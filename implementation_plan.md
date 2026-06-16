@@ -15,7 +15,7 @@ Please review the architectural choices and proposed file structure. The system 
 ## Open Questions
 
 > [!NOTE]
-> We have successfully aligned on the core parameters (Go/Rust split, gRPC, LanceDB + petgraph, hybrid local development, OpenTelemetry, general heterogeneous data sources). There are currently no critical open questions blocking the initiation of this plan.
+> We have successfully aligned on the core parameters (Go/Rust split, gRPC, LanceDB + lance-graph, hybrid local development, OpenTelemetry, general heterogeneous data sources). There are currently no critical open questions blocking the initiation of this plan.
 
 ---
 
@@ -37,7 +37,7 @@ Defines the gRPC interface between the Go API Gateway and the Rust RAG Engine:
 Configures dependencies for the Rust service:
 - `tonic`/`prost` for gRPC.
 - `lancedb` for vector storage.
-- `petgraph` for GraphRAG entity-relationship representation.
+- `lance-graph` for native LanceDB GraphRAG entity-relationship representation and Cypher querying.
 - `tokio` for async runtime.
 - `opentelemetry` & `tracing` for instrumentation.
 - `reqwest`/`serde` for LLM client integration (OpenAI/Anthropic/Gemini).
@@ -52,7 +52,7 @@ Implements the custom structure-aware recursive chunker. Supports Markdown, JSON
 Manages connection to LanceDB and abstract vector search queries.
 
 #### [NEW] [graph.rs](file:///c:/Users/user3/Shrag/engine/src/graph.rs)
-Extracts entities and relationships using LLM prompts, builds the relationship graph in `petgraph`, and persists nodes and edges to LanceDB/SQLite.
+Extracts entities and relationships using LLM prompts, maps them as a property graph, and queries them using Cypher queries via `lance-graph` stored directly in LanceDB.
 
 #### [NEW] [retriever.rs](file:///c:/Users/user3/Shrag/engine/src/retriever.rs)
 Implements the hybrid retriever: combines LanceDB vector search results with a local lexical BM25 index and applies optional metadata filters.

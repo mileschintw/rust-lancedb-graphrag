@@ -22,7 +22,7 @@ graph TD
     subgraph Data Plane Components
         RustEngine --> Chunker[Custom Chunker]
         RustEngine --> Store[LanceDB <br> Embedded Vector Store]
-        RustEngine --> GraphStore[petgraph <br> GraphRAG SQLite/LanceDB]
+        RustEngine --> GraphStore[lance-graph <br> Native LanceDB Graph Engine]
         RustEngine --> Retriever[Hybrid Retriever <br> Dense Vector + BM25]
         RustEngine --> Orchestrator[Lightweight State Machine]
     end
@@ -42,7 +42,7 @@ Unlike boilerplate RAG wrappers, Shrag features custom data-plane components bui
 
 1. **Custom Structure-Aware Chunker:** A recursive parser processing heterogeneous document formats (Markdown, JSON, text, etc.) into clean, semantic chunk structures rather than using arbitrary character-count windows.
 2. **Hybrid Vector & Lexical Retriever:** A query composer that combines embedded **LanceDB** dense vector searches with a local, in-memory **BM25 lexical index** and metadata filters.
-3. **GraphRAG Traverser:** A lightweight, state-machine orchestrator utilizing Rust's `petgraph` library to trace, score, and compile entity-relationship subgraphs into prompt context.
+3. **GraphRAG Traverser:** A GraphRAG orchestrator utilizing `lance-graph` (the native LanceDB graph engine) to store entities and relationships as Arrow tables, execute Cypher queries to extract relevant subgraphs, and compile prompt contexts.
 4. **gRPC Interface:** Seamless, type-safe inter-service communication defined in [shrag.proto](file:///c:/Users/user3/Shrag/proto/shrag.proto) utilizing `tonic` (Rust) and `google.golang.org/grpc` (Go).
 5. **Distributed Tracing (OpenTelemetry):** Native instrumentation across both Go and Rust boundaries, tracing request lifecycles from the HTTP gateway down to vector search queries and LLM invocations.
 6. **Automated Offline Evaluation:** A Python benchmarking tool utilizing an **LLM-as-a-judge** setup to measure retrieval recall, context precision, and response faithfulness.
@@ -56,7 +56,7 @@ Unlike boilerplate RAG wrappers, Shrag features custom data-plane components bui
 | **Control Plane** | Go (Gin / standard library) | Fast, light backend services, simple concurrency, and rapid API routing. |
 | **Data Plane** | Rust (Tokio, Tonic) | Memory safety, zero-cost abstractions, maximum concurrency, and low latency. |
 | **Vector Database** | LanceDB (Embedded) | Serverless, Arrow-native vector retrieval with negligible runtime overhead. |
-| **Graph Operations** | `petgraph` (Rust) | Flexible graph representation for entities & relationships traversing in-memory. |
+| **Graph Operations** | `lance-graph` | Native LanceDB graph query engine supporting Cypher queries over Arrow tables. |
 | **Metadata Store** | PostgreSQL | Relational storage for user accounts, session states, and document schemas. |
 | **Observability** | OpenTelemetry / Jaeger | Complete distributed tracing across boundaries to isolate latency bottlenecks. |
 | **Evaluation** | Python | Standard ML/LLM scripting harness for running validation tests. |
@@ -75,7 +75,7 @@ Shrag/
 │       ├── main.rs               # gRPC server bootstrap & tracing config
 │       ├── chunker.rs            # Structure-aware recursive chunker
 │       ├── store.rs              # LanceDB driver and vector retrieval
-│       ├── graph.rs              # Entity-relation petgraph builder
+│       ├── graph.rs              # Entity-relation mapping and Cypher query interface using lance-graph
 │       ├── retriever.rs          # BM25 + LanceDB hybrid query engine
 │       └── orchestrator.rs       # RAG state-machine and LLM orchestrator
 ├── gateway/                      # Go API Gateway (Control Plane)

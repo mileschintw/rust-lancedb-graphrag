@@ -21,7 +21,7 @@ This document summarizes the finalized architectural, storage, and design decisi
 
 ## 3. Storage & Vector Database Strategy
 * **Vector Store:** **LanceDB** embedded directly within the Rust service to enable fast, local-first, Arrow-native vector retrieval with minimal deployment overhead.
-* **Graph Database:** Nodes (chunks/entities) and edges (extracted relations) stored in LanceDB tables or SQLite, constructed and queried in-memory using Rust's `petgraph` library.
+* **Graph Database:** Nodes (chunks/entities) and edges (extracted relations) stored directly in LanceDB tables and queried natively using the `lance-graph` engine with Cypher.
 * **Metadata Database:** PostgreSQL (or local SQLite fallback) managed by the Go API Gateway to store user accounts, sessions, and document metadata.
 
 ---
@@ -30,7 +30,7 @@ This document summarizes the finalized architectural, storage, and design decisi
 To maximize systems engineering signaling, the core RAG components will be custom-built rather than relying on black-box frameworks:
 1. **Custom Chunking:** A structure-aware, recursive chunker parsing heterogeneous documents (Markdown, JSON, text, etc.) into clean semantic units.
 2. **Custom Hybrid Retrieval:** A query composer that combines LanceDB dense vector search, a local lexical index (e.g., BM25), and metadata filters.
-3. **Custom GraphRAG Orchestrator:** A lightweight state-machine in Rust utilizing `petgraph` to query entity-relation graphs, extract relevant subgraphs, and compile prompt contexts.
+3. **Custom GraphRAG Orchestrator:** A GraphRAG query and context compiler in Rust utilizing `lance-graph` to execute Cypher pattern-matching queries over LanceDB, extract relevant subgraphs, and compile prompt contexts.
 4. **Standard Crates:** Standard libraries (e.g., `tonic` for gRPC, `reqwest` for HTTP, `serde` for serialization) are used for basic network and serialization scaffolding.
 
 ---
