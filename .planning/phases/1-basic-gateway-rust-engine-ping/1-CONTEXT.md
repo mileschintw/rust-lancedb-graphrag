@@ -11,17 +11,22 @@ Establish the foundational split-service architecture (Go control plane + Rust d
 
 ## Implementation Decisions
 
+### Repository Structure
+- **Decision:** Monorepo with top-level directories: `/gateway` (Go API), `/engine` (Rust RAG engine), and `/proto` (Shared Protobuf definitions).
+- **Rationale:** Keeps service code cleanly separated while easily sharing the gRPC contract.
+
 ### Service Boundaries & Communication
 - **Decision:** Use **gRPC** over a structured Protobuf schema for all inter-service communication.
 - **Rationale:** Ensures strict typing and performance for the data-plane connection.
 
 ### Core Frameworks
-- **Decision:** Go for the API Gateway (standard library `net/http` or lightweight router like `chi`). Rust for the RAG Engine (using `tonic` for gRPC, `tokio` for async).
-- **Rationale:** Maximizes systems engineering signaling. Avoids black-box frameworks.
+- **Decision:** Go API Gateway will use `go-chi/chi` for routing. Rust RAG Engine will use `tonic` for gRPC and `tokio` for async.
+- **Rationale:** Maximizes systems engineering signaling. Avoids black-box frameworks while leveraging `chi`'s excellent middleware support.
 
 ### Build & Dev Environment
 - **Decision:** Hybrid local-first (`go run` / `cargo run`) backed by Docker Compose for PostgreSQL (metadata) and Jaeger (traces).
-- **Rationale:** Fast development loop while maintaining a production-like dependencies setup.
+- **Scope for Phase 1:** Only establish and verify the DB/Jaeger connections. Database migration tooling is deferred.
+- **Rationale:** Fast development loop while maintaining a production-like dependencies setup. Keeps Phase 1 focused strictly on health checks and pinging.
 
 ## Code Context
 - **Reusable Assets:** Standard Protobuf definitions for the Ping/Health service.
