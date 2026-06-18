@@ -5,11 +5,11 @@
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
 | 1 | Basic Gateway & Rust Engine Ping | Establish repo structure, Go HTTP API, and Rust gRPC server | ARCH-01, ARCH-02, ARCH-03, RAG-01 |
-| 2 | Ingestion, Chunking & Vector Storage | Ingest text/markdown, chunk, and store in LanceDB | DATA-01, DATA-02, DATA-03 |
-| 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03 |
+| 2 | Ingestion, Chunking & Vector Storage | Ingest text/markdown, chunk, and store in LanceDB | DATA-01, DATA-02, DATA-03, DATA-06 |
+| 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05 |
-| 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04 |
-| 6 | Observability, Evaluation & Polish | Add OpenTelemetry tracing, offline eval script, and README | OBS-01, OBS-02, OBS-03 |
+| 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
+| 6 | Observability, Evaluation & Polish | Add OpenTelemetry tracing, offline eval script, and README | OBS-01, OBS-02, OBS-03, OBS-04 |
 
 ## Phase Details
 
@@ -26,20 +26,22 @@
 ### Phase 2: Ingestion, Chunking & Vector Storage
 **Goal:** Ingest text/markdown, chunk, and store in LanceDB
 **Mode:** mvp
-**Requirements:** DATA-01, DATA-02, DATA-03
+**Requirements:** DATA-01, DATA-02, DATA-03, DATA-06
 **Success Criteria:**
 1. Users can upload a document via the Go HTTP API.
 2. Rust engine receives document via gRPC and chunks it.
 3. Chunks and embeddings are successfully stored in an embedded LanceDB instance.
+4. Schema includes community_ids array placeholder field on nodes and registers placeholder communities table.
 
 ### Phase 3: Hybrid Retrieval & Basic RAG Path
 **Goal:** Implement hybrid retrieval and a simple end-to-end RAG answer generation
 **Mode:** mvp
-**Requirements:** RAG-02, RAG-03
+**Requirements:** RAG-02, RAG-03, RAG-04
 **Success Criteria:**
 1. Rust engine can perform hybrid (vector + BM25) search against LanceDB.
 2. Go gateway exposes an endpoint to ask a question and receives an LLM-generated answer using retrieved context.
 3. System falls back gracefully if vector retrieval fails (degraded mode).
+4. Define pluggable async Reranker trait and NoOpReranker pass-through implementation.
 
 ### Phase 4: Knowledge Graph Extraction & Query
 **Goal:** Extract entities/relations, store in LanceDB, and compile into context
@@ -53,21 +55,23 @@
 ### Phase 5: State Machine & Workflow Events
 **Goal:** Formalize orchestration via Rust state machine with streaming events
 **Mode:** mvp
-**Requirements:** ORCH-01, ORCH-02, ORCH-03, ORCH-04
+**Requirements:** ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05
 **Success Criteria:**
 1. RAG pipeline is formalized into a defined state machine.
 2. Workflow events (node started, chunk generated, completed) stream from Rust to Go to Client.
 3. Node timeouts and retries handle failure scenarios predictably.
 4. Snapshots of the workflow state can be captured for debugging.
+5. QueryReformulator trait defined with pass-through node in state machine.
 
 ### Phase 6: Observability, Evaluation & Polish
 **Goal:** Add OpenTelemetry tracing, offline eval script, and README
 **Mode:** mvp
-**Requirements:** OBS-01, OBS-02, OBS-03
+**Requirements:** OBS-01, OBS-02, OBS-03, OBS-04
 **Success Criteria:**
 1. OpenTelemetry traces span Go, gRPC, and Rust components.
 2. Offline eval script successfully scores retrieval and answer quality on a test set.
 3. README provides clear architecture docs and instructions on how to run/evaluate.
+4. Include placeholder metric for global GraphRAG evaluation.
 
 ## Backlog
 

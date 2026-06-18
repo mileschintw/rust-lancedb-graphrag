@@ -9,6 +9,7 @@
 - [ ] **RAG-01**: Build a Rust RAG engine with gRPC server, async runtime, tracing, and service boundaries.
 - [ ] **RAG-02**: Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
 - [ ] **RAG-03**: Support degraded mode when graph extraction or one retrieval path fails, returning a useful vector/BM25-backed answer.
+- [ ] **RAG-04**: Define a pluggable async `Reranker` trait in Rust; implement a pass-through `NoOpReranker` as the v1 default, allowing external/local rerankers to be dropped in later.
 
 ## Data & Graph Processing
 - [ ] **DATA-01**: Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources.
@@ -16,17 +17,20 @@
 - [ ] **DATA-03**: Persist chunks and metadata in LanceDB as the local-first vector/graph store.
 - [ ] **DATA-04**: Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB.
 - [ ] **DATA-05**: Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context.
+- [ ] **DATA-06**: Prepare database schemas for hierarchical global summarization by adding an optional `community_ids` array on nodes and registering an empty placeholder `communities` table.
 
 ## Orchestration & State
 - [ ] **ORCH-01**: Implement a lightweight Rust state machine for the fixed RAG path (query -> reformulate -> retrieve -> graph -> prompt -> answer -> complete/failed).
 - [ ] **ORCH-02**: Emit client-facing workflow events (node started/completed/failed, answer chunks, final answer, completed).
 - [ ] **ORCH-03**: Add cancellation, timeouts, and retry/fallback behavior for node execution.
 - [ ] **ORCH-04**: Add lightweight checkpoints or snapshots for workflow state during development and debugging.
+- [ ] **ORCH-05**: Include a dedicated `reformulate` stage in the Rust state machine, defaulting to a pass-through node in v1, leaving a clean slot for future expansion.
 
 ## Observability & Evaluation
 - [ ] **OBS-01**: Add OpenTelemetry-compatible tracing across Go, gRPC, Rust nodes, retrieval, graph queries, and LLM calls.
 - [ ] **OBS-02**: Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval/answer quality.
 - [ ] **OBS-03**: Provide a README/design narrative that explains the architecture, alternatives, choices, and how to run/evaluate.
+- [ ] **OBS-04**: Add a placeholder metric (e.g. `global_faithfulness` or `global_coverage`) returning a simulated score or skipped flag in the offline evaluation script framework.
 
 ## Traceability
 (Updated by ROADMAP.md)
