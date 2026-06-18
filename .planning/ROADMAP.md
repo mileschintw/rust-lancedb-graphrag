@@ -68,3 +68,32 @@
 1. OpenTelemetry traces span Go, gRPC, and Rust components.
 2. Offline eval script successfully scores retrieval and answer quality on a test set.
 3. README provides clear architecture docs and instructions on how to run/evaluate.
+
+## Backlog
+
+### Phase 999.1: Community Summaries (Global Graph Summarization) (BACKLOG)
+
+**Goal:** Pre-computed, hierarchical summary layer built on top of the knowledge graph.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.2: Reranking (BACKLOG)
+
+**Goal:** A second-pass cross-encoder model to re-score merged retrieval candidates.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.3: Query Reformulation Strategies (BACKLOG)
+
+**Goal:** LLM-based query expansion techniques like HyDE and multi-query expansion.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
