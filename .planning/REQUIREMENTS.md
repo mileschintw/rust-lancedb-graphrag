@@ -10,6 +10,8 @@
 - [ ] **RAG-02**: Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
 - [ ] **RAG-03**: Support degraded mode when graph extraction or one retrieval path fails, returning a useful vector/BM25-backed answer.
 - [ ] **RAG-04**: Define a pluggable async `Reranker` trait in Rust; implement a pass-through `NoOpReranker` as the v1 default, allowing external/local rerankers to be dropped in later.
+- [ ] **RAG-05**: Define a `ContextAssemblyStrategy` enum/trait in the Rust engine supporting both `PrecomputedSemantics` and `SourceChunks` retrieval, defaulting to `SourceChunks` (Port for 999.5).
+- [ ] **RAG-06**: Implement an async background worker task structure (e.g. Tokio channel reader) in the Rust engine that defaults to NoOp execution (Port for 999.4).
 
 ## Data & Graph Processing
 - [ ] **DATA-01**: Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources.
@@ -18,6 +20,9 @@
 - [ ] **DATA-04**: Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB.
 - [ ] **DATA-05**: Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context.
 - [ ] **DATA-06**: Prepare database schemas for hierarchical global summarization by adding an optional `community_ids` array on nodes and registering an empty placeholder `communities` table.
+- [ ] **DATA-07**: Register nullable `summary` (Text) and `summary_vector` (Float Array) columns, along with an `unsummarized_refs` list column on the `nodes` table (Port for 999.4).
+- [ ] **DATA-08**: Define separate `nodes` and `edges` tables in LanceDB. The `edges` table must include nullable `summary` (Text) and `summary_vector` (Float Array) columns (Port for 999.5).
+- [ ] **DATA-09**: Define an async `EntityResolver` trait in Rust for ingestion, implementing a pass-through `ExactMatchResolver` as the default (Port for 999.6).
 
 ## Orchestration & State
 - [ ] **ORCH-01**: Implement a lightweight Rust state machine for the fixed RAG path (query -> reformulate -> retrieve -> graph -> prompt -> answer -> complete/failed).

@@ -24,9 +24,12 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - [ ] Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources before attempting PDF-heavy ingestion.
 - [ ] Implement custom structure-aware recursive chunking with at least fixed-size and structure-aware strategies for comparison.
 - [ ] Persist chunks and metadata in LanceDB as the local-first vector/graph store.
+  - *Port:* Define separate `nodes` and `edges` tables with nullable `summary`, `summary_vector`, and `unsummarized_refs` columns.
 - [ ] Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
 - [ ] Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB.
+  - *Port:* Define an async `EntityResolver` trait in Rust (ExactMatchResolver default) and set up an async background worker task structure.
 - [ ] Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context.
+  - *Port:* Define a `ContextAssemblyStrategy` enum/trait supporting `PrecomputedSemantics` and `SourceChunks` (fallback).
 - [ ] Implement a lightweight Rust state machine for the fixed RAG path: receive query, reformulate, retrieve hybrid, extract graph context, assemble prompt, generate answer, complete/failed.
 - [ ] Emit client-facing workflow events such as node started/completed/failed, answer chunks, final answer, and workflow completed.
 - [ ] Support degraded mode when graph extraction or one retrieval path fails, while still returning a useful vector/BM25-backed answer when possible.
