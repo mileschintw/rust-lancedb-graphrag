@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package lancet.v1;
+
+option go_package = "github.com/shrag/gateway/proto/lancet/v1;lancetv1";
+
+service LancetService {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc IngestDocument(stream IngestDocumentRequest) returns (IngestDocumentResponse);
+  rpc QueryRAG(QueryRAGRequest) returns (QueryRAGResponse);
+  rpc QueryGraph(QueryGraphRequest) returns (QueryGraphResponse);
+}
+
+message PingRequest {
+  string value = 1;
+}
+
+message PingResponse {
+  string value = 1;
+  int64 timestamp = 2;
+}
+
+message IngestDocumentRequest {
+  string document_id = 1;
+  string filename = 2;
+  bytes chunk_data = 3;
+  map<string, string> metadata = 4;
+}
+
+message IngestDocumentResponse {
+  string document_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+message QueryRAGRequest {
+  string query = 1;
+  string session_id = 2;
+}
+
+message QueryRAGResponse {
+  string answer = 1;
+  repeated string citations = 2;
+  string session_id = 3;
+}
+
+message QueryGraphRequest {
+  string query = 1;
+}
+
+message QueryGraphResponse {
+  string result_json = 1;
+}
