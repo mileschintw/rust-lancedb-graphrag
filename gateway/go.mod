@@ -1,4 +1,4 @@
-module github.com/shrag/gateway
+module github.com/lancet/gateway
 
 go 1.25.0
 

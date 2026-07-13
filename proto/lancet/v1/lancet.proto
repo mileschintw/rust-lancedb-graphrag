@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package lancet.v1;
 
-option go_package = "github.com/shrag/gateway/proto/lancet/v1;lancetv1";
+option go_package = "github.com/lancet/gateway/proto/lancet/v1;lancetv1";
 
 service LancetService {
   rpc Ping(PingRequest) returns (PingResponse);

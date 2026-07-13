@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "github.com/shrag/gateway/proto/lancet/v1"
+	pb "github.com/lancet/gateway/proto/lancet/v1"
 )
 
 type HealthResponse struct {
