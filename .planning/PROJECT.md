@@ -14,11 +14,9 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Define a stable gRPC contract between the Go API gateway and Rust RAG engine. — Phase 01
 
 ### Active
-
-- [ ] Define a stable gRPC contract between the Go API gateway and Rust RAG engine.
 - [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
 - [ ] Build a Rust RAG engine with gRPC server, async runtime, tracing, and service boundaries.
 - [ ] Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources before attempting PDF-heavy ingestion.
@@ -86,6 +84,8 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | OpenTelemetry/Jaeger tracing | Makes latency and failure points visible across Go, Rust, gRPC, retrieval, graph, and LLM calls | ✓ Good |
 | Offline evaluation script | Turns answer quality and retrieval quality into measurable claims | ✓ Good |
 | Avoid full workflow framework | Keeps the project finishable and focused on RAG/GraphRAG engineering | ✓ Good |
+| In-place protobuf generation | Simple build chain using Buf | ✓ Phase 01 |
+| Standalone Atlas CLI for Windows | Avoids incorrect winget GUI tool package | ✓ Phase 01 |
 
 ## Evolution
 
@@ -105,4 +105,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-17 after initialization from .discussion/*
+*Last updated: 2026-07-13 after Phase 01*
