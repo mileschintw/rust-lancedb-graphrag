@@ -4,7 +4,7 @@ variable "db_url" {
 }
 
 env "local" {
-  src = "file://db/schema.sql"
+  src = "file://db/schema.hcl"
   url = var.db_url
-  dev = "docker://postgres/16/dev"
+  dev = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 }
