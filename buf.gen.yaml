@@ -2,14 +2,14 @@ version: v2
 clean: true
 plugins:
   - remote: buf.build/protocolbuffers/go:v1.31.0
-    out: ../gateway/proto
+    out: gateway/proto
     opt: paths=source_relative
   - remote: buf.build/grpc/go:v1.3.0
-    out: ../gateway/proto
+    out: gateway/proto
     opt: paths=source_relative
   - remote: buf.build/community/neoeinstein-prost:v0.5.0
-    out: ../engine/src/pb
+    out: engine/src/pb
   - remote: buf.build/community/neoeinstein-tonic:v0.5.0
-    out: ../engine/src/pb
+    out: engine/src/pb
     opt:
       - no_client=true
