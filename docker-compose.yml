@@ -19,14 +19,15 @@ services:
       retries: 5
 
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.19.0
     container_name: lancet-jaeger
     ports:
       - "127.0.0.1:16686:16686" # Jaeger Web UI
       - "127.0.0.1:4317:4317"   # OTLP gRPC receiver
       - "127.0.0.1:4318:4318"   # OTLP HTTP receiver
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
+    volumes:
+      - ./jaeger-config.yaml:/etc/jaeger/jaeger-config.yaml
+    command: ["--config", "/etc/jaeger/jaeger-config.yaml"]
 
 volumes:
   postgres_data:
