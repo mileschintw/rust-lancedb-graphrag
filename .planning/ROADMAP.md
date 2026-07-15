@@ -153,7 +153,7 @@ Plans:
 
 ### Phase 999.7: CPU execution isolation with Rayon (BACKLOG)
 
-**Goal:** For CPU-heavy tasks, such as: chunking、embedding、entity extraction 或 graph post-processing, etc, import and use bounded ThreadPool from Rayon
+**Goal:** For CPU-heavy tasks, such as: chunking、embedding、entity extraction or graph post-processing, etc, import and use bounded ThreadPool from Rayon
 **Requirements:** TBD
 **Plans:** 0 plans
 
