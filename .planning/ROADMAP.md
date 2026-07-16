@@ -161,3 +161,33 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
+### Phase 999.8: S3-compatible storage for LanceDB (BACKLOG)
+
+**Goal:** Move the place store lance/lancedb from local file system to s3-compatible system, e.g. SeaweedFS or garage
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.9: Karpathy-style LLM wiki second brain (BACKLOG)
+
+**Goal:** Implement karpathy style llm wiki as user's or even team's second brain. Should be store and version control/ PR review with git in MD format. Put the projection embedding and chunk of wiki in lancedb as a part of retriveable data source with a switch for user to choose include or not.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.10: Store session conversation context in LanceDB (BACKLOG)
+
+**Goal:** Import lance-context to store full-session conversation into LanceDB for context window long-term memory and audit trail
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
