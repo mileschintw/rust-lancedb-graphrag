@@ -38,16 +38,16 @@ created: 2026-07-17
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 02-01-01 | 01 | 1 | DATA-01, DATA-02 | — | Go gateway uploads multipart files and stores metadata | integration | `go test -v ./gateway/db` | ✅ W0 | ⬜ pending |
-| 02-01-02 | 01 | 1 | DATA-03 | — | Go gateway streams file content in 64KB chunks to engine | unit/int | `go test -v ./gateway/proto` | ✅ W0 | ⬜ pending |
-| 02-02-01 | 02 | 2 | DATA-06, DATA-07 | — | Rust engine parses chunking parameters from upload settings | unit | `cargo test -p engine chunker::tests` | ✅ W0 | ⬜ pending |
-| 02-02-02 | 02 | 2 | DATA-08, DATA-09 | — | Chunker parses markdown headers using pulldown-cmark | unit | `cargo test -p engine chunker::tests` | ✅ W0 | ⬜ pending |
-| 02-02-03 | 02 | 2 | RAG-06 | — | tiktoken-rs estimates tokens with o200k_base encoding | unit | `cargo test -p engine chunker::tests` | ✅ W0 | ⬜ pending |
-| 02-03-01 | 03 | 3 | DATA-06 | — | OpenRouter client generates embeddings with retry backoff | unit | `cargo test -p engine client::tests` | ✅ W0 | ⬜ pending |
-| 02-03-02 | 03 | 3 | DATA-06 | — | LanceDB node/edge/doc schemas initialized and validated | integration | `cargo test -p engine db::tests` | ✅ W0 | ⬜ pending |
-| 02-03-03 | 03 | 3 | DATA-06 | — | Startup schema drift check fails fast on mismatch | unit | `cargo test -p engine db::tests` | ✅ W0 | ⬜ pending |
-| 02-04-01 | 04 | 4 | DATA-06 | — | Tokio channel background worker processes jobs sequentially | integration | `cargo test -p engine worker::tests` | ✅ W0 | ⬜ pending |
-| 02-04-02 | 04 | 4 | DATA-06 | — | Go gateway polls and updates PostgreSQL from GetIngestionStatus | integration | `go test -v ./gateway/...` | ✅ W0 | ⬜ pending |
+| 02-01-01 | 01 | 1 | DATA-01 | — | Go gateway uploads multipart files and stores metadata | integration | `go test -v ./gateway/db` | ✅ W0 | ⬜ pending |
+| 02-01-02 | 01 | 1 | DATA-01 | — | Go gateway streams file content in 64KB chunks to engine | unit/int | `go test -v ./gateway/proto` | ✅ W0 | ⬜ pending |
+| 02-02-01 | 02 | 2 | DATA-02 | — | Rust engine parses chunking parameters from upload settings | unit | `cargo test -p engine chunker::tests` | ✅ W0 | ⬜ pending |
+| 02-02-02 | 02 | 2 | DATA-02 | — | Chunker parses markdown headers using pulldown-cmark / fixed-size | unit | `cargo test -p engine chunker::tests` | ✅ W0 | ⬜ pending |
+| 02-02-03 | 02 | 2 | DATA-02 | — | tiktoken-rs estimates tokens with o200k_base encoding | unit | `cargo test -p engine chunker::tests` | ✅ W0 | ⬜ pending |
+| 02-03-01 | 03 | 3 | DATA-01 | — | OpenRouter client generates embeddings with retry backoff | unit | `cargo test -p engine client::tests` | ✅ W0 | ⬜ pending |
+| 02-03-02 | 03 | 3 | DATA-03, DATA-06, DATA-07, DATA-08, DATA-09 | — | LanceDB schemas initialized and EntityResolver registered | integration | `cargo test -p engine db::tests` | ✅ W0 | ⬜ pending |
+| 02-03-03 | 03 | 3 | DATA-03 | — | Startup schema drift check fails fast on mismatch | unit | `cargo test -p engine db::tests` | ✅ W0 | ⬜ pending |
+| 02-04-01 | 04 | 4 | RAG-06 | — | Tokio channel background worker processes jobs sequentially | integration | `cargo test -p engine` | ✅ W0 | ⬜ pending |
+| 02-04-02 | 04 | 4 | DATA-01 | — | Go gateway polls and updates PostgreSQL from GetIngestionStatus | integration | `go test -v ./gateway/...` | ✅ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -68,8 +68,8 @@ created: 2026-07-17
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Graceful shutdown of Tokio channel background worker | DATA-06 | Hard to simulate timing cleanly in unit test | Boot engine, start large document upload, trigger SIGINT, verify active document finishes indexing in logs, while remainder of queue is discarded. |
-| Docker Compose shared config volume mount | DATA-06 | Involves docker runtime containerization | Boot containers using `docker-compose up`, verify host `/config/config.dev.toml` changes are reflected in container log behaviors on container boot. |
+| Graceful shutdown of Tokio channel background worker | RAG-06 | Hard to simulate timing cleanly in unit test | Boot engine, start large document upload, trigger SIGINT, verify active document finishes indexing in logs, while remainder of queue is discarded. |
+| Docker Compose shared config volume mount | ARCH-03 | Involves docker runtime containerization | Boot containers using `docker-compose up`, verify host `/config/config.dev.toml` changes are reflected in container log behaviors on container boot. |
 
 ---
 
