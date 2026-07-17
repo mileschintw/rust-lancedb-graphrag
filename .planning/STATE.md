@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-07-14T12:24:00.000Z"
+last_updated: "2026-07-17T09:51:23.780Z"
 progress:
-  total_phases: 12
+  total_phases: 16
   completed_phases: 1
   total_plans: 1
   completed_plans: 1
-  percent: 8
+  percent: 6
 ---
 
 # Project State
@@ -46,5 +46,3 @@ progress:
 | setup-gitignore | 2026-07-12 | Check and make/update a proper git.ignore based on the designed stack | Complete |
 | check-dep-updates | 2026-07-14 | Check if dependencies of this project is able to update and keep working, like rust cargo and jaeger image | Complete |
 | buf-rust-codegen | 2026-07-14 | Migrate Rust protobuf code generation to Buf v2 with prost and tonic plugins | Complete |
-
-
