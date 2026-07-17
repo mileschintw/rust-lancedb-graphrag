@@ -73,8 +73,14 @@ function _safeJson(value) {
 function makeUnknownCommand(command) {
     return Object.freeze({ ok: false, kind: ERROR_KINDS.UnknownCommand, command });
 }
-function makeInvalidArgs(arg, reason) {
-    return Object.freeze({ ok: false, kind: ERROR_KINDS.InvalidArgs, arg, reason });
+function makeInvalidArgs(arg, reason, exitReason) {
+    const obj = { ok: false, kind: ERROR_KINDS.InvalidArgs, arg, reason };
+    // Conditionally add exitReason only when truthy — preserves strict-keys
+    // invariant (2-arg callers must continue to produce a 4-key frozen result).
+    if (exitReason) {
+        obj.exitReason = exitReason;
+    }
+    return Object.freeze(obj);
 }
 function makeHandlerRefusal(reason) {
     return Object.freeze({ ok: false, kind: ERROR_KINDS.HandlerRefusal, reason });
@@ -113,7 +119,8 @@ const _VARIANT_SCHEMA = {
     },
     InvalidArgs: {
         required: ['arg', 'reason'],
-        allowed: new Set(['ok', 'kind', 'arg', 'reason']),
+        // Amendment #1642: exitReason? is allowed but not required.
+        allowed: new Set(['ok', 'kind', 'arg', 'reason', 'exitReason']),
     },
     HandlerRefusal: {
         required: ['reason'],

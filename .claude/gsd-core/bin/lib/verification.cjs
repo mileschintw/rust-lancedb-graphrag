@@ -21,11 +21,16 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- core.cjs is an export= CommonJS module
-const core = require("./core.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- io.cjs is an export= CommonJS module
+const io = require("./io.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- phase-id.cjs is an export= CommonJS module
+const phaseId = require("./phase-id.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- frontmatter.cjs is an export= CommonJS module
 const frontmatterMod = require("./frontmatter.cjs");
-const { output, extractPhaseToken } = core;
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- plan-scan.cjs is an export= CommonJS module
+const scanPhasePlans = require("./plan-scan.cjs");
+const { output, error } = io;
+const { extractPhaseToken } = phaseId;
 const { extractFrontmatter } = frontmatterMod;
 // ─── Constants ────────────────────────────────────────────────────────────────
 /** The set of status values that the gsd-verifier agent emits. */
@@ -62,6 +67,11 @@ const VERIFICATION_ROUTING_TABLE = {
         next_action: "Human verification required. Complete the manual tests in the phase's *-UAT.md, then re-run the verify step until status is passed.",
         next_command: '',
     },
+    stale: {
+        status: 'stale',
+        next_action: 'Verification is stale. Re-run verify-work before transition.',
+        next_command: '',
+    },
     // INTERNAL SENTINEL: constructed when no *-VERIFICATION.md file exists or when
     // the file has no parseable frontmatter status. Never emitted by the verifier.
     missing: {
@@ -89,6 +99,40 @@ function missingResult() {
         next_action: route.next_action,
         next_command: route.next_command,
     };
+}
+function findStaleVerificationSummary(phaseDir, fsImpl = node_fs_1.default) {
+    // FS errors (TOCTOU: a SUMMARY listed by scanPhasePlans then removed before statSync;
+    // unreadable dir; broken symlink; file->dir swap) must degrade to "not stale" rather
+    // than throw uncaught into callers that are NOT under the planning lock
+    // (init.manager / init.progress / uat-predicate). Mirrors readVerificationStatus's
+    // no-throw contract; `fsImpl` threads the same injectable-fs seam for parity/testing.
+    // (Review B1 on #1548.)
+    try {
+        const phaseFiles = fsImpl.readdirSync(phaseDir);
+        const verificationFile = phaseFiles.filter((f) => f.endsWith('-VERIFICATION.md')).sort()[0];
+        if (!verificationFile)
+            return null;
+        const verificationMtimeMs = fsImpl.statSync(node_path_1.default.join(phaseDir, verificationFile)).mtimeMs;
+        let newestStaleSummary = null;
+        const summaryFiles = scanPhasePlans(phaseDir).summaryFiles;
+        for (const summaryFile of summaryFiles.sort()) {
+            const summaryMtimeMs = fsImpl.statSync(node_path_1.default.join(phaseDir, summaryFile)).mtimeMs;
+            if (summaryMtimeMs <= verificationMtimeMs)
+                continue;
+            if (!newestStaleSummary || summaryMtimeMs > newestStaleSummary.mtimeMs) {
+                newestStaleSummary = { summaryFile, mtimeMs: summaryMtimeMs };
+            }
+        }
+        if (!newestStaleSummary)
+            return null;
+        return {
+            verificationFile,
+            summaryFile: newestStaleSummary.summaryFile,
+        };
+    }
+    catch {
+        return null;
+    }
 }
 /**
  * Read the verification status from the first `*-VERIFICATION.md` file in
@@ -146,18 +190,37 @@ function readVerificationStatus(phaseDir, opts = {}) {
     if (!rawStatus) {
         return missingResult();
     }
-    // 3. Route — exclude internal sentinels from raw-file lookup (they are
-    // constructed internally above, never written by the verifier).
-    if (rawStatus in VERIFICATION_ROUTING_TABLE && rawStatus !== 'missing' && rawStatus !== 'unknown') {
-        const entry = VERIFICATION_ROUTING_TABLE[rawStatus];
-        // gaps_found: build the phase-specific command here rather than in the table.
-        const next_command = rawStatus === 'gaps_found'
-            ? `/gsd:plan-phase ${phaseNumber} --gaps`
-            : entry.next_command;
+    // gaps_found takes priority over stale — gap closure is the correct next
+    // step regardless of whether summaries are newer than the verification file.
+    if (rawStatus === 'gaps_found') {
+        const entry = VERIFICATION_ROUTING_TABLE['gaps_found'];
         return {
             status: entry.status,
             next_action: entry.next_action,
-            next_command,
+            next_command: `/gsd:plan-phase ${phaseNumber} --gaps`,
+        };
+    }
+    const staleVerification = findStaleVerificationSummary(phaseDir, fsImpl);
+    if (staleVerification) {
+        const entry = VERIFICATION_ROUTING_TABLE['stale'];
+        return {
+            status: entry.status,
+            next_action: entry.next_action,
+            next_command: `/gsd:verify-work ${phaseNumber}`,
+        };
+    }
+    // 3. Route — exclude internal sentinels from raw-file lookup (they are
+    // constructed internally above, never written by the verifier).
+    if (rawStatus in VERIFICATION_ROUTING_TABLE &&
+        rawStatus !== 'missing' &&
+        rawStatus !== 'unknown' &&
+        rawStatus !== 'stale' &&
+        rawStatus !== 'gaps_found') {
+        const entry = VERIFICATION_ROUTING_TABLE[rawStatus];
+        return {
+            status: entry.status,
+            next_action: entry.next_action,
+            next_command: entry.next_command,
         };
     }
     // Unknown value
@@ -170,7 +233,7 @@ function readVerificationStatus(phaseDir, opts = {}) {
 }
 /**
  * CLI command handler: resolve phaseDir against cwd, call readVerificationStatus,
- * emit via core.output().
+ * emit via io.output().
  *
  * @param cwd         - Current working directory (used to resolve phaseDirArg).
  * @param phaseDirArg - Phase directory path (absolute or relative to cwd).
@@ -178,7 +241,7 @@ function readVerificationStatus(phaseDir, opts = {}) {
  */
 function cmdVerificationStatus(cwd, phaseDirArg, raw) {
     if (!phaseDirArg) {
-        core.error('phase directory required for verification.status');
+        error('phase directory required for verification.status');
         return;
     }
     const phaseDir = node_path_1.default.resolve(cwd, phaseDirArg);
@@ -188,6 +251,7 @@ function cmdVerificationStatus(cwd, phaseDirArg, raw) {
 module.exports = {
     VERIFIER_STATUSES,
     VERIFICATION_ROUTING_TABLE,
+    findStaleVerificationSummary,
     readVerificationStatus,
     cmdVerificationStatus,
 };

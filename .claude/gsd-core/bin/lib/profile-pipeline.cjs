@@ -20,8 +20,8 @@ const node_path_1 = __importDefault(require("node:path"));
 const node_os_1 = __importDefault(require("node:os"));
 const node_readline_1 = __importDefault(require("node:readline"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { output, error, reapStaleTempFiles, ensureGsdTempDir, GSD_TEMP_DIR } = core;
+const ioModule = require("./io.cjs");
+const { output, error, reapStaleTempFiles, ensureGsdTempDir, GSD_TEMP_DIR } = ioModule;
 // ─── Session I/O Helpers ──────────────────────────────────────────────────────
 function getSessionsDir(overridePath) {
     const dir = overridePath || node_path_1.default.join(node_os_1.default.homedir(), '.claude', 'projects');
