@@ -8,6 +8,20 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Document struct {
+	ID            string
+	Filename      string
+	FileSize      int64
+	Status        string
+	ChunkCount    int32
+	ErrorMessage  pgtype.Text
+	ChunkStrategy string
+	ChunkSize     int32
+	ChunkOverlap  int32
+	CreatedAt     pgtype.Timestamp
+	UpdatedAt     pgtype.Timestamp
+}
+
 type User struct {
 	ID        int32
 	Username  string

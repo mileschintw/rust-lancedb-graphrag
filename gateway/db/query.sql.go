@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -22,6 +24,31 @@ func (q *Queries) CreateUser(ctx context.Context, username string) (User, error)
 	return i, err
 }
 
+const getDocument = `-- name: GetDocument :one
+SELECT id, filename, file_size, status, chunk_count, error_message, chunk_strategy, chunk_size, chunk_overlap, created_at, updated_at FROM documents
+WHERE id = $1
+LIMIT 1
+`
+
+func (q *Queries) GetDocument(ctx context.Context, id string) (Document, error) {
+	row := q.db.QueryRow(ctx, getDocument, id)
+	var i Document
+	err := row.Scan(
+		&i.ID,
+		&i.Filename,
+		&i.FileSize,
+		&i.Status,
+		&i.ChunkCount,
+		&i.ErrorMessage,
+		&i.ChunkStrategy,
+		&i.ChunkSize,
+		&i.ChunkOverlap,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, username, created_at FROM users
 WHERE id = $1 LIMIT 1
@@ -31,5 +58,105 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
 	row := q.db.QueryRow(ctx, getUser, id)
 	var i User
 	err := row.Scan(&i.ID, &i.Username, &i.CreatedAt)
+	return i, err
+}
+
+const insertDocument = `-- name: InsertDocument :one
+INSERT INTO documents (
+  id,
+  filename,
+  file_size,
+  status,
+  chunk_count,
+  chunk_strategy,
+  chunk_size,
+  chunk_overlap
+) VALUES (
+  $1,
+  $2,
+  $3,
+  'queued',
+  0,
+  $4,
+  $5,
+  $6
+)
+RETURNING id, filename, file_size, status, chunk_count, error_message, chunk_strategy, chunk_size, chunk_overlap, created_at, updated_at
+`
+
+type InsertDocumentParams struct {
+	ID            string
+	Filename      string
+	FileSize      int64
+	ChunkStrategy string
+	ChunkSize     int32
+	ChunkOverlap  int32
+}
+
+func (q *Queries) InsertDocument(ctx context.Context, arg InsertDocumentParams) (Document, error) {
+	row := q.db.QueryRow(ctx, insertDocument,
+		arg.ID,
+		arg.Filename,
+		arg.FileSize,
+		arg.ChunkStrategy,
+		arg.ChunkSize,
+		arg.ChunkOverlap,
+	)
+	var i Document
+	err := row.Scan(
+		&i.ID,
+		&i.Filename,
+		&i.FileSize,
+		&i.Status,
+		&i.ChunkCount,
+		&i.ErrorMessage,
+		&i.ChunkStrategy,
+		&i.ChunkSize,
+		&i.ChunkOverlap,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateDocumentStatus = `-- name: UpdateDocumentStatus :one
+UPDATE documents
+SET
+  status = $2,
+  chunk_count = $3,
+  error_message = $4,
+  updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, filename, file_size, status, chunk_count, error_message, chunk_strategy, chunk_size, chunk_overlap, created_at, updated_at
+`
+
+type UpdateDocumentStatusParams struct {
+	ID           string
+	Status       string
+	ChunkCount   int32
+	ErrorMessage pgtype.Text
+}
+
+func (q *Queries) UpdateDocumentStatus(ctx context.Context, arg UpdateDocumentStatusParams) (Document, error) {
+	row := q.db.QueryRow(ctx, updateDocumentStatus,
+		arg.ID,
+		arg.Status,
+		arg.ChunkCount,
+		arg.ErrorMessage,
+	)
+	var i Document
+	err := row.Scan(
+		&i.ID,
+		&i.Filename,
+		&i.FileSize,
+		&i.Status,
+		&i.ChunkCount,
+		&i.ErrorMessage,
+		&i.ChunkStrategy,
+		&i.ChunkSize,
+		&i.ChunkOverlap,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
