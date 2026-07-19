@@ -17,8 +17,8 @@
 
 ## Data & Graph Processing
 
-- [ ] **DATA-01**: Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources.
-- [ ] **DATA-02**: Implement custom structure-aware recursive chunking with at least fixed-size and structure-aware strategies.
+- [x] **DATA-01**: Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources.
+- [x] **DATA-02**: Implement custom structure-aware recursive chunking with at least fixed-size and structure-aware strategies.
 - [ ] **DATA-03**: Persist chunks and metadata in LanceDB as the local-first vector/graph store.
 - [ ] **DATA-04**: Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB.
 - [ ] **DATA-05**: Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context.

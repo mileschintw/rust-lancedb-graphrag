@@ -30,6 +30,7 @@
 **Goal:** Ingest text/markdown, chunk, and store in LanceDB
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
+**Plans:** 1/4 plans complete
 **Success Criteria:**
 
 1. Users can upload a document via the Go HTTP API.
@@ -190,4 +191,3 @@ Plans:
 Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
-
