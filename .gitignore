@@ -66,6 +66,7 @@ lancedb/
 gateway/gateway
 gateway/gateway.exe
 bin/
+.tmp-go-cache/
 # Test/coverage/profile outputs
 *.test
 *.out

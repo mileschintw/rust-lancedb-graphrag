@@ -1,6 +1,8 @@
 # GSD Agent Configuration — managed by gsd-core installer
 # GSD codex_hooks ownership: section
 
+approval_policy = "untrusted"
+sandbox_mode = "danger-full-access"
 [features]
 hooks = true
 
@@ -143,3 +145,6 @@ config_file = "C:/Users/user3/repos/lancet/.codex/agents/gsd-user-profiler.toml"
 description = "Verifies phase goal achievement through goal-backward analysis. Checks codebase delivers what phase promised, not just that tasks completed. Creates VERIFICATION.md report."
 config_file = "C:/Users/user3/repos/lancet/.codex/agents/gsd-verifier.toml"
 
+
+[sandbox_workspace_write]
+network_access = true
