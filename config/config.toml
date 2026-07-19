@@ -1,0 +1,11 @@
+[gateway]
+port = "8080"
+database_url = "postgres://postgres:postgres@localhost:5432/lancet?sslmode=disable"
+engine_addr = "localhost:50051"
+
+[engine]
+grpc_addr = "[::1]:50051"
+lancedb_path = "./data/lancedb"
+
+[openrouter]
+api_key = ""

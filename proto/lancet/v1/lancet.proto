@@ -7,6 +7,7 @@ option go_package = "github.com/lancet/gateway/proto/lancet/v1;lancetv1";
 service LancetService {
   rpc Ping(PingRequest) returns (PingResponse);
   rpc IngestDocument(stream IngestDocumentRequest) returns (IngestDocumentResponse);
+  rpc GetIngestionStatus(GetIngestionStatusRequest) returns (GetIngestionStatusResponse);
   rpc QueryRAG(QueryRAGRequest) returns (QueryRAGResponse);
   rpc QueryGraph(QueryGraphRequest) returns (QueryGraphResponse);
 }
@@ -31,6 +32,17 @@ message IngestDocumentResponse {
   string document_id = 1;
   bool success = 2;
   string message = 3;
+}
+
+message GetIngestionStatusRequest {
+  string document_id = 1;
+}
+
+message GetIngestionStatusResponse {
+  string document_id = 1;
+  string status = 2;
+  int32 chunk_count = 3;
+  string error_message = 4;
 }
 
 message QueryRAGRequest {

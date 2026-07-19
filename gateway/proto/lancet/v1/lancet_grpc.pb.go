@@ -19,10 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	LancetService_Ping_FullMethodName           = "/lancet.v1.LancetService/Ping"
-	LancetService_IngestDocument_FullMethodName = "/lancet.v1.LancetService/IngestDocument"
-	LancetService_QueryRAG_FullMethodName       = "/lancet.v1.LancetService/QueryRAG"
-	LancetService_QueryGraph_FullMethodName     = "/lancet.v1.LancetService/QueryGraph"
+	LancetService_Ping_FullMethodName               = "/lancet.v1.LancetService/Ping"
+	LancetService_IngestDocument_FullMethodName     = "/lancet.v1.LancetService/IngestDocument"
+	LancetService_GetIngestionStatus_FullMethodName = "/lancet.v1.LancetService/GetIngestionStatus"
+	LancetService_QueryRAG_FullMethodName           = "/lancet.v1.LancetService/QueryRAG"
+	LancetService_QueryGraph_FullMethodName         = "/lancet.v1.LancetService/QueryGraph"
 )
 
 // LancetServiceClient is the client API for LancetService service.
@@ -31,6 +32,7 @@ const (
 type LancetServiceClient interface {
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	IngestDocument(ctx context.Context, opts ...grpc.CallOption) (LancetService_IngestDocumentClient, error)
+	GetIngestionStatus(ctx context.Context, in *GetIngestionStatusRequest, opts ...grpc.CallOption) (*GetIngestionStatusResponse, error)
 	QueryRAG(ctx context.Context, in *QueryRAGRequest, opts ...grpc.CallOption) (*QueryRAGResponse, error)
 	QueryGraph(ctx context.Context, in *QueryGraphRequest, opts ...grpc.CallOption) (*QueryGraphResponse, error)
 }
@@ -86,6 +88,15 @@ func (x *lancetServiceIngestDocumentClient) CloseAndRecv() (*IngestDocumentRespo
 	return m, nil
 }
 
+func (c *lancetServiceClient) GetIngestionStatus(ctx context.Context, in *GetIngestionStatusRequest, opts ...grpc.CallOption) (*GetIngestionStatusResponse, error) {
+	out := new(GetIngestionStatusResponse)
+	err := c.cc.Invoke(ctx, LancetService_GetIngestionStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *lancetServiceClient) QueryRAG(ctx context.Context, in *QueryRAGRequest, opts ...grpc.CallOption) (*QueryRAGResponse, error) {
 	out := new(QueryRAGResponse)
 	err := c.cc.Invoke(ctx, LancetService_QueryRAG_FullMethodName, in, out, opts...)
@@ -110,6 +121,7 @@ func (c *lancetServiceClient) QueryGraph(ctx context.Context, in *QueryGraphRequ
 type LancetServiceServer interface {
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	IngestDocument(LancetService_IngestDocumentServer) error
+	GetIngestionStatus(context.Context, *GetIngestionStatusRequest) (*GetIngestionStatusResponse, error)
 	QueryRAG(context.Context, *QueryRAGRequest) (*QueryRAGResponse, error)
 	QueryGraph(context.Context, *QueryGraphRequest) (*QueryGraphResponse, error)
 	mustEmbedUnimplementedLancetServiceServer()
@@ -124,6 +136,9 @@ func (UnimplementedLancetServiceServer) Ping(context.Context, *PingRequest) (*Pi
 }
 func (UnimplementedLancetServiceServer) IngestDocument(LancetService_IngestDocumentServer) error {
 	return status.Errorf(codes.Unimplemented, "method IngestDocument not implemented")
+}
+func (UnimplementedLancetServiceServer) GetIngestionStatus(context.Context, *GetIngestionStatusRequest) (*GetIngestionStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetIngestionStatus not implemented")
 }
 func (UnimplementedLancetServiceServer) QueryRAG(context.Context, *QueryRAGRequest) (*QueryRAGResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QueryRAG not implemented")
@@ -188,6 +203,24 @@ func (x *lancetServiceIngestDocumentServer) Recv() (*IngestDocumentRequest, erro
 	return m, nil
 }
 
+func _LancetService_GetIngestionStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIngestionStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LancetServiceServer).GetIngestionStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LancetService_GetIngestionStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LancetServiceServer).GetIngestionStatus(ctx, req.(*GetIngestionStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _LancetService_QueryRAG_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryRAGRequest)
 	if err := dec(in); err != nil {
@@ -234,6 +267,10 @@ var LancetService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ping",
 			Handler:    _LancetService_Ping_Handler,
+		},
+		{
+			MethodName: "GetIngestionStatus",
+			Handler:    _LancetService_GetIngestionStatus_Handler,
 		},
 		{
 			MethodName: "QueryRAG",

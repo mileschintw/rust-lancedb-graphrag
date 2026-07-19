@@ -23,6 +23,13 @@ pub mod lancet_service_server {
             tonic::Response<super::IngestDocumentResponse>,
             tonic::Status,
         >;
+        async fn get_ingestion_status(
+            &self,
+            request: tonic::Request<super::GetIngestionStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIngestionStatusResponse>,
+            tonic::Status,
+        >;
         async fn query_rag(
             &self,
             request: tonic::Request<super::QueryRagRequest>,
@@ -201,6 +208,52 @@ pub mod lancet_service_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.client_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/lancet.v1.LancetService/GetIngestionStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetIngestionStatusSvc<T: LancetService>(pub Arc<T>);
+                    impl<
+                        T: LancetService,
+                    > tonic::server::UnaryService<super::GetIngestionStatusRequest>
+                    for GetIngestionStatusSvc<T> {
+                        type Response = super::GetIngestionStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetIngestionStatusRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as LancetService>::get_ingestion_status(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetIngestionStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

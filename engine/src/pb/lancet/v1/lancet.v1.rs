@@ -33,6 +33,22 @@ pub struct IngestDocumentResponse {
     pub message: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetIngestionStatusRequest {
+    #[prost(string, tag="1")]
+    pub document_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetIngestionStatusResponse {
+    #[prost(string, tag="1")]
+    pub document_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub status: ::prost::alloc::string::String,
+    #[prost(int32, tag="3")]
+    pub chunk_count: i32,
+    #[prost(string, tag="4")]
+    pub error_message: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct QueryRagRequest {
     #[prost(string, tag="1")]
     pub query: ::prost::alloc::string::String,
