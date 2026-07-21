@@ -16,5 +16,5 @@ lancedb = "0.31.0"
 serde = { version = "1.0.228", features = ["derive"] }
 arrow-array = "58.3.0"
 arrow-schema = "58.3.0"
-
-
+pulldown-cmark = "0.10"
+tiktoken-rs = "0.6"
