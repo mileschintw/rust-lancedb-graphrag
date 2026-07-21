@@ -3,14 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 2
+current_plan: 3 of 4
 status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-07-21T05:35:00Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-07-21T08:23:28.233Z"
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -56,6 +57,7 @@ progress:
 |------|----------|-------|-------|
 | Phase 02 P01 | 1h 16m | 2 tasks | 21 files |
 | Phase 02 P02 | 57m | 2 tasks | 5 files |
+| Phase 02 P03 | 1h 25m | 2 tasks | 9 files |
 
 ## Decisions
 
@@ -64,9 +66,12 @@ progress:
 - [Phase 02-01]: Keep live ingestion state in Arc DashMap while PostgreSQL remains the gateway metadata source. — This is the thinnest viable scaffold for polling before later persistence work.
 - [Phase 02-02]: Force JSON uploads through fixed-size chunking. — JSON strings may contain Markdown-like tokens but must remain raw text.
 - [Phase 02-02]: Cache o200k_base in OnceLock and estimate tokens before persistence. — Downstream embedding and vector-storage work receives stable per-chunk token counts.
+- [Phase 02-03]: Use ~major.minor Cargo requirements for two-component declarations with patch-only updates. — Matches the requested manifest format without permitting automatic minor-version drift.
+- [Phase 02-03]: Keep direct Arrow crates on the 58.3 patch line. — LanceDB 0.31 exposes Arrow 58 types; Arrow 59 would create incompatible public types.
+- [Phase 02-03]: Fail startup on any LanceDB schema field drift. — Indexing must not proceed against incompatible persisted storage.
 
 ## Session
 
-**Last session:** 2026-07-21T05:35:00Z
-**Stopped at:** Completed 02-02-PLAN.md
+**Last session:** 2026-07-21T08:23:28.211Z
+**Stopped at:** Completed 02-03-PLAN.md
 **Resume file:** None
