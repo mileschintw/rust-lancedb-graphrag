@@ -1,3 +1,7 @@
+# Copy this file to config.dev.toml or config.prod.toml and adjust it locally.
+# Set the OpenRouter credential through the OPENROUTER_API_KEY environment variable;
+# never put a real API key in a committed file.
+
 [gateway]
 port = "8080"
 database_url = "postgres://postgres:postgres@localhost:5432/lancet?sslmode=disable"
@@ -5,7 +9,7 @@ engine_addr = "localhost:50051"
 
 [engine]
 grpc_addr = "[::1]:50051"
-lancedb_path = "./data/lancedb"
+lancedb_path = "./data/lancedb-dev"
 
 [openrouter]
 embedding_model = "nvidia/llama-nemotron-embed-vl-1b-v2:free"

@@ -43,6 +43,10 @@ Desktop.ini
 *.env
 *.env.local
 
+# Environment-specific runtime configuration (may contain credentials)
+config/config.dev.toml
+config/config.prod.toml
+
 # Databases & Persistent Local Storage
 # ------------------------------------------------------------------------------
 # PostgreSQL volume data
