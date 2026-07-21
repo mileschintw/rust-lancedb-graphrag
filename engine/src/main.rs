@@ -6,7 +6,6 @@ use std::{
 };
 
 use arrow_array::{BinaryArray, RecordBatch, StringArray};
-use arrow_schema::{DataType, Field, Schema};
 use dashmap::DashMap;
 use lancedb::Table;
 use serde::Deserialize;
@@ -15,8 +14,10 @@ use tonic::{transport::Server, Request, Response, Status};
 
 mod chunker;
 mod client;
+mod db;
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
+use db::DatabaseManager;
 
 pub mod lancet {
     pub mod v1 {
@@ -137,7 +138,7 @@ impl LancetServiceImpl {
     async fn persist_raw(
         &self,
         document_id: &str,
-        filename: &str,
+        _filename: &str,
         data: &[u8],
     ) -> Result<(), Status> {
         let schema = self.table.schema().await.map_err(internal)?;
@@ -145,7 +146,6 @@ impl LancetServiceImpl {
             schema,
             vec![
                 Arc::new(StringArray::from(vec![document_id])),
-                Arc::new(StringArray::from(vec![filename])),
                 Arc::new(BinaryArray::from_vec(vec![data])),
             ],
         )
@@ -305,31 +305,14 @@ fn spawn_worker(
     })
 }
 
-async fn open_documents_table(path: &str) -> Result<Table, Box<dyn std::error::Error>> {
-    let connection = lancedb::connect(path).execute().await?;
-    match connection.open_table("documents").execute().await {
-        Ok(table) => Ok(table),
-        Err(_) => {
-            let schema = Arc::new(Schema::new(vec![
-                Field::new("document_id", DataType::Utf8, false),
-                Field::new("filename", DataType::Utf8, false),
-                Field::new("raw_data", DataType::Binary, false),
-            ]));
-            Ok(connection
-                .create_empty_table("documents", schema)
-                .execute()
-                .await?)
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();
     let settings = load_settings()?;
-    let table = open_documents_table(&settings.engine.lancedb_path).await?;
+    let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
+    let table = database.documents_table().await?;
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
     let worker = spawn_worker(receiver, statuses.clone());
