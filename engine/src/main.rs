@@ -14,6 +14,7 @@ use tokio::{sync::mpsc, task::JoinHandle};
 use tonic::{transport::Server, Request, Response, Status};
 
 mod chunker;
+mod client;
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
 
