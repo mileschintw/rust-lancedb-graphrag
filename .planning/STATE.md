@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 2
 current_plan: 4 of 4
-status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-07-24T23:23:29.520Z"
+status: verifying
+stopped_at: Phase 02 verification found DATA-08 gap
+last_updated: "2026-07-24T23:31:00.000Z"
 progress:
   total_phases: 2
-  completed_phases: 2
+  completed_phases: 1
   total_plans: 5
   completed_plans: 5
 ---
@@ -19,15 +19,15 @@ progress:
 ## Current Status
 
 - Phase 1 completed successfully.
-- Phase 2 plans 02-01 through 02-03 completed successfully; phase remains in progress.
+- Phase 2 plans 02-01 through 02-04 completed successfully; verification found a DATA-08 schema nullability gap.
 
 ## Active Phase
 
 - **Phase:** 2
-- **Status:** Executing Phase 02
+- **Status:** Verification gaps found
 - **Current Plan:** 4 of 4
-- **Phase Progress:** 3 of 4 plans complete (75%)
-- **Current Focus:** Plan 02-04 — async-background-indexing-and-status-polling
+- **Phase Progress:** 4 of 4 plans complete (100%); phase verification pending gap closure
+- **Current Focus:** Close DATA-08 edge summary nullability gap, then re-run verification
 
 ## Completed Phases
 
@@ -35,7 +35,8 @@ progress:
 
 ## Known Issues & Debt
 
-- N/A
+- DATA-08 remains incomplete: LanceDB edge `summary` and `summary_vector` fields are non-nullable.
+- Phase 02 code review also records three non-blocking ingestion integrity warnings in `02-REVIEW.md`.
 
 ## Deployment & Environments
 
@@ -70,9 +71,12 @@ progress:
 - [Phase 02-03]: Use ~major.minor Cargo requirements for two-component declarations with patch-only updates. — Matches the requested manifest format without permitting automatic minor-version drift.
 - [Phase 02-03]: Keep direct Arrow crates on the 58.3 patch line. — LanceDB 0.31 exposes Arrow 58 types; Arrow 59 would create incompatible public types.
 - [Phase 02-03]: Fail startup on any LanceDB schema field drift. — Indexing must not proceed against incompatible persisted storage.
+- [Phase 02-04]: Keep durable raw-content staging after queue reservation, then let the single worker replace document graph rows. — Preserves queue rejection semantics while making re-ingestion repairable.
+- [Phase 02-04]: Persist only completed or failed engine states in PostgreSQL. — Queued and processing remain live engine states until terminal reconciliation.
+- [Phase 02-04]: Generate and validate RFC 4122 UUIDv4 document IDs at both runtime boundaries. — Prevents predicate/path injection and keeps gateway/engine IDs compatible.
 
 ## Session
 
 **Last session:** 2026-07-24T23:23:29.354Z
-**Stopped at:** Completed 02-04-PLAN.md
+**Stopped at:** Phase 02 verification found DATA-08 gap
 **Resume file:** None

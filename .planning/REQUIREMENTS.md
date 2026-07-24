@@ -24,7 +24,7 @@
 - [ ] **DATA-05**: Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context.
 - [x] **DATA-06**: Prepare database schemas for hierarchical global summarization by adding an optional `community_ids` array on nodes and registering an empty placeholder `communities` table (Port for 999.1).
 - [x] **DATA-07**: Register nullable `summary` (Text) and `summary_vector` (Float Array) columns, along with an `unsummarized_refs` list column on the `nodes` table (Port for 999.4).
-- [x] **DATA-08**: Define separate `nodes` and `edges` tables in LanceDB. The `edges` table must include nullable `summary` (Text) and `summary_vector` (Float Array) columns (Port for 999.5).
+- [ ] **DATA-08**: Define separate `nodes` and `edges` tables in LanceDB. The `edges` table must include nullable `summary` (Text) and `summary_vector` (Float Array) columns (Port for 999.5).
 - [x] **DATA-09**: Define an async `EntityResolver` trait in Rust for ingestion, implementing a pass-through `ExactMatchResolver` as the default (Port for 999.6).
 
 ## Orchestration & State
