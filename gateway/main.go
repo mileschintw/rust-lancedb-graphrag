@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -217,6 +216,7 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "engine ingestion failed", http.StatusBadGateway)
 		return
 	}
+	w.Header().Set("Location", "/documents/"+doc.ID)
 	writeJSON(w, http.StatusAccepted, doc)
 }
 
@@ -230,17 +230,19 @@ func (a app) getDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not load document", http.StatusInternalServerError)
 		return
 	}
-	if doc.Status != "completed" && doc.Status != "failed" {
+	if doc.Status == "queued" || doc.Status == "processing" {
 		state, err := a.engine.IngestionStatus(r.Context(), doc.ID)
 		if err != nil {
 			http.Error(w, "could not poll ingestion status", http.StatusBadGateway)
 			return
 		}
-		errText := pgtype.Text{String: state.GetErrorMessage(), Valid: state.GetErrorMessage() != ""}
-		doc, err = a.store.UpdateStatus(r.Context(), db.UpdateDocumentStatusParams{ID: doc.ID, Status: state.GetStatus(), ChunkCount: state.GetChunkCount(), ErrorMessage: errText})
-		if err != nil {
-			http.Error(w, "could not update document status", http.StatusInternalServerError)
-			return
+		if state.GetStatus() == "completed" || state.GetStatus() == "failed" {
+			errText := pgtype.Text{String: state.GetErrorMessage(), Valid: state.GetErrorMessage() != ""}
+			doc, err = a.store.UpdateStatus(r.Context(), db.UpdateDocumentStatusParams{ID: doc.ID, Status: state.GetStatus(), ChunkCount: state.GetChunkCount(), ErrorMessage: errText})
+			if err != nil {
+				http.Error(w, "could not update document status", http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, doc)
@@ -251,7 +253,16 @@ func newDocumentID() (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(b[:]), nil
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf(
+		"%08x-%04x-%04x-%04x-%012x",
+		b[0:4],
+		b[4:6],
+		b[6:8],
+		b[8:10],
+		b[10:16],
+	), nil
 }
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 	"time"
 
@@ -76,6 +77,21 @@ func TestCreateDocumentMapsFullQueueTo429(t *testing.T) {
 	if store.inserted == nil || store.inserted.Filename != "notes.txt" || store.inserted.FileSize != 5 {
 		t.Fatalf("unexpected insert params: %#v", store.inserted)
 	}
+	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(store.inserted.ID) {
+		t.Fatalf("document id is not UUIDv4: %q", store.inserted.ID)
+	}
+}
+
+func TestCreateDocumentReturnsPollingLocation(t *testing.T) {
+	store := &fakeStore{}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusAccepted)
+	}
+	if got, want := recorder.Header().Get("Location"), "/documents/"+store.inserted.ID; got != want {
+		t.Fatalf("Location = %q, want %q", got, want)
+	}
 }
 
 func TestGetDocumentPollsAndPersistsNonTerminalStatus(t *testing.T) {
@@ -90,6 +106,35 @@ func TestGetDocumentPollsAndPersistsNonTerminalStatus(t *testing.T) {
 		t.Fatalf("unexpected status update: %#v", store.updated)
 	}
 	if store.updated.ErrorMessage != (pgtype.Text{}) {
+		t.Fatalf("unexpected error message: %#v", store.updated.ErrorMessage)
+	}
+}
+
+func TestGetDocumentDoesNotPersistNonTerminalEngineStatus(t *testing.T) {
+	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}}
+	engine := engineFunc{status: &pb.GetIngestionStatusResponse{DocumentId: "doc-1", Status: "processing"}}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if store.updated != nil {
+		t.Fatalf("non-terminal status must not be persisted: %#v", store.updated)
+	}
+}
+
+func TestGetDocumentPersistsFailedStatusAndError(t *testing.T) {
+	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "processing"}}
+	engine := engineFunc{status: &pb.GetIngestionStatusResponse{DocumentId: "doc-1", Status: "failed", ErrorMessage: "embedding failed"}}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if store.updated == nil || store.updated.Status != "failed" {
+		t.Fatalf("failed status was not persisted: %#v", store.updated)
+	}
+	if !store.updated.ErrorMessage.Valid || store.updated.ErrorMessage.String != "embedding failed" {
 		t.Fatalf("unexpected error message: %#v", store.updated.ErrorMessage)
 	}
 }

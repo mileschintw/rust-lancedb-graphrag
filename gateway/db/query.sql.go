@@ -127,6 +127,7 @@ SET
   error_message = $4,
   updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
+  AND status IN ('queued', 'processing')
 RETURNING id, filename, file_size, status, chunk_count, error_message, chunk_strategy, chunk_size, chunk_overlap, created_at, updated_at
 `
 

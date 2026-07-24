@@ -37,6 +37,7 @@ SET
   error_message = $4,
   updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
+  AND status IN ('queued', 'processing')
 RETURNING *;
 
 -- name: GetDocument :one
