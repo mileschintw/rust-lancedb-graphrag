@@ -57,6 +57,22 @@ impl DatabaseManager {
             .await
             .map_err(|error| format!("failed to open LanceDB documents table: {error}"))
     }
+
+    pub async fn nodes_table(&self) -> Result<Table, String> {
+        self.connection
+            .open_table("nodes")
+            .execute()
+            .await
+            .map_err(|error| format!("failed to open LanceDB nodes table: {error}"))
+    }
+
+    pub async fn edges_table(&self) -> Result<Table, String> {
+        self.connection
+            .open_table("edges")
+            .execute()
+            .await
+            .map_err(|error| format!("failed to open LanceDB edges table: {error}"))
+    }
 }
 
 async fn validate_schema(name: &str, table: &Table, expected: &SchemaRef) -> Result<(), String> {

@@ -21,3 +21,4 @@ pulldown-cmark = "~0.13"
 tiktoken-rs = "~0.12"
 reqwest = { version = "~0.13", default-features = false, features = ["json", "rustls"] }
 futures = "~0.3"
+uuid = { version = "~1.24", features = ["v4"] }

@@ -5,7 +5,7 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 
 const OPENROUTER_EMBEDDINGS_URL: &str = "https://openrouter.ai/api/v1/embeddings";
-const EMBEDDING_MODEL: &str = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
+pub const EMBEDDING_MODEL: &str = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
 const MAX_CONCURRENCY: usize = 5;
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
@@ -72,14 +72,20 @@ impl OpenRouterClient {
     }
 
     pub async fn get_embeddings(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
-        let mut indexed = stream::iter(texts.iter().enumerate().map(|(index, text)| async move {
-            self.embed_with_retry(text)
-                .await
-                .map(|embedding| (index, embedding))
-        }))
-        .buffer_unordered(MAX_CONCURRENCY)
-        .try_collect::<Vec<_>>()
-        .await?;
+        let client = self.clone();
+        let mut indexed =
+            stream::iter(texts.iter().cloned().enumerate().map(move |(index, text)| {
+                let client = client.clone();
+                async move {
+                    client
+                        .embed_with_retry(&text)
+                        .await
+                        .map(|embedding| (index, embedding))
+                }
+            }))
+            .buffer_unordered(MAX_CONCURRENCY)
+            .try_collect::<Vec<_>>()
+            .await?;
         indexed.sort_unstable_by_key(|(index, _)| *index);
         Ok(indexed
             .into_iter()
