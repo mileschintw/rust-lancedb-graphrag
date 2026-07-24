@@ -13,7 +13,7 @@
 - [ ] **RAG-03**: Support degraded mode when graph extraction or one retrieval path fails, returning a useful vector/BM25-backed answer.
 - [ ] **RAG-04**: Define a pluggable async `Reranker` trait in Rust; implement a pass-through `NoOpReranker` as the v1 default, allowing external/local rerankers to be dropped in later (Port for 999.2).
 - [ ] **RAG-05**: Define a `ContextAssemblyStrategy` enum/trait in the Rust engine supporting both `PrecomputedSemantics` and `SourceChunks` retrieval, defaulting to `SourceChunks` (Port for 999.5).
-- [ ] **RAG-06**: Implement an async background worker task structure (e.g. Tokio channel reader) in the Rust engine that defaults to NoOp execution (Port for 999.4).
+- [x] **RAG-06**: Implement an async background worker task structure (e.g. Tokio channel reader) in the Rust engine that defaults to NoOp execution (Port for 999.4).
 
 ## Data & Graph Processing
 
