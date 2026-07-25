@@ -88,7 +88,20 @@ start_managed_services() {
   [[ "$(docker inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] || {
     echo "PostgreSQL did not become healthy" >&2; return 1;
   }
-  docker compose exec -T db psql -U postgres -d lancet -v ON_ERROR_STOP=1 -f - < gateway/db/schema.sql >/dev/null
+  schema_tables="$(docker compose exec -T db psql -U postgres -d lancet -Atc \
+    "SELECT (to_regclass('public.users') IS NOT NULL)::int || '|' || (to_regclass('public.documents') IS NOT NULL)::int")"
+  case "$schema_tables" in
+    "1|1")
+      ;;
+    "0|0")
+      docker compose exec -T db psql -U postgres -d lancet -v ON_ERROR_STOP=1 -f - \
+        < gateway/db/schema.sql >/dev/null
+      ;;
+    *)
+      echo "PostgreSQL schema is partial; refusing to overwrite the existing volume" >&2
+      return 1
+      ;;
+  esac
   if curl --silent --max-time 1 "${gateway_url}/documents/not-a-uuid" -o /dev/null; then
     echo "gateway port is already occupied; refuse to trust an unmanaged service" >&2; return 1
   fi
