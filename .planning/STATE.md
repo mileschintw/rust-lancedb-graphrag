@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 2
 current_plan: 6 of 6
-status: ready_to_execute
-stopped_at: Completed 02-05 integrity tooling; 02-06 awaits credentialed final-pass gate
-last_updated: "2026-07-25T18:26:31.668Z"
+status: phase_complete
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-07-25T23:04:20.290Z"
 progress:
-  total_phases: 2
-  completed_phases: 1
+  total_phases: 6
+  completed_phases: 2
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -19,24 +19,24 @@ progress:
 ## Current Status
 
 - Phase 1 completed successfully.
-- Phase 2 plans 02-01 through 02-05 completed successfully; 02-06 remains for the credentialed live final-pass gate.
+- Phase 2 completed successfully with a challenge-bound live OpenRouter run and direct PostgreSQL/LanceDB validation.
 
 ## Active Phase
 
 - **Phase:** 2
-- **Status:** Ready to execute final live gate
+- **Status:** Complete
 - **Current Plan:** 6 of 6
-- **Phase Progress:** 5 of 6 plans complete (83%); 02-06 performs the credentialed live final-pass gate
-- **Current Focus:** Execute 02-06 with a fresh issued challenge and OpenRouter credential
+- **Phase Progress:** 6 of 6 plans complete (100%)
+- **Current Focus:** Transition to Phase 3 planning
 
 ## Completed Phases
 
 - **Phase 1: Basic Gateway & Rust Engine Ping** (Completed: 2026-07-13)
+- **Phase 2: Ingestion, Chunking & Vector Storage** (Completed: 2026-07-25)
 
 ## Known Issues & Debt
 
-- DATA-08 and the reviewed ingestion-integrity warnings are addressed by 02-05.
-- The only remaining Phase 02 gate is a credentialed OpenRouter/live-service evidence run in 02-06.
+- No known Phase 2 blockers remain.
 
 ## Deployment & Environments
 
@@ -61,6 +61,7 @@ progress:
 | Phase 02 P03 | 1h 25m | 2 tasks | 9 files |
 | Phase 02 P04 | 25 min | 2 tasks | 10 files |
 | Phase 02 P05 | 35 min | 3 tasks | 9 files |
+| Phase 02 P06 | 2h 24m | 3 tasks | 4 files |
 
 ## Decisions
 
@@ -77,9 +78,11 @@ progress:
 - [Phase 02-04]: Generate and validate RFC 4122 UUIDv4 document IDs at both runtime boundaries. — Prevents predicate/path injection and keeps gateway/engine IDs compatible.
 - [Phase 02-05]: Keep raw admission data in staged_documents until a complete canonical replacement succeeds.
 - [Phase 02-05]: Recover a lost conditional terminal update only by re-reading and verifying the winner.
+- [Phase 02-06]: Run the final live gate against a dedicated verification LanceDB store so pre-existing schema generations cannot influence acceptance.
+- [Phase 02-06]: Preserve only the fresh validated run as canonical verification data and remove stale Phase 02 rows, stores, challenges, and evidence.
 
 ## Session
 
-**Last session:** 2026-07-25T18:26:31.648Z
-**Stopped at:** Completed 02-05 integrity tooling; 02-06 awaits credentialed final-pass gate
-**Resume file:** 02-06-PLAN.md
+**Last session:** 2026-07-25T23:04:20.275Z
+**Stopped at:** Completed 02-06-PLAN.md
+**Resume file:** None
