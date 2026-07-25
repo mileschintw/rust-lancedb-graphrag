@@ -109,7 +109,7 @@ start_managed_services() {
   gateway_log="$(mktemp)"
   cargo run --quiet --manifest-path engine/Cargo.toml --bin engine >"$engine_log" 2>&1 & engine_pid=$!
   sleep 1
-  go run ./gateway >"$gateway_log" 2>&1 & gateway_pid=$!
+  go -C gateway run . >"$gateway_log" 2>&1 & gateway_pid=$!
   for _ in $(seq 1 45); do
     if curl --silent --max-time 1 "${gateway_url}/documents/not-a-uuid" -o /dev/null; then return 0; fi
     kill -0 "$engine_pid" 2>/dev/null && kill -0 "$gateway_pid" 2>/dev/null || {
