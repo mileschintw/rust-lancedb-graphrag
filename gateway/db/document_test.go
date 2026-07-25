@@ -68,3 +68,40 @@ func TestDocumentQueries(t *testing.T) {
 		t.Fatalf("retrieved document did not match insertion: %+v", got)
 	}
 }
+
+func TestConditionalTerminalUpdateRace(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is required for database integration tests")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("create database pool: %v", err)
+	}
+	defer pool.Close()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin transaction: %v", err)
+	}
+	defer tx.Rollback(ctx)
+	q := New(tx)
+	id := "race-document"
+	if _, err := q.InsertDocument(ctx, InsertDocumentParams{ID: id, Filename: "race.txt", FileSize: 1, ChunkStrategy: "fixed", ChunkSize: 500, ChunkOverlap: 50}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := q.UpdateDocumentStatus(ctx, UpdateDocumentStatusParams{ID: id, Status: "failed", ChunkCount: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.UpdateDocumentStatus(ctx, UpdateDocumentStatusParams{ID: id, Status: "completed", ChunkCount: 3}); err != pgx.ErrNoRows {
+		t.Fatalf("second update = %v, want pgx.ErrNoRows", err)
+	}
+	got, err := q.GetDocument(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != first.Status || got.ChunkCount != first.ChunkCount {
+		t.Fatalf("winner changed: %+v", got)
+	}
+}

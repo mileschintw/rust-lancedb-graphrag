@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -22,23 +23,38 @@ import (
 )
 
 type fakeStore struct {
-	document db.Document
-	inserted *db.InsertDocumentParams
-	updated  *db.UpdateDocumentStatusParams
+	document  db.Document
+	inserted  *db.InsertDocumentParams
+	updated   *db.UpdateDocumentStatusParams
+	insertErr error
+	getErr    error
+	updateErr error
+	getCalls  int
+	winner    *db.Document
 }
 
 func (s *fakeStore) Insert(_ context.Context, p db.InsertDocumentParams) (db.Document, error) {
+	if s.insertErr != nil {
+		return db.Document{}, s.insertErr
+	}
 	s.inserted = &p
 	s.document = db.Document{ID: p.ID, Filename: p.Filename, FileSize: p.FileSize, Status: "queued"}
 	return s.document, nil
 }
 
 func (s *fakeStore) Get(context.Context, string) (db.Document, error) {
-	return s.document, nil
+	s.getCalls++
+	if s.getCalls > 1 && s.winner != nil {
+		return *s.winner, s.getErr
+	}
+	return s.document, s.getErr
 }
 
 func (s *fakeStore) UpdateStatus(_ context.Context, p db.UpdateDocumentStatusParams) (db.Document, error) {
 	s.updated = &p
+	if s.updateErr != nil {
+		return db.Document{}, s.updateErr
+	}
 	s.document.Status = p.Status
 	s.document.ChunkCount = p.ChunkCount
 	s.document.ErrorMessage = p.ErrorMessage
@@ -79,6 +95,25 @@ func TestCreateDocumentMapsFullQueueTo429(t *testing.T) {
 	}
 	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(store.inserted.ID) {
 		t.Fatalf("document id is not UUIDv4: %q", store.inserted.ID)
+	}
+	if store.inserted.ChunkSize != defaultChunkSize || store.inserted.ChunkOverlap != defaultChunkOverlap {
+		t.Fatalf("defaults = %d/%d", store.inserted.ChunkSize, store.inserted.ChunkOverlap)
+	}
+	if store.updated == nil || store.updated.Status != "failed" || !store.updated.ErrorMessage.Valid {
+		t.Fatalf("queue failure was not compensated: %#v", store.updated)
+	}
+}
+
+func TestCreateDocumentCompensatesGeneralEnqueueFailure(t *testing.T) {
+	store := &fakeStore{}
+	engine := engineFunc{ingest: func(context.Context, string, string, []byte) error { return errors.New("engine down") }}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	if store.updated == nil || store.updated.Status != "failed" {
+		t.Fatalf("failure was not compensated: %#v", store.updated)
 	}
 }
 
@@ -136,6 +171,27 @@ func TestGetDocumentPersistsFailedStatusAndError(t *testing.T) {
 	}
 	if !store.updated.ErrorMessage.Valid || store.updated.ErrorMessage.String != "embedding failed" {
 		t.Fatalf("unexpected error message: %#v", store.updated.ErrorMessage)
+	}
+}
+
+func TestGetDocumentReturnsTerminalRaceWinner(t *testing.T) {
+	winner := db.Document{ID: "doc-1", Filename: "notes.txt", Status: "completed", ChunkCount: 9}
+	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}, updateErr: pgx.ErrNoRows, winner: &winner}
+	engine := engineFunc{status: &pb.GetIngestionStatusResponse{DocumentId: "doc-1", Status: "completed", ChunkCount: 3}}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+	if recorder.Code != http.StatusOK || store.getCalls != 2 {
+		t.Fatalf("status/calls = %d/%d", recorder.Code, store.getCalls)
+	}
+}
+
+func TestGetDocumentRejectsNonterminalRaceReread(t *testing.T) {
+	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}, updateErr: pgx.ErrNoRows}
+	engine := engineFunc{status: &pb.GetIngestionStatusResponse{DocumentId: "doc-1", Status: "completed", ChunkCount: 3}}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", recorder.Code)
 	}
 }
 

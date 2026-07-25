@@ -31,6 +31,8 @@ import (
 
 const maxUploadBytes int64 = 10 << 20
 const streamBufferSize = 64 << 10
+const defaultChunkSize = 500
+const defaultChunkOverlap = 50
 
 type Config struct {
 	Gateway struct {
@@ -161,6 +163,18 @@ type app struct {
 	logger *zap.Logger
 }
 
+// compensateFailedIngest prevents an admission failure from leaving an
+// indefinitely queued PostgreSQL row.  The original gRPC error remains the
+// response authority; a compensation failure is operational detail only.
+func (a app) compensateFailedIngest(ctx context.Context, id string, ingestErr error) {
+	errText := pgtype.Text{String: "engine ingestion failed", Valid: true}
+	if _, err := a.store.UpdateStatus(ctx, db.UpdateDocumentStatusParams{
+		ID: id, Status: "failed", ChunkCount: 0, ErrorMessage: errText,
+	}); err != nil {
+		a.logger.Error("compensate failed ingestion", zap.String("document_id", id), zap.Error(ingestErr), zap.Error(err))
+	}
+}
+
 func (a app) routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer, middleware.Timeout(60*time.Second))
@@ -202,13 +216,14 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not allocate document id", http.StatusInternalServerError)
 		return
 	}
-	doc, err := a.store.Insert(r.Context(), db.InsertDocumentParams{ID: id, Filename: filepath.Base(header.Filename), FileSize: header.Size, ChunkStrategy: "recursive", ChunkSize: 512, ChunkOverlap: 64})
+	doc, err := a.store.Insert(r.Context(), db.InsertDocumentParams{ID: id, Filename: filepath.Base(header.Filename), FileSize: header.Size, ChunkStrategy: "recursive", ChunkSize: defaultChunkSize, ChunkOverlap: defaultChunkOverlap})
 	if err != nil {
 		a.logger.Error("insert document", zap.Error(err))
 		http.Error(w, "could not queue document", http.StatusInternalServerError)
 		return
 	}
 	if err := a.engine.Ingest(r.Context(), id, doc.Filename, io.LimitReader(file, maxUploadBytes+1)); err != nil {
+		a.compensateFailedIngest(r.Context(), id, err)
 		if status.Code(err) == codes.ResourceExhausted {
 			http.Error(w, "ingestion queue is full", http.StatusTooManyRequests)
 			return
@@ -239,6 +254,17 @@ func (a app) getDocument(w http.ResponseWriter, r *http.Request) {
 		if state.GetStatus() == "completed" || state.GetStatus() == "failed" {
 			errText := pgtype.Text{String: state.GetErrorMessage(), Valid: state.GetErrorMessage() != ""}
 			doc, err = a.store.UpdateStatus(r.Context(), db.UpdateDocumentStatusParams{ID: doc.ID, Status: state.GetStatus(), ChunkCount: state.GetChunkCount(), ErrorMessage: errText})
+			if errors.Is(err, pgx.ErrNoRows) {
+				winner, getErr := a.store.Get(r.Context(), doc.ID)
+				if getErr == nil && (winner.Status == "completed" || winner.Status == "failed") {
+					doc = winner
+					err = nil
+				} else if getErr != nil {
+					err = getErr
+				} else {
+					err = errors.New("terminal status update lost without a terminal winner")
+				}
+			}
 			if err != nil {
 				http.Error(w, "could not update document status", http.StatusInternalServerError)
 				return
