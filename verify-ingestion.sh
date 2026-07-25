@@ -111,7 +111,7 @@ start_managed_services() {
   sleep 1
   go -C gateway run . >"$gateway_log" 2>&1 & gateway_pid=$!
   for _ in $(seq 1 45); do
-    if curl --silent --max-time 1 "${gateway_url}/documents/not-a-uuid" -o /dev/null; then return 0; fi
+    if curl --fail --silent --max-time 1 "${gateway_url}/health" -o /dev/null; then return 0; fi
     kill -0 "$engine_pid" 2>/dev/null && kill -0 "$gateway_pid" 2>/dev/null || {
       echo "managed engine or gateway failed to start" >&2; return 1;
     }
