@@ -5,7 +5,18 @@ use std::{
 
 use arrow_schema::{DataType, Field, Schema};
 
-use super::{DatabaseManager, EntityResolver, ExactMatchResolver};
+use super::{edges_schema, DatabaseManager, EntityResolver, ExactMatchResolver};
+
+#[test]
+fn edge_summary_placeholders_are_nullable_but_identifiers_are_required() {
+    let schema = edges_schema();
+    assert!(schema.field_with_name("summary").unwrap().is_nullable());
+    assert!(schema
+        .field_with_name("summary_vector")
+        .unwrap()
+        .is_nullable());
+    assert!(!schema.field_with_name("edge_id").unwrap().is_nullable());
+}
 
 fn database_path(test_name: &str) -> String {
     let nonce = SystemTime::now()
@@ -25,7 +36,16 @@ async fn initializes_and_validates_all_table_schemas() {
     let connection = lancedb::connect(&path).execute().await.unwrap();
     let mut names = connection.table_names().execute().await.unwrap();
     names.sort();
-    assert_eq!(names, ["communities", "documents", "edges", "nodes"]);
+    assert_eq!(
+        names,
+        [
+            "communities",
+            "documents",
+            "edges",
+            "nodes",
+            "staged_documents"
+        ]
+    );
 
     DatabaseManager::initialize(&path).await.unwrap();
     drop(manager);

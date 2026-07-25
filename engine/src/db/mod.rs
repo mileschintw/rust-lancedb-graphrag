@@ -58,6 +58,17 @@ impl DatabaseManager {
             .map_err(|error| format!("failed to open LanceDB documents table: {error}"))
     }
 
+    /// Durable queue-admission staging.  This is deliberately separate from the
+    /// canonical documents table so a failed same-ID replacement cannot erase the
+    /// last completed generation.
+    pub async fn staged_documents_table(&self) -> Result<Table, String> {
+        self.connection
+            .open_table("staged_documents")
+            .execute()
+            .await
+            .map_err(|error| format!("failed to open LanceDB staged_documents table: {error}"))
+    }
+
     pub async fn nodes_table(&self) -> Result<Table, String> {
         self.connection
             .open_table("nodes")
@@ -144,8 +155,8 @@ pub fn edges_schema() -> SchemaRef {
         Field::new("relation_type", DataType::Utf8, false),
         Field::new("weight", DataType::Float32, false),
         Field::new("document_id", DataType::Utf8, false),
-        Field::new("summary", DataType::Utf8, false),
-        Field::new("summary_vector", vector(), false),
+        Field::new("summary", DataType::Utf8, true),
+        Field::new("summary_vector", vector(), true),
     ]))
 }
 
@@ -160,9 +171,14 @@ pub fn communities_schema() -> SchemaRef {
     ]))
 }
 
-fn table_schemas() -> [(&'static str, SchemaRef); 4] {
+pub fn staged_documents_schema() -> SchemaRef {
+    documents_schema()
+}
+
+fn table_schemas() -> [(&'static str, SchemaRef); 5] {
     [
         ("documents", documents_schema()),
+        ("staged_documents", staged_documents_schema()),
         ("nodes", nodes_schema()),
         ("edges", edges_schema()),
         ("communities", communities_schema()),

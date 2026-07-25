@@ -98,8 +98,27 @@ struct IngestionJob {
     metadata: HashMap<String, String>,
 }
 
-const DEFAULT_CHUNK_SIZE: usize = 512;
-const DEFAULT_CHUNK_OVERLAP: usize = 64;
+const DEFAULT_CHUNK_SIZE: usize = 500;
+const DEFAULT_CHUNK_OVERLAP: usize = 50;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ReplacementBoundary {
+    DocumentsWritten,
+    NodesWritten,
+    EdgesWritten,
+}
+
+trait ReplacementFaultInjector: Send + Sync {
+    fn after(&self, boundary: ReplacementBoundary) -> Result<(), String>;
+}
+
+struct NoopReplacementFaultInjector;
+
+impl ReplacementFaultInjector for NoopReplacementFaultInjector {
+    fn after(&self, _boundary: ReplacementBoundary) -> Result<(), String> {
+        Ok(())
+    }
+}
 
 fn metadata_usize(metadata: &HashMap<String, String>, key: &str, default: usize) -> usize {
     metadata
@@ -323,6 +342,63 @@ async fn replace_document(
     chunks: &[Chunk],
     embeddings: &[Vec<f32>],
 ) -> Result<(), String> {
+    replace_document_with_faults(
+        database,
+        job,
+        chunks,
+        embeddings,
+        &NoopReplacementFaultInjector,
+    )
+    .await
+}
+
+async fn restore_version(table: &Table, version: u64) -> Result<(), String> {
+    table
+        .checkout(version)
+        .await
+        .map_err(|error| format!("checkout rollback version {version}: {error}"))?;
+    table
+        .restore()
+        .await
+        .map_err(|error| format!("restore rollback version {version}: {error}"))
+}
+
+async fn rollback_replacement(
+    documents: &Table,
+    documents_version: u64,
+    nodes: &Table,
+    nodes_version: u64,
+    edges: &Table,
+    edges_version: u64,
+    original: String,
+) -> Result<(), String> {
+    let mut rollback_errors = Vec::new();
+    for result in [
+        restore_version(documents, documents_version).await,
+        restore_version(nodes, nodes_version).await,
+        restore_version(edges, edges_version).await,
+    ] {
+        if let Err(error) = result {
+            rollback_errors.push(error);
+        }
+    }
+    if rollback_errors.is_empty() {
+        Err(original)
+    } else {
+        Err(format!(
+            "{original}; rollback failures: {}",
+            rollback_errors.join("; ")
+        ))
+    }
+}
+
+async fn replace_document_with_faults(
+    database: &DatabaseManager,
+    job: &IngestionJob,
+    chunks: &[Chunk],
+    embeddings: &[Vec<f32>],
+    faults: &dyn ReplacementFaultInjector,
+) -> Result<(), String> {
     if chunks.len() != embeddings.len() {
         return Err(format!(
             "embedding count {} does not match chunk count {}",
@@ -337,6 +413,12 @@ async fn replace_document(
     let documents = database.documents_table().await?;
     let nodes = database.nodes_table().await?;
     let edges = database.edges_table().await?;
+    let documents_version = documents
+        .version()
+        .await
+        .map_err(|error| error.to_string())?;
+    let nodes_version = nodes.version().await.map_err(|error| error.to_string())?;
+    let edges_version = edges.version().await.map_err(|error| error.to_string())?;
     let predicate = format!("document_id = '{}'", sql_string(&job.document_id));
 
     // Delete dependent rows first so retries cannot retain stale chunks or graph links.
@@ -369,8 +451,26 @@ async fn replace_document(
         .execute()
         .await
         .map_err(|error| error.to_string())?;
+    if let Err(error) = faults.after(ReplacementBoundary::DocumentsWritten) {
+        return rollback_replacement(
+            &documents,
+            documents_version,
+            &nodes,
+            nodes_version,
+            &edges,
+            edges_version,
+            error,
+        )
+        .await;
+    }
 
     if chunks.is_empty() {
+        database
+            .staged_documents_table()
+            .await?
+            .delete(&predicate)
+            .await
+            .map_err(|error| error.to_string())?;
         return Ok(());
     }
 
@@ -470,6 +570,18 @@ async fn replace_document(
         .execute()
         .await
         .map_err(|error| error.to_string())?;
+    if let Err(error) = faults.after(ReplacementBoundary::NodesWritten) {
+        return rollback_replacement(
+            &documents,
+            documents_version,
+            &nodes,
+            nodes_version,
+            &edges,
+            edges_version,
+            error,
+        )
+        .await;
+    }
 
     let resolver = ExactMatchResolver;
     let mut known_sections = Vec::<String>::new();
@@ -477,7 +589,6 @@ async fn replace_document(
     let mut edge_sources = Vec::<String>::new();
     let mut edge_targets = Vec::<String>::new();
     let mut relation_types = Vec::<String>::new();
-    let mut edge_embeddings = Vec::<Vec<f32>>::new();
     for (index, chunk) in chunks.iter().enumerate() {
         let mut target = index
             .checked_sub(1)
@@ -496,7 +607,6 @@ async fn replace_document(
             edge_sources.push(chunk_ids[index].clone());
             edge_targets.push(target);
             relation_types.push(relation.to_owned());
-            edge_embeddings.push(embeddings[index].clone());
         }
     }
     if !edge_sources.is_empty() {
@@ -505,14 +615,18 @@ async fn replace_document(
             .enumerate()
             .map(|(index, _)| format!("{}:edge:{index}", job.document_id))
             .collect();
-        let edge_vectors = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-            edge_embeddings
-                .iter()
-                .map(|embedding| Some(embedding.iter().copied().map(Some))),
-            2048,
-        );
+        let edge_schema = edges.schema().await.map_err(|error| error.to_string())?;
+        let edge_nullable = |name: &str| {
+            new_null_array(
+                edge_schema
+                    .field_with_name(name)
+                    .expect("validated edges schema must contain field")
+                    .data_type(),
+                edge_sources.len(),
+            )
+        };
         let edge_batch = RecordBatch::try_new(
-            edges.schema().await.map_err(|error| error.to_string())?,
+            edge_schema.clone(),
             vec![
                 Arc::new(StringArray::from(
                     edge_ids.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -534,8 +648,8 @@ async fn replace_document(
                     job.document_id.as_str();
                     edge_sources.len()
                 ])),
-                Arc::new(StringArray::from(vec![""; edge_sources.len()])),
-                Arc::new(edge_vectors),
+                edge_nullable("summary"),
+                edge_nullable("summary_vector"),
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -545,6 +659,24 @@ async fn replace_document(
             .await
             .map_err(|error| error.to_string())?;
     }
+    if let Err(error) = faults.after(ReplacementBoundary::EdgesWritten) {
+        return rollback_replacement(
+            &documents,
+            documents_version,
+            &nodes,
+            nodes_version,
+            &edges,
+            edges_version,
+            error,
+        )
+        .await;
+    }
+    database
+        .staged_documents_table()
+        .await?
+        .delete(&predicate)
+        .await
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
@@ -652,7 +784,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let settings = load_settings()?;
     let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
-    let table = database.documents_table().await?;
+    let table = database.staged_documents_table().await?;
     let embedder = Arc::new(OpenRouterClient::from_env()?);
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
