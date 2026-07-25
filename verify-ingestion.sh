@@ -124,7 +124,7 @@ start_managed_services() {
 if "$managed_services"; then start_managed_services; fi
 
 if [[ -z "$sample_file" ]]; then
-  sample_file="$(mktemp)"
+  sample_file="$(mktemp "./.live-ingestion-sample.XXXXXX")"
   printf '# Lancet live verification\n\nOpenRouter-backed indexing proof.\n' > "$sample_file"
 fi
 response="$(curl --fail --silent --show-error -X POST -F "file=@${sample_file};filename=$(basename "$sample_file")" "${gateway_url}/documents")"
