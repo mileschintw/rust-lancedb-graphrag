@@ -5,6 +5,7 @@ phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge_file="${phase_dir}/.02-LIVE-CHALLENGE.json"
 evidence_out="${phase_dir}/02-LIVE-EVIDENCE.json"
 gateway_url="${GATEWAY_URL:-http://127.0.0.1:8080}"
+verification_environment="verify"
 managed_services=false
 sample_file=""
 engine_pid=""
@@ -80,6 +81,7 @@ PY
 run_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 start_managed_services() {
+  export LANCET_ENV="$verification_environment"
   docker compose up -d db >/dev/null
   for _ in $(seq 1 30); do
     [[ "$(docker inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] && break

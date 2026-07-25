@@ -4,6 +4,7 @@ set -euo pipefail
 phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge="${phase_dir}/.02-LIVE-CHALLENGE.json"
 evidence="${phase_dir}/02-LIVE-EVIDENCE.json"
+verification_environment="verify"
 mode="${1:-}"
 shift || true
 
@@ -151,6 +152,7 @@ PY
     echo "Run exactly: bash ./verify-ingestion.sh --managed-services --challenge-file ${challenge} --evidence ${evidence}"
     ;;
   --validate-gate)
+    export LANCET_ENV="$verification_environment"
     require_phase_local_paths
     assert_safe_runtime_path "$challenge"
     assert_safe_runtime_path "$evidence"

@@ -1,0 +1,2 @@
+[engine]
+lancedb_path = "./data/lancedb-verify-02-06"
