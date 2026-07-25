@@ -165,9 +165,9 @@
     "allow": [
       "Bash(npx gsd-core *)",
       "Read(.planning/*)",
-      "Write(.planning/*)",
       "Read(STATE.md)",
-      "Write(STATE.md)"
+      "Edit(.planning/*)",
+      "Edit(STATE.md)"
     ],
     "deny": [
       "Read(.env)",

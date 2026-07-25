@@ -14,6 +14,9 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_os_1 = __importDefault(require("node:os"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
+// #2322: reuse the existing pure path-containment seam (ADR-1239 Phase C-2)
+// instead of hand-rolling a new traversal check for capability skill stems.
+const external_descriptor_trust_cjs_1 = require("./external-descriptor-trust.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const conversionModule = require("./runtime-artifact-conversion.cjs");
 const { applyAgentPathRewrites: _applyAgentPathRewrites, processAttribution: _processAttribution, normalizeAgentBodyForRuntime: _normalizeAgentBodyForRuntime, readGsdCommandNames: _readGsdCommandNames, } = conversionModule;
@@ -438,7 +441,182 @@ function transformRouterBodyToNested(converted) {
     });
     return out.join('\n');
 }
-function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converter, prefix, nested = false) {
+/**
+ * #2322 SECURITY: a third-party `capability.json`'s `skills[]` entries are only
+ * validated for being STRINGS and not one of the 3 reserved prototype-pollution
+ * names (capability-validator.cjs validateFeatureBody, ~line 503) — NOT for
+ * non-emptiness and NOT for a safe path-segment shape. `isSafeCapabilitySkillStem`
+ * is therefore the SOLE defense against an empty-string, `..`-escaping,
+ * separator-carrying, absolute, or NUL-carrying stem reaching a filesystem path
+ * as a literal component — not a second defense-in-depth layer on top of any
+ * validator-enforced non-emptiness (there is none). Once unioned into
+ * resolveSurface's `resolved.skills` (#2045), such a stem must never reach
+ * fs.readFileSync/writeFileSync as a literal path component, or it can escape
+ * the capabilities root on read (or stageDir on write). Reject anything but a
+ * single, ordinary path segment.
+ */
+function isSafeCapabilitySkillStem(stem) {
+    if (typeof stem !== 'string' || stem.length === 0)
+        return false;
+    if (stem.includes('\0'))
+        return false;
+    if (stem === '.' || stem === '..')
+        return false;
+    if (stem.includes('/') || stem.includes('\\'))
+        return false;
+    if (node_path_1.default.isAbsolute(stem))
+        return false;
+    return true;
+}
+/**
+ * Resolve which capability id DECLARES ownership of `stem`, per the registry's
+ * `capabilityClusters` view (capId -> [owned skill stems]) — the SAME
+ * authoritative binding `_capabilitySkillsForMode` (above) and `resolveSurface`
+ * (surface.cts) already trust to decide which stems a capability contributes.
+ * `capabilityClusters` is derived (gen-capability-registry.cjs
+ * deriveCapabilityClusters) straight from each ACCEPTED capability's OWN
+ * declared, non-empty `skills[]` array — an UNDECLARED directory a capability
+ * happens to ship on disk (an unlisted `skills/<stem>/` bundled by mistake, or
+ * by a malicious author trying to hijack another capability's stem) never
+ * appears here, so it can never resolve as an owner. Two capabilities can never
+ * both own the same stem: the registry loader (capability-loader.cts) rejects a
+ * candidate whose declared skill collides with an already-registered owner
+ * BEFORE it is ever composed into the registry — so this lookup is unambiguous
+ * by construction. Returns null for an unowned/unregistered stem or a
+ * malformed registry (never throws).
+ */
+function _owningCapabilityId(stem, clusters) {
+    const BANNED = ['__proto__', 'constructor', 'prototype'];
+    for (const capId of Object.keys(clusters)) {
+        if (BANNED.includes(capId))
+            continue;
+        const owned = clusters[capId];
+        if (!Array.isArray(owned))
+            continue;
+        if (owned.includes(stem))
+            return capId;
+    }
+    return null;
+}
+/**
+ * Union every stem ANY accepted capability declares across the WHOLE registry
+ * (unfiltered by mode/tier) — used only for the `'*'` (full profile) staging
+ * fill-in below, mirroring the SAME unconditional union `resolveSurface`
+ * (surface.cts) already performs when ITS OWN base profile resolves to `'*'`.
+ * Guards against a malformed/prototype-polluted registry; never throws.
+ */
+function capabilityClusterStems(registry) {
+    const result = new Set();
+    const clusters = registry?.capabilityClusters;
+    if (!clusters || typeof clusters !== 'object')
+        return result;
+    const BANNED = ['__proto__', 'constructor', 'prototype'];
+    for (const capId of Object.keys(clusters)) {
+        if (BANNED.includes(capId))
+            continue;
+        const stems = clusters[capId];
+        if (!Array.isArray(stems))
+            continue;
+        for (const s of stems) {
+            if (typeof s === 'string' && s.length > 0)
+                result.add(s);
+        }
+    }
+    return result;
+}
+/**
+ * #2322 HIGH-3: filesystem marker written into every staged THIRD-PARTY
+ * capability skill directory (alongside SKILL.md) so a later prune pass
+ * (surface.cts pruneSkillDirs) can identify the directory as GSD-capability-
+ * owned even after the owning capability has been uninstalled/unsurfaced and
+ * no longer appears in ANY registry view. Without a persisted marker, an
+ * orphaned capability skill directory has no first-party manifest entry (the
+ * skill manifest only ever knows gsd-core's own bundled stems) and
+ * pruneSkillDirs' conservative unknown-directory branch would preserve it
+ * FOREVER — uninstalling a malicious capability would never actually remove
+ * its already-staged instructions from the agent's context. A directory
+ * WITHOUT this marker is presumed genuinely user-created (data-loss
+ * protection is unchanged for that case).
+ */
+const CAPABILITY_SKILL_MARKER = '.gsd-capability-skill';
+/**
+ * Look up an installed third-party capability's already-authored SKILL.md for
+ * `stem`, bound to its DECLARING capability via the registry's
+ * `capabilityClusters` view (capId -> owned stems) — NEVER by scanning every
+ * installed capability directory and taking the first (sorted) match.
+ *
+ * #2322 BLOCKER 1: the prior implementation scanned every directory under the
+ * capabilities root for a `skills/<stem>/SKILL.md` file and returned the FIRST
+ * SORTED match, regardless of whether that capability actually DECLARED the
+ * stem in its `capability.json` `skills[]` and regardless of whether it was
+ * the (sole) REGISTERED owner. An attacker-controlled capability could ship an
+ * UNDECLARED `skills/<victim-stem>/SKILL.md` directory that sorted ahead of
+ * the legitimate, declaring capability and hijack its stem — the agent would
+ * load the attacker's instructions believing they came from the legitimate
+ * capability. Resolving `stem -> capId` via `capabilityClusters` FIRST (the
+ * same authoritative binding `resolveSurface`/`_capabilitySkillsForMode`
+ * trust) then reading ONLY that capability's own directory makes an
+ * undeclared/unregistered sibling directory unreachable by construction.
+ *
+ * The install-root path convention (`<capabilitiesRoot>/<capId>/skills/<stem>/
+ * SKILL.md` under `GSD_HOME || homedir()`) mirrors capability-loader.cts
+ * (global overlay root) and capability-source.cts's `stageValidated` finalDir.
+ *
+ * Total/non-throwing (#2322 requirement 5): no registry, an unowned stem, a
+ * missing capabilities root, an unreadable capability dir, or a missing/
+ * corrupt SKILL.md all degrade to `null` (skip that stem) rather than
+ * throwing — a partial/corrupt third-party install must never break
+ * first-party staging. No registry at all means NOTHING third-party is
+ * staged (fail closed — never a fallback scan).
+ *
+ * NOTE: the content returned here is staged AS-IS (no per-file `converter`
+ * runs on it — unlike gsd-core's flat command `.md`, an installed capability
+ * skill is already a complete SKILL.md), but it is NOT immune from the LATER
+ * runtime-targeted body rewrite pass `applySurface` runs over the ENTIRE
+ * staged directory (`rewriteStagedSkillBodies`, surface.cts): a `~/.claude/`
+ * (etc.) path reference in a third-party skill body IS rewritten exactly like
+ * a first-party one. "As-is" here refers only to this copy step, not to the
+ * final on-disk content after a full `applySurface` run.
+ */
+function readInstalledCapabilitySkill(stem, registry) {
+    if (!isSafeCapabilitySkillStem(stem))
+        return null;
+    if (!registry || !registry.capabilityClusters || typeof registry.capabilityClusters !== 'object')
+        return null;
+    const capId = _owningCapabilityId(stem, registry.capabilityClusters);
+    if (capId === null)
+        return null;
+    // Defense-in-depth: capId is a real accepted-capability directory name (a
+    // trusted fs.readdirSync entry at capability-loader.cts accept time), but
+    // re-validate its path-segment shape before using it as a literal path
+    // component in case a future registry composer ever stops guaranteeing that.
+    if (!isSafeCapabilitySkillStem(capId))
+        return null;
+    const home = process.env['GSD_HOME'] || node_os_1.default.homedir();
+    const capDir = node_path_1.default.join(home, '.gsd', 'capabilities', capId);
+    const relSkillPath = node_path_1.default.join('skills', stem, 'SKILL.md');
+    // Defense-in-depth: isSafeCapabilitySkillStem already rejects separators/
+    // '..'/absolute stems, but re-confirm the resolved read path stays under
+    // this capability's own directory before ever touching the filesystem.
+    if (!(0, external_descriptor_trust_cjs_1.isPathConfined)(relSkillPath, capDir))
+        return null;
+    const skillPath = node_path_1.default.join(capDir, relSkillPath);
+    try {
+        if (!node_fs_1.default.statSync(skillPath).isFile())
+            return null;
+        return { capId, content: node_fs_1.default.readFileSync(skillPath, 'utf8') };
+    }
+    catch {
+        return null; // missing / unreadable / corrupt entry -> skip
+    }
+}
+/**
+ * @param registry optional capability registry (capabilityClusters view) —
+ *   when present, third-party capability skills are unioned into the staged
+ *   output (bound to their declaring capId; see readInstalledCapabilitySkill).
+ *   When absent, NOTHING third-party is staged (fail closed).
+ */
+function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converter, prefix, nested = false, registry) {
     if (!node_fs_1.default.existsSync(srcCommandsDir))
         return srcCommandsDir;
     // Nesting applies to the `full` install AND to any surface whose skill set
@@ -458,6 +636,10 @@ function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converte
             doNest = [...bundles.routerStems].every((r) => present.has(r));
         }
     }
+    // #2322: stems actually staged from gsd-core's OWN bundled commands/gsd dir
+    // this call, so the third-party fill-in pass below can enforce "first-party
+    // ALWAYS wins on collision" without re-deriving membership.
+    const firstPartyStems = new Set();
     const stageDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(node_os_1.default.tmpdir(), 'gsd-profile-runtime-skills-'));
     try {
         const entries = node_fs_1.default.readdirSync(srcCommandsDir, { withFileTypes: true });
@@ -469,6 +651,7 @@ function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converte
             const stem = entry.name.slice(0, -3);
             if (resolvedProfile.skills !== '*' && !(resolvedProfile.skills).has(stem))
                 continue;
+            firstPartyStems.add(stem);
             const content = node_fs_1.default.readFileSync(node_path_1.default.join(srcCommandsDir, entry.name), 'utf8');
             const skillName = `${prefix}${stem}`;
             const converted = converter(content, skillName);
@@ -496,6 +679,55 @@ function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converte
             const destDir = node_path_1.default.join(stageDir, skillName);
             node_fs_1.default.mkdirSync(destDir, { recursive: true });
             node_fs_1.default.writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), converted);
+        }
+        // #2322: materialize installed THIRD-PARTY capability skills, bound to
+        // their DECLARING capability via the registry's capabilityClusters view
+        // (see readInstalledCapabilitySkill — NEVER scan-and-first-match). The
+        // registry union (#2045) already puts every accepted-capability stem into
+        // a concrete resolvedProfile.skills Set, but srcCommandsDir only ever
+        // holds gsd-core's own bundled commands — so any stem with no first-party
+        // file here was silently dropped (registry says surfaced:true, nothing on
+        // disk) unless we fill it in from the capability's own install dir.
+        //
+        // BLOCKER 2 (#2322): `resolveProfile` short-circuits the `full` profile
+        // straight to the `'*'` sentinel BEFORE ever consulting a registry — the
+        // sentinel therefore carries no per-stem list of its own, and a bare
+        // `resolvedProfile.skills !== '*'` gate here skipped this ENTIRE fill-in
+        // pass for a `full` install regardless of what the registry declared
+        // (the issue's default-profile repro: `mode=full` staged zero third-party
+        // skills even when `mode=standard` on the SAME registry staged them
+        // correctly). When `resolvedProfile.skills === '*'`, the candidate stems
+        // are instead every stem the registry's `capabilityClusters` declares —
+        // mirroring the SAME unconditional union `resolveSurface` (surface.cts,
+        // "Issue #2045" block) already performs for its own `'*'` case. When
+        // `resolvedProfile.skills` is a concrete Set, the candidate stems are the
+        // ones `_capabilitySkillsForMode` already unioned into it (unchanged).
+        //
+        // No registry in scope at all -> stage NOTHING third-party (fail closed —
+        // never fall back to scanning). Nesting (#69) never applies to a
+        // capability skill — it was never a child of any ns-* router's
+        // `requires:` list — so it always lands flat at the top level, exactly
+        // like an unrouted first-party skill.
+        if (registry) {
+            const candidateStems = resolvedProfile.skills === '*' ? capabilityClusterStems(registry) : resolvedProfile.skills;
+            for (const stem of candidateStems) {
+                if (firstPartyStems.has(stem))
+                    continue; // first-party always wins
+                const found = readInstalledCapabilitySkill(stem, registry);
+                if (found === null)
+                    continue; // absent/malformed/unowned -> skip gracefully
+                const skillName = `${prefix}${stem}`;
+                if (!(0, external_descriptor_trust_cjs_1.isPathConfined)(skillName, stageDir))
+                    continue; // defense-in-depth
+                const destDir = node_path_1.default.join(stageDir, skillName);
+                node_fs_1.default.mkdirSync(destDir, { recursive: true });
+                node_fs_1.default.writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), found.content);
+                // #2322 HIGH-3: persist the capability-owned marker so a later prune
+                // pass (surface.cts pruneSkillDirs) can identify — and remove — this
+                // directory even once the owning capability is uninstalled/unsurfaced
+                // and no longer appears in any registry view.
+                node_fs_1.default.writeFileSync(node_path_1.default.join(destDir, CAPABILITY_SKILL_MARKER), found.capId + '\n', 'utf8');
+            }
         }
     }
     catch (err) {
@@ -822,6 +1054,12 @@ module.exports = {
     parseRequires,
     parseCallsAgents,
     cleanupStagedSkills,
+    // #2322: capability-skill security seams — exported for direct unit-testing
+    // and for surface.cts's prune pass (CAPABILITY_SKILL_MARKER parity).
+    isSafeCapabilitySkillStem,
+    readInstalledCapabilitySkill,
+    capabilityClusterStems,
+    CAPABILITY_SKILL_MARKER,
     // Back-compat / deprecated
     MINIMAL_SKILL_ALLOWLIST,
     isMinimalMode,

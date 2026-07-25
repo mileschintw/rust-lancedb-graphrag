@@ -37,7 +37,11 @@ const node_path_1 = __importDefault(require("node:path"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const installProfiles = require("./install-profiles.cjs");
-const { readActiveProfile, resolveProfile, loadSkillsManifest, } = installProfiles;
+const { readActiveProfile, resolveProfile, loadSkillsManifest, 
+// #2322 HIGH-3: shared marker name — single source of truth with the writer
+// (install-profiles.cts stageSkillsForRuntimeAsSkills) so the prune reader
+// below can never drift from what the stage-time writer actually wrote.
+CAPABILITY_SKILL_MARKER, } = installProfiles;
 const clusters_cjs_1 = require("./clusters.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const runtimeArtifactLayout = require("./runtime-artifact-layout.cjs");
@@ -379,12 +383,18 @@ function applySurface(runtimeConfigDir, layout, manifest, clusterMap, registry, 
  *
  * Ownership criteria:
  *   - Non-empty prefix (e.g. 'gsd-'): dir name starts with that prefix AND
- *     appears in the manifest (manifest membership is required). Dirs that match
- *     the prefix but are NOT in the manifest are treated as user-owned and
+ *     EITHER appears in the manifest (first-party membership) OR carries the
+ *     persisted `CAPABILITY_SKILL_MARKER` file (#2322 HIGH-3: a third-party
+ *     capability skill, self-certifying and independent of current registry
+ *     state — so an uninstalled/unsurfaced capability's stale skill is still
+ *     prunable even though it no longer appears in any registry view). Dirs
+ *     that match the prefix but satisfy NEITHER are treated as user-owned and
  *     preserved — this prevents data loss for user-created gsd-* directories.
  *     A warning is written to stderr when such a dir is encountered.
  *   - Empty prefix (Hermes): dir name appears as a canonical skill stem in the
- *     manifest. User dirs not in the manifest are preserved.
+ *     manifest. User dirs not in the manifest are preserved. (Hermes does not
+ *     yet stage third-party capability skills, so the marker check does not
+ *     apply on this path.)
  *   - Empty prefix without manifest, or manifest not a Map: conservative; no
  *     dirs are removed.
  *
@@ -419,18 +429,50 @@ function pruneSkillDirs(skillsDir, retainedNames, prefix, manifest) {
                 // Does not match prefix at all — user-owned, preserve.
                 continue;
             }
-            if (!canonicalStems) {
-                // No manifest available: cannot confirm ownership — preserve conservatively.
+            // #2322: an entry in THIS apply's retained set is unambiguously wanted —
+            // check that BEFORE the first-party-manifest-membership gate below. The
+            // manifest only ever knows gsd-core's own bundled stems; a materialized
+            // third-party capability skill (retained via the resolved profile's
+            // registry union, #2045/#2322) has no manifest entry at all, so without
+            // this early check it fell into the "unknown, preserve with warning"
+            // branch on EVERY apply — misreporting a live, GSD-managed capability
+            // skill as "user-owned or unknown" noise. This does not change any
+            // deletion outcome (a retained entry was always preserved — see the
+            // `retainedNames.has(entry)` check further below); it only short-
+            // circuits the ambiguous-ownership warning for entries we already know,
+            // this apply, are wanted.
+            if (retainedNames.has(entry))
                 continue;
-            }
             // Finding 1 fix: prefix match is necessary but NOT sufficient.
             // The dir must also be in the manifest to be considered GSD-owned.
             // A user-created gsd-* dir that isn't in the manifest is preserved with a warning.
-            if (!canonicalStems.has(entry.slice(prefix.length))) {
+            const stem = entry.slice(prefix.length);
+            if (canonicalStems && canonicalStems.has(stem)) {
+                isGsdOwned = true;
+            }
+            else if (node_fs_1.default.existsSync(node_path_1.default.join(entryPath, CAPABILITY_SKILL_MARKER))) {
+                // #2322 HIGH-3: not a first-party stem, but self-certified as a
+                // GSD-managed THIRD-PARTY capability skill via the persisted marker
+                // (written by install-profiles.cts stageSkillsForRuntimeAsSkills at
+                // stage time). Without this, an orphaned capability skill — its
+                // owning capability uninstalled/unsurfaced and no longer appearing in
+                // ANY registry view — had no manifest entry at all and fell into the
+                // "unknown, preserve with warning" branch below FOREVER: uninstalling
+                // a malicious capability never actually removed its already-staged
+                // instructions from the agent's context. The marker makes ownership
+                // self-certifying at prune time, independent of current registry
+                // state (or even of whether a manifest was supplied at all).
+                isGsdOwned = true;
+            }
+            else if (!canonicalStems) {
+                // No manifest available and no capability marker: cannot confirm
+                // ownership — preserve conservatively (silent).
+                continue;
+            }
+            else {
                 process.stderr.write(`[gsd] Warning: ${entry} matches GSD prefix '${prefix}' but is not in the manifest — preserving (user-owned or unknown)\n`);
                 continue;
             }
-            isGsdOwned = true;
         }
         else if (canonicalStems) {
             // Hermes: GSD-owned iff the directory name appears in the canonical manifest.

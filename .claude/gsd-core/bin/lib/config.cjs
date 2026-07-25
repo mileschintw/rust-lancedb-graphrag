@@ -67,6 +67,45 @@ const SCHEMA_DEFAULTS = {
     'executor.stall_threshold_minutes': 10,
     'git.create_tag': true,
 };
+/**
+ * Resolve a schema-level default for an absent key (#2256). Checks the legacy
+ * hardcoded SCHEMA_DEFAULTS first, then the capability-registry configSchema
+ * default — the same registry default the runtime's capability-activation
+ * resolver (resolveConfigKey Level 4, capability-activation.cts) already honors,
+ * so `query config-get` can no longer disagree with the runtime about an absent
+ * key's effective value.
+ */
+function resolveSchemaDefault(cwd, kp) {
+    if (Object.prototype.hasOwnProperty.call(SCHEMA_DEFAULTS, kp)) {
+        return { found: true, value: SCHEMA_DEFAULTS[kp] };
+    }
+    const capSchema = getCapabilityConfigSchema(cwd);
+    if (capSchema && typeof capSchema === 'object'
+        && Object.prototype.hasOwnProperty.call(capSchema, kp)) {
+        const entry = capSchema[kp];
+        if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+            const def = entry['default'];
+            if (def !== undefined)
+                return { found: true, value: def };
+        }
+    }
+    return { found: false, value: undefined };
+}
+/**
+ * Emit a schema-resolved default (#2256), applying the same secret-masking
+ * invariant the found-key path applies. getCapabilityConfigSchema is a
+ * federated, third-party-extensible surface (ADR-1244) — a future key-name
+ * collision with a secret key must not leak a declared default in plaintext.
+ * Centralizing emission here means masking can't be missed at a call site.
+ */
+function emitResolvedDefault(kp, value, raw) {
+    if ((0, secrets_cjs_1.isSecretKey)(kp)) {
+        const masked = (0, secrets_cjs_1.maskSecret)(value);
+        output(masked, raw, masked);
+        return;
+    }
+    output(value, raw, String(value));
+}
 // ─── Validation helpers ───────────────────────────────────────────────────────
 function validateKnownConfigKeyPath(keyPath) {
     const suggested = CONFIG_KEY_SUGGESTIONS[keyPath];
@@ -698,6 +737,10 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
             error(`Invalid statusline.show_context_tokens '${val}'. Must be a boolean (true or false).`);
         }
     }
+    // Statusline GSD-state format enum validation
+    const VALID_STATE_FORMATS = ['full', 'compact'];
+    if (kp === 'statusline.state_format')
+        assertEnumValue(parsedValue, val, VALID_STATE_FORMATS, 'statusline.state_format');
     // statusline.show_git — boolean only
     if (kp === 'statusline.show_git') {
         if (typeof parsedValue !== 'boolean') {
@@ -825,16 +868,15 @@ function cmdConfigGet(cwd, keyPath, raw, defaultValue) {
             config = JSON.parse(node_fs_1.default.readFileSync(configPath, 'utf-8'));
         }
         else if (hasDefault) {
-            // eslint-disable-next-line @typescript-eslint/no-base-to-string
-            output(defaultValue, raw, String(defaultValue));
-            return;
-        }
-        else if (Object.prototype.hasOwnProperty.call(SCHEMA_DEFAULTS, kp)) {
-            const def = SCHEMA_DEFAULTS[kp];
-            output(def, raw, String(def));
+            emitResolvedDefault(kp, defaultValue, raw);
             return;
         }
         else {
+            const sd = resolveSchemaDefault(cwd, kp);
+            if (sd.found) {
+                emitResolvedDefault(kp, sd.value, raw);
+                return;
+            }
             error('No config.json found at ' + configPath, ERROR_REASON.CONFIG_NO_FILE);
         }
     }
@@ -848,29 +890,38 @@ function cmdConfigGet(cwd, keyPath, raw, defaultValue) {
     let current = config;
     for (const key of keys) {
         if (current === undefined || current === null || typeof current !== 'object') {
-            // eslint-disable-next-line @typescript-eslint/no-base-to-string
             if (hasDefault) {
-                output(defaultValue, raw, String(defaultValue));
+                emitResolvedDefault(kp, defaultValue, raw);
                 return;
             }
-            if (Object.prototype.hasOwnProperty.call(SCHEMA_DEFAULTS, kp)) {
-                const def = SCHEMA_DEFAULTS[kp];
-                output(def, raw, String(def));
+            const sd = resolveSchemaDefault(cwd, kp);
+            if (sd.found) {
+                emitResolvedDefault(kp, sd.value, raw);
                 return;
             }
             error(`Key not found: ${kp}`, ERROR_REASON.CONFIG_KEY_NOT_FOUND);
         }
-        current = current[key];
+        // Own-property gate: bracket access on a plain object walks the
+        // prototype chain, so an unqualified `current[key]` would resolve
+        // '__proto__' / 'constructor' / 'hasOwnProperty' (and other
+        // Object.prototype members) to their inherited values instead of
+        // correctly reporting them as absent. hasOwnProperty.call only
+        // returns true for a key JSON.parse actually assigned as data on
+        // this object (including a literal "__proto__" JSON key, which
+        // JSON.parse defines as an own data property, not the accessor) —
+        // never for something inherited from the prototype chain.
+        current = Object.prototype.hasOwnProperty.call(current, key)
+            ? current[key]
+            : undefined;
     }
     if (current === undefined) {
-        // eslint-disable-next-line @typescript-eslint/no-base-to-string
         if (hasDefault) {
-            output(defaultValue, raw, String(defaultValue));
+            emitResolvedDefault(kp, defaultValue, raw);
             return;
         }
-        if (Object.prototype.hasOwnProperty.call(SCHEMA_DEFAULTS, kp)) {
-            const def = SCHEMA_DEFAULTS[kp];
-            output(def, raw, String(def));
+        const sd = resolveSchemaDefault(cwd, kp);
+        if (sd.found) {
+            emitResolvedDefault(kp, sd.value, raw);
             return;
         }
         error(`Key not found: ${kp}`, ERROR_REASON.CONFIG_KEY_NOT_FOUND);
