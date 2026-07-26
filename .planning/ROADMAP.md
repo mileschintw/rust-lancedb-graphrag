@@ -5,7 +5,7 @@
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
-| 2 | Ingestion, Chunking & Vector Storage | Ingest text/markdown, chunk, and store in LanceDB | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
+| 2 | 10/10 | Complete    | 2026-07-26 |
 | 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
@@ -30,7 +30,7 @@
 **Goal:** Ingest text/markdown, chunk, and store in LanceDB
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 9/10 plans executed
+**Plans:** 10/10 plans executed
 **Wave 1**
 
 - [x] 02-01-PLAN.md
@@ -66,7 +66,7 @@
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 02-10-PLAN.md — Execute a fresh post-change OpenRouter ingestion and accept it only after challenge-bound PostgreSQL/LanceDB reinspection and success-only runtime-artifact cleanup.
+- [x] 02-10-PLAN.md — Execute a fresh post-change OpenRouter ingestion and accept it only after challenge-bound PostgreSQL/LanceDB reinspection and success-only runtime-artifact cleanup.
 
 **Success Criteria:**
 
