@@ -33,6 +33,7 @@ const maxUploadBytes int64 = 10 << 20
 const streamBufferSize = 64 << 10
 const defaultChunkSize = 500
 const defaultChunkOverlap = 50
+const ingestCompensationTimeout = 5 * time.Second
 
 type Config struct {
 	Gateway struct {
@@ -166,7 +167,9 @@ type app struct {
 // compensateFailedIngest prevents an admission failure from leaving an
 // indefinitely queued PostgreSQL row.  The original gRPC error remains the
 // response authority; a compensation failure is operational detail only.
-func (a app) compensateFailedIngest(ctx context.Context, id string, ingestErr error) {
+func (a app) compensateFailedIngest(id string, ingestErr error) {
+	ctx, cancel := context.WithTimeout(context.Background(), ingestCompensationTimeout)
+	defer cancel()
 	errText := pgtype.Text{String: "engine ingestion failed", Valid: true}
 	if _, err := a.store.UpdateStatus(ctx, db.UpdateDocumentStatusParams{
 		ID: id, Status: "failed", ChunkCount: 0, ErrorMessage: errText,
@@ -223,7 +226,7 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.engine.Ingest(r.Context(), id, doc.Filename, io.LimitReader(file, maxUploadBytes+1)); err != nil {
-		a.compensateFailedIngest(r.Context(), id, err)
+		a.compensateFailedIngest(id, err)
 		if status.Code(err) == codes.ResourceExhausted {
 			http.Error(w, "ingestion queue is full", http.StatusTooManyRequests)
 			return
