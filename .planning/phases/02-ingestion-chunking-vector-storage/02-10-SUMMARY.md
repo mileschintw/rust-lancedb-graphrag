@@ -45,7 +45,7 @@ coverage:
       - kind: e2e
         ref: "verify-ingestion.sh --managed-services --challenge-file <phase-local> --evidence <phase-local>"
         status: pass
-      - kind: automated
+      - kind: other
         ref: "verify-live-evidence.sh --validate-gate <phase-local paths>"
         status: pass
     human_judgment: true
@@ -57,7 +57,7 @@ coverage:
       - kind: integration
         ref: "verify-live-evidence.sh --validate-gate direct PostgreSQL/LanceDB comparison"
         status: pass
-      - kind: automated
+      - kind: other
         ref: "engine/src/bin/inspect_lancedb.rs durable-row inspection"
         status: pass
     human_judgment: false
@@ -65,7 +65,7 @@ coverage:
     description: "Successful validation removed both private runtime artifacts while exact ignore rules kept them untracked and unstaged."
     requirement: DATA-08
     verification:
-      - kind: automated
+      - kind: other
         ref: "post-validator Test-Path, git check-ignore, git ls-files, and git diff --cached checks"
         status: pass
     human_judgment: false
