@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 2
-current_plan: 8
+current_plan: 9
 status: executing
-stopped_at: Completed 02-08-PLAN.md
-last_updated: "2026-07-26T04:47:55.459Z"
+stopped_at: Completed 02-09-PLAN.md
+last_updated: "2026-07-26T05:29:06.259Z"
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -25,8 +25,8 @@ progress:
 
 - **Phase:** 2
 - **Status:** Executing Phase 02
-- **Current Plan:** 8
-- **Phase Progress:** 8 of 10 plans complete (80%)
+- **Current Plan:** 9
+- **Phase Progress:** 9 of 10 plans complete (90%)
 - **Current Focus:** Phase 02 — ingestion-chunking-vector-storage
 
 ## Completed Phases
@@ -35,7 +35,7 @@ progress:
 
 ## Known Issues & Debt
 
-- 02-09 and 02-10 remain as planned Phase 02 gap-closure work.
+- 02-10 remains as the planned Phase 02 final live gap-closure work.
 - Pre-existing RAG and graph query stubs are recorded in the phase deferred-items ledger for their owning phases.
 
 ## Deployment & Environments
@@ -64,6 +64,7 @@ progress:
 | Phase 02 P06 | 2h 24m | 3 tasks | 4 files |
 | Phase 02 P07 | 58 min | 3 tasks | 9 files |
 | Phase 02 P08 | 35 min | 2 tasks | 4 files |
+| Phase 02 P09 | 45 min | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -88,9 +89,13 @@ progress:
 - [Phase 02-08]: Keep REQUEST_TIMEOUT as the single ten-second reqwest builder contract; the test seam may vary endpoint and retries but never the production timeout.
 - [Phase 02-08]: Derive inspector identity and integrity verdicts only from filtered durable LanceDB rows, rejecting missing, mixed, duplicate, stale, or non-contiguous state before JSON output.
 - [Phase 02-08]: Keep real LanceDB inspector fixtures outside engine/src/bin so Cargo does not discover test-only code as a production binary target.
+- [Phase 02]: Run every challenge, evidence, freshness, privacy, and durable-store decision through explicit Python checks under isolated mode.
+- [Phase 02]: Copy provider/model/generation/duplicate/stale/continuity facts directly from the Plan 02-08 inspector output; do not attest hardcoded verdicts.
+- [Phase 02]: Keep challenge and evidence paths as exact ignored files and remove both only after final current-store reconciliation succeeds.
+- [Phase 02]: Keep all fixtures and negative tests in scripts/test_phase02_live_evidence.py; production shell files contain no test-only harness.
 
 ## Session
 
-**Last session:** 2026-07-26T04:47:55.459Z
-**Stopped at:** Completed 02-08-PLAN.md
+**Last session:** 2026-07-26T05:29:06.231Z
+**Stopped at:** Completed 02-09-PLAN.md
 **Resume file:** None
