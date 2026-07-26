@@ -5,7 +5,6 @@ use arrow_array::types::Float32Type;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Float32Array, Int32Array, Int64Array, RecordBatch, StringArray,
 };
-use lancedb::query::ExecutableQuery;
 use uuid::Uuid;
 
 use super::{db::DatabaseManager, inspect_document, Inspection, EMBEDDING_MODEL};
