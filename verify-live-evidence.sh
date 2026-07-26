@@ -4,6 +4,7 @@ set -euo pipefail
 phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge="${phase_dir}/.02-LIVE-CHALLENGE.json"
 evidence="${phase_dir}/02-LIVE-EVIDENCE.json"
+evidence_helper="scripts/phase02_live_evidence.py"
 verification_environment="verify"
 mode="${1:-}"
 shift || true
@@ -47,61 +48,13 @@ assert_safe_runtime_path() {
 }
 
 parse_and_validate_gate() {
-  "$python_cmd" - "$challenge" "$evidence" <<'PY'
-import datetime as dt
-import json
-import sys
-import uuid
-
-challenge_path, evidence_path = sys.argv[1:]
-with open(challenge_path, encoding="utf-8") as stream:
-    challenge = json.load(stream)
-with open(evidence_path, encoding="utf-8") as stream:
-    evidence = json.load(stream)
-
-challenge_keys = {"schema_version", "challenge", "run_id", "issued_at"}
-evidence_keys = {
-    "schema_version", "success_sentinel", "challenge", "run_id", "issued_at",
-    "run_started_at", "generated_at", "document_id", "provider", "embedding_model",
-    "gateway_chunk_count", "postgres_status", "postgres_chunk_count", "document_rows",
-    "staged_document_rows", "node_rows", "edge_rows", "embedding_width",
-    "duplicate_generation", "stale_generation",
-}
-assert set(challenge) == challenge_keys
-assert set(evidence) == evidence_keys
-assert challenge["schema_version"] == evidence["schema_version"] == 1
-assert isinstance(challenge["challenge"], str) and len(challenge["challenge"]) >= 32
-assert isinstance(challenge["run_id"], str) and uuid.UUID(challenge["run_id"]).version == 4
-assert all(evidence[key] == challenge[key] for key in ("challenge", "run_id", "issued_at"))
-assert evidence["success_sentinel"] == "Ingestion validation: SUCCESS"
-assert evidence["provider"] == "openrouter"
-assert evidence["embedding_model"] == "nvidia/llama-nemotron-embed-vl-1b-v2:free"
-assert uuid.UUID(evidence["document_id"]).version == 4
-assert evidence["postgres_status"] == "completed"
-assert all(isinstance(evidence[key], int) and not isinstance(evidence[key], bool) for key in (
-    "gateway_chunk_count", "postgres_chunk_count", "document_rows", "staged_document_rows",
-    "node_rows", "edge_rows", "embedding_width"))
-assert evidence["gateway_chunk_count"] == evidence["postgres_chunk_count"] == evidence["node_rows"] > 0
-assert evidence["document_rows"] == 1 and evidence["staged_document_rows"] == 0
-assert evidence["edge_rows"] >= 0 and evidence["embedding_width"] == 2048
-assert evidence["duplicate_generation"] is False and evidence["stale_generation"] is False
-parse = lambda value: dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
-issued, started, generated = map(parse, (challenge["issued_at"], evidence["run_started_at"], evidence["generated_at"]))
-assert issued.tzinfo is not None and started.tzinfo is not None and generated.tzinfo is not None
-assert issued <= started <= generated
-assert dt.datetime.now(dt.timezone.utc) - generated <= dt.timedelta(minutes=30)
-assert generated <= dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=5)
-print(evidence["document_id"])
-PY
+  "$python_cmd" -I "$evidence_helper" validate-gate --challenge "$challenge" --evidence "$evidence"
 }
 
 case "$mode" in
   --self-test)
     bash -n "$0"
-    "$python_cmd" - <<'PY'
-import json
-assert json.loads('{"schema_version":1}')["schema_version"] == 1
-PY
+    "$python_cmd" -I "$evidence_helper" self-test
     ;;
   --prepare-gate)
     require_phase_local_paths
@@ -160,23 +113,9 @@ PY
     document_id="$(parse_and_validate_gate)"
     postgres="$(docker compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
     inspection="$(cargo run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id")"
-    "$python_cmd" - "$evidence" "$postgres" "$inspection" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    evidence = json.load(stream)
-status, count = sys.argv[2].split(":", 1)
-inspection = json.loads(sys.argv[3])
-assert status == evidence["postgres_status"] == "completed"
-assert int(count) == evidence["postgres_chunk_count"] == evidence["node_rows"] > 0
-for key in ("document_id", "provider", "embedding_model", "document_rows", "staged_document_rows", "node_rows", "edge_rows", "embedding_width", "stale_generation"):
-    assert inspection[key] == evidence[key]
-assert inspection["document_rows"] == 1 and inspection["staged_document_rows"] == 0
-assert inspection["node_rows"] > 0 and inspection["edge_rows"] >= 0
-assert inspection["embedding_width"] == 2048 and inspection["stale_generation"] is False
-PY
-    rm -f -- "$challenge"
+    printf '%s\n' "$inspection" | "$python_cmd" -I "$evidence_helper" compare-live-state \
+      --challenge "$challenge" --evidence "$evidence" --postgres "$postgres" --inspection-json -
+    rm -f -- "$challenge" "$evidence"
     echo "Live evidence validated"
     ;;
   *)
