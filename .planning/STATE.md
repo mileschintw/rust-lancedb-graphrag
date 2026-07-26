@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 2
-current_plan: 7
+current_plan: 8
 status: executing
-stopped_at: Completed 02-07-PLAN.md
-last_updated: "2026-07-26T04:08:45.802Z"
+stopped_at: Completed 02-08-PLAN.md
+last_updated: "2026-07-26T04:47:55.459Z"
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -25,8 +25,8 @@ progress:
 
 - **Phase:** 2
 - **Status:** Executing Phase 02
-- **Current Plan:** 7
-- **Phase Progress:** 7 of 10 plans complete (70%)
+- **Current Plan:** 8
+- **Phase Progress:** 8 of 10 plans complete (80%)
 - **Current Focus:** Phase 02 — ingestion-chunking-vector-storage
 
 ## Completed Phases
@@ -35,7 +35,7 @@ progress:
 
 ## Known Issues & Debt
 
-- 02-08, 02-09, and 02-10 remain as planned Phase 02 gap-closure work.
+- 02-09 and 02-10 remain as planned Phase 02 gap-closure work.
 - Pre-existing RAG and graph query stubs are recorded in the phase deferred-items ledger for their owning phases.
 
 ## Deployment & Environments
@@ -63,6 +63,7 @@ progress:
 | Phase 02 P05 | 35 min | 3 tasks | 9 files |
 | Phase 02 P06 | 2h 24m | 3 tasks | 4 files |
 | Phase 02 P07 | 58 min | 3 tasks | 9 files |
+| Phase 02 P08 | 35 min | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -84,9 +85,12 @@ progress:
 - [Phase 02-07]: Capture canonical LanceDB versions before mutation and route every post-snapshot error, including staging cleanup, through one rollback funnel.
 - [Phase 02-07]: Use a five-second context.Background compensation timeout so request cancellation cannot strand failed-ingest metadata.
 - [Phase 02-07]: Keep all Rust fault fixtures and integrity tests in engine/src/tests.rs, leaving production code with only the standard test-module declaration.
+- [Phase 02-08]: Keep REQUEST_TIMEOUT as the single ten-second reqwest builder contract; the test seam may vary endpoint and retries but never the production timeout.
+- [Phase 02-08]: Derive inspector identity and integrity verdicts only from filtered durable LanceDB rows, rejecting missing, mixed, duplicate, stale, or non-contiguous state before JSON output.
+- [Phase 02-08]: Keep real LanceDB inspector fixtures outside engine/src/bin so Cargo does not discover test-only code as a production binary target.
 
 ## Session
 
-**Last session:** 2026-07-26T04:08:45.772Z
-**Stopped at:** Completed 02-07-PLAN.md
+**Last session:** 2026-07-26T04:47:55.459Z
+**Stopped at:** Completed 02-08-PLAN.md
 **Resume file:** None
