@@ -30,7 +30,7 @@
 **Goal:** Ingest text/markdown, chunk, and store in LanceDB
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 9 plans (6 executed, 3 gap-closure plans pending)
+**Plans:** 10 plans (6 executed, 4 gap-closure plans pending)
 **Wave 1**
 
 - [x] 02-01-PLAN.md
@@ -63,6 +63,10 @@
 **Wave 8** *(blocked on Wave 7 completion)*
 
 - [ ] 02-09-PLAN.md — Make live evidence validation optimization-resistant, consume derived inspector facts, and ignore/clean both private runtime artifacts.
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 02-10-PLAN.md — Execute a fresh post-change OpenRouter ingestion and accept it only after challenge-bound PostgreSQL/LanceDB reinspection and success-only runtime-artifact cleanup.
 
 **Success Criteria:**
 
