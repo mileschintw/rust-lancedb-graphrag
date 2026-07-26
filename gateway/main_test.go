@@ -23,14 +23,17 @@ import (
 )
 
 type fakeStore struct {
-	document  db.Document
-	inserted  *db.InsertDocumentParams
-	updated   *db.UpdateDocumentStatusParams
-	insertErr error
-	getErr    error
-	updateErr error
-	getCalls  int
-	winner    *db.Document
+	document              db.Document
+	inserted              *db.InsertDocumentParams
+	updated               *db.UpdateDocumentStatusParams
+	insertErr             error
+	getErr                error
+	updateErr             error
+	getCalls              int
+	winner                *db.Document
+	updateCtx             context.Context
+	updateSawLiveContext  bool
+	rejectCanceledContext bool
 }
 
 func (s *fakeStore) Insert(_ context.Context, p db.InsertDocumentParams) (db.Document, error) {
@@ -50,7 +53,12 @@ func (s *fakeStore) Get(context.Context, string) (db.Document, error) {
 	return s.document, s.getErr
 }
 
-func (s *fakeStore) UpdateStatus(_ context.Context, p db.UpdateDocumentStatusParams) (db.Document, error) {
+func (s *fakeStore) UpdateStatus(ctx context.Context, p db.UpdateDocumentStatusParams) (db.Document, error) {
+	s.updateCtx = ctx
+	s.updateSawLiveContext = ctx.Err() == nil
+	if s.rejectCanceledContext && ctx.Err() != nil {
+		return db.Document{}, ctx.Err()
+	}
 	s.updated = &p
 	if s.updateErr != nil {
 		return db.Document{}, s.updateErr
@@ -114,6 +122,37 @@ func TestCreateDocumentCompensatesGeneralEnqueueFailure(t *testing.T) {
 	}
 	if store.updated == nil || store.updated.Status != "failed" {
 		t.Fatalf("failure was not compensated: %#v", store.updated)
+	}
+}
+
+func TestCreateDocumentCompensatesWithDetachedContextAfterRequestCancellation(t *testing.T) {
+	store := &fakeStore{rejectCanceledContext: true}
+	req := multipartRequest(t, "notes.txt", []byte("hello"))
+	requestCtx, cancelRequest := context.WithCancel(req.Context())
+	req = req.WithContext(requestCtx)
+	engine := engineFunc{ingest: func(context.Context, string, string, []byte) error {
+		cancelRequest()
+		return errors.New("engine canceled before enqueue")
+	}}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+	if store.updated == nil || store.updated.Status != "failed" {
+		t.Fatalf("canceled-request failure was not compensated: %#v", store.updated)
+	}
+	if !store.updateSawLiveContext {
+		t.Fatal("compensation used an already-canceled context")
+	}
+	if store.updateCtx == nil {
+		t.Fatal("compensation context was not recorded")
+	}
+	if _, ok := store.updateCtx.Deadline(); !ok {
+		t.Fatal("compensation context has no finite deadline")
+	}
+	if store.updateCtx.Err() == nil {
+		t.Fatal("compensation context was not canceled after the update")
 	}
 }
 
