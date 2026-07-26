@@ -102,21 +102,64 @@ const DEFAULT_CHUNK_SIZE: usize = 500;
 const DEFAULT_CHUNK_OVERLAP: usize = 50;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ReplacementBoundary {
-    DocumentsWritten,
-    NodesWritten,
-    EdgesWritten,
+enum ReplacementMutation {
+    EdgesDelete,
+    NodesDelete,
+    DocumentsDelete,
+    DocumentsAdd,
+    NodesAdd,
+    EdgesAdd,
+    StagingDelete,
 }
 
-trait ReplacementFaultInjector: Send + Sync {
-    fn after(&self, boundary: ReplacementBoundary) -> Result<(), String>;
+trait ReplacementMutationBoundary: Send + Sync {
+    fn delete<'a>(
+        &self,
+        boundary: ReplacementMutation,
+        table: &'a Table,
+        predicate: &'a str,
+    ) -> BoxFuture<'a, Result<(), String>>;
+
+    fn add<'a>(
+        &self,
+        boundary: ReplacementMutation,
+        table: &'a Table,
+        batch: RecordBatch,
+    ) -> BoxFuture<'a, Result<(), String>>;
 }
 
-struct NoopReplacementFaultInjector;
+struct LanceDbReplacementMutationBoundary;
 
-impl ReplacementFaultInjector for NoopReplacementFaultInjector {
-    fn after(&self, _boundary: ReplacementBoundary) -> Result<(), String> {
-        Ok(())
+impl ReplacementMutationBoundary for LanceDbReplacementMutationBoundary {
+    fn delete<'a>(
+        &self,
+        boundary: ReplacementMutation,
+        table: &'a Table,
+        predicate: &'a str,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            table
+                .delete(predicate)
+                .await
+                .map(|_| ())
+                .map_err(|error| format!("{boundary:?}: {error}"))
+        })
+    }
+
+    fn add<'a>(
+        &self,
+        boundary: ReplacementMutation,
+        table: &'a Table,
+        batch: RecordBatch,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        Box::pin(async move {
+            table
+                .add(batch)
+                .execute()
+                .await
+                .map(|_| ())
+                .map_err(|error| format!("{boundary:?}: {error}"))
+        })
     }
 }
 
@@ -347,7 +390,7 @@ async fn replace_document(
         job,
         chunks,
         embeddings,
-        &NoopReplacementFaultInjector,
+        &LanceDbReplacementMutationBoundary,
     )
     .await
 }
@@ -397,7 +440,7 @@ async fn replace_document_with_faults(
     job: &IngestionJob,
     chunks: &[Chunk],
     embeddings: &[Vec<f32>],
-    faults: &dyn ReplacementFaultInjector,
+    mutations: &dyn ReplacementMutationBoundary,
 ) -> Result<(), String> {
     if chunks.len() != embeddings.len() {
         return Err(format!(
@@ -420,264 +463,246 @@ async fn replace_document_with_faults(
     let nodes_version = nodes.version().await.map_err(|error| error.to_string())?;
     let edges_version = edges.version().await.map_err(|error| error.to_string())?;
     let predicate = format!("document_id = '{}'", sql_string(&job.document_id));
-
-    // Delete dependent rows first so retries cannot retain stale chunks or graph links.
-    edges
-        .delete(&predicate)
-        .await
-        .map_err(|error| error.to_string())?;
-    nodes
-        .delete(&predicate)
-        .await
-        .map_err(|error| error.to_string())?;
-    documents
-        .delete(&predicate)
-        .await
-        .map_err(|error| error.to_string())?;
-
-    let documents_batch = RecordBatch::try_new(
-        documents
-            .schema()
-            .await
-            .map_err(|error| error.to_string())?,
-        vec![
-            Arc::new(StringArray::from(vec![job.document_id.as_str()])),
-            Arc::new(BinaryArray::from_vec(vec![job.raw_data.as_slice()])),
-        ],
-    )
-    .map_err(|error| error.to_string())?;
-    documents
-        .add(documents_batch)
-        .execute()
-        .await
-        .map_err(|error| error.to_string())?;
-    if let Err(error) = faults.after(ReplacementBoundary::DocumentsWritten) {
-        return rollback_replacement(
-            &documents,
-            documents_version,
-            &nodes,
-            nodes_version,
-            &edges,
-            edges_version,
-            error,
-        )
-        .await;
-    }
-
-    if chunks.is_empty() {
-        database
+    let operation = async {
+        let staged = database
             .staged_documents_table()
-            .await?
-            .delete(&predicate)
             .await
             .map_err(|error| error.to_string())?;
-        return Ok(());
-    }
 
-    let chunk_ids: Vec<String> = (0..chunks.len())
-        .map(|index| format!("{}:{index}", job.document_id))
-        .collect();
-    let ingested_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| error.to_string())?
-        .as_millis() as i64;
-    let flat_embeddings: Vec<f32> = embeddings.iter().flatten().copied().collect();
-    let embedding_array = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-        embeddings
-            .iter()
-            .map(|embedding| Some(embedding.iter().copied().map(Some))),
-        2048,
-    );
-    debug_assert_eq!(
-        flat_embeddings.len(),
-        chunks.len() * 2048,
-        "validated embedding dimensions must remain stable"
-    );
-    let node_schema = nodes.schema().await.map_err(|error| error.to_string())?;
-    let nullable = |name: &str| {
-        let field = node_schema
-            .field_with_name(name)
-            .expect("validated nodes schema must contain field");
-        new_null_array(field.data_type(), chunks.len())
-    };
-    let section_paths: Vec<Option<&str>> = chunks
-        .iter()
-        .map(|chunk| chunk.section_path.as_deref())
-        .collect();
-    let hashes: Vec<String> = chunks
-        .iter()
-        .map(|chunk| content_hash(&chunk.content))
-        .collect();
-    let batch = RecordBatch::try_new(
-        node_schema.clone(),
-        vec![
-            Arc::new(StringArray::from(vec![
-                job.document_id.as_str();
-                chunks.len()
-            ])),
-            Arc::new(StringArray::from(
-                chunk_ids.iter().map(String::as_str).collect::<Vec<_>>(),
-            )),
-            Arc::new(Int32Array::from_iter_values(
-                (0..chunks.len()).map(|index| i32::try_from(index).unwrap_or(i32::MAX)),
-            )),
-            Arc::new(Int32Array::from_iter_values(chunks.iter().map(|chunk| {
-                i32::try_from(chunk.char_start).unwrap_or(i32::MAX)
-            }))),
-            Arc::new(Int32Array::from_iter_values(
-                chunks
-                    .iter()
-                    .map(|chunk| i32::try_from(chunk.char_end).unwrap_or(i32::MAX)),
-            )),
-            Arc::new(StringArray::from(
-                chunks
-                    .iter()
-                    .map(|chunk| chunk.content.as_str())
-                    .collect::<Vec<_>>(),
-            )),
-            Arc::new(embedding_array),
-            Arc::new(Int32Array::from_iter_values(
-                chunks.iter().map(|chunk| chunk.estimated_tokens),
-            )),
-            Arc::new(StringArray::from(vec!["o200k_base"; chunks.len()])),
-            Arc::new(StringArray::from(vec!["1"; chunks.len()])),
-            Arc::new(StringArray::from(vec![
-                Some(job.filename.as_str());
-                chunks.len()
-            ])),
-            Arc::new(StringArray::from(section_paths)),
-            nullable("page_start"),
-            nullable("page_end"),
-            Arc::new(StringArray::from(
-                hashes.iter().map(String::as_str).collect::<Vec<_>>(),
-            )),
-            Arc::new(StringArray::from(vec!["1"; chunks.len()])),
-            Arc::new(StringArray::from(vec![EMBEDDING_MODEL; chunks.len()])),
-            Arc::new(Int64Array::from(vec![Some(ingested_at); chunks.len()])),
-            Arc::new(StringArray::from(vec![
-                Some(content_type(&job.filename));
-                chunks.len()
-            ])),
-            nullable("community_ids"),
-            Arc::new(StringArray::from(vec![Some(""); chunks.len()])),
-            nullable("summary_vector"),
-            nullable("unsummarized_refs"),
-        ],
-    )
-    .map_err(|error| error.to_string())?;
-    nodes
-        .add(batch)
-        .execute()
-        .await
-        .map_err(|error| error.to_string())?;
-    if let Err(error) = faults.after(ReplacementBoundary::NodesWritten) {
-        return rollback_replacement(
-            &documents,
-            documents_version,
-            &nodes,
-            nodes_version,
-            &edges,
-            edges_version,
-            error,
-        )
-        .await;
-    }
+        // Delete dependent rows first so retries cannot retain stale chunks or graph links.
+        mutations
+            .delete(ReplacementMutation::EdgesDelete, &edges, &predicate)
+            .await?;
+        mutations
+            .delete(ReplacementMutation::NodesDelete, &nodes, &predicate)
+            .await?;
+        mutations
+            .delete(ReplacementMutation::DocumentsDelete, &documents, &predicate)
+            .await?;
 
-    let resolver = ExactMatchResolver;
-    let mut known_sections = Vec::<String>::new();
-    let mut section_targets = HashMap::<String, String>::new();
-    let mut edge_sources = Vec::<String>::new();
-    let mut edge_targets = Vec::<String>::new();
-    let mut relation_types = Vec::<String>::new();
-    for (index, chunk) in chunks.iter().enumerate() {
-        let mut target = index
-            .checked_sub(1)
-            .map(|previous| chunk_ids[previous].clone());
-        let mut relation = "next_chunk";
-        if let Some(section) = chunk.section_path.as_deref() {
-            if let Some(resolved) = resolver.resolve(section, &known_sections).await? {
-                target = section_targets.get(&resolved).cloned();
-                relation = "same_section";
-            } else {
-                known_sections.push(section.to_owned());
-                section_targets.insert(section.to_owned(), chunk_ids[index].clone());
-            }
-        }
-        if let Some(target) = target {
-            edge_sources.push(chunk_ids[index].clone());
-            edge_targets.push(target);
-            relation_types.push(relation.to_owned());
-        }
-    }
-    if !edge_sources.is_empty() {
-        let edge_ids: Vec<String> = edge_sources
-            .iter()
-            .enumerate()
-            .map(|(index, _)| format!("{}:edge:{index}", job.document_id))
-            .collect();
-        let edge_schema = edges.schema().await.map_err(|error| error.to_string())?;
-        let edge_nullable = |name: &str| {
-            new_null_array(
-                edge_schema
-                    .field_with_name(name)
-                    .expect("validated edges schema must contain field")
-                    .data_type(),
-                edge_sources.len(),
-            )
-        };
-        let edge_batch = RecordBatch::try_new(
-            edge_schema.clone(),
+        let documents_batch = RecordBatch::try_new(
+            documents
+                .schema()
+                .await
+                .map_err(|error| error.to_string())?,
             vec![
-                Arc::new(StringArray::from(
-                    edge_ids.iter().map(String::as_str).collect::<Vec<_>>(),
-                )),
-                Arc::new(StringArray::from(
-                    edge_sources.iter().map(String::as_str).collect::<Vec<_>>(),
-                )),
-                Arc::new(StringArray::from(
-                    edge_targets.iter().map(String::as_str).collect::<Vec<_>>(),
-                )),
-                Arc::new(StringArray::from(
-                    relation_types
-                        .iter()
-                        .map(String::as_str)
-                        .collect::<Vec<_>>(),
-                )),
-                Arc::new(Float32Array::from(vec![1.0; edge_sources.len()])),
-                Arc::new(StringArray::from(vec![
-                    job.document_id.as_str();
-                    edge_sources.len()
-                ])),
-                edge_nullable("summary"),
-                edge_nullable("summary_vector"),
+                Arc::new(StringArray::from(vec![job.document_id.as_str()])),
+                Arc::new(BinaryArray::from_vec(vec![job.raw_data.as_slice()])),
             ],
         )
         .map_err(|error| error.to_string())?;
-        edges
-            .add(edge_batch)
-            .execute()
-            .await
-            .map_err(|error| error.to_string())?;
-    }
-    if let Err(error) = faults.after(ReplacementBoundary::EdgesWritten) {
-        return rollback_replacement(
-            &documents,
-            documents_version,
-            &nodes,
-            nodes_version,
-            &edges,
-            edges_version,
-            error,
+        mutations
+            .add(
+                ReplacementMutation::DocumentsAdd,
+                &documents,
+                documents_batch,
+            )
+            .await?;
+
+        if chunks.is_empty() {
+            mutations
+                .delete(ReplacementMutation::StagingDelete, &staged, &predicate)
+                .await?;
+            return Ok(());
+        }
+
+        let chunk_ids: Vec<String> = (0..chunks.len())
+            .map(|index| format!("{}:{index}", job.document_id))
+            .collect();
+        let ingested_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_millis() as i64;
+        let flat_embeddings: Vec<f32> = embeddings.iter().flatten().copied().collect();
+        let embedding_array = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+            embeddings
+                .iter()
+                .map(|embedding| Some(embedding.iter().copied().map(Some))),
+            2048,
+        );
+        debug_assert_eq!(
+            flat_embeddings.len(),
+            chunks.len() * 2048,
+            "validated embedding dimensions must remain stable"
+        );
+        let node_schema = nodes.schema().await.map_err(|error| error.to_string())?;
+        let nullable = |name: &str| {
+            let field = node_schema
+                .field_with_name(name)
+                .expect("validated nodes schema must contain field");
+            new_null_array(field.data_type(), chunks.len())
+        };
+        let section_paths: Vec<Option<&str>> = chunks
+            .iter()
+            .map(|chunk| chunk.section_path.as_deref())
+            .collect();
+        let hashes: Vec<String> = chunks
+            .iter()
+            .map(|chunk| content_hash(&chunk.content))
+            .collect();
+        let batch = RecordBatch::try_new(
+            node_schema.clone(),
+            vec![
+                Arc::new(StringArray::from(vec![
+                    job.document_id.as_str();
+                    chunks.len()
+                ])),
+                Arc::new(StringArray::from(
+                    chunk_ids.iter().map(String::as_str).collect::<Vec<_>>(),
+                )),
+                Arc::new(Int32Array::from_iter_values(
+                    (0..chunks.len()).map(|index| i32::try_from(index).unwrap_or(i32::MAX)),
+                )),
+                Arc::new(Int32Array::from_iter_values(chunks.iter().map(|chunk| {
+                    i32::try_from(chunk.char_start).unwrap_or(i32::MAX)
+                }))),
+                Arc::new(Int32Array::from_iter_values(
+                    chunks
+                        .iter()
+                        .map(|chunk| i32::try_from(chunk.char_end).unwrap_or(i32::MAX)),
+                )),
+                Arc::new(StringArray::from(
+                    chunks
+                        .iter()
+                        .map(|chunk| chunk.content.as_str())
+                        .collect::<Vec<_>>(),
+                )),
+                Arc::new(embedding_array),
+                Arc::new(Int32Array::from_iter_values(
+                    chunks.iter().map(|chunk| chunk.estimated_tokens),
+                )),
+                Arc::new(StringArray::from(vec!["o200k_base"; chunks.len()])),
+                Arc::new(StringArray::from(vec!["1"; chunks.len()])),
+                Arc::new(StringArray::from(vec![
+                    Some(job.filename.as_str());
+                    chunks.len()
+                ])),
+                Arc::new(StringArray::from(section_paths)),
+                nullable("page_start"),
+                nullable("page_end"),
+                Arc::new(StringArray::from(
+                    hashes.iter().map(String::as_str).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(vec!["1"; chunks.len()])),
+                Arc::new(StringArray::from(vec![EMBEDDING_MODEL; chunks.len()])),
+                Arc::new(Int64Array::from(vec![Some(ingested_at); chunks.len()])),
+                Arc::new(StringArray::from(vec![
+                    Some(content_type(&job.filename));
+                    chunks.len()
+                ])),
+                nullable("community_ids"),
+                new_null_array(
+                    node_schema
+                        .field_with_name("summary")
+                        .expect("validated nodes schema must contain summary field")
+                        .data_type(),
+                    chunks.len(),
+                ),
+                nullable("summary_vector"),
+                nullable("unsummarized_refs"),
+            ],
         )
-        .await;
-    }
-    database
-        .staged_documents_table()
-        .await?
-        .delete(&predicate)
-        .await
         .map_err(|error| error.to_string())?;
-    Ok(())
+        mutations
+            .add(ReplacementMutation::NodesAdd, &nodes, batch)
+            .await?;
+
+        let resolver = ExactMatchResolver;
+        let mut known_sections = Vec::<String>::new();
+        let mut section_targets = HashMap::<String, String>::new();
+        let mut edge_sources = Vec::<String>::new();
+        let mut edge_targets = Vec::<String>::new();
+        let mut relation_types = Vec::<String>::new();
+        for (index, chunk) in chunks.iter().enumerate() {
+            let mut target = index
+                .checked_sub(1)
+                .map(|previous| chunk_ids[previous].clone());
+            let mut relation = "next_chunk";
+            if let Some(section) = chunk.section_path.as_deref() {
+                if let Some(resolved) = resolver.resolve(section, &known_sections).await? {
+                    target = section_targets.get(&resolved).cloned();
+                    relation = "same_section";
+                } else {
+                    known_sections.push(section.to_owned());
+                    section_targets.insert(section.to_owned(), chunk_ids[index].clone());
+                }
+            }
+            if let Some(target) = target {
+                edge_sources.push(chunk_ids[index].clone());
+                edge_targets.push(target);
+                relation_types.push(relation.to_owned());
+            }
+        }
+        if !edge_sources.is_empty() {
+            let edge_ids: Vec<String> = edge_sources
+                .iter()
+                .enumerate()
+                .map(|(index, _)| format!("{}:edge:{index}", job.document_id))
+                .collect();
+            let edge_schema = edges.schema().await.map_err(|error| error.to_string())?;
+            let edge_nullable = |name: &str| {
+                new_null_array(
+                    edge_schema
+                        .field_with_name(name)
+                        .expect("validated edges schema must contain field")
+                        .data_type(),
+                    edge_sources.len(),
+                )
+            };
+            let edge_batch = RecordBatch::try_new(
+                edge_schema.clone(),
+                vec![
+                    Arc::new(StringArray::from(
+                        edge_ids.iter().map(String::as_str).collect::<Vec<_>>(),
+                    )),
+                    Arc::new(StringArray::from(
+                        edge_sources.iter().map(String::as_str).collect::<Vec<_>>(),
+                    )),
+                    Arc::new(StringArray::from(
+                        edge_targets.iter().map(String::as_str).collect::<Vec<_>>(),
+                    )),
+                    Arc::new(StringArray::from(
+                        relation_types
+                            .iter()
+                            .map(String::as_str)
+                            .collect::<Vec<_>>(),
+                    )),
+                    Arc::new(Float32Array::from(vec![1.0; edge_sources.len()])),
+                    Arc::new(StringArray::from(vec![
+                        job.document_id.as_str();
+                        edge_sources.len()
+                    ])),
+                    edge_nullable("summary"),
+                    edge_nullable("summary_vector"),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+            mutations
+                .add(ReplacementMutation::EdgesAdd, &edges, edge_batch)
+                .await?;
+        }
+        mutations
+            .delete(ReplacementMutation::StagingDelete, &staged, &predicate)
+            .await?;
+        Ok(())
+    }
+    .await;
+
+    match operation {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            rollback_replacement(
+                &documents,
+                documents_version,
+                &nodes,
+                nodes_version,
+                &edges,
+                edges_version,
+                error,
+            )
+            .await
+        }
+    }
 }
 
 async fn process_job(
@@ -847,6 +872,46 @@ mod tests {
         }
     }
 
+    struct FaultingReplacementMutationBoundary {
+        fail_at: ReplacementMutation,
+    }
+
+    impl FaultingReplacementMutationBoundary {
+        fn new(fail_at: ReplacementMutation) -> Self {
+            Self { fail_at }
+        }
+    }
+
+    impl ReplacementMutationBoundary for FaultingReplacementMutationBoundary {
+        fn delete<'a>(
+            &self,
+            boundary: ReplacementMutation,
+            table: &'a Table,
+            predicate: &'a str,
+        ) -> BoxFuture<'a, Result<(), String>> {
+            if boundary == self.fail_at {
+                return Box::pin(async move {
+                    Err(format!("injected replacement failure at {boundary:?}"))
+                });
+            }
+            LanceDbReplacementMutationBoundary.delete(boundary, table, predicate)
+        }
+
+        fn add<'a>(
+            &self,
+            boundary: ReplacementMutation,
+            table: &'a Table,
+            batch: RecordBatch,
+        ) -> BoxFuture<'a, Result<(), String>> {
+            if boundary == self.fail_at {
+                return Box::pin(async move {
+                    Err(format!("injected replacement failure at {boundary:?}"))
+                });
+            }
+            LanceDbReplacementMutationBoundary.add(boundary, table, batch)
+        }
+    }
+
     fn database_path(test_name: &str) -> String {
         std::env::temp_dir()
             .join(format!("lancet-worker-{test_name}-{}", Uuid::new_v4()))
@@ -1012,12 +1077,16 @@ mod tests {
         );
 
         std::thread::sleep(std::time::Duration::from_millis(2));
-        replace_document(&database, &replacement_job, &replacement_chunks, &replacement_embeddings)
-            .await
-            .unwrap();
+        replace_document(
+            &database,
+            &replacement_job,
+            &replacement_chunks,
+            &replacement_embeddings,
+        )
+        .await
+        .unwrap();
         let replacement_state = canonical_state(&database, &document_id).await;
         assert_ne!(replacement_state.raw_hash, old_state.raw_hash);
-        assert_ne!(replacement_state.node_ids, old_state.node_ids);
         assert_ne!(replacement_state.generations, old_state.generations);
         assert_eq!(replacement_state.node_ids.len(), replacement_chunks.len());
         assert_eq!(replacement_state.generations.len(), 1);
