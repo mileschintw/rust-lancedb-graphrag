@@ -1,210 +1,267 @@
 ---
 phase: 02-ingestion-chunking-vector-storage
-verified: 2026-07-25T23:19:56Z
+verified: 2026-07-26T08:10:42Z
 status: gaps_found
-score: 8/14 must-haves verified
-behavior_unverified: 1
+score: 11/18 must-haves verified
+behavior_unverified: 0
 overrides_applied: 0
+mvp_user_story_valid: false
+unverified_prohibitions: 1
 re_verification:
   previous_status: gaps_found
-  previous_score: 9/10
+  previous_score: 8/14
   gaps_closed:
-    - "DATA-08 edge summary and summary_vector schema fields are now nullable."
-    - "The gateway re-reads a winning terminal row after a conditional-update race."
-  gaps_remaining:
-    - "Actual LanceDB write/delete failures do not enter replacement rollback."
+    - "The production OpenRouter client now uses the locked 10-second timeout and four-attempt 1/2/4-second retry contract."
+    - "Every named canonical replacement mutation is routed through rollback, and deterministic failure/retry tests pass."
+    - "Live-evidence decisions use explicit isolated Python validation rather than optimizable assert statements."
+    - "The inspector now derives provider, model, generation, uniqueness, continuity, and edge-integrity facts from durable rows."
+    - "The exact challenge/evidence paths are ignored and success cleanup removes both artifacts."
+    - "Persisted node summary placeholders are Arrow nulls."
+    - "Failed replacement followed by retry is now exercised by a passing named behavioral test."
+  gaps_remaining: []
   regressions: []
 gaps:
-  - truth: "OpenRouter embedding calls use the locked 10-second timeout per call, then three retries after the initial request for four maximum attempts total with 1/2/4-second backoff (D-19)."
+  - truth: "A lost or canceled final gRPC acknowledgement cannot be treated as definitive non-admission after the Rust engine has accepted the job."
     status: failed
-    reason: "The production reqwest client is configured with a 30-second timeout, contrary to locked decision D-19."
+    reason: "The engine persists staging, records queued state, and enqueues before replying, while the gateway maps every CloseAndRecv error to failed without resolving ambiguous admission."
     artifacts:
-      - path: "engine/src/client/mod.rs"
-        issue: "OpenRouterClient::new uses Duration::from_secs(30)."
-    missing:
-      - "Use the locked 10-second production request timeout and assert it through a behaviorally meaningful timeout test."
-  - truth: "A failed same-ID replacement at any canonical write boundary restores the prior completed LanceDB generation."
-    status: failed
-    reason: "Rollback is invoked only for synthetic post-write fault callbacks. Real delete/add/schema/staging errors return through ? after canonical mutation and bypass rollback."
-    artifacts:
+      - path: "gateway/main.go"
+        issue: "grpcEngine.Ingest discards the response and returns the raw CloseAndRecv error; createDocument immediately compensates to failed."
       - path: "engine/src/main.rs"
-        issue: "Lines 424-453, 568-572, and 656-660 return real LanceDB errors directly; rollback calls exist only after ReplacementFaultInjector callbacks."
-      - path: "engine/src/main.rs"
-        issue: "No test implements ReplacementFaultInjector or injects a failing LanceDB delete/add; the documented `cargo test ... replacement` matched no tests."
+        issue: "The job is admitted at lines 290-298 before the success response is returned at lines 299-303."
     missing:
-      - "Route every mutation error after version capture through rollback_replacement."
-      - "Add deterministic failing-table tests for every canonical delete/add boundary and prove prior rows remain queryable."
-  - truth: "The live evidence gate rejects malformed, replayed, stale, challenge-mismatched, or store-mismatched evidence in every supported environment."
+      - "Distinguish definitive rejection from ambiguous acknowledgement loss."
+      - "Resolve ambiguous admission against authoritative engine state before changing PostgreSQL to failed."
+      - "Add a lost-acknowledgement convergence test."
+  - truth: "A failed compensation update cannot leave a non-admitted document indefinitely queued in PostgreSQL."
     status: failed
-    reason: "Security decisions are Python assert statements and disappear under optimization; `python -O -c \"assert False\"` exited 0 in this verification."
+    reason: "Compensation is one best-effort UpdateStatus call; failure is only logged, with no durable intent, retry, reconciler, or queued/engine-NotFound repair."
     artifacts:
-      - path: "verify-live-evidence.sh"
-        issue: "Lines 70-93 and 171-177 use assert for schema, provenance, freshness, model, counts, and live-store comparisons."
+      - path: "gateway/main.go"
+        issue: "compensateFailedIngest performs one bounded UpdateStatus at lines 170-178; getDocument returns 502 on engine status errors at lines 251-255."
+    missing:
+      - "Provide durable or retrying reconciliation until a terminal PostgreSQL state is reached."
+      - "Handle authoritative engine NotFound for stranded queued rows."
+      - "Test eventual convergence after UpdateStatus failure."
+  - truth: "The live gate rejects evidence bound to an arbitrarily old challenge."
+    status: failed
+    reason: "validate_challenge rejects future timestamps but has no maximum challenge age; a sanitized one-year-old challenge was accepted by the refresh probe."
+    artifacts:
+      - path: "scripts/phase02_live_evidence.py"
+        issue: "Lines 193-196 contain only a future-skew check; freshness is applied to evidence.generated_at, not challenge.issued_at."
+      - path: "scripts/test_phase02_live_evidence.py"
+        issue: "The optimized suite tests stale evidence but not a stale challenge paired with otherwise fresh evidence."
+    missing:
+      - "Enforce a bounded challenge age and complete run window."
+      - "Add an optimized isolated stale-challenge regression."
+  - truth: "The live runner never deletes a caller-owned input document."
+    status: failed
+    reason: "Every positional sample path is assigned to sample_file and the unconditional EXIT trap removes any non-empty sample_file, including caller-owned files."
+    artifacts:
       - path: "verify-ingestion.sh"
-        issue: "Lines 72-77 and 162-170 use assert for challenge and store validation."
+        issue: "Lines 18-24 delete sample_file unconditionally; lines 37-43 accept a caller path without ownership tracking."
     missing:
-      - "Replace asserts with explicit fail-closed validation and invoke Python in isolated mode."
-      - "Add negative self-tests under PYTHONOPTIMIZE=1."
-  - truth: "The LanceDB inspector derives provider, persisted model, duplicate-generation, and stale-generation verdicts from stored rows."
+      - "Track whether the sample was created by the script and delete only script-owned temporary input."
+      - "Add a shell-level early-failure regression proving caller input remains unchanged."
+  - truth: "The LanceDB inspector's explicit --lancedb-path mode works without unrelated repository configuration."
     status: failed
-    reason: "The inspector checks only schema type/count/width, then emits constant provider/model/stale values; the evidence writer separately hardcodes duplicate_generation false."
+    reason: "path.unwrap_or(settings_path()?) eagerly evaluates settings_path even when a path was supplied; the built binary reproduced the config lookup failure from a config-less directory."
     artifacts:
       - path: "engine/src/bin/inspect_lancedb.rs"
-        issue: "Lines 99-124 create an unused empty model set and serialize fixed provider/model/stale_generation values."
-      - path: "verify-ingestion.sh"
-        issue: "Line 190 serializes duplicate_generation as False without a derived inspection result."
+        issue: "Line 347 eagerly loads settings while evaluating unwrap_or."
     missing:
-      - "Read sanitized aggregates for persisted model values, generation timestamps, chunk/edge uniqueness, and chunk-index continuity."
-      - "Fail closed when provider/model/duplicate/stale facts cannot be derived."
-  - truth: "Challenge/evidence runtime artifacts remain private and cannot be accidentally staged after validation."
+      - "Select the explicit path with a lazy match or unwrap_or_else-equivalent that does not evaluate settings_path."
+      - "Add a process-level config-less working-directory test."
+  - truth: "The durable inspector rejects embeddings containing null or non-finite child values."
     status: failed
-    reason: "Neither exact runtime JSON path is Git-ignored, and successful validation removes only the challenge while leaving evidence behind."
+    reason: "The inspector checks only FixedSizeList parent null_count and width; it never validates the Float32 child array's null count or finiteness."
     artifacts:
-      - path: ".gitignore"
-        issue: "No rule ignores either Phase 02 runtime JSON artifact; git check-ignore failed for both paths."
-      - path: "verify-live-evidence.sh"
-        issue: "Line 179 removes only the challenge after validation."
+      - path: "engine/src/bin/inspect_lancedb.rs"
+        issue: "Lines 122-138 validate parent slots and list width only."
+      - path: "engine/src/inspect_lancedb_tests.rs"
+        issue: "No null-child, NaN, or infinity fixture is present."
     missing:
-      - "Add exact ignore rules for both runtime files."
-      - "Remove both artifacts after successful validation and test ignore/cleanup behavior."
-  - truth: "Nullable node summary placeholders remain Arrow null during persistence."
+      - "Downcast and validate every Float32 child value."
+      - "Add real-LanceDB null-child and non-finite fail-closed fixtures."
+  - truth: "The privacy must-NOT has machine-wired test-tier enforcement."
     status: failed
-    reason: "The schema is nullable, but persistence writes an empty non-null string for every node summary."
+    reason: "Plans 02-09 and 02-10 declare a test-tier prohibition but provide no check_kind, check_target, check_rule, or check_violation_fixture projection, so verification must fail closed as unverified-prohibition."
     artifacts:
-      - path: "engine/src/main.rs"
-        issue: "Line 562 constructs `StringArray::from(vec![Some(\"\"); chunks.len()])` for node summary."
+      - path: ".planning/phases/02-ingestion-chunking-vector-storage/02-09-PLAN.md"
+        issue: "The prohibition is flagged_unverified and has no projected enforcement descriptor."
+      - path: ".planning/phases/02-ingestion-chunking-vector-storage/02-10-PLAN.md"
+        issue: "The same unresolved test-tier prohibition is carried forward without a projected enforcement descriptor."
     missing:
-      - "Create the node summary column with schema-derived new_null_array."
-      - "Add a persisted-row null-count assertion."
-behavior_unverified_items:
-  - truth: "Retrying after each injected same-ID replacement failure converges to exactly one canonical generation with no stale nodes or edges."
-    test: "Inject a failure at each actual document/node/edge delete and add boundary, verify the old generation, retry, then inspect canonical/staged counts and identifiers."
-    expected: "The prior generation survives each failure and the retry leaves one current generation, no staging row, no duplicate IDs, and no stale rows."
-    why_human: "No named behavioral test exercises failed replacement followed by retry; the current inspector also hardcodes its stale/duplicate verdicts."
+      - "Wire a deterministic test-tier prohibition descriptor and known-bad fixture through PLAN frontmatter."
+      - "Retain explicit human review for credential/log/content surfaces that deterministic fixtures cannot prove."
 ---
 
 # Phase 2: Ingestion, Chunking & Vector Storage Verification Report
 
 **Phase Goal:** Ingest text/markdown, chunk, and store in LanceDB  
-**Verified:** 2026-07-25T23:19:56Z  
+**Verified:** 2026-07-26T08:10:42Z
 **Status:** gaps_found  
-**Re-verification:** Yes — previous DATA-08/race gaps were rechecked and newer integrity/live-gate must-haves were verified from code.
+**Re-verification:** Yes — refreshed after Plans 02-07 through 02-10 and the 2026-07-26 deep review.
 
 ## MVP Format Guard
 
-ROADMAP marks this phase `mode: mvp`, but `user-story.validate` returns `false` for `Ingest text/markdown, chunk, and store in LanceDB`. Canonical MVP user-flow coverage cannot be generated until the goal is reformatted with `$gsd-mvp-phase 2`. The technical goal-backward verification below was completed because the verification assignment explicitly required it.
+ROADMAP marks Phase 02 as `mode: mvp`, but the canonical validator rejects the goal because it is not in the required `As a …, I want to …, so that ….` form. A valid MVP User Flow Coverage table cannot be derived. This is a workflow-contract discrepancy requiring `/gsd mvp-phase 2`; it is not silently treated as a pass. The technical goal-backward refresh below was completed to preserve the requested current blocker evidence.
 
 ## Goal Achievement
 
 ### Observable Truths
 
 | # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 1 | Users can upload a lightweight text document through the Go HTTP API | ✓ VERIFIED | `gateway/main.go:198-235` enforces multipart/size limits, inserts metadata, streams to the engine, and returns 202 with a polling location; Go tests pass. |
-| 2 | Rust receives the upload through gRPC and applies structure-aware/fixed-size chunking with 500/50 defaults and o200k estimates | ✓ VERIFIED | `engine/src/main.rs:238-260`, `engine/src/main.rs:101-147`, chunker implementation/tests; Rust suite passes. |
-| 3 | Production indexing calls the locked OpenRouter model, bounds concurrency at five, and persists 2048-wide embeddings | ✓ VERIFIED | `engine/src/client/mod.rs` and `process_job`; mock client tests pass. The fresh credentialed 02-06 run is limited evidence that one real provider-backed run completed, not that the evidence gate is secure. |
-| 4 | Chunks, metadata, raw document, and edges flow into embedded LanceDB | ✓ VERIFIED | `process_job` calls `replace_document`; real-table worker replacement test passes and schemas are wired through `DatabaseManager`. |
-| 5 | Community/node/edge placeholder schemas satisfy DATA-06/07/08 | ✓ VERIFIED | `engine/src/db/mod.rs:125-181`; edge nullability and drift tests pass. |
-| 6 | Async `EntityResolver` and exact-match implementation are callable during indexing | ✓ VERIFIED | Trait/implementation in `engine/src/db/mod.rs`; resolver test and `replace_document` usage at lines 586-604. |
-| 7 | A bounded single-consumer Tokio worker processes jobs and gateway polling reconciles terminal PostgreSQL status | ✓ VERIFIED | Worker at `engine/src/main.rs:713-778`, polling at `gateway/main.go:238-271`; Rust/Go tests pass and the fresh live run proves one successful reconciliation. |
-| 8 | Gateway compensates ordinary enqueue failures and returns a winning terminal race row | ✓ VERIFIED | `gateway/main.go:169-175,225-231,256-264`; focused handler and PostgreSQL race tests pass. Cancellation reliability remains a warning below. |
-| 9 | OpenRouter uses the locked 10-second timeout per call, then three retries after the initial request for four maximum attempts total with 1/2/4-second backoff | ✗ FAILED | Production client uses `Duration::from_secs(30)` at `engine/src/client/mod.rs:43`, contrary to D-19's canonical contract. Current Plans 02-08 through 02-10 supersede any executed historical wording that implies three attempts total. |
-| 10 | Every actual canonical write failure restores the prior generation | ✗ FAILED | Real LanceDB errors bypass rollback; only post-write synthetic callback errors invoke it. |
-| 11 | Failure followed by retry provably converges without stale/duplicate generations | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | No failed-replacement/retry test exists; the inspector cannot provide the claimed verdict. |
-| 12 | Persisted nullable summary placeholders are Arrow nulls | ✗ FAILED | Edge placeholders are null, but node summary is persisted as `Some(\"\")`. |
-| 13 | Live-gate validation and artifact privacy fail closed | ✗ FAILED | Optimizable Python asserts, missing ignore rules, and retained evidence violate the gate contract. |
-| 14 | Inspector/evidence verdicts are derived from durable state | ✗ FAILED | Provider/model/stale/duplicate verdicts are constants rather than queried facts. |
+|---|---|---|---|
+| 1 | Users can upload Markdown, text, JSON, and lightweight text-like documents through the Go HTTP API. | ✓ VERIFIED | `gateway/main.go:181-238` registers `/documents`, validates multipart input/size, inserts PostgreSQL metadata, streams to the engine, and returns 202 on acknowledged admission; Go tests pass. |
+| 2 | The Rust gRPC service receives document bytes and dispatches ingestion work. | ✓ VERIFIED | `engine/src/main.rs:253-303` validates one UUIDv4 stream, reserves bounded queue capacity, persists staging, records queued status, and sends the job; Rust tests pass. |
+| 3 | Structure-aware and fixed-size chunking use the locked 500/50 defaults and o200k token estimates. | ✓ VERIFIED | `engine/src/chunker/mod.rs` is called from `process_job`; chunker/default/tokenizer tests passed in the 25-test engine target. |
+| 4 | OpenRouter uses the locked model, 2048 dimensions, 10-second timeout, four attempts with 1/2/4-second backoff, and concurrency cap five. | ✓ VERIFIED | `engine/src/client/mod.rs` is production-wired; timeout/retry/concurrency behavioral tests passed, including `production_client_times_out_at_locked_ten_seconds`. |
+| 5 | Raw documents, chunks, metadata, embeddings, and graph edges flow into embedded LanceDB. | ✓ VERIFIED | `persist_raw` and `replace_document` use real LanceDB tables; `worker_indexes_jobs_and_records_real_chunk_count` and replacement tests passed. |
+| 6 | Nodes have `community_ids` and the empty communities table initializes idempotently. | ✓ VERIFIED | `engine/src/db/mod.rs` defines and validates both schemas; initialization/drift tests passed. |
+| 7 | Node and edge summary placeholders use nullable schema fields, including Arrow-null persisted node summaries. | ✓ VERIFIED | Schema tests and `persisted_node_summary_is_arrow_null` passed; edge placeholder arrays are schema-derived nulls. |
+| 8 | Async `EntityResolver` and `ExactMatchResolver` are available and used during indexing. | ✓ VERIFIED | Trait/implementation in `engine/src/db/mod.rs`; `replace_document` calls the resolver at `engine/src/main.rs:610-628`; exact-match test passed. |
+| 9 | A bounded single-consumer Tokio worker processes accepted jobs and records terminal engine state. | ✓ VERIFIED | Worker loop at `engine/src/main.rs:748-799`; bounded queue/shutdown/indexing tests passed. |
+| 10 | Every named replacement mutation failure rolls back and retry converges to one canonical generation. | ✓ VERIFIED | Both exact rollback/retry tests passed in the current Rust run, covering documents/nodes/edges delete/add and staging cleanup. |
+| 11 | Gateway admission and failed-ingest compensation always converge PostgreSQL and engine state. | ✗ FAILED | CR-01 and CR-02 confirmed: ambiguous acknowledgement loss is treated as rejection, and failed compensation has no eventual-repair path. |
+| 12 | Losing a terminal conditional-update race returns the winning terminal PostgreSQL row. | ✓ VERIFIED | `gateway/main.go:257-270`; focused race tests remain present and the Go suite passed. |
+| 13 | The challenge-bound live gate is replay-resistant and rejects stale challenges. | ✗ FAILED | Direct sanitized probe accepted a challenge issued one year earlier; only evidence generation time has an age bound. |
+| 14 | Live tooling preserves caller-owned inputs and safely manages private runtime artifacts. | ✗ FAILED | Exact challenge/evidence ignores and success cleanup are present, but `verify-ingestion.sh:18-24` deletes caller-supplied samples. |
+| 15 | The durable inspector derives integrity facts and rejects corrupt embedding values. | ✗ FAILED | Durable model/generation/continuity facts are derived, but child null/NaN/infinity values are not inspected. |
+| 16 | `inspect_lancedb --lancedb-path` operates from a config-less diagnostic directory. | ✗ FAILED | Built-binary probe exited 1 with `configuration file "config/config" not found` despite an explicit path. |
+| 17 | A fresh post-change real OpenRouter run was challenge-bound and reconciled against current PostgreSQL/LanceDB state. | ? UNCERTAIN | The transient challenge/evidence were correctly consumed and are absent. `02-10-SUMMARY.md` records sanitized counts and `GATE_EXIT=0`, but SUMMARY claims are not independent evidence and this refresh intentionally did not repeat the credentialed run. |
+| 18 | Credentials, authorization headers, raw input, stored text, and stored chunk content are mechanically prohibited from evidence/logs/commits. | ✗ FAILED | Deterministic structured-field tests pass, but the declared test-tier prohibition has no wired enforcement descriptor and remains `flagged_unverified`. |
 
-**Score:** 8/14 truths verified (1 present, behavior-unverified)
+**Score:** 11/18 truths verified (0 present-but-behavior-unverified; 1 externally uncertain)
+
+## User Flow Coverage
+
+Unavailable: the MVP goal fails the canonical user-story format guard. The technical flow that could be verified is HTTP upload → PostgreSQL queued metadata → gRPC admission → Tokio worker → chunking/OpenRouter → LanceDB → status polling. That flow works on the tested happy path but does not satisfy the reliability and gate-integrity truths above.
 
 ## Required Artifacts
 
 | Artifact | Expected | Status | Details |
-|----------|----------|--------|---------|
-| `gateway/main.go` | Upload, compensation, polling, PostgreSQL reconciliation | ✓ SUBSTANTIVE + WIRED | Routes and store/engine calls are active; cancellation compensation is incomplete. |
-| `engine/src/chunker/mod.rs` | Markdown/fixed-size chunking and token estimates | ✓ SUBSTANTIVE + WIRED | Called from worker and covered by passing behavioral tests. |
-| `engine/src/client/mod.rs` | OpenRouter client | ⚠️ PARTIAL | Real client is wired, but production timeout violates D-19. |
-| `engine/src/db/mod.rs` | Drift-validated LanceDB schemas and resolver | ✓ SUBSTANTIVE + WIRED | Five tables including internal staging initialize; canonical schemas meet requirements. |
-| `engine/src/main.rs` | Ingestion service, worker, persistence/replacement | ✗ PARTIAL | Main path works, but actual mutation failures bypass rollback and node summary placeholder is non-null. |
-| `engine/src/bin/inspect_lancedb.rs` | Direct derived durable-state verdict | ✗ HOLLOW | Counts/width are queried; model/provider/stale/duplicate facts are fabricated or absent. |
-| `verify-ingestion.sh` | Challenge-bound live runner and sanitized evidence | ✗ UNSAFE | Assertions can be optimized away; duplicate verdict is hardcoded. |
-| `verify-live-evidence.sh` | Strict final validator and cleanup | ✗ UNSAFE | Assertions can be optimized away; evidence is retained and runtime paths are not ignored. |
+|---|---|---|---|
+| `gateway/main.go` | Upload, gRPC admission, compensation, polling, PostgreSQL convergence | ⚠️ PARTIAL + WIRED | Happy path and terminal race work; ambiguous admission and failed compensation do not converge safely. |
+| `engine/src/chunker/mod.rs` | Structure-aware/fixed chunking and token estimates | ✓ VERIFIED + WIRED | Production-called; behavioral tests pass. |
+| `engine/src/client/mod.rs` | Locked OpenRouter client | ✓ VERIFIED + WIRED | Production timeout/retry/concurrency contract passes behavioral tests. |
+| `engine/src/db/mod.rs` | Drift-validated LanceDB schemas and resolver | ✓ VERIFIED + WIRED | Canonical schemas and resolver tests pass. |
+| `engine/src/main.rs` | Ingestion service, worker, replacement persistence | ✓ VERIFIED + WIRED | Rollback/retry/null-persistence tests pass; schema lookup `expect` calls remain a warning. |
+| `engine/src/bin/inspect_lancedb.rs` | Config-independent, fail-closed durable inspector | ✗ PARTIAL + WIRED | Durable row facts flow, but explicit path is broken and embedding child values are unchecked. |
+| `scripts/phase02_live_evidence.py` | Replay-resistant explicit validation | ✗ PARTIAL + WIRED | Isolated explicit checks pass tests, but stale challenges are accepted. |
+| `scripts/test_phase02_live_evidence.py` | Optimized negative validation suite | ⚠️ INCOMPLETE | Five tests pass; stale-challenge coverage is absent. |
+| `verify-ingestion.sh` | Private live runner and sanitized evidence writer | ✗ UNSAFE + WIRED | Calls helper/inspector correctly but deletes caller-owned input. |
+| `verify-live-evidence.sh` | Current-store final comparison and success cleanup | ✓ SUBSTANTIVE + WIRED | Code re-queries PostgreSQL/inspector before cleanup; no credentialed run was repeated. |
+| `.gitignore` | Exact private runtime ignores | ⚠️ PARTIAL | Exact runtime paths are ignored; generic `bin/` also ignores future `engine/src/bin` source. |
+| Phase-local challenge/evidence JSON | Transient live-run artifacts | ℹ️ INTENTIONALLY ABSENT | Both paths are absent, ignored, untracked, and unstaged after claimed successful cleanup; their absence prevents independent replay of the prior gate evidence. |
+
+The GSD artifact helper reported several stale-pattern false negatives because older plans name superseded symbols and comma-joined patterns; manual code tracing and passing behavioral tests above supersede those pattern-only results. Missing transient runtime JSON files are expected after success-only cleanup, not implementation stubs.
 
 ## Key Link and Data-Flow Verification
 
-| From | To | Status | Details |
-|------|----|--------|---------|
-| Go upload handler | Rust `IngestDocument` stream | ✓ WIRED | 64KB streaming and response mapping are implemented. |
-| Rust worker | Chunker → OpenRouter → LanceDB | ✓ WIRED | `process_job` carries real chunk text to embeddings and batches to persistence. |
-| LanceDB mutation error | `rollback_replacement` | ✗ NOT WIRED | Only synthetic `faults.after(...)` errors reach rollback. |
-| Gateway ingest failure | PostgreSQL failed compensation | ⚠️ PARTIAL | Works with a live request context; a canceled request reuses the canceled context. |
-| Runtime evidence | Direct inspector facts | ✗ HOLLOW | Counts/width flow; provider/model/stale/duplicate conclusions do not. |
-| Accepted staging row | Startup recovery/re-enqueue | ✗ NOT WIRED (warning) | Startup opens staging but never enumerates it or reconstructs jobs. |
+| From | To | Via | Status | Details |
+|---|---|---|---|---|
+| Go HTTP upload | PostgreSQL + Rust gRPC | Insert then client-stream | ⚠️ PARTIAL | Data flows, but final-ack loss is not distinguished from rejection. |
+| Rust gRPC admission | Bounded worker | Reserved Tokio permit/job send | ✓ WIRED | Staging/status are written before job send and response. |
+| Worker | Chunker → OpenRouter → LanceDB | `process_job` / `replace_document` | ✓ FLOWING | Real chunk text feeds embeddings and canonical tables; tests pass. |
+| LanceDB mutation errors | `rollback_replacement` | Single result funnel after version capture | ✓ WIRED | Deterministic all-boundary failure/retry test passes. |
+| Failed engine call | PostgreSQL compensation | Detached bounded `UpdateStatus` | ⚠️ PARTIAL | Request cancellation is fixed; update failure has no durable retry/reconciler. |
+| Engine status | PostgreSQL terminal row | Gateway polling/update/race reread | ⚠️ PARTIAL | Terminal race is handled; response identity and engine NotFound are not reconciled. |
+| Live runner | Python helper + inspector | Isolated subcommands and JSON | ⚠️ PARTIAL | Durable facts flow, but challenge freshness and caller-file ownership are defective. |
+| Final validator | PostgreSQL + inspector | Direct current-state comparison before cleanup | ✓ WIRED IN CODE | No credentialed invocation was repeated in this refresh. |
+| Inspector | LanceDB nodes/edges | Filtered Arrow batch reads | ⚠️ PARTIAL | Identity/continuity facts flow; embedding child validity and config-less explicit path fail. |
 
 ## Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
-|----------|---------|--------|--------|
-| Rust implementation/tests | `cargo test --manifest-path engine/Cargo.toml` | 21 engine + 4 inspector-linked tests passed | ✓ PASS |
-| Go gateway/tests | `go test ./...` from `gateway` | Packages passed; telemetry emitted a non-fatal access warning | ✓ PASS |
-| Script syntax/self-test | Git Bash `-n` for both scripts and `verify-live-evidence.sh --self-test` | Exit 0 outside restricted shell | ✓ PASS |
-| Python optimization bypass | `python -O -c "assert False; print('assertion-elided')"` | Printed `assertion-elided`, exit 0 | ✗ FAIL |
-| Runtime artifact ignore | `git check-ignore` on both exact JSON paths | Neither path ignored | ✗ FAIL |
-| Replacement failure coverage | Test enumeration and fault-injector usage search | No fault implementation/test; 02-05's replacement filter matched no tests | ✗ FAIL |
+|---|---|---|---|
+| Rust format | `cargo fmt --manifest-path engine/Cargo.toml -- --check` | Exit 0 | ✓ PASS |
+| Rust implementation/tests | `cargo test --manifest-path engine/Cargo.toml` | 25 engine + 13 inspector tests passed | ✓ PASS |
+| Go gateway/tests | `go test -count=1 ./...` from `gateway` | Exit 0; gateway, db passed | ✓ PASS |
+| Go static analysis | `go vet ./...` from `gateway` | Exit 0 | ✓ PASS |
+| Optimized isolated evidence tests | `PYTHONOPTIMIZE=1 python -O -I scripts/test_phase02_live_evidence.py` | 5 tests passed | ✓ PASS |
+| Stale challenge | Isolated import and `validate_challenge` with 2025-07-26 issue time at 2026-07-26 now | Printed `STALE_CHALLENGE_ACCEPTED`, exit 0 | ✗ FAIL |
+| Explicit inspector path | Built `inspect_lancedb.exe` from `%TEMP%` with `--lancedb-path` | Exit 1: config file not found; explicit store not created | ✗ FAIL |
+| All-target Rust lint | `cargo clippy --manifest-path engine/Cargo.toml --all-targets -- -D warnings` | Exit 101: two dead-code errors plus `manual_repeat_n` | ⚠️ FAIL |
+| Runtime ignores | `git check-ignore -v --no-index` on exact JSON paths | Both match exact lines 61-62 | ✓ PASS |
+| Future Rust binary ignore | `git check-ignore -v --no-index engine/src/bin/future_inspector.rs` | Matched generic `.gitignore:76 bin/` | ⚠️ FAIL |
+| Combined Go/Python wrapper | One combined PowerShell command | Bounded timeout after 180s; no active Go/Python process remained; checks passed separately | ? TIMEOUT, SUPERSEDED |
+| Test-list/search bundle | Go test enumeration plus searches | Bounded timeout after 30s; static searches rerun separately | ? TIMEOUT, PARTIALLY SUPERSEDED |
+| Caller-file deletion reproduction | Git Bash runner with temp input | Sandbox launcher failed before script execution; escalation was rejected because it could trigger live ingestion | ? NOT RERUN |
 
-No credentialed provider request was repeated. Short-lived challenge/evidence contents, API keys, and uploaded content were not inspected or recreated.
+No OpenRouter credential was read, printed, or used. No new provider request, service startup, database mutation, or runtime evidence creation occurred.
+
+## Probe Execution
+
+No conventional or phase-declared `probe-*.sh` scripts were found. The committed verification surfaces are the Rust/Go/Python tests and the credential-dependent live runner/validator; the latter was intentionally not executed.
 
 ## Requirements Coverage
 
-| Requirement | Source Plans | Status | Evidence / qualification |
-|-------------|--------------|--------|--------------------------|
-| DATA-01 | 02-01, 02-04, 02-05, 02-06 | ✓ SATISFIED | Upload and status reconciliation work; canceled-request compensation remains a reliability warning. |
-| DATA-02 | 02-01, 02-02, 02-05, 02-06 | ✓ SATISFIED | Both chunkers and locked defaults are implemented/tested. |
-| DATA-03 | 02-03, 02-05, 02-06 | ✓ SATISFIED | Chunks/metadata persist in LanceDB; safe replacement is an added must-have and currently fails. |
-| DATA-06 | 02-03, 02-05, 02-06 | ✓ SATISFIED | `community_ids` and communities table exist and initialize idempotently. |
-| DATA-07 | 02-03, 02-05, 02-06 | ✓ SATISFIED | Nullable schema fields and refs exist; the stricter persisted-null plan truth fails for node summary. |
-| DATA-08 | 02-03, 02-05, 02-06 | ✓ SATISFIED | Separate tables and nullable edge summary fields are present. |
-| DATA-09 | 02-03 | ✓ SATISFIED | Async trait and exact-match default are implemented and used. |
-| RAG-06 | 02-02, 02-04, 02-05, 02-06 | ✓ SATISFIED | Bounded async worker exists; accepted pending work has no restart reconciliation. |
+| Requirement | Source Plans | Status | Evidence / Blocking Issue |
+|---|---|---|---|
+| DATA-01 | 02-01, 02-04–02-10 | ✗ BLOCKED | Upload works, but ambiguous acknowledgement and failed compensation can leave PostgreSQL inconsistent with accepted/non-admitted engine state. |
+| DATA-02 | 02-01, 02-02, 02-05–02-10 | ✓ SATISFIED | Structure-aware/fixed chunking, defaults, and token estimates pass tests. |
+| DATA-03 | 02-03, 02-05–02-10 | ✓ SATISFIED | Chunks/metadata persist; rollback/retry convergence passes real-table tests. Inspector corruption checks remain a gate-quality blocker, not absence of persistence. |
+| DATA-06 | 02-03, 02-05–02-10 | ✓ SATISFIED | `community_ids` and empty communities table initialize and validate. |
+| DATA-07 | 02-03, 02-05–02-10 | ✓ SATISFIED | Nullable node fields exist; persisted node summaries are Arrow null. |
+| DATA-08 | 02-03, 02-05–02-10 | ✓ SATISFIED | Separate nodes/edges tables and nullable edge summary fields exist. |
+| DATA-09 | 02-03, 02-09, 02-10 | ✓ SATISFIED | Async trait and exact-match implementation exist, are used, and pass tests. |
+| RAG-06 | 02-02, 02-04–02-10 | ✓ SATISFIED | Bounded Tokio worker exists and passes worker/shutdown tests. |
 
-No Phase 02 requirement ID is orphaned from PLAN frontmatter.
+No Phase 02 requirement ID is orphaned from all PLAN frontmatter. REQUIREMENTS checkboxes are planning metadata, not verification evidence.
 
-## Independently Validated Review Findings
+## Deep Review Reconciliation
 
-| Finding | Verdict | Evidence |
-|---------|---------|----------|
-| CR-01 runtime artifacts not ignored/cleaned | CONFIRMED BLOCKER | Both `git check-ignore` probes fail; validator deletes only challenge. |
-| CR-02 Python asserts optimized away | CONFIRMED BLOCKER | Security checks are assertions; direct `python -O` probe exits successfully. |
-| CR-03 inspector verdicts hardcoded | CONFIRMED BLOCKER | Inspector serializes constant provider/model/stale; runner hardcodes duplicate false. |
-| CR-04 real write failures bypass rollback | CONFIRMED BLOCKER | Direct `?` returns after mutation; rollback only follows synthetic callbacks. |
-| WR-01 canceled request breaks compensation | CONFIRMED WARNING | The same `r.Context()` is passed to ingest and compensation; no detached timeout or cancellation test exists. |
-| WR-02 accepted queued work is lost across restart | CONFIRMED WARNING | Biased shutdown discards pending jobs; startup does not scan staging or restore statuses. This also matches D-15's intentional pending-discard decision, but the acknowledged upload remains unreconciled. |
+| Finding | Classification | Refresh Verdict | Current Evidence |
+|---|---|---|---|
+| CR-01 lost gRPC acknowledgement misclassified | BLOCKER | CONFIRMED | `gateway/main.go:149-150,228-235`; engine admission precedes reply at `engine/src/main.rs:290-303`; no lost-ack test found. |
+| CR-02 failed compensation strands queued row | BLOCKER | CONFIRMED | Single best-effort update at `gateway/main.go:170-178`; no retry/outbox/reconciler or NotFound repair. |
+| CR-03 stale challenge accepted | BLOCKER | REPRODUCED | Sanitized one-year-old challenge accepted with exit 0; no maximum age check. |
+| CR-04 caller-owned input deleted | BLOCKER | CONFIRMED BY CODE + PRIOR REVIEW REPRODUCTION | Unconditional trap deletion at `verify-ingestion.sh:18-24`; safe rerun was not authorized because invoking the live wrapper could mutate services. |
+| CR-05 explicit inspector path requires config | BLOCKER | REPRODUCED | Built binary exited 1 with config lookup despite explicit path. |
+| CR-06 invalid embedding child values accepted | BLOCKER | CONFIRMED | Parent-list null count/width only; no child-null/finiteness checks or tests. |
+| WR-01 schema-field `expect` bypasses rollback | WARNING | CONFIRMED | `engine/src/main.rs:528-533,594-600,642-651`; schema drift after startup can panic the sole worker. |
+| WR-02 gateway trusts gRPC response identity | WARNING | CONFIRMED | Ingest reply discarded; polled `state.DocumentId` is never compared to requested ID. |
+| WR-03 generic `bin/` ignore hides Rust source | WARNING | REPRODUCED | `git check-ignore` maps `engine/src/bin/future_inspector.rs` to `.gitignore:76`. |
+| WR-04 all-target clippy gate red | WARNING | REPRODUCED | Exit 101: inspector-private DB module dead code and `manual_repeat_n`. |
 
-## Anti-Patterns
+All six blockers and all four warnings from `02-REVIEW.md` remain represented; none was silently dropped.
+
+## Anti-Patterns and Test Quality
 
 | File | Line | Pattern | Severity | Impact |
-|------|------|---------|----------|--------|
-| `engine/src/main.rs` | 424-453, 568-572, 656-660 | Mutation errors bypass rollback | 🛑 BLOCKER | Prior completed generation can be destroyed. |
-| `verify-live-evidence.sh` | 70-93, 171-177 | Security checks use `assert` | 🛑 BLOCKER | Optimized Python can accept invalid evidence. |
-| `engine/src/bin/inspect_lancedb.rs` | 99-124 | Hardcoded verdicts | 🛑 BLOCKER | Gate attests facts it did not inspect. |
-| `.gitignore` / validator | — / 179 | Private artifacts not ignored; evidence retained | 🛑 BLOCKER | Accidental disclosure/staging risk. |
-| `engine/src/main.rs` | 562 | Nullable placeholder stored as empty string | 🛑 BLOCKER | Plan truth is observably false. |
-| `gateway/main.go` | 225-226 | Compensation reuses request context | ⚠️ WARNING | Canceled uploads can remain queued forever. |
-| `engine/src/main.rs` | 722-733, 785-797 | No restart recovery | ⚠️ WARNING | Acknowledged pending jobs can strand staging/PostgreSQL state. |
+|---|---|---|---|---|
+| `gateway/main.go` | 149-150, 228-235 | Ambiguous transport failure treated as definitive rejection | 🛑 BLOCKER | PostgreSQL can say failed while LanceDB indexing completes. |
+| `gateway/main.go` | 170-178 | Log-only recovery after compensation failure | 🛑 BLOCKER | Non-admitted rows can remain queued indefinitely. |
+| `scripts/phase02_live_evidence.py` | 193-196 | Missing challenge-age bound | 🛑 BLOCKER | Old challenges can be replayed with fresh evidence timestamps. |
+| `verify-ingestion.sh` | 18-24 | Deletes caller-owned path | 🛑 BLOCKER | Destructive behavior outside script ownership. |
+| `engine/src/bin/inspect_lancedb.rs` | 122-138, 347 | Hollow validation / eager fallback | 🛑 BLOCKER | Corrupt embeddings can attest; explicit diagnostics fail. |
+| `engine/src/main.rs` | 532, 597, 647 | `expect` in post-snapshot worker path | ⚠️ WARNING | Panic bypasses rollback and terminal status. |
+| `.gitignore` | 76 | Unanchored `bin/` | ⚠️ WARNING | Future Rust binaries can be silently ignored. |
+| `engine/src/client/tests.rs` | 103-104 | `repeat().take()` | ⚠️ WARNING | Warnings-as-errors lint remains red. |
+| `engine/src/main.rs` | 329 | Placeholder RAG answer | ℹ️ DEFERRED | Explicitly belongs to Phase 03 and does not block Phase 02 ingestion. |
 
-The `QueryRAG` placeholder in `engine/src/main.rs` predates and is outside the Phase 02 ingestion goal; it is not classified as a Phase 02 blocker.
+No unreferenced `TBD`, `FIXME`, or `XXX` debt marker was found in the 13 review-scoped files. The passing suites are misleading for the six blockers because none exercises lost acknowledgement, eventual compensation failure, stale challenge, caller-owned sample cleanup, config-less explicit inspection, or corrupt embedding child values.
 
-## Human Verification Required
+## Live-Gate and Human Verification Limitation
 
-No additional credentialed or visual check is requested while deterministic blockers remain. The one behavior-unverified retry invariant should be converted into a named automated failure-injection test rather than accepted manually.
+The previous live challenge/evidence files are absent by design after cleanup. The only remaining sanitized record of the claimed real-provider run is `02-10-SUMMARY.md`, which reports PostgreSQL/LanceDB counts and validator exit zero; under adversarial verification that narrative is not independent proof. Per the run constraint, no new credentialed ingestion was attempted.
 
-## Gaps Summary and Next Action
+The externally dependent truth therefore remains `? UNCERTAIN`, but no additional live run is requested while deterministic blockers remain. After those blockers are fixed, the MVP goal should first be reformatted, the test-tier prohibition enforcement should be wired, and then a fresh challenge-bound private run can provide current evidence.
 
-Phase 02 demonstrates a working happy-path ingestion/chunking/LanceDB flow, and all eight mapped requirements have implementation evidence. It is nevertheless **not complete** against the expanded Phase 02 must-haves: recoverable replacement is not wired to real storage errors, live-gate acceptance/privacy can be bypassed or misrepresented, and persisted node summary placeholders violate the explicit null contract.
+## Deferred Items
 
-Concrete next action: run `$gsd-plan-phase 2 --gaps` using the structured gaps above. The closure plan should first fix actual-error rollback and add failing-table tests, then make the live gate fail closed with derived inspector results and private artifact cleanup, then correct node null persistence and the 10-second timeout. After implementation, re-run verification without another credentialed live request until the non-secret gate tests pass.
+No current blocker is clearly assigned to a later roadmap phase, so none was filtered out. The pre-existing `QueryRAG` and graph-query stubs are specifically owned by Phases 03 and 04 and are informational only.
+
+## Gaps Summary
+
+Phase 02 has a substantive, wired, and mechanically tested happy path for upload, chunking, OpenRouter client behavior, LanceDB persistence, rollback, schemas, and worker execution. The stale report’s implementation gaps are closed.
+
+The phase goal is still not safe to advance: admission ambiguity and failed compensation can diverge PostgreSQL from engine/LanceDB state; the live gate accepts stale challenges and deletes caller-owned input; the inspector's explicit-path mode is broken and its embedding validation is incomplete. In addition, the unresolved test-tier privacy prohibition has no machine-wired enforcement descriptor. The deep review’s four warnings also remain.
+
+This report intentionally creates no fix plans and changes no production, PLAN, SUMMARY, REVIEW, ROADMAP, REQUIREMENTS, or STATE artifact.
 
 ---
 
-_Verified: 2026-07-25T23:19:56Z_  
+_Verified: 2026-07-26T08:10:42Z_
 _Verifier: the agent (gsd-verifier)_
