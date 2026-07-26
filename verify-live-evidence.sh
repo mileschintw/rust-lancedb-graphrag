@@ -66,6 +66,7 @@ case "$mode" in
     }; done
     bash -n "$0"
     bash -n verify-ingestion.sh
+    "$python_cmd" -I "$evidence_helper" self-test
     cargo check --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb
     docker compose up -d db
     for _ in $(seq 1 30); do

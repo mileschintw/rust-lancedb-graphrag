@@ -368,6 +368,9 @@ def parse_args() -> argparse.Namespace:
     parse_challenge = subcommands.add_parser("parse-challenge")
     parse_challenge.add_argument("--challenge", "--challenge-file", dest="challenge", required=True)
 
+    validate_document = subcommands.add_parser("validate-document-id")
+    validate_document.add_argument("--document-id", required=True)
+
     build = subcommands.add_parser("build-evidence")
     build.add_argument("--challenge", "--challenge-file", dest="challenge", required=True)
     build.add_argument("--inspection-json", "--inspection", dest="inspection_json", required=True)
@@ -394,6 +397,9 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "parse-challenge":
         challenge = validate_challenge(read_json_file(Path(args.challenge), "challenge"))
         print(json.dumps(challenge, separators=(",", ":"), sort_keys=True))
+        return 0
+    if args.command == "validate-document-id":
+        print(parse_uuid_v4(args.document_id, "document_id"))
         return 0
     if args.command == "build-evidence":
         evidence = build_evidence(

@@ -4,6 +4,7 @@ set -euo pipefail
 phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge_file="${phase_dir}/.02-LIVE-CHALLENGE.json"
 evidence_out="${phase_dir}/02-LIVE-EVIDENCE.json"
+evidence_helper="scripts/phase02_live_evidence.py"
 gateway_url="${GATEWAY_URL:-http://127.0.0.1:8080}"
 verification_environment="verify"
 managed_services=false
@@ -12,6 +13,7 @@ engine_pid=""
 gateway_pid=""
 engine_log=""
 gateway_log=""
+evidence_tmp=""
 
 cleanup() {
   [[ -z "$gateway_pid" ]] || kill "$gateway_pid" 2>/dev/null || true
@@ -19,6 +21,7 @@ cleanup() {
   [[ -z "$gateway_log" ]] || rm -f -- "$gateway_log"
   [[ -z "$engine_log" ]] || rm -f -- "$engine_log"
   [[ -z "$sample_file" ]] || rm -f -- "$sample_file"
+  [[ -z "$evidence_tmp" ]] || rm -f -- "$evidence_tmp"
 }
 trap cleanup EXIT
 
@@ -61,23 +64,7 @@ git ls-files --error-unmatch -- "$evidence_out" >/dev/null 2>&1 && {
   echo "runtime artifacts must not be staged" >&2; exit 1;
 }
 
-challenge_json="$("$python_cmd" - "$challenge_file" <<'PY'
-import datetime as dt
-import json
-import sys
-import uuid
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    challenge = json.load(stream)
-assert set(challenge) == {"schema_version", "challenge", "run_id", "issued_at"}
-assert challenge["schema_version"] == 1
-assert isinstance(challenge["challenge"], str) and len(challenge["challenge"]) >= 32
-assert uuid.UUID(challenge["run_id"]).version == 4
-issued = dt.datetime.fromisoformat(challenge["issued_at"].replace("Z", "+00:00"))
-assert issued.tzinfo is not None
-print(json.dumps(challenge, separators=(",", ":")))
-PY
-)"
+"$python_cmd" -I "$evidence_helper" parse-challenge --challenge "$challenge_file" >/dev/null
 run_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 start_managed_services() {
@@ -130,68 +117,26 @@ if [[ -z "$sample_file" ]]; then
   printf '# Lancet live verification\n\nOpenRouter-backed indexing proof.\n' > "$sample_file"
 fi
 response="$(curl --fail --silent --show-error -X POST -F "file=@${sample_file};filename=$(basename "$sample_file")" "${gateway_url}/documents")"
-document_id="$(printf '%s' "$response" | "$python_cmd" -c 'import json,sys; print(json.load(sys.stdin)["ID"])')"
-"$python_cmd" - "$document_id" <<'PY'
-import sys
-import uuid
-assert uuid.UUID(sys.argv[1]).version == 4
-PY
+document_id="$(printf '%s' "$response" | "$python_cmd" -I -c 'import json,sys; print(json.load(sys.stdin)["ID"])')"
+"$python_cmd" -I "$evidence_helper" validate-document-id --document-id "$document_id" >/dev/null
 for _ in $(seq 1 "${POLL_LIMIT:-60}"); do
   response="$(curl --fail --silent --show-error "${gateway_url}/documents/${document_id}")"
-  status="$(printf '%s' "$response" | "$python_cmd" -c 'import json,sys; print(json.load(sys.stdin)["Status"])')"
+  status="$(printf '%s' "$response" | "$python_cmd" -I -c 'import json,sys; print(json.load(sys.stdin)["Status"])')"
   [[ "$status" == completed ]] && break
   [[ "$status" != failed ]] || { echo "ingestion failed" >&2; exit 1; }
   sleep "${POLL_INTERVAL_SECONDS:-2}"
 done
 [[ "${status:-}" == completed ]] || { echo "ingestion did not complete" >&2; exit 1; }
-gateway_count="$(printf '%s' "$response" | "$python_cmd" -c 'import json,sys; print(json.load(sys.stdin)["ChunkCount"])')"
+gateway_count="$(printf '%s' "$response" | "$python_cmd" -I -c 'import json,sys; print(json.load(sys.stdin)["ChunkCount"])')"
 postgres="$(docker compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
 inspection="$(cargo run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id")"
 
 umask 077
-tmp="$(mktemp "${phase_dir}/.evidence.XXXXXX")"
-"$python_cmd" - "$challenge_json" "$inspection" "$document_id" "$gateway_count" "$postgres" "$run_started_at" > "$tmp" <<'PY'
-import datetime as dt
-import json
-import sys
-
-challenge, inspection, document_id, gateway_count, postgres, started = map(str, sys.argv[1:])
-challenge = json.loads(challenge)
-inspection = json.loads(inspection)
-status, count = postgres.split(':', 1)
-assert status == 'completed'
-assert int(gateway_count) > 0 and int(gateway_count) == int(count) == inspection['node_rows']
-assert inspection['document_id'] == document_id and inspection['provider'] == 'openrouter'
-assert inspection['document_rows'] == 1 and inspection['staged_document_rows'] == 0
-assert inspection['embedding_width'] == 2048 and not inspection['stale_generation']
-assert inspection['embedding_model'] == 'nvidia/llama-nemotron-embed-vl-1b-v2:free'
-issued = dt.datetime.fromisoformat(challenge['issued_at'].replace('Z', '+00:00'))
-started_at = dt.datetime.fromisoformat(started.replace('Z', '+00:00'))
-assert started_at >= issued
-payload = {
-    'schema_version': 1,
-    'success_sentinel': 'Ingestion validation: SUCCESS',
-    'challenge': challenge['challenge'],
-    'run_id': challenge['run_id'],
-    'issued_at': challenge['issued_at'],
-    'run_started_at': started,
-    'generated_at': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-    'document_id': document_id,
-    'provider': inspection['provider'],
-    'embedding_model': inspection['embedding_model'],
-    'gateway_chunk_count': int(gateway_count),
-    'postgres_status': status,
-    'postgres_chunk_count': int(count),
-    'document_rows': inspection['document_rows'],
-    'staged_document_rows': inspection['staged_document_rows'],
-    'node_rows': inspection['node_rows'],
-    'edge_rows': inspection['edge_rows'],
-    'embedding_width': inspection['embedding_width'],
-    'duplicate_generation': False,
-    'stale_generation': inspection['stale_generation'],
-}
-print(json.dumps(payload, separators=(',', ':'), sort_keys=True))
-PY
-chmod 600 "$tmp" 2>/dev/null || true
-mv -f -- "$tmp" "$evidence_out"
+evidence_tmp="$(mktemp "${phase_dir}/.evidence.XXXXXX")"
+printf '%s\n' "$inspection" | "$python_cmd" -I "$evidence_helper" build-evidence \
+  --challenge "$challenge_file" --inspection-json - --document-id "$document_id" \
+  --gateway-count "$gateway_count" --postgres "$postgres" --run-started-at "$run_started_at" > "$evidence_tmp"
+chmod 600 "$evidence_tmp" 2>/dev/null || true
+mv -f -- "$evidence_tmp" "$evidence_out"
+evidence_tmp=""
 echo 'Ingestion validation: SUCCESS'

@@ -343,7 +343,7 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
             "chunk_indexes_contiguous",
             "generation_count",
         ):
-            self.assertIn(field, ingestion)
+            self.assertIn(field, ingestion + (ROOT / "scripts/phase02_live_evidence.py").read_text(encoding="utf-8"))
         self.assertNotIn("'duplicate_generation': False", ingestion)
         self.assertIn('rm -f -- "$challenge" "$evidence"', final)
         self.assertLess(final.index("compare-live-state"), final.index('rm -f -- "$challenge" "$evidence"'))
