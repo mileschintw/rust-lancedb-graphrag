@@ -38,7 +38,7 @@ Ingest text/markdown files asynchronously, parse structure-aware markdown elemen
 ### Vector Embedding & LanceDB Schema
 - **D-17:** OpenRouter API is the sole provider for generating embeddings, with no mock fallback.
 - **D-18:** Target embedding model is `nvidia/llama-nemotron-embed-vl-1b-v2:free` which produces embeddings with a dimension of 2048.
-- **D-19:** HTTP client retry policy for OpenRouter calls: timeout of 10s per call, retry up to 3 times with exponential backoff starting at 1 second.
+- **D-19:** HTTP client retry policy for OpenRouter calls: timeout of 10 seconds per call, then three retries after the initial request for four maximum attempts total, with 1/2/4-second exponential backoff.
 - **D-20:** OpenRouter calls are sent concurrently in batches (up to 5 concurrent HTTP requests per document ingestion) to speed up ingestion, relying on the retry logic to handle rate limits.
 - **D-21:** LanceDB table connection and schemas (for `nodes` and `edges`) are initialized on Rust engine startup, failing fast on configuration errors.
 - **D-22:** If existing LanceDB schemas drift or mismatch with code definitions, the engine fails fast on startup with a clear error message, requiring manual user intervention (no auto-wipe).

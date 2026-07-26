@@ -15,7 +15,7 @@ re_verification:
     - "Actual LanceDB write/delete failures do not enter replacement rollback."
   regressions: []
 gaps:
-  - truth: "OpenRouter embedding calls use the locked 10-second request timeout and bounded retry policy."
+  - truth: "OpenRouter embedding calls use the locked 10-second timeout per call, then three retries after the initial request for four maximum attempts total with 1/2/4-second backoff (D-19)."
     status: failed
     reason: "The production reqwest client is configured with a 30-second timeout, contrary to locked decision D-19."
     artifacts:
@@ -108,7 +108,7 @@ ROADMAP marks this phase `mode: mvp`, but `user-story.validate` returns `false` 
 | 6 | Async `EntityResolver` and exact-match implementation are callable during indexing | ✓ VERIFIED | Trait/implementation in `engine/src/db/mod.rs`; resolver test and `replace_document` usage at lines 586-604. |
 | 7 | A bounded single-consumer Tokio worker processes jobs and gateway polling reconciles terminal PostgreSQL status | ✓ VERIFIED | Worker at `engine/src/main.rs:713-778`, polling at `gateway/main.go:238-271`; Rust/Go tests pass and the fresh live run proves one successful reconciliation. |
 | 8 | Gateway compensates ordinary enqueue failures and returns a winning terminal race row | ✓ VERIFIED | `gateway/main.go:169-175,225-231,256-264`; focused handler and PostgreSQL race tests pass. Cancellation reliability remains a warning below. |
-| 9 | OpenRouter uses the locked 10-second timeout and three-retry policy | ✗ FAILED | Production client uses `Duration::from_secs(30)` at `engine/src/client/mod.rs:43`, contrary to D-19's 10 seconds. |
+| 9 | OpenRouter uses the locked 10-second timeout per call, then three retries after the initial request for four maximum attempts total with 1/2/4-second backoff | ✗ FAILED | Production client uses `Duration::from_secs(30)` at `engine/src/client/mod.rs:43`, contrary to D-19's canonical contract. Current Plans 02-08 through 02-10 supersede any executed historical wording that implies three attempts total. |
 | 10 | Every actual canonical write failure restores the prior generation | ✗ FAILED | Real LanceDB errors bypass rollback; only post-write synthetic callback errors invoke it. |
 | 11 | Failure followed by retry provably converges without stale/duplicate generations | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | No failed-replacement/retry test exists; the inspector cannot provide the claimed verdict. |
 | 12 | Persisted nullable summary placeholders are Arrow nulls | ✗ FAILED | Edge placeholders are null, but node summary is persisted as `Some(\"\")`. |
