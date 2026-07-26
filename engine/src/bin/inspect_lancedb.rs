@@ -320,7 +320,7 @@ async fn inspect_document(
 }
 
 #[cfg(test)]
-#[path = "inspect_lancedb_tests.rs"]
+#[path = "../inspect_lancedb_tests.rs"]
 mod tests;
 
 #[tokio::main]
