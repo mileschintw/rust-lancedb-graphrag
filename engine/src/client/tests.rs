@@ -3,7 +3,7 @@ use std::{
     net::{TcpListener, TcpStream},
     sync::{
         atomic::{AtomicUsize, Ordering},
-    Arc,
+        Arc,
     },
     thread,
     time::{Duration, Instant},
@@ -122,18 +122,19 @@ fn write_response(stream: &mut TcpStream, status: u16) {
     let _ = stream.write_all(response.as_bytes());
 }
 
-fn client(server: &MockServer, timeout: Duration) -> OpenRouterClient {
-    OpenRouterClient::for_test(server.endpoint.clone(), timeout, Duration::from_millis(1))
+fn client(server: &MockServer, max_retries: u32) -> OpenRouterClient {
+    OpenRouterClient::for_test(
+        server.endpoint.clone(),
+        max_retries,
+        Duration::from_millis(1),
+    )
 }
 
 #[tokio::test]
 async fn production_client_times_out_at_locked_ten_seconds() {
     let server = MockServer::start(vec![200], Duration::from_secs(11));
     let started = Instant::now();
-    let mut client = OpenRouterClient::new("test-key").unwrap();
-    client.endpoint = server.endpoint.clone();
-    client.max_retries = 0;
-    client.initial_backoff = Duration::ZERO;
+    let client = OpenRouterClient::for_test(server.endpoint.clone(), 0, Duration::ZERO);
 
     let error = client
         .get_embeddings(&["too slow for production".into()])
@@ -159,7 +160,7 @@ async fn production_client_times_out_at_locked_ten_seconds() {
 #[tokio::test]
 async fn retries_rate_limits_and_server_errors() {
     let server = MockServer::start(vec![429, 500, 200], Duration::ZERO);
-    let embeddings = client(&server, Duration::from_secs(1))
+    let embeddings = client(&server, 3)
         .get_embeddings(&["retry me".into()])
         .await
         .unwrap();
@@ -168,9 +169,9 @@ async fn retries_rate_limits_and_server_errors() {
 }
 
 #[tokio::test]
-async fn retries_timed_out_requests_then_returns_error() {
-    let server = MockServer::start(vec![200], Duration::from_millis(50));
-    let error = client(&server, Duration::from_millis(5))
+async fn retries_server_errors_then_returns_error() {
+    let server = MockServer::start(vec![500, 500, 500, 500], Duration::ZERO);
+    let error = client(&server, 3)
         .get_embeddings(&["too slow".into()])
         .await
         .unwrap_err();
@@ -184,10 +185,7 @@ async fn caps_parallel_embedding_requests_at_five() {
     let texts = (0..12)
         .map(|index| format!("text {index}"))
         .collect::<Vec<_>>();
-    let embeddings = client(&server, Duration::from_secs(1))
-        .get_embeddings(&texts)
-        .await
-        .unwrap();
+    let embeddings = client(&server, 3).get_embeddings(&texts).await.unwrap();
     assert_eq!(embeddings.len(), texts.len());
     assert_eq!(server.max_active.load(Ordering::SeqCst), 5);
 }

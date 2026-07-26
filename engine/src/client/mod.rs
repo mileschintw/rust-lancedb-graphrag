@@ -6,9 +6,14 @@ use serde::{Deserialize, Serialize};
 
 const OPENROUTER_EMBEDDINGS_URL: &str = "https://openrouter.ai/api/v1/embeddings";
 pub const EMBEDDING_MODEL: &str = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_CONCURRENCY: usize = 5;
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
+
+fn build_http_client() -> Result<Client, reqwest::Error> {
+    Client::builder().timeout(REQUEST_TIMEOUT).build()
+}
 
 #[derive(Clone)]
 pub struct OpenRouterClient {
@@ -41,9 +46,7 @@ impl OpenRouterClient {
         if api_key.trim().is_empty() {
             return Err("OpenRouter API key must not be empty".into());
         }
-        let http = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
+        let http = build_http_client()
             .map_err(|error| format!("failed to build OpenRouter HTTP client: {error}"))?;
         Ok(Self {
             http,
@@ -61,12 +64,12 @@ impl OpenRouterClient {
     }
 
     #[cfg(test)]
-    fn for_test(endpoint: String, timeout: Duration, initial_backoff: Duration) -> Self {
+    fn for_test(endpoint: String, max_retries: u32, initial_backoff: Duration) -> Self {
         Self {
-            http: Client::builder().timeout(timeout).build().unwrap(),
+            http: build_http_client().unwrap(),
             api_key: "test-key".into(),
             endpoint,
-            max_retries: MAX_RETRIES,
+            max_retries,
             initial_backoff,
         }
     }
@@ -125,7 +128,14 @@ impl OpenRouterClient {
             })
             .send()
             .await
-            .map_err(|error| RequestFailure::Retryable(error.to_string()))?;
+            .map_err(|error| {
+                let message = if error.is_timeout() {
+                    "OpenRouter request timed out".to_string()
+                } else {
+                    error.to_string()
+                };
+                RequestFailure::Retryable(message)
+            })?;
         let status = response.status();
         if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
             return Err(RequestFailure::Retryable(format!(
