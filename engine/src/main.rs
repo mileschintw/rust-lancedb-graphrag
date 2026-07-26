@@ -967,6 +967,28 @@ mod tests {
             .collect()
     }
 
+    fn int32_values(rows: &[RecordBatch], column: &str) -> BTreeSet<i32> {
+        rows.iter()
+            .flat_map(|batch| {
+                batch
+                    .column_by_name(column)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Int32Array>()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn null_count(rows: &[RecordBatch], column: &str) -> usize {
+        rows.iter()
+            .map(|batch| batch.column_by_name(column).unwrap().null_count())
+            .sum()
+    }
+
     fn binary_hash(rows: &[RecordBatch], column: &str) -> u64 {
         let values = rows
             .iter()
@@ -994,8 +1016,12 @@ mod tests {
     struct CanonicalState {
         raw_hash: u64,
         node_ids: BTreeSet<String>,
+        node_indexes: BTreeSet<i32>,
         edge_ids: BTreeSet<String>,
+        edge_sources: BTreeSet<String>,
+        edge_targets: BTreeSet<String>,
         generations: BTreeSet<i64>,
+        summary_null_count: usize,
     }
 
     async fn canonical_state(database: &DatabaseManager, document_id: &str) -> CanonicalState {
@@ -1007,8 +1033,12 @@ mod tests {
         CanonicalState {
             raw_hash: binary_hash(&documents, "raw_content"),
             node_ids: string_values(&nodes, "chunk_id"),
+            node_indexes: int32_values(&nodes, "chunk_index"),
             edge_ids: string_values(&edges, "edge_id"),
+            edge_sources: string_values(&edges, "source_node_id"),
+            edge_targets: string_values(&edges, "target_node_id"),
             generations: int64_values(&nodes, "ingested_at"),
+            summary_null_count: null_count(&nodes, "summary"),
         }
     }
 
@@ -1100,6 +1130,213 @@ mod tests {
                 .unwrap(),
             0
         );
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[tokio::test]
+    async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_converges() {
+        let boundaries = [
+            ReplacementMutation::EdgesDelete,
+            ReplacementMutation::NodesDelete,
+            ReplacementMutation::DocumentsDelete,
+            ReplacementMutation::DocumentsAdd,
+            ReplacementMutation::NodesAdd,
+            ReplacementMutation::EdgesAdd,
+            ReplacementMutation::StagingDelete,
+        ];
+        for boundary in boundaries {
+            let path = database_path(&format!("boundary-{boundary:?}"));
+            let database = DatabaseManager::initialize(&path).await.unwrap();
+            let document_id = Uuid::new_v4().to_string();
+            let old_job = IngestionJob {
+                document_id: document_id.clone(),
+                filename: "old.md".into(),
+                raw_data: b"# One\n\nfirst\n\n# Two\n\nsecond".to_vec(),
+                metadata: HashMap::new(),
+            };
+            let (_, old_chunks) = chunk_ingestion_job(&old_job);
+            let old_embeddings = vec![vec![0.25; 2048]; old_chunks.len()];
+            replace_document(&database, &old_job, &old_chunks, &old_embeddings)
+                .await
+                .unwrap();
+            stage_document(&database, &document_id, b"replacement staging row").await;
+            let old_state = canonical_state(&database, &document_id).await;
+            assert_eq!(old_state.edge_ids.len(), 3);
+            assert_eq!(old_state.summary_null_count, old_state.node_ids.len());
+
+            let replacement_job = IngestionJob {
+                document_id: document_id.clone(),
+                filename: "replacement.md".into(),
+                raw_data: b"# Three\n\nnew content\n\n# Four\n\nmore content".to_vec(),
+                metadata: HashMap::new(),
+            };
+            let (_, replacement_chunks) = chunk_ingestion_job(&replacement_job);
+            let replacement_embeddings = vec![vec![0.75; 2048]; replacement_chunks.len()];
+            let failure = FaultingReplacementMutationBoundary::new(boundary);
+            let error = replace_document_with_faults(
+                &database,
+                &replacement_job,
+                &replacement_chunks,
+                &replacement_embeddings,
+                &failure,
+            )
+            .await
+            .unwrap_err();
+            assert!(error.contains(&format!("{boundary:?}")));
+            assert_eq!(canonical_state(&database, &document_id).await, old_state);
+            assert_eq!(
+                database
+                    .staged_documents_table()
+                    .await
+                    .unwrap()
+                    .count_rows(Some(format!("document_id = '{document_id}'")))
+                    .await
+                    .unwrap(),
+                1
+            );
+
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            replace_document(
+                &database,
+                &replacement_job,
+                &replacement_chunks,
+                &replacement_embeddings,
+            )
+            .await
+            .unwrap();
+            let current = canonical_state(&database, &document_id).await;
+            let expected_indexes = (0..replacement_chunks.len())
+                .map(|index| i32::try_from(index).unwrap())
+                .collect::<BTreeSet<_>>();
+            assert_ne!(current.raw_hash, old_state.raw_hash);
+            assert_eq!(current.node_indexes, expected_indexes);
+            assert_eq!(current.node_ids.len(), replacement_chunks.len());
+            assert_eq!(current.edge_ids.len(), current.edge_sources.len());
+            assert_eq!(current.edge_ids.len(), current.edge_targets.len());
+            assert!(current.edge_sources.is_subset(&current.node_ids));
+            assert!(current.edge_targets.is_subset(&current.node_ids));
+            assert_eq!(current.generations.len(), 1);
+            assert_eq!(current.summary_null_count, current.node_ids.len());
+            assert_eq!(
+                database
+                    .staged_documents_table()
+                    .await
+                    .unwrap()
+                    .count_rows(Some(format!("document_id = '{document_id}'")))
+                    .await
+                    .unwrap(),
+                0
+            );
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
+
+    #[tokio::test]
+    async fn persisted_node_summary_is_arrow_null() {
+        let path = database_path("summary-null");
+        let database = DatabaseManager::initialize(&path).await.unwrap();
+        let _repeated = DatabaseManager::initialize(&path).await.unwrap();
+        let first_connection = lancedb::connect(&path).execute().await.unwrap();
+        let second_connection = lancedb::connect(&path).execute().await.unwrap();
+        assert_eq!(
+            first_connection
+                .open_table("communities")
+                .execute()
+                .await
+                .unwrap()
+                .count_rows(None)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            second_connection
+                .open_table("communities")
+                .execute()
+                .await
+                .unwrap()
+                .count_rows(None)
+                .await
+                .unwrap(),
+            0
+        );
+        let empty_job = IngestionJob {
+            document_id: Uuid::new_v4().to_string(),
+            filename: "empty.md".into(),
+            raw_data: Vec::new(),
+            metadata: HashMap::new(),
+        };
+        let (_, empty_chunks) = chunk_ingestion_job(&empty_job);
+        assert!(empty_chunks.is_empty());
+        replace_document(&database, &empty_job, &empty_chunks, &[])
+            .await
+            .unwrap();
+        let empty_predicate = format!("document_id = '{}'", sql_string(&empty_job.document_id));
+        assert_eq!(
+            database
+                .documents_table()
+                .await
+                .unwrap()
+                .count_rows(Some(empty_predicate.clone()))
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            database
+                .nodes_table()
+                .await
+                .unwrap()
+                .count_rows(Some(empty_predicate.clone()))
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            database
+                .edges_table()
+                .await
+                .unwrap()
+                .count_rows(Some(empty_predicate))
+                .await
+                .unwrap(),
+            0
+        );
+        let document_id = Uuid::new_v4().to_string();
+        let job = IngestionJob {
+            document_id,
+            filename: "summary.md".into(),
+            raw_data: b"# Summary\n\ncontent".to_vec(),
+            metadata: HashMap::new(),
+        };
+        let (_, chunks) = chunk_ingestion_job(&job);
+        let embeddings = vec![vec![0.25; 2048]; chunks.len()];
+        replace_document(&database, &job, &chunks, &embeddings)
+            .await
+            .unwrap();
+        let rows = query_rows(
+            &database.nodes_table().await.unwrap(),
+            &format!("document_id = '{}'", sql_string(&job.document_id)),
+        )
+        .await;
+        let summary = rows[0]
+            .column_by_name("summary")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(summary.null_count(), row_count(&rows));
+        let summary_field = database
+            .nodes_table()
+            .await
+            .unwrap()
+            .schema()
+            .await
+            .unwrap()
+            .field_with_name("summary")
+            .unwrap()
+            .clone();
+        assert!(summary_field.is_nullable());
         let _ = std::fs::remove_dir_all(path);
     }
 
