@@ -45,6 +45,10 @@ fn predicate(id: &str) -> String {
     format!("document_id = '{}'", id.replace('\'', "''"))
 }
 
+#[cfg(test)]
+#[path = "inspect_lancedb_tests.rs"]
+mod tests;
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
