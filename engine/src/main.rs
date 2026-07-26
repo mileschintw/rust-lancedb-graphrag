@@ -810,7 +810,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
+    use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
+    use futures::TryStreamExt;
+    use lancedb::query::{ExecutableQuery, QueryBase};
     use tokio::sync::Notify;
 
     struct FakeEmbedder;
@@ -847,6 +852,186 @@ mod tests {
             .join(format!("lancet-worker-{test_name}-{}", Uuid::new_v4()))
             .to_string_lossy()
             .into_owned()
+    }
+
+    async fn query_rows(table: &Table, predicate: &str) -> Vec<RecordBatch> {
+        table
+            .query()
+            .only_if(predicate)
+            .execute()
+            .await
+            .unwrap()
+            .try_collect()
+            .await
+            .unwrap()
+    }
+
+    fn row_count(rows: &[RecordBatch]) -> usize {
+        rows.iter().map(RecordBatch::num_rows).sum()
+    }
+
+    fn string_values(rows: &[RecordBatch], column: &str) -> BTreeSet<String> {
+        rows.iter()
+            .flat_map(|batch| {
+                batch
+                    .column_by_name(column)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.unwrap().to_owned())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn int64_values(rows: &[RecordBatch], column: &str) -> BTreeSet<i64> {
+        rows.iter()
+            .flat_map(|batch| {
+                batch
+                    .column_by_name(column)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn binary_hash(rows: &[RecordBatch], column: &str) -> u64 {
+        let values = rows
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .column_by_name(column)
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .unwrap()
+                    .iter()
+                    .map(|value| {
+                        let mut hasher = DefaultHasher::new();
+                        value.unwrap().hash(&mut hasher);
+                        hasher.finish()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(values.len(), 1);
+        values[0]
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct CanonicalState {
+        raw_hash: u64,
+        node_ids: BTreeSet<String>,
+        edge_ids: BTreeSet<String>,
+        generations: BTreeSet<i64>,
+    }
+
+    async fn canonical_state(database: &DatabaseManager, document_id: &str) -> CanonicalState {
+        let predicate = format!("document_id = '{}'", sql_string(document_id));
+        let documents = query_rows(&database.documents_table().await.unwrap(), &predicate).await;
+        let nodes = query_rows(&database.nodes_table().await.unwrap(), &predicate).await;
+        let edges = query_rows(&database.edges_table().await.unwrap(), &predicate).await;
+        assert_eq!(row_count(&documents), 1);
+        CanonicalState {
+            raw_hash: binary_hash(&documents, "raw_content"),
+            node_ids: string_values(&nodes, "chunk_id"),
+            edge_ids: string_values(&edges, "edge_id"),
+            generations: int64_values(&nodes, "ingested_at"),
+        }
+    }
+
+    async fn stage_document(database: &DatabaseManager, document_id: &str, raw_data: &[u8]) {
+        let table = database.staged_documents_table().await.unwrap();
+        let batch = RecordBatch::try_new(
+            table.schema().await.unwrap(),
+            vec![
+                Arc::new(StringArray::from(vec![document_id])),
+                Arc::new(BinaryArray::from_vec(vec![raw_data])),
+            ],
+        )
+        .unwrap();
+        table.add(batch).execute().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn replacement_documents_add_failure_rolls_back_and_retry_converges() {
+        let path = database_path("documents-add-failure");
+        let database = DatabaseManager::initialize(&path).await.unwrap();
+        let document_id = Uuid::new_v4().to_string();
+        let old_job = IngestionJob {
+            document_id: document_id.clone(),
+            filename: "old.md".into(),
+            raw_data: b"# One\n\nfirst\n\n# Two\n\nsecond".to_vec(),
+            metadata: HashMap::new(),
+        };
+        let (_, old_chunks) = chunk_ingestion_job(&old_job);
+        let old_embeddings = vec![vec![0.25; 2048]; old_chunks.len()];
+        replace_document(&database, &old_job, &old_chunks, &old_embeddings)
+            .await
+            .unwrap();
+        stage_document(&database, &document_id, b"replacement staging row").await;
+        let old_state = canonical_state(&database, &document_id).await;
+
+        let replacement_job = IngestionJob {
+            document_id: document_id.clone(),
+            filename: "replacement.md".into(),
+            raw_data: b"# Replacement\n\nnew content\n\n# Other\n\nmore content".to_vec(),
+            metadata: HashMap::new(),
+        };
+        let (_, replacement_chunks) = chunk_ingestion_job(&replacement_job);
+        let replacement_embeddings = vec![vec![0.75; 2048]; replacement_chunks.len()];
+        let failure = FaultingReplacementMutationBoundary::new(ReplacementMutation::DocumentsAdd);
+
+        let error = replace_document_with_faults(
+            &database,
+            &replacement_job,
+            &replacement_chunks,
+            &replacement_embeddings,
+            &failure,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("DocumentsAdd"));
+        assert_eq!(canonical_state(&database, &document_id).await, old_state);
+        assert_eq!(
+            database
+                .staged_documents_table()
+                .await
+                .unwrap()
+                .count_rows(Some(format!("document_id = '{document_id}'")))
+                .await
+                .unwrap(),
+            1
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        replace_document(&database, &replacement_job, &replacement_chunks, &replacement_embeddings)
+            .await
+            .unwrap();
+        let replacement_state = canonical_state(&database, &document_id).await;
+        assert_ne!(replacement_state.raw_hash, old_state.raw_hash);
+        assert_ne!(replacement_state.node_ids, old_state.node_ids);
+        assert_ne!(replacement_state.generations, old_state.generations);
+        assert_eq!(replacement_state.node_ids.len(), replacement_chunks.len());
+        assert_eq!(replacement_state.generations.len(), 1);
+        assert_eq!(
+            database
+                .staged_documents_table()
+                .await
+                .unwrap()
+                .count_rows(Some(format!("document_id = '{document_id}'")))
+                .await
+                .unwrap(),
+            0
+        );
+        let _ = std::fs::remove_dir_all(path);
     }
 
     #[tokio::test]
