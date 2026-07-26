@@ -3,10 +3,10 @@ use std::{
     net::{TcpListener, TcpStream},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+    Arc,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use super::OpenRouterClient;
@@ -124,6 +124,36 @@ fn write_response(stream: &mut TcpStream, status: u16) {
 
 fn client(server: &MockServer, timeout: Duration) -> OpenRouterClient {
     OpenRouterClient::for_test(server.endpoint.clone(), timeout, Duration::from_millis(1))
+}
+
+#[tokio::test]
+async fn production_client_times_out_at_locked_ten_seconds() {
+    let server = MockServer::start(vec![200], Duration::from_secs(11));
+    let started = Instant::now();
+    let mut client = OpenRouterClient::new("test-key").unwrap();
+    client.endpoint = server.endpoint.clone();
+    client.max_retries = 0;
+    client.initial_backoff = Duration::ZERO;
+
+    let error = client
+        .get_embeddings(&["too slow for production".into()])
+        .await
+        .unwrap_err();
+    let elapsed = started.elapsed();
+    let error = error.to_ascii_lowercase();
+
+    assert!(
+        error.contains("timed out") || error.contains("timeout"),
+        "expected a timeout error, got: {error}"
+    );
+    assert!(
+        elapsed >= Duration::from_secs(9),
+        "request returned before the locked timeout: {elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(15),
+        "request exceeded the narrow timeout tolerance: {elapsed:?}"
+    );
 }
 
 #[tokio::test]
