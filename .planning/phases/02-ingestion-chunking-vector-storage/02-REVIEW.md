@@ -1,111 +1,220 @@
 ---
 phase: 02-ingestion-chunking-vector-storage
-reviewed: 2026-07-25T23:11:24Z
-depth: standard
-files_reviewed: 26
+reviewed: 2026-07-26T07:19:32Z
+depth: deep
+files_reviewed: 13
 files_reviewed_list:
   - .gitignore
-  - config/config.toml
-  - config/config.dev.toml
-  - config/config.verify.toml
-  - engine/Cargo.toml
-  - engine/Cargo.lock
-  - engine/src/main.rs
-  - engine/src/chunker/mod.rs
-  - engine/src/chunker/tests.rs
+  - engine/src/inspect_lancedb_tests.rs
+  - engine/src/bin/inspect_lancedb.rs
   - engine/src/client/mod.rs
   - engine/src/client/tests.rs
-  - engine/src/db/mod.rs
-  - engine/src/db/tests.rs
-  - engine/src/bin/inspect_lancedb.rs
-  - gateway/go.mod
-  - gateway/go.sum
-  - gateway/main.go
+  - engine/src/main.rs
+  - engine/src/tests.rs
   - gateway/main_test.go
-  - gateway/db/schema.hcl
-  - gateway/db/schema.sql
-  - gateway/db/query.sql
-  - gateway/db/query.sql.go
-  - gateway/db/document_test.go
-  - proto/lancet/v1/lancet.proto
+  - gateway/main.go
+  - scripts/phase02_live_evidence.py
+  - scripts/test_phase02_live_evidence.py
   - verify-ingestion.sh
   - verify-live-evidence.sh
 findings:
-  critical: 4
-  warning: 2
+  critical: 6
+  warning: 4
   info: 0
-  total: 6
+  total: 10
 status: issues_found
 ---
 
 # Phase 02: Code Review Report
 
-**Reviewed:** 2026-07-25T23:11:24Z
-**Depth:** standard
-**Files Reviewed:** 26
+**Reviewed:** 2026-07-26T07:19:32Z
+**Depth:** deep
+**Files Reviewed:** 13
 **Status:** issues_found
-
-## Summary
-
-The ingestion implementation compiles and its unit suites pass, but it is not safe to ship as reviewed. Four blockers affect replacement durability and the integrity/privacy of the live gate. Two additional warnings can leave PostgreSQL metadata permanently stale or accepted jobs stranded after restart.
-
-Validation performed without reading runtime challenge/evidence contents or credentials:
-
-- `cargo test --manifest-path engine/Cargo.toml`: passed (21 engine tests and 4 inspector-target tests).
-- `go test ./...` from `gateway/`: passed.
-- Git ignore metadata check: neither phase-local runtime JSON path is ignored.
-- Shell execution could not be repeated in this Windows sandbox because the Bash service returned `E_ACCESSDENIED`; both scripts were still reviewed line by line.
 
 ## Narrative Findings (AI reviewer)
 
+### Summary
+
+The deep review traced ingestion admission from the Go HTTP handler through the gRPC stream and Rust queue, terminal PostgreSQL reconciliation, LanceDB replacement/rollback, durable inspection, and the challenge-bound live-evidence gate. Six blockers and four warnings were found.
+
+Mechanical checks passed for `cargo fmt`, all 38 Rust tests across the engine and inspector, the optimized isolated Python suite, all Go tests, and `go vet`. Those suites do not exercise the blocker paths below. Three defects were reproduced directly: evidence bound to a one-year-old challenge was accepted, `verify-ingestion.sh` deleted a caller-owned sample on an early failure, and `inspect_lancedb --lancedb-path ...` failed from a config-less directory because it still loaded configuration. `cargo clippy --all-targets -- -D warnings` failed.
+
 ### Critical Issues
 
-#### CR-01: Runtime challenge and evidence artifacts are not Git-ignored
+#### CR-01: A lost gRPC acknowledgement is misclassified as a rejected ingestion
 
 **Classification:** BLOCKER
-**Files:** `.gitignore:120-123`, `verify-live-evidence.sh:179`
-**Issue:** The repository ignore rules end without entries for either phase-local runtime JSON artifact. The validator consumes only the challenge after success and leaves the evidence file in the worktree. The scripts merely verify that the files are untracked and unstaged at specific moments; a later `git add -A` can stage the retained evidence. This violates the explicit short-lived/private artifact contract and creates an avoidable disclosure path for challenge/evidence data.
-**Fix:** Add exact phase-local ignore entries (including the hidden challenge) and remove both artifacts after successful validation, preferably from an EXIT cleanup that is enabled only once validation has completed. Also add a test that requires `git check-ignore` to succeed for both paths.
 
-#### CR-02: Every security decision in the live gate disappears under Python optimization
+**File:** `gateway/main.go:149-150, 228-235`; `engine/src/main.rs:285-303`
+
+**Issue:** The Rust service persists staging data, inserts the in-memory `queued` status, and sends the job before returning its response. If that response is lost, times out, or is canceled after admission, `CloseAndRecv` returns an error even though the worker owns the job. The gateway treats every such error as definitive non-admission and immediately writes PostgreSQL `failed`. The worker can then complete LanceDB indexing while PostgreSQL remains terminally failed, and later GETs will never poll the engine because only `queued`/`processing` rows are reconciled.
+
+**Fix:**
+
+```go
+// Return a typed admission result from grpcEngine.Ingest.
+reply, err := stream.CloseAndRecv()
+if err != nil {
+	return &AdmissionError{Err: err, Ambiguous: true}
+}
+if !reply.GetSuccess() || reply.GetDocumentId() != id {
+	return &AdmissionError{Err: errors.New("engine rejected admission"), Definitive: true}
+}
+return nil
+```
+
+For an ambiguous error, use a detached bounded context to query an authoritative engine admission/status endpoint with bounded retries. Return an accepted polling location when the job exists; mark PostgreSQL failed only after a definitive rejection/non-admission result. Add a test where the engine records `queued` but the final acknowledgement is lost and prove PostgreSQL is not changed to `failed`.
+
+#### CR-02: Failed compensation permanently strands PostgreSQL in `queued`
 
 **Classification:** BLOCKER
-**Files:** `verify-live-evidence.sh:70-93`, `verify-ingestion.sh:72-77`, `verify-ingestion.sh:162-170`
-**Issue:** Schema, challenge binding, UUID, freshness, provider/model, row-count, and stale-generation checks are implemented with Python `assert`. Python removes these statements when `PYTHONOPTIMIZE` is set or the interpreter is launched with `-O`; a direct probe confirmed that `python -O -c "assert False"` exits successfully. In that environment the validator can accept malformed, stale, replayed, or mismatched evidence as long as the few subsequently accessed fields parse. This defeats the gate's primary trust boundary.
-**Fix:** Replace every security-relevant assertion with explicit validation that raises a dedicated exception or exits nonzero, and invoke Python in isolated mode (`-I`) so `PYTHON*` environment variables cannot weaken execution. Add negative tests under `PYTHONOPTIMIZE=1` for mismatched challenge, stale timestamps, extra/secret-bearing fields, and incorrect store counts.
 
-#### CR-03: The LanceDB inspector fabricates the provider/model/staleness verdict
+**File:** `gateway/main.go:170-178, 228-235, 251-255`
 
-**Classification:** BLOCKER
-**Files:** `engine/src/bin/inspect_lancedb.rs:99-124`, `verify-ingestion.sh:164-167`, `verify-ingestion.sh:190-191`
-**Issue:** The inspector checks only that the `embedding_model` column has UTF-8 type, then emits the provider, locked model, and `stale_generation: false` as constants. It does not read node values, generation timestamps, content hashes, or uniqueness. The evidence writer likewise hardcodes `duplicate_generation: False`. Consequently the final gate can report the locked provider/model and “no stale/duplicate generation” for rows that contain a different model, stale values, or duplicates. A 2048-wide schema plus positive row count is not proof of those claims.
-**Fix:** Query sanitized aggregates for the recorded UUID: distinct persisted model values, minimum/maximum ingestion timestamp, duplicate chunk/edge IDs, expected chunk-index cardinality, and generation identity. Derive provider/model, duplicate, and stale booleans from those results and fail closed when they cannot be proven. Do not select or emit raw content, chunk content, headers, or credentials.
+**Issue:** Compensation is a single best-effort `UpdateStatus` call. On a transient PostgreSQL error or timeout, the code only logs and returns 429/502. The row remains `queued`, there is no retry/outbox/reconciler, and a later GET polls an engine job that was never admitted; an engine `NotFound` is converted to another 502 without repairing the row. This directly contradicts the function's claim that it prevents indefinitely queued metadata.
 
-#### CR-04: Real LanceDB write failures bypass rollback and can destroy the prior generation
+**Fix:** Persist a compensation/reconciliation intent durably in the same transaction that inserts the queued row, clear it only after authoritative engine admission, and process outstanding intents until the PostgreSQL terminal transition succeeds. At minimum, add bounded retries plus a background reconciler for queued rows and handle authoritative engine `NotFound` by conditionally transitioning the row to `failed`. Add a test with `updateErr` set and prove eventual terminal convergence rather than only checking the HTTP response.
+
+#### CR-03: The gate accepts evidence bound to an arbitrarily old challenge
 
 **Classification:** BLOCKER
-**File:** `engine/src/main.rs:424-453`, `engine/src/main.rs:568-572`, `engine/src/main.rs:656-660`
-**Issue:** Rollback is invoked only when the synthetic fault injector returns an error after a boundary. Actual failures from deleting edges/nodes/documents or adding document/node/edge batches return immediately through `?`. For example, if the prior rows are deleted and `documents.add` or `nodes.add` fails, the previous completed generation is already gone and no captured version is restored. This directly violates the recoverable same-ID replacement contract and risks data loss.
-**Fix:** Build all batches before mutation, execute the entire mutation sequence inside a result-producing block, and route every error after the version snapshots through `rollback_replacement`. Track which tables were mutated, preserve the original error, and add deterministic failing-table tests for every delete/add operation—not only post-write fault callbacks.
+
+**File:** `scripts/phase02_live_evidence.py:185-196, 271-277`
+
+**Issue:** `validate_challenge` rejects future issue times but never rejects old ones. Evidence freshness is measured only from `generated_at`; therefore an old challenge and old durable ingestion can be replayed by issuing fresh `run_started_at`/`generated_at` values. A direct reproduction passed validation with `issued_at=2025-07-26` and current 2026 evidence, violating the fresh post-change challenge and replay-resistant acceptance contract.
+
+**Fix:**
+
+```python
+MAX_CHALLENGE_AGE = dt.timedelta(minutes=30)
+
+current = now or dt.datetime.now(UTC)
+require(issued_at <= current + MAX_FUTURE_SKEW, "challenge.issued_at is in the future")
+require(current - issued_at <= MAX_CHALLENGE_AGE, "challenge.issued_at is stale")
+```
+
+Also bound the complete run window (`generated_at - issued_at`) to the allowed gate duration and add optimized isolated tests for a stale challenge paired with otherwise fresh, valid evidence.
+
+#### CR-04: The live runner deletes caller-owned input files
+
+**Classification:** BLOCKER
+
+**File:** `verify-ingestion.sh:18-24, 37-43, 115-118`
+
+**Issue:** Any positional argument is assigned to `sample_file`, and the unconditional EXIT trap deletes every non-empty `sample_file`. A caller-supplied document is therefore destroyed on success or failure. This was reproduced by invoking the script with a reviewer-created input while omitting the API key: the script exited at the credential check and still removed the supplied file.
+
+**Fix:**
+
+```bash
+sample_file=""
+sample_is_temporary=false
+
+cleanup() {
+  if "$sample_is_temporary" && [[ -n "$sample_file" ]]; then
+    rm -f -- "$sample_file"
+  fi
+  # clean up only other script-owned paths
+}
+
+if [[ -z "$sample_file" ]]; then
+  sample_file="$(mktemp "./.live-ingestion-sample.XXXXXX")"
+  sample_is_temporary=true
+fi
+```
+
+Add a shell-level regression that passes a caller-owned sample, forces an early failure, and verifies the file remains byte-for-byte intact.
+
+#### CR-05: `--lancedb-path` still requires unrelated configuration
+
+**Classification:** BLOCKER
+
+**File:** `engine/src/bin/inspect_lancedb.rs:342-348`
+
+**Issue:** `path.unwrap_or(settings_path()?)` eagerly evaluates `settings_path()` even when `--lancedb-path` was supplied. Running the built inspector from a directory without `config/config.toml` and passing an explicit database path failed with `configuration file "config/config" not found`. The advertised explicit-path mode is unusable in precisely the isolated diagnostic context it is meant to support.
+
+**Fix:**
+
+```rust
+let database_path = match path {
+    Some(path) => path,
+    None => settings_path()?,
+};
+let database = DatabaseManager::initialize(&database_path).await?;
+```
+
+Add a process-level test that runs from a config-less temporary working directory with `--lancedb-path` and verifies the failure, if any, comes from the explicit store's data invariants rather than configuration lookup.
+
+#### CR-06: The durable inspector accepts embeddings with invalid child values
+
+**Classification:** BLOCKER
+
+**File:** `engine/src/bin/inspect_lancedb.rs:122-138`
+
+**Issue:** `FixedSizeListArray::null_count()` checks only parent list slots. The canonical Arrow schema makes the Float32 child field nullable, so a 2048-wide list containing null child elements has parent `null_count() == 0` and passes the inspector. Non-finite float values are likewise never checked. The final gate can therefore attest a corrupt/non-usable embedding generation as valid.
+
+**Fix:**
+
+```rust
+let values = embeddings
+    .values()
+    .as_any()
+    .downcast_ref::<Float32Array>()
+    .ok_or_else(|| "LanceDB embedding child values have an unexpected type".to_owned())?;
+if values.null_count() != 0 {
+    return Err("LanceDB embedding vectors contain null elements".to_owned());
+}
+if values.iter().flatten().any(|value| !value.is_finite()) {
+    return Err("LanceDB embedding vectors contain non-finite elements".to_owned());
+}
+```
+
+Extend the real-LanceDB fixtures with null-child and non-finite vectors and require both cases to fail closed.
 
 ### Warnings
 
-#### WR-01: Failed-ingest compensation reuses a canceled request context
+#### WR-01: Schema-field `expect` calls can bypass rollback and kill the worker
 
 **Classification:** WARNING
-**Files:** `gateway/main.go:169-175`, `gateway/main.go:225-226`
-**Issue:** When streaming fails because the client disconnects or the request timeout fires, `createDocument` calls compensation with the same canceled `r.Context()`. PostgreSQL immediately rejects the update, leaving the already-inserted row in `queued` even though the upload was not admitted. The log records the failure, but no later process reconciles this orphan.
-**Fix:** Run compensation with a short bounded context detached from request cancellation, such as `context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)`. Add a handler test whose request context is canceled during `Ingest` and assert that the persisted row becomes terminal.
 
-#### WR-02: Accepted queued jobs are discarded on shutdown and never recovered
+**File:** `engine/src/main.rs:528-533, 594-600, 642-651`
+
+**Issue:** Missing node/edge fields panic instead of returning through the replacement operation's `Result`. If schema drift or corruption appears after startup, the panic bypasses `rollback_replacement`, leaves the active status in `processing`, and terminates the sole worker task.
+
+**Fix:** Replace each `expect` with a schema-derived helper returning `Result<ArrayRef, String>` and propagate with `?`, ensuring every post-version-capture schema failure reaches the rollback funnel. Add a fault test for schema-field lookup failure.
+
+#### WR-02: Gateway trusts gRPC response identity without validation
 
 **Classification:** WARNING
-**Files:** `engine/src/main.rs:247-255`, `engine/src/main.rs:722-733`, `engine/src/main.rs:785-797`
-**Issue:** The service acknowledges ingestion only after writing a staging row and enqueueing the job, but the biased shutdown branch exits before draining pending jobs. On restart, the status map and channel are recreated empty and staged rows are not scanned or re-enqueued. Those acknowledged uploads remain staged while PostgreSQL remains nonterminal; subsequent polling receives “status not found” from the engine and can never converge without manual intervention.
-**Fix:** Either drain the accepted queue before shutdown or implement startup recovery that enumerates staged documents, reconstructs jobs with their filename/metadata, re-enqueues them, and restores queryable status. Persist enough staging metadata to make recovery deterministic, and add a restart test with at least one active and one pending job.
+
+**File:** `gateway/main.go:149-150, 252-259`
+
+**Issue:** The ingestion response is discarded, and status polling does not verify that `state.DocumentId` equals the requested PostgreSQL ID. A malformed or misrouted engine response can therefore be applied to the wrong document.
+
+**Fix:** Require ingestion `success == true` and matching `document_id`; require every status response's `document_id` to equal `doc.ID` before persisting status/count. Return 502 on mismatch and add adversarial mismatch tests.
+
+#### WR-03: The generic `bin/` ignore hides future Rust source binaries
+
+**Classification:** WARNING
+
+**File:** `.gitignore:71-77`
+
+**Issue:** The unanchored `bin/` rule matches `engine/src/bin/`. The current inspector is tracked, but any newly created Rust binary under that standard Cargo directory is silently ignored; `git check-ignore -v --no-index engine/src/bin/future_inspector.rs` resolves to this rule.
+
+**Fix:** Remove the redundant rule or anchor it to the repository root as `/bin/`. Keep the explicit `gateway/gateway` and `gateway/gateway.exe` rules for Go outputs.
+
+#### WR-04: The all-target Rust lint gate is red
+
+**Classification:** WARNING
+
+**File:** `engine/src/bin/inspect_lancedb.rs:1-2`; `engine/src/client/tests.rs:101-106`
+
+**Issue:** `cargo clippy --manifest-path engine/Cargo.toml --all-targets -- -D warnings` exits 101. Re-including `db/mod.rs` as a private binary module makes `EntityResolver` and `ExactMatchResolver` dead code in the inspector target, and the mock response builder triggers `clippy::manual-repeat-n`. A warnings-as-errors quality gate cannot pass.
+
+**Fix:** Expose the shared database module through a library target and import it from both binaries instead of recompiling the whole module with `#[path]`. Replace `repeat(...).take(2048)` with `std::iter::repeat_n("0.25", 2048)`, then rerun the exact all-target command.
 
 ---
 
-_Reviewed: 2026-07-25T23:11:24Z_
+_Reviewed: 2026-07-26T07:19:32Z_
 _Reviewer: the agent (gsd-code-reviewer)_
-_Depth: standard_
+_Depth: deep_
