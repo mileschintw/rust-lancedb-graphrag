@@ -30,7 +30,7 @@
 **Goal:** Ingest text/markdown, chunk, and store in LanceDB
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 10 plans (6 executed, 4 gap-closure plans pending)
+**Plans:** 7/10 plans executed
 **Wave 1**
 
 - [x] 02-01-PLAN.md
@@ -57,7 +57,7 @@
 
 **Wave 7** *(blocked on Wave 6 completion; parallel)*
 
-- [ ] 02-07-PLAN.md — Route every replacement failure through rollback, prove retry convergence, persist node summaries as null, and harden canceled-request compensation.
+- [x] 02-07-PLAN.md — Route every replacement failure through rollback, prove retry convergence, persist node summaries as null, and harden canceled-request compensation.
 - [ ] 02-08-PLAN.md — Enforce the 10-second OpenRouter timeout and derive inspector identity/generation facts from durable rows.
 
 **Wave 8** *(blocked on Wave 7 completion)*
