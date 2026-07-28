@@ -1,0 +1,14 @@
+{
+  "document_id": "00000000-0000-4000-8000-000000000001",
+  "provider": "openrouter",
+  "embedding_model": "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+  "document_rows": 1,
+  "staged_document_rows": 0,
+  "node_rows": 3,
+  "edge_rows": 2,
+  "embedding_width": 2048,
+  "generation_count": 1,
+  "duplicate_generation": false,
+  "stale_generation": false,
+  "chunk_indexes_contiguous": true
+}
