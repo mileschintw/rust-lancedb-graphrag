@@ -2,7 +2,7 @@
 # GSD codex_hooks ownership: section
 
 model = "gpt-5.6-sol"
-model_reasoning_effort = "low"
+model_reasoning_effort = "medium"
 
 developer_instructions = """
 Use Luna at max reasoning for normal work.
