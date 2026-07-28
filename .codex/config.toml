@@ -5,17 +5,27 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
 
 developer_instructions = """
-Use Luna at max reasoning for normal work.
-Consult GPT-5.6-Sol at medium reasoning for architecture, difficult bugs,
-security, data consistency, major refactors, tradeoffs, and risky final reviews.
-Ask for approval before entering hard-thinking mode unless the user requested it.
+Orchestrator (this session): gpt-5.6-sol @ medium.
+Default implementer subagent: gpt-5.6-luna @ xhigh.
+Use Luna subagents for normal implementation, refactors, tests, and mechanical edits.
+Escalate to Sol (this parent) for architecture, difficult bugs, security,
+data consistency, major refactors, tradeoffs, and risky final reviews.
+Ask for approval before hard-thinking / long Sol-only loops unless the user requested it.
+When spawning, prefer the configured default subagent model; do not silently stay on Sol for bulk coding.
 """
 
 [features]
 hooks = true
 
+# Critical for Sol + MAv2: let spawn carry model/effort again
+[features.multi_agent_v2]
+hide_spawn_agent_metadata = false
+tool_namespace = "agents"
+# optional:
+# max_concurrent_threads_per_session = 8
+
 [agents]
-max_depth = 1
 enabled = true
+max_depth = 1
 default_subagent_model = "gpt-5.6-luna"
 default_subagent_reasoning_effort = "xhigh"
