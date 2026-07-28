@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 2
-current_plan: 10
-status: complete
-stopped_at: Completed 02-10-PLAN.md
-last_updated: "2026-07-26T06:18:36.988Z"
+current_plan: 11
+status: planned
+stopped_at: Ready to execute 02-11-PLAN.md
+last_updated: "2026-07-28T20:35:16.463Z"
 progress:
   total_phases: 2
   completed_phases: 2
-  total_plans: 11
+  total_plans: 17
   completed_plans: 11
 ---
 
@@ -19,15 +19,16 @@ progress:
 ## Current Status
 
 - Phase 1 completed successfully.
-- Phase 2's initial six-plan implementation and gap-closure plans 02-07 through 02-10 completed successfully with challenge-bound live OpenRouter ingestion and direct PostgreSQL/LanceDB validation.
+- Phase 2's initial six-plan implementation and gap-closure plans 02-07 through 02-10 completed, but verification found additional reliability, evidence-gate, inspector, and privacy-enforcement gaps.
+- Verified gap-closure plans 02-11 through 02-16 are ready to execute.
 
 ## Active Phase
 
 - **Phase:** 2
-- **Status:** Complete
-- **Current Plan:** 10
-- **Phase Progress:** 10 of 10 plans complete (100%)
-- **Current Focus:** Phase 02 complete — ingestion-chunking-vector-storage
+- **Status:** Ready to execute
+- **Current Plan:** 11
+- **Phase Progress:** 10 of 16 plans complete (62.5%)
+- **Current Focus:** Execute Phase 02 gap-closure plans 02-11 through 02-16
 
 ## Completed Phases
 
@@ -35,8 +36,9 @@ progress:
 
 ## Known Issues & Debt
 
-- No Phase 02 final live-gate blocker remains; both private runtime artifacts were removed after exit-zero validation.
-- Pre-existing RAG and graph query stubs are recorded in the phase deferred-items ledger for their owning phases.
+- Phase 02 verification found seven open truths covering ambiguous admission, eventual compensation, challenge freshness, caller-owned input safety, explicit-path inspection, corrupt embedding rejection, and privacy enforcement.
+- Plans 02-11 through 02-16 cover those truths plus review warnings WR-01 through WR-04.
+- Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for their owning phases.
 
 ## Deployment & Environments
 

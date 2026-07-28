@@ -27,10 +27,10 @@
 
 ### Phase 2: Ingestion, Chunking & Vector Storage
 
-**Goal:** Ingest text/markdown, chunk, and store in LanceDB
+**Goal:** As a Lancet API user, I want to ingest and safely replace text or Markdown documents, so that the last completed LanceDB index and PostgreSQL status remain trustworthy through failures and concurrent polling.
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 10/10 plans executed
+**Plans:** 10/16 plans executed
 **Wave 1**
 
 - [x] 02-01-PLAN.md
@@ -67,6 +67,24 @@
 **Wave 9** *(blocked on Wave 8 completion)*
 
 - [x] 02-10-PLAN.md — Execute a fresh post-change OpenRouter ingestion and accept it only after challenge-bound PostgreSQL/LanceDB reinspection and success-only runtime-artifact cleanup.
+
+**Wave 10** *(blocked on Wave 9 completion; parallel)*
+
+- [ ] 02-11-PLAN.md — Resolve ambiguous gRPC admission, retry terminal reconciliation, repair engine NotFound, and validate response identity.
+- [ ] 02-12-PLAN.md — Bound challenge freshness, preserve caller-owned input, and stop the build-output ignore from hiding Rust binaries.
+- [ ] 02-13-PLAN.md — Make explicit-path LanceDB inspection configuration-independent and reject null or non-finite embedding children.
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 02-14-PLAN.md — Route schema lookup failures through rollback and restore a green all-target Rust lint gate.
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 02-15-PLAN.md — Machine-wire privacy prohibition enforcement and require human review of nondeterministic disclosure surfaces.
+
+**Wave 13** *(blocked on Wave 12 completion)*
+
+- [ ] 02-16-PLAN.md — Run fresh OpenRouter validation only after deterministic closure, then reconcile current state and clean evidence on full success.
 
 **Success Criteria:**
 

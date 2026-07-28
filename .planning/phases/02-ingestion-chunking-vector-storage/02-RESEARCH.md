@@ -131,7 +131,7 @@ message GetIngestionStatusResponse {
     *   Uses `futures::stream::iter().buffer_unordered(5)` to execute up to 5 concurrent embedding HTTP requests per document.
 *   **Exponential Backoff**:
     *   Wraps HTTP request in a retry loop.
-    *   Attempts up to 3 times, sleeping 1s, then 2s, before failing.
+    *   Attempts up to 4 times total, sleeping 1s, then 2s, then 4s between retries before failing.
 
 ### 1.6 LanceDB Table Schemas & Drift Detection
 The database tables are initialized at Rust startup.
