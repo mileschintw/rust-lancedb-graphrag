@@ -100,10 +100,7 @@ fn read_request(stream: &mut TcpStream) {
 
 fn write_response(stream: &mut TcpStream, status: u16) {
     let body = if status == 200 {
-        let values = std::iter::repeat("0.25")
-            .take(2048)
-            .collect::<Vec<_>>()
-            .join(",");
+        let values = vec!["0.25"; 2048].join(",");
         format!(r#"{{"data":[{{"embedding":[{values}]}}]}}"#)
     } else {
         r#"{"error":"temporary"}"#.into()
