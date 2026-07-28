@@ -7,7 +7,8 @@ use arrow_array::{
 };
 use uuid::Uuid;
 
-use super::{db::DatabaseManager, inspect_document, Inspection, EMBEDDING_MODEL};
+use super::{inspect_document, Inspection, EMBEDDING_MODEL};
+use engine::db::DatabaseManager;
 
 #[derive(Clone)]
 struct NodeFixture {
@@ -297,4 +298,133 @@ async fn stale_edge_endpoint_fails_closed() {
     let mut edges = valid_edges(&document_id);
     edges[1].target_node_id = format!("{document_id}:stale");
     assert_rejected("stale-edge-endpoint", nodes, edges).await;
+}
+
+#[tokio::test]
+async fn explicit_path_works_from_configless_working_directory() {
+    let document_id = Uuid::new_v4().to_string();
+    let nodes = valid_nodes(&document_id);
+    let edges = valid_edges(&document_id);
+    let (database, path, stored_document_id) = fixture("configless", &nodes, &edges).await;
+    drop(database);
+
+    let mut inspector_bin = std::env::current_exe().unwrap();
+    inspector_bin.pop();
+    if inspector_bin.ends_with("deps") {
+        inspector_bin.pop();
+    }
+    inspector_bin.push("inspect_lancedb");
+    if cfg!(windows) {
+        inspector_bin.set_extension("exe");
+    }
+    if !inspector_bin.exists() {
+        let status = std::process::Command::new("cargo")
+            .args([
+                "build",
+                "--manifest-path",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+                "--bin",
+                "inspect_lancedb",
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success(), "cargo build inspect_lancedb failed");
+    }
+    let temp_dir = std::env::temp_dir().join(format!("configless-workdir-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let output = std::process::Command::new(inspector_bin)
+        .current_dir(&temp_dir)
+        .arg("--document-id")
+        .arg(&stored_document_id)
+        .arg("--lancedb-path")
+        .arg(&path)
+        .output()
+        .unwrap();
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+    let _ = std::fs::remove_dir_all(&path);
+
+    assert!(
+        output.status.success(),
+        "inspector failed from config-less dir: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let inspection: Inspection = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(inspection.document_id, stored_document_id);
+}
+
+#[tokio::test]
+async fn embedding_children_null_and_non_finite_fail_closed() {
+    let path = database_path("embedding-children");
+    let document_id = Uuid::new_v4().to_string();
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let documents = database.documents_table().await.unwrap();
+    documents
+        .add(
+            RecordBatch::try_new(
+                documents.schema().await.unwrap(),
+                vec![
+                    Arc::new(StringArray::from(vec![document_id.as_str()])),
+                    Arc::new(BinaryArray::from_vec(vec![b"fixture"])),
+                ],
+            )
+            .unwrap(),
+        )
+        .execute()
+        .await
+        .unwrap();
+
+    let node_table = database.nodes_table().await.unwrap();
+    let node_schema = node_table.schema().await.unwrap();
+
+    let mut values_null = vec![Some(0.25f32); 2048];
+    values_null[10] = None;
+    let embeddings_null =
+        FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(vec![Some(values_null)], 2048);
+
+    let nullable =
+        |name: &str| new_null_array(node_schema.field_with_name(name).unwrap().data_type(), 1);
+
+    let node_batch_null = RecordBatch::try_new(
+        node_schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec![document_id.as_str()])),
+            Arc::new(StringArray::from(vec![format!("{document_id}:0")])),
+            Arc::new(Int32Array::from(vec![0])),
+            Arc::new(Int32Array::from(vec![0])),
+            Arc::new(Int32Array::from(vec![9])),
+            Arc::new(StringArray::from(vec!["fixture"])),
+            Arc::new(embeddings_null),
+            Arc::new(Int32Array::from(vec![1])),
+            Arc::new(StringArray::from(vec!["o200k_base"])),
+            Arc::new(StringArray::from(vec!["1"])),
+            nullable("title"),
+            nullable("section_path"),
+            nullable("page_start"),
+            nullable("page_end"),
+            nullable("content_hash"),
+            nullable("chunker_version"),
+            Arc::new(StringArray::from(vec![Some(EMBEDDING_MODEL)])),
+            Arc::new(Int64Array::from(vec![Some(42)])),
+            nullable("content_type"),
+            nullable("community_ids"),
+            nullable("summary"),
+            nullable("summary_vector"),
+            nullable("unsummarized_refs"),
+        ],
+    )
+    .unwrap();
+
+    node_table.add(node_batch_null).execute().await.unwrap();
+    let res = inspect_document(&database, &document_id).await;
+    assert!(res.is_err());
+    let err_msg = res.unwrap_err();
+    assert!(
+        err_msg.contains("null child values"),
+        "got error: {err_msg}"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
 }

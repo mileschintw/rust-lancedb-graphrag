@@ -1,10 +1,9 @@
-#[path = "../db/mod.rs"]
-mod db;
-
 use std::collections::HashSet;
 
-use arrow_array::{Array, FixedSizeListArray, Int32Array, Int64Array, RecordBatch, StringArray};
-use db::DatabaseManager;
+use arrow_array::{
+    Array, FixedSizeListArray, Float32Array, Int32Array, Int64Array, RecordBatch, StringArray,
+};
+use engine::db::DatabaseManager;
 use futures::TryStreamExt;
 use lancedb::{
     query::{ExecutableQuery, QueryBase, Select},
@@ -15,7 +14,7 @@ use uuid::Uuid;
 
 const EMBEDDING_MODEL: &str = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, serde::Deserialize, Debug)]
 struct Inspection {
     document_id: String,
     provider: String,
@@ -123,6 +122,22 @@ fn derive_durable_facts(
         let embeddings = embedding_column(batch, "embedding")?;
         if embeddings.null_count() != 0 {
             return Err("LanceDB embedding rows contain null values".to_owned());
+        }
+        let child_values = embeddings
+            .values()
+            .as_any()
+            .downcast_ref::<Float32Array>()
+            .ok_or_else(|| "LanceDB embedding values have unexpected type".to_owned())?;
+        if child_values.null_count() != 0 {
+            return Err("LanceDB embedding values contain null child values".to_owned());
+        }
+        for i in 0..child_values.len() {
+            if child_values.is_null(i) {
+                return Err("LanceDB embedding values contain null child values".to_owned());
+            }
+            if !child_values.value(i).is_finite() {
+                return Err("LanceDB embedding values contain non-finite child values".to_owned());
+            }
         }
         let width = embeddings.value_length();
         if width != 2048 {
@@ -344,7 +359,11 @@ async fn main() -> Result<(), String> {
     if id.get_version_num() != 4 {
         return Err("document_id must be a UUIDv4".to_owned());
     }
-    let database = DatabaseManager::initialize(&path.unwrap_or(settings_path()?)).await?;
+    let target_path = match path {
+        Some(p) => p,
+        None => settings_path()?,
+    };
+    let database = DatabaseManager::initialize(&target_path).await?;
     let inspection = inspect_document(&database, &document_id).await?;
     println!(
         "{}",
