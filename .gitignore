@@ -73,7 +73,7 @@ data/.phase02-lancedb-preclean-*/
 # Compiled binaries
 gateway/gateway
 gateway/gateway.exe
-bin/
+/bin/
 .tmp-go-cache/
 # Test/coverage/profile outputs
 *.test

@@ -9,6 +9,7 @@ gateway_url="${GATEWAY_URL:-http://127.0.0.1:8080}"
 verification_environment="verify"
 managed_services=false
 sample_file=""
+sample_owned=false
 engine_pid=""
 gateway_pid=""
 engine_log=""
@@ -20,7 +21,7 @@ cleanup() {
   [[ -z "$engine_pid" ]] || kill "$engine_pid" 2>/dev/null || true
   [[ -z "$gateway_log" ]] || rm -f -- "$gateway_log"
   [[ -z "$engine_log" ]] || rm -f -- "$engine_log"
-  [[ -z "$sample_file" ]] || rm -f -- "$sample_file"
+  if [[ "$sample_owned" == "true" && -n "$sample_file" ]]; then rm -f -- "$sample_file"; fi
   [[ -z "$evidence_tmp" ]] || rm -f -- "$evidence_tmp"
 }
 trap cleanup EXIT
@@ -114,6 +115,7 @@ if "$managed_services"; then start_managed_services; fi
 
 if [[ -z "$sample_file" ]]; then
   sample_file="$(mktemp "./.live-ingestion-sample.XXXXXX")"
+  sample_owned=true
   printf '# Lancet live verification\n\nOpenRouter-backed indexing proof.\n' > "$sample_file"
 fi
 response="$(curl --fail --silent --show-error -X POST -F "file=@${sample_file};filename=$(basename "$sample_file")" "${gateway_url}/documents")"

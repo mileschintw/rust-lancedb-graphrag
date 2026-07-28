@@ -97,6 +97,8 @@ SENSITIVE_FIELD_PARTS = (
 )
 UTC = dt.timezone.utc
 MAX_EVIDENCE_AGE = dt.timedelta(minutes=30)
+MAX_CHALLENGE_AGE = dt.timedelta(minutes=30)
+MAX_RUN_WINDOW = dt.timedelta(minutes=35)
 MAX_FUTURE_SKEW = dt.timedelta(minutes=5)
 COUNT_PATTERN = re.compile(r"^[0-9]+$")
 
@@ -193,6 +195,7 @@ def validate_challenge(value: Any, now: dt.datetime | None = None) -> Mapping[st
     issued_at = parse_timestamp(challenge.get("issued_at"), "challenge.issued_at")
     current = now or dt.datetime.now(UTC)
     require(issued_at <= current + MAX_FUTURE_SKEW, "challenge.issued_at is in the future")
+    require(current - issued_at <= MAX_CHALLENGE_AGE, "challenge.issued_at is stale")
     return challenge
 
 
@@ -275,6 +278,8 @@ def validate_evidence(
     require(issued_at <= run_started_at <= generated_at, "evidence timestamps are not ordered")
     require(generated_at <= current + MAX_FUTURE_SKEW, "evidence.generated_at is in the future")
     require(current - generated_at <= MAX_EVIDENCE_AGE, "evidence.generated_at is stale")
+    require(generated_at - issued_at <= MAX_RUN_WINDOW, "complete run window exceeded")
+    require(run_started_at - issued_at <= MAX_RUN_WINDOW, "run start delay exceeded")
     return evidence
 
 
@@ -301,6 +306,8 @@ def build_evidence(
     current = dt.datetime.now(UTC)
     require(run_started_at >= issued_at, "run_started_at predates challenge")
     require(run_started_at <= current + MAX_FUTURE_SKEW, "run_started_at is in the future")
+    require(current - issued_at <= MAX_RUN_WINDOW, "complete run window exceeded")
+    require(run_started_at - issued_at <= MAX_RUN_WINDOW, "run start delay exceeded")
     generated_at = current.strftime("%Y-%m-%dT%H:%M:%SZ")
     evidence = {
         "schema_version": 1,
