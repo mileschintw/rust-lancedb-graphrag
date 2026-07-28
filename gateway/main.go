@@ -118,36 +118,47 @@ func (s postgresStore) UpdateStatus(ctx context.Context, p db.UpdateDocumentStat
 	return doc, nil
 }
 
+type IngestOutcome struct {
+	Ambiguous bool
+	Err       error
+}
+
 type engine interface {
-	Ingest(context.Context, string, string, io.Reader) error
+	Ingest(context.Context, string, string, io.Reader) IngestOutcome
 	IngestionStatus(context.Context, string) (*pb.GetIngestionStatusResponse, error)
 	Ping(context.Context) (time.Duration, error)
 }
 
 type grpcEngine struct{ client pb.LancetServiceClient }
 
-func (e grpcEngine) Ingest(ctx context.Context, id, filename string, src io.Reader) error {
+func (e grpcEngine) Ingest(ctx context.Context, id, filename string, src io.Reader) IngestOutcome {
 	stream, err := e.client.IngestDocument(ctx)
 	if err != nil {
-		return err
+		return IngestOutcome{Err: err}
 	}
 	buf := make([]byte, streamBufferSize)
 	for {
 		n, readErr := src.Read(buf)
 		if n > 0 {
 			if err := stream.Send(&pb.IngestDocumentRequest{DocumentId: id, Filename: filename, ChunkData: append([]byte(nil), buf[:n]...)}); err != nil {
-				return err
+				return IngestOutcome{Err: err}
 			}
 		}
 		if errors.Is(readErr, io.EOF) {
 			break
 		}
 		if readErr != nil {
-			return readErr
+			return IngestOutcome{Err: readErr}
 		}
 	}
-	_, err = stream.CloseAndRecv()
-	return err
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		return IngestOutcome{Ambiguous: true, Err: err}
+	}
+	if !resp.GetSuccess() || resp.GetDocumentId() != id {
+		return IngestOutcome{Err: fmt.Errorf("ingest rejected: success=%v, document_id=%q", resp.GetSuccess(), resp.GetDocumentId())}
+	}
+	return IngestOutcome{}
 }
 func (e grpcEngine) IngestionStatus(ctx context.Context, id string) (*pb.GetIngestionStatusResponse, error) {
 	return e.client.GetIngestionStatus(ctx, &pb.GetIngestionStatusRequest{DocumentId: id})
@@ -159,22 +170,49 @@ func (e grpcEngine) Ping(ctx context.Context) (time.Duration, error) {
 }
 
 type app struct {
-	store  documentStore
-	engine engine
-	logger *zap.Logger
+	store      documentStore
+	engine     engine
+	logger     *zap.Logger
+	retrySleep func(int)
+}
+
+func (a app) backoff(attempt int) {
+	if a.retrySleep != nil {
+		a.retrySleep(attempt)
+		return
+	}
+	time.Sleep(time.Duration(attempt*50) * time.Millisecond)
 }
 
 // compensateFailedIngest prevents an admission failure from leaving an
-// indefinitely queued PostgreSQL row.  The original gRPC error remains the
+// indefinitely queued PostgreSQL row. The original gRPC error remains the
 // response authority; a compensation failure is operational detail only.
 func (a app) compensateFailedIngest(id string, ingestErr error) {
-	ctx, cancel := context.WithTimeout(context.Background(), ingestCompensationTimeout)
-	defer cancel()
 	errText := pgtype.Text{String: "engine ingestion failed", Valid: true}
-	if _, err := a.store.UpdateStatus(ctx, db.UpdateDocumentStatusParams{
-		ID: id, Status: "failed", ChunkCount: 0, ErrorMessage: errText,
-	}); err != nil {
-		a.logger.Error("compensate failed ingestion", zap.String("document_id", id), zap.Error(ingestErr), zap.Error(err))
+	params := db.UpdateDocumentStatusParams{
+		ID:           id,
+		Status:       "failed",
+		ChunkCount:   0,
+		ErrorMessage: errText,
+	}
+
+	for attempt := 1; attempt <= 5; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), ingestCompensationTimeout)
+		_, err := a.store.UpdateStatus(ctx, params)
+		cancel()
+		if err == nil {
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			checkCtx, checkCancel := context.WithTimeout(context.Background(), ingestCompensationTimeout)
+			winner, getErr := a.store.Get(checkCtx, id)
+			checkCancel()
+			if getErr == nil && (winner.Status == "completed" || winner.Status == "failed") {
+				return
+			}
+		}
+		a.logger.Error("compensate failed ingestion", zap.String("document_id", id), zap.Int("attempt", attempt), zap.Error(ingestErr), zap.Error(err))
+		a.backoff(attempt)
 	}
 }
 
@@ -225,9 +263,23 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not queue document", http.StatusInternalServerError)
 		return
 	}
-	if err := a.engine.Ingest(r.Context(), id, doc.Filename, io.LimitReader(file, maxUploadBytes+1)); err != nil {
-		a.compensateFailedIngest(id, err)
-		if status.Code(err) == codes.ResourceExhausted {
+	outcome := a.engine.Ingest(r.Context(), id, doc.Filename, io.LimitReader(file, maxUploadBytes+1))
+	if outcome.Err != nil {
+		if outcome.Ambiguous {
+			checkCtx, checkCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			statusResp, statusErr := a.engine.IngestionStatus(checkCtx, id)
+			checkCancel()
+			if statusErr == nil && statusResp.GetDocumentId() == id {
+				st := statusResp.GetStatus()
+				if st == "queued" || st == "processing" || st == "completed" || st == "failed" {
+					w.Header().Set("Location", "/documents/"+doc.ID)
+					writeJSON(w, http.StatusAccepted, doc)
+					return
+				}
+			}
+		}
+		a.compensateFailedIngest(id, outcome.Err)
+		if status.Code(outcome.Err) == codes.ResourceExhausted {
 			http.Error(w, "ingestion queue is full", http.StatusTooManyRequests)
 			return
 		}
@@ -251,7 +303,31 @@ func (a app) getDocument(w http.ResponseWriter, r *http.Request) {
 	if doc.Status == "queued" || doc.Status == "processing" {
 		state, err := a.engine.IngestionStatus(r.Context(), doc.ID)
 		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				errText := pgtype.Text{String: "engine document not found", Valid: true}
+				repairedDoc, updateErr := a.store.UpdateStatus(r.Context(), db.UpdateDocumentStatusParams{
+					ID:           doc.ID,
+					Status:       "failed",
+					ChunkCount:   0,
+					ErrorMessage: errText,
+				})
+				if errors.Is(updateErr, pgx.ErrNoRows) {
+					winner, getErr := a.store.Get(r.Context(), doc.ID)
+					if getErr == nil && (winner.Status == "completed" || winner.Status == "failed") {
+						repairedDoc = winner
+						updateErr = nil
+					}
+				}
+				if updateErr == nil {
+					writeJSON(w, http.StatusOK, repairedDoc)
+					return
+				}
+			}
 			http.Error(w, "could not poll ingestion status", http.StatusBadGateway)
+			return
+		}
+		if state.GetDocumentId() != doc.ID {
+			http.Error(w, "mismatched status document id", http.StatusBadGateway)
 			return
 		}
 		if state.GetStatus() == "completed" || state.GetStatus() == "failed" {
