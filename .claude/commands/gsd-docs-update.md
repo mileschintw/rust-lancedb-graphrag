@@ -26,7 +26,7 @@ Flag handling rule:
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/docs-update.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/docs-update.md
 </execution_context>
 
 <context>

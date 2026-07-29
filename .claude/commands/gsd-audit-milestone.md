@@ -18,7 +18,7 @@ Verify milestone achieved its definition of done. Check requirements coverage, c
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/audit-milestone.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/audit-milestone.md
 </execution_context>
 
 <context>

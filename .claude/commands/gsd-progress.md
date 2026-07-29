@@ -32,10 +32,10 @@ Three modes:
 </flags>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/progress.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/next.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/do.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/progress.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/next.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/do.md
+@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <process>

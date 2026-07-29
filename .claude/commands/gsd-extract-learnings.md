@@ -17,7 +17,7 @@ Extract structured learnings from completed phase artifacts (PLAN.md, SUMMARY.md
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/extract-learnings.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/extract-learnings.md
 </execution_context>
 
-Execute the extract-learnings workflow from @C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/extract-learnings.md end-to-end.
+Execute the extract-learnings workflow from @D:/Repos/lancet/.claude/gsd-core/workflows/extract-learnings.md end-to-end.

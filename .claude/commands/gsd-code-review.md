@@ -31,7 +31,7 @@ Output: {padded_phase}-REVIEW.md in phase directory + inline summary of findings
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/code-review.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/code-review.md
 </execution_context>
 
 <context>

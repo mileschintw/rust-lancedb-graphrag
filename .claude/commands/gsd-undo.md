@@ -21,9 +21,9 @@ Three modes:
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/undo.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/gate-prompts.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/undo.md
+@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@D:/Repos/lancet/.claude/gsd-core/references/gate-prompts.md
 </execution_context>
 
 <context>

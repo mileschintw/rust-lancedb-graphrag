@@ -118,7 +118,11 @@
       "read_file(~/repos/lancet/.agents/gsd-core/*)",
       "read_file(~/repos/lancet/.agents/agents/gsd-*)",
       "read_file(~/repos/lancet/.agents/skills/gsd-*)",
-      "command(node ~/repos/lancet/.agents/hooks/*)"
+      "command(node ~/repos/lancet/.agents/hooks/*)",
+      "read_file(D:/Repos/lancet/.agents/gsd-core/*)",
+      "read_file(D:/Repos/lancet/.agents/agents/gsd-*)",
+      "read_file(D:/Repos/lancet/.agents/skills/gsd-*)",
+      "command(node D:/Repos/lancet/.agents/hooks/*)"
     ]
   }
 }

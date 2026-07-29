@@ -30,13 +30,13 @@ Does not require prior new-project setup — auto-creates `.planning/sketches/` 
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/sketch.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/sketch-wrap-up.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/sketch-theme-system.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/sketch-interactivity.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/sketch-tooling.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/sketch-variant-patterns.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/sketch.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/sketch-wrap-up.md
+@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@D:/Repos/lancet/.claude/gsd-core/references/sketch-theme-system.md
+@D:/Repos/lancet/.claude/gsd-core/references/sketch-interactivity.md
+@D:/Repos/lancet/.claude/gsd-core/references/sketch-tooling.md
+@D:/Repos/lancet/.claude/gsd-core/references/sketch-variant-patterns.md
 </execution_context>
 
 <runtime_note>
