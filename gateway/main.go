@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/viper"
@@ -81,6 +82,11 @@ type documentStore interface {
 	Insert(context.Context, db.InsertDocumentParams) (db.Document, error)
 	Get(context.Context, string) (db.Document, error)
 	UpdateStatus(context.Context, db.UpdateDocumentStatusParams) (db.Document, error)
+	CreateReconciliationIntent(context.Context, db.CreateReconciliationIntentParams) (db.DocumentReconciliationIntent, error)
+	ClaimDueReconciliationIntents(context.Context, db.ClaimDueReconciliationIntentsParams) ([]db.DocumentReconciliationIntent, error)
+	DeleteReconciliationIntent(context.Context, string) (pgconn.CommandTag, error)
+	RescheduleReconciliationIntent(context.Context, db.RescheduleReconciliationIntentParams) (db.DocumentReconciliationIntent, error)
+	GetReconciliationIntent(context.Context, string) (db.DocumentReconciliationIntent, error)
 }
 
 type postgresStore struct{ pool *pgxpool.Pool }
@@ -117,6 +123,69 @@ func (s postgresStore) UpdateStatus(ctx context.Context, p db.UpdateDocumentStat
 		return db.Document{}, err
 	}
 	return doc, nil
+}
+func (s postgresStore) CreateReconciliationIntent(ctx context.Context, p db.CreateReconciliationIntentParams) (db.DocumentReconciliationIntent, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return db.DocumentReconciliationIntent{}, err
+	}
+	defer tx.Rollback(ctx)
+	intent, err := db.New(tx).CreateReconciliationIntent(ctx, p)
+	if err != nil {
+		return db.DocumentReconciliationIntent{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return db.DocumentReconciliationIntent{}, err
+	}
+	return intent, nil
+}
+func (s postgresStore) ClaimDueReconciliationIntents(ctx context.Context, p db.ClaimDueReconciliationIntentsParams) ([]db.DocumentReconciliationIntent, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	intents, err := db.New(tx).ClaimDueReconciliationIntents(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return intents, nil
+}
+func (s postgresStore) DeleteReconciliationIntent(ctx context.Context, id string) (pgconn.CommandTag, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return pgconn.CommandTag{}, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := db.New(tx).DeleteReconciliationIntent(ctx, id)
+	if err != nil {
+		return pgconn.CommandTag{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return pgconn.CommandTag{}, err
+	}
+	return tag, nil
+}
+func (s postgresStore) RescheduleReconciliationIntent(ctx context.Context, p db.RescheduleReconciliationIntentParams) (db.DocumentReconciliationIntent, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return db.DocumentReconciliationIntent{}, err
+	}
+	defer tx.Rollback(ctx)
+	intent, err := db.New(tx).RescheduleReconciliationIntent(ctx, p)
+	if err != nil {
+		return db.DocumentReconciliationIntent{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return db.DocumentReconciliationIntent{}, err
+	}
+	return intent, nil
+}
+func (s postgresStore) GetReconciliationIntent(ctx context.Context, id string) (db.DocumentReconciliationIntent, error) {
+	return db.New(s.pool).GetReconciliationIntent(ctx, id)
 }
 
 type IngestOutcome struct {
@@ -203,6 +272,14 @@ func (a app) backoff(attempt int) {
 // indefinitely queued PostgreSQL row. The original gRPC error remains the
 // response authority; a compensation failure is operational detail only.
 func (a app) compensateFailedIngest(id string, ingestErr error) {
+	intentCtx, intentCancel := context.WithTimeout(context.Background(), ingestCompensationTimeout)
+	_, _ = a.store.CreateReconciliationIntent(intentCtx, db.CreateReconciliationIntentParams{
+		ID:            id,
+		DesiredStatus: "failed",
+		ReasonClass:   "failed_admission",
+	})
+	intentCancel()
+
 	errText := pgtype.Text{String: "engine ingestion failed", Valid: true}
 	params := db.UpdateDocumentStatusParams{
 		ID:           id,
@@ -216,6 +293,9 @@ func (a app) compensateFailedIngest(id string, ingestErr error) {
 		_, err := a.store.UpdateStatus(ctx, params)
 		cancel()
 		if err == nil {
+			delCtx, delCancel := context.WithTimeout(context.Background(), ingestCompensationTimeout)
+			_, _ = a.store.DeleteReconciliationIntent(delCtx, id)
+			delCancel()
 			return
 		}
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -223,11 +303,126 @@ func (a app) compensateFailedIngest(id string, ingestErr error) {
 			winner, getErr := a.store.Get(checkCtx, id)
 			checkCancel()
 			if getErr == nil && (winner.Status == "completed" || winner.Status == "failed") {
+				delCtx, delCancel := context.WithTimeout(context.Background(), ingestCompensationTimeout)
+				_, _ = a.store.DeleteReconciliationIntent(delCtx, id)
+				delCancel()
 				return
 			}
 		}
 		a.logger.Error("compensate failed ingestion", zap.String("document_id", id), zap.Int("attempt", attempt), zap.Error(ingestErr), zap.Error(err))
 		a.backoff(attempt)
+	}
+}
+
+type durableReconciler struct {
+	store       documentStore
+	logger      *zap.Logger
+	interval    time.Duration
+	batchSize   int32
+	leaseWindow time.Duration
+	nowFunc     func() time.Time
+	maxBackoff  time.Duration
+}
+
+func newDurableReconciler(store documentStore, logger *zap.Logger) *durableReconciler {
+	return &durableReconciler{
+		store:       store,
+		logger:      logger,
+		interval:    1 * time.Second,
+		batchSize:   10,
+		leaseWindow: 30 * time.Second,
+		nowFunc:     time.Now,
+		maxBackoff:  60 * time.Second,
+	}
+}
+
+func (r *durableReconciler) Run(ctx context.Context) {
+	r.reconcileBatch(ctx)
+	ticker := time.NewTicker(r.interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.reconcileBatch(ctx)
+		}
+	}
+}
+
+func (r *durableReconciler) reconcileBatch(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	now := r.nowFunc()
+	leaseExpiry := now.Add(r.leaseWindow)
+
+	claimCtx, claimCancel := context.WithTimeout(ctx, 5*time.Second)
+	intents, err := r.store.ClaimDueReconciliationIntents(claimCtx, db.ClaimDueReconciliationIntentsParams{
+		Limit:         r.batchSize,
+		NextAttemptAt: pgtype.Timestamp{Time: leaseExpiry, Valid: true},
+	})
+	claimCancel()
+	if err != nil {
+		if !errors.Is(err, context.Canceled) && ctx.Err() == nil {
+			r.logger.Error("claim due reconciliation intents", zap.Error(err))
+		}
+		return
+	}
+
+	for _, intent := range intents {
+		if ctx.Err() != nil {
+			return
+		}
+		r.reconcileOne(ctx, intent)
+	}
+}
+
+func (r *durableReconciler) reconcileOne(ctx context.Context, intent db.DocumentReconciliationIntent) {
+	workCtx, workCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer workCancel()
+
+	errText := pgtype.Text{String: "engine ingestion failed", Valid: true}
+	_, err := r.store.UpdateStatus(workCtx, db.UpdateDocumentStatusParams{
+		ID:           intent.DocumentID,
+		Status:       intent.DesiredStatus,
+		ChunkCount:   0,
+		ErrorMessage: errText,
+	})
+
+	if err == nil {
+		_, _ = r.store.DeleteReconciliationIntent(workCtx, intent.DocumentID)
+		return
+	}
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		doc, getErr := r.store.Get(workCtx, intent.DocumentID)
+		if getErr == nil && (doc.Status == "completed" || doc.Status == "failed") {
+			_, _ = r.store.DeleteReconciliationIntent(workCtx, intent.DocumentID)
+			return
+		}
+	}
+
+	r.rescheduleIntent(workCtx, intent, err)
+}
+
+func (r *durableReconciler) rescheduleIntent(ctx context.Context, intent db.DocumentReconciliationIntent, cause error) {
+	now := r.nowFunc()
+	nextRetry := intent.RetryCount + 1
+	backoffSec := 1 << min(nextRetry, 10)
+	backoffDur := time.Duration(backoffSec) * time.Second
+	if backoffDur > r.maxBackoff {
+		backoffDur = r.maxBackoff
+	}
+	nextAttemptAt := now.Add(backoffDur)
+
+	_, err := r.store.RescheduleReconciliationIntent(ctx, db.RescheduleReconciliationIntentParams{
+		DocumentID:     intent.DocumentID,
+		NextAttemptAt:  pgtype.Timestamp{Time: nextAttemptAt, Valid: true},
+		LastErrorClass: pgtype.Text{String: "reconciliation_update_failed", Valid: true},
+	})
+	if err != nil {
+		r.logger.Error("reschedule reconciliation intent", zap.String("document_id", intent.DocumentID), zap.Error(err), zap.Error(cause))
 	}
 }
 
@@ -453,6 +648,12 @@ func main() {
 		logger.Fatal("dial engine", zap.Error(err))
 	}
 	defer conn.Close()
+
+	recCtx, recCancel := context.WithCancel(context.Background())
+	defer recCancel()
+	reconciler := newDurableReconciler(postgresStore{pool}, logger)
+	go reconciler.Run(recCtx)
+
 	server := &http.Server{
 		Addr:              formatListenAddr(cfg.Gateway.Port),
 		Handler:           app{store: postgresStore{pool}, engine: grpcEngine{pb.NewLancetServiceClient(conn)}, logger: logger}.routes(),
