@@ -8,8 +8,113 @@ package db
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const claimDueReconciliationIntents = `-- name: ClaimDueReconciliationIntents :many
+WITH due AS (
+  SELECT document_id
+  FROM document_reconciliation_intents
+  WHERE next_attempt_at <= CURRENT_TIMESTAMP
+  ORDER BY next_attempt_at ASC
+  LIMIT $1
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE document_reconciliation_intents dri
+SET
+  next_attempt_at = $2,
+  updated_at = CURRENT_TIMESTAMP
+FROM due
+WHERE dri.document_id = due.document_id
+RETURNING dri.document_id, dri.desired_status, dri.reason_class, dri.retry_count, dri.next_attempt_at, dri.last_error_class, dri.created_at, dri.updated_at
+`
+
+type ClaimDueReconciliationIntentsParams struct {
+	Limit         int32
+	NextAttemptAt pgtype.Timestamp
+}
+
+func (q *Queries) ClaimDueReconciliationIntents(ctx context.Context, arg ClaimDueReconciliationIntentsParams) ([]DocumentReconciliationIntent, error) {
+	rows, err := q.db.Query(ctx, claimDueReconciliationIntents, arg.Limit, arg.NextAttemptAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentReconciliationIntent
+	for rows.Next() {
+		var i DocumentReconciliationIntent
+		if err := rows.Scan(
+			&i.DocumentID,
+			&i.DesiredStatus,
+			&i.ReasonClass,
+			&i.RetryCount,
+			&i.NextAttemptAt,
+			&i.LastErrorClass,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const createReconciliationIntent = `-- name: CreateReconciliationIntent :one
+INSERT INTO document_reconciliation_intents (
+  document_id,
+  desired_status,
+  reason_class,
+  retry_count,
+  next_attempt_at,
+  last_error_class,
+  created_at,
+  updated_at
+)
+SELECT
+  d.id,
+  $2,
+  $3,
+  0,
+  CURRENT_TIMESTAMP,
+  NULL,
+  CURRENT_TIMESTAMP,
+  CURRENT_TIMESTAMP
+FROM documents d
+WHERE d.id = $1 AND d.status = 'queued'
+ON CONFLICT (document_id) DO UPDATE
+SET
+  desired_status = EXCLUDED.desired_status,
+  reason_class = EXCLUDED.reason_class,
+  updated_at = CURRENT_TIMESTAMP
+RETURNING document_id, desired_status, reason_class, retry_count, next_attempt_at, last_error_class, created_at, updated_at
+`
+
+type CreateReconciliationIntentParams struct {
+	ID            string
+	DesiredStatus string
+	ReasonClass   string
+}
+
+func (q *Queries) CreateReconciliationIntent(ctx context.Context, arg CreateReconciliationIntentParams) (DocumentReconciliationIntent, error) {
+	row := q.db.QueryRow(ctx, createReconciliationIntent, arg.ID, arg.DesiredStatus, arg.ReasonClass)
+	var i DocumentReconciliationIntent
+	err := row.Scan(
+		&i.DocumentID,
+		&i.DesiredStatus,
+		&i.ReasonClass,
+		&i.RetryCount,
+		&i.NextAttemptAt,
+		&i.LastErrorClass,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username)
@@ -22,6 +127,18 @@ func (q *Queries) CreateUser(ctx context.Context, username string) (User, error)
 	var i User
 	err := row.Scan(&i.ID, &i.Username, &i.CreatedAt)
 	return i, err
+}
+
+const deleteReconciliationIntent = `-- name: DeleteReconciliationIntent :execresult
+DELETE FROM document_reconciliation_intents dri
+USING documents d
+WHERE dri.document_id = d.id
+  AND dri.document_id = $1
+  AND d.status IN ('completed', 'failed')
+`
+
+func (q *Queries) DeleteReconciliationIntent(ctx context.Context, documentID string) (pgconn.CommandTag, error) {
+	return q.db.Exec(ctx, deleteReconciliationIntent, documentID)
 }
 
 const getDocument = `-- name: GetDocument :one
@@ -43,6 +160,28 @@ func (q *Queries) GetDocument(ctx context.Context, id string) (Document, error) 
 		&i.ChunkStrategy,
 		&i.ChunkSize,
 		&i.ChunkOverlap,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getReconciliationIntent = `-- name: GetReconciliationIntent :one
+SELECT document_id, desired_status, reason_class, retry_count, next_attempt_at, last_error_class, created_at, updated_at FROM document_reconciliation_intents
+WHERE document_id = $1
+LIMIT 1
+`
+
+func (q *Queries) GetReconciliationIntent(ctx context.Context, documentID string) (DocumentReconciliationIntent, error) {
+	row := q.db.QueryRow(ctx, getReconciliationIntent, documentID)
+	var i DocumentReconciliationIntent
+	err := row.Scan(
+		&i.DocumentID,
+		&i.DesiredStatus,
+		&i.ReasonClass,
+		&i.RetryCount,
+		&i.NextAttemptAt,
+		&i.LastErrorClass,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -113,6 +252,39 @@ func (q *Queries) InsertDocument(ctx context.Context, arg InsertDocumentParams) 
 		&i.ChunkStrategy,
 		&i.ChunkSize,
 		&i.ChunkOverlap,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const rescheduleReconciliationIntent = `-- name: RescheduleReconciliationIntent :one
+UPDATE document_reconciliation_intents
+SET
+  retry_count = retry_count + 1,
+  next_attempt_at = $2,
+  last_error_class = $3,
+  updated_at = CURRENT_TIMESTAMP
+WHERE document_id = $1
+RETURNING document_id, desired_status, reason_class, retry_count, next_attempt_at, last_error_class, created_at, updated_at
+`
+
+type RescheduleReconciliationIntentParams struct {
+	DocumentID     string
+	NextAttemptAt  pgtype.Timestamp
+	LastErrorClass pgtype.Text
+}
+
+func (q *Queries) RescheduleReconciliationIntent(ctx context.Context, arg RescheduleReconciliationIntentParams) (DocumentReconciliationIntent, error) {
+	row := q.db.QueryRow(ctx, rescheduleReconciliationIntent, arg.DocumentID, arg.NextAttemptAt, arg.LastErrorClass)
+	var i DocumentReconciliationIntent
+	err := row.Scan(
+		&i.DocumentID,
+		&i.DesiredStatus,
+		&i.ReasonClass,
+		&i.RetryCount,
+		&i.NextAttemptAt,
+		&i.LastErrorClass,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -26,3 +26,20 @@ CREATE TABLE "public"."documents" (
   "updated_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id")
 );
+
+-- Create "document_reconciliation_intents" table
+CREATE TABLE "public"."document_reconciliation_intents" (
+  "document_id" character varying(255) NOT NULL,
+  "desired_status" character varying(50) NOT NULL,
+  "reason_class" character varying(100) NOT NULL,
+  "retry_count" integer NOT NULL DEFAULT 0,
+  "next_attempt_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_error_class" character varying(100) NULL,
+  "created_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("document_id"),
+  CONSTRAINT "document_reconciliation_intents_document_id_fkey" FOREIGN KEY ("document_id") REFERENCES "public"."documents" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "check_desired_status" CHECK ((desired_status)::text = 'failed'::text),
+  CONSTRAINT "check_retry_count" CHECK (retry_count >= 0)
+);
+

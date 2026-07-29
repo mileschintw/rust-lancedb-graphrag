@@ -22,6 +22,17 @@ type Document struct {
 	UpdatedAt     pgtype.Timestamp
 }
 
+type DocumentReconciliationIntent struct {
+	DocumentID     string
+	DesiredStatus  string
+	ReasonClass    string
+	RetryCount     int32
+	NextAttemptAt  pgtype.Timestamp
+	LastErrorClass pgtype.Text
+	CreatedAt      pgtype.Timestamp
+	UpdatedAt      pgtype.Timestamp
+}
+
 type User struct {
 	ID        int32
 	Username  string
