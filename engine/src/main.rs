@@ -142,9 +142,9 @@ fn parse_chunk_settings(metadata: &HashMap<String, String>) -> Result<ChunkSetti
     let overlap_str = metadata
         .get("chunk_overlap")
         .ok_or_else(|| Status::invalid_argument("missing metadata key: chunk_overlap"))?;
-    let overlap: usize = overlap_str
-        .parse()
-        .map_err(|_| Status::invalid_argument("invalid chunk_overlap: must be a non-negative integer"))?;
+    let overlap: usize = overlap_str.parse().map_err(|_| {
+        Status::invalid_argument("invalid chunk_overlap: must be a non-negative integer")
+    })?;
     if overlap >= size {
         return Err(Status::invalid_argument(
             "invalid chunk_overlap: must be smaller than chunk_size",
@@ -209,6 +209,16 @@ trait ReplacementMutationBoundary: Send + Sync {
         table: &'a Table,
         batch: RecordBatch,
     ) -> BoxFuture<'a, Result<(), String>>;
+
+    fn field_with_name<'a>(
+        &self,
+        schema: &'a arrow_schema::Schema,
+        name: &str,
+    ) -> Result<&'a arrow_schema::Field, String> {
+        schema
+            .field_with_name(name)
+            .map_err(|error| format!("validated schema missing field {name}: {error}"))
+    }
 }
 
 struct LanceDbReplacementMutationBoundary;
@@ -460,6 +470,7 @@ fn content_type(filename: &str) -> &'static str {
     }
 }
 
+#[allow(dead_code)]
 async fn replace_document(
     database: &DatabaseManager,
     job: &IngestionJob,
@@ -487,13 +498,17 @@ async fn restore_version(table: &Table, version: u64) -> Result<(), String> {
         .map_err(|error| format!("restore rollback version {version}: {error}"))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn rollback_replacement(
+    database: &DatabaseManager,
     documents: &Table,
     documents_version: u64,
     nodes: &Table,
     nodes_version: u64,
     edges: &Table,
     edges_version: u64,
+    predicate: &str,
+    mutations: &dyn ReplacementMutationBoundary,
     original: String,
 ) -> Result<(), String> {
     let mut rollback_errors = Vec::new();
@@ -503,6 +518,14 @@ async fn rollback_replacement(
         restore_version(edges, edges_version).await,
     ] {
         if let Err(error) = result {
+            rollback_errors.push(error);
+        }
+    }
+    if let Ok(staged) = database.staged_documents_table().await {
+        if let Err(error) = mutations
+            .delete(ReplacementMutation::StagingDelete, &staged, predicate)
+            .await
+        {
             rollback_errors.push(error);
         }
     }
@@ -608,9 +631,7 @@ async fn replace_document_with_faults(
         );
         let node_schema = nodes.schema().await.map_err(|error| error.to_string())?;
         let nullable = |name: &str| -> Result<Arc<dyn arrow_array::Array>, String> {
-            let field = node_schema
-                .field_with_name(name)
-                .map_err(|error| format!("validated nodes schema missing field {name}: {error}"))?;
+            let field = mutations.field_with_name(&node_schema, name)?;
             Ok(new_null_array(field.data_type(), chunks.len()))
         };
         let section_paths: Vec<Option<&str>> = chunks
@@ -716,9 +737,7 @@ async fn replace_document_with_faults(
                 .collect();
             let edge_schema = edges.schema().await.map_err(|error| error.to_string())?;
             let edge_nullable = |name: &str| -> Result<Arc<dyn arrow_array::Array>, String> {
-                let field = edge_schema.field_with_name(name).map_err(|error| {
-                    format!("validated edges schema missing field {name}: {error}")
-                })?;
+                let field = mutations.field_with_name(&edge_schema, name)?;
                 Ok(new_null_array(field.data_type(), edge_sources.len()))
             };
             let edge_batch = RecordBatch::try_new(
@@ -764,12 +783,15 @@ async fn replace_document_with_faults(
         Ok(()) => Ok(()),
         Err(error) => {
             rollback_replacement(
+                database,
                 &documents,
                 documents_version,
                 &nodes,
                 nodes_version,
                 &edges,
                 edges_version,
+                &predicate,
+                mutations,
                 error,
             )
             .await
@@ -777,10 +799,20 @@ async fn replace_document_with_faults(
     }
 }
 
+#[allow(dead_code)]
 async fn process_job(
     job: &IngestionJob,
     database: &DatabaseManager,
     embedder: &dyn EmbeddingProvider,
+) -> Result<i32, String> {
+    process_job_with_boundary(job, database, embedder, &LanceDbReplacementMutationBoundary).await
+}
+
+async fn process_job_with_boundary(
+    job: &IngestionJob,
+    database: &DatabaseManager,
+    embedder: &dyn EmbeddingProvider,
+    boundary: &dyn ReplacementMutationBoundary,
 ) -> Result<i32, String> {
     let chunk_span = tracing::info_span!("chunk_document", document_id = %job.document_id);
     let (strategy, chunks) = chunk_span.in_scope(|| chunk_ingestion_job(job));
@@ -801,20 +833,39 @@ async fn process_job(
         .await?;
 
     let database_span = tracing::info_span!("persist_document", document_id = %job.document_id, chunk_count = chunks.len());
-    async { replace_document(database, job, &chunks, &embeddings).await }
+    async { replace_document_with_faults(database, job, &chunks, &embeddings, boundary).await }
         .instrument(database_span)
         .await?;
     Ok(i32::try_from(chunks.len()).unwrap_or(i32::MAX))
 }
 
 fn spawn_worker(
-    mut receiver: mpsc::Receiver<IngestionJob>,
+    receiver: mpsc::Receiver<IngestionJob>,
     statuses: Arc<DashMap<String, IngestionStatus>>,
     database: DatabaseManager,
     embedder: Arc<dyn EmbeddingProvider>,
+    shutdown: watch::Receiver<bool>,
+) -> JoinHandle<()> {
+    spawn_worker_with_boundary(
+        receiver,
+        statuses,
+        database,
+        embedder,
+        Arc::new(LanceDbReplacementMutationBoundary),
+        shutdown,
+    )
+}
+
+fn spawn_worker_with_boundary(
+    receiver: mpsc::Receiver<IngestionJob>,
+    statuses: Arc<DashMap<String, IngestionStatus>>,
+    database: DatabaseManager,
+    embedder: Arc<dyn EmbeddingProvider>,
+    boundary: Arc<dyn ReplacementMutationBoundary>,
     mut shutdown: watch::Receiver<bool>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        let mut receiver = receiver;
         loop {
             let job = tokio::select! {
                 biased;
@@ -843,9 +894,12 @@ fn spawn_worker(
                 document_id = %document_id,
                 bytes = job.raw_data.len()
             );
-            match async { process_job(&job, &database, embedder.as_ref()).await }
-                .instrument(span)
-                .await
+            match async {
+                process_job_with_boundary(&job, &database, embedder.as_ref(), boundary.as_ref())
+                    .await
+            }
+            .instrument(span)
+            .await
             {
                 Ok(chunk_count) => {
                     statuses.insert(

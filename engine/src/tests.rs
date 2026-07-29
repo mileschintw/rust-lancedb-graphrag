@@ -266,7 +266,7 @@ async fn replacement_documents_add_failure_rolls_back_and_retry_converges() {
             .count_rows(Some(format!("document_id = '{document_id}'")))
             .await
             .unwrap(),
-        1
+        0
     );
 
     std::thread::sleep(std::time::Duration::from_millis(2));
@@ -347,6 +347,11 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
         .unwrap_err();
         assert!(error.contains(&format!("{boundary:?}")));
         assert_eq!(canonical_state(&database, &document_id).await, old_state);
+        let expected_staged_count = if boundary == ReplacementMutation::StagingDelete {
+            1
+        } else {
+            0
+        };
         assert_eq!(
             database
                 .staged_documents_table()
@@ -355,7 +360,7 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
                 .count_rows(Some(format!("document_id = '{document_id}'")))
                 .await
                 .unwrap(),
-            1
+            expected_staged_count
         );
 
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -598,69 +603,159 @@ async fn worker_replaces_existing_document_rows() {
     let _ = std::fs::remove_dir_all(path);
 }
 
-#[tokio::test]
-async fn schema_field_lookup_failure_rolls_back_and_retry_converges() {
-    let path = database_path("schema-lookup-fault");
-    let database = DatabaseManager::initialize(&path).await.unwrap();
+struct FaultingSchemaFieldBoundary {
+    fail_field: String,
+    enabled: Arc<std::sync::atomic::AtomicBool>,
+}
 
-    let document_id = Uuid::new_v4().to_string();
-    let job = IngestionJob::new(
-        document_id.clone(),
-        "doc.md".into(),
-        b"# Section\n\ncontent".to_vec(),
+impl FaultingSchemaFieldBoundary {
+    fn new(fail_field: &str) -> (Self, Arc<std::sync::atomic::AtomicBool>) {
+        let enabled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        (
+            Self {
+                fail_field: fail_field.to_owned(),
+                enabled: enabled.clone(),
+            },
+            enabled,
+        )
+    }
+}
+
+impl ReplacementMutationBoundary for FaultingSchemaFieldBoundary {
+    fn delete<'a>(
+        &self,
+        boundary: ReplacementMutation,
+        table: &'a Table,
+        predicate: &'a str,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        LanceDbReplacementMutationBoundary.delete(boundary, table, predicate)
+    }
+
+    fn add<'a>(
+        &self,
+        boundary: ReplacementMutation,
+        table: &'a Table,
+        batch: RecordBatch,
+    ) -> BoxFuture<'a, Result<(), String>> {
+        LanceDbReplacementMutationBoundary.add(boundary, table, batch)
+    }
+
+    fn field_with_name<'a>(
+        &self,
+        schema: &'a arrow_schema::Schema,
+        name: &str,
+    ) -> Result<&'a arrow_schema::Field, String> {
+        if name == self.fail_field && self.enabled.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(format!(
+                "validated nodes schema missing field {name}: injected schema field error"
+            ));
+        }
+        LanceDbReplacementMutationBoundary.field_with_name(schema, name)
+    }
+}
+
+#[tokio::test]
+async fn schema_field_lookup_failure_rolls_back_and_worker_survives() {
+    let path = database_path("schema-lookup-survival");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    let (boundary, fault_enabled) = FaultingSchemaFieldBoundary::new("page_start");
+
+    let worker = spawn_worker_with_boundary(
+        receiver,
+        statuses.clone(),
+        database.clone(),
+        Arc::new(FakeEmbedder),
+        Arc::new(boundary),
+        shutdown_rx,
+    );
+
+    let document_id_1 = Uuid::new_v4().to_string();
+    let job_1 = IngestionJob::new(
+        document_id_1.clone(),
+        "job1.md".into(),
+        b"# One\n\nfirst section".to_vec(),
         HashMap::new(),
     );
-    let (_, chunks) = chunk_ingestion_job(&job);
-    let embeddings = vec![vec![0.25; 2048]; chunks.len()];
+    sender.send(job_1).await.unwrap();
 
-    replace_document(&database, &job, &chunks, &embeddings)
-        .await
-        .unwrap();
+    while !statuses.contains_key(&document_id_1)
+        || statuses.get(&document_id_1).unwrap().status == "processing"
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(statuses.get(&document_id_1).unwrap().status, "completed");
 
-    let predicate = format!("document_id = '{document_id}'");
-    assert_eq!(
-        database
-            .documents_table()
-            .await
-            .unwrap()
-            .count_rows(Some(predicate.clone()))
-            .await
-            .unwrap(),
-        1
+    let initial_state = canonical_state(&database, &document_id_1).await;
+
+    // Enable the schema field lookup fault for the replacement job
+    fault_enabled.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    let replacement_job = IngestionJob::new(
+        document_id_1.clone(),
+        "job2.md".into(),
+        b"# Replacement\n\nreplacement section".to_vec(),
+        HashMap::new(),
+    );
+    stage_document(&database, &document_id_1, b"replacement staging row").await;
+    sender.send(replacement_job).await.unwrap();
+
+    while statuses.get(&document_id_1).unwrap().status == "processing"
+        || statuses.get(&document_id_1).unwrap().status == "completed"
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    let status_2 = statuses.get(&document_id_1).unwrap().clone();
+    assert_eq!(status_2.status, "failed");
+    assert!(
+        status_2
+            .error_message
+            .contains("validated nodes schema missing field page_start"),
+        "unexpected error message: {}",
+        status_2.error_message
     );
 
-    let failure = FaultingReplacementMutationBoundary::new(ReplacementMutation::NodesAdd);
-    let res = replace_document_with_faults(&database, &job, &chunks, &embeddings, &failure).await;
-    assert!(res.is_err());
-    let err = res.unwrap_err();
-    assert!(err.contains("NodesAdd"));
-
+    assert_eq!(
+        canonical_state(&database, &document_id_1).await,
+        initial_state
+    );
     assert_eq!(
         database
-            .documents_table()
+            .staged_documents_table()
             .await
             .unwrap()
-            .count_rows(Some(predicate.clone()))
+            .count_rows(Some(format!("document_id = '{document_id_1}'")))
             .await
             .unwrap(),
-        1
+        0
     );
 
-    replace_document(&database, &job, &chunks, &embeddings)
-        .await
-        .unwrap();
+    // Disable fault for subsequent job
+    fault_enabled.store(false, std::sync::atomic::Ordering::SeqCst);
 
-    assert_eq!(
-        database
-            .documents_table()
-            .await
-            .unwrap()
-            .count_rows(Some(predicate.clone()))
-            .await
-            .unwrap(),
-        1
+    let document_id_3 = Uuid::new_v4().to_string();
+    let job_3 = IngestionJob::new(
+        document_id_3.clone(),
+        "job3.md".into(),
+        b"# Three\n\nthird document".to_vec(),
+        HashMap::new(),
     );
+    sender.send(job_3).await.unwrap();
 
+    while !statuses.contains_key(&document_id_3)
+        || statuses.get(&document_id_3).unwrap().status == "processing"
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(statuses.get(&document_id_3).unwrap().status, "completed");
+    assert!(statuses.get(&document_id_3).unwrap().chunk_count > 0);
+
+    drop(sender);
+    worker.await.unwrap();
     let _ = std::fs::remove_dir_all(path);
 }
 
@@ -817,4 +912,3 @@ fn chunk_metadata_contract_invalid_metadata_rejected() {
     ]);
     assert!(parse_chunk_settings(&overlap_too_large).is_err());
 }
-

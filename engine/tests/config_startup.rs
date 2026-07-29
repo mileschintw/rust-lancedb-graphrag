@@ -8,11 +8,7 @@ use std::{
     time::Duration,
 };
 
-fn spawn_engine(
-    cwd: &Path,
-    env_vars: &[(&str, &str)],
-    remove_vars: &[&str],
-) -> (Child, String) {
+fn spawn_engine(cwd: &Path, env_vars: &[(&str, &str)], remove_vars: &[&str]) -> (Child, String) {
     let mut command = Command::new(env!("CARGO_BIN_EXE_engine"));
     command.current_dir(cwd);
     for var in remove_vars {
