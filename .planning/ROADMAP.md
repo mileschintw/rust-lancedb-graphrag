@@ -5,7 +5,7 @@
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
-| 2 | 16/21 | Gap closure planned | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
+| 2 | 21/21 | Verification gaps found (12/19 verified) | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
 | 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
@@ -30,7 +30,7 @@
 **Goal:** As a Lancet API user, I want to ingest and safely replace text or Markdown documents, so that the last completed LanceDB index and PostgreSQL status remain trustworthy through failures and concurrent polling.
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 16/21 plans executed
+**Plans:** 21/21 plans executed
 **Wave 1**
 
 - [x] 02-01-PLAN.md
@@ -88,17 +88,17 @@
 
 **Wave 14** *(executed Phase 02 baseline; parallel)*
 
-- [ ] 02-17-PLAN.md — Honor the shared config directory, make persisted chunk settings execute end to end, and enforce the local-only loopback guardrail.
-- [ ] 02-18-PLAN.md — Add the durable PostgreSQL reconciliation-intent contract and generated query surface.
+- [x] 02-17-PLAN.md — Honor the shared config directory, make persisted chunk settings execute end to end, and enforce the local-only loopback guardrail.
+- [x] 02-18-PLAN.md — Add the durable PostgreSQL reconciliation-intent contract and generated query surface.
 
 **Wave 15** *(blocked on Wave 14; parallel)*
 
-- [ ] 02-19-PLAN.md — Run the restart-safe gateway reconciler until failed admission reaches a verified terminal state.
-- [ ] 02-20-PLAN.md — Make LanceDB inspection read-only and non-disclosing, and prove real schema-field rollback plus worker survival.
+- [x] 02-19-PLAN.md — Run the restart-safe gateway reconciler until failed admission reaches a verified terminal state.
+- [x] 02-20-PLAN.md — Make LanceDB inspection read-only and non-disclosing, and prove real schema-field rollback plus worker survival.
 
 **Wave 16** *(blocked on Wave 15)*
 
-- [ ] 02-21-PLAN.md — Consolidate privacy and verification configuration in fail-closed Python tooling and run the deterministic Phase 02 exit gate.
+- [x] 02-21-PLAN.md — Consolidate privacy and verification configuration in fail-closed Python tooling and run the deterministic Phase 02 exit gate.
 
 **Success Criteria:**
 
