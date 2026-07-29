@@ -81,19 +81,14 @@ BOOLEAN_FIELDS = (
     "stale_generation",
     "chunk_indexes_contiguous",
 )
-SENSITIVE_FIELD_PARTS = (
-    "api_key",
-    "authorization",
-    "bearer",
-    "credential",
-    "header",
-    "secret",
-    "raw_bytes",
-    "raw_content",
-    "document_text",
-    "chunk_content",
-    "stored_content",
-    "uploaded_bytes",
+SENSITIVE_FIELD_CATEGORIES = (
+    ("credential", ("credential", "credentials")),
+    ("secret", ("secret", "secrets", "api_key", "apikey")),
+    ("bearer", ("bearer", "bearer_token")),
+    ("authorization_header", ("authorization", "header", "authorization_header")),
+    ("raw_content", ("raw_content", "raw_bytes", "raw_upload", "raw_data", "uploaded_bytes")),
+    ("document_text", ("document_text", "stored_document_text", "stored_content")),
+    ("chunk_content", ("chunk_content", "stored_chunk_content")),
 )
 UTC = dt.timezone.utc
 MAX_EVIDENCE_AGE = dt.timedelta(minutes=30)
@@ -112,9 +107,59 @@ def require(condition: bool, message: str) -> None:
         raise ValidationError(message)
 
 
+def classify_sensitive_field(name: str) -> str | None:
+    normalized = re.sub(r"[^a-z0-9]", "_", name.lower())
+    for category, keywords in SENSITIVE_FIELD_CATEGORIES:
+        if any(kw in normalized for kw in keywords):
+            return category
+    return None
+
+
 def is_sensitive_field(name: str) -> bool:
-    normalized = name.lower()
-    return any(part in normalized for part in SENSITIVE_FIELD_PARTS)
+    return classify_sensitive_field(name) is not None
+
+
+def inspect_privacy_prohibition(value: Any, path: str = "root") -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            require(isinstance(key, str), f"schema at '{path}' has a non-string field key")
+            category = classify_sensitive_field(key)
+            require(
+                category is None,
+                f"forbidden privacy field class '{category}' at '{path}.{key}'",
+            )
+            inspect_privacy_prohibition(item, f"{path}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for idx, item in enumerate(value):
+            inspect_privacy_prohibition(item, f"{path}[{idx}]")
+
+
+def resolve_lancedb_path(config_path: Path | str | None = None) -> Path:
+    root = Path(__file__).resolve().parents[1]
+    target = Path(config_path) if config_path else root / "config" / "config.verify.toml"
+    if not target.is_absolute():
+        target = (root / target).resolve()
+    require(target.is_file(), f"verification config file does not exist: {target}")
+    try:
+        import tomllib
+        with target.open("rb") as stream:
+            data = tomllib.load(stream)
+    except Exception as error:
+        raise ValidationError(f"invalid verification config TOML at {target}") from error
+
+    require(isinstance(data, dict), "verification config must be a TOML table")
+    engine = data.get("engine")
+    require(isinstance(engine, dict), "verification config missing [engine] table")
+    raw_path = engine.get("lancedb_path")
+    require(
+        isinstance(raw_path, str) and bool(raw_path.strip()),
+        "invalid verification LanceDB configuration: engine.lancedb_path must be a non-empty string",
+    )
+    store_path = Path(raw_path.strip())
+    if not store_path.is_absolute():
+        store_path = (root / store_path).resolve()
+    require(bool(str(store_path)), "resolved LanceDB store path is invalid")
+    return store_path
 
 
 def validate_object_keys(
@@ -123,9 +168,7 @@ def validate_object_keys(
     require(isinstance(value, dict), f"{label} must be a JSON object")
     keys = set(value)
     require(keys == expected, f"{label} schema has an unexpected field set")
-    for key in keys:
-        require(isinstance(key, str), f"{label} schema has a non-string field")
-        require(not is_sensitive_field(key), f"{label} schema contains a private field")
+    inspect_privacy_prohibition(value, label)
     return value
 
 
@@ -226,8 +269,9 @@ def validate_inspection(value: Any, expected_document_id: str | None = None) -> 
 
 def parse_postgres(value: str) -> tuple[str, int]:
     require(isinstance(value, str), "PostgreSQL state must be a status/count pair")
+    value = value.strip()
     status, separator, count_text = value.partition(":")
-    require(separator == ":" and status == "completed", "PostgreSQL status is not completed")
+    require(separator == ":" and status == "completed", f"PostgreSQL status is not completed: got '{value}'")
     require(bool(COUNT_PATTERN.fullmatch(count_text)), "PostgreSQL chunk count is invalid")
     count = int(count_text)
     require(count > 0, "PostgreSQL chunk count must be positive")
@@ -396,11 +440,26 @@ def parse_args() -> argparse.Namespace:
     compare.add_argument("--postgres", required=True)
     compare.add_argument("--inspection-json", "--inspection", dest="inspection_json", required=True)
 
+    resolve_store = subcommands.add_parser("resolve-store-path", aliases=["resolve-lancedb-path"])
+    resolve_store.add_argument("--config", dest="config", required=False, default=None)
+
+    check_priv = subcommands.add_parser("check-privacy")
+    check_priv.add_argument("--file", dest="file", required=True)
+
     subcommands.add_parser("self-test")
     return parser.parse_args()
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.command in {"resolve-store-path", "resolve-lancedb-path"}:
+        store_path = resolve_lancedb_path(args.config)
+        print(str(store_path))
+        return 0
+    if args.command == "check-privacy":
+        data = read_json_source(args.file, "subject")
+        inspect_privacy_prohibition(data, "subject")
+        print("privacy prohibition check: PASS")
+        return 0
     if args.command == "parse-challenge":
         challenge = validate_challenge(read_json_file(Path(args.challenge), "challenge"))
         print(json.dumps(challenge, separators=(",", ":"), sort_keys=True))

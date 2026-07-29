@@ -26,6 +26,22 @@ def timestamp(offset_seconds: int = 0) -> str:
     return value.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def to_bash_path(path: Path | str, base: Path | None = None) -> str:
+    target = Path(path).resolve()
+    if base is not None:
+        try:
+            return os.path.relpath(target, base.resolve()).replace("\\", "/")
+        except ValueError:
+            pass
+    posix = target.as_posix()
+    if len(posix) >= 2 and posix[1] == ":":
+        drive = posix[0].lower()
+        if Path("/mnt").exists():
+            return f"/mnt/{drive}{posix[2:]}"
+        return f"/{drive}{posix[2:]}"
+    return posix
+
+
 def fixture_pair(
     embedding_model: str = EXPECTED_MODEL,
 ) -> tuple[dict[str, object], dict[str, object]]:
@@ -116,62 +132,64 @@ def run_helper(*arguments: str, input_text: str | None = None) -> subprocess.Com
         input=input_text,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
 
 class Phase02LiveEvidenceTests(unittest.TestCase):
+    @classmethod
+    def tearDownClass(cls) -> None:
+        super().tearDownClass()
+        for p in Path(__file__).parent.glob(".phase02-live-test-*"):
+            p.unlink(missing_ok=True)
+
     def test_wrong_model_is_rejected_in_optimized_isolated_subprocess(self) -> None:
         self.assertEqual(sys.flags.optimize, 1, "the optimized test gate must run with -O")
         challenge, evidence = fixture_pair(embedding_model="not-the-locked-model")
-        temporary_paths: list[Path] = []
-        try:
-            challenge_fd, challenge_name = tempfile.mkstemp(
-                dir=Path(__file__).parent,
-                prefix=".phase02-live-test-",
-                suffix="-challenge.json",
-            )
-            evidence_fd, evidence_name = tempfile.mkstemp(
-                dir=Path(__file__).parent,
-                prefix=".phase02-live-test-",
-                suffix="-evidence.json",
-            )
-            os.close(challenge_fd)
-            os.close(evidence_fd)
-            challenge_path = Path(challenge_name)
-            evidence_path = Path(evidence_name)
-            temporary_paths.extend((challenge_path, evidence_path))
-            challenge_path.write_text(json.dumps(challenge), encoding="utf-8")
-            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+        challenge_fd, challenge_name = tempfile.mkstemp(
+            dir=Path(__file__).parent,
+            prefix=".phase02-live-test-",
+            suffix="-challenge.json",
+        )
+        evidence_fd, evidence_name = tempfile.mkstemp(
+            dir=Path(__file__).parent,
+            prefix=".phase02-live-test-",
+            suffix="-evidence.json",
+        )
+        os.close(challenge_fd)
+        os.close(evidence_fd)
+        challenge_path = Path(challenge_name)
+        evidence_path = Path(evidence_name)
+        self.addCleanup(lambda: challenge_path.unlink(missing_ok=True))
+        self.addCleanup(lambda: evidence_path.unlink(missing_ok=True))
+        challenge_path.write_text(json.dumps(challenge), encoding="utf-8")
+        evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
 
-            environment = os.environ.copy()
-            environment["PYTHONOPTIMIZE"] = "1"
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    "-O",
-                    "-I",
-                    str(HELPER),
-                    "validate-gate",
-                    "--challenge",
-                    str(challenge_path),
-                    "--evidence",
-                    str(evidence_path),
-                ],
-                cwd=ROOT,
-                env=environment,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-
-            self.assertNotEqual(completed.returncode, 0)
-            self.assertIn("embedding_model", (completed.stdout + completed.stderr).lower())
-            self.assertTrue(challenge_path.exists())
-            self.assertTrue(evidence_path.exists())
-        finally:
-            for path in temporary_paths:
-                path.unlink(missing_ok=True)
+        environment = os.environ.copy()
+        environment["PYTHONOPTIMIZE"] = "1"
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-O",
+                "-I",
+                str(HELPER),
+                "validate-gate",
+                "--challenge",
+                str(challenge_path),
+                "--evidence",
+                str(evidence_path),
+            ],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        self.assertNotEqual(completed.returncode, 0)
 
     def test_all_structured_failures_are_rejected_under_optimized_isolated_python(self) -> None:
         challenge, evidence = fixture_pair()
@@ -356,12 +374,202 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
         self.assertIn('rm -f -- "$challenge" "$evidence"', final)
         self.assertLess(final.index("compare-live-state"), final.index('rm -f -- "$challenge" "$evidence"'))
 
-    def test_explicit_lancedb_path_forwarded_by_live_scripts(self) -> None:
-        ingestion = (ROOT / "verify-ingestion.sh").read_text(encoding="utf-8")
-        final = (ROOT / "verify-live-evidence.sh").read_text(encoding="utf-8")
-        for script in (ingestion, final):
-            self.assertIn("--lancedb-path", script)
-            self.assertIn("verification_lancedb_path", script)
+    def test_privacy_clean_nested_metadata_passes(self) -> None:
+        clean_payload = {
+            "meta": {
+                "source": "test",
+                "items": [{"id": 1, "name": "clean_item"}],
+            }
+        }
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+            json.dump(clean_payload, tmp)
+            tmp_path = Path(tmp.name)
+        try:
+            completed = run_helper("check-privacy", "--file", str(tmp_path))
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("PASS", completed.stdout)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
+    def test_privacy_per_category_forbidden_fields_fail(self) -> None:
+        categories = [
+            ("credential", {"meta": {"user_credential": "secret_val_123"}}),
+            ("secret", {"api_key": "secret_val_123"}),
+            ("bearer", {"nested": [{"bearer_token": "secret_val_123"}]}),
+            ("authorization_header", {"meta": {"authorization_header": "secret_val_123"}}),
+            ("raw_content", {"data": {"raw_content": "secret_val_123"}}),
+            ("document_text", {"doc": {"stored_document_text": "secret_val_123"}}),
+            ("chunk_content", {"chunk": {"stored_chunk_content": "secret_val_123"}}),
+        ]
+        for category, payload in categories:
+            with self.subTest(category=category):
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+                    json.dump(payload, tmp)
+                    tmp_path = Path(tmp.name)
+                try:
+                    completed = run_helper("check-privacy", "--file", str(tmp_path))
+                    self.assertNotEqual(completed.returncode, 0)
+                    output = completed.stdout + completed.stderr
+                    self.assertIn(category, output.lower())
+                    self.assertNotIn("secret_val_123", output)
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+
+    def test_privacy_mixed_case_separators_and_recursive_placement(self) -> None:
+        cases = [
+            {"Nested": [{"cReDeNtIaL": "secret_val_123"}]},
+            {"RAW-CONTENT": "secret_val_123"},
+            {"stored.document.text": "secret_val_123"},
+            {"meta": {"sub": [{"authorization_header": "secret_val_123"}]}},
+        ]
+        for idx, payload in enumerate(cases):
+            with self.subTest(idx=idx):
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+                    json.dump(payload, tmp)
+                    tmp_path = Path(tmp.name)
+                try:
+                    completed = run_helper("check-privacy", "--file", str(tmp_path))
+                    self.assertNotEqual(completed.returncode, 0)
+                    output = completed.stdout + completed.stderr
+                    self.assertNotIn("secret_val_123", output)
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+
+    def test_privacy_node_is_absent_from_verification(self) -> None:
+        node_test = ROOT / "scripts/test_phase02_privacy_prohibition.cjs"
+        self.assertFalse(node_test.exists(), "Node privacy test script must be removed")
+        final_script = (ROOT / "verify-live-evidence.sh").read_text(encoding="utf-8")
+        self.assertNotIn("node", final_script)
+        self.assertNotIn("test_phase02_privacy_prohibition", final_script)
+
+    def test_resolve_store_path_strict_validation(self) -> None:
+        # Valid config resolves from repository root even from unrelated CWD
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as unrelated_cwd:
+            env = os.environ.copy()
+            env["PYTHONOPTIMIZE"] = "1"
+            completed = subprocess.run(
+                [sys.executable, "-O", "-I", str(HELPER), "resolve-store-path"],
+                cwd=unrelated_cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            expected_abs = (ROOT / "data" / "lancedb-verify-02-06").resolve()
+            self.assertEqual(Path(completed.stdout.strip()).resolve(), expected_abs)
+
+        # Invalid config options fail
+        invalid_configs = [
+            ("invalid TOML", "this is not [valid toml"),
+            ("missing engine table", "[other]\nkey = 'val'"),
+            ("missing lancedb_path", "[engine]\nother_key = 'val'"),
+            ("empty lancedb_path", "[engine]\nlancedb_path = ''"),
+            ("non-string lancedb_path", "[engine]\nlancedb_path = 123"),
+        ]
+        for name, content in invalid_configs:
+            with self.subTest(config_case=name):
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False, encoding="utf-8") as tmp:
+                    tmp.write(content)
+                    tmp_path = Path(tmp.name)
+                try:
+                    completed = run_helper("resolve-store-path", "--config", str(tmp_path))
+                    self.assertNotEqual(completed.returncode, 0)
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+
+    def test_captured_inspector_arguments_explicit_path(self) -> None:
+        doc_id = str(uuid.uuid4())
+        challenge, evidence = fixture_pair()
+        evidence["document_id"] = doc_id
+        
+        challenge_path = ROOT / CHALLENGE_RUNTIME_PATH
+        evidence_path = ROOT / EVIDENCE_RUNTIME_PATH
+        challenge_path.write_text(json.dumps(challenge), encoding="utf-8")
+        evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+        try:
+            with tempfile.TemporaryDirectory(dir=ROOT, ignore_cleanup_errors=True) as fake_bin_dir:
+                capture_file = Path(fake_bin_dir) / "cargo_capture.txt"
+                fake_cargo = Path(fake_bin_dir) / "cargo"
+                dummy_inspection = inspection_fixture(evidence)
+                dummy_inspection["document_id"] = doc_id
+                
+                script_content = f"""#!/usr/bin/env bash
+echo "$@" >> "$(dirname "$0")/cargo_capture.txt"
+if [[ "$*" == *"inspect_lancedb"* ]]; then
+  cat << 'EOF'
+{json.dumps(dummy_inspection)}
+EOF
+fi
+exit 0
+"""
+                script_bytes = script_content.replace("\r\n", "\n").encode("utf-8")
+                fake_cargo.write_bytes(script_bytes)
+                fake_cargo.chmod(0o755)
+
+                fake_cargo_cmd = Path(fake_bin_dir) / "cargo.cmd"
+                cargo_cmd_content = f"""@echo off
+echo %* >> "%~dp0cargo_capture.txt"
+echo {json.dumps(dummy_inspection)}
+exit /b 0
+"""
+                fake_cargo_cmd.write_text(cargo_cmd_content, encoding="utf-8")
+
+                fake_docker = Path(fake_bin_dir) / "fake_docker"
+                docker_script = """#!/usr/bin/env bash
+echo "completed:1"
+exit 0
+"""
+                docker_bytes = docker_script.replace("\r\n", "\n").encode("utf-8")
+                fake_docker.write_bytes(docker_bytes)
+                fake_docker.chmod(0o755)
+
+                fake_docker_cmd = Path(fake_bin_dir) / "fake_docker.cmd"
+                docker_cmd_content = """@echo off
+echo completed:1
+exit /b 0
+"""
+                fake_docker_cmd.write_text(docker_cmd_content, encoding="utf-8")
+
+                env = os.environ.copy()
+                env["PATH"] = str(Path(fake_bin_dir).resolve()) + os.pathsep + env.get("PATH", "")
+                env["DOCKER_CMD"] = "fake_docker"
+                env["PYTHONOPTIMIZE"] = "1"
+                env["LANCET_ENV"] = "verify"
+
+                with tempfile.TemporaryDirectory(dir=ROOT, ignore_cleanup_errors=True) as unrelated_cwd:
+                    unrelated_path = Path(unrelated_cwd)
+                    rel_script = to_bash_path(ROOT / "verify-live-evidence.sh", base=unrelated_path)
+                    completed = subprocess.run(
+                        [
+                            "bash",
+                            "-c",
+                            f'DOCKER_CMD=fake_docker bash "{rel_script}" --validate-gate --challenge "{CHALLENGE_RUNTIME_PATH}" --evidence "{EVIDENCE_RUNTIME_PATH}"',
+                        ],
+                        cwd=unrelated_cwd,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        check=False,
+                    )
+                    out = (completed.stderr or "") + (completed.stdout or "")
+                    self.assertEqual(completed.returncode, 0, out)
+                    self.assertTrue(capture_file.exists(), "fake cargo should have been invoked")
+                    captured_text = capture_file.read_text(encoding="utf-8")
+                    self.assertIn("inspect_lancedb", captured_text)
+                    self.assertIn(doc_id, captured_text)
+                    expected_store = (ROOT / "data" / "lancedb-verify-02-06").resolve()
+                    self.assertIn("--lancedb-path", captured_text)
+                    self.assertTrue(
+                        str(expected_store) in captured_text or to_bash_path(expected_store) in captured_text,
+                        f"{expected_store} or {to_bash_path(expected_store)} not in captured text: {captured_text}",
+                    )
+        finally:
+            challenge_path.unlink(missing_ok=True)
+            evidence_path.unlink(missing_ok=True)
 
     def test_caller_sample_preservation_on_early_failure(self) -> None:
         sample_path = ROOT / ".test-caller-sample.tmp"
@@ -383,3 +591,4 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

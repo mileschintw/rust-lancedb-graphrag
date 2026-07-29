@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ -d "/c/Users/user3/.cargo/bin" ]]; then
-  export PATH="/c/Users/user3/.cargo/bin:$PATH"
-elif [[ -d "/mnt/c/Users/user3/.cargo/bin" ]]; then
-  export PATH="/mnt/c/Users/user3/.cargo/bin:$PATH"
+if ! command -v cargo >/dev/null 2>&1 && ! command -v cargo.exe >/dev/null 2>&1; then
+  if [[ -d "/c/Users/user3/.cargo/bin" ]]; then
+    export PATH="$PATH:/c/Users/user3/.cargo/bin"
+  elif [[ -d "/mnt/c/Users/user3/.cargo/bin" ]]; then
+    export PATH="$PATH:/mnt/c/Users/user3/.cargo/bin"
+  fi
 fi
 if command -v cargo >/dev/null 2>&1; then
   cargo_cmd="cargo"
@@ -12,7 +14,9 @@ elif command -v cargo.exe >/dev/null 2>&1; then
 else
   cargo_cmd="cargo"
 fi
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+if [[ -n "${DOCKER_CMD:-}" ]]; then
+  docker_cmd="$DOCKER_CMD"
+elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   docker_cmd="docker"
 elif command -v docker.exe >/dev/null 2>&1; then
   docker_cmd="docker.exe"
@@ -21,6 +25,10 @@ elif command -v docker >/dev/null 2>&1; then
 else
   docker_cmd="docker"
 fi
+
+caller_cwd="$(pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$script_dir"
 
 phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge_file="${phase_dir}/.02-LIVE-CHALLENGE.json"
@@ -64,6 +72,10 @@ while (($#)); do
     *) sample_file="$1"; shift ;;
   esac
 done
+
+if [[ -n "$sample_file" && "$sample_file" != /* && "$sample_file" != [A-Za-z]:* ]]; then
+  sample_file="${caller_cwd}/${sample_file}"
+fi
 
 [[ "$challenge_file" == "${phase_dir}/.02-LIVE-CHALLENGE.json" ]] || {
   echo "challenge path must be the phase-local runtime path" >&2; exit 1;
@@ -150,20 +162,7 @@ for _ in $(seq 1 "${POLL_LIMIT:-60}"); do
   sleep "${POLL_INTERVAL_SECONDS:-2}"
 done
 [[ "${status:-}" == completed ]] || { echo "ingestion did not complete" >&2; exit 1; }
-verification_lancedb_path="$("$python_cmd" -I -c '
-import sys
-try:
-    import tomllib
-    with open("config/config.verify.toml", "rb") as f:
-        data = tomllib.load(f)
-        path = data["engine"]["lancedb_path"]
-except Exception:
-    import re
-    text = open("config/config.verify.toml", "r", encoding="utf-8").read()
-    match = re.search(r"lancedb_path\s*=\s*\"(.*?)\"", text)
-    path = match.group(1) if match else "./data/lancedb-verify-02-06"
-print(path)
-')"
+verification_lancedb_path="$("$python_cmd" -I "$evidence_helper" resolve-store-path)"
 gateway_count="$(printf '%s' "$response" | "$python_cmd" -I -c 'import json,sys; print(json.load(sys.stdin)["ChunkCount"])')"
 postgres="$("$docker_cmd" compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
 inspection="$("$cargo_cmd" run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id" --lancedb-path "$verification_lancedb_path")"

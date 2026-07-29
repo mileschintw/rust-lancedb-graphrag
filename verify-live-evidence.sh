@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ -d "/c/Users/user3/.cargo/bin" ]]; then
-  export PATH="/c/Users/user3/.cargo/bin:$PATH"
-elif [[ -d "/mnt/c/Users/user3/.cargo/bin" ]]; then
-  export PATH="/mnt/c/Users/user3/.cargo/bin:$PATH"
+if ! command -v cargo >/dev/null 2>&1 && ! command -v cargo.exe >/dev/null 2>&1; then
+  if [[ -d "/c/Users/user3/.cargo/bin" ]]; then
+    export PATH="$PATH:/c/Users/user3/.cargo/bin"
+  elif [[ -d "/mnt/c/Users/user3/.cargo/bin" ]]; then
+    export PATH="$PATH:/mnt/c/Users/user3/.cargo/bin"
+  fi
 fi
 if command -v cargo >/dev/null 2>&1; then
   cargo_cmd="cargo"
@@ -12,7 +14,9 @@ elif command -v cargo.exe >/dev/null 2>&1; then
 else
   cargo_cmd="cargo"
 fi
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+if [[ -n "${DOCKER_CMD:-}" ]]; then
+  docker_cmd="$DOCKER_CMD"
+elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   docker_cmd="docker"
 elif command -v docker.exe >/dev/null 2>&1; then
   docker_cmd="docker.exe"
@@ -21,6 +25,9 @@ elif command -v docker >/dev/null 2>&1; then
 else
   docker_cmd="docker"
 fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$script_dir"
 
 phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge="${phase_dir}/.02-LIVE-CHALLENGE.json"
@@ -132,27 +139,11 @@ PY
     assert_safe_runtime_path "$challenge"
     assert_safe_runtime_path "$evidence"
     [[ -s "$challenge" && -s "$evidence" ]] || { echo "challenge and evidence are required" >&2; exit 1; }
-    if command -v node >/dev/null 2>&1; then
-      GSD_PROHIB_SUBJECT="$evidence" node --test scripts/test_phase02_privacy_prohibition.cjs >/dev/null 2>&1 || {
-        echo "evidence privacy prohibition check failed" >&2; exit 1;
-      }
-    fi
-    verification_lancedb_path="$("$python_cmd" -I -c '
-import sys
-try:
-    import tomllib
-    with open("config/config.verify.toml", "rb") as f:
-        data = tomllib.load(f)
-        path = data["engine"]["lancedb_path"]
-except Exception:
-    import re
-    text = open("config/config.verify.toml", "r", encoding="utf-8").read()
-    match = re.search(r"lancedb_path\s*=\s*\"(.*?)\"", text)
-    path = match.group(1) if match else "./data/lancedb-verify-02-06"
-print(path)
-')"
+    verification_lancedb_path="$("$python_cmd" -I "$evidence_helper" resolve-store-path)"
     document_id="$(parse_and_validate_gate)"
-    postgres="$("$docker_cmd" compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
+    echo "TRACE DOCKER_CMD='${DOCKER_CMD:-}' docker_cmd='${docker_cmd:-}'" >&2
+    postgres="$(${DOCKER_CMD:-$docker_cmd} compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
+    echo "TRACE postgres='$postgres'" >&2
     inspection="$("$cargo_cmd" run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id" --lancedb-path "$verification_lancedb_path")"
     printf '%s\n' "$inspection" | "$python_cmd" -I "$evidence_helper" compare-live-state \
       --challenge "$challenge" --evidence "$evidence" --postgres "$postgres" --inspection-json -
