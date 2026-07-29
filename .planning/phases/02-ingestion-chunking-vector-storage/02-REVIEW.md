@@ -1,215 +1,144 @@
 ---
 phase: 02-ingestion-chunking-vector-storage
-reviewed: 2026-07-29T02:12:56Z
+reviewed: 2026-07-29T10:51:54Z
 depth: standard
-files_reviewed: 31
+files_reviewed: 24
 files_reviewed_list:
-  - .gitignore
   - config/config.toml
   - config/config.verify.toml
-  - engine/Cargo.toml
   - engine/Cargo.lock
-  - engine/src/lib.rs
-  - engine/src/main.rs
-  - engine/src/tests.rs
-  - engine/src/db/mod.rs
-  - engine/src/db/tests.rs
+  - engine/Cargo.toml
+  - engine/src/bin/inspect_lancedb.rs
   - engine/src/client/mod.rs
   - engine/src/client/tests.rs
-  - engine/src/bin/inspect_lancedb.rs
+  - engine/src/db/mod.rs
+  - engine/src/db/tests.rs
   - engine/src/inspect_lancedb_tests.rs
-  - gateway/go.mod
-  - gateway/go.sum
-  - gateway/main.go
-  - gateway/main_test.go
+  - engine/src/main.rs
+  - engine/src/tests.rs
+  - gateway/db/document_test.go
   - gateway/db/query.sql
   - gateway/db/query.sql.go
   - gateway/db/schema.hcl
   - gateway/db/schema.sql
-  - gateway/db/document_test.go
+  - gateway/go.mod
+  - gateway/go.sum
+  - gateway/main.go
+  - gateway/main_test.go
   - proto/lancet/v1/lancet.proto
   - scripts/phase02_live_evidence.py
   - scripts/test_phase02_live_evidence.py
-  - scripts/test_phase02_privacy_prohibition.cjs
-  - scripts/fixtures/phase02_privacy_clean.json
-  - scripts/fixtures/phase02_privacy_violation.json
-  - verify-ingestion.sh
-  - verify-live-evidence.sh
 findings:
-  critical: 6
-  warning: 5
+  critical: 3
+  warning: 2
   info: 0
-  total: 11
+  total: 5
 status: issues_found
 ---
 
 # Phase 02: Code Review Report
 
-**Reviewed:** 2026-07-29T02:12:56Z
+**Reviewed:** 2026-07-29T10:51:54Z
 **Depth:** standard
-**Files Reviewed:** 31
+**Files Reviewed:** 24
 **Status:** issues_found
+
+## Summary
+
+The supplied Phase 02 implementation has three ship-blocking defects: its privacy gate can be bypassed with camel-case sensitive-field names, a database integration test can erase every document in the configured database, and graceful engine shutdown abandons queued documents that have already been acknowledged to clients. Two further robustness issues affect chunk-setting integrity and test isolation.
+
+The privacy bypass was reproduced directly: piping `{"rawContent":"do-not-publish"}` to `check-privacy` exited successfully and printed `privacy prohibition check: PASS`.
 
 ## Narrative Findings (AI reviewer)
 
-### Summary
+## Critical Issues
 
-The refreshed review covered all supplied Phase 02 files and rechecked the intent and closure history in Plans 02-01 through 02-16. Nine of the prior report's ten findings are closed in current production code. Prior CR-02 remains only partially fixed: compensation now retries, but a fixed five-attempt cap can still permanently strand metadata.
-
-Six blockers and five warnings remain. The most consequential issues are inconsistent chunk metadata across PostgreSQL and Rust, non-durable failed-admission reconciliation, an unauthenticated all-interface upload endpoint backed by a provider credential, and resource exhaustion before bounded queue admission.
-
-Verification results:
-
-- `cargo fmt --manifest-path engine/Cargo.toml -- --check` — PASS
-- `cargo test --manifest-path engine/Cargo.toml` — PASS (37 tests)
-- `cargo clippy --manifest-path engine/Cargo.toml --all-targets -- -D warnings` — PASS
-- `go test -count=1 ./...` and `go vet ./...` from `gateway` — PASS
-- `python -O -I scripts/test_phase02_live_evidence.py` with `PYTHONOPTIMIZE=1` — PASS (7 tests)
-- Privacy fixture behavior — clean fixture PASS; known-bad fixture rejected
-- Git Bash syntax checks for both verification scripts — PASS
-
-These suites do not exercise the blocker paths below. The `LANCET_CONFIG_DIR` startup defect was reproduced by launching the built engine outside the repository with the variable pointing at the real config directory; it exited with `configuration file "config/config" not found`.
-
-### Critical Issues
-
-#### CR-01: The Rust engine ignores the supported `LANCET_CONFIG_DIR`
+### CR-01: Camel-case sensitive fields bypass the privacy prohibition
 
 **Classification:** BLOCKER
 
-**File:** `engine/src/main.rs:58-73`
+**File:** `D:/Repos/lancet/scripts/phase02_live_evidence.py:110-115,122-134`
 
-**Issue:** The Go gateway honors `LANCET_CONFIG_DIR`, but the Rust engine chooses configuration only from `../config` or `./config`. A deployment that uses the documented shared configuration-directory override can start the gateway while the engine fails before serving. This was reproduced from a config-less working directory with `LANCET_CONFIG_DIR` pointing to the repository config directory.
+**Issue:** `classify_sensitive_field` only lowercases and replaces non-alphanumeric separators. It does not split camel-case, so `rawContent`, `storedDocumentText`, `authorizationHeader`, and `bearerToken` normalize to values such as `rawcontent`, which do not contain the underscore-form keywords. The recursive checker then accepts these fields and their values. This defeats the required fail-closed privacy guard for JSON artifacts.
 
-**Fix:** Resolve the base file from `LANCET_CONFIG_DIR` first, then apply the optional environment overlay and `LANCET_` overrides to that same directory. Add a process-level startup/config test from a config-less working directory.
+**Fix:** Canonicalize both camel-case and separators before matching, and add negative tests for each camel-case alias.
 
-```rust
-let config_dir = std::env::var_os("LANCET_CONFIG_DIR")
-    .map(PathBuf::from)
-    .unwrap_or_else(discover_default_config_dir);
-let base = config_dir.join("config.toml");
-let mut builder = config::Config::builder()
-    .add_source(config::File::from(base));
+```python
+snake = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
+canonical = re.sub(r"[^a-z0-9]", "", snake)
+
+if "rawcontent" in canonical:
+    return "raw_content"
 ```
 
-#### CR-02: PostgreSQL records a chunk strategy the engine never receives or executes
+### CR-02: Database integration test deletes all documents in the configured database
 
 **Classification:** BLOCKER
 
-**File:** `gateway/main.go:134-160, 260-266`; `engine/src/main.rs:173-199, 255-269`
+**File:** `D:/Repos/lancet/gateway/db/document_test.go:196-218`
 
-**Issue:** The gateway stores `ChunkStrategy: "recursive"`, but `"recursive"` is not a Rust strategy. The gRPC client also omits `metadata` entirely, so Rust defaults to `"structure-aware"` and default sizes regardless of the PostgreSQL metadata. The durable API record therefore lies about how the document was chunked, and future per-document settings would silently be ignored at the engine boundary.
+**Issue:** `TestReconciliationIntentClaimLeaseIsExclusive` executes `DELETE FROM documents` without a predicate or transaction. With `TEST_DATABASE_URL` set, this deletes every document in that database and cascades its reconciliation intents. A mispointed environment variable therefore turns an ordinary test run into production data loss.
 
-**Fix:** Use the canonical strategy name and pass the persisted strategy, size, and overlap in the first streamed request (or every request with equality validation). Make the engine reject unknown strategies instead of silently treating them as structure-aware.
+**Fix:** Never clear a shared table in a test. Run the test against an isolated temporary database/schema, or constrain setup and cleanup to UUIDs created by that test.
 
 ```go
-metadata := map[string]string{
-    "chunk_strategy": doc.ChunkStrategy,
-    "chunk_size": strconv.Itoa(int(doc.ChunkSize)),
-    "chunk_overlap": strconv.Itoa(int(doc.ChunkOverlap)),
+// Do not issue DELETE FROM documents.
+t.Cleanup(func() {
+    _, _ = pool.Exec(context.Background(), "DELETE FROM documents WHERE id = $1", docID)
+})
+```
+
+### CR-03: Graceful shutdown drops acknowledged queued ingestions
+
+**Classification:** BLOCKER
+
+**File:** `D:/Repos/lancet/engine/src/main.rs:867-881,931-959`; `D:/Repos/lancet/gateway/main.go:548-578`
+
+**Issue:** The worker's biased `select!` chooses the shutdown notification before `receiver.recv()` and breaks immediately. Any jobs already sitting in the channel have been accepted by `ingest_document` and persisted only as staged raw bytes, but are never processed. On restart the in-memory status map is empty; a later gateway poll treats the engine `NotFound` as authoritative and marks the PostgreSQL document as `failed`. The only shutdown test covers one active job, not queued jobs, so this permanent loss of acknowledged work is untested.
+
+**Fix:** Drain work accepted before shutdown and implement startup recovery that requeues durable staged rows. Do not mark an engine `NotFound` as terminal while a matching durable staging record exists.
+
+```rust
+// Stop new sends, then use the existing status-processing body to drain the queue.
+receiver.close();
+while let Some(job) = receiver.recv().await {
+    process_and_record_status(job).await;
 }
 ```
 
-#### CR-03: Failed-admission compensation is still not eventually durable
+## Warnings
 
-**Classification:** BLOCKER
+### WR-01: Unbounded chunk size wraps when persisted to PostgreSQL
 
-**File:** `gateway/main.go:187-217, 267-287`
+**Classification:** WARNING
 
-**Issue:** Compensation retries only five times and then returns without recording any durable reconciliation intent or failure result. An outage lasting longer than those attempts leaves the row `queued` even though the gateway has returned 429/502 and the engine did not admit the job. A later GET can repair the row only if a client happens to poll and the engine returns NotFound; without that external action the stale row remains indefinitely. This is the core failure mode from prior CR-02.
+**File:** `D:/Repos/lancet/gateway/main.go:478-515`; `D:/Repos/lancet/engine/src/main.rs:122-157`
 
-**Fix:** Persist an admission/reconciliation intent transactionally with the queued row and process it in a background reconciler until a terminal update or verified terminal winner is observed. The request path may use bounded retries, but exhausting them must hand off to durable work rather than silently stop.
+**Issue:** The gateway accepts every positive machine-sized integer, then casts it to `int32` for `InsertDocumentParams`. On normal 64-bit builds, `chunk_size=2147483648` passes validation and is stored as a negative `chunk_size`, while the Rust service receives and accepts the original positive value as `usize`. The persisted ingestion settings therefore no longer describe the chunking that ran, and an extremely large requested size is not bounded.
 
-#### CR-04: The upload API is unauthenticated and listens on every interface
+**Fix:** Parse to a bounded integer before the cast, enforce the same explicit maximum in Rust, and add boundary tests.
 
-**Classification:** BLOCKER
-
-**File:** `gateway/main.go:219-225, 369-391`; `engine/src/main.rs:803`
-
-**Issue:** `POST /documents` has no authentication or authorization middleware, and the server address `":<port>"` binds all interfaces. Any network-reachable caller can submit content that is forwarded to the engine and processed with the service's private OpenRouter credential, consuming provider quota and local PostgreSQL/LanceDB storage. Upload contents also travel over plaintext HTTP.
-
-**Fix:** If this phase is local-only, bind explicitly to loopback and reject non-local deployment configuration. Otherwise require authentication/authorization, TLS at the ingress, request-rate quotas, and per-principal ingestion limits before exposing the endpoint.
-
-#### CR-05: Bounded queue admission does not bound concurrent upload memory or connection lifetime
-
-**Classification:** BLOCKER
-
-**File:** `gateway/main.go:221, 239-266, 389`; `engine/src/main.rs:255-288`
-
-**Issue:** The gateway has no body read deadline or concurrency limiter, and Rust buffers the entire stream into a `Vec` before reserving a queue slot. An attacker can hold multipart bodies open indefinitely or create many concurrent streams, each consuming up to 10 MiB, without consuming any of the queue's 100 permits. The bounded queue therefore does not provide the claimed ingestion-exhaustion protection.
-
-**Fix:** Add HTTP `ReadTimeout`/`WriteTimeout`/`IdleTimeout`, enforce a bounded upload semaphore before body streaming, and reserve engine admission capacity before buffering the full document. Release permits on every parse/stream failure.
-
-#### CR-06: Inspector errors can disclose an untrusted persisted model value
-
-**Classification:** BLOCKER
-
-**File:** `engine/src/bin/inspect_lancedb.rs:186-199`
-
-**Issue:** When a persisted `embedding_model` is unknown, the inspector interpolates the value into its error. That column is untrusted durable input; a corrupted row containing a credential or stored content would be printed to terminal/service logs during live validation, violating the phase's no-content/no-secret evidence contract.
-
-**Fix:** Return a class-only error and never serialize the stored value.
-
-```rust
-let provider = match embedding_model.as_str() {
-    EMBEDDING_MODEL => "openrouter".to_owned(),
-    _ => return Err("LanceDB contains an unknown embedding_model".to_owned()),
-};
+```go
+parsed, err := strconv.ParseInt(reqSize, 10, 32)
+if err != nil || parsed < 1 || parsed > maxChunkSize {
+    http.Error(w, "invalid chunk_size", http.StatusBadRequest)
+    return
+}
+chunkSize := int(parsed)
 ```
 
-### Warnings
-
-#### WR-01: Final privacy enforcement is skipped when Node is unavailable
+### WR-02: Live-evidence test overwrites and deletes real runtime artifacts
 
 **Classification:** WARNING
 
-**File:** `verify-live-evidence.sh:129-139`
+**File:** `D:/Repos/lancet/scripts/test_phase02_live_evidence.py:481-489,570-572`
 
-**Issue:** `--validate-gate` runs the descriptor-backed privacy test only inside `if command -v node`; an environment without Node silently skips a mandatory acceptance check and continues toward cleanup.
+**Issue:** `test_captured_inspector_arguments_explicit_path` writes directly to the real Phase 02 challenge/evidence runtime paths, then unconditionally unlinks both in `finally`. Running the test concurrently with a human verification run can overwrite or delete that run's evidence, making the test destructive and flaky.
 
-**Fix:** Treat Node as a required command during preparation and validation, and exit nonzero if the privacy test cannot run.
-
-#### WR-02: The Node privacy check covers fewer field classes than production validation
-
-**Classification:** WARNING
-
-**File:** `scripts/test_phase02_privacy_prohibition.cjs:6-26`; `scripts/phase02_live_evidence.py:84-97`
-
-**Issue:** The descriptor-backed test recognizes only seven exact keys. It misses production classes such as `credential`, `secret`, `bearer`, `authorization_header`, `raw_content`, `document_text`, and `chunk_content`. A subject containing those keys can pass the advertised machine-wired prohibition even though the Python validator would reject it.
-
-**Fix:** Share one canonical forbidden-field vocabulary or implement the same normalized substring classification in both checks. Add one bad fixture per prohibited class.
-
-#### WR-03: Several closure tests are false positives for their named behavior
-
-**Classification:** WARNING
-
-**File:** `engine/src/tests.rs:601-665`; `engine/src/inspect_lancedb_tests.rs:357-430`; `scripts/test_phase02_live_evidence.py:244-250, 359-364`
-
-**Issue:** The schema-lookup regression injects `NodesAdd`, not a missing schema field, and does not prove worker survival. The embedding-child test checks only a null child despite claiming null and NaN/positive-infinity/negative-infinity coverage. The overlong-run case changes only `evidence.issued_at`, so it fails on challenge mismatch rather than the run-window bound. The explicit-path live-script test only searches source text and never captures the actual inspector arguments.
-
-**Fix:** Add dedicated injection seams/fixtures for the exact failure classes and assert the expected error reason, persisted state, and process arguments. Avoid relying on test names or generic `is_err()` assertions as evidence.
-
-#### WR-04: Verification store selection silently falls back after configuration errors
-
-**Classification:** WARNING
-
-**File:** `verify-ingestion.sh:153-166`; `verify-live-evidence.sh:140-153`
-
-**Issue:** Both scripts catch every TOML error, use a permissive regex, and finally default to a hardcoded store path. A malformed or incomplete verification config can therefore inspect a different or stale store instead of failing closed. The returned relative path is also interpreted from the caller's working directory rather than resolved against the repository root.
-
-**Fix:** Parse the committed TOML strictly, require a non-empty `engine.lancedb_path`, resolve it against the repository root, require the intended directory/store contract, and abort on every parse/key/path error.
-
-#### WR-05: The verification inspector mutates the store it is supposed to inspect
-
-**Classification:** WARNING
-
-**File:** `engine/src/bin/inspect_lancedb.rs:362-367`; `engine/src/db/mod.rs:14-49`
-
-**Issue:** The inspector calls `DatabaseManager::initialize`, which creates any missing tables before inspection. A missing `staged_documents` table can be silently recreated as empty and then reported as the required zero-row state, masking the original durable-store condition. Diagnostic verification should not change evidence before evaluating it.
-
-**Fix:** Add a read-only `open_and_validate` path that requires all expected tables to exist and validates their schemas without creating or restoring anything. Keep table creation exclusive to engine startup.
+**Fix:** Execute the shell test in an isolated fixture checkout or parameterize the runtime-artifact paths so the test can use a temporary directory. At minimum, save and restore any pre-existing files rather than deleting them.
 
 ---
 
-_Reviewed: 2026-07-29T02:12:56Z_
+_Reviewed: 2026-07-29T10:51:54Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_
