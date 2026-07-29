@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -d "/c/Users/user3/.cargo/bin" ]]; then
+  export PATH="/c/Users/user3/.cargo/bin:$PATH"
+elif [[ -d "/mnt/c/Users/user3/.cargo/bin" ]]; then
+  export PATH="/mnt/c/Users/user3/.cargo/bin:$PATH"
+fi
+if command -v cargo >/dev/null 2>&1; then
+  cargo_cmd="cargo"
+elif command -v cargo.exe >/dev/null 2>&1; then
+  cargo_cmd="cargo.exe"
+else
+  cargo_cmd="cargo"
+fi
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  docker_cmd="docker"
+elif command -v docker.exe >/dev/null 2>&1; then
+  docker_cmd="docker.exe"
+elif command -v docker >/dev/null 2>&1; then
+  docker_cmd="docker"
+else
+  docker_cmd="docker"
+fi
 
 phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge_file="${phase_dir}/.02-LIVE-CHALLENGE.json"
@@ -70,21 +91,21 @@ run_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 start_managed_services() {
   export LANCET_ENV="$verification_environment"
-  docker compose up -d db >/dev/null
+  "$docker_cmd" compose up -d db >/dev/null
   for _ in $(seq 1 30); do
-    [[ "$(docker inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] && break
+    [[ "$("$docker_cmd" inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] && break
     sleep 2
   done
-  [[ "$(docker inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] || {
+  [[ "$("$docker_cmd" inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] || {
     echo "PostgreSQL did not become healthy" >&2; return 1;
   }
-  schema_tables="$(docker compose exec -T db psql -U postgres -d lancet -Atc \
+  schema_tables="$("$docker_cmd" compose exec -T db psql -U postgres -d lancet -Atc \
     "SELECT (to_regclass('public.users') IS NOT NULL)::int || '|' || (to_regclass('public.documents') IS NOT NULL)::int")"
   case "$schema_tables" in
     "1|1")
       ;;
     "0|0")
-      docker compose exec -T db psql -U postgres -d lancet -v ON_ERROR_STOP=1 -f - \
+      "$docker_cmd" compose exec -T db psql -U postgres -d lancet -v ON_ERROR_STOP=1 -f - \
         < gateway/db/schema.sql >/dev/null
       ;;
     *)
@@ -97,7 +118,7 @@ start_managed_services() {
   fi
   engine_log="$(mktemp)"
   gateway_log="$(mktemp)"
-  cargo run --quiet --manifest-path engine/Cargo.toml --bin engine >"$engine_log" 2>&1 & engine_pid=$!
+  "$cargo_cmd" run --quiet --manifest-path engine/Cargo.toml --bin engine >"$engine_log" 2>&1 & engine_pid=$!
   sleep 1
   go -C gateway run . >"$gateway_log" 2>&1 & gateway_pid=$!
   for _ in $(seq 1 45); do
@@ -129,9 +150,23 @@ for _ in $(seq 1 "${POLL_LIMIT:-60}"); do
   sleep "${POLL_INTERVAL_SECONDS:-2}"
 done
 [[ "${status:-}" == completed ]] || { echo "ingestion did not complete" >&2; exit 1; }
+verification_lancedb_path="$("$python_cmd" -I -c '
+import sys
+try:
+    import tomllib
+    with open("config/config.verify.toml", "rb") as f:
+        data = tomllib.load(f)
+        path = data["engine"]["lancedb_path"]
+except Exception:
+    import re
+    text = open("config/config.verify.toml", "r", encoding="utf-8").read()
+    match = re.search(r"lancedb_path\s*=\s*\"(.*?)\"", text)
+    path = match.group(1) if match else "./data/lancedb-verify-02-06"
+print(path)
+')"
 gateway_count="$(printf '%s' "$response" | "$python_cmd" -I -c 'import json,sys; print(json.load(sys.stdin)["ChunkCount"])')"
-postgres="$(docker compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
-inspection="$(cargo run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id")"
+postgres="$("$docker_cmd" compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
+inspection="$("$cargo_cmd" run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id" --lancedb-path "$verification_lancedb_path")"
 
 umask 077
 evidence_tmp="$(mktemp "${phase_dir}/.evidence.XXXXXX")"

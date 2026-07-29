@@ -356,6 +356,13 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
         self.assertIn('rm -f -- "$challenge" "$evidence"', final)
         self.assertLess(final.index("compare-live-state"), final.index('rm -f -- "$challenge" "$evidence"'))
 
+    def test_explicit_lancedb_path_forwarded_by_live_scripts(self) -> None:
+        ingestion = (ROOT / "verify-ingestion.sh").read_text(encoding="utf-8")
+        final = (ROOT / "verify-live-evidence.sh").read_text(encoding="utf-8")
+        for script in (ingestion, final):
+            self.assertIn("--lancedb-path", script)
+            self.assertIn("verification_lancedb_path", script)
+
     def test_caller_sample_preservation_on_early_failure(self) -> None:
         sample_path = ROOT / ".test-caller-sample.tmp"
         sample_path.write_bytes(b"caller sample data 12345")
