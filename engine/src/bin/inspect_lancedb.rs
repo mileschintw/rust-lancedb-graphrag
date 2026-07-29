@@ -195,7 +195,7 @@ fn derive_durable_facts(
         .ok_or_else(|| "LanceDB embedding_model could not be derived".to_owned())?;
     let provider = match embedding_model.as_str() {
         EMBEDDING_MODEL => "openrouter".to_owned(),
-        other => return Err(format!("LanceDB contains unknown embedding_model {other}")),
+        _ => return Err("LanceDB contains unknown embedding_model class".to_owned()),
     };
 
     let generation_count = generations.len();
@@ -363,7 +363,7 @@ async fn main() -> Result<(), String> {
         Some(p) => p,
         None => settings_path()?,
     };
-    let database = DatabaseManager::initialize(&target_path).await?;
+    let database = DatabaseManager::open_and_validate(&target_path).await?;
     let inspection = inspect_document(&database, &document_id).await?;
     println!(
         "{}",

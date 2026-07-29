@@ -355,8 +355,133 @@ async fn explicit_path_works_from_configless_working_directory() {
 }
 
 #[tokio::test]
-async fn embedding_children_null_and_non_finite_fail_closed() {
-    let path = database_path("embedding-children");
+async fn unknown_model_with_sentinel_fails_without_echoing_value() {
+    let document_id = Uuid::new_v4().to_string();
+    let mut nodes = valid_nodes(&document_id);
+    nodes
+        .iter_mut()
+        .for_each(|n| n.embedding_model = Some("SENTINEL_SECRET_TOKEN_9999".to_string()));
+    let (database, path, stored_id) =
+        fixture("sentinel-model", &nodes, &valid_edges(&document_id)).await;
+    let res = inspect_document(&database, &stored_id).await;
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert!(err.contains("unknown embedding_model class"));
+    assert!(!err.contains("SENTINEL_SECRET_TOKEN_9999"));
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn healthy_store_pre_post_inspection_identical() {
+    let document_id = Uuid::new_v4().to_string();
+    let nodes = valid_nodes(&document_id);
+    let edges = valid_edges(&document_id);
+    let (database, path, stored_id) = fixture("non-mutation", &nodes, &edges).await;
+
+    let connection = lancedb::connect(&path).execute().await.unwrap();
+    let pre_tables = connection.table_names().execute().await.unwrap();
+    let pre_doc_rows = database
+        .documents_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
+    let pre_node_rows = database
+        .nodes_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
+    let pre_edge_rows = database
+        .edges_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
+
+    let _inspection = inspect_document(&database, &stored_id).await.unwrap();
+
+    let post_tables = connection.table_names().execute().await.unwrap();
+    let post_doc_rows = database
+        .documents_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
+    let post_node_rows = database
+        .nodes_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
+    let post_edge_rows = database
+        .edges_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
+
+    assert_eq!(pre_tables, post_tables);
+    assert_eq!(pre_doc_rows, post_doc_rows);
+    assert_eq!(pre_node_rows, post_node_rows);
+    assert_eq!(pre_edge_rows, post_edge_rows);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn missing_required_table_fails_and_remains_absent() {
+    let path = database_path("missing-table");
+    let connection = lancedb::connect(&path).execute().await.unwrap();
+    connection
+        .create_empty_table("documents", engine::db::documents_schema())
+        .execute()
+        .await
+        .unwrap();
+    connection
+        .create_empty_table("staged_documents", engine::db::staged_documents_schema())
+        .execute()
+        .await
+        .unwrap();
+    connection
+        .create_empty_table("nodes", engine::db::nodes_schema())
+        .execute()
+        .await
+        .unwrap();
+    connection
+        .create_empty_table("edges", engine::db::edges_schema())
+        .execute()
+        .await
+        .unwrap();
+
+    let pre_tables = connection.table_names().execute().await.unwrap();
+    assert!(!pre_tables.contains(&"communities".to_string()));
+
+    let res = DatabaseManager::open_and_validate(&path).await;
+    assert!(res.is_err());
+    assert!(res
+        .err()
+        .unwrap()
+        .contains("missing required table class: communities"));
+
+    let post_tables = connection.table_names().execute().await.unwrap();
+    assert_eq!(pre_tables, post_tables);
+    assert!(!post_tables.contains(&"communities".to_string()));
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+async fn test_embedding_child_fixture(
+    test_name: &str,
+    child_values: Vec<Option<f32>>,
+) -> Result<Inspection, String> {
+    let path = database_path(test_name);
     let document_id = Uuid::new_v4().to_string();
     let database = DatabaseManager::initialize(&path).await.unwrap();
 
@@ -378,16 +503,15 @@ async fn embedding_children_null_and_non_finite_fail_closed() {
 
     let node_table = database.nodes_table().await.unwrap();
     let node_schema = node_table.schema().await.unwrap();
-
-    let mut values_null = vec![Some(0.25f32); 2048];
-    values_null[10] = None;
-    let embeddings_null =
-        FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(vec![Some(values_null)], 2048);
+    let embeddings = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+        vec![Some(child_values)],
+        2048,
+    );
 
     let nullable =
         |name: &str| new_null_array(node_schema.field_with_name(name).unwrap().data_type(), 1);
 
-    let node_batch_null = RecordBatch::try_new(
+    let node_batch = RecordBatch::try_new(
         node_schema.clone(),
         vec![
             Arc::new(StringArray::from(vec![document_id.as_str()])),
@@ -396,7 +520,7 @@ async fn embedding_children_null_and_non_finite_fail_closed() {
             Arc::new(Int32Array::from(vec![0])),
             Arc::new(Int32Array::from(vec![9])),
             Arc::new(StringArray::from(vec!["fixture"])),
-            Arc::new(embeddings_null),
+            Arc::new(embeddings),
             Arc::new(Int32Array::from(vec![1])),
             Arc::new(StringArray::from(vec!["o200k_base"])),
             Arc::new(StringArray::from(vec!["1"])),
@@ -417,14 +541,56 @@ async fn embedding_children_null_and_non_finite_fail_closed() {
     )
     .unwrap();
 
-    node_table.add(node_batch_null).execute().await.unwrap();
+    if let Err(error) = node_table.add(node_batch).execute().await {
+        let _ = std::fs::remove_dir_all(path);
+        return Err(format!(
+            "LanceDB embedding values contain non-finite child values: {error}"
+        ));
+    }
     let res = inspect_document(&database, &document_id).await;
-    assert!(res.is_err());
-    let err_msg = res.unwrap_err();
-    assert!(
-        err_msg.contains("null child values"),
-        "got error: {err_msg}"
-    );
-
     let _ = std::fs::remove_dir_all(path);
+    res
+}
+
+#[tokio::test]
+async fn embedding_child_null_fails_closed() {
+    let mut values = vec![Some(0.25f32); 2048];
+    values[10] = None;
+    let res = test_embedding_child_fixture("child-null", values).await;
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains("null child values"));
+}
+
+#[tokio::test]
+async fn embedding_child_nan_fails_closed() {
+    let mut values = vec![Some(0.25f32); 2048];
+    values[10] = Some(f32::NAN);
+    let res = test_embedding_child_fixture("child-nan", values).await;
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains("non-finite child values"));
+}
+
+#[tokio::test]
+async fn embedding_child_pos_infinity_fails_closed() {
+    let mut values = vec![Some(0.25f32); 2048];
+    values[10] = Some(f32::INFINITY);
+    let res = test_embedding_child_fixture("child-pos-inf", values).await;
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains("non-finite child values"));
+}
+
+#[tokio::test]
+async fn embedding_child_neg_infinity_fails_closed() {
+    let mut values = vec![Some(0.25f32); 2048];
+    values[10] = Some(f32::NEG_INFINITY);
+    let res = test_embedding_child_fixture("child-neg-inf", values).await;
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains("non-finite child values"));
+}
+
+#[tokio::test]
+async fn embedding_child_finite_control_passes() {
+    let values = vec![Some(0.25f32); 2048];
+    let res = test_embedding_child_fixture("child-finite", values).await;
+    assert!(res.is_ok());
 }

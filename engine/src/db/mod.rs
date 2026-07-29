@@ -10,6 +10,12 @@ pub struct DatabaseManager {
     connection: Connection,
 }
 
+impl std::fmt::Debug for DatabaseManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DatabaseManager").finish()
+    }
+}
+
 impl DatabaseManager {
     pub async fn initialize(path: &str) -> Result<Self, String> {
         let connection = lancedb::connect(path)
@@ -19,6 +25,39 @@ impl DatabaseManager {
         let manager = Self { connection };
         manager.initialize_tables().await?;
         Ok(manager)
+    }
+
+    /// Opens an existing LanceDB store and validates required schemas without mutations.
+    ///
+    /// # Errors
+    /// Returns an error if connection fails, a required table is missing, or schema drift is detected.
+    pub async fn open_and_validate(path: &str) -> Result<Self, String> {
+        let connection = lancedb::connect(path)
+            .execute()
+            .await
+            .map_err(|error| format!("failed to connect to LanceDB at {path}: {error}"))?;
+
+        let existing = connection
+            .table_names()
+            .execute()
+            .await
+            .map_err(|error| format!("failed to list LanceDB tables: {error}"))?
+            .into_iter()
+            .collect::<HashSet<_>>();
+
+        for (name, expected) in table_schemas() {
+            if !existing.contains(name) {
+                return Err(format!("LanceDB missing required table class: {name}"));
+            }
+            let table = connection
+                .open_table(name)
+                .execute()
+                .await
+                .map_err(|error| format!("failed to open LanceDB table {name}: {error}"))?;
+            validate_schema(name, &table, &expected).await?;
+        }
+
+        Ok(Self { connection })
     }
 
     async fn initialize_tables(&self) -> Result<(), String> {
