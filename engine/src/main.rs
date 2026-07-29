@@ -56,15 +56,25 @@ struct EngineSettings {
 }
 
 fn load_settings() -> Result<Settings, config::ConfigError> {
-    let base = if std::path::Path::new("../config/config.toml").exists() {
-        "../config/config"
+    let base_path = if let Ok(dir) = std::env::var("LANCET_CONFIG_DIR") {
+        if !dir.trim().is_empty() {
+            let trimmed = dir.trim().trim_end_matches(['/', '\\']);
+            format!("{trimmed}/config")
+        } else if std::path::Path::new("../config/config.toml").exists() {
+            "../config/config".to_string()
+        } else {
+            "config/config".to_string()
+        }
+    } else if std::path::Path::new("../config/config.toml").exists() {
+        "../config/config".to_string()
     } else {
-        "config/config"
+        "config/config".to_string()
     };
-    let mut builder = config::Config::builder().add_source(config::File::with_name(base));
+    let mut builder = config::Config::builder().add_source(config::File::with_name(&base_path));
     if let Ok(environment) = std::env::var("LANCET_ENV") {
-        if !environment.is_empty() {
-            builder = builder.add_source(config::File::with_name(&format!("{base}.{environment}")));
+        if !environment.trim().is_empty() {
+            let env_path = format!("{base_path}.{}", environment.trim());
+            builder = builder.add_source(config::File::with_name(&env_path).required(false));
         }
     }
     builder
@@ -89,16 +99,90 @@ impl IngestionStatus {
     }
 }
 
-#[derive(Debug)]
-struct IngestionJob {
-    document_id: String,
-    filename: String,
-    raw_data: Vec<u8>,
-    metadata: HashMap<String, String>,
-}
-
 const DEFAULT_CHUNK_SIZE: usize = 500;
 const DEFAULT_CHUNK_OVERLAP: usize = 50;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ChunkSettings {
+    pub strategy: String,
+    pub size: usize,
+    pub overlap: usize,
+}
+
+impl Default for ChunkSettings {
+    fn default() -> Self {
+        Self {
+            strategy: "structure-aware".into(),
+            size: DEFAULT_CHUNK_SIZE,
+            overlap: DEFAULT_CHUNK_OVERLAP,
+        }
+    }
+}
+
+fn parse_chunk_settings(metadata: &HashMap<String, String>) -> Result<ChunkSettings, Status> {
+    let strategy = metadata
+        .get("chunk_strategy")
+        .ok_or_else(|| Status::invalid_argument("missing metadata key: chunk_strategy"))?;
+    if strategy != "structure-aware" && strategy != "fixed-size" {
+        return Err(Status::invalid_argument(format!(
+            "invalid chunk_strategy: {strategy}"
+        )));
+    }
+    let size_str = metadata
+        .get("chunk_size")
+        .ok_or_else(|| Status::invalid_argument("missing metadata key: chunk_size"))?;
+    let size: usize = size_str
+        .parse()
+        .map_err(|_| Status::invalid_argument("invalid chunk_size: must be a positive integer"))?;
+    if size == 0 {
+        return Err(Status::invalid_argument(
+            "invalid chunk_size: must be greater than 0",
+        ));
+    }
+    let overlap_str = metadata
+        .get("chunk_overlap")
+        .ok_or_else(|| Status::invalid_argument("missing metadata key: chunk_overlap"))?;
+    let overlap: usize = overlap_str
+        .parse()
+        .map_err(|_| Status::invalid_argument("invalid chunk_overlap: must be a non-negative integer"))?;
+    if overlap >= size {
+        return Err(Status::invalid_argument(
+            "invalid chunk_overlap: must be smaller than chunk_size",
+        ));
+    }
+    Ok(ChunkSettings {
+        strategy: strategy.clone(),
+        size,
+        overlap,
+    })
+}
+
+#[derive(Debug)]
+pub struct IngestionJob {
+    pub document_id: String,
+    pub filename: String,
+    pub raw_data: Vec<u8>,
+    pub metadata: HashMap<String, String>,
+    pub chunk_settings: ChunkSettings,
+}
+
+impl IngestionJob {
+    pub fn new(
+        document_id: String,
+        filename: String,
+        raw_data: Vec<u8>,
+        metadata: HashMap<String, String>,
+    ) -> Self {
+        let chunk_settings = parse_chunk_settings(&metadata).unwrap_or_default();
+        Self {
+            document_id,
+            filename,
+            raw_data,
+            metadata,
+            chunk_settings,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ReplacementMutation {
@@ -162,31 +246,18 @@ impl ReplacementMutationBoundary for LanceDbReplacementMutationBoundary {
     }
 }
 
-fn metadata_usize(metadata: &HashMap<String, String>, key: &str, default: usize) -> usize {
-    metadata
-        .get(key)
-        .and_then(|value| value.parse().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(default)
-}
-
 fn chunk_ingestion_job(job: &IngestionJob) -> (&'static str, Vec<Chunk>) {
-    let requested_strategy = job
-        .metadata
-        .get("chunk_strategy")
-        .map(String::as_str)
-        .unwrap_or("");
     let is_json = Path::new(&job.filename)
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
-    let strategy = if is_json || requested_strategy == "fixed-size" {
+    let strategy = if is_json || job.chunk_settings.strategy == "fixed-size" {
         "fixed-size"
     } else {
         "structure-aware"
     };
-    let target_size = metadata_usize(&job.metadata, "chunk_size", DEFAULT_CHUNK_SIZE);
-    let overlap = metadata_usize(&job.metadata, "chunk_overlap", DEFAULT_CHUNK_OVERLAP);
+    let target_size = job.chunk_settings.size;
+    let overlap = job.chunk_settings.overlap;
     let text = String::from_utf8_lossy(&job.raw_data);
     let mut chunks = if strategy == "fixed-size" {
         chunk_fixed_size(&text, target_size, overlap)
@@ -261,11 +332,21 @@ impl LancetService for LancetServiceImpl {
         let mut filename = String::new();
         let mut metadata = HashMap::new();
         let mut raw = Vec::new();
+        let mut first_frame = true;
+        let mut parsed_settings = None;
         while let Some(message) = stream.message().await? {
-            if document_id.is_empty() {
+            if first_frame {
+                first_frame = false;
                 document_id = message.document_id.clone();
                 filename = message.filename.clone();
                 metadata = message.metadata.clone();
+                parsed_settings = Some(parse_chunk_settings(&metadata)?);
+            } else {
+                if !message.metadata.is_empty() {
+                    return Err(Status::invalid_argument(
+                        "stream metadata must not be provided on subsequent frames",
+                    ));
+                }
             }
             if message.document_id != document_id {
                 return Err(Status::invalid_argument(
@@ -294,6 +375,7 @@ impl LancetService for LancetServiceImpl {
             filename,
             raw_data: raw,
             metadata,
+            chunk_settings: parsed_settings.expect("parsed settings present for non-empty stream"),
         });
         Ok(Response::new(IngestDocumentResponse {
             document_id,

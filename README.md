@@ -120,3 +120,19 @@ To keep our v1 MVP focused and modular, several advanced systems-level RAG capab
 4. **Query Reformulation Strategies (Phase 999.3):** Implementing advanced LLM-driven query expansion techniques (e.g., HyDE and multi-query expansion) to improve retrieval recall.
 5. **LLM-Assisted Synthesis at Ingestion Time (Phase 999.4):** Generating synthesized, consolidated prose descriptions for extracted entities and relationships during document ingestion and store them in LanceDB alongside vectors.
 6. **Knowledge Drift Detection and Node Merging (Phase 999.6):** Implementing semantic entity resolution and node merging using vector similarity and LLM verification to maintain a self-healing, clean knowledge graph.
+
+---
+
+## 🔒 Local-Only Exposure Constraint & Debt Triggers (`DEBT-CR-04`)
+
+> [!IMPORTANT]
+> **Local-Only Service Scope**
+> The Go API Gateway listener binds explicitly to loopback (`127.0.0.1:<port>`). Phase 02 supports trusted local callers only. The service is unauthenticated and lacks TLS or per-principal rate limiting.
+
+### Review & Reclassification Triggers (`DEBT-CR-04`)
+The local-only disposition must be immediately reviewed and reclassified as blocking before any of the following deployment changes occur:
+- Binding the gateway or engine listeners to a non-loopback interface (`0.0.0.0` or shared network adapter)
+- Exposing the service via reverse proxy, tunnel, port forwarding, or shared LAN access
+- Deploying into multi-tenant, container-host, VM-host, remote, or cloud environments
+- Allowing external or automated untrusted callers to submit document ingestion requests
+

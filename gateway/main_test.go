@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -99,7 +100,7 @@ func multipartRequest(t *testing.T, filename string, contents []byte) *http.Requ
 
 func TestCreateDocumentMapsFullQueueTo429(t *testing.T) {
 	store := &fakeStore{}
-	engine := engineFunc{ingest: func(context.Context, string, string, []byte) IngestOutcome {
+	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) IngestOutcome {
 		return IngestOutcome{Err: status.Error(codes.ResourceExhausted, "full")}
 	}}
 	recorder := httptest.NewRecorder()
@@ -123,7 +124,7 @@ func TestCreateDocumentMapsFullQueueTo429(t *testing.T) {
 
 func TestCreateDocumentCompensatesGeneralEnqueueFailure(t *testing.T) {
 	store := &fakeStore{}
-	engine := engineFunc{ingest: func(context.Context, string, string, []byte) IngestOutcome { return IngestOutcome{Err: errors.New("engine down")} }}
+	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) IngestOutcome { return IngestOutcome{Err: errors.New("engine down")} }}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
 	if recorder.Code != http.StatusBadGateway {
@@ -139,7 +140,7 @@ func TestCreateDocumentCompensatesWithDetachedContextAfterRequestCancellation(t 
 	req := multipartRequest(t, "notes.txt", []byte("hello"))
 	requestCtx, cancelRequest := context.WithCancel(req.Context())
 	req = req.WithContext(requestCtx)
-	engine := engineFunc{ingest: func(context.Context, string, string, []byte) IngestOutcome {
+	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) IngestOutcome {
 		cancelRequest()
 		return IngestOutcome{Err: errors.New("engine canceled before enqueue")}
 	}}
@@ -180,7 +181,7 @@ func TestCreateDocumentReturnsPollingLocation(t *testing.T) {
 func TestCreateDocumentConvergesLostAcknowledgement(t *testing.T) {
 	store := &fakeStore{}
 	engine := engineFunc{
-		ingest: func(ctx context.Context, id, filename string, b []byte) IngestOutcome {
+		ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
 			return IngestOutcome{Ambiguous: true, Err: errors.New("stream closed abruptly")}
 		},
 		status: &pb.GetIngestionStatusResponse{Status: "queued"},
@@ -198,7 +199,7 @@ func TestCreateDocumentConvergesLostAcknowledgement(t *testing.T) {
 func TestCreateDocumentRejectsMismatchedAdmissionIdentity(t *testing.T) {
 	store := &fakeStore{}
 	engine := engineFunc{
-		ingest: func(ctx context.Context, id, filename string, b []byte) IngestOutcome {
+		ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
 			return IngestOutcome{Err: errors.New("mismatched id")}
 		},
 	}
@@ -339,12 +340,12 @@ func TestGetDocumentLeavesTransientEngineFailureQueued(t *testing.T) {
 }
 
 type engineFunc struct {
-	ingest    func(context.Context, string, string, []byte) IngestOutcome
+	ingest    func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome
 	status    *pb.GetIngestionStatusResponse
 	statusErr error
 }
 
-func (e engineFunc) Ingest(ctx context.Context, id, filename string, src io.Reader) IngestOutcome {
+func (e engineFunc) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome {
 	data, err := io.ReadAll(src)
 	if err != nil {
 		return IngestOutcome{Err: err}
@@ -352,7 +353,7 @@ func (e engineFunc) Ingest(ctx context.Context, id, filename string, src io.Read
 	if e.ingest == nil {
 		return IngestOutcome{}
 	}
-	return e.ingest(ctx, id, filename, data)
+	return e.ingest(ctx, id, filename, strategy, chunkSize, chunkOverlap, data)
 }
 
 func (e engineFunc) IngestionStatus(ctx context.Context, id string) (*pb.GetIngestionStatusResponse, error) {
@@ -375,3 +376,174 @@ func (e engineFunc) IngestionStatus(ctx context.Context, id string) (*pb.GetInge
 }
 
 func (engineFunc) Ping(context.Context) (time.Duration, error) { return time.Millisecond, nil }
+
+func TestCreateDocumentChunkSettingsContract(t *testing.T) {
+	t.Run("omitted settings use defaults", func(t *testing.T) {
+		store := &fakeStore{}
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
+		if recorder.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusAccepted)
+		}
+		if store.inserted == nil {
+			t.Fatal("expected insert params")
+		}
+		if store.inserted.ChunkStrategy != "structure-aware" || store.inserted.ChunkSize != 500 || store.inserted.ChunkOverlap != 50 {
+			t.Fatalf("unexpected inserted chunk params: %#v", store.inserted)
+		}
+	})
+
+	t.Run("custom valid fixed-size settings", func(t *testing.T) {
+		store := &fakeStore{}
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "notes.txt")
+		part.Write([]byte("hello"))
+		w.WriteField("chunk_strategy", "fixed-size")
+		w.WriteField("chunk_size", "800")
+		w.WriteField("chunk_overlap", "100")
+		w.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusAccepted)
+		}
+		if store.inserted.ChunkStrategy != "fixed-size" || store.inserted.ChunkSize != 800 || store.inserted.ChunkOverlap != 100 {
+			t.Fatalf("unexpected custom chunk params: %#v", store.inserted)
+		}
+	})
+
+	t.Run("json document converts to fixed-size", func(t *testing.T) {
+		store := &fakeStore{}
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "doc.json", []byte("{}")))
+		if recorder.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusAccepted)
+		}
+		if store.inserted.ChunkStrategy != "fixed-size" {
+			t.Fatalf("expected json to persist as fixed-size, got %q", store.inserted.ChunkStrategy)
+		}
+	})
+
+	t.Run("invalid strategy returns 400", func(t *testing.T) {
+		store := &fakeStore{}
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "notes.txt")
+		part.Write([]byte("hello"))
+		w.WriteField("chunk_strategy", "invalid-strategy")
+		w.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", recorder.Code)
+		}
+	})
+
+	t.Run("invalid size returns 400", func(t *testing.T) {
+		store := &fakeStore{}
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "notes.txt")
+		part.Write([]byte("hello"))
+		w.WriteField("chunk_size", "0")
+		w.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", recorder.Code)
+		}
+	})
+
+	t.Run("overlap >= size returns 400", func(t *testing.T) {
+		store := &fakeStore{}
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "notes.txt")
+		part.Write([]byte("hello"))
+		w.WriteField("chunk_size", "500")
+		w.WriteField("chunk_overlap", "500")
+		w.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", recorder.Code)
+		}
+	})
+}
+
+type fakeStream struct {
+	pb.LancetService_IngestDocumentClient
+	requests []*pb.IngestDocumentRequest
+}
+
+func (f *fakeStream) Send(req *pb.IngestDocumentRequest) error {
+	f.requests = append(f.requests, req)
+	return nil
+}
+
+func (f *fakeStream) CloseAndRecv() (*pb.IngestDocumentResponse, error) {
+	if len(f.requests) > 0 {
+		return &pb.IngestDocumentResponse{DocumentId: f.requests[0].DocumentId, Success: true}, nil
+	}
+	return &pb.IngestDocumentResponse{Success: true}, nil
+}
+
+type fakeGrpcClient struct {
+	pb.LancetServiceClient
+	stream pb.LancetService_IngestDocumentClient
+}
+
+func (f *fakeGrpcClient) IngestDocument(ctx context.Context, opts ...grpc.CallOption) (pb.LancetService_IngestDocumentClient, error) {
+	return f.stream, nil
+}
+
+func TestGrpcEngineStreamsChunkSettings(t *testing.T) {
+	stream := &fakeStream{}
+	engine := grpcEngine{client: &fakeGrpcClient{stream: stream}}
+	ctx := t.Context()
+	outcome := engine.Ingest(ctx, "doc-123", "guide.md", "structure-aware", 500, 50, bytes.NewReader([]byte("chunk data payload")))
+	if outcome.Err != nil {
+		t.Fatalf("unexpected ingest error: %v", outcome.Err)
+	}
+	if len(stream.requests) == 0 {
+		t.Fatal("expected gRPC stream requests")
+	}
+	first := stream.requests[0]
+	if first.Metadata == nil {
+		t.Fatal("expected first frame metadata")
+	}
+	if first.Metadata["chunk_strategy"] != "structure-aware" || first.Metadata["chunk_size"] != "500" || first.Metadata["chunk_overlap"] != "50" {
+		t.Fatalf("unexpected first frame metadata: %#v", first.Metadata)
+	}
+	for i, req := range stream.requests[1:] {
+		if req.Metadata != nil {
+			t.Fatalf("subsequent frame %d carried metadata: %#v", i+1, req.Metadata)
+		}
+	}
+}
+
+func TestGatewayAddressIsLoopback(t *testing.T) {
+	if got, want := formatListenAddr("8080"), "127.0.0.1:8080"; got != want {
+		t.Fatalf("formatListenAddr(\"8080\") = %q, want %q", got, want)
+	}
+	if got, want := formatListenAddr("127.0.0.1:9090"), "127.0.0.1:9090"; got != want {
+		t.Fatalf("formatListenAddr(\"127.0.0.1:9090\") = %q, want %q", got, want)
+	}
+}

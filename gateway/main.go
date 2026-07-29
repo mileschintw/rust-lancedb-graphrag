@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,23 +125,37 @@ type IngestOutcome struct {
 }
 
 type engine interface {
-	Ingest(context.Context, string, string, io.Reader) IngestOutcome
+	Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome
 	IngestionStatus(context.Context, string) (*pb.GetIngestionStatusResponse, error)
 	Ping(context.Context) (time.Duration, error)
 }
 
 type grpcEngine struct{ client pb.LancetServiceClient }
 
-func (e grpcEngine) Ingest(ctx context.Context, id, filename string, src io.Reader) IngestOutcome {
+func (e grpcEngine) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome {
 	stream, err := e.client.IngestDocument(ctx)
 	if err != nil {
 		return IngestOutcome{Err: err}
 	}
 	buf := make([]byte, streamBufferSize)
+	firstFrame := true
 	for {
 		n, readErr := src.Read(buf)
 		if n > 0 {
-			if err := stream.Send(&pb.IngestDocumentRequest{DocumentId: id, Filename: filename, ChunkData: append([]byte(nil), buf[:n]...)}); err != nil {
+			req := &pb.IngestDocumentRequest{
+				DocumentId: id,
+				ChunkData:  append([]byte(nil), buf[:n]...),
+			}
+			if firstFrame {
+				firstFrame = false
+				req.Filename = filename
+				req.Metadata = map[string]string{
+					"chunk_strategy": strategy,
+					"chunk_size":     strconv.Itoa(chunkSize),
+					"chunk_overlap":  strconv.Itoa(chunkOverlap),
+				}
+			}
+			if err := stream.Send(req); err != nil {
 				return IngestOutcome{Err: err}
 			}
 		}
@@ -252,18 +267,63 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "file exceeds 10MB", http.StatusRequestEntityTooLarge)
 		return
 	}
+
+	strategy := "structure-aware"
+	if reqStrategy := r.FormValue("chunk_strategy"); reqStrategy != "" {
+		if reqStrategy != "structure-aware" && reqStrategy != "fixed-size" {
+			http.Error(w, "invalid chunk_strategy", http.StatusBadRequest)
+			return
+		}
+		strategy = reqStrategy
+	}
+	if strings.EqualFold(filepath.Ext(header.Filename), ".json") {
+		strategy = "fixed-size"
+	}
+
+	chunkSize := defaultChunkSize
+	if reqSize := r.FormValue("chunk_size"); reqSize != "" {
+		parsedSize, err := strconv.Atoi(reqSize)
+		if err != nil || parsedSize <= 0 {
+			http.Error(w, "invalid chunk_size", http.StatusBadRequest)
+			return
+		}
+		chunkSize = parsedSize
+	}
+
+	chunkOverlap := defaultChunkOverlap
+	if reqOverlap := r.FormValue("chunk_overlap"); reqOverlap != "" {
+		parsedOverlap, err := strconv.Atoi(reqOverlap)
+		if err != nil || parsedOverlap < 0 {
+			http.Error(w, "invalid chunk_overlap", http.StatusBadRequest)
+			return
+		}
+		chunkOverlap = parsedOverlap
+	}
+
+	if chunkOverlap >= chunkSize {
+		http.Error(w, "chunk_overlap must be smaller than chunk_size", http.StatusBadRequest)
+		return
+	}
+
 	id, err := newDocumentID()
 	if err != nil {
 		http.Error(w, "could not allocate document id", http.StatusInternalServerError)
 		return
 	}
-	doc, err := a.store.Insert(r.Context(), db.InsertDocumentParams{ID: id, Filename: filepath.Base(header.Filename), FileSize: header.Size, ChunkStrategy: "recursive", ChunkSize: defaultChunkSize, ChunkOverlap: defaultChunkOverlap})
+	doc, err := a.store.Insert(r.Context(), db.InsertDocumentParams{
+		ID:            id,
+		Filename:      filepath.Base(header.Filename),
+		FileSize:      header.Size,
+		ChunkStrategy: strategy,
+		ChunkSize:     int32(chunkSize),
+		ChunkOverlap:  int32(chunkOverlap),
+	})
 	if err != nil {
 		a.logger.Error("insert document", zap.Error(err))
 		http.Error(w, "could not queue document", http.StatusInternalServerError)
 		return
 	}
-	outcome := a.engine.Ingest(r.Context(), id, doc.Filename, io.LimitReader(file, maxUploadBytes+1))
+	outcome := a.engine.Ingest(r.Context(), id, doc.Filename, strategy, chunkSize, chunkOverlap, io.LimitReader(file, maxUploadBytes+1))
 	if outcome.Err != nil {
 		if outcome.Ambiguous {
 			checkCtx, checkCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -366,6 +426,13 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+func formatListenAddr(port string) string {
+	if strings.Contains(port, ":") {
+		return port
+	}
+	return "127.0.0.1:" + port
+}
+
 func main() {
 	logger, err := zap.NewDevelopment()
 	if err != nil {
@@ -386,9 +453,14 @@ func main() {
 		logger.Fatal("dial engine", zap.Error(err))
 	}
 	defer conn.Close()
-	server := &http.Server{Addr: fmt.Sprintf(":%s", cfg.Gateway.Port), Handler: app{store: postgresStore{pool}, engine: grpcEngine{pb.NewLancetServiceClient(conn)}, logger: logger}.routes(), ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{
+		Addr:              formatListenAddr(cfg.Gateway.Port),
+		Handler:           app{store: postgresStore{pool}, engine: grpcEngine{pb.NewLancetServiceClient(conn)}, logger: logger}.routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	logger.Info("gateway listening", zap.String("addr", server.Addr))
 	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Fatal("gateway stopped", zap.Error(err))
 	}
 }
+

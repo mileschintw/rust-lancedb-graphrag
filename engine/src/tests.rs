@@ -223,12 +223,12 @@ async fn replacement_documents_add_failure_rolls_back_and_retry_converges() {
     let path = database_path("documents-add-failure");
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let document_id = Uuid::new_v4().to_string();
-    let old_job = IngestionJob {
-        document_id: document_id.clone(),
-        filename: "old.md".into(),
-        raw_data: b"# One\n\nfirst\n\n# Two\n\nsecond".to_vec(),
-        metadata: HashMap::new(),
-    };
+    let old_job = IngestionJob::new(
+        document_id.clone(),
+        "old.md".into(),
+        b"# One\n\nfirst\n\n# Two\n\nsecond".to_vec(),
+        HashMap::new(),
+    );
     let (_, old_chunks) = chunk_ingestion_job(&old_job);
     let old_embeddings = vec![vec![0.25; 2048]; old_chunks.len()];
     replace_document(&database, &old_job, &old_chunks, &old_embeddings)
@@ -237,12 +237,12 @@ async fn replacement_documents_add_failure_rolls_back_and_retry_converges() {
     stage_document(&database, &document_id, b"replacement staging row").await;
     let old_state = canonical_state(&database, &document_id).await;
 
-    let replacement_job = IngestionJob {
-        document_id: document_id.clone(),
-        filename: "replacement.md".into(),
-        raw_data: b"# Replacement\n\nnew content\n\n# Other\n\nmore content".to_vec(),
-        metadata: HashMap::new(),
-    };
+    let replacement_job = IngestionJob::new(
+        document_id.clone(),
+        "replacement.md".into(),
+        b"# Replacement\n\nnew content\n\n# Other\n\nmore content".to_vec(),
+        HashMap::new(),
+    );
     let (_, replacement_chunks) = chunk_ingestion_job(&replacement_job);
     let replacement_embeddings = vec![vec![0.75; 2048]; replacement_chunks.len()];
     let failure = FaultingReplacementMutationBoundary::new(ReplacementMutation::DocumentsAdd);
@@ -311,12 +311,12 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
         let path = database_path(&format!("boundary-{boundary:?}"));
         let database = DatabaseManager::initialize(&path).await.unwrap();
         let document_id = Uuid::new_v4().to_string();
-        let old_job = IngestionJob {
-            document_id: document_id.clone(),
-            filename: "old.md".into(),
-            raw_data: b"# One\n\nfirst\n\n# Two\n\nsecond".to_vec(),
-            metadata: HashMap::new(),
-        };
+        let old_job = IngestionJob::new(
+            document_id.clone(),
+            "old.md".into(),
+            b"# One\n\nfirst\n\n# Two\n\nsecond".to_vec(),
+            HashMap::new(),
+        );
         let (_, old_chunks) = chunk_ingestion_job(&old_job);
         let old_embeddings = vec![vec![0.25; 2048]; old_chunks.len()];
         replace_document(&database, &old_job, &old_chunks, &old_embeddings)
@@ -327,12 +327,12 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
         assert_eq!(old_state.edge_ids.len(), 3);
         assert_eq!(old_state.summary_null_count, old_state.node_ids.len());
 
-        let replacement_job = IngestionJob {
-            document_id: document_id.clone(),
-            filename: "replacement.md".into(),
-            raw_data: b"# Three\n\nnew content\n\n# Four\n\nmore content".to_vec(),
-            metadata: HashMap::new(),
-        };
+        let replacement_job = IngestionJob::new(
+            document_id.clone(),
+            "replacement.md".into(),
+            b"# Three\n\nnew content\n\n# Four\n\nmore content".to_vec(),
+            HashMap::new(),
+        );
         let (_, replacement_chunks) = chunk_ingestion_job(&replacement_job);
         let replacement_embeddings = vec![vec![0.75; 2048]; replacement_chunks.len()];
         let failure = FaultingReplacementMutationBoundary::new(boundary);
@@ -423,12 +423,12 @@ async fn persisted_node_summary_is_arrow_null() {
             .unwrap(),
         0
     );
-    let empty_job = IngestionJob {
-        document_id: Uuid::new_v4().to_string(),
-        filename: "empty.md".into(),
-        raw_data: Vec::new(),
-        metadata: HashMap::new(),
-    };
+    let empty_job = IngestionJob::new(
+        Uuid::new_v4().to_string(),
+        "empty.md".into(),
+        Vec::new(),
+        HashMap::new(),
+    );
     let (_, empty_chunks) = chunk_ingestion_job(&empty_job);
     assert!(empty_chunks.is_empty());
     replace_document(&database, &empty_job, &empty_chunks, &[])
@@ -466,12 +466,12 @@ async fn persisted_node_summary_is_arrow_null() {
         0
     );
     let document_id = Uuid::new_v4().to_string();
-    let job = IngestionJob {
+    let job = IngestionJob::new(
         document_id,
-        filename: "summary.md".into(),
-        raw_data: b"# Summary\n\ncontent".to_vec(),
-        metadata: HashMap::new(),
-    };
+        "summary.md".into(),
+        b"# Summary\n\ncontent".to_vec(),
+        HashMap::new(),
+    );
     let (_, chunks) = chunk_ingestion_job(&job);
     let embeddings = vec![vec![0.25; 2048]; chunks.len()];
     replace_document(&database, &job, &chunks, &embeddings)
@@ -519,12 +519,12 @@ async fn worker_indexes_jobs_and_records_real_chunk_count() {
     );
     let document_id = Uuid::new_v4().to_string();
     sender
-        .send(IngestionJob {
-            document_id: document_id.clone(),
-            filename: "document.md".into(),
-            raw_data: b"# One\n\nfirst\n\n# Two\n\nsecond".to_vec(),
-            metadata: HashMap::new(),
-        })
+        .send(IngestionJob::new(
+            document_id.clone(),
+            "document.md".into(),
+            b"# One\n\nfirst\n\n# Two\n\nsecond".to_vec(),
+            HashMap::new(),
+        ))
         .await
         .unwrap();
     drop(sender);
@@ -558,12 +558,12 @@ async fn worker_replaces_existing_document_rows() {
         b"replacement".to_vec(),
     ] {
         sender
-            .send(IngestionJob {
-                document_id: document_id.clone(),
-                filename: "document.md".into(),
+            .send(IngestionJob::new(
+                document_id.clone(),
+                "document.md".into(),
                 raw_data,
-                metadata: HashMap::new(),
-            })
+                HashMap::new(),
+            ))
             .await
             .unwrap();
     }
@@ -604,12 +604,12 @@ async fn schema_field_lookup_failure_rolls_back_and_retry_converges() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
 
     let document_id = Uuid::new_v4().to_string();
-    let job = IngestionJob {
-        document_id: document_id.clone(),
-        filename: "doc.md".into(),
-        raw_data: b"# Section\n\ncontent".to_vec(),
-        metadata: HashMap::new(),
-    };
+    let job = IngestionJob::new(
+        document_id.clone(),
+        "doc.md".into(),
+        b"# Section\n\ncontent".to_vec(),
+        HashMap::new(),
+    );
     let (_, chunks) = chunk_ingestion_job(&job);
     let embeddings = vec![vec![0.25; 2048]; chunks.len()];
 
@@ -685,12 +685,12 @@ async fn shutdown_waits_for_active_document_to_finish() {
     );
     let document_id = Uuid::new_v4().to_string();
     sender
-        .send(IngestionJob {
-            document_id: document_id.clone(),
-            filename: "document.md".into(),
-            raw_data: b"active document".to_vec(),
-            metadata: HashMap::new(),
-        })
+        .send(IngestionJob::new(
+            document_id.clone(),
+            "document.md".into(),
+            b"active document".to_vec(),
+            HashMap::new(),
+        ))
         .await
         .unwrap();
     started.notified().await;
@@ -706,35 +706,35 @@ async fn shutdown_waits_for_active_document_to_finish() {
 async fn bounded_queue_rejects_work_when_full() {
     let (sender, _receiver) = mpsc::channel(1);
     sender
-        .try_send(IngestionJob {
-            document_id: "one".into(),
-            filename: "one.txt".into(),
-            raw_data: vec![b'x'],
-            metadata: HashMap::new(),
-        })
+        .try_send(IngestionJob::new(
+            "one".into(),
+            "one.txt".into(),
+            vec![b'x'],
+            HashMap::new(),
+        ))
         .unwrap();
     assert!(sender
-        .try_send(IngestionJob {
-            document_id: "two".into(),
-            filename: "two.txt".into(),
-            raw_data: vec![b'y'],
-            metadata: HashMap::new(),
-        })
+        .try_send(IngestionJob::new(
+            "two".into(),
+            "two.txt".into(),
+            vec![b'y'],
+            HashMap::new(),
+        ))
         .is_err());
 }
 
 #[test]
 fn json_forces_fixed_size_and_populates_token_counts() {
-    let job = IngestionJob {
-        document_id: "json".into(),
-        filename: "DATA.JSON".into(),
-        raw_data: br##"{"heading":"# not markdown"}"##.to_vec(),
-        metadata: HashMap::from([
+    let job = IngestionJob::new(
+        "json".into(),
+        "DATA.JSON".into(),
+        br##"{"heading":"# not markdown"}"##.to_vec(),
+        HashMap::from([
             ("chunk_strategy".into(), "structure-aware".into()),
             ("chunk_size".into(), "10".into()),
             ("chunk_overlap".into(), "2".into()),
         ]),
-    };
+    );
     let (strategy, chunks) = chunk_ingestion_job(&job);
     assert_eq!(strategy, "fixed-size");
     assert!(chunks.len() > 1);
@@ -744,12 +744,12 @@ fn json_forces_fixed_size_and_populates_token_counts() {
 
 #[test]
 fn empty_strategy_defaults_to_structure_aware() {
-    let job = IngestionJob {
-        document_id: "markdown".into(),
-        filename: "guide.md".into(),
-        raw_data: b"# Setup\n\nInstall it.".to_vec(),
-        metadata: HashMap::new(),
-    };
+    let job = IngestionJob::new(
+        "markdown".into(),
+        "guide.md".into(),
+        b"# Setup\n\nInstall it.".to_vec(),
+        HashMap::new(),
+    );
     let (strategy, chunks) = chunk_ingestion_job(&job);
     assert_eq!(strategy, "structure-aware");
     assert!(chunks
@@ -763,3 +763,58 @@ fn rejects_non_v4_document_ids() {
     assert!(validate_document_id("00000000-0000-1000-8000-000000000000").is_err());
     assert!(validate_document_id(&Uuid::new_v4().to_string()).is_ok());
 }
+
+#[test]
+fn chunk_metadata_contract_valid_custom_settings() {
+    let metadata = HashMap::from([
+        ("chunk_strategy".into(), "fixed-size".into()),
+        ("chunk_size".into(), "800".into()),
+        ("chunk_overlap".into(), "100".into()),
+    ]);
+    let settings = parse_chunk_settings(&metadata).unwrap();
+    assert_eq!(
+        settings,
+        ChunkSettings {
+            strategy: "fixed-size".into(),
+            size: 800,
+            overlap: 100,
+        }
+    );
+    let job = IngestionJob::new(
+        "doc-1".into(),
+        "notes.txt".into(),
+        b"some long content for chunking test".to_vec(),
+        metadata,
+    );
+    let (strategy, chunks) = chunk_ingestion_job(&job);
+    assert_eq!(strategy, "fixed-size");
+    assert!(!chunks.is_empty());
+}
+
+#[test]
+fn chunk_metadata_contract_invalid_metadata_rejected() {
+    let missing_key = HashMap::from([("chunk_strategy".into(), "fixed-size".into())]);
+    assert!(parse_chunk_settings(&missing_key).is_err());
+
+    let invalid_strategy = HashMap::from([
+        ("chunk_strategy".into(), "recursive".into()),
+        ("chunk_size".into(), "500".into()),
+        ("chunk_overlap".into(), "50".into()),
+    ]);
+    assert!(parse_chunk_settings(&invalid_strategy).is_err());
+
+    let zero_size = HashMap::from([
+        ("chunk_strategy".into(), "fixed-size".into()),
+        ("chunk_size".into(), "0".into()),
+        ("chunk_overlap".into(), "0".into()),
+    ]);
+    assert!(parse_chunk_settings(&zero_size).is_err());
+
+    let overlap_too_large = HashMap::from([
+        ("chunk_strategy".into(), "fixed-size".into()),
+        ("chunk_size".into(), "500".into()),
+        ("chunk_overlap".into(), "500".into()),
+    ]);
+    assert!(parse_chunk_settings(&overlap_too_large).is_err());
+}
+
