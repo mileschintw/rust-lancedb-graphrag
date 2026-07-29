@@ -1,7 +1,7 @@
 # Phase 2: Ingestion, Chunking & Vector Storage - Context
 
 **Gathered:** 2026-07-17
-**Status:** Gap closure planned; accepted verification-disposition ADR locked 2026-07-29
+**Status:** Gap closure replanning; refreshed review disposition ADR accepted 2026-07-29
 
 <domain>
 ## Phase Boundary
@@ -67,6 +67,14 @@ Ingest text/markdown files asynchronously, parse structure-aware markdown elemen
 - **D-41:** Production runtime remains Go gateway, Rust engine, PostgreSQL, LanceDB, and configured embedding-provider access. Python is verification-only; Node is not a runtime or verification dependency after WR-01/WR-02.
 - **D-42:** The four deferred records are accepted known debt and are non-blocking for Phase 02 while their triggers remain false; an immediate trigger overrides their Phase 6/v1 target.
 
+### Refreshed Review Disposition (ADR-02-002, 2026-07-29)
+- **D-43 (CR-01):** Ship camel-case boundary canonicalization in the Python privacy classifier. `rawContent`, `storedDocumentText`, `authorizationHeader`, `bearerToken`, `chunkContent`, and `credentialValue` must map to the existing prohibited field classes; the fail-first probe must reject `{"rawContent":"do-not-publish"}` without printing the value.
+- **D-44 (CR-02):** Ship fixture-scoped database cleanup. No test may issue an unqualified `DELETE FROM documents`; cleanup is limited to test-created IDs (or an isolated temporary database/schema), and a sentinel-row regression must prove unrelated rows survive.
+- **D-45 (CR-03):** Supersede D-15's pending-request discard behavior. Graceful shutdown must stop new sends and drain or durably requeue every acknowledged job; engine startup must recover unprocessed durable staging, and gateway polling must not translate engine `NotFound` into PostgreSQL `failed` while matching unprocessed durable staging exists.
+- **D-46 (WR-01):** Ship an engine-owned `MAX_CHUNK_SIZE = 1048576` enforced by Rust with gRPC `InvalidArgument`; the Go gateway mirrors the same ceiling only as a thin pre-persistence interface guard using bounded integer parsing so no `int32` wrap can be stored.
+- **D-47 (WR-02):** Ship parameterized live-evidence runtime paths. Tests must inject temporary challenge/evidence paths, preserve any real-path sentinel byte-for-byte, and never write outside their fixture paths.
+- **D-48 (architecture):** All chunking, RAG, vector, ingestion-queue, and recovery semantics remain owned by the Rust engine. The Go gateway remains a thin HTTP/gRPC/PostgreSQL-status interface and must not acquire chunking semantics.
+
 </decisions>
 
 <canonical_refs>
@@ -77,6 +85,7 @@ Ingest text/markdown files asynchronously, parse structure-aware markdown elemen
 ### Architecture & Decisions
 - [.discussion/final_implementation_decision_document.md](file:///c:/Users/user3/repos/lancet/.discussion/final_implementation_decision_document.md) — Main architecture split, boundaries, and tech stack choices.
 - [.discussion/lightweight_state_machine_plan.md](file:///c:/Users/user3/repos/lancet/.discussion/lightweight_state_machine_plan.md) — Reference for future orchestration states and integration patterns.
+- [.discussion/decisions/phases/02/2026-07-29-ADR-02-002-refreshed-review-disposition.md](file:///D:/Repos/lancet/.discussion/decisions/phases/02/2026-07-29-ADR-02-002-refreshed-review-disposition.md) — Accepted source of truth for the five refreshed review findings, their concrete acceptance criteria, and the Rust-engine/Go-gateway responsibility boundary.
 
 ### Requirements & Roadmap
 - [.planning/REQUIREMENTS.md](file:///c:/Users/user3/repos/lancet/.planning/REQUIREMENTS.md) — Main project requirements list.
@@ -105,6 +114,7 @@ Ingest text/markdown files asynchronously, parse structure-aware markdown elemen
 
 - OpenRouter API integration uses `nvidia/llama-nemotron-embed-vl-1b-v2:free` model with 2048-dimension embeddings.
 - Concurrency limit is set to 5 concurrent HTTP calls to OpenRouter per ingestion request, with exponential backoff on retry.
+- Refreshed gap closure is complete only when all five ADR-02-002 ship items pass: the full Rust engine suite, the Go gateway test/vet suite, the isolated Python live-evidence suite, the camel-case privacy fail-first probe, no required-path `[TODO]`, and re-verification closing the corresponding five entries in `02-VERIFICATION.md`.
 
 </specifics>
 
