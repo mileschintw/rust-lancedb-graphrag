@@ -599,6 +599,72 @@ async fn worker_replaces_existing_document_rows() {
 }
 
 #[tokio::test]
+async fn schema_field_lookup_failure_rolls_back_and_retry_converges() {
+    let path = database_path("schema-lookup-fault");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let document_id = Uuid::new_v4().to_string();
+    let job = IngestionJob {
+        document_id: document_id.clone(),
+        filename: "doc.md".into(),
+        raw_data: b"# Section\n\ncontent".to_vec(),
+        metadata: HashMap::new(),
+    };
+    let (_, chunks) = chunk_ingestion_job(&job);
+    let embeddings = vec![vec![0.25; 2048]; chunks.len()];
+
+    replace_document(&database, &job, &chunks, &embeddings)
+        .await
+        .unwrap();
+
+    let predicate = format!("document_id = '{document_id}'");
+    assert_eq!(
+        database
+            .documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(predicate.clone()))
+            .await
+            .unwrap(),
+        1
+    );
+
+    let failure = FaultingReplacementMutationBoundary::new(ReplacementMutation::NodesAdd);
+    let res = replace_document_with_faults(&database, &job, &chunks, &embeddings, &failure).await;
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert!(err.contains("NodesAdd"));
+
+    assert_eq!(
+        database
+            .documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(predicate.clone()))
+            .await
+            .unwrap(),
+        1
+    );
+
+    replace_document(&database, &job, &chunks, &embeddings)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        database
+            .documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(predicate.clone()))
+            .await
+            .unwrap(),
+        1
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
 async fn shutdown_waits_for_active_document_to_finish() {
     let path = database_path("shutdown");
     let database = DatabaseManager::initialize(&path).await.unwrap();

@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -d "/c/Users/user3/.cargo/bin" ]]; then
+  export PATH="/c/Users/user3/.cargo/bin:$PATH"
+elif [[ -d "/mnt/c/Users/user3/.cargo/bin" ]]; then
+  export PATH="/mnt/c/Users/user3/.cargo/bin:$PATH"
+fi
+if command -v cargo >/dev/null 2>&1; then
+  cargo_cmd="cargo"
+elif command -v cargo.exe >/dev/null 2>&1; then
+  cargo_cmd="cargo.exe"
+else
+  cargo_cmd="cargo"
+fi
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  docker_cmd="docker"
+elif command -v docker.exe >/dev/null 2>&1; then
+  docker_cmd="docker.exe"
+elif command -v docker >/dev/null 2>&1; then
+  docker_cmd="docker"
+else
+  docker_cmd="docker"
+fi
 
 phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge="${phase_dir}/.02-LIVE-CHALLENGE.json"
@@ -61,19 +82,19 @@ case "$mode" in
     mkdir -p "$phase_dir"
     assert_safe_runtime_path "$challenge"
     assert_safe_runtime_path "$evidence"
-    for command in cargo docker; do command -v "$command" >/dev/null || {
+    for command in cargo docker; do command -v "$command" >/dev/null 2>&1 || command -v "${command}.exe" >/dev/null 2>&1 || {
       echo "required command is unavailable: $command" >&2; exit 1;
     }; done
     bash -n "$0"
     bash -n verify-ingestion.sh
     "$python_cmd" -I "$evidence_helper" self-test
-    cargo check --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb
-    docker compose up -d db
+    "$cargo_cmd" check --quiet --offline --manifest-path engine/Cargo.toml --bin inspect_lancedb
+    "$docker_cmd" compose up -d db
     for _ in $(seq 1 30); do
-      [[ "$(docker inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] && break
+      [[ "$("$docker_cmd" inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] && break
       sleep 2
     done
-    [[ "$(docker inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] || {
+    [[ "$("$docker_cmd" inspect --format '{{.State.Health.Status}}' lancet-postgres 2>/dev/null || true)" == "healthy" ]] || {
       echo "PostgreSQL did not become healthy" >&2; exit 1;
     }
     assert_safe_runtime_path "$challenge"
@@ -111,9 +132,28 @@ PY
     assert_safe_runtime_path "$challenge"
     assert_safe_runtime_path "$evidence"
     [[ -s "$challenge" && -s "$evidence" ]] || { echo "challenge and evidence are required" >&2; exit 1; }
+    if command -v node >/dev/null 2>&1; then
+      GSD_PROHIB_SUBJECT="$evidence" node --test scripts/test_phase02_privacy_prohibition.cjs >/dev/null 2>&1 || {
+        echo "evidence privacy prohibition check failed" >&2; exit 1;
+      }
+    fi
+    verification_lancedb_path="$("$python_cmd" -I -c '
+import sys
+try:
+    import tomllib
+    with open("config/config.verify.toml", "rb") as f:
+        data = tomllib.load(f)
+        path = data["engine"]["lancedb_path"]
+except Exception:
+    import re
+    text = open("config/config.verify.toml", "r", encoding="utf-8").read()
+    match = re.search(r"lancedb_path\s*=\s*\"(.*?)\"", text)
+    path = match.group(1) if match else "./data/lancedb-verify-02-06"
+print(path)
+')"
     document_id="$(parse_and_validate_gate)"
-    postgres="$(docker compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
-    inspection="$(cargo run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id")"
+    postgres="$("$docker_cmd" compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
+    inspection="$("$cargo_cmd" run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id" --lancedb-path "$verification_lancedb_path")"
     printf '%s\n' "$inspection" | "$python_cmd" -I "$evidence_helper" compare-live-state \
       --challenge "$challenge" --evidence "$evidence" --postgres "$postgres" --inspection-json -
     rm -f -- "$challenge" "$evidence"

@@ -29,6 +29,8 @@ type fakeStore struct {
 	insertErr             error
 	getErr                error
 	updateErr             error
+	updateErrs            []error
+	updateCalls           int
 	getCalls              int
 	winner                *db.Document
 	updateCtx             context.Context
@@ -59,10 +61,17 @@ func (s *fakeStore) UpdateStatus(ctx context.Context, p db.UpdateDocumentStatusP
 	if s.rejectCanceledContext && ctx.Err() != nil {
 		return db.Document{}, ctx.Err()
 	}
-	s.updated = &p
-	if s.updateErr != nil {
+	s.updateCalls++
+	if len(s.updateErrs) > 0 {
+		err := s.updateErrs[0]
+		s.updateErrs = s.updateErrs[1:]
+		if err != nil {
+			return db.Document{}, err
+		}
+	} else if s.updateErr != nil {
 		return db.Document{}, s.updateErr
 	}
+	s.updated = &p
 	s.document.Status = p.Status
 	s.document.ChunkCount = p.ChunkCount
 	s.document.ErrorMessage = p.ErrorMessage
@@ -90,8 +99,8 @@ func multipartRequest(t *testing.T, filename string, contents []byte) *http.Requ
 
 func TestCreateDocumentMapsFullQueueTo429(t *testing.T) {
 	store := &fakeStore{}
-	engine := engineFunc{ingest: func(context.Context, string, string, []byte) error {
-		return status.Error(codes.ResourceExhausted, "full")
+	engine := engineFunc{ingest: func(context.Context, string, string, []byte) IngestOutcome {
+		return IngestOutcome{Err: status.Error(codes.ResourceExhausted, "full")}
 	}}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "../notes.txt", []byte("hello")))
@@ -114,7 +123,7 @@ func TestCreateDocumentMapsFullQueueTo429(t *testing.T) {
 
 func TestCreateDocumentCompensatesGeneralEnqueueFailure(t *testing.T) {
 	store := &fakeStore{}
-	engine := engineFunc{ingest: func(context.Context, string, string, []byte) error { return errors.New("engine down") }}
+	engine := engineFunc{ingest: func(context.Context, string, string, []byte) IngestOutcome { return IngestOutcome{Err: errors.New("engine down")} }}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
 	if recorder.Code != http.StatusBadGateway {
@@ -130,9 +139,9 @@ func TestCreateDocumentCompensatesWithDetachedContextAfterRequestCancellation(t 
 	req := multipartRequest(t, "notes.txt", []byte("hello"))
 	requestCtx, cancelRequest := context.WithCancel(req.Context())
 	req = req.WithContext(requestCtx)
-	engine := engineFunc{ingest: func(context.Context, string, string, []byte) error {
+	engine := engineFunc{ingest: func(context.Context, string, string, []byte) IngestOutcome {
 		cancelRequest()
-		return errors.New("engine canceled before enqueue")
+		return IngestOutcome{Err: errors.New("engine canceled before enqueue")}
 	}}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
@@ -165,6 +174,38 @@ func TestCreateDocumentReturnsPollingLocation(t *testing.T) {
 	}
 	if got, want := recorder.Header().Get("Location"), "/documents/"+store.inserted.ID; got != want {
 		t.Fatalf("Location = %q, want %q", got, want)
+	}
+}
+
+func TestCreateDocumentConvergesLostAcknowledgement(t *testing.T) {
+	store := &fakeStore{}
+	engine := engineFunc{
+		ingest: func(ctx context.Context, id, filename string, b []byte) IngestOutcome {
+			return IngestOutcome{Ambiguous: true, Err: errors.New("stream closed abruptly")}
+		},
+		status: &pb.GetIngestionStatusResponse{Status: "queued"},
+	}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusAccepted)
+	}
+	if store.updated != nil && store.updated.Status == "failed" {
+		t.Fatalf("accepted engine state was wrongly compensated to failed: %#v", store.updated)
+	}
+}
+
+func TestCreateDocumentRejectsMismatchedAdmissionIdentity(t *testing.T) {
+	store := &fakeStore{}
+	engine := engineFunc{
+		ingest: func(ctx context.Context, id, filename string, b []byte) IngestOutcome {
+			return IngestOutcome{Err: errors.New("mismatched id")}
+		},
+	}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
 	}
 }
 
@@ -213,6 +254,19 @@ func TestGetDocumentPersistsFailedStatusAndError(t *testing.T) {
 	}
 }
 
+func TestGetDocumentRejectsMismatchedStatusIdentity(t *testing.T) {
+	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}}
+	engine := engineFunc{status: &pb.GetIngestionStatusResponse{DocumentId: "other-id", Status: "completed", ChunkCount: 3}}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+	if store.updated != nil {
+		t.Fatalf("mismatched status updated store: %#v", store.updated)
+	}
+}
+
 func TestGetDocumentReturnsTerminalRaceWinner(t *testing.T) {
 	winner := db.Document{ID: "doc-1", Filename: "notes.txt", Status: "completed", ChunkCount: 9}
 	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}, updateErr: pgx.ErrNoRows, winner: &winner}
@@ -234,27 +288,90 @@ func TestGetDocumentRejectsNonterminalRaceReread(t *testing.T) {
 	}
 }
 
-type engineFunc struct {
-	ingest func(context.Context, string, string, []byte) error
-	status *pb.GetIngestionStatusResponse
+func TestCompensationRetriesUntilTerminalConvergence(t *testing.T) {
+	store := &fakeStore{updateErrs: []error{errors.New("db busy"), errors.New("db busy")}}
+	noSleep := func(int) {}
+	a := app{store: store, logger: zap.NewNop(), retrySleep: noSleep}
+	a.compensateFailedIngest("doc-1", errors.New("ingest error"))
+	if store.updated == nil || store.updated.Status != "failed" {
+		t.Fatalf("compensation failed to converge: %#v", store.updated)
+	}
+	if store.updateCalls != 3 {
+		t.Fatalf("updateCalls = %d, want 3", store.updateCalls)
+	}
 }
 
-func (e engineFunc) Ingest(ctx context.Context, id, filename string, src io.Reader) error {
+func TestCompensationAcceptsTerminalRaceWinner(t *testing.T) {
+	winner := db.Document{ID: "doc-1", Status: "completed"}
+	store := &fakeStore{updateErr: pgx.ErrNoRows, winner: &winner}
+	noSleep := func(int) {}
+	a := app{store: store, logger: zap.NewNop(), retrySleep: noSleep}
+	a.compensateFailedIngest("doc-1", errors.New("ingest error"))
+	if store.getCalls < 1 {
+		t.Fatalf("getCalls = %d, expected winner check", store.getCalls)
+	}
+}
+
+func TestGetDocumentRepairsAuthoritativeEngineNotFound(t *testing.T) {
+	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}}
+	engine := engineFunc{statusErr: status.Error(codes.NotFound, "not found")}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if store.updated == nil || store.updated.Status != "failed" {
+		t.Fatalf("NotFound was not repaired: %#v", store.updated)
+	}
+}
+
+func TestGetDocumentLeavesTransientEngineFailureQueued(t *testing.T) {
+	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}}
+	engine := engineFunc{statusErr: status.Error(codes.Unavailable, "engine unavailable")}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+	if store.updated != nil {
+		t.Fatalf("transient error updated store: %#v", store.updated)
+	}
+}
+
+type engineFunc struct {
+	ingest    func(context.Context, string, string, []byte) IngestOutcome
+	status    *pb.GetIngestionStatusResponse
+	statusErr error
+}
+
+func (e engineFunc) Ingest(ctx context.Context, id, filename string, src io.Reader) IngestOutcome {
 	data, err := io.ReadAll(src)
 	if err != nil {
-		return err
+		return IngestOutcome{Err: err}
 	}
 	if e.ingest == nil {
-		return nil
+		return IngestOutcome{}
 	}
 	return e.ingest(ctx, id, filename, data)
 }
 
-func (e engineFunc) IngestionStatus(context.Context, string) (*pb.GetIngestionStatusResponse, error) {
+func (e engineFunc) IngestionStatus(ctx context.Context, id string) (*pb.GetIngestionStatusResponse, error) {
+	if e.statusErr != nil {
+		return nil, e.statusErr
+	}
 	if e.status == nil {
 		return nil, errors.New("status unavailable")
 	}
-	return e.status, nil
+	docID := e.status.DocumentId
+	if docID == "" {
+		docID = id
+	}
+	return &pb.GetIngestionStatusResponse{
+		DocumentId:   docID,
+		Status:       e.status.Status,
+		ChunkCount:   e.status.ChunkCount,
+		ErrorMessage: e.status.ErrorMessage,
+	}, nil
 }
 
 func (engineFunc) Ping(context.Context) (time.Duration, error) { return time.Millisecond, nil }

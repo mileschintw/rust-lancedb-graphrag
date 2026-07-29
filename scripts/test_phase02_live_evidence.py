@@ -241,6 +241,14 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
         content_field["stored_document_text"] = "sanitized-content-value"
         cases.append(("content field", challenge, content_field))
 
+        stale_challenge = dict(challenge)
+        stale_challenge["issued_at"] = timestamp(-31 * 60)
+        cases.append(("stale challenge", stale_challenge, evidence))
+
+        overlong_run = dict(evidence)
+        overlong_run["issued_at"] = timestamp(-36 * 60)
+        cases.append(("overlong run", challenge, overlong_run))
+
         for name, case_challenge, case_evidence in cases:
             with self.subTest(name=name):
                 challenge_path, evidence_path, temporary_paths = write_json_fixtures(
@@ -347,6 +355,30 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
         self.assertNotIn("'duplicate_generation': False", ingestion)
         self.assertIn('rm -f -- "$challenge" "$evidence"', final)
         self.assertLess(final.index("compare-live-state"), final.index('rm -f -- "$challenge" "$evidence"'))
+
+    def test_explicit_lancedb_path_forwarded_by_live_scripts(self) -> None:
+        ingestion = (ROOT / "verify-ingestion.sh").read_text(encoding="utf-8")
+        final = (ROOT / "verify-live-evidence.sh").read_text(encoding="utf-8")
+        for script in (ingestion, final):
+            self.assertIn("--lancedb-path", script)
+            self.assertIn("verification_lancedb_path", script)
+
+    def test_caller_sample_preservation_on_early_failure(self) -> None:
+        sample_path = ROOT / ".test-caller-sample.tmp"
+        sample_path.write_bytes(b"caller sample data 12345")
+        try:
+            completed = subprocess.run(
+                ["bash", "verify-ingestion.sh", str(sample_path)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertTrue(sample_path.exists(), "caller sample file must not be deleted on early failure")
+            self.assertEqual(sample_path.read_bytes(), b"caller sample data 12345")
+        finally:
+            sample_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

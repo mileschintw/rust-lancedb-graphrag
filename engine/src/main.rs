@@ -24,11 +24,10 @@ use uuid::Uuid;
 
 mod chunker;
 mod client;
-mod db;
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
 use client::{OpenRouterClient, EMBEDDING_MODEL};
-use db::{DatabaseManager, EntityResolver, ExactMatchResolver};
+use engine::db::{DatabaseManager, EntityResolver, ExactMatchResolver};
 
 pub mod lancet {
     pub mod v1 {
@@ -526,11 +525,11 @@ async fn replace_document_with_faults(
             "validated embedding dimensions must remain stable"
         );
         let node_schema = nodes.schema().await.map_err(|error| error.to_string())?;
-        let nullable = |name: &str| {
+        let nullable = |name: &str| -> Result<Arc<dyn arrow_array::Array>, String> {
             let field = node_schema
                 .field_with_name(name)
-                .expect("validated nodes schema must contain field");
-            new_null_array(field.data_type(), chunks.len())
+                .map_err(|error| format!("validated nodes schema missing field {name}: {error}"))?;
+            Ok(new_null_array(field.data_type(), chunks.len()))
         };
         let section_paths: Vec<Option<&str>> = chunks
             .iter()
@@ -578,8 +577,8 @@ async fn replace_document_with_faults(
                     chunks.len()
                 ])),
                 Arc::new(StringArray::from(section_paths)),
-                nullable("page_start"),
-                nullable("page_end"),
+                nullable("page_start")?,
+                nullable("page_end")?,
                 Arc::new(StringArray::from(
                     hashes.iter().map(String::as_str).collect::<Vec<_>>(),
                 )),
@@ -590,16 +589,10 @@ async fn replace_document_with_faults(
                     Some(content_type(&job.filename));
                     chunks.len()
                 ])),
-                nullable("community_ids"),
-                new_null_array(
-                    node_schema
-                        .field_with_name("summary")
-                        .expect("validated nodes schema must contain summary field")
-                        .data_type(),
-                    chunks.len(),
-                ),
-                nullable("summary_vector"),
-                nullable("unsummarized_refs"),
+                nullable("community_ids")?,
+                nullable("summary")?,
+                nullable("summary_vector")?,
+                nullable("unsummarized_refs")?,
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -640,14 +633,11 @@ async fn replace_document_with_faults(
                 .map(|(index, _)| format!("{}:edge:{index}", job.document_id))
                 .collect();
             let edge_schema = edges.schema().await.map_err(|error| error.to_string())?;
-            let edge_nullable = |name: &str| {
-                new_null_array(
-                    edge_schema
-                        .field_with_name(name)
-                        .expect("validated edges schema must contain field")
-                        .data_type(),
-                    edge_sources.len(),
-                )
+            let edge_nullable = |name: &str| -> Result<Arc<dyn arrow_array::Array>, String> {
+                let field = edge_schema.field_with_name(name).map_err(|error| {
+                    format!("validated edges schema missing field {name}: {error}")
+                })?;
+                Ok(new_null_array(field.data_type(), edge_sources.len()))
             };
             let edge_batch = RecordBatch::try_new(
                 edge_schema.clone(),
@@ -672,8 +662,8 @@ async fn replace_document_with_faults(
                         job.document_id.as_str();
                         edge_sources.len()
                     ])),
-                    edge_nullable("summary"),
-                    edge_nullable("summary_vector"),
+                    edge_nullable("summary")?,
+                    edge_nullable("summary_vector")?,
                 ],
             )
             .map_err(|error| error.to_string())?;
