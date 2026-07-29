@@ -1,7 +1,7 @@
 # Phase 2: Ingestion, Chunking & Vector Storage - Context
 
 **Gathered:** 2026-07-17
-**Status:** Ready for planning
+**Status:** Gap closure planned; accepted verification-disposition ADR locked 2026-07-29
 
 <domain>
 ## Phase Boundary
@@ -53,6 +53,20 @@ Ingest text/markdown files asynchronously, parse structure-aware markdown elemen
 - **D-29:** Configurations are managed using `viper` in Go and the `config` crate in Rust. Values are overwritten if environment variables with the same name (prefixed with `LANCET_` and using nested double underscores, e.g. `LANCET_STORAGE__PATH`) exist.
 - **D-30:** In Docker Compose, the host `/config` directory is shared with containers via read-only volume mounts.
 
+### Accepted Verification Disposition (2026-07-29)
+- **D-31:** The accepted ADR at `.discussion/decisions/phase-02-verification-disposition.md` is authoritative over the older severity/disposition text in `02-REVIEW.md` and `02-VERIFICATION.md`.
+- **D-32:** Phase 02 ships CR-01, CR-02, CR-03, and CR-06 with the ADR's concrete behavioral acceptance criteria.
+- **D-33:** Phase 02 ships WR-01 and WR-02 by consolidating privacy validation and fixtures in Python, removing the Node verification dependency and deleting the superseded Node test.
+- **D-34:** Phase 02 ships WR-03 only for the exact Phase 02 behaviors still in scope, including actual inspector-argument capture, non-finite embedding fixtures (BU-03), and real missing-schema-field rollback/worker-survival proof (BU-04); it does not pull deferred BU-01 or BU-02 proof into Phase 02.
+- **D-35:** Phase 02 ships WR-04 by parsing committed TOML strictly, requiring a non-empty `engine.lancedb_path`, resolving relative paths from the repository root, and failing closed without invoking the inspector on any configuration error.
+- **D-36:** Phase 02 ships WR-05 through a read-only LanceDB open-and-validate path that cannot create, restore, or mutate tables.
+- **D-37:** CR-04 receives only the accepted local-first guardrail in Phase 02: bind the gateway explicitly to loopback and document local-only exposure. Authentication, authorization, TLS, quotas, and non-loopback deployment remain `DEBT-CR-04`.
+- **D-38:** CR-05 resource bounds remain `DEBT-CR-05` while the service is loopback-only, trusted, single-user, manually invoked, and limited to intended local uploads.
+- **D-39:** Complete run-window behavioral proof remains `DEBT-BU-01` until v1 MVP closure or until the live gate becomes release, CI-release, public/shared-deployment, or audit evidence.
+- **D-40:** Full caller-owned input preservation proof remains `DEBT-BU-02` until v1 MVP closure or before claiming safety for arbitrary user-owned source files.
+- **D-41:** Production runtime remains Go gateway, Rust engine, PostgreSQL, LanceDB, and configured embedding-provider access. Python is verification-only; Node is not a runtime or verification dependency after WR-01/WR-02.
+- **D-42:** The four deferred records are accepted known debt and are non-blocking for Phase 02 while their triggers remain false; an immediate trigger overrides their Phase 6/v1 target.
+
 </decisions>
 
 <canonical_refs>
@@ -97,7 +111,10 @@ Ingest text/markdown files asynchronously, parse structure-aware markdown elemen
 <deferred>
 ## Deferred Ideas
 
-- None — discussion stayed within phase scope.
+- **DEBT-CR-04 — network authentication and transport controls.** Source: accepted Phase 02 verification-disposition ADR. Rationale: the current project is personal, trusted, and local-first. Current constraint: explicit loopback binding only; no reverse proxy, tunnel, port-forward, container/VM/cloud ingress, external caller, shared user, or non-loopback exposure. Trigger: any such exposure or caller. Target: before network/shared deployment, with an untriggered review gate no later than Phase 6. Future acceptance: authenticated and authorized ingestion, TLS at ingress, quotas/per-principal limits, and tests proving unauthorized callers cannot consume provider or storage resources.
+- **DEBT-CR-05 — pre-admission resource bounds.** Source: accepted Phase 02 verification-disposition ADR. Rationale: hostile slow/concurrent clients are outside the current trusted single-user loopback threat model. Current constraint: one trusted local user, manual ingestion, no intentional concurrent/bulk/scheduled ingestion, and intended uploads within the current limit. Trigger: external/shared access, bulk/scheduled/concurrent ingestion, or larger/uncontrolled uploads. Target: before the trigger, with an untriggered review gate no later than Phase 6. Future acceptance: HTTP read/write/idle timeouts, a pre-body upload semaphore, engine admission accounting before full buffering, and slow/concurrent/permit-release/memory-bound tests.
+- **DEBT-BU-01 — complete run-window behavioral proof.** Source: accepted Phase 02 verification-disposition ADR. Rationale: the missing exact-branch proof affects evidence rigor rather than local ingestion correctness. Current constraint: do not claim the live-evidence gate is fully release/audit verified. Trigger: use as release criteria, CI release criteria, public/shared-deployment evidence, or external audit evidence. Target: v1 MVP closure / Phase 6. Future acceptance: controlled clock, matching challenge/evidence identity and issue times, only the allowed run duration exceeded, and assertion of the dedicated complete-run-window error classification.
+- **DEBT-BU-02 — full caller-owned input preservation proof.** Source: accepted Phase 02 verification-disposition ADR. Rationale: the destructive ownership bug is fixed, while exhaustive live-success and representative error-path proof needs broader provider/service state. Current constraint: use copied/version-controlled samples and never pass the only copy of an important document. Trigger: before documenting the runner as safe for arbitrary user-owned sources. Target: v1 MVP closure / Phase 6. Future acceptance: successful and representative early/post-upload failures preserve SHA-256 and bytes, while only script-owned temporary files are removed.
 
 </deferred>
 

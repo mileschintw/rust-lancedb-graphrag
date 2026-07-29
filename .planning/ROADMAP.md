@@ -5,7 +5,7 @@
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
-| 2 | 10/10 | Complete    | 2026-07-26 |
+| 2 | 16/21 | Gap closure planned | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
 | 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
@@ -30,7 +30,7 @@
 **Goal:** As a Lancet API user, I want to ingest and safely replace text or Markdown documents, so that the last completed LanceDB index and PostgreSQL status remain trustworthy through failures and concurrent polling.
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 10/16 plans executed
+**Plans:** 16/21 plans executed
 **Wave 1**
 
 - [x] 02-01-PLAN.md
@@ -70,21 +70,35 @@
 
 **Wave 10** *(blocked on Wave 9 completion; parallel)*
 
-- [ ] 02-11-PLAN.md — Resolve ambiguous gRPC admission, retry terminal reconciliation, repair engine NotFound, and validate response identity.
-- [ ] 02-12-PLAN.md — Bound challenge freshness, preserve caller-owned input, and stop the build-output ignore from hiding Rust binaries.
-- [ ] 02-13-PLAN.md — Make explicit-path LanceDB inspection configuration-independent and reject null or non-finite embedding children.
+- [x] 02-11-PLAN.md — Resolve ambiguous gRPC admission, retry terminal reconciliation, repair engine NotFound, and validate response identity.
+- [x] 02-12-PLAN.md — Bound challenge freshness, preserve caller-owned input, and stop the build-output ignore from hiding Rust binaries.
+- [x] 02-13-PLAN.md — Make explicit-path LanceDB inspection configuration-independent and reject null or non-finite embedding children.
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [ ] 02-14-PLAN.md — Route schema lookup failures through rollback and restore a green all-target Rust lint gate.
+- [x] 02-14-PLAN.md — Route schema lookup failures through rollback and restore a green all-target Rust lint gate.
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 02-15-PLAN.md — Machine-wire privacy prohibition enforcement and require human review of nondeterministic disclosure surfaces.
+- [x] 02-15-PLAN.md — Machine-wire privacy prohibition enforcement and require human review of nondeterministic disclosure surfaces.
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [ ] 02-16-PLAN.md — Run fresh OpenRouter validation only after deterministic closure, then reconcile current state and clean evidence on full success.
+- [x] 02-16-PLAN.md — Run fresh OpenRouter validation only after deterministic closure, then reconcile current state and clean evidence on full success.
+
+**Wave 14** *(executed Phase 02 baseline; parallel)*
+
+- [ ] 02-17-PLAN.md — Honor the shared config directory, make persisted chunk settings execute end to end, and enforce the local-only loopback guardrail.
+- [ ] 02-18-PLAN.md — Add the durable PostgreSQL reconciliation-intent contract and generated query surface.
+
+**Wave 15** *(blocked on Wave 14; parallel)*
+
+- [ ] 02-19-PLAN.md — Run the restart-safe gateway reconciler until failed admission reaches a verified terminal state.
+- [ ] 02-20-PLAN.md — Make LanceDB inspection read-only and non-disclosing, and prove real schema-field rollback plus worker survival.
+
+**Wave 16** *(blocked on Wave 15)*
+
+- [ ] 02-21-PLAN.md — Consolidate privacy and verification configuration in fail-closed Python tooling and run the deterministic Phase 02 exit gate.
 
 **Success Criteria:**
 
@@ -144,6 +158,8 @@
 2. Offline eval script successfully scores retrieval and answer quality on a test set.
 3. README provides clear architecture docs and instructions on how to run/evaluate.
 4. Include placeholder metric for global GraphRAG evaluation.
+5. Close `DEBT-BU-01` and `DEBT-BU-02` with their recorded behavioral proofs before declaring the v1 MVP complete.
+6. Review `DEBT-CR-04` and `DEBT-CR-05` as conditional security/resource gates if neither has triggered earlier; any non-loopback/shared/remote/public caller or bulk/scheduled/concurrent/larger-uncontrolled ingestion trigger makes the corresponding review immediate and overrides Phase 6 timing.
 
 ## Backlog
 
