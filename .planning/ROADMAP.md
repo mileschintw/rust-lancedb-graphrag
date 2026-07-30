@@ -30,7 +30,7 @@
 **Goal:** As a Lancet API user, I want to ingest and safely replace text or Markdown documents, so that the last completed LanceDB index and PostgreSQL status remain trustworthy through failures and concurrent polling.
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 24/28 plans executed
+**Plans:** 28/28 plans executed
 **Verification:** Gaps found — 14/19 must-haves verified; Phase 02 remains open.
 **Wave 1**
 
@@ -112,13 +112,13 @@
 
 **Wave 19** *(blocked on Wave 18; parallel)*
 
-- [ ] 02-25-PLAN.md — Complete the Rust staging lifecycle with worker-first replay, idempotent initialization, truthful absence, and delete-before-terminal convergence.
-- [ ] 02-26-PLAN.md — Isolate the remaining PostgreSQL claimant test, make snapshot failures fatal, and add the review checklist.
-- [ ] 02-27-PLAN.md — Make privacy diagnostics category-only and live-evidence fixture cleanup process-owned.
+- [x] 02-25-PLAN.md — Complete the Rust staging lifecycle with worker-first replay, idempotent initialization, truthful absence, and delete-before-terminal convergence.
+- [x] 02-26-PLAN.md — Isolate the remaining PostgreSQL claimant test, make snapshot failures fatal, and add the review checklist.
+- [x] 02-27-PLAN.md — Make privacy diagnostics category-only and live-evidence fixture cleanup process-owned.
 
 **Wave 20** *(blocked on Wave 19)*
 
-- [ ] 02-28-PLAN.md — Run the deterministic exit gate, fresh provider-backed cross-store validation, and private disclosure review.
+- [x] 02-28-PLAN.md — Run the deterministic exit gate, fresh provider-backed cross-store validation, and private disclosure review.
 
 **Success Criteria:**
 
