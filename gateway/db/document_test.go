@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -193,6 +195,55 @@ func TestReconciliationIntentRecordAndClaim(t *testing.T) {
 	}
 }
 
+func createIsolatedTestPool(t *testing.T, databaseURL string) (*pgxpool.Pool, *pgxpool.Pool, string) {
+	t.Helper()
+	ctx := context.Background()
+	adminPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("create admin database pool: %v", err)
+	}
+
+	schemaName := "test_schema_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+
+	_, err = adminPool.Exec(ctx, fmt.Sprintf(`
+		CREATE SCHEMA %q;
+		CREATE TABLE %q.documents (LIKE public.documents INCLUDING ALL);
+		CREATE TABLE %q.document_reconciliation_intents (LIKE public.document_reconciliation_intents INCLUDING ALL);
+		ALTER TABLE %q.document_reconciliation_intents ADD CONSTRAINT document_reconciliation_intents_document_id_fkey FOREIGN KEY (document_id) REFERENCES %q.documents (id) ON UPDATE NO ACTION ON DELETE CASCADE;
+	`, schemaName, schemaName, schemaName, schemaName, schemaName))
+	if err != nil {
+		adminPool.Close()
+		t.Fatalf("create isolated schema and tables: %v", err)
+	}
+
+	connConfig, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+		t.Fatalf("parse database URL: %v", err)
+	}
+	if connConfig.ConnConfig.RuntimeParams == nil {
+		connConfig.ConnConfig.RuntimeParams = make(map[string]string)
+	}
+	connConfig.ConnConfig.RuntimeParams["search_path"] = schemaName
+
+	claimantPool, err := pgxpool.NewWithConfig(ctx, connConfig)
+	if err != nil {
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+		t.Fatalf("create claimant pool: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		claimantPool.Close()
+		_, _ = adminPool.Exec(cleanupCtx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+	})
+
+	return adminPool, claimantPool, schemaName
+}
+
 func TestReconciliationIntentClaimLeaseIsExclusive(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -200,25 +251,17 @@ func TestReconciliationIntentClaimLeaseIsExclusive(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("create database pool: %v", err)
-	}
-	defer pool.Close()
+	adminPool, claimantPool, _ := createIsolatedTestPool(t, databaseURL)
+
+	var initialPublicDocCount, initialPublicIntentCount int
+	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&initialPublicDocCount)
+	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&initialPublicIntentCount)
 
 	docID := "exclusive-claim-" + uuid.NewString()
 
-	t.Cleanup(func() {
-		cleanupCtx := context.Background()
-		_, _ = pool.Exec(cleanupCtx, "DELETE FROM documents WHERE id = $1", docID)
-	})
+	q := New(claimantPool)
 
-	// Clear pre-existing documents to isolate claim batching
-	_, _ = pool.Exec(ctx, "DELETE FROM documents")
-
-	q := New(pool)
-
-	_, err = q.InsertDocument(ctx, InsertDocumentParams{
+	_, err := q.InsertDocument(ctx, InsertDocumentParams{
 		ID:            docID,
 		Filename:      "exclusive.txt",
 		FileSize:      200,
@@ -251,7 +294,7 @@ func TestReconciliationIntentClaimLeaseIsExclusive(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			connQueries := New(pool)
+			connQueries := New(claimantPool)
 			claimed, claimErr := connQueries.ClaimDueReconciliationIntents(ctx, ClaimDueReconciliationIntentsParams{
 				Limit: 1,
 				NextAttemptAt: pgtype.Timestamp{
@@ -277,6 +320,132 @@ func TestReconciliationIntentClaimLeaseIsExclusive(t *testing.T) {
 
 	if claimedCount != 1 {
 		t.Fatalf("expected exactly 1 claimer to receive due intent, got %d", claimedCount)
+	}
+
+	var finalPublicDocCount, finalPublicIntentCount int
+	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&finalPublicDocCount)
+	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&finalPublicIntentCount)
+	if finalPublicDocCount != initialPublicDocCount || finalPublicIntentCount != initialPublicIntentCount {
+		t.Fatalf("public table counts changed: docs %d->%d, intents %d->%d", initialPublicDocCount, finalPublicDocCount, initialPublicIntentCount, finalPublicIntentCount)
+	}
+}
+
+func TestReconciliationIntentClaimLeasePreservesUnrelatedDocumentAndIntent(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is required for database integration tests")
+	}
+
+	ctx := t.Context()
+	adminPool, claimantPool, _ := createIsolatedTestPool(t, databaseURL)
+
+	var initialPublicDocCount, initialPublicIntentCount int
+	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&initialPublicDocCount)
+	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&initialPublicIntentCount)
+
+	q := New(claimantPool)
+
+	dueDocID := "due-doc-" + uuid.NewString()
+	_, err := q.InsertDocument(ctx, InsertDocumentParams{
+		ID:            dueDocID,
+		Filename:      "due.txt",
+		FileSize:      100,
+		ChunkStrategy: "fixed-size",
+		ChunkSize:     500,
+		ChunkOverlap:  50,
+	})
+	if err != nil {
+		t.Fatalf("insert due doc: %v", err)
+	}
+	_, err = q.CreateReconciliationIntent(ctx, CreateReconciliationIntentParams{
+		ID:            dueDocID,
+		DesiredStatus: "failed",
+		ReasonClass:   "due_reason",
+	})
+	if err != nil {
+		t.Fatalf("create due intent: %v", err)
+	}
+
+	unrelatedDocID := "unrelated-doc-" + uuid.NewString()
+	_, err = q.InsertDocument(ctx, InsertDocumentParams{
+		ID:            unrelatedDocID,
+		Filename:      "unrelated.txt",
+		FileSize:      500,
+		ChunkStrategy: "structure-aware",
+		ChunkSize:     800,
+		ChunkOverlap:  100,
+	})
+	if err != nil {
+		t.Fatalf("insert unrelated doc: %v", err)
+	}
+	_, err = q.CreateReconciliationIntent(ctx, CreateReconciliationIntentParams{
+		ID:            unrelatedDocID,
+		DesiredStatus: "failed",
+		ReasonClass:   "unrelated_reason",
+	})
+	if err != nil {
+		t.Fatalf("create unrelated intent: %v", err)
+	}
+	futureTime := time.Now().UTC().Add(1 * time.Hour)
+	_, err = q.RescheduleReconciliationIntent(ctx, RescheduleReconciliationIntentParams{
+		DocumentID:     unrelatedDocID,
+		NextAttemptAt:  pgtype.Timestamp{Time: futureTime, Valid: true},
+		LastErrorClass: pgtype.Text{String: "none", Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("reschedule unrelated intent: %v", err)
+	}
+
+	snapDoc, err := q.GetDocument(ctx, unrelatedDocID)
+	if err != nil {
+		t.Fatalf("get unrelated doc: %v", err)
+	}
+	snapIntent, err := q.GetReconciliationIntent(ctx, unrelatedDocID)
+	if err != nil {
+		t.Fatalf("get unrelated intent: %v", err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	leaseTime := time.Now().UTC().Add(10 * time.Minute)
+	claimed, err := q.ClaimDueReconciliationIntents(ctx, ClaimDueReconciliationIntentsParams{
+		Limit:         1,
+		NextAttemptAt: pgtype.Timestamp{Time: leaseTime, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("claim due intents: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].DocumentID != dueDocID {
+		t.Fatalf("expected due document %q claimed, got %#v", dueDocID, claimed)
+	}
+
+	gotDoc, err := q.GetDocument(ctx, unrelatedDocID)
+	if err != nil {
+		t.Fatalf("reread unrelated doc: %v", err)
+	}
+	gotIntent, err := q.GetReconciliationIntent(ctx, unrelatedDocID)
+	if err != nil {
+		t.Fatalf("reread unrelated intent: %v", err)
+	}
+
+	if gotDoc.ID != snapDoc.ID || gotDoc.Filename != snapDoc.Filename || gotDoc.FileSize != snapDoc.FileSize ||
+		gotDoc.Status != snapDoc.Status || gotDoc.ChunkCount != snapDoc.ChunkCount || gotDoc.ErrorMessage != snapDoc.ErrorMessage ||
+		gotDoc.ChunkStrategy != snapDoc.ChunkStrategy || gotDoc.ChunkSize != snapDoc.ChunkSize || gotDoc.ChunkOverlap != snapDoc.ChunkOverlap {
+		t.Fatalf("unrelated document changed: got %+v, want %+v", gotDoc, snapDoc)
+	}
+
+	if gotIntent.DocumentID != snapIntent.DocumentID || gotIntent.DesiredStatus != snapIntent.DesiredStatus ||
+		gotIntent.ReasonClass != snapIntent.ReasonClass || gotIntent.RetryCount != snapIntent.RetryCount ||
+		gotIntent.NextAttemptAt.Time.Unix() != snapIntent.NextAttemptAt.Time.Unix() ||
+		gotIntent.LastErrorClass != snapIntent.LastErrorClass {
+		t.Fatalf("unrelated intent changed: got %+v, want %+v", gotIntent, snapIntent)
+	}
+
+	var finalPublicDocCount, finalPublicIntentCount int
+	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&finalPublicDocCount)
+	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&finalPublicIntentCount)
+	if finalPublicDocCount != initialPublicDocCount || finalPublicIntentCount != initialPublicIntentCount {
+		t.Fatalf("public table counts changed: docs %d->%d, intents %d->%d", initialPublicDocCount, finalPublicDocCount, initialPublicIntentCount, finalPublicIntentCount)
 	}
 }
 

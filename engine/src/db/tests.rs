@@ -43,7 +43,7 @@ async fn initializes_and_validates_all_table_schemas() {
             "documents",
             "edges",
             "nodes",
-            "staged_documents"
+            "staged_documents_v2"
         ]
     );
 

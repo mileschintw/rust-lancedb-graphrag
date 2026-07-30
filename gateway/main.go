@@ -35,6 +35,10 @@ const maxUploadBytes int64 = 10 << 20
 const streamBufferSize = 64 << 10
 const defaultChunkSize = 500
 const defaultChunkOverlap = 50
+
+// Authoritative Rust MAX_CHUNK_SIZE ceiling mirror
+const maxChunkSize = 1048576
+
 const ingestCompensationTimeout = 5 * time.Second
 
 type Config struct {
@@ -477,12 +481,12 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 
 	chunkSize := defaultChunkSize
 	if reqSize := r.FormValue("chunk_size"); reqSize != "" {
-		parsedSize, err := strconv.Atoi(reqSize)
-		if err != nil || parsedSize <= 0 {
+		parsedSize, err := strconv.ParseInt(reqSize, 10, 32)
+		if err != nil || parsedSize <= 0 || parsedSize > maxChunkSize {
 			http.Error(w, "invalid chunk_size", http.StatusBadRequest)
 			return
 		}
-		chunkSize = parsedSize
+		chunkSize = int(parsedSize)
 	}
 
 	chunkOverlap := defaultChunkOverlap

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher},
     path::Path,
     sync::Arc,
@@ -11,8 +11,8 @@ use arrow_array::{
     Int64Array, RecordBatch, StringArray,
 };
 use dashmap::DashMap;
-use futures::future::BoxFuture;
-use lancedb::Table;
+use futures::{future::BoxFuture, TryStreamExt};
+use lancedb::{query::ExecutableQuery, Table};
 use serde::Deserialize;
 use tokio::{
     sync::{mpsc, watch},
@@ -101,6 +101,7 @@ impl IngestionStatus {
 
 const DEFAULT_CHUNK_SIZE: usize = 500;
 const DEFAULT_CHUNK_OVERLAP: usize = 50;
+pub const MAX_CHUNK_SIZE: usize = 1048576;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ChunkSettings {
@@ -138,6 +139,11 @@ fn parse_chunk_settings(metadata: &HashMap<String, String>) -> Result<ChunkSetti
         return Err(Status::invalid_argument(
             "invalid chunk_size: must be greater than 0",
         ));
+    }
+    if size > MAX_CHUNK_SIZE {
+        return Err(Status::invalid_argument(format!(
+            "invalid chunk_size: must not exceed {MAX_CHUNK_SIZE}"
+        )));
     }
     let overlap_str = metadata
         .get("chunk_overlap")
@@ -280,6 +286,97 @@ fn chunk_ingestion_job(job: &IngestionJob) -> (&'static str, Vec<Chunk>) {
     (strategy, chunks)
 }
 
+pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<IngestionJob>, String> {
+    let table = database.staged_documents_table().await?;
+    let batches: Vec<RecordBatch> = table
+        .query()
+        .execute()
+        .await
+        .map_err(|error| format!("failed to query staged_documents_v2: {error}"))?
+        .try_collect()
+        .await
+        .map_err(|error| format!("failed to collect staged_documents_v2 rows: {error}"))?;
+
+    let mut jobs = Vec::new();
+    let mut seen_ids = HashSet::new();
+
+    for batch in &batches {
+        let doc_ids = batch
+            .column_by_name("document_id")
+            .ok_or("staged_documents_v2 missing document_id column")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or("invalid document_id array type in staged_documents_v2")?;
+        let filenames = batch
+            .column_by_name("filename")
+            .ok_or("staged_documents_v2 missing filename column")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or("invalid filename array type in staged_documents_v2")?;
+        let raw_contents = batch
+            .column_by_name("raw_content")
+            .ok_or("staged_documents_v2 missing raw_content column")?
+            .as_any()
+            .downcast_ref::<BinaryArray>()
+            .ok_or("invalid raw_content array type in staged_documents_v2")?;
+        let strategies = batch
+            .column_by_name("chunk_strategy")
+            .ok_or("staged_documents_v2 missing chunk_strategy column")?
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or("invalid chunk_strategy array type in staged_documents_v2")?;
+        let sizes = batch
+            .column_by_name("chunk_size")
+            .ok_or("staged_documents_v2 missing chunk_size column")?
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .ok_or("invalid chunk_size array type in staged_documents_v2")?;
+        let overlaps = batch
+            .column_by_name("chunk_overlap")
+            .ok_or("staged_documents_v2 missing chunk_overlap column")?
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .ok_or("invalid chunk_overlap array type in staged_documents_v2")?;
+
+        for i in 0..batch.num_rows() {
+            let doc_id = doc_ids.value(i).to_string();
+            if !seen_ids.insert(doc_id.clone()) {
+                continue;
+            }
+            if validate_document_id(&doc_id).is_err() {
+                return Err(format!("malformed staged document_id: {doc_id}"));
+            }
+            let filename = filenames.value(i).to_string();
+            let raw_data = raw_contents.value(i).to_vec();
+            let strategy = strategies.value(i).to_string();
+            let size = usize::try_from(sizes.value(i))
+                .map_err(|_| format!("negative chunk_size in staging for document {doc_id}"))?;
+            let overlap = usize::try_from(overlaps.value(i))
+                .map_err(|_| format!("negative chunk_overlap in staging for document {doc_id}"))?;
+
+            let metadata = HashMap::from([
+                ("chunk_strategy".to_string(), strategy),
+                ("chunk_size".to_string(), size.to_string()),
+                ("chunk_overlap".to_string(), overlap.to_string()),
+            ]);
+
+            let chunk_settings = parse_chunk_settings(&metadata).map_err(|error| {
+                format!("malformed chunk settings in staging for document {doc_id}: {error}")
+            })?;
+
+            jobs.push(IngestionJob {
+                document_id: doc_id,
+                filename,
+                raw_data,
+                metadata,
+                chunk_settings,
+            });
+        }
+    }
+
+    Ok(jobs)
+}
+
 #[derive(Clone)]
 pub struct LancetServiceImpl {
     table: Table,
@@ -288,15 +385,23 @@ pub struct LancetServiceImpl {
 }
 
 impl LancetServiceImpl {
-    async fn persist_raw(&self, document_id: &str, data: &[u8]) -> Result<(), Status> {
-        let predicate = format!("document_id = '{}'", sql_string(document_id));
+    async fn persist_raw(&self, job: &IngestionJob) -> Result<(), Status> {
+        let predicate = format!("document_id = '{}'", sql_string(&job.document_id));
         self.table.delete(&predicate).await.map_err(internal)?;
         let schema = self.table.schema().await.map_err(internal)?;
         let batch = RecordBatch::try_new(
             schema,
             vec![
-                Arc::new(StringArray::from(vec![document_id])),
-                Arc::new(BinaryArray::from_vec(vec![data])),
+                Arc::new(StringArray::from(vec![job.document_id.as_str()])),
+                Arc::new(StringArray::from(vec![job.filename.as_str()])),
+                Arc::new(BinaryArray::from_vec(vec![job.raw_data.as_slice()])),
+                Arc::new(StringArray::from(vec![job.chunk_settings.strategy.as_str()])),
+                Arc::new(Int32Array::from(vec![
+                    i32::try_from(job.chunk_settings.size).unwrap_or(i32::MAX),
+                ])),
+                Arc::new(Int32Array::from(vec![
+                    i32::try_from(job.chunk_settings.overlap).unwrap_or(i32::MAX),
+                ])),
             ],
         )
         .map_err(internal)?;
@@ -377,16 +482,17 @@ impl LancetService for LancetServiceImpl {
             .clone()
             .try_reserve_owned()
             .map_err(|_| Status::resource_exhausted("ingestion queue is full"))?;
-        self.persist_raw(&document_id, &raw).await?;
-        self.statuses
-            .insert(document_id.clone(), IngestionStatus::queued());
-        permit.send(IngestionJob {
+        let job = IngestionJob {
             document_id: document_id.clone(),
             filename,
             raw_data: raw,
             metadata,
             chunk_settings: parsed_settings.expect("parsed settings present for non-empty stream"),
-        });
+        };
+        self.persist_raw(&job).await?;
+        self.statuses
+            .insert(document_id.clone(), IngestionStatus::queued());
+        permit.send(job);
         Ok(Response::new(IngestDocumentResponse {
             document_id,
             success: true,
@@ -399,16 +505,26 @@ impl LancetService for LancetServiceImpl {
         request: Request<GetIngestionStatusRequest>,
     ) -> Result<Response<GetIngestionStatusResponse>, Status> {
         let id = request.into_inner().document_id;
-        let state = self
-            .statuses
-            .get(&id)
-            .ok_or_else(|| Status::not_found("document status not found"))?;
-        Ok(Response::new(GetIngestionStatusResponse {
-            document_id: id,
-            status: state.status.clone(),
-            chunk_count: state.chunk_count,
-            error_message: state.error_message.clone(),
-        }))
+        if let Some(state) = self.statuses.get(&id) {
+            return Ok(Response::new(GetIngestionStatusResponse {
+                document_id: id,
+                status: state.status.clone(),
+                chunk_count: state.chunk_count,
+                error_message: state.error_message.clone(),
+            }));
+        }
+        let predicate = format!("document_id = '{}'", sql_string(&id));
+        if let Ok(count) = self.table.count_rows(Some(predicate)).await {
+            if count > 0 {
+                return Ok(Response::new(GetIngestionStatusResponse {
+                    document_id: id,
+                    status: "queued".into(),
+                    chunk_count: 0,
+                    error_message: String::new(),
+                }));
+            }
+        }
+        Err(Status::not_found("document status not found"))
     }
 
     async fn query_rag(
@@ -866,18 +982,32 @@ fn spawn_worker_with_boundary(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut receiver = receiver;
+        let mut shutdown_triggered = false;
         loop {
-            let job = tokio::select! {
-                biased;
-                changed = shutdown.changed() => {
-                    if changed.is_ok() && *shutdown.borrow() {
-                        break;
-                    }
-                    continue;
-                }
-                job = receiver.recv() => match job {
+            let job = if shutdown_triggered {
+                match receiver.recv().await {
                     Some(job) => job,
                     None => break,
+                }
+            } else {
+                tokio::select! {
+                    biased;
+                    changed = shutdown.changed() => {
+                        if changed.is_ok() && *shutdown.borrow() {
+                            shutdown_triggered = true;
+                            receiver.close();
+                            match receiver.recv().await {
+                                Some(job) => job,
+                                None => break,
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
+                    job = receiver.recv() => match job {
+                        Some(job) => job,
+                        None => break,
+                    }
                 }
             };
             statuses.insert(
@@ -939,6 +1069,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let embedder = Arc::new(OpenRouterClient::from_env()?);
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let staged_jobs = read_staged_jobs(&database).await?;
+    for job in staged_jobs {
+        statuses.insert(job.document_id.clone(), IngestionStatus::queued());
+        let _ = sender.send(job).await;
+    }
+
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let worker = spawn_worker(receiver, statuses.clone(), database, embedder, shutdown_rx);
     let service = LancetServiceImpl {
