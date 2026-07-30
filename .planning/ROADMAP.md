@@ -5,7 +5,7 @@
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
-| 2 | 24/24 | Verification gaps found (14/19 verified) | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
+| 2 | 24/28 | Gap-closure plans added for ADR-02-003; implementation not started | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
 | 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
@@ -30,7 +30,7 @@
 **Goal:** As a Lancet API user, I want to ingest and safely replace text or Markdown documents, so that the last completed LanceDB index and PostgreSQL status remain trustworthy through failures and concurrent polling.
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 24/24 plans executed
+**Plans:** 24/28 plans executed
 **Verification:** Gaps found — 14/19 must-haves verified; Phase 02 remains open.
 **Wave 1**
 
@@ -109,6 +109,16 @@
 **Wave 18** *(blocked on Wave 17)*
 
 - [x] 02-24-PLAN.md — Bound and validate persisted chunk settings, make polling staging-aware, and isolate database fixtures.
+
+**Wave 19** *(blocked on Wave 18; parallel)*
+
+- [ ] 02-25-PLAN.md — Complete the Rust staging lifecycle with worker-first replay, idempotent initialization, truthful absence, and delete-before-terminal convergence.
+- [ ] 02-26-PLAN.md — Isolate the remaining PostgreSQL claimant test, make snapshot failures fatal, and add the review checklist.
+- [ ] 02-27-PLAN.md — Make privacy diagnostics category-only and live-evidence fixture cleanup process-owned.
+
+**Wave 20** *(blocked on Wave 19)*
+
+- [ ] 02-28-PLAN.md — Run the deterministic exit gate, fresh provider-backed cross-store validation, and private disclosure review.
 
 **Success Criteria:**
 
