@@ -1,94 +1,84 @@
 ---
 phase: 02-ingestion-chunking-vector-storage
-verified: 2026-07-30T03:24:26Z
+verified: 2026-07-30T09:58:31Z
 status: gaps_found
-score: "14/19 must-haves verified"
-behavior_unverified: 1
+score: "15/20 must-haves verified"
+behavior_unverified: 0
 overrides_applied: 0
-unverified_prohibitions: 1
+unverified_prohibitions: 2
 re_verification:
   previous_status: gaps_found
-  previous_score: "12/19"
+  previous_score: "14/19"
   gaps_closed:
-    - "The six locked camel-case privacy aliases are now classified and rejected."
-    - "The historical unqualified DELETE FROM documents statement is removed."
-    - "The in-memory worker now closes admission and drains acknowledged receiver items during shutdown."
-    - "Rust and Go now reject chunk_size above 1048576 before persistence or execution."
-    - "The explicit-path live-evidence test now injects temporary challenge/evidence paths and leaves the canonical runtime paths unchanged."
+    - "All three global reconciliation claim/lease tests now use isolated per-test schemas and fatal public-count snapshot reads."
+    - "Startup replay now spawns the worker before bounded sends; the queue-capacity regression passed."
+    - "Staging read errors now return gRPC Unavailable rather than authoritative NotFound."
+    - "Pre-replacement terminal failure retains replayable staging when staging deletion fails; the isolated cross-runtime restart test passed."
+    - "Privacy diagnostics now omit raw forbidden keys and values."
+    - "ADR-02-003 D-02 superseded the unused legacy migration contract with one current-schema staging initializer; repeated non-empty initialization passed."
+    - "The retained provider-backed attestation was directly reinspected against current PostgreSQL and LanceDB state."
   gaps_remaining:
-    - "A public-schema database test still leases unrelated reconciliation intents."
-    - "Startup replay can deadlock before the worker is spawned when durable staging exceeds channel capacity."
-    - "The selected legacy staging migration is not idempotent and cannot yield a normally restartable store."
-    - "A staging-table read error is collapsed into authoritative NotFound and can make PostgreSQL falsely terminal."
-    - "Terminal pre-replacement worker failures leave replayable staging and can split PostgreSQL from LanceDB after restart."
-    - "Privacy diagnostics echo attacker-controlled forbidden field keys."
-  regressions: []
+    - "A completed canonical ingestion can become authoritative NotFound after Rust restarts before PostgreSQL observes completion."
+    - "Incomplete canonical rollback can still delete staging and publish terminal failed."
+    - "Failed admission can lose both its reconciliation intent and all finite terminal updates."
+    - "Attestation construction records human approval when no approval flag is supplied."
+    - "The optimized Python suite still performs a class-wide fixture glob and does not pass."
+  regressions:
+    - "02-27-SUMMARY.md says the class-wide fixture glob was removed, but scripts/test_phase02_live_evidence.py:166-170 still contains it."
 gaps:
-  - truth: "Phase 02 database verification is isolated and cannot mutate reconciliation work outside data created by its own test."
+  - truth: "A completed canonical ingestion remains discoverable as completed after an engine restart until PostgreSQL converges."
     status: failed
-    reason: "TestReconciliationIntentRecordAndClaim still runs the global due-intent lease query on the configured public schema and can lease up to ten unrelated rows."
-    artifacts:
-      - path: "gateway/db/document_test.go"
-        issue: "Lines 116-196 use a direct TEST_DATABASE_URL pool and an unfiltered ClaimDueReconciliationIntents call."
-    missing:
-      - "Run TestReconciliationIntentRecordAndClaim through createIsolatedTestPool."
-      - "Require every claim/lease integration test to use a per-test schema."
-  - truth: "Engine startup recovers every acknowledged staged job without blocking before the gRPC listener can start."
-    status: failed
-    reason: "Production sends every staged job into the bounded 100-item channel before spawning the receiver; the 101st staged job waits forever."
+    reason: "Success deletes durable staging before publishing completion only to the process-local registry. After restart, status checks only the empty registry and staging table, returns NotFound, and the gateway persists failed despite canonical LanceDB rows."
     artifacts:
       - path: "engine/src/main.rs"
-        issue: "Lines 1073-1080 enqueue all staged_jobs before spawn_worker."
-      - path: "engine/src/tests.rs"
-        issue: "startup_recovery_processes_staged_document starts the worker before its single send and therefore does not exercise production startup ordering or capacity."
-    missing:
-      - "Spawn and monitor the worker before replay sends while still completing replay before serving gRPC."
-      - "Add a production-order regression with more than QUEUE_CAPACITY staged jobs."
-  - truth: "The explicit legacy staging transition is idempotent and leaves a store that normal production initialization accepts on every later restart."
-    status: failed
-    reason: "Migration appends rows to staged_documents_v2 but preserves the non-empty legacy table without a completion marker; normal initialize(..., None) therefore fails again, while repeated migration can duplicate IDs."
-    artifacts:
-      - path: "engine/src/db/mod.rs"
-        issue: "Lines 120-257 neither record completed disposition nor reject existing v2 document IDs before append."
-      - path: "engine/src/tests.rs"
-        issue: "legacy_staging_transition_is_versioned_and_lossless never calls normal DatabaseManager::initialize after migration and never repeats the migration."
-    missing:
-      - "Persist an auditable idempotent migration/disposition marker or equivalent safe cutover contract."
-      - "Reject v2 ID conflicts and test normal restart, repeated migration, and conflicting IDs."
-  - truth: "Rust returns NotFound only after a successful check proves absence from both in-memory status and durable staging."
-    status: failed
-    reason: "get_ingestion_status ignores every count_rows error and falls through to NotFound; the gateway then irreversibly writes PostgreSQL failed."
-    artifacts:
-      - path: "engine/src/main.rs"
-        issue: "Lines 516-527 use if let Ok(count), discarding staging query failures."
+        issue: "get_ingestion_status checks only statuses and staged_documents_v2 (lines 508-538); success deletes staging at lines 902-904 and publishes completed only to DashMap at lines 1045-1053."
       - path: "gateway/main.go"
-        issue: "Lines 562-585 treat engine NotFound as authoritative absence and persist failed."
+        issue: "Engine NotFound irreversibly transitions queued/processing PostgreSQL rows to failed at lines 562-582."
     missing:
-      - "Map staging read/count errors to Unavailable or Internal."
-      - "Add an error-injection regression proving PostgreSQL remains non-terminal on storage read failure."
-  - truth: "A terminal engine failure cannot leave replayable staging that later diverges from the terminal PostgreSQL status."
+      - "Persist terminal engine outcome durably or derive completed status and authoritative chunk count from canonical LanceDB state."
+      - "Add a completion-then-Rust-restart-before-gateway-poll cross-runtime regression."
+  - truth: "A failed canonical rollback retains replayable staging and never exposes a split generation as terminal."
     status: failed
-    reason: "Embedding and other pre-replacement failures publish engine failed without deleting or explicitly retaining recoverable staging state; restart requeues the staged row after the gateway has persisted failed."
+    reason: "rollback_replacement attempts staging deletion even after one or more restore_version failures, and the worker error path performs another unconditional staging deletion before publishing failed."
     artifacts:
       - path: "engine/src/main.rs"
-        issue: "Lines 927-955 can fail before replace_document_with_faults; lines 1045-1055 publish failed without staging cleanup or a retryable durable-state transition."
-      - path: "gateway/main.go"
-        issue: "Lines 592-610 persist failed and stop future polling."
+        issue: "Lines 629-667 delete staging independently of rollback_errors; lines 1056-1079 delete staging again and publish terminal failed."
     missing:
-      - "Define one durable retryable-versus-terminal state transition."
-      - "Delete staging successfully before terminal failed, or keep the status recoverable while staging exists."
-      - "Test embedding failure through gateway persistence and engine restart to cross-store convergence."
-  - truth: "Privacy failure diagnostics disclose only normalized field classes and safe structural positions, never attacker-controlled keys or content."
+      - "Represent incomplete rollback as a distinct replayable/fatal result."
+      - "Do not delete staging or publish terminal status when any canonical restore fails."
+      - "Add restore_version fault injection and restart-convergence coverage."
+  - truth: "Every definitive failed admission leaves either a terminal PostgreSQL row or a confirmed durable reconciliation intent."
     status: failed
-    reason: "The classifier rejects the field, but the diagnostic interpolates the raw JSON key; a safe sentinel-bearing key was reproduced verbatim on stderr."
+    reason: "compensateFailedIngest discards the single CreateReconciliationIntent error and stops after five UpdateStatus failures. A database interruption can therefore strand a queued row with no claimable repair work."
+    artifacts:
+      - path: "gateway/main.go"
+        issue: "Lines 278-319 ignore intent persistence failure and bound terminal updates to five attempts."
+      - path: "gateway/main_test.go"
+        issue: "The fake store exposes createIntentErr and updateErrs, but no test combines an intent failure with five update failures and reconciler-only recovery."
+    missing:
+      - "Atomically create the queued row and reconciliation obligation, or require confirmed durable intent/terminal state before compensation exits."
+      - "Add a create-intent failure plus five-update-failures regression that converges without GET."
+  - truth: "A retained attestation can claim human disclosure approval only after explicit human approval is supplied."
+    status: failed
+    reason: "Both build_attestation and argparse default human_approved to true. Parsing build-attestation without --human-review-approved returned True, and the shell success test omits the flag while expecting success."
     artifacts:
       - path: "scripts/phase02_live_evidence.py"
-        issue: "Lines 127-136 append raw key text to the error path."
+        issue: "human_approved defaults true at lines 616-620 and 761-765; lines 669-676 serialize approval and fixed checkpoint provenance."
       - path: "scripts/test_phase02_live_evidence.py"
-        issue: "Privacy tests check submitted values but do not cover secret-bearing keys."
+        issue: "test_attestation_retention_and_private_cleanup_on_success invokes --validate-gate without --human-review-approved at lines 742-755."
     missing:
-      - "Use category-only diagnostics and paths made solely from safe container/index tokens."
-      - "Add a subprocess regression with an inert secret-bearing key."
+      - "Default approval false and reject attestation construction without the explicit flag."
+      - "Add a negative gate test proving omission preserves evidence and creates no attestation."
+  - truth: "The optimized live-evidence suite cleans only fixtures owned by its process and passes deterministically."
+    status: failed
+    reason: "The class-wide .phase02-live-test-* sweep remains. The verifier's full python -O -I run executed 20 tests and ended with five errors, including PermissionError when tearDownClass tried Path.unlink on a matching directory."
+    artifacts:
+      - path: "scripts/test_phase02_live_evidence.py"
+        issue: "Lines 166-170 globally glob and unlink files or directories owned by any process, contradicting Plan 02-27 and ADR-02-003 D-07."
+    missing:
+      - "Remove tearDownClass global sweeping."
+      - "Track and clean only exact process-owned files/directories, using shutil.rmtree for directories."
+      - "Make the full optimized isolated suite pass from a workspace containing a foreign matching fixture."
 deferred:
   - truth: "Network authentication, authorization, TLS, and principal quotas."
     addressed_in: "Phase 6 / before any non-loopback or shared exposure"
@@ -102,231 +92,241 @@ deferred:
   - truth: "Exhaustive caller-owned input preservation proof across live success and representative failures."
     addressed_in: "Phase 6 / v1 MVP closure"
     evidence: "DEBT-BU-02 remains accepted while the runner is not claimed safe for arbitrary user-owned source files."
-behavior_unverified_items:
-  - truth: "A fresh provider-backed ingestion is independently traceable to matching current PostgreSQL and LanceDB state without disclosure."
-    test: "After the blocking defects are fixed, issue a new local challenge, run one credentialed synthetic ingestion, and directly re-inspect PostgreSQL and the configured LanceDB path."
-    expected: "HTTP identity, PostgreSQL completed row/chunk count, engine status, and one canonical finite 2048-wide LanceDB generation agree; private logs disclose no credential, header, upload, document text, chunk text, or attacker-controlled key."
-    why_human: "Provider credentials, service lifecycle, current durable state, and private logs are external to this code audit; transient prior evidence is absent."
 prohibition_results:
-  - statement: "MUST NOT accept or disclose credential, authorization-header, raw-upload, stored-document-text, or stored-chunk-content fields in Phase 02 verification artifacts."
+  - statement: "MUST NOT emit raw document bytes, chunk content, credentials, or attacker-controlled storage values in recovery/status diagnostics."
     verification: test
-    status: failed
-    reason: "Aliases reject correctly, but a forbidden attacker-controlled key is echoed in the diagnostic."
-  - statement: "MUST NOT expose credentials, authorization headers, raw upload bytes, stored document text, or stored chunk content through runtime or service logs."
+    status: unverified
+    flagged: true
+    reason: "Source inspection found category/context logging, but no wired negative test exercises recovery and status diagnostics with attacker-controlled values."
+  - statement: "MUST NOT disclose provider credentials, authorization headers, raw uploads, stored document/chunk content, or attacker-controlled secret-bearing keys in evidence, logs, summaries, staged files, or commits."
     verification: judgment
     status: unverified
     flagged: true
-    reason: "Private service logs from a fresh credentialed run are unavailable; human review remains required."
+    reason: "The retained attestation's approval provenance is forgeable by omitting a CLI flag, so it cannot independently establish that the private log review happened."
 ---
 
 # Phase 2: Ingestion, Chunking & Vector Storage Verification Report
 
 **Phase Goal:** As a Lancet API user, I want to ingest and safely replace text or Markdown documents, so that the last completed LanceDB index and PostgreSQL status remain trustworthy through failures and concurrent polling.
 
-**Verified:** 2026-07-30T03:24:26Z
+**Verified:** 2026-07-30T09:58:31Z
 **Status:** gaps_found
-**Re-verification:** Yes — after Plans 02-22 through 02-24
+**Re-verification:** Yes — after Plans 02-25 through 02-28
 
 ## User Flow Coverage
 
 | Step | Expected | Current-code evidence | Status |
 |---|---|---|---|
-| Upload | Submit text/Markdown through `POST /documents` and receive an accepted polling record | `gateway/main.go:453-549`; Go handler tests pass | ✓ VERIFIED |
-| Configure | Choose structure-aware/fixed-size settings and persist exactly what Rust executes | Go/Rust both enforce 1048576 and metadata tests pass | ✓ VERIFIED |
-| Accept | Rust durably stages every acknowledged job before queue acknowledgement | `persist_raw` precedes status insertion and `permit.send` | ✓ VERIFIED |
-| Recover | Shutdown/restart processes every acknowledged staged job without false terminal state | Replay can deadlock, migration cannot complete normally, read errors become NotFound, and terminal failures leave replayable staging | ✗ FAILED |
-| Replace | A failed same-ID canonical-table replacement rolls back and a retry converges | Rust replacement-boundary and schema-fault tests pass | ✓ VERIFIED |
-| Poll | PostgreSQL reflects authoritative engine/durable state through failures and races | Gateway behavior is sound only if Rust NotFound is authoritative; current Rust error collapse breaks that premise | ✗ FAILED |
-| Outcome | Last completed LanceDB generation and PostgreSQL status remain trustworthy | Four recovery/state defects can hang startup or split durable state | ✗ FAILED |
+| Upload | Submit text/Markdown to `POST /documents` and receive a pollable record | `gateway/main.go:453-549`; Go suite passed | ✓ VERIFIED |
+| Configure | Persist and execute the same bounded chunk settings | Go and Rust both enforce `MAX_CHUNK_SIZE=1048576`; metadata tests passed | ✓ VERIFIED |
+| Accept | Durably stage recoverable input before Rust acknowledges queue admission | `persist_raw` precedes registry insertion and `permit.send` | ✓ VERIFIED |
+| Process | Chunk, embed, and atomically replace canonical LanceDB rows | Normal path and mutation-boundary tests pass, but rollback restoration failure can destroy replay state | ✗ FAILED |
+| Recover | Restart and failure handling preserve the last completed generation and truthful status | Capacity replay and delete-failure replay pass; completed-before-poll restart and rollback failure do not | ✗ FAILED |
+| Poll | PostgreSQL converges from authoritative Rust/durable state | Rust can report NotFound for a completed canonical generation; failed admission can lack repair intent | ✗ FAILED |
+| Outcome | Last completed LanceDB index and PostgreSQL status remain trustworthy | Four correctness/evidence defects plus the broken deterministic gate prevent this outcome | ✗ FAILED |
 
-The MVP outcome clause is not achieved. Normal ingestion and replacement work, but accepted work is not trustworthy across all failure/restart paths.
+The MVP outcome clause is not achieved. A normal provider-backed run currently reinspects successfully, but the promised trustworthiness does not hold across all restart, rollback, admission-failure, and approval paths.
 
 ## Goal Achievement
 
 ### Observable Truths
 
-| # | Truth | Status | Evidence |
-|---|---|---|---|
-| 1 | HTTP upload creates a PostgreSQL-backed polling record for text/Markdown input. | ✓ VERIFIED | Production handler is wired; Go suite passed. |
-| 2 | Rust receives validated streamed bytes and uses one bounded sequential worker. | ✓ VERIFIED | Stream parsing, queue, and worker tests passed. |
-| 3 | Persisted chunk settings always equal Rust-executed settings. | ✓ VERIFIED | Go rejects out-of-range values before `int32`; Rust enforces the same 1048576 ceiling. |
-| 4 | Structure-aware/fixed-size chunking and o200k token estimates work. | ✓ VERIFIED | Rust chunker tests passed. |
-| 5 | OpenRouter client enforces the locked timeout/retry/concurrency contract. | ✓ VERIFIED | Rust client tests passed. |
-| 6 | Chunks, embeddings, metadata, and graph rows persist in LanceDB. | ✓ VERIFIED | Worker and real-LanceDB fixtures passed. |
-| 7 | Failed same-ID replacements roll back and a clean retry converges. | ✓ VERIFIED | Replacement-boundary tests passed. |
-| 8 | Definitive failed admission has durable PostgreSQL reconciliation independent of GET polling. | ✓ VERIFIED | Production intent/reconciler wiring remains substantive and Go tests pass. |
-| 9 | Lost acknowledgement, terminal races, and response identity are guarded. | ✓ VERIFIED | Gateway behavior tests pass; database fixture safety is assessed separately. |
-| 10 | Engine honors `LANCET_CONFIG_DIR` from a config-less working directory. | ✓ VERIFIED | Three process-level config tests passed. |
-| 11 | Community/node/edge placeholder schemas contain the required nullable fields. | ✓ VERIFIED | DB schema tests passed. |
-| 12 | `EntityResolver` and production-used `ExactMatchResolver` exist. | ✓ VERIFIED | Resolver test and production DB module wiring pass. |
-| 13 | Inspector is read-only/non-disclosing and rejects null/non-finite vectors; schema drift rolls back without killing the worker. | ✓ VERIFIED | Inspector and active-worker schema-fault tests passed. |
-| 14 | Privacy enforcement rejects forbidden classes without disclosing attacker-controlled material. | ✗ FAILED | Camel-case aliases reject, but raw sensitive keys are printed. |
-| 15 | A fresh provider-backed run is independently traceable to current durable state and private logs. | ⚠ PRESENT_BEHAVIOR_UNVERIFIED | No current challenge/evidence or private provider/service state is available. |
-| 16 | Complete-run-window and exhaustive caller-owned-input proof are required now. | ↪ DEFERRED | Accepted DEBT-BU-01/02 triggers remain false; not an active Phase 02 blocker. |
-| 17 | Every acknowledged queued job remains trustworthy through shutdown, startup replay, migration, storage errors, and terminal failure. | ✗ FAILED | Recovery deadlock, non-idempotent migration, read-error collapse, and replayable terminal-failure staging remain. |
-| 18 | Phase 02 database verification cannot affect unrelated persistent rows. | ✗ FAILED | One global lease test still mutates public due intents; two isolation assertions ignore query errors. |
-| 19 | Live-evidence tests cannot overwrite or delete the real challenge/evidence artifacts. | ✓ VERIFIED | Canonical paths remained absent before/after; injected paths are used. Global test-fixture ownership remains a warning. |
+The 20 truths below deduplicate the seven roadmap success criteria, all 28 PLAN frontmatter contracts, the prior verification truths, and the new 02-25 through 02-28 closure contracts.
 
-**Score:** 14/19 truths verified; 1 present but behavior-unverified; 1 accepted deferred truth is not an active gap.
+| # | Truth | Status | Evidence |
+|---:|---|---|---|
+| 1 | HTTP upload creates a PostgreSQL-backed polling record for text/Markdown and lightweight text-like input. | ✓ VERIFIED | Handler wiring and Go tests pass. |
+| 2 | Rust validates streamed identity/metadata and processes jobs through one bounded sequential worker. | ✓ VERIFIED | Stream, queue, shutdown, and capacity-replay tests pass. |
+| 3 | PostgreSQL chunk settings equal the metadata and settings Rust executes. | ✓ VERIFIED | Go/Rust settings and ceiling tests pass. |
+| 4 | Fixed-size and structure-aware chunking plus `o200k_base` token estimation work. | ✓ VERIFIED | Rust chunker tests pass. |
+| 5 | OpenRouter uses the locked timeout, retry, ordering, and concurrency contract. | ✓ VERIFIED | Production-builder timeout/retry/concurrency tests pass. |
+| 6 | Chunks, embeddings, metadata, nodes, and edges persist to canonical LanceDB schemas. | ✓ VERIFIED | Real embedded-store and inspector fixtures pass. |
+| 7 | Every failed same-ID replacement preserves or restores one replayable canonical generation. | ✗ FAILED | Mutation failures pass, but a `restore_version` failure can still delete staging and publish failed. |
+| 8 | Definitive failed admission has durable reconciliation independent of GET polling. | ✗ FAILED | Intent creation failure is discarded and terminal retries are finite. |
+| 9 | Lost acknowledgement, terminal races, and response identity are guarded. | ✓ VERIFIED | Go behavior tests pass. |
+| 10 | Rust honors `LANCET_CONFIG_DIR` and configuration precedence from a config-less CWD. | ✓ VERIFIED | Three process-level tests pass. |
+| 11 | Community/node/edge placeholder schemas contain all required nullable fields. | ✓ VERIFIED | Schema and null-placeholder tests pass. |
+| 12 | `EntityResolver` and production-used `ExactMatchResolver` exist. | ✓ VERIFIED | Trait, implementation, worker call, and test are present. |
+| 13 | Inspector is read-only/non-disclosing and rejects invalid vectors; schema lookup faults roll back without killing the worker. | ✓ VERIFIED | Inspector and active-worker fault tests pass. |
+| 14 | Privacy classification rejects separator/camel-case aliases using category-only safe paths. | ✓ VERIFIED | Both direct raw-content and secret-bearing-key probes failed closed without echoing values/keys. |
+| 15 | The retained provider-backed run is traceable to matching current PostgreSQL and LanceDB state. | ✓ VERIFIED | `--reinspect-attestation` independently passed for document `5e3655db-4749-4015-a674-5aff5cbda0b6`. |
+| 16 | Every acknowledged job remains truthful through shutdown, completion, restart, storage error, and terminal publication. | ✗ FAILED | Completed canonical state is not a status authority after restart; incomplete rollback can destroy replay state. |
+| 17 | Every global claim/lease database test is isolated and fails on snapshot read errors. | ✓ VERIFIED | Source audit plus three named PostgreSQL integration tests passed against isolated schemas. |
+| 18 | Tests cannot replace or delete the real Phase 02 challenge/evidence artifacts. | ✓ VERIFIED | Explicit runtime paths are injected; successful gate cleanup targets only the canonical private pair. |
+| 19 | Live-evidence fixtures are process-owned and the full optimized suite passes. | ✗ FAILED | Global glob remains; full suite ran 20 tests and produced five errors. |
+| 20 | Human disclosure approval is explicit, non-forgeable, and attached only after the blocking checkpoint. | ✗ FAILED | CLI and function defaults fabricate approval when the flag is omitted. |
+
+**Score:** 15/20 truths verified; 0 present-but-behavior-unverified.
 
 ### Roadmap Success Criteria
 
 | # | Roadmap criterion | Status | Evidence |
-|---|---|---|---|
+|---:|---|---|---|
 | 1 | Upload via Go HTTP API | ✓ VERIFIED | Handler and tests exist and pass. |
 | 2 | Rust receives via gRPC and chunks | ✓ VERIFIED | Stream/chunker/worker tests pass. |
-| 3 | Chunks and embeddings stored in LanceDB | ✓ VERIFIED | Real embedded-store tests pass. |
+| 3 | Chunks and embeddings stored in LanceDB | ✓ VERIFIED | Real embedded-store tests and current attestation reinspection pass. |
 | 4 | Community IDs and communities placeholder schema | ✓ VERIFIED | Canonical schema test passes. |
-| 5 | Node/edge summary placeholder columns | ✓ VERIFIED | Nullable schema tests pass. |
-| 6 | `EntityResolver` / `ExactMatchResolver` | ✓ VERIFIED | Trait, implementation, and test exist. |
-| 7 | Tokio channel worker structure | ✓ VERIFIED | Bounded single worker exists and normal/drain tests pass. |
+| 5 | Node/edge summary placeholder columns | ✓ VERIFIED | Nullable schema and persisted-null tests pass. |
+| 6 | `EntityResolver` / `ExactMatchResolver` | ✓ VERIFIED | Trait, implementation, production call, and test exist. |
+| 7 | Tokio channel worker structure | ✓ VERIFIED | Bounded single worker and recovery/drain tests pass. |
 
-All seven narrow roadmap criteria exist, but they do not by themselves prove the MVP outcome clause. The failure/restart integrity contract added by the authoritative goal is still broken.
+All seven narrow criteria exist, but they are insufficient to establish the stronger MVP outcome clause in the current authoritative goal.
 
-## Plans 02-22 Through 02-24: Claim Versus Current Code
+### Plan Contract Disposition
 
-| Plan | Claimed closure | Independent verdict |
+| Plans | Verdict | Independent disposition |
 |---|---|---|
-| 02-22 | Drain, startup replay, legacy transition, staging-aware status, Rust chunk ceiling | **PARTIAL:** drain and ceiling pass; replay ordering, migration restartability, status-read errors, and terminal-failure staging fail. |
-| 02-23 | Camel-case privacy and temporary runtime paths | **PARTIAL:** aliases and canonical-path isolation pass; diagnostics disclose raw keys. |
-| 02-24 | Go ceiling, truthful polling, isolated database fixtures, combined exit gate | **PARTIAL:** Go ceiling passes; polling inherits false Rust NotFound; one older claim test remains public; full Python gate failed in this verifier environment. |
-
-The exact five prior defect manifestations were changed, but their broader shutdown/recovery, database-isolation, and privacy truths were not fully closed.
+| 02-01–02-04 | VERIFIED / PARTIAL | Scaffolding, chunking, schemas, worker, and polling exist; polling inherits the current completed-restart status defect. |
+| 02-05–02-07 | PARTIAL | Nullable schemas and ordinary rollback/retry pass; restore failure can still delete staging. |
+| 02-08 | VERIFIED | Timeout and durable inspector contracts pass. |
+| 02-09–02-10 | PARTIAL | Challenge/evidence and current-store validation work; full optimized suite and disclosure provenance do not. |
+| 02-11 | FAILED | Durable reconciliation can be lost when intent creation and all finite updates fail. |
+| 02-12–02-14 | VERIFIED | Freshness, explicit path, vector validation, rollback routing, and lint contracts pass. |
+| 02-15–02-16 | SUPERSEDED / PARTIAL | Node prohibition tooling was intentionally replaced by Plan 02-21's Python-only gate; private review remains unproven because approval is forgeable. |
+| 02-17–02-18 | VERIFIED | Config directory, settings propagation, loopback constraint, and durable intent schema/query surface exist. |
+| 02-19 | FAILED | Reconciler works when an intent exists, but failed admission does not guarantee intent durability. |
+| 02-20 | VERIFIED | Read-only inspector and schema-fault worker-survival contracts pass. |
+| 02-21 | PARTIAL | Python-only classifier/store resolution works; the complete Python gate does not pass. |
+| 02-22–02-24 | VERIFIED / SUPERSEDED | Drain, staged status, ceilings, canonical-path safety, and database isolation pass; ADR-02-003 D-02 formally replaced the unused legacy migration branch. |
+| 02-25 | PARTIAL | Worker-first replay, status-read errors, and delete-failure replay pass; completed restart and incomplete rollback remain unsafe. |
+| 02-26 | VERIFIED | Claim/lease test isolation, fatal snapshots, and `AGENTS.md` review convention pass. |
+| 02-27 | FAILED | Privacy diagnostics pass, but the claimed removal of the global cleanup glob did not occur. |
+| 02-28 | FAILED | Current live reinspection passes, but the deterministic Python suite fails and approval can be fabricated. |
 
 ## Required Artifacts
 
-| Artifact group | Existence/substance | Wiring and real data flow | Status |
+| Artifact group | Existence/substance | Wiring/data flow | Status |
 |---|---|---|---|
-| `gateway/main.go`, PostgreSQL schema/queries | Substantive | HTTP → PostgreSQL → gRPC → poll/reconcile is wired; relies on truthful Rust status | ⚠ PARTIAL |
-| `gateway/db/document_test.go` | Substantive | New lease tests use isolated schemas, but `TestReconciliationIntentRecordAndClaim` remains public | ✗ PARTIAL |
-| `engine/src/main.rs` | Substantive | Queue/staging/worker/LanceDB flow is wired; startup and terminal-error state machine are defective | ✗ PARTIAL |
-| `engine/src/db/mod.rs` | Substantive | Versioned table and manifest exist; transition is not normally restartable/idempotent | ✗ PARTIAL |
-| `engine/src/chunker/*`, `engine/src/client/*` | Substantive | Worker calls real chunker/provider seam; tests pass | ✓ VERIFIED |
-| `engine/src/bin/inspect_lancedb.rs`, DB schemas | Substantive | Read-only validation and real fixtures pass | ✓ VERIFIED |
-| `scripts/phase02_live_evidence.py`, tests, shell runners | Substantive | Alias/path flow is wired; raw-key diagnostic and global fixture cleanup are unsafe | ⚠ PARTIAL |
+| `gateway/main.go`, PostgreSQL schema/queries | Substantive | HTTP → PostgreSQL → gRPC → poll/reconcile is wired; failed-admission durability is incomplete | ✗ PARTIAL |
+| `gateway/db/document_test.go`, `AGENTS.md` | Substantive | All global claimants use isolated pools; snapshot reads are fatal | ✓ VERIFIED |
+| `engine/src/main.rs` | Substantive | Stream → staging → queue → worker → LanceDB is wired; completed-restart and rollback-error paths are broken | ✗ PARTIAL |
+| `engine/src/db/mod.rs`, DB tests | Substantive | One current-schema staging initializer and canonical schemas are wired | ✓ VERIFIED |
+| `engine/src/chunker/*`, `engine/src/client/*` | Substantive | Production worker calls both; tests pass | ✓ VERIFIED |
+| `engine/src/bin/inspect_lancedb.rs`, inspector tests | Substantive | Read-only current-store reinspection passed | ✓ VERIFIED |
+| `scripts/phase02_live_evidence.py` | Substantive | Privacy/current-store/attestation commands are wired; approval default is unsafe | ✗ PARTIAL |
+| `scripts/test_phase02_live_evidence.py` | Substantive | Test suite is runnable but global cleanup is destructive and the full run fails | ✗ FAILED |
+| `02-LIVE-ATTESTATION.json` | Exists, ignored, untracked, privacy-clean | Current PostgreSQL/LanceDB reinspection passed; human-approval provenance is forgeable | ✗ PARTIAL |
+| Challenge/evidence runtime pair | Absent by successful-gate design | Removal after attestation is expected | ✓ VERIFIED |
+| `scripts/test_phase02_privacy_prohibition.cjs` | Missing | Superseded by the explicit Python-only Plan 02-21 contract | ✓ SUPERSEDED |
+| `COVERAGE.md` plan path | Root path missing | The intended matrix exists at `.planning/phases/02-ingestion-chunking-vector-storage/COVERAGE.md` | ⚠ PATH MISMATCH |
+
+The artifact verifier evaluated 60 declared artifact entries. Five literal paths were absent: two transient runtime files expected to be removed, two superseded Node artifacts, and one `COVERAGE.md` path mismatch with an existing phase-local equivalent.
 
 ## Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| HTTP upload | PostgreSQL | `InsertDocument` | ✓ WIRED | Bounds execute before ID allocation/store insertion. |
-| PostgreSQL settings | gRPC first frame | `grpcEngine.Ingest` metadata | ✓ WIRED | Accepted settings are bounded and forwarded unchanged. |
-| gRPC admission | durable staging | `persist_raw` before `permit.send` | ✓ WIRED | Complete recoverable fields are written before acknowledgement. |
-| Durable staging | startup worker | `read_staged_jobs` → bounded sender | ✗ BROKEN | Sender fills before worker exists. |
-| Legacy staging | v2 recoverable staging | `initialize_with_migration` | ✗ BROKEN | No completed marker/conflict guard; normal restart fails. |
-| Staging read | gRPC status | `count_rows` fallback | ✗ BROKEN | Errors are discarded as NotFound. |
-| Worker failure | staging/status | `process_job_with_boundary` → status map | ✗ BROKEN | Pre-replacement terminal error leaves replayable staging. |
-| Worker replacement | canonical LanceDB tables | rollback/retry funnel | ✓ WIRED | Boundary tests pass. |
-| Privacy CLI | canonical classifier | recursive traversal | ⚠ PARTIAL | Classification works; diagnostic path leaks raw key. |
-| Live harness | injected challenge/evidence | explicit CLI arguments | ✓ WIRED | Canonical runtime paths remain untouched. |
+| HTTP upload | PostgreSQL | `InsertDocument` before gRPC | ✓ WIRED | Settings and bounds are persisted before streaming. |
+| PostgreSQL settings | Rust chunker | first-frame gRPC metadata | ✓ WIRED | Exact values are parsed and executed. |
+| gRPC admission | durable staging/queue | `persist_raw` then `permit.send` | ✓ WIRED | Acknowledged input is recoverable. |
+| Startup staging | worker | worker-first bounded replay | ✓ WIRED | Capacity and receiver-exit tests pass. |
+| Worker normal path | canonical LanceDB | chunk/embed/replace/delete staging | ✓ WIRED | Normal and injected mutation tests pass. |
+| Completed canonical state | status RPC | durable terminal lookup | ✗ NOT WIRED | Status RPC never consults canonical documents/nodes after registry loss. |
+| Rollback failure | replayable staging | restore outcome gates deletion | ✗ NOT WIRED | Staging deletion proceeds despite restore errors. |
+| Failed admission | durable reconciliation | confirmed intent or terminal row | ✗ NOT WIRED | Intent error is ignored and retries are finite. |
+| Rust status | PostgreSQL polling | gRPC status and conditional update | ⚠ PARTIAL | Gateway is correct only when Rust NotFound is a complete durable absence proof. |
+| Privacy CLI | classifier | recursive safe structural traversal | ✓ WIRED | Raw keys/values are omitted. |
+| Provider attestation | PostgreSQL/LanceDB | retained UUID plus direct reinspection | ✓ WIRED | Current reinspection passed. |
+| Human checkpoint | attestation approval | explicit approval flag | ✗ NOT WIRED | Omitted flag still produces `approved=true`. |
 
 ## Data-Flow Trace (Level 4)
 
 | Artifact | Data | Source → sink | Produces trustworthy data | Status |
 |---|---|---|---|---|
-| Gateway upload | chunk settings/status | multipart → PostgreSQL → gRPC | Yes for admitted values | ✓ FLOWING |
-| Rust worker | raw bytes/chunks/embeddings | gRPC → staging → queue → LanceDB | Normal path yes; failure/restart path can hang or split | ✗ PARTIAL |
-| Engine status | queued/terminal classification | registry/staging → gRPC → PostgreSQL | No when staging read fails or stale staging survives terminal failure | ✗ HOLLOW ERROR PATH |
-| Legacy migration | incomplete legacy rows → v2 jobs | manifest → `staged_documents_v2` | First append only; later normal restart/repeat is unsafe | ✗ PARTIAL |
-| Live evidence | challenge/evidence facts | Python validation → explicit inspector | Real canonical paths isolated; diagnostic key disclosure remains | ⚠ PARTIAL |
-
-## Previous Five Blockers
-
-| Previous blocker | Literal fix | Broader truth |
-|---|---|---|
-| Camel-case aliases bypass classifier | ✓ Closed | Privacy still fails because raw forbidden keys are echoed. |
-| Unqualified `DELETE FROM documents` | ✓ Closed | Database isolation still fails because another public test leases unrelated intents. |
-| Shutdown discards pending receiver items | ✓ Closed | Full recovery still fails in four restart/error paths. |
-| Chunk-size `int32` wrap | ✓ Closed | Settings truthfulness now verified. |
-| Test writes/deletes canonical evidence paths | ✓ Closed | Canonical paths are safe; global temporary-fixture cleanup remains a warning. |
-
-## Fresh Review Finding Impact
-
-| Finding | Independent current-code verdict | Classification |
-|---|---|---|
-| CR-01 public claim test leases unrelated intents | Confirmed at `gateway/db/document_test.go:116-196`; global batch query has no fixture predicate | 🛑 BLOCKER |
-| CR-02 replay exceeds queue capacity before worker spawn | Confirmed at `engine/src/main.rs:1073-1080`; existing test starts worker before its send | 🛑 BLOCKER |
-| CR-03 legacy migration cannot restart normally | Confirmed at `engine/src/db/mod.rs:120-257`; test omits normal/repeated restart | 🛑 BLOCKER |
-| CR-04 staging read failure becomes NotFound | Confirmed at `engine/src/main.rs:516-527` and terminal gateway mapping | 🛑 BLOCKER |
-| CR-05 terminal worker failure leaves staging | Confirmed: embedding fails before replacement cleanup, worker publishes failed, restart replays | 🛑 BLOCKER |
-| CR-06 privacy diagnostic discloses raw key | Reproduced with inert `Bearer SENTINEL_NOT_SECRET` key on stderr | 🛑 BLOCKER |
-| WR-01 global Python fixture cleanup | Confirmed at `scripts/test_phase02_live_evidence.py:161-164`; full suite failed when a fixture directory remained | ⚠ WARNING |
-| WR-02 public-count assertions ignore query errors | Confirmed at lines 256-258, 325-327, 342-344, and 444-446 | ⚠ WARNING |
+| Gateway upload | ID/settings/status | multipart → PostgreSQL → gRPC | Yes on normal admission | ✓ FLOWING |
+| Rust worker | raw bytes/chunks/embeddings | gRPC → staging → queue → LanceDB | Normal path yes; rollback failure unsafe | ✗ PARTIAL |
+| Engine status | queued/terminal state | registry/staging → gRPC → PostgreSQL | No after completed-state registry loss | ✗ DISCONNECTED TERMINAL SOURCE |
+| Reconciliation | failed-admission intent | handler → PostgreSQL intents → claimant | No when initial intent insert and updates fail | ✗ PARTIAL |
+| Live attestation | UUID/count/schema facts | evidence → retained digest → direct current-store reinspection | Structural facts yes | ✓ FLOWING |
+| Human approval | checkpoint judgment | CLI flag → attestation | No; default true bypasses checkpoint provenance | ✗ HOLLOW APPROVAL |
 
 ## Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| Rust engine suite | `cargo test --manifest-path engine/Cargo.toml --locked` | 55 tests passed | ✓ PASS, incomplete error-path coverage |
-| Required new Rust test names | Cargo test enumeration | All six named 02-22 tests exist | ✓ PASS, several bypass production order/error paths |
-| Go suite without external DB | `go test -count=1 ./...` from `gateway` | Passed | ✓ PASS |
-| Go vet | `go vet ./...` | Passed | ✓ PASS |
-| PostgreSQL integration proof | Named `TestReconciliationIntentRecordAndClaim` with `TEST_DATABASE_URL` unset | Explicitly skipped | ? SKIP — no isolated database supplied |
-| Python full optimized suite | `python -O -I scripts/test_phase02_live_evidence.py` | 15 tests ran; 3 errors (fixture permission/decoding and global directory unlink); canonical artifacts stayed absent | ✗ FAIL in verifier environment |
-| Python privacy subset | `python -O -I scripts/test_phase02_live_evidence.py -k privacy` | 6 tests passed | ✓ PASS |
-| Camel-case fail-first | `{"rawContent":"do-not-publish"} ... check-privacy --file -` | Exit 1, class shown, value omitted | ✓ PASS |
-| Attacker-controlled key diagnostic | `{"Bearer SENTINEL_NOT_SECRET":"x"} ... check-privacy --file -` | Exit 1 and raw sentinel-bearing key printed | ✗ FAIL |
+| Full Rust workspace | `cargo test --manifest-path engine/Cargo.toml --locked` | 60 passed across library, engine, inspector, and config tests | ✓ PASS |
+| Rust formatting/lint | `cargo fmt ... --check`; `cargo clippy --all-targets --all-features --locked -- -D warnings` | Both passed | ✓ PASS |
+| Full Go workspace | `go test -count=1 ./...` | All packages passed; integration tests skip without an injected URL | ✓ PASS WITH SCOPE NOTE |
+| Go vet | `go vet ./...` | Exit 0; Go telemetry emitted a non-fatal local token warning | ✓ PASS |
+| PostgreSQL claim isolation | Three named `TestReconciliationIntent...` tests with documented local `TEST_DATABASE_URL` | All three passed against per-test schemas | ✓ PASS |
+| Cross-runtime delete-failure restart | `TestEmbeddingFailureRestartConvergesAcrossRuntime` with isolated PostgreSQL | Passed in 6.22s | ✓ PASS |
+| Full optimized Python gate | `python -O -I scripts/test_phase02_live_evidence.py` | 20 ran; 5 errors, including global cleanup/ACL failures | ✗ FAIL |
+| Privacy probes | `check-privacy` with `rawContent` and secret-bearing key | Both exited 1; output contained only normalized class and `subject.member` | ✓ PASS |
+| Attestation syntax/privacy | `validate-attestation`; `check-privacy` | Both passed | ✓ PASS |
+| Current live reinspection | `bash verify-live-evidence.sh --reinspect-attestation ...` | `Attested live state reinspected successfully` | ✓ PASS |
+| Approval omission | Parse `build-attestation --evidence dummy.json` without approval flag | `human_approved=True` | ✗ FAIL |
 
-The full Rust suite passing is not evidence for the four recovery defects: the relevant tests omit production startup ordering, repeat migration, staging read failure, and pre-replacement terminal failure.
+Passing suites do not cover the four critical error paths: completed-before-poll restart, `restore_version` failure, simultaneous intent/update loss, and omitted human approval. The full Python suite failure independently violates Plans 02-27 and 02-28.
 
 ## Probe Execution
 
-No `probe-*.sh` files are declared or present. Phase checks are the Rust, Go, Python, and shell-runner surfaces above.
+No conventional `probe-*.sh` files are declared or present.
+
+| Probe | Command | Result | Status |
+|---|---|---|---|
+| Phase-declared attestation reinspection | `bash ./verify-live-evidence.sh --reinspect-attestation --attestation .../02-LIVE-ATTESTATION.json` | Current PostgreSQL/LanceDB state matched the retained attestation | ✓ PASS |
 
 ## Requirements Coverage
 
-| Requirement | Status | Evidence |
-|---|---|---|
-| DATA-01 | ✗ BLOCKED | Upload works, but acknowledged work can hang/diverge across restart and privacy diagnostics disclose attacker-controlled keys. |
-| DATA-02 | ✓ SATISFIED | Both chunk strategies, token estimation, exact metadata forwarding, and shared ceiling pass. |
-| DATA-03 | ✗ BLOCKED | Canonical writes/rollback pass, but terminal staging and migration/replay defects can split or block durable vector state. |
-| DATA-06 | ✓ SATISFIED | `community_ids` and communities placeholder schema pass. |
-| DATA-07 | ✓ SATISFIED | Nullable node summary fields and unsummarized refs are present. |
-| DATA-08 | ✓ SATISFIED | Separate node/edge schemas and nullable edge summaries pass. |
-| DATA-09 | ✓ SATISFIED | Async resolver and exact-match default exist and are tested. |
-| RAG-06 | ✗ BLOCKED | Worker structure exists, but startup replay and terminal staging lifecycle are not trustworthy. |
+All eight Phase 02 requirement IDs appear in PLAN frontmatter; no additional Phase 02 requirement is orphaned.
 
-All eight Phase 02 requirement IDs occur in plan frontmatter; no requirement is orphaned. Their checkboxes remain incomplete in `.planning/REQUIREMENTS.md`, which is consistent with this blocking verdict.
+| Requirement | Description | Status | Evidence |
+|---|---|---|---|
+| DATA-01 | Ingest Markdown, plain text, JSON, and text-like sources | ✓ SATISFIED | HTTP/gRPC ingestion and JSON fixed-size routing pass; empty-upload semantics remain a warning. |
+| DATA-02 | Fixed-size and structure-aware chunking | ✓ SATISFIED | Chunker and settings tests pass. |
+| DATA-03 | Persist chunks and metadata in LanceDB | ✓ SATISFIED | Canonical persistence and live reinspection pass; the stronger phase durability goal still fails. |
+| DATA-06 | `community_ids` and communities placeholder | ✓ SATISFIED | Schema tests pass. |
+| DATA-07 | Nullable node summary fields and refs | ✓ SATISFIED | Schema and persisted-null tests pass. |
+| DATA-08 | Separate nodes/edges with nullable edge summaries | ✓ SATISFIED | Schema and inspector tests pass. |
+| DATA-09 | Async resolver and exact-match default | ✓ SATISFIED | Trait, implementation, production use, and test exist. |
+| RAG-06 | Async background worker structure | ✓ SATISFIED | Bounded Tokio worker, drain, and replay tests pass. |
+
+The unchecked boxes in `.planning/REQUIREMENTS.md` are consistent with Phase 02 remaining open, even though each narrow requirement has implementation evidence. Goal-level durability and truthfulness are stricter than these terse requirement descriptions.
 
 ## Anti-Patterns and Warnings
 
-No `TBD`, `FIXME`, or `XXX` debt marker was found in the inspected Phase 02 implementation paths.
+No unreferenced `TBD`, `FIXME`, or `XXX` marker was found in the inspected Phase 02 implementation files.
 
 | File | Line | Pattern | Severity | Impact |
 |---|---:|---|---|---|
-| `scripts/test_phase02_live_evidence.py` | 163 | Global `.phase02-live-test-*` glob cleanup | WARNING | Deletes another process's fixture and errors on directories. |
-| `gateway/db/document_test.go` | 257 et al. | Discarded public-count query errors | WARNING | Isolation proof can false-pass. |
-| `.planning/ROADMAP.md` | Phase 2 | Ledger says 21/21 while 24 plans/summaries exist | INFO | Tracking is stale; not used as implementation evidence. |
+| `scripts/test_phase02_live_evidence.py` | 166-170 | Class-wide fixture glob and `Path.unlink` | 🛑 BLOCKER | Deletes foreign fixtures, fails on directories, and breaks the required full suite. |
+| `gateway/main.go` | 278-319 | Ignored durable-intent error plus finite compensation | 🛑 BLOCKER | Can strand a queued row without background repair. |
+| `scripts/phase02_live_evidence.py` | 619, 764 | Approval defaults true | 🛑 BLOCKER | Automated callers can forge human checkpoint provenance. |
+| `gateway/main.go` | 453-525 | No explicit zero-byte decision before insert/stream | ⚠ WARNING | Empty input becomes a durable failed row and HTTP 502 rather than a clear client contract. |
+| `engine/src/tests.rs` | 1422-1465, 1490-1497 | Unbounded fixture polling loops | ⚠ WARNING | A failed cross-runtime state transition can hang until the outer Go timeout/kill path. |
+| `engine/src/main.rs` | 547 | QueryRAG placeholder | ℹ INFO | Explicitly belongs to later Phase 3; not a Phase 02 gap. |
 
 ## Human Verification Required
 
-### 1. Fresh Provider-Backed Cross-Store Run
+### 1. Explicit Private Disclosure Review
 
-**Test:** After all six blocking defects are fixed, run a new synthetic text/Markdown ingestion through the loopback Go API using a private OpenRouter credential and directly inspect PostgreSQL plus the exact configured LanceDB path.
+**Test:** After the approval-default defect and five blocking gaps are fixed, issue a fresh challenge, run one provider-backed ingestion privately, invoke the final gate with an explicit approval action, and review gateway, Rust, provider, and verifier output.
 
-**Expected:** One identity and generation agree across HTTP, PostgreSQL, engine status, and LanceDB; chunk counts match; vectors are finite and 2048-wide; staging is empty only after a trustworthy terminal result.
+**Expected:** One UUID/count converges across HTTP, PostgreSQL, engine status, and LanceDB; no credential, authorization header, raw upload, document/chunk content, or attacker-controlled secret key appears; omitting approval must fail and preserve the evidence.
 
-**Why human:** Credentials, services, and current durable external state are unavailable to static verification.
+**Why human:** Private service logs and the disclosure judgment are not available to repository-only verification. The present attestation cannot substitute because its approval can be generated without the flag.
 
-### 2. Private Disclosure Review
+### 2. Recovery Diagnostic Prohibition
 
-**Test:** Review private gateway, engine, provider, and verifier output from the fresh run.
+**Test:** Exercise restart/status failure diagnostics with inert sentinel-bearing document metadata and storage errors.
 
-**Expected:** No credential, authorization header, raw upload, document text, chunk content, or attacker-controlled sensitive key is disclosed.
+**Expected:** Only document identity and safe error classes/context appear; no raw bytes, chunk/provider content, credentials, or attacker-controlled storage values are emitted.
 
-**Why human:** This is the judgment-tier prohibition and private logs are not in the repository.
+**Why human:** The test-tier prohibition currently has no wired negative test covering recovery/status logs.
 
-## Accepted Deferred Items
+## Deferred Items
 
-`DEBT-CR-04`, `DEBT-CR-05`, `DEBT-BU-01`, and `DEBT-BU-02` remain visible and non-blocking. No trigger is observable in the current local-loopback, trusted, manual-use scope. None of the six current blockers is deferred by a later roadmap goal; they concern Phase 02's own trustworthiness outcome.
+`DEBT-CR-04`, `DEBT-CR-05`, `DEBT-BU-01`, and `DEBT-BU-02` remain visible and non-blocking while their accepted triggers are false. None of the five current gaps matches a later roadmap phase goal or success criterion; all concern Phase 02's own trustworthy-ingestion outcome and verification integrity.
 
 ## Gaps Summary
 
-Plans 02-22 through 02-24 repaired all five earlier literal defect sites, including the chunk overflow and canonical evidence-path hazards. Goal-backward verification nevertheless finds six current blockers. Four share one root cause: the durable staging lifecycle is not a complete state machine across startup, migration, read failure, and terminal worker failure. The other two are database-test cross-row mutation and privacy diagnostic disclosure.
+Plans 02-25 through 02-28 genuinely closed worker-first replay, storage-read error propagation, isolated PostgreSQL claims, category-only privacy diagnostics, and current provider-backed reinspection. They did not complete the phase goal.
 
-The six blockers are not covered by a later phase goal or success criterion, so none can be deferred. Phase 02 must not advance as achieved.
+Five blockers remain. Two break the core Rust durability/status state machine, one can strand failed admission in PostgreSQL, one makes human approval forgeable, and one leaves the required deterministic Python gate destructive and failing. The last defect also directly falsifies the 02-27 summary claim that the global cleanup glob was removed.
+
+Phase 02 must remain open and must not advance as achieved.
 
 ---
 
-_Verified: 2026-07-30T03:24:26Z_
+_Verified: 2026-07-30T09:58:31Z_
 _Verifier: the agent (gsd-verifier)_
