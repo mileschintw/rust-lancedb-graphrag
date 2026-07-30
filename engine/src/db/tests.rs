@@ -78,6 +78,38 @@ async fn schema_drift_fails_database_initialization() {
 }
 
 #[tokio::test]
+async fn initialize_is_idempotent_over_non_empty_staging() {
+    use arrow_array::{BinaryArray, Int32Array, RecordBatch, StringArray};
+    let path = database_path("idempotent-init");
+    let manager = DatabaseManager::initialize(&path).await.unwrap();
+    let staged_table = manager.staged_documents_table().await.unwrap();
+    let batch = RecordBatch::try_new(
+        staged_table.schema().await.unwrap(),
+        vec![
+            Arc::new(StringArray::from(vec!["doc-1"])),
+            Arc::new(StringArray::from(vec!["file1.md"])),
+            Arc::new(BinaryArray::from_vec(vec![b"hello"])),
+            Arc::new(StringArray::from(vec!["structure-aware"])),
+            Arc::new(Int32Array::from(vec![500])),
+            Arc::new(Int32Array::from(vec![50])),
+        ],
+    )
+    .unwrap();
+    staged_table.add(batch).execute().await.unwrap();
+
+    let mgr2 = DatabaseManager::initialize(&path).await.unwrap();
+    let mgr3 = DatabaseManager::initialize(&path).await.unwrap();
+
+    let table3 = mgr3.staged_documents_table().await.unwrap();
+    assert_eq!(table3.count_rows(None).await.unwrap(), 1);
+
+    drop(manager);
+    drop(mgr2);
+    drop(mgr3);
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
 async fn exact_match_resolver_returns_only_identical_entities() {
     let resolver = ExactMatchResolver;
     let known = vec!["Lancet".to_string(), "OpenRouter".to_string()];

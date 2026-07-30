@@ -514,17 +514,23 @@ impl LancetService for LancetServiceImpl {
             }));
         }
         let predicate = format!("document_id = '{}'", sql_string(&id));
-        if let Ok(count) = self.table.count_rows(Some(predicate)).await {
-            if count > 0 {
-                return Ok(Response::new(GetIngestionStatusResponse {
-                    document_id: id,
-                    status: "queued".into(),
-                    chunk_count: 0,
-                    error_message: String::new(),
-                }));
+        match self.table.count_rows(Some(predicate)).await {
+            Ok(count) => {
+                if count > 0 {
+                    Ok(Response::new(GetIngestionStatusResponse {
+                        document_id: id,
+                        status: "queued".into(),
+                        chunk_count: 0,
+                        error_message: String::new(),
+                    }))
+                } else {
+                    Err(Status::not_found("document status not found"))
+                }
             }
+            Err(error) => Err(Status::unavailable(format!(
+                "staged_documents_v2 query failed: {error}"
+            ))),
         }
-        Err(Status::not_found("document status not found"))
     }
 
     async fn query_rag(
@@ -1043,15 +1049,40 @@ fn spawn_worker_with_boundary(
                     tracing::info!(%job.document_id, chunk_count, "indexing completed");
                 }
                 Err(error) => {
-                    tracing::error!(%job.document_id, %error, "indexing failed");
-                    statuses.insert(
-                        document_id,
-                        IngestionStatus {
-                            status: "failed".into(),
-                            chunk_count: 0,
-                            error_message: error,
-                        },
-                    );
+                    let predicate = format!("document_id = '{}'", sql_string(&document_id));
+                    let delete_res = async {
+                        let staged = database
+                            .staged_documents_table()
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        boundary
+                            .delete(ReplacementMutation::StagingDelete, &staged, &predicate)
+                            .await
+                    }
+                    .await;
+
+                    match delete_res {
+                        Ok(()) => {
+                            tracing::error!(%job.document_id, %error, "indexing failed");
+                            statuses.insert(
+                                document_id,
+                                IngestionStatus {
+                                    status: "failed".into(),
+                                    chunk_count: 0,
+                                    error_message: error,
+                                },
+                            );
+                        }
+                        Err(delete_err) => {
+                            tracing::error!(
+                                %job.document_id,
+                                %error,
+                                %delete_err,
+                                "indexing failed and staging delete failed; retaining row queued for replay"
+                            );
+                            statuses.remove(&document_id);
+                        }
+                    }
                 }
             }
         }
@@ -1070,14 +1101,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
 
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let worker = spawn_worker(receiver, statuses.clone(), database.clone(), embedder, shutdown_rx);
+
     let staged_jobs = read_staged_jobs(&database).await?;
     for job in staged_jobs {
         statuses.insert(job.document_id.clone(), IngestionStatus::queued());
-        let _ = sender.send(job).await;
+        sender
+            .send(job)
+            .await
+            .map_err(|_| "worker exited during replay send")?;
     }
 
-    let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let worker = spawn_worker(receiver, statuses.clone(), database, embedder, shutdown_rx);
     let service = LancetServiceImpl {
         table,
         statuses,

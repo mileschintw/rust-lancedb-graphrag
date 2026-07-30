@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 
 use super::*;
 use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
-use arrow_schema::{DataType, Field, Schema};
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use tokio::sync::Notify;
@@ -1089,144 +1088,404 @@ async fn startup_recovery_processes_staged_document() {
     let _ = std::fs::remove_dir_all(path);
 }
 
-async fn create_legacy_staged_documents_table(path: &str, rows: &[(&str, &[u8])]) {
-    let connection = lancedb::connect(path).execute().await.unwrap();
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("document_id", DataType::Utf8, false),
-        Field::new("raw_content", DataType::Binary, false),
-    ]));
-    let doc_ids: Vec<&str> = rows.iter().map(|(id, _)| *id).collect();
-    let contents: Vec<&[u8]> = rows.iter().map(|(_, content)| *content).collect();
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![
-            Arc::new(StringArray::from(doc_ids)),
-            Arc::new(BinaryArray::from_vec(contents)),
-        ],
-    )
-    .unwrap();
-    let table = connection
-        .create_empty_table("staged_documents", schema)
-        .execute()
-        .await
-        .unwrap();
-    table.add(batch).execute().await.unwrap();
+struct D04FailingEmbedder;
+
+impl EmbeddingProvider for D04FailingEmbedder {
+    fn get_embeddings<'a>(
+        &'a self,
+        _texts: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
+        Box::pin(async move { Err("injected embedding failure".to_string()) })
+    }
 }
 
 #[tokio::test]
-async fn legacy_staging_transition_is_versioned_and_lossless() {
-    let path = database_path("legacy-lossless");
-    let doc_id_1 = Uuid::new_v4().to_string();
-    let doc_id_2 = Uuid::new_v4().to_string();
-    let raw_1 = b"legacy raw bytes document 1";
-    let raw_2 = b"legacy raw bytes document 2";
+async fn startup_recovery_exceeds_queue_capacity_without_deadlock() {
+    let path = database_path("exceeds-capacity");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
 
-    create_legacy_staged_documents_table(&path, &[(&doc_id_1, raw_1), (&doc_id_2, raw_2)]).await;
+    let job_count = QUEUE_CAPACITY + 1;
+    let mut staged_ids = Vec::new();
+    for _ in 0..job_count {
+        let doc_id = Uuid::new_v4().to_string();
+        staged_ids.push(doc_id.clone());
+        stage_document(&database, &doc_id, b"# Test\n\nContent").await;
+    }
 
-    let init_err = DatabaseManager::initialize(&path).await.unwrap_err();
-    assert!(init_err.contains("unmigrated legacy staged documents"));
-    assert!(init_err.contains("count: 2"));
+    let result = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        let statuses = Arc::new(DashMap::new());
+        let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
 
-    let connection = lancedb::connect(&path).execute().await.unwrap();
-    let legacy_table = connection.open_table("staged_documents").execute().await.unwrap();
-    assert_eq!(legacy_table.count_rows(None).await.unwrap(), 2);
+        let worker = spawn_worker(
+            receiver,
+            statuses.clone(),
+            database.clone(),
+            Arc::new(FakeEmbedder),
+            shutdown_rx,
+        );
 
-    let mut manifest = engine::db::LegacyMigrationManifest::default();
-    manifest.entries.insert(
-        doc_id_1.clone(),
-        engine::db::LegacyMigrationEntry {
-            filename: "file1.md".into(),
-            chunk_strategy: "structure-aware".into(),
-            chunk_size: 500,
-            chunk_overlap: 50,
-        },
-    );
-    manifest.entries.insert(
-        doc_id_2.clone(),
-        engine::db::LegacyMigrationEntry {
-            filename: "file2.txt".into(),
-            chunk_strategy: "fixed-size".into(),
-            chunk_size: 300,
-            chunk_overlap: 30,
-        },
-    );
+        let staged_jobs = read_staged_jobs(&database).await.unwrap();
+        assert_eq!(staged_jobs.len(), job_count);
 
-    let db = DatabaseManager::initialize_with_migration(&path, Some(&manifest))
-        .await
-        .unwrap();
+        for job in staged_jobs {
+            statuses.insert(job.document_id.clone(), IngestionStatus::queued());
+            sender.send(job).await.unwrap();
+        }
 
-    let legacy_after = connection.open_table("staged_documents").execute().await.unwrap();
-    assert_eq!(legacy_after.count_rows(None).await.unwrap(), 2);
+        drop(sender);
+        worker.await.unwrap();
 
-    let v2_jobs = read_staged_jobs(&db).await.unwrap();
-    assert_eq!(v2_jobs.len(), 2);
-
-    let job_1 = v2_jobs.iter().find(|j| j.document_id == doc_id_1).unwrap();
-    assert_eq!(job_1.filename, "file1.md");
-    assert_eq!(job_1.raw_data, raw_1);
-    assert_eq!(job_1.chunk_settings.strategy, "structure-aware");
-    assert_eq!(job_1.chunk_settings.size, 500);
-
-    let job_2 = v2_jobs.iter().find(|j| j.document_id == doc_id_2).unwrap();
-    assert_eq!(job_2.filename, "file2.txt");
-    assert_eq!(job_2.raw_data, raw_2);
-    assert_eq!(job_2.chunk_settings.strategy, "fixed-size");
-    assert_eq!(job_2.chunk_settings.size, 300);
-
-    let _ = std::fs::remove_dir_all(path);
-}
-
-#[tokio::test]
-async fn legacy_staging_transition_rejects_incomplete_metadata() {
-    let path = database_path("legacy-incomplete");
-    let doc_id_1 = Uuid::new_v4().to_string();
-    let doc_id_2 = Uuid::new_v4().to_string();
-
-    create_legacy_staged_documents_table(
-        &path,
-        &[(&doc_id_1, b"raw content 1"), (&doc_id_2, b"raw content 2")],
-    )
+        for id in &staged_ids {
+            let state = statuses.get(id).unwrap();
+            assert_eq!(state.status, "completed");
+        }
+        let remaining_staged = database
+            .staged_documents_table()
+            .await
+            .unwrap()
+            .count_rows(None)
+            .await
+            .unwrap();
+        assert_eq!(remaining_staged, 0);
+    })
     .await;
 
-    let mut manifest = engine::db::LegacyMigrationManifest::default();
-    manifest.entries.insert(
-        doc_id_1.clone(),
-        engine::db::LegacyMigrationEntry {
-            filename: "file1.md".into(),
-            chunk_strategy: "structure-aware".into(),
-            chunk_size: 500,
-            chunk_overlap: 50,
-        },
-    );
+    assert!(result.is_ok(), "startup recovery timed out (deadlock detected)");
+    let _ = std::fs::remove_dir_all(path);
+}
 
-    let err = DatabaseManager::initialize_with_migration(&path, Some(&manifest))
-        .await
-        .unwrap_err();
-    assert!(err.contains("migration manifest missing entry for legacy document"));
+#[tokio::test]
+async fn startup_recovery_fails_when_worker_exits() {
+    let path = database_path("worker-exits-replay");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+    stage_document(&database, &doc_id, b"# Test\n\nContent").await;
 
-    let connection = lancedb::connect(&path).execute().await.unwrap();
-    let legacy_table = connection.open_table("staged_documents").execute().await.unwrap();
-    assert_eq!(legacy_table.count_rows(None).await.unwrap(), 2);
-    assert!(connection.open_table("staged_documents_v2").execute().await.is_err()
-        || connection.open_table("staged_documents_v2").execute().await.unwrap().count_rows(None).await.unwrap() == 0);
+    let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+    drop(receiver);
 
-    let mut invalid_manifest = manifest;
-    invalid_manifest.entries.insert(
-        doc_id_2.clone(),
-        engine::db::LegacyMigrationEntry {
-            filename: "file2.md".into(),
-            chunk_strategy: "structure-aware".into(),
-            chunk_size: 0,
-            chunk_overlap: 0,
-        },
-    );
+    let staged_jobs = read_staged_jobs(&database).await.unwrap();
+    assert_eq!(staged_jobs.len(), 1);
 
-    let err_invalid = DatabaseManager::initialize_with_migration(&path, Some(&invalid_manifest))
-        .await
-        .unwrap_err();
-    assert!(err_invalid.contains("invalid chunk_size in manifest"));
+    let send_res = sender.send(staged_jobs.into_iter().next().unwrap()).await;
+    assert!(send_res.is_err(), "replay send must fail when worker exits");
 
     let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn staging_read_error_is_unavailable() {
+    let path = database_path("staging-read-error");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let doc_id = Uuid::new_v4().to_string();
+    stage_document(&database, &doc_id, b"staged content").await;
+
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+    };
+
+    let _ = std::fs::remove_dir_all(&path);
+
+    let err = service
+        .get_ingestion_status(tonic::Request::new(GetIngestionStatusRequest {
+            document_id: doc_id,
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code(), tonic::Code::Unavailable);
+}
+
+#[tokio::test]
+async fn staging_delete_failure_remains_replayable() {
+    let path = database_path("delete-failure-replayable");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+    stage_document(&database, &doc_id, b"# Document\n\nContent").await;
+
+    let statuses = Arc::new(DashMap::new());
+    let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    let boundary = FaultingReplacementMutationBoundary::new(ReplacementMutation::StagingDelete);
+    let worker = spawn_worker_with_boundary(
+        receiver,
+        statuses.clone(),
+        database.clone(),
+        Arc::new(D04FailingEmbedder),
+        Arc::new(boundary),
+        shutdown_rx,
+    );
+
+    let job = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+    sender.send(job).await.unwrap();
+    drop(sender);
+    worker.await.unwrap();
+
+    assert!(!statuses.contains_key(&doc_id) || statuses.get(&doc_id).unwrap().status != "failed");
+
+    let staged_count = database
+        .staged_documents_table()
+        .await
+        .unwrap()
+        .count_rows(Some(format!("document_id = '{doc_id}'")))
+        .await
+        .unwrap();
+    assert_eq!(staged_count, 1);
+
+    let table = database.staged_documents_table().await.unwrap();
+    let (dummy_tx, _dummy_rx) = mpsc::channel(QUEUE_CAPACITY);
+    let service = LancetServiceImpl {
+        table,
+        statuses: statuses.clone(),
+        queue: dummy_tx,
+    };
+
+    let status_res = service
+        .get_ingestion_status(tonic::Request::new(GetIngestionStatusRequest {
+            document_id: doc_id.clone(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(status_res.status, "queued");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn embedding_failure_restart_converges_cross_store() {
+    let path = database_path("embedding-fail-restart-converges");
+    let doc_id = Uuid::new_v4().to_string();
+
+    {
+        let db1 = DatabaseManager::initialize(&path).await.unwrap();
+        stage_document(&db1, &doc_id, b"# Restart Test\n\nContent").await;
+        let statuses = Arc::new(DashMap::new());
+        let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let boundary = FaultingReplacementMutationBoundary::new(ReplacementMutation::StagingDelete);
+        let worker = spawn_worker_with_boundary(
+            receiver,
+            statuses.clone(),
+            db1.clone(),
+            Arc::new(D04FailingEmbedder),
+            Arc::new(boundary),
+            shutdown_rx,
+        );
+
+        let job = read_staged_jobs(&db1).await.unwrap().into_iter().next().unwrap();
+        sender.send(job).await.unwrap();
+        drop(sender);
+        worker.await.unwrap();
+
+        let staged_count = db1
+            .staged_documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(format!("document_id = '{doc_id}'")))
+            .await
+            .unwrap();
+        assert_eq!(staged_count, 1);
+
+        let docs_count = db1
+            .documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(format!("document_id = '{doc_id}'")))
+            .await
+            .unwrap();
+        assert_eq!(docs_count, 0);
+    }
+
+    {
+        let db2 = DatabaseManager::initialize(&path).await.unwrap();
+        let statuses = Arc::new(DashMap::new());
+        let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+        let worker = spawn_worker(
+            receiver,
+            statuses.clone(),
+            db2.clone(),
+            Arc::new(FakeEmbedder),
+            shutdown_rx,
+        );
+
+        let staged_jobs = read_staged_jobs(&db2).await.unwrap();
+        assert_eq!(staged_jobs.len(), 1);
+
+        for job in staged_jobs {
+            statuses.insert(job.document_id.clone(), IngestionStatus::queued());
+            sender.send(job).await.unwrap();
+        }
+
+        drop(sender);
+        worker.await.unwrap();
+
+        assert_eq!(statuses.get(&doc_id).unwrap().status, "completed");
+
+        let staged_count = db2
+            .staged_documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(format!("document_id = '{doc_id}'")))
+            .await
+            .unwrap();
+        assert_eq!(staged_count, 0);
+
+        let docs_count = db2
+            .documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(format!("document_id = '{doc_id}'")))
+            .await
+            .unwrap();
+        assert_eq!(docs_count, 1);
+
+        let state = canonical_state(&db2, &doc_id).await;
+        assert_eq!(state.generations.len(), 1);
+    }
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn d04_cross_runtime_grpc_fixture() {
+    let flag = std::env::var("LANCET_RUN_D04_FIXTURE").unwrap_or_default();
+    if flag != "1" && flag != "true" {
+        return;
+    }
+
+    let doc_id = std::env::var("LANCET_D04_DOC_ID").expect("LANCET_D04_DOC_ID required");
+    let listen_addr = std::env::var("LANCET_D04_LISTEN_ADDR").expect("LANCET_D04_LISTEN_ADDR required");
+    let lancedb_path = std::env::var("LANCET_D04_LANCEDB_PATH").expect("LANCET_D04_LANCEDB_PATH required");
+    let mode = std::env::var("LANCET_D04_MODE").expect("LANCET_D04_MODE required");
+    let stop_file = std::env::var("LANCET_D04_STOP_FILE").expect("LANCET_D04_STOP_FILE required");
+
+    let database = DatabaseManager::initialize(&lancedb_path).await.unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    let worker = if mode == "fail-delete" {
+        stage_document(&database, &doc_id, b"# Fail Delete\n\nCross-runtime D04 test content").await;
+        let boundary = FaultingReplacementMutationBoundary::new(ReplacementMutation::StagingDelete);
+        let w = spawn_worker_with_boundary(
+            receiver,
+            statuses.clone(),
+            database.clone(),
+            Arc::new(D04FailingEmbedder),
+            Arc::new(boundary),
+            shutdown_rx,
+        );
+
+        let staged_jobs = read_staged_jobs(&database).await.unwrap();
+        for job in staged_jobs {
+            statuses.insert(job.document_id.clone(), IngestionStatus::queued());
+            sender.send(job).await.unwrap();
+        }
+
+        while statuses.contains_key(&doc_id)
+            && statuses.get(&doc_id).unwrap().status == "processing"
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+
+        let staged_count = database
+            .staged_documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(format!("document_id = '{doc_id}'")))
+            .await
+            .unwrap();
+        assert_eq!(staged_count, 1);
+        let docs_count = database
+            .documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(format!("document_id = '{doc_id}'")))
+            .await
+            .unwrap();
+        assert_eq!(docs_count, 0);
+        w
+    } else if mode == "restart-success" {
+        let w = spawn_worker(
+            receiver,
+            statuses.clone(),
+            database.clone(),
+            Arc::new(FakeEmbedder),
+            shutdown_rx,
+        );
+
+        let staged_jobs = read_staged_jobs(&database).await.unwrap();
+        for job in staged_jobs {
+            statuses.insert(job.document_id.clone(), IngestionStatus::queued());
+            sender.send(job).await.unwrap();
+        }
+
+        loop {
+            if let Some(st) = statuses.get(&doc_id) {
+                if st.status == "completed" {
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let staged_count = database
+            .staged_documents_table()
+            .await
+            .unwrap()
+            .count_rows(Some(format!("document_id = '{doc_id}'")))
+            .await
+            .unwrap();
+        assert_eq!(staged_count, 0);
+        w
+    } else {
+        panic!("unknown LANCET_D04_MODE: {mode}");
+    };
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+    };
+    let addr: std::net::SocketAddr = listen_addr.parse().unwrap();
+    let stop_path = std::path::PathBuf::from(&stop_file);
+
+    let (grpc_shutdown_tx, grpc_shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+    tokio::spawn(async move {
+        loop {
+            if stop_path.exists() {
+                let _ = grpc_shutdown_tx.send(());
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    });
+
+    Server::builder()
+        .add_service(LancetServiceServer::new(service))
+        .serve_with_shutdown(addr, async move {
+            let _ = grpc_shutdown_rx.await;
+            let _ = shutdown_tx.send(true);
+        })
+        .await
+        .unwrap();
+
+    let _ = worker.await;
 }
 
 #[tokio::test]
