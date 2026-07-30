@@ -131,9 +131,9 @@ def inspect_privacy_prohibition(value: Any, path: str = "root") -> None:
             category = classify_sensitive_field(key)
             require(
                 category is None,
-                f"forbidden privacy field class '{category}' at '{path}.{key}'",
+                f"forbidden privacy field class '{category}' at '{path}.member'",
             )
-            inspect_privacy_prohibition(item, f"{path}.{key}")
+            inspect_privacy_prohibition(item, f"{path}.member")
     elif isinstance(value, (list, tuple)):
         for idx, item in enumerate(value):
             inspect_privacy_prohibition(item, f"{path}[{idx}]")
