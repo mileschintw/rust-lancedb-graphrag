@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 2
-current_plan: 28
-status: gaps_found
-stopped_at: Phase 02 review and independent verification refreshed; 15/20 must-haves verified with five blockers
-last_updated: "2026-07-30T10:03:43.910Z"
+current_phase: 3
+current_plan: 0
+status: complete
+stopped_at: "Phase 02 force-closed per ADR-02-004; open gaps deferred to Phase 6 final hardening as technical debt. Ready for Phase 03."
+last_updated: "2026-07-30T14:46:50Z"
 progress:
-  total_phases: 2
-  completed_phases: 1
+  total_phases: 6
+  completed_phases: 2
   total_plans: 28
   completed_plans: 28
 ---
@@ -19,30 +19,34 @@ progress:
 ## Current Status
 
 - Phase 1 completed successfully.
-- Phase 2 plans 02-01 through 02-28 are implemented and summarized.
-- Plans 02-25 through 02-28 closed six prior blockers, but independent re-verification found five remaining blockers.
+- Phase 2 completed (force-closed per ADR-02-004; all open gaps marked as technical debt deferred to Phase 6 final hardening).
+- Ready to begin Phase 3: Hybrid Retrieval & Basic RAG Path.
 
 ## Active Phase
 
-- **Phase:** 2
-- **Status:** Gaps found after all plans executed
-- **Current Plan:** 28 (last executed)
-- **Phase Progress:** 28 of 28 current plans executed
-- **Verification:** 15 of 20 must-haves verified
-- **Current Focus:** Plan fixes for the five blockers recorded in `02-VERIFICATION.md`
+- **Phase:** 3
+- **Status:** Ready for discussion/planning
+- **Current Plan:** 0
+- **Phase Progress:** 0 plans executed
 
 ## Completed Phases
 
 - **Phase 1: Basic Gateway & Rust Engine Ping** (Completed: 2026-07-13)
+- **Phase 2: Ingestion, Chunking & Vector Storage** (Completed: 2026-07-30 via ADR-02-004 debt deferral to Phase 6)
 
 ## Known Issues & Debt
 
-- The accepted Phase 02 verification-disposition ADR supersedes the older blocker disposition in `02-REVIEW.md` and `02-VERIFICATION.md`.
-- Plans 02-17 through 02-21 cover the accepted ship findings and CR-04's loopback-only guardrail.
-- `DEBT-CR-04`, `DEBT-CR-05`, `DEBT-BU-01`, and `DEBT-BU-02` are non-blocking for Phase 02 while their recorded triggers remain false; Phase 6/v1 closure is the latest review point, and an earlier trigger overrides it.
-- The five earlier literal defects are closed: locked camel-case aliases are rejected, table-wide document deletion is removed, shutdown drains the in-memory receiver, chunk sizes are bounded before persistence, and explicit live-evidence paths are isolated.
-- Fresh review/verification blockers are not covered by the accepted debt disposition: completed ingestion can become `NotFound` after a Rust restart; rollback restoration failure can delete replay state before consistency is restored; failed admission can lose both reconciliation intent and terminal updates; attestation construction defaults human approval to true; and the optimized Python suite still uses a global fixture glob and fails cleanup-sensitive tests.
-- Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for their owning phases.
+- Accepted ADR `.discussion/decisions/phases/02/2026-07-30-ADR-02-004-all-the-way-to-ship-mvp.md` force-closed Phase 02 to focus on MVP progress across all must-have functions.
+- All remaining Phase 02 findings are deferred as technical debt to the final hardening phase (Phase 6):
+  - `DEBT-CR-01 / VER-16`: Completed canonical ingestion downgraded to failed after engine restart
+  - `DEBT-CR-02`: Rollback failure destroys replay state
+  - `DEBT-CR-03`: Failed admission stranded queued without durable reconciliation intent
+  - `DEBT-CR-04 / VER-20`: Evidence helper forges human approval when approval flag omitted
+  - `DEBT-WR-01 / VER-19`: Test cleanup deletes another process's fixtures and fails full suite
+  - `DEBT-WR-02`: Empty uploads become durable failed jobs and misleading 502 response
+  - `DEBT-WR-03`: Cross-runtime recovery tests can hang indefinitely on failure
+- Pre-existing Phase 02 security/resource debt items (`DEBT-CR-04` loopback guardrail, `DEBT-CR-05` pre-admission bounds, `DEBT-BU-01`, `DEBT-BU-02`) remain active and non-blocking until their triggers or Phase 6.
+- Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for Phase 03 and Phase 04.
 
 ## Deployment & Environments
 
@@ -107,5 +111,6 @@ progress:
 ## Session
 
 **Last session:** 2026-07-30
-**Stopped at:** Phase 02 review and independent verification refreshed; gaps found at 15/20, ready for `/gsd-plan-phase 02 --gaps`
+**Stopped at:** Phase 02 force-closed per ADR-02-004; open gaps deferred to Phase 6 hardening. Ready for `/gsd-discuss-phase 03` or `/gsd-plan-phase 03`.
 **Resume file:** None
+

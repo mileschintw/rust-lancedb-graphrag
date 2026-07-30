@@ -5,7 +5,7 @@
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
-| 2 | 24/28 | Gap-closure plans added for ADR-02-003; implementation not started | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
+| 2 | 28/28 | Complete (ADR-02-004 deferral to Phase 6) | 2026-07-30 |
 | 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
@@ -31,7 +31,7 @@
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
 **Plans:** 28/28 plans executed
-**Verification:** Gaps found — 15/20 must-haves verified; Phase 02 remains open.
+**Verification:** Force-closed per ADR-02-004 — 15/20 must-haves verified; all open gaps (CR-01..04, WR-01..03, VER-16, VER-19, VER-20) deferred to Phase 6 hardening as technical debt.
 **Wave 1**
 
 - [x] 02-01-PLAN.md
