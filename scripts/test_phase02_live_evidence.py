@@ -696,6 +696,93 @@ exit /b 0
         self.assertTrue(owned_dir.exists())
         self.assertTrue(owned_file.exists())
 
+    def test_attestation_retention_and_private_cleanup_on_success(self) -> None:
+        challenge, evidence = fixture_pair()
+        c_path, e_path, temp_paths = write_json_fixtures(challenge, evidence, test_case=self)
+        att_path = c_path.parent / ".phase02-test-attestation-retained.json"
+        assert_not_real_runtime_path(att_path)
+        self.addCleanup(lambda: att_path.unlink(missing_ok=True))
+
+        doc_id = str(evidence["document_id"])
+        dummy_inspection = inspection_fixture(evidence)
+        dummy_inspection["document_id"] = doc_id
+
+        with tempfile.TemporaryDirectory(dir=ROOT, ignore_cleanup_errors=True) as fake_bin_dir:
+            fake_cargo = Path(fake_bin_dir) / "cargo"
+            script_content = f"""#!/usr/bin/env bash
+if [[ "$*" == *"inspect_lancedb"* ]]; then
+  cat << 'EOF'
+{json.dumps(dummy_inspection)}
+EOF
+fi
+exit 0
+"""
+            script_bytes = script_content.replace("\r\n", "\n").encode("utf-8")
+            fake_cargo.write_bytes(script_bytes)
+            fake_cargo.chmod(0o755)
+
+            fake_docker = Path(fake_bin_dir) / "fake_docker"
+            docker_script = """#!/usr/bin/env bash
+echo "completed:1"
+exit 0
+"""
+            docker_bytes = docker_script.replace("\r\n", "\n").encode("utf-8")
+            fake_docker.write_bytes(docker_bytes)
+            fake_docker.chmod(0o755)
+
+            env = os.environ.copy()
+            env["PATH"] = str(Path(fake_bin_dir).resolve()) + os.pathsep + env.get("PATH", "")
+            env["DOCKER_CMD"] = "fake_docker"
+
+            bash_challenge = to_bash_path(c_path, base=ROOT)
+            bash_evidence = to_bash_path(e_path, base=ROOT)
+            bash_attestation = to_bash_path(att_path, base=ROOT)
+            rel_script = to_bash_path(ROOT / "verify-live-evidence.sh", base=ROOT)
+
+            completed = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    f'DOCKER_CMD=fake_docker bash "{rel_script}" --validate-gate --challenge "{bash_challenge}" --evidence "{bash_evidence}" --attestation "{bash_attestation}"',
+                ],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            out = (completed.stderr or "") + (completed.stdout or "")
+            self.assertEqual(completed.returncode, 0, out)
+            self.assertFalse(c_path.exists(), "challenge must be removed on success")
+            self.assertFalse(e_path.exists(), "evidence must be removed on success")
+            self.assertTrue(att_path.exists(), "attestation must be retained on success")
+
+    def test_attestation_validation_and_drift_detection(self) -> None:
+        challenge, evidence = fixture_pair()
+        c_path, e_path, _ = write_json_fixtures(challenge, evidence, test_case=self)
+        att_path = c_path.parent / ".phase02-test-attestation-drift.json"
+        assert_not_real_runtime_path(att_path)
+        self.addCleanup(lambda: att_path.unlink(missing_ok=True))
+
+        completed = run_helper(
+            "build-attestation",
+            "--evidence",
+            str(e_path),
+            "--human-review-approved",
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        attestation_data = json.loads(completed.stdout)
+        att_path.write_text(json.dumps(attestation_data), encoding="utf-8")
+
+        val_res = run_helper("validate-attestation", "--attestation", str(att_path))
+        self.assertEqual(val_res.returncode, 0, val_res.stderr)
+
+        drifted = dict(attestation_data)
+        drifted["store_path_sha256"] = "0" * 64
+        att_path.write_text(json.dumps(drifted), encoding="utf-8")
+        drift_res = run_helper("validate-attestation", "--attestation", str(att_path))
+        self.assertNotEqual(drift_res.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -147,7 +147,7 @@ start_managed_services() {
 if "$managed_services"; then start_managed_services; fi
 
 if [[ -z "$sample_file" ]]; then
-  sample_file="$(mktemp "./.live-ingestion-sample.XXXXXX")"
+  sample_file="$(mktemp ".live-ingestion-sample.XXXXXX")"
   sample_owned=true
   printf '# Lancet live verification\n\nOpenRouter-backed indexing proof.\n' > "$sample_file"
 fi

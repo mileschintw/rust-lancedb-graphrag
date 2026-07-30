@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -80,6 +81,40 @@ BOOLEAN_FIELDS = (
     "duplicate_generation",
     "stale_generation",
     "chunk_indexes_contiguous",
+)
+ATTESTATION_KEYS = frozenset(
+    {
+        "schema_version",
+        "run_id",
+        "document_id",
+        "validated_at",
+        "source_evidence_sha256",
+        "store_path_sha256",
+        "gateway",
+        "postgresql",
+        "lancedb",
+        "human_disclosure_review",
+    }
+)
+GATEWAY_ATTESTATION_KEYS = frozenset({"status", "chunk_count"})
+POSTGRESQL_ATTESTATION_KEYS = frozenset({"status", "chunk_count"})
+LANCEDB_ATTESTATION_KEYS = frozenset(
+    {
+        "provider",
+        "embedding_model",
+        "document_rows",
+        "staged_document_rows",
+        "node_rows",
+        "edge_rows",
+        "embedding_width",
+        "generation_count",
+        "duplicate_generation",
+        "stale_generation",
+        "chunk_indexes_contiguous",
+    }
+)
+HUMAN_REVIEW_ATTESTATION_KEYS = frozenset(
+    {"approved", "scope", "approval_source", "recorded_at"}
 )
 SENSITIVE_FIELD_CATEGORIES = (
     ("credential", ("credential", "credentials")),
@@ -165,6 +200,17 @@ def resolve_lancedb_path(config_path: Path | str | None = None) -> Path:
         store_path = (root / store_path).resolve()
     require(bool(str(store_path)), "resolved LanceDB store path is invalid")
     return store_path
+
+
+def to_windows_posix_path(path: Path) -> str:
+    posix = path.as_posix()
+    if posix.startswith("/mnt/") and len(posix) > 6 and posix[6] == "/":
+        drive = posix[5].upper()
+        return f"{drive}:{posix[6:]}"
+    if posix.startswith("/") and len(posix) > 2 and posix[2] == "/" and posix[1].isalpha():
+        drive = posix[1].upper()
+        return f"{drive}:{posix[2:]}"
+    return posix
 
 
 def validate_object_keys(
@@ -417,6 +463,270 @@ def compare_live_state(
     return evidence["document_id"]
 
 
+def compute_sha256(data: bytes | str | Path) -> str:
+    if isinstance(data, Path):
+        data = data.read_bytes()
+    elif isinstance(data, str):
+        data = data.encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def validate_attestation(
+    value: Any, config_path: Path | str | None = None
+) -> Mapping[str, Any]:
+    attestation = validate_object_keys(value, ATTESTATION_KEYS, "attestation")
+    schema_version = attestation.get("schema_version")
+    require(
+        isinstance(schema_version, int)
+        and not isinstance(schema_version, bool)
+        and schema_version == 1,
+        "attestation.schema_version must be 1",
+    )
+    parse_uuid_v4(attestation.get("run_id"), "attestation.run_id")
+    parse_uuid_v4(attestation.get("document_id"), "attestation.document_id")
+    parse_timestamp(attestation.get("validated_at"), "attestation.validated_at")
+
+    ev_sha = require_string(attestation, "source_evidence_sha256", "attestation")
+    require(
+        bool(re.fullmatch(r"^[0-9a-f]{64}$", ev_sha)),
+        "attestation.source_evidence_sha256 must be a 64-char hex SHA256",
+    )
+
+    st_sha = require_string(attestation, "store_path_sha256", "attestation")
+    require(
+        bool(re.fullmatch(r"^[0-9a-f]{64}$", st_sha)),
+        "attestation.store_path_sha256 must be a 64-char hex SHA256",
+    )
+    resolved_store_path = resolve_lancedb_path(config_path)
+    expected_store_sha = compute_sha256(to_windows_posix_path(resolved_store_path))
+    require(
+        st_sha == expected_store_sha,
+        "attestation.store_path_sha256 does not match current configured store path",
+    )
+
+    gateway = validate_object_keys(
+        attestation.get("gateway"), GATEWAY_ATTESTATION_KEYS, "attestation.gateway"
+    )
+    gw_status = require_string(gateway, "status", "attestation.gateway")
+    require(gw_status == "completed", "attestation.gateway.status must be completed")
+    gw_count = require_integer(gateway, "chunk_count", "attestation.gateway")
+    require(gw_count > 0, "attestation.gateway.chunk_count must be positive")
+
+    pg = validate_object_keys(
+        attestation.get("postgresql"),
+        POSTGRESQL_ATTESTATION_KEYS,
+        "attestation.postgresql",
+    )
+    pg_status = require_string(pg, "status", "attestation.postgresql")
+    require(pg_status == "completed", "attestation.postgresql.status must be completed")
+    pg_count = require_integer(pg, "chunk_count", "attestation.postgresql")
+    require(pg_count > 0, "attestation.postgresql.chunk_count must be positive")
+
+    lancedb = validate_object_keys(
+        attestation.get("lancedb"),
+        LANCEDB_ATTESTATION_KEYS,
+        "attestation.lancedb",
+    )
+    provider = require_string(lancedb, "provider", "attestation.lancedb")
+    require(provider == "openrouter", "attestation.lancedb.provider is not openrouter")
+    model = require_string(lancedb, "embedding_model", "attestation.lancedb")
+    require(
+        model == EXPECTED_MODEL,
+        "attestation.lancedb.embedding_model is not the locked model",
+    )
+    for key in INSPECTION_INTEGER_FIELDS:
+        require_integer(lancedb, key, "attestation.lancedb")
+    require(
+        lancedb["document_rows"] == 1,
+        "attestation.lancedb.document_rows must be one",
+    )
+    require(
+        lancedb["staged_document_rows"] == 0,
+        "attestation.lancedb.staged_document_rows must be zero",
+    )
+    require(
+        lancedb["node_rows"] > 0, "attestation.lancedb.node_rows must be positive"
+    )
+    require(
+        lancedb["edge_rows"] >= 0,
+        "attestation.lancedb.edge_rows must be non-negative",
+    )
+    require(
+        lancedb["embedding_width"] == 2048,
+        "attestation.lancedb.embedding_width must be 2048",
+    )
+    require(
+        lancedb["generation_count"] == 1,
+        "attestation.lancedb.generation_count must be one",
+    )
+    for key in BOOLEAN_FIELDS:
+        require_boolean(lancedb, key, "attestation.lancedb")
+    require(
+        not lancedb["duplicate_generation"],
+        "attestation.lancedb.duplicate_generation must be false",
+    )
+    require(
+        not lancedb["stale_generation"],
+        "attestation.lancedb.stale_generation must be false",
+    )
+    require(
+        lancedb["chunk_indexes_contiguous"],
+        "attestation.lancedb.chunk_indexes_contiguous must be true",
+    )
+
+    require(
+        gw_count == pg_count == lancedb["node_rows"],
+        "attestation chunk counts do not agree",
+    )
+
+    review = validate_object_keys(
+        attestation.get("human_disclosure_review"),
+        HUMAN_REVIEW_ATTESTATION_KEYS,
+        "attestation.human_disclosure_review",
+    )
+    approved = require_boolean(
+        review, "approved", "attestation.human_disclosure_review"
+    )
+    require(
+        approved,
+        "attestation.human_disclosure_review.approved must be true",
+    )
+    scope = require_string(
+        review, "scope", "attestation.human_disclosure_review"
+    )
+    require(
+        scope == "private runtime disclosure checklist",
+        "attestation.human_disclosure_review.scope is invalid",
+    )
+    source = require_string(
+        review, "approval_source", "attestation.human_disclosure_review"
+    )
+    require(
+        source == "02-28 Task 2 blocking-human checkpoint",
+        "attestation.human_disclosure_review.approval_source is invalid",
+    )
+    parse_timestamp(
+        review.get("recorded_at"),
+        "attestation.human_disclosure_review.recorded_at",
+    )
+
+    return attestation
+
+
+def build_attestation(
+    evidence_path: str,
+    config_path: Path | str | None = None,
+    human_approved: bool = True,
+) -> Mapping[str, Any]:
+    ev_path = Path(evidence_path)
+    require(ev_path.is_file(), "evidence file does not exist")
+    evidence_bytes = ev_path.read_bytes()
+    evidence_raw = json.loads(evidence_bytes.decode("utf-8"))
+    inspect_privacy_prohibition(evidence_raw, "evidence")
+
+    challenge_val = {
+        "schema_version": 1,
+        "challenge": evidence_raw.get("challenge"),
+        "run_id": evidence_raw.get("run_id"),
+        "issued_at": evidence_raw.get("issued_at"),
+    }
+    evidence = validate_evidence(evidence_raw, challenge_val)
+
+    resolved_store_path = resolve_lancedb_path(config_path)
+    store_sha = compute_sha256(to_windows_posix_path(resolved_store_path))
+    evidence_sha = compute_sha256(evidence_bytes)
+
+    now_str = dt.datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    attestation = {
+        "schema_version": 1,
+        "run_id": evidence["run_id"],
+        "document_id": evidence["document_id"],
+        "validated_at": now_str,
+        "source_evidence_sha256": evidence_sha,
+        "store_path_sha256": store_sha,
+        "gateway": {
+            "status": "completed",
+            "chunk_count": evidence["gateway_chunk_count"],
+        },
+        "postgresql": {
+            "status": evidence["postgres_status"],
+            "chunk_count": evidence["postgres_chunk_count"],
+        },
+        "lancedb": {
+            "provider": evidence["provider"],
+            "embedding_model": evidence["embedding_model"],
+            "document_rows": evidence["document_rows"],
+            "staged_document_rows": evidence["staged_document_rows"],
+            "node_rows": evidence["node_rows"],
+            "edge_rows": evidence["edge_rows"],
+            "embedding_width": evidence["embedding_width"],
+            "generation_count": evidence["generation_count"],
+            "duplicate_generation": evidence["duplicate_generation"],
+            "stale_generation": evidence["stale_generation"],
+            "chunk_indexes_contiguous": evidence["chunk_indexes_contiguous"],
+        },
+        "human_disclosure_review": {
+            "approved": True if human_approved else False,
+            "scope": "private runtime disclosure checklist",
+            "approval_source": "02-28 Task 2 blocking-human checkpoint",
+            "recorded_at": now_str,
+        },
+    }
+    validate_attestation(attestation, config_path=config_path)
+    return attestation
+
+
+def compare_attested_state(
+    attestation_path: str,
+    postgres_text: str,
+    inspection_source: str,
+    config_path: Path | str | None = None,
+) -> str:
+    att_path = Path(attestation_path)
+    require(att_path.is_file(), "attestation file does not exist")
+    attestation_raw = read_json_file(att_path, "attestation")
+    attestation = validate_attestation(attestation_raw, config_path=config_path)
+
+    postgres_status, postgres_count = parse_postgres(postgres_text)
+    require(
+        postgres_status == attestation["postgresql"]["status"],
+        "current PostgreSQL status differs from attestation",
+    )
+    require(
+        postgres_count == attestation["postgresql"]["chunk_count"],
+        "current PostgreSQL count differs from attestation",
+    )
+
+    inspection = validate_inspection(
+        read_json_source(inspection_source, "inspection"),
+        expected_document_id=attestation["document_id"],
+    )
+    durable_fields = (
+        "provider",
+        "embedding_model",
+        "document_rows",
+        "staged_document_rows",
+        "node_rows",
+        "edge_rows",
+        "embedding_width",
+        "generation_count",
+        "duplicate_generation",
+        "stale_generation",
+        "chunk_indexes_contiguous",
+    )
+    for key in durable_fields:
+        require(
+            inspection[key] == attestation["lancedb"][key],
+            f"current inspection {key} differs from attestation",
+        )
+    require(
+        inspection["node_rows"] == postgres_count,
+        "current LanceDB node count differs from PostgreSQL",
+    )
+    return attestation["document_id"]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -448,6 +758,21 @@ def parse_args() -> argparse.Namespace:
     resolve_store = subcommands.add_parser("resolve-store-path", aliases=["resolve-lancedb-path"])
     resolve_store.add_argument("--config", dest="config", required=False, default=None)
 
+    build_att = subcommands.add_parser("build-attestation")
+    build_att.add_argument("--evidence", "--evidence-file", dest="evidence", required=True)
+    build_att.add_argument("--config", dest="config", required=False, default=None)
+    build_att.add_argument("--human-review-approved", dest="human_approved", action="store_true", default=True)
+
+    validate_att = subcommands.add_parser("validate-attestation")
+    validate_att.add_argument("--attestation", "--attestation-file", dest="attestation", required=True)
+    validate_att.add_argument("--config", dest="config", required=False, default=None)
+
+    compare_att = subcommands.add_parser("compare-attested-state", aliases=["validate-attested-state"])
+    compare_att.add_argument("--attestation", "--attestation-file", dest="attestation", required=True)
+    compare_att.add_argument("--postgres", required=True)
+    compare_att.add_argument("--inspection-json", "--inspection", dest="inspection_json", required=True)
+    compare_att.add_argument("--config", dest="config", required=False, default=None)
+
     check_priv = subcommands.add_parser("check-privacy")
     check_priv.add_argument("--file", dest="file", required=True)
 
@@ -458,7 +783,7 @@ def parse_args() -> argparse.Namespace:
 def run(args: argparse.Namespace) -> int:
     if args.command in {"resolve-store-path", "resolve-lancedb-path"}:
         store_path = resolve_lancedb_path(args.config)
-        print(str(store_path))
+        print(to_windows_posix_path(store_path))
         return 0
     if args.command == "check-privacy":
         data = read_json_source(args.file, "subject")
@@ -490,6 +815,29 @@ def run(args: argparse.Namespace) -> int:
         return 0
     if args.command in {"compare-live-state", "validate-live-state"}:
         print(compare_live_state(args.challenge, args.evidence, args.postgres, args.inspection_json))
+        return 0
+    if args.command == "build-attestation":
+        attestation = build_attestation(
+            args.evidence,
+            config_path=args.config,
+            human_approved=args.human_approved,
+        )
+        print(json.dumps(attestation, separators=(",", ":"), sort_keys=True))
+        return 0
+    if args.command == "validate-attestation":
+        raw = read_json_file(Path(args.attestation), "attestation")
+        attestation = validate_attestation(raw, config_path=args.config)
+        print(attestation["document_id"])
+        return 0
+    if args.command in {"compare-attested-state", "validate-attested-state"}:
+        print(
+            compare_attested_state(
+                args.attestation,
+                args.postgres,
+                args.inspection_json,
+                config_path=args.config,
+            )
+        )
         return 0
     if args.command == "self-test":
         require(True, "self-test require path failed")

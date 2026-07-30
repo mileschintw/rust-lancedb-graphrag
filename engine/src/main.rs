@@ -395,13 +395,18 @@ impl LancetServiceImpl {
                 Arc::new(StringArray::from(vec![job.document_id.as_str()])),
                 Arc::new(StringArray::from(vec![job.filename.as_str()])),
                 Arc::new(BinaryArray::from_vec(vec![job.raw_data.as_slice()])),
-                Arc::new(StringArray::from(vec![job.chunk_settings.strategy.as_str()])),
-                Arc::new(Int32Array::from(vec![
-                    i32::try_from(job.chunk_settings.size).unwrap_or(i32::MAX),
-                ])),
-                Arc::new(Int32Array::from(vec![
-                    i32::try_from(job.chunk_settings.overlap).unwrap_or(i32::MAX),
-                ])),
+                Arc::new(StringArray::from(vec![job
+                    .chunk_settings
+                    .strategy
+                    .as_str()])),
+                Arc::new(Int32Array::from(vec![i32::try_from(
+                    job.chunk_settings.size,
+                )
+                .unwrap_or(i32::MAX)])),
+                Arc::new(Int32Array::from(vec![i32::try_from(
+                    job.chunk_settings.overlap,
+                )
+                .unwrap_or(i32::MAX)])),
             ],
         )
         .map_err(internal)?;
@@ -1102,7 +1107,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
-    let worker = spawn_worker(receiver, statuses.clone(), database.clone(), embedder, shutdown_rx);
+    let worker = spawn_worker(
+        receiver,
+        statuses.clone(),
+        database.clone(),
+        embedder,
+        shutdown_rx,
+    );
 
     let staged_jobs = read_staged_jobs(&database).await?;
     for job in staged_jobs {

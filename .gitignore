@@ -60,6 +60,7 @@ data/lancedb-verify-02-06/
 data/.phase02-lancedb-preclean-*/
 .planning/phases/02-ingestion-chunking-vector-storage/.02-LIVE-CHALLENGE.json
 .planning/phases/02-ingestion-chunking-vector-storage/02-LIVE-EVIDENCE.json
+.planning/phases/02-ingestion-chunking-vector-storage/02-LIVE-ATTESTATION.json
 # Local database files
 *.db
 *.sqlite

@@ -1,7 +1,4 @@
-use std::{
-    collections::HashSet,
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use lancedb::{Connection, Table};

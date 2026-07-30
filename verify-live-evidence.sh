@@ -32,8 +32,10 @@ cd "$script_dir"
 phase_dir=".planning/phases/02-ingestion-chunking-vector-storage"
 challenge="${phase_dir}/.02-LIVE-CHALLENGE.json"
 evidence="${phase_dir}/02-LIVE-EVIDENCE.json"
+attestation="${phase_dir}/02-LIVE-ATTESTATION.json"
 evidence_helper="scripts/phase02_live_evidence.py"
 verification_environment="verify"
+human_approved_flag=""
 mode="${1:-}"
 shift || true
 
@@ -50,6 +52,8 @@ while (($#)); do
   case "$1" in
     --challenge) challenge="$2"; shift 2 ;;
     --evidence) evidence="$2"; shift 2 ;;
+    --attestation) attestation="$2"; shift 2 ;;
+    --human-review-approved) human_approved_flag="--human-review-approved"; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -60,6 +64,9 @@ require_phase_local_paths() {
   }
   [[ "$evidence" == "${phase_dir}/02-LIVE-EVIDENCE.json" ]] || {
     echo "evidence path must be the phase-local runtime path" >&2; exit 1;
+  }
+  [[ "$attestation" == "${phase_dir}/02-LIVE-ATTESTATION.json" ]] || {
+    echo "attestation path must be the phase-local runtime path" >&2; exit 1;
   }
 }
 
@@ -89,6 +96,7 @@ case "$mode" in
     mkdir -p "$phase_dir"
     assert_safe_runtime_path "$challenge"
     assert_safe_runtime_path "$evidence"
+    assert_safe_runtime_path "$attestation"
     for command in cargo docker; do command -v "$command" >/dev/null 2>&1 || command -v "${command}.exe" >/dev/null 2>&1 || {
       echo "required command is unavailable: $command" >&2; exit 1;
     }; done
@@ -106,7 +114,8 @@ case "$mode" in
     }
     assert_safe_runtime_path "$challenge"
     assert_safe_runtime_path "$evidence"
-    rm -f -- "$evidence" "$challenge"
+    assert_safe_runtime_path "$attestation"
+    rm -f -- "$evidence" "$challenge" "$attestation"
     umask 077
     tmp="$(mktemp "${phase_dir}/.challenge.XXXXXX")"
     trap 'rm -f -- "$tmp"' EXIT
@@ -137,20 +146,55 @@ PY
     export LANCET_ENV="$verification_environment"
     assert_safe_runtime_path "$challenge"
     assert_safe_runtime_path "$evidence"
+    assert_safe_runtime_path "$attestation"
     [[ -s "$challenge" && -s "$evidence" ]] || { echo "challenge and evidence are required" >&2; exit 1; }
     verification_lancedb_path="$("$python_cmd" -I "$evidence_helper" resolve-store-path)"
+    if [[ "$verification_lancedb_path" =~ ^/mnt/([a-zA-Z])/(.*) ]]; then
+      verification_lancedb_path="${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
+    elif [[ "$verification_lancedb_path" =~ ^/([a-zA-Z])/(.*) ]]; then
+      verification_lancedb_path="${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
+    fi
     document_id="$(parse_and_validate_gate)"
-    echo "TRACE DOCKER_CMD='${DOCKER_CMD:-}' docker_cmd='${docker_cmd:-}'" >&2
     postgres="$(${DOCKER_CMD:-$docker_cmd} compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
-    echo "TRACE postgres='$postgres'" >&2
     inspection="$("$cargo_cmd" run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id" --lancedb-path "$verification_lancedb_path")"
     printf '%s\n' "$inspection" | "$python_cmd" -I "$evidence_helper" compare-live-state \
       --challenge "$challenge" --evidence "$evidence" --postgres "$postgres" --inspection-json -
+    
+    umask 077
+    tmp_att="$(mktemp "${phase_dir}/.attestation.XXXXXX")"
+    trap 'rm -f -- "$tmp_att"' EXIT
+    if [[ -n "$human_approved_flag" ]]; then
+      "$python_cmd" -I "$evidence_helper" build-attestation --evidence "$evidence" --human-review-approved > "$tmp_att"
+    else
+      "$python_cmd" -I "$evidence_helper" build-attestation --evidence "$evidence" > "$tmp_att"
+    fi
+    chmod 600 "$tmp_att" 2>/dev/null || true
+    "$python_cmd" -I "$evidence_helper" validate-attestation --attestation "$tmp_att" >/dev/null
+    mv -f -- "$tmp_att" "$attestation"
+    trap - EXIT
+
     rm -f -- "$challenge" "$evidence"
-    echo "Live evidence validated"
+    echo "Live evidence validated and attestation retained"
+    ;;
+  --reinspect-attestation)
+    export LANCET_ENV="$verification_environment"
+    assert_safe_runtime_path "$attestation"
+    [[ -s "$attestation" ]] || { echo "attestation is required" >&2; exit 1; }
+    verification_lancedb_path="$("$python_cmd" -I "$evidence_helper" resolve-store-path)"
+    if [[ "$verification_lancedb_path" =~ ^/mnt/([a-zA-Z])/(.*) ]]; then
+      verification_lancedb_path="${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
+    elif [[ "$verification_lancedb_path" =~ ^/([a-zA-Z])/(.*) ]]; then
+      verification_lancedb_path="${BASH_REMATCH[1]^^}:/${BASH_REMATCH[2]}"
+    fi
+    document_id="$("$python_cmd" -I "$evidence_helper" validate-attestation --attestation "$attestation")"
+    postgres="$(${DOCKER_CMD:-$docker_cmd} compose exec -T db psql -U postgres -d lancet -Atc "SELECT status || ':' || chunk_count FROM documents WHERE id = '${document_id}'")"
+    inspection="$("$cargo_cmd" run --quiet --manifest-path engine/Cargo.toml --bin inspect_lancedb -- --document-id "$document_id" --lancedb-path "$verification_lancedb_path")"
+    printf '%s\n' "$inspection" | "$python_cmd" -I "$evidence_helper" compare-attested-state \
+      --attestation "$attestation" --postgres "$postgres" --inspection-json -
+    echo "Attested live state reinspected successfully"
     ;;
   *)
-    echo "usage: verify-live-evidence.sh --prepare-gate|--validate-gate|--self-test" >&2
+    echo "usage: verify-live-evidence.sh --prepare-gate|--validate-gate|--reinspect-attestation|--self-test" >&2
     exit 2
     ;;
 esac

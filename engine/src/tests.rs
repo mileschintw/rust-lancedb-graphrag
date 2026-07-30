@@ -1076,7 +1076,10 @@ async fn startup_recovery_processes_staged_document() {
     );
 
     statuses.insert(job.document_id.clone(), IngestionStatus::queued());
-    sender.send(recovered_jobs.into_iter().next().unwrap()).await.unwrap();
+    sender
+        .send(recovered_jobs.into_iter().next().unwrap())
+        .await
+        .unwrap();
     drop(sender);
 
     worker.await.unwrap();
@@ -1151,7 +1154,10 @@ async fn startup_recovery_exceeds_queue_capacity_without_deadlock() {
     })
     .await;
 
-    assert!(result.is_ok(), "startup recovery timed out (deadlock detected)");
+    assert!(
+        result.is_ok(),
+        "startup recovery timed out (deadlock detected)"
+    );
     let _ = std::fs::remove_dir_all(path);
 }
 
@@ -1225,7 +1231,12 @@ async fn staging_delete_failure_remains_replayable() {
         shutdown_rx,
     );
 
-    let job = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
     sender.send(job).await.unwrap();
     drop(sender);
     worker.await.unwrap();
@@ -1284,7 +1295,12 @@ async fn embedding_failure_restart_converges_cross_store() {
             shutdown_rx,
         );
 
-        let job = read_staged_jobs(&db1).await.unwrap().into_iter().next().unwrap();
+        let job = read_staged_jobs(&db1)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         sender.send(job).await.unwrap();
         drop(sender);
         worker.await.unwrap();
@@ -1368,8 +1384,10 @@ async fn d04_cross_runtime_grpc_fixture() {
     }
 
     let doc_id = std::env::var("LANCET_D04_DOC_ID").expect("LANCET_D04_DOC_ID required");
-    let listen_addr = std::env::var("LANCET_D04_LISTEN_ADDR").expect("LANCET_D04_LISTEN_ADDR required");
-    let lancedb_path = std::env::var("LANCET_D04_LANCEDB_PATH").expect("LANCET_D04_LANCEDB_PATH required");
+    let listen_addr =
+        std::env::var("LANCET_D04_LISTEN_ADDR").expect("LANCET_D04_LISTEN_ADDR required");
+    let lancedb_path =
+        std::env::var("LANCET_D04_LANCEDB_PATH").expect("LANCET_D04_LANCEDB_PATH required");
     let mode = std::env::var("LANCET_D04_MODE").expect("LANCET_D04_MODE required");
     let stop_file = std::env::var("LANCET_D04_STOP_FILE").expect("LANCET_D04_STOP_FILE required");
 
@@ -1379,7 +1397,12 @@ async fn d04_cross_runtime_grpc_fixture() {
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     let worker = if mode == "fail-delete" {
-        stage_document(&database, &doc_id, b"# Fail Delete\n\nCross-runtime D04 test content").await;
+        stage_document(
+            &database,
+            &doc_id,
+            b"# Fail Delete\n\nCross-runtime D04 test content",
+        )
+        .await;
         let boundary = FaultingReplacementMutationBoundary::new(ReplacementMutation::StagingDelete);
         let w = spawn_worker_with_boundary(
             receiver,

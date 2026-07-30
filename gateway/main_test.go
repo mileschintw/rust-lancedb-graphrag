@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -164,7 +166,8 @@ func (s *fakeStore) ClaimDueReconciliationIntents(_ context.Context, p db.ClaimD
 	}
 	var claimed []db.DocumentReconciliationIntent
 	now := time.Now()
-	for id, intent := range s.intents {
+	for _, id := range slices.Sorted(maps.Keys(s.intents)) {
+		intent := s.intents[id]
 		if int32(len(claimed)) >= p.Limit {
 			break
 		}
