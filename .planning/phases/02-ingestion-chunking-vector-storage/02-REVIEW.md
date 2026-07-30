@@ -1,6 +1,6 @@
 ---
 phase: 02-ingestion-chunking-vector-storage
-reviewed: 2026-07-29T10:51:54Z
+reviewed: 2026-07-30T03:15:25Z
 depth: standard
 files_reviewed: 24
 files_reviewed_list:
@@ -23,122 +23,170 @@ files_reviewed_list:
   - gateway/db/schema.sql
   - gateway/go.mod
   - gateway/go.sum
-  - gateway/main.go
   - gateway/main_test.go
+  - gateway/main.go
   - proto/lancet/v1/lancet.proto
   - scripts/phase02_live_evidence.py
   - scripts/test_phase02_live_evidence.py
 findings:
-  critical: 3
+  critical: 6
   warning: 2
   info: 0
-  total: 5
+  total: 8
 status: issues_found
 ---
 
 # Phase 02: Code Review Report
 
-**Reviewed:** 2026-07-29T10:51:54Z
+**Reviewed:** 2026-07-30T03:15:25Z
 **Depth:** standard
 **Files Reviewed:** 24
 **Status:** issues_found
 
 ## Summary
 
-The supplied Phase 02 implementation has three ship-blocking defects: its privacy gate can be bypassed with camel-case sensitive-field names, a database integration test can erase every document in the configured database, and graceful engine shutdown abandons queued documents that have already been acknowledged to clients. Two further robustness issues affect chunk-setting integrity and test isolation.
+Plans 02-22 through 02-24 close only part of the previous five-finding snapshot. The six locked camel-case aliases are now rejected, the Go and Rust chunk-size ceilings prevent the prior `int32` wrap, the specifically identified table-wide document deletion is gone, and a clean Python run leaves the canonical challenge/evidence paths alone. Shutdown now drains its in-memory receiver.
 
-The privacy bypass was reproduced directly: piping `{"rawContent":"do-not-publish"}` to `check-privacy` exited successfully and printed `privacy prohibition check: PASS`.
+The phase is still not shippable. Another public-schema integration test leases unrelated reconciliation rows, recovery can deadlock before the worker starts, the selected legacy migration cannot produce a store that normal startup will accept, storage read failures are converted into authoritative absence, and terminal worker failures can leave replayable staging behind after PostgreSQL has committed `failed`. The privacy classifier also echoes an attacker-controlled forbidden key in its failure diagnostic.
+
+The accepted ledger items `DEBT-CR-04`, `DEBT-CR-05`, `DEBT-BU-01`, and `DEBT-BU-02` remain non-blocking under their recorded constraints and are not reclassified here. The findings below are separate current correctness, data-integrity, privacy, and test-isolation defects.
+
+Verification run during review:
+
+- `cargo test --manifest-path engine/Cargo.toml --locked`: passed, 55 tests.
+- `go test ./...`: passed, but all PostgreSQL integration tests were skipped because `TEST_DATABASE_URL` was unset.
+- `python -O -I scripts/test_phase02_live_evidence.py`: passed, 15 tests, after a clean rerun.
+- The required `rawContent` probe exits nonzero. A second probe with a sensitive value embedded in the field key reproduces CR-06 and prints that value.
 
 ## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01: Camel-case sensitive fields bypass the privacy prohibition
+### CR-01: A remaining database test leases unrelated public reconciliation intents
 
 **Classification:** BLOCKER
 
-**File:** `D:/Repos/lancet/scripts/phase02_live_evidence.py:110-115,122-134`
+**File:** `D:/Repos/lancet/gateway/db/document_test.go:116-196`
 
-**Issue:** `classify_sensitive_field` only lowercases and replaces non-alphanumeric separators. It does not split camel-case, so `rawContent`, `storedDocumentText`, `authorizationHeader`, and `bearerToken` normalize to values such as `rawcontent`, which do not contain the underscore-form keywords. The recursive checker then accepts these fields and their values. This defeats the required fail-closed privacy guard for JSON artifacts.
+**Issue:** `TestReconciliationIntentRecordAndClaim` still connects directly to `TEST_DATABASE_URL` with the default `public` search path. Its call to `ClaimDueReconciliationIntents` has no document predicate and claims up to ten oldest due rows, updating their `next_attempt_at` to fifteen minutes in the future. Pointing the test at a populated database therefore mutates and temporarily suppresses unrelated reconciliation work. If ten older rows exist, it can also fail without ever claiming its own fixture. Plans 02-24 isolated two lease tests but left this destructive cross-row test on the shared schema.
 
-**Fix:** Canonicalize both camel-case and separators before matching, and add negative tests for each camel-case alias.
-
-```python
-snake = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
-canonical = re.sub(r"[^a-z0-9]", "", snake)
-
-if "rawcontent" in canonical:
-    return "raw_content"
-```
-
-### CR-02: Database integration test deletes all documents in the configured database
-
-**Classification:** BLOCKER
-
-**File:** `D:/Repos/lancet/gateway/db/document_test.go:196-218`
-
-**Issue:** `TestReconciliationIntentClaimLeaseIsExclusive` executes `DELETE FROM documents` without a predicate or transaction. With `TEST_DATABASE_URL` set, this deletes every document in that database and cascades its reconciliation intents. A mispointed environment variable therefore turns an ordinary test run into production data loss.
-
-**Fix:** Never clear a shared table in a test. Run the test against an isolated temporary database/schema, or constrain setup and cleanup to UUIDs created by that test.
+**Fix:** Run every claim/lease integration test through `createIsolatedTestPool` and create all fixtures through the returned claimant pool. Do not execute a batch claim against the configured public schema.
 
 ```go
-// Do not issue DELETE FROM documents.
-t.Cleanup(func() {
-    _, _ = pool.Exec(context.Background(), "DELETE FROM documents WHERE id = $1", docID)
-})
+_, claimantPool, _ := createIsolatedTestPool(t, databaseURL)
+q := New(claimantPool)
+// Insert and claim only inside the per-test schema.
 ```
 
-### CR-03: Graceful shutdown drops acknowledged queued ingestions
+### CR-02: Startup recovery deadlocks when durable staging exceeds queue capacity
 
 **Classification:** BLOCKER
 
-**File:** `D:/Repos/lancet/engine/src/main.rs:867-881,931-959`; `D:/Repos/lancet/gateway/main.go:548-578`
+**File:** `D:/Repos/lancet/engine/src/main.rs:1071-1080`
 
-**Issue:** The worker's biased `select!` chooses the shutdown notification before `receiver.recv()` and breaks immediately. Any jobs already sitting in the channel have been accepted by `ingest_document` and persisted only as staged raw bytes, but are never processed. On restart the in-memory status map is empty; a later gateway poll treats the engine `NotFound` as authoritative and marks the PostgreSQL document as `failed`. The only shutdown test covers one active job, not queued jobs, so this permanent loss of acknowledged work is untested.
+**Issue:** Startup sends every recovered job into the bounded 100-item channel before spawning the worker. Once the channel fills, `sender.send(job).await` waits for a receiver that cannot run because `spawn_worker` is below the loop. A crash can legitimately leave one active staged job plus a full 100-item queue, so 101 acknowledged rows are enough to hang startup permanently before the gRPC listener opens.
 
-**Fix:** Drain work accepted before shutdown and implement startup recovery that requeues durable staged rows. Do not mark an engine `NotFound` as terminal while a matching durable staging record exists.
+**Fix:** Spawn the worker before awaiting recovery sends, retain the requirement that all recovered jobs are admitted before serving gRPC, and fail startup if the worker exits while replay is being enqueued.
 
 ```rust
-// Stop new sends, then use the existing status-processing body to drain the queue.
-receiver.close();
-while let Some(job) = receiver.recv().await {
-    process_and_record_status(job).await;
+let worker = spawn_worker(receiver, statuses.clone(), database, embedder, shutdown_rx);
+for job in staged_jobs {
+    statuses.insert(job.document_id.clone(), IngestionStatus::queued());
+    sender.send(job).await.map_err(|_| "recovery worker stopped")?;
 }
+// Only now construct and serve the gRPC service.
+```
+
+### CR-03: The legacy staging migration can never yield a normally restartable store
+
+**Classification:** BLOCKER
+
+**File:** `D:/Repos/lancet/engine/src/db/mod.rs:120-136,231-256`; `D:/Repos/lancet/engine/src/main.rs:1066-1068`
+
+**Issue:** `initialize_with_migration` copies legacy rows into `staged_documents_v2` but intentionally leaves the non-empty legacy table unchanged and records no completed migration/disposition marker. Every subsequent production start calls `DatabaseManager::initialize(..., None)`, sees those same legacy rows, and fails again demanding a manifest. Re-running migration also appends the rows to an existing v2 table without conflict checks, creating duplicate document IDs that `read_staged_jobs` later resolves by silently keeping an arbitrary row. The selected transition therefore cannot complete safely across a restart.
+
+**Fix:** Make the transition idempotent and persist an auditable completion state. For example, validate a manifest, reject conflicting v2 IDs, atomically write each migrated row, and record a versioned migration marker containing legacy row IDs/content hashes. Normal initialization should accept a non-empty preserved legacy table only when that marker proves every row was dispositioned. Add tests for normal restart after migration, repeated migration, and v2 ID conflicts.
+
+### CR-04: A staging-table read failure is reported as authoritative NotFound
+
+**Classification:** BLOCKER
+
+**File:** `D:/Repos/lancet/engine/src/main.rs:503-527`; `D:/Repos/lancet/gateway/main.go:562-585`
+
+**Issue:** `get_ingestion_status` uses `if let Ok(count)` and discards every LanceDB error. A timeout, lock error, corrupted query, or transient storage failure falls through to gRPC `NotFound`. The gateway treats `NotFound` as proof that both the registry and durable staging are absent and irreversibly transitions the PostgreSQL row to `failed`. This recreates the exact false-terminal state that staging-aware polling was meant to prevent.
+
+**Fix:** Return `NotFound` only after a successful count of zero. Map count/query failures to `Internal` or `Unavailable`, which the gateway already leaves non-terminal.
+
+```rust
+let count = self
+    .table
+    .count_rows(Some(predicate))
+    .await
+    .map_err(|error| Status::unavailable(format!("staging status unavailable: {error}")))?;
+if count > 0 {
+    return Ok(queued_response(id));
+}
+Err(Status::not_found("document status not found"))
+```
+
+### CR-05: Terminal worker failure leaves replayable staging and splits durable status after restart
+
+**Classification:** BLOCKER
+
+**File:** `D:/Repos/lancet/engine/src/main.rs:927-955,1045-1055`; `D:/Repos/lancet/gateway/main.go:592-610`
+
+**Issue:** Staging is deleted only inside the LanceDB replacement path. If embedding fails before replacement begins, the worker publishes terminal `failed` but leaves the staged row. The gateway then persists `failed` in PostgreSQL and stops polling terminal documents. On the next engine restart, `read_staged_jobs` requeues that leftover row; it may complete and write a canonical LanceDB generation while PostgreSQL remains permanently `failed`. A rollback failure that leaves staging has the same split-brain outcome.
+
+**Fix:** Define one durable state machine for retryable versus terminal failures. Either remove staging successfully before publishing terminal `failed`, or keep the engine status non-terminal/recoverable while staging exists and make the gateway continue polling. Add a regression that fails embedding, persists the gateway result, restarts the engine, and proves PostgreSQL and LanceDB converge to the same terminal state.
+
+### CR-06: Privacy failure diagnostics disclose attacker-controlled sensitive field keys
+
+**Classification:** BLOCKER
+
+**File:** `D:/Repos/lancet/scripts/phase02_live_evidence.py:127-136`
+
+**Issue:** The privacy check correctly avoids printing a forbidden field's value, but its error path includes the raw JSON key. Keys are untrusted input and can themselves contain credentials or document content. For example, `{"Bearer do-not-publish":"x"}` exits nonzero but prints `subject.Bearer do-not-publish` to stderr. The retained validation output can therefore disclose exactly the sensitive material the prohibition is intended to exclude.
+
+**Fix:** Never place raw keys in privacy diagnostics. Report only the normalized class and a structural location composed from safe container/index tokens, and add a subprocess test with a secret-bearing key.
+
+```python
+require(
+    category is None,
+    f"forbidden privacy field class '{category}' below '{path}'",
+)
 ```
 
 ## Warnings
 
-### WR-01: Unbounded chunk size wraps when persisted to PostgreSQL
+### WR-01: Global fixture cleanup violates per-run ownership and can break concurrent suites
 
 **Classification:** WARNING
 
-**File:** `D:/Repos/lancet/gateway/main.go:478-515`; `D:/Repos/lancet/engine/src/main.rs:122-157`
+**File:** `D:/Repos/lancet/scripts/test_phase02_live_evidence.py:159-165`
 
-**Issue:** The gateway accepts every positive machine-sized integer, then casts it to `int32` for `InsertDocumentParams`. On normal 64-bit builds, `chunk_size=2147483648` passes validation and is stored as a negative `chunk_size`, while the Rust service receives and accepts the original positive value as `usize`. The persisted ingestion settings therefore no longer describe the chunking that ran, and an extremely large requested size is not bounded.
+**Issue:** `tearDownClass` globs every `.phase02-live-test-*` entry in the shared scripts directory and unlinks it, including files owned by another concurrent test process. It also calls `Path.unlink()` on matching directories, which raises instead of cleaning them. The clean suite passes only when no concurrent or interrupted fixture remains; a leftover matching directory reproduced a teardown error during review.
 
-**Fix:** Parse to a bounded integer before the cast, enforce the same explicit maximum in Rust, and add boundary tests.
+**Fix:** Track only paths created by the current test process and clean those exact paths through `addCleanup`/context managers. Remove the shared-directory glob entirely.
+
+### WR-02: Isolation assertions ignore database query failures and can false-pass
+
+**Classification:** WARNING
+
+**File:** `D:/Repos/lancet/gateway/db/document_test.go:256-258,325-329,342-344,444-448`
+
+**Issue:** Both isolated lease tests discard errors while reading public table counts. If permissions, schema resolution, or connectivity make both the before and after reads fail, all count variables remain zero and the assertion passes without proving public data was preserved.
+
+**Fix:** Fail immediately on every snapshot query error before comparing counts.
 
 ```go
-parsed, err := strconv.ParseInt(reqSize, 10, 32)
-if err != nil || parsed < 1 || parsed > maxChunkSize {
-    http.Error(w, "invalid chunk_size", http.StatusBadRequest)
-    return
+if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").
+    Scan(&initialPublicDocCount); err != nil {
+    t.Fatalf("snapshot public documents: %v", err)
 }
-chunkSize := int(parsed)
 ```
-
-### WR-02: Live-evidence test overwrites and deletes real runtime artifacts
-
-**Classification:** WARNING
-
-**File:** `D:/Repos/lancet/scripts/test_phase02_live_evidence.py:481-489,570-572`
-
-**Issue:** `test_captured_inspector_arguments_explicit_path` writes directly to the real Phase 02 challenge/evidence runtime paths, then unconditionally unlinks both in `finally`. Running the test concurrently with a human verification run can overwrite or delete that run's evidence, making the test destructive and flaky.
-
-**Fix:** Execute the shell test in an isolated fixture checkout or parameterize the runtime-artifact paths so the test can use a temporary directory. At minimum, save and restore any pre-existing files rather than deleting them.
 
 ---
 
-_Reviewed: 2026-07-29T10:51:54Z_
+_Reviewed: 2026-07-30T03:15:25Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_
