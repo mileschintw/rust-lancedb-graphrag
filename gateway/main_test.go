@@ -476,6 +476,150 @@ func TestGetDocumentLeavesTransientEngineFailureQueued(t *testing.T) {
 	}
 }
 
+func TestCreateDocumentChunkSizeBoundaries(t *testing.T) {
+	t.Run("boundary 1048576 accepted", func(t *testing.T) {
+		store := &fakeStore{}
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "notes.txt")
+		part.Write([]byte("hello"))
+		w.WriteField("chunk_size", "1048576")
+		w.WriteField("chunk_overlap", "50")
+		w.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		engineCalled := false
+		var passedChunkSize int
+		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
+			engineCalled = true
+			passedChunkSize = chunkSize
+			return IngestOutcome{}
+		}}
+
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want 202", recorder.Code)
+		}
+		if store.inserted == nil {
+			t.Fatal("expected store insert")
+		}
+		if store.inserted.ChunkSize != 1048576 {
+			t.Fatalf("stored chunkSize = %d, want 1048576", store.inserted.ChunkSize)
+		}
+		if !engineCalled || passedChunkSize != 1048576 {
+			t.Fatalf("engine called=%v with chunkSize=%d, want 1048576", engineCalled, passedChunkSize)
+		}
+	})
+
+	t.Run("1048577 rejected with 400", func(t *testing.T) {
+		store := &fakeStore{}
+		engineCalled := false
+		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
+			engineCalled = true
+			return IngestOutcome{}
+		}}
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "notes.txt")
+		part.Write([]byte("hello"))
+		w.WriteField("chunk_size", "1048577")
+		w.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", recorder.Code)
+		}
+		if store.inserted != nil {
+			t.Fatalf("unexpected store insert: %#v", store.inserted)
+		}
+		if engineCalled {
+			t.Fatal("engine was called for rejected chunk_size")
+		}
+	})
+
+	t.Run("2147483648 rejected with 400", func(t *testing.T) {
+		store := &fakeStore{}
+		engineCalled := false
+		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
+			engineCalled = true
+			return IngestOutcome{}
+		}}
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "notes.txt")
+		part.Write([]byte("hello"))
+		w.WriteField("chunk_size", "2147483648")
+		w.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400", recorder.Code)
+		}
+		if store.inserted != nil {
+			t.Fatalf("unexpected store insert: %#v", store.inserted)
+		}
+		if engineCalled {
+			t.Fatal("engine was called for overflow chunk_size")
+		}
+	})
+}
+
+func TestGetDocumentRecoverableStagingRemainsQueued(t *testing.T) {
+	store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}}
+	engine := engineFunc{status: &pb.GetIngestionStatusResponse{DocumentId: "doc-1", Status: "queued"}}
+	recorder := httptest.NewRecorder()
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if store.updateCalls != 0 {
+		t.Fatalf("queued staging status triggered unexpected updateCalls: %d", store.updateCalls)
+	}
+	if store.updated != nil {
+		t.Fatalf("queued staging status modified store: %#v", store.updated)
+	}
+}
+
+func TestGetDocumentNotFoundMarksFailedAfterRustConfirmsAbsence(t *testing.T) {
+	t.Run("NotFound marks failed in store", func(t *testing.T) {
+		store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}}
+		engine := engineFunc{statusErr: status.Error(codes.NotFound, "not found in registry or staging")}
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+		}
+		if store.updated == nil || store.updated.Status != "failed" {
+			t.Fatalf("NotFound did not mark document as failed: %#v", store.updated)
+		}
+	})
+
+	t.Run("NotFound returns terminal winner if update loses race", func(t *testing.T) {
+		winner := db.Document{ID: "doc-1", Filename: "notes.txt", Status: "completed", ChunkCount: 5}
+		store := &fakeStore{document: db.Document{ID: "doc-1", Filename: "notes.txt", Status: "queued"}, updateErr: pgx.ErrNoRows, winner: &winner}
+		engine := engineFunc{statusErr: status.Error(codes.NotFound, "not found")}
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/documents/doc-1", nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+		}
+		if store.getCalls != 2 {
+			t.Fatalf("getCalls = %d, want 2", store.getCalls)
+		}
+	})
+}
+
 type engineFunc struct {
 	ingest    func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome
 	status    *pb.GetIngestionStatusResponse

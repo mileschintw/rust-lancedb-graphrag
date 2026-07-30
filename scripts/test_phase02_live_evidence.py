@@ -539,6 +539,7 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
         challenge, evidence = fixture_pair()
         evidence["document_id"] = doc_id
         challenge["challenge"] = "injected-sentinel-temp-challenge-0123456789abcdef"
+        evidence["challenge"] = challenge["challenge"]
 
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent, prefix=".phase02-live-test-") as fixture_dir:
             fixture_path = Path(fixture_dir)
@@ -601,8 +602,8 @@ exit /b 0
                 with tempfile.TemporaryDirectory(dir=ROOT, ignore_cleanup_errors=True) as unrelated_cwd:
                     unrelated_path = Path(unrelated_cwd)
                     rel_script = to_bash_path(ROOT / "verify-live-evidence.sh", base=unrelated_path)
-                    bash_challenge = to_bash_path(challenge_path, base=unrelated_path)
-                    bash_evidence = to_bash_path(evidence_path, base=unrelated_path)
+                    bash_challenge = to_bash_path(challenge_path, base=ROOT)
+                    bash_evidence = to_bash_path(evidence_path, base=ROOT)
                     completed = subprocess.run(
                         [
                             "bash",

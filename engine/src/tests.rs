@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
+use arrow_schema::{DataType, Field, Schema};
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use tokio::sync::Notify;
@@ -30,6 +31,27 @@ impl EmbeddingProvider for BlockingEmbedder {
         Box::pin(async move {
             self.started.notify_one();
             self.release.notified().await;
+            Ok(texts.iter().map(|_| vec![0.25; 2048]).collect())
+        })
+    }
+}
+
+struct SingleBlockEmbedder {
+    started: Arc<Notify>,
+    release: Arc<Notify>,
+    blocked: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl EmbeddingProvider for SingleBlockEmbedder {
+    fn get_embeddings<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
+        Box::pin(async move {
+            if !self.blocked.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                self.started.notify_one();
+                self.release.notified().await;
+            }
             Ok(texts.iter().map(|_| vec![0.25; 2048]).collect())
         })
     }
@@ -206,12 +228,37 @@ async fn canonical_state(database: &DatabaseManager, document_id: &str) -> Canon
 }
 
 async fn stage_document(database: &DatabaseManager, document_id: &str, raw_data: &[u8]) {
+    stage_document_with_settings(
+        database,
+        document_id,
+        "document.md",
+        raw_data,
+        "structure-aware",
+        500,
+        50,
+    )
+    .await;
+}
+
+async fn stage_document_with_settings(
+    database: &DatabaseManager,
+    document_id: &str,
+    filename: &str,
+    raw_data: &[u8],
+    strategy: &str,
+    size: usize,
+    overlap: usize,
+) {
     let table = database.staged_documents_table().await.unwrap();
     let batch = RecordBatch::try_new(
         table.schema().await.unwrap(),
         vec![
             Arc::new(StringArray::from(vec![document_id])),
+            Arc::new(StringArray::from(vec![filename])),
             Arc::new(BinaryArray::from_vec(vec![raw_data])),
+            Arc::new(StringArray::from(vec![strategy])),
+            Arc::new(Int32Array::from(vec![i32::try_from(size).unwrap()])),
+            Arc::new(Int32Array::from(vec![i32::try_from(overlap).unwrap()])),
         ],
     )
     .unwrap();
@@ -911,4 +958,343 @@ fn chunk_metadata_contract_invalid_metadata_rejected() {
         ("chunk_overlap".into(), "500".into()),
     ]);
     assert!(parse_chunk_settings(&overlap_too_large).is_err());
+}
+
+#[tokio::test]
+async fn shutdown_drains_acknowledged_queue() {
+    let path = database_path("shutdown-drain");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let blocked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let worker = spawn_worker(
+        receiver,
+        statuses.clone(),
+        database.clone(),
+        Arc::new(SingleBlockEmbedder {
+            started: started.clone(),
+            release: release.clone(),
+            blocked,
+        }),
+        shutdown_rx,
+    );
+
+    let doc_id_1 = Uuid::new_v4().to_string();
+    let doc_id_2 = Uuid::new_v4().to_string();
+    let doc_id_3 = Uuid::new_v4().to_string();
+
+    let job_1 = IngestionJob::new(
+        doc_id_1.clone(),
+        "doc1.md".into(),
+        b"active job 1".to_vec(),
+        HashMap::new(),
+    );
+    let job_2 = IngestionJob::new(
+        doc_id_2.clone(),
+        "doc2.md".into(),
+        b"queued job 2".to_vec(),
+        HashMap::new(),
+    );
+    let job_3 = IngestionJob::new(
+        doc_id_3.clone(),
+        "doc3.md".into(),
+        b"queued job 3".to_vec(),
+        HashMap::new(),
+    );
+
+    stage_document(&database, &doc_id_1, b"active job 1").await;
+    stage_document(&database, &doc_id_2, b"queued job 2").await;
+    stage_document(&database, &doc_id_3, b"queued job 3").await;
+
+    statuses.insert(doc_id_1.clone(), IngestionStatus::queued());
+    statuses.insert(doc_id_2.clone(), IngestionStatus::queued());
+    statuses.insert(doc_id_3.clone(), IngestionStatus::queued());
+
+    sender.send(job_1).await.unwrap();
+    sender.send(job_2).await.unwrap();
+    sender.send(job_3).await.unwrap();
+
+    started.notified().await;
+    shutdown_tx.send(true).unwrap();
+
+    release.notify_one();
+    worker.await.unwrap();
+
+    assert_eq!(statuses.get(&doc_id_1).unwrap().status, "completed");
+    assert_eq!(statuses.get(&doc_id_2).unwrap().status, "completed");
+    assert_eq!(statuses.get(&doc_id_3).unwrap().status, "completed");
+
+    let staged_table = database.staged_documents_table().await.unwrap();
+    assert_eq!(staged_table.count_rows(None).await.unwrap(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn startup_recovery_processes_staged_document() {
+    let path = database_path("startup-recovery");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document_with_settings(
+        &database,
+        &doc_id,
+        "custom_file.md",
+        b"# Heading\n\nCustom content for recovery test.",
+        "fixed-size",
+        200,
+        20,
+    )
+    .await;
+
+    drop(database);
+
+    let reopened_db = DatabaseManager::initialize(&path).await.unwrap();
+    let recovered_jobs = read_staged_jobs(&reopened_db).await.unwrap();
+    assert_eq!(recovered_jobs.len(), 1);
+
+    let job = &recovered_jobs[0];
+    assert_eq!(job.document_id, doc_id);
+    assert_eq!(job.filename, "custom_file.md");
+    assert_eq!(job.chunk_settings.strategy, "fixed-size");
+    assert_eq!(job.chunk_settings.size, 200);
+    assert_eq!(job.chunk_settings.overlap, 20);
+
+    let statuses = Arc::new(DashMap::new());
+    let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    let worker = spawn_worker(
+        receiver,
+        statuses.clone(),
+        reopened_db.clone(),
+        Arc::new(FakeEmbedder),
+        shutdown_rx,
+    );
+
+    statuses.insert(job.document_id.clone(), IngestionStatus::queued());
+    sender.send(recovered_jobs.into_iter().next().unwrap()).await.unwrap();
+    drop(sender);
+
+    worker.await.unwrap();
+
+    assert_eq!(statuses.get(&doc_id).unwrap().status, "completed");
+    let staged_table = reopened_db.staged_documents_table().await.unwrap();
+    assert_eq!(staged_table.count_rows(None).await.unwrap(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+async fn create_legacy_staged_documents_table(path: &str, rows: &[(&str, &[u8])]) {
+    let connection = lancedb::connect(path).execute().await.unwrap();
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("document_id", DataType::Utf8, false),
+        Field::new("raw_content", DataType::Binary, false),
+    ]));
+    let doc_ids: Vec<&str> = rows.iter().map(|(id, _)| *id).collect();
+    let contents: Vec<&[u8]> = rows.iter().map(|(_, content)| *content).collect();
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(doc_ids)),
+            Arc::new(BinaryArray::from_vec(contents)),
+        ],
+    )
+    .unwrap();
+    let table = connection
+        .create_empty_table("staged_documents", schema)
+        .execute()
+        .await
+        .unwrap();
+    table.add(batch).execute().await.unwrap();
+}
+
+#[tokio::test]
+async fn legacy_staging_transition_is_versioned_and_lossless() {
+    let path = database_path("legacy-lossless");
+    let doc_id_1 = Uuid::new_v4().to_string();
+    let doc_id_2 = Uuid::new_v4().to_string();
+    let raw_1 = b"legacy raw bytes document 1";
+    let raw_2 = b"legacy raw bytes document 2";
+
+    create_legacy_staged_documents_table(&path, &[(&doc_id_1, raw_1), (&doc_id_2, raw_2)]).await;
+
+    let init_err = DatabaseManager::initialize(&path).await.unwrap_err();
+    assert!(init_err.contains("unmigrated legacy staged documents"));
+    assert!(init_err.contains("count: 2"));
+
+    let connection = lancedb::connect(&path).execute().await.unwrap();
+    let legacy_table = connection.open_table("staged_documents").execute().await.unwrap();
+    assert_eq!(legacy_table.count_rows(None).await.unwrap(), 2);
+
+    let mut manifest = engine::db::LegacyMigrationManifest::default();
+    manifest.entries.insert(
+        doc_id_1.clone(),
+        engine::db::LegacyMigrationEntry {
+            filename: "file1.md".into(),
+            chunk_strategy: "structure-aware".into(),
+            chunk_size: 500,
+            chunk_overlap: 50,
+        },
+    );
+    manifest.entries.insert(
+        doc_id_2.clone(),
+        engine::db::LegacyMigrationEntry {
+            filename: "file2.txt".into(),
+            chunk_strategy: "fixed-size".into(),
+            chunk_size: 300,
+            chunk_overlap: 30,
+        },
+    );
+
+    let db = DatabaseManager::initialize_with_migration(&path, Some(&manifest))
+        .await
+        .unwrap();
+
+    let legacy_after = connection.open_table("staged_documents").execute().await.unwrap();
+    assert_eq!(legacy_after.count_rows(None).await.unwrap(), 2);
+
+    let v2_jobs = read_staged_jobs(&db).await.unwrap();
+    assert_eq!(v2_jobs.len(), 2);
+
+    let job_1 = v2_jobs.iter().find(|j| j.document_id == doc_id_1).unwrap();
+    assert_eq!(job_1.filename, "file1.md");
+    assert_eq!(job_1.raw_data, raw_1);
+    assert_eq!(job_1.chunk_settings.strategy, "structure-aware");
+    assert_eq!(job_1.chunk_settings.size, 500);
+
+    let job_2 = v2_jobs.iter().find(|j| j.document_id == doc_id_2).unwrap();
+    assert_eq!(job_2.filename, "file2.txt");
+    assert_eq!(job_2.raw_data, raw_2);
+    assert_eq!(job_2.chunk_settings.strategy, "fixed-size");
+    assert_eq!(job_2.chunk_settings.size, 300);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn legacy_staging_transition_rejects_incomplete_metadata() {
+    let path = database_path("legacy-incomplete");
+    let doc_id_1 = Uuid::new_v4().to_string();
+    let doc_id_2 = Uuid::new_v4().to_string();
+
+    create_legacy_staged_documents_table(
+        &path,
+        &[(&doc_id_1, b"raw content 1"), (&doc_id_2, b"raw content 2")],
+    )
+    .await;
+
+    let mut manifest = engine::db::LegacyMigrationManifest::default();
+    manifest.entries.insert(
+        doc_id_1.clone(),
+        engine::db::LegacyMigrationEntry {
+            filename: "file1.md".into(),
+            chunk_strategy: "structure-aware".into(),
+            chunk_size: 500,
+            chunk_overlap: 50,
+        },
+    );
+
+    let err = DatabaseManager::initialize_with_migration(&path, Some(&manifest))
+        .await
+        .unwrap_err();
+    assert!(err.contains("migration manifest missing entry for legacy document"));
+
+    let connection = lancedb::connect(&path).execute().await.unwrap();
+    let legacy_table = connection.open_table("staged_documents").execute().await.unwrap();
+    assert_eq!(legacy_table.count_rows(None).await.unwrap(), 2);
+    assert!(connection.open_table("staged_documents_v2").execute().await.is_err()
+        || connection.open_table("staged_documents_v2").execute().await.unwrap().count_rows(None).await.unwrap() == 0);
+
+    let mut invalid_manifest = manifest;
+    invalid_manifest.entries.insert(
+        doc_id_2.clone(),
+        engine::db::LegacyMigrationEntry {
+            filename: "file2.md".into(),
+            chunk_strategy: "structure-aware".into(),
+            chunk_size: 0,
+            chunk_overlap: 0,
+        },
+    );
+
+    let err_invalid = DatabaseManager::initialize_with_migration(&path, Some(&invalid_manifest))
+        .await
+        .unwrap_err();
+    assert!(err_invalid.contains("invalid chunk_size in manifest"));
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn status_falls_back_to_staged_document() {
+    let path = database_path("status-fallback");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(&database, &doc_id, b"staged raw content").await;
+
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+    };
+
+    let status_res = service
+        .get_ingestion_status(tonic::Request::new(GetIngestionStatusRequest {
+            document_id: doc_id.clone(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(status_res.document_id, doc_id);
+    assert_eq!(status_res.status, "queued");
+    assert_eq!(status_res.chunk_count, 0);
+
+    let missing_id = Uuid::new_v4().to_string();
+    let not_found_err = service
+        .get_ingestion_status(tonic::Request::new(GetIngestionStatusRequest {
+            document_id: missing_id,
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(not_found_err.code(), tonic::Code::NotFound);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn chunk_size_boundaries_are_engine_authoritative() {
+    let valid_boundary = HashMap::from([
+        ("chunk_strategy".into(), "fixed-size".into()),
+        ("chunk_size".into(), "1048576".into()),
+        ("chunk_overlap".into(), "100".into()),
+    ]);
+    let settings = parse_chunk_settings(&valid_boundary).unwrap();
+    assert_eq!(settings.size, 1048576);
+
+    let exceeded_boundary = HashMap::from([
+        ("chunk_strategy".into(), "fixed-size".into()),
+        ("chunk_size".into(), "1048577".into()),
+        ("chunk_overlap".into(), "100".into()),
+    ]);
+    let err = parse_chunk_settings(&exceeded_boundary).unwrap_err();
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+
+    let overflow_boundary = HashMap::from([
+        ("chunk_strategy".into(), "fixed-size".into()),
+        ("chunk_size".into(), "2147483648".into()),
+        ("chunk_overlap".into(), "100".into()),
+    ]);
+    let err_overflow = parse_chunk_settings(&overflow_boundary).unwrap_err();
+    assert_eq!(err_overflow.code(), tonic::Code::InvalidArgument);
 }

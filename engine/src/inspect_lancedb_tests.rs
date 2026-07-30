@@ -445,7 +445,7 @@ async fn missing_required_table_fails_and_remains_absent() {
         .await
         .unwrap();
     connection
-        .create_empty_table("staged_documents", engine::db::staged_documents_schema())
+        .create_empty_table("staged_documents_v2", engine::db::staged_documents_schema())
         .execute()
         .await
         .unwrap();
