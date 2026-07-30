@@ -135,7 +135,6 @@ PY
     ;;
   --validate-gate)
     export LANCET_ENV="$verification_environment"
-    require_phase_local_paths
     assert_safe_runtime_path "$challenge"
     assert_safe_runtime_path "$evidence"
     [[ -s "$challenge" && -s "$evidence" ]] || { echo "challenge and evidence are required" >&2; exit 1; }

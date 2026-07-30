@@ -20,6 +20,22 @@ EXPECTED_MODEL = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 CHALLENGE_RUNTIME_PATH = ".planning/phases/02-ingestion-chunking-vector-storage/.02-LIVE-CHALLENGE.json"
 EVIDENCE_RUNTIME_PATH = ".planning/phases/02-ingestion-chunking-vector-storage/02-LIVE-EVIDENCE.json"
 
+if str(HELPER.parent) not in sys.path:
+    sys.path.insert(0, str(HELPER.parent))
+
+from phase02_live_evidence import classify_sensitive_field
+
+REAL_CANONICAL_PATHS = (
+    (ROOT / CHALLENGE_RUNTIME_PATH).resolve(),
+    (ROOT / EVIDENCE_RUNTIME_PATH).resolve(),
+)
+
+
+def assert_not_real_runtime_path(path: Path | str) -> None:
+    target = Path(path).resolve()
+    if target in REAL_CANONICAL_PATHS:
+        raise RuntimeError(f"Prohibited mutation of real runtime path: {path}")
+
 
 def timestamp(offset_seconds: int = 0) -> str:
     value = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=offset_seconds)
@@ -116,6 +132,8 @@ def write_json_fixtures(
     os.close(evidence_fd)
     challenge_path = Path(challenge_name)
     evidence_path = Path(evidence_name)
+    assert_not_real_runtime_path(challenge_path)
+    assert_not_real_runtime_path(evidence_path)
     temporary_paths.extend((challenge_path, evidence_path))
     challenge_path.write_text(json.dumps(challenge), encoding="utf-8")
     evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
@@ -435,6 +453,44 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
                 finally:
                     tmp_path.unlink(missing_ok=True)
 
+    def test_privacy_camel_case_aliases_classify(self) -> None:
+        self.assertEqual(classify_sensitive_field("rawContent"), "raw_content")
+        self.assertEqual(classify_sensitive_field("storedDocumentText"), "document_text")
+        self.assertEqual(classify_sensitive_field("authorizationHeader"), "authorization_header")
+        self.assertEqual(classify_sensitive_field("bearerToken"), "bearer")
+        self.assertEqual(classify_sensitive_field("chunkContent"), "chunk_content")
+        self.assertEqual(classify_sensitive_field("credentialValue"), "credential")
+
+    def test_privacy_camel_case_aliases_fail_first_and_omit_values(self) -> None:
+        aliases = [
+            ("rawContent", "raw_content", {"data": {"rawContent": "do-not-publish-raw-content"}}),
+            ("storedDocumentText", "document_text", {"doc": {"storedDocumentText": "do-not-publish-doc-text"}}),
+            ("authorizationHeader", "authorization_header", {"meta": {"authorizationHeader": "do-not-publish-auth-header"}}),
+            ("bearerToken", "bearer", {"nested": [{"bearerToken": "do-not-publish-bearer-token"}]}),
+            ("chunkContent", "chunk_content", {"chunk": {"chunkContent": "do-not-publish-chunk-content"}}),
+            ("credentialValue", "credential", {"meta": {"credentialValue": "do-not-publish-credential"}}),
+        ]
+        for alias, category, payload in aliases:
+            with self.subTest(alias=alias):
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as tmp:
+                    json.dump(payload, tmp)
+                    tmp_path = Path(tmp.name)
+                try:
+                    completed = run_helper("check-privacy", "--file", str(tmp_path))
+                    self.assertNotEqual(completed.returncode, 0)
+                    output = completed.stdout + completed.stderr
+                    self.assertIn(category, output.lower())
+                    self.assertNotIn("do-not-publish", output)
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+
+    def test_raw_content_cli_probe_fails_first_without_value_disclosure(self) -> None:
+        completed = run_helper("check-privacy", "--file", "-", input_text='{"rawContent":"do-not-publish"}')
+        self.assertNotEqual(completed.returncode, 0)
+        output = completed.stdout + completed.stderr
+        self.assertIn("raw_content", output.lower())
+        self.assertNotIn("do-not-publish", output)
+
     def test_privacy_node_is_absent_from_verification(self) -> None:
         node_test = ROOT / "scripts/test_phase02_privacy_prohibition.cjs"
         self.assertFalse(node_test.exists(), "Node privacy test script must be removed")
@@ -482,13 +538,17 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
         doc_id = str(uuid.uuid4())
         challenge, evidence = fixture_pair()
         evidence["document_id"] = doc_id
-        
-        challenge_path = ROOT / CHALLENGE_RUNTIME_PATH
-        evidence_path = ROOT / EVIDENCE_RUNTIME_PATH
-        challenge_path.write_text(json.dumps(challenge), encoding="utf-8")
-        evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+        challenge["challenge"] = "injected-sentinel-temp-challenge-0123456789abcdef"
 
-        try:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent, prefix=".phase02-live-test-") as fixture_dir:
+            fixture_path = Path(fixture_dir)
+            challenge_path = fixture_path / "injected-challenge.json"
+            evidence_path = fixture_path / "injected-evidence.json"
+            assert_not_real_runtime_path(challenge_path)
+            assert_not_real_runtime_path(evidence_path)
+            challenge_path.write_text(json.dumps(challenge), encoding="utf-8")
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
             with tempfile.TemporaryDirectory(dir=ROOT, ignore_cleanup_errors=True) as fake_bin_dir:
                 capture_file = Path(fake_bin_dir) / "cargo_capture.txt"
                 fake_cargo = Path(fake_bin_dir) / "cargo"
@@ -541,11 +601,13 @@ exit /b 0
                 with tempfile.TemporaryDirectory(dir=ROOT, ignore_cleanup_errors=True) as unrelated_cwd:
                     unrelated_path = Path(unrelated_cwd)
                     rel_script = to_bash_path(ROOT / "verify-live-evidence.sh", base=unrelated_path)
+                    bash_challenge = to_bash_path(challenge_path, base=unrelated_path)
+                    bash_evidence = to_bash_path(evidence_path, base=unrelated_path)
                     completed = subprocess.run(
                         [
                             "bash",
                             "-c",
-                            f'DOCKER_CMD=fake_docker bash "{rel_script}" --validate-gate --challenge "{CHALLENGE_RUNTIME_PATH}" --evidence "{EVIDENCE_RUNTIME_PATH}"',
+                            f'DOCKER_CMD=fake_docker bash "{rel_script}" --validate-gate --challenge "{bash_challenge}" --evidence "{bash_evidence}"',
                         ],
                         cwd=unrelated_cwd,
                         env=env,
@@ -567,9 +629,6 @@ exit /b 0
                         str(expected_store) in captured_text or to_bash_path(expected_store) in captured_text,
                         f"{expected_store} or {to_bash_path(expected_store)} not in captured text: {captured_text}",
                     )
-        finally:
-            challenge_path.unlink(missing_ok=True)
-            evidence_path.unlink(missing_ok=True)
 
     def test_caller_sample_preservation_on_early_failure(self) -> None:
         sample_path = ROOT / ".test-caller-sample.tmp"

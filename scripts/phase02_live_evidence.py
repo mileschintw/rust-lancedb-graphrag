@@ -108,9 +108,14 @@ def require(condition: bool, message: str) -> None:
 
 
 def classify_sensitive_field(name: str) -> str | None:
-    normalized = re.sub(r"[^a-z0-9]", "_", name.lower())
+    split_boundary = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+    normalized = re.sub(r"[^a-z0-9]", "_", split_boundary.lower())
+    normalized_clean = normalized.replace("_", "")
     for category, keywords in SENSITIVE_FIELD_CATEGORIES:
-        if any(kw in normalized for kw in keywords):
+        if any(
+            kw in normalized or kw.replace("_", "") in normalized_clean
+            for kw in keywords
+        ):
             return category
     return None
 
