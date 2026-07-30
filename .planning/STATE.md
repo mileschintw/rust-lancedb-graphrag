@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 2
-current_plan: 24
+current_plan: 28
 status: gaps_found
-stopped_at: Phase 02 review and independent verification refreshed; 14/19 must-haves verified with six blockers
-last_updated: "2026-07-30T03:28:48.515Z"
+stopped_at: Phase 02 review and independent verification refreshed; 15/20 must-haves verified with five blockers
+last_updated: "2026-07-30T10:03:43.910Z"
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 24
-  completed_plans: 24
+  total_plans: 28
+  completed_plans: 28
 ---
 
 # Project State
@@ -19,17 +19,17 @@ progress:
 ## Current Status
 
 - Phase 1 completed successfully.
-- Phase 2 plans 02-01 through 02-24 are implemented and summarized.
-- Plans 02-22 through 02-24 fixed the five earlier literal defects, but independent re-verification found six broader blockers.
+- Phase 2 plans 02-01 through 02-28 are implemented and summarized.
+- Plans 02-25 through 02-28 closed six prior blockers, but independent re-verification found five remaining blockers.
 
 ## Active Phase
 
 - **Phase:** 2
 - **Status:** Gaps found after all plans executed
-- **Current Plan:** 24 (last executed)
-- **Phase Progress:** 24 of 24 current plans executed
-- **Verification:** 14 of 19 must-haves verified
-- **Current Focus:** Plan fixes for the six blockers recorded in `02-VERIFICATION.md`
+- **Current Plan:** 28 (last executed)
+- **Phase Progress:** 28 of 28 current plans executed
+- **Verification:** 15 of 20 must-haves verified
+- **Current Focus:** Plan fixes for the five blockers recorded in `02-VERIFICATION.md`
 
 ## Completed Phases
 
@@ -41,7 +41,7 @@ progress:
 - Plans 02-17 through 02-21 cover the accepted ship findings and CR-04's loopback-only guardrail.
 - `DEBT-CR-04`, `DEBT-CR-05`, `DEBT-BU-01`, and `DEBT-BU-02` are non-blocking for Phase 02 while their recorded triggers remain false; Phase 6/v1 closure is the latest review point, and an earlier trigger overrides it.
 - The five earlier literal defects are closed: locked camel-case aliases are rejected, table-wide document deletion is removed, shutdown drains the in-memory receiver, chunk sizes are bounded before persistence, and explicit live-evidence paths are isolated.
-- Fresh review/verification blockers are not covered by the accepted debt disposition: one public-schema test can lease unrelated reconciliation intents; startup replay can deadlock above queue capacity; the legacy staging migration is not restartable/idempotent; staging read errors become authoritative `NotFound`; terminal worker failures can leave replayable staging; and privacy diagnostics can echo attacker-controlled keys.
+- Fresh review/verification blockers are not covered by the accepted debt disposition: completed ingestion can become `NotFound` after a Rust restart; rollback restoration failure can delete replay state before consistency is restored; failed admission can lose both reconciliation intent and terminal updates; attestation construction defaults human approval to true; and the optimized Python suite still uses a global fixture glob and fails cleanup-sensitive tests.
 - Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for their owning phases.
 
 ## Deployment & Environments
@@ -106,6 +106,6 @@ progress:
 
 ## Session
 
-**Last session:** 2026-07-29
-**Stopped at:** Phase 02 review and independent verification refreshed; gaps found at 14/19, ready for `/gsd-plan-phase 02 --gaps`
+**Last session:** 2026-07-30
+**Stopped at:** Phase 02 review and independent verification refreshed; gaps found at 15/20, ready for `/gsd-plan-phase 02 --gaps`
 **Resume file:** None
