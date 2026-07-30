@@ -7,6 +7,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -115,7 +116,9 @@ def inspection_fixture(evidence: dict[str, object]) -> dict[str, object]:
 
 
 def write_json_fixtures(
-    challenge: dict[str, object], evidence: dict[str, object]
+    challenge: dict[str, object],
+    evidence: dict[str, object],
+    test_case: unittest.TestCase | None = None,
 ) -> tuple[Path, Path, list[Path]]:
     temporary_paths: list[Path] = []
     challenge_fd, challenge_name = tempfile.mkstemp(
@@ -135,6 +138,9 @@ def write_json_fixtures(
     assert_not_real_runtime_path(challenge_path)
     assert_not_real_runtime_path(evidence_path)
     temporary_paths.extend((challenge_path, evidence_path))
+    if test_case is not None:
+        test_case.addCleanup(lambda: challenge_path.unlink(missing_ok=True))
+        test_case.addCleanup(lambda: evidence_path.unlink(missing_ok=True))
     challenge_path.write_text(json.dumps(challenge), encoding="utf-8")
     evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
     return challenge_path, evidence_path, temporary_paths
@@ -647,6 +653,48 @@ exit /b 0
             self.assertEqual(sample_path.read_bytes(), b"caller sample data 12345")
         finally:
             sample_path.unlink(missing_ok=True)
+
+    def test_secret_bearing_key_is_rejected_without_disclosure(self) -> None:
+        token = "INERT_SECRET_TOKEN_9999"
+        raw_key = f"Bearer_{token}"
+        payload = {raw_key: "sanitized_value_123"}
+        completed = run_helper("check-privacy", "--file", "-", input_text=json.dumps(payload))
+        self.assertNotEqual(completed.returncode, 0)
+        output = completed.stdout + completed.stderr
+        expected_category = classify_sensitive_field(raw_key)
+        self.assertIsNotNone(expected_category)
+        self.assertIn(expected_category, output.lower())
+        self.assertNotIn(raw_key, output)
+        self.assertNotIn(token, output)
+
+    def test_foreign_matching_fixture_survives_suite_cleanup(self) -> None:
+        foreign_file = Path(__file__).parent / ".phase02-live-test-foreign-process.json"
+        assert_not_real_runtime_path(foreign_file)
+        foreign_file.write_text('{"foreign": true}', encoding="utf-8")
+        self.addCleanup(lambda: foreign_file.unlink(missing_ok=True))
+
+        challenge, evidence = fixture_pair()
+        c_path, e_path, temp_paths = write_json_fixtures(challenge, evidence, test_case=self)
+        try:
+            self.assertTrue(c_path.exists())
+            self.assertTrue(e_path.exists())
+        finally:
+            for p in temp_paths:
+                p.unlink(missing_ok=True)
+
+        self.assertTrue(foreign_file.exists())
+
+    def test_owned_directory_and_file_cleanup_on_assertion_failure(self) -> None:
+        owned_dir = Path(tempfile.mkdtemp(dir=Path(__file__).parent, prefix=".phase02-live-test-dir-"))
+        owned_file = owned_dir / "nested_fixture.json"
+        owned_file.write_text('{"nested": true}', encoding="utf-8")
+        assert_not_real_runtime_path(owned_dir)
+        assert_not_real_runtime_path(owned_file)
+
+        self.addCleanup(lambda: shutil.rmtree(owned_dir, ignore_errors=True))
+
+        self.assertTrue(owned_dir.exists())
+        self.assertTrue(owned_file.exists())
 
 
 if __name__ == "__main__":
