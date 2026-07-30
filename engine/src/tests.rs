@@ -1374,7 +1374,6 @@ async fn d04_cross_runtime_grpc_fixture() {
     let stop_file = std::env::var("LANCET_D04_STOP_FILE").expect("LANCET_D04_STOP_FILE required");
 
     let database = DatabaseManager::initialize(&lancedb_path).await.unwrap();
-    let table = database.staged_documents_table().await.unwrap();
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -1397,9 +1396,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             sender.send(job).await.unwrap();
         }
 
-        while statuses.contains_key(&doc_id)
-            && statuses.get(&doc_id).unwrap().status == "processing"
-        {
+        while statuses.contains_key(&doc_id) {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
 
@@ -1456,6 +1453,7 @@ async fn d04_cross_runtime_grpc_fixture() {
         panic!("unknown LANCET_D04_MODE: {mode}");
     };
 
+    let table = database.staged_documents_table().await.unwrap();
     let service = LancetServiceImpl {
         table,
         statuses,

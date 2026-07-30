@@ -3,22 +3,31 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
 	"github.com/lancet/gateway/db"
@@ -1026,5 +1035,271 @@ func TestDurableReconcilerStopsCleanly(t *testing.T) {
 		// Stopped cleanly
 	case <-time.After(1 * time.Second):
 		t.Fatal("reconciler did not stop within timeout after context cancellation")
+	}
+}
+
+func startD04RustFixture(t *testing.T, docID, listenAddr, lancedbPath, mode, stopFile string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command("cargo", "test", "--manifest-path", "../engine/Cargo.toml", "--locked", "tests::d04_cross_runtime_grpc_fixture", "--", "--exact", "--nocapture")
+	cmd.Env = append(os.Environ(),
+		"LANCET_RUN_D04_FIXTURE=1",
+		"LANCET_D04_DOC_ID="+docID,
+		"LANCET_D04_LISTEN_ADDR="+listenAddr,
+		"LANCET_D04_LANCEDB_PATH="+lancedbPath,
+		"LANCET_D04_MODE="+mode,
+		"LANCET_D04_STOP_FILE="+stopFile,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start Rust D04 fixture: %v", err)
+	}
+	return cmd
+}
+
+func newD04IsolatedPostgres(t *testing.T, databaseURL string) (*postgresStore, *pgxpool.Pool, string) {
+	t.Helper()
+	ctx := context.Background()
+	adminPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("create admin pool: %v", err)
+	}
+	schemaName := "d04_schema_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	_, err = adminPool.Exec(ctx, fmt.Sprintf(`
+		CREATE SCHEMA %q;
+		CREATE TABLE %q.documents (LIKE public.documents INCLUDING ALL);
+		CREATE TABLE %q.document_reconciliation_intents (LIKE public.document_reconciliation_intents INCLUDING ALL);
+		ALTER TABLE %q.document_reconciliation_intents ADD CONSTRAINT document_reconciliation_intents_document_id_fkey FOREIGN KEY (document_id) REFERENCES %q.documents (id) ON UPDATE NO ACTION ON DELETE CASCADE;
+	`, schemaName, schemaName, schemaName, schemaName, schemaName))
+	if err != nil {
+		adminPool.Close()
+		t.Fatalf("create isolated D04 schema: %v", err)
+	}
+
+	connConfig, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+		t.Fatalf("parse database URL: %v", err)
+	}
+	if connConfig.ConnConfig.RuntimeParams == nil {
+		connConfig.ConnConfig.RuntimeParams = make(map[string]string)
+	}
+	connConfig.ConnConfig.RuntimeParams["search_path"] = schemaName
+
+	isolatedPool, err := pgxpool.NewWithConfig(ctx, connConfig)
+	if err != nil {
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+		t.Fatalf("create isolated pool: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		isolatedPool.Close()
+		_, _ = adminPool.Exec(cleanupCtx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+	})
+
+	return &postgresStore{pool: isolatedPool}, isolatedPool, schemaName
+}
+
+func getFreePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("get free port: %v", err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+type lancedbInspection struct {
+	DocumentID             string `json:"document_id"`
+	Provider               string `json:"provider"`
+	EmbeddingModel         string `json:"embedding_model"`
+	DocumentRows           int    `json:"document_rows"`
+	StagedDocumentRows     int    `json:"staged_document_rows"`
+	NodeRows               int    `json:"node_rows"`
+	EdgeRows               int    `json:"edge_rows"`
+	EmbeddingWidth         int    `json:"embedding_width"`
+	GenerationCount        int    `json:"generation_count"`
+	DuplicateGeneration    bool   `json:"duplicate_generation"`
+	StaleGeneration        bool   `json:"stale_generation"`
+	ChunkIndexesContiguous bool   `json:"chunk_indexes_contiguous"`
+}
+
+func TestEmbeddingFailureRestartConvergesAcrossRuntime(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is required for database integration tests")
+	}
+
+	ctx := t.Context()
+	store, pool, _ := newD04IsolatedPostgres(t, databaseURL)
+	_ = pool
+
+	docID := uuid.NewString()
+	q := db.New(store.pool)
+	_, err := q.InsertDocument(ctx, db.InsertDocumentParams{
+		ID:            docID,
+		Filename:      "cross_runtime_d04.md",
+		FileSize:      128,
+		ChunkStrategy: "structure-aware",
+		ChunkSize:     500,
+		ChunkOverlap:  50,
+	})
+	if err != nil {
+		t.Fatalf("insert initial document to isolated pg: %v", err)
+	}
+
+	tempDir := t.TempDir()
+	lancedbPath := tempDir + "/lancedb"
+	stopFile := tempDir + "/stop_signal"
+
+	port := getFreePort(t)
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", port)
+
+	cmd1 := startD04RustFixture(t, docID, listenAddr, lancedbPath, "fail-delete", stopFile)
+	defer func() {
+		_ = os.WriteFile(stopFile, []byte("stop"), 0644)
+		_ = cmd1.Wait()
+	}()
+
+	conn1, err := grpc.NewClient(listenAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial engine1: %v", err)
+	}
+	defer conn1.Close()
+	engine1 := grpcEngine{client: pb.NewLancetServiceClient(conn1)}
+
+	pingSuccess := false
+	for range 300 {
+		if _, pingErr := engine1.Ping(ctx); pingErr == nil {
+			pingSuccess = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !pingSuccess {
+		t.Fatal("engine1 failed to start serving ping")
+	}
+
+	application := app{store: store, engine: engine1, logger: zap.NewNop()}
+	router := application.routes()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/documents/"+docID, nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /documents/%s code = %d, want 200", docID, rec.Code)
+	}
+
+	docAfterFail, err := store.Get(ctx, docID)
+	if err != nil {
+		t.Fatalf("get doc from isolated pg: %v", err)
+	}
+	if docAfterFail.Status != "queued" || docAfterFail.ChunkCount != 0 {
+		t.Fatalf("after fail-delete, isolated pg row = %+v, want queued/0", docAfterFail)
+	}
+
+	if err := os.WriteFile(stopFile, []byte("stop"), 0644); err != nil {
+		t.Fatalf("write stop signal: %v", err)
+	}
+	_ = cmd1.Wait()
+	conn1.Close()
+	_ = os.Remove(stopFile)
+
+	port2 := getFreePort(t)
+	listenAddr2 := fmt.Sprintf("127.0.0.1:%d", port2)
+	cmd2 := startD04RustFixture(t, docID, listenAddr2, lancedbPath, "restart-success", stopFile)
+	defer func() {
+		_ = os.WriteFile(stopFile, []byte("stop"), 0644)
+		_ = cmd2.Wait()
+	}()
+
+	conn2, err := grpc.NewClient(listenAddr2, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial engine2: %v", err)
+	}
+	defer conn2.Close()
+	engine2 := grpcEngine{client: pb.NewLancetServiceClient(conn2)}
+
+	pingSuccess2 := false
+	for range 300 {
+		if _, pingErr := engine2.Ping(ctx); pingErr == nil {
+			pingSuccess2 = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !pingSuccess2 {
+		t.Fatal("engine2 failed to start serving ping")
+	}
+
+	app2 := app{store: store, engine: engine2, logger: zap.NewNop()}
+	router2 := app2.routes()
+
+	completed := false
+	for range 50 {
+		rec2 := httptest.NewRecorder()
+		req2 := httptest.NewRequest(http.MethodGet, "/documents/"+docID, nil)
+		router2.ServeHTTP(rec2, req2)
+		if rec2.Code == http.StatusOK {
+			docCheck, err := store.Get(ctx, docID)
+			if err == nil && docCheck.Status == "completed" {
+				if docCheck.ChunkCount <= 0 {
+					t.Fatalf("completed doc has non-positive chunk count: %d", docCheck.ChunkCount)
+				}
+				completed = true
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !completed {
+		t.Fatal("isolated pg row failed to transition to completed after restart")
+	}
+
+	_ = os.WriteFile(stopFile, []byte("stop"), 0644)
+	_ = cmd2.Wait()
+	conn2.Close()
+
+	out, err := exec.Command("cargo", "run", "--manifest-path", "../engine/Cargo.toml", "--locked", "--bin", "inspect_lancedb", "--", "--document-id", docID, "--lancedb-path", lancedbPath).Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			t.Fatalf("inspect_lancedb failed: %v, stderr: %s", err, string(exitErr.Stderr))
+		}
+		t.Fatalf("inspect_lancedb failed: %v", err)
+	}
+
+	var inspection lancedbInspection
+	if err := json.Unmarshal(out, &inspection); err != nil {
+		t.Fatalf("unmarshal inspect_lancedb json: %v, raw: %s", err, string(out))
+	}
+
+	docCheck, _ := store.Get(ctx, docID)
+	if inspection.DocumentRows != 1 {
+		t.Fatalf("inspection document_rows = %d, want 1", inspection.DocumentRows)
+	}
+	if inspection.StagedDocumentRows != 0 {
+		t.Fatalf("inspection staged_document_rows = %d, want 0", inspection.StagedDocumentRows)
+	}
+	if inspection.NodeRows != int(docCheck.ChunkCount) {
+		t.Fatalf("inspection node_rows = %d, want matching pg chunk count %d", inspection.NodeRows, docCheck.ChunkCount)
+	}
+	if inspection.EmbeddingWidth != 2048 {
+		t.Fatalf("inspection embedding_width = %d, want 2048", inspection.EmbeddingWidth)
+	}
+	if inspection.GenerationCount != 1 {
+		t.Fatalf("inspection generation_count = %d, want 1", inspection.GenerationCount)
+	}
+	if inspection.DuplicateGeneration || inspection.StaleGeneration {
+		t.Fatalf("inspection duplicate/stale generation flagged: %+v", inspection)
+	}
+	if !inspection.ChunkIndexesContiguous {
+		t.Fatal("inspection chunk_indexes_contiguous = false, want true")
 	}
 }
