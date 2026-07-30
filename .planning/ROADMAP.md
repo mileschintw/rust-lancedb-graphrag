@@ -5,7 +5,7 @@
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
-| 2 | 21/21 | Verification gaps found (12/19 verified) | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
+| 2 | 24/24 | Verification gaps found (14/19 verified) | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
 | 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
@@ -30,7 +30,8 @@
 **Goal:** As a Lancet API user, I want to ingest and safely replace text or Markdown documents, so that the last completed LanceDB index and PostgreSQL status remain trustworthy through failures and concurrent polling.
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
-**Plans:** 21/21 plans executed
+**Plans:** 24/24 plans executed
+**Verification:** Gaps found — 14/19 must-haves verified; Phase 02 remains open.
 **Wave 1**
 
 - [x] 02-01-PLAN.md
@@ -99,6 +100,15 @@
 **Wave 16** *(blocked on Wave 15)*
 
 - [x] 02-21-PLAN.md — Consolidate privacy and verification configuration in fail-closed Python tooling and run the deterministic Phase 02 exit gate.
+
+**Wave 17** *(blocked on Wave 16; parallel)*
+
+- [x] 02-22-PLAN.md — Drain acknowledged work during shutdown and restore staged ingestion safely after restart.
+- [x] 02-23-PLAN.md — Reject camel-case privacy aliases and isolate live-evidence runtime paths.
+
+**Wave 18** *(blocked on Wave 17)*
+
+- [x] 02-24-PLAN.md — Bound and validate persisted chunk settings, make polling staging-aware, and isolate database fixtures.
 
 **Success Criteria:**
 

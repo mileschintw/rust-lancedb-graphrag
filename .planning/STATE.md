@@ -4,9 +4,9 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 2
 current_plan: 24
-status: plans_executed
-stopped_at: All 24 plans executed for Phase 02 (including gap closure plans 02-22, 02-23, 02-24)
-last_updated: "2026-07-30T03:03:00.000Z"
+status: gaps_found
+stopped_at: Phase 02 review and independent verification refreshed; 14/19 must-haves verified with six blockers
+last_updated: "2026-07-30T03:28:48.515Z"
 progress:
   total_phases: 2
   completed_phases: 1
@@ -20,15 +20,16 @@ progress:
 
 - Phase 1 completed successfully.
 - Phase 2 plans 02-01 through 02-24 are implemented and summarized.
-- All gap closure plans (02-22, 02-23, 02-24) addressing the five ADR-02-002 blockers are complete.
+- Plans 02-22 through 02-24 fixed the five earlier literal defects, but independent re-verification found six broader blockers.
 
 ## Active Phase
 
 - **Phase:** 2
-- **Status:** All plans executed
+- **Status:** Gaps found after all plans executed
 - **Current Plan:** 24 (last executed)
 - **Phase Progress:** 24 of 24 current plans executed
-- **Current Focus:** Plan fixes for the five blockers recorded in `02-VERIFICATION.md`
+- **Verification:** 14 of 19 must-haves verified
+- **Current Focus:** Plan fixes for the six blockers recorded in `02-VERIFICATION.md`
 
 ## Completed Phases
 
@@ -39,7 +40,8 @@ progress:
 - The accepted Phase 02 verification-disposition ADR supersedes the older blocker disposition in `02-REVIEW.md` and `02-VERIFICATION.md`.
 - Plans 02-17 through 02-21 cover the accepted ship findings and CR-04's loopback-only guardrail.
 - `DEBT-CR-04`, `DEBT-CR-05`, `DEBT-BU-01`, and `DEBT-BU-02` are non-blocking for Phase 02 while their recorded triggers remain false; Phase 6/v1 closure is the latest review point, and an earlier trigger overrides it.
-- Fresh review/verification blockers are not covered by that accepted debt disposition: camel-case privacy aliases bypass the prohibition, queued acknowledged jobs can be lost at shutdown, a database integration test can delete unrelated documents, oversized chunk settings can wrap in PostgreSQL, and the live-evidence test can overwrite/delete concurrent runtime artifacts.
+- The five earlier literal defects are closed: locked camel-case aliases are rejected, table-wide document deletion is removed, shutdown drains the in-memory receiver, chunk sizes are bounded before persistence, and explicit live-evidence paths are isolated.
+- Fresh review/verification blockers are not covered by the accepted debt disposition: one public-schema test can lease unrelated reconciliation intents; startup replay can deadlock above queue capacity; the legacy staging migration is not restartable/idempotent; staging read errors become authoritative `NotFound`; terminal worker failures can leave replayable staging; and privacy diagnostics can echo attacker-controlled keys.
 - Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for their owning phases.
 
 ## Deployment & Environments
@@ -105,5 +107,5 @@ progress:
 ## Session
 
 **Last session:** 2026-07-29
-**Stopped at:** Phase 02 review and verification refreshed; gaps found, ready for `/gsd-plan-phase 02 --gaps`
+**Stopped at:** Phase 02 review and independent verification refreshed; gaps found at 14/19, ready for `/gsd-plan-phase 02 --gaps`
 **Resume file:** None
