@@ -120,22 +120,13 @@ func TestReconciliationIntentRecordAndClaim(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("create database pool: %v", err)
-	}
-	defer pool.Close()
+	_, claimantPool, _ := createIsolatedTestPool(t, databaseURL)
 
 	docID := "record-claim-" + uuid.NewString()
 
-	t.Cleanup(func() {
-		cleanupCtx := context.Background()
-		_, _ = pool.Exec(cleanupCtx, "DELETE FROM documents WHERE id = $1", docID)
-	})
+	q := New(claimantPool)
 
-	q := New(pool)
-
-	_, err = q.InsertDocument(ctx, InsertDocumentParams{
+	_, err := q.InsertDocument(ctx, InsertDocumentParams{
 		ID:            docID,
 		Filename:      "test.txt",
 		FileSize:      100,
@@ -254,8 +245,12 @@ func TestReconciliationIntentClaimLeaseIsExclusive(t *testing.T) {
 	adminPool, claimantPool, _ := createIsolatedTestPool(t, databaseURL)
 
 	var initialPublicDocCount, initialPublicIntentCount int
-	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&initialPublicDocCount)
-	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&initialPublicIntentCount)
+	if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&initialPublicDocCount); err != nil {
+		t.Fatalf("scan initial public documents count: %v", err)
+	}
+	if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&initialPublicIntentCount); err != nil {
+		t.Fatalf("scan initial public intents count: %v", err)
+	}
 
 	docID := "exclusive-claim-" + uuid.NewString()
 
@@ -323,8 +318,12 @@ func TestReconciliationIntentClaimLeaseIsExclusive(t *testing.T) {
 	}
 
 	var finalPublicDocCount, finalPublicIntentCount int
-	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&finalPublicDocCount)
-	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&finalPublicIntentCount)
+	if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&finalPublicDocCount); err != nil {
+		t.Fatalf("scan final public documents count: %v", err)
+	}
+	if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&finalPublicIntentCount); err != nil {
+		t.Fatalf("scan final public intents count: %v", err)
+	}
 	if finalPublicDocCount != initialPublicDocCount || finalPublicIntentCount != initialPublicIntentCount {
 		t.Fatalf("public table counts changed: docs %d->%d, intents %d->%d", initialPublicDocCount, finalPublicDocCount, initialPublicIntentCount, finalPublicIntentCount)
 	}
@@ -340,8 +339,12 @@ func TestReconciliationIntentClaimLeasePreservesUnrelatedDocumentAndIntent(t *te
 	adminPool, claimantPool, _ := createIsolatedTestPool(t, databaseURL)
 
 	var initialPublicDocCount, initialPublicIntentCount int
-	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&initialPublicDocCount)
-	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&initialPublicIntentCount)
+	if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&initialPublicDocCount); err != nil {
+		t.Fatalf("scan initial public documents count: %v", err)
+	}
+	if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&initialPublicIntentCount); err != nil {
+		t.Fatalf("scan initial public intents count: %v", err)
+	}
 
 	q := New(claimantPool)
 
@@ -442,8 +445,12 @@ func TestReconciliationIntentClaimLeasePreservesUnrelatedDocumentAndIntent(t *te
 	}
 
 	var finalPublicDocCount, finalPublicIntentCount int
-	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&finalPublicDocCount)
-	_ = adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&finalPublicIntentCount)
+	if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.documents").Scan(&finalPublicDocCount); err != nil {
+		t.Fatalf("scan final public documents count: %v", err)
+	}
+	if err := adminPool.QueryRow(ctx, "SELECT count(*) FROM public.document_reconciliation_intents").Scan(&finalPublicIntentCount); err != nil {
+		t.Fatalf("scan final public intents count: %v", err)
+	}
 	if finalPublicDocCount != initialPublicDocCount || finalPublicIntentCount != initialPublicIntentCount {
 		t.Fatalf("public table counts changed: docs %d->%d, intents %d->%d", initialPublicDocCount, finalPublicDocCount, initialPublicIntentCount, finalPublicIntentCount)
 	}
