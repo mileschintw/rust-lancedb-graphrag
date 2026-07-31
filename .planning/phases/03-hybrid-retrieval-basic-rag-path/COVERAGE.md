@@ -22,3 +22,9 @@ Phase 03 integrates the existing OpenRouter embeddings surface for query-vector 
 | Tools and function calling | OPT-OUT | The Phase 03 model input is limited to the question and explicitly framed evidence; no model tools are exposed. |
 | Alternate provider runtime adapters | OPT-OUT | The provider-neutral trait is integrated, but alternate concrete providers are outside this phase and have no selected contract or credentials. |
 | Provider retry and alternate-provider fallback | OPT-OUT | The accepted MVP path makes one generation attempt; retry and fallback orchestration is deferred to Phase 05 and the recorded debt ledger. |
+
+## Verification contract
+
+Plan 03-03 Task 1 performs a supported-parameters preflight for the configured model and requires the provider metadata to advertise structured-output support before a real request. The ignored command `cargo test --manifest-path engine/Cargo.toml --locked openrouter_structured_output_smoke -- --ignored` then verifies one real structured response when `OPENROUTER_API_KEY` is available. Normal tests use a local mock and do not depend on provider access.
+
+The capability subtraction is intentional: Phase 03 exposes only the unary, one-shot structured path. Streaming, tools/function calling, alternate providers, and retries/fallback remain explicit OPT-OUT decisions and are not hidden inside the tracer.

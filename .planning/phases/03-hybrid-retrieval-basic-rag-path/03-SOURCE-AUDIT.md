@@ -12,7 +12,7 @@ The executable slice is one valid-query path over a query-ready completed corpus
 |---|---|---|---|---|---|
 | GOAL | — | A chat service user asks a question through hybrid vector and BM25 retrieval and receives a grounded LLM answer. | 03-01 | COVERED | Full HTTP-to-provider tracer. |
 | REQ | RAG-02 | Dense vector plus local BM25 retrieval, metadata filtering, and deduplication. | 03-01, 03-02 | COVERED | Real LanceDB and in-memory BM25 paths, RRF, filters, and deterministic tests. |
-| REQ | RAG-03 | Degraded retrieval when one path fails. | 03-01, 03-03 | COVERED — BOUNDARY/DEFERRED | Typed per-path result capacity and public fields are preserved; runtime fallback is recorded in `deferred-items.md` as `DEBT-RAG-01`. |
+| REQ | RAG-03 | Degraded retrieval when one path fails. | 03-01, 03-03 | COVERED — BOUNDARY/DEFERRED | Typed per-path result capacity and public fields are preserved; retrieval/model fallback is `DEBT-RAG-01` and graph-extraction unavailability is explicitly `DEBT-RAG-06` in `deferred-items.md`. |
 | REQ | RAG-04 | Async `Reranker` port with pass-through `NoOpReranker`. | 03-01, 03-02 | COVERED | Injectable boxed-future port and order-preserving implementation. |
 
 ## RESEARCH coverage
@@ -25,12 +25,12 @@ The executable slice is one valid-query path over a query-ready completed corpus
 | RESEARCH | Same-filter dense and BM25 candidate selection, global IDF, field boosts, technical identifier analysis, weighted RRF, deduplication, and stable tie-breaking. | 03-01, 03-02 | COVERED | D-01 through D-10 and D-44 through D-53 are traced to implementation and tests. |
 | RESEARCH | Async `NoOpReranker` extension port. | 03-01, 03-02 | COVERED | No non-pass-through reranker is planned. |
 | RESEARCH | Bounded whole-chunk evidence, generated provenance IDs, escaped delimiters, and untrusted-evidence framing. | 03-01, 03-03 | COVERED | Prompt assembly is Rust-owned and source text remains data. |
-| RESEARCH | Closed Serde model output, one OpenRouter structured chat call, configurable model and sampling, timeout, usage metadata, and typed provider errors. | 03-01, 03-03 | COVERED | Local mock tests prove request shape and one-call behavior; live provider availability is not a suite dependency. |
+| RESEARCH | Closed Serde model output, one OpenRouter structured chat call, configurable model and sampling, timeout, usage metadata, typed provider errors, and supported-parameters preflight/live smoke. | 03-01, 03-03 | COVERED | Local mock tests prove request shape and one-call behavior; Plan 03-03 adds metadata preflight plus an explicitly ignored real-provider smoke. |
 | RESEARCH | Additive protobuf evolution, generated Rust and Go bindings, thin Go route, context forwarding, and stable HTTP status mapping. | 03-01, 03-03 | COVERED | Existing field numbers remain intact. |
 | RESEARCH | Query/session/filter validation and bounds. | 03-01, 03-03 | COVERED | 8 KiB query, UUID session, normalized filter limits, strict body decoding, and invalid-argument mapping. |
-| RESEARCH | Isolated LanceDB fixtures, fake embedding/generator seams, startup readiness proof, and Rust/Go test commands. | 03-01, 03-02, 03-03 | COVERED | Fixtures are temporary and provider-independent. |
+| RESEARCH | Isolated LanceDB fixtures, fake embedding/generator seams, startup readiness proof, provider-independent Go-to-generated-gRPC-to-Rust smoke, and Rust/Go test commands. | 03-01, 03-02, 03-03 | COVERED | Fixtures are temporary; the cross-runtime smoke uses a localhost provider mock and does not stub the Rust QueryRAG RPC. |
 | RESEARCH | Security controls for session/input validation, typed predicates, prompt injection, credential redaction, context bounds, and cross-index consistency. | 03-01, 03-02, 03-03 | COVERED | Each plan contains a STRIDE register. |
-| RESEARCH | Explicit assumptions A1–A5: model is configurable, corpus tests use isolated fixtures, candidate/final defaults are selected, provider/internal mapping is consistent, and live PostgreSQL is not required for deterministic tests. | 03-01, 03-03 | COVERED | Chosen defaults are recorded in the plans; no unresolved assumption blocks execution. |
+| RESEARCH | Resolved assumptions A1–A5: metadata-checked configurable model, isolated fixtures, explicit candidate/final/evidence bounds, stable provider/internal mapping, and no PostgreSQL dependency for deterministic tests. | 03-01, 03-03 | COVERED | Answers are recorded in `03-RESEARCH.md` under `## Open Questions (RESOLVED)` and in the revised plans. |
 | RESEARCH | External OpenRouter API surface and explicit capability subtraction. | 03-03 | COVERED | `COVERAGE.md` enumerates the integrated surface and opt-outs. |
 | RESEARCH | Graph context, workflow state machine, streaming, retries, provider fallback, evaluation tuning, tracing, and non-NoOp reranking. | — | EXCLUDED | Explicitly scoped to Phases 4–6 or Phase 999.2; not Phase 03 executable work. |
 
@@ -59,7 +59,7 @@ The executable slice is one valid-query path over a query-ready completed corpus
 | D-19 | Request carries question, optional session, and typed filters. | 03-01, 03-03 | COVERED |
 | D-20 | Session IDs are validated; absent IDs are generated and returned. | 03-01, 03-03 | COVERED |
 | D-21 | Citations contain structured provenance and retrieval metadata. | 03-01, 03-03 | COVERED |
-| D-22 | Retrieval-backed and mixed text uses numbered citation markers. | 03-01, 03-03 | COVERED for valid output |
+| D-22 | Retrieval-backed and mixed text uses numbered citation markers. | 03-01, 03-03 | COVERED for valid output; each marker resolves to its ordered engine evidence object |
 | D-23 | Excerpts are bounded and expose truncation. | 03-01, 03-03 | COVERED |
 | D-24 | Invalid markers receive repair and downgrade. | — | DEFERRED — `DEBT-RAG-03` |
 | D-25 | Responses include a compact retrieval snapshot. | 03-01 | COVERED |
@@ -77,10 +77,10 @@ The executable slice is one valid-query path over a query-ready completed corpus
 | D-37 | Prompt-injection text remains marked evidence and is flagged. | 03-01, 03-03 | COVERED in framing/notice seam |
 | D-38 | Corpus conflicts are disclosed and classified as mixed. | 03-01, 03-03 | COVERED in typed model contract |
 | D-39 | Answer budget is reserved first and whole evidence chunks are packed in rank order. | 03-01, 03-03 | COVERED |
-| D-40 | Completed ingestion means vector and BM25 representations are query-ready. | 03-01, 03-02 | COVERED for the current query-ready snapshot |
+| D-40 | Completed ingestion means vector and BM25 representations are query-ready. | 03-01, 03-02 | COVERED for the current query-ready snapshot; initial build is wave 1 |
 | D-41 | Re-ingestion keeps the previous completed version until atomic switch. | — | DEFERRED — `DEBT-RAG-04` |
-| D-42 | Restart rebuilds BM25 before readiness. | — | DEFERRED — `DEBT-RAG-04`; current-process initial build remains in scope |
-| D-43 | BM25 rebuild failure fails startup rather than serving vector-only. | — | DEFERRED — `DEBT-RAG-04` |
+| D-42 | Restart rebuilds BM25 before readiness. | 03-01, 03-02 | COVERED for initial startup build; dynamic restart/re-ingestion recovery is deferred — `DEBT-RAG-04` |
+| D-43 | BM25 rebuild failure fails startup rather than serving vector-only. | 03-01, 03-02 | COVERED for the initial current-corpus build; dynamic restart/re-ingestion recovery is deferred — `DEBT-RAG-04` |
 | D-44 | BM25 uses NFKC, Unicode case folding, and original source preservation. | 03-01, 03-02 | COVERED |
 | D-45 | No stemming or stop-word removal. | 03-01, 03-02 | COVERED |
 | D-46 | Content/title/section fields use 1.0/2.0/1.5 boosts. | 03-01, 03-02 | COVERED |
@@ -98,4 +98,4 @@ The executable slice is one valid-query path over a query-ready completed corpus
 
 ## Accepted deferred scope
 
-`DEBT-RAG-01` through `DEBT-RAG-05` in [deferred-items.md](deferred-items.md) remain out of executable tasks. The plans preserve only the typed seams and safeguards needed for a trustworthy valid-query path; they do not claim full RAG-03 completion.
+`DEBT-RAG-01` through `DEBT-RAG-06` in [deferred-items.md](deferred-items.md) remain out of executable tasks. The plans preserve only the typed seams and safeguards needed for a trustworthy valid-query path; they do not claim full RAG-03 completion.

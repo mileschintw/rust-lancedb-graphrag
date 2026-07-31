@@ -138,9 +138,9 @@
 **Plans:** 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Wire the complete HTTP-to-Rust hybrid retrieval and structured-generation tracer.
-- [ ] 03-02-PLAN.md — Prove deterministic retrieval/reranker semantics and current-corpus BM25 readiness.
-- [ ] 03-03-PLAN.md — Harden the OpenRouter/gateway contract and record external API coverage decisions.
+- [ ] 03-01-PLAN.md — Wire the query-ready HTTP-to-Rust hybrid tracer and deterministic Rust service proof.
+- [ ] 03-02-PLAN.md — Complete Unicode BM25, deterministic retrieval/reranker proofs, and initial readiness ordering.
+- [ ] 03-03-PLAN.md — Harden structured generation and gateway contracts, add the local cross-runtime smoke, and verify API capability decisions.
 
 **Success Criteria:**
 
