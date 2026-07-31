@@ -25,7 +25,9 @@ Phase 03 integrates the existing OpenRouter embeddings surface for query-vector 
 
 ## Verification contract
 
+- Plan 03-01 proves the Unicode analyzer, global BM25 statistics, typed filters, dense/BM25 fusion, and NoOp reranker through the named retrieval tests `bm25_full_unicode_analyzer_and_global_idf`, `retrieval_filter_fusion_and_determinism`, and `noop_reranker_preserves_candidates`.
 - Plan 03-02 Task 2 performs the supported-parameters preflight and strict one-call adapter contract against a deterministic local metadata/chat mock. The ignored command `cargo test --manifest-path engine/Cargo.toml --locked openrouter_structured_output_smoke -- --ignored` is the optional manual live-provider check when `OPENROUTER_API_KEY` is available; it is not required for the provider-independent path.
+- Plan 03-03 carries the additive QueryRAG contract into both generated runtimes, verifies the exact `supported_parameters` metadata key, and proves service-level QueryRAG behavior plus initial BM25 readiness before serving.
 - Plan 03-04 Task 2 proves that the existing Rust embedding client can target an explicit endpoint override while retaining its production OpenRouter default, timeout, retry, concurrency, and dimension checks.
 - Plan 03-05 Task 1 runs `TestRAGQueryCrossRuntime` through the real Go route and Rust process. One localhost server deterministically handles query embeddings, model `supported_parameters` metadata, and one strict chat completion; a reusable seed binary creates an isolated temporary completed LanceDB corpus and cleanup waits for all handles and child processes.
 - Plan 03-05 Task 2 maintains this matrix and keeps automated proof limited to the accepted valid-query path: grounded citations, usage/model metadata, strict input mapping, initial BM25 readiness, and no PostgreSQL or live credentials.
@@ -40,3 +42,5 @@ Phase 03 integrates the existing OpenRouter embeddings surface for query-vector 
   - **Future acceptance criteria:** Empty/oversized queries, malformed IDs, unsupported content types, and filter limits are rejected before retrieval/provider work with stable HTTP 400 and gRPC `InvalidArgument` behavior.
 
 The capability subtraction is intentional: Phase 03 exposes only the unary, one-shot structured path. Streaming, tools/function calling, alternate providers, retries/fallback, degraded retrieval, citation repair, and dynamic re-ingestion/restart recovery remain explicit OPT-OUT/debt decisions and are not hidden inside the tracer.
+
+Dynamic re-ingestion/restart recovery remains deferred as `DEBT-RAG-04`; it is not part of the initial-readiness proof.

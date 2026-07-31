@@ -523,7 +523,7 @@ Read canonical fields by name and expected Arrow type, use `new_null_array` for 
 
 **Sources:** `engine/src/main.rs:49-85`, `config/config.example.toml:1-14`, `gateway/main.go:52-83`.
 
-Keep file-backed TOML plus `LANCET__...` environment overrides. Load `OPENROUTER_API_KEY` from the environment, reject missing/blank keys, and never log credentials, raw prompts, or raw evidence.
+Keep file-backed TOML plus the repository's `LANCET_ENGINE__...` and `LANCET_OPENROUTER__...` environment overrides. Load `OPENROUTER_API_KEY` from the environment, reject missing/blank keys, and never log credentials, raw prompts, or raw evidence.
 
 ### Error formatting and boundary mapping
 
