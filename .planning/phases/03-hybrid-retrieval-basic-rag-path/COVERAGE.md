@@ -1,8 +1,8 @@
 # API Coverage — OpenRouter
 
-> Full coverage by default. Every capability outside the Phase 03 integrated surface has an explicit opt-out with a reason.
+> Current MVP coverage is explicit. Every capability outside the accepted Phase 03 happy path has an explicit opt-out with a reason and a debt-ledger pointer.
 
-Phase 03 integrates the existing OpenRouter embeddings surface for query-vector creation and the structured, unary chat-completion surface for one grounded answer. The provider-neutral Rust `Generator` seam remains integrated so another adapter can be added without changing retrieval or prompt contracts.
+Phase 03 integrates the existing OpenRouter embeddings surface for query-vector creation and the structured, unary chat-completion surface for one grounded answer when both vector and BM25 retrieval paths succeed over a completed corpus. The provider-neutral Rust `Generator` seam remains integrated so another adapter can be added without changing retrieval or prompt contracts. RAG-03 is explicitly opted out of this phase; its future degraded, citation-repair, graph-unavailability, and lifecycle targets remain in `deferred-items.md`.
 
 | capability | decision | reason |
 |---|---|---|
@@ -22,15 +22,30 @@ Phase 03 integrates the existing OpenRouter embeddings surface for query-vector 
 | Tools and function calling | OPT-OUT | The Phase 03 model input is limited to the question and explicitly framed evidence; no model tools are exposed. |
 | Alternate provider runtime adapters | OPT-OUT | The provider-neutral trait is integrated, but alternate concrete providers are outside this phase and have no selected contract or credentials. |
 | Provider retry and alternate-provider fallback | OPT-OUT | The accepted MVP path makes one generation attempt; retry and fallback orchestration is deferred to Phase 05 and the recorded debt ledger. |
+| Degraded retrieval and model-only fallback | OPT-OUT | RAG-03 is not a Phase 03 acceptance requirement; D-11 through D-16 remain DEBT-RAG-01 and graph unavailability remains DEBT-RAG-06 for future hardening. |
+| Citation repair and transparent downgrade | OPT-OUT | Valid structured markers are checked on the MVP path; D-24 repair/removal/downgrade remains DEBT-RAG-03. |
+| Re-ingestion/restart atomic visibility and recovery | OPT-OUT | Initial BM25 build/readiness is integrated as a trust safeguard; D-41 through D-43 lifecycle behavior remains DEBT-RAG-04. |
 
 ## Verification contract
 
 - Plan 03-01 proves the Unicode analyzer, global BM25 statistics, typed filters, dense/BM25 fusion, and NoOp reranker through the named retrieval tests `bm25_full_unicode_analyzer_and_global_idf`, `retrieval_filter_fusion_and_determinism`, and `noop_reranker_preserves_candidates`.
 - Plan 03-02 Task 2 performs the supported-parameters preflight and strict one-call adapter contract against a deterministic local metadata/chat mock. The ignored command `cargo test --manifest-path engine/Cargo.toml --locked openrouter_structured_output_smoke -- --ignored` is the optional manual live-provider check when `OPENROUTER_API_KEY` is available; it is not required for the provider-independent path.
-- Plan 03-03 carries the additive QueryRAG contract into both generated runtimes, verifies the exact `supported_parameters` metadata key, and proves service-level QueryRAG behavior plus initial BM25 readiness before serving.
+- Plan 03-03 carries the additive QueryRAG contract into both generated runtimes, verifies the exact `supported_parameters` metadata key, and proves service-level QueryRAG behavior plus the initial BM25 build/readiness safeguard before serving; it does not claim restart recovery.
 - Plan 03-04 Task 2 proves that the existing Rust embedding client can target an explicit endpoint override while retaining its production OpenRouter default, timeout, retry, concurrency, and dimension checks.
 - Plan 03-05 Task 1 runs `TestRAGQueryCrossRuntime` through the real Go route and Rust process. One localhost server deterministically handles query embeddings, model `supported_parameters` metadata, and one strict chat completion; a reusable seed binary creates an isolated temporary completed LanceDB corpus and cleanup waits for all handles and child processes.
-- Plan 03-05 Task 2 maintains this matrix and keeps automated proof limited to the accepted valid-query path: grounded citations, usage/model metadata, strict input mapping, initial BM25 readiness, and no PostgreSQL or live credentials.
+- Plan 03-05 Task 2 maintains this matrix and keeps automated proof limited to the accepted valid-query path: both retrieval paths succeeding, grounded valid citations, usage/model metadata, strict input mapping, the initial BM25 build/readiness safeguard, and no PostgreSQL or live credentials.
+
+## RAG-03 deferred boundary
+
+RAG-03 is **OPT-OUT / DEFERRED** for Phase 03 and is mapped to the Phase 06 hardening target. The current plans may preserve typed fields, provider errors, valid-marker validation, and initial-build safeguards required to make the happy path trustworthy, but they do not implement or accept the future failure branches.
+
+- `DEBT-RAG-01` — **OPT-OUT:** D-11 through D-16 degraded retrieval and model-only behavior have no Phase 03 failure-path gate; see `deferred-items.md`.
+- `DEBT-RAG-03` — **OPT-OUT:** D-24 citation repair, removal, and transparent downgrade are deferred; Phase 03 accepts valid markers only; see `deferred-items.md`.
+- `DEBT-RAG-04` — **OPT-OUT:** D-41 through D-43 re-ingestion/restart visibility and recovery are deferred; only the initial build/readiness safeguard is in scope; see `deferred-items.md`.
+- `DEBT-RAG-05` — **OPT-OUT:** Exhaustive invalid-input and filter edge coverage is deferred; basic happy-path guards remain; see `deferred-items.md`.
+- `DEBT-RAG-06` — **OPT-OUT:** Graph-extraction unavailability in the eventual RAG-03 contract is deferred; Phase 03 uses source chunks only; see `deferred-items.md`.
+
+Each debt item retains its rationale, trigger, target, and future acceptance criteria in [deferred-items.md](deferred-items.md).
 
 ## Deferred boundary coverage
 
@@ -41,6 +56,6 @@ Phase 03 integrates the existing OpenRouter embeddings surface for query-vector 
   - **Target:** Phase 06 hardening/evaluation.
   - **Future acceptance criteria:** Empty/oversized queries, malformed IDs, unsupported content types, and filter limits are rejected before retrieval/provider work with stable HTTP 400 and gRPC `InvalidArgument` behavior.
 
-The capability subtraction is intentional: Phase 03 exposes only the unary, one-shot structured path. Streaming, tools/function calling, alternate providers, retries/fallback, degraded retrieval, citation repair, and dynamic re-ingestion/restart recovery remain explicit OPT-OUT/debt decisions and are not hidden inside the tracer.
+The capability subtraction is intentional: Phase 03 exposes only the unary, one-shot structured happy path. Streaming, tools/function calling, alternate providers, retries/fallback, RAG-03 degraded behavior, citation repair, and dynamic re-ingestion/restart recovery remain explicit OPT-OUT/debt decisions and are not hidden inside the tracer.
 
 Dynamic re-ingestion/restart recovery remains deferred as `DEBT-RAG-04`; it is not part of the initial-readiness proof.

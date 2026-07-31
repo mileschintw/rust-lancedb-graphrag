@@ -6,6 +6,16 @@ Source of record: accepted MVP scope decision during Phase 03 planning (2026-07-
 
 The revised five-plan execution order distributes that same scope across retrieval/dependencies, provider contracts, gRPC/startup readiness, gateway/embedding configuration, and the isolated local cross-runtime proof. This split does not promote any item below into implementation; initial BM25 construction/readiness remains in scope, while dynamic restart/re-ingestion recovery remains `DEBT-RAG-04`.
 
+### Deferred decision mapping
+
+| Future target contract | Current source-of-record debt |
+|---|---|
+| D-11 through D-16: degraded retrieval, model-only behavior, and degraded answer-basis/warning semantics | DEBT-RAG-01 |
+| D-24: citation repair, unsupported-marker removal, and transparent downgrade | DEBT-RAG-03 |
+| D-41 through D-43: re-ingestion atomic visibility and restart rebuild/failure behavior | DEBT-RAG-04 |
+
+These mappings preserve the target behavior and decision IDs for later work; none is a Phase 03 implementation task or acceptance gate.
+
 ### DEBT-RAG-01 — Degraded retrieval and model-only fallback
 
 - **Rationale:** The first usable slice must prove retrieval-grounded generation before expanding behavior for missing, weak, unnecessary, or failed evidence.

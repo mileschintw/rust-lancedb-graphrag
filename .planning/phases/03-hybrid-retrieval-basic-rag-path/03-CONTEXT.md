@@ -1,12 +1,22 @@
 # Phase 3: Hybrid Retrieval & Basic RAG Path - Context
 
 **Gathered:** 2026-07-30
-**Status:** Ready for planning
+**Status:** Accepted MVP scope override recorded 2026-07-31; ready for execution after explicit approval
+
+## Accepted MVP Scope Override — 2026-07-31
+
+The accepted Phase 03 MVP proves only one trustworthy happy path: a valid query over a completed, query-ready corpus where both dense-vector and BM25 retrieval succeed, the results are deterministically fused into bounded evidence, and one provider-neutral LLM call returns a structured answer whose valid citations resolve to that evidence. Basic validation, bounds, untrusted-evidence framing, and the initial BM25 build/readiness gate remain in scope only as safeguards for that path.
+
+The earlier broader target behavior is preserved for later hardening, but it is not a Phase 03 acceptance lock. Decision IDs D-11 through D-16, D-24, and D-41 through D-43 are future target contracts deferred from this phase and must not be represented as delivered by the five MVP plans. `deferred-items.md` is the current source of record for the deferred behavior, rationale, triggers, targets, and future acceptance criteria.
 
 <domain>
 ## Phase Boundary
 
-Implement Rust-owned hybrid retrieval over the completed LanceDB corpus by combining dense vector search with an in-memory BM25 index, applying typed metadata filters, deterministic fusion, deduplication, and degraded retrieval behavior. Expose a unary Go `POST /rag/query` endpoint backed by the existing gRPC boundary, generate an LLM answer with structured citations, and provide an explicit model-only path when retrieved evidence is absent, weak, unnecessary, or unavailable.
+Implement the Rust-owned valid-query path over a completed LanceDB corpus by combining successful dense vector and in-memory BM25 retrieval, applying valid typed metadata filters, deterministic fusion, deduplication, bounded untrusted evidence, and one provider-neutral structured generation call. Expose the unary Go `POST /rag/query` endpoint through the existing gRPC boundary and return valid structured citations that resolve to the selected evidence.
+
+The initial BM25 snapshot must be built before the first query-ready state and a build failure must prevent that state; this is the minimum safeguard required to make the MVP happy path trustworthy. Dynamic re-ingestion switching and restart-specific recovery/readiness behavior remain future targets under `DEBT-RAG-04`.
+
+Degraded retrieval, model-only fallback, citation repair/downgrade, graph-unavailability behavior, and lifecycle recovery are not Phase 03 acceptance behavior. They remain documented target contracts in the decision list and the deferred ledger.
 
 Graph context extraction remains Phase 4. Formal workflow orchestration, streaming events, node retries, and provider fallback remain Phase 5. Evaluation-driven tuning and full observability remain Phase 6.
 
@@ -14,6 +24,10 @@ Graph context extraction remains Phase 4. Formal workflow orchestration, streami
 
 <decisions>
 ## Implementation Decisions
+
+### Decision status under the accepted MVP override
+
+The decisions below remain useful target contracts, but the following groups are deferred from Phase 03 acceptance and are tracked in `deferred-items.md`: D-11 through D-16 under `DEBT-RAG-01`, D-24 under `DEBT-RAG-03`, and D-41 through D-43 under `DEBT-RAG-04`. Phase 03 may carry typed fields or initial-build safeguards needed by the valid path; that compatibility capacity is not implementation or acceptance of the deferred behavior.
 
 ### Hybrid Ranking and Candidate Flow
 - **D-01:** Fuse dense-vector and BM25 rankings with Reciprocal Rank Fusion (RRF).
@@ -30,12 +44,12 @@ Graph context extraction remains Phase 4. Formal workflow orchestration, streami
 - **D-10:** Reject malformed document IDs and unsupported content types with gRPC `InvalidArgument` / HTTP `400`; valid filters that match nothing produce empty evidence rather than a validation error.
 
 ### Degraded Retrieval and Answer Basis
-- **D-11:** If one retrieval path fails, continue with the surviving path and mark the response degraded.
-- **D-12:** If both retrieval paths fail, continue to the LLM and allow a model-only answer with warnings for both failed paths.
-- **D-13:** Retrieval results never block generation merely because evidence is empty, weak, or unnecessary; the LLM may answer from model-owned knowledge to maximize usefulness.
-- **D-14:** Every response reports `answer_basis` as `retrieval`, `mixed`, or `model_only`.
-- **D-15:** Degraded responses include structured, machine-readable warnings naming unavailable retrieval paths.
-- **D-16:** A model-only response includes both `answer_basis: "model_only"` and a separate human-readable notice such as “Answered using model knowledge without retrieved evidence.” Its citation list is empty.
+- **D-11 (future target; DEBT-RAG-01):** If one retrieval path fails, continue with the surviving path and mark the response degraded.
+- **D-12 (future target; DEBT-RAG-01):** If both retrieval paths fail, continue to the LLM and allow a model-only answer with warnings for both failed paths.
+- **D-13 (future target; DEBT-RAG-01):** Retrieval results never block generation merely because evidence is empty, weak, or unnecessary; the LLM may answer from model-owned knowledge to maximize usefulness.
+- **D-14 (future target behavior; DEBT-RAG-01):** The full contract reports `answer_basis` as `retrieval`, `mixed`, or `model_only`. Phase 03 carries the typed field for the valid retrieval-backed response only.
+- **D-15 (future target; DEBT-RAG-01):** Degraded responses include structured, machine-readable warnings naming unavailable retrieval paths.
+- **D-16 (future target; DEBT-RAG-01):** A model-only response includes both `answer_basis: "model_only"` and a separate human-readable notice such as “Answered using model knowledge without retrieved evidence.” Its citation list is empty.
 - **D-17:** The generation call evaluates evidence use and returns the proposed answer basis through validated structured output; no separate relevance-classification call is added.
 
 ### HTTP, gRPC, Session, and Citation Contract
@@ -45,7 +59,7 @@ Graph context extraction remains Phase 4. Formal workflow orchestration, streami
 - **D-21:** Replace string-only citations with structured evidence citations containing `chunk_id`, `document_id`, source filename/title when available, section path, bounded excerpt, truncation status, and retrieval metadata.
 - **D-22:** Retrieval-backed and mixed answer text uses inline numbered markers (`[1]`, `[2]`) that resolve to structured citation objects.
 - **D-23:** Citation excerpts contain only a relevant passage up to a configurable limit and explicitly report truncation; never return the full chunk by default.
-- **D-24:** Validate every generated citation marker against supplied evidence. Make one bounded repair attempt for malformed or unknown markers. If repair still fails, remove unsupported citations, downgrade the answer to `model_only`, and emit a citation-integrity warning.
+- **D-24 (future target; DEBT-RAG-03):** Validate every generated citation marker against supplied evidence. Make one bounded repair attempt for malformed or unknown markers. If repair still fails, remove unsupported citations, downgrade the answer to `model_only`, and emit a citation-integrity warning. Phase 03 validates only structured markers that are already valid and resolvable.
 - **D-25:** Return a compact retrieval snapshot containing index generation, embedding model, RRF parameters and weights, candidate limits, and active filters.
 
 ### LLM Provider and Generation Contract
@@ -68,9 +82,9 @@ Graph context extraction remains Phase 4. Formal workflow orchestration, streami
 
 ### Cross-Index Freshness and Recovery
 - **D-40:** `completed` ingestion means both the LanceDB vector representation and BM25 entries are query-ready.
-- **D-41:** Re-ingestion keeps the previous completed document version searchable until both new representations can switch together.
-- **D-42:** On engine restart, rebuild BM25 from canonical completed LanceDB chunks before the query service reports ready or accepts queries.
-- **D-43:** Fail engine startup clearly if the BM25 rebuild fails; do not silently enter permanent vector-only degradation.
+- **D-41 (future target; DEBT-RAG-04):** Re-ingestion keeps the previous completed document version searchable until both new representations can switch together.
+- **D-42 (future restart target; DEBT-RAG-04):** On engine restart, rebuild BM25 from canonical completed LanceDB chunks before the query service reports ready or accepts queries. Phase 03 proves only the initial BM25 build before the first query-ready state.
+- **D-43 (future restart-failure target; DEBT-RAG-04):** Fail engine startup clearly if the BM25 rebuild fails; do not silently enter permanent vector-only degradation. Phase 03 keeps the equivalent initial-build failure guard, but does not claim restart recovery behavior.
 
 ### BM25 Analysis and Scoring
 - **D-44:** Use Unicode-aware tokenization with NFKC normalization and Unicode case folding. Preserve original source text for prompts and citations.
@@ -104,8 +118,8 @@ Graph context extraction remains Phase 4. Formal workflow orchestration, streami
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Requirements and Phase Boundary
-- `.planning/ROADMAP.md` — Phase 3 goal, requirements RAG-02/RAG-03/RAG-04, success criteria, and boundaries with Phases 4–6.
-- `.planning/REQUIREMENTS.md` — active hybrid retrieval, degraded-mode, and reranker-port requirements.
+- `.planning/ROADMAP.md` — Phase 3 goal, current requirements RAG-02/RAG-04, the explicit RAG-03 Phase 06 hardening target, success criteria, and boundaries with Phases 4–6.
+- `.planning/REQUIREMENTS.md` — active hybrid-retrieval and reranker-port requirements plus the deferred RAG-03 traceability entry.
 
 ### Architecture and Ownership
 - `.discussion/final_implementation_decision_document.md` — authoritative Go control-plane / Rust data-plane split and custom hybrid-retrieval direction.
@@ -130,7 +144,7 @@ Graph context extraction remains Phase 4. Formal workflow orchestration, streami
 - Rust owns chunking, vector, retrieval, recovery, and RAG semantics; Go handles HTTP, gRPC forwarding, and PostgreSQL/session metadata.
 - The codebase uses tonic/prost for the shared contract, Tokio async execution, structured tracing, configuration overlays, and fail-fast schema validation.
 - Completed data lives canonically in LanceDB; BM25 is a derived in-memory index rebuilt from completed chunks.
-- Re-ingestion and recovery favor durable staging and preservation of the last completed canonical version until replacement succeeds.
+- Initial startup uses the completed-corpus BM25 readiness safeguard; re-ingestion atomicity and restart recovery remain future targets under `DEBT-RAG-04`.
 
 ### Integration Points
 - `gateway/main.go` currently registers `/health` and document routes only; add a thin `POST /rag/query` handler and a `QueryRAG` method on the gateway engine interface.
@@ -147,7 +161,7 @@ Graph context extraction remains Phase 4. Formal workflow orchestration, streami
 - BM25 defaults: `k1 = 1.2`, `b = 0.75`; content/title/section-path boosts `1.0`/`2.0`/`1.5`.
 - Request defaults: 8 KiB query limit, 100 document IDs, 16 content types.
 - Generation defaults: 30-second timeout, no Phase 3 retries, temperature `0`, top-p `1`, and 2,048 output tokens.
-- A model-only answer should visibly say it used model knowledge without retrieved evidence while keeping that notice separate from generated answer text.
+- Future model-only target: a model-only answer should visibly say it used model knowledge without retrieved evidence while keeping that notice separate from generated answer text; this is tracked under `DEBT-RAG-01` and is not a Phase 03 acceptance criterion.
 
 </specifics>
 

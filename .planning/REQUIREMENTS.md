@@ -10,7 +10,7 @@
 
 - [x] **RAG-01**: Build a Rust RAG engine with gRPC server, async runtime, tracing, and service boundaries.
 - [ ] **RAG-02**: Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
-- [ ] **RAG-03**: Support degraded mode when graph extraction or one retrieval path fails, returning a useful vector/BM25-backed answer.
+- [ ] **RAG-03**: **Future hardening target — deferred from Phase 03 to Phase 06.** Support degraded mode when graph extraction or one retrieval path fails, returning a useful vector/BM25-backed answer. See DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 for the preserved target contracts.
 - [ ] **RAG-04**: Define a pluggable async `Reranker` trait in Rust; implement a pass-through `NoOpReranker` as the v1 default, allowing external/local rerankers to be dropped in later (Port for 999.2).
 - [ ] **RAG-05**: Define a `ContextAssemblyStrategy` enum/trait in the Rust engine supporting both `PrecomputedSemantics` and `SourceChunks` retrieval, defaulting to `SourceChunks` (Port for 999.5).
 - [ ] **RAG-06**: Implement an async background worker task structure (e.g. Tokio channel reader) in the Rust engine that defaults to NoOp execution (Port for 999.4).
@@ -44,7 +44,13 @@
 
 ## Traceability
 
-(Updated by ROADMAP.md)
+| Requirement | Current phase mapping | Scope status |
+|---|---|---|
+| RAG-02 | Phase 03 | Current MVP acceptance: successful dense/BM25 hybrid retrieval, valid filters, deterministic fusion, and deduplication. |
+| RAG-03 | Phase 06 | Deferred hardening target; not covered or accepted by Phase 03. |
+| RAG-04 | Phase 03 | Current MVP acceptance: async `Reranker` port and `NoOpReranker` pass-through. |
+
+The Phase 03 source audit and coverage matrix must show RAG-03 as opted out/deferred rather than covered.
 
 ## v2 Requirements (Deferred)
 

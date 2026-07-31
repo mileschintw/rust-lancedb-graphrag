@@ -6,10 +6,10 @@
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
 | 2 | 28/28 | Complete (ADR-02-004 deferral to Phase 6) | 2026-07-30 |
-| 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
+| 3 | Hybrid Retrieval & Basic RAG Path | Implement the valid hybrid retrieval and one structured RAG answer path | RAG-02, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
-| 6 | Observability, Evaluation & Polish | Add OpenTelemetry tracing, offline eval script, and README | OBS-01, OBS-02, OBS-03, OBS-04 |
+| 6 | Observability, Evaluation & Polish | Add OpenTelemetry tracing, offline eval script, README, and RAG hardening | RAG-03, OBS-01, OBS-02, OBS-03, OBS-04 |
 
 ## Phase Details
 
@@ -134,7 +134,8 @@
 
 **Goal:** As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.
 **Mode:** mvp
-**Requirements:** RAG-02, RAG-03, RAG-04
+**Requirements:** RAG-02, RAG-04
+**Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
 **Plans:** 5 plans
 
 Plans:
@@ -160,9 +161,9 @@ Plans:
 
 **Success Criteria:**
 
-1. Rust engine can perform hybrid (vector + BM25) search against LanceDB.
-2. Go gateway exposes an endpoint to ask a question and receives an LLM-generated answer using retrieved context.
-3. System falls back gracefully if vector retrieval fails (degraded mode).
+1. For a valid query over a completed corpus where both vector and BM25 retrieval paths succeed, the Rust engine fuses deterministic, bounded evidence and returns one structured answer with valid citations resolving to that evidence.
+2. Go gateway exposes `/rag/query` and receives that retrieval-grounded structured answer through the Rust gRPC boundary.
+3. Initial BM25 construction completes before the first query-ready state, and an initial build failure prevents serving the valid path.
 4. Define pluggable async Reranker trait and NoOpReranker pass-through implementation (Port for 999.2).
 
 ### Phase 4: Knowledge Graph Extraction & Query
@@ -192,9 +193,9 @@ Plans:
 
 ### Phase 6: Observability, Evaluation & Polish
 
-**Goal:** Add OpenTelemetry tracing, offline eval script, and README
+**Goal:** Add OpenTelemetry tracing, offline eval script, README, and post-MVP hardening
 **Mode:** mvp
-**Requirements:** OBS-01, OBS-02, OBS-03, OBS-04
+**Requirements:** RAG-03, OBS-01, OBS-02, OBS-03, OBS-04
 **Success Criteria:**
 
 1. OpenTelemetry traces span Go, gRPC, and Rust components.
@@ -203,6 +204,7 @@ Plans:
 4. Include placeholder metric for global GraphRAG evaluation.
 5. Close `DEBT-BU-01` and `DEBT-BU-02` with their recorded behavioral proofs before declaring the v1 MVP complete.
 6. Review `DEBT-CR-04` and `DEBT-CR-05` as conditional security/resource gates if neither has triggered earlier; any non-loopback/shared/remote/public caller or bulk/scheduled/concurrent/larger-uncontrolled ingestion trigger makes the corresponding review immediate and overrides Phase 6 timing.
+7. Implement and verify the deferred RAG-03 hardening target, including DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 acceptance criteria, before claiming degraded/citation-repair/re-ingestion coverage.
 
 ## Backlog
 

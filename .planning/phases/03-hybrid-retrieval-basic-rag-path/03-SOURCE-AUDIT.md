@@ -1,8 +1,8 @@
 # Phase 03 Source Coverage Audit
 
 **Phase:** 03 — Hybrid Retrieval and Basic RAG Path
-**Audit status:** complete; no unplanned in-scope items
-**Scope authority:** `ROADMAP.md`, `REQUIREMENTS.md`, `03-RESEARCH.md`, locked decisions in `03-CONTEXT.md`, and the accepted debt ledger in `deferred-items.md`
+**Audit status:** complete; current RAG-02/RAG-04 scope covered and RAG-03 explicitly opted out/deferred to Phase 06
+**Scope authority:** `ROADMAP.md`, `REQUIREMENTS.md`, decision records and the accepted MVP override in `03-CONTEXT.md`, `03-RESEARCH.md`, and the accepted debt ledger in `deferred-items.md`
 
 The revised executable slice is five sequential vertical handoffs. Together they prove one valid query over a query-ready completed corpus through the real Go gateway, Rust gRPC service, dense/BM25 retrieval, bounded evidence, and one structured generation call. Deferred failure paths remain visible below and are not executable tasks.
 
@@ -10,9 +10,9 @@ The revised executable slice is five sequential vertical handoffs. Together they
 
 | source | ID | feature or requirement | plan | status | notes |
 |---|---|---|---|---|---|
-| GOAL | — | A chat service user asks a question through hybrid vector and BM25 retrieval and receives a grounded LLM answer. | 03-01, 03-02, 03-03, 03-04, 03-05 | COVERED | Plans 03-01 through 03-04 establish sequential handoffs; 03-05 runs the provider-independent real-process proof. |
+| GOAL | — | A chat service user asks a valid question over a completed corpus where both vector and BM25 retrieval succeed, receives deterministically fused bounded evidence, and gets one structured answer with valid citations. | 03-01, 03-02, 03-03, 03-04, 03-05 | COVERED | The five sequential plans prove only this accepted happy path; initial BM25 build/readiness is a safeguard, not restart recovery. |
 | REQ | RAG-02 | Dense vector plus local BM25 retrieval, metadata filtering, and deduplication. | 03-01, 03-03, 03-05 | COVERED | Plan 03-01 owns full Unicode BM25, dense retrieval, RRF, filters, and deterministic tests; Plan 03-03 makes the initial snapshot query-ready; Plan 03-05 proves the real combined path. |
-| REQ | RAG-03 | Degraded retrieval when one path fails. | 03-02, 03-03, 03-04, 03-05 | COVERED — BOUNDARY/DEFERRED | Typed independent outcomes, answer-basis/warning capacity, provider errors, and gateway mapping are preserved; degraded retrieval/model-only behavior is `DEBT-RAG-01`, graph unavailability is `DEBT-RAG-06`, and citation repair is `DEBT-RAG-03`. |
+| REQ | RAG-03 | Degraded retrieval when one path fails. | — | OPTED OUT — DEFERRED | RAG-03 is not a Phase 03 requirement or acceptance gate; future behavior remains in DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 for Phase 06 hardening. |
 | REQ | RAG-04 | Async `Reranker` port with pass-through `NoOpReranker`. | 03-01, 03-03, 03-05 | COVERED | Plan 03-01 owns the port and deterministic pass-through; later plans carry it through Rust service startup and the real smoke. |
 
 ## RESEARCH coverage
@@ -48,12 +48,12 @@ The revised executable slice is five sequential vertical handoffs. Together they
 | D-08 | Values OR within a field and AND across fields. | 03-01, 03-03, 03-05 | COVERED |
 | D-09 | Identical filters constrain dense and BM25 before fusion. | 03-01, 03-03, 03-05 | COVERED |
 | D-10 | Malformed filters are invalid arguments; valid no-match filters produce empty evidence. | 03-01, 03-03, 03-04 | COVERED as contract guard |
-| D-11 | One retrieval-path failure continues with the surviving path. | 03-02, 03-03 | DEFERRED — `DEBT-RAG-01`; only typed independent outcome capacity is carried. |
-| D-12 | Both retrieval paths can lead to a model-only answer with warnings. | 03-02, 03-03 | DEFERRED — `DEBT-RAG-01`; response fields are capacity only. |
-| D-13 | Empty or weak evidence does not block generation. | 03-02, 03-03 | DEFERRED — `DEBT-RAG-01`; the valid grounded path is the only executed branch. |
-| D-14 | Responses report retrieval, mixed, or model-only answer basis. | 03-02, 03-03, 03-05 | COVERED for strict typed output; degraded selection remains deferred. |
-| D-15 | Degraded responses identify unavailable retrieval paths. | 03-02, 03-03 | DEFERRED — `DEBT-RAG-01`. |
-| D-16 | Model-only responses carry a separate notice and no citations. | 03-02, 03-03 | DEFERRED — `DEBT-RAG-01`. |
+| D-11 | One retrieval-path failure continues with the surviving path. | — | DEFERRED — `DEBT-RAG-01` | Future target contract; no degraded branch is implemented or accepted in Phase 03. |
+| D-12 | Both retrieval paths can lead to a model-only answer with warnings. | — | DEFERRED — `DEBT-RAG-01` | Future target contract; typed fields may be carried for compatibility only. |
+| D-13 | Empty or weak evidence does not block generation. | — | DEFERRED — `DEBT-RAG-01` | Future target contract; the Phase 03 proof uses successful retrieval with usable evidence. |
+| D-14 | Responses report retrieval, mixed, or model-only answer basis. | — | DEFERRED — `DEBT-RAG-01` | The typed field is preserved for the valid retrieval-backed response; degraded/model-only selection is future behavior. |
+| D-15 | Degraded responses identify unavailable retrieval paths. | — | DEFERRED — `DEBT-RAG-01` | Future warning contract only. |
+| D-16 | Model-only responses carry a separate notice and no citations. | — | DEFERRED — `DEBT-RAG-01` | Future model-only contract only. |
 | D-17 | The generation output proposes answer basis without a separate classifier call. | 03-02, 03-03, 03-05 | COVERED for valid output; degraded selection remains deferred. |
 | D-18 | Gateway exposes unary `POST /rag/query`. | 03-03, 03-04, 03-05 | COVERED |
 | D-19 | Request carries question, optional session, and typed filters. | 03-03, 03-04, 03-05 | COVERED |
@@ -61,7 +61,7 @@ The revised executable slice is five sequential vertical handoffs. Together they
 | D-21 | Citations contain structured provenance and retrieval metadata. | 03-02, 03-03, 03-04, 03-05 | COVERED |
 | D-22 | Retrieval-backed and mixed text uses numbered citation markers. | 03-02, 03-03, 03-04, 03-05 | COVERED for valid output; markers resolve to ordered engine evidence. |
 | D-23 | Excerpts are bounded and expose truncation. | 03-02, 03-03, 03-04, 03-05 | COVERED |
-| D-24 | Invalid markers receive repair and downgrade. | 03-02, 03-03 | DEFERRED — `DEBT-RAG-03`; only the bounded validation seam is preserved. |
+| D-24 | Invalid markers receive repair and downgrade. | — | DEFERRED — `DEBT-RAG-03` | Phase 03 validates only already-valid markers; repair/removal/downgrade is future acceptance. |
 | D-25 | Responses include a compact retrieval snapshot. | 03-03, 03-04, 03-05 | COVERED |
 | D-26 | Generation is an injectable provider-neutral async Rust trait. | 03-02, 03-03 | COVERED |
 | D-27 | OpenRouter is the configurable default adapter. | 03-02, 03-03, 03-04, 03-05 | COVERED; Plan 03-04 adds only the endpoint seam needed by deterministic local verification. |
@@ -78,9 +78,9 @@ The revised executable slice is five sequential vertical handoffs. Together they
 | D-38 | Corpus conflicts are disclosed and classified as mixed. | 03-02, 03-03, 03-05 | COVERED in the typed model contract and valid response path. |
 | D-39 | Answer budget is reserved first and whole evidence chunks are packed in rank order. | 03-02, 03-03, 03-05 | COVERED |
 | D-40 | Completed ingestion means vector and BM25 representations are query-ready. | 03-01, 03-03, 03-05 | COVERED for the initial completed snapshot. |
-| D-41 | Re-ingestion keeps the previous completed version until atomic switch. | 03-03 | DEFERRED — `DEBT-RAG-04`; plans do not implement dynamic replacement/recovery. |
-| D-42 | Restart rebuilds BM25 before readiness. | 03-03, 03-05 | COVERED for initial startup/rebuild ordering; dynamic recovery remains `DEBT-RAG-04`. |
-| D-43 | BM25 rebuild failure fails startup rather than serving vector-only. | 03-03 | COVERED for the initial current-corpus build; dynamic recovery remains `DEBT-RAG-04`. |
+| D-41 | Re-ingestion keeps the previous completed version until atomic switch. | — | DEFERRED — `DEBT-RAG-04` | Future lifecycle target; no dynamic replacement is implemented. |
+| D-42 | Restart rebuilds BM25 before readiness. | — | DEFERRED — `DEBT-RAG-04` | Phase 03 proves only the initial build before the first query-ready state; restart recovery is future acceptance. |
+| D-43 | BM25 rebuild failure prevents vector-only startup. | — | DEFERRED — `DEBT-RAG-04` | Phase 03 keeps the equivalent initial-build failure safeguard; restart-failure behavior is future acceptance. |
 | D-44 | BM25 uses NFKC, Unicode case folding, and original source preservation. | 03-01, 03-05 | COVERED with the full analyzer in the first plan and real-path proof. |
 | D-45 | No stemming or stop-word removal. | 03-01 | COVERED |
 | D-46 | Content/title/section fields use 1.0/2.0/1.5 boosts. | 03-01, 03-03 | COVERED |

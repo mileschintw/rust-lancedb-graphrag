@@ -20,7 +20,7 @@ progress:
 
 - Phase 1 completed successfully.
 - Phase 2 completed (force-closed per ADR-02-004; all open gaps marked as technical debt deferred to Phase 6 final hardening).
-- Phase 3 planning is complete with five sequential MVP plans; ready for execution when explicitly approved.
+- Phase 3 planning is complete with five sequential MVP plans for the RAG-02/RAG-04 happy path; RAG-03 degraded/citation-repair/re-ingestion behavior is explicitly deferred to Phase 6 hardening, and execution is ready only when explicitly approved.
 
 ## Active Phase
 
@@ -47,6 +47,7 @@ progress:
   - `DEBT-WR-03`: Cross-runtime recovery tests can hang indefinitely on failure
 - Pre-existing Phase 02 security/resource debt items (`DEBT-CR-04` loopback guardrail, `DEBT-CR-05` pre-admission bounds, `DEBT-BU-01`, `DEBT-BU-02`) remain active and non-blocking until their triggers or Phase 6.
 - Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for Phase 03 and Phase 04.
+- Phase 03 does not claim RAG-03 delivery: DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 remain the source-of-record future hardening contracts; the initial BM25 build/readiness guard is the only lifecycle safeguard retained in the MVP path.
 
 ## Deployment & Environments
 
