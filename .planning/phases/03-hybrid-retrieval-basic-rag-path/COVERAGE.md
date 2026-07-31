@@ -30,4 +30,13 @@ Phase 03 integrates the existing OpenRouter embeddings surface for query-vector 
 - Plan 03-05 Task 1 runs `TestRAGQueryCrossRuntime` through the real Go route and Rust process. One localhost server deterministically handles query embeddings, model `supported_parameters` metadata, and one strict chat completion; a reusable seed binary creates an isolated temporary completed LanceDB corpus and cleanup waits for all handles and child processes.
 - Plan 03-05 Task 2 maintains this matrix and keeps automated proof limited to the accepted valid-query path: grounded citations, usage/model metadata, strict input mapping, initial BM25 readiness, and no PostgreSQL or live credentials.
 
+## Deferred boundary coverage
+
+- **DEBT-RAG-05**
+  - **Deferred boundary:** Automated MVP proof covers valid query/filter inputs and only the basic guards needed to reach the happy path; exhaustive malformed, oversized, unmatched, and combinatorial input behavior is not claimed.
+  - **Rationale:** The first slice must make the hybrid retrieval-to-generation path runnable before expanding the public negative-input matrix.
+  - **Trigger:** External callers, fuzzing/property testing, or a requirement for complete public API contract coverage.
+  - **Target:** Phase 06 hardening/evaluation.
+  - **Future acceptance criteria:** Empty/oversized queries, malformed IDs, unsupported content types, and filter limits are rejected before retrieval/provider work with stable HTTP 400 and gRPC `InvalidArgument` behavior.
+
 The capability subtraction is intentional: Phase 03 exposes only the unary, one-shot structured path. Streaming, tools/function calling, alternate providers, retries/fallback, degraded retrieval, citation repair, and dynamic re-ingestion/restart recovery remain explicit OPT-OUT/debt decisions and are not hidden inside the tracer.

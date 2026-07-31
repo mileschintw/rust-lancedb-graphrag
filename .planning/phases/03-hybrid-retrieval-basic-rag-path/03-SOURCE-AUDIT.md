@@ -98,4 +98,4 @@ The revised executable slice is five sequential vertical handoffs. Together they
 
 ## Accepted deferred scope
 
-`DEBT-RAG-01` through `DEBT-RAG-06` in [deferred-items.md](deferred-items.md) remain out of executable tasks. The plans preserve only the typed seams, validation boundaries, startup safeguards, endpoint seam, and local deterministic test infrastructure needed for a trustworthy valid-query path. In particular, the five-plan split does not promote degraded retrieval, provider fallback/retry, citation repair, dynamic restart/re-ingestion recovery, graph failure handling, or exhaustive invalid-input coverage.
+`DEBT-RAG-01` through `DEBT-RAG-06` in [deferred-items.md](deferred-items.md) remain out of executable tasks. The plans preserve only the typed seams, validation boundaries, startup safeguards, endpoint seam, and local deterministic test infrastructure needed for a trustworthy valid-query path. In particular, the five-plan split does not promote degraded retrieval, provider fallback/retry, citation repair, dynamic restart/re-ingestion recovery, graph failure handling, or exhaustive invalid-input/filter coverage (`DEBT-RAG-05`).

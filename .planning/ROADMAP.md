@@ -138,10 +138,24 @@
 **Plans:** 5 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 03-01-PLAN.md — Add approved Unicode BM25 dependencies and prove deterministic dense/BM25 fusion and NoOp retrieval.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 03-02-PLAN.md — Build bounded evidence and the strict provider-neutral/OpenRouter generation contract.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 03-03-PLAN.md — Expose additive QueryRAG gRPC and make initial BM25 build part of Rust readiness.
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 03-04-PLAN.md — Add the strict Go HTTP boundary and endpoint-injectable query embeddings.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 03-05-PLAN.md — Run the isolated real-process smoke with local embedding, metadata, and chat mocks.
 
 **Success Criteria:**
