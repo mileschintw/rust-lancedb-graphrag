@@ -132,9 +132,16 @@
 
 ### Phase 3: Hybrid Retrieval & Basic RAG Path
 
-**Goal:** Implement hybrid retrieval and a simple end-to-end RAG answer generation
+**Goal:** As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-03, RAG-04
+**Plans:** 3 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Wire the complete HTTP-to-Rust hybrid retrieval and structured-generation tracer.
+- [ ] 03-02-PLAN.md — Prove deterministic retrieval/reranker semantics and current-corpus BM25 readiness.
+- [ ] 03-03-PLAN.md — Harden the OpenRouter/gateway contract and record external API coverage decisions.
+
 **Success Criteria:**
 
 1. Rust engine can perform hybrid (vector + BM25) search against LanceDB.
