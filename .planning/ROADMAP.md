@@ -135,12 +135,14 @@
 **Goal:** As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-03, RAG-04
-**Plans:** 3 plans
+**Plans:** 5 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Wire the query-ready HTTP-to-Rust hybrid tracer and deterministic Rust service proof.
-- [ ] 03-02-PLAN.md — Complete Unicode BM25, deterministic retrieval/reranker proofs, and initial readiness ordering.
-- [ ] 03-03-PLAN.md — Harden structured generation and gateway contracts, add the local cross-runtime smoke, and verify API capability decisions.
+- [ ] 03-01-PLAN.md — Add approved Unicode BM25 dependencies and prove deterministic dense/BM25 fusion and NoOp retrieval.
+- [ ] 03-02-PLAN.md — Build bounded evidence and the strict provider-neutral/OpenRouter generation contract.
+- [ ] 03-03-PLAN.md — Expose additive QueryRAG gRPC and make initial BM25 build part of Rust readiness.
+- [ ] 03-04-PLAN.md — Add the strict Go HTTP boundary and endpoint-injectable query embeddings.
+- [ ] 03-05-PLAN.md — Run the isolated real-process smoke with local embedding, metadata, and chat mocks.
 
 **Success Criteria:**
 

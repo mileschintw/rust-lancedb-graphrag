@@ -162,7 +162,7 @@ Use the existing Rust/Tokio/LanceDB/reqwest/tonic/prost/Serde/tiktoken stack and
 | Tokio | `1.53.1` locked | Async service, provider call, timeout, cancellation | Already used by the engine; Tokio supplies the async runtime and timeout primitive. [VERIFIED: `engine/Cargo.lock`] [CITED: https://docs.rs/tokio/latest/tokio/time/fn.timeout.html] |
 | LanceDB | `0.31.0` locked; manifest `~0.31` | Dense vector search over canonical `nodes` | The existing database manager and schema use LanceDB; its query API supports nearest-vector search, pre-filters, limits, and async execution. [VERIFIED: `engine/Cargo.lock`, `engine/src/db/mod.rs`] [CITED: https://docs.rs/lancedb/0.31.0/lancedb/query/struct.Query.html] |
 | Arrow Array / Schema | `58.3.0` locked | Read typed LanceDB record batches | Existing query and schema code already uses Arrow arrays and schemas. [VERIFIED: `engine/Cargo.lock`, `engine/src/db/mod.rs`] |
-| tonic / prost / tonic-prost | `0.14.6` locked | Unary Rust gRPC service and generated contract bindings | Existing `QueryRAG` is tonic/prost-based and the repository uses Buf-generated Rust and Go bindings. [VERIFIED: `engine/Cargo.lock`, `proto/buf.gen.yaml`, `engine/src/main.rs`] [CITED: https://docs.rs/tonic/latest/tonic/struct.Status.html] |
+| tonic / prost / tonic-prost | `0.14.6` locked | Unary Rust gRPC service and generated contract bindings | Existing `QueryRAG` is tonic/prost-based and the repository uses Buf-generated Rust and Go bindings. [VERIFIED: `engine/Cargo.lock`, `buf.gen.yaml`, `engine/src/main.rs`] [CITED: https://docs.rs/tonic/latest/tonic/struct.Status.html] |
 | reqwest | `0.13.4` locked | Reusable async OpenRouter embedding/generation HTTP client | Existing embedding code already establishes reqwest timeout/configuration patterns; the generation adapter should be a separate provider seam. [VERIFIED: `engine/Cargo.lock`, `engine/src/client/mod.rs`] [CITED: https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html] |
 | Serde / serde_json | `1.0.229` / `1.0.151` locked | Strict internal model-output and public response serialization | Existing Rust code uses Serde; closed deserialization plus semantic validation prevents accepting an open-ended provider payload. [VERIFIED: `engine/Cargo.lock`, `engine/Cargo.toml`] [CITED: https://serde.rs/attributes.html] |
 | tiktoken-rs | `0.12.0` locked | Prompt/evidence token budgeting | The existing chunker uses `o200k_base().encode_ordinary`; reuse that tokenizer instead of introducing a second budget model. [VERIFIED: `engine/Cargo.lock`, `engine/src/chunker/mod.rs`] [CITED: https://docs.rs/tiktoken-rs/latest/tiktoken_rs/struct.CoreBPE.html] |
@@ -361,7 +361,7 @@ Citation repair/downgrade is explicitly outside the MVP scope fence. The happy-p
 
 ### Pattern 7: Backward-Aware Contract Extension
 
-Extend the existing unary `QueryRAG` messages additively. Keep field numbers unique and never reuse retired numbers; regenerate both Rust and Go bindings with the repository’s Buf configuration before compiling either side. [CITED: https://protobuf.dev/programming-guides/proto3/] [VERIFIED: `proto/buf.yaml`, `proto/buf.gen.yaml`]
+Extend the existing unary `QueryRAG` messages additively. Keep field numbers unique and never reuse retired numbers; regenerate both Rust and Go bindings with the repository’s Buf configuration before compiling either side. [CITED: https://protobuf.dev/programming-guides/proto3/] [VERIFIED: `buf.yaml`, `buf.gen.yaml`]
 
 Map malformed query/session/filter input to tonic `InvalidArgument` and HTTP `400`; keep the Go handler as decode/forward/map logic rather than duplicating retrieval semantics. [CITED: https://docs.rs/tonic/latest/tonic/struct.Status.html] [VERIFIED: 03-CONTEXT.md; `gateway/main.go`]
 
@@ -388,7 +388,7 @@ An optional live smoke should start the engine and gateway with the configured p
 | Vector storage/query and Arrow batch handling | A second vector store or custom ANN index | Existing LanceDB/Arrow path | LanceDB is the canonical completed corpus and already supplies typed async queries. [VERIFIED: `engine/src/db/mod.rs`] [CITED: https://docs.rs/lancedb/latest/lancedb/query/trait.QueryBase.html] |
 | Unicode normalization, case folding, and word boundaries | ASCII-only lowercasing or ad hoc Unicode tables | `unicode-normalization`, `unicode-casefold`, `unicode-segmentation` | Unicode behavior is subtle and the locked contract requires NFKC/full case folding/Unicode-aware segmentation. [VERIFIED: 03-CONTEXT.md; official crate docs] |
 | Provider HTTP and timeouts | Raw sockets or a bespoke async HTTP client | Existing reqwest client pattern plus Tokio timeout | Reusable clients, TLS, request timeouts, and cancellation are already solved by the stack. [VERIFIED: `engine/src/client/mod.rs`] [CITED: https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html] |
-| gRPC/protobuf compatibility | Hand-written wire structs or JSON between services | Buf + prost/tonic generated bindings | Preserves one shared contract and field-number evolution rules. [VERIFIED: `proto/buf.gen.yaml`] [CITED: https://protobuf.dev/programming-guides/proto3/] |
+| gRPC/protobuf compatibility | Hand-written wire structs or JSON between services | Buf + prost/tonic generated bindings | Preserves one shared contract and field-number evolution rules. [VERIFIED: `buf.gen.yaml`] [CITED: https://protobuf.dev/programming-guides/proto3/] |
 | Token budgeting | A second tokenizer or character-only budget | Existing `tiktoken-rs` `o200k_base` path | Chunking already establishes the project’s tokenizer convention. [VERIFIED: `engine/src/chunker/mod.rs`] [CITED: https://docs.rs/tiktoken-rs/latest/tiktoken_rs/struct.CoreBPE.html] |
 | Strict provider output | Regex-only parsing of arbitrary text | Serde closed schema plus semantic validation and OpenRouter JSON Schema | Unknown fields and unsupported citation IDs must be rejected deterministically. [VERIFIED: 03-CONTEXT.md] [CITED: https://serde.rs/attributes.html] |
 | Full reranking | An improvised learned/local reranker | `NoOpReranker` async port | The extension port is this phase; actual rerankers belong to Phase 999.2. [VERIFIED: 03-CONTEXT.md] |
@@ -459,11 +459,11 @@ BM25 scoring and RRF are not third-party conveniences to substitute here: the pr
 
 ### Pitfall 7: Stale Generated Protobuf Code
 
-**What goes wrong:** The `.proto` file contains new fields but Rust or Go compilation still uses the old generated types. [VERIFIED: `proto/buf.gen.yaml`, current generated outputs]
+**What goes wrong:** The `.proto` file contains new fields but Rust or Go compilation still uses the old generated types. [VERIFIED: `buf.gen.yaml`, current generated outputs]
 
 **Why it happens:** Buf generation is omitted or only one language’s output is regenerated. [VERIFIED: repository codegen layout]
 
-**How to avoid:** Make code generation an explicit early action in the vertical slice, then compile and run both language suites before endpoint verification. [VERIFIED: `proto/buf.gen.yaml`]
+**How to avoid:** Make code generation an explicit early action in the vertical slice, then compile and run both language suites before endpoint verification. [VERIFIED: `buf.gen.yaml`]
 
 **Warning signs:** One side cannot set a field visible in the source proto, or the gateway and engine disagree on response field names. [VERIFIED: protobuf contract behavior]
 
@@ -578,19 +578,19 @@ The exact handler names are discretionary; the ownership and context-forwarding 
 
 | # | Claim | Section | Risk if Wrong |
 |---|-------|---------|---------------|
-| A1 | The initial OpenRouter generation model remains configurable and must pass a current `supported_parameters` check for structured output before the live smoke. [RESOLVED] | Plan 03-03 Task 1 | The executor records the selected default in TOML, fails the preflight when `response_format` is unsupported, and keeps deterministic tests on the fake Generator. |
+| A1 | The initial OpenRouter generation model remains configurable and must pass a current `supported_parameters` check for structured output before the live smoke. [RESOLVED] | Plan 03-02 Task 2 and Plan 03-05 Task 1 | The executor records the selected default in TOML, fails the preflight when `response_format` is unsupported, proves metadata/chat locally, and keeps the optional real smoke separate from deterministic tests. |
 | A2 | Local retrieval proof uses a unique temporary completed-corpus fixture; the existing `data/lancedb` path is not a test prerequisite. [RESOLVED] | Plans 03-01 and 03-02 | The service, retrieval, readiness, and cross-runtime tests create isolated fixtures and drop handles before cleanup. |
 | A3 | Candidate limit is 32, final evidence limit is 8, evidence budget is 8192 tokens, and citation excerpts are limited to 512 characters; all are configurable and included in the snapshot. [RESOLVED] | Plans 03-01 and 03-03 | These explicit bounded defaults satisfy D-05/D-23/D-25/D-39 without changing the locked behavior. |
 | A4 | InvalidArgument maps to HTTP 400; provider/internal failures remain structured upstream errors with session/correlation identity. [RESOLVED] | Plans 03-01 and 03-03 | The Rust status mapping and Go contract tests use one stable boundary classification. |
-| A5 | PostgreSQL is not required for the deterministic RAG path or local cross-runtime smoke. [RESOLVED] | Plan 03-03 Task 2 | The smoke uses a temporary LanceDB corpus, a localhost generation mock, and the existing gateway route; external database setup is outside the test path. |
+| A5 | PostgreSQL is not required for the deterministic RAG path or local cross-runtime smoke. [RESOLVED] | Plan 03-03 Task 2 and Plan 03-05 Task 1 | The smoke uses a temporary LanceDB corpus, localhost embedding/metadata/chat mocks, and the existing gateway route; external database setup is outside the test path. |
 
 ## Open Questions (RESOLVED)
 
 1. **Which configurable OpenRouter generation model should the phase use?**
-   - **Resolved answer:** Keep the model ID in the existing TOML/env configuration and choose a default only after checking the provider metadata. Plan 03-03 Task 1 must query model metadata and require `supported_parameters` to include structured-output support before a live call; deterministic tests use the injected fake. This preserves the discretion granted by D-27 without locking a provider model that may drift.
+   - **Resolved answer:** Keep the model ID in the existing TOML/env configuration and choose a default only after checking the provider metadata. Plan 03-02 Task 2 must query model metadata and require `supported_parameters` to include structured-output support before a live call; Plan 03-05 Task 1 repeats that contract through a local mock in the real process smoke, while deterministic unit tests use the injected fake. This preserves the discretion granted by D-27 without locking a provider model that may drift.
 
 2. **How should the phase demonstrate the live LLM call without making tests provider-dependent?**
-   - **Resolved answer:** Plan 03-03 Task 1 adds the explicitly named ignored `openrouter_structured_output_smoke`, gated by `OPENROUTER_API_KEY` and the configured model. All normal Rust/Go tests use local fakes or a localhost provider mock, so the live smoke is evidence of the real adapter but not a suite dependency.
+   - **Resolved answer:** Plan 03-02 Task 2 adds the explicitly named ignored `openrouter_structured_output_smoke`, gated by `OPENROUTER_API_KEY` and the configured model. Plan 03-05 Task 1 supplies the automated localhost embedding/metadata/chat mock and real Go-to-Rust process smoke; all normal tests remain provider-independent, so the live check is evidence of the real adapter but not a suite dependency.
 
 3. **How should RAG-03 be reconciled with the accepted MVP scope?**
    - **Resolved answer:** Plans 03-01 and 03-03 implement typed independent retrieval outcomes and public answer-basis/warning capacity only. Runtime one-path degradation, model-only fallback, and graph-extraction unavailability are explicitly deferred to DEBT-RAG-01 and DEBT-RAG-06 in `deferred-items.md`; RAG-03 failure-path acceptance is not claimed in Phase 03.
@@ -652,7 +652,7 @@ Nyquist validation is enabled because `.planning/config.json` sets `workflow.nyq
 - [ ] Temporary LanceDB completed-node fixture and fake embedding/generator seams — covers the end-to-end Rust query path without provider dependence. [VERIFIED: existing test helpers; 03-AI-SPEC.md]
 - [ ] `NoOpReranker` async trait and pass-through test — covers RAG-04. [VERIFIED: 03-CONTEXT.md]
 - [ ] Go fake engine/generated-client route test for JSON decode, effective session ID, response mapping, and InvalidArgument→400 — covers the gateway half of the tracer. [VERIFIED: existing `gateway/main_test.go`; 03-CONTEXT.md]
-- [ ] Buf-generated Rust/Go binding refresh after additive proto edits — required before both language suites compile. [VERIFIED: `proto/buf.gen.yaml`]
+- [ ] Buf-generated Rust/Go binding refresh after additive proto edits — required before both language suites compile. [VERIFIED: `buf.gen.yaml`]
 
 No framework installation gap was detected. [VERIFIED: environment probe; repository inspection]
 
@@ -702,7 +702,7 @@ The plan should make the normal path runnable after each meaningful commit and s
 - `.planning/ROADMAP.md` — Phase 3 goal, success criteria, and Phase 4–6 boundaries. [VERIFIED: repository file]
 - `03-AI-SPEC.md` — provider-neutral async generation, structured output, prompt trust boundary, and test strategy. [VERIFIED: repository file]
 - `engine/src/main.rs`, `engine/src/db/mod.rs`, `engine/src/client/mod.rs`, `engine/src/chunker/mod.rs` — existing Rust service, canonical schema, embedding seam, and tokenization patterns. [VERIFIED: codebase grep]
-- `gateway/main.go`, `gateway/main_test.go`, `proto/lancet/v1/lancet.proto`, `proto/buf.gen.yaml` — existing gateway, test, contract, and generated-code boundaries. [VERIFIED: codebase grep]
+- `gateway/main.go`, `gateway/main_test.go`, `proto/lancet/v1/lancet.proto`, `buf.gen.yaml` — existing gateway, test, contract, and generated-code boundaries. [VERIFIED: codebase grep]
 - `engine/Cargo.toml`, `engine/Cargo.lock`, `gateway/go.mod`, `.planning/config.json` — pinned stack, validation/security settings, and runtime configuration. [VERIFIED: codebase grep]
 
 ### Secondary (MEDIUM confidence)

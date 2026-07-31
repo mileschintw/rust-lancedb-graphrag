@@ -4,6 +4,8 @@
 
 Source of record: accepted MVP scope decision during Phase 03 planning (2026-07-31). The MVP proves one runnable happy path: a valid query searches the completed corpus through vector and BM25 retrieval, fuses bounded evidence, and receives one structured LLM answer. The items below are intentionally excluded from the current implementation plan; safeguards that are necessary to make that happy path trustworthy remain in scope.
 
+The revised five-plan execution order distributes that same scope across retrieval/dependencies, provider contracts, gRPC/startup readiness, gateway/embedding configuration, and the isolated local cross-runtime proof. This split does not promote any item below into implementation; initial BM25 construction/readiness remains in scope, while dynamic restart/re-ingestion recovery remains `DEBT-RAG-04`.
+
 ### DEBT-RAG-01 — Degraded retrieval and model-only fallback
 
 - **Rationale:** The first usable slice must prove retrieval-grounded generation before expanding behavior for missing, weak, unnecessary, or failed evidence.
