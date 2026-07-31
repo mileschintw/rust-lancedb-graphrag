@@ -284,16 +284,17 @@ The model is intentionally configurable, so do not invent a dollar estimate befo
 
 **Setup:**
 ```bash
-# Planned evaluation dependencies; keep them out of the Phase 3 runtime path.
+# Phase 6 dependency bootstrap; keep these out of the Phase 3 runtime path.
 python -m pip install arize-phoenix opentelemetry-sdk
-promptfoo eval -c eval/promptfoo.yaml --no-cache
+# Phase 6 must install and pin Promptfoo and create eval/promptfoo.yaml before enabling:
+# promptfoo eval -c eval/promptfoo.yaml --no-cache
 ```
 
 **CI/CD Integration:**
 ```bash
 # Phase 3 contract gate (runnable now); the offline dataset command is added with OBS-02 in Phase 6.
 cargo test --manifest-path engine/Cargo.toml --locked
-go test ./...
+cd gateway && go test ./...
 # Phase 6 follow-up:
 # python scripts/eval_rag.py --dataset eval/reference/rag.jsonl --fail-under 0.80
 ```
@@ -314,9 +315,12 @@ The senior engineer/project owner and repository maintainer label relevant chunk
 
 | Guardrail | Trigger | Intervention |
 |-----------|---------|--------------|
-| Input and output contract validation | Empty/oversized query, invalid IDs/types, invalid structured output, unknown citation marker, or out-of-bounds excerpt | Reject with HTTP 400/gRPC `InvalidArgument` before provider work; make one bounded citation repair, then strip unsupported citations, downgrade to `model_only`, and flag the warning. |
+| Client input contract validation | Empty/oversized query, malformed or excessive document IDs, unsupported or excessive content types, or another invalid caller-supplied field | Reject with HTTP 400/gRPC `InvalidArgument` before retrieval or provider work. |
+| Provider output schema validation | The provider response cannot deserialize into the closed schema, contains unknown fields or invalid enum values, or otherwise violates the non-citation output contract | Return the D-31 structured provider/generation error with session/correlation identity; do not classify it as caller error, retry generation, or fabricate an answer. |
+| Citation marker integrity | A generated citation marker is malformed or does not resolve to supplied evidence | Make one bounded deterministic repair pass without another provider call; if validation still fails, remove unsupported citations, downgrade to `model_only`, and emit the D-24 citation-integrity warning. |
+| Citation excerpt bounds | The response assembler would emit an excerpt beyond its configured limit or one that cannot be verified against the selected evidence | Rebuild the bounded excerpt locally from supplied evidence and set truncation explicitly; never ask the provider to supply or repair source text. |
 | Untrusted evidence boundary | Retrieved content contains instruction-like or delimiter-forging text, or model output proposes a tool/action not supported by Phase 3 | Preserve/flag the evidence, never execute it or treat it as a system rule, and return the answer with a security warning if the content affects the response. |
-| Provider failure and deadline | One generation attempt times out, is cancelled, or returns an unsupported/invalid response | Cancel the request, return a structured provider error with session/correlation identity, and never fabricate an extractive substitute. |
+| Provider failure and deadline | The single generation attempt times out, is cancelled, encounters a transport/non-success HTTP failure, or the selected provider/model cannot honor the required structured-output parameters | Cancel outstanding work, return a structured provider error with session/correlation identity, and never fabricate an extractive substitute. |
 
 ### Offline (Flywheel)
 
