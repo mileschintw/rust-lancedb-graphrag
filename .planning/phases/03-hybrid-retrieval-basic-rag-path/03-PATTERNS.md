@@ -535,7 +535,7 @@ Rust adds context with `map_err`, returns `Status::invalid_argument` for caller 
 
 **Sources:** `engine/src/inspect_lancedb_tests.rs:54-155`, `engine/src/db/tests.rs:14-61`, `engine/tests/config_startup.rs:11-66`.
 
-Every LanceDB fixture gets a unique temporary path, all handles are dropped before cleanup, and process-level tests wait for the existing readiness log. Build the BM25 snapshot before that readiness signal.
+Every LanceDB fixture gets a unique temporary path, all handles are dropped before cleanup, and process-level tests wait for the existing readiness log. Build the BM25 snapshot before that readiness signal. The current engine emits `Rust RAG Engine serving` before `serve_with_shutdown` binds, so the Phase 03 cross-runtime tracer must treat that line as a milestone only and add a bounded generated-gRPC `Ping` probe against the configured loopback address before issuing the Go request.
 
 ### Generated protobuf workflow
 
