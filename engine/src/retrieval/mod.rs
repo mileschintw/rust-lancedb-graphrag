@@ -14,8 +14,12 @@ use serde::Serialize;
 use uuid::Uuid;
 
 pub mod bm25;
+pub mod dense;
+pub mod fusion;
 
 pub use bm25::{Bm25Config, Bm25Index};
+pub use dense::DenseRetriever;
+pub use fusion::{fuse_candidates, FusedCandidate};
 
 pub const DEFAULT_CANDIDATE_LIMIT: usize = 32;
 pub const DEFAULT_FINAL_LIMIT: usize = 8;
@@ -328,6 +332,10 @@ impl QueryRequest {
             settings.max_content_types,
         )?;
         Self::normalize(query, filters, settings)
+    }
+
+    pub(crate) fn validate(&self, settings: &RetrievalSettings) -> Result<Self, RetrievalError> {
+        Self::normalize(self.query.clone(), self.filters.clone(), settings)
     }
 }
 

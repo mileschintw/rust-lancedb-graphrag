@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 mod chunker;
 mod client;
+mod rerank;
 mod retrieval;
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
