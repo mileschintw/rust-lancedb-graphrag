@@ -24,10 +24,12 @@ use uuid::Uuid;
 
 mod chunker;
 mod client;
+mod retrieval;
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
 use client::{OpenRouterClient, EMBEDDING_MODEL};
 use engine::db::{DatabaseManager, EntityResolver, ExactMatchResolver};
+use retrieval::{Bm25Config, Bm25Index};
 
 pub mod lancet {
     pub mod v1 {
@@ -1101,6 +1103,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
     let settings = load_settings()?;
     let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
+    let nodes = database.nodes_table().await?;
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default()).await?;
+    tracing::info!(document_count = bm25_index.len(), "BM25 snapshot built");
     let table = database.staged_documents_table().await?;
     let embedder = Arc::new(OpenRouterClient::from_env()?);
     let statuses = Arc::new(DashMap::new());
