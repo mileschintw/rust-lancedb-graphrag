@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
+use super::lancet::v1::*;
 use super::*;
+
 use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
@@ -1192,10 +1194,28 @@ async fn staging_read_error_is_unavailable() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
     let service = LancetServiceImpl {
         table,
         statuses,
         queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        retrieval_settings: retrieval::RetrievalSettings::default(),
+        generator: Arc::new(generation::FakeGenerator::new(Ok(
+            generation::ModelOutput {
+                answer: "Fake answer".into(),
+                cited_evidence_ids: vec![],
+                answer_basis: generation::AnswerBasis::Retrieval,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            },
+        ))),
+        embedder: Arc::new(FakeEmbedder),
     };
 
     let _ = std::fs::remove_dir_all(&path);
@@ -1254,10 +1274,28 @@ async fn staging_delete_failure_remains_replayable() {
 
     let table = database.staged_documents_table().await.unwrap();
     let (dummy_tx, _dummy_rx) = mpsc::channel(QUEUE_CAPACITY);
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
     let service = LancetServiceImpl {
         table,
         statuses: statuses.clone(),
         queue: dummy_tx,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        retrieval_settings: retrieval::RetrievalSettings::default(),
+        generator: Arc::new(generation::FakeGenerator::new(Ok(
+            generation::ModelOutput {
+                answer: "Fake answer".into(),
+                cited_evidence_ids: vec![],
+                answer_basis: generation::AnswerBasis::Retrieval,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            },
+        ))),
+        embedder: Arc::new(FakeEmbedder),
     };
 
     let status_res = service
@@ -1476,12 +1514,31 @@ async fn d04_cross_runtime_grpc_fixture() {
         panic!("unknown LANCET_D04_MODE: {mode}");
     };
 
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
     let table = database.staged_documents_table().await.unwrap();
     let service = LancetServiceImpl {
         table,
         statuses,
         queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        retrieval_settings: retrieval::RetrievalSettings::default(),
+        generator: Arc::new(generation::FakeGenerator::new(Ok(
+            generation::ModelOutput {
+                answer: "Fake answer".into(),
+                cited_evidence_ids: vec![],
+                answer_basis: generation::AnswerBasis::Retrieval,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            },
+        ))),
+        embedder: Arc::new(FakeEmbedder),
     };
+
     let addr: std::net::SocketAddr = listen_addr.parse().unwrap();
     let stop_path = std::path::PathBuf::from(&stop_file);
 
@@ -1517,6 +1574,10 @@ async fn status_falls_back_to_staged_document() {
 
     stage_document(&database, &doc_id, b"staged raw content").await;
 
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
     let table = database.staged_documents_table().await.unwrap();
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
@@ -1525,6 +1586,20 @@ async fn status_falls_back_to_staged_document() {
         table,
         statuses,
         queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        retrieval_settings: retrieval::RetrievalSettings::default(),
+        generator: Arc::new(generation::FakeGenerator::new(Ok(
+            generation::ModelOutput {
+                answer: "Fake answer".into(),
+                cited_evidence_ids: vec![],
+                answer_basis: generation::AnswerBasis::Retrieval,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            },
+        ))),
+        embedder: Arc::new(FakeEmbedder),
     };
 
     let status_res = service
@@ -1577,4 +1652,85 @@ fn chunk_size_boundaries_are_engine_authoritative() {
     ]);
     let err_overflow = parse_chunk_settings(&overflow_boundary).unwrap_err();
     assert_eq!(err_overflow.code(), tonic::Code::InvalidArgument);
+}
+
+#[tokio::test]
+async fn query_rag_happy_path_service() {
+    let path = database_path("query-rag-happy-path");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Lancet Architecture\n\nThe core Lancet architecture uses Rust for retrieval.",
+    )
+    .await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Lancet uses Rust for retrieval [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        retrieval_settings: retrieval::RetrievalSettings::default(),
+        generator: fake_gen.clone(),
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let req = QueryRagRequest {
+        query: "What language does Lancet use for retrieval?".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+
+    let response = service
+        .query_rag(tonic::Request::new(req))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(response.answer, "Lancet uses Rust for retrieval [1].");
+    assert_eq!(response.session_id, "00000000-0000-4000-8000-000000000001");
+    assert_eq!(
+        response.answer_basis,
+        lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    assert_eq!(response.citations, vec!["[1]".to_string()]);
+    assert_eq!(response.structured_citations.len(), 1);
+    assert_eq!(response.structured_citations[0].document_id, doc_id);
+    assert!(response.snapshot.is_some());
+    let snap = response.snapshot.unwrap();
+    assert!(!snap.result_hash.is_empty());
+    assert_eq!(fake_gen.calls(), 1);
+
+    let _ = std::fs::remove_dir_all(path);
 }

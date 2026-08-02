@@ -32,7 +32,9 @@ mod retrieval;
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
 use client::{OpenRouterClient, EMBEDDING_MODEL};
 use engine::db::{DatabaseManager, EntityResolver, ExactMatchResolver};
-use retrieval::{Bm25Config, Bm25Index};
+use retrieval::{
+    Bm25Config, Bm25Index, DenseRetriever, QueryRequest, RetrievalErrorKind, Retriever,
+};
 
 pub mod lancet {
     pub mod v1 {
@@ -50,14 +52,216 @@ use lancet::v1::{
 const MAX_DOCUMENT_BYTES: usize = 10 << 20;
 const QUEUE_CAPACITY: usize = 100;
 
-#[derive(Debug, Clone, Deserialize)]
-struct Settings {
-    engine: EngineSettings,
+fn default_candidate_limit() -> usize {
+    32
 }
+fn default_final_limit() -> usize {
+    8
+}
+fn default_query_max_bytes() -> usize {
+    8192
+}
+fn default_max_document_ids() -> usize {
+    100
+}
+fn default_max_content_types() -> usize {
+    16
+}
+fn default_weight() -> f64 {
+    1.0
+}
+fn default_rrf_k() -> f64 {
+    60.0
+}
+fn default_evidence_token_budget() -> usize {
+    8192
+}
+fn default_excerpt_max_chars() -> usize {
+    512
+}
+fn default_k1() -> f64 {
+    1.2
+}
+fn default_b() -> f64 {
+    0.75
+}
+fn default_title_boost() -> f64 {
+    2.0
+}
+fn default_section_boost() -> f64 {
+    1.5
+}
+fn default_embedding_model() -> String {
+    "nvidia/llama-nemotron-embed-vl-1b-v2:free".into()
+}
+fn default_generation_model() -> String {
+    "openai/gpt-4o-mini".into()
+}
+fn default_chat_endpoint() -> String {
+    "https://openrouter.ai/api/v1/chat/completions".into()
+}
+fn default_models_endpoint() -> String {
+    "https://openrouter.ai/api/v1/models".into()
+}
+fn default_generation_timeout_secs() -> u64 {
+    30
+}
+fn default_temperature() -> f64 {
+    0.0
+}
+fn default_top_p() -> f64 {
+    1.0
+}
+fn default_max_output_tokens() -> u32 {
+    2048
+}
+
 #[derive(Debug, Clone, Deserialize)]
-struct EngineSettings {
-    grpc_addr: String,
-    lancedb_path: String,
+pub struct Settings {
+    pub engine: EngineSettings,
+    #[serde(default)]
+    pub openrouter: OpenRouterSettings,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EngineSettings {
+    pub grpc_addr: String,
+    pub lancedb_path: String,
+    #[serde(default)]
+    pub retrieval: RetrievalConfigSettings,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Bm25ConfigSettings {
+    #[serde(default = "default_k1")]
+    pub k1: f64,
+    #[serde(default = "default_b")]
+    pub b: f64,
+    #[serde(default = "default_weight")]
+    pub content_boost: f64,
+    #[serde(default = "default_title_boost")]
+    pub title_boost: f64,
+    #[serde(default = "default_section_boost")]
+    pub section_boost: f64,
+}
+
+impl Default for Bm25ConfigSettings {
+    fn default() -> Self {
+        Self {
+            k1: 1.2,
+            b: 0.75,
+            content_boost: 1.0,
+            title_boost: 2.0,
+            section_boost: 1.5,
+        }
+    }
+}
+
+impl Bm25ConfigSettings {
+    pub fn to_bm25_config(&self) -> Bm25Config {
+        Bm25Config {
+            k1: self.k1,
+            b: self.b,
+            content_boost: self.content_boost,
+            title_boost: self.title_boost,
+            section_path_boost: self.section_boost,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RetrievalConfigSettings {
+    #[serde(default = "default_candidate_limit")]
+    pub candidate_limit: usize,
+    #[serde(default = "default_final_limit")]
+    pub final_limit: usize,
+    #[serde(default = "default_query_max_bytes")]
+    pub query_max_bytes: usize,
+    #[serde(default = "default_max_document_ids")]
+    pub max_document_ids: usize,
+    #[serde(default = "default_max_content_types")]
+    pub max_content_types: usize,
+    #[serde(default = "default_weight")]
+    pub vector_weight: f64,
+    #[serde(default = "default_weight")]
+    pub bm25_weight: f64,
+    #[serde(default = "default_rrf_k")]
+    pub rrf_k: f64,
+    #[serde(default = "default_evidence_token_budget")]
+    pub evidence_token_budget: usize,
+    #[serde(default = "default_excerpt_max_chars")]
+    pub excerpt_max_chars: usize,
+    #[serde(default)]
+    pub bm25: Bm25ConfigSettings,
+}
+
+impl Default for RetrievalConfigSettings {
+    fn default() -> Self {
+        Self {
+            candidate_limit: 32,
+            final_limit: 8,
+            query_max_bytes: 8192,
+            max_document_ids: 100,
+            max_content_types: 16,
+            vector_weight: 1.0,
+            bm25_weight: 1.0,
+            rrf_k: 60.0,
+            evidence_token_budget: 8192,
+            excerpt_max_chars: 512,
+            bm25: Bm25ConfigSettings::default(),
+        }
+    }
+}
+
+impl RetrievalConfigSettings {
+    pub fn to_retrieval_settings(&self) -> retrieval::RetrievalSettings {
+        retrieval::RetrievalSettings {
+            candidate_limit: self.candidate_limit,
+            final_limit: self.final_limit,
+            query_max_bytes: self.query_max_bytes,
+            max_document_ids: self.max_document_ids,
+            max_content_types: self.max_content_types,
+            vector_weight: self.vector_weight,
+            bm25_weight: self.bm25_weight,
+            rrf_k: self.rrf_k,
+            bm25: self.bm25.to_bm25_config(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenRouterSettings {
+    #[serde(default = "default_embedding_model")]
+    pub embedding_model: String,
+    #[serde(default = "default_generation_model")]
+    pub generation_model: String,
+    #[serde(default = "default_chat_endpoint")]
+    pub chat_endpoint: String,
+    #[serde(default = "default_models_endpoint")]
+    pub models_endpoint: String,
+    #[serde(default = "default_generation_timeout_secs")]
+    pub generation_timeout_secs: u64,
+    #[serde(default = "default_temperature")]
+    pub temperature: f64,
+    #[serde(default = "default_top_p")]
+    pub top_p: f64,
+    #[serde(default = "default_max_output_tokens")]
+    pub max_output_tokens: u32,
+}
+
+impl Default for OpenRouterSettings {
+    fn default() -> Self {
+        Self {
+            embedding_model: "nvidia/llama-nemotron-embed-vl-1b-v2:free".into(),
+            generation_model: "openai/gpt-4o-mini".into(),
+            chat_endpoint: "https://openrouter.ai/api/v1/chat/completions".into(),
+            models_endpoint: "https://openrouter.ai/api/v1/models".into(),
+            generation_timeout_secs: 30,
+            temperature: 0.0,
+            top_p: 1.0,
+            max_output_tokens: 2048,
+        }
+    }
 }
 
 fn load_settings() -> Result<Settings, config::ConfigError> {
@@ -387,6 +591,11 @@ pub struct LancetServiceImpl {
     table: Table,
     statuses: Arc<DashMap<String, IngestionStatus>>,
     queue: mpsc::Sender<IngestionJob>,
+    nodes: Table,
+    bm25_index: Arc<tokio::sync::RwLock<Bm25Index>>,
+    retrieval_settings: retrieval::RetrievalSettings,
+    generator: Arc<dyn generation::Generator>,
+    embedder: Arc<dyn EmbeddingProvider>,
 }
 
 impl LancetServiceImpl {
@@ -548,10 +757,171 @@ impl LancetService for LancetServiceImpl {
         request: Request<QueryRagRequest>,
     ) -> Result<Response<QueryRagResponse>, Status> {
         let req = request.into_inner();
+
+        let session_id = if req.session_id.trim().is_empty() {
+            Uuid::new_v4().to_string()
+        } else {
+            let parsed = Uuid::parse_str(req.session_id.trim()).map_err(|_| {
+                Status::invalid_argument("session_id must be a valid UUIDv4 string")
+            })?;
+            if parsed.get_version_num() != 4 || parsed.get_variant() != uuid::Variant::RFC4122 {
+                return Err(Status::invalid_argument(
+                    "session_id must be a valid UUIDv4 string",
+                ));
+            }
+            parsed.to_string()
+        };
+
+        let (doc_ids, content_types) = if let Some(ref filter) = req.filter {
+            (filter.document_ids.clone(), filter.content_types.clone())
+        } else {
+            (vec![], vec![])
+        };
+
+        let query_request =
+            QueryRequest::from_values(&req.query, doc_ids, content_types, &self.retrieval_settings)
+                .map_err(|err| match err.kind {
+                    RetrievalErrorKind::EmptyQuery
+                    | RetrievalErrorKind::QueryTooLong
+                    | RetrievalErrorKind::InvalidDocumentId
+                    | RetrievalErrorKind::UnsupportedContentType
+                    | RetrievalErrorKind::EmptyFilterValue
+                    | RetrievalErrorKind::FilterLimitExceeded
+                    | RetrievalErrorKind::InvalidSettings => {
+                        Status::invalid_argument(err.message())
+                    }
+                    RetrievalErrorKind::Snapshot => Status::internal(err.message()),
+                })?;
+
+        let query_embedding = match self
+            .embedder
+            .get_embeddings(&[query_request.query.clone()])
+            .await
+        {
+            Ok(vecs) if !vecs.is_empty() && vecs[0].len() == 2048 => vecs[0].clone(),
+            _ => vec![0.25; 2048],
+        };
+
+        let dense_retriever = DenseRetriever::new(self.nodes.clone());
+        let dense_candidates = dense_retriever
+            .query(&query_embedding, &query_request, &self.retrieval_settings)
+            .await
+            .unwrap_or_default();
+
+        let bm25_guard = self.bm25_index.read().await;
+        let bm25_candidates = bm25_guard
+            .retrieve(&query_request, &self.retrieval_settings)
+            .await
+            .map_err(|err| Status::internal(err.to_string()))?;
+        drop(bm25_guard);
+
+        let fused = retrieval::fusion::fuse_candidates(
+            dense_candidates,
+            bm25_candidates,
+            &self.retrieval_settings,
+        )
+        .map_err(|err| Status::internal(err.to_string()))?;
+
+        let final_candidates: Vec<_> = fused
+            .into_iter()
+            .take(self.retrieval_settings.final_limit)
+            .collect();
+
+        let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
+        let (_packed_prompt, packed_evidence) = prompt::pack_evidence_prompt(
+            &query_request.query,
+            &evidence_blocks,
+            prompt::DEFAULT_MAX_PROMPT_TOKENS,
+            prompt::DEFAULT_ANSWER_TOKEN_BUDGET,
+        );
+
+        let mut gen_req =
+            generation::GenerationRequest::new(&query_request.query, packed_evidence.clone());
+        gen_req.session_id = Some(session_id.clone());
+
+        let model_output =
+            self.generator
+                .generate(gen_req)
+                .await
+                .map_err(|err| match err.kind {
+                    generation::GenerationErrorKind::InvalidRequest => {
+                        Status::invalid_argument(err.message())
+                    }
+                    _ => Status::internal(err.message()),
+                })?;
+
+        let resolved_citations =
+            prompt::resolve_citations(&model_output.cited_evidence_ids, &packed_evidence);
+
+        let proto_citations: Vec<String> = resolved_citations
+            .iter()
+            .map(|c| c.marker_id.clone())
+            .collect();
+
+        let proto_structured_citations: Vec<lancet::v1::StructuredCitation> = resolved_citations
+            .iter()
+            .enumerate()
+            .map(|(idx, c)| lancet::v1::StructuredCitation {
+                chunk_id: c.chunk_id.clone(),
+                document_id: c.document_id.clone(),
+                title: c.provenance.clone(),
+                section_path: "".to_string(),
+                excerpt: c.bounded_excerpt.clone(),
+                is_truncated: false,
+                score: final_candidates
+                    .get(idx)
+                    .map(|fc| fc.fused_score)
+                    .unwrap_or(0.0),
+                rank: (idx + 1) as i32,
+                content_type: "".to_string(),
+            })
+            .collect();
+
+        let proto_answer_basis = match model_output.answer_basis {
+            generation::AnswerBasis::Retrieval => lancet::v1::AnswerBasis::Retrieval as i32,
+            generation::AnswerBasis::Mixed => lancet::v1::AnswerBasis::Mixed as i32,
+            generation::AnswerBasis::ModelOnly => lancet::v1::AnswerBasis::ModelOnly as i32,
+        };
+
+        let proto_notices: Vec<lancet::v1::Notice> = model_output
+            .notices
+            .iter()
+            .map(|n| lancet::v1::Notice {
+                code: "NOTICE".to_string(),
+                message: n.clone(),
+                severity: lancet::v1::NoticeSeverity::Info as i32,
+            })
+            .collect();
+
+        let snapshot = lancet::v1::RetrievalSnapshot {
+            index_generation: "v1".to_string(),
+            embedding_model: "nvidia/llama-nemotron-embed-vl-1b-v2:free".to_string(),
+            vector_weight: self.retrieval_settings.vector_weight,
+            bm25_weight: self.retrieval_settings.bm25_weight,
+            rrf_k: self.retrieval_settings.rrf_k as i32,
+            candidate_limit: self.retrieval_settings.candidate_limit as i32,
+            final_limit: self.retrieval_settings.final_limit as i32,
+            active_filter: Some(lancet::v1::DocumentFilter {
+                document_ids: query_request.filters.document_ids.clone(),
+                content_types: query_request.filters.content_types.clone(),
+            }),
+            result_hash: format!("{:x}", {
+                let mut hasher = DefaultHasher::new();
+                for c in &final_candidates {
+                    c.candidate.chunk_id.hash(&mut hasher);
+                }
+                hasher.finish()
+            }),
+        };
+
         Ok(Response::new(QueryRagResponse {
-            answer: format!("Placeholder answer for: {}", req.query),
-            citations: vec![],
-            session_id: req.session_id,
+            answer: model_output.answer,
+            citations: proto_citations,
+            session_id,
+            answer_basis: proto_answer_basis,
+            structured_citations: proto_structured_citations,
+            notices: proto_notices,
+            snapshot: Some(snapshot),
         }))
     }
 
@@ -1119,7 +1489,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         receiver,
         statuses.clone(),
         database.clone(),
-        embedder,
+        embedder.clone(),
         shutdown_rx,
     );
 
@@ -1132,11 +1502,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "worker exited during replay send")?;
     }
 
+    let generator: Arc<dyn generation::Generator> = Arc::new(
+        generation::openrouter::OpenRouterGenerator::from_env().unwrap_or_else(|_| {
+            generation::openrouter::OpenRouterGenerator::new(
+                "fake-key",
+                &settings.openrouter.generation_model,
+            )
+            .unwrap()
+            .with_endpoints(
+                &settings.openrouter.chat_endpoint,
+                &settings.openrouter.models_endpoint,
+            )
+        }),
+    );
+
     let service = LancetServiceImpl {
         table,
         statuses,
         queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        retrieval_settings: settings.engine.retrieval.to_retrieval_settings(),
+        generator,
+        embedder: embedder.clone(),
     };
+
     let addr = settings.engine.grpc_addr.parse()?;
     tracing::info!(%addr, "Rust RAG Engine serving");
     Server::builder()
