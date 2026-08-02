@@ -4,6 +4,18 @@
 
 Phase 03 integrates the existing OpenRouter embeddings surface for query-vector creation and the structured, unary chat-completion surface for one grounded answer when both vector and BM25 retrieval paths succeed over a completed corpus. The provider-neutral Rust `Generator` seam remains integrated so another adapter can be added without changing retrieval or prompt contracts. RAG-03 is explicitly opted out of this phase; its future degraded, citation-repair, graph-unavailability, and lifecycle targets remain in `deferred-items.md`.
 
+## Five-plan ownership matrix
+
+| Plan | Automated evidence owner | Boundary kept out of MVP coverage |
+|---|---|---|
+| 03-01 | Unicode analyzer, BM25 snapshot statistics, filtered dense retrieval, deterministic RRF fusion, and NoOp reranking | Provider calls and generation |
+| 03-02 | Provider-neutral evidence assembly plus strict OpenRouter supported-parameters and structured-output contract tests | Live credentials and alternate providers |
+| 03-03 | Additive QueryRAG gRPC contract, initial BM25 build/readiness safeguard, and Rust service coordination | Restart/re-ingestion recovery |
+| 03-04 | Go `/rag/query` boundary mapping and endpoint-injectable query embeddings | PostgreSQL-backed gateway startup |
+| 03-05 | `TestRAGQueryCrossRuntime` with seeded LanceDB, deterministic embedding/metadata/chat endpoints, real direct Rust process, generated-gRPC Ping, and bounded cleanup | Degraded/fallback/repair/retry/graph behavior |
+
+The ownership is intentionally vertical: each row names the one current plan that proves that acceptance surface, while the final row closes the real local Go-to-Rust happy path without promoting deferred behavior.
+
 | capability | decision | reason |
 |---|---|---|
 | Query embeddings via `POST /api/v1/embeddings` | INTEGRATE | Dense retrieval needs the configured embedding model and the existing Rust OpenRouter client already owns this boundary. |
@@ -33,7 +45,7 @@ Phase 03 integrates the existing OpenRouter embeddings surface for query-vector 
 - Plan 03-03 carries the additive QueryRAG contract into both generated runtimes, verifies the exact `supported_parameters` metadata key, proves service-level QueryRAG behavior plus safe-default compatibility for all existing config_startup base/overlay fixtures, and proves the initial BM25 build/readiness safeguard before serving; it does not claim restart recovery.
 - Plan 03-04 Task 2 proves that the existing Rust embedding client can target an explicit endpoint override while retaining its production OpenRouter default, timeout, retry, concurrency, and dimension checks.
 - Plan 03-05 Task 1 runs `TestRAGQueryCrossRuntime` through the real Go route and Rust process. One localhost server deterministically handles query embeddings, model `supported_parameters` metadata, and one strict chat completion; a reusable seed binary creates an isolated temporary completed LanceDB corpus, the engine and seeder are built once and launched as resolved direct binaries from the repository root with scrubbed application environments, the serving log is followed by a bounded generated-gRPC `Ping` probe against the exact loopback endpoint, and cleanup reaps the process tree before a rename/remove check proves the LanceDB path is released.
-- Plan 03-05 Task 2 maintains this matrix and keeps automated proof limited to the accepted valid-query path: both retrieval paths succeeding, grounded valid citations, usage/model metadata, strict input mapping, the initial BM25 build/readiness safeguard, and no PostgreSQL or live credentials.
+- Plan 03-05 Task 2 maintains this matrix and keeps automated proof limited to the accepted valid-query path: both retrieval paths succeeding, grounded valid citations, the mock completion's usage and model metadata, the Rust retrieval snapshot, strict request validation, timeout/cancellation seams, the initial BM25 build/readiness safeguard, and no PostgreSQL or live credentials.
 
 ## RAG-03 deferred boundary
 
