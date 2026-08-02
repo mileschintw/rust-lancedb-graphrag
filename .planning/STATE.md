@@ -5,13 +5,13 @@ milestone_name: milestone
 current_phase: 3
 current_plan: 2
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-08-02T02:27:02.252Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-08-02T22:06:18.088Z"
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 34
-  completed_plans: 31
+  completed_plans: 34
 ---
 
 # Project State
@@ -28,7 +28,7 @@ progress:
 - **Status:** Ready to execute
 - **Current Plan:** 2
 - **Total Plans in Phase:** 5
-- **Progress:** [█████████░] 88%
+- **Progress:** [██████████] 100%
 - **Phase Progress:** 0 plans executed
 
 ## Completed Phases
@@ -80,6 +80,7 @@ progress:
 | Phase 02 P09 | 45 min | 2 tasks | 5 files |
 | Phase 02 P10 | 24 min | 3 tasks | 0 files |
 | Phase 03 P01 | 25min | 2 tasks | 10 files |
+| Phase 03 P05 | 30min | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -115,9 +116,11 @@ progress:
 - [Phase 03]: Compute BM25 document frequency over the complete snapshot while applying normalized metadata filters before candidate limits.
 - [Phase 03]: Keep full-precision weighted RRF scores, retain both source ranks and scores, and resolve ties by the D-51 identity key.
 - [Phase 03]: Expose reranking through a Send + Sync boxed-future trait with NoOpReranker as the Phase 03 pass-through implementation.
+- [Phase ?]: Use a deterministic localhost three-endpoint provider mock and a real direct-process Go-to-Rust smoke to prove the Phase 03 MVP happy path.
+- [Phase ?]: Treat the Rust serving log as a milestone only; generated-gRPC Ping against the exact loopback endpoint is the readiness proof.
 
 ## Session
 
-**Last session:** 2026-08-02T02:10:04.789Z
-**Stopped at:** Completed 03-01-PLAN.md
+**Last session:** 2026-08-02T22:06:18.065Z
+**Stopped at:** Completed 03-05-PLAN.md
 **Resume file:** None

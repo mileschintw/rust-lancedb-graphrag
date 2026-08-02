@@ -136,7 +136,7 @@
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-04
 **Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
-**Plans:** 3/5 plans executed
+**Plans:** 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -151,14 +151,13 @@ Plans:
 
 - [x] 03-03-PLAN.md — Expose additive QueryRAG gRPC and make initial BM25 build part of Rust readiness.
 
-
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 03-04-PLAN.md — Add the strict Go HTTP boundary and endpoint-injectable query embeddings.
+- [x] 03-04-PLAN.md — Add the strict Go HTTP boundary and endpoint-injectable query embeddings.
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 03-05-PLAN.md — Run the isolated real-process smoke with local embedding, metadata, and chat mocks.
+- [x] 03-05-PLAN.md — Run the isolated real-process smoke with local embedding, metadata, and chat mocks.
 
 **Success Criteria:**
 
