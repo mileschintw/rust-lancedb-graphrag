@@ -31,6 +31,7 @@ title_boost = 2.0
 section_boost = 1.5
 
 [openrouter]
+embedding_endpoint = "https://openrouter.ai/api/v1/embeddings"
 embedding_model = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
 generation_model = "openai/gpt-4o-mini"
 chat_endpoint = "https://openrouter.ai/api/v1/chat/completions"

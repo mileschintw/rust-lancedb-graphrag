@@ -91,6 +91,9 @@ fn default_title_boost() -> f64 {
 fn default_section_boost() -> f64 {
     1.5
 }
+fn default_embedding_endpoint() -> String {
+    "https://openrouter.ai/api/v1/embeddings".into()
+}
 fn default_embedding_model() -> String {
     "nvidia/llama-nemotron-embed-vl-1b-v2:free".into()
 }
@@ -231,6 +234,8 @@ impl RetrievalConfigSettings {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct OpenRouterSettings {
+    #[serde(default = "default_embedding_endpoint")]
+    pub embedding_endpoint: String,
     #[serde(default = "default_embedding_model")]
     pub embedding_model: String,
     #[serde(default = "default_generation_model")]
@@ -252,6 +257,7 @@ pub struct OpenRouterSettings {
 impl Default for OpenRouterSettings {
     fn default() -> Self {
         Self {
+            embedding_endpoint: "https://openrouter.ai/api/v1/embeddings".into(),
             embedding_model: "nvidia/llama-nemotron-embed-vl-1b-v2:free".into(),
             generation_model: "openai/gpt-4o-mini".into(),
             chat_endpoint: "https://openrouter.ai/api/v1/chat/completions".into(),
@@ -1480,7 +1486,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default()).await?;
     tracing::info!(document_count = bm25_index.len(), "BM25 snapshot built");
     let table = database.staged_documents_table().await?;
-    let embedder = Arc::new(OpenRouterClient::from_env()?);
+    let embedder = Arc::new(OpenRouterClient::from_env_with_endpoint(
+        &settings.openrouter.embedding_endpoint,
+    )?);
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
 

@@ -201,6 +201,7 @@ type engine interface {
 	Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome
 	IngestionStatus(context.Context, string) (*pb.GetIngestionStatusResponse, error)
 	Ping(context.Context) (time.Duration, error)
+	QueryRAG(context.Context, *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error)
 }
 
 type grpcEngine struct{ client pb.LancetServiceClient }
@@ -255,6 +256,9 @@ func (e grpcEngine) Ping(ctx context.Context) (time.Duration, error) {
 	start := time.Now()
 	_, err := e.client.Ping(ctx, &pb.PingRequest{Value: "ping"})
 	return time.Since(start), err
+}
+func (e grpcEngine) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+	return e.client.QueryRAG(ctx, req)
 }
 
 type app struct {
@@ -436,6 +440,7 @@ func (a app) routes() http.Handler {
 	r.Get("/health", a.health)
 	r.Post("/documents", a.createDocument)
 	r.Get("/documents/{id}", a.getDocument)
+	r.Post("/rag/query", a.queryRAG)
 	return r
 }
 
@@ -610,6 +615,52 @@ func (a app) getDocument(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, doc)
+}
+
+type ragQueryRequestBody struct {
+	Query     string `json:"query"`
+	SessionID string `json:"session_id"`
+	Filter    *struct {
+		DocumentIDs  []string `json:"document_ids"`
+		ContentTypes []string `json:"content_types"`
+	} `json:"filter"`
+}
+
+func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
+	var body ragQueryRequestBody
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	req := &pb.QueryRAGRequest{
+		Query:     body.Query,
+		SessionId: body.SessionID,
+	}
+	if body.Filter != nil {
+		req.Filter = &pb.DocumentFilter{
+			DocumentIds:  body.Filter.DocumentIDs,
+			ContentTypes: body.Filter.ContentTypes,
+		}
+	}
+
+	resp, err := a.engine.QueryRAG(r.Context(), req)
+	if err != nil {
+		if status.Code(err) == codes.InvalidArgument {
+			http.Error(w, status.Convert(err).Message(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "engine query failed", http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func newDocumentID() (string, error) {

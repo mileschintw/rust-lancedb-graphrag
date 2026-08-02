@@ -195,3 +195,15 @@ fn rejects_empty_api_keys_without_exposing_credentials() {
     };
     assert_eq!(error, "OpenRouter API key must not be empty");
 }
+
+#[tokio::test]
+async fn client_embedding_endpoint_override() {
+    let server = MockServer::start(vec![200], Duration::ZERO);
+    let client = OpenRouterClient::for_test(server.endpoint.clone(), 0, Duration::ZERO);
+    let embeddings = client
+        .get_embeddings(&["test endpoint override".into()])
+        .await
+        .unwrap();
+    assert_eq!(server.requests.load(Ordering::SeqCst), 1);
+    assert_eq!(embeddings[0].len(), 2048);
+}

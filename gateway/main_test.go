@@ -636,6 +636,7 @@ type engineFunc struct {
 	ingest    func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome
 	status    *pb.GetIngestionStatusResponse
 	statusErr error
+	queryRAG  func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error)
 }
 
 func (e engineFunc) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome {
@@ -668,7 +669,182 @@ func (e engineFunc) IngestionStatus(ctx context.Context, id string) (*pb.GetInge
 	}, nil
 }
 
+func (e engineFunc) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+	if e.queryRAG != nil {
+		return e.queryRAG(ctx, req)
+	}
+	return nil, errors.New("queryRAG unimplemented")
+}
+
 func (engineFunc) Ping(context.Context) (time.Duration, error) { return time.Millisecond, nil }
+
+func TestRAGQueryValidMapping(t *testing.T) {
+	store := &fakeStore{}
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			if req.GetQuery() != "what is lancet?" {
+				t.Errorf("query = %q, want %q", req.GetQuery(), "what is lancet?")
+			}
+			return &pb.QueryRAGResponse{
+				Answer:      "Lancet is a hybrid RAG system.",
+				Citations:   []string{"doc-1#chunk-0"},
+				SessionId:   "gen-sess-100",
+				AnswerBasis: pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL,
+				StructuredCitations: []*pb.StructuredCitation{
+					{
+						DocumentId: "doc-1",
+						Excerpt:    "Lancet RAG engine",
+					},
+				},
+				Notices: []*pb.Notice{
+					{
+						Code:    "NOTICE_1",
+						Message: "Retrieval complete",
+					},
+				},
+				Snapshot: &pb.RetrievalSnapshot{
+					CandidateLimit: 32,
+				},
+			}, nil
+		},
+	}
+
+	reqBody := `{"query": "what is lancet?"}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(reqBody)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid json response: %v", err)
+	}
+
+	if resp["answer"] != "Lancet is a hybrid RAG system." {
+		t.Errorf("answer = %v", resp["answer"])
+	}
+	if resp["session_id"] != "gen-sess-100" {
+		t.Errorf("session_id = %v", resp["session_id"])
+	}
+	if float64Val, ok := resp["answer_basis"].(float64); !ok || int(float64Val) != int(pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL) {
+		t.Errorf("answer_basis = %v", resp["answer_basis"])
+	}
+	if citations, ok := resp["citations"].([]any); !ok || len(citations) != 1 || citations[0] != "doc-1#chunk-0" {
+		t.Errorf("citations = %v", resp["citations"])
+	}
+	if _, ok := resp["structured_citations"].([]any); !ok {
+		t.Errorf("structured_citations missing or invalid")
+	}
+	if _, ok := resp["notices"].([]any); !ok {
+		t.Errorf("notices missing or invalid")
+	}
+	if _, ok := resp["snapshot"].(map[string]any); !ok {
+		t.Errorf("snapshot missing or invalid")
+	}
+}
+
+func TestRAGQueryCallerSessionAndFilters(t *testing.T) {
+	store := &fakeStore{}
+	var receivedReq *pb.QueryRAGRequest
+	var receivedSawLiveContext bool
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			receivedReq = req
+			receivedSawLiveContext = ctx.Err() == nil
+			return &pb.QueryRAGResponse{
+				Answer:    "Filtered answer",
+				SessionId: req.GetSessionId(),
+			}, nil
+		},
+	}
+
+	body := `{"query":"test filter","session_id":"caller-sess-999","filter":{"document_ids":["doc-a","doc-b"],"content_types":["text/markdown"]}}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(body)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	if receivedReq == nil {
+		t.Fatal("engine QueryRAG was not called")
+	}
+	if receivedReq.GetSessionId() != "caller-sess-999" {
+		t.Errorf("session_id = %q, want caller-sess-999", receivedReq.GetSessionId())
+	}
+	if filter := receivedReq.GetFilter(); filter == nil {
+		t.Fatal("filter is nil")
+	} else {
+		if !slices.Contains(filter.GetDocumentIds(), "doc-a") || !slices.Contains(filter.GetDocumentIds(), "doc-b") {
+			t.Errorf("document_ids = %v", filter.GetDocumentIds())
+		}
+		if !slices.Contains(filter.GetContentTypes(), "text/markdown") {
+			t.Errorf("content_types = %v", filter.GetContentTypes())
+		}
+	}
+	if !receivedSawLiveContext {
+		t.Errorf("request context not live during query execution")
+	}
+}
+
+func TestRAGQueryRejectsUnknownOrTrailingJSON(t *testing.T) {
+	store := &fakeStore{}
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			return &pb.QueryRAGResponse{Answer: "should not be called"}, nil
+		},
+	}
+	router := app{store: store, engine: engine, logger: zap.NewNop()}.routes()
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"unknown field", `{"query":"test","unknown_field":"value"}`},
+		{"trailing json", `{"query":"test"}{"extra":"data"}`},
+		{"malformed json", `{"query":`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(tt.body)).WithContext(t.Context())
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("[%s] status = %d, want 400", tt.name, recorder.Code)
+			}
+		})
+	}
+}
+
+func TestRAGQueryInvalidArgumentStatus(t *testing.T) {
+	store := &fakeStore{}
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			return nil, status.Error(codes.InvalidArgument, "invalid query parameter: empty string")
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":""}`)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
 
 func TestCreateDocumentChunkSettingsContract(t *testing.T) {
 	t.Run("omitted settings use defaults", func(t *testing.T) {

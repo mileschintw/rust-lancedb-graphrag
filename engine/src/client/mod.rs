@@ -41,7 +41,10 @@ struct EmbeddingData {
 }
 
 impl OpenRouterClient {
-    pub fn new(api_key: impl Into<String>) -> Result<Self, String> {
+    pub fn new_with_endpoint(
+        api_key: impl Into<String>,
+        endpoint: impl Into<String>,
+    ) -> Result<Self, String> {
         let api_key = api_key.into();
         if api_key.trim().is_empty() {
             return Err("OpenRouter API key must not be empty".into());
@@ -51,16 +54,26 @@ impl OpenRouterClient {
         Ok(Self {
             http,
             api_key,
-            endpoint: OPENROUTER_EMBEDDINGS_URL.into(),
+            endpoint: endpoint.into(),
             max_retries: MAX_RETRIES,
             initial_backoff: INITIAL_BACKOFF,
         })
+    }
+
+    pub fn new(api_key: impl Into<String>) -> Result<Self, String> {
+        Self::new_with_endpoint(api_key, OPENROUTER_EMBEDDINGS_URL)
     }
 
     pub fn from_env() -> Result<Self, String> {
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .map_err(|_| "OPENROUTER_API_KEY is not configured".to_string())?;
         Self::new(api_key)
+    }
+
+    pub fn from_env_with_endpoint(endpoint: impl Into<String>) -> Result<Self, String> {
+        let api_key = std::env::var("OPENROUTER_API_KEY")
+            .map_err(|_| "OPENROUTER_API_KEY is not configured".to_string())?;
+        Self::new_with_endpoint(api_key, endpoint)
     }
 
     #[cfg(test)]
