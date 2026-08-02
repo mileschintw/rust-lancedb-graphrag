@@ -242,8 +242,8 @@ pub struct OpenRouterSettings {
     pub generation_model: String,
     #[serde(default = "default_chat_endpoint")]
     pub chat_endpoint: String,
-    #[serde(default = "default_models_endpoint")]
-    pub models_endpoint: String,
+    #[serde(default = "default_models_endpoint", alias = "models_endpoint")]
+    pub model_metadata_endpoint: String,
     #[serde(default = "default_generation_timeout_secs")]
     pub generation_timeout_secs: u64,
     #[serde(default = "default_temperature")]
@@ -261,7 +261,7 @@ impl Default for OpenRouterSettings {
             embedding_model: "nvidia/llama-nemotron-embed-vl-1b-v2:free".into(),
             generation_model: "openai/gpt-4o-mini".into(),
             chat_endpoint: "https://openrouter.ai/api/v1/chat/completions".into(),
-            models_endpoint: "https://openrouter.ai/api/v1/models".into(),
+            model_metadata_endpoint: "https://openrouter.ai/api/v1/models".into(),
             generation_timeout_secs: 30,
             temperature: 0.0,
             top_p: 1.0,
@@ -292,10 +292,40 @@ fn load_settings() -> Result<Settings, config::ConfigError> {
             builder = builder.add_source(config::File::with_name(&env_path).required(false));
         }
     }
-    builder
+    let mut settings: Settings = builder
         .add_source(config::Environment::with_prefix("LANCET").separator("__"))
         .build()?
-        .try_deserialize()
+        .try_deserialize()?;
+
+    // Keep the process-test and deployment override names explicit at the
+    // boundary. This also makes the double-underscore contract independent of
+    // config crate version-specific environment parsing details.
+    if let Ok(value) = std::env::var("LANCET_ENGINE__GRPC_ADDR") {
+        if !value.trim().is_empty() {
+            settings.engine.grpc_addr = value;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__LANCEDB_PATH") {
+        if !value.trim().is_empty() {
+            settings.engine.lancedb_path = value;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_OPENROUTER__EMBEDDING_ENDPOINT") {
+        if !value.trim().is_empty() {
+            settings.openrouter.embedding_endpoint = value;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT") {
+        if !value.trim().is_empty() {
+            settings.openrouter.model_metadata_endpoint = value;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_OPENROUTER__CHAT_ENDPOINT") {
+        if !value.trim().is_empty() {
+            settings.openrouter.chat_endpoint = value;
+        }
+    }
+    Ok(settings)
 }
 
 #[derive(Debug, Clone)]
@@ -1511,17 +1541,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let generator: Arc<dyn generation::Generator> = Arc::new(
-        generation::openrouter::OpenRouterGenerator::from_env().unwrap_or_else(|_| {
-            generation::openrouter::OpenRouterGenerator::new(
-                "fake-key",
-                &settings.openrouter.generation_model,
-            )
-            .unwrap()
-            .with_endpoints(
-                &settings.openrouter.chat_endpoint,
-                &settings.openrouter.models_endpoint,
-            )
-        }),
+        generation::openrouter::OpenRouterGenerator::new(
+            std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| "fake-key".to_owned()),
+            &settings.openrouter.generation_model,
+        )?
+        .with_endpoints(
+            &settings.openrouter.chat_endpoint,
+            &settings.openrouter.model_metadata_endpoint,
+        ),
     );
 
     let service = LancetServiceImpl {
