@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 3
-current_plan: 0
+current_plan: 1
 status: complete
-stopped_at: Phase 3 planning complete
-last_updated: "2026-07-31T21:39:46.715Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-08-02T02:10:04.812Z"
 progress:
-  total_phases: 6
+  total_phases: 3
   completed_phases: 2
-  total_plans: 28
-  completed_plans: 28
+  total_plans: 34
+  completed_plans: 30
 ---
 
 # Project State
@@ -26,7 +26,9 @@ progress:
 
 - **Phase:** 3
 - **Status:** Ready to execute
-- **Current Plan:** 0
+- **Current Plan:** 1
+- **Total Plans in Phase:** 5
+- **Progress:** [█████████░] 88%
 - **Phase Progress:** 0 plans executed
 
 ## Completed Phases
@@ -77,6 +79,7 @@ progress:
 | Phase 02 P08 | 35 min | 2 tasks | 4 files |
 | Phase 02 P09 | 45 min | 2 tasks | 5 files |
 | Phase 02 P10 | 24 min | 3 tasks | 0 files |
+| Phase 03 P01 | 25min | 2 tasks | 10 files |
 
 ## Decisions
 
@@ -108,9 +111,13 @@ progress:
 - [Phase 02-10]: Final acceptance required the validator exit zero and direct current PostgreSQL/LanceDB comparison before cleanup.
 - [Phase 02-10]: Git Bash was used for the unchanged validator because the WSL launcher had incompatible Cargo path semantics.
 - [Phase 02-10]: Challenge and evidence artifacts remain exact-ignored and absent after success.
+- [Phase 03]: Use NFKC, full Unicode case folding, UAX word boundaries, and identifier subtokens without stemming or stop-word removal.
+- [Phase 03]: Compute BM25 document frequency over the complete snapshot while applying normalized metadata filters before candidate limits.
+- [Phase 03]: Keep full-precision weighted RRF scores, retain both source ranks and scores, and resolve ties by the D-51 identity key.
+- [Phase 03]: Expose reranking through a Send + Sync boxed-future trait with NoOpReranker as the Phase 03 pass-through implementation.
 
 ## Session
 
-**Last session:** 2026-07-31T21:39:46.715Z
-**Stopped at:** Phase 3 planning complete
-**Resume file:** .planning/phases/03-hybrid-retrieval-basic-rag-path/03-01-PLAN.md
+**Last session:** 2026-08-02T02:10:04.789Z
+**Stopped at:** Completed 03-01-PLAN.md
+**Resume file:** None
