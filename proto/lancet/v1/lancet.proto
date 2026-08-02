@@ -45,15 +45,69 @@ message GetIngestionStatusResponse {
   string error_message = 4;
 }
 
+message DocumentFilter {
+  repeated string document_ids = 1;
+  repeated string content_types = 2;
+}
+
 message QueryRAGRequest {
   string query = 1;
   string session_id = 2;
+  DocumentFilter filter = 3;
+}
+
+enum AnswerBasis {
+  ANSWER_BASIS_UNSPECIFIED = 0;
+  ANSWER_BASIS_RETRIEVAL = 1;
+  ANSWER_BASIS_MIXED = 2;
+  ANSWER_BASIS_MODEL_ONLY = 3;
+}
+
+enum NoticeSeverity {
+  NOTICE_SEVERITY_UNSPECIFIED = 0;
+  NOTICE_SEVERITY_INFO = 1;
+  NOTICE_SEVERITY_WARNING = 2;
+  NOTICE_SEVERITY_ERROR = 3;
+}
+
+message Notice {
+  string code = 1;
+  string message = 2;
+  NoticeSeverity severity = 3;
+}
+
+message StructuredCitation {
+  string chunk_id = 1;
+  string document_id = 2;
+  string title = 3;
+  string section_path = 4;
+  string excerpt = 5;
+  bool is_truncated = 6;
+  double score = 7;
+  int32 rank = 8;
+  string content_type = 9;
+}
+
+message RetrievalSnapshot {
+  string index_generation = 1;
+  string embedding_model = 2;
+  double vector_weight = 3;
+  double bm25_weight = 4;
+  int32 rrf_k = 5;
+  int32 candidate_limit = 6;
+  int32 final_limit = 7;
+  DocumentFilter active_filter = 8;
+  string result_hash = 9;
 }
 
 message QueryRAGResponse {
   string answer = 1;
   repeated string citations = 2;
   string session_id = 3;
+  AnswerBasis answer_basis = 4;
+  repeated StructuredCitation structured_citations = 5;
+  repeated Notice notices = 6;
+  RetrievalSnapshot snapshot = 7;
 }
 
 message QueryGraphRequest {
