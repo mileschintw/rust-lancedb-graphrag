@@ -8,7 +8,11 @@ use std::{
     time::Duration,
 };
 
-fn spawn_engine(cwd: &Path, env_vars: &[(&str, &str)], remove_vars: &[&str]) -> (Child, String) {
+fn spawn_engine_full(
+    cwd: &Path,
+    env_vars: &[(&str, &str)],
+    remove_vars: &[&str],
+) -> Result<(Child, Vec<String>, String), String> {
     let mut command = Command::new(env!("CARGO_BIN_EXE_engine"));
     command.current_dir(cwd);
     for var in remove_vars {
@@ -28,9 +32,11 @@ fn spawn_engine(cwd: &Path, env_vars: &[(&str, &str)], remove_vars: &[&str]) -> 
     let tx_out = tx.clone();
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
+        let mut lines = Vec::new();
         for line in reader.lines().map_while(Result::ok) {
+            lines.push(line.clone());
             if line.contains("Rust RAG Engine serving") {
-                let _ = tx_out.send(Ok(line));
+                let _ = tx_out.send(Ok((lines, line)));
                 return;
             }
         }
@@ -43,7 +49,7 @@ fn spawn_engine(cwd: &Path, env_vars: &[(&str, &str)], remove_vars: &[&str]) -> 
         for line in reader.lines().map_while(Result::ok) {
             lines.push(line.clone());
             if line.contains("Rust RAG Engine serving") {
-                let _ = tx_err.send(Ok(line));
+                let _ = tx_err.send(Ok((lines.clone(), line)));
                 return;
             }
         }
@@ -51,15 +57,24 @@ fn spawn_engine(cwd: &Path, env_vars: &[(&str, &str)], remove_vars: &[&str]) -> 
     });
 
     match rx.recv_timeout(Duration::from_secs(10)) {
-        Ok(Ok(line)) => (child, line),
+        Ok(Ok((logs, line))) => Ok((child, logs, line)),
         Ok(Err(output)) => {
             let _ = child.kill();
-            panic!("engine exited without ready signal. Stderr:\n{output}");
+            let _ = child.wait();
+            Err(output)
         }
         Err(_) => {
             let _ = child.kill();
-            panic!("engine did not reach ready signal within timeout");
+            let _ = child.wait();
+            Err("timeout".into())
         }
+    }
+}
+
+fn spawn_engine(cwd: &Path, env_vars: &[(&str, &str)], remove_vars: &[&str]) -> (Child, String) {
+    match spawn_engine_full(cwd, env_vars, remove_vars) {
+        Ok((child, _logs, line)) => (child, line),
+        Err(err) => panic!("engine exited without ready signal. Stderr:\n{err}"),
     }
 }
 
@@ -147,5 +162,87 @@ fn engine_honors_env_overlay_and_environment_override_precedence() {
     let (child, line) = spawn_engine(&cwd_dir, &env_vars, &[]);
     assert!(line.contains("Rust RAG Engine serving"));
     cleanup_child(child);
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn initial_bm25_ready_before_serving() {
+    let temp_dir = std::env::temp_dir().join(format!("lancet-cfg-test-4-{}", uuid::Uuid::new_v4()));
+    let config_dir = temp_dir.join("isolated_config");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    let lancedb_dir = temp_dir.join("lancedb");
+
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::create_dir_all(&cwd_dir).unwrap();
+
+    let config_toml = format!(
+        "[engine]\ngrpc_addr = \"127.0.0.1:0\"\nlancedb_path = \"{}\"\n",
+        lancedb_dir.to_str().unwrap().replace('\\', "/")
+    );
+    fs::write(config_dir.join("config.toml"), config_toml).unwrap();
+
+    let env_vars = [
+        ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+
+    let (child, logs, ready_line) = spawn_engine_full(&cwd_dir, &env_vars, &[]).unwrap();
+    assert!(ready_line.contains("Rust RAG Engine serving"));
+
+    let bm25_pos = logs.iter().position(|l| l.contains("BM25 snapshot built"));
+    let serving_pos = logs
+        .iter()
+        .position(|l| l.contains("Rust RAG Engine serving"));
+
+    assert!(
+        bm25_pos.is_some(),
+        "BM25 snapshot built log must be present"
+    );
+    assert!(
+        serving_pos.is_some(),
+        "Rust RAG Engine serving log must be present"
+    );
+    assert!(
+        bm25_pos.unwrap() <= serving_pos.unwrap(),
+        "BM25 snapshot build must precede Rust RAG Engine serving log"
+    );
+
+    cleanup_child(child);
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn initial_bm25_failure_blocks_readiness() {
+    let temp_dir = std::env::temp_dir().join(format!("lancet-cfg-test-5-{}", uuid::Uuid::new_v4()));
+    let config_dir = temp_dir.join("isolated_config");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    let corrupt_lancedb = temp_dir.join("corrupt_file.txt");
+
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::create_dir_all(&cwd_dir).unwrap();
+    fs::write(&corrupt_lancedb, "corrupt data file").unwrap();
+
+    let config_toml = format!(
+        "[engine]\ngrpc_addr = \"127.0.0.1:0\"\nlancedb_path = \"{}\"\n",
+        corrupt_lancedb.to_str().unwrap().replace('\\', "/")
+    );
+    fs::write(config_dir.join("config.toml"), config_toml).unwrap();
+
+    let env_vars = [
+        ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+
+    let result = spawn_engine_full(&cwd_dir, &env_vars, &[]);
+    assert!(
+        result.is_err(),
+        "engine startup must fail when lancedb initialization fails"
+    );
+    let err_msg = result.err().unwrap();
+    assert!(
+        !err_msg.contains("Rust RAG Engine serving"),
+        "engine must never serve if startup fails"
+    );
+
     let _ = fs::remove_dir_all(temp_dir);
 }
