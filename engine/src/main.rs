@@ -24,6 +24,8 @@ use uuid::Uuid;
 
 mod chunker;
 mod client;
+pub mod generation;
+pub mod prompt;
 mod rerank;
 mod retrieval;
 
