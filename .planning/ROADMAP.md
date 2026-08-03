@@ -136,7 +136,7 @@
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-04
 **Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
-**Plans:** 5/5 plans executed
+**Plans:** 5/12 plans executed (7 gap-closure plans pending)
 
 Plans:
 **Wave 1**
@@ -158,6 +158,28 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 
 - [x] 03-05-PLAN.md — Run the isolated real-process smoke with local embedding, metadata, and chat mocks.
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 03-06-PLAN.md — Close prompt and provider grounding-integrity blockers with fail-closed evidence and validated-output regressions.
+
+**Wave 7** *(blocked on Wave 6 completion; parallel)*
+
+- [ ] 03-07-PLAN.md — Thread validated effective settings through retrieval, evidence, providers, persistence identity, and snapshots.
+- [ ] 03-08-PLAN.md — Enforce the 32 KiB HTTP body boundary and 60-second read timeout while preserving the cross-runtime path.
+
+**Wave 8** *(blocked on Wave 7 completion; parallel)*
+
+- [ ] 03-09-PLAN.md — Project identity-correct citations, Unicode-bounded excerpts, and severity-correct diagnostics.
+- [ ] 03-10-PLAN.md — Build configuration-based embedding and generation adapters with exact request-capture tests.
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 03-11-PLAN.md — Wire effective configuration and providers into production startup and prove initial readiness guards.
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 03-12-PLAN.md — Wire NoOpReranker into production query_rag and enforce zero-weight retrieval-source exclusion.
 
 **Success Criteria:**
 
