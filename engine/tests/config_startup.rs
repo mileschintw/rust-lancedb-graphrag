@@ -1,12 +1,20 @@
 use std::{
     fs,
     io::{BufRead, BufReader},
+    net::{SocketAddr, TcpListener, TcpStream},
     path::Path,
     process::{Child, Command, Stdio},
-    sync::mpsc,
+    sync::{mpsc, Arc},
     thread,
     time::Duration,
 };
+
+use arrow_array::{
+    new_null_array, types::Float32Type, FixedSizeListArray, Int32Array, Int64Array, RecordBatch,
+    StringArray,
+};
+use engine::db::DatabaseManager;
+use uuid::Uuid;
 
 fn spawn_engine_full(
     cwd: &Path,
@@ -59,14 +67,21 @@ fn spawn_engine_full(
     match rx.recv_timeout(Duration::from_secs(10)) {
         Ok(Ok((logs, line))) => Ok((child, logs, line)),
         Ok(Err(output)) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            Err(output)
+            let status = child
+                .wait()
+                .map_err(|error| format!("failed to wait for engine: {error}\n{output}"))?;
+            Err(format!(
+                "engine exited {status} without readiness\n{output}"
+            ))
         }
         Err(_) => {
             let _ = child.kill();
-            let _ = child.wait();
-            Err("timeout".into())
+            let status = child
+                .wait()
+                .map_err(|error| format!("failed to wait after startup timeout: {error}"))?;
+            Err(format!(
+                "engine startup timeout after 10 seconds (status {status})"
+            ))
         }
     }
 }
@@ -81,6 +96,114 @@ fn spawn_engine(cwd: &Path, env_vars: &[(&str, &str)], remove_vars: &[&str]) -> 
 fn cleanup_child(mut child: Child) {
     let _ = child.kill();
     let _ = child.wait();
+}
+
+fn unused_loopback_addr() -> SocketAddr {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind an ephemeral test port");
+    listener.local_addr().expect("read the ephemeral test port")
+}
+
+fn assert_not_listening(addr: SocketAddr) {
+    let result = TcpStream::connect_timeout(&addr, Duration::from_millis(250));
+    assert!(
+        result.is_err(),
+        "engine must not open a listening socket at {addr}"
+    );
+}
+
+struct Bm25FailureFixture {
+    document_id: String,
+    chunk_id: String,
+}
+
+async fn seed_schema_valid_bm25_failure_fixture(
+    lancedb_path: &Path,
+) -> Result<Bm25FailureFixture, String> {
+    let path = lancedb_path
+        .to_str()
+        .ok_or_else(|| "fixture path must be valid UTF-8".to_owned())?;
+    let database = DatabaseManager::initialize(path).await?;
+    let nodes = database.nodes_table().await?;
+    let schema = nodes
+        .schema()
+        .await
+        .map_err(|error| format!("read BM25 failure fixture schema: {error}"))?;
+    let document_id = Uuid::new_v4().to_string();
+    let chunk_id = format!("{document_id}:0");
+    let nullable = |name: &str| -> Result<Arc<dyn arrow_array::Array>, String> {
+        let field = schema
+            .field_with_name(name)
+            .map_err(|error| format!("fixture schema missing {name}: {error}"))?;
+        Ok(new_null_array(field.data_type(), 1))
+    };
+    let embedding = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+        std::iter::once(Some((0..2048).map(|_| Some(0.0f32)))),
+        2048,
+    );
+    let invalid_content = " \t\n";
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec![document_id.as_str()])),
+            Arc::new(StringArray::from(vec![chunk_id.as_str()])),
+            Arc::new(Int32Array::from(vec![0])),
+            Arc::new(Int32Array::from(vec![0])),
+            Arc::new(Int32Array::from(vec![3])),
+            Arc::new(StringArray::from(vec![invalid_content])),
+            Arc::new(embedding),
+            Arc::new(Int32Array::from(vec![1])),
+            Arc::new(StringArray::from(vec!["o200k_base"])),
+            Arc::new(StringArray::from(vec!["1"])),
+            Arc::new(StringArray::from(vec![Some("BM25 failure fixture")])),
+            Arc::new(StringArray::from(vec![Some("Readiness failure")])),
+            nullable("page_start")?,
+            nullable("page_end")?,
+            Arc::new(StringArray::from(vec![Some("bm25-failure-fixture")])),
+            Arc::new(StringArray::from(vec![Some("1")])),
+            Arc::new(StringArray::from(vec![Some("test-embedding-model")])),
+            Arc::new(Int64Array::from(vec![Some(1)])),
+            Arc::new(StringArray::from(vec![Some("text/plain")])),
+            nullable("community_ids")?,
+            nullable("summary")?,
+            nullable("summary_vector")?,
+            nullable("unsummarized_refs")?,
+        ],
+    )
+    .map_err(|error| format!("build BM25 failure fixture row: {error}"))?;
+    nodes
+        .add(batch)
+        .execute()
+        .await
+        .map_err(|error| format!("insert BM25 failure fixture row: {error}"))?;
+
+    let predicate = format!("document_id = '{document_id}'");
+    let inserted = nodes
+        .count_rows(Some(predicate.clone()))
+        .await
+        .map_err(|error| format!("count inserted BM25 failure fixture row: {error}"))?;
+    if inserted != 1 {
+        return Err(format!(
+            "expected one inserted BM25 failure fixture row, found {inserted}"
+        ));
+    }
+
+    drop(nodes);
+    drop(database);
+    let reopened = DatabaseManager::open_and_validate(path).await?;
+    let reopened_nodes = reopened.nodes_table().await?;
+    let reopened_count = reopened_nodes
+        .count_rows(Some(predicate))
+        .await
+        .map_err(|error| format!("count reopened BM25 failure fixture row: {error}"))?;
+    if reopened_count != 1 {
+        return Err(format!(
+            "expected one reopened BM25 failure fixture row, found {reopened_count}"
+        ));
+    }
+    Ok(Bm25FailureFixture {
+        document_id,
+        chunk_id,
+    })
 }
 
 #[test]
@@ -216,15 +339,19 @@ fn initial_bm25_failure_blocks_readiness() {
     let temp_dir = std::env::temp_dir().join(format!("lancet-cfg-test-5-{}", uuid::Uuid::new_v4()));
     let config_dir = temp_dir.join("isolated_config");
     let cwd_dir = temp_dir.join("empty_cwd");
-    let corrupt_lancedb = temp_dir.join("corrupt_file.txt");
+    let lancedb_dir = temp_dir.join("lancedb");
+    let grpc_addr = unused_loopback_addr();
 
     fs::create_dir_all(&config_dir).unwrap();
     fs::create_dir_all(&cwd_dir).unwrap();
-    fs::write(&corrupt_lancedb, "corrupt data file").unwrap();
+    let fixture = tokio::runtime::Runtime::new()
+        .expect("create fixture runtime")
+        .block_on(seed_schema_valid_bm25_failure_fixture(&lancedb_dir))
+        .expect("seed and reopen schema-valid BM25 failure fixture");
 
     let config_toml = format!(
-        "[engine]\ngrpc_addr = \"127.0.0.1:0\"\nlancedb_path = \"{}\"\n",
-        corrupt_lancedb.to_str().unwrap().replace('\\', "/")
+        "[engine]\ngrpc_addr = \"{grpc_addr}\"\nlancedb_path = \"{}\"\n",
+        lancedb_dir.to_str().unwrap().replace('\\', "/")
     );
     fs::write(config_dir.join("config.toml"), config_toml).unwrap();
 
@@ -234,15 +361,89 @@ fn initial_bm25_failure_blocks_readiness() {
     ];
 
     let result = spawn_engine_full(&cwd_dir, &env_vars, &[]);
+    let err_msg = match result {
+        Ok((child, _, _)) => {
+            cleanup_child(child);
+            panic!("engine must fail while building the initial BM25 snapshot")
+        }
+        Err(error) => error,
+    };
     assert!(
-        result.is_err(),
-        "engine startup must fail when lancedb initialization fails"
+        err_msg.contains("exited "),
+        "engine must terminate: {err_msg}"
     );
-    let err_msg = result.err().unwrap();
+    assert!(
+        !err_msg.contains("status exit status: 0"),
+        "engine must terminate nonzero: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("BM25 snapshot"),
+        "diagnostic must identify BM25 construction: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("content"),
+        "diagnostic must identify invalid content: {err_msg}"
+    );
+    assert!(
+        err_msg.contains(&fixture.document_id) && err_msg.contains(&fixture.chunk_id),
+        "diagnostic must identify the unique completed row: {err_msg}"
+    );
     assert!(
         !err_msg.contains("Rust RAG Engine serving"),
         "engine must never serve if startup fails"
     );
+    assert_not_listening(grpc_addr);
+
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn invalid_rag_settings_block_readiness() {
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-invalid-{}", uuid::Uuid::new_v4()));
+    let config_dir = temp_dir.join("isolated_config");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    let lancedb_dir = temp_dir.join("lancedb");
+    let grpc_addr = unused_loopback_addr();
+
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::create_dir_all(&cwd_dir).unwrap();
+    let config_toml = format!(
+        "[engine]\ngrpc_addr = \"{grpc_addr}\"\nlancedb_path = \"{}\"\n\n[engine.retrieval]\ncandidate_limit = 0\n",
+        lancedb_dir.to_str().unwrap().replace('\\', "/")
+    );
+    fs::write(config_dir.join("config.toml"), config_toml).unwrap();
+
+    let env_vars = [
+        ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+
+    let result = spawn_engine_full(&cwd_dir, &env_vars, &[]);
+    let err_msg = match result {
+        Ok((child, _, _)) => {
+            cleanup_child(child);
+            panic!("engine must reject invalid RAG settings before readiness")
+        }
+        Err(error) => error,
+    };
+    assert!(
+        err_msg.contains("exited "),
+        "engine must terminate: {err_msg}"
+    );
+    assert!(
+        !err_msg.contains("status exit status: 0"),
+        "engine must terminate nonzero: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("candidate_limit"),
+        "diagnostic must name the invalid setting: {err_msg}"
+    );
+    assert!(
+        !err_msg.contains("Rust RAG Engine serving"),
+        "engine must never serve with invalid settings"
+    );
+    assert_not_listening(grpc_addr);
 
     let _ = fs::remove_dir_all(temp_dir);
 }
