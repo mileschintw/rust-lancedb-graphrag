@@ -864,15 +864,16 @@ impl LancetService for LancetServiceImpl {
             .collect();
 
         let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
-        let (_packed_prompt, packed_evidence) = prompt::pack_evidence_prompt(
+        let packed_evidence = prompt::pack_evidence_prompt(
             &query_request.query,
             &evidence_blocks,
             prompt::DEFAULT_MAX_PROMPT_TOKENS,
             prompt::DEFAULT_ANSWER_TOKEN_BUDGET,
-        );
+        )
+        .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
 
         let mut gen_req =
-            generation::GenerationRequest::new(&query_request.query, packed_evidence.clone());
+            generation::GenerationRequest::new(&query_request.query, packed_evidence.evidence.clone());
         gen_req.session_id = Some(session_id.clone());
 
         let model_output =
@@ -886,8 +887,12 @@ impl LancetService for LancetServiceImpl {
                     _ => Status::internal(err.message()),
                 })?;
 
+        model_output
+            .validate_grounding(&packed_evidence.evidence)
+            .map_err(|err| Status::internal(err.message()))?;
+
         let resolved_citations =
-            prompt::resolve_citations(&model_output.cited_evidence_ids, &packed_evidence);
+            prompt::resolve_citations(&model_output.cited_evidence_ids, &packed_evidence.evidence);
 
         let proto_citations: Vec<String> = resolved_citations
             .iter()

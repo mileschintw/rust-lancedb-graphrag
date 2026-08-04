@@ -168,11 +168,41 @@ impl OpenRouterGenerator {
         // Preflight supported parameters check per D-27
         self.check_supported_parameters().await?;
 
-        let (prompt_text, packed_evidence) =
-            pack_evidence_prompt(&request.question, &request.evidence, 8192, 2048);
+        let packed_evidence =
+            pack_evidence_prompt(&request.question, &request.evidence, 8192, 2048).map_err(|err| {
+                GenerationError::new(
+                    GenerationErrorKind::InvalidRequest,
+                    format!("prompt assembly failed: {err}"),
+                )
+            })?;
 
         let system_msg = request.system_policy.clone();
-        let user_msg = prompt_text;
+        let user_msg = packed_evidence.prompt;
+
+        let schema_json = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "answer": { "type": "string" },
+                "cited_evidence_ids": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                },
+                "answer_basis": {
+                    "type": "string",
+                    "enum": ["retrieval", "mixed", "model_only"]
+                },
+                "notices": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                }
+            },
+            "required": ["answer", "cited_evidence_ids", "answer_basis", "notices", "warnings"],
+            "additionalProperties": false
+        });
 
         let payload = OpenRouterChatPayload {
             model: self.model.clone(),
@@ -188,9 +218,14 @@ impl OpenRouterGenerator {
             ],
             temperature: 0.0,
             top_p: 1.0,
-            max_tokens: 2048,
+            max_completion_tokens: 2048,
             response_format: ResponseFormat {
-                format_type: "json_object".into(),
+                format_type: "json_schema".into(),
+                json_schema: JsonSchemaWrapper {
+                    name: "model_output".into(),
+                    strict: true,
+                    schema: schema_json,
+                },
             },
         };
 
@@ -240,6 +275,22 @@ impl OpenRouterGenerator {
             )
         })?;
 
+        match choice.finish_reason.as_deref() {
+            Some("stop") => {}
+            Some(other) => {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("OpenRouter completion incomplete: finish_reason '{other}'"),
+                ));
+            }
+            None => {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    "OpenRouter choice missing finish_reason",
+                ));
+            }
+        }
+
         let content_str = &choice.message.content;
         let mut model_output: ModelOutput = serde_json::from_str(content_str).map_err(|err| {
             GenerationError::new(
@@ -256,11 +307,8 @@ impl OpenRouterGenerator {
             });
         }
 
-        // Keep citations bounded only to available evidence IDs
-        let valid_ids: Vec<String> = packed_evidence.iter().map(|e| e.id.clone()).collect();
-        model_output.cited_evidence_ids.retain(|id| {
-            valid_ids.contains(id) || packed_evidence.iter().any(|e| e.chunk_id == *id)
-        });
+        // Validate semantic grounding against packed evidence IDs per D-17, D-22, D-28
+        model_output.validate_grounding(&packed_evidence.evidence)?;
 
         Ok(model_output)
     }
@@ -293,7 +341,7 @@ struct OpenRouterChatPayload {
     messages: Vec<ChatMessage>,
     temperature: f64,
     top_p: f64,
-    max_tokens: usize,
+    max_completion_tokens: usize,
     response_format: ResponseFormat,
 }
 
@@ -307,6 +355,14 @@ struct ChatMessage {
 struct ResponseFormat {
     #[serde(rename = "type")]
     format_type: String,
+    json_schema: JsonSchemaWrapper,
+}
+
+#[derive(Serialize)]
+struct JsonSchemaWrapper {
+    name: String,
+    strict: bool,
+    schema: serde_json::Value,
 }
 
 #[derive(Deserialize)]
@@ -329,6 +385,7 @@ struct OpenRouterChatResponse {
 #[derive(Deserialize)]
 struct ChatChoice {
     message: ChoiceMessage,
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]

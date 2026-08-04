@@ -40,8 +40,11 @@ impl Display for AnswerBasis {
     }
 }
 
+use std::collections::HashSet;
+
 /// Token usage reported by a generation provider.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ModelUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -50,6 +53,7 @@ pub struct ModelUsage {
 
 /// Closed provider-neutral output contract for structured generation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelOutput {
     pub answer: String,
     #[serde(default)]
@@ -61,6 +65,89 @@ pub struct ModelOutput {
     pub warnings: Vec<String>,
     #[serde(default)]
     pub usage: Option<ModelUsage>,
+}
+
+impl ModelOutput {
+    pub fn validate_grounding(&self, packed_evidence: &[EvidenceBlock]) -> Result<(), GenerationError> {
+        if self.answer.trim().is_empty() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                "Model answer text must not be empty or blank",
+            ));
+        }
+
+        // Check for duplicate cited evidence IDs
+        let mut seen_cited = HashSet::new();
+        for id in &self.cited_evidence_ids {
+            if !seen_cited.insert(id.as_str()) {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("cited_evidence_ids contains duplicate ID '{id}'"),
+                ));
+            }
+        }
+
+        let known_ids: HashSet<&str> = packed_evidence.iter().map(|e| e.id.as_str()).collect();
+
+        // Check that all cited_evidence_ids are known
+        for id in &self.cited_evidence_ids {
+            if !known_ids.contains(id.as_str()) {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("cited_evidence_id '{id}' is not in packed evidence"),
+                ));
+            }
+        }
+
+        // Extract inline markers like [1], [2] from answer text
+        let inline_markers = extract_inline_markers(&self.answer);
+        let mut inline_set = HashSet::new();
+        for marker in &inline_markers {
+            if !known_ids.contains(marker.as_str()) {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("inline marker '{marker}' in answer is not in packed evidence"),
+                ));
+            }
+            inline_set.insert(marker.as_str());
+        }
+
+        // Validate exact set equality between cited_evidence_ids and inline answer markers
+        if seen_cited != inline_set {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!(
+                    "mismatch between cited_evidence_ids ({:?}) and inline markers ({:?})",
+                    self.cited_evidence_ids, inline_markers
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+fn extract_inline_markers(text: &str) -> Vec<String> {
+    let mut markers = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'[' {
+            let start = i;
+            i += 1;
+            let mut is_num = false;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                is_num = true;
+                i += 1;
+            }
+            if is_num && i < bytes.len() && bytes[i] == b']' {
+                markers.push(text[start..=i].to_string());
+            }
+        } else {
+            i += 1;
+        }
+    }
+    markers
 }
 
 /// A structured input request passed to a `Generator`.
