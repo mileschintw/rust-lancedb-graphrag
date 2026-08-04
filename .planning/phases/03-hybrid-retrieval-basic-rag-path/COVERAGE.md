@@ -71,3 +71,12 @@ Each debt item retains its rationale, trigger, target, and future acceptance cri
 The capability subtraction is intentional: Phase 03 exposes only the unary, one-shot structured happy path. Streaming, tools/function calling, alternate providers, retries/fallback, RAG-03 degraded behavior, citation repair, and dynamic re-ingestion/restart recovery remain explicit OPT-OUT/debt decisions and are not hidden inside the tracer.
 
 Dynamic re-ingestion/restart recovery remains deferred as `DEBT-RAG-04`; it is not part of the initial-readiness proof.
+
+## Plan 03-08 Gap-Closure Addendum: Bounded Gateway & HTTP 413
+
+Plan 03-08 enforces an explicit 32 KiB request body limit (`maxRAGQueryBodyBytes = 32 << 10`) at the `POST /rag/query` HTTP trust boundary:
+- Oversized request bodies (one byte over 32 KiB or inflated by filter arrays) return HTTP 413 before the engine is invoked.
+- Request body closure and zero engine calls are proved by `TestRAGQueryRejectsOversizedBody` and `TestRAGQueryRejectsHugeFilterBody`.
+- Server `ReadTimeout` is set to 60 seconds while preserving `ReadHeaderTimeout` at 10 seconds, verified by `TestHTTPServerReadTimeouts`.
+- `TestRAGQueryCrossRuntime` verifies cross-runtime compatibility with Plan 03-06 strict `json_schema`, `max_completion_tokens`, top-level `usage`, and `finish_reason: stop`.
+- RAG-03 and deferred debt ownership (DEBT-RAG-01 through DEBT-RAG-06) remain unchanged.
