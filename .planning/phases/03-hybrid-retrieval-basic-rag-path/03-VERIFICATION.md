@@ -1,269 +1,308 @@
 ---
 phase: 03-hybrid-retrieval-basic-rag-path
-verified: 2026-08-02T23:18:33Z
+verified: 2026-08-04T09:04:52Z
 status: gaps_found
-score: 7/15 must-haves verified
-behavior_unverified: 1
+score: "49/54 must-haves verified"
+behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: gaps_found
+  previous_score: "7/15"
+  gaps_closed:
+    - "The injected Reranker/NoOpReranker seam is now present, wired after fusion, and covered by focused service tests."
+    - "The Go /rag/query body is bounded at 32 KiB, closes the body, and rejects oversized requests before the engine call."
+    - "Unicode evidence encoding, complete-block packing, bounded excerpts, and the basic unknown-marker rejection path are implemented and tested."
+  gaps_remaining:
+    - "The retrieval-backed output contract still accepts model_only and citationless retrieval answers."
+    - "The production OpenRouter adapter repacks evidence with hardcoded 8192/2048 limits instead of the effective runtime settings."
+    - "Provider failures lose the available session/correlation identity, startup accepts a fake credential fallback, and the locked Rust suite still has one failing test."
+  regressions:
+    - "The current checkout's full Rust suite fails query_rag_citation_identity_and_notices in both parallel and serial runs; its single-test invocation passes."
 gaps:
-  - truth: "Bounded, isolated evidence remains untrusted and honors the configured prompt and excerpt limits."
+  - truth: "RSC-1 / P09 / P24: only a complete retrieval-backed provider result with valid evidence markers can reach the public QueryRAG response."
     status: failed
-    reason: "Corpus-controlled title/section metadata is interpolated into prompt attributes without escaping, the first evidence block bypasses the token budget, and runtime prompt/excerpt assembly ignores the committed evidence and excerpt settings."
-    artifacts:
-      - path: "engine/src/prompt.rs"
-        issue: "Unescaped provenance attributes, first-block budget bypass, and byte-indexed Unicode excerpt truncation."
-      - path: "engine/src/main.rs"
-        issue: "QueryRAG calls prompt assembly with constants rather than effective configuration."
-    missing:
-      - "Escape every corpus-controlled metadata/content field with one structured encoding boundary."
-      - "Reject or omit an over-budget first block and fail closed when no complete evidence block fits."
-      - "Use configured evidence/excerpt limits and truncate excerpts on Unicode character boundaries with accurate truncation state."
-  - truth: "Every accepted provider answer is closed-schema validated and every valid marker produces a provenance-correct bounded citation from the cited evidence object."
-    status: failed
-    reason: "The adapter requests json_object rather than strict JSON Schema, ModelOutput accepts unknown fields, invalid IDs are silently removed, finish reason and grounding invariants are unchecked, and response citations take score/rank from citation position rather than cited evidence identity."
+    reason: "ModelOutput::validate_grounding checks known, duplicate, and inline marker identity but does not require citations for retrieval/mixed output or reject model_only for this Phase 03 path. The OpenRouter schema also has no answer, array, or item size bounds."
     artifacts:
       - path: "engine/src/generation/mod.rs"
-        issue: "ModelOutput is not deny_unknown_fields and has no complete semantic validator."
+        issue: "validate_grounding compares cited IDs with inline markers but permits an empty equal set and does not constrain answer_basis."
       - path: "engine/src/generation/openrouter.rs"
-        issue: "Uses json_object and silently retains-away unsupported citation IDs."
+        issue: "The strict schema enumerates model_only and leaves answer/notices/warnings/ID arrays unbounded."
       - path: "engine/src/main.rs"
-        issue: "Structured citation metadata is paired by enumeration index and warnings are discarded."
+        issue: "query_rag maps every accepted ModelOutput into QueryRAGResponse without a Phase 03 retrieval-backed basis/citation guard."
     missing:
-      - "Send strict JSON Schema with required fields and additionalProperties false."
-      - "Reject empty/truncated/unknown-field/invalid-marker or marker-ID-mismatch outputs before publishing an answer."
-      - "Resolve citation metadata by engine-issued evidence/chunk identity and preserve title, section, content type, score, rank, and truncation from that same source."
-  - truth: "A valid QueryRAG call routes fused candidates through the configured NoOpReranker before evidence assembly."
+      - "Reject model_only and citationless retrieval/mixed output before response assembly, or explicitly revise the Phase 03 contract."
+      - "Add bounded output fields/array limits at the provider boundary and a named regression for these cases."
+  - truth: "P25 / P41: one validated EffectiveRagSettings value controls production retrieval, evidence, provider, and generation behavior."
     status: failed
-    reason: "The Reranker trait and NoOpReranker are substantive and unit-tested, but LancetServiceImpl has no reranker field and QueryRAG sends fused candidates directly to evidence assembly."
+    reason: "query_rag uses configured evidence_token_budget and max_output_tokens, but OpenRouterGenerator::execute_one_call repacks the same evidence with literal 8192 and 2048 values. The configured service tests use a recording generator and therefore do not exercise this production adapter path."
     artifacts:
-      - path: "engine/src/rerank/mod.rs"
-        issue: "Orphaned from the production QueryRAG path; compiler reports the trait unused and NoOpReranker never constructed."
-      - path: "engine/src/main.rs"
-        issue: "No injected reranker or rerank invocation after fusion."
-    missing:
-      - "Inject Arc<dyn Reranker>, construct NoOpReranker at startup, and invoke it after fusion."
-      - "Add a service-level recording-reranker test proving exactly one call and field/order preservation."
-  - truth: "Committed retrieval, embedding, generation, evidence, and snapshot settings control the behavior the service reports."
-    status: failed
-    reason: "Several settings deserialize but are inert: startup builds BM25 with defaults, evidence/excerpt limits are unused, generation sampling/timeout/output are hardcoded, the embedding model is compile-time, and the snapshot hardcodes or narrows effective values."
-    artifacts:
-      - path: "config/config.toml"
-        issue: "Declares settings that are not consistently consumed."
-      - path: "engine/src/main.rs"
-        issue: "Builds BM25 with Bm25Config::default and hardcodes snapshot values."
-      - path: "engine/src/client/mod.rs"
-        issue: "Embedding request model and timeout remain compile-time constants."
       - path: "engine/src/generation/openrouter.rs"
-        issue: "Timeout, temperature, top-p, output limit, and prompt limits remain fixed constants."
+        issue: "pack_evidence_prompt(&request.question, &request.evidence, 8192, 2048) bypasses effective settings."
+      - path: "engine/src/main.rs"
+        issue: "Production startup constructs the adapter from EffectiveRagSettings, but the adapter does not consume all relevant limits from that object."
     missing:
-      - "Validate effective settings before readiness and use the same BM25 settings for index build and query."
-      - "Pass validated embedding/generation/evidence configuration into adapters and service assembly."
-      - "Report exact effective snapshot values without hardcoding or lossy casts."
-  - truth: "The Go /rag/query boundary accepts a bounded strict JSON envelope and rejects over-limit bodies before allocation/provider work."
+      - "Pass the effective prompt/output limits through the provider-neutral request/configuration and assert a non-default production-adapter request."
+  - truth: "D-31 generation failures preserve session/correlation identity in a structured provider error without fabricating an answer."
     status: failed
-    reason: "Unknown and trailing JSON are rejected and InvalidArgument maps to HTTP 400, but queryRAG decodes r.Body without MaxBytesReader and the server has no request-body read timeout."
+    reason: "query_rag sets session_id but never sets correlation_id, and maps GenerationError to a plain tonic Status using only err.message(), discarding the error's retained identity fields."
     artifacts:
-      - path: "gateway/main.go"
-        issue: "The RAG body is unbounded; MaxBytesReader is used only for document upload."
-      - path: "gateway/main_test.go"
-        issue: "No one-byte-over-limit RAG body or huge-filter body test."
+      - path: "engine/src/main.rs"
+        issue: "gen_req.correlation_id is never populated and the error mapper drops GenerationError.session_id/correlation_id."
+      - path: "engine/src/generation/mod.rs"
+        issue: "The identity fields exist, but no service-level response/status path consumes them."
     missing:
-      - "Bound /rag/query JSON before decoding, close it, and return HTTP 413 for over-limit input."
-      - "Add an appropriate request-body deadline and focused over-limit tests."
+      - "Generate/propagate a correlation identity and expose session/correlation metadata in the provider failure boundary."
+  - truth: "P41: production startup must construct a usable configured provider path from validated settings and explicit credentials."
+    status: failed
+    reason: "Missing OPENROUTER_API_KEY is replaced with the literal fake-key value, allowing the engine to announce readiness with a provider configuration that cannot make a real request."
+    artifacts:
+      - path: "engine/src/main.rs"
+        issue: "main() uses std::env::var(\"OPENROUTER_API_KEY\").unwrap_or_else(|_| \"fake-key\".to_owned())."
+    missing:
+      - "Fail closed on a missing production credential, or make the test-only credential injection explicit and unreachable in production startup."
+  - truth: "The current locked Rust regression gate passes for the completed Phase 03 checkout."
+    status: failed
+    reason: "cargo test --manifest-path engine/Cargo.toml --locked failed in both the parallel and -- --test-threads=1 runs: 70 engine binary tests passed, one failed, one was ignored. The failure is query_rag_citation_identity_and_notices at engine/src/tests.rs:2851 (assertion sc.is_truncated); the focused named test passes alone."
+    artifacts:
+      - path: "engine/src/tests.rs"
+        issue: "The citation/truncation assertion is order-sensitive or otherwise not isolated under the full binary test target."
+    missing:
+      - "Make the citation fixture/assertion deterministic and rerun the complete locked Rust gate."
 deferred:
-  - truth: "Transparent surviving-path or model-only behavior after retrieval/provider failure."
-    addressed_in: "Phase 6"
-    evidence: "Phase 6 success criterion 7 implements the deferred RAG-03 hardening target, including DEBT-RAG-01 and DEBT-RAG-06."
-  - truth: "One bounded repair/downgrade flow for malformed or unknown citation markers."
-    addressed_in: "Phase 6"
-    evidence: "Phase 6 success criterion 7 includes DEBT-RAG-03; Phase 03 still must reject rather than silently publish an invalid marker."
-  - truth: "Atomic BM25/vector visibility across re-ingestion and restart recovery."
-    addressed_in: "Phase 6"
-    evidence: "Phase 6 success criterion 7 includes DEBT-RAG-04; Phase 03 only owns the initial-build safeguard."
-behavior_unverified_items:
-  - truth: "Initial BM25 construction completes before the first query-ready state, and an initial BM25 build failure prevents serving the valid path."
-    test: "Create a database that opens successfully but contains a schema-valid completed row whose required content is whitespace-only, then start the engine."
-    expected: "BM25 construction reports the offending row/field and the engine emits no serving signal or listening socket."
-    why_human: "The positive ordering test passes, but the named failure test points LanceDB at an ordinary corrupt file and exits during database initialization before BM25 construction is reached."
+  - truth: "Degraded vector/BM25/provider behavior and model-only fallback"
+    addressed_in: "Phase 06 / DEBT-RAG-01 and DEBT-RAG-06"
+    evidence: "deferred-items.md states Phase 03 requires both retrieval paths to succeed and Phase 06 owns degraded/model-only acceptance."
+  - truth: "Citation repair/downgrade after invalid markers"
+    addressed_in: "Phase 06 / DEBT-RAG-03"
+    evidence: "03-CONTEXT.md D-24 and roadmap Phase 06 SC7 defer repair."
+  - truth: "Dynamic BM25 re-ingestion/restart switching and recovery"
+    addressed_in: "Phase 06 / DEBT-RAG-04"
+    evidence: "03-CONTEXT.md D-41 through D-43 and roadmap Phase 06 SC7 own lifecycle behavior."
+  - truth: "Exhaustive unmatched, malformed, oversized, and combinatorial filter contract"
+    addressed_in: "Phase 06 / DEBT-RAG-05"
+    evidence: "COVERAGE.md and deferred-items.md preserve the future negative-input matrix."
+  - truth: "Graph-unavailable RAG-03 fallback"
+    addressed_in: "Phase 04 seam plus Phase 06 hardening / DEBT-RAG-06"
+    evidence: "Phase 04 owns graph context; Phase 03 is source-chunk-only."
 ---
 
-# Phase 3: Hybrid Retrieval & Basic RAG Path Verification Report
+# Phase 03: Hybrid Retrieval & Basic RAG Path Verification Report
 
 **Phase Goal:** As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.
-**Verified:** 2026-08-02T23:18:33Z
+
+**Verified:** 2026-08-04T09:04:52Z
 **Status:** gaps_found
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — fresh verification after the prior `gaps_found` report; summaries, the prior report, and both review artifacts were treated as claims to re-check.
 
 ## User Flow Coverage
 
-User story: “As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.”
+The roadmap marks this phase `mode: mvp`, and the goal passes the canonical user-story validator. The API-user flow is observable in the current checkout, but the final outcome is blocked by the provider-output contract gaps below.
 
 | Step | Expected | Evidence | Status |
-|---|---|---|---|
-| Ask | A valid `POST /rag/query` reaches the generated gRPC client with query/session/filter values. | `gateway/main.go:443,629-663`; `TestRAGQueryCrossRuntime` passed independently. | ✓ VERIFIED |
-| Retrieve | Rust obtains dense and BM25 candidates from a completed LanceDB corpus and deterministically fuses them. | `engine/src/main.rs:832-864`; the real-process smoke rejects the chat request unless both fixture markers reach the prompt (`gateway/main_test.go:1573-1575`). | ✓ VERIFIED for the successful default path |
-| Generate | One capability-checked local provider call returns a structured answer through the real Rust process. | `gateway/main_test.go:1503-1782`; exact test passed in 2.53s. | ✓ VERIFIED for the cooperative fixture |
-| Ground and cite | Accepted answer markers resolve to the correct bounded evidence object with trustworthy provenance. | `engine/src/main.rs:897-913` pairs citation metadata by enumeration index; `engine/src/generation/openrouter.rs:243-265` accepts permissive output and silently drops unknown IDs. | ✗ FAILED |
-| Outcome | The returned LLM answer is observably grounded in completed-corpus evidence. | The first-citation fixture works, but the general citation/evidence invariants required by the outcome do not hold. | ✗ FAILED |
-
-The MVP flow stops at the grounding/citation outcome. The technical sections below document the evidence used to classify the blockers; passing lower-level steps do not override the failed outcome.
+|------|----------|----------|--------|
+| Ask | POST a valid question to `/rag/query` with an optional typed filter and session ID. | `gateway/main.go:630-667`, `engine/src/main.rs:922-965` | ✓ |
+| Retrieve | The Rust engine searches dense LanceDB rows and the completed-corpus BM25 snapshot, fuses and reranks the candidate pool. | `engine/src/main.rs:967-1009`, `engine/src/retrieval/{dense,bm25,fusion}.rs`, `engine/src/rerank/mod.rs` | ✓ |
+| Generate | The selected evidence is encoded and sent through one strict structured generation call. | `engine/src/prompt.rs:180-243`, `engine/src/generation/openrouter.rs:283-440` | ✓ on the valid local mock path |
+| See grounded answer | The LLM answer is retrieval-backed and every citation resolves to the selected completed-corpus evidence. | `gateway/main_test.go:1600-1900` passes locally, but `engine/src/generation/mod.rs:71-123` permits citationless retrieval/model-only output. | ✗ BLOCKED |
 
 ## Goal Achievement
 
 ### Observable Truths
 
-The four roadmap success criteria were kept verbatim. Twenty-one PLAN truths were merged and deduplicated into eleven additional observable truths; no PLAN reduced roadmap scope.
+The roadmap success criteria are mandatory. Plan truths that clearly restated the initial-BM25 criterion are deduplicated into RSC-3 and counted once; all other plan-specific truths are included below. `Pxx` refers to the corresponding `must_haves.truths` item in `03-xx-PLAN.md`.
 
-| # | Truth | Source | Status | Evidence |
-|---|---|---|---|---|
-| 1 | For a valid query over a completed corpus where both vector and BM25 retrieval paths succeed, the Rust engine fuses deterministic, bounded evidence and returns one structured answer with valid citations resolving to that evidence. | ROADMAP SC1 | ✗ FAILED | Retrieval/fusion and the cooperative smoke pass, but prompt bounds, closed output validation, and citation identity/provenance fail (`prompt.rs:35-40,129-143,175-180`; `openrouter.rs:192-194,243-265`; `main.rs:897-913`). |
-| 2 | Go gateway exposes `/rag/query` and receives that retrieval-grounded structured answer through the Rust gRPC boundary. | ROADMAP SC2 | ✓ VERIFIED | Real Go route → generated gRPC client → Rust process passes in `TestRAGQueryCrossRuntime`. |
-| 3 | Initial BM25 construction completes before the first query-ready state, and an initial build failure prevents serving the valid path. | ROADMAP SC3 | ⚠ PRESENT_BEHAVIOR_UNVERIFIED | `initial_bm25_ready_before_serving` passes, but `initial_bm25_failure_blocks_readiness` fails during database open rather than BM25 build (`config_startup.rs:215-245`). |
-| 4 | Define pluggable async Reranker trait and NoOpReranker pass-through implementation (Port for 999.2). | ROADMAP SC4 | ✓ VERIFIED | Object-safe trait and pass-through exist (`rerank/mod.rs:10-35`); preservation unit test passes. Runtime use is a separate truth below. |
-| 5 | Rust builds a Unicode-aware BM25 snapshot from completed rows while preserving original evidence metadata and repeatability. | 03-01 | ✓ VERIFIED | Substantive analyzer/index code plus `bm25_full_unicode_analyzer_and_global_idf` and `bm25_rejects_empty_required_content` pass. |
-| 6 | Dense and BM25 use one normalized filter model and fuse with deterministic full-precision weighted RRF and chunk-ID deduplication. | 03-01 | ✓ VERIFIED | `QueryRequest`/`QueryFilters`, dense/BM25 code, fusion ordering, and `retrieval_filter_fusion_and_determinism` pass. |
-| 7 | A valid QueryRAG call routes fused candidates through NoOpReranker without field/order loss. | 03-01, 03-03 | ✗ FAILED | `LancetServiceImpl` has no reranker and `main.rs:854-864` goes directly from fusion to truncation; compiler says the trait is unused and NoOp is never constructed. |
-| 8 | Ordered candidates become bounded isolated evidence; suspicious corpus text/metadata cannot become executable instruction and configured limits are honored. | 03-02 | ✗ FAILED | Unescaped provenance attributes, first-block budget bypass, ignored settings, and byte slicing violate the trust/bounds contract. |
-| 9 | Valid markers resolve only to supplied evidence and citations preserve bounded excerpts and correct provenance under a closed provider output contract. | 03-02 | ✗ FAILED | Invalid IDs are silently removed; output is not closed-schema validated; citation metadata is taken from the wrong candidate for non-prefix citation order. |
-| 10 | OpenRouter performs one timeout-bounded strict structured call after capability preflight, using effective settings, while automated tests remain provider-independent. | 03-02 | ✗ FAILED | Provider independence, preflight, and one call are present, but the request is `json_object`, not strict JSON Schema, and timeout/sampling/output settings are hardcoded. |
-| 11 | The additive QueryRAG wire contract carries typed filters, effective session, answer basis, notices, structured citations, and retrieval snapshot fields without renumbering prior fields. | 03-03 | ✓ VERIFIED | Proto fields are additive (`lancet.proto:48-110`), generated Rust/Go bindings compile, and `buf lint` passes. Runtime field correctness is evaluated in truth 9. |
-| 12 | Committed TOML/environment settings actually control the retrieval and generation behavior the service reports. | 03-03 | ✗ FAILED | Startup uses `Bm25Config::default()` (`main.rs:1516`), prompt uses constants (`main.rs:866-872`), and provider/snapshot values are hardcoded. |
-| 13 | Go accepts a bounded strict `/rag/query` envelope and maps caller validation failures to HTTP 400. | 03-04 | ✗ FAILED | Unknown/trailing JSON and InvalidArgument mapping work, but the route body is unbounded (`gateway/main.go:629-640`). |
-| 14 | The production embedding client retains its default while startup can inject a configured endpoint for local verification. | 03-04 | ✓ VERIFIED | `new_with_endpoint`/`from_env_with_endpoint` are wired from `main.rs:1519-1521`; focused endpoint test passes. The artifact query's missing `embedding_endpoint` literal in `client/mod.rs` is a heuristic false positive, not a stub. |
-| 15 | A provider-independent real-process smoke uses isolated completed-corpus LanceDB, local embedding/metadata/chat mocks, generated-gRPC Ping, clean child environments, and bounded cleanup to return an answer through the real route. | 03-05 | ✓ VERIFIED | `TestRAGQueryCrossRuntime` passed exactly; test code verifies all three mocks, both evidence markers, Ping, direct binaries, scrubbed env, process teardown, and path release. |
+| # | Truth | Status | Evidence |
+|---:|---|---|---|
+| RSC-1 | A valid query with successful dense and BM25 retrieval produces deterministic bounded evidence, one structured answer, and citations resolving to that evidence. | ✗ FAILED | The local cross-runtime happy path passes, but the response guard accepts an empty citation set for retrieval output and accepts `model_only`; see `engine/src/generation/mod.rs:71-123` and Gap 1. |
+| RSC-2 | Go `/rag/query` receives the retrieval-grounded structured answer through Rust gRPC. | ✓ VERIFIED | `go test -count=1 ./...` and focused `TestRAGQueryCrossRuntime` both pass; the test exercises real Go HTTP, Rust process, generated Ping, local embedding/metadata/chat mocks, and structured citations. |
+| RSC-3 | Initial BM25 construction completes before query readiness, and an initial build failure prevents serving. | ✓ VERIFIED | `engine/src/main.rs:1708-1770` builds BM25 before the serving log; `initial_bm25_ready_before_serving`, `initial_bm25_failure_blocks_readiness`, and `invalid_rag_settings_block_readiness` pass as focused tests. |
+| RSC-4 | A pluggable async `Reranker` trait and NoOp pass-through implementation exist. | ✓ VERIFIED | `engine/src/rerank/mod.rs:11-40`, production injection at `engine/src/main.rs:1762`, and focused one-call/order/failure tests pass. |
+| P01 | Rust builds a Unicode-aware BM25 snapshot from completed LanceDB rows while preserving evidence metadata. | ✓ VERIFIED | `engine/src/retrieval/bm25.rs:171-304` preserves candidate fields and uses NFKC/case folding/UAX analysis; `bm25_full_unicode_analyzer_and_global_idf` and startup fixtures pass. |
+| P02 | Dense and BM25 paths use one validated filter model, weighted full-precision RRF, deterministic deduplication by chunk ID. | ✓ VERIFIED | `engine/src/retrieval/mod.rs:75-203`, `dense.rs:41-84`, and `fusion.rs:36-125`; `retrieval_filter_fusion_and_determinism` passes. |
+| P03 | NoOpReranker is object-safe async and preserves every fused candidate field and order. | ✓ VERIFIED | `engine/src/rerank/mod.rs:11-40`; reranker unit test and `query_rag_noop_reranker_preserves_fused_order` pass. |
+| P04 | The retrieval core is repeatable for the same normalized query, filters, snapshot, and settings; dynamic replacement/restart remains debt. | ✓ VERIFIED | Deterministic fusion/retrieval tests and opaque generation test pass; dynamic lifecycle is explicitly deferred as DEBT-RAG-04. |
+| P05 | An ordered candidate set becomes bounded isolated evidence and one strict provider-neutral generation request. | ✓ VERIFIED | `engine/src/prompt.rs:22-243` creates complete encoded blocks; `GenerationRequest` is passed once by `query_rag`; local cross-runtime and generation tests pass. |
+| P06 | Valid numbered markers resolve only to engine evidence with bounded excerpts and provenance. | ✓ VERIFIED | `engine/src/prompt.rs:280-324` resolves by evidence ID/chunk identity and Unicode-bounds excerpts; focused citation and cross-runtime checks pass. |
+| P07 | Suspicious corpus text remains marked data and valid corpus conflict can disclose a mixed basis. | ✓ VERIFIED | `prompt.rs:146-178` and generation tests `adversarial_evidence_fields_cannot_forge_prompt_boundary`, `suspicious_evidence_remains_marked_unexecuted`, and `corpus_conflict_returns_mixed_basis_with_disclosure` pass. |
+| P08 | OpenRouter performs a capability check followed by one timeout-bounded structured call; tests remain provider-independent. | ✓ VERIFIED | `engine/src/generation/openrouter.rs:214-285,350-450`; supported-parameters, finish-reason, one-call, and timeout tests pass against local mocks. |
+| P09 | Phase 03 accepts only the valid retrieval-backed branch while retaining future typed basis/notice capacity. | ✗ FAILED | `answer_basis` includes `model_only` in the provider schema and `validate_grounding` has no basis/citation requirement; this violates the accepted valid-path contract even though degraded behavior itself is deferred. |
+| P10 | QueryRAG's additive gRPC contract carries filters, session, structured citations, basis, notices/warnings, and snapshot without renumbering fields. | ✓ VERIFIED | `proto/lancet/v1/lancet.proto:44-109`, generated Rust/Go bindings, `buf lint`, and Go/Rust compilation/tests pass. |
+| P11 | A valid gRPC QueryRAG call reaches retrieval, NoOpReranker, evidence, and Generator and returns the structured response. | ✓ VERIFIED | `engine/src/main.rs:922-1129`, focused Rust service tests, and `TestRAGQueryCrossRuntime` pass. |
+| P13 | Committed TOML and environment overlays expose locked retrieval/generation bounds and defaults; lifecycle switching remains DEBT-RAG-04. | ✓ VERIFIED | `config/config.toml`, `config/config.example.toml`, `EffectiveRagSettings`, config-startup tests, and the example contract test agree on the key set. |
+| P14 | Go accepts a bounded strict `/rag/query` envelope, forwards context/typed fields, and maps caller validation failures to HTTP 400. | ✓ VERIFIED | `gateway/main.go:630-675`; focused malformed/trailing/oversized/filter and full Go tests pass. |
+| P15 | Gateway preserves session, structured basis, notices/warnings, citations, and retrieval snapshot without reimplementing semantics. | ✓ VERIFIED | `gateway/main.go:656-675`, `TestRAGQueryValidMapping`, and the real cross-runtime response assertions pass. |
+| P16 | The Rust embedding client targets a configured endpoint while retaining production defaults and its existing retry/timeout behavior. | ✓ VERIFIED | `engine/src/client/mod.rs:20-145,180-250`; endpoint, model, retry, timeout, and redaction tests pass. |
+| P17 | A provider-independent process smoke runs the real Rust engine against an isolated LanceDB corpus and real Go route. | ✓ VERIFIED | `gateway/main_test.go:1600-1900`; focused `TestRAGQueryCrossRuntime` passes. |
+| P18 | The deterministic mock exercises embedding, model capability, strict chat, dense/BM25 retrieval, fusion, evidence, and generation without OpenRouter/PostgreSQL. | ✓ VERIFIED | `gateway/main_test.go` tracks all three mock endpoints and asserts dense and lexical fixture markers; focused smoke passes. |
+| P19 | The serving log is only a milestone; generated-gRPC Ping succeeds before `/rag/query`. | ✓ VERIFIED | Cross-runtime test probes the exact configured loopback address after the serving log and before calling the Go route. |
+| P20 | Child environments are exact and teardown reaps processes and releases the isolated LanceDB path on Windows. | ✓ VERIFIED | `gateway/main_test.go:1890-1960` scrubs/whitelists environment variables, uses process-tree teardown, and rename/removal release proof; Windows-focused smoke passes. |
+| P21 | Smoke fixtures/processes are isolated and cleaned; live-provider checking is separate/manual. | ✓ VERIFIED | `t.TempDir`, isolated seeder/engine environment, deferred cleanup, and the current coverage/deferred ledger provide this boundary. |
+| P22 | Corpus metadata/content cannot escape the single evidence encoding boundary or become executable prompt instructions. | ✓ VERIFIED | `engine/src/prompt.rs:88-178`; all-field adversarial encoding test passes and preserves `suspicious=true`. |
+| P23 | Over-budget first blocks fail closed, no-fit creates no prompt, and Unicode excerpts truncate only at character boundaries. | ✓ VERIFIED | `pack_evidence_prompt` reserves budgets and returns `NoEvidenceFits`; `prompt_rejects_over_budget_first_block_and_unicode_excerpt` passes. |
+| P24 | Only complete schema-valid provider output with exact evidence-marker identity reaches response assembly. | ✗ FAILED | Unknown/duplicate/mismatched IDs fail, but empty retrieval citations and `model_only` pass; provider output strings/arrays also have no max bounds. |
+| P25 | One validated runtime settings object controls retrieval, evidence, citation, embedding, and generation behavior. | ✗ FAILED | Service-side settings are threaded, but `openrouter.rs:288` repacks with literal 8192/2048; the configured-provider tests do not cover this adapter implementation. |
+| P26 | Evidence budget is token-based while citation excerpts independently use Unicode character units. | ✓ VERIFIED | `main.rs:1012-1019`, `prompt.rs:224-243`, and `configured_evidence_token_budget_is_exact` plus Unicode tests pass. The adapter bypass is tracked separately under P25. |
+| P27 | Configured provider model identities are retained and reported in persistence/snapshot state. | ✓ VERIFIED | `engine/src/client/mod.rs:126-145`, `main.rs` snapshot construction, and `configured_embedding_identity_persists_and_reports`/provider tests pass. |
+| P28 | RetrievalSnapshot reports exact settings and an opaque stable per-service index generation. | ✓ VERIFIED | `snapshot_rrf_k`, `snapshot_limit`, snapshot assembly, and `service_index_generation_is_opaque_and_stable` pass. |
+| P29 | Invalid settings fail before database/provider construction or readiness. | ✓ VERIFIED | `main.rs:1701-1712` validates EffectiveRagSettings before DB construction; `invalid_rag_settings_block_readiness` passes. |
+| P30 | Bodies over `maxRAGQueryBodyBytes` receive HTTP 413 before engine work. | ✓ VERIFIED | `gateway/main.go:35,630-654`; oversized and huge-filter focused tests pass with zero engine calls and closed bodies. |
+| P31 | The 32 KiB boundary accommodates the locked query/filter/session maxima while bounding decoder work. | ✓ VERIFIED | Gateway cap plus 8 KiB query/100 UUID/16 content-type engine limits are present; boundary tests and full Go suite pass. |
+| P32 | Gateway closes the body, distinguishes MaxBytesError from malformed JSON, and uses a 60-second ReadTimeout. | ✓ VERIFIED | `gateway/main.go:631-654,701-705`; focused boundary/timeout tests pass. |
+| P33 | Cross-runtime happy path remains compatible with strict JSON schema, completion-token, and stop-finish requirements. | ✓ VERIFIED | Local provider mock asserts strict schema, required fields, max completion tokens, stop finish reason, and top-level usage; focused smoke passes. |
+| P34 | COVERAGE.md records the HTTP 413 surface without promoting RAG-03/deferred debt. | ✓ VERIFIED | `COVERAGE.md:60-73` and the phase debt ledger preserve the scope fence. |
+| P35 | Returned citations resolve by validated evidence ID rather than model position. | ✓ VERIFIED | `prompt.rs:280-304` looks up marker IDs/chunk IDs; `query_rag_citation_identity_and_notices` passes when run alone and asserts rank-2 identity. |
+| P36 | Citation identity, metadata, configured Unicode excerpt, and truncation state come from the selected evidence item. | ✓ VERIFIED | `main.rs:1040-1068`; the named citation test passes alone and the cross-runtime test asserts structured provenance. The full-suite isolation failure is reported separately. |
+| P37 | Notices and warnings cross the service boundary with deterministic INFO/WARNING severities. | ✓ VERIFIED | `main.rs:1078-1090`; citation/notices test asserts order and enum values. |
+| P38 | Unknown evidence identity cannot produce a successful or partial QueryRAG response. | ✓ VERIFIED | `query_rag_rejects_unknown_marker_without_response` passes; response assembly is after validation/resolution and checks resolution cardinality. |
+| P39 | Configured embedding model is used in the provider request and reported as persistence/snapshot identity. | ✓ VERIFIED | `client/tests.rs` request capture and `engine/src/tests.rs` configured identity test pass. |
+| P40 | Configured generation model/endpoints/timeout/sampling/max completion tokens govern the strict OpenRouter request. | ✓ VERIFIED | `OpenRouterGenerationConfig` fields feed the payload at `openrouter.rs:323-345`; `generation_request_uses_effective_settings` passes. P25 covers the separate hardcoded evidence-pack limits. |
+| P41 | Production startup constructs retrieval/prompt/embedding/generation components from one validated EffectiveRagSettings value. | ✗ FAILED | Startup takes most component settings from the effective object, but the provider adapter has its own prompt defaults and startup falls back to `fake-key`; see Gaps 2 and 4. |
+| P42 | Configured embedding identity is stable across provider request, persisted metadata, and snapshot; generation is opaque per service. | ✓ VERIFIED | Configured identity and opaque-generation tests pass; source keeps `embedder.model_id()` and `index_generation` in the response path. |
+| P43 | Startup does not report readiness until initial BM25 succeeds over a schema-valid completed corpus. | ✓ VERIFIED | `initial_bm25_ready_before_serving` and the schema-valid invalid-content fixture test pass. |
+| P44 | Invalid settings and genuine initial BM25 failures exit nonzero with diagnostics and no listener/readiness signal. | ✓ VERIFIED | `config_startup.rs:342-445`; focused invalid-settings and BM25-failure tests pass. |
+| P45 | The committed example is deserialized by the real binary Settings/EffectiveRagSettings types, documents exact keys/units/ranges, and assigns no credentials. | ✓ VERIFIED | `config_example_matches_effective_rag_contract` passes; `config/config.example.toml` contains the annotated 24-key contract and environment-only credential guidance. |
+| P46 | Production query_rag invokes the injected Reranker once after fusion and before final limiting/evidence packing. | ✓ VERIFIED | `main.rs:993-1011`; `query_rag_invokes_recording_reranker_once` and `query_rag_grounding_uses_reranked_identity` pass. |
+| P47 | Startup injects NoOpReranker and preserves fused order. | ✓ VERIFIED | `main.rs:1762` and `query_rag_noop_reranker_preserves_fused_order` pass. |
+| P48 | A source with configured weight zero contributes no candidates, ranks, or ordering influence. | ✓ VERIFIED | `fusion.rs:43-74` skips exact-zero sources; symmetric zero-weight tests pass. |
+| P49 | Enabled-source RRF remains deduplicated, full-precision, deterministically tie-broken, and repeatable. | ✓ VERIFIED | `fusion.rs:75-125` and retrieval tests pass. |
+| P50 | Final reranked/limited evidence identities flow into grounding validation and citation projection. | ✓ VERIFIED | `query_rag_grounding_uses_reranked_identity` passes and asserts generator evidence equals public structured-citation identity. |
+| P51 | A reranker error returns no QueryRAG response and skips generation after one reranker call. | ✓ VERIFIED | `query_rag_reranker_failure_skips_generation` passes; `main.rs:1000-1004` propagates the error before generator invocation. |
 
-**Score:** 7/15 truths verified (1 present, behavior-unverified)
+**Score:** 49/54 truths verified. `P12` (the plan's initial-BM25 truth) is intentionally counted under RSC-3 rather than double-counted. No accepted state-transition/cancellation invariant is presence-only: the named reranker, timeout, startup, and citation tests were run where applicable, so `behavior_unverified: 0`. The full-suite failure is a separate blocking regression gate, not a silent behavior pass.
 
-### Deferred Items
-
-| # | Item | Addressed In | Evidence |
-|---|---|---|---|
-| 1 | Transparent surviving-path/model-only behavior after retrieval/provider failure | Phase 6 | ROADMAP Phase 6 SC7; RAG-03 and DEBT-RAG-01/06. The current silent fallback was confirmed but is not counted as a Phase 03 acceptance gap. |
-| 2 | Citation repair and transparent downgrade after an invalid marker | Phase 6 | ROADMAP Phase 6 SC7; DEBT-RAG-03. Phase 03 still must reject invalid output rather than silently publish it. |
-| 3 | Atomic vector/BM25 visibility across re-ingestion and restart | Phase 6 | ROADMAP Phase 6 SC7; DEBT-RAG-04. |
-
-### Required Artifacts
+## Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `engine/Cargo.toml` / `engine/Cargo.lock` | Approved Unicode dependencies and locked resolution | ✓ VERIFIED | Artifact query passes; locked Rust suite passes. |
-| `engine/src/retrieval/bm25.rs` | Unicode BM25 snapshot/query | ✓ VERIFIED | Substantive, wired at startup/query, and focused tests pass. |
-| `engine/src/retrieval/fusion.rs` | Weighted RRF/dedup/source ranks | ✓ VERIFIED | Substantive and used by QueryRAG; deterministic test passes. |
-| `engine/src/rerank/mod.rs` | Async port and NoOp default | ⚠ ORPHANED | Substantive and unit-tested, but not injected or called by the service. |
-| `engine/src/prompt.rs` | Bounded untrusted evidence and citation resolution | ✗ DEFECTIVE | Wired, but prompt-boundary escaping, first-block budget, and Unicode excerpt invariants fail. |
-| `engine/src/generation/mod.rs` | Closed provider-neutral output | ✗ DEFECTIVE | Substantive/wired; schema is permissive and semantic grounding validation is absent. |
-| `engine/src/generation/openrouter.rs` | Strict one-shot OpenRouter adapter | ✗ DEFECTIVE | Wired and one-shot, but uses `json_object` and hardcoded settings. |
-| `engine/src/generation/tests.rs` | Prompt/provider/citation tests | ⚠ PARTIAL | Tests pass but omit adversarial provenance, first-block overflow, unknown fields, invalid IDs, marker mismatch, and finish reason; one test intentionally returns invalid `Format-1`. |
-| `proto/lancet/v1/lancet.proto` and generated bindings | Additive typed QueryRAG contract | ✓ VERIFIED | Compiles in both workspaces; `buf lint` passes. |
-| `engine/src/main.rs` | QueryRAG coordinator and startup readiness | ✗ DEFECTIVE | Full path is wired, but reranker, citation mapping, bounds, and settings are incomplete. |
-| `config/config.toml` / `config/config.example.toml` | Explicit non-secret defaults | ⚠ PARTIAL | Values exist, but several are inert at runtime. |
-| `engine/tests/config_startup.rs` | Readiness order and BM25 failure proof | ⚠ PARTIAL | Positive order test is valid; negative test never reaches BM25 construction. |
-| `gateway/main.go` | Thin strict bounded `/rag/query` adapter | ✗ DEFECTIVE | Route/gRPC mapping work; request body is unbounded. |
-| `gateway/main_test.go` | HTTP contracts and real cross-runtime smoke | ✓ VERIFIED / ⚠ GAP | Happy path is strong and passes; over-limit and adversarial citation/provider cases are absent. |
-| `engine/src/client/mod.rs` / `engine/src/client/tests.rs` | Endpoint-injectable embedding client | ✓ VERIFIED | Explicit endpoint parameter and focused test prove the seam despite the frontmatter literal-pattern mismatch. |
-| `engine/src/bin/seed_rag_fixture.rs` | Canonical deterministic completed-corpus fixture | ✓ VERIFIED | Built and exercised by the exact cross-runtime smoke. |
-| `COVERAGE.md` | Five-plan coverage/deferred boundary | ✓ VERIFIED | Contains all plan ownership and debt markers; documentation was not treated as behavioral proof. |
+| `engine/src/retrieval/{mod,bm25,dense,fusion}.rs` | Unicode BM25, typed filters, dense retrieval, weighted RRF/dedup | ✓ VERIFIED | Substantive source, imported by `main.rs`, real LanceDB/BM25 data flows, and focused retrieval tests pass. |
+| `engine/src/rerank/mod.rs` and `engine/src/rerank/tests.rs` | Async Reranker port and NoOp implementation | ✓ VERIFIED | Imported/used by `LancetServiceImpl`; production and focused tests confirm call/order/failure behavior. |
+| `engine/src/prompt.rs` | Encoded evidence, token packing, Unicode excerpts, citation resolver | ✓ VERIFIED | Substantive and wired to query/generation/response; adversarial, budget, and citation checks pass. |
+| `engine/src/generation/mod.rs` | Closed provider-neutral output/error contract | ⚠️ PARTIAL | Serde closure and marker checks exist, but basis/citation cardinality and output-size guards are incomplete. |
+| `engine/src/generation/openrouter.rs` | Configured strict OpenRouter adapter | ⚠️ PARTIAL | One-shot capability/timeout/schema path is real, but prompt budgets are hardcoded and response fields are unbounded. |
+| `engine/src/main.rs` | Rust service/query/startup integration | ⚠️ PARTIAL | Fully wired and data-flowing on the local happy path; fallback, fake-key, settings, and error-identity gaps remain. |
+| `proto/lancet/v1/lancet.proto` plus generated Rust/Go bindings | Additive QueryRAG contract | ✓ VERIFIED | `buf lint`, compilation, and cross-runtime mapping pass. |
+| `gateway/main.go` and `gateway/main_test.go` | Thin bounded `/rag/query` HTTP boundary | ✓ VERIFIED | Strict decoding, 32 KiB cap, timeout, forwarding, and local process smoke pass. |
+| `engine/src/client/mod.rs` and tests | Configured embedding endpoint/model/retry seam | ✓ VERIFIED | Endpoint/model capture, timeout, retries, concurrency, and redaction tests pass. The artifact query's `embedding_endpoint` pattern was a false negative; manual source inspection confirms the field and use. |
+| `config/config.toml` and `config/config.example.toml` | Effective non-secret RAG settings | ✓ VERIFIED | Example contract test passes; tracked local config contains development DB defaults but no provider secret. |
+| `engine/tests/config_startup.rs`, `engine/src/tests.rs`, `gateway` smoke | Executable startup/service evidence | ⚠️ PARTIAL | Focused tests and smoke pass, but the full locked Rust suite fails one citation assertion. |
 
-### Key Link Verification
+The GSD artifact query reported all listed artifacts present/substantive for Plans 03-01 through 03-03 and 03-05 through 03-12, and 3/4 for Plan 03-04 only because its pattern checker did not find the literal `embedding_endpoint` in `engine/src/client/mod.rs`; the manual three-level check above confirms that artifact exists, is substantive, and is wired.
+
+## Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| Query normalization | Dense + BM25 | One `QueryRequest`/`QueryFilters` | ✓ WIRED | Both paths receive the same normalized values in the public service path. |
-| Dense + BM25 | Fusion | `fuse_candidates` | ✓ WIRED | Called in `main.rs:854-859`. |
-| Fusion | Reranker | `Reranker::rerank` | ✗ NOT WIRED | Automated key-link query found a target symbol only; manual usage scan finds calls only in reranker unit tests. |
-| Fusion | Prompt/evidence | `assemble_evidence_blocks` | ✓ WIRED, DEFECTIVE | Data flows, but trust/budget transformations are incorrect. |
-| Prompt | Generator/OpenRouter | `GenerationRequest` / `Generator::generate` | ✓ WIRED, DEFECTIVE | One call occurs, but strict schema and effective settings do not flow. |
-| Proto | Generated Rust/Go bindings | Buf generation contract | ✓ WIRED | Both language suites compile; `buf lint` passes. |
-| TOML/env | Runtime settings | `load_settings` | ⚠ PARTIAL | Endpoint/address values flow; BM25, evidence, excerpt, embedding-model, timeout, sampling, output, and snapshot values do not all flow. |
-| Go route | Generated gRPC client | `grpcEngine.QueryRAG(r.Context(), req)` | ✓ WIRED | Real-process smoke passes. |
-| Seeder | Engine nodes table | Shared temporary LanceDB path/schema | ✓ WIRED | Real process opens the seeded completed corpus. |
-| Local mocks | Embedder + metadata preflight + chat | Injected loopback endpoints | ✓ WIRED | Exact smoke observes one call to each expected contract. |
+| `gateway/main.go` | generated `QueryRAG` client | `grpcEngine.QueryRAG` | ✓ WIRED | HTTP handler forwards typed request/context and writes the engine response. |
+| `proto/lancet/v1/lancet.proto` | generated Rust/Go types | buf generation artifacts | ✓ WIRED | Additive fields compile and are exercised by the cross-runtime smoke. |
+| `engine/src/main.rs` | dense/BM25/fusion modules | `query_rag` calls both paths then `fuse_candidates` | ✓ WIRED | Real nodes table and BM25 snapshot feed the fused pool. |
+| `engine/src/main.rs` | `engine/src/rerank/mod.rs` | `Arc<dyn Reranker>` and one awaited call | ✓ WIRED | The local link checker missed the path-string relationship, but source and named tests prove the call. |
+| fusion output | final evidence/citations | rerank → final limit → prompt → validation → resolver | ✓ WIRED | `main.rs:993-1068` and reranked-identity test prove identity continuity. |
+| `EffectiveRagSettings` | OpenRouter prompt/provider | constructors and payload fields | ⚠️ PARTIAL | Model/endpoint/timeout/sampling/output fields flow; evidence/output packing still uses literal 8192/2048. |
+| generation error | session/correlation identity | `GenerationError` → tonic status | ✗ NOT WIRED | Error identity is stored by the type but discarded by `query_rag`; no correlation ID is assigned. |
+| ingestion worker | live BM25 snapshot | completed replacement → `bm25_index` refresh | ✗ NOT WIRED (deferred) | Worker processes/replaces rows but does not republish the in-memory BM25 snapshot; DEBT-RAG-04 explicitly defers this lifecycle. |
 
-### Data-Flow Trace (Level 4)
+## Data-Flow Trace (Level 4)
 
-| Artifact / stage | Data variable | Source | Produces Real Data | Status |
+| Artifact | Data variable | Source | Produces real data | Status |
 |---|---|---|---|---|
-| `gateway/main.go` | `ragQueryRequestBody` → `pb.QueryRAGRequest` | HTTP JSON | Yes | ✓ FLOWING |
-| `engine/src/main.rs` | `query_request` | Generated gRPC request | Yes; validated and normalized | ✓ FLOWING |
-| Dense/BM25 | `dense_candidates`, `bm25_candidates` | Canonical completed `nodes` table + query embedding | Yes; real LanceDB exercised in smoke | ✓ FLOWING |
-| Fusion | `fused` | Both candidate vectors | Yes; deterministic RRF/dedup | ✓ FLOWING |
-| Reranker | expected reranked vector | `fused` | No production call | ✗ DISCONNECTED |
-| Prompt | `packed_evidence` | Final fused candidates | Real data, but unsafe/unbounded first-block transform | ✗ INVALID TRANSFORM |
-| Generator | `model_output` | One local/provider response | Real response, insufficient validation | ✗ UNTRUSTED TRANSFORM |
-| Citations | `proto_structured_citations` | Resolved evidence + final candidates | Mixed identities for non-prefix citation order | ✗ CORRUPTED MAPPING |
-| Go response | protobuf JSON | Rust `QueryRagResponse` | Yes | ✓ FLOWING |
+| `DenseRetriever` | dense candidates | LanceDB `nodes` nearest-vector query | Yes | ✓ FLOWING |
+| `Bm25Index` | lexical candidates | completed `nodes` rows at startup | Yes | ✓ FLOWING |
+| `query_rag` | fused/reranked evidence | both candidate lists, RRF, injected reranker | Yes | ✓ FLOWING on valid path |
+| `OpenRouterGenerator` | model output | local deterministic provider mock in smoke; real adapter in source | Yes in local smoke | ⚠️ LIVE PROVIDER UNVERIFIED |
+| `QueryRAGResponse` | structured citations/snapshot | selected evidence and effective settings | Yes | ✓ FLOWING; contract guard is incomplete |
+| worker → BM25 | post-ingestion lexical state | no update/rebuild edge exists | No | ⚠️ STATIC/DEFERRED under DEBT-RAG-04 |
 
-### Behavioral Spot-Checks
+## Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| Rust workspace | `cargo test --manifest-path engine/Cargo.toml --locked` | 82 passed, 0 failed, 2 ignored; compiler warns Reranker unused/NoOp never constructed | ✓ PASS suite / blocker corroborated |
-| Go workspace | `GOTELEMETRY=off; cd gateway; go test ./...` | All packages passed | ✓ PASS |
-| Real cross-runtime user flow | `go test . -run '^TestRAGQueryCrossRuntime$' -count=1 -v` | PASS in 2.53s | ✓ PASS cooperative happy path |
-| Initial BM25 positive ordering | Full Rust suite, `initial_bm25_ready_before_serving` | PASS | ✓ PASS |
-| Initial BM25 failure boundary | Full Rust suite, `initial_bm25_failure_blocks_readiness` | Test passes, but setup fails during DB initialization | ⚠ TEST PASSES, TRUTH UNPROVEN |
-| Proto lint | `buf lint` | Exit 0 | ✓ PASS |
-| Formatting | `cargo fmt --manifest-path engine/Cargo.toml -- --check` | Exit 0 | ✓ PASS |
-| Patch hygiene | `git diff --check` | Exit 0 | ✓ PASS |
+| Go gateway and DB package tests | `go test -count=1 ./...` from `gateway` | Gateway and DB packages passed. | ✓ PASS |
+| Real Go → Rust → local provider path | `go test -count=1 -run '^TestRAGQueryCrossRuntime$'` from `gateway` | PASS; real processes, Ping, dense/BM25 fixture markers, strict chat, citation, and snapshot assertions passed. | ✓ PASS |
+| HTTP boundary guards | `go test -count=1 -run 'TestRAGQueryRejectsOversizedBody|TestRAGQueryRejectsHugeFilterBody|TestRAGQueryRejectsUnknownOrTrailingJSON|TestHTTPServerReadTimeouts'` | PASS. | ✓ PASS |
+| Full parallel Rust gate | `cargo test --manifest-path engine/Cargo.toml --locked` | 24 library passed/1 ignored; engine binary 70 passed/1 failed/1 ignored; failure at `engine/src/tests.rs:2851`, `sc.is_truncated`. | ✗ FAIL |
+| Full serial Rust gate | `cargo test --manifest-path engine/Cargo.toml --locked -- --test-threads=1` | Same `query_rag_citation_identity_and_notices` failure; current checkout does not reproduce the submitted claim that serial execution passes. | ✗ FAIL |
+| Named citation test | `cargo test --manifest-path engine/Cargo.toml --locked tests::query_rag_citation_identity_and_notices -- --exact --test-threads=1` | One binary test passed when isolated. | ✓ PASS (isolated) |
+| Named startup guards | `cargo test ... --test config_startup initial_bm25_failure_blocks_readiness` and `invalid_rag_settings_block_readiness` | Both passed. | ✓ PASS |
+| Named reranker guards | `cargo test ... tests::query_rag_grounding_uses_reranked_identity`, `query_rag_noop_reranker_preserves_fused_order`, `query_rag_reranker_failure_skips_generation` | Passed individually. | ✓ PASS |
+| Named retrieval/grounding guards | `cargo test ... retrieval::tests::retrieval_filter_fusion_and_determinism` and `generation::tests::model_output_marker_identity_validation` | Passed individually. | ✓ PASS |
+| Protobuf lint | `buf lint` | Passed. | ✓ PASS |
+| Rust formatting | `cargo fmt --manifest-path engine/Cargo.toml -- --check` | Failed on existing formatting drift across generation/prompt/main/test files; no formatter writes were made. | ⚠️ WARNING |
+| Buf formatting | `buf format --diff --exit-code` | Could not execute the requested diff gate because this Windows environment has no `diff` executable; `buf lint` and generated-code compilation passed. | ⚠️ ENVIRONMENT |
 
-### Probe Execution
+## Probe Execution
 
-No `probe-*.sh` path is declared by the phase plans/summaries, and no conventional project probe was found. **SKIPPED (no probes declared).**
+No `scripts/*/tests/probe-*.sh` file exists and no Phase 03 plan declares a probe path. **SKIPPED (no probes declared or found).** The old report's probe wording was not treated as a current probe declaration.
 
-### Requirements Coverage
+## Requirements Coverage
 
-All PLAN frontmatter requirement IDs were collected. Plans 03-01, 03-02, 03-03, and 03-05 declare `RAG-02`/`RAG-04`; Plan 03-04 declares `RAG-02`. No additional Phase 03 requirement is orphaned in `REQUIREMENTS.md`.
-
-| Requirement | Source Plans | Description | Status | Evidence |
+| Requirement | Source | Description | Status | Evidence |
 |---|---|---|---|---|
-| RAG-02 | 03-01, 03-02, 03-03, 03-04, 03-05 | Dense vector + local BM25 retrieval, metadata filters, and deduplication | ✓ SATISFIED | Shared normalization, real dense/BM25 retrieval, deterministic RRF/dedup test, and cross-runtime completed-corpus smoke pass. |
-| RAG-04 | 03-01, 03-02, 03-03, 03-05 | Async Reranker trait with NoOp as v1 default | ✗ BLOCKED | Trait/implementation/test exist, but the production QueryRAG path never constructs or invokes the default. |
+| RAG-02 | `.planning/REQUIREMENTS.md:12,49` and Plans 03-01 through 03-12 | Dense + local BM25 retrieval, typed metadata filters, deterministic fusion, and chunk deduplication. | ✓ SATISFIED for the stated retrieval contract | Unicode BM25, dense filters, RRF/dedup tests, focused service tests, and real cross-runtime smoke all pass. The broader grounded-answer gate remains blocked by the provider-output gaps above. |
+| RAG-04 | `.planning/REQUIREMENTS.md:14,51` and Plans 03-01/03-03/03-05/03-12 | Pluggable async Rust `Reranker` and NoOp pass-through default. | ✓ SATISFIED | `engine/src/rerank/mod.rs`, startup injection, one-call/order/identity/failure tests, and cross-runtime path verify the requirement. |
 
-`RAG-03` is correctly excluded from PLAN frontmatter and mapped to Phase 6. The `03-03-SUMMARY.md` claim that `RAG-03` completed is contradicted by the live roadmap/requirements and was not accepted as evidence.
+No Phase 03 requirement is orphaned. RAG-03 is explicitly mapped to Phase 06 and is not an acceptance requirement for this phase.
 
-### Anti-Patterns Found
+## Reconciliation with `03-REVIEW.md` and refreshed `03-REVIEWS.md`
+
+The refreshed Antigravity review is a single reviewer input, not a verdict. Its positive RAG-04 claim and the local happy-path claim are supported by source/tests. The following review findings were independently checked:
+
+| Review finding | Independent result | Disposition |
+|---|---|---|
+| CR-01 embedding errors become `[0.25; 2048]` | Confirmed at `engine/src/main.rs:967-974`. | Explicit DEBT-RAG-01 failure/degraded behavior; deferred because Phase 03 accepts only successful dense/BM25 retrieval. Still listed as a risk, never treated as a pass. |
+| CR-02 dense errors become an empty list | Confirmed at `engine/src/main.rs:976-984`. | Same DEBT-RAG-01 disposition. |
+| CR-03 BM25 is not refreshed after worker ingestion | Confirmed; no worker path updates `bm25_index`. | DEBT-RAG-04 / Phase 06, explicitly outside initial-readiness acceptance. |
+| CR-04 grounding permits citationless retrieval/model-only output | Confirmed in `generation/mod.rs:71-123` and service response mapping. | BLOCKER; this contradicts the accepted valid retrieval-backed answer contract. |
+| CR-05 provider output and prompt budgets are insufficiently bounded | Confirmed: schema fields have no max bounds and adapter uses literal 8192/2048. | BLOCKER for the settings/output contract; included in Gaps 1 and 2. |
+| CR-06 generation error/correlation identity is discarded | Confirmed: no `correlation_id` assignment and plain tonic mapping. | BLOCKER against D-31; included in Gap 3. |
+| CR-07 missing key falls back to `fake-key` | Confirmed at `engine/src/main.rs:1715`. | BLOCKER for usable explicit provider startup; included in Gap 4. |
+| CR-08 valid no-match becomes HTTP 400 | Confirmed through EmptyEvidence → InvalidArgument mapping. | Deferred to DEBT-RAG-05/Phase 06's exhaustive unmatched/invalid-input contract; not silently counted as verified. |
+| CR-09 delete-before-add raw persistence mutation | Confirmed at `engine/src/main.rs:751-776`. | Warning outside the Phase 03 RAG-02/RAG-04 acceptance surface; lifecycle/atomicity work is separately tracked. |
+| WR-05 citation assertion is order-sensitive | Confirmed by both full-suite failures and isolated-test pass. | BLOCKER regression gate; included in Gap 5. |
+
+## Deferred Items
+
+These items are explicitly excluded by `03-CONTEXT.md`, `03-AI-SPEC.md`, `COVERAGE.md`, `deferred-items.md`, or later roadmap criteria. They do not repair the blockers above and are not included in the 49/54 score.
+
+| Item | Addressed in | Evidence |
+|---|---|---|
+| Degraded vector/BM25/provider behavior and model-only fallback | Phase 06 / DEBT-RAG-01 and DEBT-RAG-06 | `deferred-items.md` states Phase 03 requires both retrieval paths to succeed and Phase 06 owns degraded/model-only acceptance. |
+| Citation repair/downgrade after invalid markers | Phase 06 / DEBT-RAG-03 | `03-CONTEXT.md` D-24 and roadmap Phase 06 SC7 explicitly defer repair. The current valid-marker rejection path is verified, but repair is not claimed. |
+| Dynamic BM25 re-ingestion/restart switching and recovery | Phase 06 / DEBT-RAG-04 | Initial build/readiness is verified; `03-CONTEXT.md` D-41 through D-43 and roadmap Phase 06 SC7 own lifecycle behavior. |
+| Exhaustive unmatched, malformed, oversized, and combinatorial filter contract | Phase 06 / DEBT-RAG-05 | `COVERAGE.md:65-69` and `deferred-items.md` preserve the future negative-input matrix. |
+| Graph-unavailable RAG-03 fallback | Phase 04 seam plus Phase 06 hardening / DEBT-RAG-06 | Phase 04 owns graph context; Phase 03 is source-chunk-only. |
+
+## Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
-|---|---|---|---|---|
-| `engine/src/main.rs` | 845 | `.unwrap_or_default()` on dense retrieval | ℹ DEFERRED | Confirms silent one-path fallback; transparent degraded semantics are Phase 6 RAG-03 work and are not scored as a Phase 03 blocker. |
-| `engine/src/main.rs` | 25-30 | Library modules redeclared in the binary | ⚠ WARNING | Duplicates type/test ownership and generated 24 library warnings plus binary warnings, making dead wiring harder to see. |
-| `engine/src/rerank/mod.rs` | 10-35 | Production-dead extension seam | 🛑 BLOCKER | Compiler and usage scan show the planned default is not wired. |
-| Phase-modified files | — | `TBD` / `FIXME` / `XXX` / `TODO` / `HACK` / placeholder scan | ✓ NONE | No debt-marker blocker found in the modified-file scope. |
+|---|---:|---|---|---|
+| `engine/src/main.rs` | 973, 984 | Constant embedding fallback and `unwrap_or_default` dense failure suppression | ⚠️ Deferred risk | Can produce vector-only or unrelated results on failure; explicitly excluded degraded behavior, but unsafe for production until DEBT-RAG-01 closes. |
+| `engine/src/generation/mod.rs` | 71-123 | Empty citation set and model-only basis pass grounding | 🛑 Blocker | A plausible answer can be published without the Phase 03 evidence guarantee. |
+| `engine/src/generation/openrouter.rs` | 288, 298-320 | Hardcoded prompt budgets and unbounded provider output schema | 🛑 Blocker | Effective settings do not govern the production adapter and output resource bounds are absent. |
+| `engine/src/main.rs` | 1025-1038 | Error mapper discards correlation/session identity | 🛑 Blocker | Violates D-31 structured failure identity. |
+| `engine/src/main.rs` | 1715 | `fake-key` credential fallback | 🛑 Blocker | Missing credentials do not fail closed before readiness. |
+| `engine/src/tests.rs` | 2851 | Full-suite order-sensitive truncation assertion | 🛑 Blocker | Complete locked Rust gate fails although the named test passes alone. |
+| `engine/src/main.rs` | 751-776 | Delete-before-add raw persistence replacement | ⚠️ Warning | Potential lifecycle/data-loss risk; outside current RAG-02/RAG-04 goal and not silently accepted as phase evidence. |
+| `engine/src/generation/*`, `engine/src/prompt.rs`, `engine/src/main.rs`, `engine/src/tests.rs` | — | Repository `cargo fmt --check` drift | ⚠️ Warning | Formatting gate is not clean; no `TBD`, `FIXME`, or `XXX` markers were found in the phase-modified source/config/test set. |
 
-### Review Reconciliation
+## Human Verification Required
 
-`03-REVIEW.md` was advisory only. Direct inspection independently confirmed:
+Automated local-provider evidence is strong for the happy path, but a real provider integration is inherently external and was not run here. This item remains subordinate to the blocking code gaps.
 
-- Current-goal blockers: CR-01 through CR-05, CR-07 through CR-12, WR-02, and WR-03, grouped into the five actionable gaps above.
-- Confirmed but filtered from the Phase 03 blocker score: CR-06's degraded-path behavior and the failure-path portion of CR-13, because RAG-03/provider hardening is explicitly Phase 6 scope. Their code risks remain real.
-- Confirmed warnings: WR-01, WR-04, and WR-05. WR-04 causes the behavior-unverified truth rather than a silent pass.
-- The review's blanket “13 critical blockers” count was not copied into this verdict; only findings tied to the live MVP goal/PLAN truths were promoted.
+### 1. Real configured-provider user flow
 
-### Human Verification Required
+**Test:** With an explicit `OPENROUTER_API_KEY`, a real completed corpus, and the configured endpoints/model, start the Rust engine, confirm readiness, submit a valid question through the Go `/rag/query` route, and inspect the returned answer, basis, citations, excerpt bounds, and snapshot.
 
-#### 1. Real BM25 build-failure readiness boundary
+**Expected:** One strict structured provider response produces a retrieval-backed answer whose markers resolve to the displayed completed-corpus evidence; no credential or raw prompt is exposed.
 
-**Test:** Start the engine against a database that initializes successfully but has a schema-valid completed row with whitespace-only required content.
+**Why human:** The local smoke uses deterministic HTTP mocks and cannot establish external provider/model compatibility, network behavior, or live answer quality.
 
-**Expected:** The BM25 builder identifies the bad row/field, the engine never emits `Rust RAG Engine serving`, and the gRPC endpoint never accepts Ping.
+## Gaps Summary
 
-**Why human:** The current named failure test exits before BM25 construction, so static ordering plus a passing unrelated failure fixture cannot prove the state transition.
+The phase delivers the core hybrid retrieval implementation, additive contract, bounded gateway, initial BM25 readiness gate, real local cross-runtime path, and RAG-04 reranker seam. It does not yet meet the complete Phase 03 goal contract because the provider path can publish citationless/model-only output, the production adapter bypasses configured evidence/output settings and lacks output size limits, provider errors lose correlation identity, startup silently substitutes a fake credential, and the current full Rust regression gate fails one test. The explicitly deferred degraded, citation-repair, unmatched-input, graph, and dynamic-lifecycle concerns were filtered to their later phases rather than reported as newly missing Phase 03 work.
 
-#### 2. Optional live OpenRouter structured-output smoke (non-gating)
-
-**Test:** With a developer-owned `OPENROUTER_API_KEY`, run the ignored `openrouter_structured_output_smoke` after the deterministic blockers are fixed.
-
-**Expected:** The selected model advertises structured output, exactly one bounded response succeeds, and no credential/raw-evidence content is emitted.
-
-**Why human:** It depends on an external provider and credential. The plan explicitly makes this optional; it does not change the current `gaps_found` verdict.
-
-### Gaps Summary
-
-The implementation is a substantive, executable tracer: the real Go route, generated gRPC boundary, Rust hybrid retrieval, local provider mocks, and completed-corpus data all run. The phase goal is nevertheless not achieved because the final grounding contract is not trustworthy beyond the narrow first-citation fixture. Five grouped concerns block closure: evidence isolation/bounds, provider-output/citation integrity, production reranker wiring, effective configuration, and the bounded public HTTP envelope.
-
-The most efficient closure plan should fix the citation/evidence pipeline first, wire the reranker second, then make configuration and boundary limits executable. The BM25 negative startup fixture should be corrected alongside those changes so the remaining behavior-unverified item can become verified.
+**Next action:** keep Phase 03 pending and plan closure for the five structured gaps above before advancing to the next phase.
 
 ---
 
-_Verified: 2026-08-02T23:18:33Z_
+_Verified: 2026-08-04T09:04:52Z_
 _Verifier: the agent (gsd-verifier)_
