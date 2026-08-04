@@ -576,8 +576,7 @@ async fn generation_timeout_uses_one_effective_value() {
             }),
         );
 
-        let (mut chat_stream, _) = listener.accept().expect("accept chat request");
-        let _ = read_http_request(&mut chat_stream);
+        let (_chat_stream, _) = listener.accept().expect("accept chat request");
         thread::sleep(Duration::from_millis(600));
     });
 

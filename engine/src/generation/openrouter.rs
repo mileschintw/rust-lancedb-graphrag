@@ -21,10 +21,13 @@ pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4o-mini";
 pub const DEFAULT_CHAT_ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
 pub const DEFAULT_MODELS_ENDPOINT: &str = "https://openrouter.ai/api/v1/models";
 pub const GENERATION_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_TEMPERATURE: f64 = 0.0;
+const DEFAULT_TOP_P: f64 = 1.0;
+const DEFAULT_MAX_COMPLETION_TOKENS: usize = 2048;
 
-fn build_http_client() -> Result<Client, GenerationError> {
+fn build_http_client(timeout: Duration) -> Result<Client, GenerationError> {
     Client::builder()
-        .timeout(GENERATION_TIMEOUT)
+        .timeout(timeout)
         .build()
         .map_err(|err| {
             GenerationError::new(
@@ -34,16 +37,116 @@ fn build_http_client() -> Result<Client, GenerationError> {
         })
 }
 
+#[derive(Debug, Clone)]
+pub struct OpenRouterGenerationConfig {
+    model: String,
+    chat_endpoint: String,
+    models_endpoint: String,
+    timeout: Duration,
+    temperature: f64,
+    top_p: f64,
+    max_completion_tokens: usize,
+}
+
+impl OpenRouterGenerationConfig {
+    pub fn new(
+        model: impl Into<String>,
+        chat_endpoint: impl Into<String>,
+        models_endpoint: impl Into<String>,
+        timeout: Duration,
+        temperature: f64,
+        top_p: f64,
+        max_completion_tokens: usize,
+    ) -> Result<Self, GenerationError> {
+        let config = Self {
+            model: model.into(),
+            chat_endpoint: chat_endpoint.into(),
+            models_endpoint: models_endpoint.into(),
+            timeout,
+            temperature,
+            top_p,
+            max_completion_tokens,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    fn validate(&self) -> Result<(), GenerationError> {
+        if self.model.trim().is_empty() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter generation model must not be empty",
+            ));
+        }
+        if self.chat_endpoint.trim().is_empty() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter chat endpoint must not be empty",
+            ));
+        }
+        if self.models_endpoint.trim().is_empty() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter models endpoint must not be empty",
+            ));
+        }
+        if self.timeout.is_zero() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter generation timeout must be greater than zero",
+            ));
+        }
+        if !self.temperature.is_finite() || self.temperature < 0.0 || self.temperature > 2.0 {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter temperature must be finite and between 0.0 and 2.0",
+            ));
+        }
+        if !self.top_p.is_finite() || self.top_p <= 0.0 || self.top_p > 1.0 {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter top_p must be finite and between 0.0 and 1.0",
+            ));
+        }
+        if self.max_completion_tokens == 0 {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter max_completion_tokens must be greater than zero",
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub struct OpenRouterGenerator {
     http: Client,
     api_key: String,
-    model: String,
-    chat_endpoint: String,
-    models_endpoint: String,
+    config: OpenRouterGenerationConfig,
 }
 
 impl OpenRouterGenerator {
+    pub fn new_with_config(
+        api_key: impl Into<String>,
+        config: OpenRouterGenerationConfig,
+    ) -> Result<Self, GenerationError> {
+        let api_key = api_key.into();
+        if api_key.trim().is_empty() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter API key must not be empty",
+            ));
+        }
+        config.validate()?;
+        let http = build_http_client(config.timeout)?;
+
+        Ok(Self {
+            http,
+            api_key,
+            config,
+        })
+    }
+
     pub fn new(
         api_key: impl Into<String>,
         model: impl Into<String>,
@@ -61,15 +164,16 @@ impl OpenRouterGenerator {
         } else {
             model.trim().to_string()
         };
-        let http = build_http_client()?;
-
-        Ok(Self {
-            http,
-            api_key,
+        let config = OpenRouterGenerationConfig::new(
             model,
-            chat_endpoint: DEFAULT_CHAT_ENDPOINT.into(),
-            models_endpoint: DEFAULT_MODELS_ENDPOINT.into(),
-        })
+            DEFAULT_CHAT_ENDPOINT,
+            DEFAULT_MODELS_ENDPOINT,
+            GENERATION_TIMEOUT,
+            DEFAULT_TEMPERATURE,
+            DEFAULT_TOP_P,
+            DEFAULT_MAX_COMPLETION_TOKENS,
+        )?;
+        Self::new_with_config(api_key, config)
     }
 
     pub fn from_env() -> Result<Self, GenerationError> {
@@ -84,13 +188,25 @@ impl OpenRouterGenerator {
         Self::new(api_key, model)
     }
 
+    pub fn from_env_with_config(
+        config: OpenRouterGenerationConfig,
+    ) -> Result<Self, GenerationError> {
+        let api_key = std::env::var("OPENROUTER_API_KEY").map_err(|_| {
+            GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OPENROUTER_API_KEY environment variable is not set",
+            )
+        })?;
+        Self::new_with_config(api_key, config)
+    }
+
     pub fn with_endpoints(
         mut self,
         chat_endpoint: impl Into<String>,
         models_endpoint: impl Into<String>,
     ) -> Self {
-        self.chat_endpoint = chat_endpoint.into();
-        self.models_endpoint = models_endpoint.into();
+        self.config.chat_endpoint = chat_endpoint.into();
+        self.config.models_endpoint = models_endpoint.into();
         self
     }
 
@@ -98,7 +214,7 @@ impl OpenRouterGenerator {
     pub async fn check_supported_parameters(&self) -> Result<(), GenerationError> {
         let response = self
             .http
-            .get(&self.models_endpoint)
+            .get(&self.config.models_endpoint)
             .bearer_auth(&self.api_key)
             .send()
             .await
@@ -132,13 +248,13 @@ impl OpenRouterGenerator {
         let model_meta = models_resp
             .data
             .into_iter()
-            .find(|m| m.id == self.model)
+            .find(|m| m.id == self.config.model)
             .ok_or_else(|| {
                 GenerationError::new(
                     GenerationErrorKind::SupportedParameters,
                     format!(
                         "model metadata for '{}' not found in OpenRouter list",
-                        self.model
+                        self.config.model
                     ),
                 )
             })?;
@@ -156,7 +272,7 @@ impl OpenRouterGenerator {
             GenerationErrorKind::SupportedParameters,
             format!(
                 "model '{}' does not advertise response_format/structured_outputs support",
-                self.model
+                self.config.model
             ),
         ))
     }
@@ -205,7 +321,7 @@ impl OpenRouterGenerator {
         });
 
         let payload = OpenRouterChatPayload {
-            model: self.model.clone(),
+            model: self.config.model.clone(),
             messages: vec![
                 ChatMessage {
                     role: "system".into(),
@@ -216,9 +332,9 @@ impl OpenRouterGenerator {
                     content: user_msg,
                 },
             ],
-            temperature: 0.0,
-            top_p: 1.0,
-            max_completion_tokens: 2048,
+            temperature: self.config.temperature,
+            top_p: self.config.top_p,
+            max_completion_tokens: self.config.max_completion_tokens,
             response_format: ResponseFormat {
                 format_type: "json_schema".into(),
                 json_schema: JsonSchemaWrapper {
@@ -231,7 +347,7 @@ impl OpenRouterGenerator {
 
         let response = self
             .http
-            .post(&self.chat_endpoint)
+            .post(&self.config.chat_endpoint)
             .bearer_auth(&self.api_key)
             .json(&payload)
             .send()
@@ -323,7 +439,7 @@ impl Generator for OpenRouterGenerator {
             let session_id = request.session_id.clone();
             let correlation_id = request.correlation_id.clone();
 
-            match timeout(GENERATION_TIMEOUT, self.execute_one_call(request)).await {
+            match timeout(self.config.timeout, self.execute_one_call(request)).await {
                 Ok(res) => res.map_err(|err| err.with_correlation(session_id, correlation_id)),
                 Err(_) => Err(GenerationError::new(
                     GenerationErrorKind::Timeout,
