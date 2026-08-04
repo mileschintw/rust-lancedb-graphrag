@@ -1,4 +1,8 @@
-use std::collections::BTreeSet;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+};
 
 use super::lancet::v1::*;
 use super::*;
@@ -7,6 +11,215 @@ use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use tokio::sync::Notify;
+
+const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
+    "engine.retrieval.candidate_limit",
+    "engine.retrieval.final_limit",
+    "engine.retrieval.query_max_bytes",
+    "engine.retrieval.max_document_ids",
+    "engine.retrieval.max_content_types",
+    "engine.retrieval.vector_weight",
+    "engine.retrieval.bm25_weight",
+    "engine.retrieval.rrf_k",
+    "engine.retrieval.evidence_token_budget",
+    "engine.retrieval.excerpt_max_chars",
+    "engine.retrieval.bm25.k1",
+    "engine.retrieval.bm25.b",
+    "engine.retrieval.bm25.content_boost",
+    "engine.retrieval.bm25.title_boost",
+    "engine.retrieval.bm25.section_boost",
+    "openrouter.embedding_endpoint",
+    "openrouter.embedding_model",
+    "openrouter.generation_model",
+    "openrouter.chat_endpoint",
+    "openrouter.models_endpoint",
+    "openrouter.generation_timeout_secs",
+    "openrouter.temperature",
+    "openrouter.top_p",
+    "openrouter.max_output_tokens",
+];
+
+const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
+    (
+        "engine.retrieval.candidate_limit",
+        "unit=count; range=1..=2147483647",
+    ),
+    (
+        "engine.retrieval.final_limit",
+        "unit=count; range=1..=2147483647",
+    ),
+    (
+        "engine.retrieval.query_max_bytes",
+        "unit=UTF-8 bytes; range=>0",
+    ),
+    (
+        "engine.retrieval.max_document_ids",
+        "unit=count; range=1..=2147483647",
+    ),
+    (
+        "engine.retrieval.max_content_types",
+        "unit=count; range=1..=2147483647",
+    ),
+    (
+        "engine.retrieval.vector_weight",
+        "unit=unitless; range=finite >=0 and combined >0",
+    ),
+    (
+        "engine.retrieval.bm25_weight",
+        "unit=unitless; range=finite >=0 and combined >0",
+    ),
+    (
+        "engine.retrieval.rrf_k",
+        "unit=rank constant; range=integer 1..=2147483647",
+    ),
+    (
+        "engine.retrieval.evidence_token_budget",
+        "unit=tokens; range=>0",
+    ),
+    (
+        "engine.retrieval.excerpt_max_chars",
+        "unit=Unicode characters; range=>0",
+    ),
+    (
+        "engine.retrieval.bm25.k1",
+        "unit=unitless; range=finite >0",
+    ),
+    (
+        "engine.retrieval.bm25.b",
+        "unit=unitless; range=finite 0..=1",
+    ),
+    (
+        "engine.retrieval.bm25.content_boost",
+        "unit=unitless; range=finite >0",
+    ),
+    (
+        "engine.retrieval.bm25.title_boost",
+        "unit=unitless; range=finite >0",
+    ),
+    (
+        "engine.retrieval.bm25.section_boost",
+        "unit=unitless; range=finite >0",
+    ),
+    (
+        "openrouter.embedding_endpoint",
+        "unit=URL string; range=nonblank",
+    ),
+    (
+        "openrouter.embedding_model",
+        "unit=provider identifier; range=nonblank",
+    ),
+    (
+        "openrouter.generation_model",
+        "unit=provider identifier; range=nonblank",
+    ),
+    (
+        "openrouter.chat_endpoint",
+        "unit=URL string; range=nonblank",
+    ),
+    (
+        "openrouter.models_endpoint",
+        "unit=URL string; range=nonblank",
+    ),
+    (
+        "openrouter.generation_timeout_secs",
+        "unit=seconds; range=>0",
+    ),
+    (
+        "openrouter.temperature",
+        "unit=unitless; range=finite 0..2",
+    ),
+    (
+        "openrouter.top_p",
+        "unit=unitless; range=finite 0..1",
+    ),
+    (
+        "openrouter.max_output_tokens",
+        "unit=tokens; range=>0",
+    ),
+];
+
+#[test]
+fn config_example_matches_effective_rag_contract() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("engine manifest must have a repository parent");
+    let config_path = repo_root.join("config/config.example.toml");
+    let raw = fs::read_to_string(&config_path).expect("read operator configuration example");
+    let settings: Settings = config::Config::builder()
+        .add_source(config::File::from_str(&raw, config::FileFormat::Toml))
+        .build()
+        .expect("parse operator configuration example")
+        .try_deserialize()
+        .expect("deserialize operator configuration example through Settings");
+    let effective = EffectiveRagSettings::try_from_settings(&settings)
+        .expect("operator configuration example must construct EffectiveRagSettings");
+    effective
+        .validate()
+        .expect("operator configuration example must validate");
+
+    let lines: Vec<&str> = raw.lines().collect();
+    let mut section = "";
+    let mut observed = BTreeMap::<String, usize>::new();
+    for (line_number, raw_line) in lines.iter().enumerate() {
+        let line = raw_line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            section = &line[1..line.len() - 1];
+            continue;
+        }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, _value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let key_lower = key.to_ascii_lowercase();
+        assert!(
+            !key_lower.contains("api_key") && !key_lower.contains("secret"),
+            "configuration example must not assign credentials: line {}",
+            line_number + 1
+        );
+        if !matches!(
+            section,
+            "engine.retrieval" | "engine.retrieval.bm25" | "openrouter"
+        ) {
+            continue;
+        }
+        let full_key = format!("{section}.{key}");
+        *observed.entry(full_key.clone()).or_default() += 1;
+        let marker = REQUIRED_EFFECTIVE_RAG_ANNOTATIONS
+            .iter()
+            .find_map(|(candidate, marker)| (*candidate == full_key).then_some(*marker))
+            .unwrap_or_else(|| panic!("missing contract annotation mapping for {full_key}"));
+        let previous_comment = line_number
+            .checked_sub(1)
+            .and_then(|index| lines.get(index))
+            .map(|line| line.trim())
+            .unwrap_or_default();
+        assert!(
+            previous_comment.starts_with('#') && previous_comment.contains(marker),
+            "line {} for {full_key} must have adjacent annotation `{marker}`",
+            line_number + 1
+        );
+    }
+
+    let observed_keys: BTreeSet<String> = observed.keys().cloned().collect();
+    let required_keys: BTreeSet<String> = REQUIRED_EFFECTIVE_RAG_KEYS
+        .iter()
+        .map(|key| (*key).to_owned())
+        .collect();
+    assert_eq!(
+        observed_keys, required_keys,
+        "effective RAG sections must contain exactly the documented key set"
+    );
+    for key in REQUIRED_EFFECTIVE_RAG_KEYS {
+        assert_eq!(
+            observed.get(*key).copied(),
+            Some(1),
+            "effective RAG key {key} must occur exactly once"
+        );
+    }
+}
 
 struct FakeEmbedder;
 
