@@ -19,6 +19,115 @@ impl EmbeddingProvider for FakeEmbedder {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct RecordedGenerationConfig {
+    model: String,
+    chat_endpoint: String,
+    models_endpoint: String,
+    timeout: std::time::Duration,
+    temperature: f64,
+    top_p: f64,
+    max_output_tokens: usize,
+}
+
+struct RecordingEmbeddingProvider {
+    configured_model: String,
+    requests: Arc<std::sync::Mutex<Vec<Vec<String>>>>,
+}
+
+impl RecordingEmbeddingProvider {
+    fn from_effective_settings(settings: &EffectiveRagSettings) -> Arc<Self> {
+        client::OpenRouterEmbeddingConfig::new(
+            settings.embedding_model.clone(),
+            settings.embedding_endpoint.clone(),
+        )
+        .expect("effective embedding settings must construct the production config");
+        Arc::new(Self {
+            configured_model: settings.embedding_model.clone(),
+            requests: Arc::new(std::sync::Mutex::new(Vec::new())),
+        })
+    }
+
+    fn requests(&self) -> Vec<Vec<String>> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+impl EmbeddingProvider for RecordingEmbeddingProvider {
+    fn get_embeddings<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
+        Box::pin(async move {
+            self.requests.lock().unwrap().push(texts.to_vec());
+            Ok(texts.iter().map(|_| vec![0.25; 2048]).collect())
+        })
+    }
+}
+
+struct RecordingGenerator {
+    config: RecordedGenerationConfig,
+    requests: Arc<std::sync::Mutex<Vec<generation::GenerationRequest>>>,
+    response: generation::ModelOutput,
+}
+
+impl RecordingGenerator {
+    fn from_effective_settings(settings: &EffectiveRagSettings) -> Arc<Self> {
+        let max_output_tokens = usize::try_from(settings.max_output_tokens)
+            .expect("effective output token limit must fit usize");
+        generation::openrouter::OpenRouterGenerationConfig::new(
+            settings.generation_model.clone(),
+            settings.chat_endpoint.clone(),
+            settings.model_metadata_endpoint.clone(),
+            std::time::Duration::from_secs(settings.generation_timeout_secs),
+            settings.temperature,
+            settings.top_p,
+            max_output_tokens,
+        )
+        .expect("effective generation settings must construct the production config");
+        Arc::new(Self {
+            config: RecordedGenerationConfig {
+                model: settings.generation_model.clone(),
+                chat_endpoint: settings.chat_endpoint.clone(),
+                models_endpoint: settings.model_metadata_endpoint.clone(),
+                timeout: std::time::Duration::from_secs(settings.generation_timeout_secs),
+                temperature: settings.temperature,
+                top_p: settings.top_p,
+                max_output_tokens,
+            },
+            requests: Arc::new(std::sync::Mutex::new(Vec::new())),
+            response: generation::ModelOutput {
+                answer: "Configured answer [1].".into(),
+                cited_evidence_ids: vec!["[1]".into()],
+                answer_basis: generation::AnswerBasis::Retrieval,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            },
+        })
+    }
+
+    fn requests(&self) -> Vec<generation::GenerationRequest> {
+        self.requests.lock().unwrap().clone()
+    }
+
+    fn calls(&self) -> usize {
+        self.requests.lock().unwrap().len()
+    }
+}
+
+impl generation::Generator for RecordingGenerator {
+    fn generate<'a>(
+        &'a self,
+        request: generation::GenerationRequest,
+    ) -> BoxFuture<'a, Result<generation::ModelOutput, generation::GenerationError>> {
+        Box::pin(async move {
+            self.requests.lock().unwrap().push(request);
+            Ok(self.response.clone())
+        })
+    }
+}
+
 struct BlockingEmbedder {
     started: Arc<Notify>,
     release: Arc<Notify>,
@@ -264,6 +373,70 @@ async fn stage_document_with_settings(
     )
     .unwrap();
     table.add(batch).execute().await.unwrap();
+}
+
+fn configured_settings(lancedb_path: &str) -> Settings {
+    Settings {
+        engine: EngineSettings {
+            grpc_addr: "127.0.0.1:0".into(),
+            lancedb_path: lancedb_path.into(),
+            retrieval: RetrievalConfigSettings {
+                candidate_limit: 4,
+                final_limit: 2,
+                query_max_bytes: 4096,
+                max_document_ids: 7,
+                max_content_types: 5,
+                vector_weight: 0.7,
+                bm25_weight: 0.3,
+                rrf_k: 17.0,
+                evidence_token_budget: 4096,
+                excerpt_max_chars: 23,
+                bm25: Bm25ConfigSettings {
+                    k1: 1.7,
+                    b: 0.65,
+                    content_boost: 1.8,
+                    title_boost: 3.5,
+                    section_boost: 2.25,
+                },
+            },
+        },
+        openrouter: OpenRouterSettings {
+            embedding_endpoint: "https://example.test/v1/embeddings".into(),
+            embedding_model: "custom/embed-v11".into(),
+            generation_model: "custom/generation-v7".into(),
+            chat_endpoint: "https://example.test/v1/chat/completions".into(),
+            model_metadata_endpoint: "https://example.test/v1/models".into(),
+            generation_timeout_secs: 7,
+            temperature: 0.35,
+            top_p: 0.82,
+            max_output_tokens: 777,
+        },
+    }
+}
+
+async fn configured_service(
+    database: &DatabaseManager,
+    effective_settings: EffectiveRagSettings,
+    embedder: Arc<dyn EmbeddingProvider>,
+    generator: Arc<dyn generation::Generator>,
+) -> LancetServiceImpl {
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+    LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        effective_settings,
+        generator,
+        embedder,
+    }
 }
 
 #[tokio::test]
@@ -1731,6 +1904,205 @@ async fn query_rag_happy_path_service() {
     let snap = response.snapshot.unwrap();
     assert!(!snap.result_hash.is_empty());
     assert_eq!(fake_gen.calls(), 1);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn configured_provider_settings_reach_query_requests() {
+    let path = database_path("configured-provider-settings-reach-query");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let document_id = Uuid::new_v4().to_string();
+    stage_document_with_settings(
+        &database,
+        &document_id,
+        "configured.md",
+        b"# Configured Retrieval\n\nThe configured provider query reaches every consumer.",
+        "structure-aware",
+        500,
+        50,
+    )
+    .await;
+
+    let settings = configured_settings(&path);
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+    let embedder = RecordingEmbeddingProvider::from_effective_settings(&effective_settings);
+    let generator = RecordingGenerator::from_effective_settings(&effective_settings);
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job, &database, embedder.as_ref()).await.unwrap();
+
+    let service = configured_service(
+        &database,
+        effective_settings.clone(),
+        embedder.clone(),
+        generator.clone(),
+    )
+    .await;
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "configured provider query".into(),
+            session_id: "00000000-0000-4000-8000-000000000111".into(),
+            filter: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(embedder.requests().len(), 2);
+    assert_eq!(embedder.requests()[1], vec!["configured provider query".to_string()]);
+    assert_eq!(generator.calls(), 1);
+    let generation_request = &generator.requests()[0];
+    assert_eq!(generation_request.question, "configured provider query");
+    assert!(!generation_request.evidence.is_empty());
+    assert_eq!(generator.config.model, effective_settings.generation_model);
+    assert_eq!(
+        generator.config.chat_endpoint,
+        effective_settings.chat_endpoint
+    );
+    assert_eq!(
+        generator.config.models_endpoint,
+        effective_settings.model_metadata_endpoint
+    );
+    assert_eq!(
+        generator.config.timeout,
+        std::time::Duration::from_secs(effective_settings.generation_timeout_secs)
+    );
+    assert_eq!(generator.config.temperature, effective_settings.temperature);
+    assert_eq!(generator.config.top_p, effective_settings.top_p);
+    assert_eq!(
+        generator.config.max_output_tokens,
+        usize::try_from(effective_settings.max_output_tokens).unwrap()
+    );
+
+    let snapshot = response.snapshot.unwrap();
+    assert_eq!(snapshot.candidate_limit, 4);
+    assert_eq!(snapshot.final_limit, 2);
+    assert_eq!(snapshot.vector_weight, 0.7);
+    assert_eq!(snapshot.bm25_weight, 0.3);
+    assert_eq!(snapshot.rrf_k, 17);
+    assert_eq!(snapshot.embedding_model, "custom/embed-v11");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn configured_embedding_identity_persists_and_reports() {
+    let path = database_path("configured-embedding-identity");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let document_id = Uuid::new_v4().to_string();
+    stage_document(&database, &document_id, b"# Identity\n\nConfigured identity content.").await;
+
+    let settings = configured_settings(&path);
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+    let embedder = RecordingEmbeddingProvider::from_effective_settings(&effective_settings);
+    let generator = RecordingGenerator::from_effective_settings(&effective_settings);
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job, &database, embedder.as_ref()).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let rows = query_rows(
+        &nodes,
+        &format!("document_id = '{}'", sql_string(&document_id)),
+    )
+    .await;
+    assert_eq!(string_values(&rows, "embedding_model"),
+        BTreeSet::from([embedder.configured_model.clone()]));
+
+    let service = configured_service(
+        &database,
+        effective_settings.clone(),
+        embedder.clone(),
+        generator,
+    )
+    .await;
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "configured identity content".into(),
+            session_id: "00000000-0000-4000-8000-000000000112".into(),
+            filter: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(embedder.configured_model, effective_settings.embedding_model);
+    assert_eq!(
+        response.snapshot.unwrap().embedding_model,
+        embedder.configured_model
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn configured_bm25_and_evidence_settings_reach_query() {
+    let path = database_path("configured-bm25-and-evidence");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let document_id = Uuid::new_v4().to_string();
+    stage_document_with_settings(
+        &database,
+        &document_id,
+        "bm25.md",
+        "# BM25 Configured\n\nneedle configured lexical evidence with Unicode π and enough text to truncate safely."
+            .as_bytes(),
+        "structure-aware",
+        500,
+        50,
+    )
+    .await;
+
+    let settings = configured_settings(&path);
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+    let embedder = RecordingEmbeddingProvider::from_effective_settings(&effective_settings);
+    let generator = RecordingGenerator::from_effective_settings(&effective_settings);
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job, &database, embedder.as_ref()).await.unwrap();
+
+    let service = configured_service(
+        &database,
+        effective_settings.clone(),
+        embedder,
+        generator.clone(),
+    )
+    .await;
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "needle configured lexical evidence".into(),
+            session_id: "00000000-0000-4000-8000-000000000113".into(),
+            filter: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    let request = &generator.requests()[0];
+    assert_eq!(request.evidence.len(), 1);
+    assert!(request.evidence[0].text.contains("needle"));
+    assert_eq!(response.structured_citations.len(), 1);
+    assert_eq!(response.structured_citations[0].excerpt.chars().count(), 23);
+    assert!(response.structured_citations[0].is_truncated);
+    assert_eq!(response.snapshot.as_ref().unwrap().candidate_limit, 4);
+    assert_eq!(response.snapshot.as_ref().unwrap().final_limit, 2);
+    assert_eq!(response.snapshot.as_ref().unwrap().rrf_k, 17);
+    assert_eq!(
+        service.effective_settings.retrieval.bm25,
+        effective_settings.retrieval.bm25
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
