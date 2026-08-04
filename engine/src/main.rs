@@ -744,6 +744,7 @@ pub struct LancetServiceImpl {
     pub effective_settings: EffectiveRagSettings,
     generator: Arc<dyn generation::Generator>,
     embedder: Arc<dyn EmbeddingProvider>,
+    reranker: Arc<dyn rerank::Reranker>,
 }
 
 impl LancetServiceImpl {
@@ -996,7 +997,13 @@ impl LancetService for LancetServiceImpl {
         )
         .map_err(|err| Status::internal(err.to_string()))?;
 
-        let final_candidates: Vec<_> = fused
+        let reranked = self
+            .reranker
+            .rerank(fused)
+            .await
+            .map_err(|err| Status::internal(err.to_string()))?;
+
+        let final_candidates: Vec<_> = reranked
             .into_iter()
             .take(self.effective_settings.retrieval.final_limit)
             .collect();
@@ -1756,6 +1763,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         effective_settings,
         generator,
         embedder: embedder.clone(),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
     };
 
     let addr = settings.engine.grpc_addr.parse()?;

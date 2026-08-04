@@ -87,7 +87,6 @@ pub fn fuse_candidates(
             .then_with(|| best_rank(left).cmp(&best_rank(right)))
             .then_with(|| left.candidate.sort_key().cmp(&right.candidate.sort_key()))
     });
-    results.truncate(settings.final_limit);
     Ok(results)
 }
 
