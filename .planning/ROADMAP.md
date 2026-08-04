@@ -136,7 +136,7 @@
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-04
 **Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
-**Plans:** 12/12 plans executed
+**Plans:** 12/15 plans executed
 
 Plans:
 **Wave 1**
@@ -180,6 +180,18 @@ Plans:
 **Wave 10** *(blocked on Wave 9 completion)*
 
 - [x] 03-12-PLAN.md — Wire NoOpReranker into production query_rag and enforce zero-weight retrieval-source exclusion.
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 03-13-PLAN.md — Enforce fail-closed retrieval grounding and bounded OpenRouter output.
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 03-14-PLAN.md — Route effective settings through the provider and preserve generation identity with explicit credentials.
+
+**Wave 13** *(blocked on Wave 12 completion)*
+
+- [ ] 03-15-PLAN.md — Stabilize citation identity fixtures and restore the complete locked Rust regression gate.
 
 **Success Criteria:**
 
