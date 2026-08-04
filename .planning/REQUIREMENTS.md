@@ -9,7 +9,7 @@
 ## RAG Engine Core
 
 - [x] **RAG-01**: Build a Rust RAG engine with gRPC server, async runtime, tracing, and service boundaries.
-- [ ] **RAG-02**: Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
+- [x] **RAG-02**: Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
 - [ ] **RAG-03**: **Future hardening target — deferred from Phase 03 to Phase 06.** Support degraded mode when graph extraction or one retrieval path fails, returning a useful vector/BM25-backed answer. See DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 for the preserved target contracts.
 - [ ] **RAG-04**: Define a pluggable async `Reranker` trait in Rust; implement a pass-through `NoOpReranker` as the v1 default, allowing external/local rerankers to be dropped in later (Port for 999.2).
 - [ ] **RAG-05**: Define a `ContextAssemblyStrategy` enum/trait in the Rust engine supporting both `PrecomputedSemantics` and `SourceChunks` retrieval, defaulting to `SourceChunks` (Port for 999.5).

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 3
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-08-03T23:51:19.622Z"
+stopped_at: Completed 03-10-PLAN.md
+last_updated: "2026-08-04T03:36:12.139Z"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 41
-  completed_plans: 34
+  completed_plans: 39
 ---
 
 # Project State
@@ -26,9 +26,9 @@ progress:
 
 - **Phase:** 3
 - **Status:** Ready to execute
-- **Current Plan:** 2
+- **Current Plan:** 3
 - **Total Plans in Phase:** 12
-- **Progress:** [██████████] 100%
+- **Progress:** [██████████] 95%
 - **Phase Progress:** 0 plans executed
 
 ## Completed Phases
@@ -81,6 +81,7 @@ progress:
 | Phase 02 P10 | 24 min | 3 tasks | 0 files |
 | Phase 03 P01 | 25min | 2 tasks | 10 files |
 | Phase 03 P05 | 30min | 2 tasks | 4 files |
+| Phase 03 P10 | 18 min | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -118,9 +119,12 @@ progress:
 - [Phase 03]: Expose reranking through a Send + Sync boxed-future trait with NoOpReranker as the Phase 03 pass-through implementation.
 - [Phase ?]: Use a deterministic localhost three-endpoint provider mock and a real direct-process Go-to-Rust smoke to prove the Phase 03 MVP happy path.
 - [Phase ?]: Treat the Rust serving log as a milestone only; generated-gRPC Ping against the exact loopback endpoint is the readiness proof.
+- [Phase ?]: Keep legacy OpenRouter constructors source-compatible while routing configured constructors through explicit provider state.
+- [Phase ?]: Use the configured embedding model for both the outbound request and OpenRouterClient::model_id so persistence and snapshot wiring can share one identity.
+- [Phase ?]: Use one configured generation Duration for reqwest and Tokio timeout enforcement; retain one attempt with no retry or fallback.
 
 ## Session
 
-**Last session:** 2026-08-02T22:06:18.065Z
-**Stopped at:** Completed 03-05-PLAN.md
+**Last session:** 2026-08-04T03:36:12.116Z
+**Stopped at:** Completed 03-10-PLAN.md
 **Resume file:** None
