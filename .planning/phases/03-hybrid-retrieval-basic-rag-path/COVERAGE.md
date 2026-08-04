@@ -4,17 +4,18 @@
 
 Phase 03 integrates the existing OpenRouter embeddings surface for query-vector creation and the structured, unary chat-completion surface for one grounded answer when both vector and BM25 retrieval paths succeed over a completed corpus. The provider-neutral Rust `Generator` seam remains integrated so another adapter can be added without changing retrieval or prompt contracts. RAG-03 is explicitly opted out of this phase; its future degraded, citation-repair, graph-unavailability, and lifecycle targets remain in `deferred-items.md`.
 
-## Five-plan ownership matrix
+## Plan ownership notes
 
-| Plan | Automated evidence owner | Boundary kept out of MVP coverage |
-|---|---|---|
-| 03-01 | Unicode analyzer, BM25 snapshot statistics, filtered dense retrieval, deterministic RRF fusion, and NoOp reranking | Provider calls and generation |
-| 03-02 | Provider-neutral evidence assembly plus strict OpenRouter supported-parameters and structured-output contract tests | Live credentials and alternate providers |
-| 03-03 | Additive QueryRAG gRPC contract, initial BM25 build/readiness safeguard, and Rust service coordination | Restart/re-ingestion recovery |
-| 03-04 | Go `/rag/query` boundary mapping and endpoint-injectable query embeddings | PostgreSQL-backed gateway startup |
-| 03-05 | `TestRAGQueryCrossRuntime` with seeded LanceDB, deterministic embedding/metadata/chat endpoints, real direct Rust process, generated-gRPC Ping, and bounded cleanup | Degraded/fallback/repair/retry/graph behavior |
+The ownership is intentionally vertical. These notes identify the evidence owner for each completed slice and closure plan without presenting planning metadata as an API capability decision table.
 
-The ownership is intentionally vertical: each row names the one current plan that proves that acceptance surface, while the final row closes the real local Go-to-Rust happy path without promoting deferred behavior.
+- 03-01 — Unicode analyzer, BM25 snapshot statistics, filtered dense retrieval, deterministic RRF fusion, and NoOp reranking; provider calls and generation remain outside this slice.
+- 03-02 — Provider-neutral evidence assembly plus strict OpenRouter supported-parameters and structured-output contract tests; live credentials and alternate providers remain outside this slice.
+- 03-03 — Additive QueryRAG gRPC contract, initial BM25 build/readiness safeguard, and Rust service coordination; restart/re-ingestion recovery remains outside this slice.
+- 03-04 — Go /rag/query boundary mapping and endpoint-injectable query embeddings; PostgreSQL-backed gateway startup remains outside this slice.
+- 03-05 — TestRAGQueryCrossRuntime with seeded LanceDB, deterministic embedding/metadata/chat endpoints, real direct Rust process, generated-gRPC Ping, and bounded cleanup; degraded/fallback/repair/retry/graph behavior remains outside this slice.
+- 03-13 — Fail-closed retrieval grounding and bounded OpenRouter output for the current RSC-1/P09/P24 gap.
+- 03-14 — Effective provider evidence settings, D-31 identity preservation, and explicit credential startup for the current P25/P41 gaps.
+- 03-15 — Deterministic citation identity fixtures and the full parallel/serial locked Rust regression gate for the remaining P09/P24 blocker.
 
 | capability | decision | reason |
 |---|---|---|
