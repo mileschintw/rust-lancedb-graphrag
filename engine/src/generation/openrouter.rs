@@ -298,22 +298,37 @@ impl OpenRouterGenerator {
         let schema_json = serde_json::json!({
             "type": "object",
             "properties": {
-                "answer": { "type": "string" },
+                "answer": {
+                    "type": "string",
+                    "maxLength": crate::generation::MAX_ANSWER_CHARS
+                },
                 "cited_evidence_ids": {
                     "type": "array",
-                    "items": { "type": "string" }
+                    "items": {
+                        "type": "string",
+                        "maxLength": crate::generation::MAX_EVIDENCE_ID_CHARS
+                    },
+                    "maxItems": crate::generation::MAX_CITED_EVIDENCE_IDS
                 },
                 "answer_basis": {
                     "type": "string",
-                    "enum": ["retrieval", "mixed", "model_only"]
+                    "enum": ["retrieval", "mixed"]
                 },
                 "notices": {
                     "type": "array",
-                    "items": { "type": "string" }
+                    "items": {
+                        "type": "string",
+                        "maxLength": crate::generation::MAX_NOTICE_WARNING_CHARS
+                    },
+                    "maxItems": crate::generation::MAX_NOTICES_WARNINGS_ITEMS
                 },
                 "warnings": {
                     "type": "array",
-                    "items": { "type": "string" }
+                    "items": {
+                        "type": "string",
+                        "maxLength": crate::generation::MAX_NOTICE_WARNING_CHARS
+                    },
+                    "maxItems": crate::generation::MAX_NOTICES_WARNINGS_ITEMS
                 }
             },
             "required": ["answer", "cited_evidence_ids", "answer_basis", "notices", "warnings"],
@@ -374,22 +389,42 @@ impl OpenRouterGenerator {
             ));
         }
 
-        let chat_resp = response
-            .json::<OpenRouterChatResponse>()
-            .await
-            .map_err(|err| {
-                GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!("failed to parse OpenRouter response wrapper JSON: {err}"),
-                )
-            })?;
-
-        let choice = chat_resp.choices.first().ok_or_else(|| {
+        const MAX_RESPONSE_BODY_BYTES: usize = 256 * 1024;
+        let body_bytes = response.bytes().await.map_err(|err| {
             GenerationError::new(
-                GenerationErrorKind::SchemaValidation,
-                "OpenRouter returned empty choices array",
+                GenerationErrorKind::ProviderError,
+                format!("failed to read OpenRouter response body: {err}"),
             )
         })?;
+
+        if body_bytes.len() > MAX_RESPONSE_BODY_BYTES {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!(
+                    "OpenRouter response body exceeds 256 KiB limit: got {} bytes",
+                    body_bytes.len()
+                ),
+            ));
+        }
+
+        let chat_resp: OpenRouterChatResponse = serde_json::from_slice(&body_bytes).map_err(|err| {
+            GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!("failed to parse OpenRouter response wrapper JSON: {err}"),
+            )
+        })?;
+
+        if chat_resp.choices.len() != 1 {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!(
+                    "OpenRouter must return exactly 1 choice, got {}",
+                    chat_resp.choices.len()
+                ),
+            ));
+        }
+
+        let choice = &chat_resp.choices[0];
 
         match choice.finish_reason.as_deref() {
             Some("stop") => {}
@@ -416,6 +451,31 @@ impl OpenRouterGenerator {
         })?;
 
         if let Some(usage) = chat_resp.usage {
+            if usage.prompt_tokens > crate::generation::DEFAULT_EVIDENCE_TOKEN_BUDGET {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("OpenRouter prompt_tokens {} exceeds budget {}", usage.prompt_tokens, crate::generation::DEFAULT_EVIDENCE_TOKEN_BUDGET),
+                ));
+            }
+            if usage.completion_tokens > crate::generation::DEFAULT_MAX_OUTPUT_TOKENS {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("OpenRouter completion_tokens {} exceeds budget {}", usage.completion_tokens, crate::generation::DEFAULT_MAX_OUTPUT_TOKENS),
+                ));
+            }
+            let checked_total = usage.prompt_tokens.checked_add(usage.completion_tokens).ok_or_else(|| {
+                GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    "OpenRouter token usage addition overflowed",
+                )
+            })?;
+            if usage.total_tokens > crate::generation::MAX_TOTAL_TOKENS_BUDGET || usage.total_tokens < checked_total {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("OpenRouter total_tokens {} exceeds budget limit {}", usage.total_tokens, crate::generation::MAX_TOTAL_TOKENS_BUDGET),
+                ));
+            }
+
             model_output.usage = Some(crate::generation::ModelUsage {
                 prompt_tokens: usage.prompt_tokens,
                 completion_tokens: usage.completion_tokens,

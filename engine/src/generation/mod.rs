@@ -67,13 +67,118 @@ pub struct ModelOutput {
     pub usage: Option<ModelUsage>,
 }
 
+pub const MAX_ANSWER_CHARS: usize = 16_384;
+pub const MAX_CITED_EVIDENCE_IDS: usize = 64;
+pub const MAX_EVIDENCE_ID_CHARS: usize = 128;
+pub const MAX_NOTICES_WARNINGS_ITEMS: usize = 32;
+pub const MAX_NOTICE_WARNING_CHARS: usize = 1_024;
+pub const DEFAULT_EVIDENCE_TOKEN_BUDGET: u32 = 8_192;
+pub const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 2_048;
+pub const MAX_TOTAL_TOKENS_BUDGET: u32 = DEFAULT_EVIDENCE_TOKEN_BUDGET + DEFAULT_MAX_OUTPUT_TOKENS;
+
 impl ModelOutput {
     pub fn validate_grounding(&self, packed_evidence: &[EvidenceBlock]) -> Result<(), GenerationError> {
+        if self.answer_basis == AnswerBasis::ModelOnly {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                "ModelOnly answer basis is not supported on Phase 03 QueryRAG path",
+            ));
+        }
+
         if self.answer.trim().is_empty() {
             return Err(GenerationError::new(
                 GenerationErrorKind::SchemaValidation,
                 "Model answer text must not be empty or blank",
             ));
+        }
+
+        if self.answer.chars().count() > MAX_ANSWER_CHARS {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!("answer exceeds maximum length of {MAX_ANSWER_CHARS} characters"),
+            ));
+        }
+
+        if self.cited_evidence_ids.is_empty() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!("answer basis '{}' requires at least one cited evidence ID", self.answer_basis),
+            ));
+        }
+
+        if self.cited_evidence_ids.len() > MAX_CITED_EVIDENCE_IDS {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!("cited_evidence_ids count {} exceeds limit {MAX_CITED_EVIDENCE_IDS}", self.cited_evidence_ids.len()),
+            ));
+        }
+
+        for id in &self.cited_evidence_ids {
+            if id.chars().count() > MAX_EVIDENCE_ID_CHARS {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("cited_evidence_id length exceeds limit {MAX_EVIDENCE_ID_CHARS}"),
+                ));
+            }
+        }
+
+        if self.notices.len() > MAX_NOTICES_WARNINGS_ITEMS {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!("notices count {} exceeds limit {MAX_NOTICES_WARNINGS_ITEMS}", self.notices.len()),
+            ));
+        }
+
+        for notice in &self.notices {
+            if notice.chars().count() > MAX_NOTICE_WARNING_CHARS {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("notice length exceeds limit {MAX_NOTICE_WARNING_CHARS}"),
+                ));
+            }
+        }
+
+        if self.warnings.len() > MAX_NOTICES_WARNINGS_ITEMS {
+            return Err(GenerationError::new(
+                GenerationErrorKind::SchemaValidation,
+                format!("warnings count {} exceeds limit {MAX_NOTICES_WARNINGS_ITEMS}", self.warnings.len()),
+            ));
+        }
+
+        for warning in &self.warnings {
+            if warning.chars().count() > MAX_NOTICE_WARNING_CHARS {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("warning length exceeds limit {MAX_NOTICE_WARNING_CHARS}"),
+                ));
+            }
+        }
+
+        if let Some(usage) = &self.usage {
+            if usage.prompt_tokens > DEFAULT_EVIDENCE_TOKEN_BUDGET {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("prompt_tokens {} exceeds budget {DEFAULT_EVIDENCE_TOKEN_BUDGET}", usage.prompt_tokens),
+                ));
+            }
+            if usage.completion_tokens > DEFAULT_MAX_OUTPUT_TOKENS {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("completion_tokens {} exceeds budget {DEFAULT_MAX_OUTPUT_TOKENS}", usage.completion_tokens),
+                ));
+            }
+            let checked_total = usage.prompt_tokens.checked_add(usage.completion_tokens).ok_or_else(|| {
+                GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    "token usage addition overflowed",
+                )
+            })?;
+            if usage.total_tokens > MAX_TOTAL_TOKENS_BUDGET || usage.total_tokens < checked_total {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("total_tokens {} exceeds calculated/budget limit", usage.total_tokens),
+                ));
+            }
         }
 
         // Check for duplicate cited evidence IDs

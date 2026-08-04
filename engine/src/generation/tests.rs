@@ -644,3 +644,371 @@ async fn openrouter_structured_output_smoke() {
         res.answer, res.answer_basis
     );
 }
+
+#[test]
+fn model_output_requires_retrieval_citation() {
+    let cand = sample_candidate("1", "Sample text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let output = ModelOutput {
+        answer: "Uncited answer text.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let err = output.validate_grounding(&evidence).unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert!(err.message().contains("requires at least one cited evidence ID"));
+}
+
+#[test]
+fn model_output_requires_mixed_citation() {
+    let cand = sample_candidate("1", "Sample text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let output = ModelOutput {
+        answer: "Uncited mixed answer text.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Mixed,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let err = output.validate_grounding(&evidence).unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert!(err.message().contains("requires at least one cited evidence ID"));
+}
+
+#[test]
+fn model_output_rejects_model_only() {
+    let cand = sample_candidate("1", "Sample text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let output = ModelOutput {
+        answer: "Model only answer text.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let err = output.validate_grounding(&evidence).unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert!(err.message().contains("ModelOnly answer basis is not supported"));
+}
+
+#[test]
+fn model_output_accepts_cited_mixed_basis() {
+    let cand = sample_candidate("1", "Sample text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let output = ModelOutput {
+        answer: "Mixed answer with citation [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Mixed,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    assert!(output.validate_grounding(&evidence).is_ok());
+}
+
+#[tokio::test]
+async fn openrouter_schema_declares_output_bounds() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let captured_request = Arc::new(Mutex::new(None));
+    let captured_request_server = captured_request.clone();
+
+    let server_handle = thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "data": [{
+                        "id": "mock/bounded-model",
+                        "supported_parameters": ["response_format", "json_schema"]
+                    }]
+                }),
+            );
+        }
+
+        if let Ok((mut stream, _)) = listener.accept() {
+            let req_str = read_http_request(&mut stream);
+            *captured_request_server.lock().unwrap() = Some(req_str);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": json!({
+                                "answer": "Answer [1]",
+                                "cited_evidence_ids": ["[1]"],
+                                "answer_basis": "retrieval",
+                                "notices": [],
+                                "warnings": []
+                            }).to_string()
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }),
+            );
+        }
+    });
+
+    let adapter = OpenRouterGenerator::new("test-key", "mock/bounded-model")
+        .expect("adapter created")
+        .with_endpoints(format!("http://{addr}/chat"), format!("http://{addr}/models"));
+
+    let cand = sample_candidate("1", "Text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let res = adapter.generate(GenerationRequest::new("Question?", evidence)).await;
+    assert!(res.is_ok());
+
+    server_handle.join().expect("server completed");
+    let req = captured_request.lock().unwrap().take().unwrap();
+    let body_str = req.split_once("\r\n\r\n").unwrap().1;
+    let body: serde_json::Value = serde_json::from_str(body_str).unwrap();
+    let schema = &body["response_format"]["json_schema"]["schema"];
+    assert_eq!(schema["properties"]["answer"]["maxLength"], 16384);
+    assert_eq!(schema["properties"]["cited_evidence_ids"]["maxItems"], 64);
+    assert_eq!(schema["properties"]["cited_evidence_ids"]["items"]["maxLength"], 128);
+    assert_eq!(schema["properties"]["answer_basis"]["enum"], json!(["retrieval", "mixed"]));
+}
+
+#[tokio::test]
+async fn openrouter_rejects_oversized_response_body() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "data": [{
+                        "id": "mock/big-body-model",
+                        "supported_parameters": ["response_format", "json_schema"]
+                    }]
+                }),
+            );
+        }
+
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            let huge_padding = "x".repeat(300 * 1024);
+            let body = json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": "Answer [1]",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [huge_padding],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }]
+            }).to_string();
+
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+
+    let adapter = OpenRouterGenerator::new("test-key", "mock/big-body-model")
+        .expect("adapter created")
+        .with_endpoints(format!("http://{addr}/chat"), format!("http://{addr}/models"));
+
+    let cand = sample_candidate("1", "Text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let err = adapter.generate(GenerationRequest::new("Question?", evidence)).await.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert!(err.message().contains("exceeds 256 KiB limit"));
+
+    server_handle.join().expect("server completed");
+}
+
+#[tokio::test]
+async fn openrouter_rejects_oversized_model_output_fields() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "data": [{
+                        "id": "mock/field-limit-model",
+                        "supported_parameters": ["response_format", "json_schema"]
+                    }]
+                }),
+            );
+        }
+
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            let long_answer = "a".repeat(17000) + " [1]";
+            write_json_response(
+                &mut stream,
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": json!({
+                                "answer": long_answer,
+                                "cited_evidence_ids": ["[1]"],
+                                "answer_basis": "retrieval",
+                                "notices": [],
+                                "warnings": []
+                            }).to_string()
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }),
+            );
+        }
+    });
+
+    let adapter = OpenRouterGenerator::new("test-key", "mock/field-limit-model")
+        .expect("adapter created")
+        .with_endpoints(format!("http://{addr}/chat"), format!("http://{addr}/models"));
+
+    let cand = sample_candidate("1", "Text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let err = adapter.generate(GenerationRequest::new("Question?", evidence)).await.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert!(err.message().contains("answer exceeds maximum length"));
+
+    server_handle.join().expect("server completed");
+}
+
+#[tokio::test]
+async fn openrouter_rejects_invalid_usage() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "data": [{
+                        "id": "mock/usage-limit-model",
+                        "supported_parameters": ["response_format", "json_schema"]
+                    }]
+                }),
+            );
+        }
+
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": json!({
+                                "answer": "Answer [1]",
+                                "cited_evidence_ids": ["[1]"],
+                                "answer_basis": "retrieval",
+                                "notices": [],
+                                "warnings": []
+                            }).to_string()
+                        },
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": 9000,
+                        "completion_tokens": 100,
+                        "total_tokens": 9100
+                    }
+                }),
+            );
+        }
+    });
+
+    let adapter = OpenRouterGenerator::new("test-key", "mock/usage-limit-model")
+        .expect("adapter created")
+        .with_endpoints(format!("http://{addr}/chat"), format!("http://{addr}/models"));
+
+    let cand = sample_candidate("1", "Text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let err = adapter.generate(GenerationRequest::new("Question?", evidence)).await.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert!(err.message().contains("exceeds budget"));
+
+    server_handle.join().expect("server completed");
+}
+
+#[tokio::test]
+async fn openrouter_valid_bounded_response() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "data": [{
+                        "id": "mock/valid-model",
+                        "supported_parameters": ["response_format", "json_schema"]
+                    }]
+                }),
+            );
+        }
+
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _ = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": json!({
+                                "answer": "Valid answer text with citation [1].",
+                                "cited_evidence_ids": ["[1]"],
+                                "answer_basis": "retrieval",
+                                "notices": ["Valid notice"],
+                                "warnings": []
+                            }).to_string()
+                        },
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": 500,
+                        "completion_tokens": 100,
+                        "total_tokens": 600
+                    }
+                }),
+            );
+        }
+    });
+
+    let adapter = OpenRouterGenerator::new("test-key", "mock/valid-model")
+        .expect("adapter created")
+        .with_endpoints(format!("http://{addr}/chat"), format!("http://{addr}/models"));
+
+    let cand = sample_candidate("1", "Text.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+    let res = adapter.generate(GenerationRequest::new("Question?", evidence)).await.unwrap();
+    assert_eq!(res.answer_basis, AnswerBasis::Retrieval);
+    assert_eq!(res.cited_evidence_ids, vec!["[1]"]);
+    assert_eq!(res.usage.unwrap().total_tokens, 600);
+
+    server_handle.join().expect("server completed");
+}

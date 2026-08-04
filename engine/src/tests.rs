@@ -2931,6 +2931,72 @@ async fn query_rag_rejects_unknown_marker_without_response() {
     let _ = std::fs::remove_dir_all(path);
 }
 
+#[tokio::test]
+async fn query_rag_rejects_invalid_provider_grounding() {
+    let path = database_path("query-rag-rejects-invalid-provider-grounding");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Document Grounding\n\nContent for grounding test document.",
+    )
+    .await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Model-only response without grounding.".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
+        effective_settings: EffectiveRagSettings::default(),
+        generator: fake_gen.clone(),
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let req = QueryRagRequest {
+        query: "grounding test document".into(),
+        session_id: "00000000-0000-4000-8000-000000000099".into(),
+        filter: None,
+    };
+
+    let res = service.query_rag(tonic::Request::new(req)).await;
+    assert!(res.is_err());
+    let status = res.unwrap_err();
+    assert_eq!(status.code(), tonic::Code::Internal);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
 async fn reranker_query_fixture(
     test_name: &str,
     final_limit: usize,
