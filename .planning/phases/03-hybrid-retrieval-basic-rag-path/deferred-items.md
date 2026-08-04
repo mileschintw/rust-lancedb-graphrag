@@ -78,3 +78,17 @@ This item is part of the explicit RAG-03 deferred scope. Phase 03 may preserve t
 - **Evidence:** The mandated full engine suite passed 63 tests and failed only `query_rag_citation_identity_and_notices` at `engine/src/tests.rs:2754`, where the existing unstaged edit expects `Root` but the generated citation is `/Document Beta`.
 - **Scope:** This edit predates the 03-11 continuation and was explicitly requested to remain untouched; no plan commit includes it.
 - **Resolution:** Preserve the working-tree edit and defer its test reconciliation to the owner of that change. The six focused 03-11 verification tests pass.
+
+### DEFERRED-03-12-01 — Preserved citation-test edit and repository formatting drift
+
+- **Found during:** Plan 03-12 overall verification.
+- **Evidence:** The full Rust suite passed all 24 library tests and 70 of 71 binary tests; `query_rag_citation_identity_and_notices` failed at `engine/src/tests.rs:2842` because the preserved unstaged edit expects `Root` while the fixture produces `/Document Beta`. Repository-wide `cargo fmt --check` also reports pre-existing drift in `engine/src/generation/*` and `engine/src/prompt.rs`; the 03-12 Rust files pass file-local rustfmt.
+- **Scope:** Both conditions are outside the 03-12 production changes. The citation edit was explicitly requested to remain untouched, and unrelated formatting changes were not applied.
+- **Resolution:** Defer reconciliation to the owner of the citation edit and a dedicated formatting cleanup; do not claim the full repository gate passed.
+
+### DEFERRED-03-12-02 — User-stopped Go and protobuf gates
+
+- **Found during:** Plan 03-12 overall verification.
+- **Evidence:** The Go, cross-runtime `TestRAGQueryCrossRuntime`, `buf lint`, and `buf format --diff --exit-code` gates were not completed after the user directed execution to stop phase-final gates.
+- **Scope:** No production defect was inferred; the remaining verification was intentionally stopped by the user after all substantive 03-12 commits were present.
+- **Resolution:** Run these gates only when the user requests phase-final/regression verification.

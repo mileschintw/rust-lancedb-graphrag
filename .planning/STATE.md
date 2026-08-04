@@ -5,13 +5,13 @@ milestone_name: milestone
 current_phase: 3
 current_plan: 12
 status: executing
-stopped_at: Completed 03-11-PLAN.md
-last_updated: "2026-08-04T04:25:24.843Z"
+stopped_at: Completed 03-12-PLAN.md; phase-final gates intentionally deferred
+last_updated: "2026-08-04T05:05:24.519Z"
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 41
-  completed_plans: 40
+  completed_plans: 41
 ---
 
 # Project State
@@ -28,7 +28,7 @@ progress:
 - **Status:** Ready to execute
 - **Current Plan:** 12
 - **Total Plans in Phase:** 12
-- **Progress:** [██████████] 98%
+- **Progress:** [██████████] 100%
 - **Phase Progress:** 11 plans executed
 
 ## Completed Phases
@@ -83,6 +83,7 @@ progress:
 | Phase 03 P05 | 30min | 2 tasks | 4 files |
 | Phase 03 P10 | 18 min | 2 tasks | 4 files |
 | Phase 03 P11 | 35min | 3 tasks | 5 files |
+| Phase 03 P12 | 13m | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -126,9 +127,11 @@ progress:
 - [Phase ?]: Use one validated EffectiveRagSettings value for production retrieval, prompt, provider, persistence, citation, and snapshot consumers.
 - [Phase ?]: Require schema-valid initial BM25 fixtures and row-identity diagnostics before readiness.
 - [Phase ?]: Validate the exact 24-key secret-free operator example through the binary target real settings types.
+- [Phase ?]: Phase 03 Plan 12: keep NoOpReranker as the production pass-through and invoke the injected reranker once after fusion before final limiting.
+- [Phase ?]: Phase 03 Plan 12: exact-zero vector_weight and bm25_weight disable their sources before candidate insertion while enabled-source RRF remains deterministic and full precision.
 
 ## Session
 
-**Last session:** 2026-08-04T04:23:41.284Z
-**Stopped at:** Completed 03-11-PLAN.md
+**Last session:** 2026-08-04T05:05:24.498Z
+**Stopped at:** Completed 03-12-PLAN.md; phase-final gates intentionally deferred
 **Resume file:** None
