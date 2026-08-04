@@ -1017,6 +1017,12 @@ impl LancetService for LancetServiceImpl {
             self.effective_settings.citation_excerpt_max_chars,
         );
 
+        if resolved_citations.len() != model_output.cited_evidence_ids.len() {
+            return Err(Status::internal(
+                "failed to resolve all cited evidence identities completely",
+            ));
+        }
+
         let proto_citations: Vec<String> = resolved_citations
             .iter()
             .map(|c| c.marker_id.clone())
@@ -1024,19 +1030,15 @@ impl LancetService for LancetServiceImpl {
 
         let proto_structured_citations: Vec<lancet::v1::StructuredCitation> = resolved_citations
             .iter()
-            .enumerate()
-            .map(|(idx, c)| lancet::v1::StructuredCitation {
+            .map(|c| lancet::v1::StructuredCitation {
                 chunk_id: c.chunk_id.clone(),
                 document_id: c.document_id.clone(),
-                title: c.provenance.clone(),
-                section_path: "".to_string(),
+                title: c.title.as_deref().unwrap_or("Untitled Document").to_string(),
+                section_path: c.section_path.as_deref().unwrap_or("Root").to_string(),
                 excerpt: c.bounded_excerpt.clone(),
                 is_truncated: c.is_truncated,
-                score: final_candidates
-                    .get(idx)
-                    .map(|fc| fc.fused_score)
-                    .unwrap_or(0.0),
-                rank: (idx + 1) as i32,
+                score: c.score,
+                rank: c.rank as i32,
                 content_type: c.content_type.clone(),
             })
             .collect();
@@ -1047,15 +1049,21 @@ impl LancetService for LancetServiceImpl {
             generation::AnswerBasis::ModelOnly => lancet::v1::AnswerBasis::ModelOnly as i32,
         };
 
-        let proto_notices: Vec<lancet::v1::Notice> = model_output
-            .notices
-            .iter()
-            .map(|n| lancet::v1::Notice {
+        let mut proto_notices: Vec<lancet::v1::Notice> = Vec::new();
+        for notice in &model_output.notices {
+            proto_notices.push(lancet::v1::Notice {
                 code: "NOTICE".to_string(),
-                message: n.clone(),
+                message: notice.clone(),
                 severity: lancet::v1::NoticeSeverity::Info as i32,
-            })
-            .collect();
+            });
+        }
+        for warning in &model_output.warnings {
+            proto_notices.push(lancet::v1::Notice {
+                code: "WARNING".to_string(),
+                message: warning.clone(),
+                severity: lancet::v1::NoticeSeverity::Warning as i32,
+            });
+        }
 
         let snapshot = lancet::v1::RetrievalSnapshot {
             index_generation: self.effective_settings.index_generation.clone(),

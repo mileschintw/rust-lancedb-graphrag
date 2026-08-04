@@ -2040,3 +2040,169 @@ fn invalid_effective_settings_rejected() {
     settings3.engine.retrieval.rrf_k = 60.5;
     assert!(EffectiveRagSettings::try_from_settings(&settings3).is_err());
 }
+
+#[tokio::test]
+async fn query_rag_citation_identity_and_notices() {
+    let path = database_path("query-rag-citation-identity-and-notices");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id_1 = Uuid::new_v4().to_string();
+    let doc_id_2 = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id_1,
+        b"# Document Alpha\n\n## Section One\n\nFirst document content block for testing query_rag.",
+    )
+    .await;
+
+    stage_document(
+        &database,
+        &doc_id_2,
+        b"# Document Beta\n\n## Section Two\n\nSecond document content block with long text for unicode truncation check.",
+    )
+    .await;
+
+    let jobs = read_staged_jobs(&database).await.unwrap();
+    for job in jobs {
+        process_job(&job, &database, &FakeEmbedder).await.unwrap();
+    }
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Answer citing second block only [2].".into(),
+            cited_evidence_ids: vec!["[2]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec!["Notice msg A".into()],
+            warnings: vec!["Warning msg B".into()],
+            usage: None,
+        },
+    )));
+
+    let mut settings = Settings::default();
+    settings.engine.retrieval.excerpt_max_chars = 20;
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        effective_settings,
+        generator: fake_gen.clone(),
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let req = QueryRagRequest {
+        query: "document content".into(),
+        session_id: "00000000-0000-4000-8000-000000000099".into(),
+        filter: None,
+    };
+
+    let response = service
+        .query_rag(tonic::Request::new(req))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(response.answer, "Answer citing second block only [2].");
+    assert_eq!(response.citations, vec!["[2]".to_string()]);
+    assert_eq!(response.structured_citations.len(), 1);
+
+    let sc = &response.structured_citations[0];
+    assert_eq!(sc.document_id, doc_id_2);
+    assert_eq!(sc.title, "Document Beta");
+    assert_eq!(sc.section_path, "Section Two");
+    assert_eq!(sc.content_type, "text/markdown");
+    assert_eq!(sc.rank, 2);
+    assert_eq!(sc.excerpt.chars().count(), 20);
+    assert!(sc.is_truncated);
+
+    assert_eq!(response.notices.len(), 2);
+    assert_eq!(response.notices[0].code, "NOTICE");
+    assert_eq!(response.notices[0].message, "Notice msg A");
+    assert_eq!(
+        response.notices[0].severity,
+        lancet::v1::NoticeSeverity::Info as i32
+    );
+    assert_eq!(response.notices[1].code, "WARNING");
+    assert_eq!(response.notices[1].message, "Warning msg B");
+    assert_eq!(
+        response.notices[1].severity,
+        lancet::v1::NoticeSeverity::Warning as i32
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_rejects_unknown_marker_without_response() {
+    let path = database_path("query-rag-rejects-unknown-marker");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Document Gamma\n\nContent for gamma document.",
+    )
+    .await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Answer citing nonexistent marker [99].".into(),
+            cited_evidence_ids: vec!["[99]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        effective_settings: EffectiveRagSettings::default(),
+        generator: fake_gen.clone(),
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let req = QueryRagRequest {
+        query: "gamma document".into(),
+        session_id: "00000000-0000-4000-8000-000000000088".into(),
+        filter: None,
+    };
+
+    let res = service.query_rag(tonic::Request::new(req)).await;
+    assert!(res.is_err());
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
