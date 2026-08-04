@@ -230,7 +230,13 @@ async fn embedding_request_uses_effective_model() {
         .unwrap();
 
     assert_eq!(client.model_id(), model);
-    let body = server.request_bodies.lock().unwrap().first().cloned().unwrap();
+    let body = server
+        .request_bodies
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .unwrap();
     let body: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(body["model"], model);
 }
@@ -238,8 +244,7 @@ async fn embedding_request_uses_effective_model() {
 #[tokio::test]
 async fn embedding_config_preserves_bounds_and_redaction() {
     let server = MockServer::start(vec![500, 500, 500, 500], Duration::ZERO);
-    let config = OpenRouterEmbeddingConfig::new("custom/embedding-model", server.endpoint)
-        .unwrap();
+    let config = OpenRouterEmbeddingConfig::new("custom/embedding-model", server.endpoint).unwrap();
 
     assert_eq!(config.timeout, Duration::from_secs(10));
     assert_eq!(config.max_retries, 3);
@@ -252,5 +257,8 @@ async fn embedding_config_preserves_bounds_and_redaction() {
         .get_embeddings(&["redaction".into()])
         .await
         .unwrap_err();
-    assert!(!error.contains(secret), "provider error leaked the credential");
+    assert!(
+        !error.contains(secret),
+        "provider error leaked the credential"
+    );
 }
