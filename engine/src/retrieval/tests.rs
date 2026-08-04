@@ -370,3 +370,128 @@ fn retrieval_snapshot_values_are_lossless() {
     };
     assert!(limit_too_large.validate().is_err());
 }
+
+#[test]
+fn zero_vector_weight_excludes_vector_only_candidates() {
+    let mut settings = RetrievalSettings {
+        candidate_limit: 4,
+        final_limit: 4,
+        vector_weight: 0.0,
+        bm25_weight: 1.0,
+        ..RetrievalSettings::default()
+    };
+    settings.rrf_k = 60.0;
+
+    let vector_shared = candidate("doc-shared", "shared", "vector shared");
+    let vector_only = candidate("doc-vector", "vector-only", "vector only");
+    let bm25_shared = candidate("doc-shared", "shared", "bm25 shared");
+    let bm25_only = candidate("doc-bm25", "bm25-only", "bm25 only");
+
+    let fused = fuse_candidates(
+        vec![vector_shared, vector_only],
+        vec![bm25_shared, bm25_only],
+        &settings,
+    )
+    .unwrap();
+
+    assert_eq!(
+        fused
+            .iter()
+            .map(|result| result.candidate.chunk_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["shared", "bm25-only"]
+    );
+    assert!(fused
+        .iter()
+        .all(|result| result.vector_rank.is_none() && result.vector_score.is_none()));
+    assert!(fused.iter().all(|result| result.bm25_rank.is_some()));
+}
+
+#[test]
+fn zero_bm25_weight_excludes_bm25_only_candidates() {
+    let settings = RetrievalSettings {
+        candidate_limit: 4,
+        final_limit: 4,
+        vector_weight: 1.0,
+        bm25_weight: 0.0,
+        ..RetrievalSettings::default()
+    };
+
+    let vector_shared = candidate("doc-shared", "shared", "vector shared");
+    let vector_only = candidate("doc-vector", "vector-only", "vector only");
+    let bm25_shared = candidate("doc-shared", "shared", "bm25 shared");
+    let bm25_only = candidate("doc-bm25", "bm25-only", "bm25 only");
+
+    let fused = fuse_candidates(
+        vec![vector_shared, vector_only],
+        vec![bm25_shared, bm25_only],
+        &settings,
+    )
+    .unwrap();
+
+    assert_eq!(
+        fused
+            .iter()
+            .map(|result| result.candidate.chunk_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["shared", "vector-only"]
+    );
+    assert!(fused
+        .iter()
+        .all(|result| result.bm25_rank.is_none() && result.bm25_score.is_none()));
+    assert!(fused.iter().all(|result| result.vector_rank.is_some()));
+}
+
+#[test]
+fn positive_weights_preserve_rrf_dedup_and_ties() {
+    let settings = RetrievalSettings {
+        candidate_limit: 3,
+        final_limit: 3,
+        vector_weight: 1.0,
+        bm25_weight: 1.0,
+        rrf_k: 60.0,
+        ..RetrievalSettings::default()
+    };
+
+    let vector_shared = candidate("doc-shared", "shared", "vector shared");
+    let vector_only = candidate("doc-z", "vector-only", "vector only");
+    let bm25_shared = candidate("doc-shared", "shared", "bm25 shared");
+    let bm25_only = candidate("doc-a", "bm25-only", "bm25 only");
+
+    let fused = fuse_candidates(
+        vec![vector_shared.clone(), vector_only.clone()],
+        vec![bm25_shared.clone(), bm25_only.clone()],
+        &settings,
+    )
+    .unwrap();
+    let repeated = fuse_candidates(
+        vec![vector_shared, vector_only],
+        vec![bm25_shared, bm25_only],
+        &settings,
+    )
+    .unwrap();
+
+    assert_eq!(fused.len(), 3, "shared chunk IDs must be deduplicated");
+    assert_eq!(
+        fused
+            .iter()
+            .map(|result| result.candidate.chunk_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["shared", "bm25-only", "vector-only"],
+        "equal exclusive scores use the deterministic document-ID tie key"
+    );
+
+    let shared = &fused[0];
+    assert_eq!(shared.vector_rank, Some(1));
+    assert_eq!(shared.bm25_rank, Some(1));
+    assert_eq!(shared.vector_score, Some(0.0));
+    assert_eq!(shared.bm25_score, Some(0.0));
+    assert_eq!(shared.fused_score, 1.0 / 61.0 + 1.0 / 61.0);
+    assert_eq!(fused[1].fused_score, 1.0 / 62.0);
+    assert_eq!(fused[2].fused_score, 1.0 / 62.0);
+    assert_eq!(
+        serde_json::to_vec(&fused).unwrap(),
+        serde_json::to_vec(&repeated).unwrap(),
+        "positive-weight fusion must remain byte-stable across identical runs"
+    );
+}
