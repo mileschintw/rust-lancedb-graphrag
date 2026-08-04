@@ -1,7 +1,7 @@
 ---
 phase: 03-hybrid-retrieval-basic-rag-path
-reviewed: 2026-08-04T08:15:37Z
-depth: deep
+reviewed: 2026-08-04T12:46:05Z
+depth: standard
 files_reviewed: 29
 files_reviewed_list:
   - config/config.example.toml
@@ -28,184 +28,218 @@ files_reviewed_list:
   - engine/src/retrieval/tests.rs
   - engine/src/tests.rs
   - engine/tests/config_startup.rs
-  - gateway/main_test.go
   - gateway/main.go
+  - gateway/main_test.go
   - gateway/proto/lancet/v1/lancet_grpc.pb.go
   - gateway/proto/lancet/v1/lancet.pb.go
   - proto/lancet/v1/lancet.proto
 findings:
-  critical: 9
-  warning: 6
+  critical: 7
+  warning: 11
   info: 0
-  total: 15
+  total: 18
 status: issues_found
 ---
 
 # Phase 03: Code Review Report
 
-**Reviewed:** 2026-08-04T08:15:37Z  
-**Depth:** deep  
+**Reviewed:** 2026-08-04T12:46:05Z
+**Depth:** standard
 **Files Reviewed:** 29  
 **Status:** issues_found
 
 ## Summary
 
-The current checkout was reviewed across the gateway-to-engine query path, ingestion and replay lifecycle, dense/BM25 retrieval, fusion, reranking, prompt assembly, provider generation, protobuf boundaries, configuration, and tests. The implementation has the nominal RAG-02/RAG-04 components, but several failure paths silently fabricate or weaken retrieval results, and the lexical index is not kept current after ingestion. The resulting path can return apparently grounded answers from invalid or incomplete evidence, while valid no-match queries are reported as client errors.
+The review covered all 29 explicitly scoped source, configuration, generated-binding, lock, and test files. The gateway-to-engine query path, ingestion staging/replay path, provider response handling, retrieval fusion, grounding validation, and resource-bound behavior were traced across modules.
 
-Validation performed: go test ./... passed. The serial Rust engine binary suite passed (71 passed, 1 ignored), but the full parallel Rust run exposed the test-order/random-fixture defect reported as WR-05.
+Seven blocker-level issues remain, including silent embedding and dense-retrieval failure, an incorrect HTTP status for valid zero-result queries, provider response limits that are enforced only after unbounded buffering, destructive replacement of replay data, unconstrained configured resource limits, and non-finite fused scores that can produce malformed successful HTTP responses. Eleven warnings cover configuration security, lifecycle consistency, disclosure enforcement, idempotency, module duplication, and validation gaps.
+
+The scoped mutable-row integration tests use per-test UUID-backed schemas and fatal external snapshot query failures; no violation of the repository review convention was found. Tests were not executed as part of this read-only review.
+
+## Narrative Findings (AI reviewer)
 
 ## Critical Issues
 
-### CR-01 [BLOCKER]: Embedding failures are converted into a plausible constant query vector
+### CR-01 [BLOCKER]: Embedding failures are replaced with a plausible constant vector
 
 **File:** engine/src/main.rs:967-974
 
-**Issue:** Any embedding error, empty response, or wrong-dimensional response is replaced with vec![0.25; 2048]. A provider outage or malformed provider response therefore continues into dense retrieval using an unrelated vector, and the generator can present arbitrary retrieved chunks as a valid hybrid answer.
+**Issue:** Any embedding-provider error, empty result, wrong dimension, or multi-vector response falls through to vec![0.25; 2048]. The dense retriever therefore runs on a fabricated but valid-looking embedding and can return unrelated evidence, after which the generation path may present the answer as retrieval-grounded. The branch also does not verify that every value is finite or that exactly one vector was returned.
 
 **Fix:**
 
-~~~rust
-let query_embedding = self
+```rust
+let vectors = self
     .embedder
-    .get_embeddings(std::slice::from_ref(&request.question))
+    .get_embeddings(&[query_request.query.clone()])
     .await
-    .map_err(|err| Status::unavailable(format!("query embedding failed: {err}")))?
-    .into_iter()
-    .next()
-    .filter(|embedding| {
-        embedding.len() == 2048 && embedding.iter().all(|value| value.is_finite())
-    })
-    .ok_or_else(|| Status::internal("embedding provider returned an invalid vector"))?;
-~~~
+    .map_err(|err| Status::unavailable(format!("embedding unavailable: {err}")))?;
 
-Only use a deliberately configured degraded mode if it is disclosed and cannot be mistaken for retrieval-backed output.
+let [embedding] = vectors.as_slice() else {
+    return Err(Status::internal("embedding provider returned the wrong vector count"));
+};
+if embedding.len() != 2048 || embedding.iter().any(|value| !value.is_finite()) {
+    return Err(Status::internal("embedding provider returned an invalid vector"));
+}
+let query_embedding = embedding.clone();
+```
 
-### CR-02 [BLOCKER]: Dense retrieval errors are silently treated as an empty dense branch
+### CR-02 [BLOCKER]: Dense retrieval errors are silently converted to an empty branch
 
 **File:** engine/src/main.rs:976-984
 
-**Issue:** DenseRetriever::query errors, including snapshot, filter, and LanceDB failures, are converted with unwrap_or_default(). BM25 can then supply candidates and the service still executes generation as if the hybrid retrieval succeeded. This violates RAG-02’s requirement that the dense and lexical branches both form the retrieval chain and hides infrastructure failures as valid answers.
+**Issue:** unwrap_or_default() erases every DenseRetriever error, including snapshot, filter, and LanceDB query failures. BM25 and generation then continue as if the hybrid query succeeded, so a backend failure is indistinguishable from a successful zero-result dense search and can silently weaken grounding.
 
-**Fix:** Propagate the dense error as a typed Unavailable/Internal gRPC error (and log its correlation identity). Return an empty branch only when the retriever successfully returns zero matches.
+**Fix:** Propagate the retrieval error through the typed gRPC error mapping. Treat Ok(empty) as a legitimate zero-result branch only after the query itself succeeds. If degraded retrieval is ever supported, return an explicit degraded basis and disclosure rather than silently continuing.
 
-### CR-03 [BLOCKER]: The BM25 snapshot never includes documents ingested after startup
+### CR-03 [BLOCKER]: Valid zero-result queries are reported as malformed HTTP 400 requests
 
-**File:** engine/src/main.rs:1710-1713, 1530-1568, 1641-1658
+**File:** engine/src/main.rs:1006-1019; engine/src/prompt.rs:202-204; gateway/main.go:705-710
 
-**Issue:** Bm25Index is built once before the worker starts. The worker writes canonical documents/nodes/edges and marks jobs completed, but no code updates or republishes the BM25 index afterward. Newly completed documents can therefore be found by the dense branch but are absent from BM25, so the advertised hybrid RAG-02 path is stale immediately after ingestion. Startup replay has the same ordering issue: the index is built before replayed jobs complete.
+**Issue:** A syntactically valid query whose filters match no rows produces an empty final candidate list. Prompt assembly returns EmptyEvidence, the engine maps that to Status::invalid_argument, and the gateway maps InvalidArgument to HTTP 400. The phase contract requires valid filters with no matches to produce empty evidence rather than a caller-validation error, so clients cannot distinguish “no results” from malformed input.
 
-**Fix:** Make completion transactional with retrieval readiness: build the lexical representation for the new/replaced document, atomically publish a new BM25 snapshot (or an equivalent synchronized update), and mark the document completed only after both dense and BM25 views contain it. Apply the same ordering to replay, replacement, and deletion.
+**Fix:** Add an explicit no-results/no-answer outcome before prompt assembly, or introduce a dedicated typed status/result that is not mapped to HTTP 400. Reserve InvalidArgument for malformed query and filter input.
 
-### CR-04 [BLOCKER]: Grounding validation permits retrieval-backed answers with no citations
+### CR-04 [BLOCKER]: Provider response-size limits are enforced after unbounded buffering
 
-**File:** engine/src/generation/mod.rs:70-126
+**File:** engine/src/generation/openrouter.rs:223-250, 407-423; engine/src/client/mod.rs:232-237
 
-**Issue:** validate_grounding checks that supplied citation IDs are known and that inline markers match the supplied set, but it does not require a non-empty citation set for Retrieval or Mixed answers. It also accepts ModelOnly output without requiring the contract’s explicit model-only disclosure. engine/src/main.rs:1036-1044 relies on this validator before returning the answer, so a model can label an uncited answer retrieval-backed and pass the gate.
+**Issue:** Model-capability responses and embedding responses are deserialized with response.json(), which buffers the complete remote body without a size limit. Chat responses call response.bytes() and check the length only after the full body has been read and allocated. A compromised or misconfigured provider can therefore force memory allocation far beyond the intended 256 KiB bound before the request is rejected.
 
-**Fix:** Enforce basis-specific invariants: Retrieval and Mixed must cite at least one selected evidence ID and use the exact inline marker set; ModelOnly must carry the required explicit disclosure and must not be returned on a retrieval path unless that mode is intentionally selected. Reject any output that violates those rules.
+**Fix:** Apply the same bounded reader to every provider response, including model metadata and embeddings. Reject a Content-Length above the limit before reading, and for chunked responses stop reading and fail as soon as the accumulator would exceed the limit, then deserialize only the bounded buffer.
 
-### CR-05 [BLOCKER]: Provider output and notice fields have no enforced size bounds
-
-**File:** engine/src/generation/mod.rs:54-68; engine/src/generation/openrouter.rs:377-427; engine/src/main.rs:1078-1090
-
-**Issue:** The closed JSON schema declares unbounded answer, citation arrays, notices, warnings, and usage fields. The OpenRouter adapter deserializes response.json::<OpenRouterChatResponse>() without a response-body cap, and the service forwards notices/warnings into the protobuf without a local limit. A provider or intermediary can therefore cause unbounded parsing/allocation and oversized downstream responses; max_completion_tokens is only a provider request parameter, not a validation boundary.
-
-**Fix:** Read provider responses through a bounded body/byte limit before deserialization, reject over-limit payloads, and validate answer length, citation count, citation ID length, notice/warning count and size, and usage values against explicit constants/configuration before constructing the gRPC response.
-
-### CR-06 [BLOCKER]: Provider failure correlation/session identity is discarded at the API boundary
-
-**File:** engine/src/generation/mod.rs:187-214; engine/src/main.rs:1021-1034; gateway/main.go:261-263, 667-674
-
-**Issue:** GenerationError carries session and correlation identity, and the OpenRouter path attaches it, but the query handler creates a request with no correlation_id, maps the error to a plain tonic status containing only err.message(), and the gateway reduces every non-InvalidArgument error to a generic 502. Clients and operators cannot correlate provider failures with the request, contrary to the structured provider-error contract.
-
-**Fix:** Generate/propagate a request correlation ID through the gateway metadata and GenerationRequest, preserve it in gRPC status details or a typed protobuf error, and return a stable HTTP error shape containing the same identity without exposing provider secrets.
-
-### CR-07 [BLOCKER]: Missing OpenRouter credentials are replaced with a fake production key
-
-**File:** engine/src/main.rs:1715-1720
-
-**Issue:** OPENROUTER_API_KEY is read with a fake-key fallback even though both the client and adapter constructors otherwise reject a missing/blank key (engine/src/client/mod.rs:119-134 and engine/src/generation/openrouter.rs:179-200). A misconfigured deployment starts successfully and only fails later during requests, producing misleading readiness and opaque provider failures instead of failing closed.
-
-**Fix:**
-
-~~~rust
-let api_key = std::env::var("OPENROUTER_API_KEY")
-    .map_err(|_| anyhow::anyhow!("OPENROUTER_API_KEY is required"))?;
-if api_key.trim().is_empty() {
-    return Err(anyhow::anyhow!("OPENROUTER_API_KEY must not be blank"));
-}
-~~~
-
-Keep test credentials confined to test-only setup.
-
-### CR-08 [BLOCKER]: Valid zero-match filters are returned as HTTP 400
-
-**File:** engine/src/main.rs:1006-1019; engine/src/prompt.rs:195-203; gateway/main.go:667-674
-
-**Issue:** A syntactically valid filter that matches no rows produces no fused evidence. Prompt assembly then returns EmptyEvidence, and the query handler maps that condition to Status::invalid_argument; the gateway exposes it as HTTP 400. The phase contract explicitly distinguishes valid no-match filters from malformed input and requires an empty evidence result rather than a validation error.
-
-**Fix:** Handle a successful zero-result retrieval before prompt assembly and return the contract’s successful zero-evidence/no-results response (without invoking a retrieval-backed generator), or use a distinct typed no-results status that the gateway does not map to 400. Reserve InvalidArgument for malformed questions, IDs, and filters.
-
-### CR-09 [BLOCKER]: Staging data is deleted before the replacement payload is durably written
+### CR-05 [BLOCKER]: Raw ingestion data is deleted before replacement is durable
 
 **File:** engine/src/main.rs:751-776
 
-**Issue:** persist_raw deletes the existing staged row before adding the new schema/raw payload. If schema creation or the subsequent add fails, the old replayable payload is already gone. A transient storage failure during replacement can therefore lose the document and its recovery data.
+**Issue:** persist_raw deletes the existing staged_documents_v2 row before reading the schema, constructing the new RecordBatch, or executing the add. Any failure after line 753 permanently removes the old replayable payload, making the document unrecoverable and preventing startup replay.
 
-**Fix:** Write the new staged/versioned payload first, verify it is durable, then remove the superseded row in the same transaction or use an atomic upsert. Preserve the old staging record until canonical persistence and queue publication have both succeeded.
+**Fix:** Write the new staged record first and delete the previous version only after the add succeeds, using the database's transactional/atomic replacement primitive if available. Preserve the old row when schema construction or insertion fails.
+
+### CR-06 [BLOCKER]: Configurable retrieval and generation limits have no service-safe upper bounds
+
+**File:** engine/src/main.rs:238-250, 335-370; engine/src/retrieval/mod.rs:250-280; engine/src/generation/openrouter.rs:114-125
+
+**Issue:** Validation permits candidate, final, query, filter, evidence, and output limits up to broad integer/usize ranges, and permits arbitrarily large finite retrieval weights. The effective values feed candidate collection, evidence packing, provider requests, and response validation. A deployment can therefore configure values that create unbounded-in-practice allocations or oversized provider requests/responses, defeating the service's grounding and resource-bound guarantees. Nonzero and i32-fit checks are not operational ceilings.
+
+**Fix:** Define explicit service maximums for every count, byte, token, and evidence setting and enforce them at startup and at the request boundary. Keep provider body limits independent of operator-configured output limits, and reject configurations above the safe ceilings with a clear startup error.
+
+### CR-07 [BLOCKER]: Accepted RRF weights can overflow fused scores and yield malformed HTTP 200 responses
+
+**File:** engine/src/retrieval/mod.rs:267-280; engine/src/retrieval/fusion.rs:123-134; engine/src/main.rs:1095-1107; gateway/main.go:723-726
+
+**Issue:** Retrieval settings accept any finite non-negative vector_weight and bm25_weight. With values near f64::MAX, contributions for a chunk present in both branches can be finite individually but their accumulator addition becomes +Inf. That non-finite score is copied into the protobuf citation and reaches the gateway, where encoding/json rejects it. writeJSON has already committed status 200 and ignores the encode error, producing an empty or malformed successful response.
+
+**Fix:**
+
+```rust
+let contribution = weight / (rrf_k + rank as f64);
+let score = entry.fused_score + contribution;
+if !contribution.is_finite() || !score.is_finite() {
+    return Err(RetrievalError::new(
+        RetrievalErrorKind::Snapshot,
+        "non-finite fused score",
+    ));
+}
+entry.fused_score = score;
+```
+
+Also cap configured weights and validate every score before response conversion. Marshal the Go response into a buffer before WriteHeader so JSON encoding failures can return an error status instead of a committed 200.
 
 ## Warnings
 
-### WR-01 [WARNING]: OpenRouter repacks evidence with hardcoded budgets
-
-**File:** engine/src/generation/openrouter.rs:287-293; engine/src/main.rs:299-309, 1011-1019
-
-**Issue:** The service assembles evidence using the effective configured evidence/output limits, but the adapter calls pack_evidence_prompt again with hardcoded 8192 and 2048. Runtime settings are therefore not authoritative at the provider boundary: a smaller configured budget can be expanded, and a configured output limit is not carried through consistently.
-
-**Fix:** Pass the effective limits in GenerationRequest or preassemble the prompt once, and use those values in the adapter. Validate that the provider request and response stay within the same limits.
-
-### WR-02 [WARNING]: “No evidence fits” is classified as invalid client input
+### WR-01 [WARNING]: Evidence-budget failure is misclassified as caller InvalidArgument
 
 **File:** engine/src/main.rs:1011-1019; engine/src/prompt.rs:132-153, 246-250
 
-**Issue:** NoEvidenceFits can result from the configured evidence budget and corpus excerpts, but the query handler maps every prompt assembly error to InvalidArgument. A valid query can thus become HTTP 400 because of an operator/corpus budget choice rather than malformed caller input.
+**Issue:** A valid query with evidence that cannot fit within the configured budget returns InvalidArgument and is exposed as HTTP 400. This conflates a server/configuration resource failure with malformed client input and gives clients no stable way to diagnose the condition.
 
-**Fix:** Use separate error variants for caller validation and evidence/resource exhaustion. Map the latter to a server-side/configuration error and expose a stable diagnostic/correlation ID.
+**Fix:** Map NoEvidenceFits to a distinct FailedPrecondition or ResourceExhausted status, include the effective budget in structured metadata, and keep InvalidArgument for invalid query data.
 
-### WR-03 [WARNING]: Checked-in runtime configuration embeds default database credentials and disables TLS
+### WR-02 [WARNING]: Usage validation is hardcoded to defaults instead of effective limits
 
-**File:** config/config.toml:1-4; gateway/main.go:53-70
+**File:** engine/src/generation/mod.rs:157-181; engine/src/generation/openrouter.rs:468-492
 
-**Issue:** The gateway loads config/config.toml by default, and the tracked file contains postgres://postgres:postgres@localhost:5432/lancet?sslmode=disable. These defaults are convenient for local development but are unsafe if the file is copied into a non-local deployment or treated as an operational configuration.
+**Issue:** Generation response validation compares prompt and completion usage against DEFAULT_EVIDENCE_TOKEN_BUDGET, DEFAULT_MAX_OUTPUT_TOKENS, and a default total budget. The runtime request uses effective configured settings, so custom values above the defaults can reject valid provider responses, while values below the defaults are not enforced consistently during response validation.
 
-**Fix:** Keep credentials and transport security in environment/secret-managed configuration, make TLS the non-development default, and leave only clearly local placeholders in the example file.
+**Fix:** Pass one effective GroundingLimits/output-limits value into response validation and the OpenRouter adapter. Remove duplicate default constants from the validation path.
 
-### WR-04 [WARNING]: The RAG fixture seeder is not idempotent
+### WR-03 [WARNING]: BM25 remains stale after queued ingestion is marked completed
+
+**File:** engine/src/main.rs:1568-1607, 1686-1695, 1748-1751, 1775-1782
+
+**Issue:** The BM25 snapshot is built once at startup. The ingestion worker persists replacement vector nodes and marks the document completed, but no code rebuilds or republishes the BM25 snapshot. Replayed staged documents can therefore be visible to dense retrieval while remaining absent from lexical retrieval even though their status is completed.
+
+The phase context lists dynamic BM25 refresh/restart recovery as deferred, so this is recorded as a warning rather than a blocker; the current completion state nevertheless exposes a cross-index consistency gap.
+
+**Fix:** Rebuild and atomically publish the BM25 snapshot before reporting completion, or make the status explicitly indicate lexical index lag and persist the refresh debt for the next lifecycle boundary.
+
+### WR-04 [WARNING]: Mixed-answer conflict disclosure is not machine-enforced
+
+**File:** engine/src/generation/mod.rs:79-231; engine/src/generation/tests.rs:702-713
+
+**Issue:** The validator checks citation identity and answer markers but does not require a disclosure notice when AnswerBasis::Mixed is used. The test suite accepts a Mixed response with citations and empty notices/warnings. The system prompt is not a reliable enforcement boundary, while the phase contract requires corpus conflict disclosure and separation of external knowledge.
+
+**Fix:** Require a stable disclosure code or notice for Mixed responses in the validator, and test that omission is rejected. Keep citation requirements for the corpus-backed portion.
+
+### WR-05 [WARNING]: Duplicate rows from one source inflate RRF scores
+
+**File:** engine/src/retrieval/fusion.rs:103-154; engine/src/bin/seed_rag_fixture.rs:82-91, 157, 185
+
+**Issue:** add_candidate adds the contribution before checking whether the same chunk already has a rank for that source. Duplicate vector or BM25 rows therefore contribute multiple ranks while only the first source rank is retained. The fixture uses fixed IDs and add operations, so repeated seeding can make duplicate rows reachable.
+
+**Fix:** Deduplicate each source result by chunk_id before assigning ranks, or ignore a candidate from a source once that source rank is already recorded.
+
+### WR-06 [WARNING]: Checked-in defaults contain a known plaintext database credential and disable TLS
+
+**File:** config/config.toml:1-4; config/config.example.toml:5-8
+
+**Issue:** The default connection string uses postgres:postgres and sslmode=disable. The gateway loads the configuration by default, so deployments that copy it without overriding the value receive a known credential and plaintext database transport.
+
+**Fix:** Require a secret/environment-provided database URL, use TLS verification outside an explicitly local-development mode, and make the checked-in config a non-secret template rather than an operational credential.
+
+### WR-07 [WARNING]: Gateway-to-engine gRPC transport is always unauthenticated and unencrypted
+
+**File:** gateway/main.go:760
+
+**Issue:** EngineAddr is configurable, but the gateway always creates the client with insecure.NewCredentials(). If the engine is placed on another host or a shared network, query text, answers, citations, and error metadata can be observed or modified without authentication.
+
+**Fix:** Add TLS/mTLS configuration and fail closed for non-loopback addresses when insecure transport is selected. Keep insecure transport as an explicit local-development option only.
+
+### WR-08 [WARNING]: The RAG fixture seeder is not idempotent
 
 **File:** engine/src/bin/seed_rag_fixture.rs:82-91, 157, 185
 
-**Issue:** Each run inserts the same fixed document, nodes, and edges without deleting/upserting the existing IDs or asserting the expected final counts. Re-running the seeder can duplicate fixture rows or fail in a partially populated database, making cross-runtime RAG checks depend on prior state.
+**Issue:** Every run adds the same document, node, and edge IDs/content rather than upserting or resetting the fixture path. Re-running the command can create duplicates or fail partway through, which changes retrieval ranks and makes smoke-test results dependent on prior runs.
 
-**Fix:** Seed into a fresh isolated database/path, or perform an idempotent delete/upsert for the fixture IDs and verify final document/node/edge counts.
+**Fix:** Use a fresh isolated fixture directory per run, or delete/upsert the known fixture IDs and verify the resulting row counts before reporting success.
 
-### WR-05 [WARNING]: Citation truncation test depends on nondeterministic candidate ranking
+### WR-09 [WARNING]: The binary and library compile separate production module graphs
 
-**File:** engine/src/tests.rs:2750-2851
+**File:** engine/src/lib.rs:3-7; engine/src/main.rs:25-30
 
-**Issue:** The test fixes the fake model citation to [2] and asserts that citation rank 2 is truncated, but the fixture uses runtime-generated IDs and the retrieval order can put a short heading chunk at that position. The full parallel Rust run failed at assert!(sc.is_truncated), while the serial binary suite passed. This is a test-reliability defect and can conceal real citation regressions.
+**Issue:** The library exports generation, prompt, rerank, and retrieval modules, while the binary redeclares private copies of those modules. Production wiring uses the binary copies, so library consumers and tests can validate different trait/type instances and behavior from the actual service binary.
 
-**Fix:** Construct deterministic fixture IDs/content and select the cited evidence by a stable predicate, or assert truncation on a deliberately oversized cited chunk rather than on a positional rank.
+**Fix:** Define shared modules once in the library and import them from main, or move the service implementation into the library and keep main as a thin entry point. Ensure integration tests exercise that shared graph.
 
-### WR-06 [WARNING]: Production and library code maintain duplicate retrieval/generation module graphs
+### WR-10 [WARNING]: Empty multipart uploads are admitted by HTTP but dropped before the first gRPC frame
 
-**File:** engine/src/lib.rs:1-7; engine/src/main.rs:25-30, 1000-1004, 1762-1766
+**File:** gateway/main.go:211-252, 482-497; engine/src/main.rs:827-865
 
-**Issue:** The library exports generation, prompt, rerank, and retrieval, while the binary declares private copies of those modules. The production service therefore uses a different Reranker trait/type graph from library consumers and tests; the public NoOpReranker contract is not necessarily the one wired into the running binary. This permits tests and external callers to validate code paths that production does not use.
+**Issue:** The gateway accepts a zero-byte multipart file but sends no streaming frame because it only sends when n > 0. The engine rejects an empty ingestion stream, so the request can be inserted into the gateway database and then fail ambiguously during CloseAndRecv, producing a compensation/502 path instead of a deterministic validation response.
 
-**Fix:** Consolidate shared modules in the library and import them from the binary, or move the service implementation into the library. Ensure the integration tests exercise the same exported types and actual production wiring.
+**Fix:** Reject zero-byte files with HTTP 400 before inserting the document, or send a metadata-bearing empty frame and define/document empty-document chunking semantics end to end.
+
+### WR-11 [WARNING]: BM25 query does not normalize and validate the request at its public boundary
+
+**File:** engine/src/retrieval/bm25.rs:233-263; engine/src/retrieval/dense.rs:48-55
+
+**Issue:** Bm25Index::query validates settings but never calls QueryRequest::validate(settings). DenseRetriever does normalize the request, so the two public retrieval paths enforce different query/filter bounds when called directly with a constructed request or with settings different from the caller's normalization context.
+
+**Fix:** Validate and retain the normalized request at the start of BM25 query, matching DenseRetriever, and use that normalized value for filter matching and all limits.
 
 ---
 
-_Reviewed: 2026-08-04T08:15:37Z_  
-_Reviewer: the agent (gsd-code-reviewer)_  
-_Depth: deep_
+_Reviewed: 2026-08-04T12:46:05Z_
+_Reviewer: the agent (gsd-code-reviewer)_
+_Depth: standard_
