@@ -9,10 +9,10 @@ use serde_json::json;
 
 use crate::{
     generation::{
-        openrouter::OpenRouterGenerator, AnswerBasis, FakeGenerator, GenerationError,
+        openrouter::OpenRouterGenerator, AnswerBasis, FakeGenerator,
         GenerationErrorKind, GenerationRequest, Generator, ModelOutput, ModelUsage,
     },
-    prompt::{assemble_evidence_blocks, pack_evidence_prompt, resolve_citations, EvidenceBlock},
+    prompt::{assemble_evidence_blocks, pack_evidence_prompt, resolve_citations},
     retrieval::{fusion::FusedCandidate, Candidate},
 };
 
@@ -91,11 +91,11 @@ fn prompt_evidence_budget_and_boundary() {
     assert_eq!(packed.evidence[0].id, "[1]");
     assert_eq!(packed.evidence[1].id, "[2]");
 
-    // Test token limit cutoff
+    // Test token limit cutoff: allow first block (~115 tokens) to fit, but cut off second block
     let small_packed =
-        pack_evidence_prompt("What is the architecture?", &evidence, 150, 50)
+        pack_evidence_prompt("What is the architecture?", &evidence, 300, 50)
             .expect("pack succeeds with limited budget");
-    assert!(small_packed.evidence.len() <= 2);
+    assert_eq!(small_packed.evidence.len(), 1);
     assert!(small_packed.prompt.contains("Question: What is the architecture?"));
 }
 
