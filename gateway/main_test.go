@@ -852,6 +852,106 @@ func TestRAGQueryInvalidArgumentStatus(t *testing.T) {
 	}
 }
 
+type trackingReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (t *trackingReadCloser) Close() error {
+	t.closed = true
+	if c, ok := t.Reader.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
+}
+
+func TestRAGQueryRejectsOversizedBody(t *testing.T) {
+	store := &fakeStore{}
+	engineCalls := 0
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			engineCalls++
+			return &pb.QueryRAGResponse{Answer: "should not be called"}, nil
+		},
+	}
+
+	prefix := `{"query":"`
+	suffix := `"}`
+	paddingLen := int(maxRAGQueryBodyBytes) + 1 - len(prefix) - len(suffix)
+	bodyStr := prefix + strings.Repeat("a", paddingLen) + suffix
+
+	tracking := &trackingReadCloser{Reader: strings.NewReader(bodyStr)}
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", tracking).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusRequestEntityTooLarge)
+	}
+	if !tracking.closed {
+		t.Fatal("expected request body to be closed")
+	}
+	if engineCalls != 0 {
+		t.Fatalf("engine calls = %d, want 0", engineCalls)
+	}
+}
+
+func TestRAGQueryRejectsHugeFilterBody(t *testing.T) {
+	store := &fakeStore{}
+	engineCalls := 0
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			engineCalls++
+			return &pb.QueryRAGResponse{Answer: "should not be called"}, nil
+		},
+	}
+
+	var docIDs []string
+	for i := range 2000 {
+		docIDs = append(docIDs, fmt.Sprintf("doc-id-filter-%04d-padding-string-for-large-size", i))
+	}
+	filterObj := map[string]any{
+		"query":  "test",
+		"filter": map[string]any{"document_ids": docIDs},
+	}
+	bodyBytes, err := json.Marshal(filterObj)
+	if err != nil {
+		t.Fatalf("marshal huge filter body: %v", err)
+	}
+	if int64(len(bodyBytes)) <= maxRAGQueryBodyBytes {
+		t.Fatalf("huge filter body size %d <= maxRAGQueryBodyBytes %d", len(bodyBytes), maxRAGQueryBodyBytes)
+	}
+
+	tracking := &trackingReadCloser{Reader: bytes.NewReader(bodyBytes)}
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", tracking).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusRequestEntityTooLarge)
+	}
+	if !tracking.closed {
+		t.Fatal("expected request body to be closed")
+	}
+	if engineCalls != 0 {
+		t.Fatalf("engine calls = %d, want 0", engineCalls)
+	}
+}
+
+func TestHTTPServerReadTimeouts(t *testing.T) {
+	server := newHTTPServer("127.0.0.1:8080", nil)
+	if server.ReadTimeout != 60*time.Second {
+		t.Errorf("ReadTimeout = %v, want 60s", server.ReadTimeout)
+	}
+	if server.ReadHeaderTimeout != 10*time.Second {
+		t.Errorf("ReadHeaderTimeout = %v, want 10s", server.ReadHeaderTimeout)
+	}
+}
+
 func TestCreateDocumentChunkSettingsContract(t *testing.T) {
 	t.Run("omitted settings use defaults", func(t *testing.T) {
 		store := &fakeStore{}
@@ -1559,18 +1659,36 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 					Role    string `json:"role"`
 					Content string `json:"content"`
 				} `json:"messages"`
-				Temperature    float64 `json:"temperature"`
-				TopP           float64 `json:"top_p"`
-				MaxTokens      int     `json:"max_tokens"`
-				ResponseFormat struct {
-					Type string `json:"type"`
+				Temperature         float64 `json:"temperature"`
+				TopP                float64 `json:"top_p"`
+				MaxCompletionTokens int     `json:"max_completion_tokens"`
+				ResponseFormat      struct {
+					Type       string `json:"type"`
+					JSONSchema struct {
+						Name   string         `json:"name"`
+						Strict bool           `json:"strict"`
+						Schema map[string]any `json:"schema"`
+					} `json:"json_schema"`
 				} `json:"response_format"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != "openai/gpt-4o-mini" || len(request.Messages) != 2 || request.Messages[0].Role != "system" || request.Messages[1].Role != "user" || request.Temperature != 0 || request.TopP != 1 || request.MaxTokens != 2048 || request.ResponseFormat.Type != "json_object" {
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Logf("chat completion JSON decode error: %v", err)
+				http.Error(w, "invalid chat request JSON", http.StatusBadRequest)
+				return
+			}
+			schema := request.ResponseFormat.JSONSchema.Schema
+			addProps, hasAddProps := schema["additionalProperties"].(bool)
+			reqFields, _ := schema["required"].([]any)
+			hasRequired := len(reqFields) >= 5
+
+			if request.Model != "openai/gpt-4o-mini" || len(request.Messages) != 2 || request.Messages[0].Role != "system" || request.Messages[1].Role != "user" || request.Temperature != 0 || request.TopP != 1 || request.MaxCompletionTokens != 2048 || request.ResponseFormat.Type != "json_schema" || !request.ResponseFormat.JSONSchema.Strict || !hasAddProps || addProps || !hasRequired {
+				t.Logf("CONTRACT FAIL: model=%q msgs=%d temp=%v top_p=%v max_tokens=%d type=%q strict=%v hasAddProps=%v addProps=%v hasRequired=%v reqFields=%#v",
+					request.Model, len(request.Messages), request.Temperature, request.TopP, request.MaxCompletionTokens, request.ResponseFormat.Type, request.ResponseFormat.JSONSchema.Strict, hasAddProps, addProps, hasRequired, reqFields)
 				http.Error(w, "strict chat request contract failed", http.StatusBadRequest)
 				return
 			}
 			if !strings.Contains(request.Messages[1].Content, "DENSE_FIXTURE_MARKER") || !strings.Contains(request.Messages[1].Content, "LEXICAL_FIXTURE_IDENTIFIER_2026") {
+				t.Logf("EVIDENCE FAIL: content=%q", request.Messages[1].Content)
 				http.Error(w, "retrieval evidence is incomplete", http.StatusBadRequest)
 				return
 			}
@@ -1582,22 +1700,24 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 			state.strictChatObserved = true
 			state.mu.Unlock()
 			modelOutput, _ := json.Marshal(map[string]any{
-				"answer":             "DENSE_AND_LEXICAL_FIXTURE_MARKER",
+				"answer":             "DENSE_AND_LEXICAL_FIXTURE_MARKER [1]",
 				"cited_evidence_ids": []string{"[1]"},
 				"answer_basis":       "retrieval",
 				"notices":            []string{},
 				"warnings":           []string{},
+			})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":    "local-chat-completion",
+				"model": "openai/gpt-4o-mini",
+				"choices": []any{map[string]any{
+					"message":       map[string]any{"content": string(modelOutput)},
+					"finish_reason": "stop",
+				}},
 				"usage": map[string]any{
 					"prompt_tokens":     17,
 					"completion_tokens": 9,
 					"total_tokens":      26,
 				},
-			})
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":      "local-chat-completion",
-				"model":   "openai/gpt-4o-mini",
-				"choices": []any{map[string]any{"message": map[string]any{"content": string(modelOutput)}}},
-				"usage":   map[string]any{"prompt_tokens": 17, "completion_tokens": 9, "total_tokens": 26},
 			})
 
 		default:
@@ -1752,7 +1872,7 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	app{store: &fakeStore{}, engine: grpcEngine{client: client}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("real /rag/query status = %d, body = %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("real /rag/query status = %d, body = %s; engine output: %s", recorder.Code, recorder.Body.String(), strings.Join(engineLines, " | "))
 	}
 	var response pb.QueryRAGResponse
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
@@ -1761,7 +1881,7 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	if response.GetSessionId() != "00000000-0000-4000-8000-000000000006" {
 		t.Fatalf("effective session_id = %q", response.GetSessionId())
 	}
-	if response.GetAnswer() != "DENSE_AND_LEXICAL_FIXTURE_MARKER" || response.GetAnswerBasis() != pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL {
+	if response.GetAnswer() != "DENSE_AND_LEXICAL_FIXTURE_MARKER [1]" || response.GetAnswerBasis() != pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL {
 		t.Fatalf("grounded answer = %q, basis = %v", response.GetAnswer(), response.GetAnswerBasis())
 	}
 	if len(response.GetCitations()) != 1 || response.GetCitations()[0] != "[1]" || len(response.GetStructuredCitations()) != 1 || response.GetStructuredCitations()[0].GetDocumentId() != "00000000-0000-4000-8000-000000000005" {

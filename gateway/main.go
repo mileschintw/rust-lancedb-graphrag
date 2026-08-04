@@ -32,6 +32,7 @@ import (
 )
 
 const maxUploadBytes int64 = 10 << 20
+const maxRAGQueryBodyBytes int64 = 32 << 10
 const streamBufferSize = 64 << 10
 const defaultChunkSize = 500
 const defaultChunkOverlap = 50
@@ -627,14 +628,27 @@ type ragQueryRequestBody struct {
 }
 
 func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRAGQueryBodyBytes)
+	defer r.Body.Close()
+
 	var body ragQueryRequestBody
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -683,6 +697,15 @@ func formatListenAddr(port string) string {
 	return "127.0.0.1:" + port
 }
 
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+}
+
 func main() {
 	logger, err := zap.NewDevelopment()
 	if err != nil {
@@ -709,11 +732,10 @@ func main() {
 	reconciler := newDurableReconciler(postgresStore{pool}, logger)
 	go reconciler.Run(recCtx)
 
-	server := &http.Server{
-		Addr:              formatListenAddr(cfg.Gateway.Port),
-		Handler:           app{store: postgresStore{pool}, engine: grpcEngine{pb.NewLancetServiceClient(conn)}, logger: logger}.routes(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	server := newHTTPServer(
+		formatListenAddr(cfg.Gateway.Port),
+		app{store: postgresStore{pool}, engine: grpcEngine{pb.NewLancetServiceClient(conn)}, logger: logger}.routes(),
+	)
 	logger.Info("gateway listening", zap.String("addr", server.Addr))
 	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Fatal("gateway stopped", zap.Error(err))
