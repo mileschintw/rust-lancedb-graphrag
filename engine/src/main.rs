@@ -126,12 +126,31 @@ pub struct Settings {
     pub openrouter: OpenRouterSettings,
 }
 
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            engine: EngineSettings::default(),
+            openrouter: OpenRouterSettings::default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct EngineSettings {
     pub grpc_addr: String,
     pub lancedb_path: String,
     #[serde(default)]
     pub retrieval: RetrievalConfigSettings,
+}
+
+impl Default for EngineSettings {
+    fn default() -> Self {
+        Self {
+            grpc_addr: "[::1]:50051".into(),
+            lancedb_path: "./data/lancedb".into(),
+            retrieval: RetrievalConfigSettings::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -267,6 +286,99 @@ impl Default for OpenRouterSettings {
             top_p: 1.0,
             max_output_tokens: 2048,
         }
+    }
+}
+
+fn new_index_generation() -> String {
+    format!("gen-{}", Uuid::new_v4())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EffectiveRagSettings {
+    pub retrieval: retrieval::RetrievalSettings,
+    pub evidence_token_budget: usize,
+    pub citation_excerpt_max_chars: usize,
+    pub embedding_endpoint: String,
+    pub embedding_model: String,
+    pub generation_model: String,
+    pub chat_endpoint: String,
+    pub model_metadata_endpoint: String,
+    pub generation_timeout_secs: u64,
+    pub temperature: f64,
+    pub top_p: f64,
+    pub max_output_tokens: u32,
+    pub index_generation: String,
+}
+
+impl EffectiveRagSettings {
+    pub fn try_from_settings(settings: &Settings) -> Result<Self, String> {
+        let retrieval = settings.engine.retrieval.to_retrieval_settings();
+        let effective = Self {
+            retrieval,
+            evidence_token_budget: settings.engine.retrieval.evidence_token_budget,
+            citation_excerpt_max_chars: settings.engine.retrieval.excerpt_max_chars,
+            embedding_endpoint: settings.openrouter.embedding_endpoint.clone(),
+            embedding_model: settings.openrouter.embedding_model.clone(),
+            generation_model: settings.openrouter.generation_model.clone(),
+            chat_endpoint: settings.openrouter.chat_endpoint.clone(),
+            model_metadata_endpoint: settings.openrouter.model_metadata_endpoint.clone(),
+            generation_timeout_secs: settings.openrouter.generation_timeout_secs,
+            temperature: settings.openrouter.temperature,
+            top_p: settings.openrouter.top_p,
+            max_output_tokens: settings.openrouter.max_output_tokens,
+            index_generation: new_index_generation(),
+        };
+        effective.validate()?;
+        Ok(effective)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        self.retrieval
+            .validate()
+            .map_err(|err| format!("invalid retrieval settings: {}", err.message()))?;
+        if self.evidence_token_budget == 0 {
+            return Err("invalid evidence_token_budget: must be greater than 0".into());
+        }
+        if self.citation_excerpt_max_chars == 0 {
+            return Err("invalid excerpt_max_chars: must be greater than 0".into());
+        }
+        if self.embedding_endpoint.trim().is_empty() {
+            return Err("invalid embedding_endpoint: must not be empty".into());
+        }
+        if self.embedding_model.trim().is_empty() {
+            return Err("invalid embedding_model: must not be empty".into());
+        }
+        if self.generation_model.trim().is_empty() {
+            return Err("invalid generation_model: must not be empty".into());
+        }
+        if self.chat_endpoint.trim().is_empty() {
+            return Err("invalid chat_endpoint: must not be empty".into());
+        }
+        if self.model_metadata_endpoint.trim().is_empty() {
+            return Err("invalid model_metadata_endpoint: must not be empty".into());
+        }
+        if self.generation_timeout_secs == 0 {
+            return Err("invalid generation_timeout_secs: must be greater than 0".into());
+        }
+        if !self.temperature.is_finite() || self.temperature < 0.0 || self.temperature > 2.0 {
+            return Err("invalid temperature: must be finite and between 0.0 and 2.0".into());
+        }
+        if !self.top_p.is_finite() || self.top_p <= 0.0 || self.top_p > 1.0 {
+            return Err("invalid top_p: must be finite and between 0.0 and 1.0".into());
+        }
+        if self.max_output_tokens == 0 {
+            return Err("invalid max_output_tokens: must be greater than 0".into());
+        }
+        if self.index_generation.trim().is_empty() {
+            return Err("invalid index_generation: must not be empty".into());
+        }
+        Ok(())
+    }
+}
+
+impl Default for EffectiveRagSettings {
+    fn default() -> Self {
+        Self::try_from_settings(&Settings::default()).expect("default settings must be valid")
     }
 }
 
@@ -629,7 +741,7 @@ pub struct LancetServiceImpl {
     queue: mpsc::Sender<IngestionJob>,
     nodes: Table,
     bm25_index: Arc<tokio::sync::RwLock<Bm25Index>>,
-    retrieval_settings: retrieval::RetrievalSettings,
+    pub effective_settings: EffectiveRagSettings,
     generator: Arc<dyn generation::Generator>,
     embedder: Arc<dyn EmbeddingProvider>,
 }
@@ -814,20 +926,24 @@ impl LancetService for LancetServiceImpl {
             (vec![], vec![])
         };
 
-        let query_request =
-            QueryRequest::from_values(&req.query, doc_ids, content_types, &self.retrieval_settings)
-                .map_err(|err| match err.kind {
-                    RetrievalErrorKind::EmptyQuery
-                    | RetrievalErrorKind::QueryTooLong
-                    | RetrievalErrorKind::InvalidDocumentId
-                    | RetrievalErrorKind::UnsupportedContentType
-                    | RetrievalErrorKind::EmptyFilterValue
-                    | RetrievalErrorKind::FilterLimitExceeded
-                    | RetrievalErrorKind::InvalidSettings => {
-                        Status::invalid_argument(err.message())
-                    }
-                    RetrievalErrorKind::Snapshot => Status::internal(err.message()),
-                })?;
+        let query_request = QueryRequest::from_values(
+            &req.query,
+            doc_ids,
+            content_types,
+            &self.effective_settings.retrieval,
+        )
+        .map_err(|err| match err.kind {
+            RetrievalErrorKind::EmptyQuery
+            | RetrievalErrorKind::QueryTooLong
+            | RetrievalErrorKind::InvalidDocumentId
+            | RetrievalErrorKind::UnsupportedContentType
+            | RetrievalErrorKind::EmptyFilterValue
+            | RetrievalErrorKind::FilterLimitExceeded
+            | RetrievalErrorKind::InvalidSettings => {
+                Status::invalid_argument(err.message())
+            }
+            RetrievalErrorKind::Snapshot => Status::internal(err.message()),
+        })?;
 
         let query_embedding = match self
             .embedder
@@ -840,13 +956,17 @@ impl LancetService for LancetServiceImpl {
 
         let dense_retriever = DenseRetriever::new(self.nodes.clone());
         let dense_candidates = dense_retriever
-            .query(&query_embedding, &query_request, &self.retrieval_settings)
+            .query(
+                &query_embedding,
+                &query_request,
+                &self.effective_settings.retrieval,
+            )
             .await
             .unwrap_or_default();
 
         let bm25_guard = self.bm25_index.read().await;
         let bm25_candidates = bm25_guard
-            .retrieve(&query_request, &self.retrieval_settings)
+            .retrieve(&query_request, &self.effective_settings.retrieval)
             .await
             .map_err(|err| Status::internal(err.to_string()))?;
         drop(bm25_guard);
@@ -854,20 +974,20 @@ impl LancetService for LancetServiceImpl {
         let fused = retrieval::fusion::fuse_candidates(
             dense_candidates,
             bm25_candidates,
-            &self.retrieval_settings,
+            &self.effective_settings.retrieval,
         )
         .map_err(|err| Status::internal(err.to_string()))?;
 
         let final_candidates: Vec<_> = fused
             .into_iter()
-            .take(self.retrieval_settings.final_limit)
+            .take(self.effective_settings.retrieval.final_limit)
             .collect();
 
         let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
         let packed_evidence = prompt::pack_evidence_prompt(
             &query_request.query,
             &evidence_blocks,
-            prompt::DEFAULT_MAX_PROMPT_TOKENS,
+            self.effective_settings.evidence_token_budget,
             prompt::DEFAULT_ANSWER_TOKEN_BUDGET,
         )
         .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
@@ -891,8 +1011,11 @@ impl LancetService for LancetServiceImpl {
             .validate_grounding(&packed_evidence.evidence)
             .map_err(|err| Status::internal(err.message()))?;
 
-        let resolved_citations =
-            prompt::resolve_citations(&model_output.cited_evidence_ids, &packed_evidence.evidence);
+        let resolved_citations = prompt::resolve_citations_with_max_chars(
+            &model_output.cited_evidence_ids,
+            &packed_evidence.evidence,
+            self.effective_settings.citation_excerpt_max_chars,
+        );
 
         let proto_citations: Vec<String> = resolved_citations
             .iter()
@@ -908,13 +1031,13 @@ impl LancetService for LancetServiceImpl {
                 title: c.provenance.clone(),
                 section_path: "".to_string(),
                 excerpt: c.bounded_excerpt.clone(),
-                is_truncated: false,
+                is_truncated: c.is_truncated,
                 score: final_candidates
                     .get(idx)
                     .map(|fc| fc.fused_score)
                     .unwrap_or(0.0),
                 rank: (idx + 1) as i32,
-                content_type: "".to_string(),
+                content_type: c.content_type.clone(),
             })
             .collect();
 
@@ -935,13 +1058,13 @@ impl LancetService for LancetServiceImpl {
             .collect();
 
         let snapshot = lancet::v1::RetrievalSnapshot {
-            index_generation: "v1".to_string(),
-            embedding_model: "nvidia/llama-nemotron-embed-vl-1b-v2:free".to_string(),
-            vector_weight: self.retrieval_settings.vector_weight,
-            bm25_weight: self.retrieval_settings.bm25_weight,
-            rrf_k: self.retrieval_settings.rrf_k as i32,
-            candidate_limit: self.retrieval_settings.candidate_limit as i32,
-            final_limit: self.retrieval_settings.final_limit as i32,
+            index_generation: self.effective_settings.index_generation.clone(),
+            embedding_model: self.effective_settings.embedding_model.clone(),
+            vector_weight: self.effective_settings.retrieval.vector_weight,
+            bm25_weight: self.effective_settings.retrieval.bm25_weight,
+            rrf_k: self.effective_settings.retrieval.rrf_k as i32,
+            candidate_limit: self.effective_settings.retrieval.candidate_limit as i32,
+            final_limit: self.effective_settings.retrieval.final_limit as i32,
             active_filter: Some(lancet::v1::DocumentFilter {
                 document_ids: query_request.filters.document_ids.clone(),
                 content_types: query_request.filters.content_types.clone(),
@@ -1516,9 +1639,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(tracing::Level::INFO)
         .init();
     let settings = load_settings()?;
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings)
+        .map_err(|err| format!("invalid RAG configuration: {err}"))?;
     let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
     let nodes = database.nodes_table().await?;
-    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default()).await?;
+    let bm25_index =
+        Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone()).await?;
     tracing::info!(document_count = bm25_index.len(), "BM25 snapshot built");
     let table = database.staged_documents_table().await?;
     let embedder = Arc::new(OpenRouterClient::from_env_with_endpoint(
@@ -1562,7 +1688,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
-        retrieval_settings: settings.engine.retrieval.to_retrieval_settings(),
+        effective_settings,
         generator,
         embedder: embedder.clone(),
     };

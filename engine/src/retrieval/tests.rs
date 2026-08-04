@@ -335,3 +335,38 @@ async fn retrieval_filter_fusion_and_determinism() {
     drop(database);
     let _ = std::fs::remove_dir_all(path);
 }
+
+#[test]
+fn retrieval_snapshot_values_are_lossless() {
+    let valid = RetrievalSettings {
+        candidate_limit: i32::MAX as usize,
+        final_limit: i32::MAX as usize,
+        rrf_k: 60.0,
+        ..RetrievalSettings::default()
+    };
+    assert!(valid.validate().is_ok());
+
+    let fractional_k = RetrievalSettings {
+        rrf_k: 60.5,
+        ..RetrievalSettings::default()
+    };
+    assert!(fractional_k.validate().is_err());
+
+    let non_finite_k = RetrievalSettings {
+        rrf_k: f64::NAN,
+        ..RetrievalSettings::default()
+    };
+    assert!(non_finite_k.validate().is_err());
+
+    let out_of_range_k = RetrievalSettings {
+        rrf_k: 3_000_000_000.0,
+        ..RetrievalSettings::default()
+    };
+    assert!(out_of_range_k.validate().is_err());
+
+    let limit_too_large = RetrievalSettings {
+        candidate_limit: (i32::MAX as usize) + 1,
+        ..RetrievalSettings::default()
+    };
+    assert!(limit_too_large.validate().is_err());
+}

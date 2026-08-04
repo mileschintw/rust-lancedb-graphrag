@@ -247,6 +247,17 @@ impl RetrievalSettings {
                 "final_limit must not exceed candidate_limit",
             ));
         }
+        if self.candidate_limit > i32::MAX as usize
+            || self.final_limit > i32::MAX as usize
+            || self.query_max_bytes > i32::MAX as usize
+            || self.max_document_ids > i32::MAX as usize
+            || self.max_content_types > i32::MAX as usize
+        {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidSettings,
+                "retrieval limits must fit within signed 32-bit integer range",
+            ));
+        }
         if self.query_max_bytes == 0 || self.max_document_ids == 0 || self.max_content_types == 0 {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
@@ -260,10 +271,12 @@ impl RetrievalSettings {
             || self.vector_weight + self.bm25_weight == 0.0
             || !self.rrf_k.is_finite()
             || self.rrf_k <= 0.0
+            || self.rrf_k.fract() != 0.0
+            || self.rrf_k > i32::MAX as f64
         {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
-                "RRF weights must be finite and non-negative with at least one positive weight, and rrf_k must be positive",
+                "RRF weights must be finite and non-negative with at least one positive weight, and rrf_k must be a positive signed 32-bit integral value",
             ));
         }
         self.bm25.validate()

@@ -275,10 +275,19 @@ pub fn bounded_unicode_excerpt(text: &str, max_chars: usize) -> (String, bool) {
     }
 }
 
-/// Resolves valid numbered markers (e.g. `[1]` or `1`) exclusively to engine evidence blocks.
+/// Resolves valid numbered markers (e.g. `[1]` or `1`) exclusively to engine evidence blocks with default excerpt limit.
 pub fn resolve_citations(
     cited_ids: &[String],
     evidence: &[EvidenceBlock],
+) -> Vec<StructuredCitation> {
+    resolve_citations_with_max_chars(cited_ids, evidence, 200)
+}
+
+/// Resolves valid numbered markers exclusively to engine evidence blocks, bounding excerpts to `max_chars` Unicode code points.
+pub fn resolve_citations_with_max_chars(
+    cited_ids: &[String],
+    evidence: &[EvidenceBlock],
+    max_chars: usize,
 ) -> Vec<StructuredCitation> {
     let mut citations = Vec::new();
     for raw_id in cited_ids {
@@ -292,7 +301,7 @@ pub fn resolve_citations(
             .iter()
             .find(|e| e.id == normalized_id || e.chunk_id == *raw_id)
         {
-            let (bounded_excerpt, is_truncated) = bounded_unicode_excerpt(&block.text, 200);
+            let (bounded_excerpt, is_truncated) = bounded_unicode_excerpt(&block.text, max_chars);
 
             citations.push(StructuredCitation {
                 marker_id: block.id.clone(),

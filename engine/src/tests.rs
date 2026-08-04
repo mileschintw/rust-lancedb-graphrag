@@ -1204,7 +1204,7 @@ async fn staging_read_error_is_unavailable() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
-        retrieval_settings: retrieval::RetrievalSettings::default(),
+        effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Fake answer".into(),
@@ -1284,7 +1284,7 @@ async fn staging_delete_failure_remains_replayable() {
         queue: dummy_tx,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
-        retrieval_settings: retrieval::RetrievalSettings::default(),
+        effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Fake answer".into(),
@@ -1525,7 +1525,7 @@ async fn d04_cross_runtime_grpc_fixture() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
-        retrieval_settings: retrieval::RetrievalSettings::default(),
+        effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Fake answer".into(),
@@ -1588,7 +1588,7 @@ async fn status_falls_back_to_staged_document() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
-        retrieval_settings: retrieval::RetrievalSettings::default(),
+        effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Fake answer".into(),
@@ -1701,7 +1701,7 @@ async fn query_rag_happy_path_service() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
-        retrieval_settings: retrieval::RetrievalSettings::default(),
+        effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
     };
@@ -1733,4 +1733,310 @@ async fn query_rag_happy_path_service() {
     assert_eq!(fake_gen.calls(), 1);
 
     let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn configured_rag_settings_drive_service() {
+    let path = database_path("rag-settings-drive-service");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Custom Settings\n\nContent for testing custom RAG configuration.",
+    )
+    .await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let settings = Settings {
+        engine: EngineSettings {
+            grpc_addr: "[::1]:50051".into(),
+            lancedb_path: path.clone(),
+            retrieval: RetrievalConfigSettings {
+                candidate_limit: 16,
+                final_limit: 4,
+                query_max_bytes: 4096,
+                max_document_ids: 50,
+                max_content_types: 8,
+                vector_weight: 0.8,
+                bm25_weight: 0.2,
+                rrf_k: 30.0,
+                evidence_token_budget: 4096,
+                excerpt_max_chars: 128,
+                bm25: Bm25ConfigSettings {
+                    k1: 1.5,
+                    b: 0.8,
+                    content_boost: 1.5,
+                    title_boost: 3.0,
+                    section_boost: 2.0,
+                },
+            },
+        },
+        openrouter: OpenRouterSettings {
+            embedding_endpoint: "https://example.com/api/v1/embeddings".into(),
+            embedding_model: "custom/embed-v1".into(),
+            generation_model: "custom/gen-v1".into(),
+            chat_endpoint: "https://example.com/api/v1/chat/completions".into(),
+            model_metadata_endpoint: "https://example.com/api/v1/models".into(),
+            generation_timeout_secs: 15,
+            temperature: 0.2,
+            top_p: 0.9,
+            max_output_tokens: 1024,
+        },
+    };
+
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Custom answer [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        effective_settings: effective_settings.clone(),
+        generator: fake_gen,
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let req = QueryRagRequest {
+        query: "What is testing custom configuration?".into(),
+        session_id: "00000000-0000-4000-8000-000000000002".into(),
+        filter: None,
+    };
+
+    let response = service
+        .query_rag(tonic::Request::new(req))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert!(response.snapshot.is_some());
+    let snap = response.snapshot.unwrap();
+    assert_eq!(snap.candidate_limit, 16);
+    assert_eq!(snap.final_limit, 4);
+    assert_eq!(snap.vector_weight, 0.8);
+    assert_eq!(snap.bm25_weight, 0.2);
+    assert_eq!(snap.rrf_k, 30);
+    assert_eq!(snap.embedding_model, "custom/embed-v1");
+    assert_eq!(snap.index_generation, effective_settings.index_generation);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn configured_evidence_token_budget_is_exact() {
+    let path = database_path("evidence-token-budget-exact");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let long_text = "This is a very long section content designed to test character-based citation excerpt truncation in the structured citation payload. ".repeat(10);
+    stage_document(&database, &doc_id, long_text.as_bytes()).await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let mut settings = Settings::default();
+    settings.engine.retrieval.evidence_token_budget = 8192;
+    settings.engine.retrieval.excerpt_max_chars = 30;
+
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Answer with excerpt test [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        effective_settings,
+        generator: fake_gen,
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let req = QueryRagRequest {
+        query: "Excerpt test query?".into(),
+        session_id: "00000000-0000-4000-8000-000000000003".into(),
+        filter: None,
+    };
+
+    let response = service
+        .query_rag(tonic::Request::new(req))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(response.structured_citations.len(), 1);
+    let citation = &response.structured_citations[0];
+    assert_eq!(citation.excerpt.chars().count(), 30);
+    assert!(citation.is_truncated);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn service_index_generation_is_opaque_and_stable() {
+    let path1 = database_path("opaque-stable-gen-1");
+    let database1 = DatabaseManager::initialize(&path1).await.unwrap();
+    let doc_id1 = Uuid::new_v4().to_string();
+    stage_document(&database1, &doc_id1, b"# Test Document 1\n\nContent 1").await;
+    let job1 = read_staged_jobs(&database1).await.unwrap().into_iter().next().unwrap();
+    process_job(&job1, &database1, &FakeEmbedder).await.unwrap();
+
+    let effective_settings1 = EffectiveRagSettings::default();
+    let nodes1 = database1.nodes_table().await.unwrap();
+    let bm25_index1 = Bm25Index::from_table(&nodes1, effective_settings1.retrieval.bm25.clone()).await.unwrap();
+    let table1 = database1.staged_documents_table().await.unwrap();
+    let (sender1, _receiver1) = mpsc::channel(QUEUE_CAPACITY);
+    let model_out1 = generation::ModelOutput {
+        answer: "Answer 1".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let fake_gen1 = Arc::new(generation::FakeGenerator::with_responses(vec![
+        Ok(model_out1.clone()),
+        Ok(model_out1),
+    ]));
+
+    let service1 = LancetServiceImpl {
+        table: table1,
+        statuses: Arc::new(DashMap::new()),
+        queue: sender1,
+        nodes: nodes1,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index1)),
+        effective_settings: effective_settings1,
+        generator: fake_gen1,
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let req1 = QueryRagRequest {
+        query: "Query 1".into(),
+        session_id: "00000000-0000-4000-8000-000000000004".into(),
+        filter: None,
+    };
+    let req2 = QueryRagRequest {
+        query: "Query 2".into(),
+        session_id: "00000000-0000-4000-8000-000000000005".into(),
+        filter: None,
+    };
+
+    let res1 = service1.query_rag(tonic::Request::new(req1)).await.unwrap().into_inner();
+    let res2 = service1.query_rag(tonic::Request::new(req2)).await.unwrap().into_inner();
+
+    let gen1 = res1.snapshot.as_ref().unwrap().index_generation.clone();
+    let gen2 = res2.snapshot.as_ref().unwrap().index_generation.clone();
+
+    assert!(!gen1.is_empty());
+    assert_ne!(gen1, "v1");
+    assert_eq!(gen1, gen2, "two queries on the same service must report the same generation");
+
+    let effective_settings2 = EffectiveRagSettings::default();
+    let path2 = database_path("opaque-stable-gen-2");
+    let database2 = DatabaseManager::initialize(&path2).await.unwrap();
+    let doc_id2 = Uuid::new_v4().to_string();
+    stage_document(&database2, &doc_id2, b"# Test Document 2\n\nContent 2").await;
+    let job2 = read_staged_jobs(&database2).await.unwrap().into_iter().next().unwrap();
+    process_job(&job2, &database2, &FakeEmbedder).await.unwrap();
+
+    let nodes2 = database2.nodes_table().await.unwrap();
+    let bm25_index2 = Bm25Index::from_table(&nodes2, effective_settings2.retrieval.bm25.clone()).await.unwrap();
+    let table2 = database2.staged_documents_table().await.unwrap();
+    let (sender2, _receiver2) = mpsc::channel(QUEUE_CAPACITY);
+    let service2 = LancetServiceImpl {
+        table: table2,
+        statuses: Arc::new(DashMap::new()),
+        queue: sender2,
+        nodes: nodes2,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index2)),
+        effective_settings: effective_settings2,
+        generator: Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer 2".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let req3 = QueryRagRequest {
+        query: "Query 3".into(),
+        session_id: "00000000-0000-4000-8000-000000000006".into(),
+        filter: None,
+    };
+    let res3 = service2.query_rag(tonic::Request::new(req3)).await.unwrap().into_inner();
+    let gen3 = res3.snapshot.as_ref().unwrap().index_generation.clone();
+
+    assert_ne!(gen1, gen3, "separately constructed service must report a different generation");
+
+    let _ = std::fs::remove_dir_all(path1);
+    let _ = std::fs::remove_dir_all(path2);
+}
+
+#[test]
+fn invalid_effective_settings_rejected() {
+    let mut settings = Settings::default();
+    settings.openrouter.embedding_model = "  ".into();
+    assert!(EffectiveRagSettings::try_from_settings(&settings).is_err());
+
+    let mut settings2 = Settings::default();
+    settings2.openrouter.temperature = 5.0;
+    assert!(EffectiveRagSettings::try_from_settings(&settings2).is_err());
+
+    let mut settings3 = Settings::default();
+    settings3.engine.retrieval.rrf_k = 60.5;
+    assert!(EffectiveRagSettings::try_from_settings(&settings3).is_err());
 }
