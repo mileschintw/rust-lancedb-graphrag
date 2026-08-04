@@ -71,3 +71,10 @@ This item is part of the explicit RAG-03 deferred scope. Phase 03 may preserve t
 - **Trigger:** External callers, fuzzing/property testing, or a requirement for complete public API contract coverage.
 - **Target:** Phase 06 hardening/evaluation.
 - **Future acceptance criteria:** Empty/oversized queries, malformed IDs, unsupported content types, and filter limits are rejected before retrieval/provider work with stable HTTP 400 and gRPC `InvalidArgument` behavior.
+
+### DEFERRED-03-11-01 — Pre-existing citation test working-tree edit
+
+- **Found during:** Plan 03-11 overall verification.
+- **Evidence:** The mandated full engine suite passed 63 tests and failed only `query_rag_citation_identity_and_notices` at `engine/src/tests.rs:2754`, where the existing unstaged edit expects `Root` but the generated citation is `/Document Beta`.
+- **Scope:** This edit predates the 03-11 continuation and was explicitly requested to remain untouched; no plan commit includes it.
+- **Resolution:** Preserve the working-tree edit and defer its test reconciliation to the owner of that change. The six focused 03-11 verification tests pass.

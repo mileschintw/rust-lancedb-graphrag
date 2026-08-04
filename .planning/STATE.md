@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 3
-current_plan: 3
+current_plan: 12
 status: executing
-stopped_at: Completed 03-10-PLAN.md
-last_updated: "2026-08-04T03:36:12.139Z"
+stopped_at: Completed 03-11-PLAN.md
+last_updated: "2026-08-04T04:25:24.843Z"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 41
-  completed_plans: 39
+  completed_plans: 40
 ---
 
 # Project State
@@ -26,10 +26,10 @@ progress:
 
 - **Phase:** 3
 - **Status:** Ready to execute
-- **Current Plan:** 3
+- **Current Plan:** 12
 - **Total Plans in Phase:** 12
-- **Progress:** [██████████] 95%
-- **Phase Progress:** 0 plans executed
+- **Progress:** [██████████] 98%
+- **Phase Progress:** 11 plans executed
 
 ## Completed Phases
 
@@ -82,6 +82,7 @@ progress:
 | Phase 03 P01 | 25min | 2 tasks | 10 files |
 | Phase 03 P05 | 30min | 2 tasks | 4 files |
 | Phase 03 P10 | 18 min | 2 tasks | 4 files |
+| Phase 03 P11 | 35min | 3 tasks | 5 files |
 
 ## Decisions
 
@@ -122,9 +123,12 @@ progress:
 - [Phase ?]: Keep legacy OpenRouter constructors source-compatible while routing configured constructors through explicit provider state.
 - [Phase ?]: Use the configured embedding model for both the outbound request and OpenRouterClient::model_id so persistence and snapshot wiring can share one identity.
 - [Phase ?]: Use one configured generation Duration for reqwest and Tokio timeout enforcement; retain one attempt with no retry or fallback.
+- [Phase ?]: Use one validated EffectiveRagSettings value for production retrieval, prompt, provider, persistence, citation, and snapshot consumers.
+- [Phase ?]: Require schema-valid initial BM25 fixtures and row-identity diagnostics before readiness.
+- [Phase ?]: Validate the exact 24-key secret-free operator example through the binary target real settings types.
 
 ## Session
 
-**Last session:** 2026-08-04T03:36:12.116Z
-**Stopped at:** Completed 03-10-PLAN.md
+**Last session:** 2026-08-04T04:23:41.284Z
+**Stopped at:** Completed 03-11-PLAN.md
 **Resume file:** None
