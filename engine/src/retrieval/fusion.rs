@@ -40,33 +40,37 @@ pub fn fuse_candidates(
 ) -> Result<Vec<FusedCandidate>, RetrievalError> {
     settings.validate()?;
     let mut fused = BTreeMap::new();
-    for (rank, candidate) in vector_candidates
-        .into_iter()
-        .take(settings.candidate_limit)
-        .enumerate()
-    {
-        add_candidate(
-            &mut fused,
-            candidate,
-            rank + 1,
-            Source::Vector,
-            settings.vector_weight,
-            settings.rrf_k,
-        )?;
+    if settings.vector_weight != 0.0 {
+        for (rank, candidate) in vector_candidates
+            .into_iter()
+            .take(settings.candidate_limit)
+            .enumerate()
+        {
+            add_candidate(
+                &mut fused,
+                candidate,
+                rank + 1,
+                Source::Vector,
+                settings.vector_weight,
+                settings.rrf_k,
+            )?;
+        }
     }
-    for (rank, candidate) in bm25_candidates
-        .into_iter()
-        .take(settings.candidate_limit)
-        .enumerate()
-    {
-        add_candidate(
-            &mut fused,
-            candidate,
-            rank + 1,
-            Source::Bm25,
-            settings.bm25_weight,
-            settings.rrf_k,
-        )?;
+    if settings.bm25_weight != 0.0 {
+        for (rank, candidate) in bm25_candidates
+            .into_iter()
+            .take(settings.candidate_limit)
+            .enumerate()
+        {
+            add_candidate(
+                &mut fused,
+                candidate,
+                rank + 1,
+                Source::Bm25,
+                settings.bm25_weight,
+                settings.rrf_k,
+            )?;
+        }
     }
 
     let mut results = fused
@@ -104,6 +108,9 @@ fn add_candidate(
     weight: f64,
     rrf_k: f64,
 ) -> Result<(), RetrievalError> {
+    if weight == 0.0 {
+        return Ok(());
+    }
     if !candidate.score.is_finite() {
         return Err(RetrievalError::new(
             RetrievalErrorKind::Snapshot,
