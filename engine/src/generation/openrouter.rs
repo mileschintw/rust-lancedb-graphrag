@@ -46,6 +46,7 @@ pub struct OpenRouterGenerationConfig {
     temperature: f64,
     top_p: f64,
     max_completion_tokens: usize,
+    evidence_token_budget: usize,
 }
 
 impl OpenRouterGenerationConfig {
@@ -57,6 +58,7 @@ impl OpenRouterGenerationConfig {
         temperature: f64,
         top_p: f64,
         max_completion_tokens: usize,
+        evidence_token_budget: usize,
     ) -> Result<Self, GenerationError> {
         let config = Self {
             model: model.into(),
@@ -66,6 +68,7 @@ impl OpenRouterGenerationConfig {
             temperature,
             top_p,
             max_completion_tokens,
+            evidence_token_budget,
         };
         config.validate()?;
         Ok(config)
@@ -112,6 +115,12 @@ impl OpenRouterGenerationConfig {
             return Err(GenerationError::new(
                 GenerationErrorKind::InvalidRequest,
                 "OpenRouter max_completion_tokens must be greater than zero",
+            ));
+        }
+        if self.evidence_token_budget == 0 {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter evidence_token_budget must be greater than zero",
             ));
         }
         Ok(())
@@ -172,6 +181,7 @@ impl OpenRouterGenerator {
             DEFAULT_TEMPERATURE,
             DEFAULT_TOP_P,
             DEFAULT_MAX_COMPLETION_TOKENS,
+            crate::generation::DEFAULT_EVIDENCE_TOKEN_BUDGET as usize,
         )?;
         Self::new_with_config(api_key, config)
     }
@@ -284,13 +294,18 @@ impl OpenRouterGenerator {
         // Preflight supported parameters check per D-27
         self.check_supported_parameters().await?;
 
-        let packed_evidence =
-            pack_evidence_prompt(&request.question, &request.evidence, 8192, 2048).map_err(|err| {
-                GenerationError::new(
-                    GenerationErrorKind::InvalidRequest,
-                    format!("prompt assembly failed: {err}"),
-                )
-            })?;
+        let packed_evidence = pack_evidence_prompt(
+            &request.question,
+            &request.evidence,
+            self.config.evidence_token_budget,
+            self.config.max_completion_tokens,
+        )
+        .map_err(|err| {
+            GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                format!("prompt assembly failed: {err}"),
+            )
+        })?;
 
         let system_msg = request.system_policy.clone();
         let user_msg = packed_evidence.prompt;

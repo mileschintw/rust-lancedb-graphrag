@@ -34,6 +34,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/lancet/gateway/db"
@@ -849,6 +850,56 @@ func TestRAGQueryInvalidArgumentStatus(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+}
+
+func TestRAGQueryProviderErrorPreservesIdentity(t *testing.T) {
+	store := &fakeStore{}
+	sessionID := "00000000-0000-4000-8000-000000000077"
+	correlationID := "00000000-0000-4000-8000-000000000099"
+	errKind := "provider_error"
+
+	tr := metadata.Pairs(
+		"x-lancet-session-id", sessionID,
+		"x-lancet-correlation-id", correlationID,
+		"x-lancet-error-kind", errKind,
+	)
+	failingErr := trailerError{
+		err:     status.Error(codes.Internal, "OpenRouter API rate limit"),
+		trailer: tr,
+	}
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			return nil, failingErr
+		},
+	}
+
+	bodyStr := `{"query":"test query","session_id":"` + sessionID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(bodyStr)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+
+	if got := strings.TrimSpace(recorder.Body.String()); got != "engine query failed" {
+		t.Fatalf("body = %q, want %q", got, "engine query failed")
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Session-ID"); got != sessionID {
+		t.Fatalf("X-Lancet-Session-ID = %q, want %q", got, sessionID)
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Correlation-ID"); got != correlationID {
+		t.Fatalf("X-Lancet-Correlation-ID = %q, want %q", got, correlationID)
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Error-Kind"); got != errKind {
+		t.Fatalf("X-Lancet-Error-Kind = %q, want %q", got, errKind)
 	}
 }
 

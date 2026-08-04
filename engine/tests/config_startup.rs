@@ -444,3 +444,97 @@ fn invalid_rag_settings_block_readiness() {
 
     let _ = fs::remove_dir_all(temp_dir);
 }
+
+#[test]
+fn missing_openrouter_api_key_blocks_readiness() {
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-no-key-{}", uuid::Uuid::new_v4()));
+    let config_dir = temp_dir.join("isolated_config");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    let lancedb_dir = temp_dir.join("lancedb");
+    let grpc_addr = unused_loopback_addr();
+
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::create_dir_all(&cwd_dir).unwrap();
+    let config_toml = format!(
+        "[engine]\ngrpc_addr = \"{grpc_addr}\"\nlancedb_path = \"{}\"\n",
+        lancedb_dir.to_str().unwrap().replace('\\', "/")
+    );
+    fs::write(config_dir.join("config.toml"), config_toml).unwrap();
+
+    let env_vars = [("LANCET_CONFIG_DIR", config_dir.to_str().unwrap())];
+    let remove_vars = ["OPENROUTER_API_KEY"];
+
+    let result = spawn_engine_full(&cwd_dir, &env_vars, &remove_vars);
+    let err_msg = match result {
+        Ok((child, _, _)) => {
+            cleanup_child(child);
+            panic!("engine must reject missing OPENROUTER_API_KEY before readiness")
+        }
+        Err(error) => error,
+    };
+    assert!(
+        err_msg.contains("process exited nonzero"),
+        "engine must terminate nonzero: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("OPENROUTER_API_KEY"),
+        "diagnostic must name missing OPENROUTER_API_KEY: {err_msg}"
+    );
+    assert!(
+        !err_msg.contains("Rust RAG Engine serving"),
+        "engine must never serve without OPENROUTER_API_KEY"
+    );
+    assert_not_listening(grpc_addr);
+
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn blank_openrouter_api_key_blocks_readiness() {
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-blank-key-{}", uuid::Uuid::new_v4()));
+    let config_dir = temp_dir.join("isolated_config");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    let lancedb_dir = temp_dir.join("lancedb");
+    let grpc_addr = unused_loopback_addr();
+
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::create_dir_all(&cwd_dir).unwrap();
+    let config_toml = format!(
+        "[engine]\ngrpc_addr = \"{grpc_addr}\"\nlancedb_path = \"{}\"\n",
+        lancedb_dir.to_str().unwrap().replace('\\', "/")
+    );
+    fs::write(config_dir.join("config.toml"), config_toml).unwrap();
+
+    for blank_val in ["", "   \t\n  "] {
+        let env_vars = [
+            ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+            ("OPENROUTER_API_KEY", blank_val),
+        ];
+
+        let result = spawn_engine_full(&cwd_dir, &env_vars, &[]);
+        let err_msg = match result {
+            Ok((child, _, _)) => {
+                cleanup_child(child);
+                panic!("engine must reject blank OPENROUTER_API_KEY before readiness")
+            }
+            Err(error) => error,
+        };
+        assert!(
+            err_msg.contains("process exited nonzero"),
+            "engine must terminate nonzero: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("OPENROUTER_API_KEY"),
+            "diagnostic must name blank OPENROUTER_API_KEY: {err_msg}"
+        );
+        assert!(
+            !err_msg.contains("Rust RAG Engine serving"),
+            "engine must never serve with blank OPENROUTER_API_KEY"
+        );
+        assert_not_listening(grpc_addr);
+    }
+
+    let _ = fs::remove_dir_all(temp_dir);
+}

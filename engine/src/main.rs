@@ -1018,24 +1018,62 @@ impl LancetService for LancetServiceImpl {
         )
         .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
 
+        let correlation_id = Uuid::new_v4().to_string();
+
         let mut gen_req =
             generation::GenerationRequest::new(&query_request.query, packed_evidence.evidence.clone());
         gen_req.session_id = Some(session_id.clone());
+        gen_req.correlation_id = Some(correlation_id.clone());
 
         let model_output =
             self.generator
                 .generate(gen_req)
                 .await
-                .map_err(|err| match err.kind {
-                    generation::GenerationErrorKind::InvalidRequest => {
-                        Status::invalid_argument(err.message())
+                .map_err(|err| {
+                    let mut status = match err.kind {
+                        generation::GenerationErrorKind::InvalidRequest => {
+                            Status::invalid_argument(err.message())
+                        }
+                        _ => Status::internal(err.message()),
+                    };
+                    let err_kind_str = match err.kind {
+                        generation::GenerationErrorKind::InvalidRequest => "invalid_request",
+                        generation::GenerationErrorKind::SupportedParameters => "supported_parameters",
+                        generation::GenerationErrorKind::ProviderError => "provider_error",
+                        generation::GenerationErrorKind::SchemaValidation => "schema_validation",
+                        generation::GenerationErrorKind::Timeout => "timeout",
+                        generation::GenerationErrorKind::Cancelled => "cancelled",
+                        generation::GenerationErrorKind::SessionCorrelation => "session_correlation",
+                    };
+                    let metadata = status.metadata_mut();
+                    if let Ok(val) = session_id.parse() {
+                        metadata.insert("x-lancet-session-id", val);
                     }
-                    _ => Status::internal(err.message()),
+                    if let Ok(val) = correlation_id.parse() {
+                        metadata.insert("x-lancet-correlation-id", val);
+                    }
+                    if let Ok(val) = err_kind_str.parse() {
+                        metadata.insert("x-lancet-error-kind", val);
+                    }
+                    status
                 })?;
 
         model_output
             .validate_grounding(&packed_evidence.evidence)
-            .map_err(|err| Status::internal(err.message()))?;
+            .map_err(|err| {
+                let mut status = Status::internal(err.message());
+                let metadata = status.metadata_mut();
+                if let Ok(val) = session_id.parse() {
+                    metadata.insert("x-lancet-session-id", val);
+                }
+                if let Ok(val) = correlation_id.parse() {
+                    metadata.insert("x-lancet-correlation-id", val);
+                }
+                if let Ok(val) = "schema_validation".parse() {
+                    metadata.insert("x-lancet-error-kind", val);
+                }
+                status
+            })?;
 
         let resolved_citations = prompt::resolve_citations_with_max_chars(
             &model_output.cited_evidence_ids,
@@ -1712,7 +1750,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| format!("initial BM25 snapshot build failed: {error}"))?;
     tracing::info!(document_count = bm25_index.len(), "BM25 snapshot built");
     let table = database.staged_documents_table().await?;
-    let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| "fake-key".to_owned());
+    let api_key = std::env::var("OPENROUTER_API_KEY")
+        .map_err(|_| "OPENROUTER_API_KEY environment variable is not set")?;
+    if api_key.trim().is_empty() {
+        return Err("OPENROUTER_API_KEY environment variable must not be empty or blank".into());
+    }
     let embedding_config = OpenRouterEmbeddingConfig::new(
         effective_settings.embedding_model.clone(),
         effective_settings.embedding_endpoint.clone(),
@@ -1739,6 +1781,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "worker exited during replay send")?;
     }
 
+    let evidence_token_budget = usize::try_from(effective_settings.evidence_token_budget)
+        .map_err(|_| "evidence_token_budget does not fit usize")?;
     let max_output_tokens = usize::try_from(effective_settings.max_output_tokens)
         .map_err(|_| "max_output_tokens does not fit usize")?;
     let generation_config = generation::openrouter::OpenRouterGenerationConfig::new(
@@ -1749,6 +1793,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         effective_settings.temperature,
         effective_settings.top_p,
         max_output_tokens,
+        evidence_token_budget,
     )?;
     let generator: Arc<dyn generation::Generator> = Arc::new(
         generation::openrouter::OpenRouterGenerator::new_with_config(api_key, generation_config)?,

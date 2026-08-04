@@ -363,6 +363,8 @@ impl rerank::Reranker for FailingReranker {
 
 impl RecordingGenerator {
     fn from_effective_settings(settings: &EffectiveRagSettings) -> Arc<Self> {
+        let evidence_token_budget = usize::try_from(settings.evidence_token_budget)
+            .expect("effective evidence budget limit must fit usize");
         let max_output_tokens = usize::try_from(settings.max_output_tokens)
             .expect("effective output token limit must fit usize");
         generation::openrouter::OpenRouterGenerationConfig::new(
@@ -373,6 +375,7 @@ impl RecordingGenerator {
             settings.temperature,
             settings.top_p,
             max_output_tokens,
+            evidence_token_budget,
         )
         .expect("effective generation settings must construct the production config");
         Arc::new(Self {
@@ -2993,6 +2996,81 @@ async fn query_rag_rejects_invalid_provider_grounding() {
     assert!(res.is_err());
     let status = res.unwrap_err();
     assert_eq!(status.code(), tonic::Code::Internal);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_generation_error_preserves_identity() {
+    let path = database_path("query-rag-generation-error-preserves-identity");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Document Identity\n\nContent for identity preservation test.",
+    )
+    .await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let failing_gen = Arc::new(generation::FakeGenerator::new(Err(
+        generation::GenerationError::new(
+            generation::GenerationErrorKind::ProviderError,
+            "OpenRouter API rate limit",
+        ),
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
+        effective_settings: EffectiveRagSettings::default(),
+        generator: failing_gen,
+        embedder: Arc::new(FakeEmbedder),
+    };
+
+    let session_id = "00000000-0000-4000-8000-000000000077";
+    let req = QueryRagRequest {
+        query: "identity preservation test".into(),
+        session_id: session_id.into(),
+        filter: None,
+    };
+
+    let res = service.query_rag(tonic::Request::new(req)).await;
+    assert!(res.is_err());
+    let status = res.unwrap_err();
+    assert_eq!(status.code(), tonic::Code::Internal);
+    assert_eq!(status.message(), "OpenRouter API rate limit");
+
+    let metadata = status.metadata();
+    let sess_val = metadata.get("x-lancet-session-id").expect("session id trailer");
+    assert_eq!(sess_val.to_str().unwrap(), session_id);
+
+    let corr_val = metadata.get("x-lancet-correlation-id").expect("correlation id trailer");
+    let corr_str = corr_val.to_str().unwrap();
+    assert!(Uuid::parse_str(corr_str).is_ok());
+
+    let kind_val = metadata.get("x-lancet-error-kind").expect("error kind trailer");
+    assert_eq!(kind_val.to_str().unwrap(), "provider_error");
 
     let _ = std::fs::remove_dir_all(path);
 }

@@ -531,6 +531,7 @@ async fn generation_request_uses_effective_settings() {
         0.37,
         0.82,
         777,
+        4096,
     )
     .expect("configured generation settings are valid");
     let adapter = OpenRouterGenerator::new_with_config("test-key", config)
@@ -588,6 +589,7 @@ async fn generation_timeout_uses_one_effective_value() {
         0.0,
         1.0,
         333,
+        4096,
     )
     .expect("timeout generation settings are valid");
     let adapter = OpenRouterGenerator::new_with_config("test-key", config)

@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/lancet/gateway/db"
@@ -258,8 +259,30 @@ func (e grpcEngine) Ping(ctx context.Context) (time.Duration, error) {
 	_, err := e.client.Ping(ctx, &pb.PingRequest{Value: "ping"})
 	return time.Since(start), err
 }
+type trailerError struct {
+	err     error
+	trailer metadata.MD
+}
+
+func (e trailerError) Error() string {
+	return e.err.Error()
+}
+
+func (e trailerError) GRPCStatus() *status.Status {
+	return status.Convert(e.err)
+}
+
+func (e trailerError) Trailer() metadata.MD {
+	return e.trailer
+}
+
 func (e grpcEngine) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
-	return e.client.QueryRAG(ctx, req)
+	var trailer metadata.MD
+	resp, err := e.client.QueryRAG(ctx, req, grpc.Trailer(&trailer))
+	if err != nil {
+		return resp, trailerError{err: err, trailer: trailer}
+	}
+	return resp, nil
 }
 
 type app struct {
@@ -666,6 +689,19 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := a.engine.QueryRAG(r.Context(), req)
 	if err != nil {
+		if te, ok := err.(interface{ Trailer() metadata.MD }); ok {
+			tr := te.Trailer()
+			if vals := tr.Get("x-lancet-session-id"); len(vals) > 0 && vals[0] != "" {
+				w.Header().Set("X-Lancet-Session-ID", vals[0])
+			}
+			if vals := tr.Get("x-lancet-correlation-id"); len(vals) > 0 && vals[0] != "" {
+				w.Header().Set("X-Lancet-Correlation-ID", vals[0])
+			}
+			if vals := tr.Get("x-lancet-error-kind"); len(vals) > 0 && vals[0] != "" {
+				w.Header().Set("X-Lancet-Error-Kind", vals[0])
+			}
+		}
+
 		if status.Code(err) == codes.InvalidArgument {
 			http.Error(w, status.Convert(err).Message(), http.StatusBadRequest)
 			return
