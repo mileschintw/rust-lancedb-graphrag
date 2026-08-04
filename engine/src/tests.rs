@@ -2644,8 +2644,8 @@ async fn service_index_generation_is_opaque_and_stable() {
     let table1 = database1.staged_documents_table().await.unwrap();
     let (sender1, _receiver1) = mpsc::channel(QUEUE_CAPACITY);
     let model_out1 = generation::ModelOutput {
-        answer: "Answer 1".into(),
-        cited_evidence_ids: vec![],
+        answer: "Answer 1 [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
@@ -2710,8 +2710,8 @@ async fn service_index_generation_is_opaque_and_stable() {
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings2,
         generator: Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-            answer: "Answer 2".into(),
-            cited_evidence_ids: vec![],
+            answer: "Answer 2 [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
             answer_basis: generation::AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
@@ -2753,14 +2753,14 @@ fn invalid_effective_settings_rejected() {
 async fn query_rag_citation_identity_and_notices() {
     let path = database_path("query-rag-citation-identity-and-notices");
     let database = DatabaseManager::initialize(&path).await.unwrap();
-    let doc_id_1 = Uuid::new_v4().to_string();
-    let doc_id_2 = Uuid::new_v4().to_string();
+    let doc_id_1 = "00000000-0000-4000-8000-000000000001".to_string();
+    let doc_id_2 = "00000000-0000-4000-8000-000000000002".to_string();
 
     stage_document_with_settings(
         &database,
         &doc_id_1,
         "Document Alpha",
-        b"# Document Alpha\nFirst document content block for testing query_rag.",
+        b"# Document Alpha\nFirst document content block with very long detailed text for testing query_rag citation identity and notices truncation check.",
         "structure-aware",
         500,
         50,
@@ -2771,7 +2771,7 @@ async fn query_rag_citation_identity_and_notices() {
         &database,
         &doc_id_2,
         "Document Beta",
-        b"# Document Beta\nSecond document content block with long text for unicode truncation check.",
+        b"# Document Beta\nSecond document content block with very long detailed text for testing unicode truncation check.",
         "structure-aware",
         500,
         50,
@@ -2835,19 +2835,9 @@ async fn query_rag_citation_identity_and_notices() {
     assert_eq!(response.structured_citations.len(), 1);
 
     let sc = &response.structured_citations[0];
-    let expected_title = if sc.document_id == doc_id_2 {
-        "Document Beta"
-    } else {
-        "Document Alpha"
-    };
-    let expected_section_path = if sc.document_id == doc_id_2 {
-        "/Document Beta"
-    } else {
-        "/Document Alpha"
-    };
-    assert!(sc.document_id == doc_id_1 || sc.document_id == doc_id_2);
-    assert_eq!(sc.title, expected_title);
-    assert_eq!(sc.section_path, expected_section_path);
+    assert_eq!(sc.document_id, doc_id_1);
+    assert_eq!(sc.title, "Document Alpha");
+    assert_eq!(sc.section_path, "/Document Alpha");
     assert_eq!(sc.content_type, "text/plain");
     assert_eq!(sc.rank, 2);
     assert!(sc.excerpt.chars().count() <= 20);

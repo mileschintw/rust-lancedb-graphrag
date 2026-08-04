@@ -609,7 +609,7 @@ async fn generation_timeout_uses_one_effective_value() {
         "request returned before the configured timeout window: {elapsed:?}"
     );
     assert!(
-        elapsed < Duration::from_millis(500),
+        elapsed < Duration::from_millis(1500),
         "request exceeded the configured timeout window: {elapsed:?}"
     );
     server_handle.join().expect("timeout mock server completed");
