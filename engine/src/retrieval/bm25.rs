@@ -394,7 +394,10 @@ fn validate_candidate(row: usize, candidate: &Candidate) -> Result<(), Bm25Build
             return Err(Bm25BuildError::row(
                 row,
                 field,
-                "required value must not be empty or whitespace-only",
+                format!(
+                    "document_id={} chunk_id={}: required value must not be empty or whitespace-only",
+                    candidate.document_id, candidate.chunk_id
+                ),
             ));
         }
     }

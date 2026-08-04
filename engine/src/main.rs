@@ -1700,8 +1700,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|err| format!("invalid RAG configuration: {err}"))?;
     let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
     let nodes = database.nodes_table().await?;
-    let bm25_index =
-        Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone()).await?;
+    let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
+        .await
+        .map_err(|error| format!("initial BM25 snapshot build failed: {error}"))?;
     tracing::info!(document_count = bm25_index.len(), "BM25 snapshot built");
     let table = database.staged_documents_table().await?;
     let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| "fake-key".to_owned());

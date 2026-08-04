@@ -70,8 +70,13 @@ fn spawn_engine_full(
             let status = child
                 .wait()
                 .map_err(|error| format!("failed to wait for engine: {error}\n{output}"))?;
+            let termination = if status.success() {
+                "process exited successfully"
+            } else {
+                "process exited nonzero"
+            };
             Err(format!(
-                "engine exited {status} without readiness\n{output}"
+                "{termination} ({status}) without readiness\n{output}"
             ))
         }
         Err(_) => {
@@ -369,11 +374,7 @@ fn initial_bm25_failure_blocks_readiness() {
         Err(error) => error,
     };
     assert!(
-        err_msg.contains("exited "),
-        "engine must terminate: {err_msg}"
-    );
-    assert!(
-        !err_msg.contains("status exit status: 0"),
+        err_msg.contains("process exited nonzero"),
         "engine must terminate nonzero: {err_msg}"
     );
     assert!(
@@ -409,7 +410,7 @@ fn invalid_rag_settings_block_readiness() {
     fs::create_dir_all(&config_dir).unwrap();
     fs::create_dir_all(&cwd_dir).unwrap();
     let config_toml = format!(
-        "[engine]\ngrpc_addr = \"{grpc_addr}\"\nlancedb_path = \"{}\"\n\n[engine.retrieval]\ncandidate_limit = 0\n",
+        "[engine]\ngrpc_addr = \"{grpc_addr}\"\nlancedb_path = \"{}\"\n\n[engine.retrieval]\nevidence_token_budget = 0\n",
         lancedb_dir.to_str().unwrap().replace('\\', "/")
     );
     fs::write(config_dir.join("config.toml"), config_toml).unwrap();
@@ -428,15 +429,11 @@ fn invalid_rag_settings_block_readiness() {
         Err(error) => error,
     };
     assert!(
-        err_msg.contains("exited "),
-        "engine must terminate: {err_msg}"
-    );
-    assert!(
-        !err_msg.contains("status exit status: 0"),
+        err_msg.contains("process exited nonzero"),
         "engine must terminate nonzero: {err_msg}"
     );
     assert!(
-        err_msg.contains("candidate_limit"),
+        err_msg.contains("evidence_token_budget"),
         "diagnostic must name the invalid setting: {err_msg}"
     );
     assert!(
