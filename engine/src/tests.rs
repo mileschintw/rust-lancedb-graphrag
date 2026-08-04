@@ -288,6 +288,79 @@ struct RecordingGenerator {
     response: generation::ModelOutput,
 }
 
+struct RecordingReranker {
+    call_count: std::sync::atomic::AtomicUsize,
+    inputs: std::sync::Mutex<Vec<Vec<retrieval::FusedCandidate>>>,
+}
+
+impl RecordingReranker {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+            inputs: std::sync::Mutex::new(Vec::new()),
+        })
+    }
+
+    fn calls(&self) -> usize {
+        self.call_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn inputs(&self) -> Vec<Vec<retrieval::FusedCandidate>> {
+        self.inputs.lock().unwrap().clone()
+    }
+}
+
+impl rerank::Reranker for RecordingReranker {
+    fn rerank<'a>(
+        &'a self,
+        mut candidates: Vec<retrieval::FusedCandidate>,
+    ) -> BoxFuture<'a, Result<Vec<retrieval::FusedCandidate>, retrieval::RetrievalError>> {
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.inputs.lock().unwrap().push(candidates.clone());
+        Box::pin(async move {
+            if candidates.len() > 1 {
+                candidates.rotate_left(1);
+            }
+            Ok(candidates)
+        })
+    }
+}
+
+struct FailingReranker {
+    call_count: std::sync::atomic::AtomicUsize,
+}
+
+impl FailingReranker {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        })
+    }
+
+    fn calls(&self) -> usize {
+        self.call_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl rerank::Reranker for FailingReranker {
+    fn rerank<'a>(
+        &'a self,
+        _candidates: Vec<retrieval::FusedCandidate>,
+    ) -> BoxFuture<'a, Result<Vec<retrieval::FusedCandidate>, retrieval::RetrievalError>> {
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Box::pin(async {
+            Err(retrieval::RetrievalError::new(
+                retrieval::RetrievalErrorKind::Snapshot,
+                "deterministic reranker failure",
+            ))
+        })
+    }
+}
+
 impl RecordingGenerator {
     fn from_effective_settings(settings: &EffectiveRagSettings) -> Arc<Self> {
         let max_output_tokens = usize::try_from(settings.max_output_tokens)
@@ -636,6 +709,7 @@ async fn configured_service(
     effective_settings: EffectiveRagSettings,
     embedder: Arc<dyn EmbeddingProvider>,
     generator: Arc<dyn generation::Generator>,
+    reranker: Arc<dyn rerank::Reranker>,
 ) -> LancetServiceImpl {
     let nodes = database.nodes_table().await.unwrap();
     let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
@@ -653,6 +727,7 @@ async fn configured_service(
         effective_settings,
         generator,
         embedder,
+        reranker,
     }
 }
 
@@ -1622,6 +1697,7 @@ async fn staging_read_error_is_unavailable() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
             generation::ModelOutput {
@@ -1702,6 +1778,7 @@ async fn staging_delete_failure_remains_replayable() {
         queue: dummy_tx,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
             generation::ModelOutput {
@@ -1943,6 +2020,7 @@ async fn d04_cross_runtime_grpc_fixture() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
             generation::ModelOutput {
@@ -2006,6 +2084,7 @@ async fn status_falls_back_to_staged_document() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
             generation::ModelOutput {
@@ -2119,6 +2198,7 @@ async fn query_rag_happy_path_service() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
@@ -2186,6 +2266,7 @@ async fn configured_provider_settings_reach_query_requests() {
         effective_settings.clone(),
         embedder.clone(),
         generator.clone(),
+        Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
     let response = service
@@ -2268,6 +2349,7 @@ async fn configured_embedding_identity_persists_and_reports() {
         effective_settings.clone(),
         embedder.clone(),
         generator,
+        Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
     let response = service
@@ -2323,6 +2405,7 @@ async fn configured_bm25_and_evidence_settings_reach_query() {
         effective_settings.clone(),
         embedder,
         generator.clone(),
+        Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
     let response = service
@@ -2438,6 +2521,7 @@ async fn configured_rag_settings_drive_service() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings.clone(),
         generator: fake_gen,
         embedder: configured_embedder,
@@ -2516,6 +2600,7 @@ async fn configured_evidence_token_budget_is_exact() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings,
         generator: fake_gen,
         embedder: Arc::new(FakeEmbedder),
@@ -2574,6 +2659,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         queue: sender1,
         nodes: nodes1,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index1)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings1,
         generator: fake_gen1,
         embedder: Arc::new(FakeEmbedder),
@@ -2618,6 +2704,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         queue: sender2,
         nodes: nodes2,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index2)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings2,
         generator: Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
             answer: "Answer 2".into(),
@@ -2714,6 +2801,7 @@ async fn query_rag_citation_identity_and_notices() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings,
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
@@ -2807,6 +2895,7 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
@@ -2824,3 +2913,201 @@ async fn query_rag_rejects_unknown_marker_without_response() {
     let _ = std::fs::remove_dir_all(path);
 }
 
+async fn reranker_query_fixture(
+    test_name: &str,
+    final_limit: usize,
+    generator: Arc<dyn generation::Generator>,
+    reranker: Arc<dyn rerank::Reranker>,
+) -> (String, LancetServiceImpl) {
+    let path = database_path(test_name);
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    for label in ["Alpha", "Beta", "Gamma"] {
+        let document_id = Uuid::new_v4().to_string();
+        let content = format!("# {label}\n\nReranker evidence {label} content.");
+        stage_document(&database, &document_id, content.as_bytes()).await;
+    }
+
+    let jobs = read_staged_jobs(&database).await.unwrap();
+    for job in jobs {
+        process_job(&job, &database, &FakeEmbedder).await.unwrap();
+    }
+
+    let mut settings = Settings::default();
+    settings.engine.retrieval.candidate_limit = 8;
+    settings.engine.retrieval.final_limit = final_limit;
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+    let service = configured_service(
+        &database,
+        effective_settings,
+        Arc::new(FakeEmbedder),
+        generator,
+        reranker,
+    )
+    .await;
+    (path, service)
+}
+
+#[tokio::test]
+async fn query_rag_invokes_recording_reranker_once() {
+    let reranker = RecordingReranker::new();
+    let generator = RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default());
+    let (path, service) = reranker_query_fixture(
+        "query-rag-recording-reranker-once",
+        1,
+        generator.clone(),
+        reranker.clone(),
+    )
+    .await;
+
+    service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "reranker evidence".into(),
+            session_id: "00000000-0000-4000-8000-000000000201".into(),
+            filter: None,
+        }))
+        .await
+        .unwrap();
+
+    let inputs = reranker.inputs();
+    assert_eq!(reranker.calls(), 1);
+    assert_eq!(inputs.len(), 1);
+    assert!(inputs[0].len() > service.effective_settings.retrieval.final_limit);
+    assert_eq!(generator.calls(), 1);
+    assert_eq!(generator.requests()[0].evidence.len(), 1);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_grounding_uses_reranked_identity() {
+    let reranker = RecordingReranker::new();
+    let generator = RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default());
+    let (path, service) = reranker_query_fixture(
+        "query-rag-reranked-grounding-identity",
+        1,
+        generator.clone(),
+        reranker.clone(),
+    )
+    .await;
+
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "reranker evidence".into(),
+            session_id: "00000000-0000-4000-8000-000000000202".into(),
+            filter: None,
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    let input = &reranker.inputs()[0];
+    assert!(input.len() > 1);
+    let expected_chunk_id = input[1].candidate.chunk_id.clone();
+    let generated_evidence = &generator.requests()[0].evidence;
+    assert_eq!(generated_evidence.len(), 1);
+    assert_eq!(generated_evidence[0].chunk_id, expected_chunk_id);
+    assert_eq!(response.structured_citations.len(), 1);
+    assert_eq!(response.structured_citations[0].chunk_id, expected_chunk_id);
+    assert_eq!(response.citations, vec!["[1]".to_string()]);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_noop_reranker_preserves_fused_order() {
+    let generator = RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default());
+    let (path, service) = reranker_query_fixture(
+        "query-rag-noop-reranker-order",
+        2,
+        generator.clone(),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let query_request = QueryRequest::from_values(
+        "reranker evidence",
+        vec![],
+        vec![],
+        &service.effective_settings.retrieval,
+    )
+    .unwrap();
+    let dense_candidates = DenseRetriever::new(service.nodes.clone())
+        .query(
+            &vec![0.25; 2048],
+            &query_request,
+            &service.effective_settings.retrieval,
+        )
+        .await
+        .unwrap();
+    let bm25_candidates = service
+        .bm25_index
+        .read()
+        .await
+        .retrieve(&query_request, &service.effective_settings.retrieval)
+        .await
+        .unwrap();
+    let expected = retrieval::fusion::fuse_candidates(
+        dense_candidates,
+        bm25_candidates,
+        &service.effective_settings.retrieval,
+    )
+    .unwrap();
+    let expected_chunk_ids: Vec<_> = expected
+        .iter()
+        .take(service.effective_settings.retrieval.final_limit)
+        .map(|candidate| candidate.candidate.chunk_id.clone())
+        .collect();
+
+    service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "reranker evidence".into(),
+            session_id: "00000000-0000-4000-8000-000000000203".into(),
+            filter: None,
+        }))
+        .await
+        .unwrap();
+    let actual_chunk_ids: Vec<_> = generator.requests()[0]
+        .evidence
+        .iter()
+        .map(|evidence| evidence.chunk_id.clone())
+        .collect();
+    assert_eq!(actual_chunk_ids, expected_chunk_ids);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_reranker_failure_skips_generation() {
+    let reranker = FailingReranker::new();
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "This answer must never be generated".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+    let (path, service) = reranker_query_fixture(
+        "query-rag-failing-reranker",
+        1,
+        generator.clone(),
+        reranker.clone(),
+    )
+    .await;
+
+    let result = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "reranker evidence".into(),
+            session_id: "00000000-0000-4000-8000-000000000204".into(),
+            filter: None,
+        }))
+        .await;
+
+    assert!(result.is_err());
+    assert_eq!(reranker.calls(), 1);
+    assert_eq!(generator.calls(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
