@@ -1,15 +1,16 @@
 use std::{
     io::{Read, Write},
     net::TcpListener,
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
+    time::{Duration, Instant},
 };
 
 use serde_json::json;
 
 use crate::{
     generation::{
-        openrouter::OpenRouterGenerator, AnswerBasis, FakeGenerator,
+        openrouter::{OpenRouterGenerationConfig, OpenRouterGenerator}, AnswerBasis, FakeGenerator,
         GenerationErrorKind, GenerationRequest, Generator, ModelOutput, ModelUsage,
     },
     prompt::{assemble_evidence_blocks, pack_evidence_prompt, resolve_citations},
@@ -38,6 +39,46 @@ fn sample_candidate(id: &str, text: &str) -> FusedCandidate {
         vector_score: Some(0.95),
         bm25_score: Some(12.5),
     }
+}
+
+fn read_http_request(stream: &mut std::net::TcpStream) -> String {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("set mock read timeout");
+    let mut request = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        if let Some(header_end) = request
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+        {
+            let headers = String::from_utf8_lossy(&request[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                })
+                .unwrap_or(0);
+            if request.len() >= header_end + 4 + content_length {
+                break;
+            }
+        }
+        let read = stream.read(&mut buffer).expect("read mock request");
+        assert!(read > 0, "mock request ended before its body was received");
+        request.extend_from_slice(&buffer[..read]);
+    }
+    String::from_utf8(request).expect("mock request must be UTF-8")
+}
+
+fn write_json_response(stream: &mut std::net::TcpStream, payload: serde_json::Value) {
+    let body = payload.to_string();
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(), body
+    );
+    stream.write_all(response.as_bytes()).expect("write mock response");
 }
 
 #[tokio::test]
@@ -435,6 +476,142 @@ async fn openrouter_supported_parameters_one_call() {
     assert_eq!(res.usage.unwrap().total_tokens, 130);
 
     server_handle.join().expect("mock server completed");
+}
+
+#[tokio::test]
+async fn generation_request_uses_effective_settings() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let captured_chat = Arc::new(Mutex::new(None));
+    let captured_chat_for_server = captured_chat.clone();
+
+    let server_handle = thread::spawn(move || {
+        let (mut models_stream, _) = listener.accept().expect("accept models request");
+        let models_request = read_http_request(&mut models_stream);
+        assert!(models_request.starts_with("GET /configured/models "));
+        write_json_response(
+            &mut models_stream,
+            json!({
+                "data": [{
+                    "id": "custom/configured-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
+
+        let (mut chat_stream, _) = listener.accept().expect("accept chat request");
+        let chat_request = read_http_request(&mut chat_stream);
+        assert!(chat_request.starts_with("POST /configured/chat "));
+        *captured_chat_for_server.lock().unwrap() = Some(chat_request);
+        write_json_response(
+            &mut chat_stream,
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": "Configured answer [1].",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }]
+            }),
+        );
+    });
+
+    let config = OpenRouterGenerationConfig::new(
+        "custom/configured-model",
+        format!("http://{addr}/configured/chat"),
+        format!("http://{addr}/configured/models"),
+        Duration::from_secs(2),
+        0.37,
+        0.82,
+        777,
+    )
+    .expect("configured generation settings are valid");
+    let adapter = OpenRouterGenerator::new_with_config("test-key", config)
+        .expect("configured adapter created");
+
+    let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Configured content.")]);
+    let response = adapter
+        .generate(GenerationRequest::new("Configured question?", evidence))
+        .await
+        .expect("configured request succeeds");
+    assert_eq!(response.answer, "Configured answer [1].");
+
+    server_handle.join().expect("configured mock server completed");
+    let chat_request = captured_chat.lock().unwrap().take().unwrap();
+    let body = chat_request
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .expect("chat request includes a body");
+    let body: serde_json::Value = serde_json::from_str(body).expect("chat body is JSON");
+    assert_eq!(body["model"], "custom/configured-model");
+    assert_eq!(body["temperature"], 0.37);
+    assert_eq!(body["top_p"], 0.82);
+    assert_eq!(body["max_completion_tokens"], 777);
+    assert_eq!(body["response_format"]["type"], "json_schema");
+    assert_eq!(body["response_format"]["json_schema"]["strict"], true);
+}
+
+#[tokio::test]
+async fn generation_timeout_uses_one_effective_value() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let timeout = Duration::from_millis(120);
+    let server_handle = thread::spawn(move || {
+        let (mut models_stream, _) = listener.accept().expect("accept models request");
+        let _ = read_http_request(&mut models_stream);
+        write_json_response(
+            &mut models_stream,
+            json!({
+                "data": [{
+                    "id": "custom/timeout-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
+
+        let (mut chat_stream, _) = listener.accept().expect("accept chat request");
+        let _ = read_http_request(&mut chat_stream);
+        thread::sleep(Duration::from_millis(600));
+    });
+
+    let config = OpenRouterGenerationConfig::new(
+        "custom/timeout-model",
+        format!("http://{addr}/timeout/chat"),
+        format!("http://{addr}/timeout/models"),
+        timeout,
+        0.0,
+        1.0,
+        333,
+    )
+    .expect("timeout generation settings are valid");
+    let adapter = OpenRouterGenerator::new_with_config("test-key", config)
+        .expect("configured timeout adapter created");
+    let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Timeout content.")]);
+
+    let started = Instant::now();
+    let error = adapter
+        .generate(GenerationRequest::new("Timeout question?", evidence))
+        .await
+        .expect_err("delayed provider must time out");
+    let elapsed = started.elapsed();
+
+    assert_eq!(error.kind, GenerationErrorKind::Timeout);
+    assert!(
+        elapsed >= timeout / 2,
+        "request returned before the configured timeout window: {elapsed:?}"
+    );
+    assert!(
+        elapsed < Duration::from_millis(500),
+        "request exceeded the configured timeout window: {elapsed:?}"
+    );
+    server_handle.join().expect("timeout mock server completed");
 }
 
 #[tokio::test]
