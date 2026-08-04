@@ -54,6 +54,10 @@ impl RecordingEmbeddingProvider {
 }
 
 impl EmbeddingProvider for RecordingEmbeddingProvider {
+    fn model_id(&self) -> &str {
+        &self.configured_model
+    }
+
     fn get_embeddings<'a>(
         &'a self,
         texts: &'a [String],
@@ -452,7 +456,13 @@ async fn replacement_documents_add_failure_rolls_back_and_retry_converges() {
     );
     let (_, old_chunks) = chunk_ingestion_job(&old_job);
     let old_embeddings = vec![vec![0.25; 2048]; old_chunks.len()];
-    replace_document(&database, &old_job, &old_chunks, &old_embeddings)
+    replace_document(
+        &database,
+        &old_job,
+        &old_chunks,
+        &old_embeddings,
+        client::EMBEDDING_MODEL,
+    )
         .await
         .unwrap();
     stage_document(&database, &document_id, b"replacement staging row").await;
@@ -473,6 +483,7 @@ async fn replacement_documents_add_failure_rolls_back_and_retry_converges() {
         &replacement_job,
         &replacement_chunks,
         &replacement_embeddings,
+        client::EMBEDDING_MODEL,
         &failure,
     )
     .await
@@ -496,6 +507,7 @@ async fn replacement_documents_add_failure_rolls_back_and_retry_converges() {
         &replacement_job,
         &replacement_chunks,
         &replacement_embeddings,
+        client::EMBEDDING_MODEL,
     )
     .await
     .unwrap();
@@ -540,7 +552,13 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
         );
         let (_, old_chunks) = chunk_ingestion_job(&old_job);
         let old_embeddings = vec![vec![0.25; 2048]; old_chunks.len()];
-        replace_document(&database, &old_job, &old_chunks, &old_embeddings)
+        replace_document(
+            &database,
+            &old_job,
+            &old_chunks,
+            &old_embeddings,
+            client::EMBEDDING_MODEL,
+        )
             .await
             .unwrap();
         stage_document(&database, &document_id, b"replacement staging row").await;
@@ -562,6 +580,7 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
             &replacement_job,
             &replacement_chunks,
             &replacement_embeddings,
+            client::EMBEDDING_MODEL,
             &failure,
         )
         .await
@@ -590,6 +609,7 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
             &replacement_job,
             &replacement_chunks,
             &replacement_embeddings,
+            client::EMBEDDING_MODEL,
         )
         .await
         .unwrap();
@@ -657,7 +677,13 @@ async fn persisted_node_summary_is_arrow_null() {
     );
     let (_, empty_chunks) = chunk_ingestion_job(&empty_job);
     assert!(empty_chunks.is_empty());
-    replace_document(&database, &empty_job, &empty_chunks, &[])
+    replace_document(
+        &database,
+        &empty_job,
+        &empty_chunks,
+        &[],
+        client::EMBEDDING_MODEL,
+    )
         .await
         .unwrap();
     let empty_predicate = format!("document_id = '{}'", sql_string(&empty_job.document_id));
@@ -700,7 +726,13 @@ async fn persisted_node_summary_is_arrow_null() {
     );
     let (_, chunks) = chunk_ingestion_job(&job);
     let embeddings = vec![vec![0.25; 2048]; chunks.len()];
-    replace_document(&database, &job, &chunks, &embeddings)
+    replace_document(
+        &database,
+        &job,
+        &chunks,
+        &embeddings,
+        client::EMBEDDING_MODEL,
+    )
         .await
         .unwrap();
     let rows = query_rows(
@@ -2053,7 +2085,7 @@ async fn configured_bm25_and_evidence_settings_reach_query() {
         &database,
         &document_id,
         "bm25.md",
-        "# BM25 Configured\n\nneedle configured lexical evidence with Unicode π and enough text to truncate safely."
+        "needle configured lexical evidence with Unicode π and enough text to truncate safely."
             .as_bytes(),
         "structure-aware",
         500,
@@ -2167,6 +2199,7 @@ async fn configured_rag_settings_drive_service() {
     };
 
     let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+    let configured_embedder = RecordingEmbeddingProvider::from_effective_settings(&effective_settings);
     let nodes = database.nodes_table().await.unwrap();
     let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
         .await
@@ -2194,7 +2227,7 @@ async fn configured_rag_settings_drive_service() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
         effective_settings: effective_settings.clone(),
         generator: fake_gen,
-        embedder: Arc::new(FakeEmbedder),
+        embedder: configured_embedder,
     };
 
     let req = QueryRagRequest {

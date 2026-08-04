@@ -3,7 +3,7 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
     path::Path,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use arrow_array::{
@@ -30,7 +30,7 @@ mod rerank;
 mod retrieval;
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
-use client::{OpenRouterClient, EMBEDDING_MODEL};
+use client::{OpenRouterClient, OpenRouterEmbeddingConfig};
 use engine::db::{DatabaseManager, EntityResolver, ExactMatchResolver};
 use retrieval::{
     Bm25Config, Bm25Index, DenseRetriever, QueryRequest, RetrievalErrorKind, Retriever,
@@ -781,6 +781,24 @@ fn internal(err: impl std::fmt::Display) -> Status {
     Status::internal(err.to_string())
 }
 
+fn snapshot_limit(value: usize, name: &str) -> Result<i32, Status> {
+    i32::try_from(value)
+        .map_err(|_| Status::internal(format!("validated {name} does not fit snapshot")))
+}
+
+fn snapshot_rrf_k(value: f64) -> Result<i32, Status> {
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > i32::MAX as f64 {
+        return Err(Status::internal(
+            "validated rrf_k is outside the snapshot representation",
+        ));
+    }
+    value
+        .round()
+        .to_string()
+        .parse::<i32>()
+        .map_err(|_| Status::internal("validated rrf_k is not a snapshot integer"))
+}
+
 fn validate_document_id(document_id: &str) -> Result<(), Status> {
     let id = Uuid::parse_str(document_id)
         .map_err(|_| Status::invalid_argument("document_id must be a UUIDv4 string"))?;
@@ -988,7 +1006,8 @@ impl LancetService for LancetServiceImpl {
             &query_request.query,
             &evidence_blocks,
             self.effective_settings.evidence_token_budget,
-            prompt::DEFAULT_ANSWER_TOKEN_BUDGET,
+            usize::try_from(self.effective_settings.max_output_tokens)
+                .map_err(|_| Status::internal("max_output_tokens does not fit usize"))?,
         )
         .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
 
@@ -1067,12 +1086,18 @@ impl LancetService for LancetServiceImpl {
 
         let snapshot = lancet::v1::RetrievalSnapshot {
             index_generation: self.effective_settings.index_generation.clone(),
-            embedding_model: self.effective_settings.embedding_model.clone(),
+            embedding_model: self.embedder.model_id().to_owned(),
             vector_weight: self.effective_settings.retrieval.vector_weight,
             bm25_weight: self.effective_settings.retrieval.bm25_weight,
-            rrf_k: self.effective_settings.retrieval.rrf_k as i32,
-            candidate_limit: self.effective_settings.retrieval.candidate_limit as i32,
-            final_limit: self.effective_settings.retrieval.final_limit as i32,
+            rrf_k: snapshot_rrf_k(self.effective_settings.retrieval.rrf_k)?,
+            candidate_limit: snapshot_limit(
+                self.effective_settings.retrieval.candidate_limit,
+                "candidate_limit",
+            )?,
+            final_limit: snapshot_limit(
+                self.effective_settings.retrieval.final_limit,
+                "final_limit",
+            )?,
             active_filter: Some(lancet::v1::DocumentFilter {
                 document_ids: query_request.filters.document_ids.clone(),
                 content_types: query_request.filters.content_types.clone(),
@@ -1108,6 +1133,12 @@ impl LancetService for LancetServiceImpl {
 }
 
 trait EmbeddingProvider: Send + Sync {
+    fn model_id(&self) -> &str {
+        // Existing test doubles predate the model identity seam. Production
+        // adapters override this with their configured provider identity.
+        client::EMBEDDING_MODEL
+    }
+
     fn get_embeddings<'a>(
         &'a self,
         texts: &'a [String],
@@ -1115,6 +1146,10 @@ trait EmbeddingProvider: Send + Sync {
 }
 
 impl EmbeddingProvider for OpenRouterClient {
+    fn model_id(&self) -> &str {
+        OpenRouterClient::model_id(self)
+    }
+
     fn get_embeddings<'a>(
         &'a self,
         texts: &'a [String],
@@ -1150,12 +1185,14 @@ async fn replace_document(
     job: &IngestionJob,
     chunks: &[Chunk],
     embeddings: &[Vec<f32>],
+    embedding_model: &str,
 ) -> Result<(), String> {
     replace_document_with_faults(
         database,
         job,
         chunks,
         embeddings,
+        embedding_model,
         &LanceDbReplacementMutationBoundary,
     )
     .await
@@ -1218,6 +1255,7 @@ async fn replace_document_with_faults(
     job: &IngestionJob,
     chunks: &[Chunk],
     embeddings: &[Vec<f32>],
+    embedding_model: &str,
     mutations: &dyn ReplacementMutationBoundary,
 ) -> Result<(), String> {
     if chunks.len() != embeddings.len() {
@@ -1360,7 +1398,7 @@ async fn replace_document_with_faults(
                     hashes.iter().map(String::as_str).collect::<Vec<_>>(),
                 )),
                 Arc::new(StringArray::from(vec!["1"; chunks.len()])),
-                Arc::new(StringArray::from(vec![EMBEDDING_MODEL; chunks.len()])),
+                Arc::new(StringArray::from(vec![embedding_model; chunks.len()])),
                 Arc::new(Int64Array::from(vec![Some(ingested_at); chunks.len()])),
                 Arc::new(StringArray::from(vec![
                     Some(content_type(&job.filename));
@@ -1505,9 +1543,20 @@ async fn process_job_with_boundary(
     let embeddings = async { embedder.get_embeddings(&texts).await }
         .instrument(embedding_span)
         .await?;
+    let embedding_model = embedder.model_id().to_owned();
 
     let database_span = tracing::info_span!("persist_document", document_id = %job.document_id, chunk_count = chunks.len());
-    async { replace_document_with_faults(database, job, &chunks, &embeddings, boundary).await }
+    async {
+        replace_document_with_faults(
+            database,
+            job,
+            &chunks,
+            &embeddings,
+            &embedding_model,
+            boundary,
+        )
+        .await
+    }
         .instrument(database_span)
         .await?;
     Ok(i32::try_from(chunks.len()).unwrap_or(i32::MAX))
@@ -1655,9 +1704,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone()).await?;
     tracing::info!(document_count = bm25_index.len(), "BM25 snapshot built");
     let table = database.staged_documents_table().await?;
-    let embedder = Arc::new(OpenRouterClient::from_env_with_endpoint(
-        &settings.openrouter.embedding_endpoint,
-    )?);
+    let api_key = std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| "fake-key".to_owned());
+    let embedding_config = OpenRouterEmbeddingConfig::new(
+        effective_settings.embedding_model.clone(),
+        effective_settings.embedding_endpoint.clone(),
+    )?;
+    let embedder = Arc::new(OpenRouterClient::new_with_config(api_key.clone(), embedding_config)?);
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
 
@@ -1679,15 +1731,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "worker exited during replay send")?;
     }
 
+    let max_output_tokens = usize::try_from(effective_settings.max_output_tokens)
+        .map_err(|_| "max_output_tokens does not fit usize")?;
+    let generation_config = generation::openrouter::OpenRouterGenerationConfig::new(
+        effective_settings.generation_model.clone(),
+        effective_settings.chat_endpoint.clone(),
+        effective_settings.model_metadata_endpoint.clone(),
+        Duration::from_secs(effective_settings.generation_timeout_secs),
+        effective_settings.temperature,
+        effective_settings.top_p,
+        max_output_tokens,
+    )?;
     let generator: Arc<dyn generation::Generator> = Arc::new(
-        generation::openrouter::OpenRouterGenerator::new(
-            std::env::var("OPENROUTER_API_KEY").unwrap_or_else(|_| "fake-key".to_owned()),
-            &settings.openrouter.generation_model,
-        )?
-        .with_endpoints(
-            &settings.openrouter.chat_endpoint,
-            &settings.openrouter.model_metadata_endpoint,
-        ),
+        generation::openrouter::OpenRouterGenerator::new_with_config(api_key, generation_config)?,
     );
 
     let service = LancetServiceImpl {
