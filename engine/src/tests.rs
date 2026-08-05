@@ -3263,3 +3263,263 @@ async fn query_rag_reranker_failure_skips_generation() {
 
     let _ = std::fs::remove_dir_all(path);
 }
+
+struct FailingEmbedder(String);
+
+impl EmbeddingProvider for FailingEmbedder {
+    fn get_embeddings<'a>(
+        &'a self,
+        _texts: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
+        let msg = self.0.clone();
+        Box::pin(async move { Err(msg) })
+    }
+}
+
+struct PayloadEmbedder(Vec<Vec<f32>>);
+
+impl EmbeddingProvider for PayloadEmbedder {
+    fn get_embeddings<'a>(
+        &'a self,
+        _texts: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
+        let vecs = self.0.clone();
+        Box::pin(async move { Ok(vecs) })
+    }
+}
+
+#[tokio::test]
+async fn query_rag_fail_closed_embedding_transport() {
+    let path = database_path("query-rag-fc-emb-trans");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let effective_settings = EffectiveRagSettings::default();
+    let embedder = Arc::new(FailingEmbedder("network unreachable".into()));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let reranker = Arc::new(rerank::NoOpReranker::new());
+
+    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+
+    let req = QueryRagRequest {
+        query: "What is Lancet?".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+
+    let status = service.query_rag(Request::new(req)).await.expect_err("embedding transport error fails closed");
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert_eq!(
+        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        "embedding_transport"
+    );
+    assert_eq!(
+        status.metadata().get("x-lancet-session-id").unwrap().to_str().unwrap(),
+        "00000000-0000-4000-8000-000000000001"
+    );
+    assert!(status.metadata().get("x-lancet-correlation-id").is_some());
+    assert_eq!(generator.calls(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_fail_closed_embedding_empty_payload() {
+    let path = database_path("query-rag-fc-emb-empty");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let effective_settings = EffectiveRagSettings::default();
+    let embedder = Arc::new(PayloadEmbedder(vec![]));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let reranker = Arc::new(rerank::NoOpReranker::new());
+
+    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+
+    let req = QueryRagRequest {
+        query: "What is Lancet?".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+
+    let status = service.query_rag(Request::new(req)).await.expect_err("empty embedding payload fails closed");
+    assert_eq!(status.code(), tonic::Code::Internal);
+    assert_eq!(
+        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        "embedding_invalid_payload"
+    );
+    assert_eq!(generator.calls(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_fail_closed_embedding_multi_vector() {
+    let path = database_path("query-rag-fc-emb-multi");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let effective_settings = EffectiveRagSettings::default();
+    let embedder = Arc::new(PayloadEmbedder(vec![vec![0.25; 2048], vec![0.25; 2048]]));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let reranker = Arc::new(rerank::NoOpReranker::new());
+
+    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+
+    let req = QueryRagRequest {
+        query: "What is Lancet?".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+
+    let status = service.query_rag(Request::new(req)).await.expect_err("multi vector payload fails closed");
+    assert_eq!(status.code(), tonic::Code::Internal);
+    assert_eq!(
+        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        "embedding_invalid_payload"
+    );
+    assert_eq!(generator.calls(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_fail_closed_embedding_wrong_dimension() {
+    let path = database_path("query-rag-fc-emb-dim");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let effective_settings = EffectiveRagSettings::default();
+    let embedder = Arc::new(PayloadEmbedder(vec![vec![0.25; 512]]));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let reranker = Arc::new(rerank::NoOpReranker::new());
+
+    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+
+    let req = QueryRagRequest {
+        query: "What is Lancet?".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+
+    let status = service.query_rag(Request::new(req)).await.expect_err("wrong dimension vector fails closed");
+    assert_eq!(status.code(), tonic::Code::Internal);
+    assert_eq!(
+        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        "embedding_invalid_payload"
+    );
+    assert_eq!(generator.calls(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_fail_closed_embedding_non_finite() {
+    let path = database_path("query-rag-fc-emb-nan");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let effective_settings = EffectiveRagSettings::default();
+    let mut vec_nan = vec![0.25; 2048];
+    vec_nan[10] = f32::NAN;
+    let embedder = Arc::new(PayloadEmbedder(vec![vec_nan]));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let reranker = Arc::new(rerank::NoOpReranker::new());
+
+    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+
+    let req = QueryRagRequest {
+        query: "What is Lancet?".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+
+    let status = service.query_rag(Request::new(req)).await.expect_err("non finite vector fails closed");
+    assert_eq!(status.code(), tonic::Code::Internal);
+    assert_eq!(
+        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        "embedding_invalid_payload"
+    );
+    assert_eq!(generator.calls(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_fail_closed_dense_snapshot() {
+    let path = database_path("query-rag-fc-dense-snap");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let effective_settings = EffectiveRagSettings::default();
+    let embedder = Arc::new(FakeEmbedder);
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let reranker = Arc::new(rerank::NoOpReranker::new());
+
+    let malformed_nodes = database.edges_table().await.unwrap();
+    let bm25_nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&bm25_nodes, effective_settings.retrieval.bm25.clone())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(dashmap::DashMap::new());
+    let (sender, _receiver) = tokio::sync::mpsc::channel(QUEUE_CAPACITY);
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes: malformed_nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        effective_settings,
+        generator: generator.clone(),
+        embedder,
+        reranker,
+    };
+
+    let req = QueryRagRequest {
+        query: "What is Lancet?".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+
+    let status = service.query_rag(Request::new(req)).await.expect_err("dense snapshot error fails closed");
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert_eq!(
+        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        "dense_retrieval"
+    );
+    assert_eq!(generator.calls(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}

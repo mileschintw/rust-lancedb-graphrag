@@ -759,6 +759,29 @@ pub struct LancetServiceImpl {
     reranker: Arc<dyn rerank::Reranker>,
 }
 
+fn d1_status(
+    code: tonic::Code,
+    message: impl Into<String>,
+    session_id: &str,
+    correlation_id: &str,
+    error_kind: &str,
+) -> Status {
+    let msg = message.into();
+    tracing::warn!(%session_id, %correlation_id, %error_kind, "QueryRAG infrastructure failure: {msg}");
+    let mut status = Status::new(code, msg);
+    let metadata = status.metadata_mut();
+    if let Ok(val) = session_id.parse() {
+        metadata.insert("x-lancet-session-id", val);
+    }
+    if let Ok(val) = correlation_id.parse() {
+        metadata.insert("x-lancet-correlation-id", val);
+    }
+    if let Ok(val) = error_kind.parse() {
+        metadata.insert("x-lancet-error-kind", val);
+    }
+    status
+}
+
 impl LancetServiceImpl {
     async fn persist_raw(&self, job: &IngestionJob) -> Result<(), Status> {
         let predicate = format!("document_id = '{}'", sql_string(&job.document_id));
@@ -951,6 +974,8 @@ impl LancetService for LancetServiceImpl {
             parsed.to_string()
         };
 
+        let correlation_id = Uuid::new_v4().to_string();
+
         let (doc_ids, content_types) = if let Some(ref filter) = req.filter {
             (filter.document_ids.clone(), filter.content_types.clone())
         } else {
@@ -981,19 +1006,56 @@ impl LancetService for LancetServiceImpl {
             .get_embeddings(&[query_request.query.clone()])
             .await
         {
-            Ok(vecs) if !vecs.is_empty() && vecs[0].len() == 2048 => vecs[0].clone(),
-            _ => vec![0.25; 2048],
+            Ok(vecs) => {
+                if vecs.len() != 1
+                    || vecs[0].len() != 2048
+                    || vecs[0].iter().any(|f| !f.is_finite())
+                {
+                    return Err(d1_status(
+                        tonic::Code::Internal,
+                        "embedding provider returned invalid payload",
+                        &session_id,
+                        &correlation_id,
+                        "embedding_invalid_payload",
+                    ));
+                }
+                vecs.into_iter().next().unwrap()
+            }
+            Err(err) => {
+                return Err(d1_status(
+                    tonic::Code::Unavailable,
+                    format!("embedding provider transport error: {err}"),
+                    &session_id,
+                    &correlation_id,
+                    "embedding_transport",
+                ));
+            }
         };
 
         let dense_retriever = DenseRetriever::new(self.nodes.clone());
-        let dense_candidates = dense_retriever
+        let dense_candidates = match dense_retriever
             .query(
                 &query_embedding,
                 &query_request,
                 &self.effective_settings.retrieval,
             )
             .await
-            .unwrap_or_default();
+        {
+            Ok(candidates) => candidates,
+            Err(err) => {
+                let (code, kind_str) = match err.kind {
+                    RetrievalErrorKind::Snapshot => (tonic::Code::Unavailable, "dense_retrieval"),
+                    _ => (tonic::Code::Internal, "dense_retrieval_internal"),
+                };
+                return Err(d1_status(
+                    code,
+                    format!("dense retrieval failure: {}", err.message()),
+                    &session_id,
+                    &correlation_id,
+                    kind_str,
+                ));
+            }
+        };
 
         let bm25_guard = self.bm25_index.read().await;
         let bm25_candidates = bm25_guard
@@ -1021,16 +1083,17 @@ impl LancetService for LancetServiceImpl {
             .collect();
 
         let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
+        let limits = self
+            .effective_settings
+            .grounding_limits()
+            .map_err(|err| Status::internal(err))?;
         let packed_evidence = prompt::pack_evidence_prompt(
             &query_request.query,
             &evidence_blocks,
-            self.effective_settings.evidence_token_budget,
-            usize::try_from(self.effective_settings.max_output_tokens)
-                .map_err(|_| Status::internal("max_output_tokens does not fit usize"))?,
+            limits.evidence_token_budget as usize,
+            limits.max_output_tokens as usize,
         )
         .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
-
-        let correlation_id = Uuid::new_v4().to_string();
 
         let mut gen_req =
             generation::GenerationRequest::new(&query_request.query, packed_evidence.evidence.clone());
@@ -1042,49 +1105,38 @@ impl LancetService for LancetServiceImpl {
                 .generate(gen_req)
                 .await
                 .map_err(|err| {
-                    let mut status = match err.kind {
+                    let (code, err_kind_str) = match err.kind {
                         generation::GenerationErrorKind::InvalidRequest => {
-                            Status::invalid_argument(err.message())
+                            (tonic::Code::InvalidArgument, "invalid_request")
                         }
-                        _ => Status::internal(err.message()),
+                        generation::GenerationErrorKind::SupportedParameters => {
+                            (tonic::Code::Internal, "supported_parameters")
+                        }
+                        generation::GenerationErrorKind::ProviderError => {
+                            (tonic::Code::Internal, "provider_error")
+                        }
+                        generation::GenerationErrorKind::SchemaValidation => {
+                            (tonic::Code::Internal, "schema_validation")
+                        }
+                        generation::GenerationErrorKind::Timeout => (tonic::Code::Internal, "timeout"),
+                        generation::GenerationErrorKind::Cancelled => (tonic::Code::Internal, "cancelled"),
+                        generation::GenerationErrorKind::SessionCorrelation => {
+                            (tonic::Code::Internal, "session_correlation")
+                        }
                     };
-                    let err_kind_str = match err.kind {
-                        generation::GenerationErrorKind::InvalidRequest => "invalid_request",
-                        generation::GenerationErrorKind::SupportedParameters => "supported_parameters",
-                        generation::GenerationErrorKind::ProviderError => "provider_error",
-                        generation::GenerationErrorKind::SchemaValidation => "schema_validation",
-                        generation::GenerationErrorKind::Timeout => "timeout",
-                        generation::GenerationErrorKind::Cancelled => "cancelled",
-                        generation::GenerationErrorKind::SessionCorrelation => "session_correlation",
-                    };
-                    let metadata = status.metadata_mut();
-                    if let Ok(val) = session_id.parse() {
-                        metadata.insert("x-lancet-session-id", val);
-                    }
-                    if let Ok(val) = correlation_id.parse() {
-                        metadata.insert("x-lancet-correlation-id", val);
-                    }
-                    if let Ok(val) = err_kind_str.parse() {
-                        metadata.insert("x-lancet-error-kind", val);
-                    }
-                    status
+                    d1_status(code, err.message(), &session_id, &correlation_id, err_kind_str)
                 })?;
 
         model_output
-            .validate_grounding(&packed_evidence.evidence)
+            .validate_grounding_with_limits(&packed_evidence.evidence, limits)
             .map_err(|err| {
-                let mut status = Status::internal(err.message());
-                let metadata = status.metadata_mut();
-                if let Ok(val) = session_id.parse() {
-                    metadata.insert("x-lancet-session-id", val);
-                }
-                if let Ok(val) = correlation_id.parse() {
-                    metadata.insert("x-lancet-correlation-id", val);
-                }
-                if let Ok(val) = "schema_validation".parse() {
-                    metadata.insert("x-lancet-error-kind", val);
-                }
-                status
+                d1_status(
+                    tonic::Code::Internal,
+                    err.message(),
+                    &session_id,
+                    &correlation_id,
+                    "schema_validation",
+                )
             })?;
 
         let resolved_citations = prompt::resolve_citations_with_max_chars(

@@ -903,6 +903,156 @@ func TestRAGQueryProviderErrorPreservesIdentity(t *testing.T) {
 	}
 }
 
+func TestRAGQueryEmbeddingTransportIdentity(t *testing.T) {
+	store := &fakeStore{}
+	sessionID := "00000000-0000-4000-8000-000000000088"
+	correlationID := "00000000-0000-4000-8000-000000000099"
+	errKind := "embedding_transport"
+
+	tr := metadata.Pairs(
+		"x-lancet-session-id", sessionID,
+		"x-lancet-correlation-id", correlationID,
+		"x-lancet-error-kind", errKind,
+	)
+	failingErr := trailerError{
+		err:     status.Error(codes.Unavailable, "embedding provider unreachable"),
+		trailer: tr,
+	}
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			return nil, failingErr
+		},
+	}
+
+	bodyStr := `{"query":"test query","session_id":"` + sessionID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(bodyStr)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+
+	if got := strings.TrimSpace(recorder.Body.String()); got != "engine query failed" {
+		t.Fatalf("body = %q, want %q", got, "engine query failed")
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Session-ID"); got != sessionID {
+		t.Fatalf("X-Lancet-Session-ID = %q, want %q", got, sessionID)
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Correlation-ID"); got != correlationID {
+		t.Fatalf("X-Lancet-Correlation-ID = %q, want %q", got, correlationID)
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Error-Kind"); got != errKind {
+		t.Fatalf("X-Lancet-Error-Kind = %q, want %q", got, errKind)
+	}
+}
+
+func TestRAGQueryEmbeddingInvalidPayloadIdentity(t *testing.T) {
+	store := &fakeStore{}
+	sessionID := "00000000-0000-4000-8000-000000000088"
+	correlationID := "00000000-0000-4000-8000-000000000099"
+	errKind := "embedding_invalid_payload"
+
+	tr := metadata.Pairs(
+		"x-lancet-session-id", sessionID,
+		"x-lancet-correlation-id", correlationID,
+		"x-lancet-error-kind", errKind,
+	)
+	failingErr := trailerError{
+		err:     status.Error(codes.Internal, "embedding payload invalid"),
+		trailer: tr,
+	}
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			return nil, failingErr
+		},
+	}
+
+	bodyStr := `{"query":"test query","session_id":"` + sessionID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(bodyStr)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+
+	if got := strings.TrimSpace(recorder.Body.String()); got != "engine query failed" {
+		t.Fatalf("body = %q, want %q", got, "engine query failed")
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Session-ID"); got != sessionID {
+		t.Fatalf("X-Lancet-Session-ID = %q, want %q", got, sessionID)
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Correlation-ID"); got != correlationID {
+		t.Fatalf("X-Lancet-Correlation-ID = %q, want %q", got, correlationID)
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Error-Kind"); got != errKind {
+		t.Fatalf("X-Lancet-Error-Kind = %q, want %q", got, errKind)
+	}
+}
+
+func TestRAGQueryDenseRetrievalIdentity(t *testing.T) {
+	store := &fakeStore{}
+	sessionID := "00000000-0000-4000-8000-000000000088"
+	correlationID := "00000000-0000-4000-8000-000000000099"
+	errKind := "dense_retrieval"
+
+	tr := metadata.Pairs(
+		"x-lancet-session-id", sessionID,
+		"x-lancet-correlation-id", correlationID,
+		"x-lancet-error-kind", errKind,
+	)
+	failingErr := trailerError{
+		err:     status.Error(codes.Unavailable, "dense query failed"),
+		trailer: tr,
+	}
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			return nil, failingErr
+		},
+	}
+
+	bodyStr := `{"query":"test query","session_id":"` + sessionID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(bodyStr)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadGateway)
+	}
+
+	if got := strings.TrimSpace(recorder.Body.String()); got != "engine query failed" {
+		t.Fatalf("body = %q, want %q", got, "engine query failed")
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Session-ID"); got != sessionID {
+		t.Fatalf("X-Lancet-Session-ID = %q, want %q", got, sessionID)
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Correlation-ID"); got != correlationID {
+		t.Fatalf("X-Lancet-Correlation-ID = %q, want %q", got, correlationID)
+	}
+
+	if got := recorder.Header().Get("X-Lancet-Error-Kind"); got != errKind {
+		t.Fatalf("X-Lancet-Error-Kind = %q, want %q", got, errKind)
+	}
+}
+
 type trackingReadCloser struct {
 	io.Reader
 	closed bool
