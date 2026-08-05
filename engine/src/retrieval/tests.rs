@@ -582,3 +582,34 @@ fn bm25_candidate_workspace_respects_effective_limit() {
     assert_eq!(res[0].chunk_id, "chunk-1");
     assert_eq!(res[1].chunk_id, "chunk-2");
 }
+
+#[test]
+fn fusion_deduplicates_source_before_contribution() {
+    let settings = RetrievalSettings::default();
+    let cand1 = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "content");
+    let cand1_dup = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "content");
+
+    let fused = fuse_candidates(vec![cand1, cand1_dup], vec![], &settings).unwrap();
+    assert_eq!(fused.len(), 1, "duplicate candidate in vector source must be deduplicated before contribution");
+    assert_eq!(fused[0].fused_score, 1.0 / 61.0, "should contribute only once at rank 1");
+}
+
+#[test]
+fn fusion_rejects_non_finite_scores() {
+    let settings = RetrievalSettings::default();
+    let mut cand_nan = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "content");
+    cand_nan.score = f64::NAN;
+
+    let err = fuse_candidates(vec![cand_nan], vec![], &settings).unwrap_err();
+    assert_eq!(err.kind, RetrievalErrorKind::NonFiniteScore);
+}
+
+#[test]
+fn fusion_rejects_non_finite_accumulator() {
+    let settings = RetrievalSettings::default();
+    let mut cand_inf = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "content");
+    cand_inf.score = f64::INFINITY;
+
+    let err = fuse_candidates(vec![cand_inf], vec![], &settings).unwrap_err();
+    assert_eq!(err.kind, RetrievalErrorKind::NonFiniteScore);
+}

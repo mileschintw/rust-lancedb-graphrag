@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -2270,4 +2271,41 @@ func releaseRAGPath(t *testing.T, source, released string) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+func TestWriteJSONEncodeFailureReturns500(t *testing.T) {
+	t.Run("nan causes 500 without commit", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		unencodable := struct {
+			Val float64 `json:"val"`
+		}{
+			Val: math.NaN(),
+		}
+		writeJSON(recorder, http.StatusOK, unencodable)
+		if recorder.Code != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want 500", recorder.Code)
+		}
+		if !strings.Contains(recorder.Body.String(), "error") {
+			t.Fatalf("expected error body, got: %s", recorder.Body.String())
+		}
+	})
+
+	t.Run("encodable returns requested status and json body", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		encodable := map[string]string{"status": "ok"}
+		writeJSON(recorder, http.StatusOK, encodable)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", recorder.Code)
+		}
+		if recorder.Header().Get("Content-Type") != "application/json" {
+			t.Fatalf("content-type = %s, want application/json", recorder.Header().Get("Content-Type"))
+		}
+		var parsed map[string]string
+		if err := json.Unmarshal(recorder.Body.Bytes(), &parsed); err != nil {
+			t.Fatalf("failed to parse json response: %v", err)
+		}
+		if parsed["status"] != "ok" {
+			t.Fatalf("parsed status = %s, want ok", parsed["status"])
+		}
+	})
 }

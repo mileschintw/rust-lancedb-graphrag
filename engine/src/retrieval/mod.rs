@@ -47,6 +47,7 @@ pub enum RetrievalErrorKind {
     EmptyFilterValue,
     FilterLimitExceeded,
     InvalidSettings,
+    NonFiniteScore,
     Snapshot,
 }
 

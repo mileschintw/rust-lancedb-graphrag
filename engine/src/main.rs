@@ -1004,7 +1004,9 @@ impl LancetService for LancetServiceImpl {
             | RetrievalErrorKind::InvalidSettings => {
                 Status::invalid_argument(err.message())
             }
-            RetrievalErrorKind::Snapshot => Status::internal(err.message()),
+            RetrievalErrorKind::NonFiniteScore | RetrievalErrorKind::Snapshot => {
+                Status::internal(err.message())
+            }
         })?;
 
         let query_embedding = match self
@@ -1051,6 +1053,7 @@ impl LancetService for LancetServiceImpl {
             Err(err) => {
                 let (code, kind_str) = match err.kind {
                     RetrievalErrorKind::Snapshot => (tonic::Code::Unavailable, "dense_retrieval"),
+                    RetrievalErrorKind::NonFiniteScore => (tonic::Code::Internal, "non_finite_score"),
                     _ => (tonic::Code::Internal, "dense_retrieval_internal"),
                 };
                 return Err(d1_status(
@@ -1075,7 +1078,10 @@ impl LancetService for LancetServiceImpl {
             bm25_candidates,
             &self.effective_settings.retrieval,
         )
-        .map_err(|err| Status::internal(err.to_string()))?;
+        .map_err(|err| match err.kind {
+            RetrievalErrorKind::NonFiniteScore => Status::internal(format!("non-finite fusion score: {err}")),
+            _ => Status::internal(err.to_string()),
+        })?;
 
         let reranked = self
             .reranker

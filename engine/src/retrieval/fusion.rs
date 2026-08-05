@@ -32,6 +32,26 @@ struct Accumulator {
     bm25_score: Option<f64>,
 }
 
+fn deduplicate_source_candidates(candidates: Vec<Candidate>) -> Result<Vec<Candidate>, RetrievalError> {
+    let mut seen = std::collections::HashSet::with_capacity(candidates.len());
+    let mut deduplicated = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        if !candidate.score.is_finite() {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::NonFiniteScore,
+                format!(
+                    "candidate {} has a non-finite source score",
+                    candidate.chunk_id
+                ),
+            ));
+        }
+        if seen.insert(candidate.chunk_id.clone()) {
+            deduplicated.push(candidate);
+        }
+    }
+    Ok(deduplicated)
+}
+
 /// Fuses bounded source rankings using weighted full-precision RRF.
 pub fn fuse_candidates(
     vector_candidates: Vec<Candidate>,
@@ -39,6 +59,8 @@ pub fn fuse_candidates(
     settings: &RetrievalSettings,
 ) -> Result<Vec<FusedCandidate>, RetrievalError> {
     settings.validate()?;
+    let vector_candidates = deduplicate_source_candidates(vector_candidates)?;
+    let bm25_candidates = deduplicate_source_candidates(bm25_candidates)?;
     let mut fused = BTreeMap::new();
     if settings.vector_weight != 0.0 {
         for (rank, candidate) in vector_candidates
@@ -113,16 +135,29 @@ fn add_candidate(
     }
     if !candidate.score.is_finite() {
         return Err(RetrievalError::new(
-            RetrievalErrorKind::Snapshot,
+            RetrievalErrorKind::NonFiniteScore,
             format!(
                 "candidate {} has a non-finite source score",
                 candidate.chunk_id
             ),
         ));
     }
+    if !weight.is_finite() || !rrf_k.is_finite() {
+        return Err(RetrievalError::new(
+            RetrievalErrorKind::NonFiniteScore,
+            "non-finite weight or rrf_k",
+        ));
+    }
     let source_score = candidate.score;
     let chunk_id = candidate.chunk_id.clone();
-    let contribution = weight / (rrf_k + rank as f64);
+    let denominator = rrf_k + rank as f64;
+    let contribution = weight / denominator;
+    if !contribution.is_finite() {
+        return Err(RetrievalError::new(
+            RetrievalErrorKind::NonFiniteScore,
+            format!("non-finite contribution for candidate {}", candidate.chunk_id),
+        ));
+    }
     let entry = fused.entry(chunk_id).or_insert_with(|| Accumulator {
         candidate: candidate.clone(),
         fused_score: 0.0,
@@ -132,6 +167,12 @@ fn add_candidate(
         bm25_score: None,
     });
     entry.fused_score += contribution;
+    if !entry.fused_score.is_finite() {
+        return Err(RetrievalError::new(
+            RetrievalErrorKind::NonFiniteScore,
+            format!("non-finite accumulator for candidate {}", candidate.chunk_id),
+        ));
+    }
     match source {
         Source::Vector => {
             if entry.vector_rank.is_none() {
