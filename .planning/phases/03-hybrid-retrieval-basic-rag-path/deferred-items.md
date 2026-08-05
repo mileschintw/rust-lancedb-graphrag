@@ -117,3 +117,96 @@ Only D2's valid zero-match success branch is shipped; the malformed, bound, unma
 - **Evidence:** The Go, cross-runtime `TestRAGQueryCrossRuntime`, `buf lint`, and `buf format --diff --exit-code` gates were not completed after the user directed execution to stop phase-final gates.
 - **Scope:** No production defect was inferred; the remaining verification was intentionally stopped by the user after all substantive 03-12 commits were present.
 - **Resolution:** Run these gates only when the user requests phase-final/regression verification.
+
+## ADR-03-003 Force-Close Deferred Items Ledger
+
+Accepted force-close disposition recorded in `.discussion/decisions/phases/03/2026-08-05-ADR-03-003-all-the-way-to-ship-mvp.md`.
+
+### DEBT-P3-BODY-BOUND — Provider body bound post-chunk (Plan 03-20 T1)
+- **Rationale:** `reqwest::Response::chunk` limit check is post-materialization. Local MVP trusts the configured provider; full stream cap is Phase 06 hardening.
+- **Known risk:** Untrusted or malicious upstream can force large frame allocation before reject.
+- **Current constraints:** MVP trusts configured provider transport. Do not expose Engine provider egress to untrusted networks.
+- **Trigger:** Non-loopback deployment, untrusted provider path, or security review of provider I/O.
+- **Target:** Phase 06 resource/security hardening.
+- **Future acceptance criteria:** Reader never retains frame exceeding remaining budget; shared 256 KiB policy enforced pre-materialization.
+
+### DEBT-P3-STAGING-GEN-RACE — Staging generation allocation race (Plan 03-23 T1)
+- **Rationale:** `persist_raw_with_boundary` max generation RMW lacks lock/CAS. Single-writer per doc local MVP avoids concurrent ingest of same doc.
+- **Known risk:** Duplicate generation values; fail-closed read sticks document requiring manual repair.
+- **Current constraints:** Single writer per document_id at a time. Int64 generation column & append-verify-delete protocol unchanged.
+- **Trigger:** Concurrent same-document_id ingest, multi-replica Engine, or production incident with stuck staging docs.
+- **Target:** Phase 06 ingestion hardening.
+- **Future acceptance criteria:** Generation allocation atomic/serialized per document; concurrent replace test passes.
+
+### DEBT-P3-STAGING-PHYSICAL-BU — Physical row retention after delete failure (Plan 03-23 T2)
+- **Rationale:** Delete failure leaving both physical rows unproven under injected delete faults.
+- **Known risk:** Unproven physical row retention under fault paths.
+- **Current constraints:** Rely on sequential happy-path replace only for confidence.
+- **Trigger:** Staging failure-injection work starts or write protocol modified.
+- **Target:** Phase 06 test hardening.
+- **Future acceptance criteria:** Injected delete failure leaves old + successor physical rows; error returned; successor not deleted.
+
+### DEBT-P3-CONFIG-DB-PLAINTEXT — Committed database credentials and disabled TLS
+- **Rationale:** `config.toml` contains plaintext dev credentials and `sslmode=disable` for local docker-style MVP defaults under R4.
+- **Known risk:** Unencrypted DB traffic if remote; credential exposure if mis-copied.
+- **Current constraints:** Single-host local Postgres only. Do not deploy committed defaults to shared/prod databases.
+- **Trigger:** Non-local Postgres, shared environment, or secrets review.
+- **Target:** Phase 06 secrets/config hygiene.
+- **Future acceptance criteria:** No live credentials in committed config; placeholders used; TLS required for non-local.
+
+### DEBT-CR-04 — Insecure Gateway→Engine gRPC (Extended with Phase 03 evidence)
+- **Rationale:** `gateway/main.go` dials engine with `insecure.NewCredentials()`. Extended Phase 02 `DEBT-CR-04` with Phase 03 evidence; loopback single-host MVP makes plaintext gRPC acceptable.
+- **Known risk:** Plaintext gRPC if `engine_addr` is remote.
+- **Current constraints:** Engine reachable only via loopback / single-host path.
+- **Trigger:** Non-loopback `engine_addr`, multi-host deployment, or shared network path.
+- **Target:** Phase 06 transport hardening.
+- **Future acceptance criteria:** TLS with cert validation for non-local; fail startup when insecure dials non-loopback.
+
+### DEBT-P3-PROVIDER-ENDPOINT-TRUST — Provider endpoint trust and bearer exfiltration
+- **Rationale:** Effective settings validate endpoints only as non-blank. Bearer token sent to configured URL.
+- **Known risk:** Typo/malicious endpoint URL receives API bearer key.
+- **Current constraints:** Provider endpoint is operator-trusted input. Do not accept endpoint values from untrusted multi-tenant config.
+- **Trigger:** Multi-tenant/untrusted config source or security review.
+- **Target:** Phase 06 security hardening.
+- **Future acceptance criteria:** HTTPS required except loopback dev; endpoint host allowlist before attaching bearer.
+
+### DEBT-P3-WARN-DX — Fixture and upload DX issues
+- **Rationale:** Non-idempotent seeder appends duplicate stable IDs on re-run; empty multipart upload ambiguity.
+- **Known risk:** Duplicate corpus rows on re-seed; ambiguous empty file upload error.
+- **Current constraints:** Treat seeder as non-idempotent; reset DB/fixtures when re-seeding.
+- **Trigger:** CI flake from duplicate seeds or user empty-upload issue.
+- **Target:** Phase 06 DX overhaul.
+- **Future acceptance criteria:** Seeder reset/upsert; empty upload rejected with 400.
+
+### DEBT-P3-WARN-API — API semantics and D1 identity gaps
+- **Rationale:** Mixed answer basis without conflict disclosure; `NoEvidenceFits` mapped to 400 (blaming client for capacity); missing D1 session/correlation identity on some retrieval errors.
+- **Known risk:** Misleading status codes; incomplete error correlation.
+- **Current constraints:** Do not assume Mixed always carries conflict notices; capacity failure may show as 400.
+- **Trigger:** External client integration depending on precise status/identity.
+- **Target:** Phase 06 API contract hardening.
+- **Future acceptance criteria:** Mixed requires conflict notice; `NoEvidenceFits` maps to capacity status; error kinds attached.
+
+### DEBT-P3-WARN-SETTINGS — Settings consistency warnings
+- **Rationale:** Invalid numeric env overrides silently ignored; public scalar grounding budgets vs private carrier; chunk limits saturate to `i32::MAX`.
+- **Known risk:** Effective config differs from env override intent.
+- **Current constraints:** Validate critical overrides manually when using env.
+- **Trigger:** Production config via env at scale or settings incidents.
+- **Target:** Phase 06 settings refactor.
+- **Future acceptance criteria:** Present-but-invalid env overrides fail startup; carrier is single authority; fail-closed chunk settings.
+
+### DEBT-P3-WARN-VALIDATE — Validation gaps (nulls and non-finite)
+- **Rationale:** Staging readers call `value(i)` without null checks on required fields; embeddings missing `f32::is_finite` check; BM25 finite boosts overflow before fusion reject.
+- **Known risk:** Panic on corrupt rows or non-finite provider outputs.
+- **Current constraints:** Do not feed untrusted embedding providers; treat staging corruption as stop-the-line issue.
+- **Trigger:** Untrusted embedding source or numeric retrieval incidents.
+- **Target:** Phase 06 validation sweep.
+- **Future acceptance criteria:** Required staging fields null-checked; embeddings finite-checked; BM25 boost ceilings.
+
+### DEBT-P3-MODULE-GRAPH — Dual library/binary module graph
+- **Rationale:** `lib.rs` and `main.rs` both declare overlapping production modules, risking drift between test library and running binary.
+- **Known risk:** Silent dual implementation drift.
+- **Current constraints:** Critical fixes must land on the path binary uses.
+- **Trigger:** Next large engine module change or observed drift.
+- **Target:** Phase 06 engine layout refactor.
+- **Future acceptance criteria:** Binary imports shared modules from library crate.
+

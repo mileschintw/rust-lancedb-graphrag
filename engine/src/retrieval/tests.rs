@@ -503,43 +503,67 @@ fn service_ceiling_rejects_each_absolute_maximum() {
     // candidate_limit > 500
     let mut s = base.clone();
     s.candidate_limit = 501;
-    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+    assert_eq!(
+        s.validate().unwrap_err().kind,
+        RetrievalErrorKind::InvalidSettings
+    );
 
     // final_limit > 100
     let mut s = base.clone();
     s.candidate_limit = 500;
     s.final_limit = 101;
-    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+    assert_eq!(
+        s.validate().unwrap_err().kind,
+        RetrievalErrorKind::InvalidSettings
+    );
 
     // query_max_bytes > 8192
     let mut s = base.clone();
     s.query_max_bytes = 8193;
-    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+    assert_eq!(
+        s.validate().unwrap_err().kind,
+        RetrievalErrorKind::InvalidSettings
+    );
 
     // max_document_ids > 100
     let mut s = base.clone();
     s.max_document_ids = 101;
-    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+    assert_eq!(
+        s.validate().unwrap_err().kind,
+        RetrievalErrorKind::InvalidSettings
+    );
 
     // max_content_types > 100
     let mut s = base.clone();
     s.max_content_types = 101;
-    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+    assert_eq!(
+        s.validate().unwrap_err().kind,
+        RetrievalErrorKind::InvalidSettings
+    );
 
     // vector_weight > 16.0
     let mut s = base.clone();
     s.vector_weight = 16.000001;
-    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+    assert_eq!(
+        s.validate().unwrap_err().kind,
+        RetrievalErrorKind::InvalidSettings
+    );
 
     // bm25_weight > 16.0
     let mut s = base.clone();
     s.bm25_weight = 16.000001;
-    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+    assert_eq!(
+        s.validate().unwrap_err().kind,
+        RetrievalErrorKind::InvalidSettings
+    );
 
     // rrf_k > 1000000.0
     let mut s = base.clone();
     s.rrf_k = 1000001.0;
-    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+    assert_eq!(
+        s.validate().unwrap_err().kind,
+        RetrievalErrorKind::InvalidSettings
+    );
 }
 
 #[test]
@@ -563,11 +587,20 @@ fn request_filter_limit_enforces_unique_values_after_normalization() {
 
 #[test]
 fn bm25_candidate_workspace_respects_effective_limit() {
-    let cand1 = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "apple apple apple");
-    let cand2 = candidate("00000000-0000-4000-8000-000000000002", "chunk-2", "apple apple");
+    let cand1 = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-1",
+        "apple apple apple",
+    );
+    let cand2 = candidate(
+        "00000000-0000-4000-8000-000000000002",
+        "chunk-2",
+        "apple apple",
+    );
     let cand3 = candidate("00000000-0000-4000-8000-000000000003", "chunk-3", "apple");
 
-    let index = Bm25Index::from_candidates(vec![cand1, cand2, cand3], Bm25Config::default()).unwrap();
+    let index =
+        Bm25Index::from_candidates(vec![cand1, cand2, cand3], Bm25Config::default()).unwrap();
 
     let settings = RetrievalSettings {
         candidate_limit: 2,
@@ -590,8 +623,16 @@ fn fusion_deduplicates_source_before_contribution() {
     let cand1_dup = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "content");
 
     let fused = fuse_candidates(vec![cand1, cand1_dup], vec![], &settings).unwrap();
-    assert_eq!(fused.len(), 1, "duplicate candidate in vector source must be deduplicated before contribution");
-    assert_eq!(fused[0].fused_score, 1.0 / 61.0, "should contribute only once at rank 1");
+    assert_eq!(
+        fused.len(),
+        1,
+        "duplicate candidate in vector source must be deduplicated before contribution"
+    );
+    assert_eq!(
+        fused[0].fused_score,
+        1.0 / 61.0,
+        "should contribute only once at rank 1"
+    );
 }
 
 #[test]

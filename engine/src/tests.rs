@@ -44,10 +44,7 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
         "engine.retrieval.candidate_limit",
         "unit=count; range=1..=500",
     ),
-    (
-        "engine.retrieval.final_limit",
-        "unit=count; range=1..=100",
-    ),
+    ("engine.retrieval.final_limit", "unit=count; range=1..=100"),
     (
         "engine.retrieval.query_max_bytes",
         "unit=UTF-8 bytes; range=1..=8192",
@@ -80,10 +77,7 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
         "engine.retrieval.excerpt_max_chars",
         "unit=Unicode characters; range=>0",
     ),
-    (
-        "engine.retrieval.bm25.k1",
-        "unit=unitless; range=finite >0",
-    ),
+    ("engine.retrieval.bm25.k1", "unit=unitless; range=finite >0"),
     (
         "engine.retrieval.bm25.b",
         "unit=unitless; range=finite 0..=1",
@@ -124,18 +118,9 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
         "openrouter.generation_timeout_secs",
         "unit=seconds; range=>0",
     ),
-    (
-        "openrouter.temperature",
-        "unit=unitless; range=finite 0..2",
-    ),
-    (
-        "openrouter.top_p",
-        "unit=unitless; range=finite 0..1",
-    ),
-    (
-        "openrouter.max_output_tokens",
-        "unit=tokens; range=>0",
-    ),
+    ("openrouter.temperature", "unit=unitless; range=finite 0..2"),
+    ("openrouter.top_p", "unit=unitless; range=finite 0..1"),
+    ("openrouter.max_output_tokens", "unit=tokens; range=>0"),
 ];
 
 #[test]
@@ -302,8 +287,7 @@ impl RecordingReranker {
     }
 
     fn calls(&self) -> usize {
-        self.call_count
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.call_count.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn inputs(&self) -> Vec<Vec<retrieval::FusedCandidate>> {
@@ -340,8 +324,7 @@ impl FailingReranker {
     }
 
     fn calls(&self) -> usize {
-        self.call_count
-            .load(std::sync::atomic::Ordering::Relaxed)
+        self.call_count.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -750,8 +733,8 @@ async fn replacement_documents_add_failure_rolls_back_and_retry_converges() {
         &old_embeddings,
         client::EMBEDDING_MODEL,
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     stage_document(&database, &document_id, b"replacement staging row").await;
     let old_state = canonical_state(&database, &document_id).await;
 
@@ -846,8 +829,8 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
             &old_embeddings,
             client::EMBEDDING_MODEL,
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         stage_document(&database, &document_id, b"replacement staging row").await;
         let old_state = canonical_state(&database, &document_id).await;
         assert_eq!(old_state.edge_ids.len(), 3);
@@ -971,8 +954,8 @@ async fn persisted_node_summary_is_arrow_null() {
         &[],
         client::EMBEDDING_MODEL,
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     let empty_predicate = format!("document_id = '{}'", sql_string(&empty_job.document_id));
     assert_eq!(
         database
@@ -1020,8 +1003,8 @@ async fn persisted_node_summary_is_arrow_null() {
         &embeddings,
         client::EMBEDDING_MODEL,
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     let rows = query_rows(
         &database.nodes_table().await.unwrap(),
         &format!("document_id = '{}'", sql_string(&job.document_id)),
@@ -2258,7 +2241,9 @@ async fn configured_provider_settings_reach_query_requests() {
         .into_iter()
         .next()
         .unwrap();
-    process_job(&job, &database, embedder.as_ref()).await.unwrap();
+    process_job(&job, &database, embedder.as_ref())
+        .await
+        .unwrap();
 
     let service = configured_service(
         &database,
@@ -2279,7 +2264,10 @@ async fn configured_provider_settings_reach_query_requests() {
         .into_inner();
 
     assert_eq!(embedder.requests().len(), 2);
-    assert_eq!(embedder.requests()[1], vec!["configured provider query".to_string()]);
+    assert_eq!(
+        embedder.requests()[1],
+        vec!["configured provider query".to_string()]
+    );
     assert_eq!(generator.calls(), 1);
     let generation_request = &generator.requests()[0];
     assert_eq!(generation_request.question, "configured provider query");
@@ -2320,7 +2308,12 @@ async fn configured_embedding_identity_persists_and_reports() {
     let path = database_path("configured-embedding-identity");
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let document_id = Uuid::new_v4().to_string();
-    stage_document(&database, &document_id, b"# Identity\n\nConfigured identity content.").await;
+    stage_document(
+        &database,
+        &document_id,
+        b"# Identity\n\nConfigured identity content.",
+    )
+    .await;
 
     let settings = configured_settings(&path);
     let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
@@ -2332,7 +2325,9 @@ async fn configured_embedding_identity_persists_and_reports() {
         .into_iter()
         .next()
         .unwrap();
-    process_job(&job, &database, embedder.as_ref()).await.unwrap();
+    process_job(&job, &database, embedder.as_ref())
+        .await
+        .unwrap();
 
     let nodes = database.nodes_table().await.unwrap();
     let rows = query_rows(
@@ -2340,8 +2335,10 @@ async fn configured_embedding_identity_persists_and_reports() {
         &format!("document_id = '{}'", sql_string(&document_id)),
     )
     .await;
-    assert_eq!(string_values(&rows, "embedding_model"),
-        BTreeSet::from([embedder.configured_model.clone()]));
+    assert_eq!(
+        string_values(&rows, "embedding_model"),
+        BTreeSet::from([embedder.configured_model.clone()])
+    );
 
     let service = configured_service(
         &database,
@@ -2361,7 +2358,10 @@ async fn configured_embedding_identity_persists_and_reports() {
         .unwrap()
         .into_inner();
 
-    assert_eq!(embedder.configured_model, effective_settings.embedding_model);
+    assert_eq!(
+        embedder.configured_model,
+        effective_settings.embedding_model
+    );
     assert_eq!(
         response.snapshot.unwrap().embedding_model,
         embedder.configured_model
@@ -2397,7 +2397,9 @@ async fn configured_bm25_and_evidence_settings_reach_query() {
         .into_iter()
         .next()
         .unwrap();
-    process_job(&job, &database, embedder.as_ref()).await.unwrap();
+    process_job(&job, &database, embedder.as_ref())
+        .await
+        .unwrap();
 
     let service = configured_service(
         &database,
@@ -2494,7 +2496,8 @@ async fn configured_rag_settings_drive_service() {
     };
 
     let effective_settings = EffectiveRagSettings::try_from_settings(&settings).unwrap();
-    let configured_embedder = RecordingEmbeddingProvider::from_effective_settings(&effective_settings);
+    let configured_embedder =
+        RecordingEmbeddingProvider::from_effective_settings(&effective_settings);
     let nodes = database.nodes_table().await.unwrap();
     let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
         .await
@@ -2631,12 +2634,19 @@ async fn service_index_generation_is_opaque_and_stable() {
     let database1 = DatabaseManager::initialize(&path1).await.unwrap();
     let doc_id1 = Uuid::new_v4().to_string();
     stage_document(&database1, &doc_id1, b"# Test Document 1\n\nContent 1").await;
-    let job1 = read_staged_jobs(&database1).await.unwrap().into_iter().next().unwrap();
+    let job1 = read_staged_jobs(&database1)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
     process_job(&job1, &database1, &FakeEmbedder).await.unwrap();
 
     let effective_settings1 = EffectiveRagSettings::default();
     let nodes1 = database1.nodes_table().await.unwrap();
-    let bm25_index1 = Bm25Index::from_table(&nodes1, effective_settings1.retrieval.bm25.clone()).await.unwrap();
+    let bm25_index1 = Bm25Index::from_table(&nodes1, effective_settings1.retrieval.bm25.clone())
+        .await
+        .unwrap();
     let table1 = database1.staged_documents_table().await.unwrap();
     let (sender1, _receiver1) = mpsc::channel(QUEUE_CAPACITY);
     let model_out1 = generation::ModelOutput {
@@ -2675,26 +2685,44 @@ async fn service_index_generation_is_opaque_and_stable() {
         filter: None,
     };
 
-    let res1 = service1.query_rag(tonic::Request::new(req1)).await.unwrap().into_inner();
-    let res2 = service1.query_rag(tonic::Request::new(req2)).await.unwrap().into_inner();
+    let res1 = service1
+        .query_rag(tonic::Request::new(req1))
+        .await
+        .unwrap()
+        .into_inner();
+    let res2 = service1
+        .query_rag(tonic::Request::new(req2))
+        .await
+        .unwrap()
+        .into_inner();
 
     let gen1 = res1.snapshot.as_ref().unwrap().index_generation.clone();
     let gen2 = res2.snapshot.as_ref().unwrap().index_generation.clone();
 
     assert!(!gen1.is_empty());
     assert_ne!(gen1, "v1");
-    assert_eq!(gen1, gen2, "two queries on the same service must report the same generation");
+    assert_eq!(
+        gen1, gen2,
+        "two queries on the same service must report the same generation"
+    );
 
     let effective_settings2 = EffectiveRagSettings::default();
     let path2 = database_path("opaque-stable-gen-2");
     let database2 = DatabaseManager::initialize(&path2).await.unwrap();
     let doc_id2 = Uuid::new_v4().to_string();
     stage_document(&database2, &doc_id2, b"# Test Document 2\n\nContent 2").await;
-    let job2 = read_staged_jobs(&database2).await.unwrap().into_iter().next().unwrap();
+    let job2 = read_staged_jobs(&database2)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
     process_job(&job2, &database2, &FakeEmbedder).await.unwrap();
 
     let nodes2 = database2.nodes_table().await.unwrap();
-    let bm25_index2 = Bm25Index::from_table(&nodes2, effective_settings2.retrieval.bm25.clone()).await.unwrap();
+    let bm25_index2 = Bm25Index::from_table(&nodes2, effective_settings2.retrieval.bm25.clone())
+        .await
+        .unwrap();
     let table2 = database2.staged_documents_table().await.unwrap();
     let (sender2, _receiver2) = mpsc::channel(QUEUE_CAPACITY);
     let service2 = LancetServiceImpl {
@@ -2705,14 +2733,16 @@ async fn service_index_generation_is_opaque_and_stable() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index2)),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings2,
-        generator: Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-            answer: "Answer 2 [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        }))),
+        generator: Arc::new(generation::FakeGenerator::new(Ok(
+            generation::ModelOutput {
+                answer: "Answer 2 [1].".into(),
+                cited_evidence_ids: vec!["[1]".into()],
+                answer_basis: generation::AnswerBasis::Retrieval,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            },
+        ))),
         embedder: Arc::new(FakeEmbedder),
     };
 
@@ -2721,10 +2751,17 @@ async fn service_index_generation_is_opaque_and_stable() {
         session_id: "00000000-0000-4000-8000-000000000006".into(),
         filter: None,
     };
-    let res3 = service2.query_rag(tonic::Request::new(req3)).await.unwrap().into_inner();
+    let res3 = service2
+        .query_rag(tonic::Request::new(req3))
+        .await
+        .unwrap()
+        .into_inner();
     let gen3 = res3.snapshot.as_ref().unwrap().index_generation.clone();
 
-    assert_ne!(gen1, gen3, "separately constructed service must report a different generation");
+    assert_ne!(
+        gen1, gen3,
+        "separately constructed service must report a different generation"
+    );
 
     let _ = std::fs::remove_dir_all(path1);
     let _ = std::fs::remove_dir_all(path2);
@@ -3048,14 +3085,20 @@ async fn query_rag_generation_error_preserves_identity() {
     assert_eq!(status.message(), "OpenRouter API rate limit");
 
     let metadata = status.metadata();
-    let sess_val = metadata.get("x-lancet-session-id").expect("session id trailer");
+    let sess_val = metadata
+        .get("x-lancet-session-id")
+        .expect("session id trailer");
     assert_eq!(sess_val.to_str().unwrap(), session_id);
 
-    let corr_val = metadata.get("x-lancet-correlation-id").expect("correlation id trailer");
+    let corr_val = metadata
+        .get("x-lancet-correlation-id")
+        .expect("correlation id trailer");
     let corr_str = corr_val.to_str().unwrap();
     assert!(Uuid::parse_str(corr_str).is_ok());
 
-    let kind_val = metadata.get("x-lancet-error-kind").expect("error kind trailer");
+    let kind_val = metadata
+        .get("x-lancet-error-kind")
+        .expect("error kind trailer");
     assert_eq!(kind_val.to_str().unwrap(), "provider_error");
 
     let _ = std::fs::remove_dir_all(path);
@@ -3290,17 +3333,26 @@ async fn query_rag_fail_closed_embedding_transport() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FailingEmbedder("network unreachable".into()));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-        answer: "Should not be called [1].".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: generation::AnswerBasis::Retrieval,
-        notices: vec![],
-        warnings: vec![],
-        usage: None,
-    })));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Should not be called [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
-    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+    let service = configured_service(
+        &database,
+        effective_settings,
+        embedder,
+        generator.clone(),
+        reranker,
+    )
+    .await;
 
     let req = QueryRagRequest {
         query: "What is Lancet?".into(),
@@ -3308,14 +3360,27 @@ async fn query_rag_fail_closed_embedding_transport() {
         filter: None,
     };
 
-    let status = service.query_rag(Request::new(req)).await.expect_err("embedding transport error fails closed");
+    let status = service
+        .query_rag(Request::new(req))
+        .await
+        .expect_err("embedding transport error fails closed");
     assert_eq!(status.code(), tonic::Code::Unavailable);
     assert_eq!(
-        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        status
+            .metadata()
+            .get("x-lancet-error-kind")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "embedding_transport"
     );
     assert_eq!(
-        status.metadata().get("x-lancet-session-id").unwrap().to_str().unwrap(),
+        status
+            .metadata()
+            .get("x-lancet-session-id")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "00000000-0000-4000-8000-000000000001"
     );
     assert!(status.metadata().get("x-lancet-correlation-id").is_some());
@@ -3330,17 +3395,26 @@ async fn query_rag_fail_closed_embedding_empty_payload() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![]));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-        answer: "Should not be called [1].".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: generation::AnswerBasis::Retrieval,
-        notices: vec![],
-        warnings: vec![],
-        usage: None,
-    })));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Should not be called [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
-    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+    let service = configured_service(
+        &database,
+        effective_settings,
+        embedder,
+        generator.clone(),
+        reranker,
+    )
+    .await;
 
     let req = QueryRagRequest {
         query: "What is Lancet?".into(),
@@ -3348,10 +3422,18 @@ async fn query_rag_fail_closed_embedding_empty_payload() {
         filter: None,
     };
 
-    let status = service.query_rag(Request::new(req)).await.expect_err("empty embedding payload fails closed");
+    let status = service
+        .query_rag(Request::new(req))
+        .await
+        .expect_err("empty embedding payload fails closed");
     assert_eq!(status.code(), tonic::Code::Internal);
     assert_eq!(
-        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        status
+            .metadata()
+            .get("x-lancet-error-kind")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "embedding_invalid_payload"
     );
     assert_eq!(generator.calls(), 0);
@@ -3365,17 +3447,26 @@ async fn query_rag_fail_closed_embedding_multi_vector() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![vec![0.25; 2048], vec![0.25; 2048]]));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-        answer: "Should not be called [1].".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: generation::AnswerBasis::Retrieval,
-        notices: vec![],
-        warnings: vec![],
-        usage: None,
-    })));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Should not be called [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
-    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+    let service = configured_service(
+        &database,
+        effective_settings,
+        embedder,
+        generator.clone(),
+        reranker,
+    )
+    .await;
 
     let req = QueryRagRequest {
         query: "What is Lancet?".into(),
@@ -3383,10 +3474,18 @@ async fn query_rag_fail_closed_embedding_multi_vector() {
         filter: None,
     };
 
-    let status = service.query_rag(Request::new(req)).await.expect_err("multi vector payload fails closed");
+    let status = service
+        .query_rag(Request::new(req))
+        .await
+        .expect_err("multi vector payload fails closed");
     assert_eq!(status.code(), tonic::Code::Internal);
     assert_eq!(
-        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        status
+            .metadata()
+            .get("x-lancet-error-kind")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "embedding_invalid_payload"
     );
     assert_eq!(generator.calls(), 0);
@@ -3400,17 +3499,26 @@ async fn query_rag_fail_closed_embedding_wrong_dimension() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![vec![0.25; 512]]));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-        answer: "Should not be called [1].".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: generation::AnswerBasis::Retrieval,
-        notices: vec![],
-        warnings: vec![],
-        usage: None,
-    })));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Should not be called [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
-    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+    let service = configured_service(
+        &database,
+        effective_settings,
+        embedder,
+        generator.clone(),
+        reranker,
+    )
+    .await;
 
     let req = QueryRagRequest {
         query: "What is Lancet?".into(),
@@ -3418,10 +3526,18 @@ async fn query_rag_fail_closed_embedding_wrong_dimension() {
         filter: None,
     };
 
-    let status = service.query_rag(Request::new(req)).await.expect_err("wrong dimension vector fails closed");
+    let status = service
+        .query_rag(Request::new(req))
+        .await
+        .expect_err("wrong dimension vector fails closed");
     assert_eq!(status.code(), tonic::Code::Internal);
     assert_eq!(
-        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        status
+            .metadata()
+            .get("x-lancet-error-kind")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "embedding_invalid_payload"
     );
     assert_eq!(generator.calls(), 0);
@@ -3437,17 +3553,26 @@ async fn query_rag_fail_closed_embedding_non_finite() {
     let mut vec_nan = vec![0.25; 2048];
     vec_nan[10] = f32::NAN;
     let embedder = Arc::new(PayloadEmbedder(vec![vec_nan]));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-        answer: "Should not be called [1].".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: generation::AnswerBasis::Retrieval,
-        notices: vec![],
-        warnings: vec![],
-        usage: None,
-    })));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Should not be called [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
-    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+    let service = configured_service(
+        &database,
+        effective_settings,
+        embedder,
+        generator.clone(),
+        reranker,
+    )
+    .await;
 
     let req = QueryRagRequest {
         query: "What is Lancet?".into(),
@@ -3455,10 +3580,18 @@ async fn query_rag_fail_closed_embedding_non_finite() {
         filter: None,
     };
 
-    let status = service.query_rag(Request::new(req)).await.expect_err("non finite vector fails closed");
+    let status = service
+        .query_rag(Request::new(req))
+        .await
+        .expect_err("non finite vector fails closed");
     assert_eq!(status.code(), tonic::Code::Internal);
     assert_eq!(
-        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        status
+            .metadata()
+            .get("x-lancet-error-kind")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "embedding_invalid_payload"
     );
     assert_eq!(generator.calls(), 0);
@@ -3472,14 +3605,16 @@ async fn query_rag_fail_closed_dense_snapshot() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FakeEmbedder);
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-        answer: "Should not be called [1].".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: generation::AnswerBasis::Retrieval,
-        notices: vec![],
-        warnings: vec![],
-        usage: None,
-    })));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Should not be called [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
     let malformed_nodes = database.edges_table().await.unwrap();
@@ -3509,10 +3644,18 @@ async fn query_rag_fail_closed_dense_snapshot() {
         filter: None,
     };
 
-    let status = service.query_rag(Request::new(req)).await.expect_err("dense snapshot error fails closed");
+    let status = service
+        .query_rag(Request::new(req))
+        .await
+        .expect_err("dense snapshot error fails closed");
     assert_eq!(status.code(), tonic::Code::Unavailable);
     assert_eq!(
-        status.metadata().get("x-lancet-error-kind").unwrap().to_str().unwrap(),
+        status
+            .metadata()
+            .get("x-lancet-error-kind")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "dense_retrieval"
     );
     assert_eq!(generator.calls(), 0);
@@ -3526,17 +3669,26 @@ async fn query_rag_valid_zero_match() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FakeEmbedder);
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
-        answer: "Should not be called [1].".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: generation::AnswerBasis::Retrieval,
-        notices: vec![],
-        warnings: vec![],
-        usage: None,
-    })));
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Should not be called [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
-    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+    let service = configured_service(
+        &database,
+        effective_settings,
+        embedder,
+        generator.clone(),
+        reranker,
+    )
+    .await;
 
     let req = QueryRagRequest {
         query: "What is Lancet?".into(),
@@ -3547,16 +3699,29 @@ async fn query_rag_valid_zero_match() {
         }),
     };
 
-    let resp = service.query_rag(Request::new(req)).await.unwrap().into_inner();
+    let resp = service
+        .query_rag(Request::new(req))
+        .await
+        .unwrap()
+        .into_inner();
     assert_eq!(resp.answer, "");
     assert!(resp.citations.is_empty());
     assert!(resp.structured_citations.is_empty());
     assert_eq!(resp.session_id, "00000000-0000-4000-8000-000000000001");
-    assert_eq!(resp.answer_basis, lancet::v1::AnswerBasis::Unspecified as i32);
+    assert_eq!(
+        resp.answer_basis,
+        lancet::v1::AnswerBasis::Unspecified as i32
+    );
     assert_eq!(resp.notices.len(), 1);
     assert_eq!(resp.notices[0].code, "NO_EVIDENCE");
-    assert_eq!(resp.notices[0].message, "No completed corpus evidence matched the requested filters.");
-    assert_eq!(resp.notices[0].severity, lancet::v1::NoticeSeverity::Info as i32);
+    assert_eq!(
+        resp.notices[0].message,
+        "No completed corpus evidence matched the requested filters."
+    );
+    assert_eq!(
+        resp.notices[0].severity,
+        lancet::v1::NoticeSeverity::Info as i32
+    );
     assert!(resp.snapshot.is_some());
     assert_eq!(generator.calls(), 0);
 
@@ -3592,7 +3757,8 @@ async fn read_staged_jobs_latest_generation_wins() {
             ("chunk_strategy".to_string(), "fixed-size".to_string()),
             ("chunk_size".to_string(), "500".to_string()),
             ("chunk_overlap".to_string(), "50".to_string()),
-        ])).unwrap(),
+        ]))
+        .unwrap(),
     };
 
     let job_v2 = IngestionJob {
@@ -3608,7 +3774,8 @@ async fn read_staged_jobs_latest_generation_wins() {
             ("chunk_strategy".to_string(), "fixed-size".to_string()),
             ("chunk_size".to_string(), "500".to_string()),
             ("chunk_overlap".to_string(), "50".to_string()),
-        ])).unwrap(),
+        ]))
+        .unwrap(),
     };
 
     let rows = vec![
@@ -3685,7 +3852,11 @@ async fn persist_raw_append_verify_precedes_delete() {
         ) -> BoxFuture<'a, Result<(), String>> {
             self.0.lock().unwrap().push(boundary);
             Box::pin(async move {
-                table.delete(predicate).await.map(|_| ()).map_err(|e| e.to_string())
+                table
+                    .delete(predicate)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
             })
         }
         fn add<'a>(
@@ -3696,7 +3867,12 @@ async fn persist_raw_append_verify_precedes_delete() {
         ) -> BoxFuture<'a, Result<(), String>> {
             self.0.lock().unwrap().push(boundary);
             Box::pin(async move {
-                table.add(batch).execute().await.map(|_| ()).map_err(|e| e.to_string())
+                table
+                    .add(batch)
+                    .execute()
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
             })
         }
     }
@@ -3707,7 +3883,13 @@ async fn persist_raw_append_verify_precedes_delete() {
         .unwrap();
 
     let calls = recorded_calls.lock().unwrap().clone();
-    assert_eq!(calls, vec![ReplacementMutation::StagingAdd, ReplacementMutation::StagingDelete]);
+    assert_eq!(
+        calls,
+        vec![
+            ReplacementMutation::StagingAdd,
+            ReplacementMutation::StagingDelete
+        ]
+    );
 
     let staged_jobs = read_staged_jobs(&manager).await.unwrap();
     assert_eq!(staged_jobs.len(), 1);
@@ -3766,7 +3948,12 @@ async fn persist_raw_keeps_old_generation_when_delete_fails() {
             batch: RecordBatch,
         ) -> BoxFuture<'a, Result<(), String>> {
             Box::pin(async move {
-                table.add(batch).execute().await.map(|_| ()).map_err(|e| e.to_string())
+                table
+                    .add(batch)
+                    .execute()
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
             })
         }
     }

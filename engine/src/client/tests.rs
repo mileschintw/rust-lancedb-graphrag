@@ -329,5 +329,8 @@ async fn embedding_client_rejects_oversized_streaming_body() {
     let endpoint = format!("http://{addr}/embeddings");
     let client = OpenRouterClient::for_test(endpoint, 0, Duration::ZERO);
     let err = client.get_embeddings(&["test".into()]).await.unwrap_err();
-    assert!(err.contains("invalid embedding response"), "got error: {err}");
+    assert!(
+        err.contains("invalid embedding response"),
+        "got error: {err}"
+    );
 }

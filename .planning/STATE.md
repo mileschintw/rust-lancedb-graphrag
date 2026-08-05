@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 3
-current_plan: 23
-status: executing
-stopped_at: Completed Phase 03 plan execution; verification refreshed with gaps_found
-last_updated: "2026-08-05T21:14:10.413Z"
+current_phase: 4
+current_plan: 0
+status: ready_to_plan
+stopped_at: Force-closed Phase 03 per ADR-03-003; ready for Phase 04 planning
+last_updated: "2026-08-05T21:30:00.000Z"
 progress:
-  total_phases: 3
-  completed_phases: 2
+  total_phases: 6
+  completed_phases: 3
   total_plans: 52
   completed_plans: 52
 ---
@@ -20,21 +20,21 @@ progress:
 
 - Phase 1 completed successfully.
 - Phase 2 completed (force-closed per ADR-02-004; all open gaps marked as technical debt deferred to Phase 6 final hardening).
-- Phase 3 plan execution is complete (23/23 plans); RAG-03 degraded/citation-repair/re-ingestion behavior is explicitly deferred to Phase 6 hardening. Phase-final review and verification were refreshed; verification returned `gaps_found` for provider body pre-materialization bounds, raw-staging generation concurrency, committed transport/configuration security, and one unverified physical-row behavior item, so the phase remains pending gap planning.
+- Phase 3 completed (force-closed per ADR-03-003; 23/23 plans executed; residual verification gaps recorded as technical debt DEBT-P3-* deferred to Phase 6 final hardening; next phase = Phase 4).
 
 ## Active Phase
 
-- **Phase:** 3
-- **Status:** Plan execution complete; phase verification has gaps
-- **Current Plan:** 23
-- **Total Plans in Phase:** 23
-- **Progress:** [██████████] 100%
-- **Phase Progress:** 23 plans executed
+- **Phase:** 4
+- **Status:** Ready for Phase 04 planning
+- **Current Plan:** 0
+- **Total Plans in Phase:** TBD
+- **Progress:** [░░░░░░░░░░] 0%
 
 ## Completed Phases
 
 - **Phase 1: Basic Gateway & Rust Engine Ping** (Completed: 2026-07-13)
 - **Phase 2: Ingestion, Chunking & Vector Storage** (Completed: 2026-07-30 via ADR-02-004 debt deferral to Phase 6)
+- **Phase 3: Hybrid Retrieval & Basic RAG Path** (Completed: 2026-08-05 via ADR-03-003 debt deferral to Phase 6)
 
 ## Known Issues & Debt
 
@@ -47,6 +47,19 @@ progress:
   - `DEBT-WR-01 / VER-19`: Test cleanup deletes another process's fixtures and fails full suite
   - `DEBT-WR-02`: Empty uploads become durable failed jobs and misleading 502 response
   - `DEBT-WR-03`: Cross-runtime recovery tests can hang indefinitely on failure
+- Accepted ADR `.discussion/decisions/phases/03/2026-08-05-ADR-03-003-all-the-way-to-ship-mvp.md` force-closed Phase 03 to focus on Phase 04 Knowledge Graph progress.
+- All remaining Phase 03 findings are deferred as technical debt to the final hardening phase (Phase 6):
+  - `DEBT-P3-BODY-BOUND`: Provider body limit bound is post-chunk materialization
+  - `DEBT-P3-STAGING-GEN-RACE`: Staging generation RMW max generation allocation race under equal-gen fail-closed
+  - `DEBT-P3-STAGING-PHYSICAL-BU`: Delete-fail physical row retention unproven under fault injection
+  - `DEBT-P3-CONFIG-DB-PLAINTEXT`: Committed plaintext DB credentials and sslmode=disable local dev defaults
+  - `DEBT-CR-04` (extended): Insecure Gateway->Engine gRPC dial on loopback
+  - `DEBT-P3-PROVIDER-ENDPOINT-TRUST`: Provider endpoint URL trust and bearer token sending
+  - `DEBT-P3-WARN-DX`: Seeder non-idempotence and empty multipart upload ambiguity
+  - `DEBT-P3-WARN-API`: Mixed answer basis without conflict notice, NoEvidenceFits mapped to 400, D1 identity gaps
+  - `DEBT-P3-WARN-SETTINGS`: Env ignore, scalar vs carrier dual budget, chunk limit saturation
+  - `DEBT-P3-WARN-VALIDATE`: Staging reader null checks, non-finite embedding/BM25 boost overflow
+  - `DEBT-P3-MODULE-GRAPH`: Dual lib/bin production module graph
 - Pre-existing Phase 02 security/resource debt items (`DEBT-CR-04` loopback guardrail, `DEBT-CR-05` pre-admission bounds, `DEBT-BU-01`, `DEBT-BU-02`) remain active and non-blocking until their triggers or Phase 6.
 - Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for Phase 03 and Phase 04.
 - Phase 03 does not claim RAG-03 delivery: DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 remain the source-of-record future hardening contracts; the initial BM25 build/readiness guard is the only lifecycle safeguard retained in the MVP path.

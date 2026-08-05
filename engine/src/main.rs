@@ -836,7 +836,10 @@ fn d1_status(
     status
 }
 
-async fn get_max_staged_generation(table: &Table, document_id: &str) -> Result<Option<i64>, String> {
+async fn get_max_staged_generation(
+    table: &Table,
+    document_id: &str,
+) -> Result<Option<i64>, String> {
     let pred = format!("document_id = '{}'", sql_string(document_id));
     let batches: Vec<RecordBatch> = table
         .query()
@@ -899,7 +902,9 @@ async fn persist_raw_with_boundary(
     )
     .map_err(|e| e.to_string())?;
 
-    boundary.add(ReplacementMutation::StagingAdd, table, batch).await?;
+    boundary
+        .add(ReplacementMutation::StagingAdd, table, batch)
+        .await?;
 
     let verify_pred = format!(
         "document_id = '{}' AND generation = {new_gen}",
@@ -1126,9 +1131,7 @@ impl LancetService for LancetServiceImpl {
             | RetrievalErrorKind::UnsupportedContentType
             | RetrievalErrorKind::EmptyFilterValue
             | RetrievalErrorKind::FilterLimitExceeded
-            | RetrievalErrorKind::InvalidSettings => {
-                Status::invalid_argument(err.message())
-            }
+            | RetrievalErrorKind::InvalidSettings => Status::invalid_argument(err.message()),
             RetrievalErrorKind::NonFiniteScore | RetrievalErrorKind::Snapshot => {
                 Status::internal(err.message())
             }
@@ -1178,7 +1181,9 @@ impl LancetService for LancetServiceImpl {
             Err(err) => {
                 let (code, kind_str) = match err.kind {
                     RetrievalErrorKind::Snapshot => (tonic::Code::Unavailable, "dense_retrieval"),
-                    RetrievalErrorKind::NonFiniteScore => (tonic::Code::Internal, "non_finite_score"),
+                    RetrievalErrorKind::NonFiniteScore => {
+                        (tonic::Code::Internal, "non_finite_score")
+                    }
                     _ => (tonic::Code::Internal, "dense_retrieval_internal"),
                 };
                 return Err(d1_status(
@@ -1204,7 +1209,9 @@ impl LancetService for LancetServiceImpl {
             &self.effective_settings.retrieval,
         )
         .map_err(|err| match err.kind {
-            RetrievalErrorKind::NonFiniteScore => Status::internal(format!("non-finite fusion score: {err}")),
+            RetrievalErrorKind::NonFiniteScore => {
+                Status::internal(format!("non-finite fusion score: {err}"))
+            }
             _ => Status::internal(err.to_string()),
         })?;
 
@@ -1252,7 +1259,8 @@ impl LancetService for LancetServiceImpl {
                 structured_citations: vec![],
                 notices: vec![lancet::v1::Notice {
                     code: "NO_EVIDENCE".to_string(),
-                    message: "No completed corpus evidence matched the requested filters.".to_string(),
+                    message: "No completed corpus evidence matched the requested filters."
+                        .to_string(),
                     severity: lancet::v1::NoticeSeverity::Info as i32,
                 }],
                 snapshot: Some(snapshot),
@@ -1269,37 +1277,41 @@ impl LancetService for LancetServiceImpl {
         )
         .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
 
-        let mut gen_req =
-            generation::GenerationRequest::new(&query_request.query, packed_evidence.evidence.clone());
+        let mut gen_req = generation::GenerationRequest::new(
+            &query_request.query,
+            packed_evidence.evidence.clone(),
+        );
         gen_req.session_id = Some(session_id.clone());
         gen_req.correlation_id = Some(correlation_id.clone());
 
-        let model_output =
-            self.generator
-                .generate(gen_req)
-                .await
-                .map_err(|err| {
-                    let (code, err_kind_str) = match err.kind {
-                        generation::GenerationErrorKind::InvalidRequest => {
-                            (tonic::Code::InvalidArgument, "invalid_request")
-                        }
-                        generation::GenerationErrorKind::SupportedParameters => {
-                            (tonic::Code::Internal, "supported_parameters")
-                        }
-                        generation::GenerationErrorKind::ProviderError => {
-                            (tonic::Code::Internal, "provider_error")
-                        }
-                        generation::GenerationErrorKind::SchemaValidation => {
-                            (tonic::Code::Internal, "schema_validation")
-                        }
-                        generation::GenerationErrorKind::Timeout => (tonic::Code::Internal, "timeout"),
-                        generation::GenerationErrorKind::Cancelled => (tonic::Code::Internal, "cancelled"),
-                        generation::GenerationErrorKind::SessionCorrelation => {
-                            (tonic::Code::Internal, "session_correlation")
-                        }
-                    };
-                    d1_status(code, err.message(), &session_id, &correlation_id, err_kind_str)
-                })?;
+        let model_output = self.generator.generate(gen_req).await.map_err(|err| {
+            let (code, err_kind_str) = match err.kind {
+                generation::GenerationErrorKind::InvalidRequest => {
+                    (tonic::Code::InvalidArgument, "invalid_request")
+                }
+                generation::GenerationErrorKind::SupportedParameters => {
+                    (tonic::Code::Internal, "supported_parameters")
+                }
+                generation::GenerationErrorKind::ProviderError => {
+                    (tonic::Code::Internal, "provider_error")
+                }
+                generation::GenerationErrorKind::SchemaValidation => {
+                    (tonic::Code::Internal, "schema_validation")
+                }
+                generation::GenerationErrorKind::Timeout => (tonic::Code::Internal, "timeout"),
+                generation::GenerationErrorKind::Cancelled => (tonic::Code::Internal, "cancelled"),
+                generation::GenerationErrorKind::SessionCorrelation => {
+                    (tonic::Code::Internal, "session_correlation")
+                }
+            };
+            d1_status(
+                code,
+                err.message(),
+                &session_id,
+                &correlation_id,
+                err_kind_str,
+            )
+        })?;
 
         model_output
             .validate_grounding_with_limits(&packed_evidence.evidence, *limits)
@@ -1335,7 +1347,11 @@ impl LancetService for LancetServiceImpl {
             .map(|c| lancet::v1::StructuredCitation {
                 chunk_id: c.chunk_id.clone(),
                 document_id: c.document_id.clone(),
-                title: c.title.as_deref().unwrap_or("Untitled Document").to_string(),
+                title: c
+                    .title
+                    .as_deref()
+                    .unwrap_or("Untitled Document")
+                    .to_string(),
                 section_path: c.section_path.as_deref().unwrap_or("Root").to_string(),
                 excerpt: c.bounded_excerpt.clone(),
                 is_truncated: c.is_truncated,
@@ -1840,8 +1856,8 @@ async fn process_job_with_boundary(
         )
         .await
     }
-        .instrument(database_span)
-        .await?;
+    .instrument(database_span)
+    .await?;
     Ok(i32::try_from(chunks.len()).unwrap_or(i32::MAX))
 }
 
@@ -1997,7 +2013,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         effective_settings.embedding_model.clone(),
         effective_settings.embedding_endpoint.clone(),
     )?;
-    let embedder = Arc::new(OpenRouterClient::new_with_config(api_key.clone(), embedding_config)?);
+    let embedder = Arc::new(OpenRouterClient::new_with_config(
+        api_key.clone(),
+        embedding_config,
+    )?);
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
 
@@ -2019,15 +2038,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "worker exited during replay send")?;
     }
 
-    let generation_config = generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
-        effective_settings.generation_model.clone(),
-        effective_settings.chat_endpoint.clone(),
-        effective_settings.model_metadata_endpoint.clone(),
-        Duration::from_secs(effective_settings.generation_timeout_secs),
-        effective_settings.temperature,
-        effective_settings.top_p,
-        effective_settings.grounding_limits_arc(),
-    )?;
+    let generation_config =
+        generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
+            effective_settings.generation_model.clone(),
+            effective_settings.chat_endpoint.clone(),
+            effective_settings.model_metadata_endpoint.clone(),
+            Duration::from_secs(effective_settings.generation_timeout_secs),
+            effective_settings.temperature,
+            effective_settings.top_p,
+            effective_settings.grounding_limits_arc(),
+        )?;
     let generator: Arc<dyn generation::Generator> = Arc::new(
         generation::openrouter::OpenRouterGenerator::new_with_config(api_key, generation_config)?,
     );

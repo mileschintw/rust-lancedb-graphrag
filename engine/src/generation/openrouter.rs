@@ -27,15 +27,12 @@ const DEFAULT_TOP_P: f64 = 1.0;
 const DEFAULT_MAX_COMPLETION_TOKENS: usize = 2048;
 
 fn build_http_client(timeout: Duration) -> Result<Client, GenerationError> {
-    Client::builder()
-        .timeout(timeout)
-        .build()
-        .map_err(|err| {
-            GenerationError::new(
-                GenerationErrorKind::ProviderError,
-                format!("failed to build HTTP client: {err}"),
-            )
-        })
+    Client::builder().timeout(timeout).build().map_err(|err| {
+        GenerationError::new(
+            GenerationErrorKind::ProviderError,
+            format!("failed to build HTTP client: {err}"),
+        )
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -294,28 +291,30 @@ impl OpenRouterGenerator {
             ));
         }
 
-        let body_bytes = crate::client::read_body_limited(response)
-            .await
-            .map_err(|err| match err {
-                crate::client::BoundedBodyError::TooLarge => GenerationError::new(
-                    GenerationErrorKind::SupportedParameters,
-                    format!(
-                        "model capabilities response exceeds maximum body limit of {} bytes",
-                        crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
+        let body_bytes =
+            crate::client::read_body_limited(response)
+                .await
+                .map_err(|err| match err {
+                    crate::client::BoundedBodyError::TooLarge => GenerationError::new(
+                        GenerationErrorKind::SupportedParameters,
+                        format!(
+                            "model capabilities response exceeds maximum body limit of {} bytes",
+                            crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
+                        ),
                     ),
-                ),
-                crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
-                    GenerationErrorKind::SupportedParameters,
-                    format!("failed to read model capabilities response body: {msg}"),
-                ),
-            })?;
+                    crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
+                        GenerationErrorKind::SupportedParameters,
+                        format!("failed to read model capabilities response body: {msg}"),
+                    ),
+                })?;
 
-        let models_resp = serde_json::from_slice::<OpenRouterModelsResponse>(&body_bytes).map_err(|err| {
-            GenerationError::new(
-                GenerationErrorKind::SupportedParameters,
-                format!("invalid models metadata JSON: {err}"),
-            )
-        })?;
+        let models_resp =
+            serde_json::from_slice::<OpenRouterModelsResponse>(&body_bytes).map_err(|err| {
+                GenerationError::new(
+                    GenerationErrorKind::SupportedParameters,
+                    format!("invalid models metadata JSON: {err}"),
+                )
+            })?;
 
         let model_meta = models_resp
             .data
@@ -466,28 +465,30 @@ impl OpenRouterGenerator {
             ));
         }
 
-        let body_bytes = crate::client::read_body_limited(response)
-            .await
-            .map_err(|err| match err {
-                crate::client::BoundedBodyError::TooLarge => GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!(
-                        "OpenRouter response body exceeds maximum body limit of {} bytes",
-                        crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
+        let body_bytes =
+            crate::client::read_body_limited(response)
+                .await
+                .map_err(|err| match err {
+                    crate::client::BoundedBodyError::TooLarge => GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!(
+                            "OpenRouter response body exceeds maximum body limit of {} bytes",
+                            crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
+                        ),
                     ),
-                ),
-                crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
-                    GenerationErrorKind::ProviderError,
-                    format!("failed to read OpenRouter response body: {msg}"),
-                ),
-            })?;
+                    crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
+                        GenerationErrorKind::ProviderError,
+                        format!("failed to read OpenRouter response body: {msg}"),
+                    ),
+                })?;
 
-        let chat_resp: OpenRouterChatResponse = serde_json::from_slice(&body_bytes).map_err(|err| {
-            GenerationError::new(
-                GenerationErrorKind::SchemaValidation,
-                format!("failed to parse OpenRouter response wrapper JSON: {err}"),
-            )
-        })?;
+        let chat_resp: OpenRouterChatResponse =
+            serde_json::from_slice(&body_bytes).map_err(|err| {
+                GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("failed to parse OpenRouter response wrapper JSON: {err}"),
+                )
+            })?;
 
         if chat_resp.choices.len() != 1 {
             return Err(GenerationError::new(
@@ -530,25 +531,42 @@ impl OpenRouterGenerator {
             if usage.prompt_tokens > limits.evidence_token_budget() {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
-                    format!("OpenRouter prompt_tokens {} exceeds budget {}", usage.prompt_tokens, limits.evidence_token_budget()),
+                    format!(
+                        "OpenRouter prompt_tokens {} exceeds budget {}",
+                        usage.prompt_tokens,
+                        limits.evidence_token_budget()
+                    ),
                 ));
             }
             if usage.completion_tokens > limits.max_output_tokens() {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
-                    format!("OpenRouter completion_tokens {} exceeds budget {}", usage.completion_tokens, limits.max_output_tokens()),
+                    format!(
+                        "OpenRouter completion_tokens {} exceeds budget {}",
+                        usage.completion_tokens,
+                        limits.max_output_tokens()
+                    ),
                 ));
             }
-            let checked_total = usage.prompt_tokens.checked_add(usage.completion_tokens).ok_or_else(|| {
-                GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    "OpenRouter token usage addition overflowed",
-                )
-            })?;
-            if usage.total_tokens > limits.total_tokens_ceiling() || usage.total_tokens < checked_total {
+            let checked_total = usage
+                .prompt_tokens
+                .checked_add(usage.completion_tokens)
+                .ok_or_else(|| {
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        "OpenRouter token usage addition overflowed",
+                    )
+                })?;
+            if usage.total_tokens > limits.total_tokens_ceiling()
+                || usage.total_tokens < checked_total
+            {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
-                    format!("OpenRouter total_tokens {} exceeds budget limit {}", usage.total_tokens, limits.total_tokens_ceiling()),
+                    format!(
+                        "OpenRouter total_tokens {} exceeds budget limit {}",
+                        usage.total_tokens,
+                        limits.total_tokens_ceiling()
+                    ),
                 ));
             }
 
@@ -560,7 +578,10 @@ impl OpenRouterGenerator {
         }
 
         // Validate semantic grounding against packed evidence IDs per D-17, D-22, D-28
-        model_output.validate_grounding_with_limits(&packed_evidence.evidence, *self.config.grounding_limits)?;
+        model_output.validate_grounding_with_limits(
+            &packed_evidence.evidence,
+            *self.config.grounding_limits,
+        )?;
 
         Ok(model_output)
     }

@@ -114,9 +114,9 @@ async fn initialize_is_idempotent_over_non_empty_staging() {
 
 #[tokio::test]
 async fn staged_generation_schema_is_int64_and_legacy_rows_migrate() {
+    use super::legacy_staged_documents_v2_schema;
     use arrow_array::{BinaryArray, Int32Array, Int64Array, RecordBatch, StringArray};
     use futures::TryStreamExt;
-    use super::legacy_staged_documents_v2_schema;
 
     let path = database_path("legacy-migration");
     let connection = lancedb::connect(&path).execute().await.unwrap();
@@ -150,7 +150,14 @@ async fn staged_generation_schema_is_int64_and_legacy_rows_migrate() {
     assert_eq!(gen_field.data_type(), &DataType::Int64);
     assert!(!gen_field.is_nullable());
 
-    let batches: Vec<RecordBatch> = table.query().execute().await.unwrap().try_collect().await.unwrap();
+    let batches: Vec<RecordBatch> = table
+        .query()
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
     assert_eq!(batches.len(), 1);
     let gen_col = batches[0]
         .column_by_name("generation")

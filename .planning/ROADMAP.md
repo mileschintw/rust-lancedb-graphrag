@@ -6,7 +6,7 @@
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
 | 2 | 28/28 | Complete (ADR-02-004 deferral to Phase 6) | 2026-07-30 |
-| 3 | Hybrid Retrieval & Basic RAG Path | Implement the valid hybrid retrieval and one structured RAG answer path | RAG-02, RAG-04 |
+| 3 | 23/23 | Complete (ADR-03-003 force-close; DEBT-P3-* to Phase 6) | 2026-08-05 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
 | 6 | Observability, Evaluation & Polish | Add OpenTelemetry tracing, offline eval script, README, and RAG hardening | RAG-03, OBS-01, OBS-02, OBS-03, OBS-04 |
@@ -135,6 +135,7 @@
 **Goal:** As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-04
+**Verification:** Force-closed per ADR-03-003 — 98/101 plan truths verified; residual gaps (DEBT-P3-BODY-BOUND, DEBT-P3-STAGING-GEN-RACE, DEBT-P3-STAGING-PHYSICAL-BU, DEBT-P3-CONFIG-DB-PLAINTEXT, DEBT-CR-04 extension, DEBT-P3-PROVIDER-ENDPOINT-TRUST, DEBT-P3-WARN-*, DEBT-P3-MODULE-GRAPH) deferred to Phase 6 hardening as technical debt.
 **Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
 **Plans:** 23/23 plans executed
 

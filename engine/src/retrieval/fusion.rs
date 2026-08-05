@@ -32,7 +32,9 @@ struct Accumulator {
     bm25_score: Option<f64>,
 }
 
-fn deduplicate_source_candidates(candidates: Vec<Candidate>) -> Result<Vec<Candidate>, RetrievalError> {
+fn deduplicate_source_candidates(
+    candidates: Vec<Candidate>,
+) -> Result<Vec<Candidate>, RetrievalError> {
     let mut seen = std::collections::HashSet::with_capacity(candidates.len());
     let mut deduplicated = Vec::with_capacity(candidates.len());
     for candidate in candidates {
@@ -155,7 +157,10 @@ fn add_candidate(
     if !contribution.is_finite() {
         return Err(RetrievalError::new(
             RetrievalErrorKind::NonFiniteScore,
-            format!("non-finite contribution for candidate {}", candidate.chunk_id),
+            format!(
+                "non-finite contribution for candidate {}",
+                candidate.chunk_id
+            ),
         ));
     }
     let entry = fused.entry(chunk_id).or_insert_with(|| Accumulator {
@@ -170,7 +175,10 @@ fn add_candidate(
     if !entry.fused_score.is_finite() {
         return Err(RetrievalError::new(
             RetrievalErrorKind::NonFiniteScore,
-            format!("non-finite accumulator for candidate {}", candidate.chunk_id),
+            format!(
+                "non-finite accumulator for candidate {}",
+                candidate.chunk_id
+            ),
         ));
     }
     match source {

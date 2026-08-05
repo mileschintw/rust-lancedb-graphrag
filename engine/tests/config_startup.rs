@@ -492,8 +492,10 @@ fn missing_openrouter_api_key_blocks_readiness() {
 
 #[test]
 fn blank_openrouter_api_key_blocks_readiness() {
-    let temp_dir =
-        std::env::temp_dir().join(format!("lancet-cfg-test-blank-key-{}", uuid::Uuid::new_v4()));
+    let temp_dir = std::env::temp_dir().join(format!(
+        "lancet-cfg-test-blank-key-{}",
+        uuid::Uuid::new_v4()
+    ));
     let config_dir = temp_dir.join("isolated_config");
     let cwd_dir = temp_dir.join("empty_cwd");
     let lancedb_dir = temp_dir.join("lancedb");
@@ -558,7 +560,8 @@ fn service_ceiling_rejects_above_effective_limits() {
     );
 
     // 2. Process-level integration tests
-    let temp_dir = std::env::temp_dir().join(format!("lancet-cfg-test-ceiling-{}", uuid::Uuid::new_v4()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-ceiling-{}", uuid::Uuid::new_v4()));
     let config_dir = temp_dir.join("isolated_config");
     let cwd_dir = temp_dir.join("empty_cwd");
     let lancedb_dir = temp_dir.join("lancedb");
@@ -586,8 +589,14 @@ fn service_ceiling_rejects_above_effective_limits() {
         }
         Err(err) => err,
     };
-    assert!(err_ev.contains("process exited nonzero"), "must exit nonzero: {err_ev}");
-    assert!(err_ev.contains("exceeds service ceiling"), "must state ceiling error: {err_ev}");
+    assert!(
+        err_ev.contains("process exited nonzero"),
+        "must exit nonzero: {err_ev}"
+    );
+    assert!(
+        err_ev.contains("exceeds service ceiling"),
+        "must state ceiling error: {err_ev}"
+    );
     assert_not_listening(grpc_addr);
 
     // Rejection 2: max_output_tokens above ceiling (4,097)
@@ -604,8 +613,14 @@ fn service_ceiling_rejects_above_effective_limits() {
         }
         Err(err) => err,
     };
-    assert!(err_out.contains("process exited nonzero"), "must exit nonzero: {err_out}");
-    assert!(err_out.contains("exceeds service ceiling"), "must state ceiling error: {err_out}");
+    assert!(
+        err_out.contains("process exited nonzero"),
+        "must exit nonzero: {err_out}"
+    );
+    assert!(
+        err_out.contains("exceeds service ceiling"),
+        "must state ceiling error: {err_out}"
+    );
     assert_not_listening(grpc_addr);
 
     let _ = fs::remove_dir_all(temp_dir);

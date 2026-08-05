@@ -316,10 +316,12 @@ pub fn resolve_citations_with_max_chars(
                 is_truncated,
                 score: block.score,
                 rank: block.rank,
-                content_type: block.content_type.clone().unwrap_or_else(|| "text/plain".into()),
+                content_type: block
+                    .content_type
+                    .clone()
+                    .unwrap_or_else(|| "text/plain".into()),
             });
         }
     }
     citations
 }
-

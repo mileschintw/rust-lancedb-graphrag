@@ -271,13 +271,18 @@ impl RetrievalSettings {
         if self.max_document_ids == 0 || self.max_document_ids > MAX_SERVICE_FILTER_VALUES_PER_KEY {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
-                format!("max_document_ids must be between 1 and {MAX_SERVICE_FILTER_VALUES_PER_KEY}"),
+                format!(
+                    "max_document_ids must be between 1 and {MAX_SERVICE_FILTER_VALUES_PER_KEY}"
+                ),
             ));
         }
-        if self.max_content_types == 0 || self.max_content_types > MAX_SERVICE_FILTER_VALUES_PER_KEY {
+        if self.max_content_types == 0 || self.max_content_types > MAX_SERVICE_FILTER_VALUES_PER_KEY
+        {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
-                format!("max_content_types must be between 1 and {MAX_SERVICE_FILTER_VALUES_PER_KEY}"),
+                format!(
+                    "max_content_types must be between 1 and {MAX_SERVICE_FILTER_VALUES_PER_KEY}"
+                ),
             ));
         }
         if !self.vector_weight.is_finite()
@@ -286,7 +291,9 @@ impl RetrievalSettings {
         {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
-                format!("vector_weight must be finite and between 0.0 and {MAX_SERVICE_RRF_WEIGHT}"),
+                format!(
+                    "vector_weight must be finite and between 0.0 and {MAX_SERVICE_RRF_WEIGHT}"
+                ),
             ));
         }
         if !self.bm25_weight.is_finite()

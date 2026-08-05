@@ -90,9 +90,9 @@ impl DatabaseManager {
                             "generation".to_string(),
                             "CAST(1 AS BIGINT)".to_string(),
                         )]);
-                        tbl.add_columns(transform, None)
-                            .await
-                            .map_err(|error| format!("failed to add generation column to {name}: {error}"))?;
+                        tbl.add_columns(transform, None).await.map_err(|error| {
+                            format!("failed to add generation column to {name}: {error}")
+                        })?;
                     }
                 }
                 tbl
