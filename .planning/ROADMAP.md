@@ -136,7 +136,7 @@
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-04
 **Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
-**Plans:** 18/18 plans executed
+**Plans:** 18/23 plans executed
 
 Plans:
 **Wave 1**
@@ -204,6 +204,23 @@ Plans:
 **Wave 16** *(blocked on Wave 15 completion)*
 
 - [x] 03-18-PLAN.md — Return valid zero-match success responses and confirm deferred RAG boundaries.
+
+**Wave 17** *(blocked on Wave 16 completion)*
+
+- [ ] 03-19-PLAN.md — Carry effective grounding limits end-to-end and reconcile the D1-LOG waiver documentation.
+
+**Wave 18** *(blocked on Wave 17 completion; parallel)*
+
+- [ ] 03-20-PLAN.md — Enforce bounded provider request bodies and metadata/embedding request contracts.
+- [ ] 03-21-PLAN.md — Enforce retrieval service ceilings and normalized, deduplicated filter limits.
+
+**Wave 19** *(blocked on Wave 18 completion)*
+
+- [ ] 03-22-PLAN.md — Prove finite deterministic fusion and gateway write-error handling.
+
+**Wave 20** *(blocked on Wave 19 completion)*
+
+- [ ] 03-23-PLAN.md — Persist raw ingestion generations with the gated Lance schema migration checkpoint.
 
 **Success Criteria:**
 
