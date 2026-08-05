@@ -136,7 +136,7 @@
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-04
 **Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
-**Plans:** 15/15 plans executed
+**Plans:** 15/18 plans executed
 
 Plans:
 **Wave 1**
@@ -192,6 +192,18 @@ Plans:
 **Wave 13** *(blocked on Wave 12 completion)*
 
 - [x] 03-15-PLAN.md — Stabilize citation identity fixtures and restore the complete locked Rust regression gate.
+
+**Wave 14** *(blocked on Wave 13 completion)*
+
+- [ ] 03-16-PLAN.md — Close G1 with effective provider usage limits and service-safe ceilings.
+
+**Wave 15** *(blocked on Wave 14 completion)*
+
+- [ ] 03-17-PLAN.md — Fail closed on embedding and dense retrieval infrastructure errors with identity propagation.
+
+**Wave 16** *(blocked on Wave 15 completion)*
+
+- [ ] 03-18-PLAN.md — Return valid zero-match success responses and confirm deferred RAG boundaries.
 
 **Success Criteria:**
 
