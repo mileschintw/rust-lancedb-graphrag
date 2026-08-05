@@ -262,3 +262,72 @@ async fn embedding_config_preserves_bounds_and_redaction() {
         "provider error leaked the credential"
     );
 }
+
+#[tokio::test]
+async fn bounded_provider_body_accepts_exact_limit() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let body = vec![b'a'; 262144];
+            let header = format!("HTTP/1.1 200 OK\r\nContent-Length: 262144\r\n\r\n");
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(&body);
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client.get(format!("http://{addr}")).send().await.unwrap();
+    let bytes = super::read_body_limited(resp).await.unwrap();
+    assert_eq!(bytes.len(), 262144);
+}
+
+#[tokio::test]
+async fn bounded_provider_body_rejects_chunked_limit_plus_one() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+            let _ = stream.write_all(header.as_bytes());
+            let chunk_data = vec![b'b'; 262145];
+            let chunk_header = format!("{:x}\r\n", chunk_data.len());
+            let _ = stream.write_all(chunk_header.as_bytes());
+            let _ = stream.write_all(&chunk_data);
+            let _ = stream.write_all(b"\r\n0\r\n\r\n");
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client.get(format!("http://{addr}")).send().await.unwrap();
+    let err = super::read_body_limited(resp).await.unwrap_err();
+    assert!(matches!(err, super::BoundedBodyError::TooLarge));
+}
+
+#[tokio::test]
+async fn embedding_client_rejects_oversized_streaming_body() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+            let _ = stream.write_all(header.as_bytes());
+            let chunk_data = vec![b' '; 262145];
+            let chunk_header = format!("{:x}\r\n", chunk_data.len());
+            let _ = stream.write_all(chunk_header.as_bytes());
+            let _ = stream.write_all(&chunk_data);
+            let _ = stream.write_all(b"\r\n0\r\n\r\n");
+        }
+    });
+
+    let endpoint = format!("http://{addr}/embeddings");
+    let client = OpenRouterClient::for_test(endpoint, 0, Duration::ZERO);
+    let err = client.get_embeddings(&["test".into()]).await.unwrap_err();
+    assert!(err.contains("invalid embedding response"), "got error: {err}");
+}

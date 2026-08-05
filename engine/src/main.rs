@@ -23,7 +23,7 @@ use tracing::Instrument;
 use uuid::Uuid;
 
 mod chunker;
-mod client;
+use engine::client;
 pub mod generation;
 pub mod prompt;
 mod rerank;

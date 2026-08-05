@@ -1175,3 +1175,117 @@ fn openrouter_config_uses_effective_grounding_limits() {
     assert_eq!(config.evidence_token_budget(), 16384);
     assert_eq!(config.max_completion_tokens(), 4096);
 }
+
+#[tokio::test]
+async fn openrouter_chat_rejects_oversized_streaming_body() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::thread;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let chat_endpoint = format!("http://{addr}/chat");
+    let models_endpoint = format!("http://{addr}/models");
+
+    let server_handle = thread::spawn(move || {
+        // First connection: /models preflight
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 8192];
+            let _ = stream.read(&mut buf);
+            let models_body = r#"{"data":[{"id":"test-model","supported_parameters":["response_format"]}]}"#;
+            let header = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n", models_body.len());
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(models_body.as_bytes());
+        }
+        // Second connection: /chat response (oversized)
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 8192];
+            let _ = stream.read(&mut buf);
+            let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+            let _ = stream.write_all(header.as_bytes());
+            let chunk_data = vec![b' '; 262145];
+            let chunk_header = format!("{:x}\r\n", chunk_data.len());
+            let _ = stream.write_all(chunk_header.as_bytes());
+            let _ = stream.write_all(&chunk_data);
+            let _ = stream.write_all(b"\r\n0\r\n\r\n");
+            thread::sleep(Duration::from_millis(50));
+        }
+    });
+
+    let limits = Arc::new(super::GroundingLimits::default_limits());
+    let config = super::openrouter::OpenRouterGenerationConfig::from_effective_limits(
+        "test-model",
+        chat_endpoint,
+        models_endpoint,
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        limits,
+    )
+    .unwrap();
+
+    let adapter = super::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap();
+    let cand = sample_candidate("1", "Content");
+    let evidence = assemble_evidence_blocks(&[cand]);
+
+    let err = adapter
+        .generate(GenerationRequest::new("Question?", evidence))
+        .await
+        .expect_err("oversized chat response body must be rejected");
+
+    assert_eq!(err.kind, super::GenerationErrorKind::SchemaValidation);
+    assert!(err.message().contains("exceeds maximum body limit"));
+
+    server_handle.join().expect("server completed");
+}
+
+#[tokio::test]
+async fn openrouter_metadata_rejects_oversized_streaming_body() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::thread;
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let models_endpoint = format!("http://{addr}/models");
+
+    let server_handle = thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+            let _ = stream.write_all(header.as_bytes());
+            let chunk_data = vec![b' '; 262145];
+            let chunk_header = format!("{:x}\r\n", chunk_data.len());
+            let _ = stream.write_all(chunk_header.as_bytes());
+            let _ = stream.write_all(&chunk_data);
+            let _ = stream.write_all(b"\r\n0\r\n\r\n");
+        }
+    });
+
+    let limits = Arc::new(super::GroundingLimits::default_limits());
+    let config = super::openrouter::OpenRouterGenerationConfig::from_effective_limits(
+        "test-model",
+        "http://localhost/chat",
+        models_endpoint,
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        limits,
+    )
+    .unwrap();
+
+    let adapter = super::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap();
+
+    let err = adapter
+        .check_supported_parameters()
+        .await
+        .expect_err("oversized metadata response body must be rejected");
+
+    assert_eq!(err.kind, super::GenerationErrorKind::SupportedParameters);
+    assert!(err.message().contains("exceeds maximum body limit"));
+
+    server_handle.join().expect("server completed");
+}

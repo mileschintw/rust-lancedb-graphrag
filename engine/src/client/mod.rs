@@ -12,6 +12,53 @@ const MAX_CONCURRENCY: usize = 5;
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 
+pub const MAX_PROVIDER_RESPONSE_BODY_BYTES: usize = 256 * 1024;
+
+#[derive(Debug)]
+pub enum BoundedBodyError {
+    TooLarge,
+    Read(String),
+}
+
+impl std::fmt::Display for BoundedBodyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooLarge => write!(
+                f,
+                "provider response exceeded maximum body limit of {MAX_PROVIDER_RESPONSE_BODY_BYTES} bytes"
+            ),
+            Self::Read(err) => write!(f, "failed to read provider response body: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for BoundedBodyError {}
+
+pub async fn read_body_limited(
+    mut response: reqwest::Response,
+) -> Result<Vec<u8>, BoundedBodyError> {
+    if let Some(content_length) = response.content_length() {
+        if content_length > MAX_PROVIDER_RESPONSE_BODY_BYTES as u64 {
+            return Err(BoundedBodyError::TooLarge);
+        }
+    }
+
+    let mut buffer = Vec::new();
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|err| BoundedBodyError::Read(err.to_string()))?
+    {
+        if buffer.len() + chunk.len() > MAX_PROVIDER_RESPONSE_BODY_BYTES {
+            return Err(BoundedBodyError::TooLarge);
+        }
+        buffer.extend_from_slice(&chunk);
+    }
+
+    Ok(buffer)
+}
+
 fn build_http_client(timeout: Duration) -> Result<Client, reqwest::Error> {
     Client::builder().timeout(timeout).build()
 }
@@ -229,9 +276,15 @@ impl OpenRouterClient {
                 "OpenRouter returned HTTP {status}"
             )));
         }
-        let mut data = response
-            .json::<EmbeddingResponse>()
-            .await
+        let body_bytes = read_body_limited(response).await.map_err(|err| match err {
+            BoundedBodyError::TooLarge => {
+                RequestFailure::Permanent(format!("invalid embedding response: {err}"))
+            }
+            BoundedBodyError::Read(msg) => {
+                RequestFailure::Permanent(format!("failed to read embedding response: {msg}"))
+            }
+        })?;
+        let mut data = serde_json::from_slice::<EmbeddingResponse>(&body_bytes)
             .map_err(|error| {
                 RequestFailure::Permanent(format!("invalid embedding response: {error}"))
             })?

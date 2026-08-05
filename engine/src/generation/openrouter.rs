@@ -294,15 +294,28 @@ impl OpenRouterGenerator {
             ));
         }
 
-        let models_resp = response
-            .json::<OpenRouterModelsResponse>()
+        let body_bytes = crate::client::read_body_limited(response)
             .await
-            .map_err(|err| {
-                GenerationError::new(
+            .map_err(|err| match err {
+                crate::client::BoundedBodyError::TooLarge => GenerationError::new(
                     GenerationErrorKind::SupportedParameters,
-                    format!("invalid models metadata JSON: {err}"),
-                )
+                    format!(
+                        "model capabilities response exceeds maximum body limit of {} bytes",
+                        crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
+                    ),
+                ),
+                crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
+                    GenerationErrorKind::SupportedParameters,
+                    format!("failed to read model capabilities response body: {msg}"),
+                ),
             })?;
+
+        let models_resp = serde_json::from_slice::<OpenRouterModelsResponse>(&body_bytes).map_err(|err| {
+            GenerationError::new(
+                GenerationErrorKind::SupportedParameters,
+                format!("invalid models metadata JSON: {err}"),
+            )
+        })?;
 
         let model_meta = models_resp
             .data
@@ -453,23 +466,21 @@ impl OpenRouterGenerator {
             ));
         }
 
-        const MAX_RESPONSE_BODY_BYTES: usize = 256 * 1024;
-        let body_bytes = response.bytes().await.map_err(|err| {
-            GenerationError::new(
-                GenerationErrorKind::ProviderError,
-                format!("failed to read OpenRouter response body: {err}"),
-            )
-        })?;
-
-        if body_bytes.len() > MAX_RESPONSE_BODY_BYTES {
-            return Err(GenerationError::new(
-                GenerationErrorKind::SchemaValidation,
-                format!(
-                    "OpenRouter response body exceeds 256 KiB limit: got {} bytes",
-                    body_bytes.len()
+        let body_bytes = crate::client::read_body_limited(response)
+            .await
+            .map_err(|err| match err {
+                crate::client::BoundedBodyError::TooLarge => GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!(
+                        "OpenRouter response body exceeds maximum body limit of {} bytes",
+                        crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
+                    ),
                 ),
-            ));
-        }
+                crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
+                    GenerationErrorKind::ProviderError,
+                    format!("failed to read OpenRouter response body: {msg}"),
+                ),
+            })?;
 
         let chat_resp: OpenRouterChatResponse = serde_json::from_slice(&body_bytes).map_err(|err| {
             GenerationError::new(
