@@ -4,7 +4,7 @@
 //! the configured model metadata advertises structured output before making
 //! exactly one timeout-bounded HTTP call with strict JSON Schema output bounds.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,7 @@ pub struct OpenRouterGenerationConfig {
     timeout: Duration,
     temperature: f64,
     top_p: f64,
-    pub grounding_limits: GroundingLimits,
+    pub grounding_limits: Arc<GroundingLimits>,
 }
 
 impl OpenRouterGenerationConfig {
@@ -74,6 +74,26 @@ impl OpenRouterGenerationConfig {
                 )
             })?,
         )?;
+        Self::from_effective_limits(
+            model,
+            chat_endpoint,
+            models_endpoint,
+            timeout,
+            temperature,
+            top_p,
+            Arc::new(limits),
+        )
+    }
+
+    pub fn from_effective_limits(
+        model: impl Into<String>,
+        chat_endpoint: impl Into<String>,
+        models_endpoint: impl Into<String>,
+        timeout: Duration,
+        temperature: f64,
+        top_p: f64,
+        limits: Arc<GroundingLimits>,
+    ) -> Result<Self, GenerationError> {
         let config = Self {
             model: model.into(),
             chat_endpoint: chat_endpoint.into(),
@@ -96,25 +116,23 @@ impl OpenRouterGenerationConfig {
         top_p: f64,
         limits: GroundingLimits,
     ) -> Result<Self, GenerationError> {
-        let config = Self {
-            model: model.into(),
-            chat_endpoint: chat_endpoint.into(),
-            models_endpoint: models_endpoint.into(),
+        Self::from_effective_limits(
+            model,
+            chat_endpoint,
+            models_endpoint,
             timeout,
             temperature,
             top_p,
-            grounding_limits: limits,
-        };
-        config.validate()?;
-        Ok(config)
+            Arc::new(limits),
+        )
     }
 
     pub fn max_completion_tokens(&self) -> usize {
-        self.grounding_limits.max_output_tokens as usize
+        self.grounding_limits.max_output_tokens() as usize
     }
 
     pub fn evidence_token_budget(&self) -> usize {
-        self.grounding_limits.evidence_token_budget as usize
+        self.grounding_limits.evidence_token_budget() as usize
     }
 
     fn validate(&self) -> Result<(), GenerationError> {
@@ -497,17 +515,17 @@ impl OpenRouterGenerator {
         })?;
 
         if let Some(usage) = chat_resp.usage {
-            let limits = self.config.grounding_limits;
-            if usage.prompt_tokens > limits.evidence_token_budget {
+            let limits = &self.config.grounding_limits;
+            if usage.prompt_tokens > limits.evidence_token_budget() {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
-                    format!("OpenRouter prompt_tokens {} exceeds budget {}", usage.prompt_tokens, limits.evidence_token_budget),
+                    format!("OpenRouter prompt_tokens {} exceeds budget {}", usage.prompt_tokens, limits.evidence_token_budget()),
                 ));
             }
-            if usage.completion_tokens > limits.max_output_tokens {
+            if usage.completion_tokens > limits.max_output_tokens() {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
-                    format!("OpenRouter completion_tokens {} exceeds budget {}", usage.completion_tokens, limits.max_output_tokens),
+                    format!("OpenRouter completion_tokens {} exceeds budget {}", usage.completion_tokens, limits.max_output_tokens()),
                 ));
             }
             let checked_total = usage.prompt_tokens.checked_add(usage.completion_tokens).ok_or_else(|| {
@@ -516,10 +534,10 @@ impl OpenRouterGenerator {
                     "OpenRouter token usage addition overflowed",
                 )
             })?;
-            if usage.total_tokens > limits.total_tokens_ceiling || usage.total_tokens < checked_total {
+            if usage.total_tokens > limits.total_tokens_ceiling() || usage.total_tokens < checked_total {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
-                    format!("OpenRouter total_tokens {} exceeds budget limit {}", usage.total_tokens, limits.total_tokens_ceiling),
+                    format!("OpenRouter total_tokens {} exceeds budget limit {}", usage.total_tokens, limits.total_tokens_ceiling()),
                 ));
             }
 
@@ -531,7 +549,7 @@ impl OpenRouterGenerator {
         }
 
         // Validate semantic grounding against packed evidence IDs per D-17, D-22, D-28
-        model_output.validate_grounding_with_limits(&packed_evidence.evidence, self.config.grounding_limits)?;
+        model_output.validate_grounding_with_limits(&packed_evidence.evidence, *self.config.grounding_limits)?;
 
         Ok(model_output)
     }

@@ -308,18 +308,24 @@ pub struct EffectiveRagSettings {
     pub top_p: f64,
     pub max_output_tokens: u32,
     pub index_generation: String,
+    grounding_limits: Arc<generation::GroundingLimits>,
 }
 
 impl EffectiveRagSettings {
-    pub fn grounding_limits(&self) -> Result<generation::GroundingLimits, String> {
-        let ev = u32::try_from(self.evidence_token_budget)
-            .map_err(|_| "evidence_token_budget exceeds u32::MAX".to_string())?;
-        generation::GroundingLimits::new(ev, self.max_output_tokens)
-            .map_err(|err| err.message().to_string())
+    pub fn grounding_limits(&self) -> &generation::GroundingLimits {
+        &self.grounding_limits
+    }
+
+    pub fn grounding_limits_arc(&self) -> Arc<generation::GroundingLimits> {
+        Arc::clone(&self.grounding_limits)
     }
 
     pub fn try_from_settings(settings: &Settings) -> Result<Self, String> {
         let retrieval = settings.engine.retrieval.to_retrieval_settings();
+        let ev = u32::try_from(settings.engine.retrieval.evidence_token_budget)
+            .map_err(|_| "evidence_token_budget exceeds u32::MAX".to_string())?;
+        let limits = generation::GroundingLimits::new(ev, settings.openrouter.max_output_tokens)
+            .map_err(|err| err.message().to_string())?;
         let effective = Self {
             retrieval,
             evidence_token_budget: settings.engine.retrieval.evidence_token_budget,
@@ -334,6 +340,7 @@ impl EffectiveRagSettings {
             top_p: settings.openrouter.top_p,
             max_output_tokens: settings.openrouter.max_output_tokens,
             index_generation: new_index_generation(),
+            grounding_limits: Arc::new(limits),
         };
         effective.validate()?;
         Ok(effective)
@@ -343,7 +350,6 @@ impl EffectiveRagSettings {
         self.retrieval
             .validate()
             .map_err(|err| format!("invalid retrieval settings: {}", err.message()))?;
-        self.grounding_limits()?;
         if self.citation_excerpt_max_chars == 0 {
             return Err("invalid excerpt_max_chars: must be greater than 0".into());
         }
@@ -1123,15 +1129,12 @@ impl LancetService for LancetServiceImpl {
         }
 
         let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
-        let limits = self
-            .effective_settings
-            .grounding_limits()
-            .map_err(|err| Status::internal(err))?;
+        let limits = self.effective_settings.grounding_limits();
         let packed_evidence = prompt::pack_evidence_prompt(
             &query_request.query,
             &evidence_blocks,
-            limits.evidence_token_budget as usize,
-            limits.max_output_tokens as usize,
+            limits.evidence_token_budget() as usize,
+            limits.max_output_tokens() as usize,
         )
         .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
 
@@ -1168,7 +1171,7 @@ impl LancetService for LancetServiceImpl {
                 })?;
 
         model_output
-            .validate_grounding_with_limits(&packed_evidence.evidence, limits)
+            .validate_grounding_with_limits(&packed_evidence.evidence, *limits)
             .map_err(|err| {
                 d1_status(
                     tonic::Code::Internal,
@@ -1885,19 +1888,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "worker exited during replay send")?;
     }
 
-    let evidence_token_budget = usize::try_from(effective_settings.evidence_token_budget)
-        .map_err(|_| "evidence_token_budget does not fit usize")?;
-    let max_output_tokens = usize::try_from(effective_settings.max_output_tokens)
-        .map_err(|_| "max_output_tokens does not fit usize")?;
-    let generation_config = generation::openrouter::OpenRouterGenerationConfig::new(
+    let generation_config = generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
         effective_settings.generation_model.clone(),
         effective_settings.chat_endpoint.clone(),
         effective_settings.model_metadata_endpoint.clone(),
         Duration::from_secs(effective_settings.generation_timeout_secs),
         effective_settings.temperature,
         effective_settings.top_p,
-        max_output_tokens,
-        evidence_token_budget,
+        effective_settings.grounding_limits_arc(),
     )?;
     let generator: Arc<dyn generation::Generator> = Arc::new(
         generation::openrouter::OpenRouterGenerator::new_with_config(api_key, generation_config)?,

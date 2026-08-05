@@ -31,6 +31,17 @@ D1 infrastructure failures now fail closed with session, correlation, and error-
 - **Target:** Phase 06 hardening/evaluation, or earlier if the trigger occurs.
 - **Future acceptance criteria:** One-path failure returns a useful surviving-path answer with a machine-readable warning; both-path failure returns an explicit model-only basis and notice with no citations; weak/empty evidence follows the documented answer-basis contract.
 
+### DEBT-D1-SAFE-LOG — Preserved full-message tracing under accepted D1-LOG waiver
+
+D1 infrastructure failures fail closed with session, correlation, and error-kind identity; full-message tracing text is preserved as an accepted MVP override under ADR-03-002.
+
+- **Rationale:** Phase 03 MVP prioritizes fail-closed error classification and session/correlation identity over strict log-body stripping.
+- **Known risk:** Detailed provider error messages may appear in engine trace logs.
+- **Current constraints:** Preserves response session, correlation, and error-kind identity; full message tracing text is allowed by the Phase 03 MVP waiver without changing `engine/src/main.rs`.
+- **Trigger:** Phase 06 hardening or multi-tenant/shared-log-sink deployment.
+- **Target:** Phase 06 hardening/evaluation.
+- **Future acceptance criteria:** Identity-only structured logging without raw provider detail leakage across shared log sinks.
+
 ### DEBT-RAG-02 — Provider failure, timeout, retry, and fallback behavior
 
 - **Rationale:** The MVP needs one successful provider call to prove the vertical path; orchestration retries and alternate-provider policy belong outside the first slice.

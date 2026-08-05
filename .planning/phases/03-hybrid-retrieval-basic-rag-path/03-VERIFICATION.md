@@ -13,7 +13,7 @@ re_verification:
     - "The late D1 and D2 implementations are present and their focused Rust, Go, and cross-runtime tests pass on the current checkout."
   gaps_remaining:
     - "The G1 one-carrier invariant is not implemented: EffectiveRagSettings stores scalar budgets and OpenRouter constructs a separate carrier."
-    - "D1 infrastructure logging still interpolates the full error message instead of identity-only structured fields."
+    - "D1 infrastructure logging preserves full message tracing as an accepted MVP override under ADR-03-002 D1-LOG (DEBT-D1-SAFE-LOG)."
     - "Provider response and retrieval/fusion resource bounds are not fail-closed at the allocation and serialization boundaries."
   regressions:
     - "The stale report did not cover plans 03-16, 03-17, or 03-18; this report verifies all 18 plan/summary pairs."
@@ -40,11 +40,11 @@ gaps:
     missing:
       - "Use a bounded streaming/read path that stops before allocating an oversized response and apply an equivalent bound to model metadata."
   - truth: "D1: infrastructure failures preserve identity and safe structured logs while preventing generation or model-only continuation."
-    status: failed
-    reason: "The fail-closed status helper preserves identity metadata and skips generation, but its tracing warning interpolates the full msg. That contradicts the plan's identity-only safe-log contract because transport/provider messages can contain untrusted or sensitive details."
+    status: passed_with_waiver
+    reason: "The fail-closed status helper preserves identity metadata and skips generation. Trace warning interpolation of detailed error message is accepted under ADR-03-002 and DEBT-D1-SAFE-LOG for Phase 03."
     artifacts:
       - path: "engine/src/main.rs"
-        issue: "d1_status logs QueryRAG infrastructure failure: {msg} in addition to session_id, correlation_id, and error_kind."
+        issue: "d1_status logs QueryRAG infrastructure failure: {msg} in addition to session_id, correlation_id, and error_kind (accepted MVP waiver)."
     missing:
       - "Log only session_id, correlation_id, error_kind, and a fixed event name; keep detailed error text out of the structured warning."
       - "Add a regression assertion that the D1 warning cannot contain the error message or payload details."

@@ -81,11 +81,11 @@ pub const MAX_SERVICE_OUTPUT_TOKENS: u32 = 4_096;
 pub const MAX_SERVICE_TOTAL_TOKENS: u32 = MAX_SERVICE_EVIDENCE_TOKEN_BUDGET + MAX_SERVICE_OUTPUT_TOKENS;
 
 /// Shared carrier governing evidence token budget, max output tokens, and total usage ceiling.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GroundingLimits {
-    pub evidence_token_budget: u32,
-    pub max_output_tokens: u32,
-    pub total_tokens_ceiling: u32,
+    evidence_token_budget: u32,
+    max_output_tokens: u32,
+    total_tokens_ceiling: u32,
 }
 
 impl GroundingLimits {
@@ -133,6 +133,18 @@ impl GroundingLimits {
     pub fn default_limits() -> Self {
         Self::new(DEFAULT_EVIDENCE_TOKEN_BUDGET, DEFAULT_MAX_OUTPUT_TOKENS)
             .expect("default grounding limits must be valid")
+    }
+
+    pub fn evidence_token_budget(&self) -> u32 {
+        self.evidence_token_budget
+    }
+
+    pub fn max_output_tokens(&self) -> u32 {
+        self.max_output_tokens
+    }
+
+    pub fn total_tokens_ceiling(&self) -> u32 {
+        self.total_tokens_ceiling
     }
 }
 

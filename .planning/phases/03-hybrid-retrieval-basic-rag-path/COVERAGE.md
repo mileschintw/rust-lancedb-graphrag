@@ -16,6 +16,11 @@ The ownership is intentionally vertical. These notes identify the evidence owner
 - 03-13 — Fail-closed retrieval grounding and bounded OpenRouter output for the current RSC-1/P09/P24 gap.
 - 03-14 — Effective provider evidence settings, D-31 identity preservation, and explicit credential startup for the current P25/P41 gaps.
 - 03-15 — Deterministic citation identity fixtures and the full parallel/serial locked Rust regression gate for the remaining P09/P24 blocker.
+- 03-19 — G1 settings-owned GroundingLimits carrier and D1-LOG accepted waiver.
+- 03-20 — P24-BODY 256 KiB shared bounded streaming reader.
+- 03-21 — RAG02-CEIL operator retrieval limits and service ceilings.
+- 03-22 — RRF-FINITE finite Rust fusion and WR-01 Go JSON response commit.
+- 03-23 — PERSIST-RAW Lance append-verify-delete replacement.
 
 | capability | decision | reason |
 |---|---|---|

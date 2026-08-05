@@ -544,9 +544,9 @@ fn service_ceiling_rejects_above_effective_limits() {
     // 1. Direct boundary assertions for exact ceiling values (inclusive contract)
     let valid_at_ceilings = engine::generation::GroundingLimits::new(16384, 4096)
         .expect("exact ceilings 16,384 evidence and 4,096 output must be accepted");
-    assert_eq!(valid_at_ceilings.evidence_token_budget, 16384);
-    assert_eq!(valid_at_ceilings.max_output_tokens, 4096);
-    assert_eq!(valid_at_ceilings.total_tokens_ceiling, 20480);
+    assert_eq!(valid_at_ceilings.evidence_token_budget(), 16384);
+    assert_eq!(valid_at_ceilings.max_output_tokens(), 4096);
+    assert_eq!(valid_at_ceilings.total_tokens_ceiling(), 20480);
 
     assert!(
         engine::generation::GroundingLimits::new(16385, 4096).is_err(),

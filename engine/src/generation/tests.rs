@@ -1140,3 +1140,38 @@ async fn openrouter_effective_usage_limits() {
 
     server_handle.join().expect("mock server completed");
 }
+
+#[test]
+fn grounding_limits_accessors_preserve_service_ceiling() {
+    use super::GroundingLimits;
+    let default_limits = GroundingLimits::default_limits();
+    assert_eq!(default_limits.evidence_token_budget(), 8192);
+    assert_eq!(default_limits.max_output_tokens(), 2048);
+    assert_eq!(default_limits.total_tokens_ceiling(), 10240);
+
+    let max_limits = GroundingLimits::new(16384, 4096).unwrap();
+    assert_eq!(max_limits.evidence_token_budget(), 16384);
+    assert_eq!(max_limits.max_output_tokens(), 4096);
+    assert_eq!(max_limits.total_tokens_ceiling(), 20480);
+}
+
+#[test]
+fn openrouter_config_uses_effective_grounding_limits() {
+    use std::sync::Arc;
+    use super::{openrouter::OpenRouterGenerationConfig, GroundingLimits};
+    let limits = Arc::new(GroundingLimits::new(16384, 4096).unwrap());
+    let config = OpenRouterGenerationConfig::from_effective_limits(
+        "test-model",
+        "http://localhost/chat",
+        "http://localhost/models",
+        Duration::from_secs(30),
+        0.0,
+        1.0,
+        Arc::clone(&limits),
+    )
+    .unwrap();
+
+    assert!(Arc::ptr_eq(&config.grounding_limits, &limits));
+    assert_eq!(config.evidence_token_budget(), 16384);
+    assert_eq!(config.max_completion_tokens(), 4096);
+}

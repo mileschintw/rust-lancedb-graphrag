@@ -363,19 +363,14 @@ impl rerank::Reranker for FailingReranker {
 
 impl RecordingGenerator {
     fn from_effective_settings(settings: &EffectiveRagSettings) -> Arc<Self> {
-        let evidence_token_budget = usize::try_from(settings.evidence_token_budget)
-            .expect("effective evidence budget limit must fit usize");
-        let max_output_tokens = usize::try_from(settings.max_output_tokens)
-            .expect("effective output token limit must fit usize");
-        generation::openrouter::OpenRouterGenerationConfig::new(
+        generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
             settings.generation_model.clone(),
             settings.chat_endpoint.clone(),
             settings.model_metadata_endpoint.clone(),
             std::time::Duration::from_secs(settings.generation_timeout_secs),
             settings.temperature,
             settings.top_p,
-            max_output_tokens,
-            evidence_token_budget,
+            settings.grounding_limits_arc(),
         )
         .expect("effective generation settings must construct the production config");
         Arc::new(Self {
@@ -386,7 +381,7 @@ impl RecordingGenerator {
                 timeout: std::time::Duration::from_secs(settings.generation_timeout_secs),
                 temperature: settings.temperature,
                 top_p: settings.top_p,
-                max_output_tokens,
+                max_output_tokens: settings.max_output_tokens as usize,
             },
             requests: Arc::new(std::sync::Mutex::new(Vec::new())),
             response: generation::ModelOutput {
@@ -3565,4 +3560,17 @@ async fn query_rag_valid_zero_match() {
     assert_eq!(generator.calls(), 0);
 
     let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn effective_settings_carries_one_grounding_limits() {
+    let settings = Settings::default();
+    let effective = EffectiveRagSettings::try_from_settings(&settings).unwrap();
+    let limits = effective.grounding_limits();
+    assert_eq!(limits.evidence_token_budget(), 8192);
+    assert_eq!(limits.max_output_tokens(), 2048);
+    assert_eq!(limits.total_tokens_ceiling(), 10240);
+
+    let arc_limits = effective.grounding_limits_arc();
+    assert_eq!(arc_limits.as_ref(), limits);
 }
