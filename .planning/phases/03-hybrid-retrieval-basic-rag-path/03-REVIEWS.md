@@ -1,8 +1,10 @@
 ---
 phase: 03
 reviewers: [agy]
-reviewed_at: 2026-08-04T12:59:15Z
-plans_reviewed: [03-01-PLAN.md, 03-02-PLAN.md, 03-03-PLAN.md, 03-04-PLAN.md, 03-05-PLAN.md, 03-06-PLAN.md, 03-07-PLAN.md, 03-08-PLAN.md, 03-09-PLAN.md, 03-10-PLAN.md, 03-11-PLAN.md, 03-12-PLAN.md, 03-13-PLAN.md, 03-14-PLAN.md, 03-15-PLAN.md]
+reviewed_at: 2026-08-05T20:40:47Z
+plans_reviewed: [03-01-PLAN.md, 03-02-PLAN.md, 03-03-PLAN.md, 03-04-PLAN.md, 03-05-PLAN.md, 03-06-PLAN.md, 03-07-PLAN.md, 03-08-PLAN.md, 03-09-PLAN.md, 03-10-PLAN.md, 03-11-PLAN.md, 03-12-PLAN.md, 03-13-PLAN.md, 03-14-PLAN.md, 03-15-PLAN.md, 03-16-PLAN.md, 03-17-PLAN.md, 03-18-PLAN.md, 03-19-PLAN.md, 03-20-PLAN.md, 03-21-PLAN.md, 03-22-PLAN.md, 03-23-PLAN.md]
+repo_access: granted
+review_mode: plan
 ---
 
 # Cross-AI Plan Review — Phase 03
@@ -11,113 +13,74 @@ plans_reviewed: [03-01-PLAN.md, 03-02-PLAN.md, 03-03-PLAN.md, 03-04-PLAN.md, 03-
 
 ### Summary
 
-This cross-AI plan review evaluates the implementation plans and live repository state for Phase 03 — Hybrid Retrieval & Basic RAG Path in Lancet. The review verified the full end-to-end request lifecycle across the Go API gateway (`gateway/`), gRPC service boundary (`proto/lancet/v1/lancet.proto`), Rust RAG engine (`engine/`), hybrid vector/BM25 retrieval engine (`engine/src/retrieval/`), evidence assembly (`engine/src/prompt.rs`), provider-neutral LLM generation adapter (`engine/src/generation/`), and citation resolution.
-
-The plans successfully establish a modular, provider-neutral architecture that combines dense LanceDB vector search with an in-memory Unicode-aware BM25 index using Reciprocal Rank Fusion (RRF). However, severe discrepancies exist between the plan claims, the recorded design contracts (`03-CONTEXT.md`, `03-AI-SPEC.md`), and the actual implementation in `engine/src/main.rs` and `gateway/main.go`. Most notably, silent fallbacks for embedding/dense retrieval errors violate fail-closed principles, valid zero-result queries are incorrectly mapped to HTTP 400 Bad Request errors, and documentation drift leaves completed plans marked as unexecuted in `ROADMAP.md`.
+AgY reviewed all 23 Phase 03 plans and the live implementation, with particular attention to plans 03-19 through 03-23. It found that the core hybrid dense/BM25 retrieval path, RRF fusion, structured answer path, RAG-04 reranker port, provider limits, and deferred RAG-03 boundaries are substantially represented in the checkout. It identified one high-severity data-integrity risk and three additional implementation concerns that should be resolved or independently verified before final sign-off.
 
 ### Strengths
 
-1. **Provider-Neutral Trait Design**: The async `Generator` trait (`engine/src/generation/mod.rs:27-40`) decouples the core RAG data plane from vendor-specific LLM SDKs, allowing OpenRouter to serve as an injectable adapter without lock-in.
-2. **Pluggable Reranker Port (RAG-04)**: The `Reranker` trait (`engine/src/rerank/mod.rs:15-30`) and `NoOpReranker` implementation fulfill requirement RAG-04, creating a clean extension point for cross-encoder reranking (Phase 999.2).
-3. **Full Unicode Lexical Analysis**: The BM25 tokenizer (`engine/src/retrieval/bm25.rs:45-120`) applies NFKC normalization, full Unicode case-folding, and technical sub-token splitting (camelCase, underscores, hyphens) per D-44..D-48 without destructive stemming.
-4. **Structured Evidence Boundary & Escaping**: Prompt assembly (`engine/src/prompt.rs:80-160`) treats retrieved text strictly as untrusted evidence, assigning engine-generated block IDs and escaping delimiter-like text to prevent prompt injection.
-5. **Request Identity & Error Context Propagation**: Trailer metadata (`x-lancet-session-id`, `x-lancet-correlation-id`, `x-lancet-error-kind`) in tonic gRPC responses (`engine/src/main.rs:1049-1058`) is correctly copied by the Go gateway into client HTTP headers (`gateway/main.go:692-703`) for observability.
+- `EffectiveRagSettings` owns one private, validated `Arc<GroundingLimits>` carrier, and configured provider limits are fail-closed (`engine/src/generation/mod.rs:85-131`, `engine/src/generation/openrouter.rs:77-85`).
+- A shared 256 KiB streaming response bound covers chat, model metadata, and embeddings (`engine/src/client/mod.rs:15,37-60`, `engine/src/generation/openrouter.rs:297-311,469-483`).
+- Retrieval service ceilings and bounded BM25 candidate retention prevent unbounded candidate work (`engine/src/retrieval/mod.rs:30-36,246-319`, `engine/src/retrieval/bm25.rs:310-336`).
+- RRF deduplicates per source and rejects non-finite scores; the Go gateway buffers JSON before committing the HTTP status (`engine/src/retrieval/fusion.rs:35-53,137-175`, `gateway/main.go:846-857`).
+- Prompt evidence is XML-escaped and injection patterns are surfaced as untrusted evidence diagnostics (`engine/src/prompt.rs:107-114,168-179`).
+- AgY found the claim/lease integration tests compliant with the repository convention for isolated schemas and fatal snapshot-query errors (`gateway/db/document_test.go:189-236,249-452`).
 
 ### Concerns
 
-#### 1. Silent Degradation & Fallback on Embedding/Dense Failures Violates Fail-Closed Contract
+#### HIGH — non-atomic staged generation increment
 
-- **Severity**: HIGH
-- **Plan ID(s)**: `03-02-PLAN.md`, `03-03-PLAN.md`, `03-06-PLAN.md`, `03-13-PLAN.md`
-- **File:Line Evidence**: `engine/src/main.rs:967-984`
-- **Mechanism**: `03-AI-SPEC.md` and `03-CONTEXT.md` state that degraded retrieval is deferred (`DEBT-RAG-01`) and is not part of Phase 03 acceptance. Phase 03 therefore requires failing closed on retrieval error. However, `engine/src/main.rs:973` catches embedding errors and silently falls back to a fake constant vector `vec![0.25; 2048]`. Furthermore, `engine/src/main.rs:984` uses `.unwrap_or_default()` on `dense_retriever.query()`, converting LanceDB or snapshot failures into an empty candidate list. This conceals backend failure as a clean zero-result search and permits generation to proceed with ungrounded or weakened evidence.
-- **Recommendation**: Remove the constant-vector fallback and `.unwrap_or_default()` call. Propagate embedding and dense retrieval errors immediately as typed `tonic::Status::unavailable` or `tonic::Status::internal` results.
+- Plan: `03-23`
+- Evidence: `engine/src/main.rs:872-876,902`; latest-row selection at `engine/src/main.rs:683-687`.
+- Mechanism: two concurrent replacements for the same `document_id` can read the same maximum generation, both assign `old + 1`, and create duplicate generation rows. The latest-generation reader then treats the duplicate as ambiguous and fails closed, potentially blocking that document until intervention.
+- Recommendation: serialize replacement per document or make generation assignment atomic. Add a concurrent replacement regression before closing the phase.
 
-#### 2. Valid Zero-Result Filter Queries Mapped to HTTP 400 Bad Request
+#### MEDIUM — schema matching and migration path are fragile
 
-- **Severity**: HIGH
-- **Plan ID(s)**: `03-03-PLAN.md`, `03-04-PLAN.md`, `03-05-PLAN.md`, `03-12-PLAN.md`
-- **File:Line Evidence**: `engine/src/main.rs:1011-1019`, `engine/src/prompt.rs:202-204`, `gateway/main.go:705-708`
-- **Mechanism**: Decision D-10 specifies that valid filters matching no documents produce empty evidence rather than a validation error. When a valid query has no matches, prompt packing returns `PromptError::EmptyEvidence`, the engine maps it to `tonic::Status::invalid_argument`, and the gateway translates `InvalidArgument` to HTTP 400. Clients therefore receive an invalid-request error instead of a valid zero-result response or a distinct no-evidence outcome.
-- **Recommendation**: Handle an empty final candidate list before prompt packing by constructing a valid zero-result response or a distinct server-side outcome. Reserve `InvalidArgument` strictly for malformed input such as invalid UUIDs or oversized requests.
+- Plan: `03-23`
+- Evidence: `engine/src/db/mod.rs:35-62,88`.
+- Mechanism: exact Arrow `Field` vector equality can reject a compatible legacy table when metadata differs, and a read-only `open_and_validate` path may report schema drift without applying the compatible generation-column migration.
+- Recommendation: compare compatible field names/types explicitly and ensure every startup/open path either migrates the legacy schema or reports a deliberate, tested compatibility result.
 
-#### 3. HTTP 200 OK Committed Before JSON Encoding Validates Float Values
+#### MEDIUM — staging generation queries may load full raw blobs
 
-- **Severity**: HIGH
-- **Plan ID(s)**: `03-01-PLAN.md`, `03-03-PLAN.md`, `03-04-PLAN.md`
-- **File:Line Evidence**: `gateway/main.go:713, 723-727`, `engine/src/retrieval/fusion.rs:123-134`
-- **Mechanism**: `writeJSON` writes the HTTP status before encoding the response and ignores the encoder error. If RRF weights or scores produce `NaN` or `+Inf`, Go JSON encoding fails after HTTP 200 has been committed, yielding a truncated or malformed successful response.
-- **Recommendation**: Marshal into a buffer before calling `WriteHeader`; return HTTP 500 if encoding fails. Also validate that every fused score is finite before constructing the protobuf response.
+- Plan: `03-23`
+- Evidence: `engine/src/main.rs:841-845,908-916`.
+- Mechanism: maximum-generation and successor-verification queries do not project only the generation/identity fields, so LanceDB may deserialize historical `raw_content` payloads while calculating metadata.
+- Recommendation: add explicit column projections such as `generation` and `document_id` to the metadata-only queries, with a regression covering the query shape if the API supports it.
 
-#### 4. Roadmap & Plan Tracking Drift (Plans 13–15 Unmarked in Roadmap)
+#### LOW — positional RecordBatch construction is schema-order dependent
 
-- **Severity**: MEDIUM
-- **Plan ID(s)**: `03-13-PLAN.md`, `03-14-PLAN.md`, `03-15-PLAN.md`
-- **File:Line Evidence**: `.planning/ROADMAP.md:139-195` versus the three corresponding `*-SUMMARY.md` files
-- **Mechanism**: The roadmap records 12/15 plans executed and leaves Waves 11–13 unchecked, while the three summary files and their source changes show execution on 2026-08-04. This documentation drift makes external reviewers and planning tools see Phase 03 as incomplete.
-- **Recommendation**: Update roadmap plan counters and check off 03-13, 03-14, and 03-15 only after reconciling the post-execution verification result. Do not mark the phase complete from summaries alone.
+- Plan: `03-23`
+- Evidence: `engine/src/main.rs:879-900`.
+- Mechanism: arrays are supplied positionally against the table schema. Future field reordering could make the batch invalid or bind values to the wrong fields.
+- Recommendation: construct the batch using explicit schema-order helpers or named builders.
 
-#### 5. Response Token Usage Validation Evaluates Static Defaults Rather Than EffectiveRagSettings
+#### LOW / live-verification required — reported test and formatting drift
 
-- **Severity**: MEDIUM
-- **Plan ID(s)**: `03-07-PLAN.md`, `03-13-PLAN.md`, `03-14-PLAN.md`
-- **File:Line Evidence**: `engine/src/generation/mod.rs:75-77, 157-180`, `engine/src/main.rs:1062-1076`
-- **Mechanism**: `ModelOutput::validate_grounding` validates prompt and completion usage against hardcoded defaults (`8192` and `2048`) rather than active `EffectiveRagSettings`. A configured evidence budget above 8192 can reject valid responses, while a smaller configured budget is not enforced consistently.
-- **Recommendation**: Pass `EffectiveRagSettings` or explicit active limits into grounding validation and remove duplicate default-only enforcement from the runtime path.
+- Plans: `03-11`, `03-12`
+- Evidence cited by AgY: `engine/src/tests.rs:2842` and `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md:100-113`.
+- Mechanism: AgY reported a citation expectation mismatch and formatting drift. This was not corroborated at report-writing time because the current worktree was clean; the independent verification and test gate must decide whether it is stale or current.
+- Recommendation: treat this as a verification item, not as a confirmed blocker, until the current checkout test results establish the fact.
 
-#### 6. BM25 Index Invalidation & Ingestion Replay Lifecycle Gap
+### Overall Risk Assessment
 
-- **Severity**: MEDIUM
-- **Plan ID(s)**: `03-01-PLAN.md`, `03-03-PLAN.md`, `03-11-PLAN.md`
-- **File:Line Evidence**: `engine/src/main.rs:986-991, 1568-1607`, `engine/src/retrieval/bm25.rs:180-220`
-- **Mechanism**: `Bm25Index` is instantiated once during startup. Ingestion changes vector entries in LanceDB, but no update or rebuild is made to the in-memory BM25 index. Dense retrieval can therefore see updated chunks while lexical retrieval remains stale. Atomic cross-index lifecycle switching is deferred, but the absence of invalidation creates immediate divergence after document changes in a running process.
-- **Recommendation**: Add explicit BM25 invalidation or atomic snapshot publication when ingestion completes, or preserve a clearly documented status that lexical index lag is out of scope.
-
-#### 7. Duplicate Candidate RRF Score Inflation
-
-- **Severity**: LOW
-- **Plan ID(s)**: `03-01-PLAN.md`
-- **File:Line Evidence**: `engine/src/retrieval/fusion.rs:103-154`
-- **Mechanism**: `fuse_candidates` adds the RRF contribution for every duplicate returned by one source while retaining only the first rank. A duplicated `chunk_id` can therefore receive inflated fused scores.
-- **Recommendation**: Deduplicate candidates per source by `chunk_id` before applying source rank contributions.
-
-### Coverage and Traceability
-
-| Requirement | Plan Ownership | Repository Trace | Status |
-|---|---|---|---|
-| RAG-02 Hybrid Retrieval & Fusion | 03-01, 03-03, 03-12 | `engine/src/retrieval/fusion.rs`, `engine/src/main.rs:976-998` | Partially verified; functional happy path is compromised by silent retrieval fallback, zero-result mapping, score serialization, and BM25 lifecycle concerns. |
-| RAG-04 Pluggable Reranker Seam | 03-01, 03-12 | `engine/src/rerank/mod.rs`, `engine/src/main.rs:1000-1005` | Verified as an async `Reranker` trait with `NoOpReranker`; the review did not identify a current implementation blocker in the seam. |
-| RAG-03 Degraded Mode & Fallbacks | Deferred (`DEBT-RAG-01` through `DEBT-RAG-06`) | `deferred-items.md:19-74` | Correctly isolated as deferred, but silent fallbacks in `main.rs` violate the fail-closed assumptions of that scope fence. |
-
-### Risk Assessment
-
-1. **Grounding and integrity**: Silent embedding and dense-search fallback can return irrelevant context while presenting a retrieval-backed answer.
-2. **API contract**: Valid zero-result queries returning HTTP 400 break the distinction between malformed input and empty corpus matches.
-3. **Transport correctness**: Non-finite fused scores can cause an ignored JSON encoding error after HTTP 200 is committed.
-4. **Auditability**: Roadmap drift makes executed plans appear incomplete and can misroute future GSD actions.
-
-### Reviewer Limitations
-
-- No live OpenRouter API invocation was performed; provider behavior was assessed through source and mock contracts.
-- No build, test, or binary execution was performed during this read-only plan review.
-- The review is one external reviewer’s assessment; the local `03-REVIEW.md` is the independent source-code quality gate.
+Core MVP scope is structurally strong, but raw-staging concurrency is a moderate-to-high integrity risk because duplicate generations can make a document unreadable. Migration behavior and unnecessary blob reads add operational risk. The explicitly deferred RAG-03 degraded/model-only/citation-repair behaviors remain outside Phase 03 scope and should stay in the debt ledger.
 
 ## Consensus Summary
 
-Only AgY was requested and available, so this is a single-reviewer synthesis rather than a multi-reviewer consensus.
-
 ### Agreed Strengths
 
-- The provider-neutral generator and async reranker seams are cleanly separated from vendor implementations.
-- Unicode-aware BM25, structured evidence escaping, deterministic fusion, and identity-bearing error propagation are well-founded.
-- The valid dense-plus-BM25 happy path and Go-to-Rust request lifecycle are represented by executable tests and deferred scope is documented.
+The current implementation has a coherent provider-neutral RAG boundary, explicit resource ceilings, bounded provider bodies, finite deterministic fusion, safe gateway JSON response commitment, prompt evidence escaping, and a pluggable `NoOpReranker` port. These strengths align with the Phase 03 MVP intent and are corroborated by the source review’s current code inspection.
 
 ### Agreed Concerns
 
-- The refreshed local code review independently identifies the same high-priority fail-closed and zero-result contract risks: embedding/dense failures are silently weakened and valid no-match queries are mapped to HTTP 400.
-- Both reviews identify runtime-limit/configuration mismatches and non-finite score/response handling as remaining quality risks.
-- BM25 lifecycle invalidation and roadmap tracking require explicit reconciliation before any phase-completion claim.
+1. Close or explicitly accept the 03-23 per-document generation race with a concrete concurrency proof.
+2. Make compatible legacy schema detection/migration behavior explicit and tested.
+3. Project metadata-only staging queries so replacement checks do not repeatedly load raw payloads.
 
-### Divergent Views
+### Divergent / Uncorroborated Views
 
-- AgY also flags plan-level concerns about duplicate per-source RRF contributions and the long-term reranker interface; these are lower-severity or future-extension concerns than the local code-review blockers and should be evaluated during gap planning.
+AgY described the core phase goal and RAG-02/RAG-04 as achieved, while the current source review and independent verification remain the authoritative quality gates. AgY’s cited citation-test/formatting drift was not treated as confirmed until the live verifier reruns the current checkout. AgY’s positive MVP assessment does not override any current `gaps_found` verification status.
+
+### Highest-Priority Actions Before Sign-Off
+
+Resolve the staged-generation concurrency and migration decisions, rerun the complete Rust/Go gates, and refresh independent verification. Keep Phase 03 pending unless the canonical verifier returns `passed`; do not transition based on this advisory cross-AI review alone.
