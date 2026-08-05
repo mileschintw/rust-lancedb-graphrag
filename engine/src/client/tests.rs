@@ -3,18 +3,19 @@ use std::{
     net::{TcpListener, TcpStream},
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc,
+        Arc, Mutex,
     },
     thread,
     time::{Duration, Instant},
 };
 
-use super::OpenRouterClient;
+use super::{OpenRouterClient, OpenRouterEmbeddingConfig};
 
 struct MockServer {
     endpoint: String,
     requests: Arc<AtomicUsize>,
     max_active: Arc<AtomicUsize>,
+    request_bodies: Arc<Mutex<Vec<String>>>,
 }
 
 impl MockServer {
@@ -24,8 +25,10 @@ impl MockServer {
         let requests = Arc::new(AtomicUsize::new(0));
         let active = Arc::new(AtomicUsize::new(0));
         let max_active = Arc::new(AtomicUsize::new(0));
+        let request_bodies = Arc::new(Mutex::new(Vec::new()));
         let requests_for_thread = requests.clone();
         let max_for_thread = max_active.clone();
+        let bodies_for_thread = request_bodies.clone();
         thread::spawn(move || {
             for connection in listener.incoming() {
                 let Ok(mut stream) = connection else { break };
@@ -37,10 +40,13 @@ impl MockServer {
                     .unwrap_or(200);
                 let active = active.clone();
                 let max_active = max_for_thread.clone();
+                let request_bodies = bodies_for_thread.clone();
                 thread::spawn(move || {
                     let now_active = active.fetch_add(1, Ordering::SeqCst) + 1;
                     max_active.fetch_max(now_active, Ordering::SeqCst);
-                    read_request(&mut stream);
+                    if let Some(body) = read_request(&mut stream) {
+                        request_bodies.lock().unwrap().push(body);
+                    }
                     thread::sleep(response_delay);
                     write_response(&mut stream, status);
                     active.fetch_sub(1, Ordering::SeqCst);
@@ -51,11 +57,12 @@ impl MockServer {
             endpoint,
             requests,
             max_active,
+            request_bodies,
         }
     }
 }
 
-fn read_request(stream: &mut TcpStream) {
+fn read_request(stream: &mut TcpStream) -> Option<String> {
     stream
         .set_read_timeout(Some(Duration::from_secs(1)))
         .unwrap();
@@ -63,14 +70,17 @@ fn read_request(stream: &mut TcpStream) {
     let mut buffer = [0; 4096];
     while !request.windows(4).any(|window| window == b"\r\n\r\n") {
         let Ok(read) = stream.read(&mut buffer) else {
-            return;
+            return None;
         };
         if read == 0 {
-            return;
+            return None;
         }
         request.extend_from_slice(&buffer[..read]);
     }
-    let headers = String::from_utf8_lossy(&request);
+    let header_end = request
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")?;
+    let headers = String::from_utf8_lossy(&request[..header_end]);
     let content_length = headers
         .lines()
         .find_map(|line| {
@@ -80,22 +90,21 @@ fn read_request(stream: &mut TcpStream) {
                 .and_then(|value| value.parse::<usize>().ok())
         })
         .unwrap_or(0);
-    let body_start = request
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .unwrap()
-        + 4;
-    let mut remaining = content_length.saturating_sub(request.len() - body_start);
+    let body_start = header_end + 4;
+    let mut body = request[body_start..].to_vec();
+    let mut remaining = content_length.saturating_sub(body.len());
     while remaining > 0 {
         let read_len = remaining.min(buffer.len());
         let Ok(read) = stream.read(&mut buffer[..read_len]) else {
-            return;
+            return None;
         };
         if read == 0 {
-            return;
+            return None;
         }
+        body.extend_from_slice(&buffer[..read]);
         remaining -= read;
     }
+    String::from_utf8(body).ok()
 }
 
 fn write_response(stream: &mut TcpStream, status: u16) {
@@ -194,4 +203,62 @@ fn rejects_empty_api_keys_without_exposing_credentials() {
         Err(error) => error,
     };
     assert_eq!(error, "OpenRouter API key must not be empty");
+}
+
+#[tokio::test]
+async fn client_embedding_endpoint_override() {
+    let server = MockServer::start(vec![200], Duration::ZERO);
+    let client = OpenRouterClient::for_test(server.endpoint.clone(), 0, Duration::ZERO);
+    let embeddings = client
+        .get_embeddings(&["test endpoint override".into()])
+        .await
+        .unwrap();
+    assert_eq!(server.requests.load(Ordering::SeqCst), 1);
+    assert_eq!(embeddings[0].len(), 2048);
+}
+
+#[tokio::test]
+async fn embedding_request_uses_effective_model() {
+    let server = MockServer::start(vec![200], Duration::ZERO);
+    let model = "custom/embedding-model";
+    let config = OpenRouterEmbeddingConfig::new(model, server.endpoint.clone()).unwrap();
+    let client = OpenRouterClient::new_with_config("test-secret", config).unwrap();
+
+    client
+        .get_embeddings(&["configured model request".into()])
+        .await
+        .unwrap();
+
+    assert_eq!(client.model_id(), model);
+    let body = server
+        .request_bodies
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["model"], model);
+}
+
+#[tokio::test]
+async fn embedding_config_preserves_bounds_and_redaction() {
+    let server = MockServer::start(vec![500, 500, 500, 500], Duration::ZERO);
+    let config = OpenRouterEmbeddingConfig::new("custom/embedding-model", server.endpoint).unwrap();
+
+    assert_eq!(config.timeout, Duration::from_secs(10));
+    assert_eq!(config.max_retries, 3);
+    assert_eq!(config.max_concurrency, 5);
+    assert_eq!(config.expected_dimension, 2048);
+
+    let secret = "secret-must-not-appear";
+    let error = OpenRouterClient::new_with_config(secret, config)
+        .unwrap()
+        .get_embeddings(&["redaction".into()])
+        .await
+        .unwrap_err();
+    assert!(
+        !error.contains(secret),
+        "provider error leaked the credential"
+    );
 }

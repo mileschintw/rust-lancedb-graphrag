@@ -49,13 +49,73 @@ pub struct GetIngestionStatusResponse {
     pub error_message: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DocumentFilter {
+    #[prost(string, repeated, tag="1")]
+    pub document_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag="2")]
+    pub content_types: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct QueryRagRequest {
     #[prost(string, tag="1")]
     pub query: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub session_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="3")]
+    pub filter: ::core::option::Option<DocumentFilter>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Notice {
+    #[prost(string, tag="1")]
+    pub code: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(enumeration="NoticeSeverity", tag="3")]
+    pub severity: i32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StructuredCitation {
+    #[prost(string, tag="1")]
+    pub chunk_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub document_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub title: ::prost::alloc::string::String,
+    #[prost(string, tag="4")]
+    pub section_path: ::prost::alloc::string::String,
+    #[prost(string, tag="5")]
+    pub excerpt: ::prost::alloc::string::String,
+    #[prost(bool, tag="6")]
+    pub is_truncated: bool,
+    #[prost(double, tag="7")]
+    pub score: f64,
+    #[prost(int32, tag="8")]
+    pub rank: i32,
+    #[prost(string, tag="9")]
+    pub content_type: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RetrievalSnapshot {
+    #[prost(string, tag="1")]
+    pub index_generation: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub embedding_model: ::prost::alloc::string::String,
+    #[prost(double, tag="3")]
+    pub vector_weight: f64,
+    #[prost(double, tag="4")]
+    pub bm25_weight: f64,
+    #[prost(int32, tag="5")]
+    pub rrf_k: i32,
+    #[prost(int32, tag="6")]
+    pub candidate_limit: i32,
+    #[prost(int32, tag="7")]
+    pub final_limit: i32,
+    #[prost(message, optional, tag="8")]
+    pub active_filter: ::core::option::Option<DocumentFilter>,
+    #[prost(string, tag="9")]
+    pub result_hash: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryRagResponse {
     #[prost(string, tag="1")]
     pub answer: ::prost::alloc::string::String,
@@ -63,6 +123,14 @@ pub struct QueryRagResponse {
     pub citations: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, tag="3")]
     pub session_id: ::prost::alloc::string::String,
+    #[prost(enumeration="AnswerBasis", tag="4")]
+    pub answer_basis: i32,
+    #[prost(message, repeated, tag="5")]
+    pub structured_citations: ::prost::alloc::vec::Vec<StructuredCitation>,
+    #[prost(message, repeated, tag="6")]
+    pub notices: ::prost::alloc::vec::Vec<Notice>,
+    #[prost(message, optional, tag="7")]
+    pub snapshot: ::core::option::Option<RetrievalSnapshot>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct QueryGraphRequest {
@@ -73,6 +141,70 @@ pub struct QueryGraphRequest {
 pub struct QueryGraphResponse {
     #[prost(string, tag="1")]
     pub result_json: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AnswerBasis {
+    Unspecified = 0,
+    Retrieval = 1,
+    Mixed = 2,
+    ModelOnly = 3,
+}
+impl AnswerBasis {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ANSWER_BASIS_UNSPECIFIED",
+            Self::Retrieval => "ANSWER_BASIS_RETRIEVAL",
+            Self::Mixed => "ANSWER_BASIS_MIXED",
+            Self::ModelOnly => "ANSWER_BASIS_MODEL_ONLY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ANSWER_BASIS_UNSPECIFIED" => Some(Self::Unspecified),
+            "ANSWER_BASIS_RETRIEVAL" => Some(Self::Retrieval),
+            "ANSWER_BASIS_MIXED" => Some(Self::Mixed),
+            "ANSWER_BASIS_MODEL_ONLY" => Some(Self::ModelOnly),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum NoticeSeverity {
+    Unspecified = 0,
+    Info = 1,
+    Warning = 2,
+    Error = 3,
+}
+impl NoticeSeverity {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "NOTICE_SEVERITY_UNSPECIFIED",
+            Self::Info => "NOTICE_SEVERITY_INFO",
+            Self::Warning => "NOTICE_SEVERITY_WARNING",
+            Self::Error => "NOTICE_SEVERITY_ERROR",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "NOTICE_SEVERITY_UNSPECIFIED" => Some(Self::Unspecified),
+            "NOTICE_SEVERITY_INFO" => Some(Self::Info),
+            "NOTICE_SEVERITY_WARNING" => Some(Self::Warning),
+            "NOTICE_SEVERITY_ERROR" => Some(Self::Error),
+            _ => None,
+        }
+    }
 }
 include!("lancet.v1.tonic.rs");
 // @@protoc_insertion_point(module)

@@ -7,5 +7,32 @@ engine_addr = "localhost:50051"
 grpc_addr = "[::1]:50051"
 lancedb_path = "./data/lancedb"
 
+[engine.retrieval]
+candidate_limit = 32
+final_limit = 8
+query_max_bytes = 8192
+max_document_ids = 100
+max_content_types = 16
+vector_weight = 1.0
+bm25_weight = 1.0
+rrf_k = 60.0
+evidence_token_budget = 8192
+excerpt_max_chars = 512
+
+[engine.retrieval.bm25]
+k1 = 1.2
+b = 0.75
+content_boost = 1.0
+title_boost = 2.0
+section_boost = 1.5
+
 [openrouter]
+embedding_endpoint = "https://openrouter.ai/api/v1/embeddings"
 embedding_model = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+generation_model = "openai/gpt-4o-mini"
+chat_endpoint = "https://openrouter.ai/api/v1/chat/completions"
+models_endpoint = "https://openrouter.ai/api/v1/models"
+generation_timeout_secs = 30
+temperature = 0.0
+top_p = 1.0
+max_output_tokens = 2048

@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/lancet/gateway/db"
@@ -32,6 +33,7 @@ import (
 )
 
 const maxUploadBytes int64 = 10 << 20
+const maxRAGQueryBodyBytes int64 = 32 << 10
 const streamBufferSize = 64 << 10
 const defaultChunkSize = 500
 const defaultChunkOverlap = 50
@@ -201,6 +203,7 @@ type engine interface {
 	Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome
 	IngestionStatus(context.Context, string) (*pb.GetIngestionStatusResponse, error)
 	Ping(context.Context) (time.Duration, error)
+	QueryRAG(context.Context, *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error)
 }
 
 type grpcEngine struct{ client pb.LancetServiceClient }
@@ -255,6 +258,31 @@ func (e grpcEngine) Ping(ctx context.Context) (time.Duration, error) {
 	start := time.Now()
 	_, err := e.client.Ping(ctx, &pb.PingRequest{Value: "ping"})
 	return time.Since(start), err
+}
+type trailerError struct {
+	err     error
+	trailer metadata.MD
+}
+
+func (e trailerError) Error() string {
+	return e.err.Error()
+}
+
+func (e trailerError) GRPCStatus() *status.Status {
+	return status.Convert(e.err)
+}
+
+func (e trailerError) Trailer() metadata.MD {
+	return e.trailer
+}
+
+func (e grpcEngine) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+	var trailer metadata.MD
+	resp, err := e.client.QueryRAG(ctx, req, grpc.Trailer(&trailer))
+	if err != nil {
+		return resp, trailerError{err: err, trailer: trailer}
+	}
+	return resp, nil
 }
 
 type app struct {
@@ -436,6 +464,7 @@ func (a app) routes() http.Handler {
 	r.Get("/health", a.health)
 	r.Post("/documents", a.createDocument)
 	r.Get("/documents/{id}", a.getDocument)
+	r.Post("/rag/query", a.queryRAG)
 	return r
 }
 
@@ -612,6 +641,78 @@ func (a app) getDocument(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, doc)
 }
 
+type ragQueryRequestBody struct {
+	Query     string `json:"query"`
+	SessionID string `json:"session_id"`
+	Filter    *struct {
+		DocumentIDs  []string `json:"document_ids"`
+		ContentTypes []string `json:"content_types"`
+	} `json:"filter"`
+}
+
+func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRAGQueryBodyBytes)
+	defer r.Body.Close()
+
+	var body ragQueryRequestBody
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	req := &pb.QueryRAGRequest{
+		Query:     body.Query,
+		SessionId: body.SessionID,
+	}
+	if body.Filter != nil {
+		req.Filter = &pb.DocumentFilter{
+			DocumentIds:  body.Filter.DocumentIDs,
+			ContentTypes: body.Filter.ContentTypes,
+		}
+	}
+
+	resp, err := a.engine.QueryRAG(r.Context(), req)
+	if err != nil {
+		if te, ok := err.(interface{ Trailer() metadata.MD }); ok {
+			tr := te.Trailer()
+			if vals := tr.Get("x-lancet-session-id"); len(vals) > 0 && vals[0] != "" {
+				w.Header().Set("X-Lancet-Session-ID", vals[0])
+			}
+			if vals := tr.Get("x-lancet-correlation-id"); len(vals) > 0 && vals[0] != "" {
+				w.Header().Set("X-Lancet-Correlation-ID", vals[0])
+			}
+			if vals := tr.Get("x-lancet-error-kind"); len(vals) > 0 && vals[0] != "" {
+				w.Header().Set("X-Lancet-Error-Kind", vals[0])
+			}
+		}
+
+		if status.Code(err) == codes.InvalidArgument {
+			http.Error(w, status.Convert(err).Message(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "engine query failed", http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func newDocumentID() (string, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
@@ -630,6 +731,15 @@ func formatListenAddr(port string) string {
 		return port
 	}
 	return "127.0.0.1:" + port
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadTimeout:       60 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 }
 
 func main() {
@@ -658,11 +768,10 @@ func main() {
 	reconciler := newDurableReconciler(postgresStore{pool}, logger)
 	go reconciler.Run(recCtx)
 
-	server := &http.Server{
-		Addr:              formatListenAddr(cfg.Gateway.Port),
-		Handler:           app{store: postgresStore{pool}, engine: grpcEngine{pb.NewLancetServiceClient(conn)}, logger: logger}.routes(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	server := newHTTPServer(
+		formatListenAddr(cfg.Gateway.Port),
+		app{store: postgresStore{pool}, engine: grpcEngine{pb.NewLancetServiceClient(conn)}, logger: logger}.routes(),
+	)
 	logger.Info("gateway listening", zap.String("addr", server.Addr))
 	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Fatal("gateway stopped", zap.Error(err))

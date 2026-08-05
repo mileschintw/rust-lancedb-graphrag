@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 2
-current_plan: 28
-status: gaps_found
-stopped_at: Phase 02 review and independent verification refreshed; 15/20 must-haves verified with five blockers
-last_updated: "2026-07-30T10:03:43.910Z"
+current_phase: 3
+current_plan: 15
+status: executing
+stopped_at: Completed 03-15-PLAN.md; phase verification refreshed with gaps_found
+last_updated: "2026-08-04T13:35:54.046Z"
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 28
-  completed_plans: 28
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 44
+  completed_plans: 44
 ---
 
 # Project State
@@ -19,30 +19,37 @@ progress:
 ## Current Status
 
 - Phase 1 completed successfully.
-- Phase 2 plans 02-01 through 02-28 are implemented and summarized.
-- Plans 02-25 through 02-28 closed six prior blockers, but independent re-verification found five remaining blockers.
+- Phase 2 completed (force-closed per ADR-02-004; all open gaps marked as technical debt deferred to Phase 6 final hardening).
+- Phase 3 plan execution is complete (15/15 plans); RAG-03 degraded/citation-repair/re-ingestion behavior is explicitly deferred to Phase 6 hardening. Phase-final review and verification were refreshed; verification returned `gaps_found` for provider usage-budget threading, so the phase remains pending gap planning.
 
 ## Active Phase
 
-- **Phase:** 2
-- **Status:** Gaps found after all plans executed
-- **Current Plan:** 28 (last executed)
-- **Phase Progress:** 28 of 28 current plans executed
-- **Verification:** 15 of 20 must-haves verified
-- **Current Focus:** Plan fixes for the five blockers recorded in `02-VERIFICATION.md`
+- **Phase:** 3
+- **Status:** Plan execution complete; phase verification has gaps
+- **Current Plan:** 15
+- **Total Plans in Phase:** 15
+- **Progress:** [██████████] 100%
+- **Phase Progress:** 15 plans executed
 
 ## Completed Phases
 
 - **Phase 1: Basic Gateway & Rust Engine Ping** (Completed: 2026-07-13)
+- **Phase 2: Ingestion, Chunking & Vector Storage** (Completed: 2026-07-30 via ADR-02-004 debt deferral to Phase 6)
 
 ## Known Issues & Debt
 
-- The accepted Phase 02 verification-disposition ADR supersedes the older blocker disposition in `02-REVIEW.md` and `02-VERIFICATION.md`.
-- Plans 02-17 through 02-21 cover the accepted ship findings and CR-04's loopback-only guardrail.
-- `DEBT-CR-04`, `DEBT-CR-05`, `DEBT-BU-01`, and `DEBT-BU-02` are non-blocking for Phase 02 while their recorded triggers remain false; Phase 6/v1 closure is the latest review point, and an earlier trigger overrides it.
-- The five earlier literal defects are closed: locked camel-case aliases are rejected, table-wide document deletion is removed, shutdown drains the in-memory receiver, chunk sizes are bounded before persistence, and explicit live-evidence paths are isolated.
-- Fresh review/verification blockers are not covered by the accepted debt disposition: completed ingestion can become `NotFound` after a Rust restart; rollback restoration failure can delete replay state before consistency is restored; failed admission can lose both reconciliation intent and terminal updates; attestation construction defaults human approval to true; and the optimized Python suite still uses a global fixture glob and fails cleanup-sensitive tests.
-- Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for their owning phases.
+- Accepted ADR `.discussion/decisions/phases/02/2026-07-30-ADR-02-004-all-the-way-to-ship-mvp.md` force-closed Phase 02 to focus on MVP progress across all must-have functions.
+- All remaining Phase 02 findings are deferred as technical debt to the final hardening phase (Phase 6):
+  - `DEBT-CR-01 / VER-16`: Completed canonical ingestion downgraded to failed after engine restart
+  - `DEBT-CR-02`: Rollback failure destroys replay state
+  - `DEBT-CR-03`: Failed admission stranded queued without durable reconciliation intent
+  - `DEBT-CR-04 / VER-20`: Evidence helper forges human approval when approval flag omitted
+  - `DEBT-WR-01 / VER-19`: Test cleanup deletes another process's fixtures and fails full suite
+  - `DEBT-WR-02`: Empty uploads become durable failed jobs and misleading 502 response
+  - `DEBT-WR-03`: Cross-runtime recovery tests can hang indefinitely on failure
+- Pre-existing Phase 02 security/resource debt items (`DEBT-CR-04` loopback guardrail, `DEBT-CR-05` pre-admission bounds, `DEBT-BU-01`, `DEBT-BU-02`) remain active and non-blocking until their triggers or Phase 6.
+- Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for Phase 03 and Phase 04.
+- Phase 03 does not claim RAG-03 delivery: DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 remain the source-of-record future hardening contracts; the initial BM25 build/readiness guard is the only lifecycle safeguard retained in the MVP path.
 
 ## Deployment & Environments
 
@@ -72,6 +79,11 @@ progress:
 | Phase 02 P08 | 35 min | 2 tasks | 4 files |
 | Phase 02 P09 | 45 min | 2 tasks | 5 files |
 | Phase 02 P10 | 24 min | 3 tasks | 0 files |
+| Phase 03 P01 | 25min | 2 tasks | 10 files |
+| Phase 03 P05 | 30min | 2 tasks | 4 files |
+| Phase 03 P10 | 18 min | 2 tasks | 4 files |
+| Phase 03 P11 | 35min | 3 tasks | 5 files |
+| Phase 03 P12 | 13m | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -103,9 +115,23 @@ progress:
 - [Phase 02-10]: Final acceptance required the validator exit zero and direct current PostgreSQL/LanceDB comparison before cleanup.
 - [Phase 02-10]: Git Bash was used for the unchanged validator because the WSL launcher had incompatible Cargo path semantics.
 - [Phase 02-10]: Challenge and evidence artifacts remain exact-ignored and absent after success.
+- [Phase 03]: Use NFKC, full Unicode case folding, UAX word boundaries, and identifier subtokens without stemming or stop-word removal.
+- [Phase 03]: Compute BM25 document frequency over the complete snapshot while applying normalized metadata filters before candidate limits.
+- [Phase 03]: Keep full-precision weighted RRF scores, retain both source ranks and scores, and resolve ties by the D-51 identity key.
+- [Phase 03]: Expose reranking through a Send + Sync boxed-future trait with NoOpReranker as the Phase 03 pass-through implementation.
+- [Phase ?]: Use a deterministic localhost three-endpoint provider mock and a real direct-process Go-to-Rust smoke to prove the Phase 03 MVP happy path.
+- [Phase ?]: Treat the Rust serving log as a milestone only; generated-gRPC Ping against the exact loopback endpoint is the readiness proof.
+- [Phase ?]: Keep legacy OpenRouter constructors source-compatible while routing configured constructors through explicit provider state.
+- [Phase ?]: Use the configured embedding model for both the outbound request and OpenRouterClient::model_id so persistence and snapshot wiring can share one identity.
+- [Phase ?]: Use one configured generation Duration for reqwest and Tokio timeout enforcement; retain one attempt with no retry or fallback.
+- [Phase ?]: Use one validated EffectiveRagSettings value for production retrieval, prompt, provider, persistence, citation, and snapshot consumers.
+- [Phase ?]: Require schema-valid initial BM25 fixtures and row-identity diagnostics before readiness.
+- [Phase ?]: Validate the exact 24-key secret-free operator example through the binary target real settings types.
+- [Phase ?]: Phase 03 Plan 12: keep NoOpReranker as the production pass-through and invoke the injected reranker once after fusion before final limiting.
+- [Phase ?]: Phase 03 Plan 12: exact-zero vector_weight and bm25_weight disable their sources before candidate insertion while enabled-source RRF remains deterministic and full precision.
 
 ## Session
 
-**Last session:** 2026-07-30
-**Stopped at:** Phase 02 review and independent verification refreshed; gaps found at 15/20, ready for `/gsd-plan-phase 02 --gaps`
+**Last session:** 2026-08-04T05:05:24.498Z
+**Stopped at:** Completed 03-12-PLAN.md; phase-final gates intentionally deferred
 **Resume file:** None

@@ -11,5 +11,56 @@ engine_addr = "localhost:50051"
 grpc_addr = "[::1]:50051"
 lancedb_path = "./data/lancedb-dev"
 
+[engine.retrieval]
+# unit=count; range=1..=2147483647
+candidate_limit = 32
+# unit=count; range=1..=2147483647
+final_limit = 8
+# unit=UTF-8 bytes; range=>0
+query_max_bytes = 8192
+# unit=count; range=1..=2147483647
+max_document_ids = 100
+# unit=count; range=1..=2147483647
+max_content_types = 16
+# unit=unitless; range=finite >=0 and combined >0
+vector_weight = 1.0
+# unit=unitless; range=finite >=0 and combined >0
+bm25_weight = 1.0
+# unit=rank constant; range=integer 1..=2147483647
+rrf_k = 60.0
+# unit=tokens; range=>0
+evidence_token_budget = 8192
+# unit=Unicode characters; range=>0
+excerpt_max_chars = 512
+
+[engine.retrieval.bm25]
+# unit=unitless; range=finite >0
+k1 = 1.2
+# unit=unitless; range=finite 0..=1
+b = 0.75
+# unit=unitless; range=finite >0
+content_boost = 1.0
+# unit=unitless; range=finite >0
+title_boost = 2.0
+# unit=unitless; range=finite >0
+section_boost = 1.5
+
 [openrouter]
+# unit=URL string; range=nonblank
+embedding_endpoint = "https://openrouter.ai/api/v1/embeddings"
+# unit=provider identifier; range=nonblank
 embedding_model = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+# unit=provider identifier; range=nonblank
+generation_model = "openai/gpt-4o-mini"
+# unit=URL string; range=nonblank
+chat_endpoint = "https://openrouter.ai/api/v1/chat/completions"
+# unit=URL string; range=nonblank
+models_endpoint = "https://openrouter.ai/api/v1/models"
+# unit=seconds; range=>0
+generation_timeout_secs = 30
+# unit=unitless; range=finite 0..2
+temperature = 0.0
+# unit=unitless; range=finite 0..1
+top_p = 1.0
+# unit=tokens; range=>0
+max_output_tokens = 2048

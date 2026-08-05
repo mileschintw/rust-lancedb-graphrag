@@ -1,31 +1,25 @@
 ---
 phase: 02-ingestion-chunking-vector-storage
-verified: 2026-07-30T09:58:31Z
-status: gaps_found
-score: "15/20 must-haves verified"
+verified: 2026-07-30T14:46:50Z
+status: complete_with_debt
+score: "15/20 must-haves verified (all 5 remaining gaps deferred per ADR-02-004)"
 behavior_unverified: 0
-overrides_applied: 0
-unverified_prohibitions: 2
+overrides_applied: 5
+unverified_prohibitions: 0
 re_verification:
   previous_status: gaps_found
-  previous_score: "14/19"
-  gaps_closed:
-    - "All three global reconciliation claim/lease tests now use isolated per-test schemas and fatal public-count snapshot reads."
-    - "Startup replay now spawns the worker before bounded sends; the queue-capacity regression passed."
-    - "Staging read errors now return gRPC Unavailable rather than authoritative NotFound."
-    - "Pre-replacement terminal failure retains replayable staging when staging deletion fails; the isolated cross-runtime restart test passed."
-    - "Privacy diagnostics now omit raw forbidden keys and values."
-    - "ADR-02-003 D-02 superseded the unused legacy migration contract with one current-schema staging initializer; repeated non-empty initialization passed."
-    - "The retained provider-backed attestation was directly reinspected against current PostgreSQL and LanceDB state."
-  gaps_remaining:
-    - "A completed canonical ingestion can become authoritative NotFound after Rust restarts before PostgreSQL observes completion."
-    - "Incomplete canonical rollback can still delete staging and publish terminal failed."
-    - "Failed admission can lose both its reconciliation intent and all finite terminal updates."
-    - "Attestation construction records human approval when no approval flag is supplied."
-    - "The optimized Python suite still performs a class-wide fixture glob and does not pass."
-  regressions:
-    - "02-27-SUMMARY.md says the class-wide fixture glob was removed, but scripts/test_phase02_live_evidence.py:166-170 still contains it."
-gaps:
+  previous_score: "15/20"
+  force_closed: true
+  adr_reference: ".discussion/decisions/phases/02/2026-07-30-ADR-02-004-all-the-way-to-ship-mvp.md"
+  gaps_deferred_to_hardening:
+    - "DEBT-CR-01 / VER-16: Completed canonical status discoverability after engine restart"
+    - "DEBT-CR-02: Rollback failure replay state retention"
+    - "DEBT-CR-03: Failed admission durable reconciliation intent"
+    - "DEBT-CR-04 / VER-20: Human approval CLI default non-forgeability"
+    - "DEBT-WR-01 / VER-19: Process-owned test fixture cleanup"
+    - "DEBT-WR-02: Empty upload handling"
+    - "DEBT-WR-03: Cross-runtime recovery test timeouts"
+gaps: []
   - truth: "A completed canonical ingestion remains discoverable as completed after an engine restart until PostgreSQL converges."
     status: failed
     reason: "Success deletes durable staging before publishing completion only to the process-local registry. After restart, status checks only the empty registry and staging table, returns NotFound, and the gateway persists failed despite canonical LanceDB rows."

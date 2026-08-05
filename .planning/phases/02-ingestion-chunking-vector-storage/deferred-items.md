@@ -44,3 +44,31 @@ Source of record for every item below: accepted ADR `.discussion/decisions/phase
 - **Trigger:** Before documenting the live runner as safe for arbitrary user-owned source files.
 - **Target:** Phase 6 / v1 MVP closure.
 - **Future acceptance criteria:** Successful plus representative early and post-upload failures preserve caller fixture SHA-256 and bytes; script-created temporary files are removed only when owned by the script.
+
+## Accepted Phase 02 ADR-02-004 technical debt
+
+Source of record: `.discussion/decisions/phases/02/2026-07-30-ADR-02-004-all-the-way-to-ship-mvp.md` (2026-07-30).
+All open Phase 02 findings listed below are accepted as technical debt deferred to the final hardening phase (Phase 6).
+
+- **DEBT-CR-01 / VER-16**: Completed canonical ingestion downgraded to failed after engine restart
+  - **Target**: Final hardening phase
+  - **Constraints**: Single-operator use; avoid automated engine restarts during active ingestion.
+- **DEBT-CR-02**: Rollback failure destroys replay state
+  - **Target**: Final hardening phase
+  - **Constraints**: Log rollback errors verbosely for manual inspection.
+- **DEBT-CR-03**: Failed admission stranded queued without durable reconciliation intent
+  - **Target**: Final hardening phase
+  - **Constraints**: Single PostgreSQL instance; manual monitoring of queued documents.
+- **DEBT-CR-04 / VER-20**: Evidence helper forges human approval when approval flag omitted
+  - **Target**: Final hardening phase
+  - **Constraints**: Operator must consciously review disclosures.
+- **DEBT-WR-01 / VER-19**: Test cleanup deletes another process's fixtures and fails full suite
+  - **Target**: Final hardening phase
+  - **Constraints**: Run tests sequentially in clean workspace.
+- **DEBT-WR-02**: Empty uploads become durable failed jobs and misleading 502 response
+  - **Target**: Final hardening phase
+  - **Constraints**: Client-side validation to prevent zero-byte uploads.
+- **DEBT-WR-03**: Cross-runtime recovery tests can hang indefinitely on failure
+  - **Target**: Final hardening phase
+  - **Constraints**: Run tests with external timeouts.
+

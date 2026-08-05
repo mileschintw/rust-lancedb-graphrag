@@ -1,9 +1,6 @@
 # GSD Agent Configuration — managed by gsd-core installer
 # GSD codex_hooks ownership: section
 
-model = "gpt-5.6-sol"
-model_reasoning_effort = "medium"
-
 developer_instructions = """
 Orchestrator (this session): gpt-5.6-sol @ medium.
 Default implementer subagent: gpt-5.6-luna @ xhigh.
@@ -28,4 +25,4 @@ tool_namespace = "agents"
 enabled = true
 max_depth = 1
 default_subagent_model = "gpt-5.6-luna"
-default_subagent_reasoning_effort = "xhigh"
+default_subagent_reasoning_effort = "max"

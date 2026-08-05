@@ -5,11 +5,11 @@
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
 | 1 | 1/1 | Complete    | 2026-07-13 |
-| 2 | 24/28 | Gap-closure plans added for ADR-02-003; implementation not started | DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06 |
-| 3 | Hybrid Retrieval & Basic RAG Path | Implement hybrid retrieval and a simple end-to-end RAG answer generation | RAG-02, RAG-03, RAG-04 |
+| 2 | 28/28 | Complete (ADR-02-004 deferral to Phase 6) | 2026-07-30 |
+| 3 | Hybrid Retrieval & Basic RAG Path | Implement the valid hybrid retrieval and one structured RAG answer path | RAG-02, RAG-04 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
-| 6 | Observability, Evaluation & Polish | Add OpenTelemetry tracing, offline eval script, and README | OBS-01, OBS-02, OBS-03, OBS-04 |
+| 6 | Observability, Evaluation & Polish | Add OpenTelemetry tracing, offline eval script, README, and RAG hardening | RAG-03, OBS-01, OBS-02, OBS-03, OBS-04 |
 
 ## Phase Details
 
@@ -31,7 +31,7 @@
 **Mode:** mvp
 **Requirements:** DATA-01, DATA-02, DATA-03, DATA-06, DATA-07, DATA-08, DATA-09, RAG-06
 **Plans:** 28/28 plans executed
-**Verification:** Gaps found — 15/20 must-haves verified; Phase 02 remains open.
+**Verification:** Force-closed per ADR-02-004 — 15/20 must-haves verified; all open gaps (CR-01..04, WR-01..03, VER-16, VER-19, VER-20) deferred to Phase 6 hardening as technical debt.
 **Wave 1**
 
 - [x] 02-01-PLAN.md
@@ -132,14 +132,72 @@
 
 ### Phase 3: Hybrid Retrieval & Basic RAG Path
 
-**Goal:** Implement hybrid retrieval and a simple end-to-end RAG answer generation
+**Goal:** As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.
 **Mode:** mvp
-**Requirements:** RAG-02, RAG-03, RAG-04
+**Requirements:** RAG-02, RAG-04
+**Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
+**Plans:** 15/15 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 03-01-PLAN.md — Add approved Unicode BM25 dependencies and prove deterministic dense/BM25 fusion and NoOp retrieval.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 03-02-PLAN.md — Build bounded evidence and the strict provider-neutral/OpenRouter generation contract.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 03-03-PLAN.md — Expose additive QueryRAG gRPC and make initial BM25 build part of Rust readiness.
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 03-04-PLAN.md — Add the strict Go HTTP boundary and endpoint-injectable query embeddings.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 03-05-PLAN.md — Run the isolated real-process smoke with local embedding, metadata, and chat mocks.
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 03-06-PLAN.md — Close prompt and provider grounding-integrity blockers with fail-closed evidence and validated-output regressions.
+
+**Wave 7** *(blocked on Wave 6 completion; parallel)*
+
+- [x] 03-07-PLAN.md — Thread validated effective settings through retrieval, evidence, providers, persistence identity, and snapshots.
+- [x] 03-08-PLAN.md — Enforce the 32 KiB HTTP body boundary and 60-second read timeout while preserving the cross-runtime path.
+
+**Wave 8** *(blocked on Wave 7 completion; parallel)*
+
+- [x] 03-09-PLAN.md — Project identity-correct citations, Unicode-bounded excerpts, and severity-correct diagnostics.
+- [x] 03-10-PLAN.md — Build configuration-based embedding and generation adapters with exact request-capture tests.
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [x] 03-11-PLAN.md — Wire effective configuration and providers into production startup and prove initial readiness guards.
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [x] 03-12-PLAN.md — Wire NoOpReranker into production query_rag and enforce zero-weight retrieval-source exclusion.
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [x] 03-13-PLAN.md — Enforce fail-closed retrieval grounding and bounded OpenRouter output.
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [x] 03-14-PLAN.md — Route effective settings through the provider and preserve generation identity with explicit credentials.
+
+**Wave 13** *(blocked on Wave 12 completion)*
+
+- [x] 03-15-PLAN.md — Stabilize citation identity fixtures and restore the complete locked Rust regression gate.
+
 **Success Criteria:**
 
-1. Rust engine can perform hybrid (vector + BM25) search against LanceDB.
-2. Go gateway exposes an endpoint to ask a question and receives an LLM-generated answer using retrieved context.
-3. System falls back gracefully if vector retrieval fails (degraded mode).
+1. For a valid query over a completed corpus where both vector and BM25 retrieval paths succeed, the Rust engine fuses deterministic, bounded evidence and returns one structured answer with valid citations resolving to that evidence.
+2. Go gateway exposes `/rag/query` and receives that retrieval-grounded structured answer through the Rust gRPC boundary.
+3. Initial BM25 construction completes before the first query-ready state, and an initial build failure prevents serving the valid path.
 4. Define pluggable async Reranker trait and NoOpReranker pass-through implementation (Port for 999.2).
 
 ### Phase 4: Knowledge Graph Extraction & Query
@@ -169,9 +227,9 @@
 
 ### Phase 6: Observability, Evaluation & Polish
 
-**Goal:** Add OpenTelemetry tracing, offline eval script, and README
+**Goal:** Add OpenTelemetry tracing, offline eval script, README, and post-MVP hardening
 **Mode:** mvp
-**Requirements:** OBS-01, OBS-02, OBS-03, OBS-04
+**Requirements:** RAG-03, OBS-01, OBS-02, OBS-03, OBS-04
 **Success Criteria:**
 
 1. OpenTelemetry traces span Go, gRPC, and Rust components.
@@ -180,6 +238,7 @@
 4. Include placeholder metric for global GraphRAG evaluation.
 5. Close `DEBT-BU-01` and `DEBT-BU-02` with their recorded behavioral proofs before declaring the v1 MVP complete.
 6. Review `DEBT-CR-04` and `DEBT-CR-05` as conditional security/resource gates if neither has triggered earlier; any non-loopback/shared/remote/public caller or bulk/scheduled/concurrent/larger-uncontrolled ingestion trigger makes the corresponding review immediate and overrides Phase 6 timing.
+7. Implement and verify the deferred RAG-03 hardening target, including DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 acceptance criteria, before claiming degraded/citation-repair/re-ingestion coverage.
 
 ## Backlog
 
