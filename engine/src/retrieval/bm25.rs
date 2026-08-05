@@ -236,12 +236,13 @@ impl Bm25Index {
         settings: &RetrievalSettings,
     ) -> Result<Vec<Candidate>, RetrievalError> {
         settings.validate()?;
+        let request = request.validate(settings)?;
         let terms = analyze(&request.query).into_iter().collect::<BTreeSet<_>>();
         if terms.is_empty() {
             return Ok(Vec::new());
         }
 
-        let mut results = Vec::with_capacity(self.documents.len());
+        let mut results = Vec::with_capacity(settings.candidate_limit);
         for document in &self.documents {
             if !request.filters.matches(&document.candidate) {
                 continue;
@@ -250,7 +251,7 @@ impl Bm25Index {
             if score > 0.0 {
                 let mut candidate = document.candidate.clone();
                 candidate.score = score;
-                results.push(candidate);
+                insert_bounded_candidate(&mut results, candidate, settings.candidate_limit);
             }
         }
         results.sort_by(|left, right| {
@@ -259,7 +260,6 @@ impl Bm25Index {
                 .total_cmp(&left.score)
                 .then_with(|| left.sort_key().cmp(&right.sort_key()))
         });
-        results.truncate(settings.candidate_limit);
         Ok(results)
     }
 
@@ -304,6 +304,34 @@ impl Bm25Index {
 
     pub fn is_empty(&self) -> bool {
         self.documents.is_empty()
+    }
+}
+
+fn insert_bounded_candidate(results: &mut Vec<Candidate>, candidate: Candidate, limit: usize) {
+    if limit == 0 {
+        return;
+    }
+    if results.len() < limit {
+        results.push(candidate);
+        return;
+    }
+
+    let mut worst_index = 0;
+    for index in 1..results.len() {
+        let prev_worst = &results[worst_index];
+        let current = &results[index];
+        if current.score < prev_worst.score
+            || (current.score == prev_worst.score && current.sort_key() > prev_worst.sort_key())
+        {
+            worst_index = index;
+        }
+    }
+
+    let worst = &results[worst_index];
+    if candidate.score > worst.score
+        || (candidate.score == worst.score && candidate.sort_key() < worst.sort_key())
+    {
+        results[worst_index] = candidate;
     }
 }
 

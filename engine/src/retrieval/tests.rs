@@ -10,7 +10,7 @@ use uuid::Uuid;
 use super::bm25::analyze;
 use super::{
     fuse_candidates, Bm25Config, Bm25Index, Candidate, DenseRetriever, QueryFilters, QueryRequest,
-    RetrievalSettings,
+    RetrievalErrorKind, RetrievalSettings,
 };
 
 fn candidate(document_id: &str, chunk_id: &str, content: &str) -> Candidate {
@@ -494,4 +494,91 @@ fn positive_weights_preserve_rrf_dedup_and_ties() {
         serde_json::to_vec(&repeated).unwrap(),
         "positive-weight fusion must remain byte-stable across identical runs"
     );
+}
+
+#[test]
+fn service_ceiling_rejects_each_absolute_maximum() {
+    let base = RetrievalSettings::default();
+
+    // candidate_limit > 500
+    let mut s = base.clone();
+    s.candidate_limit = 501;
+    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+
+    // final_limit > 100
+    let mut s = base.clone();
+    s.candidate_limit = 500;
+    s.final_limit = 101;
+    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+
+    // query_max_bytes > 8192
+    let mut s = base.clone();
+    s.query_max_bytes = 8193;
+    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+
+    // max_document_ids > 100
+    let mut s = base.clone();
+    s.max_document_ids = 101;
+    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+
+    // max_content_types > 100
+    let mut s = base.clone();
+    s.max_content_types = 101;
+    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+
+    // vector_weight > 16.0
+    let mut s = base.clone();
+    s.vector_weight = 16.000001;
+    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+
+    // bm25_weight > 16.0
+    let mut s = base.clone();
+    s.bm25_weight = 16.000001;
+    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+
+    // rrf_k > 1000000.0
+    let mut s = base.clone();
+    s.rrf_k = 1000001.0;
+    assert_eq!(s.validate().unwrap_err().kind, RetrievalErrorKind::InvalidSettings);
+}
+
+#[test]
+fn request_filter_limit_enforces_unique_values_after_normalization() {
+    let mut doc_ids = Vec::new();
+    let uuid_str = "00000000-0000-4000-8000-000000000001";
+    for _ in 0..200 {
+        doc_ids.push(uuid_str.to_string());
+    }
+
+    let filters = QueryFilters::normalize_with_limits(doc_ids, vec![], 100, 16).unwrap();
+    assert_eq!(filters.document_ids.len(), 1);
+
+    let mut distinct_ids = Vec::new();
+    for i in 0..101 {
+        distinct_ids.push(format!("00000000-0000-4000-8000-{i:012x}"));
+    }
+    let err = QueryFilters::normalize_with_limits(distinct_ids, vec![], 100, 16).unwrap_err();
+    assert_eq!(err.kind, RetrievalErrorKind::FilterLimitExceeded);
+}
+
+#[test]
+fn bm25_candidate_workspace_respects_effective_limit() {
+    let cand1 = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "apple apple apple");
+    let cand2 = candidate("00000000-0000-4000-8000-000000000002", "chunk-2", "apple apple");
+    let cand3 = candidate("00000000-0000-4000-8000-000000000003", "chunk-3", "apple");
+
+    let index = Bm25Index::from_candidates(vec![cand1, cand2, cand3], Bm25Config::default()).unwrap();
+
+    let settings = RetrievalSettings {
+        candidate_limit: 2,
+        final_limit: 2,
+        ..RetrievalSettings::default()
+    };
+
+    let req = QueryRequest::new("apple", QueryFilters::empty()).unwrap();
+    let res = index.query(&req, &settings).unwrap();
+
+    assert_eq!(res.len(), 2, "must be bounded by candidate_limit 2");
+    assert_eq!(res[0].chunk_id, "chunk-1");
+    assert_eq!(res[1].chunk_id, "chunk-2");
 }

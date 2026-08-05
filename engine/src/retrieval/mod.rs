@@ -27,6 +27,14 @@ pub const DEFAULT_QUERY_MAX_BYTES: usize = 8 * 1024;
 pub const DEFAULT_MAX_DOCUMENT_IDS: usize = 100;
 pub const DEFAULT_MAX_CONTENT_TYPES: usize = 16;
 
+pub const MAX_SERVICE_CANDIDATE_LIMIT: usize = 500;
+pub const MAX_SERVICE_FINAL_LIMIT: usize = 100;
+pub const MAX_SERVICE_QUERY_MAX_BYTES: usize = 8192;
+pub const MAX_SERVICE_FILTER_KEYS: usize = 32;
+pub const MAX_SERVICE_FILTER_VALUES_PER_KEY: usize = 100;
+pub const MAX_SERVICE_RRF_WEIGHT: f64 = 16.0;
+pub const MAX_SERVICE_RRF_K: f64 = 1000000.0;
+
 const SUPPORTED_CONTENT_TYPES: &[&str] = &["application/json", "text/markdown", "text/plain"];
 
 /// Identifies a caller contract error or an unavailable retrieval snapshot.
@@ -134,7 +142,7 @@ fn normalize_document_ids(
     document_ids: Vec<String>,
     limit: usize,
 ) -> Result<Vec<String>, RetrievalError> {
-    let mut values = HashSet::with_capacity(document_ids.len());
+    let mut values = HashSet::with_capacity(limit.min(document_ids.len()));
     for value in document_ids {
         let value = value.trim();
         if value.is_empty() {
@@ -156,12 +164,12 @@ fn normalize_document_ids(
             ));
         }
         values.insert(id.to_string());
-    }
-    if values.len() > limit {
-        return Err(RetrievalError::new(
-            RetrievalErrorKind::FilterLimitExceeded,
-            format!("document_ids filter exceeds the limit of {limit}"),
-        ));
+        if values.len() > limit {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::FilterLimitExceeded,
+                format!("document_ids filter exceeds the limit of {limit}"),
+            ));
+        }
     }
     let mut values: Vec<_> = values.into_iter().collect();
     values.sort_unstable();
@@ -172,7 +180,7 @@ fn normalize_content_types(
     content_types: Vec<String>,
     limit: usize,
 ) -> Result<Vec<String>, RetrievalError> {
-    let mut values = HashSet::with_capacity(content_types.len());
+    let mut values = HashSet::with_capacity(limit.min(content_types.len()));
     for value in content_types {
         let value = value.trim().to_ascii_lowercase();
         if value.is_empty() {
@@ -188,12 +196,12 @@ fn normalize_content_types(
             ));
         }
         values.insert(value);
-    }
-    if values.len() > limit {
-        return Err(RetrievalError::new(
-            RetrievalErrorKind::FilterLimitExceeded,
-            format!("content_types filter exceeds the limit of {limit}"),
-        ));
+        if values.len() > limit {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::FilterLimitExceeded,
+                format!("content_types filter exceeds the limit of {limit}"),
+            ));
+        }
     }
     let mut values: Vec<_> = values.into_iter().collect();
     values.sort_unstable();
@@ -235,10 +243,16 @@ impl Default for RetrievalSettings {
 
 impl RetrievalSettings {
     pub fn validate(&self) -> Result<(), RetrievalError> {
-        if self.candidate_limit == 0 || self.final_limit == 0 {
+        if self.candidate_limit == 0 || self.candidate_limit > MAX_SERVICE_CANDIDATE_LIMIT {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
-                "candidate and final limits must be greater than zero",
+                format!("candidate_limit must be between 1 and {MAX_SERVICE_CANDIDATE_LIMIT}"),
+            ));
+        }
+        if self.final_limit == 0 || self.final_limit > MAX_SERVICE_FINAL_LIMIT {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidSettings,
+                format!("final_limit must be between 1 and {MAX_SERVICE_FINAL_LIMIT}"),
             ));
         }
         if self.final_limit > self.candidate_limit {
@@ -247,36 +261,56 @@ impl RetrievalSettings {
                 "final_limit must not exceed candidate_limit",
             ));
         }
-        if self.candidate_limit > i32::MAX as usize
-            || self.final_limit > i32::MAX as usize
-            || self.query_max_bytes > i32::MAX as usize
-            || self.max_document_ids > i32::MAX as usize
-            || self.max_content_types > i32::MAX as usize
-        {
+        if self.query_max_bytes == 0 || self.query_max_bytes > MAX_SERVICE_QUERY_MAX_BYTES {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
-                "retrieval limits must fit within signed 32-bit integer range",
+                format!("query_max_bytes must be between 1 and {MAX_SERVICE_QUERY_MAX_BYTES}"),
             ));
         }
-        if self.query_max_bytes == 0 || self.max_document_ids == 0 || self.max_content_types == 0 {
+        if self.max_document_ids == 0 || self.max_document_ids > MAX_SERVICE_FILTER_VALUES_PER_KEY {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
-                "query and filter limits must be greater than zero",
+                format!("max_document_ids must be between 1 and {MAX_SERVICE_FILTER_VALUES_PER_KEY}"),
+            ));
+        }
+        if self.max_content_types == 0 || self.max_content_types > MAX_SERVICE_FILTER_VALUES_PER_KEY {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidSettings,
+                format!("max_content_types must be between 1 and {MAX_SERVICE_FILTER_VALUES_PER_KEY}"),
             ));
         }
         if !self.vector_weight.is_finite()
-            || !self.bm25_weight.is_finite()
             || self.vector_weight < 0.0
-            || self.bm25_weight < 0.0
-            || self.vector_weight + self.bm25_weight == 0.0
-            || !self.rrf_k.is_finite()
-            || self.rrf_k <= 0.0
-            || self.rrf_k.fract() != 0.0
-            || self.rrf_k > i32::MAX as f64
+            || self.vector_weight > MAX_SERVICE_RRF_WEIGHT
         {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
-                "RRF weights must be finite and non-negative with at least one positive weight, and rrf_k must be a positive signed 32-bit integral value",
+                format!("vector_weight must be finite and between 0.0 and {MAX_SERVICE_RRF_WEIGHT}"),
+            ));
+        }
+        if !self.bm25_weight.is_finite()
+            || self.bm25_weight < 0.0
+            || self.bm25_weight > MAX_SERVICE_RRF_WEIGHT
+        {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidSettings,
+                format!("bm25_weight must be finite and between 0.0 and {MAX_SERVICE_RRF_WEIGHT}"),
+            ));
+        }
+        if self.vector_weight + self.bm25_weight == 0.0 {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidSettings,
+                "at least one of vector_weight or bm25_weight must be greater than zero",
+            ));
+        }
+        if !self.rrf_k.is_finite()
+            || self.rrf_k <= 0.0
+            || self.rrf_k.fract() != 0.0
+            || self.rrf_k > MAX_SERVICE_RRF_K
+        {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidSettings,
+                format!("rrf_k must be a positive integral value up to {MAX_SERVICE_RRF_K}"),
             ));
         }
         self.bm25.validate()
