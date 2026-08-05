@@ -538,3 +538,75 @@ fn blank_openrouter_api_key_blocks_readiness() {
 
     let _ = fs::remove_dir_all(temp_dir);
 }
+
+#[test]
+fn service_ceiling_rejects_above_effective_limits() {
+    // 1. Direct boundary assertions for exact ceiling values (inclusive contract)
+    let valid_at_ceilings = engine::generation::GroundingLimits::new(16384, 4096)
+        .expect("exact ceilings 16,384 evidence and 4,096 output must be accepted");
+    assert_eq!(valid_at_ceilings.evidence_token_budget, 16384);
+    assert_eq!(valid_at_ceilings.max_output_tokens, 4096);
+    assert_eq!(valid_at_ceilings.total_tokens_ceiling, 20480);
+
+    assert!(
+        engine::generation::GroundingLimits::new(16385, 4096).is_err(),
+        "evidence_token_budget 16,385 must be rejected above ceiling"
+    );
+    assert!(
+        engine::generation::GroundingLimits::new(16384, 4097).is_err(),
+        "max_output_tokens 4,097 must be rejected above ceiling"
+    );
+
+    // 2. Process-level integration tests
+    let temp_dir = std::env::temp_dir().join(format!("lancet-cfg-test-ceiling-{}", uuid::Uuid::new_v4()));
+    let config_dir = temp_dir.join("isolated_config");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    let lancedb_dir = temp_dir.join("lancedb");
+    let grpc_addr = unused_loopback_addr();
+
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::create_dir_all(&cwd_dir).unwrap();
+    let config_toml = format!(
+        "[engine]\ngrpc_addr = \"{grpc_addr}\"\nlancedb_path = \"{}\"\n",
+        lancedb_dir.to_str().unwrap().replace('\\', "/")
+    );
+    fs::write(config_dir.join("config.toml"), config_toml).unwrap();
+
+    // Rejection 1: evidence_token_budget above ceiling (16,385)
+    let env_vars_ev = [
+        ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+        ("OPENROUTER_API_KEY", "test-key"),
+        ("LANCET_ENGINE__RETRIEVAL__EVIDENCE_TOKEN_BUDGET", "16385"),
+    ];
+    let result_ev = spawn_engine_full(&cwd_dir, &env_vars_ev, &[]);
+    let err_ev = match result_ev {
+        Ok((child, _, _)) => {
+            cleanup_child(child);
+            panic!("engine must reject evidence_token_budget 16,385 before readiness");
+        }
+        Err(err) => err,
+    };
+    assert!(err_ev.contains("process exited nonzero"), "must exit nonzero: {err_ev}");
+    assert!(err_ev.contains("exceeds service ceiling"), "must state ceiling error: {err_ev}");
+    assert_not_listening(grpc_addr);
+
+    // Rejection 2: max_output_tokens above ceiling (4,097)
+    let env_vars_out = [
+        ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+        ("OPENROUTER_API_KEY", "test-key"),
+        ("LANCET_OPENROUTER__MAX_OUTPUT_TOKENS", "4097"),
+    ];
+    let result_out = spawn_engine_full(&cwd_dir, &env_vars_out, &[]);
+    let err_out = match result_out {
+        Ok((child, _, _)) => {
+            cleanup_child(child);
+            panic!("engine must reject max_output_tokens 4,097 before readiness");
+        }
+        Err(err) => err,
+    };
+    assert!(err_out.contains("process exited nonzero"), "must exit nonzero: {err_out}");
+    assert!(err_out.contains("exceeds service ceiling"), "must state ceiling error: {err_out}");
+    assert_not_listening(grpc_addr);
+
+    let _ = fs::remove_dir_all(temp_dir);
+}

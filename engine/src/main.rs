@@ -311,6 +311,13 @@ pub struct EffectiveRagSettings {
 }
 
 impl EffectiveRagSettings {
+    pub fn grounding_limits(&self) -> Result<generation::GroundingLimits, String> {
+        let ev = u32::try_from(self.evidence_token_budget)
+            .map_err(|_| "evidence_token_budget exceeds u32::MAX".to_string())?;
+        generation::GroundingLimits::new(ev, self.max_output_tokens)
+            .map_err(|err| err.message().to_string())
+    }
+
     pub fn try_from_settings(settings: &Settings) -> Result<Self, String> {
         let retrieval = settings.engine.retrieval.to_retrieval_settings();
         let effective = Self {
@@ -336,9 +343,7 @@ impl EffectiveRagSettings {
         self.retrieval
             .validate()
             .map_err(|err| format!("invalid retrieval settings: {}", err.message()))?;
-        if self.evidence_token_budget == 0 {
-            return Err("invalid evidence_token_budget: must be greater than 0".into());
-        }
+        self.grounding_limits()?;
         if self.citation_excerpt_max_chars == 0 {
             return Err("invalid excerpt_max_chars: must be greater than 0".into());
         }
@@ -365,9 +370,6 @@ impl EffectiveRagSettings {
         }
         if !self.top_p.is_finite() || self.top_p <= 0.0 || self.top_p > 1.0 {
             return Err("invalid top_p: must be finite and between 0.0 and 1.0".into());
-        }
-        if self.max_output_tokens == 0 {
-            return Err("invalid max_output_tokens: must be greater than 0".into());
         }
         if self.index_generation.trim().is_empty() {
             return Err("invalid index_generation: must not be empty".into());
@@ -435,6 +437,16 @@ fn load_settings() -> Result<Settings, config::ConfigError> {
     if let Ok(value) = std::env::var("LANCET_OPENROUTER__CHAT_ENDPOINT") {
         if !value.trim().is_empty() {
             settings.openrouter.chat_endpoint = value;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__RETRIEVAL__EVIDENCE_TOKEN_BUDGET") {
+        if let Ok(budget) = value.trim().parse::<usize>() {
+            settings.engine.retrieval.evidence_token_budget = budget;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_OPENROUTER__MAX_OUTPUT_TOKENS") {
+        if let Ok(tokens) = value.trim().parse::<u32>() {
+            settings.openrouter.max_output_tokens = tokens;
         }
     }
     Ok(settings)

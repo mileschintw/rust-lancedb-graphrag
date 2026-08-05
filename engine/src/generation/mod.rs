@@ -76,8 +76,76 @@ pub const DEFAULT_EVIDENCE_TOKEN_BUDGET: u32 = 8_192;
 pub const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 2_048;
 pub const MAX_TOTAL_TOKENS_BUDGET: u32 = DEFAULT_EVIDENCE_TOKEN_BUDGET + DEFAULT_MAX_OUTPUT_TOKENS;
 
+pub const MAX_SERVICE_EVIDENCE_TOKEN_BUDGET: u32 = 16_384;
+pub const MAX_SERVICE_OUTPUT_TOKENS: u32 = 4_096;
+pub const MAX_SERVICE_TOTAL_TOKENS: u32 = MAX_SERVICE_EVIDENCE_TOKEN_BUDGET + MAX_SERVICE_OUTPUT_TOKENS;
+
+/// Shared carrier governing evidence token budget, max output tokens, and total usage ceiling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroundingLimits {
+    pub evidence_token_budget: u32,
+    pub max_output_tokens: u32,
+    pub total_tokens_ceiling: u32,
+}
+
+impl GroundingLimits {
+    pub fn new(evidence_token_budget: u32, max_output_tokens: u32) -> Result<Self, GenerationError> {
+        if evidence_token_budget == 0 || evidence_token_budget > MAX_SERVICE_EVIDENCE_TOKEN_BUDGET {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                format!(
+                    "evidence_token_budget {} exceeds service ceiling {}",
+                    evidence_token_budget, MAX_SERVICE_EVIDENCE_TOKEN_BUDGET
+                ),
+            ));
+        }
+        if max_output_tokens == 0 || max_output_tokens > MAX_SERVICE_OUTPUT_TOKENS {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                format!(
+                    "max_output_tokens {} exceeds service ceiling {}",
+                    max_output_tokens, MAX_SERVICE_OUTPUT_TOKENS
+                ),
+            ));
+        }
+        let total_tokens_ceiling = evidence_token_budget.checked_add(max_output_tokens).ok_or_else(|| {
+            GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "token budget addition overflowed",
+            )
+        })?;
+        if total_tokens_ceiling > MAX_SERVICE_TOTAL_TOKENS {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                format!(
+                    "derived total_tokens_ceiling {} exceeds service ceiling {}",
+                    total_tokens_ceiling, MAX_SERVICE_TOTAL_TOKENS
+                ),
+            ));
+        }
+        Ok(Self {
+            evidence_token_budget,
+            max_output_tokens,
+            total_tokens_ceiling,
+        })
+    }
+
+    pub fn default_limits() -> Self {
+        Self::new(DEFAULT_EVIDENCE_TOKEN_BUDGET, DEFAULT_MAX_OUTPUT_TOKENS)
+            .expect("default grounding limits must be valid")
+    }
+}
+
 impl ModelOutput {
     pub fn validate_grounding(&self, packed_evidence: &[EvidenceBlock]) -> Result<(), GenerationError> {
+        self.validate_grounding_with_limits(packed_evidence, GroundingLimits::default_limits())
+    }
+
+    pub fn validate_grounding_with_limits(
+        &self,
+        packed_evidence: &[EvidenceBlock],
+        limits: GroundingLimits,
+    ) -> Result<(), GenerationError> {
         if self.answer_basis == AnswerBasis::ModelOnly {
             return Err(GenerationError::new(
                 GenerationErrorKind::SchemaValidation,
@@ -155,16 +223,16 @@ impl ModelOutput {
         }
 
         if let Some(usage) = &self.usage {
-            if usage.prompt_tokens > DEFAULT_EVIDENCE_TOKEN_BUDGET {
+            if usage.prompt_tokens > limits.evidence_token_budget {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
-                    format!("prompt_tokens {} exceeds budget {DEFAULT_EVIDENCE_TOKEN_BUDGET}", usage.prompt_tokens),
+                    format!("prompt_tokens {} exceeds budget {}", usage.prompt_tokens, limits.evidence_token_budget),
                 ));
             }
-            if usage.completion_tokens > DEFAULT_MAX_OUTPUT_TOKENS {
+            if usage.completion_tokens > limits.max_output_tokens {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
-                    format!("completion_tokens {} exceeds budget {DEFAULT_MAX_OUTPUT_TOKENS}", usage.completion_tokens),
+                    format!("completion_tokens {} exceeds budget {}", usage.completion_tokens, limits.max_output_tokens),
                 ));
             }
             let checked_total = usage.prompt_tokens.checked_add(usage.completion_tokens).ok_or_else(|| {
@@ -173,7 +241,7 @@ impl ModelOutput {
                     "token usage addition overflowed",
                 )
             })?;
-            if usage.total_tokens > MAX_TOTAL_TOKENS_BUDGET || usage.total_tokens < checked_total {
+            if usage.total_tokens > limits.total_tokens_ceiling || usage.total_tokens < checked_total {
                 return Err(GenerationError::new(
                     GenerationErrorKind::SchemaValidation,
                     format!("total_tokens {} exceeds calculated/budget limit", usage.total_tokens),

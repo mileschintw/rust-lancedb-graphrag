@@ -1014,3 +1014,129 @@ async fn openrouter_valid_bounded_response() {
 
     server_handle.join().expect("server completed");
 }
+
+#[tokio::test]
+async fn openrouter_effective_usage_limits() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = thread::spawn(move || {
+        // 1. Models endpoint
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _req = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "data": [{
+                        "id": "mock/limits-model",
+                        "supported_parameters": ["response_format", "json_schema"]
+                    }]
+                }),
+            );
+        }
+
+        // 2. Chat completion 1 (valid non-default usage: 9000 prompt + 2500 completion = 11500 total)
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _req = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": json!({
+                                "answer": "G1 effective limits answer [1].",
+                                "cited_evidence_ids": ["[1]"],
+                                "answer_basis": "retrieval",
+                                "notices": [],
+                                "warnings": []
+                            }).to_string()
+                        },
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": 9000,
+                        "completion_tokens": 2500,
+                        "total_tokens": 11500
+                    }
+                }),
+            );
+        }
+
+        // 3. Models endpoint for second call
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _req = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "data": [{
+                        "id": "mock/limits-model",
+                        "supported_parameters": ["response_format", "json_schema"]
+                    }]
+                }),
+            );
+        }
+
+        // 4. Chat completion 2 (over-limit usage: 10001 prompt tokens > 10000 budget)
+        if let Ok((mut stream, _)) = listener.accept() {
+            let _req = read_http_request(&mut stream);
+            write_json_response(
+                &mut stream,
+                json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": json!({
+                                "answer": "Over budget answer [1].",
+                                "cited_evidence_ids": ["[1]"],
+                                "answer_basis": "retrieval",
+                                "notices": [],
+                                "warnings": []
+                            }).to_string()
+                        },
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": 10001,
+                        "completion_tokens": 500,
+                        "total_tokens": 10501
+                    }
+                }),
+            );
+        }
+    });
+
+    let config = OpenRouterGenerationConfig::new(
+        "mock/limits-model",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        3000,
+        10000,
+    )
+    .expect("config created with 10k evidence and 3k output limits");
+
+    let adapter = OpenRouterGenerator::new_with_config("test-key", config).unwrap();
+    let cand = sample_candidate("1", "Content for G1 limits test.");
+    let evidence = assemble_evidence_blocks(&[cand]);
+
+    // First call: 9000 prompt + 2500 completion is accepted under 10000 / 3000 effective limits
+    let res = adapter
+        .generate(GenerationRequest::new("Question?", evidence.clone()))
+        .await
+        .expect("in-limit non-default usage succeeds");
+    assert_eq!(res.usage.as_ref().unwrap().prompt_tokens, 9000);
+    assert_eq!(res.usage.as_ref().unwrap().completion_tokens, 2500);
+
+    // Second call: 10001 prompt tokens exceeds 10000 limit -> fails schema validation
+    let err = adapter
+        .generate(GenerationRequest::new("Question?", evidence))
+        .await
+        .expect_err("over-limit usage fails schema validation");
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert!(err.message().contains("exceeds budget"));
+
+    server_handle.join().expect("mock server completed");
+}
