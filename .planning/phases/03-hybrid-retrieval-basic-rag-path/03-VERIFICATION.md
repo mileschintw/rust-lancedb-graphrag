@@ -101,7 +101,7 @@ next_command: "/gsd-plan-phase 03 --gaps"
 
 | Input | Applied verification contract |
 | --- | --- |
-| ROADMAP.md | Phase goal, MVP mode, four roadmap success criteria, and the live plan tracker. The tracker still says 15/18 executed; the checkout contains 18 PLAN/SUMMARY pairs, so the tracker was not used as completion evidence. |
+| ROADMAP.md | Phase goal, MVP mode, four roadmap success criteria, and the live plan tracker. The tracker reported 15/18 at verification start; it was reconciled to 18/18 after verification without marking the phase complete, so the independent source/test evidence remains authoritative. |
 | REQUIREMENTS.md | RAG-02 and RAG-04 are the Phase 03 requirements; RAG-03 is mapped to Phase 06. |
 | 03-CONTEXT.md | Accepted slice is the valid completed-corpus path with dense plus BM25 retrieval, deterministic fusion, bounded evidence, one grounded response, and initial BM25 readiness. |
 | 03-AI-SPEC.md | Provider-neutral generation, strict grounding/citation validation, fail-closed provider/error behavior, and no unapproved model-only fallback on the valid path. |
