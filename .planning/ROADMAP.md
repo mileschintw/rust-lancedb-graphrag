@@ -136,7 +136,7 @@
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-04
 **Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
-**Plans:** 18/23 plans executed
+**Plans:** 19/23 plans executed
 
 Plans:
 **Wave 1**
@@ -207,7 +207,7 @@ Plans:
 
 **Wave 17** *(blocked on Wave 16 completion)*
 
-- [ ] 03-19-PLAN.md — Carry effective grounding limits end-to-end and reconcile the D1-LOG waiver documentation.
+- [x] 03-19-PLAN.md — Carry effective grounding limits end-to-end and reconcile the D1-LOG waiver documentation.
 
 **Wave 18** *(blocked on Wave 17 completion; parallel)*
 
