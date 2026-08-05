@@ -1,5 +1,5 @@
 ---
-title: "Phase 02 Verification Finding Disposition"
+title: "ADR-02-001: Phase 02 Verification Finding Disposition"
 status: accepted
 date: 2026-07-29
 decider: mileschintw

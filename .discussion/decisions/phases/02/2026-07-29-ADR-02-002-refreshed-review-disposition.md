@@ -1,5 +1,5 @@
 ---
-title: "ADR-XXXX: Disposition of Phase 02 Refreshed Review Findings"
+title: "ADR-02-002: Disposition of Phase 02 Refreshed Review Findings"
 status: accepted
 date: 2026-07-29
 decider: mileschintw
