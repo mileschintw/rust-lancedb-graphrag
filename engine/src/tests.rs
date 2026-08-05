@@ -3523,3 +3523,46 @@ async fn query_rag_fail_closed_dense_snapshot() {
 
     let _ = std::fs::remove_dir_all(path);
 }
+
+#[tokio::test]
+async fn query_rag_valid_zero_match() {
+    let path = database_path("query-rag-zero-match");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let effective_settings = EffectiveRagSettings::default();
+    let embedder = Arc::new(FakeEmbedder);
+    let generator = Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let reranker = Arc::new(rerank::NoOpReranker::new());
+
+    let service = configured_service(&database, effective_settings, embedder, generator.clone(), reranker).await;
+
+    let req = QueryRagRequest {
+        query: "What is Lancet?".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: Some(DocumentFilter {
+            document_ids: vec!["00000000-0000-4000-8000-000000000999".into()],
+            content_types: vec![],
+        }),
+    };
+
+    let resp = service.query_rag(Request::new(req)).await.unwrap().into_inner();
+    assert_eq!(resp.answer, "");
+    assert!(resp.citations.is_empty());
+    assert!(resp.structured_citations.is_empty());
+    assert_eq!(resp.session_id, "00000000-0000-4000-8000-000000000001");
+    assert_eq!(resp.answer_basis, lancet::v1::AnswerBasis::Unspecified as i32);
+    assert_eq!(resp.notices.len(), 1);
+    assert_eq!(resp.notices[0].code, "NO_EVIDENCE");
+    assert_eq!(resp.notices[0].message, "No completed corpus evidence matched the requested filters.");
+    assert_eq!(resp.notices[0].severity, lancet::v1::NoticeSeverity::Info as i32);
+    assert!(resp.snapshot.is_some());
+    assert_eq!(generator.calls(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}

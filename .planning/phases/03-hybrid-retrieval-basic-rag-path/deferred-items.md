@@ -6,6 +6,10 @@ Source of record: accepted MVP scope decision during Phase 03 planning (2026-07-
 
 The revised five-plan execution order distributes that same scope across retrieval/dependencies, provider contracts, gRPC/startup readiness, gateway/embedding configuration, and the isolated local cross-runtime proof. This split does not promote any item below into implementation; initial BM25 construction/readiness remains in scope, while dynamic restart/re-ingestion recovery remains `DEBT-RAG-04`.
 
+## ADR-03-001 deferred-confirmed boundaries
+
+The gap closure plans 03-13 through 03-18 implement specific accepted ADR-03-001 decisions; no Phase 03 runtime implementation claim is made for D3, D4, or D5.
+
 ### Deferred decision mapping
 
 | Future target contract | Current source-of-record debt |
@@ -17,6 +21,8 @@ The revised five-plan execution order distributes that same scope across retriev
 These mappings preserve the target behavior and decision IDs for later work; none is a Phase 03 implementation task or acceptance gate.
 
 ### DEBT-RAG-01 — Degraded retrieval and model-only fallback
+
+D1 infrastructure failures now fail closed with session, correlation, and error-kind identity; disclosed surviving-path continuation and model-only behavior remain Phase 06.
 
 - **Rationale:** The first usable slice must prove retrieval-grounded generation before expanding behavior for missing, weak, unnecessary, or failed evidence.
 - **Known risk:** A vector or BM25 failure, empty result, or weak result may currently fail the request or lack an explicit `model_only` answer basis instead of degrading transparently.
@@ -36,6 +42,8 @@ These mappings preserve the target behavior and decision IDs for later work; non
 
 ### DEBT-RAG-03 — Citation repair and transparent downgrade
 
+D3 retains fail-closed citation validation: illegal markers do not produce a public success; citation repair and transparent downgrade remain Phase 06.
+
 - **Rationale:** The happy path can validate structured citation IDs against the supplied evidence; repair of malformed or unsupported model markers is a separate failure path.
 - **Known risk:** Malformed or unsupported citation markers may be rejected or left without the final repair-and-downgrade behavior.
 - **Current constraints:** Happy-path tests use valid structured citations that resolve to selected bounded evidence.
@@ -44,6 +52,8 @@ These mappings preserve the target behavior and decision IDs for later work; non
 - **Future acceptance criteria:** One bounded repair attempt is made without another provider call; unresolved markers are removed, the answer basis is downgraded transparently, and a machine-readable warning is emitted.
 
 ### DEBT-RAG-04 — Re-ingestion/restart recovery and cross-index atomic visibility
+
+D4 preserves initial BM25 build-before-readiness; after in-process ingest, an engine restart may be required because document completed does not imply presence in live BM25.
 
 - **Rationale:** The MVP must build the initial BM25 snapshot before the first query-ready state, but replacement and restart recovery are broader lifecycle paths.
 - **Known risk:** A future re-ingestion or restart could expose mixed vector/BM25 generations or serve before the lexical index is rebuilt.
@@ -54,16 +64,20 @@ These mappings preserve the target behavior and decision IDs for later work; non
 
 ### DEBT-RAG-06 — Graph-extraction unavailability in RAG-03
 
+D5 keeps Phase 03 source-chunk-only; the graph seam belongs to Phase 04 and graph-unavailable fallback remains Phase 06.
+
 - **Rationale:** Graph context extraction belongs to Phase 04; the Phase 03 happy path uses completed source chunks and does not depend on graph context.
 - **Known risk:** If graph extraction is unavailable, the eventual full RAG-03 contract may not yet describe or test the resulting degraded response.
 - **Current constraints:** Do not implement graph extraction or graph-failure fallback in Phase 03. The happy path must remain runnable from source chunks alone.
 - **Trigger:** Phase 04 graph context becomes part of the query path, or RAG-03 is claimed complete across graph and retrieval failures.
-- **Target:** Phase 04 for the typed graph-context seam; Phase 06 hardening/evaluation for full degraded behavior.
+- **Target:** Phase 06 hardening/evaluation for full degraded behavior.
 - **Future acceptance criteria:** Graph-unavailable queries retain a useful typed response or documented model-only/degraded basis, with machine-readable warning behavior and tests that do not require graph data for source-chunk queries.
 
 This item is part of the explicit RAG-03 deferred scope. Phase 03 may preserve typed warning/answer-basis fields, but it must not claim graph-extraction failure handling or graph-backed degraded answers.
 
 ### DEBT-RAG-05 — Full invalid-input and filter edge coverage
+
+Only D2's valid zero-match success branch is shipped; the malformed, bound, unmatched, and combinatorial filter matrix remains deferred.
 
 - **Rationale:** The MVP exercises valid query and filter inputs needed for the end-to-end slice; exhaustive malformed, oversized, unmatched, and combinatorial input behavior can follow after the path is runnable.
 - **Known risk:** Invalid requests may not yet receive every final HTTP/gRPC classification or bound-specific error.

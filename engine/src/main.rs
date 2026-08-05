@@ -1082,6 +1082,46 @@ impl LancetService for LancetServiceImpl {
             .take(self.effective_settings.retrieval.final_limit)
             .collect();
 
+        if final_candidates.is_empty() {
+            let snapshot = lancet::v1::RetrievalSnapshot {
+                index_generation: self.effective_settings.index_generation.clone(),
+                embedding_model: self.embedder.model_id().to_owned(),
+                vector_weight: self.effective_settings.retrieval.vector_weight,
+                bm25_weight: self.effective_settings.retrieval.bm25_weight,
+                rrf_k: snapshot_rrf_k(self.effective_settings.retrieval.rrf_k)?,
+                candidate_limit: snapshot_limit(
+                    self.effective_settings.retrieval.candidate_limit,
+                    "candidate_limit",
+                )?,
+                final_limit: snapshot_limit(
+                    self.effective_settings.retrieval.final_limit,
+                    "final_limit",
+                )?,
+                active_filter: Some(lancet::v1::DocumentFilter {
+                    document_ids: query_request.filters.document_ids.clone(),
+                    content_types: query_request.filters.content_types.clone(),
+                }),
+                result_hash: format!("{:x}", {
+                    let hasher = DefaultHasher::new();
+                    hasher.finish()
+                }),
+            };
+
+            return Ok(Response::new(QueryRagResponse {
+                answer: String::new(),
+                citations: vec![],
+                session_id,
+                answer_basis: lancet::v1::AnswerBasis::Unspecified as i32,
+                structured_citations: vec![],
+                notices: vec![lancet::v1::Notice {
+                    code: "NO_EVIDENCE".to_string(),
+                    message: "No completed corpus evidence matched the requested filters.".to_string(),
+                    severity: lancet::v1::NoticeSeverity::Info as i32,
+                }],
+                snapshot: Some(snapshot),
+            }));
+        }
+
         let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
         let limits = self
             .effective_settings

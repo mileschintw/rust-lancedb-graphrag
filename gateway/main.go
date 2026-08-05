@@ -710,7 +710,129 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, toQueryRAGResponseDTO(resp))
+}
+
+type queryRAGResponseDTO struct {
+	Answer              string                   `json:"answer"`
+	Citations           []string                 `json:"citations"`
+	SessionID           string                   `json:"session_id"`
+	AnswerBasis         int32                    `json:"answer_basis"`
+	StructuredCitations []structuredCitationDTO  `json:"structured_citations"`
+	Notices             []noticeDTO              `json:"notices"`
+	Snapshot            *retrievalSnapshotDTO    `json:"snapshot"`
+}
+
+type structuredCitationDTO struct {
+	ChunkID      string  `json:"chunk_id"`
+	DocumentID   string  `json:"document_id"`
+	Title        string  `json:"title"`
+	SectionPath  string  `json:"section_path"`
+	Excerpt      string  `json:"excerpt"`
+	IsTruncated  bool    `json:"is_truncated"`
+	Score        float64 `json:"score"`
+	Rank         int32   `json:"rank"`
+	ContentType  string  `json:"content_type"`
+}
+
+type noticeDTO struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Severity int32  `json:"severity"`
+}
+
+type documentFilterDTO struct {
+	DocumentIDs  []string `json:"document_ids"`
+	ContentTypes []string `json:"content_types"`
+}
+
+type retrievalSnapshotDTO struct {
+	IndexGeneration string             `json:"index_generation"`
+	EmbeddingModel  string             `json:"embedding_model"`
+	VectorWeight    float64            `json:"vector_weight"`
+	Bm25Weight      float64            `json:"bm25_weight"`
+	RrfK            int32              `json:"rrf_k"`
+	CandidateLimit  int32              `json:"candidate_limit"`
+	FinalLimit      int32              `json:"final_limit"`
+	ActiveFilter    *documentFilterDTO `json:"active_filter"`
+	ResultHash      string             `json:"result_hash"`
+}
+
+func toQueryRAGResponseDTO(resp *pb.QueryRAGResponse) queryRAGResponseDTO {
+	citations := make([]string, 0)
+	if len(resp.Citations) > 0 {
+		citations = resp.Citations
+	}
+
+	structuredCitations := make([]structuredCitationDTO, 0)
+	for _, sc := range resp.StructuredCitations {
+		if sc == nil {
+			continue
+		}
+		structuredCitations = append(structuredCitations, structuredCitationDTO{
+			ChunkID:     sc.ChunkId,
+			DocumentID:  sc.DocumentId,
+			Title:       sc.Title,
+			SectionPath: sc.SectionPath,
+			Excerpt:     sc.Excerpt,
+			IsTruncated: sc.IsTruncated,
+			Score:       sc.Score,
+			Rank:        sc.Rank,
+			ContentType: sc.ContentType,
+		})
+	}
+
+	notices := make([]noticeDTO, 0)
+	for _, n := range resp.Notices {
+		if n == nil {
+			continue
+		}
+		notices = append(notices, noticeDTO{
+			Code:     n.Code,
+			Message:  n.Message,
+			Severity: int32(n.Severity),
+		})
+	}
+
+	var snapshot *retrievalSnapshotDTO
+	if resp.Snapshot != nil {
+		var activeFilter *documentFilterDTO
+		if resp.Snapshot.ActiveFilter != nil {
+			docIDs := make([]string, 0)
+			if len(resp.Snapshot.ActiveFilter.DocumentIds) > 0 {
+				docIDs = resp.Snapshot.ActiveFilter.DocumentIds
+			}
+			contentTypes := make([]string, 0)
+			if len(resp.Snapshot.ActiveFilter.ContentTypes) > 0 {
+				contentTypes = resp.Snapshot.ActiveFilter.ContentTypes
+			}
+			activeFilter = &documentFilterDTO{
+				DocumentIDs:  docIDs,
+				ContentTypes: contentTypes,
+			}
+		}
+		snapshot = &retrievalSnapshotDTO{
+			IndexGeneration: resp.Snapshot.IndexGeneration,
+			EmbeddingModel:  resp.Snapshot.EmbeddingModel,
+			VectorWeight:    resp.Snapshot.VectorWeight,
+			Bm25Weight:      resp.Snapshot.Bm25Weight,
+			RrfK:            resp.Snapshot.RrfK,
+			CandidateLimit:  resp.Snapshot.CandidateLimit,
+			FinalLimit:      resp.Snapshot.FinalLimit,
+			ActiveFilter:    activeFilter,
+			ResultHash:      resp.Snapshot.ResultHash,
+		}
+	}
+
+	return queryRAGResponseDTO{
+		Answer:              resp.Answer,
+		Citations:           citations,
+		SessionID:           resp.SessionId,
+		AnswerBasis:         int32(resp.AnswerBasis),
+		StructuredCitations: structuredCitations,
+		Notices:             notices,
+		Snapshot:            snapshot,
+	}
 }
 
 func newDocumentID() (string, error) {

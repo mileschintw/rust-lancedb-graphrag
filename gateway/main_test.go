@@ -685,6 +685,94 @@ func (e engineFunc) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.
 
 func (engineFunc) Ping(context.Context) (time.Duration, error) { return time.Millisecond, nil }
 
+func TestRAGQueryNoResults(t *testing.T) {
+	store := &fakeStore{}
+	sessionID := "00000000-0000-4000-8000-000000000055"
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+			return &pb.QueryRAGResponse{
+				Answer:              "",
+				Citations:           []string{},
+				SessionId:           sessionID,
+				AnswerBasis:         pb.AnswerBasis_ANSWER_BASIS_UNSPECIFIED,
+				StructuredCitations: []*pb.StructuredCitation{},
+				Notices: []*pb.Notice{
+					{
+						Code:     "NO_EVIDENCE",
+						Message:  "No completed corpus evidence matched the requested filters.",
+						Severity: pb.NoticeSeverity_NOTICE_SEVERITY_INFO,
+					},
+				},
+				Snapshot: &pb.RetrievalSnapshot{
+					IndexGeneration: "gen-1",
+					EmbeddingModel:  "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+					VectorWeight:    0.5,
+					Bm25Weight:      0.5,
+					RrfK:            60,
+					CandidateLimit:  20,
+					FinalLimit:      5,
+					ActiveFilter: &pb.DocumentFilter{
+						DocumentIds:  []string{"00000000-0000-4000-8000-000000000999"},
+						ContentTypes: []string{},
+					},
+					ResultHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				},
+			}, nil
+		},
+	}
+
+	bodyStr := `{"query":"test query","session_id":"` + sessionID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(bodyStr)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var res map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &res); err != nil {
+		t.Fatalf("unmarshal error = %v", err)
+	}
+
+	if ans, ok := res["answer"].(string); !ok || ans != "" {
+		t.Fatalf("answer = %v, want empty string", res["answer"])
+	}
+	if cits, ok := res["citations"].([]any); !ok || len(cits) != 0 {
+		t.Fatalf("citations = %v, want empty array", res["citations"])
+	}
+	if scits, ok := res["structured_citations"].([]any); !ok || len(scits) != 0 {
+		t.Fatalf("structured_citations = %v, want empty array", res["structured_citations"])
+	}
+	if basis, ok := res["answer_basis"].(float64); !ok || basis != 0 {
+		t.Fatalf("answer_basis = %v, want 0", res["answer_basis"])
+	}
+	if sess, ok := res["session_id"].(string); !ok || sess != sessionID {
+		t.Fatalf("session_id = %v, want %s", res["session_id"], sessionID)
+	}
+
+	notices, ok := res["notices"].([]any)
+	if !ok || len(notices) != 1 {
+		t.Fatalf("notices = %v, want 1 notice", res["notices"])
+	}
+	noticeMap := notices[0].(map[string]any)
+	if noticeMap["code"] != "NO_EVIDENCE" {
+		t.Fatalf("notice code = %v, want NO_EVIDENCE", noticeMap["code"])
+	}
+	if noticeMap["message"] != "No completed corpus evidence matched the requested filters." {
+		t.Fatalf("notice message = %v", noticeMap["message"])
+	}
+	if noticeMap["severity"].(float64) != 1 {
+		t.Fatalf("notice severity = %v, want 1", noticeMap["severity"])
+	}
+
+	if res["snapshot"] == nil {
+		t.Fatalf("snapshot is nil")
+	}
+}
+
 func TestRAGQueryValidMapping(t *testing.T) {
 	store := &fakeStore{}
 	engine := engineFunc{
