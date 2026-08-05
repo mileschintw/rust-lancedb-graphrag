@@ -1,276 +1,298 @@
 ---
-phase: 03-hybrid-retrieval-basic-rag-path
-verified: 2026-08-05T06:46:30Z
+phase: "03-hybrid-retrieval-basic-rag-path"
+verified: "2026-08-05T21:00:38Z"
 status: gaps_found
-score: 76/79 must-haves verified
-behavior_unverified: 0
+score: "98/101 plan must-haves verified; roadmap 4/4 success criteria verified"
+behavior_unverified: 1
 overrides_applied: 0
+requirements:
+  - id: RAG-02
+    status: blocked
+  - id: RAG-04
+    status: satisfied
+plans_checked: 23
+plan_files_checked: 23
+summary_files_checked: 23
+findings:
+  blockers: 5
+  warnings: 13
+  info: 1
+  total: 19
+next_action: "Plan focused Phase 03 gap closure for bounded provider reads, atomic staging generations, and the live transport/endpoint security findings; keep Phase 03 pending."
+next_command: "/gsd:plan-phase 03 --gaps"
 re_verification:
   previous_status: gaps_found
-  previous_score: 64/65 must-haves verified
+  previous_score: "76/79"
   gaps_closed:
-    - "The previous fixed-default usage comparison is now exercised with non-default effective budgets; the focused provider-usage and startup-ceiling tests pass."
-    - "The late D1 and D2 implementations are present and their focused Rust, Go, and cross-runtime tests pass on the current checkout."
+    - "The single GroundingLimits carrier is now constructed and consumed by evidence packing, provider generation, and grounding validation."
+    - "Retrieval ceilings, bounded BM25 workspace, finite fusion, gateway request limits, and gateway JSON pre-encoding are present and covered by focused tests."
+    - "Plans 03-19 through 03-23 now exist in the checkout and were independently checked."
   gaps_remaining:
-    - "The G1 one-carrier invariant is not implemented: EffectiveRagSettings stores scalar budgets and OpenRouter constructs a separate carrier."
-    - "D1 infrastructure logging preserves full message tracing as an accepted MVP override under ADR-03-002 D1-LOG (DEBT-D1-SAFE-LOG)."
-    - "Provider response and retrieval/fusion resource bounds are not fail-closed at the allocation and serialization boundaries."
+    - "Provider body reading still uses reqwest Response::chunk and aggregates each chunk before the max-plus-one check."
+    - "Raw staging generation allocation is read-max-then-append without per-document serialization or a uniqueness/CAS guard."
+    - "Committed configuration and configurable provider/engine transports do not enforce the reviewed security boundary."
   regressions:
-    - "The stale report did not cover plans 03-16, 03-17, or 03-18; this report verifies all 18 plan/summary pairs."
+    - "The current provider resource and staging concurrency findings remain live after the late plans."
 gaps:
-  - truth: "G1: one GroundingLimits carrier derived from EffectiveRagSettings governs evidence packing, provider max output, derived total usage, shared grounding validation, and OpenRouter usage validation."
+  - truth: "03-20: every provider response is bounded while streamed, before untrusted response allocation."
     status: failed
-    reason: "EffectiveRagSettings::try_from_settings validates scalar budgets but does not store a GroundingLimits carrier. Query code derives one carrier, while startup OpenRouterGenerationConfig::new derives another; with_grounding_limits also accepts public carrier fields without revalidating service ceilings."
+    reason: "The shared reader checks Content-Length and aggregate buffer length, but response.chunk can materialize an oversized frame before the guard runs; the plan's required pre-materialization stream bound is absent."
     artifacts:
-      - path: "engine/src/main.rs"
-        issue: "EffectiveRagSettings has grounding_limits() but no grounding_limits field; the carrier is reconstructed at call sites."
-      - path: "engine/src/generation/mod.rs"
-        issue: "GroundingLimits fields are public and no public validation method protects callers that construct or deserialize the struct."
-      - path: "engine/src/generation/openrouter.rs"
-        issue: "with_grounding_limits stores the supplied carrier and only validates unrelated config fields."
+      - path: "engine/src/client/mod.rs:40-59"
+        issue: "read_body_limited uses response.chunk, Vec::new, and only then rejects buffer.len plus chunk.len greater than 262144."
+      - path: "engine/src/generation/openrouter.rs:297-318"
+        issue: "Model metadata depends on the incomplete shared-reader invariant."
+      - path: "engine/src/generation/openrouter.rs:469-490"
+        issue: "Chat depends on the same incomplete shared-reader invariant."
     missing:
-      - "Store one validated GroundingLimits value in EffectiveRagSettings and pass that same value through packing, generation, usage, and grounding validation."
-      - "Make carrier construction/deserialization validate the service ceilings, or make the fields private and validate every constructor path."
-  - truth: "P24: provider answer, evidence-ID, notice, warning, usage, and wrapper payload sizes are bounded before untrusted output reaches public response construction."
+      - "Use a bounded stream/reader that does not retain an over-limit frame before rejection, and add an oversized-single-frame regression."
+  - truth: "03-23: raw staging replacement allocates a monotonic generation safely for each stable document identity."
     status: failed
-    reason: "The chat path calls response.bytes() before checking the 256 KiB limit, so the full untrusted body is buffered before rejection. The model-metadata path calls response.json() with no body-size guard."
+    reason: "Two replacements can read the same maximum generation and append the same successor generation; the latest-row selector then rejects equal generations instead of providing atomic allocation."
     artifacts:
-      - path: "engine/src/generation/openrouter.rs"
-        issue: "The 256 KiB check is after full-body buffering at lines 438-456, and model metadata is parsed directly at lines 279-287."
+      - path: "engine/src/main.rs:839-902"
+        issue: "persist_raw_with_boundary reads old_max_gen and computes new_gen before append, with no per-document lock, compare-and-swap, or uniqueness guard."
+      - path: "engine/src/main.rs:683-687"
+        issue: "Duplicate equal generations are rejected during selection, showing the race's observable failure mode."
     missing:
-      - "Use a bounded streaming/read path that stops before allocating an oversized response and apply an equivalent bound to model metadata."
-  - truth: "D1: infrastructure failures preserve identity and safe structured logs while preventing generation or model-only continuation."
-    status: passed_with_waiver
-    reason: "The fail-closed status helper preserves identity metadata and skips generation. Trace warning interpolation of detailed error message is accepted under ADR-03-002 and DEBT-D1-SAFE-LOG for Phase 03."
-    artifacts:
-      - path: "engine/src/main.rs"
-        issue: "d1_status logs QueryRAG infrastructure failure: {msg} in addition to session_id, correlation_id, and error_kind (accepted MVP waiver)."
-    missing:
-      - "Log only session_id, correlation_id, error_kind, and a fixed event name; keep detailed error text out of the structured warning."
-      - "Add a regression assertion that the D1 warning cannot contain the error message or payload details."
-  - truth: "Roadmap success criterion 1 / RAG-02: valid completed-corpus hybrid retrieval produces deterministic bounded evidence for a grounded answer."
+      - "Serialize generation allocation or enforce a Lance-native uniqueness/CAS invariant, then test concurrent replacement of one document_id."
+  - truth: "Committed provider and service transports remain within the intended security boundary."
     status: failed
-    reason: "The normal seeded happy path is deterministic and passes, but current valid configuration permits effectively unbounded candidate/query/filter limits up to i32::MAX, BM25 allocates for the full document set before truncating, and finite source scores can overflow fused_score. The Go JSON encoder error is ignored after headers are committed, so a non-finite fused result can escape as an HTTP 200 with an invalid body."
+    reason: "Live code confirms the advisory CR-03/CR-04/CR-05 findings: committed plaintext database credentials/TLS-disabled config, insecure Go-to-Rust gRPC, and arbitrary configurable provider endpoints receiving bearer credentials."
     artifacts:
-      - path: "engine/src/retrieval/mod.rs"
-        issue: "Validation caps limits only at i32::MAX rather than service-safe ceilings."
-      - path: "engine/src/retrieval/bm25.rs"
-        issue: "The in-memory result vector is allocated from the full document count before candidate truncation."
-      - path: "engine/src/retrieval/fusion.rs"
-        issue: "RRF contribution and fused_score accumulation have no finite/overflow guard."
-      - path: "gateway/main.go"
-        issue: "writeJSON ignores Encoder.Encode errors after WriteHeader."
+      - path: "config/config.toml:3"
+        issue: "Committed database_url contains postgres:postgres and sslmode=disable."
+      - path: "config/config.example.toml:7"
+        issue: "The example repeats the reusable plaintext credential and disabled TLS default."
+      - path: "gateway/main.go:890"
+        issue: "The gateway uses insecure.NewCredentials for the engine connection."
+      - path: "engine/src/main.rs:359-372"
+        issue: "Effective settings validate endpoints only for nonblank strings."
+      - path: "engine/src/generation/openrouter.rs:262-269,277-278,440-444"
+        issue: "with_endpoints accepts arbitrary values while model and chat requests attach the API bearer token."
     missing:
-      - "Enforce explicit service-safe retrieval, query, and filter ceilings before work or allocation."
-      - "Fail closed on non-finite RRF arithmetic and encode the response before committing a success status, or handle encoding failure with a safe error path."
+      - "Remove committed reusable credentials and define the supported local-only/TLS boundary."
+      - "Add authenticated/TLS engine transport or enforce a safe local-only deployment boundary."
+      - "Validate provider endpoint scheme/host/allowlist before any bearer-authenticated request."
 deferred:
-  - truth: "Degraded retrieval continuation, disclosed model-only answers, and infrastructure recovery."
+  - truth: "RAG-03 degraded/model-only behavior and its citation/lifecycle/negative-input/graph hardening contracts"
     addressed_in: "Phase 06"
-    evidence: "ROADMAP and deferred-items.md assign RAG-03 and DEBT-RAG-01 to the later hardening phase; current valid-path D1 failures remain fail-closed."
-  - truth: "Citation repair or downgrade."
-    addressed_in: "Phase 06"
-    evidence: "deferred-items.md DEBT-RAG-03 explicitly retains fail-closed citation validation and defers repair/downgrade."
-  - truth: "Re-ingestion lifecycle recovery after restart."
-    addressed_in: "Phase 06"
-    evidence: "deferred-items.md DEBT-RAG-04 keeps initial BM25 build-before-readiness and defers restart/lifecycle recovery."
-  - truth: "Exhaustive malformed, bound, unmatched, and combinatorial filter matrix."
-    addressed_in: "Phase 06"
-    evidence: "deferred-items.md DEBT-RAG-05 ships only the valid zero-match branch for Phase 03."
-  - truth: "Graph retrieval and graph-unavailable fallback."
-    addressed_in: "Phase 04 / Phase 06"
-    evidence: "deferred-items.md DEBT-RAG-06 keeps Phase 03 source-chunk-only and assigns the graph seam to Phase 04 with fallback hardening later."
-human_verification:
-  - test: "Run the Rust engine and Go gateway with an approved live provider configuration and submit a valid query over a completed corpus."
-    expected: "The provider responds within the declared bounded contract and the gateway returns one grounded answer whose citations resolve to returned evidence, with no provider-specific failure or redaction issue."
-    why_human: "External provider behavior and real credential/network integration are not reproducible from the local deterministic mocks."
-next_action: "Keep Phase 03 pending; plan targeted gap closure and rerun the verification gate. Do not update ROADMAP or STATE to complete."
-next_command: "/gsd-plan-phase 03 --gaps"
+    evidence: "ROADMAP.md Phase 03 explicitly defers RAG-03 to Phase 06; Phase 06 success criterion 7 names DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06."
+  - truth: "Conditional security/resource review gates DEBT-CR-04 and DEBT-CR-05"
+    addressed_in: "Phase 06 unless an earlier trigger applies"
+    evidence: "ROADMAP.md Phase 06 success criterion 6 says these gates are reviewed later only when they have not triggered earlier. The current committed credentials, insecure transport, and bearer-endpoint behavior are reported as live findings rather than silently classified as RAG-03 debt."
+  - truth: "D1 full-message logging and other explicitly accepted safe-log/deferred ledger items"
+    addressed_in: "Recorded follow-up hardening"
+    evidence: "engine/src/main.rs:824-825 logs the full D1 message, and deferred-items.md records the accepted DEBT-D1-SAFE-LOG waiver."
+behavior_unverified_items:
+  - truth: "03-23: after successor verification, an old-generation deletion failure leaves both physical rows present while the operation fails visibly."
+    test: "Inject append, verification, and old-generation deletion failures, then inspect staged_documents_v2 physical rows and payloads rather than only calling the latest-row reader."
+    expected: "Append or verification failure leaves the old row; deletion failure leaves both old and successor rows, returns an error, and does not delete the successor."
+    why_human: "The existing deletion-failure test reads through latest-generation selection and asserts only the selected filename; it does not prove that the old physical row remains, and no concurrent/physical-row assertion exercises the full invariant."
 ---
 
-# Phase 03: Hybrid Retrieval & Basic RAG Path Verification Report
+# Phase 03: Hybrid Retrieval and Basic RAG Path Verification Report
 
-**Phase Goal:** As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.
+Phase Goal: As a chat service API user, I want to ask a question using hybrid vector and BM25 retrieval, so that the LLM returns an answer grounded in completed corpus evidence.
 
-**Verified:** 2026-08-05T06:46:30Z
+Verified: 2026-08-05T21:00:38Z
 
-**Status:** gaps_found
+Status: gaps_found
 
-**Re-verification:** Yes — the prior report was stale and did not cover plans 03-16 through 03-18.
+Re-verification: Yes. A prior verification existed with status gaps_found and score 76/79. This report re-checks the current checkout, including Plans 03-19 through 03-23; prior claims are historical context only.
 
-## Contract Inputs
+## Verdict
 
-| Input | Applied verification contract |
-| --- | --- |
-| ROADMAP.md | Phase goal, MVP mode, four roadmap success criteria, and the live plan tracker. The tracker reported 15/18 at verification start; it was reconciled to 18/18 after verification without marking the phase complete, so the independent source/test evidence remains authoritative. |
-| REQUIREMENTS.md | RAG-02 and RAG-04 are the Phase 03 requirements; RAG-03 is mapped to Phase 06. |
-| 03-CONTEXT.md | Accepted slice is the valid completed-corpus path with dense plus BM25 retrieval, deterministic fusion, bounded evidence, one grounded response, and initial BM25 readiness. |
-| 03-AI-SPEC.md | Provider-neutral generation, strict grounding/citation validation, fail-closed provider/error behavior, and no unapproved model-only fallback on the valid path. |
-| COVERAGE.md | The valid-provider matrix and explicit RAG-03 opt-out/debt surface; coverage prehook passed with 19 surfaces, 12 integration cases, and 7 opt-outs. |
-| deferred-items.md | Canonical D1-D5 scope ledger; deferred degradation, citation repair, re-ingestion recovery, filter matrix expansion, and graph fallback were not counted as Phase 03 gaps unless current valid-path code violated fail-closed behavior. |
-| GSD verifier gates | MVP user-story validation passed; previous verification was loaded in re-verification mode; no documented probes were present. |
+The MVP happy path is implemented and independently runnable: a Go request reaches Rust over gRPC, dense and BM25 retrieval are fused, evidence is packed, the provider-neutral grounding validator enforces retrieval citations, and the cross-runtime test returns a structured response. Initial BM25 construction also gates readiness, and the async reranker/NoOp contract is present.
 
-## User Flow Coverage
+The Phase 03 goal is not accepted as complete. Two plan-level safety invariants are not achieved: provider body bounding is post-chunk rather than pre-materialization, and raw staging generation allocation is racy. The refreshed review's three transport/configuration findings are also confirmed in live source. These are current findings, not the explicitly deferred RAG-03 behavior. Phase 03 must remain pending.
 
-| User-story step | Expected outcome | Current evidence | Status |
+## MVP User Flow Coverage
+
+The roadmap goal validates as a proper MVP user story. The observable flow is:
+
+| User-flow step | Expected result | Live evidence | Status |
 | --- | --- | --- | --- |
-| Submit a valid query | Go accepts the strict request, validates the session/filter, and forwards it to Rust gRPC. | gateway/main.go strict decoder and RAG handler; Go request-boundary tests; cross-runtime smoke. | VERIFIED |
-| Retrieve evidence | Dense and BM25 retrieval use the same query/filter contract, fuse deterministically, deduplicate, and pass through the async reranker seam. | Rust retrieval/fusion/rerank tests; seeded LanceDB plus BM25 cross-runtime fixture. | PARTIAL — normal path passes, but resource/finite-arithmetic bounds remain a blocker. |
-| Generate one grounded response | Rust calls the provider-neutral generator once only after non-empty evidence, validates grounding/citations, and returns the structured response. | Rust happy-path, citation, fail-closed, and provider-usage tests; cross-runtime smoke. | PARTIAL — provider body-bound implementation is not allocation-bounded. |
-| Achieve the outcome | The valid completed-corpus path returns an answer grounded in completed corpus evidence with resolving citations. | TestRAGQueryCrossRuntime passes against the local deterministic provider and seeded completed corpus. | PARTIAL — the accepted default path works, but the phase contract is not safe for all valid configurations. |
+| Submit a valid query over a completed corpus | Go validates the body and calls typed Rust QueryRAG | gateway/main.go:645-715; gateway/main.go:875-906 | VERIFIED |
+| Retrieve with both sources | Dense Lance retrieval and local BM25 produce candidates under shared settings | engine/src/retrieval/dense.rs:41-133; engine/src/retrieval/bm25.rs:233-336 | VERIFIED |
+| Fuse and ground evidence | Finite deterministic RRF, bounded evidence, exact citation IDs, retrieval/mixed-only validation | engine/src/retrieval/fusion.rs:35-197; engine/src/generation/mod.rs:156-311 | VERIFIED |
+| Return one structured answer | Rust returns the typed response and Go preserves basis, notices, warnings, citations, and snapshot | engine/src/main.rs:1200-1320; gateway/main.go:633-715; TestRAGQueryCrossRuntime | VERIFIED |
 
-## Goal Achievement
+This proves the happy path, not the full phase-quality contract. The failed plan truths below prevent a PASS verdict.
 
-### Observable Truths
+## Roadmap Success Criteria
 
-| # | Truth | Status | Evidence |
+| # | Success criterion | Evidence | Status |
 | --- | --- | --- | --- |
-| 1 | Roadmap SC1: valid completed-corpus vector+BM25 retrieval yields deterministic bounded evidence, one structured answer, and resolving citations. | FAILED | Default seeded cross-runtime path passes, but retrieval limits/allocations and fused-score/JSON error handling are not fail-closed for valid configurations. |
-| 2 | Roadmap SC2: Go /rag/query receives the structured grounded answer through Rust gRPC. | VERIFIED | Go boundary tests and TestRAGQueryCrossRuntime pass; DTO fields are explicit rather than omitted. |
-| 3 | Roadmap SC3: initial BM25 build completes before readiness and failure prevents serving. | VERIFIED | config_startup initial_bm25 tests and full locked Rust suite pass; startup builds BM25 before serving. |
-| 4 | Roadmap SC4: async pluggable Reranker exists with NoOp pass-through. | VERIFIED | Reranker trait, NoOp injection, and pass-through tests pass. |
-| 5 | Plan truths across 03-01 through 03-12 and 03-14 through 03-15. | VERIFIED | 54/54 plan truths supported by current source, wiring, and focused/full tests. |
-| 6 | Plan 03-13 provider-boundary and grounding hardening truths. | FAILED | 3/4 pass; output rejection is present, but the provider body is fully buffered before the size check and metadata JSON has no equivalent bound. |
-| 7 | Plan 03-16 G1 effective-limit carrier truths. | FAILED | 3/4 pass; configured ceiling tests pass, but there is no single carrier derived and retained by EffectiveRagSettings. |
-| 8 | Plan 03-17 D1 fail-closed identity/error truths. | FAILED | 3/4 pass; transport/invalid-payload mapping and generation suppression pass, but d1_status logs the full message. |
-| 9 | Plan 03-18 D2 zero-match and scope-fence truths. | VERIFIED | 6/6 pass; exact zero-match Rust/Go shape, malformed-input behavior, D1 behavior, and deferred D3/D4/D5 boundaries are present. |
+| 1 | Valid query over completed corpus uses vector and BM25 retrieval, deterministic bounded fusion, and returns one grounded structured answer with resolving citations | Cross-runtime Go test; Rust retrieval/fusion/generation tests; engine/src/main.rs:1200-1320 | VERIFIED |
+| 2 | Go /rag/query receives the structured grounded answer through Rust gRPC | gateway/main.go:645-715,875-906; proto/lancet/v1/lancet.proto; TestRAGQueryCrossRuntime | VERIFIED |
+| 3 | Initial BM25 build completes before readiness; failure prevents serving | engine/src/main.rs:1981-2049; engine/tests/config_startup.rs:297-375 | VERIFIED |
+| 4 | Async pluggable Reranker and NoOpReranker pass-through exist | engine/src/rerank.rs; engine/src/retrieval/fusion.rs; reranker tests | VERIFIED |
 
-**Score:** 76/79 must-haves verified (73/76 plan truths plus 3/4 roadmap success criteria). Behavior-unverified truths: 0. The remaining failures are static contract violations, not merely untested transitions.
+The success criteria are satisfied on the exercised happy path, but they are not sufficient to override failed plan-level safety and security must-haves.
 
-### All Plan/Summary Pair Reconciliation
+## Requirements Verdict
 
-All 18 PLAN files and all 18 SUMMARY files were read. The following counts are PLAN frontmatter truth counts; a summary claim is not treated as evidence unless current source and tests support it.
+| Requirement | Roadmap assignment | Verdict | Evidence and reconciliation |
+| --- | --- | --- | --- |
+| RAG-02 | Phase 03 current MVP acceptance | BLOCKED | Dense/BM25 retrieval, filters, deterministic fusion, deduplication, grounding, and zero-match behavior are implemented and tested. The Plan 03-20 provider boundary and Plan 03-23 staging-generation safety gaps leave the complete RAG-02 contract unverified. REQUIREMENTS.md:12,49 remains unchecked. |
+| RAG-04 | Phase 03 current MVP acceptance | SATISFIED | Reranker is async/object-safe, NoOpReranker preserves order, startup wiring uses it, and focused/full Rust tests pass. REQUIREMENTS.md:14,51. |
+| RAG-03 | Phase 06, not a Phase 03 requirement | DEFERRED, NOT A GAP | ROADMAP.md and deferred-items.md explicitly exclude degraded/model-only fallback, citation repair/downgrade, re-ingestion/restart recovery, graph fallback, and exhaustive negative-input coverage from Phase 03. |
 
-| Plan | Truths verified | Current assessment |
-| --- | ---: | --- |
-| 03-01 | 4/4 | Hybrid retrieval core is present and wired. |
-| 03-02 | 5/5 | Evidence packing and grounding path are present for normal bounded settings. |
-| 03-03 | 4/4 | Provider-neutral generation path is present; its SUMMARY metadata overclaims RAG-03, which remains deferred by the canonical scope documents. |
-| 03-04 | 3/3 | Query API and request validation are present. |
-| 03-05 | 5/5 | Citation/evidence response contract is present and tested. |
-| 03-06 | 3/3 | Ingestion/query integration claims are supported on the valid path. |
-| 03-07 | 5/5 | Metadata/filter and response mapping claims are supported on the valid path. |
-| 03-08 | 5/5 | Coverage addendum and valid-provider matrix are reflected in code/tests. |
-| 03-09 | 4/4 | Initial end-to-end RAG path claims are supported by current tests. |
-| 03-10 | 2/2 | Reranker seam and NoOp behavior are wired. |
-| 03-11 | 5/5 | Provider/error/citation contract claims are supported except for the later body-allocation defect tracked under 03-13. |
-| 03-12 | 6/6 | Fail-closed and deterministic valid-path claims are supported for exercised inputs. |
-| 03-13 | 3/4 | Summary claims wrapper bounds, but response.bytes buffers the whole body before rejecting it and models metadata is unbounded. |
-| 03-14 | 4/4 | Configuration/startup and gateway hardening claims are present on exercised paths. |
-| 03-15 | 3/3 | The prior effective-usage gap is covered by non-default budget tests; the G1 authority issue is a later 03-16 failure. |
-| 03-16 | 3/4 | Summary claims one G1 carrier; current code re-derives scalar-equivalent carriers at separate call sites. |
-| 03-17 | 3/4 | Summary claims identity-only safe logs; current d1_status includes the full message in tracing output. |
-| 03-18 | 6/6 | D2 valid zero-match branch and explicit D3/D4/D5 deferrals are verified. |
+03-03-SUMMARY.md and 03-21-SUMMARY.md list RAG-01/RAG-03 as completed in summary metadata even though the Phase 03 roadmap requirements are RAG-02/RAG-04 and RAG-03 is explicitly Phase 06. Those claims were not accepted over the roadmap and live evidence.
 
-Plans 03-16, 03-17, and 03-18 are not summary-only artifacts: their source/test changes are in the current checkout and their focused tests pass. Their passing tests close the exercised behavior claims, but they do not erase the two static contract deviations above or the independent RAG-02 resource-bound gap.
+## Must-Have Matrix
 
-The 03-03 SUMMARY lists RAG-03 under requirements-completed. That is not accepted as a scope change: ROADMAP.md, 03-CONTEXT.md, COVERAGE.md, and deferred-items.md all keep degraded/model-only/citation-repair/re-ingestion hardening deferred. Current code also rejects ModelOnly output and keeps D1/citation failures fail-closed, so no current valid-path violation requires pulling RAG-03 into this phase.
+Every plan frontmatter truth was checked in plan order. V means source, wiring, and available behavioral evidence support the truth. F means a blocker. P means implementation is present and wired but the required invariant is not behaviorally proven by the existing test.
+
+| Plan | Truths checked in plan order | Score | Evidence |
+| --- | --- | --- | --- |
+| 03-01 | T1 V Unicode BM25 snapshot/metadata; T2 V shared filters, weighted finite RRF, dedup; T3 V async object-safe NoOp; T4 V deterministic normalized query behavior | 4/4 | retrieval/bm25.rs, fusion.rs, rerank.rs and focused tests |
+| 03-02 | T1 V bounded evidence/request; T2 V valid markers/citations; T3 V suspicious text stays non-executable; T4 V one timeout-bounded provider call; T5 V typed basis/notices with no Phase 03 model-only branch | 5/5 | generation/mod.rs, prompt.rs, openrouter.rs and generation tests |
+| 03-03 | T1 V typed QueryRAG contract; T2 V gRPC reaches retrieval/generation; T3 V BM25 startup gate; T4 V validated TOML/env settings | 4/4 | proto contract, engine/main.rs, startup tests |
+| 03-04 | T1 V bounded strict gateway POST and caller validation; T2 V identity/basis/notices/warnings/citations/snapshot preservation; T3 V configurable embedding transport seam | 3/3 | gateway/main.go:645-715; engine/main.rs; client/mod.rs |
+| 03-05 | T1 V isolated real-process smoke; T2 V local mock provider exercises dense/BM25/fusion/evidence/generation; T3 V startup milestone and Ping; T4 V child environment/teardown; T5 V isolated fixture/process cleanup with live provider optional | 5/5 | gateway cross-runtime test, startup tests, scripts and fixtures |
+| 03-06 | T1 V untrusted corpus stays outside executable prompt semantics; T2 V over-budget/Unicode evidence is omitted safely; T3 V provider output requires valid IDs/notices/usage and exact markers | 3/3 | generation/prompt.rs, generation/mod.rs and tests |
+| 03-07 | T1 V settings control retrieval/evidence/citations/provider; T2 V evidence/citation character budgets; T3 V provider model identity; T4 V exact settings/index snapshot; T5 V invalid settings fail before readiness/provider | 5/5 | engine/main.rs, openrouter.rs, retrieval settings tests |
+| 03-08 | T1 V 32 KiB gateway bound/413; T2 V locked request capacity; T3 V body close and timeout; T4 V strict provider JSON; T5 V no RAG-03 scope expansion | 5/5 | gateway/main.go:36-38,645-715; gateway tests; provider tests |
+| 03-09 | T1 V citation IDs resolve to evidence; T2 V citation identity/title/section/content/score/rank/excerpt/truncation; T3 V notice/warning severity; T4 V unknown identity fails closed | 4/4 | generation/prompt.rs, engine/main.rs and service tests |
+| 03-10 | T1 V nondefault embedding model identity; T2 V generation model/endpoint/timeout/sampling/max completion effective | 2/2 | engine/main.rs, client/mod.rs, openrouter.rs |
+| 03-11 | T1 V one effective startup settings object; T2 V embedding identity/stable generation; T3 V BM25 before readiness; T4 V invalid settings/BM25 fail without listen; T5 V example keys/ranges | 5/5 | engine/main.rs:1981-2049; config example; startup tests |
+| 03-12 | T1 V exactly-one reranker after fusion; T2 V NoOp order; T3 V zero source weights; T4 V finite deterministic RRF; T5 V reranked IDs flow to validation/citations; T6 V reranker error stops generation | 6/6 | rerank.rs, retrieval/fusion.rs and engine tests |
+| 03-13 | T1 V only nonempty Retrieval/Mixed valid-marker output assembles; T2 V ModelOnly rejected; T3 V answer/IDs/notices/warnings/usage/wrapper fields bounded before public response; T4 V valid local answer uses shared generator/validator/citation path | 4/4 | generation/mod.rs:156-311; openrouter.rs:485-565; tests |
+| 03-14 | T1 V production OpenRouter uses effective settings; T2 V provider errors retain session/correlation and do not fabricate; T3 V gateway preserves identity/classification; T4 V missing/blank API key refuses startup | 4/4 | main.rs:1991-2049; openrouter.rs:569-585; gateway/main.go |
+| 03-15 | T1 V citation identity test isolation; T2 V fail-closed doubles; T3 V locked Rust gate in serial/parallel modes | 3/3 | Rust test modules and both full cargo runs |
+| 03-16 | T1 V one GroundingLimits carrier; T2 V 16384/4096/20480 ceilings; T3 V in-limit nondefault and above-limit rejection; T4 V grounded RAG-02 and no RAG-03 | 4/4 | generation/mod.rs:79-149; main.rs:299-347,1262-1306; ceiling tests |
+| 03-17 | T1 V transport failures map Unavailable/no generation; T2 V invalid embedding payloads map Internal/no generation; T3 V dense infrastructure failure differs from valid empty; T4 V error identity crosses Go boundary | 4/4 | client/mod.rs, retrieval/dense.rs, main.rs and fail-closed tests |
+| 03-18 | T1 V zero-match success/no provider; T2 V exact gRPC empty response; T3 V exact HTTP 200; T4 V malformed input remains 400; T5 V D3-D5 deferred/chunk-only scope; T6 V RAG-04/no RAG-03 | 6/6 | engine/main.rs query path; gateway/main.go; zero-match/fail-closed tests |
+| 03-19 | T1 V one GroundingLimits carrier with defaults 8192/2048/10240; T2 V nondefault carrier through pack/provider/usage/grounding; T3 V private carrier/no clamp/pre-ready rejection; T4 V D1 identity and recorded waiver; T5 V coverage opt-outs/ownership | 5/5 | generation/mod.rs; main.rs; deferred ledger; settings tests |
+| 03-20 | T1 F all provider bodies bounded before response-frame materialization; T2 V Content-Length and chunked over-limit rejection; T3 V exact 262144 acceptance; T4 V typed fail-closed paths; T5 V unary/no public streaming | 4/5 | Tests pass the rejection cases, but client/mod.rs:48-56 uses response.chunk before checking aggregate size. |
+| 03-21 | T1 V exact service ceilings; T2 V reject above ceilings/no clamp; T3 V defaults and absolute 100 limit; T4 V dense sends validated limit; T5 V BM25 bounded workspace; T6 V incremental filter normalization/dedup/rejection | 6/6 | retrieval/mod.rs:30-36,109-121,229-318; dense.rs:85; bm25.rs:233-336 |
+| 03-22 | T1 V one contribution per source/chunk with overlap retained; T2 V finite RRF contributions/accumulators; T3 V gateway buffers JSON before status; T4 V deterministic finite grounded response | 4/4 | retrieval/fusion.rs:35-197; gateway/main.go:846-857; tests |
+| 03-23 | T1 F monotonic generation allocation under replacement concurrency; T2 P physical failure-retention invariant unproven; T3 V latest non-deleted readers/replay; T4 V Int64 legacy compatibility/fail-closed schema; T5 V append/verify precedes old deletion/no in-place mutation | 3/5 | main.rs:683-687,839-936; db/mod.rs:74-157,230-250; staging tests |
+
+Plan-level score: 98/101 truths verified. The F truths are Plan 03-20 T1 and Plan 03-23 T1. The P truth is Plan 03-23 T2 and is excluded from the verified count.
 
 ## Required Artifacts
 
-| Artifact | Expected | Status | Details |
-| --- | --- | --- | --- |
-| engine/src/retrieval/mod.rs, dense.rs, bm25.rs, fusion.rs | Real vector/BM25 retrieval, filtering, deterministic fusion, deduplication, and bounded candidates. | PARTIAL / BLOCKER | Real LanceDB and in-memory BM25 data flow is wired; service-safe ceilings and finite RRF arithmetic are missing. |
-| engine/src/generation/mod.rs | Shared grounding limits, validation, citation identity, and provider-neutral generator contract. | PARTIAL / BLOCKER | Shared validation exists, but the carrier is publicly constructible without validation and is not retained as one EffectiveRagSettings authority. |
-| engine/src/generation/openrouter.rs | Provider adapter with bounded wrapper/model responses and usage validation. | PARTIAL / BLOCKER | Usage and schema validation are wired; chat bytes are fully buffered before the 256 KiB check and model metadata uses direct JSON parsing. |
-| engine/src/main.rs | Startup/readiness, query orchestration, fail-closed D1 behavior, and NoOp injection. | PARTIAL / BLOCKER | Startup order, query path, error identities, and generation suppression are wired; the carrier is re-derived and D1 logs include msg. |
-| engine/src/rerank.rs | Async Reranker trait and NoOp pass-through. | VERIFIED | Imported and injected into the query service; focused pass-through test passes. |
-| gateway/main.go and proto/lancet/v1/lancet.proto | Strict HTTP boundary, gRPC mapping, structured response DTO, and error identity propagation. | PARTIAL | Normal and cross-runtime paths pass; writeJSON ignores encoding errors after committing the HTTP status. |
-| engine/tests, gateway tests, and fixture seeder | Behavioral evidence for valid path, fail-closed behavior, zero-match, startup, limits, and cross-runtime mapping. | VERIFIED | Focused tests, full locked Rust, full Go, and cross-runtime smoke all exit 0. |
-| .planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md | Canonical scope/debt ledger for excluded RAG-03 behavior. | VERIFIED | D1-D5 boundaries and later-phase ownership are explicit and consistent with current fail-closed code. |
+All 23 plan files and all 23 matching summaries exist and were read. Summary completion, test, and probe claims were treated as hypotheses; no summary PASS was counted without live source or test evidence. The artifact verifier returned substantive artifacts for every plan that declared them, with two literal-pattern false negatives manually reconciled:
+
+| Plans | Artifact query result | Independent disposition |
+| --- | --- | --- |
+| 03-01 through 03-03 | 13/13 passed | Existence, substantive implementation, and wiring verified |
+| 03-04 | 3/4 passed | The missing embedding_endpoint pattern is a tool false negative: the client uses a generic endpoint field and main.rs wires EffectiveRagSettings.embedding_endpoint into it. Manually verified. |
+| 03-05 through 03-13 | 39/39 passed | Existence, substantive implementation, wiring, and data flow verified |
+| 03-14 and 03-15 | No artifact blocks | Truths and tests checked directly |
+| 03-16 through 03-20 | 22/22 passed | Plan 03-20's helper exists and is used, but its streaming invariant is incomplete; the key link remains a gap |
+| 03-21 | 5/6 passed | The missing MAX_SERVICE pattern is a tool false negative: ceilings are defined in retrieval/mod.rs and reached through EffectiveRagSettings.validate. Manually verified. |
+| 03-22 | 6/6 passed | Existence, substantive implementation, wiring, and data flow verified |
+| 03-23 | 4/4 passed | Symbol-style key-link checks were invalid for this plan; source and tests were traced manually |
+
+The artifact query cannot turn a present helper into a verified streaming bound. Level 3 wiring exists for the helper, but Level 4 behavior is incomplete because a chunk can exceed the remaining allowance before the check.
 
 ## Key Link Verification
 
 | From | To | Via | Status | Details |
 | --- | --- | --- | --- | --- |
-| HTTP /rag/query | Rust QueryRAG | Go gRPC client call and strict DTO conversion | WIRED | Go focused boundary tests and cross-runtime smoke pass. |
-| QueryRAG | embedder, DenseRetriever, BM25Retriever | validated QueryRequest and shared filter | WIRED | Query orchestration calls both retrievers and maps transport/invalid-payload failures. |
-| Dense/BM25 results | RRF fusion | retrieval::fuse with deterministic sort key | WIRED | Fusion and determinism tests pass; arithmetic overflow guard is missing. |
-| Fusion results | Reranker | async Reranker trait with NoOpReranker | WIRED | NoOp pass-through test and service injection pass. |
-| Reranked candidates | evidence packer/generator | final_limit, prompt packing, one provider call | WIRED | Happy path and generator-call-count tests pass; provider body bound is late. |
-| Model output | grounding validator/citation resolver/DTO | shared limits and source chunk IDs | PARTIAL | Normal grounding/citation tests pass; the one-carrier limit authority is not implemented. |
-| Startup config | BM25 build/readiness | build before Server::serve | WIRED | Initial-BM25 startup tests pass. |
+| Gateway /rag/query | Rust QueryRAG | typed gRPC client and response mapping | VERIFIED | gateway/main.go:645-715; TestRAGQueryCrossRuntime |
+| QueryRAG service | dense, BM25, fusion, evidence, generator | normalize, retrieve, rerank, pack, validate, assemble | VERIFIED | engine/main.rs:1200-1320 |
+| EffectiveRagSettings | GroundingLimits | one validated Arc carrier | VERIFIED | engine/main.rs:299-347,1262-1306 |
+| Dense settings | Lance query | validated candidate limit and normalized filters | VERIFIED | retrieval/dense.rs:48-96 |
+| BM25 settings | candidate workspace | candidate-limit capacity and bounded insertion | VERIFIED | retrieval/bm25.rs:233-336 |
+| Provider body reader | chat, metadata, embeddings | shared read_body_limited helper | PARTIAL | All paths call it, but client/mod.rs:48-56 uses chunk aggregation rather than a pre-materialization stream bound |
+| Staged append verification | old-generation deletion | add, verify at current version, then delete | VERIFIED for sequential ordering | main.rs:902-934; concurrent allocation is a separate failed link |
+| Staged rows | replay/status reader | maximum non-deleted generation per document_id | VERIFIED with race exposure | main.rs:668-801; equal-generation duplicates fail at 683-687 |
+| Go JSON response | HTTP status commitment | buffer encode before WriteHeader | VERIFIED | gateway/main.go:846-857; TestWriteJSONEncodeFailureReturns500 |
 
-## Data-Flow Trace (Level 4)
+## Data-Flow Trace
 
 | Artifact | Data variable | Source | Produces real data | Status |
 | --- | --- | --- | --- | --- |
-| DenseRetriever | vector candidates | LanceDB query over seeded completed corpus | Yes | FLOWING |
-| Bm25Retriever | lexical candidates | in-memory BM25 index built from completed corpus | Yes | FLOWING |
-| fusion and NoOpReranker | fused/reranked candidates | both retrieval branches | Yes | FLOWING, with missing finite-arithmetic guard |
-| prompt packing and generator | evidence blocks and model output | fused source chunks plus local deterministic provider in tests | Yes | FLOWING, with provider body-bound defect |
-| grounding/citation response | answer, citations, notices, snapshot | validated model output and source IDs | Yes | FLOWING on tested normal path |
-| zero-match response | empty answer/citations plus snapshot | valid empty fused result; generator is not called | Yes | FLOWING; exact Rust/Go tests pass |
+| DenseRetriever | vector candidates | embedding client and Lance table query | Yes | FLOWING |
+| Bm25Retriever | lexical candidates | completed snapshot and bounded candidate insertion | Yes | FLOWING |
+| Fusion | merged candidates/ranks/scores | dense and BM25 vectors | Yes; finite checked | FLOWING |
+| Evidence prompt | packed evidence blocks | fused candidate content and metadata | Yes; bounded | FLOWING |
+| QueryRAG response | answer/citations/notices/snapshot | generator output validated against evidence | Yes; cross-runtime test | FLOWING |
+| Staged replay | latest document generation | staged_documents_v2 rows | Yes, but equal-generation concurrency is unsafe | FLOWING WITH BLOCKER |
 
-## Behavioral Spot-Checks
+No public component was found to render a static or hardcoded empty answer. Zero-match is intentionally a successful typed response with an informational notice and no provider call.
 
-| Behavior | Exact command | Result |
-| --- | --- | --- |
-| Full locked Rust suite | cargo test --manifest-path engine/Cargo.toml --locked -- --test-threads=1 | PASS, exit 0; targets reported 34 passed/1 ignored, 90 passed/1 ignored, 18 passed, and 9 passed. |
-| Effective provider usage limits | cargo test --manifest-path engine/Cargo.toml --locked openrouter_effective_usage_limits -- --test-threads=1 | PASS, exit 0. |
-| Startup service ceilings | cargo test --manifest-path engine/Cargo.toml --locked --test config_startup service_ceiling_rejects_above_effective_limits -- --test-threads=1 | PASS, exit 0; 1 passed. |
-| D1 fail-closed family | cargo test --manifest-path engine/Cargo.toml --locked query_rag_fail_closed_ -- --test-threads=1 | PASS, exit 0; 6 passed. |
-| Valid zero-match | cargo test --manifest-path engine/Cargo.toml --locked query_rag_valid_zero_match -- --test-threads=1 | PASS, exit 0; 1 passed. |
-| Retrieval filter/fusion | cargo test --manifest-path engine/Cargo.toml --locked retrieval_filter_fusion_and_determinism -- --test-threads=1 | PASS, exit 0. |
-| NoOp reranker | cargo test --manifest-path engine/Cargo.toml --locked noop_reranker_preserves_candidates -- --test-threads=1 | PASS, exit 0. |
-| Rust query happy path | cargo test --manifest-path engine/Cargo.toml --locked query_rag_happy_path_service -- --test-threads=1 | PASS, exit 0. |
-| Citation identity/notices | cargo test --manifest-path engine/Cargo.toml --locked query_rag_citation_identity_and_notices -- --test-threads=1 | PASS, exit 0. |
-| Initial BM25 readiness | cargo test --manifest-path engine/Cargo.toml --locked --test config_startup initial_bm25 -- --test-threads=1 | PASS, exit 0; 2 passed. |
-| Go RAG boundary and D1 mapping | from gateway: go test -count=1 -run '^(TestRAGQueryNoResults|TestRAGQueryValidMapping|TestRAGQueryInvalidArgumentStatus|TestRAGQueryRejectsUnknownOrTrailingJSON|TestRAGQueryEmbeddingTransportIdentity|TestRAGQueryEmbeddingInvalidPayloadIdentity|TestRAGQueryDenseRetrievalIdentity)$' ./... | PASS, exit 0. |
-| Go/Rust cross-runtime contract | from gateway: go test -count=1 -run '^TestRAGQueryCrossRuntime$' ./... | PASS, exit 0. |
-| Full Go suite | from gateway: go test -count=1 ./... | PASS, exit 0. |
-| Go static checks | from gateway: go vet ./... | PASS, exit 0. |
-| Protobuf lint | buf lint | PASS, exit 0. |
-| Rust formatting check | cargo fmt --manifest-path engine/Cargo.toml --all -- --check | FAIL, exit 1; current formatting drift remains in engine files. No formatting changes were made. |
-| Protobuf formatting check | buf format --diff --exit-code | BLOCKED by environment, exit 1; buf could not execute diff because diff is not on PATH. |
+## Automated Checks
+
+Commands were run in the live checkout. No result below is based solely on a filter matching zero tests.
+
+| Check | Result |
+| --- | --- |
+| cargo test --manifest-path engine/Cargo.toml --locked -- --test-threads=1 | PASS: library 56 passed/1 ignored; binary 96 passed/1 ignored; integration targets 18 and 9 passed |
+| cargo test --manifest-path engine/Cargo.toml --locked | PASS: same nonzero test targets passed in parallel |
+| cargo test --manifest-path engine/Cargo.toml --locked --lib effective_settings_carries_one_grounding_limits -- --test-threads=1 | PASS: 1 named test |
+| cargo test --manifest-path engine/Cargo.toml --locked --lib openrouter_ -- --test-threads=1 | PASS: provider tests ran and passed in each relevant target |
+| cargo test --manifest-path engine/Cargo.toml --locked --test config_startup service_ceiling_rejects_above_effective_limits -- --test-threads=1 | PASS: 1 named test |
+| cargo test --manifest-path engine/Cargo.toml --locked --test config_startup service_ceiling_rejects_each_absolute_maximum -- --test-threads=1 | PASS: 1 named test |
+| cargo test --manifest-path engine/Cargo.toml --locked --lib retrieval_filter_fusion_and_determinism -- --test-threads=1 | PASS: 1 named test |
+| cargo test --manifest-path engine/Cargo.toml --locked --lib query_rag_fail_closed_ -- --test-threads=1 | PASS: 6 named tests |
+| cargo test --manifest-path engine/Cargo.toml --locked --lib query_rag_valid_zero_match -- --test-threads=1 | PASS: 1 named test |
+| cargo test --manifest-path engine/Cargo.toml --locked --lib read_staged_jobs_latest_generation_wins -- --test-threads=1 | PASS: 1 named test |
+| cargo test --manifest-path engine/Cargo.toml --locked --lib persist_raw_ -- --test-threads=1 | PASS: 2 named tests |
+| go test -count=1 ./... from gateway | PASS: gateway and gateway/db packages |
+| go vet ./... from gateway | PASS |
+| buf lint | PASS |
+| go test -list 'TestRAGQueryCrossRuntime|TestWriteJSONEncodeFailureReturns500|TestRAGQueryRejectsOversizedBody|TestRAGQueryNoResults' ./... from gateway | PASS: all four names listed |
+| go test -count=1 -run '^(TestRAGQueryCrossRuntime|TestWriteJSONEncodeFailureReturns500|TestRAGQueryRejectsOversizedBody|TestRAGQueryNoResults)$' ./... from gateway | PASS |
+| cargo fmt --manifest-path engine/Cargo.toml --all -- --check | FAIL: formatting drift in current Rust files including engine/src/tests.rs and engine/tests/config_startup.rs; no formatter was run |
+
+Focused staging tests prove sequential append-before-delete ordering and latest-wins selection. They do not prove concurrent generation allocation or physical old-row retention after a delete fault.
 
 ## Probe Execution
 
-No conventional scripts/*/tests/probe-*.sh probes were found and no phase PLAN/SUMMARY declares a probe path. Probe execution was skipped; there was no missing documented probe.
+No scripts/*/tests/probe-*.sh files were present, and no Phase 03 plan or summary declared a probe path. Probe execution is not applicable; no probe PASS claim was accepted from summaries.
 
-## Requirements Coverage
+## Anti-Patterns and Advisory Findings
 
-| Requirement | Source | Description | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| RAG-02 | ROADMAP.md, REQUIREMENTS.md, plans 03-01 through 03-18 | Hybrid dense/vector plus local BM25 retrieval with filtering and deduplication. | BLOCKED | The valid default/cross-runtime path and core tests pass, but current resource ceilings, fused-score finite handling, and provider boundary defects prevent accepting the requirement as fully achieved. |
-| RAG-04 | ROADMAP.md, REQUIREMENTS.md, plans 03-10 and 03-14 | Async pluggable Reranker trait with NoOp default. | SATISFIED | Trait, NoOp implementation/injection, pass-through test, and cross-runtime path are present. |
-| RAG-03 | REQUIREMENTS.md Phase 06 mapping, COVERAGE.md, deferred-items.md | Degraded/model-only/citation-repair/re-ingestion hardening. | DEFERRED, NOT A PHASE 03 GAP | The scope fence is explicit; current valid-path failures remain fail-closed and ModelOnly is rejected. |
+The source scan found no unreferenced TODO, FIXME, or XXX debt markers in Phase 03 production files. Findings:
 
-No additional Phase 03 requirement is orphaned in REQUIREMENTS.md: the phase maps to RAG-02 and RAG-04, while RAG-03 is mapped to Phase 06. Several late PLAN files use blank requirements metadata, but that does not reduce the roadmap contract and does not create an unclaimed Phase 03 requirement.
+| Severity | Live evidence | Finding |
+| --- | --- | --- |
+| BLOCKER | engine/src/client/mod.rs:48-56 | Post-chunk provider body check can retain an oversized frame before rejection; CR-01 and Plan 03-20 T1. |
+| BLOCKER | engine/src/main.rs:872-902 | Read-max-then-append staging generation race; CR-02 and Plan 03-23 T1. |
+| BLOCKER | config/config.toml:3; config/config.example.toml:7 | Reusable plaintext database credential and sslmode=disable; CR-03. |
+| BLOCKER | gateway/main.go:890 | Go-to-Rust gRPC uses insecure.NewCredentials; CR-04 for non-local/shared deployment. |
+| BLOCKER | engine/src/main.rs:359-372; generation/openrouter.rs:262-269,277-278,440-444 | Arbitrary nonblank provider endpoints receive bearer credentials; CR-05. |
+| WARNING | cargo fmt check | Current Rust formatting gate fails. |
+| WARNING | engine/src/lib.rs:1-8; engine/src/main.rs:28-34 | Overlapping library and binary module graphs increase drift risk. |
+| WARNING | engine/src/main.rs:302,312,314 | Public scalar grounding settings coexist with the private carrier. |
+| WARNING | engine/src/client/mod.rs:253-306 | Embedding dimension is checked, but finite-value validation is not evident at the client boundary. |
+| WARNING | engine/src/main.rs:760-774 | Staged replay reads nullable Arrow values without an explicit null check. |
+| WARNING | engine/src/main.rs:889-896 | Raw staging chunk settings saturate to i32::MAX instead of rejecting invalid persisted values. |
+| INFO | engine/src/db/tests.rs:13 | “placeholders” is a nullable-field fixture test name, not a production stub or debt marker. |
 
-## Anti-Patterns Found
+03-REVIEW.md reports five blocker-level findings and twelve warnings. Live source confirms the five blockers above; the formatting check adds one warning to the report count. 03-REVIEWS.md/AgY was advisory, not evidence: its positive body-bounding assessment conflicts with the actual response.chunk implementation, while its high staged-generation concern is corroborated.
 
-| File | Line | Pattern | Severity | Impact |
-| --- | ---: | --- | --- | --- |
-| engine/src/main.rs | 770 | D1 structured warning interpolates the full msg | BLOCKER | Violates the identity-only safe-log contract even though status metadata and generation suppression work. |
-| engine/src/generation/openrouter.rs | 279-287, 438-456 | Direct JSON metadata parse and full response.bytes buffer before size rejection | BLOCKER | Untrusted provider payloads are not bounded before allocation. |
-| engine/src/retrieval/mod.rs; dense.rs; bm25.rs | 250-275; 85; 244-262 | Limits allow i32::MAX-scale work and BM25 allocates from full document count | BLOCKER | A valid configuration can defeat the bounded-evidence/resource contract. |
-| engine/src/retrieval/fusion.rs; gateway/main.go | 125-134; 845-848 | Fused score overflow/non-finite path and ignored JSON encoder error | BLOCKER | Invalid response serialization can escape after HTTP 200. |
-| engine/src/generation/mod.rs; generation/openrouter.rs | 85-89; 90-109 | Public GroundingLimits fields and an unvalidated carrier injection path | WARNING | Related to the failed G1 one-carrier truth and a future bypass of service ceilings. |
-| engine/src/retrieval/bm25.rs | 233-263 | Direct BM25 query validates settings but not QueryRequest | WARNING | Production QueryRAG validates first, but the lower-level API has a weaker contract. |
-| engine/src/lib.rs; engine/src/main.rs | module declarations | Retrieval/generation modules are declared through duplicate library/binary paths | WARNING | Maintenance risk and possible divergence; current binary path is exercised. |
-| engine/src/db/tests.rs | 11 | Test name contains placeholder wording | INFO | Test-only naming; no production stub or unreferenced TODO/FIXME/XXX marker was found. |
-| engine formatting | multiple files | cargo fmt --check drift | WARNING | Quality gate remains red; no source was reformatted during verification. |
+## Human Verification
 
-## Human Verification Required
+Automated evidence cannot establish:
 
-1. Live provider integration
+1. Plan 03-23 physical failure retention. After repair, inject append/verify/delete faults and inspect physical Lance rows and payloads. The current test only observes latest-wins output, so this invariant remains behavior-unverified.
+2. Optional real OpenRouter smoke. With an intentionally supplied OPENROUTER_API_KEY, run the ignored structured-output smoke from Plan 03-02 and confirm one supported structured response with no credential or raw-evidence disclosure. Local mocks and provider-independent tests passed; no live credentialed provider call was made.
 
-   Test: Run the engine and gateway with approved OpenRouter credentials and submit a valid query over a completed corpus.
+These items do not convert the current result to passed. The current status is already gaps_found because failed truths and live blockers take precedence.
 
-   Expected: One grounded structured answer is returned, citations resolve to returned evidence, usage stays within the effective limits, and provider/network failures are surfaced without sensitive logging or model-only continuation.
+## Current Gaps and Targeted Next Action
 
-   Why human: External provider behavior, credentials, and network integration are not reproducible from the local deterministic mocks. This item does not change the current status precedence: the four automated blockers keep the phase at gaps_found.
+The closure should be narrow and must not plan the explicitly deferred RAG-03 feature set:
 
-## Gaps Summary
+1. Replace the provider response read path with a truly bounded stream/reader that cannot materialize a frame beyond the remaining allowance; retain the shared 262144-byte policy across chat, metadata, and embeddings and add a single-frame regression.
+2. Make per-document staged generation allocation atomic or serialized and add a concurrent replacement test. Extend delete-failure tests to count physical old and successor rows, not only latest-wins output.
+3. Resolve the live transport/configuration security findings, or record an approved local-only boundary with enforcement that prevents remote/shared deployment from inheriting unsafe defaults.
 
-The valid default path is real and exercised: dense and BM25 data flow from a completed seeded corpus through deterministic fusion, NoOp reranking, bounded prompt packing, one local generation call, grounding validation, citation resolution, Rust gRPC, and Go DTO conversion. The full locked Rust suite, full Go suite, focused D1/D2/limit tests, and cross-runtime smoke all pass.
+Targeted next command: /gsd:plan-phase 03 --gaps
 
-The phase is nevertheless not achieved. The G1 implementation does not provide the promised single effective limits carrier; D1 logs include the full error message; provider response limits are checked only after buffering and model metadata is unbounded; and the RAG-02 path still admits effectively unbounded retrieval work and unchecked fused-score/JSON serialization failure. These are current-code blockers, not deferred RAG-03 behavior. Keep the phase pending and route the structured gaps to targeted planning.
+## Transition Decision
 
-The existing unrelated working-tree change gateway/tmp-go-cache-regression/ was preserved. No production source, ROADMAP, STATE, or phase-completion marker was modified.
+Do not transition ROADMAP.md or STATE.md to a completed Phase 03 state. The current verification routing is gaps_found, REQUIREMENTS.md correctly leaves RAG-02 and RAG-04 unchecked, and the phase must remain pending until the targeted gaps are closed and re-verified. RAG-03 remains deferred to Phase 06 and must not be promoted into the Phase 03 closure plan.
 
 ---
 
-Verified: 2026-08-05T06:46:30Z
+Verified: 2026-08-05T21:00:38Z
 
 Verifier: the agent (gsd-verifier)
