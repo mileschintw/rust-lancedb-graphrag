@@ -136,7 +136,7 @@
 **Mode:** mvp
 **Requirements:** RAG-02, RAG-04
 **Deferred target:** RAG-03 is explicitly deferred from Phase 03 to Phase 06 hardening/evaluation; its target behavior remains in `deferred-items.md` as DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06. It is not a Phase 03 acceptance requirement.
-**Plans:** 22/23 plans executed
+**Plans:** 23/23 plans executed
 
 Plans:
 **Wave 1**
@@ -220,7 +220,7 @@ Plans:
 
 **Wave 20** *(blocked on Wave 19 completion)*
 
-- [ ] 03-23-PLAN.md — Persist raw ingestion generations with the gated Lance schema migration checkpoint.
+- [x] 03-23-PLAN.md — Persist raw ingestion generations with the gated Lance schema migration checkpoint.
 
 **Success Criteria:**
 
