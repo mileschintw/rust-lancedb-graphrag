@@ -10,7 +10,7 @@ use uuid::Uuid;
 use super::bm25::analyze;
 use super::{
     fuse_candidates, Bm25Config, Bm25Index, Candidate, DenseRetriever, QueryFilters, QueryRequest,
-    RetrievalErrorKind, RetrievalSettings,
+    RetrievalErrorKind, RetrievalSettings, MAX_SERVICE_CANDIDATE_LIMIT, MAX_SERVICE_FINAL_LIMIT,
 };
 
 fn candidate(document_id: &str, chunk_id: &str, content: &str) -> Candidate {
@@ -339,8 +339,8 @@ async fn retrieval_filter_fusion_and_determinism() {
 #[test]
 fn retrieval_snapshot_values_are_lossless() {
     let valid = RetrievalSettings {
-        candidate_limit: i32::MAX as usize,
-        final_limit: i32::MAX as usize,
+        candidate_limit: MAX_SERVICE_CANDIDATE_LIMIT,
+        final_limit: MAX_SERVICE_FINAL_LIMIT,
         rrf_k: 60.0,
         ..RetrievalSettings::default()
     };

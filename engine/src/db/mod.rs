@@ -73,11 +73,29 @@ impl DatabaseManager {
 
         for (name, expected) in table_schemas() {
             let table = if existing.contains(name) {
-                self.connection
+                let tbl = self
+                    .connection
                     .open_table(name)
                     .execute()
                     .await
-                    .map_err(|error| format!("failed to open LanceDB table {name}: {error}"))?
+                    .map_err(|error| format!("failed to open LanceDB table {name}: {error}"))?;
+
+                if name == "staged_documents_v2" {
+                    let actual = tbl
+                        .schema()
+                        .await
+                        .map_err(|error| format!("failed to read schema for {name}: {error}"))?;
+                    if actual.fields() == legacy_staged_documents_v2_schema().fields() {
+                        let transform = lancedb::table::NewColumnTransform::SqlExpressions(vec![(
+                            "generation".to_string(),
+                            "CAST(1 AS BIGINT)".to_string(),
+                        )]);
+                        tbl.add_columns(transform, None)
+                            .await
+                            .map_err(|error| format!("failed to add generation column to {name}: {error}"))?;
+                    }
+                }
+                tbl
             } else {
                 self.connection
                     .create_empty_table(name, expected.clone())
@@ -209,6 +227,17 @@ pub fn communities_schema() -> SchemaRef {
     ]))
 }
 
+pub fn legacy_staged_documents_v2_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("document_id", DataType::Utf8, false),
+        Field::new("filename", DataType::Utf8, false),
+        Field::new("raw_content", DataType::Binary, false),
+        Field::new("chunk_strategy", DataType::Utf8, false),
+        Field::new("chunk_size", DataType::Int32, false),
+        Field::new("chunk_overlap", DataType::Int32, false),
+    ]))
+}
+
 pub fn staged_documents_v2_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("document_id", DataType::Utf8, false),
@@ -217,6 +246,7 @@ pub fn staged_documents_v2_schema() -> SchemaRef {
         Field::new("chunk_strategy", DataType::Utf8, false),
         Field::new("chunk_size", DataType::Int32, false),
         Field::new("chunk_overlap", DataType::Int32, false),
+        Field::new("generation", DataType::Int64, false),
     ]))
 }
 

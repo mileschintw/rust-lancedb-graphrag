@@ -42,35 +42,35 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
 const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     (
         "engine.retrieval.candidate_limit",
-        "unit=count; range=1..=2147483647",
+        "unit=count; range=1..=500",
     ),
     (
         "engine.retrieval.final_limit",
-        "unit=count; range=1..=2147483647",
+        "unit=count; range=1..=100",
     ),
     (
         "engine.retrieval.query_max_bytes",
-        "unit=UTF-8 bytes; range=>0",
+        "unit=UTF-8 bytes; range=1..=8192",
     ),
     (
         "engine.retrieval.max_document_ids",
-        "unit=count; range=1..=2147483647",
+        "unit=count; range=1..=100",
     ),
     (
         "engine.retrieval.max_content_types",
-        "unit=count; range=1..=2147483647",
+        "unit=count; range=1..=100",
     ),
     (
         "engine.retrieval.vector_weight",
-        "unit=unitless; range=finite >=0 and combined >0",
+        "unit=unitless; range=finite 0.0..=16.0 and combined >0",
     ),
     (
         "engine.retrieval.bm25_weight",
-        "unit=unitless; range=finite >=0 and combined >0",
+        "unit=unitless; range=finite 0.0..=16.0 and combined >0",
     ),
     (
         "engine.retrieval.rrf_k",
-        "unit=rank constant; range=integer 1..=2147483647",
+        "unit=rank constant; range=integer 1.0..=1000000.0",
     ),
     (
         "engine.retrieval.evidence_token_budget",
@@ -657,6 +657,7 @@ async fn stage_document_with_settings(
             Arc::new(StringArray::from(vec![strategy])),
             Arc::new(Int32Array::from(vec![i32::try_from(size).unwrap()])),
             Arc::new(Int32Array::from(vec![i32::try_from(overlap).unwrap()])),
+            Arc::new(Int64Array::from(vec![1])),
         ],
     )
     .unwrap();
@@ -3573,4 +3574,209 @@ fn effective_settings_carries_one_grounding_limits() {
 
     let arc_limits = effective.grounding_limits_arc();
     assert_eq!(arc_limits.as_ref(), limits);
+}
+
+#[tokio::test]
+async fn read_staged_jobs_latest_generation_wins() {
+    let doc_id = "00000000-0000-4000-8000-000000000001";
+    let job_v1 = IngestionJob {
+        document_id: doc_id.to_string(),
+        filename: "doc_v1.txt".to_string(),
+        raw_data: b"version 1".to_vec(),
+        metadata: HashMap::from([
+            ("chunk_strategy".to_string(), "fixed-size".to_string()),
+            ("chunk_size".to_string(), "500".to_string()),
+            ("chunk_overlap".to_string(), "50".to_string()),
+        ]),
+        chunk_settings: crate::parse_chunk_settings(&HashMap::from([
+            ("chunk_strategy".to_string(), "fixed-size".to_string()),
+            ("chunk_size".to_string(), "500".to_string()),
+            ("chunk_overlap".to_string(), "50".to_string()),
+        ])).unwrap(),
+    };
+
+    let job_v2 = IngestionJob {
+        document_id: doc_id.to_string(),
+        filename: "doc_v2.txt".to_string(),
+        raw_data: b"version 2".to_vec(),
+        metadata: HashMap::from([
+            ("chunk_strategy".to_string(), "fixed-size".to_string()),
+            ("chunk_size".to_string(), "500".to_string()),
+            ("chunk_overlap".to_string(), "50".to_string()),
+        ]),
+        chunk_settings: crate::parse_chunk_settings(&HashMap::from([
+            ("chunk_strategy".to_string(), "fixed-size".to_string()),
+            ("chunk_size".to_string(), "500".to_string()),
+            ("chunk_overlap".to_string(), "50".to_string()),
+        ])).unwrap(),
+    };
+
+    let rows = vec![
+        StagedJobRow {
+            document_id: doc_id.to_string(),
+            generation: 1,
+            job: job_v1,
+        },
+        StagedJobRow {
+            document_id: doc_id.to_string(),
+            generation: 2,
+            job: job_v2,
+        },
+    ];
+
+    let selected = select_latest_staged_rows(rows).unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].filename, "doc_v2.txt");
+    assert_eq!(selected[0].raw_data, b"version 2");
+}
+
+fn temp_db_path(test_name: &str) -> String {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir()
+        .join(format!("lancet-{test_name}-{nonce}"))
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[tokio::test]
+async fn persist_raw_append_verify_precedes_delete() {
+    let path = temp_db_path("persist-raw-order");
+    let manager = DatabaseManager::initialize(&path).await.unwrap();
+    let staged_table = manager.staged_documents_table().await.unwrap();
+
+    let doc_id = "00000000-0000-4000-8000-000000000001";
+    let job1 = IngestionJob::new(
+        doc_id.to_string(),
+        "v1.txt".to_string(),
+        b"raw v1".to_vec(),
+        HashMap::from([
+            ("chunk_strategy".to_string(), "fixed-size".to_string()),
+            ("chunk_size".to_string(), "500".to_string()),
+            ("chunk_overlap".to_string(), "50".to_string()),
+        ]),
+    );
+
+    persist_raw_with_boundary(&staged_table, &job1, &LanceDbReplacementMutationBoundary)
+        .await
+        .unwrap();
+
+    let job2 = IngestionJob::new(
+        doc_id.to_string(),
+        "v2.txt".to_string(),
+        b"raw v2".to_vec(),
+        HashMap::from([
+            ("chunk_strategy".to_string(), "fixed-size".to_string()),
+            ("chunk_size".to_string(), "500".to_string()),
+            ("chunk_overlap".to_string(), "50".to_string()),
+        ]),
+    );
+
+    let recorded_calls = Arc::new(std::sync::Mutex::new(Vec::new()));
+    struct RecordingBoundary(Arc<std::sync::Mutex<Vec<ReplacementMutation>>>);
+    impl ReplacementMutationBoundary for RecordingBoundary {
+        fn delete<'a>(
+            &self,
+            boundary: ReplacementMutation,
+            table: &'a Table,
+            predicate: &'a str,
+        ) -> BoxFuture<'a, Result<(), String>> {
+            self.0.lock().unwrap().push(boundary);
+            Box::pin(async move {
+                table.delete(predicate).await.map(|_| ()).map_err(|e| e.to_string())
+            })
+        }
+        fn add<'a>(
+            &self,
+            boundary: ReplacementMutation,
+            table: &'a Table,
+            batch: RecordBatch,
+        ) -> BoxFuture<'a, Result<(), String>> {
+            self.0.lock().unwrap().push(boundary);
+            Box::pin(async move {
+                table.add(batch).execute().await.map(|_| ()).map_err(|e| e.to_string())
+            })
+        }
+    }
+
+    let rec_boundary = RecordingBoundary(recorded_calls.clone());
+    persist_raw_with_boundary(&staged_table, &job2, &rec_boundary)
+        .await
+        .unwrap();
+
+    let calls = recorded_calls.lock().unwrap().clone();
+    assert_eq!(calls, vec![ReplacementMutation::StagingAdd, ReplacementMutation::StagingDelete]);
+
+    let staged_jobs = read_staged_jobs(&manager).await.unwrap();
+    assert_eq!(staged_jobs.len(), 1);
+    assert_eq!(staged_jobs[0].filename, "v2.txt");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn persist_raw_keeps_old_generation_when_delete_fails() {
+    let path = temp_db_path("persist-raw-fail-delete");
+    let manager = DatabaseManager::initialize(&path).await.unwrap();
+    let staged_table = manager.staged_documents_table().await.unwrap();
+
+    let doc_id = "00000000-0000-4000-8000-000000000001";
+    let job1 = IngestionJob::new(
+        doc_id.to_string(),
+        "v1.txt".to_string(),
+        b"raw v1".to_vec(),
+        HashMap::from([
+            ("chunk_strategy".to_string(), "fixed-size".to_string()),
+            ("chunk_size".to_string(), "500".to_string()),
+            ("chunk_overlap".to_string(), "50".to_string()),
+        ]),
+    );
+
+    persist_raw_with_boundary(&staged_table, &job1, &LanceDbReplacementMutationBoundary)
+        .await
+        .unwrap();
+
+    let job2 = IngestionJob::new(
+        doc_id.to_string(),
+        "v2.txt".to_string(),
+        b"raw v2".to_vec(),
+        HashMap::from([
+            ("chunk_strategy".to_string(), "fixed-size".to_string()),
+            ("chunk_size".to_string(), "500".to_string()),
+            ("chunk_overlap".to_string(), "50".to_string()),
+        ]),
+    );
+
+    struct DeleteFaultBoundary;
+    impl ReplacementMutationBoundary for DeleteFaultBoundary {
+        fn delete<'a>(
+            &self,
+            _boundary: ReplacementMutation,
+            _table: &'a Table,
+            _predicate: &'a str,
+        ) -> BoxFuture<'a, Result<(), String>> {
+            Box::pin(async move { Err("injected delete failure".to_string()) })
+        }
+        fn add<'a>(
+            &self,
+            _boundary: ReplacementMutation,
+            table: &'a Table,
+            batch: RecordBatch,
+        ) -> BoxFuture<'a, Result<(), String>> {
+            Box::pin(async move {
+                table.add(batch).execute().await.map(|_| ()).map_err(|e| e.to_string())
+            })
+        }
+    }
+
+    let res = persist_raw_with_boundary(&staged_table, &job2, &DeleteFaultBoundary).await;
+    assert!(res.is_err(), "must fail when delete fails");
+
+    let staged_jobs = read_staged_jobs(&manager).await.unwrap();
+    assert_eq!(staged_jobs.len(), 1);
+    assert_eq!(staged_jobs[0].filename, "v2.txt");
+
+    let _ = std::fs::remove_dir_all(path);
 }

@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     hash::{DefaultHasher, Hash, Hasher},
     path::Path,
     sync::Arc,
@@ -12,7 +12,10 @@ use arrow_array::{
 };
 use dashmap::DashMap;
 use futures::{future::BoxFuture, TryStreamExt};
-use lancedb::{query::ExecutableQuery, Table};
+use lancedb::{
+    query::{ExecutableQuery, QueryBase},
+    Table,
+};
 use serde::Deserialize;
 use tokio::{
     sync::{mpsc, watch},
@@ -573,6 +576,7 @@ enum ReplacementMutation {
     DocumentsAdd,
     NodesAdd,
     EdgesAdd,
+    StagingAdd,
     StagingDelete,
 }
 
@@ -661,6 +665,38 @@ fn chunk_ingestion_job(job: &IngestionJob) -> (&'static str, Vec<Chunk>) {
     (strategy, chunks)
 }
 
+struct StagedJobRow {
+    document_id: String,
+    generation: i64,
+    job: IngestionJob,
+}
+
+fn select_latest_staged_rows(rows: Vec<StagedJobRow>) -> Result<Vec<IngestionJob>, String> {
+    let mut latest_by_doc: HashMap<String, StagedJobRow> = HashMap::new();
+
+    for row in rows {
+        match latest_by_doc.entry(row.document_id.clone()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(row);
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if row.generation == entry.get().generation {
+                    return Err(format!(
+                        "ambiguous staged rows: duplicate generation {} for document {}",
+                        row.generation, row.document_id
+                    ));
+                } else if row.generation > entry.get().generation {
+                    entry.insert(row);
+                }
+            }
+        }
+    }
+
+    let mut result_rows: Vec<StagedJobRow> = latest_by_doc.into_values().collect();
+    result_rows.sort_by(|a, b| a.document_id.cmp(&b.document_id));
+    Ok(result_rows.into_iter().map(|r| r.job).collect())
+}
+
 pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<IngestionJob>, String> {
     let table = database.staged_documents_table().await?;
     let batches: Vec<RecordBatch> = table
@@ -672,8 +708,7 @@ pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<Ingestio
         .await
         .map_err(|error| format!("failed to collect staged_documents_v2 rows: {error}"))?;
 
-    let mut jobs = Vec::new();
-    let mut seen_ids = HashSet::new();
+    let mut staged_rows = Vec::new();
 
     for batch in &batches {
         let doc_ids = batch
@@ -712,12 +747,17 @@ pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<Ingestio
             .as_any()
             .downcast_ref::<Int32Array>()
             .ok_or("invalid chunk_overlap array type in staged_documents_v2")?;
+        let generations = batch
+            .column_by_name("generation")
+            .map(|col| {
+                col.as_any()
+                    .downcast_ref::<Int64Array>()
+                    .ok_or("invalid generation array type in staged_documents_v2")
+            })
+            .transpose()?;
 
         for i in 0..batch.num_rows() {
             let doc_id = doc_ids.value(i).to_string();
-            if !seen_ids.insert(doc_id.clone()) {
-                continue;
-            }
             if validate_document_id(&doc_id).is_err() {
                 return Err(format!("malformed staged document_id: {doc_id}"));
             }
@@ -728,6 +768,10 @@ pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<Ingestio
                 .map_err(|_| format!("negative chunk_size in staging for document {doc_id}"))?;
             let overlap = usize::try_from(overlaps.value(i))
                 .map_err(|_| format!("negative chunk_overlap in staging for document {doc_id}"))?;
+            let generation = match generations {
+                Some(arr) => arr.value(i),
+                None => 1,
+            };
 
             let metadata = HashMap::from([
                 ("chunk_strategy".to_string(), strategy),
@@ -739,17 +783,21 @@ pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<Ingestio
                 format!("malformed chunk settings in staging for document {doc_id}: {error}")
             })?;
 
-            jobs.push(IngestionJob {
-                document_id: doc_id,
-                filename,
-                raw_data,
-                metadata,
-                chunk_settings,
+            staged_rows.push(StagedJobRow {
+                document_id: doc_id.clone(),
+                generation,
+                job: IngestionJob {
+                    document_id: doc_id,
+                    filename,
+                    raw_data,
+                    metadata,
+                    chunk_settings,
+                },
             });
         }
     }
 
-    Ok(jobs)
+    select_latest_staged_rows(staged_rows)
 }
 
 #[derive(Clone)]
@@ -788,34 +836,111 @@ fn d1_status(
     status
 }
 
+async fn get_max_staged_generation(table: &Table, document_id: &str) -> Result<Option<i64>, String> {
+    let pred = format!("document_id = '{}'", sql_string(document_id));
+    let batches: Vec<RecordBatch> = table
+        .query()
+        .only_if(&pred)
+        .execute()
+        .await
+        .map_err(|e| format!("query failed: {e}"))?
+        .try_collect()
+        .await
+        .map_err(|e| format!("collect failed: {e}"))?;
+
+    let mut max_g: Option<i64> = None;
+    for batch in &batches {
+        if let Some(col) = batch.column_by_name("generation") {
+            let gen_arr = col
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .ok_or_else(|| "invalid generation column type".to_string())?;
+            for i in 0..batch.num_rows() {
+                let g = gen_arr.value(i);
+                max_g = Some(max_g.map_or(g, |current| current.max(g)));
+            }
+        }
+    }
+    Ok(max_g)
+}
+
+async fn persist_raw_with_boundary(
+    table: &Table,
+    job: &IngestionJob,
+    boundary: &dyn ReplacementMutationBoundary,
+) -> Result<(), String> {
+    let old_max_gen = get_max_staged_generation(table, &job.document_id).await?;
+    let new_gen = match old_max_gen {
+        Some(g) => g.checked_add(1).ok_or("generation overflow")?,
+        None => 1,
+    };
+
+    let schema = table.schema().await.map_err(|e| e.to_string())?;
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec![job.document_id.as_str()])),
+            Arc::new(StringArray::from(vec![job.filename.as_str()])),
+            Arc::new(BinaryArray::from_vec(vec![job.raw_data.as_slice()])),
+            Arc::new(StringArray::from(vec![job
+                .chunk_settings
+                .strategy
+                .as_str()])),
+            Arc::new(Int32Array::from(vec![i32::try_from(
+                job.chunk_settings.size,
+            )
+            .unwrap_or(i32::MAX)])),
+            Arc::new(Int32Array::from(vec![i32::try_from(
+                job.chunk_settings.overlap,
+            )
+            .unwrap_or(i32::MAX)])),
+            Arc::new(Int64Array::from(vec![new_gen])),
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    boundary.add(ReplacementMutation::StagingAdd, table, batch).await?;
+
+    let verify_pred = format!(
+        "document_id = '{}' AND generation = {new_gen}",
+        sql_string(&job.document_id)
+    );
+    let verified_batches: Vec<RecordBatch> = table
+        .query()
+        .only_if(&verify_pred)
+        .execute()
+        .await
+        .map_err(|e| format!("verify query failed: {e}"))?
+        .try_collect()
+        .await
+        .map_err(|e| format!("verify collect failed: {e}"))?;
+
+    let verified_count: usize = verified_batches.iter().map(|b| b.num_rows()).sum();
+    if verified_count == 0 {
+        return Err(format!(
+            "staged raw successor verification failed: document {} generation {} not readable",
+            job.document_id, new_gen
+        ));
+    }
+
+    if let Some(old_g) = old_max_gen {
+        let delete_pred = format!(
+            "document_id = '{}' AND generation <= {old_g}",
+            sql_string(&job.document_id)
+        );
+        boundary
+            .delete(ReplacementMutation::StagingDelete, table, &delete_pred)
+            .await?;
+    }
+
+    Ok(())
+}
+
 impl LancetServiceImpl {
     async fn persist_raw(&self, job: &IngestionJob) -> Result<(), Status> {
-        let predicate = format!("document_id = '{}'", sql_string(&job.document_id));
-        self.table.delete(&predicate).await.map_err(internal)?;
-        let schema = self.table.schema().await.map_err(internal)?;
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(StringArray::from(vec![job.document_id.as_str()])),
-                Arc::new(StringArray::from(vec![job.filename.as_str()])),
-                Arc::new(BinaryArray::from_vec(vec![job.raw_data.as_slice()])),
-                Arc::new(StringArray::from(vec![job
-                    .chunk_settings
-                    .strategy
-                    .as_str()])),
-                Arc::new(Int32Array::from(vec![i32::try_from(
-                    job.chunk_settings.size,
-                )
-                .unwrap_or(i32::MAX)])),
-                Arc::new(Int32Array::from(vec![i32::try_from(
-                    job.chunk_settings.overlap,
-                )
-                .unwrap_or(i32::MAX)])),
-            ],
-        )
-        .map_err(internal)?;
-        self.table.add(batch).execute().await.map_err(internal)?;
-        Ok(())
+        persist_raw_with_boundary(&self.table, job, &LanceDbReplacementMutationBoundary)
+            .await
+            .map_err(internal)
     }
 }
 

@@ -833,7 +833,7 @@ async fn openrouter_rejects_oversized_response_body() {
     let evidence = assemble_evidence_blocks(&[cand]);
     let err = adapter.generate(GenerationRequest::new("Question?", evidence)).await.unwrap_err();
     assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
-    assert!(err.message().contains("exceeds 256 KiB limit"));
+    assert!(err.message().contains("maximum body limit"));
 
     server_handle.join().expect("server completed");
 }
