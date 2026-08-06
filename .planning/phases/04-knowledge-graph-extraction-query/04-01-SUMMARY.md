@@ -31,7 +31,11 @@ key-decisions:
   - "Used property_fields: vec![\"relation_type\".into()] in traverse_fixed_hop's RelationshipMapping (matching 04-RESEARCH.md's fixture, which has no weight column), not vec![\"weight\".into()] from 04-AI-SPEC.md's illustrative snippet (04-AI-SPEC.md's own schema includes weight but this phase's fixture does not)."
   - "engine/src/graph/bridge.rs's bridge_batch/bridge_batch_back are pub(crate) per the plan's interfaces section, while the bridge module itself is declared pub mod bridge (per PATTERNS.md and Step 3's explicit instruction) — the function-level pub(crate) visibility, not module hiding, is what keeps them off engine::graph's public API surface."
 
-requirements-completed: [DATA-04, DATA-05, RAG-05]
+requirements-completed: []
+# DATA-04, DATA-05, RAG-05 are NOT fully completed by this plan — this was a SPIDR spike
+# closing only the lance-graph/lancedb compatibility prerequisite. Full closure deferred
+# to Phase 04.1 per ROADMAP.md's "Deferred target" line. See `coverage:` below for the
+# specific prerequisite truths this plan actually proved per requirement.
 
 coverage:
   - id: D1
