@@ -175,22 +175,39 @@ if [ -z "$FILES_OVERRIDE" ]; then
         if (!match) { process.exit(0); }
         const yaml = match[1];
         const files = [];
+        let inKeyFiles = false;
         let inSection = null;
+        function inlineArrayItems(str) {
+          const items = [];
+          const re = /['\"]([^'\"]+)['\"]/g;
+          let m;
+          while ((m = re.exec(str))) items.push(m[1]);
+          return items;
+        }
         for (const line of yaml.split('\n')) {
-          if (/^\s+created:/.test(line)) { inSection = 'created'; continue; }
-          if (/^\s+modified:/.test(line)) { inSection = 'modified'; continue; }
-          if (/^\s*[\w-]+:/.test(line) && !/^\s*-/.test(line)) { inSection = null; continue; }
+          if (/^[\w-]+:/.test(line)) {
+            inKeyFiles = /^key[-_]files:\s*$/.test(line);
+            inSection = null;
+            if (!inKeyFiles) continue;
+          }
+          if (!inKeyFiles) continue;
+          const createdInline = line.match(/^\s+created:\s*\[(.*)\]\s*$/);
+          const modifiedInline = line.match(/^\s+modified:\s*\[(.*)\]\s*$/);
+          if (createdInline) { files.push(...inlineArrayItems(createdInline[1])); inSection = null; continue; }
+          if (modifiedInline) { files.push(...inlineArrayItems(modifiedInline[1])); inSection = null; continue; }
+          if (/^\s+created:\s*$/.test(line)) { inSection = 'created'; continue; }
+          if (/^\s+modified:\s*$/.test(line)) { inSection = 'modified'; continue; }
+          if (/^\s+[\w-]+:/.test(line) && !/^\s*-/.test(line)) { inSection = null; continue; }
           if (inSection && /^\s+-\s+(.+)/.test(line)) {
             let raw = line.match(/^\s+-\s+(.+)/)[1].trim();
             raw = raw.replace(/^['"]|['"]$/g, '');
             raw = raw.replace(/\s+\([^)]*\)\s*$/, '');
             raw = raw.split(/\s+—\s/)[0].trim();
-            if (/\//.test(raw) && /\.[A-Za-z0-9]+$/.test(raw)) {
-              files.push(raw);
-            }
+            files.push(raw);
           }
         }
-        if (files.length) console.log(files.join('\n'));
+        const filtered = files.filter(raw => /\//.test(raw) && /\.[A-Za-z0-9]+$/.test(raw));
+        if (filtered.length) console.log(filtered.join('\n'));
       " 2>/dev/null)
       
       # Add extracted files to REVIEW_FILES array
@@ -216,7 +233,13 @@ If no SUMMARY.md files found OR no files extracted from them:
 ```bash
 if [ ${#REVIEW_FILES[@]} -eq 0 ]; then
   # Compute diff base from phase commits — fail closed if no reliable base found
-  PHASE_COMMITS=$(git log --oneline --all --grep="${PADDED_PHASE}" --format="%H" 2>/dev/null)
+  # Anchor the grep to the conventional-commit scope parens (e.g. "(04)", "(04-01)",
+  # "(999.6)") instead of a bare substring — a bare "${PADDED_PHASE}" would also match
+  # unrelated commits whose subject/body merely contains that digit sequence (dates,
+  # other phase/task IDs, etc.), especially for short/common phase numbers.
+  ESCAPED_PADDED_PHASE=$(printf '%s' "${PADDED_PHASE}" | sed 's/\./\\./g')
+  PHASE_GREP_PATTERN="\\(${ESCAPED_PADDED_PHASE}([.-][0-9]+)*\\)"
+  PHASE_COMMITS=$(git log --oneline --all -E --grep="${PHASE_GREP_PATTERN}" --format="%H" 2>/dev/null)
   
   if [ -n "$PHASE_COMMITS" ]; then
     DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)^
@@ -391,7 +414,9 @@ FALLOW_STDERR_TMP=$(mktemp)
 # auto-detects the base branch).
 FALLOW_SCOPE_ARGS=()
 if [ \"$FALLOW_SCOPE\" = \"phase\" ]; then
-  FALLOW_PHASE_COMMITS=$(git log --oneline --all --grep=\"${PADDED_PHASE}\" --format=\"%H\" 2>/dev/null)
+  FALLOW_ESCAPED_PHASE=$(printf '%s' \"${PADDED_PHASE}\" | sed 's/\./\\\\./g')
+  FALLOW_GREP_PATTERN=\"\\\\(${FALLOW_ESCAPED_PHASE}([.-][0-9]+)*\\\\)\"
+  FALLOW_PHASE_COMMITS=$(git log --oneline --all -E --grep=\"${FALLOW_GREP_PATTERN}\" --format=\"%H\" 2>/dev/null)
   if [ -n \"$FALLOW_PHASE_COMMITS\" ]; then
     FALLOW_BASE=$(echo \"$FALLOW_PHASE_COMMITS\" | tail -1)^
     FALLOW_SCOPE_ARGS=(--changed-since \"$FALLOW_BASE\")
@@ -443,7 +468,9 @@ REVIEW_PATH="${PHASE_DIR}/${PADDED_PHASE}-REVIEW.md"
 
 Compute DIFF_BASE for agent context (in case agent needs it):
 ```bash
-PHASE_COMMITS=$(git log --oneline --all --grep="${PADDED_PHASE}" --format="%H" 2>/dev/null)
+ESCAPED_PADDED_PHASE=$(printf '%s' "${PADDED_PHASE}" | sed 's/\./\\./g')
+PHASE_GREP_PATTERN="\\(${ESCAPED_PADDED_PHASE}([.-][0-9]+)*\\)"
+PHASE_COMMITS=$(git log --oneline --all -E --grep="${PHASE_GREP_PATTERN}" --format="%H" 2>/dev/null)
 if [ -n "$PHASE_COMMITS" ]; then
   DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)^
 else
