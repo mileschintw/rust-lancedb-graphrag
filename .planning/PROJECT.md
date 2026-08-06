@@ -86,6 +86,7 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | Avoid full workflow framework | Keeps the project finishable and focused on RAG/GraphRAG engineering | ✓ Good |
 | In-place protobuf generation | Simple build chain using Buf | ✓ Phase 01 |
 | Standalone Atlas CLI for Windows | Avoids incorrect winget GUI tool package | ✓ Phase 01 |
+| `lance-graph` 0.5.4 + arrow-version IPC bridge for Cypher graph traversal | De-risked the `lancedb`/`lance-graph`/arrow-version compatibility unknown before committing to full GraphRAG extraction/query implementation | ✓ Confirmed, Phase 04 (spike only — full extraction/storage/query deferred to Phase 04.1) |
 
 ## Evolution
 
@@ -105,4 +106,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-13 after Phase 01*
+*Last updated: 2026-08-06 after Phase 04*

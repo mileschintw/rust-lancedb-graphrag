@@ -2,11 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 4
-current_plan: 1
-status: verifying
+current_phase: 5
+current_phase_name: State Machine & Workflow Events
+current_plan: Not started
+status: planning
 stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-08-06T20:01:10.669Z"
+last_updated: "2026-08-06T22:34:42.490Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -21,12 +22,13 @@ progress:
 - Phase 1 completed successfully.
 - Phase 2 completed (force-closed per ADR-02-004; all open gaps marked as technical debt deferred to Phase 6 final hardening).
 - Phase 3 completed (force-closed per ADR-03-003; 23/23 plans executed; residual verification gaps recorded as technical debt DEBT-P3-* deferred to Phase 6 final hardening; next phase = Phase 4).
+- Phase 4 completed (lance-graph/lancedb compatibility spike only, per ROADMAP's "Deferred target" note; UAT 3/3 passed, SECURITY.md verified threats_open: 0; full extraction/storage/query-traversal implementation deferred to Phase 04.1, not yet created; next phase = Phase 5).
 
 ## Active Phase
 
-- **Phase:** 4
-- **Status:** Phase complete — ready for verification
-- **Current Plan:** 1
+- **Phase:** 5 — State Machine & Workflow Events
+- **Status:** Ready to plan
+- **Current Plan:** Not started
 - **Total Plans in Phase:** 1
 - **Progress:** [██████████] 100%
 
@@ -35,6 +37,7 @@ progress:
 - **Phase 1: Basic Gateway & Rust Engine Ping** (Completed: 2026-07-13)
 - **Phase 2: Ingestion, Chunking & Vector Storage** (Completed: 2026-07-30 via ADR-02-004 debt deferral to Phase 6)
 - **Phase 3: Hybrid Retrieval & Basic RAG Path** (Completed: 2026-08-05 via ADR-03-003 debt deferral to Phase 6)
+- **Phase 4: Knowledge Graph Extraction & Query** (Completed: 2026-08-06 — lance-graph compatibility spike only; full implementation deferred to Phase 04.1)
 
 ## Known Issues & Debt
 
@@ -63,6 +66,7 @@ progress:
 - Pre-existing Phase 02 security/resource debt items (`DEBT-CR-04` loopback guardrail, `DEBT-CR-05` pre-admission bounds, `DEBT-BU-01`, `DEBT-BU-02`) remain active and non-blocking until their triggers or Phase 6.
 - Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for Phase 03 and Phase 04.
 - Phase 03 does not claim RAG-03 delivery: DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 remain the source-of-record future hardening contracts; the initial BM25 build/readiness guard is the only lifecycle safeguard retained in the MVP path.
+- Phase 04 only closed the `lance-graph`/`lancedb` compatibility unknown via a feature-gated PoC (`engine/src/graph/`, not wired into the default build). DATA-04 (entity/relationship extraction), DATA-05 (full graph query traversal wired into RAG), and RAG-05 (ContextAssemblyStrategy) remain unimplemented against real data — deferred to Phase 04.1 (not yet created; see ROADMAP.md Phase 4's "Deferred target" note and `/gsd insert-phase` guidance).
 
 ## Deployment & Environments
 
@@ -148,6 +152,6 @@ progress:
 
 ## Session
 
-**Last session:** 2026-08-06T20:01:10.635Z
-**Stopped at:** Completed 04-01-PLAN.md
+**Last session:** 2026-08-06
+**Stopped at:** Phase 4 complete, ready to plan Phase 5
 **Resume file:** None

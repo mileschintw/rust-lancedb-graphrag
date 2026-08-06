@@ -1,7 +1,7 @@
 ---
 phase: 04-knowledge-graph-extraction-query
 verified: 2026-08-06T21:05:00Z
-status: human_needed
+status: passed
 score: 9/9 must-haves + roadmap success criteria verified; 0 blocking gaps remain
 behavior_unverified: 0
 overrides_applied: 0
@@ -9,10 +9,12 @@ re_verification:
   previous_status: gaps_found
   previous_score: "9/9 must-haves verified; 1 blocking requirements-ledger gap"
   gaps_closed:
+
     - "REQUIREMENTS.md DATA-04/DATA-05/RAG-05 reverted from [x] to [ ], each annotated '**SPIKE ONLY — ... deferred to Phase 04.1**' (commit 3428178) — no more false full-completion claim."
     - "04-01-SUMMARY.md `requirements-completed:` frontmatter field changed from `[DATA-04, DATA-05, RAG-05]` to `[]` with an explanatory comment (commit 3428178), removing the machine-readable root cause that would otherwise re-flip REQUIREMENTS.md on a future automated re-run."
     - "04-AI-SPEC.md Section 3 'Common Pitfalls' #1 and #4 rewritten from stale 'unverified'/'unconfirmed' language to CONFIRMED, citing the spike's checked-in test evidence (commit 3428178) — closes the secondary WARNING from the prior pass."
   gaps_remaining:
+
     - "04-01-SUMMARY.md's `coverage:` block item D8 still maps `requirement: RAG-05` even though it evidences the AI-SPEC status-lock finding, not the `ContextAssemblyStrategy` trait RAG-05 actually describes (same root defect class flagged in the prior pass's missing-item #3, left unaddressed by commit 3428178). Downgraded from blocking gap to non-blocking WARNING this pass after confirming `coverage[].requirement` is carried through `gsd-core/bin/lib/coverage.cjs` only as passthrough display metadata (`view.requirement`, line 372-373) for the UAT/audit classifier — no code path reads it to compute or gate requirement-completion state (that role is filled by `requirements-completed:`, which is already fixed). The mapping is systemically loose, not just D8: D1/D2/D7 are also mapped to DATA-05 despite being manifest-resolution/IPC-bridge/default-build findings rather than direct evidence of 'compile it into RAG prompt context.' Cosmetic inaccuracy in a traceability table, not a false-completion claim — see Anti-Patterns."
   regressions: []
 ---
