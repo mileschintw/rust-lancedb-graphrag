@@ -133,3 +133,103 @@ pub async fn traverse_fixed_hop(
 
     bridge::bridge_batch_back(&result_lg)
 }
+
+/// Runs a variable-length (`*1..hop_cap`) Cypher traversal, returning matched neighbors.
+///
+/// `hop_cap` is clamped via [`clamp_hop_cap`] before it is ever interpolated into the
+/// `format!`-built Cypher string — Cypher cannot parameterize a variable-length path
+/// bound, so this is the V5 input-validation guard from 04-RESEARCH.md's Security
+/// Domain. Per 04-RESEARCH.md Pitfall 6, the relationship-pattern variable (`r`) is
+/// omitted from `RETURN` — variable-length quantifiers cannot project it.
+///
+/// # Errors
+/// Returns a [`GraphSpikeError`] if `hop_cap` is out of range, or if bridging, graph
+/// configuration, Cypher parsing, or Cypher execution fails.
+pub async fn traverse_multi_hop(
+    entities: &arrow_array::RecordBatch,
+    edges: &arrow_array::RecordBatch,
+    seed_id: &str,
+    hop_cap: u32,
+) -> Result<arrow_array::RecordBatch, GraphSpikeError> {
+    let hop_cap = clamp_hop_cap(hop_cap)?;
+
+    let entities_lg = bridge::bridge_batch(entities)?;
+    let edges_lg = bridge::bridge_batch(edges)?;
+
+    let config = GraphConfigBuilder::new()
+        .with_node_label("Entity", "entity_id")
+        .with_default_relationship_type_field("relation_type")
+        .with_relationship("RELATED", "source_node_id", "target_node_id")
+        .build()
+        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::GraphConfig, format!("graph config: {e}")))?;
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Entity".to_string(), entities_lg);
+    datasets.insert("RELATED".to_string(), edges_lg);
+
+    let cypher = format!(
+        "MATCH (seed:Entity {{entity_id: $seed_id}})-[r:RELATED*1..{hop_cap}]-(neighbor:Entity) \
+         RETURN seed.entity_id, neighbor.entity_id, neighbor.name"
+    );
+    let query = CypherQuery::new(&cypher)
+        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::CypherParse, format!("cypher parse: {e}")))?
+        .with_config(config)
+        .with_parameter("seed_id", seed_id);
+
+    let result_lg = query
+        .execute(datasets, None::<ExecutionStrategy>)
+        .await
+        .map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::CypherExecute, format!("cypher execute: {e}"))
+        })?;
+
+    bridge::bridge_batch_back(&result_lg)
+}
+
+/// Matches `RELATED` neighbors of `seed_id` whose `relation_type` equals `relation_type`.
+///
+/// Both `seed_id` and `relation_type` are passed as Cypher `$parameter` bindings, never
+/// string-interpolated — ordinary value predicates parameterize safely, unlike the
+/// hop-count bound [`traverse_multi_hop`] must clamp and interpolate.
+///
+/// # Errors
+/// Returns a [`GraphSpikeError`] if bridging, graph configuration, Cypher parsing, or
+/// Cypher execution fails.
+pub async fn traverse_filtered_by_relation_type(
+    entities: &arrow_array::RecordBatch,
+    edges: &arrow_array::RecordBatch,
+    seed_id: &str,
+    relation_type: &str,
+) -> Result<arrow_array::RecordBatch, GraphSpikeError> {
+    let entities_lg = bridge::bridge_batch(entities)?;
+    let edges_lg = bridge::bridge_batch(edges)?;
+
+    let config = GraphConfigBuilder::new()
+        .with_node_label("Entity", "entity_id")
+        .with_default_relationship_type_field("relation_type")
+        .with_relationship("RELATED", "source_node_id", "target_node_id")
+        .build()
+        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::GraphConfig, format!("graph config: {e}")))?;
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Entity".to_string(), entities_lg);
+    datasets.insert("RELATED".to_string(), edges_lg);
+
+    let cypher = "MATCH (seed:Entity {entity_id: $seed_id})-[r:RELATED]-(neighbor:Entity) \
+         WHERE r.relation_type = $relation_type \
+         RETURN neighbor.entity_id, neighbor.name";
+    let query = CypherQuery::new(cypher)
+        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::CypherParse, format!("cypher parse: {e}")))?
+        .with_config(config)
+        .with_parameter("seed_id", seed_id)
+        .with_parameter("relation_type", relation_type);
+
+    let result_lg = query
+        .execute(datasets, None::<ExecutionStrategy>)
+        .await
+        .map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::CypherExecute, format!("cypher execute: {e}"))
+        })?;
+
+    bridge::bridge_batch_back(&result_lg)
+}
