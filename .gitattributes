@@ -1,0 +1,5 @@
+# Exclude AI agent framework files & node scripts from GitHub language statistics
+.agents/** linguist-vendored
+.claude/** linguist-vendored
+.codex/** linguist-vendored
+.planning/** linguist-documentation
