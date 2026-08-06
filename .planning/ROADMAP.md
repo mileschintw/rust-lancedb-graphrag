@@ -244,17 +244,18 @@ Plans:
 4. Phase 04.1 can be planned with the `lance-graph`/`lancedb` integration pattern as a known quantity, not an open risk.
 
 *(Deferred — Phase 04.1 Success Criteria, carried forward unchanged:)*
+
 1. Rust engine extracts entities and relationships from chunks during ingestion.
 2. Graph data is stored in LanceDB tables.
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 1 plan
+**Plans:** 1/1 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — Resolve the real lancedb+lance-graph manifest, check in a feature-gated PoC reproducing 04-RESEARCH.md's proven bridge/Cypher patterns, and lock 04-AI-SPEC.md's Framework Decision to CONFIRMED.
+- [x] 04-01-PLAN.md — Resolve the real lancedb+lance-graph manifest, check in a feature-gated PoC reproducing 04-RESEARCH.md's proven bridge/Cypher patterns, and lock 04-AI-SPEC.md's Framework Decision to CONFIRMED.
 
 ### Phase 5: State Machine & Workflow Events
 

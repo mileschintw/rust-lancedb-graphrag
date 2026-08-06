@@ -37,6 +37,8 @@
         "code_review": true,
         "code_review_depth": "standard",
         "code_review_command": null,
+        "build_command": "cargo build --manifest-path engine/Cargo.toml && (cd gateway && go build ./...)",
+        "test_command": "cargo test --manifest-path engine/Cargo.toml --locked && (cd gateway && go test ./...)",
         "pattern_mapper": true,
         "plan_bounce": false,
         "plan_bounce_script": null,

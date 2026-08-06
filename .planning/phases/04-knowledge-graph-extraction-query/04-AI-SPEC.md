@@ -104,7 +104,7 @@ None identified as directly binding on this phase's implementation. Lancet is a 
 
 **Version:** `lance-graph` 0.5.4, added with `default-features = false` (default features pull in `unity-catalog`/`delta` — cloud object-store, S3/Azure/GCS, and geospatial deps inconsistent with this project's local-first, no-new-infrastructure posture).
 
-**Status:** CONDITIONAL — pending a compatibility spike during Phase 04 planning (see Critical Finding below). This is the already-locked D-17/D-19 mechanism, not a fresh pick; the selector's job here was verification, and it surfaced a real version conflict that must be resolved before implementation.
+**Status:** CONFIRMED — empirically verified by the Phase 04 spike documented in 04-RESEARCH.md's `## Summary` and `## Code Examples`. The IPC bridge compiled and correctly round-tripped real data across the arrow ~58.3 / arrow ^56.2 version boundary, and `CypherQuery::execute()` was confirmed to take a plain `HashMap<String, RecordBatch>` rather than a path/URI or a typed `lance::Dataset` handle. Both of this section's original open spike questions are therefore resolved: Question 1 is answered directly by that `HashMap` signature, and Question 2 is moot — no code path in `lance-graph` 0.5.4 ever touches a `lance::Dataset` handle on this integration route, so the seven-major-version divergence between `lance-graph`'s bundled `lance-1.0.4` and `lancedb`'s `lance-8.0.0` never actually collides. This is the already-locked D-17/D-19 mechanism, not a fresh pick; the selector's job here was verification, and this phase's checked-in `engine/src/graph/{mod.rs,bridge.rs,tests.rs}` reproduces the proof as five passing, reproducible tests rather than a deleted scratch crate.
 
 **Rationale:**
 Extraction and traversal mechanisms are already locked by prior architectural decisions (D-08: extraction via `Generator` trait; D-17/D-19: traversal via genuine `lance-graph` Cypher queries rather than hand-rolled BFS). This phase's job is direct native integration, not framework selection. D-08 keeps model access provider-neutral (no framework-specific client); D-17/D-19 keep traversal expressive (Cypher) without introducing a second language/runtime or a cross-process boundary.
@@ -127,7 +127,7 @@ If either answer is unfavorable, escalate to the fallback below before implement
 
 **Vendor Lock-In Accepted:** No — model access stays provider-neutral via OpenRouter/`Generator` trait; `lance-graph` is a local, open-source, in-process dependency, not a hosted vendor.
 
-**Correction to upstream artifact:** `04-CONTEXT.md`'s `canonical_refs` lists `lance-graph`'s repo as `github.com/lance-format/lance-graph`. The actual repo (per crates.io) is `github.com/lancedb/lance-graph`, published by the `lance-community` org. Not corrected in `04-CONTEXT.md` itself (out of this workflow's write scope — that file is a prior phase's gated artifact) — flagged here for the planner to carry forward.
+**Correction to upstream artifact:** `04-CONTEXT.md`'s `canonical_refs` lists `lance-graph`'s repo as `github.com/lance-format/lance-graph`. The actual repo (per crates.io) is `github.com/lancedb/lance-graph`, published by the `lance-community` org. Not corrected in `04-CONTEXT.md` itself (out of this workflow's write scope — that file is a prior phase's gated artifact) — flagged here for the planner to carry forward. 04-RESEARCH.md's Package Legitimacy Audit independently re-confirmed this correction via `crates.io`'s registry API `repository` field, a second, independent citation strengthening the correction above.
 
 ---
 
@@ -135,7 +135,7 @@ If either answer is unfavorable, escalate to the fallback below before implement
 
 > Fetched from official docs by `gsd-ai-researcher` (docs.rs/lance-graph 0.5.4, crates.io metadata, GitHub source view — see Sources below). Distilled for this specific use case.
 >
-> **Refinement to Section 2's open spike question:** the fetched API surface answers "path/URI vs. typed `lance::Dataset`?" — it's **neither**. `CypherQuery::execute()` takes `HashMap<String, RecordBatch>` (plain in-memory Arrow data), and `LanceNativePlanner` is a documented **placeholder** in 0.5.4 (no native Lance-dataset reader ships in this version; `table_readers` only has `ParquetTableReader`/`DeltaTableReader`). So the `lance ^1.0.0` vs. `lance =8.0.0` divergence never actually collides — lance-graph never touches a `lance::Dataset` handle on this path. **The real wall moved one layer up: `arrow::RecordBatch` from lance-graph's pinned `arrow ^56.2` is a different Rust type than this project's `arrow-array ~58.3`** (same memory layout, not the same type — a compile-time mismatch, not a runtime one). This still needs the Phase 04 spike to confirm the bridge below actually compiles and round-trips correctly; treat everything past this note as informed-but-unverified until that spike runs.
+> **Refinement to Section 2's open spike question:** the fetched API surface answers "path/URI vs. typed `lance::Dataset`?" — it's **neither**. `CypherQuery::execute()` takes `HashMap<String, RecordBatch>` (plain in-memory Arrow data), and `LanceNativePlanner` is a documented **placeholder** in 0.5.4 (no native Lance-dataset reader ships in this version; `table_readers` only has `ParquetTableReader`/`DeltaTableReader`). So the `lance ^1.0.0` vs. `lance =8.0.0` divergence never actually collides — lance-graph never touches a `lance::Dataset` handle on this path. **The real wall moved one layer up: `arrow::RecordBatch` from lance-graph's pinned `arrow ^56.2` is a different Rust type than this project's `arrow-array ~58.3`** (same memory layout, not the same type — a compile-time mismatch, not a runtime one). **The Phase 04 spike ran and this pattern is now empirically confirmed** — the bridge below compiles and round-trips correctly, and a checked-in reference implementation lives at `engine/src/graph/{mod.rs,bridge.rs,tests.rs}` (this phase's Task 1/2 output), not only in this document's illustrative code blocks below.
 
 ### Installation
 ```toml
@@ -167,13 +167,16 @@ use arrow_lg::record_batch::RecordBatch as RecordBatchLg;
 
 ### Entry Point Pattern
 ```rust
-// engine/src/graph/query.rs — illustrative, NOT compiled/verified against the real crate.
-// Two flags to resolve in the Phase 04 spike before treating this as settled:
-//   (1) The IPC bridge below is the recommended hypothesis for crossing the arrow-version
-//       boundary (safe code, format-stable across arrow-rs majors); `arrow::ffi`'s C Data
-//       Interface is the zero-copy alternative if profiling shows the copy matters.
-//   (2) `RelationshipMapping.type_field` is UNVERIFIED as a dynamic per-row type-column
-//       mechanism — see Pitfall 4 below. The call below assumes it works as named.
+// engine/src/graph/query.rs — illustrative shape; the checked-in, compiled, and tested
+// implementation lives at engine/src/graph/{mod.rs,bridge.rs} (this phase's Task 1/2).
+// Two flags the Phase 04 spike resolved:
+//   (1) The IPC bridge below is confirmed working — a real, checked-in test
+//       (bridge_round_trip_preserves_schema_and_values) proves it compiles and round-trips
+//       real data. `arrow::ffi`'s C Data Interface remains a valid zero-copy optimization
+//       if profiling later shows the copy matters, but is not needed to unblock planning.
+//   (2) `RelationshipMapping.type_field` is CONFIRMED working as a dynamic per-row
+//       type-column mechanism — resolved, not just clarified, per Pitfall 4 below. The
+//       call below matches the empirically proven pattern.
 use std::collections::HashMap;
 
 /// Bridges an engine-native (arrow ~58.3) RecordBatch across the version boundary into
@@ -200,6 +203,9 @@ fn bridge_batch(batch: &arrow_array::RecordBatch) -> Result<RecordBatchLg, Strin
 /// with the renamed `arrow-ipc-lg` writer, re-encodes with the engine's own
 /// `arrow-ipc` (~58.3) reader. Needed because downstream engine code (prompt
 /// assembly, D-27's rendering) is written against arrow-array ~58.3 types.
+/// CONFIRMED working — the Phase 04 spike's checked-in
+/// `bridge_round_trip_preserves_schema_and_values` test proves this round-trips
+/// real data correctly; this was previously the unverified half of the bridge.
 fn bridge_batch_back(batch: &RecordBatchLg) -> Result<arrow_array::RecordBatch, String> {
     let mut buf = Vec::new();
     {
@@ -254,7 +260,7 @@ pub async fn traverse(
             relationship_type: "RELATED".into(), // generic wrapper type; see Pitfall 4
             source_id_field: "source_node_id".into(),
             target_id_field: "target_node_id".into(),
-            type_field: Some("relation_type".into()), // UNVERIFIED dynamic-column assumption
+            type_field: Some("relation_type".into()), // CONFIRMED working — resolved, not just clarified (Pitfall 4)
             property_fields: vec!["weight".into()],
             filter_conditions: None,
         })
@@ -300,10 +306,10 @@ pub async fn traverse(
 | `table_readers::{ParquetTableReader, DeltaTableReader}`, `lance_native_planner::LanceNativePlanner` | Bundled alternate data-source adapters; `LanceNativePlanner` is a documented **placeholder** in 0.5.4 | **Not used** by this integration — no native Lance/lancedb reader exists yet; the `HashMap<String, RecordBatch>` path is the only viable route in this version |
 
 ### Common Pitfalls
-1. **The wall isn't `lance::Dataset` typing — it's `arrow::RecordBatch` version skew.** `execute()` requires a `RecordBatch` built against lance-graph's pinned `arrow ^56.2`; a `RecordBatch` built with this project's `arrow-array ~58.3` is a **different Rust type** (compile error, not a runtime surprise). Requires the explicit IPC bridge shown above — itself unverified glue pending the Phase 04 spike's actual `cargo build`.
+1. **The wall isn't `lance::Dataset` typing — it's `arrow::RecordBatch` version skew.** `execute()` requires a `RecordBatch` built against lance-graph's pinned `arrow ^56.2`; a `RecordBatch` built with this project's `arrow-array ~58.3` is a **different Rust type** (compile error, not a runtime surprise). Requires the explicit IPC bridge shown above — **CONFIRMED**: the Phase 04 spike built this exact bridge (`engine/src/graph/bridge.rs`, `bridge_batch`/`bridge_batch_back`) and proved it round-trips a `RecordBatch` losslessly in both directions via a passing `cargo test` (see 04-RESEARCH.md, 04-01-SUMMARY.md).
 2. **No predicate pushdown through this API.** `execute()` materializes the *entire* `HashMap<String, RecordBatch>` argument in memory — there is no way to push a `WHERE`/seed filter down into the lancedb scan through lance-graph. Every query must pre-narrow the neighborhood in Rust first (hop-capped BFS against lancedb), which partially re-litigates what D-19 wanted Cypher to replace — say this explicitly to the planner rather than presenting Cypher as doing all the traversal work. Column projection matters here too: `entities.name_vector`/`summary_vector` are 2048-dim `FixedSizeList<Float32>` (~8KB/row) that Cypher never reads (seeding already happened against `name_vector` in lancedb per D-18) — project them out before the IPC bridge, or every traversal pays to serialize/deserialize vector columns for nothing.
 3. **`execute_with_context(SessionContext)` looks like a shortcut around materialization — it is not.** DataFusion's `SessionContext`/`TableProvider` are trait objects built against lance-graph's pinned `datafusion ^50.3`; lancedb's are `datafusion ^53.0`. Trait objects cannot cross a dependency-version boundary the way plain data (Arrow IPC bytes) can. Only the `HashMap<String, RecordBatch>` path is viable for this project's two-tree situation — do not let implementation "discover" `execute_with_context` as a tempting dead end.
-4. **`RelationshipMapping.type_field` semantics are unconfirmed from public docs.** The doc comment reads "optional field containing the relationship type" (suggesting a dynamic per-row type column — exactly what D-04's freeform `relation_type` needs), but no query-time consumption code was visible in the fetched source, and `relationship_type: String` is documented as a single fixed label (e.g. `"KNOWS"`) alongside it. If `type_field` turns out to be metadata-only and each `RelationshipMapping` binds exactly one literal type string, D-04's open-vocabulary `relation_type` values would require registering one mapping per distinct value observed in the narrowed edge batch before every query — a real complexity/cost difference the spike must resolve, not something to assume away.
+4. **`RelationshipMapping.type_field` semantics — RESOLVED, confirmed dynamic per-row.** The doc comment reads "optional field containing the relationship type" (suggesting a dynamic per-row type column — exactly what D-04's freeform `relation_type` needs). **CONFIRMED** by the Phase 04 spike: `traverse_fixed_hop`/`traverse_multi_hop` set `property_fields: vec!["relation_type".into()]` plus `.with_default_relationship_type_field("relation_type")` on the `GraphConfigBuilder`, and the spike's `WHERE`-filtered `relation_type_filter` test (`engine/src/graph/tests.rs`) passed against fixture edges carrying distinct open-vocabulary `relation_type` values in a single relationship mapping — no per-value mapping registration is needed. `RelationshipMapping` does not require one mapping per distinct type string.
 5. **Forgetting `default-features = false` silently reintroduces cloud/geospatial deps** (`unity-catalog`, `delta` pull S3/Azure/GCS object-store clients and `wkb`/`wkt`/`tantivy`) on any `cargo update` that touches this line — inconsistent with the project's local-first, no-new-infrastructure posture (Section 2).
 
 ### Recommended Project Structure
