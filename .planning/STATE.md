@@ -5,10 +5,10 @@ milestone_name: milestone
 current_phase: 4
 current_plan: 0
 status: ready_to_plan
-stopped_at: Force-closed Phase 03 per ADR-03-003; ready for Phase 04 planning
-last_updated: "2026-08-05T21:30:00.000Z"
+stopped_at: Phase 4 context gathered
+last_updated: "2026-08-06T05:56:12.154Z"
 progress:
-  total_phases: 6
+  total_phases: 4
   completed_phases: 3
   total_plans: 52
   completed_plans: 52
@@ -145,6 +145,6 @@ progress:
 
 ## Session
 
-**Last session:** 2026-08-04T05:05:24.498Z
-**Stopped at:** Completed Phase 03 plan execution; verification refreshed with gaps_found
-**Resume file:** None
+**Last session:** 2026-08-06T05:56:12.104Z
+**Stopped at:** Phase 4 context gathered
+**Resume file:** .planning/phases/04-knowledge-graph-extraction-query/04-CONTEXT.md
