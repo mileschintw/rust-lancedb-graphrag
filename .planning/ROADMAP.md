@@ -257,6 +257,17 @@ Plans:
 
 - [x] 04-01-PLAN.md — Resolve the real lancedb+lance-graph manifest, check in a feature-gated PoC reproducing 04-RESEARCH.md's proven bridge/Cypher patterns, and lock 04-AI-SPEC.md's Framework Decision to CONFIRMED.
 
+### Phase 04.1: Knowledge Graph Extraction & Query (Full Implementation) (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 4
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 04.1 to break down)
+
 ### Phase 5: State Machine & Workflow Events
 
 **Goal:** Formalize orchestration via Rust state machine with streaming events
