@@ -25,3 +25,10 @@ uuid = { version = "~1.24", features = ["v4"] }
 unicode-normalization = "~0.1.25"
 unicode-casefold = "~0.2.0"
 unicode-segmentation = "~1.13.3"
+lance-graph = { version = "0.5.4", default-features = false, optional = true }
+arrow-ipc = { version = "~58.3", optional = true }
+arrow-lg = { package = "arrow", version = "^56.2", optional = true }
+arrow-ipc-lg = { package = "arrow-ipc", version = "^56.2", optional = true }
+
+[features]
+graph-spike = ["dep:lance-graph", "dep:arrow-ipc", "dep:arrow-lg", "dep:arrow-ipc-lg"]
