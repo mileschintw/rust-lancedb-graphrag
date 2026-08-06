@@ -259,9 +259,16 @@ Plans:
 
 ### Phase 04.1: Knowledge Graph Extraction & Query (Full Implementation) (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
+**Goal:** As a Lancet engineer, I want entities and relationships extracted from chunks during ingestion, persisted as a knowledge graph in LanceDB, and traversable at query time via the now-confirmed `lance-graph` integration, so that RAG queries are grounded with graph context alongside the existing hybrid-retrieval evidence.
+**Requirements:** DATA-04, DATA-05, RAG-05
 **Depends on:** Phase 4
+**Success Criteria:** *(carried forward unchanged from Phase 4's original deferred target)*
+
+1. Rust engine extracts entities and relationships from chunks during ingestion.
+2. Graph data is stored in LanceDB tables.
+3. Queries successfully traverse graph context to compile additional prompts for the LLM.
+4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
+
 **Plans:** 0 plans
 
 Plans:
