@@ -232,11 +232,18 @@ Plans:
 
 ### Phase 4: Knowledge Graph Extraction & Query
 
-**Goal:** Extract entities/relations, store in LanceDB, and compile into context
+**Goal:** As a Lancet engineer, I want to prototype lance-graph's LanceDB integration for entity/relationship storage, so that I know enough to plan graph extraction and query.
 **Mode:** mvp
 **Requirements:** DATA-04, DATA-05, RAG-05
+**Deferred target:** The full extraction/storage/query-traversal implementation (original Success Criteria below) and full closure of DATA-04, DATA-05, and RAG-05 are deferred to Phase 04.1 (not yet created — see `/gsd insert-phase` guidance after planning completes). Phase 4 itself only needs to close the `lance-graph`/`lancedb` compatibility unknown flagged CONDITIONAL in `04-AI-SPEC.md`.
 **Success Criteria:**
 
+1. `lance-graph` 0.5.4's Cypher traversal API surface (path/URI vs. typed `Dataset` handle) is empirically confirmed, not just inferred from docs.
+2. The `04-AI-SPEC.md` "Critical Finding" version-conflict question (`lance-graph` requires `lance ^1.0.0`; `lancedb ~0.31` requires `lance =8.0.0`) is resolved with a documented, reproducible integration pattern.
+3. `04-AI-SPEC.md`'s Framework Decision status is updated from `CONDITIONAL` to confirmed/locked, citing the empirical evidence.
+4. Phase 04.1 can be planned with the `lance-graph`/`lancedb` integration pattern as a known quantity, not an open risk.
+
+*(Deferred — Phase 04.1 Success Criteria, carried forward unchanged:)*
 1. Rust engine extracts entities and relationships from chunks during ingestion.
 2. Graph data is stored in LanceDB tables.
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
