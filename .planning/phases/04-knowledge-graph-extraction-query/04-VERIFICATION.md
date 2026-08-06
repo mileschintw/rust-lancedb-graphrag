@@ -1,74 +1,81 @@
 ---
 phase: 04-knowledge-graph-extraction-query
-verified: 2026-08-06T20:19:43Z
-status: gaps_found
-score: 9/9 must-haves + roadmap success criteria verified; 1 requirements-ledger gap (out-of-scope file)
+verified: 2026-08-06T21:05:00Z
+status: human_needed
+score: 9/9 must-haves + roadmap success criteria verified; 0 blocking gaps remain
 behavior_unverified: 0
 overrides_applied: 0
-gaps:
-  - truth: "REQUIREMENTS.md accurately reflects this phase's actual (spike-scoped) closure of DATA-04, DATA-05, and RAG-05"
-    status: failed
-    reason: >
-      Commit 6873f08 ("docs(04-01): complete lance-graph compatibility spike plan") flipped
-      DATA-04, DATA-05, and RAG-05 from `[ ]` to `[x]` in .planning/REQUIREMENTS.md, marking
-      them fully satisfied with no qualifying annotation. This is factually false and
-      self-contradicting against this same phase's own artifacts: ROADMAP.md's Phase 4
-      section explicitly states "The full extraction/storage/query-traversal implementation
-      ... and full closure of DATA-04, DATA-05, and RAG-05 are deferred to Phase 04.1
-      (not yet created)"; 04-01-PLAN.md's own `flagged_assumptions` block states outright
-      "This plan does NOT implement DATA-04's extraction pipeline, DATA-05's real
-      graph-query-into-RAG-prompt path, or RAG-05's ContextAssemblyStrategy trait"; and
-      REQUIREMENTS.md is not listed in 04-01-PLAN.md's `files_modified` frontmatter at all
-      — it was never in this plan's declared scope to touch. Verified directly against the
-      codebase: no entity/relationship extraction code exists anywhere in engine/src
-      (DATA-04 unmet), no `entities`/`edges` LanceDB tables or RAG-prompt graph-context
-      compilation exists (DATA-05's "compile it into RAG prompt context" clause unmet —
-      only the Cypher pattern-matching mechanism is proven), and no `ContextAssemblyStrategy`
-      trait/enum exists anywhere in the codebase (RAG-05 unmet — grep confirms zero matches).
-      The project's own established convention for partial/MVP satisfaction (e.g. RAG-02:
-      "SATISFIED (MVP, see DEBT-P3-*)") was not applied here — these three were marked as
-      plainly, unconditionally done.
-    artifacts:
-      - path: ".planning/REQUIREMENTS.md"
-        issue: "Lines 15, 23, 24: DATA-04, DATA-05, RAG-05 marked [x] with no caveat, despite none of their described behavior existing in the codebase beyond a compatibility spike."
-      - path: ".planning/phases/04-knowledge-graph-extraction-query/04-01-SUMMARY.md"
-        issue: "Frontmatter `requirements-completed: [DATA-04, DATA-05, RAG-05]` (line 34) is the likely root cause the checkbox flip was derived from — re-running any workflow that reads this field will re-flip REQUIREMENTS.md even after a manual fix. Its `coverage` block also mis-attributes item D8 (AI-SPEC Framework Decision status lock to CONFIRMED) to requirement RAG-05 (line 93-95), which is about the unrelated `ContextAssemblyStrategy` trait — evidence the requirement mapping was back-filled rather than derived from actual coverage."
-    missing:
-      - "Fix .planning/REQUIREMENTS.md: either revert DATA-04/DATA-05/RAG-05 to `[ ]`, or annotate them in the project's existing convention, e.g. '**SPIKE ONLY — lance-graph/lancedb compatibility confirmed; full extraction/query/trait implementation deferred to Phase 04.1**' (mirroring RAG-02's `SATISFIED (MVP, see DEBT-P3-*)` pattern)."
-      - "Fix 04-01-SUMMARY.md's `requirements-completed:` frontmatter field to reflect spike-scoped closure only (e.g. drop the field or annotate it), so a future automated re-run of the completion workflow does not re-flip REQUIREMENTS.md's checkboxes back to false-complete."
-      - "Correct or remove the D8 coverage-block mapping to RAG-05 in 04-01-SUMMARY.md — it does not evidence the ContextAssemblyStrategy trait."
+re_verification:
+  previous_status: gaps_found
+  previous_score: "9/9 must-haves verified; 1 blocking requirements-ledger gap"
+  gaps_closed:
+    - "REQUIREMENTS.md DATA-04/DATA-05/RAG-05 reverted from [x] to [ ], each annotated '**SPIKE ONLY — ... deferred to Phase 04.1**' (commit 3428178) — no more false full-completion claim."
+    - "04-01-SUMMARY.md `requirements-completed:` frontmatter field changed from `[DATA-04, DATA-05, RAG-05]` to `[]` with an explanatory comment (commit 3428178), removing the machine-readable root cause that would otherwise re-flip REQUIREMENTS.md on a future automated re-run."
+    - "04-AI-SPEC.md Section 3 'Common Pitfalls' #1 and #4 rewritten from stale 'unverified'/'unconfirmed' language to CONFIRMED, citing the spike's checked-in test evidence (commit 3428178) — closes the secondary WARNING from the prior pass."
+  gaps_remaining:
+    - "04-01-SUMMARY.md's `coverage:` block item D8 still maps `requirement: RAG-05` even though it evidences the AI-SPEC status-lock finding, not the `ContextAssemblyStrategy` trait RAG-05 actually describes (same root defect class flagged in the prior pass's missing-item #3, left unaddressed by commit 3428178). Downgraded from blocking gap to non-blocking WARNING this pass after confirming `coverage[].requirement` is carried through `gsd-core/bin/lib/coverage.cjs` only as passthrough display metadata (`view.requirement`, line 372-373) for the UAT/audit classifier — no code path reads it to compute or gate requirement-completion state (that role is filled by `requirements-completed:`, which is already fixed). The mapping is systemically loose, not just D8: D1/D2/D7 are also mapped to DATA-05 despite being manifest-resolution/IPC-bridge/default-build findings rather than direct evidence of 'compile it into RAG prompt context.' Cosmetic inaccuracy in a traceability table, not a false-completion claim — see Anti-Patterns."
+  regressions: []
 ---
 
 # Phase 4: Knowledge Graph Extraction & Query Verification Report
 
 **Phase Goal:** As a Lancet engineer, I want to prototype lance-graph's LanceDB integration for entity/relationship storage, so that I know enough to plan graph extraction and query.
 **Phase Scope Note:** This is a SPIDR "Spike" split. Verified against Phase 4's actual spike-scoped Success Criteria and Goal, not the deferred full-feature Success Criteria (carried forward to not-yet-created Phase 04.1).
-**Verified:** 2026-08-06T20:19:43Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-08-06T21:05:00Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure (previous pass: `gaps_found`, blocking gap: false REQUIREMENTS.md completion claims)
 
 ## Goal Achievement
+
+### Re-Verification: Was the Blocking Gap Actually Closed?
+
+The prior pass's single blocking gap was: commit `6873f08` incorrectly marked DATA-04, DATA-05, and RAG-05 `[x]` (fully complete) in `.planning/REQUIREMENTS.md`, contradicting ROADMAP.md's own "Deferred target" line and 04-01-PLAN.md's `flagged_assumptions`. Verified directly against the current codebase (not trusted from the task description):
+
+| # | Fix Claimed | Verified Against Codebase | Status |
+|---|---|---|---|
+| 1 | REQUIREMENTS.md reverts DATA-04/DATA-05/RAG-05 to `[ ]` with SPIKE ONLY annotations | Read `.planning/REQUIREMENTS.md` lines 15, 23-24 directly: all three now read `- [ ]` with `**SPIKE ONLY — ...deferred to Phase 04.1**` annotations, mirroring the RAG-02 `SATISFIED (MVP, see DEBT-P3-*)` convention exactly as the prior pass recommended. | ✓ VERIFIED |
+| 2 | 04-01-SUMMARY.md `requirements-completed:` emptied to prevent re-flip | Read `04-01-SUMMARY.md` line 34: `requirements-completed: []` with an explanatory comment block (lines 35-38) citing the SPIDR-spike rationale and pointing to the `coverage:` block. `gsd-core/bin/lib/commands.cjs:1026` confirms this exact field is what `audit-milestone.md`'s `summary-extract --fields requirements_completed` reads — the prior pass's identified root cause is now neutralized at its source. | ✓ VERIFIED |
+| 3 | 04-AI-SPEC.md stale Pitfall #1/#4 language closed | Read `04-AI-SPEC.md` lines 309 and 312 directly: #1 now reads "**CONFIRMED**: the Phase 04 spike built this exact bridge... and proved it round-trips a `RecordBatch` losslessly in both directions via a passing `cargo test`"; #4 now reads "**RESOLVED, confirmed dynamic per-row**... **CONFIRMED** by the Phase 04 spike." Both now agree with Section 2's `Status: CONFIRMED` and Section 3's intro callout, closing the prior pass's non-blocking WARNING. | ✓ VERIFIED |
+| — | Fix confined to exactly these 3 files, matching the stated diff | `git show 3428178 --stat` confirms exactly `.planning/REQUIREMENTS.md`, `04-01-SUMMARY.md`, `04-AI-SPEC.md` changed (6/6/4 lines), no scope creep. `git status --short` is clean — nothing uncommitted. | ✓ VERIFIED |
+
+**The blocking gap is genuinely closed.** REQUIREMENTS.md no longer makes a false claim of full DATA-04/DATA-05/RAG-05 completion, and the machine-readable field that could silently re-introduce the false state (`requirements-completed:`) is corrected at its source.
+
+**One item from the prior pass's `missing:` list was NOT addressed:** the `coverage:` block's D8 entry still maps to `requirement: "RAG-05"` despite evidencing the AI-SPEC status-lock (an unrelated finding to RAG-05's `ContextAssemblyStrategy` trait). Investigated this pass and downgraded from blocking to non-blocking WARNING — see `gaps_remaining` in frontmatter and Anti-Patterns below for the reasoning and evidence.
+
+### Fresh Full-Pass Regression Check
+
+Re-verification mode: previously-passed items get a regression sanity check rather than a full re-run of all four verification levels (which the prior pass already did independently).
+
+| Check | Command | Result |
+|---|---|---|
+| graph-spike tests still pass | `cargo test --manifest-path engine/Cargo.toml --features graph-spike graph::` | `test result: ok. 5 passed; 0 failed` — same 5 named tests as before, no regression |
+| Default build still unaffected | `cargo build --manifest-path engine/Cargo.toml` | `Finished` profile, exit 0 |
+| Default test suite still isolated from graph-spike | `cargo test --manifest-path engine/Cargo.toml --locked` output grepped for `graph::` | 0 matches |
+| Working tree clean | `git status --short` | empty — nothing uncommitted, nothing stray |
+| No debt markers on the 3 fixed files | `grep -n -E "TBD\|FIXME\|XXX\|TODO\|HACK\|PLACEHOLDER"` across REQUIREMENTS.md, 04-01-SUMMARY.md, 04-AI-SPEC.md | no matches |
+
+No regressions found. All previously-verified truths, artifacts, and key links remain intact.
 
 ### Observable Truths (04-01-PLAN.md `must_haves.truths`)
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | 04-AI-SPEC.md Section 2 reads `Status: CONFIRMED` (not CONDITIONAL), citing 04-RESEARCH.md | ✓ VERIFIED | 04-AI-SPEC.md:107 — `**Status:** CONFIRMED — empirically verified by the Phase 04 spike documented in 04-RESEARCH.md's ## Summary and ## Code Examples.` (see WARNING under Anti-Patterns: two Section-3 "Common Pitfalls" entries elsewhere in the same document still read as unresolved). |
-| 2 | 04-AI-SPEC.md's repo-URL correction cites `github.com/lancedb/lance-graph`, independently re-confirmed via crates.io's registry API per 04-RESEARCH.md | ✓ VERIFIED | 04-AI-SPEC.md:130 — "04-RESEARCH.md's Package Legitimacy Audit independently re-confirmed this correction via crates.io's registry API repository field, a second, independent citation." |
-| 3 | `cargo test --features graph-spike graph::` produces 5 passing tests (bridge round-trip both directions, fixed single-hop with relationship-property projection, multi-hop, relation_type WHERE filtering, hop_cap clamp) | ✓ VERIFIED | Ran independently: `cargo test --manifest-path engine/Cargo.toml --features graph-spike graph::` → `test result: ok. 5 passed; 0 failed` — all 5 named tests present and passing (`bridge_round_trip_preserves_schema_and_values`, `fixed_single_hop_projects_relationship_properties`, `multi_hop_traversal_finds_one_hop_neighbor`, `relation_type_filter_excludes_non_matching_edge`, `clamp_hop_cap_rejects_zero_and_over_max`). |
-| 4 | `cargo build` and `cargo test --locked` (default features) succeed and compile zero code under `engine/src/graph/` | ✓ VERIFIED | Ran independently: `cargo build --manifest-path engine/Cargo.toml` → exit 0. `cargo test --manifest-path engine/Cargo.toml --locked` → exit 0, full output greped for `graph::` → zero matches. `engine/src/lib.rs:6-7` gates `pub mod graph;` behind `#[cfg(feature = "graph-spike")]`, which is not part of any default feature set in `engine/Cargo.toml`. |
-| 5 | Phase 04.1 can cite checked-in `engine/src/graph/{mod.rs,bridge.rs,tests.rs}` and updated 04-AI-SPEC.md as a known, reproducible starting point | ✓ VERIFIED (see WARNING) | All three files exist, are substantive, wired, and independently proven to compile/pass (see Truth 3/4). WARNING: 04-AI-SPEC.md Section 3 "Common Pitfalls" #1 and #4 still contain stale "unverified"/"unconfirmed" language contradicting Section 2's CONFIRMED status and Section 3's own updated intro callout — a 04.1 planner reading only that subsection would draw the wrong conclusion. See Anti-Patterns. |
+| 1 | 04-AI-SPEC.md Section 2 reads `Status: CONFIRMED` (not CONDITIONAL), citing 04-RESEARCH.md | ✓ VERIFIED | 04-AI-SPEC.md:107 — unchanged since prior pass, still reads CONFIRMED with citation. |
+| 2 | 04-AI-SPEC.md's repo-URL correction cites `github.com/lancedb/lance-graph`, independently re-confirmed via crates.io's registry API per 04-RESEARCH.md | ✓ VERIFIED | 04-AI-SPEC.md:130 — unchanged. |
+| 3 | `cargo test --features graph-spike graph::` produces 5 passing tests | ✓ VERIFIED | Re-run independently this pass: `test result: ok. 5 passed; 0 failed`. |
+| 4 | `cargo build` and `cargo test --locked` (default features) succeed and compile zero code under `engine/src/graph/` | ✓ VERIFIED | Re-run independently this pass: build exit 0, `--locked` output has zero `graph::` matches. |
+| 5 | Phase 04.1 can cite checked-in `engine/src/graph/{mod.rs,bridge.rs,tests.rs}` and updated 04-AI-SPEC.md as a known, reproducible starting point | ✓ VERIFIED | All three files present, substantive, wired, reproducibly passing. Prior pass's WARNING (stale Pitfall #1/#4 language) is now resolved — see Re-Verification table above. |
 
-**Score:** 5/5 truths verified (1 carries a non-blocking WARNING)
+**Score:** 5/5 truths verified (prior WARNING closed)
 
-### Roadmap Success Criteria (ROADMAP.md Phase 4, spike-scoped — not the deferred block)
+### Roadmap Success Criteria (ROADMAP.md Phase 4, spike-scoped)
 
 | # | Success Criterion | Status | Evidence |
 |---|---|---|---|
-| 1 | `lance-graph` 0.5.4's Cypher traversal API surface (path/URI vs. typed `Dataset` handle) empirically confirmed, not just inferred from docs | ✓ VERIFIED | `engine/src/graph/mod.rs` builds a `HashMap<String, RecordBatch>` and calls `.execute(datasets, None::<ExecutionStrategy>)` — this exact code path compiled and passed 5 tests in an independent run, which is the empirical confirmation this criterion demands (not merely re-stating docs). |
-| 2 | `04-AI-SPEC.md` version-conflict "Critical Finding" resolved with documented, reproducible integration pattern | ✓ VERIFIED | Reproducible = the 5 passing tests (independently re-run, not merely trusted from SUMMARY.md). Documented = 04-AI-SPEC.md Section 3 Entry Point Pattern plus the checked-in reference implementation it now points to. |
-| 3 | `04-AI-SPEC.md`'s Framework Decision status updated from CONDITIONAL to confirmed/locked, citing empirical evidence | ✓ VERIFIED | 04-AI-SPEC.md:107, see Truth 1. |
-| 4 | Phase 04.1 can be planned with the `lance-graph`/`lancedb` integration pattern as a known quantity, not an open risk | ✓ VERIFIED (see WARNING) | Same basis as Truth 5 — artifacts exist and are proven, but residual stale text in the same document (Section 3 Pitfalls #1/#4) is a real, if non-blocking, drag on this criterion's "known quantity" framing. |
+| 1 | `lance-graph` 0.5.4's Cypher traversal API surface empirically confirmed | ✓ VERIFIED | Unchanged from prior pass; re-confirmed by this pass's regression test run. |
+| 2 | 04-AI-SPEC.md version-conflict "Critical Finding" resolved with documented, reproducible integration pattern | ✓ VERIFIED | Unchanged. |
+| 3 | 04-AI-SPEC.md's Framework Decision status updated from CONDITIONAL to confirmed/locked, citing empirical evidence | ✓ VERIFIED | Unchanged. |
+| 4 | Phase 04.1 can be planned with the integration pattern as a known quantity, not an open risk | ✓ VERIFIED | Strengthened this pass — the stale-pitfall WARNING that partially undercut this criterion last pass is now closed. |
 
 **Score:** 4/4 roadmap success criteria verified
 
@@ -76,32 +83,35 @@ gaps:
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `engine/Cargo.toml` | `graph-spike = ["dep:lance-graph"...` optional deps | ✓ VERIFIED | Lines 28-34: 4 optional deps + `[features] graph-spike = [...]`, exactly as specified. |
-| `engine/Cargo.lock` | Regenerated, contains `lance-graph` entry | ✓ VERIFIED | `grep -n "lance-graph" engine/Cargo.lock` → `name = "lance-graph"` present (line 5554). |
-| `engine/src/lib.rs` | `#[cfg(feature = "graph-spike")]` gating `pub mod graph;` | ✓ VERIFIED | Lines 6-7, positioned alphabetically between `generation` and `prompt` as specified. |
-| `engine/src/graph/mod.rs` | Typed errors, hop-cap clamp, 3 Cypher query shapes | ✓ VERIFIED | `GraphSpikeError`/`GraphSpikeErrorKind`, `MAX_HOP_CAP`/`clamp_hop_cap`, `traverse_fixed_hop`, `traverse_multi_hop`, `traverse_filtered_by_relation_type` all present and match `RetrievalError`'s typed-error convention. |
-| `engine/src/graph/bridge.rs` | `bridge_batch`/`bridge_batch_back`, pub(crate) | ✓ VERIFIED | Both functions present, `pub(crate)` visibility confirmed (mod.rs:18 declares `pub mod bridge;` but every item inside is `pub(crate)` — see IN-03 info finding, non-blocking). |
-| `engine/src/graph/tests.rs` | 5 fixture-backed tests | ✓ VERIFIED | 3 fixture builders + 5 `#[test]`/`#[tokio::test]` functions, all passing (independently re-run). |
-| `.planning/.../04-AI-SPEC.md` | Status CONFIRMED | ✓ VERIFIED | See Truth 1. |
-| `.planning/.../04-COVERAGE.md` | "No external API integration" | ✓ VERIFIED | File exists, contains exact string. |
+| `engine/Cargo.toml` | `graph-spike` feature, optional deps | ✓ VERIFIED | Unchanged, re-confirmed. |
+| `engine/Cargo.lock` | Contains `lance-graph` entry | ✓ VERIFIED | Unchanged. |
+| `engine/src/lib.rs` | `#[cfg(feature = "graph-spike")]` gate | ✓ VERIFIED | Unchanged. |
+| `engine/src/graph/mod.rs` | Typed errors, hop-cap clamp, 3 Cypher query shapes | ✓ VERIFIED | Unchanged. |
+| `engine/src/graph/bridge.rs` | `bridge_batch`/`bridge_batch_back`, pub(crate) | ✓ VERIFIED | Unchanged. |
+| `engine/src/graph/tests.rs` | 5 fixture-backed tests | ✓ VERIFIED | Unchanged, re-run passing. |
+| `.planning/.../04-AI-SPEC.md` | Status CONFIRMED, no stale contradicting language | ✓ VERIFIED | Improved this pass — Pitfalls #1/#4 now consistent with Section 2. |
+| `.planning/.../04-COVERAGE.md` | "No external API integration" | ✓ VERIFIED | Unchanged. |
+| `.planning/REQUIREMENTS.md` | DATA-04/DATA-05/RAG-05 accurately reflect spike-only closure | ✓ VERIFIED (fixed this pass) | Now `[ ]` with SPIKE ONLY annotations — see Re-Verification table above. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| `engine/Cargo.toml` | `engine/src/lib.rs` | `graph-spike` feature flag gates `pub mod graph;` | ✓ WIRED | Confirmed by independent `cargo build`/`cargo test --locked` run producing zero `graph::` output, and independent `cargo test --features graph-spike` run producing the graph tests. |
-| `engine/src/graph/mod.rs` | `engine/src/graph/bridge.rs` | Every `traverse_*` calls `bridge::bridge_batch` before and `bridge::bridge_batch_back` after `CypherQuery::execute()` | ✓ WIRED | Confirmed by direct code read (mod.rs:99-100/134, 156-157/186, 204-205/234) and by the passing `fixed_single_hop_projects_relationship_properties`/`multi_hop_traversal_finds_one_hop_neighbor`/`relation_type_filter_excludes_non_matching_edge` tests, which fail if either bridge call is broken. |
-| `clamp_hop_cap` | `traverse_multi_hop` | `hop_cap` clamped before it reaches the `format!`-built Cypher string | ✓ VERIFIED (ordering invariant, reasoning stated) | mod.rs:154: `let hop_cap = clamp_hop_cap(hop_cap)?;` is the traversal function's first statement, and the resulting binding shadows the original parameter — the unclamped `u32` is structurally unreachable by any later line in the function body, including the `format!` call at line 170. This is a compile-time-enforced ordering guarantee, not merely an untested runtime path; the code reviewer (04-REVIEW.md) independently confirmed the same call-site ordering. No test drives an out-of-range value through the full `traverse_multi_hop` path (the multi-hop test only exercises `MAX_HOP_CAP`), but `clamp_hop_cap_rejects_zero_and_over_max` proves the guard itself rejects `0`/`MAX_HOP_CAP+1` in isolation, and shadowing closes the gap a missing integration test would otherwise leave. |
-| `04-AI-SPEC.md` | `04-RESEARCH.md` | Section 2 Status cites RESEARCH.md's empirical evidence | ✓ WIRED | 04-AI-SPEC.md:107, 130. |
+| `engine/Cargo.toml` | `engine/src/lib.rs` | `graph-spike` feature flag gates `pub mod graph;` | ✓ WIRED | Re-confirmed this pass. |
+| `engine/src/graph/mod.rs` | `engine/src/graph/bridge.rs` | Every `traverse_*` calls bridge before/after `CypherQuery::execute()` | ✓ WIRED | Unchanged; re-confirmed by passing tests. |
+| `clamp_hop_cap` | `traverse_multi_hop` | Clamped before reaching `format!`-built Cypher string | ✓ VERIFIED | Unchanged. |
+| `04-AI-SPEC.md` | `04-RESEARCH.md` | Section 2 Status cites RESEARCH.md's empirical evidence | ✓ WIRED | Unchanged. |
+| `.planning/REQUIREMENTS.md` | `04-01-SUMMARY.md` `requirements-completed:` | The field `gsd-core`'s milestone-audit machinery reads to determine per-phase requirement closure | ✓ WIRED (fixed) | `commands.cjs:1026` confirms `requirements-completed` (now `[]`) is what `audit-milestone.md`'s `summary-extract --fields requirements_completed` reads — the false-completion signal is corrected at its actual consumption point, not just cosmetically in REQUIREMENTS.md. |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| Combined manifest resolves and 5 graph-spike tests pass | `cargo test --manifest-path engine/Cargo.toml --features graph-spike graph::` | `test result: ok. 5 passed; 0 failed` — all 5 named tests present | ✓ PASS |
-| Default build unaffected by optional graph-spike deps | `cargo build --manifest-path engine/Cargo.toml` | exit 0 | ✓ PASS |
-| Default `--locked` test suite contains zero graph-spike code | `cargo test --manifest-path engine/Cargo.toml --locked` (output grepped for `graph::`) | exit 0, `NO graph:: MATCHES FOUND` | ✓ PASS |
-| No debt markers (TODO/FIXME/XXX/TBD/HACK/PLACEHOLDER) in the 4 new/modified Rust files | `grep -n -E "TODO|FIXME|XXX|TBD|HACK|PLACEHOLDER"` across graph/mod.rs, bridge.rs, tests.rs, lib.rs, Cargo.toml | no matches | ✓ PASS |
+| 5 graph-spike tests still pass | `cargo test --manifest-path engine/Cargo.toml --features graph-spike graph::` | `test result: ok. 5 passed; 0 failed` | ✓ PASS |
+| Default build unaffected | `cargo build --manifest-path engine/Cargo.toml` | exit 0 | ✓ PASS |
+| Default test suite isolated | `cargo test --manifest-path engine/Cargo.toml --locked` grepped for `graph::` | 0 matches | ✓ PASS |
+| No debt markers on fixed files | grep TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER across the 3 fix-commit files | no matches | ✓ PASS |
+| Working tree clean (no stray edits) | `git status --short` | empty | ✓ PASS |
 
 ### Probe Execution
 
@@ -111,33 +121,61 @@ No `scripts/*/tests/probe-*.sh` or phase-declared probes found for this phase. S
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |---|---|---|---|---|
-| DATA-04 | 04-01-PLAN.md | Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB | ✗ BLOCKED (mismarked in REQUIREMENTS.md) | No extraction code exists anywhere in `engine/src` — confirmed by reading `engine/src/graph/{mod.rs,bridge.rs,tests.rs}` in full (only traversal/bridge functions, no LLM extraction call, no `entities`/`edges` table writes). 04-01-PLAN.md's own `flagged_assumptions` explicitly disclaims this. REQUIREMENTS.md marks it `[x]` regardless — see gap above. |
-| DATA-05 | 04-01-PLAN.md | Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context | ⚠️ PARTIAL (mismarked in REQUIREMENTS.md as fully satisfied) | The Cypher pattern-matching mechanism against `lance-graph` is now proven (5 passing tests). The "compile it into RAG prompt context" clause is unmet — no `entities`/`edges` LanceDB tables, no prompt-assembly graph-context code exists; 04-01-PLAN.md's `flagged_assumptions` explicitly disclaims this. REQUIREMENTS.md marks it `[x]` (fully satisfied) with no partial-completion annotation — see gap above. |
-| RAG-05 | 04-01-PLAN.md | Define a `ContextAssemblyStrategy` enum/trait in the Rust engine supporting `PrecomputedSemantics`/`SourceChunks` | ✗ BLOCKED (mismarked in REQUIREMENTS.md) | `grep -rn "ContextAssemblyStrategy" engine/src` → zero matches anywhere in the codebase. 04-01-PLAN.md's `flagged_assumptions` states directly "No such trait is defined by this phase." REQUIREMENTS.md marks it `[x]` regardless — see gap above. |
+| DATA-04 | 04-01-PLAN.md | Extract entities and relationships during ingestion and persist as graph nodes/edges | ⚠️ SPIKE-ONLY, accurately marked `[ ]` | No extraction code exists in `engine/src` (confirmed by re-reading `engine/src/graph/{mod.rs,bridge.rs,tests.rs}` in full — only traversal/bridge functions). REQUIREMENTS.md now correctly annotates this as spike-only, deferred to Phase 04.1. Ledger accurately reflects reality — no longer a gap. |
+| DATA-05 | 04-01-PLAN.md | Query graph context via Cypher pattern matching and compile into RAG prompt context | ⚠️ SPIKE-ONLY, accurately marked `[ ]` | Cypher pattern-matching mechanism proven (5 passing tests); "compile it into RAG prompt context" clause unmet (no `entities`/`edges` tables, no prompt-assembly graph-context code — confirmed `grep -n "graph" engine/src/prompt.rs` returns zero matches). REQUIREMENTS.md now correctly annotates this as spike-only. Ledger accurately reflects reality. |
+| RAG-05 | 04-01-PLAN.md | Define a `ContextAssemblyStrategy` enum/trait supporting `PrecomputedSemantics`/`SourceChunks` | ⚠️ SPIKE-ONLY, accurately marked `[ ]` | `grep -rn "ContextAssemblyStrategy" engine/src` → zero matches. REQUIREMENTS.md now correctly annotates this as spike-only. Ledger accurately reflects reality. |
 
 No orphaned requirements: ROADMAP.md's Phase 4 requirement list (DATA-04, DATA-05, RAG-05) exactly matches 04-01-PLAN.md's frontmatter `requirements:` field.
+
+### Prohibitions (04-01-PLAN.md `must_haves.prohibitions` — judgment-tier, all `status: unresolved`)
+
+Per verification-overrides protocol: judgment-tier prohibitions with no `verification:` field route to a soft gate — a non-authoritative LLM-judge verdict is recorded here plus a flag for human review. None of these are silently absorbed into a passing verdict.
+
+| # | Prohibition | LLM-Judge Verdict (non-authoritative) | Evidence | Flag |
+|---|---|---|---|---|
+| 1 | MUST NOT silently merge two entity mentions into one node when they refer to different real-world things (D-05 over-conflation) without operator-visible signal | N/A to this phase — no entity-resolution/merge code exists in `engine/src/graph/*`; the phase's own `flagged_assumptions` state this is deferred to Phase 04.1's actual extraction/resolution implementation. `grep -rn "ExactMatchResolver\|entity_resolution\|merge_entit" engine/src` finds only a pre-existing, unrelated `db::ExactMatchResolver` (DATA-09's ingestion-time stub from an earlier phase, not wired to any ingestion pipeline — DATA-01/02/03 are still `[ ]`) — nothing this phase added. | unverified-prohibition — human review recommended |
+| 2 | MUST NOT persist sensitive/PII-bearing extracted entity/relation content into the globally-merged v1 entities graph without redaction/scoping | N/A to this phase — `grep -n "db::\|DatabaseManager\|create_table\|insert\|write" engine/src/graph/mod.rs engine/src/graph/bridge.rs` shows zero lancedb/persistence calls; the module only builds an in-memory `HashMap<String, RecordBatch>` for Cypher execution against synthetic test fixtures. No real table is ever touched. | unverified-prohibition — human review recommended |
+| 3 | MUST NOT surface graph-derived entities/relationships into a compiled RAG answer indistinguishable in trustworthiness from citation-grounded chunk evidence | N/A to this phase — `grep -n "graph" engine/src/prompt.rs` returns zero matches; no RAG-answer prompt-assembly code in this phase touches graph context at all. | unverified-prohibition — human review recommended |
+
+**Disposition:** All three verdicts are consistent with the plan's own `flagged_assumptions` (each prohibition statement explicitly says "not applicable to this phase's PoC, which persists/touches nothing") and are independently confirmed by absence-of-code greps, not merely trusted from the plan text. However, per protocol these remain judgment-tier and are surfaced for human confirmation rather than auto-passed — hence `status: human_needed` below, not `passed`.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `engine/src/graph/bridge.rs` | 28-35, 60-67 | `bridge_batch`/`bridge_batch_back` take only the first IPC-decoded batch and silently discard any subsequent batches (WR-01 in 04-REVIEW.md) | ⚠️ Warning (non-blocking for this phase; inherited risk) | Holds for the current single-`StringArray`-column fixtures, but Phase 04.1 is directed by Truth 5 to inherit this exact code as its integration starting point against real `entities`/`edges` batches that may span multiple IPC stream messages (e.g. dictionary-encoded columns) — silent row loss with no caller-visible signal is a real correctness risk once real data replaces synthetic fixtures. Flagged forward for 04.1, not a blocker for this spike-scoped phase's own goal. |
-| `.planning/phases/04-knowledge-graph-extraction-query/04-AI-SPEC.md` | 309, 312 | Section 3 "Common Pitfalls" #1 and #4 still read "itself unverified glue pending the Phase 04 spike's actual `cargo build`" and "`RelationshipMapping.type_field` semantics are unconfirmed from public docs" | ⚠️ Warning | Contradicts Section 2's `Status: CONFIRMED` (line 107) and Section 3's own updated intro callout (line 138) and Entry Point Pattern comments (lines 178-179, 206-208, 263), which both describe these exact same two items as now confirmed/resolved. 04-01-PLAN.md Task 3's edit instructions only targeted the intro callout and two inline code comments, not the "Common Pitfalls" list — a residual transcription gap, same defect class as the REQUIREMENTS.md gap above but lower stakes (internal document self-contradiction vs. a project-wide false completion claim). Not a blocker for this phase's goal, but should be cleaned up before Phase 04.1 planning to avoid a planner reading stale "unverified"/"unconfirmed" language. |
-| `engine/src/graph/mod.rs`, `bridge.rs` | various | IN-01 through IN-04 from 04-REVIEW.md (config/bridge-function duplication, `bridge` module unnecessarily `pub`, `Display` drops `kind` field) | ℹ️ Info | All non-blocking maintainability observations already documented in 04-REVIEW.md; no action required for this phase's goal. |
+| `.planning/phases/04-knowledge-graph-extraction-query/04-01-SUMMARY.md` | 97-104 (coverage block, item D8) | `coverage[].requirement` maps D8 (AI-SPEC status-lock evidence) to `RAG-05`, though D8 evidences neither RAG-05's `ContextAssemblyStrategy` trait nor a single clean requirement — D1/D2/D7 have the same loose 1:1-to-DATA-05 mapping problem | ⚠️ Warning (downgraded from prior pass's blocking classification) | Confirmed this pass that `coverage[].requirement` is read only as passthrough display metadata by `gsd-core/bin/lib/coverage.cjs:372-373` (`view.requirement`) for the UAT/audit classifier — no code path uses it to compute or gate requirement-completion state (that role belongs to `requirements-completed:`, already fixed). Cosmetic inaccuracy in a traceability table; does not reintroduce a false-completion claim. Should still be cleaned up before Phase 04.1 planning for documentation hygiene, but does not block this phase's goal. |
+| `engine/src/graph/bridge.rs` | 28-35, 60-67 | `bridge_batch`/`bridge_batch_back` take only the first IPC-decoded batch, silently discard subsequent batches (WR-01, 04-REVIEW.md) | ⚠️ Warning (non-blocking, inherited risk, unchanged from prior pass) | Carried forward — see prior pass's full note. Flagged for Phase 04.1, not a blocker here. |
+| `engine/src/graph/mod.rs`, `bridge.rs` | various | IN-01–IN-04 from 04-REVIEW.md (minor maintainability items) | ℹ️ Info | Unchanged, non-blocking. |
 
 ### Human Verification Required
 
-None. All findings above are directly evidenced by git history, grep, and independently re-run `cargo build`/`cargo test` commands — no visual, real-time, or subjective judgment items apply to this phase's code-only, non-UI scope.
+### 1. Judgment-tier prohibition #1 — entity over-conflation (D-05)
+
+**Test:** Confirm the LLM-judge verdict above (N/A — no entity-resolution/merge code in this phase) matches your own reading of `engine/src/graph/{mod.rs,bridge.rs,tests.rs}` and the pre-existing, unrelated `db::ExactMatchResolver`.
+**Expected:** Agreement that this phase persists/merges nothing, so the prohibition is not triggered — deferral to Phase 04.1 remains appropriate.
+**Why human:** Judgment-tier prohibition per verification-overrides protocol — an LLM verdict on "is this truly N/A" is non-authoritative and must be human-confirmed, not silently passed.
+
+### 2. Judgment-tier prohibition #2 — PII/sensitive-content persistence (D-05/D-10-16)
+
+**Test:** Confirm no lancedb persistence of extracted entity/relation content occurs anywhere in this phase's checked-in code.
+**Expected:** Agreement — only synthetic fixture data flows through `engine/src/graph/*`, no real table writes.
+**Why human:** Judgment-tier prohibition; same protocol as above.
+
+### 3. Judgment-tier prohibition #3 — graph-fact trustworthiness indistinguishability in RAG answers (D-27)
+
+**Test:** Confirm no RAG-answer prompt-assembly code in this phase blends graph context into a compiled answer.
+**Expected:** Agreement — `engine/src/prompt.rs` is untouched by this phase; no citation-marking question is even reachable yet.
+**Why human:** Judgment-tier prohibition; same protocol as above.
 
 ### Gaps Summary
 
-This spike-scoped phase's own deliverables are fully and independently verified: the combined `lancedb ~0.31` + `lance-graph 0.5.4` manifest resolves and compiles, all 5 checked-in tests pass (re-run independently, not trusted from SUMMARY.md), the default build/test suite is completely unaffected (re-run independently, grepped for zero `graph::` leakage), and 04-AI-SPEC.md's Framework Decision is locked to CONFIRMED with a citation to empirical evidence. All 5 plan-frontmatter truths and all 4 ROADMAP success criteria for Phase 4's actual (spike-scoped) goal are VERIFIED.
+**The prior pass's single blocking gap is closed.** Direct file inspection (not the task description) confirms commit `3428178` correctly reverted DATA-04/DATA-05/RAG-05 to `[ ]` in REQUIREMENTS.md with accurate SPIKE ONLY annotations, emptied `04-01-SUMMARY.md`'s `requirements-completed:` field (the machine-readable field `audit-milestone.md` actually consumes), and closed the secondary WARNING (stale AI-SPEC pitfall language). A fresh regression pass confirms zero code regressions: all 5 graph-spike tests still pass, the default build/test suite remains unaffected, and the working tree is clean.
 
-The one blocking gap is a project-integrity issue introduced as a side effect of this phase's completion, not a defect in the spike's own code: the phase-completion commit (6873f08) marked DATA-04, DATA-05, and RAG-05 as fully `[x]` complete in `.planning/REQUIREMENTS.md`, despite REQUIREMENTS.md never being in this plan's declared `files_modified` scope, despite ROADMAP.md's own "Deferred target" line stating full closure of these three requirements is deferred to not-yet-created Phase 04.1, and despite 04-01-PLAN.md's own `flagged_assumptions` section explicitly disclaiming DATA-04's extraction pipeline, DATA-05's real graph-query-into-RAG-prompt path, and RAG-05's `ContextAssemblyStrategy` trait as out of scope for this phase. Direct codebase verification confirms none of these three requirements' described behavior exists beyond the compatibility spike. Left uncorrected, this false completion claim would mislead any future milestone audit or Phase 04.1 planning session into believing DATA-04/DATA-05/RAG-05 need no further work. The likely root cause — `04-01-SUMMARY.md`'s `requirements-completed:` frontmatter field — must also be corrected, or a future automated re-run will re-introduce the same false checkbox state.
+**One item from the prior pass's `missing:` list — the `coverage:` block's D8-and-siblings requirement mismapping — was not addressed.** This pass investigated whether that omission matters by tracing `coverage[].requirement` to its actual consumer (`gsd-core/bin/lib/coverage.cjs`) and found it is display-only passthrough metadata with no role in computing requirement-completion state. It is downgraded to a non-blocking WARNING (cosmetic traceability-table inaccuracy) rather than treated as a reopened blocking gap, but is documented in full above and in the frontmatter `gaps_remaining` so it isn't silently dropped.
 
-A secondary, non-blocking WARNING: 04-AI-SPEC.md Section 3's "Common Pitfalls" #1 and #4 retain stale "unverified"/"unconfirmed" language that Task 3's edits did not reach, contradicting the CONFIRMED status the rest of the document (including the same section's intro callout) now asserts. Recommended cleanup before Phase 04.1 planning, not a blocker for this phase.
+**Status is `human_needed`, not `passed`, solely because of three judgment-tier prohibitions** (`04-01-PLAN.md` `must_haves.prohibitions`, all `status: unresolved`) that the prior pass never surfaced. Per the verification-overrides protocol, judgment-tier prohibitions must never be silently absorbed into a `passed` verdict — they require explicit human confirmation even when the LLM-judge verdict (recorded above, backed by absence-of-code greps) is N/A. This is a process-completeness finding, not a code defect: the spike's own code and artifacts remain fully verified with zero blocking issues.
 
 ---
 
-*Verified: 2026-08-06T20:19:43Z*
+*Verified: 2026-08-06T21:05:00Z*
 *Verifier: Claude (gsd-verifier)*
