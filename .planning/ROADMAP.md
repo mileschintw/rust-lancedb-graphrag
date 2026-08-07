@@ -259,7 +259,8 @@ Plans:
 
 ### Phase 04.1: Knowledge Graph Extraction & Query (Full Implementation) (INSERTED)
 
-**Goal:** As a Lancet engineer, I want entities and relationships extracted from chunks during ingestion, persisted as a knowledge graph in LanceDB, and traversable at query time via the now-confirmed `lance-graph` integration, so that RAG queries are grounded with graph context alongside the existing hybrid-retrieval evidence.
+**Goal:** As a Lancet engineer, I want to extract entities and relationships from chunks during ingestion, persist them as a knowledge graph in LanceDB, and traverse them at query time via the now-confirmed `lance-graph` integration, so that RAG queries are grounded with graph context alongside the existing hybrid-retrieval evidence.
+**Mode:** mvp
 **Requirements:** DATA-04, DATA-05, RAG-05
 **Depends on:** Phase 4
 **Success Criteria:** *(carried forward unchanged from Phase 4's original deferred target)*
@@ -269,11 +270,24 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 04.1 to break down)
+- [ ] 04.1-01-PLAN.md — Promote graph out of graph-spike, lock the entities-table schema-restructure decision, and prove extract→persist→traverse→prompt end-to-end (tracer).
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04.1-02-PLAN.md — Concurrent bounded extraction (D-09), min-content-length skip (D-07), idempotent re-ingestion, and the WR-01 bridge multi-batch fix.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04.1-03-PLAN.md — Redesign the standalone QueryGraph RPC with a structured, hop-bounded contract and Pitfall-6 relation-property recovery.
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04.1-04-PLAN.md — Score-interleave graph facts with chunk evidence under a configurable graph_weight, and add graph_augmentation outcome tagging.
 
 ### Phase 5: State Machine & Workflow Events
 
