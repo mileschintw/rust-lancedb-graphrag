@@ -31,7 +31,7 @@ impl<R: std::io::Read> DecodeAllBatches for arrow_ipc_lg::reader::StreamReader<R
             return Ok(batches.remove(0));
         }
 
-        arrow_lg::compute::concat_batches(&schema, &batches.iter().collect::<Vec<_>>())
+        arrow_lg::compute::concat_batches(&schema, batches.iter())
             .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc concat: {e}")))
     }
 }
@@ -60,7 +60,7 @@ impl<R: std::io::Read> DecodeAllBatches for arrow_ipc::reader::StreamReader<R> {
             return Ok(batches.remove(0));
         }
 
-        arrow_select::concat::concat_batches(&schema, &batches.iter().collect::<Vec<_>>())
+        arrow_select::concat::concat_batches(&schema, batches.iter())
             .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc concat: {e}")))
     }
 }
