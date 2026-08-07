@@ -270,24 +270,28 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 4 plans
+**Plans:** 5 plans
 
 Plans:
 **Wave 1**
 
-- [ ] 04.1-01-PLAN.md — Promote graph out of graph-spike, lock the entities-table schema-restructure decision, and prove extract→persist→traverse→prompt end-to-end (tracer).
+- [ ] 04.1-01-PLAN.md — Promote graph out of graph-spike, lock the entities/entity_edges schema-restructure decision, and migrate every existing fixture/test to the restructured schema.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04.1-02-PLAN.md — Concurrent bounded extraction (D-09), min-content-length skip (D-07), idempotent re-ingestion, and the WR-01 bridge multi-batch fix.
+- [ ] 04.1-02-PLAN.md — Prove extract→persist→traverse→render→reach-the-provider end-to-end (tracer), including the provider-payload-capture fix, seed-inclusive fetch_neighborhood, and reserve-one-citable-chunk packing.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04.1-03-PLAN.md — Redesign the standalone QueryGraph RPC with a structured, hop-bounded contract and Pitfall-6 relation-property recovery.
+- [ ] 04.1-03-PLAN.md — Concurrent bounded extraction (D-09), real min-content-length skip (D-07), idempotent re-ingestion by construction, documented stale-entity semantics, and the WR-01 bridge multi-batch fix.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04.1-04-PLAN.md — Score-interleave graph facts with chunk evidence under a configurable graph_weight, and add graph_augmentation outcome tagging.
+- [ ] 04.1-04-PLAN.md — Redesign the standalone QueryGraph RPC as an induced-neighborhood query with a structured, hop-bounded contract, correct relation-type filtering at any hop depth, and validated input.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 04.1-05-PLAN.md — Score-interleave graph facts with chunk evidence under a validated, configurable graph_weight, and prove graph_augmentation outcome tagging observable end-to-end.
 
 ### Phase 5: State Machine & Workflow Events
 
