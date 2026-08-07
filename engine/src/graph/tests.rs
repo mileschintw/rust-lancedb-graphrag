@@ -319,3 +319,78 @@ async fn cypher_narrowing_fail_open() {
     assert_eq!(out_entities.num_rows(), entities.num_rows());
     assert_eq!(out_edges.num_rows(), edges.num_rows());
 }
+
+#[test]
+fn bridge_preserves_all_rows_across_multiple_ipc_batches() {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("entity_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+    ]));
+
+    let batch1 = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec!["id-1", "id-2"])),
+            Arc::new(StringArray::from(vec!["Name1", "Name2"])),
+        ],
+    )
+    .unwrap();
+
+    let batch2 = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec!["id-3", "id-4", "id-5"])),
+            Arc::new(StringArray::from(vec!["Name3", "Name4", "Name5"])),
+        ],
+    )
+    .unwrap();
+
+    // Construct raw IPC bytes containing TWO batches
+    let mut buf = Vec::new();
+    {
+        let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buf, &schema).unwrap();
+        writer.write(&batch1).unwrap();
+        writer.write(&batch2).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let reader = arrow_ipc_lg::reader::StreamReader::try_new(buf.as_slice(), None).unwrap();
+    let bridged_lg = bridge::decode_all_batches(reader).expect("decode_all_batches must succeed on 2-batch stream");
+    assert_eq!(bridged_lg.num_rows(), 5, "bridged_lg must contain all 5 rows across both batches");
+
+    // Also test bridge_batch_back direction decoding multiple batches
+    let schema_lg = Arc::new(arrow_lg::datatypes::Schema::new(vec![
+        arrow_lg::datatypes::Field::new("entity_id", arrow_lg::datatypes::DataType::Utf8, false),
+        arrow_lg::datatypes::Field::new("name", arrow_lg::datatypes::DataType::Utf8, false),
+    ]));
+
+    let batch1_lg = arrow_lg::record_batch::RecordBatch::try_new(
+        schema_lg.clone(),
+        vec![
+            Arc::new(arrow_lg::array::StringArray::from(vec!["id-1", "id-2"])),
+            Arc::new(arrow_lg::array::StringArray::from(vec!["Name1", "Name2"])),
+        ],
+    )
+    .unwrap();
+
+    let batch2_lg = arrow_lg::record_batch::RecordBatch::try_new(
+        schema_lg.clone(),
+        vec![
+            Arc::new(arrow_lg::array::StringArray::from(vec!["id-3"])),
+            Arc::new(arrow_lg::array::StringArray::from(vec!["Name3"])),
+        ],
+    )
+    .unwrap();
+
+    let mut buf_lg = Vec::new();
+    {
+        let mut writer = arrow_ipc_lg::writer::StreamWriter::try_new(&mut buf_lg, &schema_lg).unwrap();
+        writer.write(&batch1_lg).unwrap();
+        writer.write(&batch2_lg).unwrap();
+        writer.finish().unwrap();
+    }
+
+    let reader_back = arrow_ipc::reader::StreamReader::try_new(buf_lg.as_slice(), None).unwrap();
+    let bridged_back = bridge::decode_all_batches(reader_back).expect("decode_all_batches must succeed on 2-batch back stream");
+    assert_eq!(bridged_back.num_rows(), 3, "bridged_back must contain all 3 rows across both batches");
+}
