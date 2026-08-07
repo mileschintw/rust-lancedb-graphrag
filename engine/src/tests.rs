@@ -4284,3 +4284,342 @@ async fn query_rag_span_and_request_threading() {
 
     let _ = std::fs::remove_dir_all(path);
 }
+
+#[tokio::test]
+async fn extraction_runs_concurrently_and_skips_short_chunks() {
+    let path = database_path("extraction-concurrent-skip");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let long_para = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+    // 7 chunks total: chunk 0 short, chunks 1..=6 long
+    let text = format!("Short\n\n{long_para}\n\n{long_para}\n\n{long_para}\n\n{long_para}\n\n{long_para}\n\n{long_para}");
+
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "concurrent.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let failing_chunk_id = format!("{doc_id}:3");
+    let mut keyed_responses = HashMap::new();
+    keyed_responses.insert(
+        failing_chunk_id.clone(),
+        Err(generation::GenerationError::new(
+            generation::GenerationErrorKind::ProviderError,
+            "simulated extraction failure",
+        )),
+    );
+    // For other long chunks (1, 2, 4, 5, 6), provide valid responses
+    for idx in [1, 2, 4, 5, 6] {
+        let cid = format!("{doc_id}:{idx}");
+        keyed_responses.insert(
+            cid,
+            Ok(graph::extraction::ExtractionOutput {
+                entities: vec![graph::extraction::ExtractedEntity {
+                    name: format!("Entity {idx}"),
+                    entity_type: "concept".into(),
+                }],
+                relations: vec![],
+            }),
+        );
+    }
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_responses);
+
+    let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
+    assert!(res.is_ok(), "D-06: per-chunk extraction failure must not fail function");
+
+    // Short chunk (index 0) was skipped, chunk 3 failed, so 5 calls were made
+    assert_eq!(fake_gen.calls(), 5, "Short chunk must be skipped, 5 long chunks called");
+
+    let entities_table = database.entities_table().await.unwrap();
+    let count = entities_table.count_rows(None).await.unwrap();
+    assert_eq!(count, 5, "5 entities from successful chunks persisted");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn extraction_reingestion_is_idempotent_by_construction() {
+    let path = database_path("extraction-reingest-idempotent");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let long_para = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+    let text = format!("# Section 1\n\n{long_para}\n\n# Section 2\n\n{long_para}");
+
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "idempotent.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::with_responses(vec![
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Widget".into(),
+                entity_type: "product".into(),
+            }],
+            relations: vec![],
+        }),
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Gadget".into(),
+                entity_type: "product".into(),
+            }],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Widget".into(),
+                target: "Gadget".into(),
+                relation_type: "connected_to".into(),
+                confidence: 0.9,
+            }],
+        }),
+    ]);
+
+    // First ingestion call
+    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let entities_table = database.entities_table().await.unwrap();
+    let edges_table = database.entity_edges_table().await.unwrap();
+    let entity_count_1 = entities_table.count_rows(None).await.unwrap();
+    let edge_count_1 = edges_table.count_rows(None).await.unwrap();
+
+    assert_eq!(entity_count_1, 2);
+    assert_eq!(edge_count_1, 1);
+
+    // Second ingestion call in direct sequence with fresh responses
+    let fake_gen_2 = graph::extraction::FakeExtractionGenerator::with_responses(vec![
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Widget".into(),
+                entity_type: "product".into(),
+            }],
+            relations: vec![],
+        }),
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Gadget".into(),
+                entity_type: "product".into(),
+            }],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Widget".into(),
+                target: "Gadget".into(),
+                relation_type: "connected_to".into(),
+                confidence: 0.9,
+            }],
+        }),
+    ]);
+
+    super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let entity_count_2 = entities_table.count_rows(None).await.unwrap();
+    let edge_count_2 = edges_table.count_rows(None).await.unwrap();
+
+    assert_eq!(entity_count_2, entity_count_1, "Entities count must stay identical");
+    assert_eq!(edge_count_2, edge_count_1, "Entity edges count must stay identical");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn cross_document_entity_merge_still_works_under_concurrency() {
+    let path = database_path("cross-doc-merge-concurrent");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let long_para = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+
+    let doc1_id = Uuid::new_v4().to_string();
+    let text1 = format!("# Doc 1\n\nAcme Corp is a company building widgets.\n\n{long_para}");
+    let job1 = IngestionJob::new(doc1_id.clone(), "doc1.md".into(), text1.as_bytes().to_vec(), HashMap::new());
+
+    let fake_gen1 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+        entities: vec![graph::extraction::ExtractedEntity {
+            name: "Acme Corp".into(),
+            entity_type: "organization".into(),
+        }],
+        relations: vec![],
+    }));
+
+    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let doc2_id = Uuid::new_v4().to_string();
+    let text2 = format!("# Doc 2\n\nacme corp provides widget solutions.\n\n{long_para}");
+    let job2 = IngestionJob::new(doc2_id.clone(), "doc2.md".into(), text2.as_bytes().to_vec(), HashMap::new());
+
+    let fake_gen2 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+        entities: vec![graph::extraction::ExtractedEntity {
+            name: "Acme Corp".into(),
+            entity_type: "organization".into(),
+        }],
+        relations: vec![],
+    }));
+
+    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let entities_table = database.entities_table().await.unwrap();
+    assert_eq!(entities_table.count_rows(None).await.unwrap(), 1, "Exactly one Acme Corp entity row");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn stale_entity_survives_document_replacement() {
+    let path = database_path("stale-entity-survives");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text1 = "Acme Corp is an organization building software widgets in the global marketplace.";
+    stage_document(&database, &doc_id, text1.as_bytes()).await;
+    let job1 = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+
+    let fake_gen1 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+        entities: vec![graph::extraction::ExtractedEntity {
+            name: "Acme Corp".into(),
+            entity_type: "organization".into(),
+        }],
+        relations: vec![],
+    }));
+
+    replace_document_with_faults(&database, &job1, &FakeEmbedder, &NoOpFaultBoundary).await.unwrap();
+    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder).await.unwrap();
+
+    let entities_table = database.entities_table().await.unwrap();
+    assert_eq!(entities_table.count_rows(None).await.unwrap(), 1);
+
+    // Replace document with Acme-free content
+    let text2 = "Widgets are manufactured with high quality materials in automated factories daily.";
+    stage_document(&database, &doc_id, text2.as_bytes()).await;
+    let job2 = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+
+    let fake_gen2 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+        entities: vec![graph::extraction::ExtractedEntity {
+            name: "Widget".into(),
+            entity_type: "product".into(),
+        }],
+        relations: vec![],
+    }));
+
+    replace_document_with_faults(&database, &job2, &FakeEmbedder, &NoOpFaultBoundary).await.unwrap();
+    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder).await.unwrap();
+
+    // Acme Corp entity row remains present (v1 documented behavior)
+    assert_eq!(entities_table.count_rows(None).await.unwrap(), 2, "Stale entity Acme Corp survives document replacement");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn stale_source_chunk_ids_can_reference_unrelated_replacement_content() {
+    let path = database_path("stale-chunk-unrelated");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text1 = "Acme Corp is an organization building software widgets in the global marketplace.";
+    stage_document(&database, &doc_id, text1.as_bytes()).await;
+    let job1 = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+
+    let fake_gen1 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+        entities: vec![graph::extraction::ExtractedEntity {
+            name: "Acme Corp".into(),
+            entity_type: "organization".into(),
+        }],
+        relations: vec![],
+    }));
+
+    replace_document_with_faults(&database, &job1, &FakeEmbedder, &NoOpFaultBoundary).await.unwrap();
+    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder).await.unwrap();
+
+    // Replace document with Acme-free content at chunk index 0 holding unrelated text
+    let text2 = "Unrelated replacement paragraph about widgets and high quality manufacturing.";
+    stage_document(&database, &doc_id, text2.as_bytes()).await;
+    let job2 = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+
+    let fake_gen2 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+        entities: vec![],
+        relations: vec![],
+    }));
+
+    replace_document_with_faults(&database, &job2, &FakeEmbedder, &NoOpFaultBoundary).await.unwrap();
+    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder).await.unwrap();
+
+    let chunk_0_id = format!("{doc_id}:0");
+    let nodes_table = database.nodes_table().await.unwrap();
+    let batches: Vec<RecordBatch> = nodes_table
+        .query()
+        .only_if(format!("chunk_id = '{}'", escape_sql_literal(&chunk_0_id)))
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+
+    assert_eq!(batches.len(), 1);
+    let content_col = batches[0].column_by_name("content").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+    let new_content = content_col.value(0);
+
+    assert!(new_content.contains("Unrelated replacement paragraph"));
+    assert!(!new_content.contains("Acme Corp"));
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn extraction_concurrency_bound_is_observed_not_assumed() {
+    let path = database_path("extraction-concurrency-bound");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let long_para = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+    let mut paragraphs = Vec::new();
+    for i in 0..12 {
+        paragraphs.push(format!("# Section {i}\n\n{long_para}"));
+    }
+    let text = paragraphs.join("\n\n");
+
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "bound.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let mut keyed_responses = HashMap::new();
+    for i in 0..12 {
+        let cid = format!("{doc_id}:{i}");
+        keyed_responses.insert(
+            cid,
+            Ok(graph::extraction::ExtractionOutput {
+                entities: vec![graph::extraction::ExtractedEntity {
+                    name: format!("Entity {i}"),
+                    entity_type: "concept".into(),
+                }],
+                relations: vec![],
+            }),
+        );
+    }
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_responses)
+        .with_delay(Duration::from_millis(20));
+
+    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let max_conc = fake_gen.max_observed_concurrency();
+    assert!(max_conc <= 5, "Max observed concurrency must be <= 5 (bound held), got {max_conc}");
+    assert!(max_conc >= 2, "Max observed concurrency must be >= 2 (real overlap occurred), got {max_conc}");
+
+    let _ = std::fs::remove_dir_all(path);
+}

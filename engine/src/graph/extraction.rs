@@ -1,6 +1,10 @@
 //! Entity and relationship extraction traits, openrouter adapter, and test fakes.
 
-use std::{sync::atomic::{AtomicUsize, Ordering}, sync::Mutex};
+use std::{
+    sync::Arc,
+    sync::atomic::{AtomicUsize, Ordering},
+    sync::Mutex,
+};
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -233,6 +237,11 @@ impl ExtractionGenerator for OpenRouterExtractionGenerator {
 pub struct FakeExtractionGenerator {
     pub call_count: AtomicUsize,
     pub responses: Mutex<Vec<Result<ExtractionOutput, GenerationError>>>,
+    pub keyed_responses:
+        Mutex<std::collections::HashMap<String, Result<ExtractionOutput, GenerationError>>>,
+    pub current_in_flight: Arc<AtomicUsize>,
+    pub max_in_flight: Arc<AtomicUsize>,
+    pub delay: Option<std::time::Duration>,
 }
 
 impl FakeExtractionGenerator {
@@ -240,6 +249,10 @@ impl FakeExtractionGenerator {
         Self {
             call_count: AtomicUsize::new(0),
             responses: Mutex::new(vec![response]),
+            keyed_responses: Mutex::new(std::collections::HashMap::new()),
+            current_in_flight: Arc::new(AtomicUsize::new(0)),
+            max_in_flight: Arc::new(AtomicUsize::new(0)),
+            delay: None,
         }
     }
 
@@ -247,7 +260,33 @@ impl FakeExtractionGenerator {
         Self {
             call_count: AtomicUsize::new(0),
             responses: Mutex::new(responses),
+            keyed_responses: Mutex::new(std::collections::HashMap::new()),
+            current_in_flight: Arc::new(AtomicUsize::new(0)),
+            max_in_flight: Arc::new(AtomicUsize::new(0)),
+            delay: None,
         }
+    }
+
+    pub fn with_keyed_responses(
+        responses: std::collections::HashMap<String, Result<ExtractionOutput, GenerationError>>,
+    ) -> Self {
+        Self {
+            call_count: AtomicUsize::new(0),
+            responses: Mutex::new(vec![]),
+            keyed_responses: Mutex::new(responses),
+            current_in_flight: Arc::new(AtomicUsize::new(0)),
+            max_in_flight: Arc::new(AtomicUsize::new(0)),
+            delay: None,
+        }
+    }
+
+    pub fn with_delay(mut self, delay: std::time::Duration) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+
+    pub fn max_observed_concurrency(&self) -> usize {
+        self.max_in_flight.load(Ordering::SeqCst)
     }
 
     pub fn calls(&self) -> usize {
@@ -258,19 +297,38 @@ impl FakeExtractionGenerator {
 impl ExtractionGenerator for FakeExtractionGenerator {
     fn extract<'a>(
         &'a self,
-        _request: ExtractionRequest,
+        request: ExtractionRequest,
     ) -> BoxFuture<'a, Result<ExtractionOutput, GenerationError>> {
         Box::pin(async move {
             self.call_count.fetch_add(1, Ordering::Relaxed);
-            let mut guard = self.responses.lock().unwrap();
-            if guard.is_empty() {
-                Err(GenerationError::new(
-                    GenerationErrorKind::ProviderError,
-                    "FakeExtractionGenerator ran out of responses",
-                ))
-            } else {
-                guard.remove(0)
+            let now = self.current_in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_in_flight.fetch_max(now, Ordering::SeqCst);
+
+            if let Some(delay) = self.delay {
+                if !delay.is_zero() {
+                    tokio::time::sleep(delay).await;
+                }
             }
+
+            let res = {
+                let mut keyed_guard = self.keyed_responses.lock().unwrap();
+                if let Some(resp) = keyed_guard.remove(&request.chunk_id) {
+                    resp
+                } else {
+                    let mut guard = self.responses.lock().unwrap();
+                    if guard.is_empty() {
+                        Err(GenerationError::new(
+                            GenerationErrorKind::ProviderError,
+                            "FakeExtractionGenerator ran out of responses",
+                        ))
+                    } else {
+                        guard.remove(0)
+                    }
+                }
+            };
+
+            self.current_in_flight.fetch_sub(1, Ordering::SeqCst);
+            res
         })
     }
 }

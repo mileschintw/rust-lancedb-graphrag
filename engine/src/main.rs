@@ -11,7 +11,7 @@ use arrow_array::{
     Int64Array, RecordBatch, StringArray,
 };
 use dashmap::DashMap;
-use futures::{future::BoxFuture, TryStreamExt};
+use futures::{future::BoxFuture, StreamExt, TryStreamExt};
 use lancedb::{
     query::{ExecutableQuery, QueryBase},
     Table,
@@ -2155,16 +2155,40 @@ pub(crate) async fn extract_and_persist_entities(
         .collect();
 
     // Phase A (read-only)
+    let stream_items: Vec<(usize, String, String)> = chunks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, chunk)| {
+            if chunk.content.trim().len() < graph::extraction::MIN_CHUNK_CONTENT_LENGTH {
+                None
+            } else {
+                Some((index, chunk_ids[index].clone(), chunk.content.clone()))
+            }
+        })
+        .collect();
+
+    let mut indexed_results = futures::stream::iter(stream_items.into_iter().map(|(index, chunk_id, chunk_text)| {
+        let doc_id = job.document_id.clone();
+        async move {
+            let req = graph::extraction::ExtractionRequest {
+                chunk_id: chunk_id.clone(),
+                document_id: doc_id,
+                chunk_text,
+            };
+            let res = extraction_generator.extract(req).await;
+            (index, chunk_id, res)
+        }
+    }))
+    .buffer_unordered(5)
+    .collect::<Vec<_>>()
+    .await;
+
+    indexed_results.sort_unstable_by_key(|(index, _, _)| *index);
+
     let mut chunk_outputs = Vec::new();
-    for (index, chunk) in chunks.iter().enumerate() {
-        let chunk_id = &chunk_ids[index];
-        let req = graph::extraction::ExtractionRequest {
-            chunk_id: chunk_id.clone(),
-            document_id: job.document_id.clone(),
-            chunk_text: chunk.content.clone(),
-        };
-        match extraction_generator.extract(req).await {
-            Ok(output) => chunk_outputs.push((chunk_id.clone(), output)),
+    for (_index, chunk_id, res) in indexed_results {
+        match res {
+            Ok(output) => chunk_outputs.push((chunk_id, output)),
             Err(e) => {
                 tracing::warn!(
                     %job.document_id,
