@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 1/5 plans executed
+**Plans:** 2/5 plans executed
 
 Plans:
 **Wave 1**
@@ -279,7 +279,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04.1-02-PLAN.md — Prove extract→persist→traverse→render→reach-the-provider end-to-end (tracer), including the provider-payload-capture fix, seed-inclusive fetch_neighborhood, and reserve-one-citable-chunk packing.
+- [x] 04.1-02-PLAN.md — Prove extract→persist→traverse→render→reach-the-provider end-to-end (tracer), including the provider-payload-capture fix, seed-inclusive fetch_neighborhood, and reserve-one-citable-chunk packing.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
