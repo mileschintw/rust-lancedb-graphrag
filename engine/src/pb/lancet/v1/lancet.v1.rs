@@ -135,12 +135,40 @@ pub struct QueryRagResponse {
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct QueryGraphRequest {
     #[prost(string, tag="1")]
-    pub query: ::prost::alloc::string::String,
+    pub seed_entity_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub seed_entity_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag="3")]
+    pub hop_depth: u32,
+    #[prost(string, tag="4")]
+    pub relation_type_filter: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct QueryGraphResponse {
+pub struct QueryGraphNode {
     #[prost(string, tag="1")]
-    pub result_json: ::prost::alloc::string::String,
+    pub entity_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub entity_type: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryGraphEdge {
+    #[prost(string, tag="1")]
+    pub source_entity_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub target_entity_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub relation_type: ::prost::alloc::string::String,
+    #[prost(float, tag="4")]
+    pub weight: f32,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryGraphResponse {
+    #[prost(message, repeated, tag="1")]
+    pub nodes: ::prost::alloc::vec::Vec<QueryGraphNode>,
+    #[prost(message, repeated, tag="2")]
+    pub edges: ::prost::alloc::vec::Vec<QueryGraphEdge>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

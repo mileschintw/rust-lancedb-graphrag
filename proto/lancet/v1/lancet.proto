@@ -111,9 +111,26 @@ message QueryRAGResponse {
 }
 
 message QueryGraphRequest {
-  string query = 1;
+  string seed_entity_id = 1;
+  string seed_entity_name = 2;
+  uint32 hop_depth = 3;
+  string relation_type_filter = 4;
+}
+
+message QueryGraphNode {
+  string entity_id = 1;
+  string name = 2;
+  string entity_type = 3;
+}
+
+message QueryGraphEdge {
+  string source_entity_id = 1;
+  string target_entity_id = 2;
+  string relation_type = 3;
+  float weight = 4;
 }
 
 message QueryGraphResponse {
-  string result_json = 1;
+  repeated QueryGraphNode nodes = 1;
+  repeated QueryGraphEdge edges = 2;
 }
