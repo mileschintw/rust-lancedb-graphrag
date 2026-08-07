@@ -15,7 +15,7 @@ use std::fmt::{Display, Formatter};
 use lance_graph::config::{GraphConfigBuilder, RelationshipMapping};
 use lance_graph::query::{CypherQuery, ExecutionStrategy};
 
-pub mod bridge;
+pub(crate) mod bridge;
 
 #[cfg(test)]
 mod tests;

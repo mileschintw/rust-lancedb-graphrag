@@ -140,6 +140,22 @@ impl DatabaseManager {
             .await
             .map_err(|error| format!("failed to open LanceDB edges table: {error}"))
     }
+
+    pub async fn entities_table(&self) -> Result<Table, String> {
+        self.connection
+            .open_table("entities")
+            .execute()
+            .await
+            .map_err(|error| format!("failed to open LanceDB entities table: {error}"))
+    }
+
+    pub async fn entity_edges_table(&self) -> Result<Table, String> {
+        self.connection
+            .open_table("entity_edges")
+            .execute()
+            .await
+            .map_err(|error| format!("failed to open LanceDB entity_edges table: {error}"))
+    }
 }
 
 async fn validate_schema(name: &str, table: &Table, expected: &SchemaRef) -> Result<(), String> {
@@ -196,14 +212,37 @@ pub fn nodes_schema() -> SchemaRef {
         Field::new("embedding_model", DataType::Utf8, true),
         Field::new("ingested_at", DataType::Int64, true),
         Field::new("content_type", DataType::Utf8, true),
-        Field::new("community_ids", list(DataType::Int32), true),
-        Field::new("summary", DataType::Utf8, true),
-        Field::new("summary_vector", vector(), true),
-        Field::new("unsummarized_refs", list(DataType::Utf8), true),
     ]))
 }
 
 pub fn edges_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("edge_id", DataType::Utf8, false),
+        Field::new("source_node_id", DataType::Utf8, false),
+        Field::new("target_node_id", DataType::Utf8, false),
+        Field::new("relation_type", DataType::Utf8, false),
+        Field::new("weight", DataType::Float32, false),
+        Field::new("document_id", DataType::Utf8, false),
+        Field::new("summary", DataType::Utf8, true),
+        Field::new("summary_vector", vector(), true),
+    ]))
+}
+
+pub fn entities_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("entity_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("entity_type", DataType::Utf8, false),
+        Field::new("name_vector", vector(), false),
+        Field::new("summary", DataType::Utf8, true),
+        Field::new("summary_vector", vector(), true),
+        Field::new("unsummarized_refs", list(DataType::Utf8), true),
+        Field::new("community_ids", list(DataType::Int32), true),
+        Field::new("source_chunk_ids", list(DataType::Utf8), false),
+    ]))
+}
+
+pub fn entity_edges_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("edge_id", DataType::Utf8, false),
         Field::new("source_node_id", DataType::Utf8, false),
@@ -254,15 +293,18 @@ pub fn staged_documents_schema() -> SchemaRef {
     staged_documents_v2_schema()
 }
 
-fn table_schemas() -> [(&'static str, SchemaRef); 5] {
+fn table_schemas() -> [(&'static str, SchemaRef); 7] {
     [
-        ("documents", documents_schema()),
-        ("staged_documents_v2", staged_documents_v2_schema()),
-        ("nodes", nodes_schema()),
-        ("edges", edges_schema()),
         ("communities", communities_schema()),
+        ("documents", documents_schema()),
+        ("edges", edges_schema()),
+        ("entities", entities_schema()),
+        ("entity_edges", entity_edges_schema()),
+        ("nodes", nodes_schema()),
+        ("staged_documents_v2", staged_documents_v2_schema()),
     ]
 }
+
 
 #[tonic::async_trait]
 pub trait EntityResolver: Send + Sync {

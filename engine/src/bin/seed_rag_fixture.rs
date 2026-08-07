@@ -148,12 +148,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(StringArray::from(vec![Some(EMBEDDING_MODEL); CHUNKS.len()])),
             Arc::new(Int64Array::from(vec![Some(ingested_at); CHUNKS.len()])),
             Arc::new(StringArray::from(vec![Some("text/plain"); CHUNKS.len()])),
-            nullable("community_ids"),
-            nullable("summary"),
-            nullable("summary_vector"),
-            nullable("unsummarized_refs"),
         ],
     )?;
+
     nodes.add(node_batch).execute().await?;
 
     let edge_schema = edges.schema().await?;

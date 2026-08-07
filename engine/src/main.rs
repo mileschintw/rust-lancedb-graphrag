@@ -1703,12 +1703,9 @@ async fn replace_document_with_faults(
                     Some(content_type(&job.filename));
                     chunks.len()
                 ])),
-                nullable("community_ids")?,
-                nullable("summary")?,
-                nullable("summary_vector")?,
-                nullable("unsummarized_refs")?,
             ],
         )
+
         .map_err(|error| error.to_string())?;
         mutations
             .add(ReplacementMutation::NodesAdd, &nodes, batch)

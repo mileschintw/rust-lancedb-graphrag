@@ -168,12 +168,10 @@ async fn retrieval_filter_fusion_and_determinism() {
             Arc::new(StringArray::from(vec![Some("test-model"); 4])),
             Arc::new(Int64Array::from(vec![Some(42); 4])),
             Arc::new(StringArray::from(content_types.to_vec())),
-            nullable("community_ids"),
-            nullable("summary"),
-            nullable("summary_vector"),
-            nullable("unsummarized_refs"),
         ],
     )
+
+
     .unwrap();
     nodes.add(batch).execute().await.unwrap();
 

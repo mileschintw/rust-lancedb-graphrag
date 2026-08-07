@@ -145,10 +145,6 @@ async fn fixture(
                     .collect::<Vec<_>>(),
             )),
             nullable("content_type"),
-            nullable("community_ids"),
-            nullable("summary"),
-            nullable("summary_vector"),
-            nullable("unsummarized_refs"),
         ],
     )
     .unwrap();
@@ -533,10 +529,6 @@ async fn test_embedding_child_fixture(
             Arc::new(StringArray::from(vec![Some(EMBEDDING_MODEL)])),
             Arc::new(Int64Array::from(vec![Some(42)])),
             nullable("content_type"),
-            nullable("community_ids"),
-            nullable("summary"),
-            nullable("summary_vector"),
-            nullable("unsummarized_refs"),
         ],
     )
     .unwrap();

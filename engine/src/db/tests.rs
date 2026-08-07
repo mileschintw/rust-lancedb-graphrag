@@ -44,6 +44,8 @@ async fn initializes_and_validates_all_table_schemas() {
             "communities",
             "documents",
             "edges",
+            "entities",
+            "entity_edges",
             "nodes",
             "staged_documents_v2"
         ]
@@ -53,6 +55,32 @@ async fn initializes_and_validates_all_table_schemas() {
     drop(manager);
     let _ = std::fs::remove_dir_all(path);
 }
+
+#[test]
+fn entities_and_entity_edges_schema_shapes_are_valid() {
+    use super::{entities_schema, entity_edges_schema};
+    let ent_schema = entities_schema();
+    assert!(!ent_schema.field_with_name("entity_id").unwrap().is_nullable());
+    assert!(!ent_schema.field_with_name("name").unwrap().is_nullable());
+    assert!(!ent_schema.field_with_name("entity_type").unwrap().is_nullable());
+    assert!(!ent_schema.field_with_name("name_vector").unwrap().is_nullable());
+    assert!(ent_schema.field_with_name("summary").unwrap().is_nullable());
+    assert!(ent_schema.field_with_name("summary_vector").unwrap().is_nullable());
+    assert!(ent_schema.field_with_name("unsummarized_refs").unwrap().is_nullable());
+    assert!(ent_schema.field_with_name("community_ids").unwrap().is_nullable());
+    assert!(!ent_schema.field_with_name("source_chunk_ids").unwrap().is_nullable());
+
+    let ee_schema = entity_edges_schema();
+    assert!(!ee_schema.field_with_name("edge_id").unwrap().is_nullable());
+    assert!(!ee_schema.field_with_name("source_node_id").unwrap().is_nullable());
+    assert!(!ee_schema.field_with_name("target_node_id").unwrap().is_nullable());
+    assert!(!ee_schema.field_with_name("relation_type").unwrap().is_nullable());
+    assert!(!ee_schema.field_with_name("weight").unwrap().is_nullable());
+    assert!(!ee_schema.field_with_name("document_id").unwrap().is_nullable());
+    assert!(ee_schema.field_with_name("summary").unwrap().is_nullable());
+    assert!(ee_schema.field_with_name("summary_vector").unwrap().is_nullable());
+}
+
 
 #[tokio::test]
 async fn schema_drift_fails_database_initialization() {

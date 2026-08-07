@@ -168,12 +168,10 @@ async fn seed_schema_valid_bm25_failure_fixture(
             Arc::new(StringArray::from(vec![Some("test-embedding-model")])),
             Arc::new(Int64Array::from(vec![Some(1)])),
             Arc::new(StringArray::from(vec![Some("text/plain")])),
-            nullable("community_ids")?,
-            nullable("summary")?,
-            nullable("summary_vector")?,
-            nullable("unsummarized_refs")?,
         ],
     )
+
+
     .map_err(|error| format!("build BM25 failure fixture row: {error}"))?;
     nodes
         .add(batch)

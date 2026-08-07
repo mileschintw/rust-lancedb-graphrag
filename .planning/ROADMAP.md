@@ -270,12 +270,12 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 5 plans
+**Plans:** 1/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 04.1-01-PLAN.md — Promote graph out of graph-spike, lock the entities/entity_edges schema-restructure decision, and migrate every existing fixture/test to the restructured schema.
+- [x] 04.1-01-PLAN.md — Promote graph out of graph-spike, lock the entities/entity_edges schema-restructure decision, and migrate every existing fixture/test to the restructured schema.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

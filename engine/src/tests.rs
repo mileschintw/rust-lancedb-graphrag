@@ -604,8 +604,9 @@ async fn canonical_state(database: &DatabaseManager, document_id: &str) -> Canon
         edge_sources: string_values(&edges, "source_node_id"),
         edge_targets: string_values(&edges, "target_node_id"),
         generations: int64_values(&nodes, "ingested_at"),
-        summary_null_count: null_count(&nodes, "summary"),
+        summary_null_count: null_count(&edges, "summary"),
     }
+
 }
 
 async fn stage_document(database: &DatabaseManager, document_id: &str, raw_data: &[u8]) {
@@ -834,7 +835,8 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
         stage_document(&database, &document_id, b"replacement staging row").await;
         let old_state = canonical_state(&database, &document_id).await;
         assert_eq!(old_state.edge_ids.len(), 3);
-        assert_eq!(old_state.summary_null_count, old_state.node_ids.len());
+        assert_eq!(old_state.summary_null_count, old_state.edge_ids.len());
+
 
         let replacement_job = IngestionJob::new(
             document_id.clone(),
@@ -895,7 +897,8 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
         assert!(current.edge_sources.is_subset(&current.node_ids));
         assert!(current.edge_targets.is_subset(&current.node_ids));
         assert_eq!(current.generations.len(), 1);
-        assert_eq!(current.summary_null_count, current.node_ids.len());
+        assert_eq!(current.summary_null_count, current.edge_ids.len());
+
         assert_eq!(
             database
                 .staged_documents_table()
@@ -1006,7 +1009,7 @@ async fn persisted_node_summary_is_arrow_null() {
     .await
     .unwrap();
     let rows = query_rows(
-        &database.nodes_table().await.unwrap(),
+        &database.edges_table().await.unwrap(),
         &format!("document_id = '{}'", sql_string(&job.document_id)),
     )
     .await;
@@ -1018,7 +1021,7 @@ async fn persisted_node_summary_is_arrow_null() {
         .unwrap();
     assert_eq!(summary.null_count(), row_count(&rows));
     let summary_field = database
-        .nodes_table()
+        .edges_table()
         .await
         .unwrap()
         .schema()
@@ -1028,6 +1031,7 @@ async fn persisted_node_summary_is_arrow_null() {
         .unwrap()
         .clone();
     assert!(summary_field.is_nullable());
+
     let _ = std::fs::remove_dir_all(path);
 }
 
