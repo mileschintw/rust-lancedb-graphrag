@@ -371,11 +371,12 @@ fn extract_inline_markers(text: &str) -> Vec<String> {
 }
 
 /// A structured input request passed to a `Generator`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct GenerationRequest {
     pub system_policy: String,
     pub question: String,
     pub evidence: Vec<EvidenceBlock>,
+    pub graph_facts: Vec<crate::prompt::GraphFactBlock>,
     pub session_id: Option<String>,
     pub correlation_id: Option<String>,
 }
@@ -386,6 +387,7 @@ impl GenerationRequest {
             system_policy: "You are a precise technical RAG engine.".into(),
             question: question.into(),
             evidence,
+            graph_facts: Vec::new(),
             session_id: None,
             correlation_id: None,
         }

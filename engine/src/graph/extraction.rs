@@ -1,0 +1,276 @@
+//! Entity and relationship extraction traits, openrouter adapter, and test fakes.
+
+use std::{sync::atomic::{AtomicUsize, Ordering}, sync::Mutex};
+
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+
+use crate::generation::{
+    openrouter::OpenRouterGenerationConfig, BoxFuture, GenerationError, GenerationErrorKind,
+};
+
+pub const MIN_CHUNK_CONTENT_LENGTH: usize = 40;
+
+/// A request to extract entities and relationships from a single chunk.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtractionRequest {
+    pub chunk_id: String,
+    pub document_id: String,
+    pub chunk_text: String,
+}
+
+/// Extracted entities and relationships output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtractionOutput {
+    pub entities: Vec<ExtractedEntity>,
+    pub relations: Vec<ExtractedRelation>,
+}
+
+/// An entity extracted from text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtractedEntity {
+    pub name: String,
+    pub entity_type: String,
+}
+
+/// A relationship extracted between two entities in text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExtractedRelation {
+    pub source: String,
+    pub target: String,
+    pub relation_type: String,
+    pub confidence: f32,
+}
+
+/// Trait for extracting knowledge graph entities and relationships.
+pub trait ExtractionGenerator: Send + Sync {
+    fn extract<'a>(
+        &'a self,
+        request: ExtractionRequest,
+    ) -> BoxFuture<'a, Result<ExtractionOutput, GenerationError>>;
+}
+
+/// OpenRouter implementation of ExtractionGenerator using structured outputs.
+#[derive(Clone)]
+pub struct OpenRouterExtractionGenerator {
+    http: Client,
+    api_key: String,
+    config: OpenRouterGenerationConfig,
+}
+
+impl OpenRouterExtractionGenerator {
+    pub fn new_with_config(
+        api_key: impl Into<String>,
+        config: OpenRouterGenerationConfig,
+    ) -> Result<Self, GenerationError> {
+        let api_key = api_key.into();
+        if api_key.trim().is_empty() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter API key must not be empty for extraction",
+            ));
+        }
+
+        let http = Client::builder()
+            .timeout(config.timeout())
+            .build()
+            .map_err(|err| {
+                GenerationError::new(
+                    GenerationErrorKind::ProviderError,
+                    format!("failed to build HTTP client for extraction: {err}"),
+                )
+            })?;
+
+        Ok(Self {
+            http,
+            api_key,
+            config,
+        })
+    }
+    pub(crate) fn build_request_payload(&self, chunk_text: &str) -> serde_json::Value {
+        let system_msg = "You are an entity and relationship extraction engine. Extract key entities and relationships from the provided text block into the requested JSON schema. Do not extract trivial or stopword entities.";
+        let user_msg = format!("Extract entities and relationships:\n\nText:\n{}", chunk_text);
+
+        let schema_json = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "entities": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "maxLength": 128 },
+                            "entity_type": { "type": "string", "maxLength": 64 }
+                        },
+                        "required": ["name", "entity_type"],
+                        "additionalProperties": false
+                    },
+                    "maxItems": 32
+                },
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source": { "type": "string", "maxLength": 128 },
+                            "target": { "type": "string", "maxLength": 128 },
+                            "relation_type": { "type": "string", "maxLength": 64 },
+                            "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+                        },
+                        "required": ["source", "target", "relation_type", "confidence"],
+                        "additionalProperties": false
+                    },
+                    "maxItems": 64
+                }
+            },
+            "required": ["entities", "relations"],
+            "additionalProperties": false
+        });
+
+        serde_json::json!({
+            "model": self.config.model(),
+            "messages": [
+                { "role": "system", "content": system_msg },
+                { "role": "user", "content": user_msg }
+            ],
+            "temperature": self.config.temperature(),
+            "top_p": self.config.top_p(),
+            "max_completion_tokens": self.config.max_completion_tokens(),
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "knowledge_graph_extraction",
+                    "strict": true,
+                    "schema": schema_json
+                }
+            }
+        })
+    }
+}
+
+impl ExtractionGenerator for OpenRouterExtractionGenerator {
+    fn extract<'a>(
+        &'a self,
+        request: ExtractionRequest,
+    ) -> BoxFuture<'a, Result<ExtractionOutput, GenerationError>> {
+        Box::pin(async move {
+            let payload = self.build_request_payload(&request.chunk_text);
+
+            let response = self
+                .http
+                .post(self.config.chat_endpoint())
+                .bearer_auth(&self.api_key)
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|err| {
+                    if err.is_timeout() {
+                        GenerationError::new(
+                            GenerationErrorKind::Timeout,
+                            "OpenRouter extraction timed out",
+                        )
+                    } else {
+                        GenerationError::new(
+                            GenerationErrorKind::ProviderError,
+                            format!("OpenRouter extraction request failed: {err}"),
+                        )
+                    }
+                })?;
+
+            if !response.status().is_success() {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::ProviderError,
+                    format!("OpenRouter extraction returned HTTP {}", response.status()),
+                ));
+            }
+
+            let body_bytes = crate::client::read_body_limited(response)
+                .await
+                .map_err(|err| match err {
+                    crate::client::BoundedBodyError::TooLarge => GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        "OpenRouter extraction response body exceeds limit",
+                    ),
+                    crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
+                        GenerationErrorKind::ProviderError,
+                        format!("failed to read OpenRouter extraction response body: {msg}"),
+                    ),
+                })?;
+
+            let chat_resp: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(|err| {
+                GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("failed to parse OpenRouter response wrapper JSON: {err}"),
+                )
+            })?;
+
+            let content_str = chat_resp["choices"][0]["message"]["content"]
+                .as_str()
+                .ok_or_else(|| {
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        "missing choices[0].message.content in OpenRouter response",
+                    )
+                })?;
+
+            let output: ExtractionOutput = serde_json::from_str(content_str).map_err(|err| {
+                GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("failed to deserialize ExtractionOutput schema: {err}"),
+                )
+            })?;
+
+            Ok(output)
+        })
+    }
+}
+
+/// Fake extraction generator for unit tests.
+pub struct FakeExtractionGenerator {
+    pub call_count: AtomicUsize,
+    pub responses: Mutex<Vec<Result<ExtractionOutput, GenerationError>>>,
+}
+
+impl FakeExtractionGenerator {
+    pub fn new(response: Result<ExtractionOutput, GenerationError>) -> Self {
+        Self {
+            call_count: AtomicUsize::new(0),
+            responses: Mutex::new(vec![response]),
+        }
+    }
+
+    pub fn with_responses(responses: Vec<Result<ExtractionOutput, GenerationError>>) -> Self {
+        Self {
+            call_count: AtomicUsize::new(0),
+            responses: Mutex::new(responses),
+        }
+    }
+
+    pub fn calls(&self) -> usize {
+        self.call_count.load(Ordering::Relaxed)
+    }
+}
+
+impl ExtractionGenerator for FakeExtractionGenerator {
+    fn extract<'a>(
+        &'a self,
+        _request: ExtractionRequest,
+    ) -> BoxFuture<'a, Result<ExtractionOutput, GenerationError>> {
+        Box::pin(async move {
+            self.call_count.fetch_add(1, Ordering::Relaxed);
+            let mut guard = self.responses.lock().unwrap();
+            if guard.is_empty() {
+                Err(GenerationError::new(
+                    GenerationErrorKind::ProviderError,
+                    "FakeExtractionGenerator ran out of responses",
+                ))
+            } else {
+                guard.remove(0)
+            }
+        })
+    }
+}

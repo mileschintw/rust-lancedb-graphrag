@@ -181,3 +181,141 @@ fn clamp_hop_cap_rejects_zero_and_over_max() {
 
     assert_eq!(clamp_hop_cap(MAX_HOP_CAP), Ok(MAX_HOP_CAP));
 }
+
+#[test]
+fn graph_fact_block_escaping_contract() {
+    use super::context_strategy::{ContextAssemblyStrategy, GraphFact};
+    use crate::prompt::GraphFactBlock;
+
+    let raw_src = "<Tag & 'Name'>";
+    let raw_rel = "REL & TYPE";
+    let raw_tgt = "<Target>";
+    let fact = GraphFact::new(raw_src, raw_rel, raw_tgt, None, 0.9);
+
+    let assembled = ContextAssemblyStrategy::SourceChunks.assemble(&fact);
+    assert!(assembled.contains("&lt;Tag &amp; &apos;Name&apos;&gt;"));
+    assert!(assembled.contains("REL &amp; TYPE"));
+    assert!(assembled.contains("&lt;Target&gt;"));
+    assert!(!assembled.contains("<Tag"));
+
+    let block = GraphFactBlock { fact: fact.clone() };
+    let serialized = serde_json::to_string(&block).expect("GraphFactBlock must serialize");
+    assert!(serialized.contains("&lt;Tag &amp; &apos;Name&apos;&gt;"));
+
+    // Deserialization disabled invariant: check that serde_json::from_str fails or isn't implemented
+    // Note: GraphFact does NOT derive Deserialize, ensuring private-field constructor cannot be bypassed.
+}
+
+#[tokio::test]
+async fn extraction_generator_trait_and_fake() {
+    use super::extraction::{ExtractionGenerator, ExtractionOutput, ExtractionRequest, FakeExtractionGenerator, ExtractedEntity, ExtractedRelation};
+
+    let fake_output = ExtractionOutput {
+        entities: vec![ExtractedEntity {
+            name: "Alice".into(),
+            entity_type: "person".into(),
+        }],
+        relations: vec![ExtractedRelation {
+            source: "Alice".into(),
+            target: "Bob".into(),
+            relation_type: "knows".into(),
+            confidence: 0.95,
+        }],
+    };
+
+    let generator = FakeExtractionGenerator::new(Ok(fake_output.clone()));
+    let req = ExtractionRequest {
+        chunk_id: "chk-1".into(),
+        document_id: "doc-1".into(),
+        chunk_text: "Alice knows Bob.".into(),
+    };
+
+    let res = generator.extract(req).await.expect("Fake extraction must succeed");
+    assert_eq!(res, fake_output);
+}
+
+#[test]
+fn structured_extraction_json_schema_validation() {
+    use super::extraction::OpenRouterExtractionGenerator;
+    use crate::generation::openrouter::OpenRouterGenerationConfig;
+    use std::time::Duration;
+
+    let config = OpenRouterGenerationConfig::new(
+        "test-model",
+        "https://example.com/chat",
+        "https://example.com/models",
+        Duration::from_secs(10),
+        0.0,
+        1.0,
+        768,
+        768,
+    )
+    .expect("OpenRouterGenerationConfig must construct");
+
+    let gen = OpenRouterExtractionGenerator::new_with_config("api-key", config)
+        .expect("OpenRouterExtractionGenerator must construct");
+
+    let req_body = gen.build_request_payload("Test chunk text");
+    assert_eq!(req_body["model"], "test-model");
+
+    let response_format = &req_body["response_format"];
+    assert_eq!(response_format["type"], "json_schema");
+
+    let schema_obj = &response_format["json_schema"];
+    assert_eq!(schema_obj["strict"], true);
+    assert_eq!(schema_obj["name"], "knowledge_graph_extraction");
+
+    let schema_val = &schema_obj["schema"];
+    assert_eq!(schema_val["type"], "object");
+    assert_eq!(schema_val["additionalProperties"], false);
+
+    let props = &schema_val["properties"];
+    assert!(props.get("entities").is_some());
+    assert!(props.get("relations").is_some());
+
+    let entities_items = &props["entities"]["items"];
+    assert_eq!(entities_items["additionalProperties"], false);
+    assert!(entities_items["properties"].get("name").is_some());
+    assert!(entities_items["properties"].get("entity_type").is_some());
+
+    let rel_items = &props["relations"]["items"];
+    assert_eq!(rel_items["additionalProperties"], false);
+    assert!(rel_items["properties"].get("source").is_some());
+    assert!(rel_items["properties"].get("target").is_some());
+    assert!(rel_items["properties"].get("relation_type").is_some());
+    assert!(rel_items["properties"].get("confidence").is_some());
+}
+
+#[test]
+fn openrouter_generation_config_accessors() {
+    use crate::generation::openrouter::OpenRouterGenerationConfig;
+    use std::time::Duration;
+
+    let config = OpenRouterGenerationConfig::new(
+        "my-model",
+        "https://example.com/chat",
+        "https://example.com/models",
+        Duration::from_secs(12),
+        0.1,
+        0.9,
+        512,
+        512,
+    )
+    .expect("Config must construct");
+
+    assert_eq!(config.model(), "my-model");
+    assert_eq!(config.chat_endpoint(), "https://example.com/chat");
+    assert_eq!(config.timeout(), Duration::from_secs(12));
+    assert_eq!(config.temperature(), 0.1);
+    assert_eq!(config.top_p(), 0.9);
+}
+
+#[tokio::test]
+async fn cypher_narrowing_fail_open() {
+    let (entities, edges) = three_entity_two_edge_fixture();
+    // Invalid seed_id or empty neighborhood should fail open to original batches
+    let (out_entities, out_edges) = super::narrow_via_cypher(&entities, &edges, "nonexistent-seed", 1).await;
+    // Fail open invariant: out_entities and out_edges must equal original inputs
+    assert_eq!(out_entities.num_rows(), entities.num_rows());
+    assert_eq!(out_edges.num_rows(), edges.num_rows());
+}

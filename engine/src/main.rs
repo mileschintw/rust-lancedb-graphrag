@@ -22,12 +22,16 @@ use tokio::{
     task::JoinHandle,
 };
 use tonic::{transport::Server, Request, Response, Status};
+use arrow_array::Array;
+use graph::escape_sql_literal;
 use tracing::Instrument;
 use uuid::Uuid;
 
 mod chunker;
 use engine::client;
+use engine::db;
 pub mod generation;
+pub mod graph;
 pub mod prompt;
 mod rerank;
 mod retrieval;
@@ -138,12 +142,45 @@ impl Default for Settings {
     }
 }
 
+fn default_seed_match_min_score() -> f64 {
+    0.5
+}
+
+fn default_max_hop_cap() -> u32 {
+    3
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GraphConfigSettings {
+    #[serde(default = "default_seed_match_min_score")]
+    pub seed_match_min_score: f64,
+    #[serde(default = "default_max_hop_cap")]
+    pub max_hop_cap: u32,
+}
+
+impl Default for GraphConfigSettings {
+    fn default() -> Self {
+        Self {
+            seed_match_min_score: default_seed_match_min_score(),
+            max_hop_cap: default_max_hop_cap(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphSettings {
+    pub seed_match_min_score: f64,
+    pub max_hop_cap: u32,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct EngineSettings {
     pub grpc_addr: String,
     pub lancedb_path: String,
     #[serde(default)]
     pub retrieval: RetrievalConfigSettings,
+    #[serde(default)]
+    pub graph: GraphConfigSettings,
 }
 
 impl Default for EngineSettings {
@@ -152,6 +189,7 @@ impl Default for EngineSettings {
             grpc_addr: "[::1]:50051".into(),
             lancedb_path: "./data/lancedb".into(),
             retrieval: RetrievalConfigSettings::default(),
+            graph: GraphConfigSettings::default(),
         }
     }
 }
@@ -299,6 +337,7 @@ fn new_index_generation() -> String {
 #[derive(Debug, Clone, PartialEq)]
 pub struct EffectiveRagSettings {
     pub retrieval: retrieval::RetrievalSettings,
+    pub graph: GraphSettings,
     pub evidence_token_budget: usize,
     pub citation_excerpt_max_chars: usize,
     pub embedding_endpoint: String,
@@ -325,12 +364,17 @@ impl EffectiveRagSettings {
 
     pub fn try_from_settings(settings: &Settings) -> Result<Self, String> {
         let retrieval = settings.engine.retrieval.to_retrieval_settings();
+        let graph = GraphSettings {
+            seed_match_min_score: settings.engine.graph.seed_match_min_score,
+            max_hop_cap: settings.engine.graph.max_hop_cap,
+        };
         let ev = u32::try_from(settings.engine.retrieval.evidence_token_budget)
             .map_err(|_| "evidence_token_budget exceeds u32::MAX".to_string())?;
         let limits = generation::GroundingLimits::new(ev, settings.openrouter.max_output_tokens)
             .map_err(|err| err.message().to_string())?;
         let effective = Self {
             retrieval,
+            graph,
             evidence_token_budget: settings.engine.retrieval.evidence_token_budget,
             citation_excerpt_max_chars: settings.engine.retrieval.excerpt_max_chars,
             embedding_endpoint: settings.openrouter.embedding_endpoint.clone(),
@@ -353,6 +397,18 @@ impl EffectiveRagSettings {
         self.retrieval
             .validate()
             .map_err(|err| format!("invalid retrieval settings: {}", err.message()))?;
+        if !self.graph.seed_match_min_score.is_finite()
+            || self.graph.seed_match_min_score < 0.0
+            || self.graph.seed_match_min_score > 1.0
+        {
+            return Err("invalid graph.seed_match_min_score: must be finite and between 0.0 and 1.0".into());
+        }
+        if self.graph.max_hop_cap == 0 || self.graph.max_hop_cap > graph::MAX_HOP_CAP {
+            return Err(format!(
+                "invalid graph.max_hop_cap: must be between 1 and {}",
+                graph::MAX_HOP_CAP
+            ));
+        }
         if self.citation_excerpt_max_chars == 0 {
             return Err("invalid excerpt_max_chars: must be greater than 0".into());
         }
@@ -811,6 +867,7 @@ pub struct LancetServiceImpl {
     generator: Arc<dyn generation::Generator>,
     embedder: Arc<dyn EmbeddingProvider>,
     reranker: Arc<dyn rerank::Reranker>,
+    pub database: DatabaseManager,
 }
 
 fn d1_status(
@@ -982,6 +1039,198 @@ fn validate_document_id(document_id: &str) -> Result<(), Status> {
     Ok(())
 }
 
+pub(crate) enum GraphAugmentationOutcome {
+    Succeeded {
+        facts: Vec<graph::context_strategy::GraphFact>,
+    },
+    NoMatchFound,
+    AttemptedAndFailed {
+        reason: String,
+    },
+}
+
+pub(crate) async fn attempt_graph_augmentation(
+    database: &DatabaseManager,
+    query_embedding: &[f32],
+    settings: &GraphSettings,
+) -> GraphAugmentationOutcome {
+    let entities_table = match database.entities_table().await {
+        Ok(t) => t,
+        Err(e) => {
+            return GraphAugmentationOutcome::AttemptedAndFailed {
+                reason: format!("entities table error: {e}"),
+            }
+        }
+    };
+
+    let nearest = match entities_table
+        .query()
+        .nearest_to(query_embedding.to_vec())
+    {
+        Ok(q) => q,
+        Err(e) => {
+            return GraphAugmentationOutcome::AttemptedAndFailed {
+                reason: format!("nearest_to error: {e}"),
+            }
+        }
+    };
+
+    let batches: Vec<arrow_array::RecordBatch> = match nearest
+        .column("name_vector")
+        .select(lancedb::query::Select::columns(&[
+            "entity_id",
+            "name",
+            "entity_type",
+            "_distance",
+        ]))
+        .limit(1)
+        .execute()
+        .await
+    {
+        Ok(s) => match s.try_collect().await {
+            Ok(b) => b,
+            Err(e) => {
+                return GraphAugmentationOutcome::AttemptedAndFailed {
+                    reason: format!("execute collect error: {e}"),
+                }
+            }
+        },
+        Err(e) => {
+            return GraphAugmentationOutcome::AttemptedAndFailed {
+                reason: format!("execute error: {e}"),
+            }
+        }
+    };
+
+    if batches.is_empty() || batches[0].num_rows() == 0 {
+        return GraphAugmentationOutcome::NoMatchFound;
+    }
+
+    let seed_batch = &batches[0];
+    let distance_col = match seed_batch
+        .column_by_name("_distance")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>())
+    {
+        Some(c) => c,
+        None => {
+            return GraphAugmentationOutcome::AttemptedAndFailed {
+                reason: "missing _distance column".into(),
+            }
+        }
+    };
+    let distance = distance_col.value(0) as f64;
+    let seed_match_score = retrieval::dense::dense_score(distance);
+
+    if seed_match_score < settings.seed_match_min_score {
+        return GraphAugmentationOutcome::NoMatchFound;
+    }
+
+    let seed_id_col = match seed_batch
+        .column_by_name("entity_id")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+    {
+        Some(c) => c,
+        None => {
+            return GraphAugmentationOutcome::AttemptedAndFailed {
+                reason: "missing entity_id column".into(),
+            }
+        }
+    };
+    let matched_entity_id = seed_id_col.value(0).to_string();
+
+    let (entities_batch, edges_batch) =
+        match graph::fetch_neighborhood(database, &matched_entity_id, 1, true).await {
+            Ok(res) => res,
+            Err(e) => {
+                return GraphAugmentationOutcome::AttemptedAndFailed {
+                    reason: format!("fetch_neighborhood kind: {:?}", e.kind),
+                }
+            }
+        };
+
+    let (entities_batch, edges_batch) =
+        graph::narrow_via_cypher(&entities_batch, &edges_batch, &matched_entity_id, 1).await;
+
+    let entity_id_col = match entities_batch
+        .column_by_name("entity_id")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+    {
+        Some(c) => c,
+        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
+    };
+    let name_col = match entities_batch
+        .column_by_name("name")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+    {
+        Some(c) => c,
+        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
+    };
+
+    let mut name_map = HashMap::new();
+    for i in 0..entities_batch.num_rows() {
+        if !entity_id_col.is_null(i) && !name_col.is_null(i) {
+            name_map.insert(
+                entity_id_col.value(i).to_string(),
+                name_col.value(i).to_string(),
+            );
+        }
+    }
+
+    let source_col = match edges_batch
+        .column_by_name("source_node_id")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+    {
+        Some(c) => c,
+        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
+    };
+    let target_col = match edges_batch
+        .column_by_name("target_node_id")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+    {
+        Some(c) => c,
+        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
+    };
+    let rel_col = match edges_batch
+        .column_by_name("relation_type")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+    {
+        Some(c) => c,
+        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
+    };
+    let weight_col = match edges_batch
+        .column_by_name("weight")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>())
+    {
+        Some(c) => c,
+        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
+    };
+
+    let mut facts = Vec::new();
+    for i in 0..edges_batch.num_rows() {
+        if !source_col.is_null(i)
+            && !target_col.is_null(i)
+            && !rel_col.is_null(i)
+            && !weight_col.is_null(i)
+        {
+            let src_id = source_col.value(i);
+            let tgt_id = target_col.value(i);
+            let rel = rel_col.value(i);
+            let weight = weight_col.value(i) as f64;
+
+            if let (Some(src_name), Some(tgt_name)) =
+                (name_map.get(src_id), name_map.get(tgt_id))
+            {
+                let score = seed_match_score * weight;
+                facts.push(graph::context_strategy::GraphFact::new(
+                    src_name, rel, tgt_name, None, score,
+                ));
+            }
+        }
+    }
+
+    GraphAugmentationOutcome::Succeeded { facts }
+}
+
 #[tonic::async_trait]
 impl LancetService for LancetServiceImpl {
     async fn ping(&self, request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
@@ -1094,195 +1343,223 @@ impl LancetService for LancetServiceImpl {
         &self,
         request: Request<QueryRagRequest>,
     ) -> Result<Response<QueryRagResponse>, Status> {
-        let req = request.into_inner();
+        let query_span = tracing::info_span!("query_rag", graph_augmentation = tracing::field::Empty);
+        async move {
+            let req = request.into_inner();
 
-        let session_id = if req.session_id.trim().is_empty() {
-            Uuid::new_v4().to_string()
-        } else {
-            let parsed = Uuid::parse_str(req.session_id.trim()).map_err(|_| {
-                Status::invalid_argument("session_id must be a valid UUIDv4 string")
-            })?;
-            if parsed.get_version_num() != 4 || parsed.get_variant() != uuid::Variant::RFC4122 {
-                return Err(Status::invalid_argument(
-                    "session_id must be a valid UUIDv4 string",
-                ));
-            }
-            parsed.to_string()
-        };
-
-        let correlation_id = Uuid::new_v4().to_string();
-
-        let (doc_ids, content_types) = if let Some(ref filter) = req.filter {
-            (filter.document_ids.clone(), filter.content_types.clone())
-        } else {
-            (vec![], vec![])
-        };
-
-        let query_request = QueryRequest::from_values(
-            &req.query,
-            doc_ids,
-            content_types,
-            &self.effective_settings.retrieval,
-        )
-        .map_err(|err| match err.kind {
-            RetrievalErrorKind::EmptyQuery
-            | RetrievalErrorKind::QueryTooLong
-            | RetrievalErrorKind::InvalidDocumentId
-            | RetrievalErrorKind::UnsupportedContentType
-            | RetrievalErrorKind::EmptyFilterValue
-            | RetrievalErrorKind::FilterLimitExceeded
-            | RetrievalErrorKind::InvalidSettings => Status::invalid_argument(err.message()),
-            RetrievalErrorKind::NonFiniteScore | RetrievalErrorKind::Snapshot => {
-                Status::internal(err.message())
-            }
-        })?;
-
-        let query_embedding = match self
-            .embedder
-            .get_embeddings(&[query_request.query.clone()])
-            .await
-        {
-            Ok(vecs) => {
-                if vecs.len() != 1
-                    || vecs[0].len() != 2048
-                    || vecs[0].iter().any(|f| !f.is_finite())
-                {
-                    return Err(d1_status(
-                        tonic::Code::Internal,
-                        "embedding provider returned invalid payload",
-                        &session_id,
-                        &correlation_id,
-                        "embedding_invalid_payload",
+            let session_id = if req.session_id.trim().is_empty() {
+                Uuid::new_v4().to_string()
+            } else {
+                let parsed = Uuid::parse_str(req.session_id.trim()).map_err(|_| {
+                    Status::invalid_argument("session_id must be a valid UUIDv4 string")
+                })?;
+                if parsed.get_version_num() != 4 || parsed.get_variant() != uuid::Variant::RFC4122 {
+                    return Err(Status::invalid_argument(
+                        "session_id must be a valid UUIDv4 string",
                     ));
                 }
-                vecs.into_iter().next().unwrap()
-            }
-            Err(err) => {
-                return Err(d1_status(
-                    tonic::Code::Unavailable,
-                    format!("embedding provider transport error: {err}"),
-                    &session_id,
-                    &correlation_id,
-                    "embedding_transport",
-                ));
-            }
-        };
-
-        let dense_retriever = DenseRetriever::new(self.nodes.clone());
-        let dense_candidates = match dense_retriever
-            .query(
-                &query_embedding,
-                &query_request,
-                &self.effective_settings.retrieval,
-            )
-            .await
-        {
-            Ok(candidates) => candidates,
-            Err(err) => {
-                let (code, kind_str) = match err.kind {
-                    RetrievalErrorKind::Snapshot => (tonic::Code::Unavailable, "dense_retrieval"),
-                    RetrievalErrorKind::NonFiniteScore => {
-                        (tonic::Code::Internal, "non_finite_score")
-                    }
-                    _ => (tonic::Code::Internal, "dense_retrieval_internal"),
-                };
-                return Err(d1_status(
-                    code,
-                    format!("dense retrieval failure: {}", err.message()),
-                    &session_id,
-                    &correlation_id,
-                    kind_str,
-                ));
-            }
-        };
-
-        let bm25_guard = self.bm25_index.read().await;
-        let bm25_candidates = bm25_guard
-            .retrieve(&query_request, &self.effective_settings.retrieval)
-            .await
-            .map_err(|err| Status::internal(err.to_string()))?;
-        drop(bm25_guard);
-
-        let fused = retrieval::fusion::fuse_candidates(
-            dense_candidates,
-            bm25_candidates,
-            &self.effective_settings.retrieval,
-        )
-        .map_err(|err| match err.kind {
-            RetrievalErrorKind::NonFiniteScore => {
-                Status::internal(format!("non-finite fusion score: {err}"))
-            }
-            _ => Status::internal(err.to_string()),
-        })?;
-
-        let reranked = self
-            .reranker
-            .rerank(fused)
-            .await
-            .map_err(|err| Status::internal(err.to_string()))?;
-
-        let final_candidates: Vec<_> = reranked
-            .into_iter()
-            .take(self.effective_settings.retrieval.final_limit)
-            .collect();
-
-        if final_candidates.is_empty() {
-            let snapshot = lancet::v1::RetrievalSnapshot {
-                index_generation: self.effective_settings.index_generation.clone(),
-                embedding_model: self.embedder.model_id().to_owned(),
-                vector_weight: self.effective_settings.retrieval.vector_weight,
-                bm25_weight: self.effective_settings.retrieval.bm25_weight,
-                rrf_k: snapshot_rrf_k(self.effective_settings.retrieval.rrf_k)?,
-                candidate_limit: snapshot_limit(
-                    self.effective_settings.retrieval.candidate_limit,
-                    "candidate_limit",
-                )?,
-                final_limit: snapshot_limit(
-                    self.effective_settings.retrieval.final_limit,
-                    "final_limit",
-                )?,
-                active_filter: Some(lancet::v1::DocumentFilter {
-                    document_ids: query_request.filters.document_ids.clone(),
-                    content_types: query_request.filters.content_types.clone(),
-                }),
-                result_hash: format!("{:x}", {
-                    let hasher = DefaultHasher::new();
-                    hasher.finish()
-                }),
+                parsed.to_string()
             };
 
-            return Ok(Response::new(QueryRagResponse {
-                answer: String::new(),
-                citations: vec![],
-                session_id,
-                answer_basis: lancet::v1::AnswerBasis::Unspecified as i32,
-                structured_citations: vec![],
-                notices: vec![lancet::v1::Notice {
-                    code: "NO_EVIDENCE".to_string(),
-                    message: "No completed corpus evidence matched the requested filters."
-                        .to_string(),
-                    severity: lancet::v1::NoticeSeverity::Info as i32,
-                }],
-                snapshot: Some(snapshot),
-            }));
-        }
+            let correlation_id = Uuid::new_v4().to_string();
 
-        let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
-        let limits = self.effective_settings.grounding_limits();
-        let packed_evidence = prompt::pack_evidence_prompt(
-            &query_request.query,
-            &evidence_blocks,
-            limits.evidence_token_budget() as usize,
-            limits.max_output_tokens() as usize,
-        )
-        .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
+            let (doc_ids, content_types) = if let Some(ref filter) = req.filter {
+                (filter.document_ids.clone(), filter.content_types.clone())
+            } else {
+                (vec![], vec![])
+            };
 
-        let mut gen_req = generation::GenerationRequest::new(
-            &query_request.query,
-            packed_evidence.evidence.clone(),
-        );
-        gen_req.session_id = Some(session_id.clone());
-        gen_req.correlation_id = Some(correlation_id.clone());
+            let query_request = QueryRequest::from_values(
+                &req.query,
+                doc_ids,
+                content_types,
+                &self.effective_settings.retrieval,
+            )
+            .map_err(|err| match err.kind {
+                RetrievalErrorKind::EmptyQuery
+                | RetrievalErrorKind::QueryTooLong
+                | RetrievalErrorKind::InvalidDocumentId
+                | RetrievalErrorKind::UnsupportedContentType
+                | RetrievalErrorKind::EmptyFilterValue
+                | RetrievalErrorKind::FilterLimitExceeded
+                | RetrievalErrorKind::InvalidSettings => Status::invalid_argument(err.message()),
+                RetrievalErrorKind::NonFiniteScore | RetrievalErrorKind::Snapshot => {
+                    Status::internal(err.message())
+                }
+            })?;
+
+            let query_embedding = match self
+                .embedder
+                .get_embeddings(&[query_request.query.clone()])
+                .await
+            {
+                Ok(vecs) => {
+                    if vecs.len() != 1
+                        || vecs[0].len() != 2048
+                        || vecs[0].iter().any(|f| !f.is_finite())
+                    {
+                        return Err(d1_status(
+                            tonic::Code::Internal,
+                            "embedding provider returned invalid payload",
+                            &session_id,
+                            &correlation_id,
+                            "embedding_invalid_payload",
+                        ));
+                    }
+                    vecs.into_iter().next().unwrap()
+                }
+                Err(err) => {
+                    return Err(d1_status(
+                        tonic::Code::Unavailable,
+                        format!("embedding provider transport error: {err}"),
+                        &session_id,
+                        &correlation_id,
+                        "embedding_transport",
+                    ));
+                }
+            };
+
+            let graph_outcome = attempt_graph_augmentation(
+                &self.database,
+                &query_embedding,
+                &self.effective_settings.graph,
+            )
+            .await;
+
+            tracing::Span::current().record(
+                "graph_augmentation",
+                match &graph_outcome {
+                    GraphAugmentationOutcome::Succeeded { .. } => "succeeded",
+                    GraphAugmentationOutcome::NoMatchFound => "no_match_found",
+                    GraphAugmentationOutcome::AttemptedAndFailed { .. } => "attempted_and_failed",
+                },
+            );
+
+            let graph_facts: Vec<prompt::GraphFactBlock> = match graph_outcome {
+                GraphAugmentationOutcome::Succeeded { facts } => facts
+                    .into_iter()
+                    .map(|fact| prompt::GraphFactBlock { fact })
+                    .collect(),
+                _ => vec![],
+            };
+
+            let dense_retriever = DenseRetriever::new(self.nodes.clone());
+            let dense_candidates = match dense_retriever
+                .query(
+                    &query_embedding,
+                    &query_request,
+                    &self.effective_settings.retrieval,
+                )
+                .await
+            {
+                Ok(candidates) => candidates,
+                Err(err) => {
+                    let (code, kind_str) = match err.kind {
+                        RetrievalErrorKind::Snapshot => (tonic::Code::Unavailable, "dense_retrieval"),
+                        RetrievalErrorKind::NonFiniteScore => {
+                            (tonic::Code::Internal, "non_finite_score")
+                        }
+                        _ => (tonic::Code::Internal, "dense_retrieval_internal"),
+                    };
+                    return Err(d1_status(
+                        code,
+                        format!("dense retrieval failure: {}", err.message()),
+                        &session_id,
+                        &correlation_id,
+                        kind_str,
+                    ));
+                }
+            };
+
+            let bm25_guard = self.bm25_index.read().await;
+            let bm25_candidates = bm25_guard
+                .retrieve(&query_request, &self.effective_settings.retrieval)
+                .await
+                .map_err(|err| Status::internal(err.to_string()))?;
+            drop(bm25_guard);
+
+            let fused = retrieval::fusion::fuse_candidates(
+                dense_candidates,
+                bm25_candidates,
+                &self.effective_settings.retrieval,
+            )
+            .map_err(|err| match err.kind {
+                RetrievalErrorKind::NonFiniteScore => {
+                    Status::internal(format!("non-finite fusion score: {err}"))
+                }
+                _ => Status::internal(err.to_string()),
+            })?;
+
+            let reranked = self
+                .reranker
+                .rerank(fused)
+                .await
+                .map_err(|err| Status::internal(err.to_string()))?;
+
+            let final_candidates: Vec<_> = reranked
+                .into_iter()
+                .take(self.effective_settings.retrieval.final_limit)
+                .collect();
+
+            if final_candidates.is_empty() {
+                let snapshot = lancet::v1::RetrievalSnapshot {
+                    index_generation: self.effective_settings.index_generation.clone(),
+                    embedding_model: self.embedder.model_id().to_owned(),
+                    vector_weight: self.effective_settings.retrieval.vector_weight,
+                    bm25_weight: self.effective_settings.retrieval.bm25_weight,
+                    rrf_k: snapshot_rrf_k(self.effective_settings.retrieval.rrf_k)?,
+                    candidate_limit: snapshot_limit(
+                        self.effective_settings.retrieval.candidate_limit,
+                        "candidate_limit",
+                    )?,
+                    final_limit: snapshot_limit(
+                        self.effective_settings.retrieval.final_limit,
+                        "final_limit",
+                    )?,
+                    active_filter: Some(lancet::v1::DocumentFilter {
+                        document_ids: query_request.filters.document_ids.clone(),
+                        content_types: query_request.filters.content_types.clone(),
+                    }),
+                    result_hash: format!("{:x}", {
+                        let hasher = DefaultHasher::new();
+                        hasher.finish()
+                    }),
+                };
+
+                return Ok(Response::new(QueryRagResponse {
+                    answer: String::new(),
+                    citations: vec![],
+                    session_id,
+                    answer_basis: lancet::v1::AnswerBasis::Unspecified as i32,
+                    structured_citations: vec![],
+                    notices: vec![lancet::v1::Notice {
+                        code: "NO_EVIDENCE".to_string(),
+                        message: "No completed corpus evidence matched the requested filters."
+                            .to_string(),
+                        severity: lancet::v1::NoticeSeverity::Info as i32,
+                    }],
+                    snapshot: Some(snapshot),
+                }));
+            }
+
+            let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
+            let limits = self.effective_settings.grounding_limits();
+            let packed_evidence = prompt::pack_evidence_and_graph_prompt(
+                &query_request.query,
+                &evidence_blocks,
+                &graph_facts,
+                limits.evidence_token_budget() as usize,
+                limits.max_output_tokens() as usize,
+            )
+            .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
+
+            let mut gen_req = generation::GenerationRequest::new(
+                &query_request.query,
+                packed_evidence.evidence.clone(),
+            );
+            gen_req.graph_facts = packed_evidence.graph_facts.clone();
+            gen_req.session_id = Some(session_id.clone());
+            gen_req.correlation_id = Some(correlation_id.clone());
 
         let model_output = self.generator.generate(gen_req).await.map_err(|err| {
             let (code, err_kind_str) = match err.kind {
@@ -1410,15 +1687,18 @@ impl LancetService for LancetServiceImpl {
             }),
         };
 
-        Ok(Response::new(QueryRagResponse {
-            answer: model_output.answer,
-            citations: proto_citations,
-            session_id,
-            answer_basis: proto_answer_basis,
-            structured_citations: proto_structured_citations,
-            notices: proto_notices,
-            snapshot: Some(snapshot),
-        }))
+            Ok(Response::new(QueryRagResponse {
+                answer: model_output.answer,
+                citations: proto_citations,
+                session_id,
+                answer_basis: proto_answer_basis,
+                structured_citations: proto_structured_citations,
+                notices: proto_notices,
+                snapshot: Some(snapshot),
+            }))
+        }
+        .instrument(query_span)
+        .await
     }
 
     async fn query_graph(
@@ -1858,11 +2138,418 @@ async fn process_job_with_boundary(
     Ok(i32::try_from(chunks.len()).unwrap_or(i32::MAX))
 }
 
+/// Extracts entities and relationships from a document and persists them to LanceDB.
+///
+/// Phase A (read-only): extracts per-chunk entities and relations, reading entities_table for exact match resolution.
+/// Phase B (mutation): captures table versions, deletes existing entity_edges for document_id, and inserts updated/new entity and edge rows.
+/// If Phase B fails, table versions are restored. This rollback is safe because document ingestion is serialized through spawn_worker_with_boundary.
+pub(crate) async fn extract_and_persist_entities(
+    database: &DatabaseManager,
+    job: &IngestionJob,
+    extraction_generator: &dyn graph::extraction::ExtractionGenerator,
+    embedder: &dyn EmbeddingProvider,
+) -> Result<(), String> {
+    let (_strategy, chunks) = chunk_ingestion_job(job);
+    let chunk_ids: Vec<String> = (0..chunks.len())
+        .map(|index| format!("{}:{index}", job.document_id))
+        .collect();
+
+    // Phase A (read-only)
+    let mut chunk_outputs = Vec::new();
+    for (index, chunk) in chunks.iter().enumerate() {
+        let chunk_id = &chunk_ids[index];
+        let req = graph::extraction::ExtractionRequest {
+            chunk_id: chunk_id.clone(),
+            document_id: job.document_id.clone(),
+            chunk_text: chunk.content.clone(),
+        };
+        match extraction_generator.extract(req).await {
+            Ok(output) => chunk_outputs.push((chunk_id.clone(), output)),
+            Err(e) => {
+                tracing::warn!(
+                    %job.document_id,
+                    %chunk_id,
+                    error = %e,
+                    "entity extraction failed for chunk"
+                );
+            }
+        }
+    }
+
+    let entities_table = database.entities_table().await.map_err(|e| e.to_string())?;
+    let entity_edges_table = database.entity_edges_table().await.map_err(|e| e.to_string())?;
+
+    // Read known entities for exact-match resolver
+    let known_batches: Vec<arrow_array::RecordBatch> = entities_table
+        .query()
+        .select(lancedb::query::Select::columns(&[
+            "entity_id",
+            "name",
+            "entity_type",
+            "name_vector",
+            "source_chunk_ids",
+        ]))
+        .execute()
+        .await
+        .map_err(|e| e.to_string())?
+        .try_collect()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    struct ExistingEntity {
+        entity_id: String,
+        name: String,
+        entity_type: String,
+        name_vector: Vec<f32>,
+        source_chunk_ids: Vec<String>,
+    }
+
+    let mut known_map: HashMap<String, ExistingEntity> = HashMap::new();
+    for batch in &known_batches {
+        let id_col = batch
+            .column_by_name("entity_id")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+        let name_col = batch
+            .column_by_name("name")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+        let type_col = batch
+            .column_by_name("entity_type")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+        let vec_col = batch
+            .column_by_name("name_vector")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::FixedSizeListArray>());
+        let chunks_col = batch
+            .column_by_name("source_chunk_ids")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::ListArray>());
+
+        if let (Some(id_col), Some(name_col), Some(type_col), Some(vec_col), Some(chunks_col)) =
+            (id_col, name_col, type_col, vec_col, chunks_col)
+        {
+            for i in 0..batch.num_rows() {
+                let entity_id = id_col.value(i).to_string();
+                let name = name_col.value(i).to_string();
+                let entity_type = type_col.value(i).to_string();
+                let folded = name.trim().to_lowercase();
+
+                let vec_values = vec_col.value(i);
+                let float_vec = vec_values
+                    .as_any()
+                    .downcast_ref::<arrow_array::Float32Array>()
+                    .map(|f| f.values().to_vec())
+                    .unwrap_or_default();
+
+                let chunks_arr = chunks_col.value(i);
+                let str_chunks = chunks_arr
+                    .as_any()
+                    .downcast_ref::<arrow_array::StringArray>();
+                let mut source_chunk_ids = Vec::new();
+                if let Some(str_chunks) = str_chunks {
+                    for j in 0..str_chunks.len() {
+                        if !str_chunks.is_null(j) {
+                            source_chunk_ids.push(str_chunks.value(j).to_string());
+                        }
+                    }
+                }
+
+                known_map.insert(
+                    folded,
+                    ExistingEntity {
+                        entity_id,
+                        name,
+                        entity_type,
+                        name_vector: float_vec,
+                        source_chunk_ids,
+                    },
+                );
+            }
+        }
+    }
+
+    struct StagedEntity {
+        entity_id: String,
+        name: String,
+        entity_type: String,
+        name_vector: Option<Vec<f32>>,
+        source_chunk_ids: Vec<String>,
+        is_new: bool,
+    }
+
+    let mut resolved_entities: HashMap<String, StagedEntity> = HashMap::new();
+    let mut chunk_entity_maps: HashMap<String, HashMap<String, String>> = HashMap::new();
+
+    for (chunk_id, output) in &chunk_outputs {
+        let mut chunk_map = HashMap::new();
+        for entity in &output.entities {
+            let folded = entity.name.trim().to_lowercase();
+            let entity_id = if let Some(existing) = known_map.get(&folded) {
+                let entry = resolved_entities.entry(folded.clone()).or_insert_with(|| {
+                    StagedEntity {
+                        entity_id: existing.entity_id.clone(),
+                        name: existing.name.clone(),
+                        entity_type: existing.entity_type.clone(),
+                        name_vector: Some(existing.name_vector.clone()),
+                        source_chunk_ids: existing.source_chunk_ids.clone(),
+                        is_new: false,
+                    }
+                });
+                if !entry.source_chunk_ids.contains(chunk_id) {
+                    entry.source_chunk_ids.push(chunk_id.clone());
+                }
+                existing.entity_id.clone()
+            } else if let Some(entry) = resolved_entities.get_mut(&folded) {
+                if !entry.source_chunk_ids.contains(chunk_id) {
+                    entry.source_chunk_ids.push(chunk_id.clone());
+                }
+                entry.entity_id.clone()
+            } else {
+                let new_id = Uuid::new_v4().to_string();
+                resolved_entities.insert(
+                    folded.clone(),
+                    StagedEntity {
+                        entity_id: new_id.clone(),
+                        name: entity.name.clone(),
+                        entity_type: entity.entity_type.clone(),
+                        name_vector: None,
+                        source_chunk_ids: vec![chunk_id.clone()],
+                        is_new: true,
+                    },
+                );
+                new_id
+            };
+            chunk_map.insert(folded, entity_id);
+        }
+        chunk_entity_maps.insert(chunk_id.clone(), chunk_map);
+    }
+
+    let new_names: Vec<String> = resolved_entities
+        .values()
+        .filter(|e| e.is_new)
+        .map(|e| e.name.clone())
+        .collect();
+
+    let new_embeddings = if !new_names.is_empty() {
+        embedder
+            .get_embeddings(&new_names)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        vec![]
+    };
+
+    let mut name_to_emb: HashMap<String, Vec<f32>> = HashMap::new();
+    for (name, emb) in new_names.into_iter().zip(new_embeddings.into_iter()) {
+        name_to_emb.insert(name, emb);
+    }
+
+    for entity in resolved_entities.values_mut() {
+        if entity.is_new {
+            if let Some(emb) = name_to_emb.remove(&entity.name) {
+                entity.name_vector = Some(emb);
+            }
+        }
+    }
+
+    struct StagedEdge {
+        edge_id: String,
+        source_node_id: String,
+        target_node_id: String,
+        relation_type: String,
+        weight: f32,
+        document_id: String,
+    }
+
+    let mut staged_edges = Vec::new();
+    for (chunk_id, output) in &chunk_outputs {
+        if let Some(chunk_map) = chunk_entity_maps.get(chunk_id) {
+            for rel in &output.relations {
+                let src_folded = rel.source.trim().to_lowercase();
+                let tgt_folded = rel.target.trim().to_lowercase();
+
+                if let (Some(src_id), Some(tgt_id)) =
+                    (chunk_map.get(&src_folded), chunk_map.get(&tgt_folded))
+                {
+                    staged_edges.push(StagedEdge {
+                        edge_id: Uuid::new_v4().to_string(),
+                        source_node_id: src_id.clone(),
+                        target_node_id: tgt_id.clone(),
+                        relation_type: rel.relation_type.clone(),
+                        weight: rel.confidence,
+                        document_id: job.document_id.clone(),
+                    });
+                } else {
+                    tracing::warn!(
+                        %job.document_id,
+                        %chunk_id,
+                        source = %rel.source,
+                        target = %rel.target,
+                        "dropping relation with unmapped entity endpoint in chunk"
+                    );
+                }
+            }
+        }
+    }
+
+    // Phase B (mutation phase)
+    let version_entities = entities_table.version().await.map_err(|e| e.to_string())?;
+    let version_edges = entity_edges_table.version().await.map_err(|e| e.to_string())?;
+
+    let run_mutations = async {
+        let edge_pred = format!("document_id = '{}'", escape_sql_literal(&job.document_id));
+        entity_edges_table
+            .delete(&edge_pred)
+            .await
+            .map_err(|e| format!("delete entity_edges failed: {e}"))?;
+
+        let updated_entities: Vec<&StagedEntity> = resolved_entities
+            .values()
+            .filter(|e| !e.is_new)
+            .collect();
+        for entity in &updated_entities {
+            let ent_pred = format!("entity_id = '{}'", escape_sql_literal(&entity.entity_id));
+            entities_table
+                .delete(&ent_pred)
+                .await
+                .map_err(|e| format!("delete updated entity failed: {e}"))?;
+        }
+
+        let all_entities: Vec<&StagedEntity> = resolved_entities.values().collect();
+        if !all_entities.is_empty() {
+            let schema = db::entities_schema();
+            let mut entity_ids = Vec::new();
+            let mut names = Vec::new();
+            let mut entity_types = Vec::new();
+            let mut source_chunks_list = Vec::new();
+
+            for e in &all_entities {
+                entity_ids.push(e.entity_id.clone());
+                names.push(e.name.clone());
+                entity_types.push(e.entity_type.clone());
+                source_chunks_list.push(e.source_chunk_ids.clone());
+            }
+
+            let num_rows = all_entities.len();
+            let id_arr = Arc::new(arrow_array::StringArray::from(entity_ids));
+            let name_arr = Arc::new(arrow_array::StringArray::from(names));
+            let type_arr = Arc::new(arrow_array::StringArray::from(entity_types));
+            let vec_arr = Arc::new(
+                arrow_array::FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+                    all_entities.iter().map(|e| e.name_vector.as_ref().map(|v| v.iter().copied().map(Some))),
+                    2048,
+                ),
+            );
+
+            let mut chunk_builder =
+                arrow_array::builder::ListBuilder::new(arrow_array::builder::StringBuilder::new());
+            for chunk_ids in source_chunks_list {
+                for cid in chunk_ids {
+                    chunk_builder.values().append_value(cid);
+                }
+                chunk_builder.append(true);
+            }
+            let chunk_arr = Arc::new(chunk_builder.finish());
+
+            let null_summary = new_null_array(schema.field(4).data_type(), num_rows);
+            let null_summary_vec = new_null_array(schema.field(5).data_type(), num_rows);
+            let null_refs = new_null_array(schema.field(6).data_type(), num_rows);
+            let null_comm = new_null_array(schema.field(7).data_type(), num_rows);
+
+            let batch = arrow_array::RecordBatch::try_new(
+                schema,
+                vec![
+                    id_arr,
+                    name_arr,
+                    type_arr,
+                    vec_arr,
+                    null_summary,
+                    null_summary_vec,
+                    null_refs,
+                    null_comm,
+                    chunk_arr,
+                ],
+            )
+            .map_err(|e| format!("build entities RecordBatch failed: {e}"))?;
+
+            entities_table
+                .add(batch)
+                .execute()
+                .await
+                .map_err(|e| format!("add entities failed: {e}"))?;
+        }
+
+        if !staged_edges.is_empty() {
+            let schema = db::entity_edges_schema();
+            let mut edge_ids = Vec::new();
+            let mut src_ids = Vec::new();
+            let mut tgt_ids = Vec::new();
+            let mut rel_types = Vec::new();
+            let mut weights = Vec::new();
+            let mut doc_ids = Vec::new();
+
+            for edge in &staged_edges {
+                edge_ids.push(edge.edge_id.clone());
+                src_ids.push(edge.source_node_id.clone());
+                tgt_ids.push(edge.target_node_id.clone());
+                rel_types.push(edge.relation_type.clone());
+                weights.push(edge.weight);
+                doc_ids.push(edge.document_id.clone());
+            }
+
+            let num_rows = staged_edges.len();
+            let edge_id_arr = Arc::new(arrow_array::StringArray::from(edge_ids));
+            let src_arr = Arc::new(arrow_array::StringArray::from(src_ids));
+            let tgt_arr = Arc::new(arrow_array::StringArray::from(tgt_ids));
+            let rel_arr = Arc::new(arrow_array::StringArray::from(rel_types));
+            let weight_arr = Arc::new(arrow_array::Float32Array::from(weights));
+            let doc_arr = Arc::new(arrow_array::StringArray::from(doc_ids));
+
+            let null_summary = new_null_array(schema.field(6).data_type(), num_rows);
+            let null_summary_vec = new_null_array(schema.field(7).data_type(), num_rows);
+
+            let batch = arrow_array::RecordBatch::try_new(
+                schema,
+                vec![
+                    edge_id_arr,
+                    src_arr,
+                    tgt_arr,
+                    rel_arr,
+                    weight_arr,
+                    doc_arr,
+                    null_summary,
+                    null_summary_vec,
+                ],
+            )
+            .map_err(|e| format!("build entity_edges RecordBatch failed: {e}"))?;
+
+            entity_edges_table
+                .add(batch)
+                .execute()
+                .await
+                .map_err(|e| format!("add entity_edges failed: {e}"))?;
+        }
+
+        Ok(())
+    };
+
+    if let Err(mut_err) = run_mutations.await {
+        tracing::error!(
+            %job.document_id,
+            error = %mut_err,
+            "Phase B mutation failed, attempting table version restores"
+        );
+        let _ = restore_version(&entities_table, version_entities).await;
+        let _ = restore_version(&entity_edges_table, version_edges).await;
+        return Err(mut_err);
+    }
+
+    Ok(())
+}
+
 fn spawn_worker(
     receiver: mpsc::Receiver<IngestionJob>,
     statuses: Arc<DashMap<String, IngestionStatus>>,
     database: DatabaseManager,
     embedder: Arc<dyn EmbeddingProvider>,
+    extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator>,
     shutdown: watch::Receiver<bool>,
 ) -> JoinHandle<()> {
     spawn_worker_with_boundary(
@@ -1870,6 +2557,7 @@ fn spawn_worker(
         statuses,
         database,
         embedder,
+        extraction_generator,
         Arc::new(LanceDbReplacementMutationBoundary),
         shutdown,
     )
@@ -1880,6 +2568,7 @@ fn spawn_worker_with_boundary(
     statuses: Arc<DashMap<String, IngestionStatus>>,
     database: DatabaseManager,
     embedder: Arc<dyn EmbeddingProvider>,
+    extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator>,
     boundary: Arc<dyn ReplacementMutationBoundary>,
     mut shutdown: watch::Receiver<bool>,
 ) -> JoinHandle<()> {
@@ -1935,6 +2624,20 @@ fn spawn_worker_with_boundary(
             .await
             {
                 Ok(chunk_count) => {
+                    if let Err(err) = extract_and_persist_entities(
+                        &database,
+                        &job,
+                        extraction_generator.as_ref(),
+                        embedder.as_ref(),
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            %job.document_id,
+                            %err,
+                            "extract_and_persist_entities failed"
+                        );
+                    }
                     statuses.insert(
                         document_id,
                         IngestionStatus {
@@ -2014,6 +2717,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key.clone(),
         embedding_config,
     )?);
+    let extraction_config = generation::openrouter::OpenRouterGenerationConfig::new(
+        effective_settings.generation_model.clone(),
+        effective_settings.chat_endpoint.clone(),
+        effective_settings.model_metadata_endpoint.clone(),
+        Duration::from_secs(effective_settings.generation_timeout_secs),
+        0.0,
+        1.0,
+        768,
+        768,
+    )?;
+    let extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator> =
+        Arc::new(graph::extraction::OpenRouterExtractionGenerator::new_with_config(
+            api_key.clone(),
+            extraction_config,
+        )?);
+
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
 
@@ -2023,6 +2742,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         statuses.clone(),
         database.clone(),
         embedder.clone(),
+        extraction_generator.clone(),
         shutdown_rx,
     );
 
@@ -2059,6 +2779,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         generator,
         embedder: embedder.clone(),
         reranker: Arc::new(rerank::NoOpReranker::new()),
+        database: database.clone(),
     };
 
     let addr = settings.engine.grpc_addr.parse()?;

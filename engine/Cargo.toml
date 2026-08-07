@@ -17,6 +17,7 @@ serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
 arrow-array = "~58.3"
 arrow-schema = "~58.3"
+arrow-select = "~58.3"
 pulldown-cmark = "~0.13"
 tiktoken-rs = "~0.12"
 reqwest = { version = "~0.13", default-features = false, features = ["json", "rustls"] }

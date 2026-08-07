@@ -3518,6 +3518,7 @@ dependencies = [
  "arrow-ipc 56.2.1",
  "arrow-ipc 58.3.0",
  "arrow-schema 58.3.0",
+ "arrow-select 58.3.0",
  "config",
  "dashmap",
  "futures",

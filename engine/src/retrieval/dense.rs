@@ -159,7 +159,7 @@ fn escape_sql_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-fn dense_score(distance: f64) -> f64 {
+pub(crate) fn dense_score(distance: f64) -> f64 {
     1.0 / (1.0 + distance.max(0.0))
 }
 

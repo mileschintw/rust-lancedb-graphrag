@@ -132,6 +132,26 @@ impl OpenRouterGenerationConfig {
         self.grounding_limits.evidence_token_budget() as usize
     }
 
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    pub fn chat_endpoint(&self) -> &str {
+        &self.chat_endpoint
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    pub fn temperature(&self) -> f64 {
+        self.temperature
+    }
+
+    pub fn top_p(&self) -> f64 {
+        self.top_p
+    }
+
     fn validate(&self) -> Result<(), GenerationError> {
         if self.model.trim().is_empty() {
             return Err(GenerationError::new(

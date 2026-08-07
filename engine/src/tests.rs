@@ -648,6 +648,15 @@ async fn stage_document_with_settings(
     table.add(batch).execute().await.unwrap();
 }
 
+fn test_extraction_generator() -> Arc<dyn crate::graph::extraction::ExtractionGenerator> {
+    Arc::new(crate::graph::extraction::FakeExtractionGenerator::new(Ok(
+        crate::graph::extraction::ExtractionOutput {
+            entities: vec![],
+            relations: vec![],
+        },
+    )))
+}
+
 fn configured_settings(lancedb_path: &str) -> Settings {
     Settings {
         engine: EngineSettings {
@@ -672,6 +681,7 @@ fn configured_settings(lancedb_path: &str) -> Settings {
                     section_boost: 2.25,
                 },
             },
+            graph: GraphConfigSettings::default(),
         },
         openrouter: OpenRouterSettings {
             embedding_endpoint: "https://example.test/v1/embeddings".into(),
@@ -679,10 +689,10 @@ fn configured_settings(lancedb_path: &str) -> Settings {
             generation_model: "custom/generation-v7".into(),
             chat_endpoint: "https://example.test/v1/chat/completions".into(),
             model_metadata_endpoint: "https://example.test/v1/models".into(),
-            generation_timeout_secs: 7,
-            temperature: 0.35,
-            top_p: 0.82,
-            max_output_tokens: 777,
+            generation_timeout_secs: 15,
+            temperature: 0.2,
+            top_p: 0.95,
+            max_output_tokens: 1024,
         },
     }
 }
@@ -711,6 +721,7 @@ async fn configured_service(
         generator,
         embedder,
         reranker,
+        database: database.clone(),
     }
 }
 
@@ -1047,6 +1058,7 @@ async fn worker_indexes_jobs_and_records_real_chunk_count() {
         statuses.clone(),
         database.clone(),
         Arc::new(FakeEmbedder),
+        test_extraction_generator(),
         shutdown_rx,
     );
     let document_id = Uuid::new_v4().to_string();
@@ -1082,6 +1094,7 @@ async fn worker_replaces_existing_document_rows() {
         statuses.clone(),
         database.clone(),
         Arc::new(FakeEmbedder),
+        test_extraction_generator(),
         shutdown_rx,
     );
     let document_id = Uuid::new_v4().to_string();
@@ -1196,6 +1209,7 @@ async fn schema_field_lookup_failure_rolls_back_and_worker_survives() {
         statuses.clone(),
         database.clone(),
         Arc::new(FakeEmbedder),
+        test_extraction_generator(),
         Arc::new(boundary),
         shutdown_rx,
     );
@@ -1303,6 +1317,7 @@ async fn shutdown_waits_for_active_document_to_finish() {
             started: started.clone(),
             release: release.clone(),
         }),
+        test_extraction_generator(),
         shutdown_rx,
     );
     let document_id = Uuid::new_v4().to_string();
@@ -1460,6 +1475,7 @@ async fn shutdown_drains_acknowledged_queue() {
             release: release.clone(),
             blocked,
         }),
+        test_extraction_generator(),
         shutdown_rx,
     );
 
@@ -1553,6 +1569,7 @@ async fn startup_recovery_processes_staged_document() {
         statuses.clone(),
         reopened_db.clone(),
         Arc::new(FakeEmbedder),
+        test_extraction_generator(),
         shutdown_rx,
     );
 
@@ -1606,6 +1623,7 @@ async fn startup_recovery_exceeds_queue_capacity_without_deadlock() {
             statuses.clone(),
             database.clone(),
             Arc::new(FakeEmbedder),
+            test_extraction_generator(),
             shutdown_rx,
         );
 
@@ -1696,6 +1714,7 @@ async fn staging_read_error_is_unavailable() {
             },
         ))),
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let _ = std::fs::remove_dir_all(&path);
@@ -1727,6 +1746,7 @@ async fn staging_delete_failure_remains_replayable() {
         statuses.clone(),
         database.clone(),
         Arc::new(D04FailingEmbedder),
+        test_extraction_generator(),
         Arc::new(boundary),
         shutdown_rx,
     );
@@ -1777,6 +1797,7 @@ async fn staging_delete_failure_remains_replayable() {
             },
         ))),
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let status_res = service
@@ -1810,6 +1831,7 @@ async fn embedding_failure_restart_converges_cross_store() {
             statuses.clone(),
             db1.clone(),
             Arc::new(D04FailingEmbedder),
+            test_extraction_generator(),
             Arc::new(boundary),
             shutdown_rx,
         );
@@ -1854,6 +1876,7 @@ async fn embedding_failure_restart_converges_cross_store() {
             statuses.clone(),
             db2.clone(),
             Arc::new(FakeEmbedder),
+            test_extraction_generator(),
             shutdown_rx,
         );
 
@@ -1928,6 +1951,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             statuses.clone(),
             database.clone(),
             Arc::new(D04FailingEmbedder),
+            test_extraction_generator(),
             Arc::new(boundary),
             shutdown_rx,
         );
@@ -1965,6 +1989,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             statuses.clone(),
             database.clone(),
             Arc::new(FakeEmbedder),
+            test_extraction_generator(),
             shutdown_rx,
         );
 
@@ -2019,6 +2044,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             },
         ))),
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let addr: std::net::SocketAddr = listen_addr.parse().unwrap();
@@ -2083,6 +2109,7 @@ async fn status_falls_back_to_staged_document() {
             },
         ))),
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let status_res = service
@@ -2188,6 +2215,7 @@ async fn query_rag_happy_path_service() {
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let req = QueryRagRequest {
@@ -2485,6 +2513,7 @@ async fn configured_rag_settings_drive_service() {
                     section_boost: 2.0,
                 },
             },
+            graph: GraphConfigSettings::default(),
         },
         openrouter: OpenRouterSettings {
             embedding_endpoint: "https://example.com/api/v1/embeddings".into(),
@@ -2531,6 +2560,7 @@ async fn configured_rag_settings_drive_service() {
         effective_settings: effective_settings.clone(),
         generator: fake_gen,
         embedder: configured_embedder,
+        database: database.clone(),
     };
 
     let req = QueryRagRequest {
@@ -2610,6 +2640,7 @@ async fn configured_evidence_token_budget_is_exact() {
         effective_settings,
         generator: fake_gen,
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let req = QueryRagRequest {
@@ -2676,6 +2707,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         effective_settings: effective_settings1,
         generator: fake_gen1,
         embedder: Arc::new(FakeEmbedder),
+        database: database1.clone(),
     };
 
     let req1 = QueryRagRequest {
@@ -2748,6 +2780,7 @@ async fn service_index_generation_is_opaque_and_stable() {
             },
         ))),
         embedder: Arc::new(FakeEmbedder),
+        database: database2.clone(),
     };
 
     let req3 = QueryRagRequest {
@@ -2853,6 +2886,7 @@ async fn query_rag_citation_identity_and_notices() {
         effective_settings,
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let req = QueryRagRequest {
@@ -2947,6 +2981,7 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let req = QueryRagRequest {
@@ -3011,6 +3046,7 @@ async fn query_rag_rejects_invalid_provider_grounding() {
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let req = QueryRagRequest {
@@ -3073,6 +3109,7 @@ async fn query_rag_generation_error_preserves_identity() {
         effective_settings: EffectiveRagSettings::default(),
         generator: failing_gen,
         embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
     };
 
     let session_id = "00000000-0000-4000-8000-000000000077";
@@ -3640,6 +3677,7 @@ async fn query_rag_fail_closed_dense_snapshot() {
         generator: generator.clone(),
         embedder,
         reranker,
+        database: database.clone(),
     };
 
     let req = QueryRagRequest {
@@ -3968,6 +4006,281 @@ async fn persist_raw_keeps_old_generation_when_delete_fails() {
     let staged_jobs = read_staged_jobs(&manager).await.unwrap();
     assert_eq!(staged_jobs.len(), 1);
     assert_eq!(staged_jobs[0].filename, "v2.txt");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn ingestion_chunking_min_length() {
+    assert_eq!(crate::graph::extraction::MIN_CHUNK_CONTENT_LENGTH, 40);
+}
+
+#[tokio::test]
+async fn extraction_chunk_field_propagation() {
+    let path = database_path("extraction-chunk-propagation");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text = "# Section Title\n\n"
+        .to_string()
+        + &"This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "propagation.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let captured_requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let capturer = captured_requests.clone();
+
+    struct CapturingGenerator(Arc<tokio::sync::Mutex<Vec<super::graph::extraction::ExtractionRequest>>>);
+
+    impl super::graph::extraction::ExtractionGenerator for CapturingGenerator {
+        fn extract<'a>(
+            &'a self,
+            request: super::graph::extraction::ExtractionRequest,
+        ) -> BoxFuture<'a, Result<super::graph::extraction::ExtractionOutput, generation::GenerationError>>
+        {
+            let cap = self.0.clone();
+            Box::pin(async move {
+                cap.lock().await.push(request);
+                Ok(super::graph::extraction::ExtractionOutput {
+                    entities: vec![],
+                    relations: vec![],
+                })
+            })
+        }
+    }
+
+    super::extract_and_persist_entities(&database, &job, &CapturingGenerator(capturer), &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let reqs = captured_requests.lock().await;
+    assert!(!reqs.is_empty());
+    for req in reqs.iter() {
+        assert_eq!(req.document_id, doc_id);
+        assert!(!req.chunk_id.is_empty());
+        assert!(!req.chunk_text.is_empty());
+    }
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn exact_match_entity_deduplication() {
+    let path = database_path("exact-match-dedup");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text = "# Section 1\n\nAcme Corp is an organization that builds high quality software widgets.\n\n# Section 2\n\nACME CORP continues to expand its organization product catalog globally.";
+
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "dedup.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = super::graph::extraction::FakeExtractionGenerator::new(Ok(
+        super::graph::extraction::ExtractionOutput {
+            entities: vec![super::graph::extraction::ExtractedEntity {
+                name: "Acme Corp".into(),
+                entity_type: "organization".into(),
+            }],
+            relations: vec![],
+        },
+    ));
+
+    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let entities_table = database.entities_table().await.unwrap();
+    let count = entities_table.count_rows(None).await.unwrap();
+    assert_eq!(count, 1, "Acme Corp and ACME CORP must deduplicate to single entity");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn cross_document_entity_resolution() {
+    let path = database_path("cross-doc-entity-res");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let text1 = "# Doc 1\n\nAcme Corp is a company building widgets in the global marketplace.";
+    let job1 = IngestionJob::new(
+        Uuid::new_v4().to_string(),
+        "doc1.md".into(),
+        text1.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = super::graph::extraction::FakeExtractionGenerator::new(Ok(
+        super::graph::extraction::ExtractionOutput {
+            entities: vec![super::graph::extraction::ExtractedEntity {
+                name: "Acme Corp".into(),
+                entity_type: "organization".into(),
+            }],
+            relations: vec![],
+        },
+    ));
+
+    super::extract_and_persist_entities(&database, &job1, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let text2 = "# Doc 2\n\nacme corp provides widget solutions to clients worldwide daily.";
+    let job2 = IngestionJob::new(
+        Uuid::new_v4().to_string(),
+        "doc2.md".into(),
+        text2.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    super::extract_and_persist_entities(&database, &job2, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let entities_table = database.entities_table().await.unwrap();
+    assert_eq!(entities_table.count_rows(None).await.unwrap(), 1);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn unmapped_relation_endpoint_dropped() {
+    let path = database_path("unmapped-rel-endpoint");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text = "# Section\n\nAlice works with Bob in the organization department today.";
+    let job = IngestionJob::new(
+        doc_id,
+        "unmapped.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = super::graph::extraction::FakeExtractionGenerator::new(Ok(
+        super::graph::extraction::ExtractionOutput {
+            entities: vec![super::graph::extraction::ExtractedEntity {
+                name: "Alice".into(),
+                entity_type: "person".into(),
+            }],
+            relations: vec![super::graph::extraction::ExtractedRelation {
+                source: "Alice".into(),
+                target: "Bob".into(), // Bob is not in entities!
+                relation_type: "works_with".into(),
+                confidence: 0.9,
+            }],
+        },
+    ));
+
+    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let edges_table = database.entity_edges_table().await.unwrap();
+    assert_eq!(edges_table.count_rows(None).await.unwrap(), 0, "Unmapped relation endpoint must be dropped");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn attempt_graph_augmentation_scoring_and_neighborhood() {
+    let path = database_path("attempt-graph-aug");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let settings = GraphSettings {
+        seed_match_min_score: 0.5,
+        max_hop_cap: 3,
+    };
+
+    let outcome = super::attempt_graph_augmentation(&database, &[0.0; 2048], &settings).await;
+    assert!(matches!(outcome, super::GraphAugmentationOutcome::NoMatchFound));
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn prompt_evidence_packing_graph_fact_rendering() {
+    use crate::prompt::{
+        pack_evidence_and_graph_prompt, assemble_evidence_blocks, GraphFactBlock,
+    };
+    use crate::graph::context_strategy::GraphFact;
+
+    let candidate = crate::retrieval::FusedCandidate {
+        candidate: crate::retrieval::Candidate {
+            document_id: "doc-1".into(),
+            chunk_id: "chk-1".into(),
+            chunk_index: 0,
+            char_start: 0,
+            char_end: 20,
+            content: "Content chunk text".into(),
+            title: Some("Title".into()),
+            section_path: Some("/Sec".into()),
+            content_type: Some("text/markdown".into()),
+            embedding_model: None,
+            ingested_at: None,
+            score: 0.9,
+        },
+        fused_score: 0.9,
+        vector_rank: Some(1),
+        bm25_rank: None,
+        vector_score: Some(0.9),
+        bm25_score: None,
+    };
+
+    let blocks = assemble_evidence_blocks(&[candidate]);
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Alice", "knows", "Bob", None, 0.85),
+    }];
+
+    let packed = pack_evidence_and_graph_prompt("Who knows Bob?", &blocks, &facts, 4096, 512).unwrap();
+    assert!(packed.prompt.contains("## Related Entities & Relationships"));
+    assert!(packed.prompt.contains("Alice —knows→ Bob"));
+    assert_eq!(packed.graph_facts.len(), 1);
+}
+
+#[tokio::test]
+async fn query_rag_span_and_request_threading() {
+    let path = database_path("query-rag-span-threading");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(&database, &doc_id, b"# Test\n\nContent for RAG query threading.").await;
+
+    let job = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let settings = EffectiveRagSettings::default();
+    let service = configured_service(
+        &database,
+        settings,
+        Arc::new(FakeEmbedder),
+        Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let req = QueryRagRequest {
+        query: "RAG query".into(),
+        session_id: Uuid::new_v4().to_string(),
+        filter: None,
+    };
+
+    let res = service.query_rag(tonic::Request::new(req)).await;
+    assert!(res.is_ok());
 
     let _ = std::fs::remove_dir_all(path);
 }
