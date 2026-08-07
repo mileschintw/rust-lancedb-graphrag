@@ -45,6 +45,12 @@ title_boost = 2.0
 # unit=unitless; range=finite >0
 section_boost = 1.5
 
+[engine.graph]
+# unit=unitless; range=finite 0.0..=1.0
+seed_match_min_score = 0.5
+# unit=count; range=1..=3
+max_hop_cap = 3
+
 [openrouter]
 # unit=URL string; range=nonblank
 embedding_endpoint = "https://openrouter.ai/api/v1/embeddings"

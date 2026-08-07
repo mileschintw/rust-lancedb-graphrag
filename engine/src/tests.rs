@@ -28,6 +28,8 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.retrieval.bm25.content_boost",
     "engine.retrieval.bm25.title_boost",
     "engine.retrieval.bm25.section_boost",
+    "engine.graph.seed_match_min_score",
+    "engine.graph.max_hop_cap",
     "openrouter.embedding_endpoint",
     "openrouter.embedding_model",
     "openrouter.generation_model",
@@ -94,6 +96,11 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
         "engine.retrieval.bm25.section_boost",
         "unit=unitless; range=finite >0",
     ),
+    (
+        "engine.graph.seed_match_min_score",
+        "unit=unitless; range=finite 0.0..=1.0",
+    ),
+    ("engine.graph.max_hop_cap", "unit=count; range=1..=3"),
     (
         "openrouter.embedding_endpoint",
         "unit=URL string; range=nonblank",
@@ -166,7 +173,7 @@ fn config_example_matches_effective_rag_contract() {
         );
         if !matches!(
             section,
-            "engine.retrieval" | "engine.retrieval.bm25" | "openrouter"
+            "engine.retrieval" | "engine.retrieval.bm25" | "engine.graph" | "openrouter"
         ) {
             continue;
         }
@@ -4979,6 +4986,538 @@ async fn extraction_persist_summary_reports_coverage_regression() {
     assert_eq!(summary2.prior_entity_edges_count, 2);
     assert_eq!(summary2.written_entity_edges_count, 1);
     assert!(summary2.written_entity_edges_count < summary2.prior_entity_edges_count, "Coverage regression reported in summary");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+// ── QueryGraph handler ─────────────────────────────────────────────────────────────────────────
+
+/// Construct a minimal LancetServiceImpl wrapping an already-initialized DB for query_graph tests.
+async fn query_graph_service_with_db(database: DatabaseManager) -> LancetServiceImpl {
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+    LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
+        effective_settings: EffectiveRagSettings::default(),
+        generator: Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "unused".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        embedder: Arc::new(FakeEmbedder),
+        database,
+    }
+}
+
+/// Construct a minimal LancetServiceImpl backed by a real (but empty) DB for query_graph tests.
+async fn query_graph_service(path: &str) -> LancetServiceImpl {
+    let database = DatabaseManager::initialize(path).await.unwrap();
+    query_graph_service_with_db(database).await
+}
+
+/// Seeds a real two-hop entity graph via `extract_and_persist_entities` (mirrors
+/// production entity/relation persistence, per D-05's write-time merge convention):
+/// `Alice --knows--> Bob --works_at--> Acme`, two distinct edges with distinct
+/// `relation_type`s and distinct confidences (persisted as `weight`).
+async fn seed_two_hop_graph(path: &str) -> DatabaseManager {
+    let database = DatabaseManager::initialize(path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+    let text = "# Graph Fixture\n\nAlice knows Bob who works at Acme Corporation every single day.";
+    let job = IngestionJob::new(
+        doc_id,
+        "graph-fixture.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
+        graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity {
+                    name: "Alice".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Bob".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Acme".into(),
+                    entity_type: "organization".into(),
+                },
+            ],
+            relations: vec![
+                graph::extraction::ExtractedRelation {
+                    source: "Alice".into(),
+                    target: "Bob".into(),
+                    relation_type: "knows".into(),
+                    confidence: 0.9,
+                },
+                graph::extraction::ExtractedRelation {
+                    source: "Bob".into(),
+                    target: "Acme".into(),
+                    relation_type: "works_at".into(),
+                    confidence: 0.8,
+                },
+            ],
+        },
+    ));
+
+    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    database
+}
+
+/// Seeds a single real edge `source_name --relation_type--> target_name` via
+/// `extract_and_persist_entities`.
+async fn seed_single_edge_graph(
+    path: &str,
+    source_name: &str,
+    target_name: &str,
+    relation_type: &str,
+) -> DatabaseManager {
+    let database = DatabaseManager::initialize(path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+    let text = format!(
+        "# Graph Fixture\n\n{source_name} {relation_type} {target_name} in this scenario every day."
+    );
+    let job = IngestionJob::new(
+        doc_id,
+        "graph-edge-fixture.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
+        graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity {
+                    name: source_name.into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: target_name.into(),
+                    entity_type: "person".into(),
+                },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: source_name.into(),
+                target: target_name.into(),
+                relation_type: relation_type.into(),
+                confidence: 0.75,
+            }],
+        },
+    ));
+
+    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    database
+}
+
+/// Blank `seed_entity_id` and blank `seed_entity_name` together must be rejected
+/// as `InvalidArgument` before any table scan is attempted.
+#[tokio::test]
+async fn query_graph_validates_both_blank_seed_inputs_before_db_ops() {
+    use crate::LancetService;
+    let path = database_path("query-graph-blank-seed");
+    let service = query_graph_service(&path).await;
+
+    let err = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "".into(),
+            seed_entity_name: "".into(),
+            hop_depth: 1,
+            relation_type_filter: "".into(),
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        err.code(),
+        tonic::Code::InvalidArgument,
+        "blank seed must be rejected as InvalidArgument"
+    );
+    assert!(
+        err.message().contains("non-blank"),
+        "error message must mention non-blank requirement, got: {}",
+        err.message()
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// A `seed_entity_name` exceeding `MAX_SEED_ENTITY_NAME_BYTES` must be rejected as
+/// `InvalidArgument`, not `NotFound` — proving the length check runs BEFORE the
+/// case-folded lookup, not merely instead of it. Constructed as a real, short,
+/// stored entity's name padded past the byte ceiling: if the length check were
+/// missing or ran after the lookup, the padded name would fail to case-fold-match
+/// the shorter stored name and surface as `NotFound`, not `InvalidArgument`.
+#[tokio::test]
+async fn query_graph_rejects_oversized_seed_entity_name() {
+    use crate::LancetService;
+    use graph::MAX_SEED_ENTITY_NAME_BYTES;
+
+    let path = database_path("query-graph-oversized-seed-name");
+    let database = seed_single_edge_graph(&path, "Al", "Bo", "knows").await;
+    let service = query_graph_service_with_db(database).await;
+
+    let padded_name = format!("Al{}", "x".repeat(MAX_SEED_ENTITY_NAME_BYTES));
+    assert!(padded_name.len() > MAX_SEED_ENTITY_NAME_BYTES);
+
+    let err = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "".into(),
+            seed_entity_name: padded_name,
+            hop_depth: 1,
+            relation_type_filter: "".into(),
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.code(),
+        tonic::Code::InvalidArgument,
+        "oversized name must be rejected as InvalidArgument (length check runs before lookup), not NotFound; got: {err:?}"
+    );
+    assert!(
+        err.message().contains("seed_entity_name"),
+        "error must mention seed_entity_name, got: {}",
+        err.message()
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// A `relation_type_filter` exceeding `MAX_RELATION_TYPE_FILTER_BYTES` must be rejected
+/// as `InvalidArgument`, checked before `fetch_neighborhood`/`narrow_via_cypher` run at
+/// all — validation-only, does not require a matching-seed fixture (unlike Test 8).
+#[tokio::test]
+async fn query_graph_rejects_oversized_relation_type_filter() {
+    use crate::LancetService;
+    use graph::MAX_RELATION_TYPE_FILTER_BYTES;
+
+    let path = database_path("query-graph-oversized-relation-filter");
+    let service = query_graph_service(&path).await;
+
+    let oversized_filter = "y".repeat(MAX_RELATION_TYPE_FILTER_BYTES + 1);
+    let err = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "".into(),
+            seed_entity_name: "Alice".into(),
+            hop_depth: 1,
+            relation_type_filter: oversized_filter,
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    assert!(
+        err.message().contains("relation_type_filter"),
+        "error must mention relation_type_filter, got: {}",
+        err.message()
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// A syntactically invalid UUID in `seed_entity_id` must be rejected as `InvalidArgument`.
+#[tokio::test]
+async fn query_graph_rejects_malformed_seed_id() {
+    use crate::LancetService;
+    let path = database_path("query-graph-bad-uuid");
+    let service = query_graph_service(&path).await;
+
+    let err = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "not-a-valid-uuid".into(),
+            seed_entity_name: "".into(),
+            hop_depth: 1,
+            relation_type_filter: "".into(),
+        }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        err.code(),
+        tonic::Code::InvalidArgument,
+        "invalid UUID must be rejected as InvalidArgument"
+    );
+    assert!(
+        err.message().contains("seed_entity_id"),
+        "error message must mention seed_entity_id, got: {}",
+        err.message()
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// A `hop_depth` of `0` or above the configured ceiling must return `InvalidArgument`
+/// WITHOUT any `fetch_neighborhood` call occurring: the seed UUID is well-formed but
+/// does not exist in the (empty) DB, so if the hop-depth check were skipped or ran
+/// after `fetch_neighborhood`, the handler would instead return `Ok` with an empty
+/// response (fetch_neighborhood tolerates a nonexistent seed) — a distinguishable
+/// success/failure discriminator, not merely a status-code check.
+#[tokio::test]
+async fn query_graph_rejects_out_of_range_hop_depth() {
+    use crate::LancetService;
+    let path = database_path("query-graph-hop-depth-range");
+    let service = query_graph_service(&path).await;
+
+    let err_zero = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: Uuid::new_v4().to_string(),
+            seed_entity_name: "".into(),
+            hop_depth: 0,
+            relation_type_filter: "".into(),
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err_zero.code(),
+        tonic::Code::InvalidArgument,
+        "hop_depth=0 must be rejected as InvalidArgument, not silently defaulted to 1; got: {err_zero:?}"
+    );
+
+    let err_over = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: Uuid::new_v4().to_string(),
+            seed_entity_name: "".into(),
+            hop_depth: graph::MAX_HOP_CAP + 1,
+            relation_type_filter: "".into(),
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(err_over.code(), tonic::Code::InvalidArgument);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// The redesign's core proof: a `hop_depth = 2` call against a fixture
+/// `seed --knows--> neighbor1 --works_at--> neighbor2` (two distinct edges, distinct
+/// `relation_type`s) returns `QueryGraphEdge` entries for BOTH edges with correct
+/// `relation_type`/`weight` — proving the induced-neighborhood design recovers what
+/// the correlate-back design cannot for a 2-hop path, and that the response-affecting
+/// `narrow_via_cypher` step is correctness-preserving on real, non-adversarial data.
+#[tokio::test]
+async fn query_graph_recovers_multi_hop_edge_relation_properties() {
+    use crate::LancetService;
+    let path = database_path("query-graph-multihop-recover");
+    let database = seed_two_hop_graph(&path).await;
+    let service = query_graph_service_with_db(database).await;
+
+    let resp = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "".into(),
+            seed_entity_name: "Alice".into(),
+            hop_depth: 2,
+            relation_type_filter: "".into(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(
+        resp.edges.len(),
+        2,
+        "both hops' edges must be present, got: {:?}",
+        resp.edges
+    );
+    let by_relation: std::collections::HashMap<&str, &QueryGraphEdge> = resp
+        .edges
+        .iter()
+        .map(|e| (e.relation_type.as_str(), e))
+        .collect();
+
+    let knows_edge = by_relation.get("knows").expect("knows edge must be present");
+    assert!(
+        (knows_edge.weight - 0.9).abs() < 1e-4,
+        "knows edge weight must be ~0.9, got {}",
+        knows_edge.weight
+    );
+
+    let works_edge = by_relation
+        .get("works_at")
+        .expect("works_at edge must be present");
+    assert!(
+        (works_edge.weight - 0.8).abs() < 1e-4,
+        "works_at edge weight must be ~0.8, got {}",
+        works_edge.weight
+    );
+
+    assert_eq!(
+        resp.nodes.len(),
+        3,
+        "unfiltered response must include the seed plus both hop neighbors, got: {:?}",
+        resp.nodes
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// A `hop_depth = 2` call with a `relation_type_filter` set, against a fixture where
+/// only ONE of the two hops' edges matches, returns exactly that one matching edge
+/// and exactly its two endpoint entities in `.nodes` — nothing from the non-matching
+/// first hop, and the seed itself absent from `.nodes` since it is not an endpoint of
+/// the matching second edge — proving nodes/edges stay mutually consistent under
+/// filtering rather than a full-neighborhood response.
+#[tokio::test]
+async fn query_graph_relation_filter_correct_at_hop_depth_two() {
+    use crate::LancetService;
+    let path = database_path("query-graph-relation-filter-hop2");
+    let database = seed_two_hop_graph(&path).await;
+    let service = query_graph_service_with_db(database).await;
+
+    let resp = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "".into(),
+            seed_entity_name: "Alice".into(),
+            hop_depth: 2,
+            relation_type_filter: "works_at".into(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(
+        resp.edges.len(),
+        1,
+        "only the matching hop-2 edge must survive filtering, got: {:?}",
+        resp.edges
+    );
+    assert_eq!(resp.edges[0].relation_type, "works_at");
+
+    assert_eq!(
+        resp.nodes.len(),
+        2,
+        "nodes must be exactly the matching edge's two endpoints, got: {:?}",
+        resp.nodes
+    );
+    let node_names: std::collections::HashSet<&str> =
+        resp.nodes.iter().map(|n| n.name.as_str()).collect();
+    assert!(node_names.contains("Bob"));
+    assert!(node_names.contains("Acme"));
+    assert!(
+        !node_names.contains("Alice"),
+        "seed must be absent — it is not an endpoint of the matching edge"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// A `relation_type_filter` matching ZERO edges in the fetched neighborhood returns
+/// `Ok` with empty `.nodes` and empty `.edges` — never `Status::not_found` (a filter
+/// matching nothing is a valid, successful "no matching relationships" answer).
+#[tokio::test]
+async fn query_graph_relation_filter_returns_empty_on_no_match() {
+    use crate::LancetService;
+    let path = database_path("query-graph-relation-filter-empty");
+    let database = seed_two_hop_graph(&path).await;
+    let service = query_graph_service_with_db(database).await;
+
+    let resp = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "".into(),
+            seed_entity_name: "Alice".into(),
+            hop_depth: 2,
+            relation_type_filter: "nonexistent_relation".into(),
+        }))
+        .await
+        .expect("a filter matching zero edges must be Ok, not an error")
+        .into_inner();
+
+    assert!(resp.nodes.is_empty(), "zero matching edges must yield empty nodes");
+    assert!(resp.edges.is_empty(), "zero matching edges must yield empty edges");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// A seed that is only ever the TARGET of an edge (never the source) still returns
+/// that edge in the response (D-24 bidirectionality, reused from `fetch_neighborhood`).
+#[tokio::test]
+async fn query_graph_bidirectional_seed_as_target() {
+    use crate::LancetService;
+    let path = database_path("query-graph-bidir-seed-target");
+    let database = seed_single_edge_graph(&path, "Carol", "Dave", "mentors").await;
+    let service = query_graph_service_with_db(database).await;
+
+    let resp = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "".into(),
+            seed_entity_name: "Dave".into(),
+            hop_depth: 1,
+            relation_type_filter: "".into(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    assert_eq!(
+        resp.edges.len(),
+        1,
+        "seed-as-target edge must still be returned (D-24 bidirectionality), got: {:?}",
+        resp.edges
+    );
+    assert_eq!(resp.edges[0].relation_type, "mentors");
+    let node_names: std::collections::HashSet<&str> =
+        resp.nodes.iter().map(|n| n.name.as_str()).collect();
+    assert!(node_names.contains("Carol"));
+    assert!(node_names.contains("Dave"));
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// With no `relation_type_filter` set, `QueryGraphResponse.nodes` includes the seed
+/// entity itself plus every entity reachable within `hop_depth` hops — the explicit
+/// response-semantics contract for the unfiltered case.
+#[tokio::test]
+async fn query_graph_nodes_include_seed_when_unfiltered() {
+    use crate::LancetService;
+    let path = database_path("query-graph-nodes-include-seed");
+    let database = seed_two_hop_graph(&path).await;
+    let service = query_graph_service_with_db(database).await;
+
+    let resp = service
+        .query_graph(tonic::Request::new(QueryGraphRequest {
+            seed_entity_id: "".into(),
+            seed_entity_name: "Alice".into(),
+            hop_depth: 1,
+            relation_type_filter: "".into(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+
+    let node_names: std::collections::HashSet<&str> =
+        resp.nodes.iter().map(|n| n.name.as_str()).collect();
+    assert!(
+        node_names.contains("Alice"),
+        "unfiltered response must include the seed entity itself"
+    );
+    assert!(
+        node_names.contains("Bob"),
+        "unfiltered response must include the 1-hop neighbor"
+    );
+    assert_eq!(
+        resp.nodes.len(),
+        2,
+        "hop_depth=1 must not include the 2-hop-away Acme, got: {:?}",
+        resp.nodes
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }

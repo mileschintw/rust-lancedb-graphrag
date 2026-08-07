@@ -5,8 +5,9 @@ use arrow_schema::{DataType, Field, Schema};
 
 use super::bridge;
 use super::{
-    clamp_hop_cap, traverse_fixed_hop, traverse_filtered_by_relation_type, traverse_multi_hop,
-    GraphSpikeErrorKind, MAX_HOP_CAP,
+    clamp_hop_cap, clamp_hop_cap_with_ceiling, traverse_fixed_hop,
+    traverse_filtered_by_relation_type, traverse_multi_hop, GraphSpikeErrorKind, MAX_HOP_CAP,
+    MAX_RELATION_TYPE_FILTER_BYTES, MAX_SEED_ENTITY_NAME_BYTES,
 };
 
 /// RESEARCH.md's exact 3-entity/2-edge fixture: Alice --knows--> Bob,
@@ -393,4 +394,37 @@ fn bridge_preserves_all_rows_across_multiple_ipc_batches() {
     let reader_back = arrow_ipc::reader::StreamReader::try_new(buf_lg.as_slice(), None).unwrap();
     let bridged_back = bridge::decode_all_batches(reader_back).expect("decode_all_batches must succeed on 2-batch back stream");
     assert_eq!(bridged_back.num_rows(), 3, "bridged_back must contain all 3 rows across both batches");
+}
+#[test]
+fn clamp_hop_cap_with_ceiling_applies_min_of_configured_and_compile_time() {
+    // configured_max below MAX_HOP_CAP: the configured value wins
+    assert_eq!(clamp_hop_cap_with_ceiling(1, 1), Ok(1));
+    assert_eq!(clamp_hop_cap_with_ceiling(2, 2), Ok(2));
+    // configured_max equal to MAX_HOP_CAP: both agree
+    assert_eq!(clamp_hop_cap_with_ceiling(MAX_HOP_CAP, MAX_HOP_CAP), Ok(MAX_HOP_CAP));
+    // configured_max above MAX_HOP_CAP: capped to compile-time bound
+    assert_eq!(
+        clamp_hop_cap_with_ceiling(MAX_HOP_CAP, MAX_HOP_CAP + 5),
+        Ok(MAX_HOP_CAP)
+    );
+}
+
+#[test]
+fn clamp_hop_cap_with_ceiling_rejects_zero_and_over_effective_max() {
+    let err = clamp_hop_cap_with_ceiling(0, MAX_HOP_CAP).expect_err("0 must be rejected");
+    assert_eq!(err.kind, GraphSpikeErrorKind::InvalidHopCap);
+
+    // request above a low configured ceiling is rejected
+    let err2 = clamp_hop_cap_with_ceiling(3, 2).expect_err("3 must be rejected when ceiling is 2");
+    assert_eq!(err2.kind, GraphSpikeErrorKind::InvalidHopCap);
+}
+
+#[test]
+fn byte_ceiling_constants_are_sensibly_bounded() {
+    // Constants mirror extraction JSON-Schema maxLength values; verify they are
+    // plausible (non-zero, not absurdly large) so a schema change is caught here.
+    assert!(MAX_SEED_ENTITY_NAME_BYTES > 0);
+    assert!(MAX_SEED_ENTITY_NAME_BYTES <= 4096);
+    assert!(MAX_RELATION_TYPE_FILTER_BYTES > 0);
+    assert!(MAX_RELATION_TYPE_FILTER_BYTES <= 1024);
 }

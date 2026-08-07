@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher},
     path::Path,
     sync::Arc,
@@ -52,8 +52,8 @@ pub mod lancet {
 use lancet::v1::lancet_service_server::{LancetService, LancetServiceServer};
 use lancet::v1::{
     GetIngestionStatusRequest, GetIngestionStatusResponse, IngestDocumentRequest,
-    IngestDocumentResponse, PingRequest, PingResponse, QueryGraphRequest, QueryGraphResponse,
-    QueryRagRequest, QueryRagResponse,
+    IngestDocumentResponse, PingRequest, PingResponse, QueryGraphEdge, QueryGraphNode,
+    QueryGraphRequest, QueryGraphResponse, QueryRagRequest, QueryRagResponse,
 };
 
 const MAX_DOCUMENT_BYTES: usize = 10 << 20;
@@ -1701,13 +1701,264 @@ impl LancetService for LancetServiceImpl {
         .await
     }
 
+    /// Traverses the knowledge graph from a seed entity and returns a hop-bounded neighborhood.
+    ///
+    /// The seed entity is identified by `seed_entity_id` (UUID) **or** by `seed_entity_name`
+    /// (case-folded exact name lookup over the full entities table — no match returns
+    /// `Status::not_found`). At least one of the two fields must be non-blank. Byte-ceiling
+    /// validation on `seed_entity_name` and `relation_type_filter` runs before any table or
+    /// scan operations (T-04.1-19, defence in depth against large-payload DoS). `hop_depth`
+    /// must be an explicit value in `[1, effective ceiling]`; `0` is rejected, never defaulted.
+    ///
+    /// Traversal uses the `fetch_neighborhood` pipeline established in Plan 02, followed by
+    /// `narrow_via_cypher` for Cypher membership verification (fail-open: returns the
+    /// unconstrained neighbourhood if Cypher is unavailable). An optional `relation_type_filter`
+    /// is applied as a post-narrowing edge predicate; when set, `nodes` is narrowed to exactly
+    /// the endpoints of the surviving edges, keeping `nodes`/`edges` mutually consistent.
+    ///
+    /// The effective hop ceiling is `min(MAX_HOP_CAP, configured max_hop_cap)`.
     async fn query_graph(
         &self,
-        _request: Request<QueryGraphRequest>,
+        request: Request<QueryGraphRequest>,
     ) -> Result<Response<QueryGraphResponse>, Status> {
-        Ok(Response::new(QueryGraphResponse {
-            result_json: r#"{"status":"scaffolding"}"#.into(),
-        }))
+        let req = request.into_inner();
+
+        // ── Input validation (byte-ceiling checks before any DB ops) ─────────────────
+        let seed_entity_name = req.seed_entity_name.trim().to_string();
+        let seed_entity_id = req.seed_entity_id.trim().to_string();
+        let relation_type_filter = req.relation_type_filter.trim().to_string();
+
+        if seed_entity_name.len() > graph::MAX_SEED_ENTITY_NAME_BYTES {
+            return Err(Status::invalid_argument(format!(
+                "seed_entity_name exceeds {} byte limit",
+                graph::MAX_SEED_ENTITY_NAME_BYTES
+            )));
+        }
+        if relation_type_filter.len() > graph::MAX_RELATION_TYPE_FILTER_BYTES {
+            return Err(Status::invalid_argument(format!(
+                "relation_type_filter exceeds {} byte limit",
+                graph::MAX_RELATION_TYPE_FILTER_BYTES
+            )));
+        }
+
+        // ── Resolve seed entity UUID ─────────────────────────────────────────────────
+        let resolved_seed_id: String = if !seed_entity_id.is_empty() {
+            // Caller supplied an explicit UUID; validate it.
+            let parsed =
+                Uuid::parse_str(&seed_entity_id).map_err(|_| {
+                    Status::invalid_argument("seed_entity_id must be a valid UUID string")
+                })?;
+            parsed.to_string()
+        } else if !seed_entity_name.is_empty() {
+            // Name-based lookup: read entity_id/name in full into memory (a small,
+            // bounded scan — no secondary index exists on entities.name, and a
+            // case-folded exact match cannot be pushed down as a LanceDB predicate;
+            // T-04.1-19 accepts this table-scan-cost trade-off explicitly) and
+            // case-fold both sides the same way this codebase's D-05 write-time
+            // merge step does (`.trim().to_lowercase()`, mirrored from
+            // extract_and_persist_entities), so a lookup finds exactly what the
+            // write-time merge would have folded together.
+            let entities_table = self
+                .database
+                .entities_table()
+                .await
+                .map_err(|e| Status::internal(format!("entities table error: {e}")))?;
+
+            let batches: Vec<arrow_array::RecordBatch> = entities_table
+                .query()
+                .select(lancedb::query::Select::columns(&["entity_id", "name"]))
+                .execute()
+                .await
+                .map_err(|e| Status::internal(format!("entity name lookup error: {e}")))?
+                .try_collect()
+                .await
+                .map_err(|e| {
+                    Status::internal(format!("entity name lookup collect error: {e}"))
+                })?;
+
+            let folded_query = seed_entity_name.trim().to_lowercase();
+            let mut matched_ids: Vec<String> = Vec::new();
+            for batch in &batches {
+                let id_col = batch
+                    .column_by_name("entity_id")
+                    .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+                let name_col = batch
+                    .column_by_name("name")
+                    .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+                if let (Some(id_col), Some(name_col)) = (id_col, name_col) {
+                    for i in 0..batch.num_rows() {
+                        if id_col.is_null(i) || name_col.is_null(i) {
+                            continue;
+                        }
+                        if name_col.value(i).trim().to_lowercase() == folded_query {
+                            matched_ids.push(id_col.value(i).to_string());
+                        }
+                    }
+                }
+            }
+
+            if matched_ids.is_empty() {
+                return Err(Status::not_found(format!(
+                    "no entity found with name '{seed_entity_name}'"
+                )));
+            }
+            matched_ids.sort();
+            if matched_ids.len() > 1 {
+                // Defensive only: ExactMatchResolver already merges entities by
+                // case-folded name at write time (D-05), so a duplicate here would
+                // itself indicate that merge invariant drifted. Deterministic,
+                // operator-visible, not request-failing.
+                tracing::warn!(
+                    name = %seed_entity_name,
+                    count = matched_ids.len(),
+                    "multiple entities matched case-folded name lookup; using lexicographically smallest entity_id"
+                );
+            }
+            matched_ids.into_iter().next().expect("matched_ids checked non-empty above")
+        } else {
+            return Err(Status::invalid_argument(
+                "at least one of seed_entity_id or seed_entity_name must be non-blank",
+            ));
+        };
+
+        // ── Hop-depth clamping ───────────────────────────────────────────────────────
+        // hop_depth = 0 is rejected outright (clamp_hop_cap_with_ceiling's own 0-check),
+        // not silently treated as "unset" — a caller must supply an explicit >=1 value.
+        let effective_depth = graph::clamp_hop_cap_with_ceiling(
+            req.hop_depth,
+            self.effective_settings.graph.max_hop_cap,
+        )
+        .map_err(|e| Status::invalid_argument(e.message().to_string()))?;
+
+        // ── Neighborhood fetch + Cypher narrowing ────────────────────────────────────
+        let (entities_batch, edges_batch) =
+            graph::fetch_neighborhood(&self.database, &resolved_seed_id, effective_depth, true)
+                .await
+                .map_err(|e| Status::internal(format!("fetch_neighborhood: {:?}", e.kind)))?;
+
+        let (entities_batch, edges_batch) =
+            graph::narrow_via_cypher(&entities_batch, &edges_batch, &resolved_seed_id, effective_depth)
+                .await;
+
+        // ── Optional relation_type_filter ────────────────────────────────────────────
+        let filter_applied = !relation_type_filter.is_empty();
+        let edges_batch = if filter_applied {
+            let rel_col = edges_batch
+                .column_by_name("relation_type")
+                .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+            if let Some(rel_col) = rel_col {
+                let mask: arrow_array::BooleanArray = (0..edges_batch.num_rows())
+                    .map(|i| {
+                        Some(
+                            !rel_col.is_null(i)
+                                && rel_col.value(i) == relation_type_filter.as_str(),
+                        )
+                    })
+                    .collect();
+                arrow_select::filter::filter_record_batch(&edges_batch, &mask)
+                    .unwrap_or(edges_batch)
+            } else {
+                edges_batch
+            }
+        } else {
+            edges_batch
+        };
+
+        // ── Build QueryGraphResponse ─────────────────────────────────────────────────
+        // Without a relation_type_filter: nodes is the full (Cypher-constrained,
+        // seed-inclusive) entities_batch. With a filter: nodes is redefined as
+        // exactly the entities that are an endpoint (source or target) of one of
+        // the FILTERED edges — a strict subset, never the full unfiltered set, so
+        // nodes/edges stay mutually consistent under filtering (never a node the
+        // response's own edges don't reference, and never an edge pointing at a
+        // node the response never lists).
+        let node_source_batch: arrow_array::RecordBatch = if filter_applied {
+            let src_col = edges_batch
+                .column_by_name("source_node_id")
+                .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+            let tgt_col = edges_batch
+                .column_by_name("target_node_id")
+                .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+
+            let mut endpoint_ids: HashSet<String> = HashSet::new();
+            if let (Some(src_col), Some(tgt_col)) = (src_col, tgt_col) {
+                for i in 0..edges_batch.num_rows() {
+                    if !src_col.is_null(i) {
+                        endpoint_ids.insert(src_col.value(i).to_string());
+                    }
+                    if !tgt_col.is_null(i) {
+                        endpoint_ids.insert(tgt_col.value(i).to_string());
+                    }
+                }
+            }
+
+            let entity_id_col_for_mask = entities_batch
+                .column_by_name("entity_id")
+                .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+            let node_mask: arrow_array::BooleanArray = (0..entities_batch.num_rows())
+                .map(|i| {
+                    Some(entity_id_col_for_mask.is_some_and(|col| {
+                        !col.is_null(i) && endpoint_ids.contains(col.value(i))
+                    }))
+                })
+                .collect();
+            arrow_select::filter::filter_record_batch(&entities_batch, &node_mask)
+                .unwrap_or_else(|_| entities_batch.clone())
+        } else {
+            entities_batch.clone()
+        };
+
+        let entity_id_col = node_source_batch
+            .column_by_name("entity_id")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+        let entity_name_col = node_source_batch
+            .column_by_name("name")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+        let entity_type_col = node_source_batch
+            .column_by_name("entity_type")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+
+        let mut nodes = Vec::with_capacity(node_source_batch.num_rows());
+        if let (Some(id_col), Some(name_col), Some(type_col)) =
+            (entity_id_col, entity_name_col, entity_type_col)
+        {
+            for i in 0..node_source_batch.num_rows() {
+                nodes.push(QueryGraphNode {
+                    entity_id: if id_col.is_null(i) { String::new() } else { id_col.value(i).to_string() },
+                    name: if name_col.is_null(i) { String::new() } else { name_col.value(i).to_string() },
+                    entity_type: if type_col.is_null(i) { String::new() } else { type_col.value(i).to_string() },
+                });
+            }
+        }
+
+        let src_col = edges_batch
+            .column_by_name("source_node_id")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+        let tgt_col = edges_batch
+            .column_by_name("target_node_id")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+        let rel_col = edges_batch
+            .column_by_name("relation_type")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>());
+        let weight_col = edges_batch
+            .column_by_name("weight")
+            .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>());
+
+        let mut edges = Vec::with_capacity(edges_batch.num_rows());
+        if let (Some(src), Some(tgt), Some(rel)) = (src_col, tgt_col, rel_col) {
+            for i in 0..edges_batch.num_rows() {
+                edges.push(QueryGraphEdge {
+                    source_entity_id: if src.is_null(i) { String::new() } else { src.value(i).to_string() },
+                    target_entity_id: if tgt.is_null(i) { String::new() } else { tgt.value(i).to_string() },
+                    relation_type: if rel.is_null(i) { String::new() } else { rel.value(i).to_string() },
+                    weight: weight_col
+                        .and_then(|w| if w.is_null(i) { None } else { Some(w.value(i)) })
+                        .unwrap_or(1.0),
+                });
+            }
+        }
+
+        Ok(Response::new(QueryGraphResponse { nodes, edges }))
     }
 }
 

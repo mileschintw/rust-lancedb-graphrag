@@ -71,6 +71,18 @@ impl std::error::Error for GraphSpikeError {}
 /// Upper bound on caller-requested traversal hop depth (D-23's Claude's-Discretion default).
 pub const MAX_HOP_CAP: u32 = 3;
 
+/// Maximum byte length accepted for a caller-supplied `seed_entity_name` (T-04.1-19).
+///
+/// Matches the extraction JSON-Schema's own `name` `maxLength` bound from AI-SPEC §4b.1,
+/// reusing an existing bound rather than introducing an arbitrary new ceiling.
+pub const MAX_SEED_ENTITY_NAME_BYTES: usize = 512;
+
+/// Maximum byte length accepted for a caller-supplied `relation_type_filter` (T-04.1-19).
+///
+/// Matches the extraction JSON-Schema's own `relation_type` `maxLength` bound from
+/// AI-SPEC §4b.1.
+pub const MAX_RELATION_TYPE_FILTER_BYTES: usize = 128;
+
 /// Clamps a requested hop count to the `[1, MAX_HOP_CAP]` range.
 ///
 /// This guard runs before `hop_cap` is ever interpolated into a `format!`-built
@@ -85,6 +97,36 @@ pub fn clamp_hop_cap(requested: u32) -> Result<u32, GraphSpikeError> {
         return Err(GraphSpikeError::new(
             GraphSpikeErrorKind::InvalidHopCap,
             format!("hop_cap must be between 1 and {MAX_HOP_CAP}, got {requested}"),
+        ));
+    }
+    Ok(requested)
+}
+
+/// Clamps a requested hop count against a configurable ceiling.
+///
+/// This is the `QueryGraph`-specific variant of [`clamp_hop_cap`] that takes a
+/// caller-configured maximum (`configured_max`) read from `GraphSettings.max_hop_cap`
+/// rather than relying solely on the compile-time [`MAX_HOP_CAP`] constant.
+///
+/// The effective ceiling is `min(MAX_HOP_CAP, configured_max)`: if the operator
+/// sets a `max_hop_cap` above the compile-time bound it is silently capped to
+/// `MAX_HOP_CAP` (defence in depth against a misconfigured TOML value), then the
+/// same `0 / > effective_max` rejection logic as [`clamp_hop_cap`] applies.
+///
+/// # Errors
+/// Returns a [`GraphSpikeError`] with kind [`GraphSpikeErrorKind::InvalidHopCap`]
+/// if `requested` is `0` or greater than the effective ceiling.
+pub fn clamp_hop_cap_with_ceiling(
+    requested: u32,
+    configured_max: u32,
+) -> Result<u32, GraphSpikeError> {
+    let effective_max = MAX_HOP_CAP.min(configured_max);
+    if requested == 0 || requested > effective_max {
+        return Err(GraphSpikeError::new(
+            GraphSpikeErrorKind::InvalidHopCap,
+            format!(
+                "hop_depth must be between 1 and {effective_max} (configured ceiling), got {requested}"
+            ),
         ));
     }
     Ok(requested)
@@ -419,11 +461,63 @@ pub async fn fetch_neighborhood(
     let edges_batch = if accumulated_edge_batches.is_empty() {
         arrow_array::RecordBatch::new_empty(edges_schema)
     } else {
-        concat_batches(&edges_schema, &accumulated_edge_batches)
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("concat edges: {e}")))?
+        let concatenated = concat_batches(&edges_schema, &accumulated_edge_batches)
+            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("concat edges: {e}")))?;
+        // Bidirectional per-hop querying re-matches an edge already accumulated in a
+        // prior hop once its OTHER endpoint enters a later frontier (e.g. seed--A-->B
+        // fetched at hop 1 via seed's frontier, then re-fetched at hop 2 once B enters
+        // the frontier and the bidirectional predicate matches B as an endpoint again).
+        // Deduplicate before returning so the response never double-counts an edge.
+        dedup_edges_by_identity(&concatenated)?
     };
 
     Ok((entities_batch, edges_batch))
+}
+
+/// Deduplicates edge rows re-fetched across multiple BFS hops in [`fetch_neighborhood`].
+///
+/// Identity is `(source_node_id, target_node_id, relation_type, weight)`; the first
+/// occurrence in row order is kept. Two rows sharing this full identity are the same
+/// edge re-observed from a later hop's bidirectional frontier query, not two distinct
+/// edges — distinct edges persisted from separate extractions would differ in at least
+/// `weight` (each relation's `weight` is its own extraction's `confidence`) even when
+/// `source_node_id`/`target_node_id`/`relation_type` coincide.
+fn dedup_edges_by_identity(
+    edges: &arrow_array::RecordBatch,
+) -> Result<arrow_array::RecordBatch, GraphSpikeError> {
+    let source_col = edges
+        .column_by_name("source_node_id")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing source_node_id column"))?;
+    let target_col = edges
+        .column_by_name("target_node_id")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing target_node_id column"))?;
+    let relation_col = edges
+        .column_by_name("relation_type")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing relation_type column"))?;
+    let weight_col = edges
+        .column_by_name("weight")
+        .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>())
+        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing weight column"))?;
+
+    let mut seen: HashSet<(String, String, String, u32)> = HashSet::new();
+    let mask: arrow_array::BooleanArray = (0..edges.num_rows())
+        .map(|i| {
+            let key = (
+                source_col.value(i).to_string(),
+                target_col.value(i).to_string(),
+                relation_col.value(i).to_string(),
+                weight_col.value(i).to_bits(),
+            );
+            Some(seen.insert(key))
+        })
+        .collect();
+
+    filter_record_batch(edges, &mask).map_err(|e| {
+        GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("filter deduped edges failed: {e}"))
+    })
 }
 
 pub(crate) async fn cypher_confirmed_neighbor_ids(
