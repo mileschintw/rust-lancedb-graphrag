@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 5
+current_phase: 04.1
 current_phase_name: State Machine & Workflow Events
-current_plan: 1
+current_plan: 5
 status: executing
-stopped_at: Phase 04.1 context gathered
-last_updated: "2026-08-07T21:41:30.000Z"
+stopped_at: Completed 04.1-04-PLAN.md (resumed Task 2)
+last_updated: "2026-08-07T23:12:08.204Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 58
-  completed_plans: 56
+  completed_plans: 57
 ---
 
 # Project State
@@ -24,14 +24,15 @@ progress:
 - Phase 3 completed (force-closed per ADR-03-003; 23/23 plans executed; residual verification gaps recorded as technical debt DEBT-P3-* deferred to Phase 6 final hardening; next phase = Phase 4).
 - Phase 4 completed (lance-graph/lancedb compatibility spike only, per ROADMAP's "Deferred target" note; UAT 3/3 passed, SECURITY.md verified threats_open: 0; full extraction/storage/query-traversal implementation deferred to Phase 04.1, not yet created; next phase = Phase 5).
 - Phase 04.1 Plan 03 executed: concurrent bounded extraction, WR-01 IPC multi-batch bridge fix, extraction retries with confidence validation, and re-ingestion rollback proof.
+- Phase 04.1 Plan 04 executed: QueryGraph RPC as a Cypher-constrained induced-neighborhood query with bounded/validated input, including a fix for a pre-existing fetch_neighborhood bidirectional-BFS edge-duplication bug.
 
 ## Active Phase
 
 - **Phase:** 04.1 — Knowledge Graph Extraction & Query (Full Implementation)
-- **Status:** Executing Phase 04.1 Plan 04
-- **Current Plan:** 4
+- **Status:** Ready to execute
+- **Current Plan:** 5
 - **Total Plans in Phase:** 5
-- **Progress:** [███████░░░] 60%
+- **Progress:** [██████████] 98%
 
 ## Completed Phases
 
@@ -106,6 +107,7 @@ progress:
 | Phase 04.1 P01 | 20min | 2 tasks | 9 files |
 | Phase 04.1 P02 | 40min | 3 tasks | 10 files |
 | Phase 04.1 P03 | 45min | 3 tasks | 5 files |
+| Phase 04.1 P04 | 50min | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -146,16 +148,17 @@ progress:
 - [Phase 04.1-03]: Concurrently extract per-chunk entities using buffer_unordered(5) while collecting non-fatal extraction errors without failing document ingestion.
 - [Phase 04.1-03]: Decode all batches in IPC streams via DecodeAllBatches in bridge.rs to prevent multi-batch stream truncation across Arrow crate boundaries (WR-01).
 - [Phase 04.1-03]: Enforce 2 retries (3 total attempts) with confidence range validation [0.0, 1.0] and log coverage regressions on re-ingestion.
+- [Phase 04.1-04]: Fixed a pre-existing fetch_neighborhood bug where bidirectional multi-hop BFS double-counted an edge re-matched from a later hop's frontier; deduplicated by (source, target, relation_type, weight) identity.
+- [Phase 04.1-04]: QueryGraph seed_entity_name lookup case-folds via .trim().to_lowercase() (this codebase's D-05 write-time merge convention) over a full table scan, returning Status::not_found on zero matches.
 
 ## Session
 
-**Last session:** 2026-08-07T21:41:30.000Z
-**Stopped at:** Plan 04.1-03 completed
-**Resume file:** .planning/phases/04.1-knowledge-graph-extraction-query-full-implementation/04.1-04-PLAN.md
+**Last session:** 2026-08-07T23:12:08.168Z
+**Stopped at:** Completed 04.1-04-PLAN.md (resumed Task 2)
+**Resume file:** None
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 
 - Phase 04.1 inserted after Phase 4: Knowledge Graph Extraction & Query (Full Implementation) (URGENT)
-

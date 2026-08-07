@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 **Wave 1**
@@ -287,7 +287,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04.1-04-PLAN.md — Redesign the standalone QueryGraph RPC as an induced-neighborhood query with a structured, hop-bounded contract, correct relation-type filtering at any hop depth, and validated input.
+- [x] 04.1-04-PLAN.md — Redesign the standalone QueryGraph RPC as an induced-neighborhood query with a structured, hop-bounded contract, correct relation-type filtering at any hop depth, and validated input.
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
