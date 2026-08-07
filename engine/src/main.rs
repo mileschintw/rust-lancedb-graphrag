@@ -2138,6 +2138,13 @@ async fn process_job_with_boundary(
     Ok(i32::try_from(chunks.len()).unwrap_or(i32::MAX))
 }
 
+/// Summary of entity_edges row count changes on re-ingestion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtractionPersistSummary {
+    pub prior_entity_edges_count: usize,
+    pub written_entity_edges_count: usize,
+}
+
 /// Extracts entities and relationships from a document and persists them to LanceDB.
 ///
 /// Phase A (read-only): extracts per-chunk entities and relations, reading entities_table for exact match resolution.
@@ -2148,7 +2155,7 @@ pub(crate) async fn extract_and_persist_entities(
     job: &IngestionJob,
     extraction_generator: &dyn graph::extraction::ExtractionGenerator,
     embedder: &dyn EmbeddingProvider,
-) -> Result<(), String> {
+) -> Result<ExtractionPersistSummary, String> {
     let (_strategy, chunks) = chunk_ingestion_job(job);
     let chunk_ids: Vec<String> = (0..chunks.len())
         .map(|index| format!("{}:{index}", job.document_id))
@@ -2175,7 +2182,7 @@ pub(crate) async fn extract_and_persist_entities(
                 document_id: doc_id,
                 chunk_text,
             };
-            let res = extraction_generator.extract(req).await;
+            let res = graph::extraction::extract_with_retry(extraction_generator, req).await;
             (index, chunk_id, res)
         }
     }))
@@ -2417,8 +2424,19 @@ pub(crate) async fn extract_and_persist_entities(
     let version_entities = entities_table.version().await.map_err(|e| e.to_string())?;
     let version_edges = entity_edges_table.version().await.map_err(|e| e.to_string())?;
 
+    let edge_pred = format!("document_id = '{}'", escape_sql_literal(&job.document_id));
+    let prior_batches: Vec<arrow_array::RecordBatch> = entity_edges_table
+        .query()
+        .only_if(&edge_pred)
+        .execute()
+        .await
+        .map_err(|e| format!("count prior entity_edges failed: {e}"))?
+        .try_collect()
+        .await
+        .map_err(|e| format!("count prior entity_edges collect failed: {e}"))?;
+    let prior_entity_edges_count: usize = prior_batches.iter().map(|b| b.num_rows()).sum();
+
     let run_mutations = async {
-        let edge_pred = format!("document_id = '{}'", escape_sql_literal(&job.document_id));
         entity_edges_table
             .delete(&edge_pred)
             .await
@@ -2551,21 +2569,37 @@ pub(crate) async fn extract_and_persist_entities(
                 .map_err(|e| format!("add entity_edges failed: {e}"))?;
         }
 
-        Ok(())
+        let fresh_edges_table = database.entity_edges_table().await.map_err(|e| format!("open fresh entity_edges_table failed: {e}"))?;
+        let written_batches: Vec<arrow_array::RecordBatch> = fresh_edges_table
+            .query()
+            .only_if(&edge_pred)
+            .execute()
+            .await
+            .map_err(|e| format!("count written entity_edges failed: {e}"))?
+            .try_collect()
+            .await
+            .map_err(|e| format!("count written entity_edges collect failed: {e}"))?;
+        let written_entity_edges_count: usize = written_batches.iter().map(|b| b.num_rows()).sum();
+
+        Ok(ExtractionPersistSummary {
+            prior_entity_edges_count,
+            written_entity_edges_count,
+        })
     };
 
-    if let Err(mut_err) = run_mutations.await {
-        tracing::error!(
-            %job.document_id,
-            error = %mut_err,
-            "Phase B mutation failed, attempting table version restores"
-        );
-        let _ = restore_version(&entities_table, version_entities).await;
-        let _ = restore_version(&entity_edges_table, version_edges).await;
-        return Err(mut_err);
+    match run_mutations.await {
+        Ok(summary) => Ok(summary),
+        Err(mut_err) => {
+            tracing::error!(
+                %job.document_id,
+                error = %mut_err,
+                "Phase B mutation failed, attempting table version restores"
+            );
+            let _ = restore_version(&entities_table, version_entities).await;
+            let _ = restore_version(&entity_edges_table, version_edges).await;
+            Err(mut_err)
+        }
     }
-
-    Ok(())
 }
 
 fn spawn_worker(
@@ -2648,7 +2682,7 @@ fn spawn_worker_with_boundary(
             .await
             {
                 Ok(chunk_count) => {
-                    if let Err(err) = extract_and_persist_entities(
+                    match extract_and_persist_entities(
                         &database,
                         &job,
                         extraction_generator.as_ref(),
@@ -2656,11 +2690,23 @@ fn spawn_worker_with_boundary(
                     )
                     .await
                     {
-                        tracing::warn!(
-                            %job.document_id,
-                            %err,
-                            "extract_and_persist_entities failed"
-                        );
+                        Ok(summary) => {
+                            if summary.written_entity_edges_count < summary.prior_entity_edges_count {
+                                tracing::warn!(
+                                    %job.document_id,
+                                    prior = summary.prior_entity_edges_count,
+                                    written = summary.written_entity_edges_count,
+                                    "graph completeness reduced on re-ingestion"
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            tracing::error!(
+                                %job.document_id,
+                                error = %err,
+                                "extract_and_persist_entities failed, prior graph preserved"
+                            );
+                        }
                     }
                     statuses.insert(
                         document_id,

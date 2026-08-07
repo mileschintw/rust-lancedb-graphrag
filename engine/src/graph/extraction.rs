@@ -58,6 +58,72 @@ pub trait ExtractionGenerator: Send + Sync {
     ) -> BoxFuture<'a, Result<ExtractionOutput, GenerationError>>;
 }
 
+/// Validates an ExtractionOutput's relation confidences.
+///
+/// Returns `Err` if any relation confidence is non-finite or outside [0.0, 1.0].
+pub(crate) fn validate_extraction_output(output: &ExtractionOutput) -> Result<(), String> {
+    for rel in &output.relations {
+        if !rel.confidence.is_finite() || rel.confidence < 0.0 || rel.confidence > 1.0 {
+            return Err(format!(
+                "relation confidence {} is out of range [0.0, 1.0]",
+                rel.confidence
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Executes an extraction request with bounded retry logic (up to 2 retries, 3 total attempts).
+///
+/// Implements AI-SPEC §4b.1's bounded retry contract for extraction calls.
+/// Logs carry only chunk_id, document_id, attempt number, and error kind/reason —
+/// NEVER the raw extracted text or model output (a deliberate, documented deviation
+/// from AI-SPEC §4b.1's literal instruction, preserving T-04.1-07 and GraphSpikeError
+/// no-row-values-in-logs discipline).
+pub(crate) async fn extract_with_retry(
+    generator: &dyn ExtractionGenerator,
+    request: ExtractionRequest,
+) -> Result<ExtractionOutput, GenerationError> {
+    let mut attempt = 1;
+    let max_attempts = 3;
+
+    loop {
+        match generator.extract(request.clone()).await {
+            Ok(output) => match validate_extraction_output(&output) {
+                Ok(()) => return Ok(output),
+                Err(val_err) => {
+                    tracing::warn!(
+                        chunk_id = %request.chunk_id,
+                        document_id = %request.document_id,
+                        attempt,
+                        reason = "confidence_out_of_range",
+                        "extraction output validation failed"
+                    );
+                    if attempt >= max_attempts {
+                        return Err(GenerationError::new(
+                            GenerationErrorKind::SchemaValidation,
+                            format!("extraction output failed validation after retries: {val_err}"),
+                        ));
+                    }
+                }
+            },
+            Err(err) => {
+                tracing::warn!(
+                    chunk_id = %request.chunk_id,
+                    document_id = %request.document_id,
+                    attempt,
+                    reason = %err,
+                    "extraction call failed"
+                );
+                if attempt >= max_attempts {
+                    return Err(err);
+                }
+            }
+        }
+        attempt += 1;
+    }
+}
+
 /// OpenRouter implementation of ExtractionGenerator using structured outputs.
 #[derive(Clone)]
 pub struct OpenRouterExtractionGenerator {
@@ -316,7 +382,9 @@ impl ExtractionGenerator for FakeExtractionGenerator {
                     resp
                 } else {
                     let mut guard = self.responses.lock().unwrap();
-                    if guard.is_empty() {
+                    if guard.len() == 1 {
+                        guard[0].clone()
+                    } else if guard.is_empty() {
                         Err(GenerationError::new(
                             GenerationErrorKind::ProviderError,
                             "FakeExtractionGenerator ran out of responses",

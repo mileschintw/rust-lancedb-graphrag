@@ -4331,8 +4331,8 @@ async fn extraction_runs_concurrently_and_skips_short_chunks() {
     let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
     assert!(res.is_ok(), "D-06: per-chunk extraction failure must not fail function");
 
-    // Short chunk (index 0) was skipped, chunk 3 failed, so 5 calls were made
-    assert_eq!(fake_gen.calls(), 5, "Short chunk must be skipped, 5 long chunks called");
+    // Short chunk (index 0) skipped (0 calls); 5 long chunks succeed (5 calls); chunk 3 fails and retries 3 times under extract_with_retry (3 calls); total 8 calls
+    assert_eq!(fake_gen.calls(), 8, "Short chunk skipped, 5 chunks called once, 1 chunk called 3 times on retries");
 
     let entities_table = database.entities_table().await.unwrap();
     let count = entities_table.count_rows(None).await.unwrap();
@@ -4350,14 +4350,24 @@ async fn extraction_reingestion_is_idempotent_by_construction() {
     let long_para = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
     let text = format!("# Section 1\n\n{long_para}\n\n# Section 2\n\n{long_para}");
 
+    let mut metadata = HashMap::new();
+    metadata.insert("chunk_strategy".to_string(), "fixed-size".to_string());
+    metadata.insert("chunk_size".to_string(), "100".to_string());
+    metadata.insert("chunk_overlap".to_string(), "10".to_string());
+
     let job = IngestionJob::new(
         doc_id.clone(),
         "idempotent.md".into(),
         text.as_bytes().to_vec(),
-        HashMap::new(),
+        metadata,
     );
 
-    let fake_gen = graph::extraction::FakeExtractionGenerator::with_responses(vec![
+    let cid_0 = format!("{doc_id}:0");
+    let cid_1 = format!("{doc_id}:1");
+
+    let mut keyed_1 = HashMap::new();
+    keyed_1.insert(
+        cid_0.clone(),
         Ok(graph::extraction::ExtractionOutput {
             entities: vec![graph::extraction::ExtractedEntity {
                 name: "Widget".into(),
@@ -4365,11 +4375,20 @@ async fn extraction_reingestion_is_idempotent_by_construction() {
             }],
             relations: vec![],
         }),
+    );
+    keyed_1.insert(
+        cid_1.clone(),
         Ok(graph::extraction::ExtractionOutput {
-            entities: vec![graph::extraction::ExtractedEntity {
-                name: "Gadget".into(),
-                entity_type: "product".into(),
-            }],
+            entities: vec![
+                graph::extraction::ExtractedEntity {
+                    name: "Widget".into(),
+                    entity_type: "product".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Gadget".into(),
+                    entity_type: "product".into(),
+                },
+            ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "Widget".into(),
                 target: "Gadget".into(),
@@ -4377,7 +4396,9 @@ async fn extraction_reingestion_is_idempotent_by_construction() {
                 confidence: 0.9,
             }],
         }),
-    ]);
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_1);
 
     // First ingestion call
     super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
@@ -4393,7 +4414,9 @@ async fn extraction_reingestion_is_idempotent_by_construction() {
     assert_eq!(edge_count_1, 1);
 
     // Second ingestion call in direct sequence with fresh responses
-    let fake_gen_2 = graph::extraction::FakeExtractionGenerator::with_responses(vec![
+    let mut keyed_2 = HashMap::new();
+    keyed_2.insert(
+        cid_0,
         Ok(graph::extraction::ExtractionOutput {
             entities: vec![graph::extraction::ExtractedEntity {
                 name: "Widget".into(),
@@ -4401,11 +4424,20 @@ async fn extraction_reingestion_is_idempotent_by_construction() {
             }],
             relations: vec![],
         }),
+    );
+    keyed_2.insert(
+        cid_1,
         Ok(graph::extraction::ExtractionOutput {
-            entities: vec![graph::extraction::ExtractedEntity {
-                name: "Gadget".into(),
-                entity_type: "product".into(),
-            }],
+            entities: vec![
+                graph::extraction::ExtractedEntity {
+                    name: "Widget".into(),
+                    entity_type: "product".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Gadget".into(),
+                    entity_type: "product".into(),
+                },
+            ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "Widget".into(),
                 target: "Gadget".into(),
@@ -4413,17 +4445,21 @@ async fn extraction_reingestion_is_idempotent_by_construction() {
                 confidence: 0.9,
             }],
         }),
-    ]);
+    );
+
+    let fake_gen_2 = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_2);
 
     super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder)
         .await
         .unwrap();
 
-    let entity_count_2 = entities_table.count_rows(None).await.unwrap();
-    let edge_count_2 = edges_table.count_rows(None).await.unwrap();
+    let entities_table_2 = database.entities_table().await.unwrap();
+    let edges_table_2 = database.entity_edges_table().await.unwrap();
+    let entity_count_2 = entities_table_2.count_rows(None).await.unwrap();
+    let edge_count_2 = edges_table_2.count_rows(None).await.unwrap();
 
-    assert_eq!(entity_count_2, entity_count_1, "Entities count must stay identical");
-    assert_eq!(edge_count_2, edge_count_1, "Entity edges count must stay identical");
+    assert_eq!(entity_count_2, 2);
+    assert_eq!(edge_count_2, 1);
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -4491,7 +4527,7 @@ async fn stale_entity_survives_document_replacement() {
         relations: vec![],
     }));
 
-    replace_document_with_faults(&database, &job1, &FakeEmbedder, &NoOpFaultBoundary).await.unwrap();
+    process_job(&job1, &database, &FakeEmbedder).await.unwrap();
     super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder).await.unwrap();
 
     let entities_table = database.entities_table().await.unwrap();
@@ -4510,11 +4546,12 @@ async fn stale_entity_survives_document_replacement() {
         relations: vec![],
     }));
 
-    replace_document_with_faults(&database, &job2, &FakeEmbedder, &NoOpFaultBoundary).await.unwrap();
+    process_job(&job2, &database, &FakeEmbedder).await.unwrap();
     super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder).await.unwrap();
 
+    let fresh_entities_table = database.entities_table().await.unwrap();
     // Acme Corp entity row remains present (v1 documented behavior)
-    assert_eq!(entities_table.count_rows(None).await.unwrap(), 2, "Stale entity Acme Corp survives document replacement");
+    assert_eq!(fresh_entities_table.count_rows(None).await.unwrap(), 2, "Stale entity Acme Corp survives document replacement");
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -4537,7 +4574,7 @@ async fn stale_source_chunk_ids_can_reference_unrelated_replacement_content() {
         relations: vec![],
     }));
 
-    replace_document_with_faults(&database, &job1, &FakeEmbedder, &NoOpFaultBoundary).await.unwrap();
+    process_job(&job1, &database, &FakeEmbedder).await.unwrap();
     super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder).await.unwrap();
 
     // Replace document with Acme-free content at chunk index 0 holding unrelated text
@@ -4550,7 +4587,7 @@ async fn stale_source_chunk_ids_can_reference_unrelated_replacement_content() {
         relations: vec![],
     }));
 
-    replace_document_with_faults(&database, &job2, &FakeEmbedder, &NoOpFaultBoundary).await.unwrap();
+    process_job(&job2, &database, &FakeEmbedder).await.unwrap();
     super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder).await.unwrap();
 
     let chunk_0_id = format!("{doc_id}:0");
@@ -4620,6 +4657,328 @@ async fn extraction_concurrency_bound_is_observed_not_assumed() {
     let max_conc = fake_gen.max_observed_concurrency();
     assert!(max_conc <= 5, "Max observed concurrency must be <= 5 (bound held), got {max_conc}");
     assert!(max_conc >= 2, "Max observed concurrency must be >= 2 (real overlap occurred), got {max_conc}");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn extraction_retries_then_succeeds_within_attempt_budget() {
+    let path = database_path("extraction-retry-success");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "retry_success.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::with_responses(vec![
+        Err(generation::GenerationError::new(
+            generation::GenerationErrorKind::SchemaValidation,
+            "transient schema validation failure",
+        )),
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "RetrySuccess".into(),
+                entity_type: "concept".into(),
+            }],
+            relations: vec![],
+        }),
+    ]);
+
+    let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
+    assert!(res.is_ok());
+
+    assert_eq!(fake_gen.calls(), 2, "Must retry once and succeed on 2nd attempt");
+
+    let entities_table = database.entities_table().await.unwrap();
+    assert_eq!(entities_table.count_rows(None).await.unwrap(), 1);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn extraction_retry_exhaustion_yields_zero_entities_not_function_failure() {
+    let path = database_path("extraction-retry-exhaustion");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "retry_exhaustion.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::with_responses(vec![
+        Err(generation::GenerationError::new(
+            generation::GenerationErrorKind::ProviderError,
+            "attempt 1 fail",
+        )),
+        Err(generation::GenerationError::new(
+            generation::GenerationErrorKind::ProviderError,
+            "attempt 2 fail",
+        )),
+        Err(generation::GenerationError::new(
+            generation::GenerationErrorKind::ProviderError,
+            "attempt 3 fail",
+        )),
+    ]);
+
+    let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
+    assert!(res.is_ok(), "D-06: retry exhaustion yields zero entities, not function failure");
+
+    assert_eq!(fake_gen.calls(), 3, "Must attempt 3 times total");
+
+    let entities_table = database.entities_table().await.unwrap();
+    assert_eq!(entities_table.count_rows(None).await.unwrap(), 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn extraction_output_with_out_of_range_confidence_is_rejected_before_persistence() {
+    let path = database_path("extraction-confidence-range");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "confidence_range.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::with_responses(vec![
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity { name: "Alice".into(), entity_type: "person".into() },
+                graph::extraction::ExtractedEntity { name: "Bob".into(), entity_type: "person".into() },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Alice".into(),
+                target: "Bob".into(),
+                relation_type: "knows".into(),
+                confidence: 1.5,
+            }],
+        }),
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity { name: "Alice".into(), entity_type: "person".into() },
+                graph::extraction::ExtractedEntity { name: "Bob".into(), entity_type: "person".into() },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Alice".into(),
+                target: "Bob".into(),
+                relation_type: "knows".into(),
+                confidence: 1.5,
+            }],
+        }),
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity { name: "Alice".into(), entity_type: "person".into() },
+                graph::extraction::ExtractedEntity { name: "Bob".into(), entity_type: "person".into() },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Alice".into(),
+                target: "Bob".into(),
+                relation_type: "knows".into(),
+                confidence: 0.8,
+            }],
+        }),
+    ]);
+
+    let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
+    assert!(res.is_ok());
+    assert_eq!(fake_gen.calls(), 3);
+
+    let edges_table = database.entity_edges_table().await.unwrap();
+    assert_eq!(edges_table.count_rows(None).await.unwrap(), 1, "3rd attempt valid output persisted");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn extract_and_persist_entities_preserves_prior_graph_on_forced_persistence_failure() {
+    let path = database_path("extraction-forced-failure");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let text = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "forced_fail.md".into(),
+        text.as_bytes().to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen_1 = graph::extraction::FakeExtractionGenerator::new(Ok(
+        graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity { name: "Node1".into(), entity_type: "concept".into() },
+                graph::extraction::ExtractedEntity { name: "Node2".into(), entity_type: "concept".into() },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Node1".into(),
+                target: "Node2".into(),
+                relation_type: "links_to".into(),
+                confidence: 0.9,
+            }],
+        },
+    ));
+
+    let res1 = super::extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder).await;
+    assert!(res1.is_ok());
+
+    let edges_table = database.entity_edges_table().await.unwrap();
+    let pred = format!("document_id = '{}'", escape_sql_literal(&doc_id));
+    let prior_batches: Vec<RecordBatch> = edges_table
+        .query()
+        .only_if(&pred)
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+
+    let prior_row_count = prior_batches.iter().map(|b| b.num_rows()).sum::<usize>();
+    assert!(prior_row_count > 0);
+
+    let prior_edge_ids: Vec<String> = prior_batches
+        .iter()
+        .flat_map(|b| {
+            let col = b.column_by_name("edge_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+            (0..b.num_rows()).map(|i| col.value(i).to_string()).collect::<Vec<_>>()
+        })
+        .collect();
+
+    let fake_gen_2 = graph::extraction::FakeExtractionGenerator::new(Ok(
+        graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity { name: "Node3New".into(), entity_type: "concept".into() },
+            ],
+            relations: vec![],
+        },
+    ));
+
+    let res2 = super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FailingEmbedder("injected embedding failure".into())).await;
+    assert!(res2.is_err(), "Must return Err on forced infrastructure failure during Phase B");
+
+    let post_batches: Vec<RecordBatch> = edges_table
+        .query()
+        .only_if(&pred)
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+
+    let post_row_count = post_batches.iter().map(|b| b.num_rows()).sum::<usize>();
+    assert_eq!(post_row_count, prior_row_count, "Row count must be preserved after Phase B rollback");
+
+    let post_edge_ids: Vec<String> = post_batches
+        .iter()
+        .flat_map(|b| {
+            let col = b.column_by_name("edge_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+            (0..b.num_rows()).map(|i| col.value(i).to_string()).collect::<Vec<_>>()
+        })
+        .collect();
+
+    assert_eq!(post_edge_ids, prior_edge_ids, "Edge IDs must be byte-identical after rollback");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn extraction_persist_summary_reports_coverage_regression() {
+    let path = database_path("extraction-coverage-regression");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    let long_para = "This is a long sentence with enough characters to pass the min chunk content length requirement. ".repeat(3);
+    let text = format!("# Section 1\n\n{long_para}\n\n# Section 2\n\n{long_para}");
+
+    let mut metadata = HashMap::new();
+    metadata.insert("chunk_strategy".to_string(), "fixed-size".to_string());
+    metadata.insert("chunk_size".to_string(), "100".to_string());
+    metadata.insert("chunk_overlap".to_string(), "10".to_string());
+
+    let job = IngestionJob::new(
+        doc_id.clone(),
+        "regression.md".into(),
+        text.as_bytes().to_vec(),
+        metadata,
+    );
+
+    let cid_0 = format!("{doc_id}:0");
+    let cid_1 = format!("{doc_id}:1");
+
+    let mut keyed_1 = HashMap::new();
+    keyed_1.insert(
+        cid_0.clone(),
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity { name: "E1".into(), entity_type: "concept".into() },
+                graph::extraction::ExtractedEntity { name: "E2".into(), entity_type: "concept".into() },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "E1".into(),
+                target: "E2".into(),
+                relation_type: "rel1".into(),
+                confidence: 0.9,
+            }],
+        }),
+    );
+    keyed_1.insert(
+        cid_1,
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity { name: "E3".into(), entity_type: "concept".into() },
+                graph::extraction::ExtractedEntity { name: "E4".into(), entity_type: "concept".into() },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "E3".into(),
+                target: "E4".into(),
+                relation_type: "rel2".into(),
+                confidence: 0.9,
+            }],
+        }),
+    );
+
+    let fake_gen_1 = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_1);
+    let summary1 = super::extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder).await.unwrap();
+    assert_eq!(summary1.written_entity_edges_count, 2);
+
+    let mut keyed_2 = HashMap::new();
+    keyed_2.insert(
+        cid_0,
+        Ok(graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity { name: "E1".into(), entity_type: "concept".into() },
+                graph::extraction::ExtractedEntity { name: "E2".into(), entity_type: "concept".into() },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "E1".into(),
+                target: "E2".into(),
+                relation_type: "rel1".into(),
+                confidence: 0.9,
+            }],
+        }),
+    );
+
+    let fake_gen_2 = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_2);
+    let summary2 = super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder).await.unwrap();
+
+    assert_eq!(summary2.prior_entity_edges_count, 2);
+    assert_eq!(summary2.written_entity_edges_count, 1);
+    assert!(summary2.written_entity_edges_count < summary2.prior_entity_edges_count, "Coverage regression reported in summary");
 
     let _ = std::fs::remove_dir_all(path);
 }
