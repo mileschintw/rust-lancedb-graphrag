@@ -7,12 +7,12 @@ current_phase_name: State Machine & Workflow Events
 current_plan: 1
 status: executing
 stopped_at: Phase 04.1 context gathered
-last_updated: "2026-08-07T19:46:51.320Z"
+last_updated: "2026-08-07T21:41:30.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 58
-  completed_plans: 53
+  completed_plans: 56
 ---
 
 # Project State
@@ -23,14 +23,15 @@ progress:
 - Phase 2 completed (force-closed per ADR-02-004; all open gaps marked as technical debt deferred to Phase 6 final hardening).
 - Phase 3 completed (force-closed per ADR-03-003; 23/23 plans executed; residual verification gaps recorded as technical debt DEBT-P3-* deferred to Phase 6 final hardening; next phase = Phase 4).
 - Phase 4 completed (lance-graph/lancedb compatibility spike only, per ROADMAP's "Deferred target" note; UAT 3/3 passed, SECURITY.md verified threats_open: 0; full extraction/storage/query-traversal implementation deferred to Phase 04.1, not yet created; next phase = Phase 5).
+- Phase 04.1 Plan 03 executed: concurrent bounded extraction, WR-01 IPC multi-batch bridge fix, extraction retries with confidence validation, and re-ingestion rollback proof.
 
 ## Active Phase
 
-- **Phase:** 5 — State Machine & Workflow Events
-- **Status:** Executing Phase 04.1
-- **Current Plan:** 1
+- **Phase:** 04.1 — Knowledge Graph Extraction & Query (Full Implementation)
+- **Status:** Executing Phase 04.1 Plan 04
+- **Current Plan:** 4
 - **Total Plans in Phase:** 5
-- **Progress:** [██████████] 100%
+- **Progress:** [███████░░░] 60%
 
 ## Completed Phases
 
@@ -66,7 +67,7 @@ progress:
 - Pre-existing Phase 02 security/resource debt items (`DEBT-CR-04` loopback guardrail, `DEBT-CR-05` pre-admission bounds, `DEBT-BU-01`, `DEBT-BU-02`) remain active and non-blocking until their triggers or Phase 6.
 - Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for Phase 03 and Phase 04.
 - Phase 03 does not claim RAG-03 delivery: DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 remain the source-of-record future hardening contracts; the initial BM25 build/readiness guard is the only lifecycle safeguard retained in the MVP path.
-- Phase 04 only closed the `lance-graph`/`lancedb` compatibility unknown via a feature-gated PoC (`engine/src/graph/`, not wired into the default build). DATA-04 (entity/relationship extraction), DATA-05 (full graph query traversal wired into RAG), and RAG-05 (ContextAssemblyStrategy) remain unimplemented against real data — deferred to Phase 04.1 (not yet created; see ROADMAP.md Phase 4's "Deferred target" note and `/gsd insert-phase` guidance).
+- Phase 04 only closed the `lance-graph`/`lancedb` compatibility unknown via a feature-gated PoC (`engine/src/graph/`, not wired into the default build). DATA-04 (entity/relationship extraction), DATA-05 (full graph query traversal wired into RAG), and RAG-05 (ContextAssemblyStrategy) remain unimplemented against real data — deferred to Phase 04.1.
 
 ## Deployment & Environments
 
@@ -102,6 +103,9 @@ progress:
 | Phase 03 P11 | 35min | 3 tasks | 5 files |
 | Phase 03 P12 | 13m | 2 tasks | 5 files |
 | Phase 04 P01 | 45min | 3 tasks | 8 files |
+| Phase 04.1 P01 | 20min | 2 tasks | 9 files |
+| Phase 04.1 P02 | 40min | 3 tasks | 10 files |
+| Phase 04.1 P03 | 45min | 3 tasks | 5 files |
 
 ## Decisions
 
@@ -137,27 +141,21 @@ progress:
 - [Phase 03]: Compute BM25 document frequency over the complete snapshot while applying normalized metadata filters before candidate limits.
 - [Phase 03]: Keep full-precision weighted RRF scores, retain both source ranks and scores, and resolve ties by the D-51 identity key.
 - [Phase 03]: Expose reranking through a Send + Sync boxed-future trait with NoOpReranker as the Phase 03 pass-through implementation.
-- [Phase ?]: Use a deterministic localhost three-endpoint provider mock and a real direct-process Go-to-Rust smoke to prove the Phase 03 MVP happy path.
-- [Phase ?]: Treat the Rust serving log as a milestone only; generated-gRPC Ping against the exact loopback endpoint is the readiness proof.
-- [Phase ?]: Keep legacy OpenRouter constructors source-compatible while routing configured constructors through explicit provider state.
-- [Phase ?]: Use the configured embedding model for both the outbound request and OpenRouterClient::model_id so persistence and snapshot wiring can share one identity.
-- [Phase ?]: Use one configured generation Duration for reqwest and Tokio timeout enforcement; retain one attempt with no retry or fallback.
-- [Phase ?]: Use one validated EffectiveRagSettings value for production retrieval, prompt, provider, persistence, citation, and snapshot consumers.
-- [Phase ?]: Require schema-valid initial BM25 fixtures and row-identity diagnostics before readiness.
-- [Phase ?]: Validate the exact 24-key secret-free operator example through the binary target real settings types.
-- [Phase ?]: Phase 03 Plan 12: keep NoOpReranker as the production pass-through and invoke the injected reranker once after fusion before final limiting.
-- [Phase ?]: Phase 03 Plan 12: exact-zero vector_weight and bm25_weight disable their sources before candidate insertion while enabled-source RRF remains deterministic and full precision.
-- [Phase ?]: Phase 04-01: Included .with_default_relationship_type_field("relation_type") in traverse_fixed_hop/traverse_multi_hop matching 04-RESEARCH.md's proven config exactly (PLAN.md prose omitted it).
-- [Phase ?]: Phase 04-01: Used property_fields: vec!["relation_type"] (matching the actual fixture) rather than AI-SPEC's illustrative vec!["weight"].
+- [Phase 04.1-01]: Restructure entity tables to `entities` (entity_id primary key) and `entity_edges` (document_id indexed), migrating all code and test fixtures to the new schema.
+- [Phase 04.1-02]: Wire extract_and_persist_entities into the worker loop, prove end-to-end extraction and graph-fact prompt packing, and reserve 1 evidence chunk for citations.
+- [Phase 04.1-03]: Concurrently extract per-chunk entities using buffer_unordered(5) while collecting non-fatal extraction errors without failing document ingestion.
+- [Phase 04.1-03]: Decode all batches in IPC streams via DecodeAllBatches in bridge.rs to prevent multi-batch stream truncation across Arrow crate boundaries (WR-01).
+- [Phase 04.1-03]: Enforce 2 retries (3 total attempts) with confidence range validation [0.0, 1.0] and log coverage regressions on re-ingestion.
 
 ## Session
 
-**Last session:** 2026-08-06T23:03:03.455Z
-**Stopped at:** Phase 04.1 context gathered
-**Resume file:** .planning/phases/04.1-knowledge-graph-extraction-query-full-implementation/04.1-CONTEXT.md
+**Last session:** 2026-08-07T21:41:30.000Z
+**Stopped at:** Plan 04.1-03 completed
+**Resume file:** .planning/phases/04.1-knowledge-graph-extraction-query-full-implementation/04.1-04-PLAN.md
 
 ## Accumulated Context
 
 ### Roadmap Evolution
 
 - Phase 04.1 inserted after Phase 4: Knowledge Graph Extraction & Query (Full Implementation) (URGENT)
+

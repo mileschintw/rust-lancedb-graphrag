@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 2/5 plans executed
+**Plans:** 3/5 plans executed
 
 Plans:
 **Wave 1**
@@ -283,7 +283,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04.1-03-PLAN.md — Concurrent bounded extraction (D-09), real min-content-length skip (D-07), idempotent re-ingestion by construction, documented stale-entity semantics, and the WR-01 bridge multi-batch fix.
+- [x] 04.1-03-PLAN.md — Concurrent bounded extraction (D-09), real min-content-length skip (D-07), idempotent re-ingestion by construction, documented stale-entity semantics, and the WR-01 bridge multi-batch fix.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
