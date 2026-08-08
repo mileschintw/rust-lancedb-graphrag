@@ -605,3 +605,61 @@ fn byte_ceiling_constants_are_sensibly_bounded() {
     assert!(MAX_RELATION_TYPE_FILTER_BYTES > 0);
     assert!(MAX_RELATION_TYPE_FILTER_BYTES <= 1024);
 }
+
+struct ExtractionValidationDebugCaptureLayer {
+    captured: Arc<std::sync::Mutex<Vec<f64>>>,
+}
+
+struct ExtractionValidationDebugVisitor<'a> {
+    captured: &'a Arc<std::sync::Mutex<Vec<f64>>>,
+}
+
+impl<'a> tracing::field::Visit for ExtractionValidationDebugVisitor<'a> {
+    fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
+        if field.name() == "confidence" {
+            self.captured.lock().unwrap().push(value);
+        }
+    }
+
+    fn record_debug(&mut self, _field: &tracing::field::Field, _value: &dyn std::fmt::Debug) {}
+}
+
+impl<S> tracing_subscriber::layer::Layer<S> for ExtractionValidationDebugCaptureLayer
+where
+    S: tracing::Subscriber,
+{
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
+        let mut visitor = ExtractionValidationDebugVisitor {
+            captured: &self.captured,
+        };
+        event.record(&mut visitor);
+    }
+}
+
+#[test]
+fn validate_extraction_output_logs_confidence_field_on_out_of_range_failure() {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let layer = ExtractionValidationDebugCaptureLayer {
+        captured: captured.clone(),
+    };
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_subscriber::filter::LevelFilter::DEBUG)
+        .with(layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let output = super::extraction::ExtractionOutput {
+        entities: vec![],
+        relations: vec![super::extraction::ExtractedRelation {
+            source: "A".into(),
+            target: "B".into(),
+            relation_type: "knows".into(),
+            confidence: 1.5,
+        }],
+    };
+
+    let result = super::extraction::validate_extraction_output(&output);
+    assert!(result.is_err());
+    assert_eq!(captured.lock().unwrap().as_slice(), &[1.5_f64]);
+}

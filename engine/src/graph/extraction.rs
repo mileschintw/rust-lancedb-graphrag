@@ -64,6 +64,10 @@ pub trait ExtractionGenerator: Send + Sync {
 pub(crate) fn validate_extraction_output(output: &ExtractionOutput) -> Result<(), String> {
     for rel in &output.relations {
         if !rel.confidence.is_finite() || rel.confidence < 0.0 || rel.confidence > 1.0 {
+            tracing::debug!(
+                confidence = rel.confidence as f64,
+                "extraction output field-level validation failure: confidence out of range"
+            );
             return Err(format!(
                 "relation confidence {} is out of range [0.0, 1.0]",
                 rel.confidence

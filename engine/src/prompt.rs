@@ -364,7 +364,7 @@ pub fn pack_evidence_and_graph_prompt(
         score_b.total_cmp(score_a).then_with(|| {
             let is_graph_a = matches!(candidate_a, PackCandidate::Graph(_));
             let is_graph_b = matches!(candidate_b, PackCandidate::Graph(_));
-            is_graph_b.cmp(&is_graph_a)
+            is_graph_a.cmp(&is_graph_b)
         })
     });
 

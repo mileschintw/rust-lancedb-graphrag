@@ -5641,6 +5641,33 @@ fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
     assert!(packed.prompt.contains("<GRAPH_FACT"));
 }
 
+#[test]
+fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
+    use crate::graph::context_strategy::GraphFact;
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+
+    let reserved = candidate_with_score(
+        "reserved",
+        "Reserved top evidence block content for the question asked today.",
+        0.99,
+    );
+    let tied_evidence = candidate_with_score(
+        "tied",
+        "Second evidence block content also relevant to the question today.",
+        0.5,
+    );
+    let evidence = assemble_evidence_blocks(&[reserved, tied_evidence]);
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Alice", "knows", "Bob", None, 0.5),
+    }];
+
+    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 1.0, 350, 16)
+        .expect("pack succeeds");
+
+    assert_eq!(packed.evidence.len(), 2);
+    assert_eq!(packed.graph_facts.len(), 0);
+}
+
 /// Test 3 (04.1-05 Task 1): `graph_weight = 0.0` hard-excludes graph facts
 /// from the packed prompt regardless of their raw match score.
 #[test]
