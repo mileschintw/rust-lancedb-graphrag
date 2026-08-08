@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 5/7 plans executed
+**Plans:** 5/8 plans executed
 
 Plans:
 **Wave 1**
@@ -295,11 +295,15 @@ Plans:
 
 **Wave 6** *(gap closure — blocked on Wave 5 completion)*
 
-- [ ] 04.1-06-PLAN.md — Prove Cypher genuinely narrows the response on disagreement (Gap 1), fix and regression-test CR-01's edge-dedup identity defect, and fix and regression-test WR-01's final-hop frontier-cap gap plus the pre-existing MAX_TOTAL_EDGES rejection's first test.
+- [ ] 04.1-06-PLAN.md — Prove Cypher genuinely narrows the response on disagreement (Gap 1) including the zero-confirmed-neighbors total-disagreement case (REVIEWS.md MEDIUM), fix and regression-test CR-01's edge-dedup identity defect, and fix and regression-test WR-01's final-hop frontier-cap gap plus the pre-existing MAX_TOTAL_EDGES rejection's first test.
 
 **Wave 7** *(gap closure — blocked on Wave 6 completion)*
 
 - [ ] 04.1-07-PLAN.md — Prove extraction/graph-augmentation reach the provider through the real worker queue (not a direct call), and prove GraphFact orientation is preserved on the RAG path when the seed is the edge's target.
+
+**Wave 8** *(review closure — blocked on Wave 7 completion)*
+
+- [ ] 04.1-08-PLAN.md — Fix the inverted exact-score tie-breaker in pack_evidence_and_graph_prompt and add field-level tracing::debug! diagnostics to validate_extraction_output's confidence-out-of-range failure (REVIEWS.md LOW findings, closed with real code changes since Plans 03/05 already executed).
 
 ### Phase 5: State Machine & Workflow Events
 
