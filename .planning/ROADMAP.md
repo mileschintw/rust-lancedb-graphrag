@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 5/8 plans executed
+**Plans:** 6/8 plans executed
 
 Plans:
 **Wave 1**
@@ -295,7 +295,7 @@ Plans:
 
 **Wave 6** *(gap closure — blocked on Wave 5 completion)*
 
-- [ ] 04.1-06-PLAN.md — Prove Cypher genuinely narrows the response on disagreement (Gap 1) including the zero-confirmed-neighbors total-disagreement case (REVIEWS.md MEDIUM); fix a previously-undiscovered one-sided directional gap in Cypher confirmation (lance-graph 0.5.4's RelationshipMapping has no bidirectional option) that empirical full-suite regression testing proved was a required prerequisite for the fallback fix above; fix and regression-test CR-01's edge-dedup identity defect; and fix and regression-test WR-01's final-hop frontier-cap gap plus the pre-existing MAX_TOTAL_EDGES rejection's first test.
+- [x] 04.1-06-PLAN.md — Prove Cypher genuinely narrows the response on disagreement (Gap 1) including the zero-confirmed-neighbors total-disagreement case (REVIEWS.md MEDIUM); fix a previously-undiscovered one-sided directional gap in Cypher confirmation (lance-graph 0.5.4's RelationshipMapping has no bidirectional option) that empirical full-suite regression testing proved was a required prerequisite for the fallback fix above; fix and regression-test CR-01's edge-dedup identity defect; and fix and regression-test WR-01's final-hop frontier-cap gap plus the pre-existing MAX_TOTAL_EDGES rejection's first test.
 
 **Wave 7** *(gap closure — blocked on Wave 6 completion)*
 
