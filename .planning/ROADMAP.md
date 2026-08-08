@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 6/8 plans executed
+**Plans:** 7/8 plans executed
 
 Plans:
 **Wave 1**
@@ -299,7 +299,7 @@ Plans:
 
 **Wave 7** *(gap closure — blocked on Wave 6 completion)*
 
-- [ ] 04.1-07-PLAN.md — Prove extraction/graph-augmentation reach the provider through the real worker queue (not a direct call), and prove GraphFact orientation is preserved on the RAG path when the seed is the edge's target.
+- [x] 04.1-07-PLAN.md — Prove extraction/graph-augmentation reach the provider through the real worker queue (not a direct call), and prove GraphFact orientation is preserved on the RAG path when the seed is the edge's target.
 
 **Wave 8** *(review closure — blocked on Wave 7 completion)*
 
