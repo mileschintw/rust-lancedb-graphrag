@@ -6304,3 +6304,272 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
 
     let _ = std::fs::remove_dir_all(path);
 }
+
+// ---------------------------------------------------------------------------
+// 04.1-06: Gap closure for CR-01, WR-01, and MAX_TOTAL_EDGES
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn fetch_neighborhood_returns_both_edges_when_two_documents_share_identical_fact() {
+    let path = database_path("fetch-neighborhood-dedup-edge-id");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let doc_a = Uuid::new_v4().to_string();
+    let job_a = IngestionJob::new(
+        doc_a.clone(),
+        "doc_a.md".into(),
+        b"Alice knows Bob. This is paragraph one with sufficient content length.".to_vec(),
+        HashMap::new(),
+    );
+
+    let doc_b = Uuid::new_v4().to_string();
+    let job_b = IngestionJob::new(
+        doc_b.clone(),
+        "doc_b.md".into(),
+        b"Alice knows Bob. This is paragraph two with sufficient content length.".to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
+        graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity {
+                    name: "Alice".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Bob".into(),
+                    entity_type: "person".into(),
+                },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Alice".into(),
+                target: "Bob".into(),
+                relation_type: "knows".into(),
+                confidence: 0.9,
+            }],
+        },
+    ));
+
+    super::extract_and_persist_entities(&database, &job_a, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+    super::extract_and_persist_entities(&database, &job_b, &fake_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    // Verify both documents exist in entity_edges_table separately
+    let edges_table = database.entity_edges_table().await.unwrap();
+    let doc_a_edges: Vec<arrow_array::RecordBatch> = edges_table
+        .query()
+        .only_if(format!("document_id = '{doc_a}'"))
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+    let doc_b_edges: Vec<arrow_array::RecordBatch> = edges_table
+        .query()
+        .only_if(format!("document_id = '{doc_b}'"))
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+
+    let doc_a_count: usize = doc_a_edges.iter().map(|b| b.num_rows()).sum();
+    let doc_b_count: usize = doc_b_edges.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(doc_a_count, 1);
+    assert_eq!(doc_b_count, 1);
+
+    let entities_table = database.entities_table().await.unwrap();
+    let alice_batches: Vec<arrow_array::RecordBatch> = entities_table
+        .query()
+        .only_if("name = 'Alice'".to_string())
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+
+    let alice_id_col = alice_batches[0]
+        .column_by_name("entity_id")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<arrow_array::StringArray>()
+        .unwrap();
+    let alice_id = alice_id_col.value(0);
+
+    let (_entities_batch, edges_batch) = graph::fetch_neighborhood(&database, alice_id, 1, true)
+        .await
+        .expect("fetch_neighborhood must succeed");
+
+    assert_eq!(edges_batch.num_rows(), 2, "both documents' edges must survive dedup");
+
+    let edge_id_col = edges_batch
+        .column_by_name("edge_id")
+        .expect("edge_id column must exist in fetch_neighborhood result")
+        .as_any()
+        .downcast_ref::<arrow_array::StringArray>()
+        .unwrap();
+
+    let unique_edge_ids: std::collections::HashSet<&str> =
+        (0..edges_batch.num_rows()).map(|i| edge_id_col.value(i)).collect();
+    assert_eq!(unique_edge_ids.len(), 2, "two distinct edge_id values must exist");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn fetch_neighborhood_rejects_oversized_edge_batch() {
+    use arrow_schema::{DataType, Field, Schema};
+
+    let path = database_path("fetch-neighborhood-rejects-oversized-edge-batch");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let seed_id = Uuid::new_v4().to_string();
+
+    let mut edge_ids = Vec::new();
+    let mut sources = Vec::new();
+    let mut targets = Vec::new();
+    let mut rel_types = Vec::new();
+    let mut weights = Vec::new();
+    let mut doc_ids = Vec::new();
+
+    let over_limit = graph::MAX_TOTAL_EDGES + 1;
+    let shared_doc_id = Uuid::new_v4().to_string();
+
+    for _ in 0..over_limit {
+        edge_ids.push(Uuid::new_v4().to_string());
+        sources.push(seed_id.clone());
+        targets.push(Uuid::new_v4().to_string());
+        rel_types.push("related_to".to_string());
+        weights.push(0.5_f32);
+        doc_ids.push(shared_doc_id.clone());
+    }
+
+    let edges_schema = Arc::new(Schema::new(vec![
+        Field::new("edge_id", DataType::Utf8, false),
+        Field::new("source_node_id", DataType::Utf8, false),
+        Field::new("target_node_id", DataType::Utf8, false),
+        Field::new("relation_type", DataType::Utf8, false),
+        Field::new("weight", DataType::Float32, false),
+        Field::new("document_id", DataType::Utf8, false),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        edges_schema,
+        vec![
+            Arc::new(StringArray::from(edge_ids)),
+            Arc::new(StringArray::from(sources)),
+            Arc::new(StringArray::from(targets)),
+            Arc::new(StringArray::from(rel_types)),
+            Arc::new(arrow_array::Float32Array::from(weights)),
+            Arc::new(StringArray::from(doc_ids)),
+        ],
+    )
+    .unwrap();
+
+    let edges_table = database.entity_edges_table().await.unwrap();
+    edges_table.add(batch).execute().await.unwrap();
+
+    let err = graph::fetch_neighborhood(&database, &seed_id, 1, true)
+        .await
+        .expect_err("fetch_neighborhood must reject when accumulated edges exceed MAX_TOTAL_EDGES");
+
+    assert_eq!(err.kind, graph::GraphSpikeErrorKind::Bridge);
+    assert!(
+        err.message().contains("MAX_TOTAL_EDGES"),
+        "error message must mention MAX_TOTAL_EDGES, got: {}",
+        err.message()
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn fetch_neighborhood_rejects_oversized_final_hop_frontier() {
+    use arrow_schema::{DataType, Field, Schema};
+
+    let path = database_path("fetch-neighborhood-rejects-oversized-final-hop-frontier");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let seed_id = Uuid::new_v4().to_string();
+    let hub_id = Uuid::new_v4().to_string();
+    let shared_doc_id = Uuid::new_v4().to_string();
+
+    let edges_schema = Arc::new(Schema::new(vec![
+        Field::new("edge_id", DataType::Utf8, false),
+        Field::new("source_node_id", DataType::Utf8, false),
+        Field::new("target_node_id", DataType::Utf8, false),
+        Field::new("relation_type", DataType::Utf8, false),
+        Field::new("weight", DataType::Float32, false),
+        Field::new("document_id", DataType::Utf8, false),
+    ]));
+
+    // Hop 1: seed_id -> hub_id
+    let hop1_batch = RecordBatch::try_new(
+        edges_schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec![Uuid::new_v4().to_string()])),
+            Arc::new(StringArray::from(vec![seed_id.clone()])),
+            Arc::new(StringArray::from(vec![hub_id.clone()])),
+            Arc::new(StringArray::from(vec!["parent".to_string()])),
+            Arc::new(arrow_array::Float32Array::from(vec![0.5_f32])),
+            Arc::new(StringArray::from(vec![shared_doc_id.clone()])),
+        ],
+    )
+    .unwrap();
+
+    // Hop 2: hub_id -> MAX_FRONTIER_SIZE + 1 targets
+    let over_limit = graph::MAX_FRONTIER_SIZE + 1;
+    let mut edge_ids = Vec::new();
+    let mut sources = Vec::new();
+    let mut targets = Vec::new();
+    let mut rel_types = Vec::new();
+    let mut weights = Vec::new();
+    let mut doc_ids = Vec::new();
+
+    for _ in 0..over_limit {
+        edge_ids.push(Uuid::new_v4().to_string());
+        sources.push(hub_id.clone());
+        targets.push(Uuid::new_v4().to_string());
+        rel_types.push("child".to_string());
+        weights.push(0.5_f32);
+        doc_ids.push(shared_doc_id.clone());
+    }
+
+    let hop2_batch = RecordBatch::try_new(
+        edges_schema,
+        vec![
+            Arc::new(StringArray::from(edge_ids)),
+            Arc::new(StringArray::from(sources)),
+            Arc::new(StringArray::from(targets)),
+            Arc::new(StringArray::from(rel_types)),
+            Arc::new(arrow_array::Float32Array::from(weights)),
+            Arc::new(StringArray::from(doc_ids)),
+        ],
+    )
+    .unwrap();
+
+    let edges_table = database.entity_edges_table().await.unwrap();
+    edges_table.add(hop1_batch).execute().await.unwrap();
+    edges_table.add(hop2_batch).execute().await.unwrap();
+
+    let err = graph::fetch_neighborhood(&database, &seed_id, 2, true)
+        .await
+        .expect_err("fetch_neighborhood must reject when final hop frontier exceeds MAX_FRONTIER_SIZE");
+
+    assert_eq!(err.kind, graph::GraphSpikeErrorKind::Bridge);
+    assert!(
+        err.message().contains("MAX_FRONTIER_SIZE"),
+        "error message must mention MAX_FRONTIER_SIZE, got: {}",
+        err.message()
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+

@@ -320,17 +320,6 @@ pub async fn fetch_neighborhood(
     let mut total_edge_count: usize = 0;
 
     for _hop in 1..=hop_cap {
-        if frontier.len() > MAX_FRONTIER_SIZE {
-            return Err(GraphSpikeError::new(
-                GraphSpikeErrorKind::Bridge,
-                format!(
-                    "frontier size {} exceeds MAX_FRONTIER_SIZE {}",
-                    frontier.len(),
-                    MAX_FRONTIER_SIZE
-                ),
-            ));
-        }
-
         let escaped_ids: Vec<String> = frontier
             .iter()
             .map(|id| format!("'{}'", escape_sql_literal(id)))
@@ -351,6 +340,7 @@ pub async fn fetch_neighborhood(
             .query()
             .only_if(predicate)
             .select(lancedb::query::Select::columns(&[
+                "edge_id",
                 "source_node_id",
                 "target_node_id",
                 "relation_type",
@@ -403,6 +393,17 @@ pub async fn fetch_neighborhood(
             }
         }
 
+        if next_frontier.len() > MAX_FRONTIER_SIZE {
+            return Err(GraphSpikeError::new(
+                GraphSpikeErrorKind::Bridge,
+                format!(
+                    "frontier size {} exceeds MAX_FRONTIER_SIZE {}",
+                    next_frontier.len(),
+                    MAX_FRONTIER_SIZE
+                ),
+            ));
+        }
+
         accumulated_edge_batches.extend(edge_batches);
         visited.extend(next_frontier.clone());
         frontier = next_frontier;
@@ -445,6 +446,7 @@ pub async fn fetch_neighborhood(
     ]));
 
     let edges_schema = Arc::new(arrow_schema::Schema::new(vec![
+        arrow_schema::Field::new("edge_id", arrow_schema::DataType::Utf8, false),
         arrow_schema::Field::new("source_node_id", arrow_schema::DataType::Utf8, false),
         arrow_schema::Field::new("target_node_id", arrow_schema::DataType::Utf8, false),
         arrow_schema::Field::new("relation_type", arrow_schema::DataType::Utf8, false),
@@ -476,41 +478,23 @@ pub async fn fetch_neighborhood(
 
 /// Deduplicates edge rows re-fetched across multiple BFS hops in [`fetch_neighborhood`].
 ///
-/// Identity is `(source_node_id, target_node_id, relation_type, weight)`; the first
-/// occurrence in row order is kept. Two rows sharing this full identity are the same
-/// edge re-observed from a later hop's bidirectional frontier query, not two distinct
-/// edges — distinct edges persisted from separate extractions would differ in at least
-/// `weight` (each relation's `weight` is its own extraction's `confidence`) even when
-/// `source_node_id`/`target_node_id`/`relation_type` coincide.
+/// Identity is `edge_id` — the `entity_edges` table's own `Uuid::new_v4()`-generated
+/// unique identifier set once per edge at creation time, now selected into this
+/// function's input batch. This correctly distinguishes a genuinely distinct edge
+/// from the same edge merely re-observed across a later bidirectional BFS hop,
+/// unlike a value-tuple two unrelated edges can coincidentally share.
 fn dedup_edges_by_identity(
     edges: &arrow_array::RecordBatch,
 ) -> Result<arrow_array::RecordBatch, GraphSpikeError> {
-    let source_col = edges
-        .column_by_name("source_node_id")
+    let edge_id_col = edges
+        .column_by_name("edge_id")
         .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing source_node_id column"))?;
-    let target_col = edges
-        .column_by_name("target_node_id")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing target_node_id column"))?;
-    let relation_col = edges
-        .column_by_name("relation_type")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing relation_type column"))?;
-    let weight_col = edges
-        .column_by_name("weight")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>())
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing weight column"))?;
+        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing edge_id column"))?;
 
-    let mut seen: HashSet<(String, String, String, u32)> = HashSet::new();
+    let mut seen: HashSet<String> = HashSet::new();
     let mask: arrow_array::BooleanArray = (0..edges.num_rows())
         .map(|i| {
-            let key = (
-                source_col.value(i).to_string(),
-                target_col.value(i).to_string(),
-                relation_col.value(i).to_string(),
-                weight_col.value(i).to_bits(),
-            );
+            let key = edge_id_col.value(i).to_string();
             Some(seen.insert(key))
         })
         .collect();
@@ -520,13 +504,9 @@ fn dedup_edges_by_identity(
     })
 }
 
-pub(crate) async fn cypher_confirmed_neighbor_ids(
-    entities: &arrow_array::RecordBatch,
-    edges: &arrow_array::RecordBatch,
-    seed_id: &str,
-    hop_cap: u32,
+fn extract_neighbor_ids(
+    result_batch: &arrow_array::RecordBatch,
 ) -> Result<HashSet<String>, GraphSpikeError> {
-    let result_batch = traverse_multi_hop(entities, edges, seed_id, hop_cap).await?;
     let neighbor_col = result_batch
         .column_by_name("neighbor.entity_id")
         .ok_or_else(|| {
@@ -551,6 +531,49 @@ pub(crate) async fn cypher_confirmed_neighbor_ids(
             confirmed.insert(string_array.value(i).to_string());
         }
     }
+    Ok(confirmed)
+}
+
+/// Swaps `source_node_id` and `target_node_id` column arrays in `edges`.
+///
+/// `lance-graph` 0.5.4's relationship mapping is strictly directed; this helper
+/// allows querying reversed edges without mutating the schema or other columns.
+fn reverse_edge_endpoints(
+    edges: &arrow_array::RecordBatch,
+) -> Result<arrow_array::RecordBatch, GraphSpikeError> {
+    let source_idx = edges
+        .schema()
+        .index_of("source_node_id")
+        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("missing source_node_id: {e}")))?;
+    let target_idx = edges
+        .schema()
+        .index_of("target_node_id")
+        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("missing target_node_id: {e}")))?;
+
+    let mut columns = edges.columns().to_vec();
+    columns.swap(source_idx, target_idx);
+
+    arrow_array::RecordBatch::try_new(edges.schema(), columns)
+        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("swap edge columns failed: {e}")))
+}
+
+/// Executes Cypher traversal in both forward and reversed directions to confirm reachable neighbors.
+///
+/// Note on limitation: A path that changes direction partway through a multi-hop chain
+/// (e.g. seed -> A <- B) is not confirmed by either direction alone.
+pub(crate) async fn cypher_confirmed_neighbor_ids(
+    entities: &arrow_array::RecordBatch,
+    edges: &arrow_array::RecordBatch,
+    seed_id: &str,
+    hop_cap: u32,
+) -> Result<HashSet<String>, GraphSpikeError> {
+    let forward_batch = traverse_multi_hop(entities, edges, seed_id, hop_cap).await?;
+    let mut confirmed = extract_neighbor_ids(&forward_batch)?;
+
+    let reversed_edges = reverse_edge_endpoints(edges)?;
+    let reverse_batch = traverse_multi_hop(entities, &reversed_edges, seed_id, hop_cap).await?;
+    confirmed.extend(extract_neighbor_ids(&reverse_batch)?);
+
     Ok(confirmed)
 }
 
@@ -621,10 +644,6 @@ pub(crate) async fn narrow_via_cypher(
 ) -> (arrow_array::RecordBatch, arrow_array::RecordBatch) {
     match cypher_confirmed_neighbor_ids(entities, edges, seed_id, hop_cap).await {
         Ok(confirmed_ids) => {
-            if confirmed_ids.is_empty() {
-                tracing::warn!("cypher returned 0 confirmed neighbors, falling back to unconstrained");
-                return (entities.clone(), edges.clone());
-            }
             match constrain_to_cypher_matched(entities, edges, seed_id, &confirmed_ids) {
                 Ok(res) => res,
                 Err(err) => {
@@ -639,3 +658,4 @@ pub(crate) async fn narrow_via_cypher(
         }
     }
 }
+

@@ -312,11 +312,188 @@ fn openrouter_generation_config_accessors() {
 }
 
 #[tokio::test]
-async fn cypher_narrowing_fail_open() {
+async fn narrow_via_cypher_narrows_to_empty_when_seed_absent_from_graph() {
     let (entities, edges) = three_entity_two_edge_fixture();
-    // Invalid seed_id or empty neighborhood should fail open to original batches
+    // A nonexistent seed narrows to zero entities and zero edges under Cypher confirmation
     let (out_entities, out_edges) = super::narrow_via_cypher(&entities, &edges, "nonexistent-seed", 1).await;
-    // Fail open invariant: out_entities and out_edges must equal original inputs
+    assert_eq!(out_entities.num_rows(), 0);
+    assert_eq!(out_edges.num_rows(), 0);
+}
+
+#[test]
+fn constrain_to_cypher_matched_narrows_response_when_cypher_confirms_fewer_neighbors() {
+    let (entities, edges) = three_entity_two_edge_fixture();
+    let mut cypher_neighbor_ids = std::collections::HashSet::new();
+    cypher_neighbor_ids.insert("def-456".to_string());
+
+    let (out_entities, out_edges) =
+        super::constrain_to_cypher_matched(&entities, &edges, "abc-123", &cypher_neighbor_ids)
+            .expect("constrain_to_cypher_matched must succeed");
+
+    assert_eq!(out_entities.num_rows(), 2);
+    assert_eq!(out_edges.num_rows(), 1);
+
+    let rel_col = out_edges
+        .column_by_name("relation_type")
+        .expect("relation_type column must exist")
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .expect("relation_type must be StringArray");
+    assert_eq!(rel_col.value(0), "knows");
+}
+
+#[test]
+fn constrain_to_cypher_matched_preserves_full_response_when_cypher_confirms_all_neighbors() {
+    let (entities, edges) = three_entity_two_edge_fixture();
+    let mut cypher_neighbor_ids = std::collections::HashSet::new();
+    cypher_neighbor_ids.insert("def-456".to_string());
+    cypher_neighbor_ids.insert("ghi-789".to_string());
+
+    let (out_entities, out_edges) =
+        super::constrain_to_cypher_matched(&entities, &edges, "abc-123", &cypher_neighbor_ids)
+            .expect("constrain_to_cypher_matched must succeed");
+
+    assert_eq!(out_entities.num_rows(), 3);
+    assert_eq!(out_edges.num_rows(), 2);
+}
+
+#[tokio::test]
+async fn cypher_confirmed_neighbor_ids_reflects_real_traverse_multi_hop_execution() {
+    let entities_schema = Arc::new(Schema::new(vec![
+        Field::new("entity_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("entity_type", DataType::Utf8, false),
+    ]));
+    let entities = RecordBatch::try_new(
+        entities_schema,
+        vec![
+            Arc::new(StringArray::from(vec!["abc-123", "def-456", "ghi-789"])),
+            Arc::new(StringArray::from(vec!["Alice", "Bob", "Acme"])),
+            Arc::new(StringArray::from(vec!["person", "person", "organization"])),
+        ],
+    )
+    .expect("entities batch must build");
+
+    let edges_schema = Arc::new(Schema::new(vec![
+        Field::new("edge_id", DataType::Utf8, false),
+        Field::new("source_node_id", DataType::Utf8, false),
+        Field::new("target_node_id", DataType::Utf8, false),
+        Field::new("relation_type", DataType::Utf8, false),
+        Field::new("weight", DataType::Float32, false),
+    ]));
+    let edges = RecordBatch::try_new(
+        edges_schema,
+        vec![
+            Arc::new(StringArray::from(vec!["edge-1", "edge-2"])),
+            Arc::new(StringArray::from(vec!["abc-123", "abc-123"])),
+            Arc::new(StringArray::from(vec!["def-456", "ghi-789"])),
+            Arc::new(StringArray::from(vec!["knows", "founded_by"])),
+            Arc::new(arrow_array::Float32Array::from(vec![0.9, 0.8])),
+        ],
+    )
+    .expect("5-column edges batch must build");
+
+    let confirmed = super::cypher_confirmed_neighbor_ids(&entities, &edges, "abc-123", 1)
+        .await
+        .expect("cypher_confirmed_neighbor_ids must succeed");
+
+    let expected: std::collections::HashSet<String> =
+        ["def-456".to_string(), "ghi-789".to_string()].into_iter().collect();
+    assert_eq!(confirmed, expected);
+}
+
+#[tokio::test]
+async fn cypher_confirmed_neighbor_ids_finds_neighbor_regardless_of_edge_direction() {
+    let (entities, edges) = two_entity_one_edge_fixture();
+    let confirmed = super::cypher_confirmed_neighbor_ids(&entities, &edges, "def-456", 1)
+        .await
+        .expect("cypher_confirmed_neighbor_ids must succeed");
+
+    let expected: std::collections::HashSet<String> = ["abc-123".to_string()].into_iter().collect();
+    assert_eq!(confirmed, expected);
+}
+
+#[tokio::test]
+async fn cypher_confirmed_neighbor_ids_does_not_confirm_direction_changing_multi_hop_path() {
+    let entities_schema = Arc::new(Schema::new(vec![
+        Field::new("entity_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("entity_type", DataType::Utf8, false),
+    ]));
+    let entities = RecordBatch::try_new(
+        entities_schema,
+        vec![
+            Arc::new(StringArray::from(vec!["a-id", "b-id", "c-id"])),
+            Arc::new(StringArray::from(vec!["A", "B", "C"])),
+            Arc::new(StringArray::from(vec!["person", "person", "person"])),
+        ],
+    )
+    .expect("entities batch must build");
+
+    let edges_schema = Arc::new(Schema::new(vec![
+        Field::new("source_node_id", DataType::Utf8, false),
+        Field::new("target_node_id", DataType::Utf8, false),
+        Field::new("relation_type", DataType::Utf8, false),
+    ]));
+    let edges = RecordBatch::try_new(
+        edges_schema,
+        vec![
+            Arc::new(StringArray::from(vec!["a-id", "c-id"])),
+            Arc::new(StringArray::from(vec!["b-id", "b-id"])),
+            Arc::new(StringArray::from(vec!["knows", "knows"])),
+        ],
+    )
+    .expect("edges batch must build");
+
+    let confirmed = super::cypher_confirmed_neighbor_ids(&entities, &edges, "a-id", 2)
+        .await
+        .expect("cypher_confirmed_neighbor_ids must succeed");
+
+    let expected: std::collections::HashSet<String> = ["b-id".to_string()].into_iter().collect();
+    assert_eq!(confirmed, expected);
+}
+
+#[tokio::test]
+async fn narrow_via_cypher_narrows_to_seed_only_when_zero_neighbors_confirmed() {
+    let entities_schema = Arc::new(Schema::new(vec![
+        Field::new("entity_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("entity_type", DataType::Utf8, false),
+    ]));
+    let entities = RecordBatch::try_new(
+        entities_schema,
+        vec![
+            Arc::new(StringArray::from(vec!["iso-1", "iso-2"])),
+            Arc::new(StringArray::from(vec!["Lonely", "Other"])),
+            Arc::new(StringArray::from(vec!["person", "person"])),
+        ],
+    )
+    .expect("entities batch must build");
+
+    let edges_schema = Arc::new(Schema::new(vec![
+        Field::new("source_node_id", DataType::Utf8, false),
+        Field::new("target_node_id", DataType::Utf8, false),
+        Field::new("relation_type", DataType::Utf8, false),
+    ]));
+    let edges = RecordBatch::try_new(
+        edges_schema,
+        vec![
+            Arc::new(StringArray::from(Vec::<&str>::new())),
+            Arc::new(StringArray::from(Vec::<&str>::new())),
+            Arc::new(StringArray::from(Vec::<&str>::new())),
+        ],
+    )
+    .expect("empty edges batch must build");
+
+    let (out_entities, out_edges) = super::narrow_via_cypher(&entities, &edges, "iso-1", 1).await;
+    assert_eq!(out_entities.num_rows(), 1);
+    assert_eq!(out_edges.num_rows(), 0);
+}
+
+#[tokio::test]
+async fn narrow_via_cypher_fails_open_on_genuine_cypher_error() {
+    let (entities, edges) = three_entity_two_edge_fixture();
+    let (out_entities, out_edges) = super::narrow_via_cypher(&entities, &edges, "abc-123", 0).await;
     assert_eq!(out_entities.num_rows(), entities.num_rows());
     assert_eq!(out_edges.num_rows(), edges.num_rows());
 }
