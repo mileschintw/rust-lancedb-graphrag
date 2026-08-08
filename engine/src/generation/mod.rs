@@ -377,6 +377,12 @@ pub struct GenerationRequest {
     pub question: String,
     pub evidence: Vec<EvidenceBlock>,
     pub graph_facts: Vec<crate::prompt::GraphFactBlock>,
+    /// Configurable multiplier (D-30) applied to normalized graph-fact scores
+    /// before they compete with chunk evidence for the shared prompt token
+    /// budget; `0.0` hard-excludes graph facts. This is the single source both
+    /// `main.rs`'s pre-check and the provider adapter's actual outbound call
+    /// read from — never independently derived in two places.
+    pub graph_weight: f64,
     pub session_id: Option<String>,
     pub correlation_id: Option<String>,
 }
@@ -388,6 +394,7 @@ impl GenerationRequest {
             question: question.into(),
             evidence,
             graph_facts: Vec::new(),
+            graph_weight: 1.0,
             session_id: None,
             correlation_id: None,
         }

@@ -15,7 +15,7 @@ use crate::{
         BoxFuture, GenerationError, GenerationErrorKind, GenerationRequest, Generator,
         GroundingLimits, ModelOutput,
     },
-    prompt::pack_evidence_prompt,
+    prompt::pack_evidence_and_graph_prompt,
 };
 
 pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4o-mini";
@@ -375,9 +375,16 @@ impl OpenRouterGenerator {
         // Preflight supported parameters check per D-27
         self.check_supported_parameters().await?;
 
-        let packed_evidence = pack_evidence_prompt(
+        // This is the call site whose packed prompt becomes the real outbound
+        // `messages[1].content` — it reads `request.graph_facts` and
+        // `request.graph_weight` from the request it was actually handed, not a
+        // separately-derived value, so a configured graph_weight provably
+        // reaches the wire (REVIEWS.md HIGH).
+        let packed_evidence = pack_evidence_and_graph_prompt(
             &request.question,
             &request.evidence,
+            &request.graph_facts,
+            request.graph_weight,
             self.config.evidence_token_budget(),
             self.config.max_completion_tokens(),
         )

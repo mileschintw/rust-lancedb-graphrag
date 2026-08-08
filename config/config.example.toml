@@ -26,6 +26,8 @@ max_content_types = 16
 vector_weight = 1.0
 # unit=unitless; range=finite 0.0..=16.0 and combined >0
 bm25_weight = 1.0
+# unit=unitless; range=finite 0.0..=16.0
+graph_weight = 1.0
 # unit=rank constant; range=integer 1.0..=1000000.0
 rrf_k = 60.0
 # unit=tokens; range=>0
