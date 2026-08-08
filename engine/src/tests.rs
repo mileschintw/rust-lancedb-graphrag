@@ -6573,3 +6573,181 @@ async fn fetch_neighborhood_rejects_oversized_final_hop_frontier() {
     let _ = std::fs::remove_dir_all(path);
 }
 
+// ---------------------------------------------------------------------------
+// 04.1-07: Queue-driven extraction proof and GraphFact orientation test
+// ---------------------------------------------------------------------------
+
+struct KeyedEmbedder {
+    vectors: std::collections::HashMap<String, Vec<f32>>,
+    default_vector: Vec<f32>,
+}
+
+impl EmbeddingProvider for KeyedEmbedder {
+    fn get_embeddings<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
+        Box::pin(async move {
+            Ok(texts
+                .iter()
+                .map(|t| {
+                    self.vectors
+                        .get(t)
+                        .cloned()
+                        .unwrap_or_else(|| self.default_vector.clone())
+                })
+                .collect())
+        })
+    }
+}
+
+#[tokio::test]
+async fn worker_queue_extracted_graph_facts_reach_provider_request_body() {
+    let path = database_path("worker-queue-graph-facts");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let doc_a = Uuid::new_v4().to_string();
+    stage_document(
+        &database,
+        &doc_a,
+        b"# Reserved Chunk\n\nKeystone retrieval architecture explanation for the primary reserved evidence block.",
+    )
+    .await;
+    let job_a = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job_a, &database, &FakeEmbedder).await.unwrap();
+
+    let statuses = Arc::new(dashmap::DashMap::new());
+    let (tx, rx) = tokio::sync::mpsc::channel(QUEUE_CAPACITY);
+    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
+        graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity {
+                    name: "Alice".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Bob".into(),
+                    entity_type: "person".into(),
+                },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Alice".into(),
+                target: "Bob".into(),
+                relation_type: "knows".into(),
+                confidence: 0.9,
+            }],
+        },
+    ));
+
+    let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let worker_db = database.clone();
+    let worker_statuses = statuses.clone();
+    let worker = spawn_worker(
+        rx,
+        worker_statuses,
+        worker_db,
+        Arc::new(FakeEmbedder),
+        Arc::new(fake_gen),
+        shutdown_rx,
+    );
+
+    let graph_doc_id = Uuid::new_v4().to_string();
+    let graph_job = IngestionJob::new(
+        graph_doc_id.clone(),
+        "graph-worker-fixture.md".into(),
+        b"# Graph Fixture\n\nAlice knows Bob in this fixture scenario every single day.".to_vec(),
+        HashMap::new(),
+    );
+    tx.send(graph_job).await.unwrap();
+    drop(tx);
+
+    worker.await.unwrap();
+
+    let status_entry = statuses.get(&graph_doc_id).expect("status must exist");
+    assert_eq!(status_entry.status, "completed");
+
+    let entity_count = database.entities_table().await.unwrap().count_rows(None).await.unwrap();
+    let edge_count = database.entity_edges_table().await.unwrap().count_rows(None).await.unwrap();
+    assert_eq!(entity_count, 2);
+    assert_eq!(edge_count, 1);
+
+    let body = capture_chat_request_body(&database, 1.0).await;
+    assert!(
+        body.contains("<GRAPH_FACT"),
+        "body must contain <GRAPH_FACT, got: {body}"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
+    let path = database_path("graph-fact-orientation-seed-target");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let mut vector_map = std::collections::HashMap::new();
+    vector_map.insert("Carol".to_string(), vec![0.9_f32; 2048]);
+    vector_map.insert("Dave".to_string(), vec![-0.9_f32; 2048]);
+
+    let embedder = KeyedEmbedder {
+        vectors: vector_map,
+        default_vector: vec![0.1_f32; 2048],
+    };
+
+    let doc_id = Uuid::new_v4().to_string();
+    let job = IngestionJob::new(
+        doc_id,
+        "mentors.md".into(),
+        b"# Mentorship\n\nCarol mentors Dave in software engineering.".to_vec(),
+        HashMap::new(),
+    );
+
+    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
+        graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity {
+                    name: "Carol".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Dave".into(),
+                    entity_type: "person".into(),
+                },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Carol".into(),
+                target: "Dave".into(),
+                relation_type: "mentors".into(),
+                confidence: 0.75,
+            }],
+        },
+    ));
+
+    super::extract_and_persist_entities(&database, &job, &fake_gen, &embedder)
+        .await
+        .unwrap();
+
+    let dave_vector = vec![-0.9_f32; 2048];
+    let settings = GraphSettings {
+        seed_match_min_score: 0.0,
+        max_hop_cap: 3,
+    };
+
+    let outcome = attempt_graph_augmentation(&database, &dave_vector, &settings).await;
+    if let GraphAugmentationOutcome::Succeeded { facts } = outcome {
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].entity_a_name(), "Carol");
+        assert_eq!(facts[0].entity_b_name(), "Dave");
+    } else {
+        panic!("expected GraphAugmentationOutcome::Succeeded");
+    }
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+
