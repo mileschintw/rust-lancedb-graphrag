@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -291,7 +291,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04.1-05-PLAN.md — Score-interleave graph facts with chunk evidence under a validated, configurable graph_weight, and prove graph_augmentation outcome tagging observable end-to-end.
+- [x] 04.1-05-PLAN.md — Score-interleave graph facts with chunk evidence under a validated, configurable graph_weight, and prove graph_augmentation outcome tagging observable end-to-end.
 
 ### Phase 5: State Machine & Workflow Events
 
