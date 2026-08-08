@@ -20,6 +20,7 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.retrieval.max_content_types",
     "engine.retrieval.vector_weight",
     "engine.retrieval.bm25_weight",
+    "engine.retrieval.graph_weight",
     "engine.retrieval.rrf_k",
     "engine.retrieval.evidence_token_budget",
     "engine.retrieval.excerpt_max_chars",
@@ -66,6 +67,10 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     (
         "engine.retrieval.bm25_weight",
         "unit=unitless; range=finite 0.0..=16.0 and combined >0",
+    ),
+    (
+        "engine.retrieval.graph_weight",
+        "unit=unitless; range=finite 0.0..=16.0",
     ),
     (
         "engine.retrieval.rrf_k",
@@ -677,6 +682,7 @@ fn configured_settings(lancedb_path: &str) -> Settings {
                 max_content_types: 5,
                 vector_weight: 0.7,
                 bm25_weight: 0.3,
+                graph_weight: 1.0,
                 rrf_k: 17.0,
                 evidence_token_budget: 4096,
                 excerpt_max_chars: 23,
@@ -2509,6 +2515,7 @@ async fn configured_rag_settings_drive_service() {
                 max_content_types: 8,
                 vector_weight: 0.8,
                 bm25_weight: 0.2,
+                graph_weight: 1.0,
                 rrf_k: 30.0,
                 evidence_token_budget: 4096,
                 excerpt_max_chars: 128,
@@ -4246,7 +4253,8 @@ fn prompt_evidence_packing_graph_fact_rendering() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.85),
     }];
 
-    let packed = pack_evidence_and_graph_prompt("Who knows Bob?", &blocks, &facts, 4096, 512).unwrap();
+    let packed =
+        pack_evidence_and_graph_prompt("Who knows Bob?", &blocks, &facts, 1.0, 4096, 512).unwrap();
     assert!(packed.prompt.contains("## Related Entities & Relationships"));
     assert!(packed.prompt.contains("Alice —knows→ Bob"));
     assert_eq!(packed.graph_facts.len(), 1);
@@ -5518,6 +5526,781 @@ async fn query_graph_nodes_include_seed_when_unfiltered() {
         "hop_depth=1 must not include the 2-hop-away Acme, got: {:?}",
         resp.nodes
     );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+// ---------------------------------------------------------------------------
+// 04.1-05: score-interleaved graph-fact packing under a validated, configurable
+// graph_weight, plus end-to-end graph_augmentation observability.
+// ---------------------------------------------------------------------------
+
+/// Builds a `FusedCandidate` with a controllable `fused_score`/`score` for
+/// score-interleaving fixtures.
+fn candidate_with_score(id_hint: &str, text: &str, score: f64) -> crate::retrieval::FusedCandidate {
+    crate::retrieval::FusedCandidate {
+        candidate: crate::retrieval::Candidate {
+            document_id: format!("doc-{id_hint}"),
+            chunk_id: format!("chk-{id_hint}"),
+            chunk_index: 0,
+            char_start: 0,
+            char_end: text.len() as i32,
+            content: text.into(),
+            title: Some("Title".into()),
+            section_path: Some("/Sec".into()),
+            content_type: Some("text/markdown".into()),
+            embedding_model: None,
+            ingested_at: None,
+            score,
+        },
+        fused_score: score,
+        vector_rank: Some(1),
+        bm25_rank: None,
+        vector_score: Some(score),
+        bm25_score: None,
+    }
+}
+
+/// Test 1 (04.1-05 Task 1): a single reserved chunk block with a high fused
+/// score is placed ahead of a low-scoring graph fact in the packed prompt.
+#[test]
+fn graph_facts_interleave_by_normalized_score() {
+    use crate::graph::context_strategy::GraphFact;
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+
+    let candidate = candidate_with_score(
+        "hi",
+        "High scoring chunk content about the retrieval engine.",
+        0.95,
+    );
+    let evidence = assemble_evidence_blocks(&[candidate]);
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Alice", "knows", "Bob", None, 0.1),
+    }];
+
+    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 1.0, 8192, 512)
+        .expect("pack succeeds");
+
+    let evidence_pos = packed
+        .prompt
+        .find("<EVIDENCE")
+        .expect("evidence block rendered");
+    let graph_pos = packed
+        .prompt
+        .find("<GRAPH_FACT")
+        .expect("graph fact rendered");
+    assert!(
+        evidence_pos < graph_pos,
+        "the single reserved chunk evidence block must appear ahead of the graph fact"
+    );
+    assert_eq!(packed.evidence.len(), 1);
+    assert_eq!(packed.graph_facts.len(), 1);
+}
+
+/// Test 2 (04.1-05 Task 1, Behavior spec — not independently named in
+/// `<verify>` but exercised by the same code path as Test 7): with a token
+/// budget too small to fit both the second chunk block and the graph fact,
+/// the graph fact competes for and wins the shared budget beyond the single
+/// reserved slot, excluding the lower-priority second chunk block.
+#[test]
+fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
+    use crate::graph::context_strategy::GraphFact;
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+
+    let reserved = candidate_with_score(
+        "reserved",
+        "Reserved top evidence block content for the question asked.",
+        0.9,
+    );
+    let padding = "supplementary detail padding ".repeat(15);
+    let second = candidate_with_score(
+        "second",
+        &format!("Low scoring second chunk block: {padding}"),
+        0.2,
+    );
+    let evidence = assemble_evidence_blocks(&[reserved, second]);
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Alice", "knows", "Bob", None, 0.9),
+    }];
+
+    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 1.0, 330, 32)
+        .expect("pack succeeds");
+
+    assert_eq!(
+        packed.evidence.len(),
+        1,
+        "the low-scoring second chunk block must be excluded, packed evidence: {:?}",
+        packed.evidence
+    );
+    assert_eq!(
+        packed.graph_facts.len(),
+        1,
+        "the graph fact must be included, competing for the shared budget"
+    );
+    assert!(!packed.prompt.contains("padding"));
+    assert!(packed.prompt.contains("<GRAPH_FACT"));
+}
+
+/// Test 3 (04.1-05 Task 1): `graph_weight = 0.0` hard-excludes graph facts
+/// from the packed prompt regardless of their raw match score.
+#[test]
+fn graph_weight_zero_excludes_graph_facts() {
+    use crate::graph::context_strategy::GraphFact;
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+
+    let candidate = candidate_with_score(
+        "only",
+        "Sole evidence block content for the question asked.",
+        0.5,
+    );
+    let evidence = assemble_evidence_blocks(&[candidate]);
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Alice", "knows", "Bob", None, 0.99),
+    }];
+
+    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 0.0, 8192, 512)
+        .expect("pack succeeds");
+
+    assert!(!packed.prompt.contains("<GRAPH_FACT"));
+    assert!(packed.graph_facts.is_empty());
+}
+
+/// Test 3b (04.1-05 Task 1, the discriminating case Test 3 alone cannot
+/// prove): with a deliberately abundant token budget that would fit every
+/// chunk block AND every graph fact, `graph_weight = 0.0` STILL excludes
+/// every graph fact — the exclusion is unconditional, not an artifact of a
+/// tight budget.
+#[test]
+fn graph_weight_zero_excludes_graph_facts_even_with_abundant_budget() {
+    use crate::graph::context_strategy::GraphFact;
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+
+    let candidate = candidate_with_score(
+        "only",
+        "Sole evidence block content for the question asked.",
+        0.5,
+    );
+    let evidence = assemble_evidence_blocks(&[candidate]);
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Alice", "knows", "Bob", None, 0.99),
+    }];
+
+    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 0.0, 65536, 512)
+        .expect("pack succeeds");
+
+    assert!(!packed.prompt.contains("<GRAPH_FACT"));
+    assert!(packed.graph_facts.is_empty());
+}
+
+/// Test 3c (must-resolve #3, empty-slice panic guard, evidence side): an
+/// empty `evidence` slice returns `Err(EmptyEvidence)` regardless of
+/// `graph_facts` content — D-27 forbids a compiled answer resting on graph
+/// facts alone.
+#[test]
+fn pack_evidence_and_graph_prompt_empty_evidence_still_errors_regardless_of_graph_facts() {
+    use crate::graph::context_strategy::GraphFact;
+    use crate::prompt::{
+        pack_evidence_and_graph_prompt, EvidenceBlock, GraphFactBlock, PromptAssemblyError,
+    };
+
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Alice", "knows", "Bob", None, 0.9),
+    }];
+    let empty_evidence: Vec<EvidenceBlock> = Vec::new();
+
+    let err = pack_evidence_and_graph_prompt("Question?", &empty_evidence, &facts, 1.0, 8192, 512)
+        .expect_err("empty evidence must error even with non-empty graph facts");
+    assert_eq!(err, PromptAssemblyError::EmptyEvidence);
+}
+
+/// Test 3d (must-resolve #3, empty-slice panic guard, graph-facts side): a
+/// non-empty `evidence` slice with an EMPTY `graph_facts` slice returns
+/// `Ok(..)` with zero `<GRAPH_FACT>` blocks — no panic, no error.
+#[test]
+fn pack_evidence_and_graph_prompt_empty_graph_facts_does_not_panic() {
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+
+    let candidate = candidate_with_score(
+        "only",
+        "Sole evidence block content for the question asked.",
+        0.5,
+    );
+    let evidence = assemble_evidence_blocks(&[candidate]);
+    let empty_facts: Vec<GraphFactBlock> = Vec::new();
+
+    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &empty_facts, 1.0, 8192, 512)
+        .expect("pack succeeds without panicking on an empty graph_facts slice");
+    assert!(!packed.prompt.contains("<GRAPH_FACT"));
+    assert!(packed.graph_facts.is_empty());
+}
+
+/// Test 4 (04.1-05 Task 1, corrected per REVIEWS.md MEDIUM): every packed
+/// chunk `EvidenceBlock` keeps its stable, originally-assigned `[N]` marker
+/// regardless of where score-interleaving places it in the packed sequence —
+/// markers are never renumbered to reflect "sequential in packed order".
+#[test]
+fn packed_chunk_markers_stay_stable_under_interleaving() {
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt};
+
+    let block0 = candidate_with_score(
+        "a",
+        "Reserved first block content for the question about retrieval.",
+        0.9,
+    );
+    let block1 = candidate_with_score(
+        "b",
+        "Low scoring second block content padded out a bit further today.",
+        0.1,
+    );
+    let block2 = candidate_with_score(
+        "c",
+        "High scoring third block content that outranks the second block.",
+        0.8,
+    );
+    let evidence = assemble_evidence_blocks(&[block0, block1, block2]);
+    assert_eq!(evidence[0].id, "[1]");
+    assert_eq!(evidence[1].id, "[2]");
+    assert_eq!(evidence[2].id, "[3]");
+
+    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &[], 1.0, 8192, 512)
+        .expect("pack succeeds");
+
+    assert_eq!(
+        packed.evidence.len(),
+        3,
+        "all three blocks fit within the generous budget"
+    );
+    // The reserved block is always first; the remaining two are admitted by
+    // descending normalized score — block2 (id "[3]") outranks block1 (id
+    // "[2]") and is therefore packed BEFORE it, yet neither marker is
+    // renumbered to reflect its new packed position.
+    assert_eq!(packed.evidence[0].id, "[1]");
+    assert_eq!(packed.evidence[1].id, "[3]");
+    assert_eq!(packed.evidence[2].id, "[2]");
+
+    let ids: std::collections::HashSet<&str> =
+        packed.evidence.iter().map(|block| block.id.as_str()).collect();
+    assert_eq!(ids.len(), 3, "no two packed blocks share a marker");
+}
+
+/// Test 5 (04.1-05 Task 1): `RetrievalSettings::validate()` rejects a
+/// non-finite, negative, or excessively large `graph_weight` with the same
+/// discipline already applied to `vector_weight`/`bm25_weight` — but, unlike
+/// those two, `graph_weight == 0.0` alone is a valid explicit opt-out.
+#[test]
+fn graph_weight_validation_rejects_non_finite_negative_and_oversized() {
+    let nan_weight = crate::retrieval::RetrievalSettings {
+        graph_weight: f64::NAN,
+        ..crate::retrieval::RetrievalSettings::default()
+    };
+    assert!(nan_weight.validate().is_err());
+
+    let negative_weight = crate::retrieval::RetrievalSettings {
+        graph_weight: -0.5,
+        ..crate::retrieval::RetrievalSettings::default()
+    };
+    assert!(negative_weight.validate().is_err());
+
+    let oversized_weight = crate::retrieval::RetrievalSettings {
+        graph_weight: crate::retrieval::MAX_SERVICE_RRF_WEIGHT + 1.0,
+        ..crate::retrieval::RetrievalSettings::default()
+    };
+    assert!(oversized_weight.validate().is_err());
+
+    let zero_weight = crate::retrieval::RetrievalSettings {
+        graph_weight: 0.0,
+        ..crate::retrieval::RetrievalSettings::default()
+    };
+    assert!(
+        zero_weight.validate().is_ok(),
+        "graph_weight == 0.0 is a valid explicit opt-out, unlike vector_weight/bm25_weight which forbid a combined zero"
+    );
+
+    let valid_weight = crate::retrieval::RetrievalSettings {
+        graph_weight: 2.5,
+        ..crate::retrieval::RetrievalSettings::default()
+    };
+    assert!(valid_weight.validate().is_ok());
+}
+
+/// Test 6 (04.1-05 Task 1): the reserve-one-citable-chunk rule (Plan 02)
+/// still holds under interleaving — a graph fact scored high enough that
+/// unbounded interleaving would exclude the sole chunk block still leaves
+/// that chunk block packed, because it is reserved before any competition.
+#[test]
+fn reserve_one_citable_chunk_holds_under_interleaving() {
+    use crate::graph::context_strategy::GraphFact;
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+
+    let sole_chunk = candidate_with_score(
+        "sole",
+        "The one and only reserved chunk block content for this question.",
+        0.1,
+    );
+    let evidence = assemble_evidence_blocks(&[sole_chunk]);
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Alice", "knows", "Bob", None, 0.99),
+    }];
+
+    // Budget sized to fit only the reserved chunk block itself -- no room
+    // left for the graph fact's header + body, even though the graph fact's
+    // raw score would dominate an unreserved competition.
+    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 1.0, 300, 16)
+        .expect("the reserved chunk block always fits, regardless of graph fact score");
+
+    assert_eq!(
+        packed.evidence.len(),
+        1,
+        "the sole chunk block is always reserved"
+    );
+    assert_eq!(packed.evidence[0].id, "[1]");
+}
+
+fn read_mock_http_request(stream: &mut std::net::TcpStream) -> String {
+    use std::io::Read;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .expect("set mock read timeout");
+    let mut request = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        if let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+            let headers = String::from_utf8_lossy(&request[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                })
+                .unwrap_or(0);
+            if request.len() >= header_end + 4 + content_length {
+                break;
+            }
+        }
+        let read = stream.read(&mut buffer).expect("read mock request");
+        assert!(read > 0, "mock request ended before its body was received");
+        request.extend_from_slice(&buffer[..read]);
+    }
+    String::from_utf8(request).expect("mock request must be UTF-8")
+}
+
+fn write_mock_json_response(stream: &mut std::net::TcpStream, payload: serde_json::Value) {
+    use std::io::Write;
+    let body = payload.to_string();
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    );
+    stream
+        .write_all(response.as_bytes())
+        .expect("write mock response");
+}
+
+/// Runs a single real `query_rag` call through `LancetServiceImpl` and a real
+/// local mock HTTP server, capturing the raw outbound `POST /chat/completions`
+/// request body. Returns the captured body so the caller can assert on what
+/// was actually sent to the provider.
+async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64) -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let captured_chat: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
+    let captured_chat_for_server = captured_chat.clone();
+
+    let server_handle = std::thread::spawn(move || {
+        let (mut models_stream, _) = listener.accept().expect("accept models request");
+        let _ = read_mock_http_request(&mut models_stream);
+        write_mock_json_response(
+            &mut models_stream,
+            serde_json::json!({
+                "data": [{
+                    "id": "mock/graph-weight-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
+
+        let (mut chat_stream, _) = listener.accept().expect("accept chat request");
+        let chat_request = read_mock_http_request(&mut chat_stream);
+        *captured_chat_for_server.lock().unwrap() = Some(chat_request);
+        write_mock_json_response(
+            &mut chat_stream,
+            serde_json::json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": serde_json::json!({
+                            "answer": "Mock answer [1].",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }]
+            }),
+        );
+    });
+
+    let settings = Settings {
+        engine: EngineSettings {
+            grpc_addr: "127.0.0.1:0".into(),
+            lancedb_path: "unused-lancedb-path".into(),
+            retrieval: RetrievalConfigSettings {
+                candidate_limit: 4,
+                final_limit: 2,
+                query_max_bytes: 8192,
+                max_document_ids: 100,
+                max_content_types: 16,
+                vector_weight: 0.0,
+                bm25_weight: 1.0,
+                graph_weight,
+                rrf_k: 60.0,
+                evidence_token_budget: 382,
+                excerpt_max_chars: 512,
+                bm25: Bm25ConfigSettings::default(),
+            },
+            graph: GraphConfigSettings {
+                seed_match_min_score: 0.0,
+                max_hop_cap: 1,
+            },
+        },
+        openrouter: OpenRouterSettings {
+            embedding_endpoint: "https://example.test/v1/embeddings".into(),
+            embedding_model: "test/embed".into(),
+            generation_model: "mock/graph-weight-model".into(),
+            chat_endpoint: format!("http://{addr}/chat/completions"),
+            model_metadata_endpoint: format!("http://{addr}/models"),
+            generation_timeout_secs: 5,
+            temperature: 0.0,
+            top_p: 1.0,
+            max_output_tokens: 32,
+        },
+    };
+
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings)
+        .expect("fixture settings must construct EffectiveRagSettings");
+
+    let generation_config = generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
+        effective_settings.generation_model.clone(),
+        effective_settings.chat_endpoint.clone(),
+        effective_settings.model_metadata_endpoint.clone(),
+        std::time::Duration::from_secs(effective_settings.generation_timeout_secs),
+        effective_settings.temperature,
+        effective_settings.top_p,
+        effective_settings.grounding_limits_arc(),
+    )
+    .expect("generation config must be valid");
+    let generator: Arc<dyn generation::Generator> = Arc::new(
+        generation::openrouter::OpenRouterGenerator::new_with_config("test-key", generation_config)
+            .expect("generator must construct"),
+    );
+
+    let service = configured_service(
+        database,
+        effective_settings,
+        Arc::new(FakeEmbedder),
+        generator,
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "keystone retrieval architecture explanation".into(),
+            session_id: Uuid::new_v4().to_string(),
+            filter: None,
+        }))
+        .await
+        .expect("query_rag succeeds through the real generator and mock provider")
+        .into_inner();
+    assert_eq!(response.answer, "Mock answer [1].");
+
+    server_handle.join().expect("mock server thread completed");
+    let chat_request = captured_chat
+        .lock()
+        .unwrap()
+        .take()
+        .expect("chat request was captured");
+    chat_request
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body.to_string())
+        .expect("captured chat request has a body")
+}
+
+/// Test 7 (04.1-05 Task 1, REVIEWS.md HIGH): a full `query_rag` call, through
+/// the real `LancetServiceImpl` and a real local mock HTTP server capturing
+/// the outbound OpenRouter request body, run twice against the same fixture —
+/// once with `graph_weight = 1.0` (the graph fact outranks the second chunk
+/// block and reaches the real wire payload) and once with `graph_weight =
+/// 0.0` (the graph fact is hard-excluded before packing, never reaching the
+/// wire, and the second chunk block fills the freed budget instead) —
+/// proving the configured value reaches the real outbound provider request,
+/// not merely an intermediate `PackedEvidence` value.
+#[tokio::test]
+async fn graph_weight_reaches_actual_provider_request_body() {
+    let path = database_path("graph-weight-reaches-provider-body");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    // Two real chunk candidates: the reserved top block, and a second,
+    // competing block that ranks lower under pure BM25 weighting
+    // (vector_weight = 0.0 eliminates FakeEmbedder's constant-vector dense
+    // tie, so ranking is deterministically driven by keyword overlap).
+    let doc_a = Uuid::new_v4().to_string();
+    stage_document(
+        &database,
+        &doc_a,
+        b"# Reserved Chunk\n\nKeystone retrieval architecture explanation for the primary reserved evidence block.",
+    )
+    .await;
+    let job_a = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job_a, &database, &FakeEmbedder).await.unwrap();
+
+    let doc_b = Uuid::new_v4().to_string();
+    stage_document(
+        &database,
+        &doc_b,
+        b"# Second Chunk\n\nA secondary supplementary passage that barely touches retrieval in passing today.",
+    )
+    .await;
+    let job_b = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    process_job(&job_b, &database, &FakeEmbedder).await.unwrap();
+
+    // A single real graph fact, reachable from the query's embedding via
+    // FakeEmbedder's constant vector (seed_match_min_score = 0.0 admits any
+    // match; max_hop_cap = 1 returns exactly one edge).
+    let graph_job = IngestionJob::new(
+        Uuid::new_v4().to_string(),
+        "graph-weight-fixture.md".into(),
+        b"# Graph Fixture\n\nAlice knows Bob in this fixture scenario every single day.".to_vec(),
+        HashMap::new(),
+    );
+    let fake_extraction_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
+        graph::extraction::ExtractionOutput {
+            entities: vec![
+                graph::extraction::ExtractedEntity {
+                    name: "Alice".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Bob".into(),
+                    entity_type: "person".into(),
+                },
+            ],
+            relations: vec![graph::extraction::ExtractedRelation {
+                source: "Alice".into(),
+                target: "Bob".into(),
+                relation_type: "knows".into(),
+                confidence: 0.9,
+            }],
+        },
+    ));
+    super::extract_and_persist_entities(&database, &graph_job, &fake_extraction_gen, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let weighted_body = capture_chat_request_body(&database, 1.0).await;
+    assert!(
+        weighted_body.contains("<GRAPH_FACT"),
+        "graph_weight = 1.0: the graph fact must reach the real outbound chat request body, got: {weighted_body}"
+    );
+    assert!(
+        !weighted_body.contains("secondary supplementary passage"),
+        "graph_weight = 1.0: the lower-priority second chunk block must be excluded when the graph fact outranks it, got: {weighted_body}"
+    );
+
+    let excluded_body = capture_chat_request_body(&database, 0.0).await;
+    assert!(
+        !excluded_body.contains("<GRAPH_FACT"),
+        "graph_weight = 0.0: graph facts must be hard-excluded from the real outbound chat request body, got: {excluded_body}"
+    );
+    assert!(
+        excluded_body.contains("secondary supplementary passage"),
+        "graph_weight = 0.0: the second chunk block must fill the freed budget, got: {excluded_body}"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+// ---------------------------------------------------------------------------
+// 04.1-05 Task 2: prove `graph_augmentation` outcome tagging is observable
+// through the full `/rag/query` handler for all three outcomes, via a real
+// async-safe tracing capture layer (not only Plan 02's isolated-function
+// tests).
+// ---------------------------------------------------------------------------
+
+/// Test-only `tracing_subscriber::layer::Layer` that captures every recorded
+/// `graph_augmentation` field value it observes.
+struct GraphAugmentationCaptureLayer {
+    captured: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+struct GraphAugmentationVisitor<'a> {
+    captured: &'a Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl tracing::field::Visit for GraphAugmentationVisitor<'_> {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        if field.name() == "graph_augmentation" {
+            self.captured.lock().unwrap().push(value.to_string());
+        }
+    }
+
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "graph_augmentation" {
+            self.captured.lock().unwrap().push(format!("{value:?}"));
+        }
+    }
+}
+
+impl<S> tracing_subscriber::layer::Layer<S> for GraphAugmentationCaptureLayer
+where
+    S: tracing::Subscriber,
+{
+    fn on_record(
+        &self,
+        _id: &tracing::span::Id,
+        values: &tracing::span::Record<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut visitor = GraphAugmentationVisitor {
+            captured: &self.captured,
+        };
+        values.record(&mut visitor);
+    }
+}
+
+/// Test 1 (04.1-05 Task 2): a full `query_rag` call whose seed vector-search
+/// finds a matching entity and whose traversal returns at least one neighbor
+/// records `graph_augmentation = "succeeded"` on the request's tracing span.
+#[tokio::test(flavor = "current_thread")]
+async fn graph_augmentation_succeeded_is_observable_end_to_end() {
+    use crate::LancetService;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let path = database_path("graph-aug-succeeded-observable");
+    let database = seed_single_edge_graph(&path, "Alice", "Bob", "knows").await;
+    let service = query_graph_service_with_db(database).await;
+
+    let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let layer = GraphAugmentationCaptureLayer {
+        captured: captured.clone(),
+    };
+    let subscriber = tracing_subscriber::registry().with(layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "Alice knows Bob".into(),
+            session_id: Uuid::new_v4().to_string(),
+            filter: None,
+        }))
+        .await
+        .expect("query_rag returns Ok even with graph-only context and no chunk evidence")
+        .into_inner();
+    assert!(
+        response.notices.iter().any(|n| n.code == "NO_EVIDENCE"),
+        "this fixture has no chunk evidence, only graph context"
+    );
+
+    let captured = captured.lock().unwrap();
+    assert_eq!(captured.as_slice(), ["succeeded"]);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// Test 2 (04.1-05 Task 2): a full `query_rag` call whose seed vector-search
+/// finds no entity above `seed_match_min_score` records `graph_augmentation =
+/// "no_match_found"` on the span, and the query still returns a normal
+/// response.
+#[tokio::test(flavor = "current_thread")]
+async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
+    use crate::LancetService;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let path = database_path("graph-aug-no-match-observable");
+    let service = query_graph_service(&path).await;
+
+    let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let layer = GraphAugmentationCaptureLayer {
+        captured: captured.clone(),
+    };
+    let subscriber = tracing_subscriber::registry().with(layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "no entities exist in this corpus".into(),
+            session_id: Uuid::new_v4().to_string(),
+            filter: None,
+        }))
+        .await
+        .expect("query_rag returns Ok even when no entity matches and no chunk evidence exists")
+        .into_inner();
+    assert!(response.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
+
+    let captured = captured.lock().unwrap();
+    assert_eq!(captured.as_slice(), ["no_match_found"]);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// Test 3 (04.1-05 Task 2): a full `query_rag` call under a real forced-fault
+/// (deleted LanceDB directory for `entities`) records `graph_augmentation =
+/// "attempted_and_failed"` on the span, and the query STILL returns
+/// successfully (D-32) — proving the tag is purely observational and never
+/// changes the response contract.
+#[tokio::test(flavor = "current_thread")]
+async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
+    use crate::LancetService;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let path = database_path("graph-aug-attempted-failed-observable");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    // Force a real fault: delete the entities table's on-disk LanceDB
+    // directory after initialization, so `entities_table()` genuinely fails
+    // to open rather than simulating the error path.
+    let entities_dir = std::path::Path::new(&path).join("entities.lance");
+    std::fs::remove_dir_all(&entities_dir)
+        .expect("remove entities.lance to force a real table-open failure");
+
+    let service = query_graph_service_with_db(database).await;
+
+    let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let layer = GraphAugmentationCaptureLayer {
+        captured: captured.clone(),
+    };
+    let subscriber = tracing_subscriber::registry().with(layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "entities table is corrupted".into(),
+            session_id: Uuid::new_v4().to_string(),
+            filter: None,
+        }))
+        .await
+        .expect(
+            "query_rag still returns Ok with chunk-only (or NO_EVIDENCE) evidence per D-32, \
+             even when graph augmentation attempted and failed",
+        )
+        .into_inner();
+    assert!(response.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
+
+    let captured = captured.lock().unwrap();
+    assert_eq!(captured.as_slice(), ["attempted_and_failed"]);
 
     let _ = std::fs::remove_dir_all(path);
 }

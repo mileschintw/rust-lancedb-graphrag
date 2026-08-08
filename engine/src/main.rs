@@ -248,6 +248,8 @@ pub struct RetrievalConfigSettings {
     pub vector_weight: f64,
     #[serde(default = "default_weight")]
     pub bm25_weight: f64,
+    #[serde(default = "default_weight")]
+    pub graph_weight: f64,
     #[serde(default = "default_rrf_k")]
     pub rrf_k: f64,
     #[serde(default = "default_evidence_token_budget")]
@@ -268,6 +270,7 @@ impl Default for RetrievalConfigSettings {
             max_content_types: 16,
             vector_weight: 1.0,
             bm25_weight: 1.0,
+            graph_weight: 1.0,
             rrf_k: 60.0,
             evidence_token_budget: 8192,
             excerpt_max_chars: 512,
@@ -286,6 +289,7 @@ impl RetrievalConfigSettings {
             max_content_types: self.max_content_types,
             vector_weight: self.vector_weight,
             bm25_weight: self.bm25_weight,
+            graph_weight: self.graph_weight,
             rrf_k: self.rrf_k,
             bm25: self.bm25.to_bm25_config(),
         }
@@ -1548,6 +1552,7 @@ impl LancetService for LancetServiceImpl {
                 &query_request.query,
                 &evidence_blocks,
                 &graph_facts,
+                self.effective_settings.retrieval.graph_weight,
                 limits.evidence_token_budget() as usize,
                 limits.max_output_tokens() as usize,
             )
@@ -1558,6 +1563,7 @@ impl LancetService for LancetServiceImpl {
                 packed_evidence.evidence.clone(),
             );
             gen_req.graph_facts = packed_evidence.graph_facts.clone();
+            gen_req.graph_weight = self.effective_settings.retrieval.graph_weight;
             gen_req.session_id = Some(session_id.clone());
             gen_req.correlation_id = Some(correlation_id.clone());
 

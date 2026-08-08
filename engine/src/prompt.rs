@@ -215,20 +215,59 @@ pub fn pack_evidence_prompt(
     max_prompt_tokens: usize,
     answer_token_budget: usize,
 ) -> Result<PackedEvidence, PromptAssemblyError> {
-    pack_evidence_and_graph_prompt(question, evidence, &[], max_prompt_tokens, answer_token_budget)
+    pack_evidence_and_graph_prompt(
+        question,
+        evidence,
+        &[],
+        1.0,
+        max_prompt_tokens,
+        answer_token_budget,
+    )
+}
+
+/// One score-interleaving candidate: either a remaining chunk `EvidenceBlock`
+/// (beyond the single reserved top block) or a `GraphFactBlock`, tagged with its
+/// normalized, weighted packing priority.
+enum PackCandidate<'a> {
+    Evidence(&'a EvidenceBlock),
+    Graph(&'a GraphFactBlock),
 }
 
 /// Packs evidence chunks and optional graph facts into prompt context after reserving the answer budget.
+///
+/// `graph_weight` is a validated (D-30), configurable multiplier applied to
+/// normalized graph-fact scores before they compete with normalized chunk-evidence
+/// scores for the shared token budget (D-29). `graph_weight == 0.0` HARD-EXCLUDES
+/// every graph fact unconditionally, before packing begins — regardless of token
+/// budget size (REVIEWS.md MEDIUM: a weighted-score-of-zero fed into the same
+/// sort/pack path would still be included whenever the budget is large enough to
+/// fit everything, so the exclusion must short-circuit before candidate insertion,
+/// mirroring the existing zero-vector_weight/zero-bm25_weight precedent).
+///
+/// # Errors
+/// Returns [`PromptAssemblyError::EmptyEvidence`] if `evidence` is empty,
+/// regardless of `graph_facts` content (D-27 forbids a compiled answer resting on
+/// graph facts alone, since they are never cited and cannot satisfy
+/// `ModelOutput::validate_grounding_with_limits`'s non-empty `cited_evidence_ids`
+/// requirement). Returns [`PromptAssemblyError::NoEvidenceFits`] if the single
+/// reserved top evidence block does not fit the allowed token budget. Never
+/// panics on an empty `evidence` or empty `graph_facts` slice.
 pub fn pack_evidence_and_graph_prompt(
     question: &str,
     evidence: &[EvidenceBlock],
     graph_facts: &[GraphFactBlock],
+    graph_weight: f64,
     max_prompt_tokens: usize,
     answer_token_budget: usize,
 ) -> Result<PackedEvidence, PromptAssemblyError> {
     if evidence.is_empty() {
         return Err(PromptAssemblyError::EmptyEvidence);
     }
+
+    // graph_weight == 0.0 hard-excludes every graph fact, unconditionally, BEFORE
+    // any normalization or packing runs — an explicit opt-out, not a
+    // deprioritization that a sufficiently large token budget could still admit.
+    let graph_facts: &[GraphFactBlock] = if graph_weight == 0.0 { &[] } else { graph_facts };
 
     let bpe = tiktoken_rs::cl100k_base().ok();
 
@@ -252,7 +291,10 @@ pub fn pack_evidence_and_graph_prompt(
     let mut encoded_blocks = Vec::new();
     let mut packed_graph_facts = Vec::new();
     let mut current_tokens = 0;
-    // Reserve-one-citable-chunk: always include the single highest-scoring chunk block first if evidence exists
+
+    // Reserve-one-citable-chunk (Plan 02, unchanged): always include the single
+    // highest-scoring chunk block first, unconditionally, before any competition
+    // with the remaining evidence or graph facts begins.
     let first_block = &evidence[0];
     let first_encoded = encode_evidence_block(first_block);
     let first_str = first_encoded.render_prompt_block();
@@ -266,39 +308,91 @@ pub fn pack_evidence_and_graph_prompt(
         });
     }
 
-    prompt.push_str(&first_str);
+    let mut evidence_text = String::new();
+    evidence_text.push_str(&first_str);
     current_tokens += first_tokens;
     packed_evidence.push(first_block.clone());
     encoded_blocks.push(first_encoded);
 
-    // Pack remaining evidence blocks
-    for block in &evidence[1..] {
-        let encoded = encode_evidence_block(block);
-        let block_str = encoded.render_prompt_block();
-        let block_tokens = count_tokens(&block_str, bpe.as_ref());
-
-        if current_tokens + block_tokens > allowed_evidence_tokens {
-            break;
+    // Build the shared, score-interleaved candidate pool: the remaining chunk
+    // evidence (beyond the reserved block) and the graph facts each min-max
+    // normalize to [0.0, 1.0] WITHIN their own source, graph facts are then
+    // scaled by `graph_weight`, and both compete for the same remaining budget by
+    // descending (normalized, weighted) score. A degenerate all-equal-scores
+    // slice (including the common single-remaining-candidate case) normalizes to
+    // 1.0 rather than dividing by zero.
+    fn min_max(scores: impl Iterator<Item = f64>) -> (f64, f64) {
+        scores.fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), score| {
+            (min.min(score), max.max(score))
+        })
+    }
+    fn normalize(score: f64, min: f64, max: f64) -> f64 {
+        if max == min {
+            1.0
+        } else {
+            (score - min) / (max - min)
         }
-
-        prompt.push_str(&block_str);
-        current_tokens += block_tokens;
-        packed_evidence.push(block.clone());
-        encoded_blocks.push(encoded);
     }
 
-    // Pack graph facts under section header if present and budget permits
+    let mut scored: Vec<(f64, PackCandidate)> = Vec::new();
+
+    let remaining_evidence = &evidence[1..];
+    if !remaining_evidence.is_empty() {
+        let (min, max) = min_max(remaining_evidence.iter().map(|block| block.score));
+        for block in remaining_evidence {
+            let normalized = normalize(block.score, min, max);
+            scored.push((normalized, PackCandidate::Evidence(block)));
+        }
+    }
+
     if !graph_facts.is_empty() {
-        let section_header = "## Related Entities & Relationships\n";
-        let header_tokens = count_tokens(section_header, bpe.as_ref());
+        let (min, max) = min_max(graph_facts.iter().map(|fact_block| fact_block.fact.score));
+        for fact_block in graph_facts {
+            let normalized = normalize(fact_block.fact.score, min, max);
+            scored.push((normalized * graph_weight, PackCandidate::Graph(fact_block)));
+        }
+    }
 
-        if current_tokens + header_tokens <= allowed_evidence_tokens {
-            let mut graph_section = String::from(section_header);
-            let mut graph_tokens = header_tokens;
+    // Stable sort descending by (normalized, weighted) score. On an exact tie,
+    // preserve insertion order — graph-fact candidates were pushed after
+    // evidence candidates above, so a tie is broken in evidence's favor only
+    // when both truly carry equal priority; ties are resolved explicitly below
+    // so graph facts are never silently deprioritized purely by construction
+    // order (the historical bias REVIEWS.md flagged in the prior append-only
+    // design).
+    scored.sort_by(|(score_a, candidate_a), (score_b, candidate_b)| {
+        score_b.total_cmp(score_a).then_with(|| {
+            let is_graph_a = matches!(candidate_a, PackCandidate::Graph(_));
+            let is_graph_b = matches!(candidate_b, PackCandidate::Graph(_));
+            is_graph_b.cmp(&is_graph_a)
+        })
+    });
 
-            for fact_block in graph_facts {
+    let section_header = "## Related Entities & Relationships\n";
+    let header_tokens = count_tokens(section_header, bpe.as_ref());
+    let mut header_reserved = false;
+    let mut graph_section_text = String::new();
+
+    for (_, candidate) in scored {
+        match candidate {
+            PackCandidate::Evidence(block) => {
+                let encoded = encode_evidence_block(block);
+                let block_str = encoded.render_prompt_block();
+                let block_tokens = count_tokens(&block_str, bpe.as_ref());
+
+                if current_tokens + block_tokens > allowed_evidence_tokens {
+                    continue;
+                }
+
+                evidence_text.push_str(&block_str);
+                current_tokens += block_tokens;
+                packed_evidence.push(block.clone());
+                encoded_blocks.push(encoded);
+            }
+            PackCandidate::Graph(fact_block) => {
                 let fact = &fact_block.fact;
-                let rendered_fact = crate::graph::context_strategy::ContextAssemblyStrategy::SourceChunks.assemble(fact);
+                let rendered_fact = crate::graph::context_strategy::ContextAssemblyStrategy::SourceChunks
+                    .assemble(fact);
                 let fact_str = format!(
                     "<GRAPH_FACT entity_a=\"{}\" relation=\"{}\" entity_b=\"{}\" score=\"{:.4}\">\n{}\n</GRAPH_FACT>\n\n",
                     fact.entity_a_name(),
@@ -308,18 +402,21 @@ pub fn pack_evidence_and_graph_prompt(
                     rendered_fact
                 );
                 let fact_tokens = count_tokens(&fact_str, bpe.as_ref());
+                let extra_header_tokens = if header_reserved { 0 } else { header_tokens };
 
-                if current_tokens + graph_tokens + fact_tokens > allowed_evidence_tokens {
-                    break;
+                if current_tokens + extra_header_tokens + fact_tokens > allowed_evidence_tokens {
+                    continue;
                 }
 
-                graph_section.push_str(&fact_str);
-                graph_tokens += fact_tokens;
-                packed_graph_facts.push(fact_block.clone());
-            }
+                if !header_reserved {
+                    header_reserved = true;
+                    current_tokens += header_tokens;
+                    graph_section_text.push_str(section_header);
+                }
 
-            if !packed_graph_facts.is_empty() {
-                prompt.push_str(&graph_section);
+                graph_section_text.push_str(&fact_str);
+                current_tokens += fact_tokens;
+                packed_graph_facts.push(fact_block.clone());
             }
         }
     }
@@ -330,6 +427,9 @@ pub fn pack_evidence_and_graph_prompt(
             allowed_tokens: allowed_evidence_tokens,
         });
     }
+
+    prompt.push_str(&evidence_text);
+    prompt.push_str(&graph_section_text);
 
     Ok(PackedEvidence {
         prompt,

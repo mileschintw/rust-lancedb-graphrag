@@ -222,6 +222,7 @@ pub struct RetrievalSettings {
     pub max_content_types: usize,
     pub vector_weight: f64,
     pub bm25_weight: f64,
+    pub graph_weight: f64,
     pub rrf_k: f64,
     pub bm25: Bm25Config,
 }
@@ -236,6 +237,7 @@ impl Default for RetrievalSettings {
             max_content_types: DEFAULT_MAX_CONTENT_TYPES,
             vector_weight: 1.0,
             bm25_weight: 1.0,
+            graph_weight: 1.0,
             rrf_k: 60.0,
             bm25: Bm25Config::default(),
         }
@@ -309,6 +311,17 @@ impl RetrievalSettings {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
                 "at least one of vector_weight or bm25_weight must be greater than zero",
+            ));
+        }
+        if !self.graph_weight.is_finite()
+            || self.graph_weight < 0.0
+            || self.graph_weight > MAX_SERVICE_RRF_WEIGHT
+        {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidSettings,
+                format!(
+                    "graph_weight must be finite and between 0.0 and {MAX_SERVICE_RRF_WEIGHT}"
+                ),
             ));
         }
         if !self.rrf_k.is_finite()
