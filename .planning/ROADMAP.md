@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 5/5 plans executed
+**Plans:** 5/7 plans executed
 
 Plans:
 **Wave 1**
@@ -292,6 +292,14 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 
 - [x] 04.1-05-PLAN.md — Score-interleave graph facts with chunk evidence under a validated, configurable graph_weight, and prove graph_augmentation outcome tagging observable end-to-end.
+
+**Wave 6** *(gap closure — blocked on Wave 5 completion)*
+
+- [ ] 04.1-06-PLAN.md — Prove Cypher genuinely narrows the response on disagreement (Gap 1), fix and regression-test CR-01's edge-dedup identity defect, and fix and regression-test WR-01's final-hop frontier-cap gap plus the pre-existing MAX_TOTAL_EDGES rejection's first test.
+
+**Wave 7** *(gap closure — blocked on Wave 6 completion)*
+
+- [ ] 04.1-07-PLAN.md — Prove extraction/graph-augmentation reach the provider through the real worker queue (not a direct call), and prove GraphFact orientation is preserved on the RAG path when the seed is the edge's target.
 
 ### Phase 5: State Machine & Workflow Events
 
