@@ -6133,3 +6133,174 @@ async fn graph_weight_reaches_actual_provider_request_body() {
 
     let _ = std::fs::remove_dir_all(path);
 }
+
+// ---------------------------------------------------------------------------
+// 04.1-05 Task 2: prove `graph_augmentation` outcome tagging is observable
+// through the full `/rag/query` handler for all three outcomes, via a real
+// async-safe tracing capture layer (not only Plan 02's isolated-function
+// tests).
+// ---------------------------------------------------------------------------
+
+/// Test-only `tracing_subscriber::layer::Layer` that captures every recorded
+/// `graph_augmentation` field value it observes.
+struct GraphAugmentationCaptureLayer {
+    captured: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+struct GraphAugmentationVisitor<'a> {
+    captured: &'a Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl tracing::field::Visit for GraphAugmentationVisitor<'_> {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        if field.name() == "graph_augmentation" {
+            self.captured.lock().unwrap().push(value.to_string());
+        }
+    }
+
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "graph_augmentation" {
+            self.captured.lock().unwrap().push(format!("{value:?}"));
+        }
+    }
+}
+
+impl<S> tracing_subscriber::layer::Layer<S> for GraphAugmentationCaptureLayer
+where
+    S: tracing::Subscriber,
+{
+    fn on_record(
+        &self,
+        _id: &tracing::span::Id,
+        values: &tracing::span::Record<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut visitor = GraphAugmentationVisitor {
+            captured: &self.captured,
+        };
+        values.record(&mut visitor);
+    }
+}
+
+/// Test 1 (04.1-05 Task 2): a full `query_rag` call whose seed vector-search
+/// finds a matching entity and whose traversal returns at least one neighbor
+/// records `graph_augmentation = "succeeded"` on the request's tracing span.
+#[tokio::test(flavor = "current_thread")]
+async fn graph_augmentation_succeeded_is_observable_end_to_end() {
+    use crate::LancetService;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let path = database_path("graph-aug-succeeded-observable");
+    let database = seed_single_edge_graph(&path, "Alice", "Bob", "knows").await;
+    let service = query_graph_service_with_db(database).await;
+
+    let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let layer = GraphAugmentationCaptureLayer {
+        captured: captured.clone(),
+    };
+    let subscriber = tracing_subscriber::registry().with(layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "Alice knows Bob".into(),
+            session_id: Uuid::new_v4().to_string(),
+            filter: None,
+        }))
+        .await
+        .expect("query_rag returns Ok even with graph-only context and no chunk evidence")
+        .into_inner();
+    assert!(
+        response.notices.iter().any(|n| n.code == "NO_EVIDENCE"),
+        "this fixture has no chunk evidence, only graph context"
+    );
+
+    let captured = captured.lock().unwrap();
+    assert_eq!(captured.as_slice(), ["succeeded"]);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// Test 2 (04.1-05 Task 2): a full `query_rag` call whose seed vector-search
+/// finds no entity above `seed_match_min_score` records `graph_augmentation =
+/// "no_match_found"` on the span, and the query still returns a normal
+/// response.
+#[tokio::test(flavor = "current_thread")]
+async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
+    use crate::LancetService;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let path = database_path("graph-aug-no-match-observable");
+    let service = query_graph_service(&path).await;
+
+    let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let layer = GraphAugmentationCaptureLayer {
+        captured: captured.clone(),
+    };
+    let subscriber = tracing_subscriber::registry().with(layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "no entities exist in this corpus".into(),
+            session_id: Uuid::new_v4().to_string(),
+            filter: None,
+        }))
+        .await
+        .expect("query_rag returns Ok even when no entity matches and no chunk evidence exists")
+        .into_inner();
+    assert!(response.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
+
+    let captured = captured.lock().unwrap();
+    assert_eq!(captured.as_slice(), ["no_match_found"]);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// Test 3 (04.1-05 Task 2): a full `query_rag` call under a real forced-fault
+/// (deleted LanceDB directory for `entities`) records `graph_augmentation =
+/// "attempted_and_failed"` on the span, and the query STILL returns
+/// successfully (D-32) — proving the tag is purely observational and never
+/// changes the response contract.
+#[tokio::test(flavor = "current_thread")]
+async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
+    use crate::LancetService;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let path = database_path("graph-aug-attempted-failed-observable");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    // Force a real fault: delete the entities table's on-disk LanceDB
+    // directory after initialization, so `entities_table()` genuinely fails
+    // to open rather than simulating the error path.
+    let entities_dir = std::path::Path::new(&path).join("entities.lance");
+    std::fs::remove_dir_all(&entities_dir)
+        .expect("remove entities.lance to force a real table-open failure");
+
+    let service = query_graph_service_with_db(database).await;
+
+    let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let layer = GraphAugmentationCaptureLayer {
+        captured: captured.clone(),
+    };
+    let subscriber = tracing_subscriber::registry().with(layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let response = service
+        .query_rag(tonic::Request::new(QueryRagRequest {
+            query: "entities table is corrupted".into(),
+            session_id: Uuid::new_v4().to_string(),
+            filter: None,
+        }))
+        .await
+        .expect(
+            "query_rag still returns Ok with chunk-only (or NO_EVIDENCE) evidence per D-32, \
+             even when graph augmentation attempted and failed",
+        )
+        .into_inner();
+    assert!(response.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
+
+    let captured = captured.lock().unwrap();
+    assert_eq!(captured.as_slice(), ["attempted_and_failed"]);
+
+    let _ = std::fs::remove_dir_all(path);
+}
