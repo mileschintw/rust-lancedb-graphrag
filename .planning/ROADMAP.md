@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans executed
 
 Plans:
 **Wave 1**
@@ -303,7 +303,7 @@ Plans:
 
 **Wave 8** *(review closure — blocked on Wave 7 completion)*
 
-- [ ] 04.1-08-PLAN.md — Fix the inverted exact-score tie-breaker in pack_evidence_and_graph_prompt and add field-level tracing::debug! diagnostics to validate_extraction_output's confidence-out-of-range failure (REVIEWS.md LOW findings, closed with real code changes since Plans 03/05 already executed).
+- [x] 04.1-08-PLAN.md — Fix the inverted exact-score tie-breaker in pack_evidence_and_graph_prompt and add field-level tracing::debug! diagnostics to validate_extraction_output's confidence-out-of-range failure (REVIEWS.md LOW findings, closed with real code changes since Plans 03/05 already executed).
 
 ### Phase 5: State Machine & Workflow Events
 
