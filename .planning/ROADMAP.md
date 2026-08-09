@@ -270,7 +270,7 @@ Plans:
 3. Queries successfully traverse graph context to compile additional prompts for the LLM.
 4. Define ContextAssemblyStrategy trait/enum and implement SourceChunks fallback strategy (Port for 999.5).
 
-**Plans:** 8/9 plans executed
+**Plans:** 9/9 plans executed
 
 Plans:
 **Wave 1**
@@ -307,7 +307,7 @@ Plans:
 
 **Wave 9** *(gap closure — blocked on Wave 8 completion)*
 
-- [ ] 04.1-09-PLAN.md — Fix the fresh CR-01 defect where fetch_neighborhood's MAX_TOTAL_EDGES bound double-counted bidirectionally re-matched edges before dedup, wrongly rejecting genuinely in-bounds multi-hop query_graph requests; rename WR-04's misleadingly-scoped fail-open test; explicit disposition recorded for every other still-open 04.1-REVIEW.md finding.
+- [x] 04.1-09-PLAN.md — Fix the fresh CR-01 defect where fetch_neighborhood's MAX_TOTAL_EDGES bound double-counted bidirectionally re-matched edges before dedup, wrongly rejecting genuinely in-bounds multi-hop query_graph requests; rename WR-04's misleadingly-scoped fail-open test; explicit disposition recorded for every other still-open 04.1-REVIEW.md finding.
 
 ### Phase 5: State Machine & Workflow Events
 
