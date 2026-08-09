@@ -490,8 +490,15 @@ async fn narrow_via_cypher_narrows_to_seed_only_when_zero_neighbors_confirmed() 
     assert_eq!(out_edges.num_rows(), 0);
 }
 
+/// Proves `narrow_via_cypher`'s fail-open path for the `InvalidHopCap` case specifically.
+/// `hop_cap = 0` is rejected by `clamp_hop_cap` inside `cypher_confirmed_neighbor_ids`'s `traverse_multi_hop`
+/// call before any Cypher query is ever parsed or executed — and does NOT exercise a genuine
+/// `CypherParse`/`CypherExecute` failure (WR-04, 04.1-REVIEW.md); that residual case remains an accepted,
+/// untested gap, since forcing a real `lance-graph` 0.5.4 execution-time failure would require internals
+/// this plan cannot verify without open-ended trial-and-error, so the test's name and scope are narrowed to match
+/// its actual, already-correct coverage rather than left silently implying broader coverage than it has.
 #[tokio::test]
-async fn narrow_via_cypher_fails_open_on_genuine_cypher_error() {
+async fn narrow_via_cypher_fails_open_on_invalid_hop_cap() {
     let (entities, edges) = three_entity_two_edge_fixture();
     let (out_entities, out_edges) = super::narrow_via_cypher(&entities, &edges, "abc-123", 0).await;
     assert_eq!(out_entities.num_rows(), entities.num_rows());

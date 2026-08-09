@@ -6600,6 +6600,96 @@ async fn fetch_neighborhood_rejects_oversized_final_hop_frontier() {
     let _ = std::fs::remove_dir_all(path);
 }
 
+#[tokio::test]
+async fn fetch_neighborhood_accepts_in_bounds_neighborhood_despite_raw_recount_exceeding_max_total_edges() {
+    use arrow_schema::{DataType, Field, Schema};
+
+    let path = database_path("fetch-neighborhood-accepts-in-bounds-neighborhood-despite-raw-recount");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let seed_id = Uuid::new_v4().to_string();
+    let hub1_id = Uuid::new_v4().to_string();
+    let hub2_id = Uuid::new_v4().to_string();
+    let leaf_id = Uuid::new_v4().to_string();
+    let shared_doc_id = Uuid::new_v4().to_string();
+
+    let mut edge_ids = Vec::new();
+    let mut sources = Vec::new();
+    let mut targets = Vec::new();
+    let mut rel_types = Vec::new();
+    let mut weights = Vec::new();
+    let mut doc_ids = Vec::new();
+
+    // Row 0: seed -> hub1
+    edge_ids.push(Uuid::new_v4().to_string());
+    sources.push(seed_id.clone());
+    targets.push(hub1_id.clone());
+    rel_types.push("parent".to_string());
+    weights.push(0.5_f32);
+    doc_ids.push(shared_doc_id.clone());
+
+    // Row 1: hub1 -> hub2
+    edge_ids.push(Uuid::new_v4().to_string());
+    sources.push(hub1_id.clone());
+    targets.push(hub2_id.clone());
+    rel_types.push("parent".to_string());
+    weights.push(0.5_f32);
+    doc_ids.push(shared_doc_id.clone());
+
+    // Rows 2..499 (497 rows): hub2 -> leaf (same leaf_id for all 497 rows)
+    for _ in 2..499 {
+        edge_ids.push(Uuid::new_v4().to_string());
+        sources.push(hub2_id.clone());
+        targets.push(leaf_id.clone());
+        rel_types.push("child".to_string());
+        weights.push(0.5_f32);
+        doc_ids.push(shared_doc_id.clone());
+    }
+
+    let edges_schema = Arc::new(Schema::new(vec![
+        Field::new("edge_id", DataType::Utf8, false),
+        Field::new("source_node_id", DataType::Utf8, false),
+        Field::new("target_node_id", DataType::Utf8, false),
+        Field::new("relation_type", DataType::Utf8, false),
+        Field::new("weight", DataType::Float32, false),
+        Field::new("document_id", DataType::Utf8, false),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        edges_schema,
+        vec![
+            Arc::new(StringArray::from(edge_ids)),
+            Arc::new(StringArray::from(sources)),
+            Arc::new(StringArray::from(targets)),
+            Arc::new(StringArray::from(rel_types)),
+            Arc::new(arrow_array::Float32Array::from(weights)),
+            Arc::new(StringArray::from(doc_ids)),
+        ],
+    )
+    .unwrap();
+
+    let edges_table = database.entity_edges_table().await.unwrap();
+    edges_table.add(batch).execute().await.unwrap();
+
+    let (_entities_batch, edges_batch) = graph::fetch_neighborhood(&database, &seed_id, 3, true)
+        .await
+        .expect("fetch_neighborhood must accept in-bounds neighborhood despite raw recounted edges exceeding MAX_TOTAL_EDGES");
+
+    assert_eq!(edges_batch.num_rows(), 499);
+
+    let edge_id_col = edges_batch
+        .column_by_name("edge_id")
+        .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+        .expect("edges_batch must carry edge_id column");
+
+    let distinct_edge_ids: std::collections::HashSet<&str> =
+        (0..edges_batch.num_rows()).map(|i| edge_id_col.value(i)).collect();
+
+    assert_eq!(distinct_edge_ids.len(), 499);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
 // ---------------------------------------------------------------------------
 // 04.1-07: Queue-driven extraction proof and GraphFact orientation test
 // ---------------------------------------------------------------------------

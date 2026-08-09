@@ -296,7 +296,7 @@ pub const MAX_TOTAL_EDGES: usize = 500;
 /// Bounded multi-hop neighborhood fetch over `entity_edges_table()`.
 ///
 /// Fetches nodes and edges within `hop_cap` steps of `seed_entity_id`, querying `entity_edges_table()`
-/// exclusively. Enforces `MAX_FRONTIER_SIZE` and `MAX_TOTAL_EDGES` bounds, returning a [`GraphSpikeError`]
+/// exclusively. Enforces `MAX_FRONTIER_SIZE` and `MAX_TOTAL_EDGES` bounds (enforced against distinct edge_id values), returning a [`GraphSpikeError`]
 /// if exceeded rather than silently truncating. Returns the bridged `entities` batch (including the seed entity)
 /// and `entity_edges` batch.
 pub async fn fetch_neighborhood(
@@ -317,7 +317,7 @@ pub async fn fetch_neighborhood(
     let mut frontier: HashSet<String> = HashSet::from([seed_entity_id.to_string()]);
     let mut visited: HashSet<String> = HashSet::from([seed_entity_id.to_string()]);
     let mut accumulated_edge_batches: Vec<arrow_array::RecordBatch> = Vec::new();
-    let mut total_edge_count: usize = 0;
+    let mut seen_edge_ids: HashSet<String> = HashSet::new();
 
     for _hop in 1..=hop_cap {
         let escaped_ids: Vec<String> = frontier
@@ -353,18 +353,26 @@ pub async fn fetch_neighborhood(
             .await
             .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, e.to_string()))?;
 
-        let hop_rows: usize = edge_batches.iter().map(|b| b.num_rows()).sum();
-        if total_edge_count + hop_rows > MAX_TOTAL_EDGES {
+        for batch in &edge_batches {
+            let edge_id_col = batch
+                .column_by_name("edge_id")
+                .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
+                .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing edge_id column"))?;
+            for i in 0..batch.num_rows() {
+                seen_edge_ids.insert(edge_id_col.value(i).to_string());
+            }
+        }
+
+        if seen_edge_ids.len() > MAX_TOTAL_EDGES {
             return Err(GraphSpikeError::new(
                 GraphSpikeErrorKind::Bridge,
                 format!(
-                    "accumulated edge count {} exceeds MAX_TOTAL_EDGES {}",
-                    total_edge_count + hop_rows,
+                    "accumulated distinct edge count {} exceeds MAX_TOTAL_EDGES {}",
+                    seen_edge_ids.len(),
                     MAX_TOTAL_EDGES
                 ),
             ));
         }
-        total_edge_count += hop_rows;
 
         let mut next_frontier = HashSet::new();
         for batch in &edge_batches {
