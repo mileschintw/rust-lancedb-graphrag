@@ -15,6 +15,8 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 ### Validated
 
 - ✓ Define a stable gRPC contract between the Go API gateway and Rust RAG engine. — Phase 01
+- ✓ Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB. — Phase 04.1
+- ✓ Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context, including a `ContextAssemblyStrategy` enum/trait supporting `PrecomputedSemantics` and `SourceChunks` (fallback). — Phase 04.1
 
 ### Active
 - [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
@@ -24,10 +26,6 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - [ ] Persist chunks and metadata in LanceDB as the local-first vector/graph store.
   - *Port:* Define separate `nodes` and `edges` tables with nullable `summary`, `summary_vector`, and `unsummarized_refs` columns.
 - [ ] Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
-- [ ] Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB.
-  - *Port:* Define an async `EntityResolver` trait in Rust (ExactMatchResolver default) and set up an async background worker task structure.
-- [ ] Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context.
-  - *Port:* Define a `ContextAssemblyStrategy` enum/trait supporting `PrecomputedSemantics` and `SourceChunks` (fallback).
 - [ ] Implement a lightweight Rust state machine for the fixed RAG path: receive query, reformulate, retrieve hybrid, extract graph context, assemble prompt, generate answer, complete/failed.
 - [ ] Emit client-facing workflow events such as node started/completed/failed, answer chunks, final answer, and workflow completed.
 - [ ] Support degraded mode when graph extraction or one retrieval path fails, while still returning a useful vector/BM25-backed answer when possible.
@@ -106,4 +104,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-06 after Phase 04*
+*Last updated: 2026-08-09 after Phase 04.1*
