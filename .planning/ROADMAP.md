@@ -311,7 +311,7 @@ Plans:
 
 ### Phase 5: State Machine & Workflow Events
 
-**Goal:** Formalize orchestration via Rust state machine with streaming events
+**Goal:** As a Lancet engineer, I want to formalize RAG orchestration into a Rust state machine, so that I can debug and extend the pipeline with predictable failure handling.
 **Mode:** mvp
 **Requirements:** ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05
 **Success Criteria:**
@@ -321,6 +321,25 @@ Plans:
 3. Node timeouts and retries handle failure scenarios predictably.
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
+**Plans:** 5 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md — Tracer: streaming QueryRAG wire contract, one-node Rust Node/WorkflowRunner, Go SSE transport, route-scoped timeout.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 corrected order, D-07 cross-variant RRF merge, D-03 short-circuit.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-03-PLAN.md — AssemblePrompt + GenerateAnswer nodes, D-12/D-13 retry-then-honest-failure, D-01/D-02 AnswerChunk/FinalAnswer.
+
+**Wave 4** *(blocked on Wave 3 completion; parallel)*
+
+- [ ] 05-04-PLAN.md — GraphQueryPort/DenseRetrievalPort testability seam and full deterministic fault-injection coverage.
+- [ ] 05-05-PLAN.md — PostgreSQL-backed workflow_checkpoints persistence (ORCH-04), fire-and-forget from Go.
 
 ### Phase 6: Observability, Evaluation & Polish
 
