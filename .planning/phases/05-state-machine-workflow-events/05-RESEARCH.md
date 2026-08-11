@@ -467,22 +467,25 @@ func (e grpcEngine) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.
 
 **Recommendation:** A1 and A2 are low-risk, standard-library/first-party-crate behaviors well within normal training-knowledge reliability — no user confirmation needed before planning proceeds. A3 should be spot-checked with a small manual test (curl a slow endpoint through the existing chi middleware stack) during Wave 0 rather than assumed, since it directly affects how Pitfall #1's fix is implemented (some timeout middleware designs write a 503 even after partial writes, which would corrupt SSE framing).
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does `ExtractGraphContext`'s D-17 timeout fail the query or degrade it, per D-09?**
+1. **(RESOLVED)** **Does `ExtractGraphContext`'s D-17 timeout fail the query or degrade it, per D-09?**
    - What we know: D-09 says the node "always runs... success is not required." `attempt_graph_augmentation` is already infallible-by-construction for logical failures (returns an outcome enum, never `Err`). AI-SPEC's own dimension-4 eval criterion explicitly flags this as unresolved and reserves reference-dataset scenario #4 for whatever answer planning gives.
    - What's unclear: Whether D-09's "mandatory but non-required" framing was intended to cover the timeout sub-case specifically, or only logical/no-match failures.
    - Recommendation: Give `ExtractGraphContextNode` its own inner timeout race (see Common Pitfalls #2) so a graph timeout degrades exactly like `AttemptedAndFailed` — uniform node failure-policy across the runner, D-09 honored for both failure sub-cases. This is a semantic reading of D-09, not a technical fact — confirm with the user/CONTEXT.md owner before locking it into the plan, since it's the kind of interpretation call the AI-SPEC explicitly declined to make unilaterally.
+   - **Resolution:** Locked exactly as recommended in 05-02-PLAN.md Task 1's `ExtractGraphContextNode` (`engine/src/workflow/nodes/graph_context.rs`) — an inner `tokio::select!` timeout race degrades a genuine graph timeout identically to `AttemptedAndFailed` (`ctx.graph_context` stays empty, `WorkflowCompleted{success: true}`), proven by a Tier 1 test with a genuinely-stalled `FakeGraphQueryPort`.
 
-2. **How should `RetrieveHybrid`'s RRF-merge-across-reformulation-variants (D-07) compose with the existing single-pass `fuse_candidates` function?**
+2. **(RESOLVED)** **How should `RetrieveHybrid`'s RRF-merge-across-reformulation-variants (D-07) compose with the existing single-pass `fuse_candidates` function?**
    - What we know: `fuse_candidates` merges one dense list + one BM25 list via RRF today; D-07 requires merging across N reformulation variants too.
    - What's unclear: Whether this should be "flatten all variants' candidates into two lists, one `fuse_candidates` call" or "N `fuse_candidates` calls (one per variant), then a second RRF pass over the N `FusedCandidate` lists."
    - Recommendation: Since v1's NoOp reformulator makes this behaviorally inert (always exactly one variant), either approach passes v1 tests — but the planner should pick one explicitly (flatten-then-fuse is simpler and reuses `fuse_candidates` unmodified; two-pass is more semantically correct for N>1 variants but requires new merge code) rather than let it be decided implicitly by whichever is easiest to write against a single-variant NoOp.
+   - **Resolution:** Locked to the two-pass approach in 05-02-PLAN.md Task 2 (`RetrieveHybridNode`) — one `fuse_candidates` call per `QueryReformulator` variant, then a new cross-variant RRF merge function (in `engine::retrieval::fusion`) over the per-variant `FusedCandidate` lists, with an explicit documented scoring formula proven by an exact-score assertion (not just relative order) against a 2-variant fake.
 
-3. **Should the graph-query and dense-retrieval paths get an injectable test double this phase, or is real-fixture-based timeout testing accepted for v1?**
+3. **(RESOLVED)** **Should the graph-query and dense-retrieval paths get an injectable test double this phase, or is real-fixture-based timeout testing accepted for v1?**
    - What we know: `Generator` and `EmbeddingProvider` already have trait-based DI + fakes; graph augmentation and dense retrieval do not (see Common Pitfalls #3).
    - What's unclear: Whether introducing this seam is in-scope for this phase (it's not explicitly named in ORCH-01 through ORCH-05) or should be accepted as a testing gap/technical debt like several other Phase 2/3 items already tracked in `STATE.md`.
    - Recommendation: Size it as an explicit Wave 0 task if the planner wants full parity with the AI-SPEC's stated testability requirements; otherwise, explicitly document it as accepted debt (consistent with this project's established pattern of `DEBT-*` tracking) rather than silently under-delivering on the timeout-enforcement eval dimension for these two nodes.
+   - **Resolution:** Sized in-scope, not accepted as debt. 05-02-PLAN.md Task 1 defines `GraphQueryPort`/`DenseRetrievalPort` traits (`engine/src/workflow/ports.rs`) plus production wrapper implementations and `FakeGraphQueryPort`/`FakeDenseRetrievalPort` test doubles, giving both paths the same injectable-seam parity `Generator`/`EmbeddingProvider` already had.
 
 ## Environment Availability
 
