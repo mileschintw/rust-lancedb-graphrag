@@ -1,7 +1,7 @@
 ---
 phase: 5
 reviewers: [codex, antigravity]
-reviewed_at: 2026-08-10T21:25:58Z
+reviewed_at: 2026-08-11T08:44:40Z
 plans_reviewed:
   - 05-01-PLAN.md
   - 05-02-PLAN.md
@@ -14,207 +14,120 @@ plans_reviewed:
 
 ## Codex Review
 
-# Summary
+# Phase 5 Plan Review
 
-The plans show strong architectural judgment and good awareness of the existing pipeline, but they are not execution-ready yet. The highest risks are in 05-01: streaming validation errors will likely become HTTP 200 SSE responses, the proposed Rust integration harness lacks a generated client and fake-provider injection path, and the new event contract drops existing session/no-evidence response data. Additional blockers include a 05-02/05-04 dependency mismatch, contradictory event ordering in 05-03, and a 05-05 sqlc schema omission. Overall risk is **HIGH** until these are resolved.
+## Summary
+
+The revised plans have a strong architecture and address most earlier review findings: the graph-before-retrieval order is correct, the D-03 short-circuit preserves existing response semantics, Tier 1 tests use the existing in-process Rust pattern, and client-visible events use reliable delivery. However, the phase is not execution-ready. Plan 05-05 contains two compile-level contract defects, and the checkpoint sidecar design still allows large snapshots to backpressure the primary query stream. Additional gaps remain around cancellation supervision, retry testability, timeout validation, and exact context-field contracts.
 
 ## Strengths
 
-- **05-01 preserves the important validation boundary.** The plan correctly keeps request/session validation before workflow execution, matching the current handler at [engine/src/main.rs:1346](/D:/Repos/lancet/engine/src/main.rs:1346) and existing trailer handling at [gateway/main.go:280](/D:/Repos/lancet/gateway/main.go:280).
+- The plans correctly preserve the shipped pipeline order: graph augmentation at [`engine/src/main.rs:1426`](/D:/Repos/lancet/engine/src/main.rs:1426) precedes dense retrieval at [`engine/src/main.rs:1450`](/D:/Repos/lancet/engine/src/main.rs:1450), and 05-02 explicitly wires the nodes in that order at [05-02-PLAN.md:168](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:168).
 
-- **05-02 follows the shipped graph-before-retrieval order.** The current code performs graph augmentation at [engine/src/main.rs:1426](/D:/Repos/lancet/engine/src/main.rs:1426) before dense retrieval at [engine/src/main.rs:1450](/D:/Repos/lancet/engine/src/main.rs:1450); the plan explicitly preserves this at [05-02-PLAN.md:155](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:155).
+- The D-03 zero-evidence behavior is grounded in the existing implementation at [`engine/src/main.rs:1508`](/D:/Repos/lancet/engine/src/main.rs:1508). The plans preserve its notice, snapshot, and session identity through `WorkflowCompleted`, rather than fabricating an answer.
 
-- **The plans reuse existing domain mechanisms rather than introducing unnecessary frameworks.** The `Generator`/`FakeGenerator` seam already exists at [engine/src/generation/mod.rs:459](/D:/Repos/lancet/engine/src/generation/mod.rs:459), RRF fusion is centralized at [engine/src/retrieval/fusion.rs:58](/D:/Repos/lancet/engine/src/retrieval/fusion.rs:58), and prompt packing is already implemented at [engine/src/prompt.rs:255](/D:/Repos/lancet/engine/src/prompt.rs:255).
+- The first-frame prefetch is an important correction. Plan 05-01 explicitly performs `Recv()` before committing SSE headers at [05-01-PLAN.md:313](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:313), addressing the difference between gRPC stream creation and delivery of a server-side validation error.
 
-- **05-03 has a clear no-fabrication goal.** The retry ceiling and honest failure behavior are explicit at [05-03-PLAN.md:22](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:22) and [05-03-PLAN.md:182](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:182).
+- The in-process Rust test strategy is appropriate. Existing tests already call the service handler directly, and the plan avoids generating a Rust client while `buf.gen.yaml` intentionally uses `no_client=true`.
 
-- **05-04 correctly identifies the missing retrieval test seams.** Introducing ports for graph and dense retrieval is a justified response to the current concrete dependencies and is better than pretending real LanceDB latency tests are deterministic.
+- Reliable `.send(...).await` for client-visible workflow events is the correct consequence of the event-contract requirements. Plan 05-01 makes this explicit at [05-01-PLAN.md:288](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:288).
+
+- Plan 05-02 gives the cross-variant RRF merge a concrete formula and exact-score test requirement, reusing the existing fusion implementation at [`engine/src/retrieval/fusion.rs:58`](/D:/Repos/lancet/engine/src/retrieval/fusion.rs:58).
+
+- Plan 05-05 correctly recognizes that sqlc reads `db/schema.sql`, not Atlas HCL. The plan updates both schema sources at [05-05-PLAN.md:130](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:130), consistent with [`gateway/sqlc.yaml:3`](/D:/Repos/lancet/gateway/sqlc.yaml:3).
 
 ## Concerns
 
-- **HIGH — 05-01 does not actually preserve HTTP 4xx behavior for pre-stream validation failures.** The current Go client has a unary `QueryRAG` method at [gateway/main.go:207](/D:/Repos/lancet/gateway/main.go:207), but the existing streaming precedent uses `NewStream` and defers status delivery until stream operations at [gateway/proto/lancet/v1/lancet_grpc.pb.go:57](/D:/Repos/lancet/gateway/proto/lancet/v1/lancet_grpc.pb.go:57). The plan handles errors from opening the stream, then writes SSE headers before entering `stream.Recv()` at [05-01-PLAN.md:276](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:276). A Rust validation error will therefore likely arrive from `Recv()` after HTTP 200 is committed, violating the plan’s own D-04 requirement.
+- **HIGH — Checkpoint trace identity is inconsistent and will not compile.** Plan 05-01 defines `Checkpoint` with only `node_name` and `context_snapshot_json` at [05-01-PLAN.md:257](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:257), while 05-05 calls `cp.TraceId` at [05-05-PLAN.md:155](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:155). The trace ID is on the enclosing `WorkflowEvent`, not the checkpoint sidecar. Pass `event.TraceId` separately to `persistCheckpoint`, or add the field consistently to the protobuf contract.
 
-  Fix: receive and classify the first gRPC frame/status before `WriteHeader`; only commit SSE headers after the first successful event, or add an explicit preflight validation RPC.
+- **HIGH — Full checkpoint serialization is not implementable as written.** 05-05 serializes the entire `WorkflowContext` with `serde_json::to_string` at [05-05-PLAN.md:152](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:152). But `QueryRequest` currently lacks `Serialize` at [`engine/src/retrieval/mod.rs:343`](/D:/Repos/lancet/engine/src/retrieval/mod.rs:343), and generated protobuf types such as `Notice` are prost-only at [`engine/src/pb/lancet/v1/lancet.v1.rs:68`](/D:/Repos/lancet/engine/src/pb/lancet/v1/lancet.v1.rs:68). Adding derives directly to generated files will be lost on the next `buf generate`. Use an explicit serializable checkpoint DTO, or configure protobuf generation with stable serde attributes.
 
-- **HIGH — The planned Rust Tier 1 harness cannot work with the current code-generation and crate layout.** `buf.gen.yaml` explicitly disables the Rust client with `no_client=true` at [buf.gen.yaml:15](/D:/Repos/lancet/buf.gen.yaml:15). The plan nevertheless requires `engine/tests/workflow_events.rs` to connect as a tonic client at [05-01-PLAN.md:275](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:275). Additionally, the library target exposes only modules listed at [engine/src/lib.rs:3](/D:/Repos/lancet/engine/src/lib.rs:3), while `EmbeddingProvider` is private to the binary at [engine/src/main.rs:1971](/D:/Repos/lancet/engine/src/main.rs:1971). The spawned binary always constructs OpenRouter clients and requires `OPENROUTER_API_KEY` at [engine/src/main.rs:3034](/D:/Repos/lancet/engine/src/main.rs:3034); no fake-provider injection seam exists.
+- **HIGH — D-27 is only partially isolated.** Detaching the PostgreSQL insert at [05-05-PLAN.md:155](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:155) prevents the database write itself from blocking the Go handler. However, the full snapshot is still attached to the reliable primary `NodeCompleted` event at [05-05-PLAN.md:154](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:154). A large snapshot can block Rust's event channel while Go writes or flushes SSE, so query progression can still be delayed by transport backpressure. The plan needs a bounded snapshot policy or a separate checkpoint transport path.
 
-  Fix: either generate a Rust client and move shared workflow/service types into the library, or make these deterministic tests in-process/unit-level. If process-level testing is required, specify a real injection mechanism, such as a configurable local mock OpenRouter endpoint.
+- **MEDIUM — Cancellation supervision is underspecified.** Plan 05-01 requires a `tx.closed()` watcher at [05-01-PLAN.md:288](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:288), but does not define the supervisor task that owns the runner, receiver closure, cancellation token, and terminal outcome. This is especially important because the current handler is unary at [`gateway/main.go:654`](/D:/Repos/lancet/gateway/main.go:654), while the new implementation will return immediately after spawning the workflow. Define one explicit `tokio::select!` supervisor and test cancellation as internal termination when the receiver is dropped.
 
-- **HIGH — The new event contract loses existing successful-response semantics.** The current zero-evidence path returns a `QueryRAGResponse` containing `session_id`, a `NO_EVIDENCE` notice, and a retrieval snapshot at [engine/src/main.rs:1508](/D:/Repos/lancet/engine/src/main.rs:1508). The existing response schema is defined at [proto/lancet/v1/lancet.proto:103](/D:/Repos/lancet/proto/lancet/v1/lancet.proto:103). The planned `FinalAnswer` omits `session_id`, while `WorkflowCompleted` contains only `bool success` at [05-01-PLAN.md:244](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:244). Meanwhile, D-03 deliberately emits no answer events on zero evidence at [05-02-PLAN.md:200](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:200).
+- **MEDIUM — The Go streaming interface and trailer ownership need a concrete type.** The current interface returns a unary response at [`gateway/main.go:203`](/D:/Repos/lancet/gateway/main.go:203), and the current implementation owns trailer metadata locally at [`gateway/main.go:280`](/D:/Repos/lancet/gateway/main.go:280). The plan says to return a stream plus a "lazily-consulted trailer" at [05-01-PLAN.md:313](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:313), but does not specify the wrapper or method signature. Define a concrete stream wrapper exposing both `Recv()` and trailer metadata. Also obtain `http.Flusher` before committing the 200 response.
 
-  Result: a successful no-evidence query cannot deliver the existing notice/snapshot/session information, and normal successful queries cannot deliver `session_id`.
+- **MEDIUM — Cargo lockfile and task ordering are incomplete.** Plan 05-01 adds direct dependencies but does not list `engine/Cargo.lock` among modified files. The direct dependency declaration is currently at [`engine/Cargo.toml:7`](/D:/Repos/lancet/engine/Cargo.toml:7), while the locked package dependency list is recorded in `engine/Cargo.lock`. Its `cargo build --locked` acceptance criterion will fail unless the lockfile is regenerated. Additionally, Task 1 updates `EngineSettings` literals at [05-01-PLAN.md:261](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:261) before the new settings field is introduced in the later Rust task.
 
-  Fix: add session/terminal response data to the terminal event, or define an explicit no-evidence terminal payload while still skipping prompt assembly and generation.
+- **MEDIUM — RetrieveHybrid's context contract remains ambiguous.** 05-02 allows the executor to choose between `vector_results`/`bm25_results` and a merged field at [05-02-PLAN.md:199](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:199), while 05-03 repeats "whatever" field shape at [05-03-PLAN.md:148](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:148). Prompt assembly and checkpoint fidelity depend on this state. Define an exact `final_candidates` field and separate raw/per-variant fields before execution.
 
-- **HIGH — `WorkflowContext` omits the validated query filters and normalized query.** `QueryRequest` contains filters at [engine/src/retrieval/mod.rs:343](/D:/Repos/lancet/engine/src/retrieval/mod.rs:343), and the current dense, BM25, and prompt stages all consume that validated request at [engine/src/main.rs:1453](/D:/Repos/lancet/engine/src/main.rs:1453), [engine/src/main.rs:1480](/D:/Repos/lancet/engine/src/main.rs:1480), and [engine/src/main.rs:1552](/D:/Repos/lancet/engine/src/main.rs:1552). The planned context fields at [05-01-PLAN.md:268](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:268) contain no filters or `QueryRequest`, and the planned retrieval node fields at [05-02-PLAN.md:185](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:185) do not provide an alternative source.
+- **MEDIUM — Timeout invariants are configuration claims, not runtime guarantees.** 05-02 requires `graph_outer_timeout_ms > graph_timeout_ms` at [05-02-PLAN.md:167](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:167), but the current `EngineSettings` has no workflow section at [`engine/src/main.rs:177`](/D:/Repos/lancet/engine/src/main.rs:177). Add validation for zero, overflow, and the inner/outer ordering, including environment overrides.
 
-  This risks dropping document/content-type filters and using raw `req.query` instead of the normalized query. It also leaves D-07 underspecified: all variants use the same embedding, but the BM25 request must use each variant’s text.
+- **MEDIUM — The retry tests overclaim what `GenerationRequest` proves.** The plan asks the fake to compare model, temperature, and top-p at [05-03-PLAN.md:21](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:21), but `GenerationRequest` currently contains none of those fields at [`engine/src/generation/mod.rs:374`](/D:/Repos/lancet/engine/src/generation/mod.rs:374). Also, the existing `FakeGenerator` has no delay or synchronization hook at [`engine/src/generation/mod.rs:459`](/D:/Repos/lancet/engine/src/generation/mod.rs:459), despite scenarios requiring timeout and cancellation between attempts. Add deterministic barriers/delays and either compare only request fields that exist or record the fully materialized provider payload.
 
-  Fix: carry the validated `QueryRequest` or its filters and normalized query in `WorkflowContext`; clone it with `query = variant` for each BM25 pass.
+- **MEDIUM — Retry policy is broader than the stated transient-failure intent.** 05-03 retries both transport and grounding/schema failures at [05-03-PLAN.md:176](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:176), apparently for every first-attempt error. Existing `GenerationErrorKind` distinguishes provider, timeout, schema, invalid-request, and cancellation classes. Explicitly exclude cancellation and permanent request/configuration errors from retry.
 
-- **HIGH — `try_send` is applied to client-visible workflow events, not just fire-and-forget checkpoints.** The plan requires `try_send` for `NodeStarted`, terminal events, and completion at [05-01-PLAN.md:270](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:270), and explicitly accepts dropping events when full at [05-01-PLAN.md:309](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:309). The AI-SPEC’s nonblocking rule is specifically motivated by the checkpoint side channel at [05-AI-SPEC.md:266](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-AI-SPEC.md:266).
-
-  A full channel can drop `NodeCompleted`, `NodeFailed`, or `WorkflowCompleted`, violating the exactly-one event contract. The 05-04 “never-draining receiver” test at [05-04-PLAN.md:97](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-04-PLAN.md:97) also cannot observe a `FinalAnswer` if it never drains the same channel.
-
-  Fix: separate reliable client-event delivery from lossy/detached checkpoint persistence. Treat `Closed` as cancellation, but do not silently drop required client events on `Full`.
-
-- **HIGH — 05-02 requires a deterministic graph-timeout test before the graph port exists.** 05-02 requires a stalling graph test at [05-02-PLAN.md:164](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:164), but its node still directly owns `DatabaseManager` at [05-02-PLAN.md:155](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:155). The injectable `GraphQueryPort` is only introduced later in 05-04 at [05-04-PLAN.md:77](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-04-PLAN.md:77).
-
-  The plan cannot provide the claimed deterministic test in Wave 2 without either a slow real LanceDB fixture or undocumented refactoring. Also, the graph node’s inner timeout and runner timeout appear to use the same configured budget, so the outer timeout can win the race and incorrectly fail the query.
-
-  Fix: move the graph-timeout acceptance test to 05-04, move the port seam into 05-02, or define separate inner-degrade and outer-backstop durations.
-
-- **MEDIUM — 05-02’s cross-variant RRF semantics are not fully defined.** Existing `fuse_candidates` combines vector/BM25 ranks and weights at [engine/src/retrieval/fusion.rs:58](/D:/Repos/lancet/engine/src/retrieval/fusion.rs:58), using internal accumulation logic at [engine/src/retrieval/fusion.rs:123](/D:/Repos/lancet/engine/src/retrieval/fusion.rs:123). The new merge receives already-fused lists but is instructed to reuse the same weighted formula at [05-02-PLAN.md:184](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md:184). It does not define whether the existing vector/BM25 weights apply again, whether variants have equal weight, or how source-rank provenance is retained.
-
-  Fix: define the outer variant-RRF score and tie-break explicitly, then test exact scores as well as order.
-
-- **MEDIUM — 05-03 contradicts itself on answer-event ordering.** The must-have says `AnswerChunk` and `FinalAnswer` occur after `GenerateAnswer`’s `NodeCompleted` at [05-03-PLAN.md:24](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:24), while the implementation task requires them before `NodeCompleted` at [05-03-PLAN.md:183](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:183).
-
-  Fix: choose one canonical sequence and assert it in every Rust and Go test.
-
-- **MEDIUM — The retry tests do not prove byte-identical requests.** The plan requires identical retry parameters at [05-03-PLAN.md:21](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:21), but the existing `FakeGenerator` exposes call count and configured responses at [engine/src/generation/mod.rs:467](/D:/Repos/lancet/engine/src/generation/mod.rs:467), not the requests received. The planned scenarios at [05-03-PLAN.md:187](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md:187) only require call-count assertions.
-
-  Fix: record cloned `GenerationRequest` values in the fake and compare attempt 1 with attempt 2 field-by-field.
-
-- **HIGH — 05-05 updates the wrong schema source for sqlc.** `sqlc.yaml` reads `db/schema.sql` at [gateway/sqlc.yaml:3](/D:/Repos/lancet/gateway/sqlc.yaml:3), and the current table definitions are in [gateway/db/schema.sql:5](/D:/Repos/lancet/gateway/db/schema.sql:5). However, the plan’s file list only includes `gateway/db/schema.hcl`, `query.sql`, and generated Go at [05-05-PLAN.md:116](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:116).
-
-  `sqlc generate` will not know about `workflow_checkpoints` unless `schema.sql` is also updated or the sqlc source configuration changes.
-
-  Fix: add `gateway/db/schema.sql` to the task and keep it synchronized with the Atlas source at [gateway/atlas.hcl:6](/D:/Repos/lancet/gateway/atlas.hcl:6).
-
-- **MEDIUM — Fire-and-forget checkpoint writes have no bounded lifetime or test synchronization.** The plan explicitly uses `context.Background()` and detached goroutines at [05-05-PLAN.md:142](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:142). The gateway already uses a five-second bounded background context for compensation writes at [gateway/main.go:45](/D:/Repos/lancet/gateway/main.go:45) and [gateway/main.go:308](/D:/Repos/lancet/gateway/main.go:308).
-
-  An unbounded database call can leak goroutines during a DB outage, while tests that query immediately after SSE completion can race the detached insert.
-
-  Fix: use a bounded background timeout and have integration tests poll for the expected rows or expose a test-only drain hook.
-
-- **MEDIUM — 05-04 omits AssemblePrompt from timeout coverage.** The AI-SPEC explicitly includes `AssemblePrompt` in the parametrized timeout scenario at [05-AI-SPEC.md:475](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-AI-SPEC.md:475), but 05-04 excludes it at [05-04-PLAN.md:97](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-04-PLAN.md:97). This leaves one of the five node timeout contracts untested.
-
-  Fix: add a deterministic runner-level blocking-node test or a focused prompt-node timeout test; no production fake is necessarily required.
-
-- **MEDIUM — New workflow configuration is missing from the configuration contract.** The example file currently contains only the existing sections at [config/config.example.toml:14](/D:/Repos/lancet/config/config.example.toml:14), and the configuration tests enumerate allowed sections and required keys at [engine/src/tests.rs:15](/D:/Repos/lancet/engine/src/tests.rs:15) and [engine/src/tests.rs:181](/D:/Repos/lancet/engine/src/tests.rs:181). The plans add workflow keys only to `config/config.toml`, beginning at [05-01-PLAN.md:244](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md:244).
-
-  Fix: update `config.example.toml`, configuration-contract tests, env override documentation, and all `EngineSettings` literals in existing tests.
-
-- **MEDIUM — Full snapshots may become an oversized and overexposing SSE payload.** `Candidate` includes raw chunk content and is serializable at [engine/src/retrieval/mod.rs:412](/D:/Repos/lancet/engine/src/retrieval/mod.rs:412); `PackedEvidence` is also serializable at [engine/src/prompt.rs:168](/D:/Repos/lancet/engine/src/prompt.rs:168). The plan serializes the entire context at every node boundary and forwards the checkpoint sidecar through SSE at [05-05-PLAN.md:139](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:139).
-
-  D-23 accepts raw content in local Postgres, but it does not define a payload-size limit or whether clients should receive the raw checkpoint. Repeated full prompts, candidates, graph facts, and embeddings can materially increase memory, gRPC, SSE, and database usage.
-
-  Fix: bound or redact checkpoint fields, cap serialized size, and consider persisting the sidecar in Go without forwarding its full contents to the client.
+- **LOW/MEDIUM — Checkpoint tests need explicit database isolation and migration commands.** 05-05 requires a live table but leaves the Atlas command unspecified at [05-05-PLAN.md:130](/D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md:130). Existing integration tests use isolated schemas; the new tests should create the checkpoint table in the same per-test schema and use deterministic synchronization for detached goroutines. Given indefinite retention, add a `(trace_id, created_at)` index or document the query-performance tradeoff.
 
 ## Suggestions
 
-- Add a Wave 0 contract gate before 05-01:
-  - finalize terminal-event/session/no-evidence semantics;
-  - generate a Rust client or change the Tier 1 test architecture;
-  - move shared workflow types and test seams into the library;
-  - specify first-frame prefetch behavior for gateway error mapping.
-
-- Add validated query state to `WorkflowContext`, including filters and the normalized query. Build a per-variant BM25 `QueryRequest` while retaining the single D-08 embedding.
-
-- Separate client-facing event delivery from checkpoint persistence. Required workflow events should not be silently dropped; only the Postgres side effect should be lossy/nonblocking.
-
-- Reorder 05-04 ahead of graph-timeout acceptance, or move the port seam into 05-02. Define distinct graph inner and runner backstop timeouts.
-
-- Resolve the 05-03 event-order contradiction and add request-capture assertions to the retry fake.
-
-- Add `gateway/db/schema.sql` to 05-05, then verify both `sqlc generate` and Atlas apply against the same schema.
-
-- Bound detached checkpoint writes, wait/poll for asynchronous inserts in tests, and define a maximum serialized snapshot size.
+1. Correct the protobuf/Go checkpoint identity contract first: pass the enclosing event's `trace_id` into `persistCheckpoint`.
+2. Replace whole-struct serde with an explicit versioned `WorkflowCheckpointSnapshot` DTO.
+3. Decide whether full checkpoint payloads remain on the primary event stream. If so, add a size limit and measure serialization/send latency.
+4. Define a concrete Rust workflow supervisor and Go stream wrapper, including trailer access and receiver-drop cancellation.
+5. Add `Cargo.lock` regeneration and move all workflow settings/schema changes into the same compilation step.
+6. Freeze the exact `WorkflowContext` fields before 05-02/05-03 execution and validate all timeout relationships.
+7. Add deterministic fake-generator barriers and narrow retryable error categories.
+8. Specify the Atlas apply command and extend the existing isolated PostgreSQL test fixture to include `workflow_checkpoints`.
 
 ## Risk Assessment
 
-**Overall: HIGH.** The architecture is coherent and the plans contain valuable tests and explicit failure semantics, but several first-order assumptions currently prevent faithful implementation: streaming pre-validation, Rust client/test injection, response-contract preservation, event reliability, and sqlc generation. Resolving those in a revised Wave 0 should reduce execution risk to MEDIUM.
-
+**Overall risk: HIGH.** The architectural direction is sound, but 05-05 currently has compile-level defects, and the checkpoint sidecar can still impose backpressure on the query path despite the detached database write. Plans 05-01 through 05-04 are viable after tightening their contracts and cancellation/test mechanics; the phase should not begin execution until the checkpoint schema, serialization, trace identity, and stream-supervision issues are resolved.
 
 ---
 
 ## Antigravity Review
 
-# Cross-AI Plan Review: Phase 5 (State Machine & Workflow Events)
+# Plan Review: Phase 5 (State Machine & Workflow Events)
 
-## 1. Summary
+## Summary
 
-The Phase 5 plan suite (`05-01-PLAN.md` through `05-05-PLAN.md`) provides a well-structured, wave-sequenced implementation strategy for formalizing Lancet's fixed RAG pipeline into a Rust async state machine with streaming workflow events and PostgreSQL checkpoint persistence. It demonstrates exceptional attention to codebase details, accurately resolving prior plan inconsistencies against live code (such as correcting the pipeline node execution order in D-06 to match `engine/src/main.rs:1426` vs `1450`), preserving the D-04 synchronous pre-stream validation boundary (`engine/src/main.rs:1346-1393` and `gateway/main.go:692-711`), and introducing clean testability ports (`GraphQueryPort`, `DenseRetrievalPort`) to achieve deterministic fault-injection testing. Minor risks exist around indiscriminate channel `try_send` usage dropping client-facing answer frames under backpressure and Rust test compilation requirements for `#[ignore]` attributes, but overall the plan suite is robust, realistic, and directly satisfies requirements ORCH-01 through ORCH-05.
+The Phase 5 plan set (`05-01` through `05-05`) delivers a comprehensive, type-safe Rust state machine (`WorkflowRunner` / `Node`) and Go SSE streaming transport for the fixed RAG path (`QueryRAG`). It faithfully implements all locked decisions (D-01 through D-31) and phase requirements (ORCH-01 through ORCH-05). The plans demonstrate exceptional engineering rigor by directly resolving prior peer review feedback—substituting lossy `try_send` calls with reliable channel `.send().await`, synchronizing `gateway/db/schema.hcl` and `gateway/db/schema.sql` for sqlc codegen, codifying an explicit cross-variant RRF fusion formula in `engine/src/retrieval/fusion.rs`, and defining injectable port seams (`GraphQueryPort`, `DenseRetrievalPort`) with extended `FakeGenerator` request recording for byte-identical retry verification.
 
----
+## Strengths
 
-## 2. Strengths
+- **Direct Resolution of Review Concerns & Edge Cases**: The plans incorporate solutions for complex edge cases raised in previous reviews, including sqlc schema source alignment (`schema.sql`), eliminating lossy `try_send` event drops, and adding `GenerationRequest` recording to `FakeGenerator` for exact field-by-field retry assertions.
+- **Clean Service & State Boundaries (D-04, D-26)**: Pre-stream request validation (`ReceiveQuery`) remains synchronous in the tonic gRPC handler, returning standard gRPC `Status` with trailer metadata (`d1_status`) prior to stream initiation. Go retains sole ownership of PostgreSQL for checkpoint writes via detached goroutines (`go a.persistCheckpoint(cp)`), avoiding DB driver complexity inside the Rust engine.
+- **Fault Isolation & Graceful Degradation (D-03, D-09)**: `ExtractGraphContextNode` wraps graph context extraction in an inner timeout (`graph_timeout_ms = 15s`) and degrades to an empty graph context on both logical failure and timeout without aborting the query. `RetrieveHybridNode` correctly implements the D-03 zero-evidence short-circuit to send `WorkflowCompleted{success: true, notices: [NO_EVIDENCE], snapshot: Some(...)}` immediately without entering downstream prompt assembly or generation nodes.
+- **Deterministic Multi-Tier Test Strategy**: Tier 1 tests in `engine/src/tests.rs` leverage in-process trait doubles (`FakeGraphQueryPort`, `FakeDenseRetrievalPort`, `FakeGenerator`, `StallingTestNode`) to verify timeout arithmetic, cancellation, and byte-identical retry requests deterministically without external process flakiness. Tier 2 tests in `gateway/main_test.go` validate end-to-end SSE framing, DB snapshot fidelity, and cancellation atomicity against a live Postgres instance.
+- **Event Granularity & Privacy Controls (D-01, D-02, D-20)**: SSE client payloads strictly strip internal `checkpoint` context snapshots, while progress events maintain a predictable, forward-compatible sequence (`NodeStarted` → `NodeCompleted` → `AnswerChunk` → `FinalAnswer` → `WorkflowCompleted`).
 
-- **Accurate Codebase Seams & Order Resolution (D-06)**: Plan 02 (`05-02-PLAN.md`) correctly identifies and resolves a contradiction in prior context documents by verifying against live code (`engine/src/main.rs:1426` graph augmentation vs `1450` dense retrieval), ensuring `ExtractGraphContextNode` executes before `RetrieveHybridNode` as required by D-06.
-- **Preservation of Pre-Stream Validation Boundary (D-04)**: Plan 01 (`05-01-PLAN.md`) maintains synchronous validation in `query_rag` (`engine/src/main.rs:1354-1393`) before opening the gRPC stream. This preserves `gateway/main.go:692-711`'s `trailerError` handling for returning HTTP 400 Bad Request with `X-Lancet-*` headers on invalid requests.
-- **Route-Scoped HTTP Timeout Resolution**: Plan 01 (`05-01-PLAN.md`) correctly identifies that the blanket `middleware.Timeout(60*time.Second)` at `gateway/main.go:464` would prematurely abort long-running SSE streams (where node timeouts total ~97s), and replaces it with a route-scoped timeout for `/rag/query`.
-- **Infallible Graph Degradation & Timeout Alignment (D-09)**: Plan 02 (`05-02-PLAN.md`) wraps `attempt_graph_augmentation` (`engine/src/main.rs:1426-1448`) in an inner `tokio::select!` timeout race, ensuring both logical failures (`GraphAugmentationOutcome::AttemptedAndFailed`) and graph query timeouts degrade gracefully to empty graph context without failing the overall RAG query.
-- **Single-Retry & Honest Failure Contract (D-11, D-12, D-13)**: Plan 03 (`05-03-PLAN.md`) enforces a hard two-attempt limit on `GenerateAnswerNode` (`engine/src/generation/mod.rs:459-464`), reusing identical request parameters and ensuring that double generation failures result in `WorkflowCompleted{success: false}` without substituting fabricated or unvalidated answers.
-- **Deterministic DI Port Seams for Storage & Graph (ORCH-03)**: Plan 04 (`05-04-PLAN.md`) introduces `GraphQueryPort` and `DenseRetrievalPort` traits in `engine/src/workflow/ports.rs`, mirroring the `Generator` DI pattern in `engine/src/generation/mod.rs:459-490`, enabling deterministic stall/failure testing without relying on uncoordinated network/storage timing.
-- **Fire-and-Forget Checkpoint Persistence (D-26, D-27, ORCH-04)**: Plan 05 (`05-05-PLAN.md`) decouples Postgres writes from the hot query path by dispatching `go a.persistCheckpoint(cp)` in a detached goroutine (`context.Background()`) off `gateway/main.go`'s SSE loop, using Atlas HCL (`gateway/db/schema.hcl`) and sqlc (`gateway/db/query.sql`) conventions.
+## Concerns
 
----
+- **Go Gateway Global Middleware Timeout Collision (MEDIUM)**: `gateway/main.go:464` applies `middleware.Timeout(60*time.Second)` globally across all routes in `routes()`. However, `generate_timeout_ms` is set to 65s (allowing two 30s LLM generation attempts plus slack), which means a valid query experiencing a transient LLM retry will be aborted at 60s by Chi's HTTP middleware before completing. While `05-01` and `05-RESEARCH.md` identify this risk, `05-01`'s task action must explicitly ensure `/rag/query` is exempted from the global 60s timeout via route grouping or `r.With(...)`.
+- **Unbounded PostgreSQL Checkpoint Growth (LOW)**: Each `NodeCompleted` event persists a full `WorkflowContext` JSON snapshot (D-28). Per D-24, no TTL or cleanup job is included in v1. While acceptable for a local-first demo, high query volume during local testing could lead to rapid growth in `workflow_checkpoints`.
+- **Cross-Variant Candidate Buffering (LOW)**: In `RetrieveHybridNode` (`05-02` Task 2), iterating over `Vec<String>` reformulation variants creates per-variant candidate lists before cross-variant RRF merging. While NoOp reformulator yields 1 variant in v1, pre-allocating candidate vectors will prevent unnecessary allocations when Phase 999.3 introduces multi-query expansion.
 
-## 3. Concerns
+## Suggestions
 
-- **HIGH: Indiscriminate `try_send` on bounded channels risks dropping client-facing answer events (`AnswerChunk` / `FinalAnswer`) under backpressure**
-  - **File / Location**: `05-01-PLAN.md:1211`, `05-03-PLAN.md:1700`, `05-05-PLAN.md:2048`
-  - **Mechanism**: The plans specify sending all events (`NodeStarted`, `NodeCompleted`, `AnswerChunk`, `FinalAnswer`, `WorkflowCompleted`) via `try_send` on `mpsc::Sender<WorkflowEvent>`. While D-27 requires fire-and-forget for *checkpoint sidecar writes*, applying `try_send` to primary response payload events (`AnswerChunk`, `FinalAnswer`) means that if the bounded channel experiences temporary backpressure, `try_send` will drop `FinalAnswer` or `AnswerChunk`. The client stream will close without receiving the generated answer or citations despite successful LLM generation.
-  - **Impact**: Silent data loss and broken client contract on high-concurrency or backpressured streams.
+- **Explicit Chi Route Exemption in 05-01**: Update `routes()` in `gateway/main.go` to apply `middleware.Timeout(60*time.Second)` selectively to `/documents` and `/health`, leaving `/rag/query` governed by client disconnects (D-16) and Rust node timeouts (D-17).
+- **Schema Sync Verification**: Ensure `sqlc generate` and Atlas migration apply steps in `05-05` verify that both `gateway/db/schema.hcl` and `gateway/db/schema.sql` stay strictly synchronized.
 
-- **MEDIUM: Rust compiler `#[ignore]` semantics misunderstood for broken test call sites**
-  - **File / Location**: `05-01-PLAN.md:1150-1152`, `1215`, `engine/src/tests.rs:2181+`
-  - **Mechanism**: Plan 01 instructs marking ~12 existing `query_rag_*` integration tests in `engine/src/tests.rs` with `#[ignore = "pending 05-0N"]` while updating `QueryRAG`'s gRPC signature from unary to server-streaming. In Rust, `#[ignore]` skips test execution at runtime, but the compiler still type-checks all `#[ignore]`'d functions during `cargo test`.
-  - **Impact**: Any test calling `.query_rag(req).await` expecting a unary `Result<Response<QueryRagResponse>, Status>` will fail `cargo test` at compile time unless the call site expressions are updated to compile against the streaming signature.
+## Risk Assessment
 
-- **LOW: Heavy payload duplication in full accumulated JSON snapshots**
-  - **File / Location**: `05-05-PLAN.md:2038-2048`, `gateway/db/schema.hcl:5-27`
-  - **Mechanism**: Plan 05 serializes full `WorkflowContext` snapshots (`serde_json::to_string(ctx)`) into `jsonb` columns for every `NodeCompleted` event (5 rows per 5-node query). Since `WorkflowContext` contains 2048-dim float embeddings (`query_embedding`) and full chunk text content inside `vector_results`/`bm25_results`, each query writes ~150–250 KB of JSON across 5 rows.
-  - **Impact**: Negligible for local MVP demo, but without retention cleanup (D-24), Postgres storage will grow rapidly during extensive local evaluation runs.
-
----
-
-## 4. Suggestions
-
-- **Differentiate Event Delivery (`send().await`) from Checkpoint Sidecars (`try_send`)**:
-  - **File / Location**: `engine/src/workflow/runner.rs`, `engine/src/workflow/events.rs`
-  - **Action**: In `WorkflowRunner::run`, use `events.send(event).await` for primary protocol events (`NodeStarted`, `NodeCompleted`, `AnswerChunk`, `FinalAnswer`, `WorkflowCompleted`) so backpressure pauses node execution rather than dropping answers. Restrict `try_send` (or non-blocking channel drop) exclusively to optional checkpoint sidecars or background worker queues.
-
-- **Explicitly Update Test Signatures in `engine/src/tests.rs`**:
-  - **File / Location**: `engine/src/tests.rs:2181+`, `05-01-PLAN.md:1215`
-  - **Action**: Ensure Task 2 of Plan 01 updates the response handling invocation (e.g. consuming or taking the first stream frame) for all 17 tests in `engine/src/tests.rs` so that `cargo test --locked` compiles cleanly, before adding `#[ignore = "..."]` for tests whose functional assertions await future nodes.
-
-- **Pre-allocate Buffer for `Vec<Vec<FusedCandidate>>` Cross-Variant RRF Merge**:
-  - **File / Location**: `engine/src/retrieval/fusion.rs:58-100`, `05-02-PLAN.md:1458-1463`
-  - **Action**: When implementing `merge_fused_candidate_lists` in `fusion.rs`, pre-allocate the candidate map with capacity matching `variants.len() * settings.candidate_limit` to prevent repeated re-allocations during multi-variant RRF fusion.
-
----
-
-## 5. Risk Assessment
-
-**Overall Risk Level: LOW**
-
-**Justification**:
-The implementation plans are exceptionally well-prepared, highly detailed, and thoroughly grounded in the existing Lancet codebase. They map directly onto the validated requirements (ORCH-01 through ORCH-05) and decisions (D-01 through D-31). The plans accurately anticipate gRPC streaming changes (`proto/lancet/v1/lancet.proto:11`), Go HTTP SSE forwarding (`gateway/main.go:654-715`), Atlas/sqlc migration patterns (`gateway/db/schema.hcl` & `query.sql`), and Rust async cancellation/timeout mechanics (`tokio::select!`). The identified concerns (`try_send` usage on answer events and Rust test compilation requirements) are straightforward to address during execution and do not compromise the core architectural integrity of the phase.
+- **Overall Risk Level**: **LOW**
+- **Justification**: The 5-plan wave breakdown is modular, well-ordered, and achievable. The design strictly respects domain boundaries, avoids black-box frameworks, and enforces critical invariants (retry bounds, honest failure propagation, zero-evidence short-circuiting) through deterministic unit and integration test suites.
 
 ---
 
 ## Consensus Summary
 
-Both reviewers had full repo access and grounded their findings in `file:line` citations against the live codebase — no ungrounded or blind reviews to down-weight. However, they land on **sharply different overall risk verdicts** (Antigravity: LOW, Codex: HIGH), driven by Codex surfacing several first-order execution blockers that Antigravity's pass did not catch.
+The two reviewers strongly agree on what the plans get *right*, but diverge sharply on overall execution readiness — Codex rates the plan set **HIGH risk** and not execution-ready; Antigravity rates it **LOW risk** and ready to proceed. Codex's HIGH-severity findings are specific, line-cited, compile-level claims that Antigravity's review does not address at all (neither confirming nor refuting them), so they should be treated as open and verified directly against source before execution, not resolved by the risk-level disagreement alone.
 
 ### Agreed Strengths
-
-- **Pre-stream validation boundary is preserved on the engine side (D-04).** Both reviewers confirm `query_rag` keeps synchronous request/session validation before workflow execution begins (`engine/src/main.rs:1346-1393`), matching existing `gateway/main.go` trailer/error handling. (Codex also flags a related but distinct gateway-side gap — see Divergent Views.)
-- **Graph-before-retrieval node ordering is correct (D-06).** Both reviewers independently verified the plan's ordering claim against live code: graph augmentation at `engine/src/main.rs:1426` executes before dense retrieval at `:1450`, and 05-02-PLAN.md preserves this.
+- **Shipped pipeline order preserved.** Both reviewers confirm graph-before-retrieval order matches existing code (`engine/src/main.rs:1426` vs `:1450`) and is correctly wired in 05-02.
+- **D-03 zero-evidence short-circuit correctly implemented.** Both confirm `WorkflowCompleted{success: true, notices, snapshot}` fires without entering `AssemblePrompt`/`GenerateAnswer`, preserving today's response semantics.
+- **Reliable event delivery.** Both explicitly credit the plans for replacing lossy `try_send` with `.send().await` for client-visible workflow events — a fix from the prior review round.
+- **sqlc/Atlas schema sync in 05-05.** Both flag that `db/schema.sql` (sqlc's actual source) and the Atlas HCL schema are kept in sync, and both suggest verifying this stays true (Antigravity as a suggestion, Codex implicitly via its DB-isolation concern).
+- **In-process Tier 1 test strategy.** Both approve of the no-spawned-process, no-generated-client `engine/src/tests.rs` approach reusing existing fixture patterns.
 
 ### Agreed Concerns
-
-- **HIGH — `try_send` risks silently dropping client-facing workflow events under backpressure.** Both reviewers flag that the plans apply non-blocking `try_send` not just to the fire-and-forget checkpoint sidecar (as D-27 intends) but also to primary protocol events — `NodeStarted`, `NodeCompleted`, `AnswerChunk`, `FinalAnswer`, `WorkflowCompleted` (05-01-PLAN.md, 05-03-PLAN.md, 05-05-PLAN.md; AI-SPEC.md:266). A full channel can drop a client's answer or completion signal entirely. Both recommend separating reliable `.send().await` delivery for client-facing events from lossy/detached delivery for checkpoint persistence only.
-- **MEDIUM/LOW — Checkpoint/context JSON snapshots may be oversized.** Both reviewers independently flag that serializing full `WorkflowContext`/`Candidate`/`PackedEvidence` snapshots (including raw chunk text and embeddings) at every node boundary produces large payloads (Antigravity estimates ~150-250KB per query across 5 rows) with no defined size cap or redaction — a concern for both Postgres storage growth and, per Codex, potential over-exposure if the sidecar is forwarded to the client via SSE.
+- No single concern was raised at the same severity by both reviewers. The closest overlap is checkpoint/database durability: Codex raises DB-isolation and migration-command gaps for `workflow_checkpoints` (LOW/MEDIUM); Antigravity separately raises unbounded checkpoint growth with no TTL (LOW). Both are checkpoint-adjacent but distinct issues — treat as two separate findings, not one confirmed-by-two-reviewers concern.
 
 ### Divergent Views
-
-- **Overall risk level: LOW (Antigravity) vs. HIGH (Codex).** This is the most important disagreement to resolve before execution. Codex's HIGH verdict rests on several concrete blockers Antigravity's pass did not surface:
-  - **Streaming validation may not actually yield HTTP 4xx.** Codex argues that once the Go gateway commits SSE headers and calls `stream.Recv()`, a Rust-side validation error arriving from the stream lands *after* HTTP 200 is already committed — undermining the very D-04 guarantee both reviewers credited as a strength. Fix proposed: classify the first gRPC frame/status before `WriteHeader`, or add a preflight validation RPC.
-  - **The planned Rust Tier 1 integration test harness may not be buildable as specified.** Codex found `buf.gen.yaml:15` sets `no_client=true`, so no generated Rust gRPC client exists for `engine/tests/workflow_events.rs` to use as planned; it also notes `EmbeddingProvider` is private to the binary and the binary unconditionally requires `OPENROUTER_API_KEY` with no fake-provider injection seam. Antigravity's review did not check for this.
-  - **The new event contract may drop existing response data.** Codex identifies that `session_id`, filters, and the no-evidence notice/snapshot present in the current `QueryRAGResponse` schema have no home in the planned `FinalAnswer`/`WorkflowCompleted` events.
-  - **Other Codex-only HIGH/MEDIUM findings not raised by Antigravity:** a 05-02/05-04 dependency-ordering mismatch (the graph-timeout test in 05-02 needs `GraphQueryPort`, which isn't introduced until 05-04), a self-contradiction in 05-03 on whether answer events fire before or after `GenerateAnswer`'s `NodeCompleted`, and a sqlc/schema mismatch in 05-05 (`sqlc.yaml` reads `db/schema.sql`, but the plan only updates `db/schema.hcl`).
-  - Given Codex's findings are backed by specific, checkable file:line evidence (`buf.gen.yaml:15`, `gateway/sqlc.yaml:3`, `05-03-PLAN.md:24` vs `:183`, etc.), **these should be verified against the repo before proceeding** — they represent a materially different risk picture than Antigravity's LOW verdict.
-- **Test-compilation risk (Antigravity only).** Antigravity flags that marking ~12 tests `#[ignore]` in `engine/src/tests.rs` doesn't exempt them from compilation, so call sites must already compile against the new streaming signature — Codex's review did not mention this.
+- **Checkpoint trace-ID compile defect — CONFIRMED against plan text (Codex HIGH, unaddressed by Antigravity).** Directly verified: `05-01-PLAN.md:257` defines the proto `Checkpoint` message with only `node_name` and `context_snapshot_json` fields (trace_id lives on the enclosing `WorkflowEvent`, not `Checkpoint`). `05-05-PLAN.md:155` then calls `a.store.InsertWorkflowCheckpoint(ctx, cp.TraceId, cp.NodeName, []byte(cp.ContextSnapshotJson))` — `cp.TraceId` has no backing field in the message 05-01 defines. As written, this will not compile. Codex's finding is correct; Antigravity's LOW-risk verdict did not catch this. **This must be fixed before 05-05 executes** — either add `trace_id` to the `Checkpoint` proto message in 05-01, or thread `event.TraceId` into `persistCheckpoint` as a separate parameter instead of reading it off `cp`.
+- **Checkpoint `WorkflowContext` serialization defect (Codex HIGH, not independently re-verified but plausible).** Codex further claims `serde_json::to_string(ctx)` on the full `WorkflowContext` (05-05-PLAN.md:153) won't compile because `QueryRequest` (05-01's context field, `engine/src/retrieval/mod.rs:343`) and generated prost message types like `Notice` aren't `Serialize`. Not independently confirmed line-by-line here, but consistent with prost's default codegen (no serde derives unless configured) — treat as high-confidence and verify `Serialize` is actually derivable for every `WorkflowContext` field before 05-05 executes, per Codex's suggested fix (an explicit versioned DTO rather than serializing the struct directly).
+- **Checkpoint backpressure on the primary event channel (Codex HIGH, not raised by Antigravity).** Codex argues the full context snapshot still rides the reliable `NodeCompleted` event even though the Postgres write itself is detached (D-27), so a large snapshot can still stall query progression via channel backpressure. Antigravity's review doesn't engage with this mechanism at all. Worth an explicit design decision: either bound snapshot size or move the snapshot payload off the primary SSE-forwarded channel.
+- **Chi route-timeout exemption: settled fix vs. residual risk.** Antigravity flags the global 60s `middleware.Timeout` colliding with the 65s generation-retry budget as an active MEDIUM risk requiring an explicit fix in 05-01. Codex doesn't mention this at all in its concerns list — either because it considers 05-01's route-scoped-timeout language (`sized to at least 120s`) already sufficient, or because it simply didn't focus there. Given Antigravity's specific citation (`gateway/main.go:464`) and the 65s/60s numeric collision, verify the exemption is concretely implemented (not just described) before treating this as closed.
+- **Overall risk level.** Codex: HIGH, blocking on 05-05's compile-level defects and cancellation-supervision gaps. Antigravity: LOW, citing strong adherence to locked decisions and a solid test strategy. The disagreement is not really about the quality of 05-01–05-04 (both are positive there) — it hinged on whether Codex's specific 05-05 claims about `Checkpoint.TraceId` and `WorkflowContext` serialization are accurate. That factual question is now resolved for the `TraceId` claim (confirmed real, see above), which tips this toward Codex's HIGH rating: 05-05 is not execution-ready as written, regardless of how sound 05-01–05-04 are.
