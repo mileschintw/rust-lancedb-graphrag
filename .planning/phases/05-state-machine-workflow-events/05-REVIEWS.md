@@ -2,7 +2,7 @@
 phase: 5
 reviewers: [antigravity, claude]
 successful_reviewers: [antigravity, claude]
-reviewed_at: 2026-08-12T06:25:47Z
+reviewed_at: 2026-08-12T18:15:52Z
 plans_reviewed:
   - 05-01-PLAN.md
   - 05-02-PLAN.md
@@ -11,260 +11,223 @@ plans_reviewed:
   - 05-05-PLAN.md
   - 05-06-PLAN.md
 reviewer_models:
-  antigravity: gemini-3.1-pro
-  claude: sonnet
+  antigravity: gemini-3.5-flash
+  claude: opus
 reviewer_effort: high
 ---
 
 # Cross-AI Plan Review — Phase 5
 
-## Antigravity Review (gemini-3.1-pro, high)
+## Antigravity Review (gemini-3.5-flash, high)
 
-> Review quality note: This reviewer returned a non-empty review covering all six plans, but did not include the requested concrete `file:line` citations. Treat its findings as high-level review observations and verify them against source during planning.
+# Phase 5 Implementation Plan Review: State Machine & Workflow Events
 
-# Cross-AI Plan Review: Phase 5 - State Machine & Workflow Events
-
-## Overview
-The set of implementation plans (05-01 through 05-06) is exceptionally well-structured, logically ordered, and meticulously aligned with the context, architectural decisions (D-01 through D-31), and the specific repository rules (e.g., `AGENTS.md`). The formalization of the pipeline into a Rust state machine (`WorkflowRunner` and `Node` trait) and the adaptation of the Go gateway for Server-Sent Events (SSE) and decoupled PostgreSQL persistence are handled with high precision.
-
-## Strengths & Completeness
-- **Architectural Boundary Adherence**: The plans strictly respect the control-plane/data-plane divide (D-26). Go retains ownership of PostgreSQL and HTTP transport, while Rust retains vector/graph processing and RAG orchestration without creating cross-boundary database connections.
-- **Workflow Correctness**: `05-02-PLAN.md` correctly supersedes the original design document by enforcing D-06 (`ExtractGraphContext` runs *before* `RetrieveHybrid`). The zero-evidence early return (D-03) is preserved cleanly.
-- **Resilience and Retries**: `05-03-PLAN.md` accurately scopes generation retries to exactly one replay, handling transient errors without applying arbitrary fallbacks (D-12, D-13, D-14).
-- **Timeout Fixes**: The plans successfully recognize and mitigate the chi global timeout issue (Pitfall #1) in `05-06-PLAN.md`, isolating the `/rag/query` route and adding sub-second timeout config overrides for deterministic Tier 1 testing.
-- **Decoupled Checkpointing**: The asynchronous, bounded FIFO drain checkpoint mechanism (`CheckpointHandoff`) designed across `05-01` and `05-05` avoids coupling heavy PostgreSQL writes to the critical path of the SSE client response (D-27).
-- **Rule Adherence (`AGENTS.md`)**: `05-05-PLAN.md` strictly adheres to the unique per-test schema requirement (`newWorkflowCheckpointsIsolatedPostgres`), dynamically scoping the `search_path`, and applying `t.Fatalf` on query setup errors to prevent false-passing snapshot counts.
-
-## Risks & Minor Recommendations
-
-1. **Timeout vs. Cancellation Conflation (Pitfall Avoidance)**
-   While `05-01` and `05-04` correctly map cancellation scenarios, ensure the `tokio::select!` block in `WorkflowRunner` explicitly differentiates between a completed `tokio::time::timeout` and the cancellation token. A generic timeout error must never be conflated with a client-initiated cancellation; the exact `NodeErrorKind` mappings (Timeout vs. Cancelled) must remain distinct.
-
-2. **Graph Context Degradation**
-   `05-02-PLAN.md` successfully captures the need for `ExtractGraphContextNode` to own its *inner* timeout race. Because `attempt_graph_augmentation` is natively infallible for logical failures, ensuring the inner timeout degrades silently (empty `graph_context`) instead of escalating to a hard `NodeFailed` correctly satisfies D-09. The implementation should be scrutinized during execution to verify the outer `tokio::select!` doesn't preempt the inner node-degrade timeout.
-
-3. **Cross-Variant Fusion Complexity**
-   In `05-02-PLAN.md`, the plan dictates running `fuse_candidates` per reformulation variant and then performing a cross-variant RRF pass (`fuse_across_variants`). While currently inert due to the `NoOpQueryReformulator`, ensure the new `fuse_across_variants` strictly bounds deduplicated memory consumption (via chunk identity) so it doesn't open a resource exhaustion vector when real HyDE/Multi-Query expansion lands in Phase 999.3.
-
-4. **SSE Event Stream Drops**
-   `05-06-PLAN.md` handles SSE transport framing. Keep in mind that SSE lacks a standard mid-stream error frame. The gateway must immediately close the connection on a gRPC `Recv()` transport failure without writing malformed data or a partial JSON frame.
-
-## Final Verdict
-**Approved.** The execution wave strategy (1 through 5) is safe and correctly unblocks dependencies sequentially. The plans demonstrate an advanced understanding of the codebase's abstractions, the `AGENTS.md` test isolation constraints, and the complex asynchronous Rust-to-Go gRPC boundaries. No critical structural or logical gaps were identified.
+This document provides a structured review of the proposed execution plans ([05-01-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-01-PLAN.md), [05-06-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-06-PLAN.md), [05-02-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-02-PLAN.md), [05-03-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-03-PLAN.md), [05-04-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-04-PLAN.md), and [05-05-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-05-PLAN.md)) designed to formalize Lancet's RAG orchestration into a Rust state machine with Go SSE streaming and PostgreSQL checkpoint persistence.
 
 ---
 
-## Claude Review (sonnet, high)
-
-The requested Claude lane completed with the recognized sonnet model at high effort. The full source-grounded review follows.
-
-# Independent Review: Phase 5 Plans (05-01 through 05-06) — Lancet "State Machine & Workflow Events"
-
-## Context
-
-The user requested a cross-AI independent review of six execution plans for Phase 5 of the Lancet project (formalizing the `QueryRAG` pipeline into a Rust state machine with streaming events, PostgreSQL checkpoints, and a Go SSE gateway). This is a review/analysis task, not an implementation task — no code changes are proposed. The task explicitly requires verifying every plan claim against the actual repository source rather than trusting the plan text, so this review is built entirely from direct `Read`/`Grep`/`Bash` verification against `D:\Repos\lancet` (via two parallel read-only exploration passes plus targeted follow-up checks), not from re-stating the plans' own claims.
-
-One limitation: `05-AI-SPEC.md` (552 lines, confirmed to exist at `.planning/phases/05-state-machine-workflow-events/05-AI-SPEC.md`) is referenced by all six plans as the authoritative source for the Rust `Node`/`WorkflowRunner` pattern, but its content was not provided in the review request and was not read for this pass. Claims that defer to it are flagged as unverified rather than asserted true or false.
+## 1. Summary
+The proposed implementation plans present a highly complete, secure, and structurally sound approach to formalizing Lancet's linear RAG pipeline into a typed Rust state machine. The plans leverage a clever wave-based transition system—using a temporary Rust-only Buf compilation configuration (`buf.gen.yaml` with `clean: false`) in Wave 1 and restoring full Go/Rust coordination in Wave 2—to prevent intermediate build failures during the unary-to-streaming API migration. The architecture enforces clean separation of concerns, keeping `ReceiveQuery` validation synchronous before stream creation, and isolates storage operations via injectable ports (`GraphQueryPort`, `DenseRetrievalPort`, `Bm25RetrievalPort`) to allow for a deterministic Tier 1 test matrix. The design is optimized for resilience, addressing key asynchronous pitfalls through cooperative prompt-packing yield loops, a deterministic size-ladder truncation strategy for Postgres-backed checkpoints, and a non-blocking background queue for database writes.
 
 ---
 
-## Cross-Cutting Finding (applies to 05-01 and 05-06 jointly)
-
-**`buf.gen.yaml` drift window — the single biggest structural risk in this plan set.**
-
-Confirmed via direct read, the repo's checked-in `buf.gen.yaml` is a **single unified template** covering both runtimes:
-
-```yaml
-version: v2
-clean: true
-plugins:
-  - remote: buf.build/protocolbuffers/go:v1.31.0
-    out: gateway/proto
-  - remote: buf.build/grpc/go:v1.3.0
-    out: gateway/proto
-  - remote: buf.build/community/neoeinstein-prost:v0.5.0
-    out: engine/src/pb
-  - remote: buf.build/community/neoeinstein-tonic:v0.5.0
-    out: engine/src/pb
-```
-
-`05-01-PLAN.md` Task 1 deliberately avoids running this template, instead running a **hand-rolled inline Rust-only template** in its `<verify>` block (`buf generate --template '{"version":"v2","plugins":[...engine/src/pb only...]}'`) so that `gateway/proto/*.pb.go` is left untouched and `gateway/main.go`'s existing unary `engine.QueryRAG` interface (confirmed `gateway/main.go:207`) keeps compiling.
-
-This is the *correct* tactical choice for 05-01 in isolation, but it means that **between 05-01 landing and 05-06 landing**, the repository is in a state where:
-- `proto/lancet/v1/lancet.proto` declares `QueryRAG` as server-streaming.
-- The checked-in `buf.gen.yaml` — the standard, documented codegen command for this repo — would regenerate `gateway/proto/*.pb.go` with a **streaming** Go client if run as-is.
-- `gateway/main.go` (confirmed unchanged until 05-06) still implements the **unary** `engine` interface (`main.go:207`, `grpcEngine.QueryRAG` at `main.go:280-287`).
-
-Any developer, CI job, or parallel branch that runs the standard `buf generate` command during this window breaks the Go build. Neither plan documents this hazard, adds a guard, or notes that 05-01→05-06 must land as an effectively-atomic unit with no intervening standard codegen runs. This is worth flagging explicitly before execution, even though it doesn't block correctness of either plan's own file surface.
+## 2. Strengths
+* **Safe gRPC/Protobuf Transition Path:** The use of `clean: false` and temporary Rust-only plugins in [buf.gen.yaml](file:///D:/Repos/lancet/buf.gen.yaml) in `05-01` ensures the Go gateway continues to compile using the old unary client during Rust refactoring, avoiding build breaks.
+* **Synchronous Input Validation (D-04):** Keeping input validation and correlation/session ID minting synchronous before stream creation prevents allocation of stream resources for malformed requests.
+* **Cooperative Prompt Packing:** Defining `PROMPT_YIELD_GRANULARITY` to yield execution control (`tokio::task::yield_now()`) after processing individual evidence blocks prevents heavy prompt tokenize/scoring loops from blocking tokio executor threads.
+* **Deterministic Checkpoint Truncation (D-28):** The plan implements a strict size-limiting ladder (262,144-byte cap) that degrades fields progressively (assembled prompt -> evidence text -> candidate contents -> minimal fallback marker) to protect Postgres writes without stalling or failing RAG queries.
+* **Non-Blocking Persistence (D-26/D-27):** Checkpoint snapshots are persisted in Go via a background worker using a bounded dispatcher (`checkpointPrimaryCapacity = 1`, `checkpointOverflowCapacity = 5`), ensuring database slowness never backpressures the response stream.
+* **Injectable Port Boundaries:** The introduction of explicit traits mockable in unit/integration tests solves the lack of mockability for LanceDB and BM25 index lookups.
+* **Integration Test Concurrency Safety:** The Postgres tests adhere strictly to the `AGENTS.md` review convention, utilizing isolated per-test schemas, dynamically binding `search_path`, and using `t.Fatalf` to fail immediately on query errors.
 
 ---
 
-## 05-01-PLAN.md — Tracer: streaming wire contract, one-node runner, checkpoint channel
-
-**Summary:** A well-grounded tracer plan. Every load-bearing citation (`query_rag` at `main.rs:1346`, `d1_status` at `main.rs:877-898` setting all three trailer keys, `LancetServiceImpl` fields at `main.rs:864-875` as `Arc<dyn Trait>`) checks out exactly against source. The plan correctly identifies that no server-streaming gRPC precedent exists in this codebase and correctly scopes itself to avoid breaking the Go build mid-wave.
-
-**Strengths:**
-- `main.rs:1346` (`query_rag`), `main.rs:877-898` (`d1_status`, confirmed sets `x-lancet-session-id`/`-correlation-id`/`-error-kind` trailer metadata) — both exact.
-- `LancetServiceImpl` (not "RagEngineService" as some phase docs call it) confirmed at `main.rs:864-875` with `generator: Arc<dyn generation::Generator>`, `embedder: Arc<dyn EmbeddingProvider>`, `reranker: Arc<dyn rerank::Reranker>` — the exact DI shape the plan's `Node`/port pattern needs to mirror.
-- `FakeGenerator` (`generation/mod.rs:467-512`, `call_count: AtomicUsize` + `responses: Mutex<Vec<Result<...>>>` + `with_responses`) is correctly identified as reusable — confirmed already used 20+ times in `engine/src/tests.rs` (e.g. `tests.rs:2709-2712` for two-response retry scenarios), so this isn't a speculative reuse claim.
-- Correctly avoids touching `gateway/proto/*.pb.go`, keeping the Go build green through this plan alone (verified `gateway/main.go:207`/`280-287` untouched by 05-01's file list).
-
-**Concerns:**
-- **HIGH** — The `buf.gen.yaml` drift window described above. 05-01 introduces the hazard (05-06 later closes it), and nothing in 05-01 documents or guards against it.
-- **MEDIUM** — `attempt_graph_augmentation` (`main.rs:1056-1236`, confirmed by direct read — `pub(crate) async fn attempt_graph_augmentation(database: &DatabaseManager, query_embedding: &[f32], settings: &GraphSettings) -> GraphAugmentationOutcome`) spans ~180 lines, substantially more than the ~1046-1080 range cited in the phase's own RESEARCH/PATTERNS docs. Doesn't block 05-01 itself, but is inherited context for 05-02.
-- **MEDIUM** — The `CheckpointHandoff`'s "owned FIFO overflow sized to the maximum checkpoint boundaries for the fixed workflow" is a reasonable bound (≤5 nodes ⇒ ≤5 checkpoint records per query) but the plan never pins this as an explicit number anywhere in its must_haves or action text, leaving capacity sizing to executor judgment.
-- **LOW** — Task 2's verify step gates on `--list` output containing the substring `workflow`, which confirms *some* test matched the filter but not that the specific new tests actually ran under that name.
-
-**Suggestions:**
-- Explicitly note the `buf.gen.yaml` hazard in the plan (or land 05-01+05-06 atomically) so a parallel branch/CI run can't silently break the Go build.
-- Pin the `CheckpointHandoff` overflow capacity to a concrete number/formula in the plan text.
-
-**Risk Assessment: MEDIUM** — sound design, but the undocumented `buf.gen.yaml` drift window is a real, currently-unmitigated build-breakage risk for anyone touching the repo mid-wave.
+## 3. Concerns
+* **Global Middleware Timeout Conflict (Severity: HIGH):**
+  * *Context:* [gateway/main.go:464](file:///D:/Repos/lancet/gateway/main.go#L464) applies a global `middleware.Timeout(60*time.Second)` to all routes.
+  * *Risk:* The sequential worst-case timeout for the state machine is `5s (Reformulate) + 10s (Retrieve) + 15s (Graph) + 2s (Prompt) + 65s (Generate with 1 retry) = 97s`. The Go gateway middleware will terminate the HTTP request at exactly 60 seconds, canceling the gRPC context and aborting the Rust engine before a slow-but-valid query with retries can succeed. While the plans state the route is outside the timeout, the exact isolation setup must be handled carefully.
+* **Rate-Limit Failures on Non-Backoff Retries (Severity: MEDIUM):**
+  * *Context:* Decision `D-12` specifies exactly 1 retry with no backoff delay, replaying the exact same request.
+  * *Risk:* If the first attempt failed due to an OpenRouter rate limit (HTTP 429) or temporary provider overload (HTTP 503), retrying immediately without delay has a high probability of failing again, wasting the query's single retry attempt.
+* **Out-of-Order Checkpoint Traversal Sorting (Severity: LOW):**
+  * *Context:* Checkpoint rows in [gateway/db/schema.hcl](file:///D:/Repos/lancet/gateway/db/schema.hcl) are indexed and sorted via a non-unique composite index on `(trace_id, created_at)`.
+  * *Risk:* Relying solely on `created_at` timestamp precision for chronological ordering of snapshots (e.g., Reformulate -> Graph -> Retrieve) can lead to out-of-order logs if multiple checkpoints are persisted in sub-millisecond proximity or concurrent background workers write them out of order.
+* **Database Connection Leaks on Schema Drop (Severity: LOW):**
+  * *Context:* Per-test schemas are dynamically created and dropped in Go integration tests.
+  * *Risk:* If a test panics or database connections inside the active pool are not fully closed prior to dropping the schema, table descriptor leaks or active lock errors might occur on the Postgres instance.
 
 ---
 
-## 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 order, cross-variant RRF
-
-**Summary:** Correctly reuses existing, verified retrieval/graph primitives (`Bm25Index` at `retrieval/bm25.rs:114`, `DenseRetriever` at `retrieval/dense.rs:25`, `attempt_graph_augmentation`) and grounds the D-06 graph-before-retrieval order in a real, confirmed code invariant rather than an assumption. The cross-variant RRF design is the plan's weakest point — technically sound but architecturally novel and effectively untested for its real target case.
-
-**Strengths:**
-- D-06's order is not just asserted but empirically confirmed: embed (`main.rs:1395-1424`) → graph (`main.rs:1426-1431`) → dense retrieval (`main.rs:1450-1476`), exactly matching the plan's claimed sequence and line numbers.
-- `fuse_candidates`'s real signature (`fusion.rs:58-62`, `fn fuse_candidates(vector_candidates: Vec<Candidate>, bm25_candidates: Vec<Candidate>, settings: &RetrievalSettings) -> Result<Vec<FusedCandidate>, RetrievalError>`) is confirmed single-variant/single-pass — the plan's premise that cross-variant merging is genuinely new work (not duplicating an existing capability) holds.
-- Confirmed no internal timeout inside `attempt_graph_augmentation` (grep for `tokio::time::timeout`/`Duration::from_sec` inside its body returns nothing), correctly motivating the plan's requirement that `ExtractGraphContextNode` own its own inner timeout race rather than relying solely on the runner's outer one.
-- The `WorkflowDependencies` DI struct is explicitly framed as closing a real review-flagged gap ("the service-level dependency-injection correction for the Codex HIGH review finding") — appropriate given graph/dense/BM25 today have no injectable seam (only `Generator`/`EmbeddingProvider` do, confirmed via `LancetServiceImpl`'s fields).
-
-**Concerns:**
-- **MEDIUM** — The cross-variant fusion design (`fuse_candidates` once per variant, then a second RRF pass over each variant's *already rank-collapsed* `FusedCandidate` list, "sum deterministic `1/(rrf_k + rank)` contributions across variant-local fused ranks") is RRF-of-RRF: the second pass only sees each variant's already-compressed rank, not the underlying dense/BM25 scores. This is a defensible but non-standard composition invented for this plan, not an established retrieval pattern. Because the NoOp reformulator makes this dead code in v1 (single variant only), the risk is inert today but genuinely untested for real multi-variant behavior — the plan's "two-variant exact scores" unit test proves the *arithmetic* is deterministic, not that the retrieval-quality tradeoff of discarding per-source score magnitude twice is sound.
-- **MEDIUM** — `attempt_graph_augmentation`'s real complexity (180 lines, confirmed) is understated by the phase's own upstream citations; the plan's Task 1 action text doesn't restate this, risking executor underestimation of the wrapping effort (entities-table access, embedding-based traversal, Cypher pattern matching per Phase 04.1 all live inside this function).
-- **LOW** — The plan doesn't explicitly state that `Arc<dyn GraphQueryPort>`'s production adapter must own a *cloned* `DatabaseManager` (confirmed `#[derive(Clone)]` at `db/mod.rs:8-11`) rather than borrow one, which the `'static` bound implied by mirroring `Generator`'s `Arc<dyn Trait>` shape requires — likely obvious to a competent executor, but not stated.
-
-**Suggestions:**
-- Note `attempt_graph_augmentation`'s real span (~1056-1236) in the plan so the wrapping task isn't underscoped.
-- Require at least one test with genuinely different (not just distinguishably-scored) per-variant rankings to validate the cross-variant RRF formula produces retrieval-sane output, ahead of 999.3 depending on it.
-
-**Risk Assessment: MEDIUM** — architecture is sound and well-grounded in real code, but the double-RRF design is a novel, untested-at-scale invention, and the graph-node wrapping is more involved than the phase's own upstream docs suggest.
+## 4. Suggestions
+* **Bypass Chi Timeout via Sub-Routing:** Explicitly isolate `/rag/query` from the global timeout middleware in [gateway/main.go](file:///D:/Repos/lancet/gateway/main.go) by restructuring the router initialization:
+  ```go
+  r.Group(func(r chi.Router) {
+      r.Use(middleware.Timeout(60*time.Second))
+      r.Post("/documents", a.createDocument)
+      r.Get("/documents/{id}", a.getDocument)
+  })
+  r.Post("/rag/query", a.queryRAG) // Bypasses the 60s timeout
+  ```
+* **Add Jittered Backoff for Provider Errors:** Modify the retry logic in `GenerateAnswerNode` to wait a minimal, configurable baseline duration (e.g., 250ms–500ms) or parse standard `Retry-After` HTTP headers from provider responses before starting the second LLM generation call.
+* **Introduce Step Sequence Ordinals:** Add an explicit `step_number` or `sequence_ordinal` integer column to the `workflow_checkpoints` table. This guarantees correct step-by-step sorting when querying database rows, regardless of timestamp resolution or thread write timing.
+* **Ensure Explicit Connection Pool Closure in Tests:** In the integration test schema cleanup helper, ensure that `dbPool.Close()` is called to drain and sever all active pool connections before executing the `DROP SCHEMA <test_schema> CASCADE` statement.
 
 ---
 
-## 05-03-PLAN.md — AssemblePrompt + GenerateAnswer nodes, retry, full snapshots
-
-**Summary:** Correctly separates the new cooperative-cancellation prompt path from the existing, Phase-3-locked synchronous `pack_evidence_and_graph_prompt` (confirmed at `prompt.rs:255`) rather than mutating it in place, and correctly distinguishes the per-attempt provider timeout from a new node-level budget. The plan's two largest pieces of new, must-be-correct logic — cooperative cancellation granularity and the checkpoint size-truncation ladder — are both underspecified relative to their complexity.
-
-**Strengths:**
-- `pack_evidence_and_graph_prompt` confirmed as a synchronous function at `prompt.rs:255`; introducing a new async `_cooperative` sibling rather than rewriting it in place is a low-risk way to add yield/cancellation points without disturbing Phase 3's locked semantics (which the plan explicitly requires to stay unchanged).
-- Correctly distinguishes `GENERATION_TIMEOUT` (`openrouter.rs:24`, confirmed `Duration::from_secs(30)`, wrapped per-call at `openrouter.rs:626`) from the new node-level outer budget — this is a previously-flagged real bug risk (reusing the per-attempt constant as the node's wall-clock budget) that the plan correctly avoids.
-- The retryable/non-retryable `GenerationErrorKind` split is grounded in the actual seven confirmed variants (`generation/mod.rs:406-414`: `InvalidRequest, SupportedParameters, ProviderError, SchemaValidation, Timeout, Cancelled, SessionCorrelation`), with no invented categories.
-
-**Concerns:**
-- **HIGH** — "Cooperative prompt assembly" (checking a `CancellationToken` and yielding between bounded work units inside the candidate/render/tokenization loop, explicitly rejecting a bare non-preemptible `spawn_blocking`) is the right *design* call, but the plan gives no concrete yield granularity (e.g., "once per candidate" vs. "once per N tokens"). Too coarse a yield interval means the node isn't actually preemptible before its timeout fires (defeating the whole point of this task); too fine adds scheduling overhead. This is left entirely to executor judgment despite being the crux of the task's stated purpose.
-- **MEDIUM** — The checkpoint size-truncation ladder (full DTO → replace prompt/evidence/graph-fact text with markers → replace candidate content/`encoded_blocks` → fixed `CheckpointFallbackV1` on any serialization error, asserted ≤262144 bytes) is a multi-stage must-never-fail contract. The acceptance criteria cover "oversized" and "NaN/Infinity-score" fixtures but not the case where a *single* field (e.g. `assembled_prompt` alone) already exceeds the budget before any candidate-level truncation runs — a plausible real scenario given large evidence packing — which could silently over-trigger the Fallback path without a test catching it.
-
-**Suggestions:**
-- Specify a concrete yield granularity for the cooperative prompt-packing loop (e.g., yield once per evidence candidate, bounded by existing `RetrievalSettings` limits).
-- Add a fixture where a single oversized field alone exceeds the 256 KiB budget, to prove the size ladder degrades correctly at that stage too, not just in aggregate.
-
-**Risk Assessment: MEDIUM** — correct design intent throughout, but the two pieces of genuinely new, must-be-infallible logic (cooperative cancellation, checkpoint size ladder) are underspecified relative to how much can silently go subtly wrong in each.
+## 5. Risk Assessment
+* **Overall Risk Level:** **LOW-MEDIUM**
+* **Justification:** The planning documents show high architectural maturity, providing explicit details on memory bounds, thread-yielding safety, and codegen isolation. Incorporating dependency injection for all data-plane layers and locking in a comprehensive test suite of 24 deterministic scenarios guarantees high test coverage. The risk is downgraded to Low-Medium because the only major points of friction—the global gateway timeout conflict and immediate provider retries—can be easily mitigated during execution.
 
 ---
 
-## 05-04-PLAN.md — Tier 1 deterministic test harness (Wave 5, depends on 05-03)
+## Claude Review (opus, high)
 
-**Summary:** The most soundly-grounded plan of the six. It builds directly on already-proven, already-heavily-used fixture patterns (`configured_service` at `tests.rs:713-739`, `FakeGenerator::with_responses` already used 20+ times) rather than inventing new test infrastructure, and its explicit prohibition against testing a "disconnected toy runner" targets a real, previously-identified failure mode.
+# Cross-AI Plan Review — Phase 5 (05-01 … 05-06)
 
-**Strengths:**
-- `configured_service` (`tests.rs:713-739`) confirmed to already build a `LancetServiceImpl` from injected `Arc<dyn EmbeddingProvider>`/`Arc<dyn generation::Generator>`/`Arc<dyn rerank::Reranker>` — extending this exact factory to also populate `WorkflowDependencies`, rather than building a parallel harness, is the correct reuse.
-- `FakeGenerator::with_responses` confirmed already exercised for multi-call and failure-injection scenarios (`tests.rs:2709-2712`, `tests.rs:3109`) — the plan's retry/cancellation-gate tests extend a pattern with real prior mileage in this codebase, not a speculative one.
-- The prohibition on "a fake path that bypasses `LancetServiceImpl` dependency construction" is a concrete, testable guard against the single most common way this kind of test suite silently loses coverage.
-
-**Concerns:**
-- **MEDIUM** — `engine/src/tests.rs` is confirmed to already be 6,870 lines / 244KB. This plan adds substantial new fixtures (multiple new `Fake*` port types, `RecordingCheckpointSink`, ~15 named scenarios) into the same already-enormous single file. Not a correctness risk, but a navigability/merge-conflict risk the plan doesn't address (e.g. via a `workflow`-scoped test submodule).
-- **LOW** — The instruction to wrap `Notify::notified()` rendezvous waits in bounded timeouts *and* give spawned fakes an abort-on-drop guard is sound anti-hang advice, but the plan doesn't state that the guard must be explicitly disarmed after a successful join — if missed, a `Drop`-triggered abort racing against an already-successful task completion could produce noisy (if harmless) abort-on-drop log output on green runs.
-
-**Suggestions:**
-- Consider a `engine/src/workflow/tests.rs`-style submodule for new Phase 5 fixtures rather than continuing to grow the single 6,800-line file (non-blocking, hygiene only).
-- State explicitly that abort-handle guards must be disarmed on the success path before/after the join.
-
-**Risk Assessment: LOW** — the strongest plan in the set; its risks are code-organization hygiene, not functional correctness.
+**Basis:** All findings below were verified by reading `D:\Repos\lancet` directly (proto, engine, gateway, generated stubs, tests, config, sqlc/atlas). Line citations are from the current working tree at `f68ce15`.
 
 ---
 
-## 05-05-PLAN.md — PostgreSQL checkpoint persistence (Wave 5, depends on 05-03 and 05-06)
+## 1. Summary
 
-**Summary:** Correctly anticipates and mitigates a real, easy-to-miss gap this review independently found: `gateway/sqlc.yaml` and `gateway/atlas.hcl` point at two *separate* schema files (`db/schema.sql` vs. `db/schema.hcl`) with no automated sync tooling in the repo. The plan explicitly requires mirroring the new table into both. Its main open risk is coordination with 05-04 over a shared concurrency contract, both landing in the same nominally-parallel wave.
+This is a strong, unusually well-evidenced plan set. Almost every load-bearing citation checks out against source — `query_rag` at `engine/src/main.rs:1346`, `d1_status` at `:877`, `attempt_graph_augmentation` at `:1056-1236` (confirmed infallible-by-construction, no internal timeout), `fuse_candidates` at `engine/src/retrieval/fusion.rs:58`, the global chi timeout at `gateway/main.go:464`, the dual schema source (`gateway/sqlc.yaml` → `db/schema.sql` vs. `gateway/atlas.hcl` → `db/schema.hcl`), and all 21 Rust test names in 05-01's migration list. The wave ordering in `.planning/ROADMAP.md:327-349` now matches every `depends_on`, which closes the prior review's 05-04/05-05 coordination gap.
 
-**Strengths:**
-- Confirmed the dual-schema-source gap is real (`gateway/sqlc.yaml` → `db/schema.sql`; `gateway/atlas.hcl` → `db/schema.hcl`; no `migrations/`, `Makefile`, or `justfile` enforcing parity) — the plan's Task 1 action text explicitly requires updating both files, correctly closing a gap that would otherwise silently desync generated Go types from the Atlas-applied DB schema.
-- Confirmed `gateway/db/models.go`/`query.sql.go` are genuinely sqlc-generated (header: `sqlc v1.31.1`) with no `WorkflowCheckpoint` type or `jsonb` column precedent anywhere today — the plan's explicit requirement that `models.go` contain the generated model (framed as correcting "the review's missing-model-file finding") targets a real, confirmed gap.
-- Correctly avoids extending `newD04IsolatedPostgres` (confirmed at `main_test.go:1635-1680`, which only clones `documents` and `document_reconciliation_intents` at lines 1645-1646) — building a dedicated `newWorkflowCheckpointsIsolatedPostgres` instead keeps that helper's scope from silently growing to cover an unrelated table.
-- The blocking `checkpoint:decision` gate before schema/codegen changes matches the plan's own `reversibility="one-way"` framing for a durable schema addition — appropriate use of a human checkpoint.
-
-**Concerns:**
-- **MEDIUM** — 05-05 (Wave 5) and 05-04 (also Wave 5, "parallel" per ROADMAP.md) both depend on the `CheckpointHandoff`/`CheckpointDispatcher` Full/Closed/Pending contract established in 05-01/05-06, and both build their own test coverage against it (05-04's `TestWorkflowCheckpointPersistenceUnderBackpressure` on the Rust side, 05-05's Go-side backpressure tests) without a stated dependency on each other. If an executor for either plan resolves an ambiguous edge case in that shared contract differently, both plans' tests could pass in isolation while asserting subtly inconsistent semantics — nothing in either plan states that both must treat 05-01/05-06's contract as the single source of truth rather than independently re-deriving compatible-but-not-identical behavior.
-- **LOW** — Task 1's blocking verify command runs `docker compose up -d db` unconditionally; a developer with a pre-existing local Postgres already bound to `127.0.0.1:5432` (the exact binding confirmed in `docker-compose.yml`) could get a confusing silent-connect-to-wrong-instance failure mode rather than a clear error. Not something the plan needs to solve, but a one-line troubleshooting note would help.
-
-**Suggestions:**
-- Add a cross-reference note in both 05-04 and 05-05 stating that the `CheckpointHandoff`/`Pending`/overflow semantics from 05-01/05-06 are the single source of truth for both plans' tests.
-
-**Risk Assessment: MEDIUM** — very well-grounded in real repo state (the dual-schema-source and missing-generated-model risks are both correctly caught), but the same-wave, no-stated-dependency relationship with 05-04 over a shared concurrency contract is an unaddressed coordination risk.
+Three findings, however, are load-bearing enough to change execution. **(a)** 05-01's own verification gate cannot pass: an existing, unskipped Go test spawns the real Rust engine and calls it through the real *unary* Go client, so the moment 05-01 flips `QueryRAG` to server-streaming, `go test ./...` in `gateway` fails at runtime — the Rust-only `buf.gen.yaml` guard protects compile-time only. **(b)** The locked `generation_node_timeout_ms = 30000` collapses the node budget onto the pre-existing 30s *per-attempt* provider timeout, which is precisely the FAIL condition written into this phase's own `05-AI-SPEC.md:412` — D-12's retry becomes unreachable for the provider-timeout case it was written for. **(c)** The "pre-stream trailer identity" contract the plans preserve does not exist in the code as described, and after this phase no production path emits those trailers at all.
 
 ---
 
-## 05-06-PLAN.md — Gateway SSE adapter, timeout config (Wave 2, depends on 05-01)
+## 2. Strengths (verified, not restated from the plans)
 
-**Summary:** Correctly identifies and fixes the two most dangerous pre-existing Go-side gaps: the blanket 60-second `chi` timeout (confirmed to apply to `/rag/query` with no existing override) and the complete absence of any SSE/streaming-HTTP precedent in this codebase. Shares the `buf.gen.yaml` drift-window risk described above, since 05-06 is the plan that must close it.
-
-**Strengths:**
-- Confirmed `gateway/main.go:464`'s `r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer, middleware.Timeout(60*time.Second))` applies globally, including to `Post("/rag/query", a.queryRAG)` at line 468, with no existing per-route override — the plan's requirement to exempt `/rag/query` (without a fixed replacement) is the correct fix given the aggregate worst-case node-timeout budget (5+10+15+2+65s ≈ 97s) already exceeds 60s.
-- Confirmed zero existing SSE precedent (`text/event-stream`, `http.Flusher`, `http.NewResponseController` all absent from `gateway/`) and zero existing server-streaming gRPC precedent (`IngestDocument` is the only streaming RPC and is client-streaming only, confirmed `lancet.proto:9`, `lancet_grpc.pb.go:180-200/286`) — the plan correctly treats this as genuinely new infrastructure and budgets a dedicated wave for it rather than tucking it into the Rust-side work.
-- The "first-frame prefetch" design (calling `Recv()` once before committing SSE headers/status 200) correctly accounts for a real, non-obvious gRPC-Go semantics gap: a server-streaming call that opens successfully can still fail on its first `Recv()` if the server errors before sending any message, so headers can't safely commit until one frame is confirmed.
-- `trailerError`'s forwarding path (confirmed via a structural interface check `err.(interface{ Trailer() metadata.MD })` at `main.go:693`, not a concrete-type assertion) is correctly preserved as the pre-stream-error path distinct from the new in-band event/checkpoint path.
-
-**Concerns:**
-- **HIGH** — Task 1 explicitly runs "the repository's full `buf generate`" using the confirmed unified `buf.gen.yaml` template. This is exactly the command that, if run by anyone *before* 05-06 (i.e., during the 05-01→05-06 gap), would break the Go build. 05-06 is the plan that legitimately closes the gap, but nothing enforces that it runs immediately after 05-01 with zero intervening standard-codegen runs by any other actor (developer, CI, parallel branch).
-- **MEDIUM** — The `CheckpointDispatcher`'s in-memory default sink (built in 05-06, ahead of 05-05's PostgreSQL sink one wave later) has no stated ownership after 05-05 lands — should it remain available as a test double, or be removed? 05-05's must_haves don't address this either. Likely resolves fine in practice (interface persists, only the default implementation changes) but is not explicitly stated in either plan.
-- **LOW** — The "no fixed replacement gateway deadline" acceptance criterion is verifiable by code inspection (absence of a chi middleware wrapper) but the plan doesn't check whether `gateway/main.go`'s `http.Server` (if constructed explicitly) sets its own `ReadTimeout`/`WriteTimeout`/`IdleTimeout`, which could reintroduce the same problem at a different layer even after the chi-level fix lands.
-
-**Suggestions:**
-- Treat 05-01+05-06 as an effectively-atomic landing unit, or add an explicit repo-level guard/note against running the standard `buf generate` in between.
-- Verify (or have the plan verify) whether `gateway/main.go` sets explicit `http.Server` timeout fields that could independently cap `/rag/query`.
-
-**Risk Assessment: MEDIUM-HIGH** — correctly targets the two most dangerous pre-existing Go-side gaps, but is one half of the `buf.gen.yaml` drift-window risk, and that risk is only fully closed once both 05-01 and 05-06 have landed with nothing running standard codegen in between.
+- **05-01's Rust test-migration list is complete and accurate.** All 21 named test functions (`query_rag_happy_path_service`, `configured_evidence_token_budget_is_exact`, `graph_augmentation_attempted_and_failed_is_observable_end_to_end`, the five `query_rag_fail_closed_embedding_*`, etc.) exist exactly once in `engine/src/tests.rs`; there are 29 `.query_rag(` call sites, matching the plan's ~27 named tests plus the three calls inside `service_index_generation_is_opaque_and_stable`. This is not a speculative list.
+- **The `futures::StreamExt` collision warning is real and non-obvious.** `engine/src/main.rs:14` already does `use futures::{future::BoxFuture, StreamExt, TryStreamExt};` — 05-01's instruction to alias `tokio_stream::StreamExt as TokioStreamExt` prevents a genuine ambiguity error.
+- **The Tokio feature claim is correct.** `engine/Cargo.toml:8` declares only `features = ["rt-multi-thread", "macros"]` while the code already uses `tokio::sync::RwLock`/`mpsc` transitively; adding `time`/`sync` explicitly is warranted, and `tokio-util`/`tokio-stream` are genuinely absent.
+- **05-06's config-contract extension targets the real test.** `engine/src/tests.rs:138-216` (`config_example_matches_effective_rag_contract`) does exactly what the plan describes: a `REQUIRED_EFFECTIVE_RAG_KEYS`/`ANNOTATIONS` pair, a section allowlist at `:180` (`"engine.retrieval" | "engine.retrieval.bm25" | "engine.graph" | "openrouter"`), an adjacent-comment marker assertion, and an exact set equality. "Extend the arrays, allowlist, and annotation checks" is a precise instruction, not a hand-wave.
+- **05-06's negative greps are well-aimed.** `queryRAG\s+func\(...\)` matches `gateway/main_test.go:647` (two spaces). The `json\.Unmarshal\(recorder\.Body\.Bytes\(\),\s*&(?:res|resp|response)` guard catches exactly the three `/rag/query` success decodes (`:737`, `:820`, `:2168`) and correctly does *not* false-positive on `:2304` (`&parsed`, inside `TestWriteJSONEncodeFailureReturns500`).
+- **`newHTTPServer` assertion is grounded.** `gateway/main.go:866-873` sets `ReadTimeout: 60s` and `ReadHeaderTimeout: 10s` with no `WriteTimeout`/`IdleTimeout` — so `TestHTTPServerKeepsReadBoundsWithoutResponseTimeout` checks real fields, and the analysis is correct (Go's `ReadTimeout` bounds request reads, not response writes, so it does not cap SSE).
+- **The graph inner-timeout resolution is correctly motivated.** `attempt_graph_augmentation` (`engine/src/main.rs:1056-1236`) returns `GraphAugmentationOutcome` (`:1046-1054`) and never `Err`, and contains no `tokio::time::timeout` — so relying only on the runner's outer race genuinely would make the timeout sub-case behave differently from the logical-failure sub-case, contradicting D-09. 05-02's inner-deadline requirement is the right fix.
+- **Generated-stub grep will work.** `gateway/proto/lancet/v1/lancet_grpc.pb.go:1-4` shows `protoc-gen-go-grpc v1.3.0` (non-generic style, e.g. `Recv() (*IngestDocumentRequest, error)` at `:186`), so 05-06's `Recv\(\) \(\*WorkflowEvent, error\)` assertion will match the new named client interface and cannot false-positive on the existing ingest stubs.
+- **05-05's dual-schema requirement closes a real gap.** `gateway/sqlc.yaml:3` points at `db/schema.sql`; `gateway/atlas.hcl:7` points at `db/schema.hcl`; there is no migrations dir/Makefile enforcing parity. Requiring both is correct. `fakeStore` (`gateway/main_test.go:45`) is the sole `documentStore` implementer, so the interface-extension blast radius is genuinely small.
 
 ---
 
-## Overall Assessment
+## 3. Concerns
 
-Across all six plans, the phase-level `CONTEXT.md` decisions (D-01 through D-31) are consistently and correctly grounded in verified source citations — the plans are not inventing behavior contrary to the locked decisions, and most line-number citations checked out exactly or within a few lines. The two genuinely structural risks that recur across multiple plans are:
+### HIGH — 05-01's verification gate is unpassable; `TestRAGQueryCrossRuntime` breaks at runtime, not compile time
 
-1. **The `buf.gen.yaml` drift window** (05-01 → 05-06) — a real, currently undocumented build-breakage hazard for anyone running standard codegen mid-wave.
-2. **The Wave-5 coordination gap between 05-04 and 05-05** over the shared `CheckpointHandoff` concurrency contract, run "in parallel" per ROADMAP.md with no stated cross-dependency.
+The reviewers' `buf.gen.yaml` drift finding was addressed at the **compile** layer (05-01 checks in a Rust-only template, hashes `gateway/proto/*` and `gateway/main.go`, runs `go build ./...`). But the drift is also a **runtime** hazard, and one existing test exercises it:
 
-Neither is a fundamental design flaw — both are process/sequencing gaps in otherwise well-evidenced, well-scoped plans. The weakest *design* (as opposed to process) choice is 05-02's cross-variant RRF-of-RRF composition, which is architecturally defensible but untested against realistic multi-variant input and will remain so until Phase 999.3 lands.
+- `gateway/main_test.go:1893` `TestRAGQueryCrossRuntime` has **no build tag and no `t.Skip`** (the only `t.Skip` in the file is at `:1710`, for `TEST_DATABASE_URL`).
+- It unconditionally builds the real engine (`:2026`, `cargo build … --bin engine`), starts it (`:2074`), and calls the gateway with the **real** client: `app{store: &fakeStore{}, engine: grpcEngine{client: client}, …}.routes().ServeHTTP(...)` at `gateway/main_test.go:2161`.
+- After 05-01 lands, the Rust server serves `QueryRAG` as server-streaming while `grpcEngine.QueryRAG` (`gateway/main.go:280-287`) still invokes it as unary against stale stubs. grpc-go's unary `RecvMsg` performs a second receive and fails with a client-streaming protocol violation once a second message arrives — and the workflow emits at minimum `NodeStarted`/`NodeCompleted`/`WorkflowCompleted`. The assertions at `:2168-2180` (answer `DENSE_AND_LEXICAL_FIXTURE_MARKER [1]`, citation `[1]`, snapshot fields) cannot pass.
 
-**No plan should be blocked on these findings** — they are risks to flag and mitigate during execution (e.g., landing 05-01+05-06 together, adding a shared-contract note between 05-04/05-05, pinning the RRF-of-RRF test to non-trivial variant data), not defects requiring a re-plan.
+05-01 Task 2's `<automated>` block ends with `Push-Location gateway; go test ./...` and its `<verification>` states "the current unfiltered Go suite pass[es] at the wave boundary." That is contradicted by the source. **05-01 cannot be completed as written.**
+
+*Fix:* either move the `TestRAGQueryCrossRuntime` migration into 05-01 (it is already in 05-06's list, so it would just move a wave earlier), or land 05-01+05-06 as one unit, or add an explicit, temporary skip with a plan-recorded removal obligation in 05-06.
+
+### HIGH — `generation_node_timeout_ms = 30000` implements the failure condition this phase's own spec defines
+
+- The provider already enforces **30s per attempt**: `GENERATION_TIMEOUT: Duration = Duration::from_secs(30)` (`engine/src/generation/openrouter.rs:24`), applied at `openrouter.rs:626` (`timeout(self.config.timeout, self.execute_one_call(request))`), configured as `generation_timeout_secs = 30` (`config/config.toml:35`).
+- 05-06 Task 1 locks `generation_node_timeout_ms=30000` as the *node* deadline and 05-03 requires the retry to fit "using the remaining node budget."
+- `05-AI-SPEC.md:265` (pitfall #3): *"If GenerateAnswer's D-17 node-level timeout is read as 30s total … the retry can never run — it becomes dead code."* `05-AI-SPEC.md:412` makes it an explicit eval **FAIL**: *"or the node-level budget collapses onto the 30s per-attempt figure such that D-12's retry can never fire."*
+- Both plans acknowledge the conflict and resolve it toward the failing reading ("use the locked CONTEXT.md D-17 interpretation as authoritative over the alternative retry-budget interpretation in 05-AI-SPEC.md").
+
+Consequence: D-12 names "timeout, 5xx, rate limit" as the retry's purpose. Under this configuration, **the timeout case can never retry** (attempt 1 consuming 30s exhausts the node deadline), and any attempt that fails slowly (e.g. 25s → 502) leaves ~5s — insufficient for a real replay. Only fast-failing provider errors retry. That is a materially weaker ORCH-03 than the requirement describes, delivered without flagging it as a scope reduction. Note this does *not* rescue the chi fix: worst case is still 5+10+15+2+30 = 62s > 60s, so 05-06's route exemption remains necessary.
+
+*Fix:* this deserves a `checkpoint:decision` gate (05-05 already sets that precedent) rather than a silent resolution — either ~65s node budget per the AI-SPEC, or an explicit, recorded acceptance that "retry" means "fast-failure retry only" with `Timeout` removed from the retryable set so it isn't misleadingly advertised.
+
+### HIGH — the "pre-stream trailer identity" contract is mis-described and silently retired
+
+05-01's must_have asserts: *"invalid session or query input remains a trailer-bearing gRPC error."* Source says otherwise:
+
+- Malformed `session_id` → `Status::invalid_argument("session_id must be a valid UUIDv4 string")` at `engine/src/main.rs:1356-1362` — **plain `Status`, no metadata**.
+- `QueryRequest::from_values` failures → plain `Status::invalid_argument(...)` at `main.rs:1381-1392` — **no metadata**.
+- The only trailer producer is `d1_status` (`main.rs:877-898`), and *every* current call site is post-validation infrastructure failure: embedding invalid payload (`:1408`), embedding transport (`:1417`), plus dense-retrieval/reranker/generation later — exactly the paths 05-01 moves in-stream.
+
+So after Phase 5: no production path emits `x-lancet-session-id`/`-correlation-id`/`-error-kind` pre-stream, while `gateway/main.go:693-704` keeps forwarding them and 05-06 keeps four tests asserting the headers (`gateway/main_test.go:945`, `:995`, `:1045`, `:1095`) that will only ever pass against `trailerError` fakes. Meanwhile nothing in any plan requires the in-band `NodeFailed`/`WorkflowCompleted` path to surface session/correlation identity to the HTTP client at all (events carry `trace_id`, terminal carries `session_id`, but no response headers). **A client-visible identity contract disappears with no stated replacement**, and its regression tests become non-representative.
+
+*Fix:* state explicitly what happens to `X-Lancet-*` on the SSE path (set them from the first event before flushing headers is the obvious move, and is compatible with 05-06's first-frame prefetch), and correct 05-01's truth statement.
+
+### MEDIUM — the incremental node-migration bridge is never specified (05-01, 05-02)
+
+05-01 introduces a runner with exactly one node (`ReformulateQueryNode`) yet requires every existing behavioral test — including `query_rag_happy_path_service` (`tests.rs:2181`) and the three `graph_augmentation_*_end_to_end` tests — to still produce a real terminal `QueryRAGResponse` through `drain_query_rag_stream`. That means ~90% of the pipeline (`main.rs:1395-1708`) must keep running as inline code alongside the runner, and the terminal event must be built from it. **Neither 05-01 nor 05-02 says how.** 05-02 then makes the vector `[Reformulate, ExtractGraphContext, RetrieveHybrid]` while prompt assembly and generation remain inline until 05-03.
+
+This is the single largest unspecified mechanism in the phase: three plans each shrink an inline remainder that must keep ~25 assertions green, with no stated contract for how `WorkflowContext` hands off to the remainder or who emits `WorkflowCompleted`. Expect executor divergence and rework at each wave boundary.
+
+### MEDIUM — cross-variant RRF: output shape and score semantics unspecified
+
+`FusedCandidate` (`engine/src/retrieval/fusion.rs:16-23`) carries **single-valued** `vector_rank`, `bm25_rank`, `vector_score`, `bm25_score`. N reformulation variants produce N provenances per chunk. 05-02 requires the merge to "retain each candidate's source rank/score provenance" without saying whether the struct grows (breaking `rerank::Reranker`, `engine/src/rerank/mod.rs:12-15`, which takes/returns `Vec<FusedCandidate>`) or one variant's provenance is arbitrarily kept.
+
+Worse, `fused_score` is **client-visible**: `engine/src/prompt.rs:62` sets `score: candidate.fused_score` on each evidence block, which flows to `StructuredCitation.score` in the proto response. A second RRF pass summing raw `1/(rrf_k + rank)` produces different magnitudes than `fuse_candidates`' *weighted* RRF (`fusion.rs:66-80`, weights applied and zero-weight sources skipped). 05-02 asks for a "one-variant equivalence" test but never says whether equivalence means *order* or *score identity* — under the former, a phase that promises "MUST NOT change existing retrieval semantics" silently changes an API field. (No existing test pins exact fused scores, so this would not be caught.)
+
+### MEDIUM — `CheckpointHandoff` is over-built relative to its own requirements
+
+D-27 is explicitly fire-and-forget ("a dropped/delayed checkpoint write never stalls or fails the user's actual query"); D-24 has no retention; D-25 has no fetch API; the feature is developer-debugging-only. The plans respond with: a 1-slot primary queue + 5-slot owned FIFO overflow, `Pending`/transport-closed/`Overflow` statuses, a detached drain, a mirrored Go `CheckpointDispatcher` with the same constants, a `Drain(ctx)` retry contract, and six dedicated tests (three Rust in 05-04, three Go in 05-05/05-06) plus three STRIDE entries (`T-05-05`, `T-05-27`, `T-05-28`). This is the most elaborated mechanism in the phase, attached to its least-consequential requirement, against `PROJECT.md`'s explicit "avoid overbuilding" / "scope discipline" constraint.
+
+A concrete symptom: `test_workflow_checkpoint_sixth_record_reports_overflow` is listed in 05-04's *"complete service-level matrix"*, but the fixed 5-node workflow can emit at most 5 checkpoint records (and only 3 on the D-03 short-circuit path), so a sixth record is unreachable through `LancetServiceImpl::query_rag` — it can only be a direct unit test on `CheckpointHandoff`, contradicting the matrix's own framing and 05-04's prohibition against tests that "bypass `LancetServiceImpl` dependency construction."
+
+### MEDIUM — several named Go transport tests have no stated deterministic mechanism
+
+- `TestQueryRAGSSEFramesFlush` claims to assert "SSE frame boundaries and flushes." `httptest.ResponseRecorder` exposes a single `Flushed bool` and buffers everything — you cannot observe per-frame flush or that the first frame was prefetched *before* headers committed. Every existing `/rag/query` test uses `httptest.NewRecorder()` (`main_test.go:726`, `:809`, `:2160`). Without switching to `httptest.NewServer` + incremental body reads, this test passes trivially and proves nothing about streaming incrementality.
+- `TestQueryRAGRouteTimeoutIsolation`: chi does not expose per-route middleware for introspection, and waiting out 60s is not viable. The plan gives no mechanism (e.g. making the timeout injectable) for making this deterministic.
+- `TestQueryRAGFirstFramePrefetch` has the same observability problem as the flush test.
+
+### LOW
+
+- **05-05 internal inconsistency.** The `<action>` text lists `context_snapshot|jsonb|NO|<NULL>|<NULL>|<NULL>|<NULL>` (7 fields) while `<schema_inspection_contract>` and the executable `$expectedColumns` array use 8 (`…|<NULL>|<NULL>`). The SQL selects 8 fields, so the prose is wrong and the gate is right — but a reader following the prose will mis-author the row.
+- **05-05 context gaps.** `depends_on: [05-03, 05-06, 05-04]` but `<context>` loads only `05-03-SUMMARY.md`. The executor will not have 05-06's summary despite Task 1 modifying `gateway/checkpoint_sink.go`, a file 05-06 creates (mitigated only by `read_first`).
+- **Rust type names.** The prost-generated types are `QueryRagRequest`/`QueryRagResponse` (see `engine/src/tests.rs:2302`), not `QueryRAGResponse` as written throughout the Rust-side plan text including the `drain_query_rag_stream` signature.
+- **Reranker failure is uncovered.** `query_rag_reranker_failure_skips_generation` exists (`tests.rs`), rerank sits inside 05-02's `RetrieveHybridNode` ("apply the existing final-limit/reranker path"), but no reranker scenario appears in 05-04's *"exhaustive"* 24-test matrix and `NodeErrorKind` has no natural category for it.
+- **`config/config.verify.toml`** exists and is consumed by `scripts/phase02_live_evidence.py:179` but is not in 05-06's `files_modified`; the contract test only reads `config.example.toml` (`tests.rs:143`), so `config/config.toml`'s new section is unverified by the named tests.
+- **05-01's `clean: false` rationale is inaccurate.** "set `clean: false` so existing unary Go outputs are preserved" — in a Rust-only template `gateway/proto` is not a plugin `out`, so buf could not clean it regardless. Harmless belt-and-braces, but the stated mechanism is wrong.
+
+---
+
+## 4. Suggestions
+
+1. **Move the `TestRAGQueryCrossRuntime` migration into 05-01**, or merge 05-01+05-06 into one landing. Add an explicit runtime-drift note alongside the existing compile-time buf guard.
+2. **Escalate the generation-timeout arithmetic to a `checkpoint:decision`** with two options (65s node budget per `05-AI-SPEC.md:305`, vs. 30s with `Timeout` removed from the retryable set and the reduction recorded), rather than resolving it inside plan prose.
+3. **Add an explicit requirement that in-stream `NodeFailed`/terminal events populate `X-Lancet-Session-ID`/`-Correlation-ID`/`-Error-Kind` response headers** from the prefetched first frame, and correct 05-01's trailer truth statement (malformed input returns a bare `Status`, `main.rs:1356/1381`).
+4. **Add a short "inline remainder contract" section to 05-01 and 05-02**: exactly which `main.rs` lines stay inline, how `WorkflowContext` is handed to them, and who emits the terminal event at each wave.
+5. **Pin the cross-variant merge's output type and score contract**: either extend `FusedCandidate` with per-variant provenance (and accept the `Reranker` signature churn), or state that variant-0 provenance wins; and require the 1-variant path to be *score-identical*, not merely order-equivalent, so `StructuredCitation.score` does not shift.
+6. **Right-size the checkpoint handoff**: keep bounded `try_send` + a drop counter (which is all D-27 asks for), and drop the 6-slot FIFO/`Pending`/`Overflow` machinery and its six tests — or, if kept, move `test_workflow_checkpoint_sixth_record_reports_overflow` out of the service-level matrix and label it a unit test.
+7. **Specify the SSE test harness**: `httptest.NewServer` + `bufio.Scanner` over the live body for `TestQueryRAGFirstFramePrefetch`/`TestQueryRAGSSEFramesFlush`/`TestQueryRAGMidstreamRecvErrorClosesCleanly`, and make the route timeout injectable so `TestQueryRAGRouteTimeoutIsolation` is deterministic.
+8. Add a reranker-failure scenario to 05-04's matrix, and fix the 05-05 column-spec typo plus the missing dependency summaries in `<context>`.
+
+---
+
+## 5. Risk Assessment
+
+**Overall: HIGH.**
+
+The design is sound and the evidence discipline is genuinely above average — most of what the plans assert about this repo is true, and the wave graph is now internally consistent. The risk is not conceptual, it is executional and concentrated in three places:
+
+- **05-01 is currently un-completable** (its own `go test ./...` gate fails on `main_test.go:1893`). That alone blocks the wave chain, since every other plan depends transitively on it.
+- **A locked configuration knowingly implements this phase's own documented eval failure** (`05-AI-SPEC.md:412`), silently reducing ORCH-03's delivered scope.
+- **A client-visible identity contract is retired without replacement**, with its regression tests preserved in a form that can no longer detect the loss.
+
+Per-plan: 05-01 **HIGH** (blocking gate defect + trailer mis-statement + unspecified inline bridge); 05-06 **HIGH** (retry arithmetic, unverifiable streaming tests, other half of the drift window); 05-03 **MEDIUM-HIGH** (retry deadline, otherwise strong); 05-02 **MEDIUM** (RRF output/score shape); 05-05 **MEDIUM** (well-grounded; minor spec/context defects); 05-04 **LOW-MEDIUM** (strongest plan; matrix/service-level inconsistency on the overflow case).
+
+None of these require re-planning the phase. They require fixing 05-01's sequencing before execution begins, and making two deliberate decisions (generation budget, identity headers) explicit rather than implicit.
 
 ---
 
 ## Consensus Summary
 
-Both successful reviewers evaluated all six Phase 5 plans. Claude supplied concrete `file:line` evidence; AgY supplied a higher-level independent assessment without source-line citations.
+The reviewers agree that the six plans are architecturally strong and aligned with the fixed RAG state-machine goal, but they do not agree that the plan set is ready to execute unchanged. The shared concern is concentrated in timing and boundary contracts; Claude additionally identified several concrete execution blockers that should be resolved before the first wave.
 
 ### Agreed Strengths
 
-- The plans preserve the Rust-owned orchestration boundary and the Go transport/control-plane boundary.
-- The corrected graph-before-retrieval order in `05-02-PLAN.md` is well grounded and preserves the zero-evidence path.
-- The plans take timeout, retry, streaming, and decoupled checkpointing concerns seriously, with the SSE first-frame and bounded checkpoint designs called out as important integration points.
+- The Rust/Go boundary and wave-based decomposition are coherent, with Rust owning orchestration/data-plane work and Go owning HTTP/SSE and PostgreSQL responsibilities.
+- The plans take testability and failure handling seriously, including injectable retrieval seams, bounded checkpoint delivery, and the repository's isolated PostgreSQL fixture convention.
+- The existing 60-second gateway timeout is recognized as a real constraint; both reviewers agree that route-level timeout isolation must be explicit and deterministic.
 
 ### Agreed Concerns
 
-- **Cross-variant retrieval fusion needs stronger validation.** Both reviewers flagged the novel cross-variant RRF composition as a risk area; add tests using genuinely different per-variant rankings and keep memory bounded before relying on the future reformulation port.
-- **Cancellation and timeout behavior needs explicit implementation-level proof.** Both reviewers called out the need to preserve distinct cancellation/timeout semantics and to make cooperative cancellation yield granularity concrete enough to be effective without excessive scheduling overhead.
+- **HIGH — End-to-end timeout/retry contract:** the planned node budgets and one-retry behavior can exceed the gateway's global 60-second timeout, while immediate/no-backoff retries are weak for provider throttling. Make route isolation and retry timing/error semantics an explicit, tested contract.
+- **MEDIUM/HIGH — Checkpoint and event ordering contracts:** checkpoint persistence and streamed event handling need deterministic ordering and lifecycle guarantees; review the timestamp-only ordering assumption and ensure persistence cannot affect the response path.
 
 ### Divergent Views
 
-- Claude identified a **HIGH** `buf.gen.yaml` drift window between 05-01 and 05-06: standard code generation can produce streaming Go stubs while `gateway/main.go` still expects unary APIs. AgY did not identify this risk. Treat 05-01 and 05-06 as an effectively coordinated landing unit or add an explicit guard/note.
-- Claude rated 05-06 MEDIUM-HIGH and identified additional coordination risks between 05-04 and 05-05 over the shared checkpoint contract; AgY gave an overall approval with only minor cautions.
-
-### Follow-up
-
-Use `/gsd-plan-phase 5 --reviews` to incorporate the findings. Give priority to the `buf.gen.yaml` sequencing hazard, explicit cancellation/truncation tests, cross-variant RRF validation, and a single source of truth for Wave-5 checkpoint concurrency semantics.
+- Antigravity assesses the plan set as LOW-MEDIUM risk and broadly approved after four targeted mitigations. Claude assesses it as HIGH risk because 05-01's existing cross-runtime test would fail once the RPC becomes streaming, the 30-second generation node budget can make timeout retries unreachable, and the pre-stream identity/trailer contract has no stated SSE replacement.
+- Antigravity recommends adding retry backoff and stronger checkpoint ordering/cleanup safeguards. Claude instead prioritizes sequencing the runtime test migration, defining the inline-to-runner bridge, pinning cross-variant RRF score semantics, and making SSE/timeout tests use a live deterministic harness.
+- Claude also flags scope proportionality for the six-slot checkpoint handoff and several plan-text/test-matrix inconsistencies; these are not raised by Antigravity and should be treated as targeted follow-up checks rather than consensus blockers.
