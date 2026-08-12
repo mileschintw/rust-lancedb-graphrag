@@ -340,9 +340,12 @@ Plans:
 
 - [ ] 05-03-PLAN.md — AssemblePrompt + GenerateAnswer nodes, D-12/D-13 retry-then-honest-failure, D-01/D-02 AnswerChunk/FinalAnswer, and full accumulated snapshots.
 
-**Wave 5** *(blocked on Wave 4 completion; parallel)*
+**Wave 5** *(blocked on Wave 4 completion)*
 
 - [ ] 05-04-PLAN.md — GraphQueryPort/DenseRetrievalPort testability seam, bounded Notify rendezvous cleanup, and full deterministic fault-injection coverage.
+
+**Wave 6** *(blocked on Wave 5 completion; 05-05 depends on 05-04 as well as 05-03 and 05-06)*
+
 - [ ] 05-05-PLAN.md — PostgreSQL-backed workflow_checkpoints persistence (ORCH-04), detached standalone checkpoint events, and full-snapshot fidelity.
 
 ### Phase 6: Observability, Evaluation & Polish

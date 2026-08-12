@@ -18,7 +18,7 @@
 | `engine/src/workflow/nodes/graph_context.rs` (wraps `attempt_graph_augmentation` + inner timeout) | service (pipeline stage) | transform | `engine/src/main.rs:1426-1448` (existing `attempt_graph_augmentation` call site + outcome match) | exact |
 | `engine/src/workflow/nodes/assemble_prompt.rs` | service (pipeline stage) | transform | `engine/src/main.rs:1549-1559` (existing `pack_evidence_and_graph_prompt` call site) | exact |
 | `engine/src/workflow/nodes/generate.rs` (wraps `Generator::generate`, owns D-12 single-retry loop) | service (pipeline stage) | request-response | `engine/src/main.rs:1561-1597` (existing generation call site + error-kind mapping) + `engine/src/generation/mod.rs:466-512` (`FakeGenerator`, retry-test double) | exact |
-| `engine/src/main.rs` `query_rag` handler (rewritten: `ReceiveQuery` boundary stays, rest delegates to `WorkflowRunner`, opens `mpsc`/`ReceiverStream`) | controller (tonic handler) | streaming | `engine/src/main.rs:1346-1626` (itself — refactor in place) | exact (self) |
+| `engine/src/main.rs` `query_rag` handler (rewritten: `ReceiveQuery` boundary stays, rest delegates to `WorkflowRunner`, opens `mpsc`/`ReceiverStream`) | controller (tonic handler) | streaming | `engine/src/main.rs:1346-1708` (itself — refactor in place) | exact (self) |
 | `proto/lancet/v1/lancet.proto` (`QueryRAG` unary→server-streaming, new `WorkflowEvent` oneof message) | config/contract | streaming | same file's `IngestDocument` (client-streaming RPC, line 9) for streaming-RPC syntax precedent; `QueryRAGRequest`/`QueryRAGResponse` (lines 53-111) for field-shape precedent | role-match |
 | `gateway/main.go` `engine.QueryRAG` interface + `grpcEngine.QueryRAG` (unary→stream-consuming client method) | service/adapter | streaming | `gateway/main.go:212-254` (`grpcEngine.Ingest`, the only existing streaming gRPC client call — client-streaming, but same "stream + defer-close + loop" shape) + `gateway/main.go:280-287` (current unary `QueryRAG`, trailer pattern to preserve for pre-stream errors) | role-match |
 | `gateway/main.go` `queryRAG` HTTP handler (rewritten: SSE `text/event-stream` forwarding loop) | controller (HTTP handler) | streaming | `gateway/main.go:653-715` (itself — current unary JSON handler, refactor in place); no existing SSE precedent in this codebase (net-new pattern, `05-RESEARCH.md` Pattern 2) | no analog (see below) |
@@ -231,7 +231,7 @@ let model_output = self.generator.generate(gen_req).await.map_err(|err| {
 
 ### `engine/src/main.rs` `query_rag` handler (controller, streaming)
 
-**Analog:** itself, `engine/src/main.rs:1346-1626` (refactor in place)
+**Analog:** itself, `engine/src/main.rs:1346-1708` (refactor in place)
 
 **D-04 boundary to preserve exactly (ReceiveQuery stays synchronous, pre-stream)** — session/correlation ID minting + `QueryRequest::from_values` validation (lines 1354-1393) must remain before the `mpsc::channel`/`ReceiverStream` is opened. Malformed requests still return `d1_status`'s trailer-bearing `Status`:
 ```rust
