@@ -44,7 +44,7 @@ assigned to an executable plan. Deferred and descoped items from
 | CONTEXT | D-14 | No backup provider/model | 05-03 | COVERED |
 | CONTEXT | D-15 | No retrying event | 05-01, 05-03 | COVERED |
 | CONTEXT | D-16 | Native SSE disconnect cancellation and no cancel RPC | 05-01, 05-04, 05-05 | COVERED |
-| CONTEXT | D-17 | Default configurable per-attempt/node timeout values | 05-01, 05-03, 05-04 | COVERED |
+| CONTEXT | D-17 | Default configurable per-attempt/node timeout values, including the distinct 65000ms generation node budget | 05-03, 05-04, 05-06 | COVERED |
 | CONTEXT | D-18 | Unary-to-server-streaming `QueryRAG` | 05-01, 05-06 | COVERED |
 | CONTEXT | D-19 | SSE-only `/rag/query` | 05-06 | COVERED |
 | CONTEXT | D-20 | Coarse node event granularity | 05-01, 05-04 | COVERED |
@@ -63,8 +63,26 @@ assigned to an executable plan. Deferred and descoped items from
 ## Review Disposition
 
 All current actionable findings in `05-REVIEWS.md` are incorporated into the
-five plans. The only intentionally rejected addition is a durable graph
-failure-vs-no-match metadata field: D-30 defers workflow metadata and the
-AI-SPEC defines the empty `graph_context` checkpoint diff as the Phase 5
-degradation signal. Plans retain the bounded graph outcome internally for
-sanitized diagnostics without adding a new checkpoint metadata contract.
+six plans. The revised graph/retrieval plan pins bounded cross-variant score
+and provenance semantics; the generation and gateway plans pin 65000ms versus
+30000ms timeout arithmetic, route isolation, live SSE testing, generated-code
+landing order, and no-backoff retry behavior; the checkpoint plans pin
+sequence-ordinal ordering, generated model coverage, reliable pending/drain
+ownership, and isolated-schema cleanup. The only intentionally rejected
+addition is a durable graph failure-vs-no-match metadata field: D-30 defers
+workflow metadata and the AI-SPEC defines the empty `graph_context` checkpoint
+diff as the Phase 5 degradation signal. Plans retain the bounded graph outcome
+internally for sanitized diagnostics without adding a new checkpoint metadata
+contract.
+
+## Spec-less fallback dispositions
+
+The supplied edge probe found six unresolved items and no regular SPEC Edge
+Coverage or Prohibitions sections. The plans surface them as flagged executable
+assumptions: ORCH-01 unclassified state transitions (05-01/05-02), ORCH-02
+unclassified event/transport behavior (05-01/05-04/05-06), ORCH-03 idempotency
+(05-01/05-03/05-04) and concurrency (05-01/05-02/05-04/05-05/05-06), ORCH-04
+unclassified checkpoint behavior (05-05), and ORCH-05 unclassified
+pass-through behavior (05-02). Each plan's prohibition entries are explicitly
+flagged `unverified` under the descriptor-less prohibition fallback; no wired
+prohibition descriptor is claimed.
