@@ -93,6 +93,24 @@ locked-decision checkpoints. Focused registration guards now use immediate
 command-failure checks and exact escaped test names rather than broad
 alternation/count lower bounds.
 
+## Revision iteration 2 checker closure
+
+The second bounded checker pass is closed in the task actions and must-have
+links, not only in plan-level prose. The Rust event/terminal contract, Go DTO,
+and SSE frame now map and assert non-empty `answer`, `citations`, `session_id`,
+`answer_basis`, `structured_citations`, `notices`, and `snapshot` field by
+field, with `snapshot` kept distinct from notices and durable checkpoint
+`context_snapshot`. Graph timeout has one shared semantic owner: a 14000ms
+inner deadline degrades to empty context before the 15000ms runner backstop,
+while the backstop routes to the same successful branch; tests assert one
+notice, successful completion, and no `NodeFailed`. The eight-variant memory
+bound is fail-closed with typed rejection before retrieval for an exact
+nine-variant input, so D-07's all-`Vec` RRF contract cannot be silently
+truncated. The implementing task actions also cite the previously under-traced
+locked decisions D-05, D-09, D-10, D-11, D-13, D-14, D-15, D-17, D-20, D-21,
+D-24, D-25, D-26, D-30, and D-31, including explicit absence assertions for
+the negative/deferred choices.
+
 ## Spec-less fallback dispositions
 
 The supplied edge probe found six unresolved items and no regular SPEC Edge
