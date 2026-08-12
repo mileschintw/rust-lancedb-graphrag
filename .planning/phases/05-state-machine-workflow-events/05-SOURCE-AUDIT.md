@@ -75,6 +75,24 @@ diff as the Phase 5 degradation signal. Plans retain the bounded graph outcome
 internally for sanitized diagnostics without adding a new checkpoint metadata
 contract.
 
+## Revision iteration 1 checker closure
+
+The checker-blocking corrections remain assigned to executable owners: every Go
+verification command runs with `go -C gateway` and captures `$LASTEXITCODE`
+immediately; the sixth-envelope dispatcher handoff is a direct Go unit test in
+05-06 rather than a Rust-owned claim; prompt packing has bounded cancellation
+checkpoints and `yield_now` granularity; both inline bridges specify their
+field-level context mutation, partial-node event/checkpoint ownership, failure
+return, and sole terminal emitter; 05-01 guards Rust-only code generation with
+before/after hashes of existing Go outputs; and 05-02's runner path is
+`engine/src/workflow/runner.rs`. The validation artifact is a populated,
+pre-execution matrix with exact task commands and an explicit draft/false
+Nyquist status, while the large 05-01/05-02/05-06 inventories carry
+execution-visible atomicity rationales and the one-way tasks have preceding
+locked-decision checkpoints. Focused registration guards now use immediate
+command-failure checks and exact escaped test names rather than broad
+alternation/count lower bounds.
+
 ## Spec-less fallback dispositions
 
 The supplied edge probe found six unresolved items and no regular SPEC Edge
