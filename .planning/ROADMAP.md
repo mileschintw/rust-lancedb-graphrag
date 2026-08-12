@@ -321,25 +321,29 @@ Plans:
 3. Node timeouts and retries handle failure scenarios predictably.
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
-**Plans:** 5 plans
+**Plans:** 6 plans
 
 Plans:
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — Tracer: streaming QueryRAG wire contract, one-node Rust Node/WorkflowRunner, Go SSE transport, route-scoped timeout.
+- [ ] 05-01-PLAN.md — Tracer: streaming QueryRAG wire contract, one-node Rust Node/WorkflowRunner, and independent checkpoint channel.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 corrected order, D-07 cross-variant RRF merge, D-03 short-circuit.
+- [ ] 05-06-PLAN.md — Generated stream to Go SSE, timeout configuration, and deterministic transport/config regression tests.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 05-03-PLAN.md — AssemblePrompt + GenerateAnswer nodes, D-12/D-13 retry-then-honest-failure, D-01/D-02 AnswerChunk/FinalAnswer.
+- [ ] 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 corrected order, D-07 cross-variant RRF merge, D-03 short-circuit with full retrieval-source context.
 
-**Wave 4** *(blocked on Wave 3 completion; parallel)*
+**Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 05-04-PLAN.md — GraphQueryPort/DenseRetrievalPort testability seam and full deterministic fault-injection coverage.
-- [ ] 05-05-PLAN.md — PostgreSQL-backed workflow_checkpoints persistence (ORCH-04), fire-and-forget from Go.
+- [ ] 05-03-PLAN.md — AssemblePrompt + GenerateAnswer nodes, D-12/D-13 retry-then-honest-failure, D-01/D-02 AnswerChunk/FinalAnswer, and full accumulated snapshots.
+
+**Wave 5** *(blocked on Wave 4 completion; parallel)*
+
+- [ ] 05-04-PLAN.md — GraphQueryPort/DenseRetrievalPort testability seam, bounded Notify rendezvous cleanup, and full deterministic fault-injection coverage.
+- [ ] 05-05-PLAN.md — PostgreSQL-backed workflow_checkpoints persistence (ORCH-04), detached standalone checkpoint events, and full-snapshot fidelity.
 
 ### Phase 6: Observability, Evaluation & Polish
 
