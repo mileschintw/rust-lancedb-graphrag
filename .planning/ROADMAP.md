@@ -322,17 +322,20 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 13 plans (7 baseline executed, 6 additive gap closure pending)
+**Plans:** 16 plans (7 baseline executed, 9 additive gap closure pending)
 
 Plans:
 
 - [x] 05-07-PLAN.md
 - [ ] 05-08-PLAN.md — Production five-node wiring, real adapter dependencies, and WorkflowContext population.
 - [ ] 05-09-PLAN.md — Live workflow settings, real-I/O deadlines, and stream-owned cancellation.
-- [ ] 05-10-PLAN.md — Exhaustive five-node NodeKind dispatch, typed event delivery, sequence integrity, and full snapshots.
+- [ ] 05-10-PLAN.md — Reliable typed event delivery, terminal idempotence, sequence integrity, and full snapshots.
 - [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
 - [ ] 05-12-PLAN.md — Additive historical-summary traceability errata and source coverage audit.
 - [ ] 05-13-PLAN.md — OpenRouter preflight classification, successful-only capability caching, and bounded generation retry.
+- [ ] 05-14-PLAN.md — Exhaustive typed NodeKind dispatch and early reformulation admission.
+- [ ] 05-15-PLAN.md — Prompt API contract and cfg(test)-only workflow fakes.
+- [ ] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
 
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
@@ -374,9 +377,18 @@ Plans:
 
 **Wave 10** *(blocked on the provider retry contract and live timeout/cancellation controls)*
 
-- [ ] 05-10-PLAN.md — Exhaustive five-node NodeKind dispatch, typed event delivery, sequence integrity, and full snapshots.
+- [ ] 05-14-PLAN.md — Exhaustive typed NodeKind dispatch and early reformulation admission.
+- [ ] 05-15-PLAN.md — Prompt API contract and cfg(test)-only workflow fakes.
 
-**Wave 11** *(blocked on the corrected Rust event and retry contracts)*
+**Wave 11** *(blocked on typed dispatch and prompt/fake boundaries)*
+
+- [ ] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
+
+**Wave 12** *(blocked on typed dispatch, graph/retrieval contracts, and prompt/fake boundaries)*
+
+- [ ] 05-10-PLAN.md — Reliable typed event delivery, terminal idempotence, sequence integrity, and full snapshots.
+
+**Wave 13** *(blocked on the corrected Rust event, graph/retrieval, and retry contracts)*
 
 - [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
 

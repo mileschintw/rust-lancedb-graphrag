@@ -159,14 +159,16 @@ The additive checker revision adds 05-13 as the Wave 9 owner of OpenRouter
 capability preflight, successful-only caching, typed transient transport
 classification, and the D-11/D-12 generation retry contract. 05-09 now owns
 `config/config.verify.toml` and sets the provider-attempt budget to 30 seconds
-while retaining the 7000ms live generation-node timeout proof. 05-10 is the
-Wave 10 owner of exhaustive `NodeKind` dispatch and lists the exact
-`graph_context.rs`, `retrieve.rs`, and `assemble_prompt.rs` node files alongside
-the other five node implementations; it no longer owns OpenRouter preflight or
-generation-attempt policy. 05-11 is Wave 11 and depends explicitly on both
-05-10's event contract and 05-13's retryability contract. The 05-12 errata and
-validation mappings include 05-13, so GOAL, ORCH-01 through ORCH-05, RESEARCH,
-and D-01 through D-31 remain traceable without changing executed artifacts.
+while retaining the 7000ms live generation-node timeout proof. 05-14 is the
+Wave 10 owner of exhaustive `NodeKind` dispatch; 05-15 owns prompt API and
+fake-port boundaries; 05-16 owns graph notice/provenance/BM25 invariants; and
+05-10 is the later Wave 12 owner of event delivery, terminal idempotence,
+sequence integrity, and full snapshots. None of these plans owns OpenRouter
+preflight or generation-attempt policy outside 05-13. 05-11 is Wave 13 and
+depends explicitly on the corrected event, graph/retrieval, and retry
+contracts. The 05-12 errata and validation mappings include 05-13 through
+05-16, so GOAL, ORCH-01 through ORCH-05, RESEARCH, and D-01 through D-31 remain
+traceable without changing executed artifacts.
 
 ## Spec-less fallback dispositions
 
@@ -179,3 +181,46 @@ unclassified checkpoint behavior (05-05), and ORCH-05 unclassified
 pass-through behavior (05-02). Each plan's prohibition entries are explicitly
 flagged `unverified` under the descriptor-less prohibition fallback; no wired
 prohibition descriptor is claimed.
+
+## Revision continuation coverage (checker blockers and warnings)
+
+This additive matrix supersedes the earlier six-plan description without
+changing any executed artifact. Every item from the current independent
+checker has an executable owner:
+
+| Checker item | Root cause | Executable owner | Closure artifact / proof |
+|---|---|---|---|
+| Historical verification command sanity | Frozen executed plans predate the additive exact Cargo registration rule | 05-12 | Literal fourteen-path HEAD blob table, staged/unstaged path assertions, and `git diff --check` in the errata guard |
+| Production adapter proof | 05-08 previously proved registration but not real service-field dependency construction | 05-08 | `workflow_phase5_production_dependencies_are_real`, builder source assertions for existing service fields, non-None adapter slots, and production-builder invocation |
+| Task ownership | Tests and monolith retirement were described outside exact task file ownership | 05-08, 05-09 | Exact test-file and `workflow/mod.rs` ownership in task `<files>`, acceptance, and focused registration guards |
+| OpenRouter cross-plan contract | Preflight and GenerationRequest were incorrectly asserted as one byte contract | 05-13 | Separate preflight method/deadline/cache proof; only serialized GenerationRequest attempt 1/2 equality |
+| Post-open SSE failure | Gateway silently ended after Recv error or EOF without a terminal frame | 05-11 | Raw `stream_error` SSE tests for `GRPC_RECV_ERROR` and `STREAM_EOF_WITHOUT_TERMINAL` after HTTP 200 |
+| WR-10 / WR-11 | Public sync prompt wrappers and incomplete async docs were not executablely gated | 05-15 | Prompt API source/tests, graph_weight semantics, complete error docs, and cfg(test) sync helper boundary |
+| Fake ports in production | Fake workflow ports had no compilation boundary | 05-15 | Six fake declarations cfg(test)-gated and source assertion |
+| WR-06 / WR-07 | Graph code and notice replacement used untyped/overwriting outcomes | 05-16, 05-10 | Exact GRAPH_TIMEOUT/GRAPH_DEGRADED codes, ordered notice merge, and later terminal preservation tests |
+| WR-09 | Multi-variant BM25 weighting was not auditable | 05-16 | Explicit RetrievalSnapshot.variant_count and variant_identities with focused test |
+| WR-13 | Terminal helper allowed duplicate terminal emission | 05-10 | Atomic/idempotent guard and duplicate-terminal exact-one test |
+| WR-14 | BM25 RwLock guard could survive an await | 05-16 | Owned immutable index snapshot, source guard, and stalled-retrieval/concurrent-ingestion regression |
+| Scope sanity | 05-10 mixed typed NodeKind, event delivery, and snapshot concerns across eleven files | 05-14, 05-10 | 05-14 owns typed node dispatch; 05-10 now owns only runner/event/snapshot files and precise task ownership |
+
+### Continuation source coverage
+
+| Source | Items | Plans |
+|---|---|---|
+| GOAL | Production five-node state machine with predictable failure handling | 05-08, 05-09, 05-13, 05-14, 05-15, 05-16, 05-10, 05-11 |
+| REQ | ORCH-01 | 05-08, 05-14, 05-16 |
+| REQ | ORCH-02 | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15 |
+| REQ | ORCH-03 | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15, 05-16 |
+| REQ | ORCH-04 | 05-08, 05-10, 05-11, 05-12, 05-16 |
+| REQ | ORCH-05 | 05-08, 05-12 |
+| RESEARCH | Real adapter responsibility belongs to Rust; Go relays SSE and owns Postgres; 30s provider attempt is distinct from node budget; graph timeout degrades; fakes and deterministic fault seams are required | 05-08, 05-09, 05-11, 05-13, 05-15, 05-16 |
+| CONTEXT | D-01..D-05 answer/event/prestream contracts | 05-08, 05-10, 05-11, 05-13, 05-14 |
+| CONTEXT | D-06..D-10 graph/retrieval ordering and degradation | 05-08, 05-14, 05-16 |
+| CONTEXT | D-11..D-17 retry, timeout, cancellation, and provider arithmetic | 05-09, 05-10, 05-13, 05-14 |
+| CONTEXT | D-18..D-22 stream/SSE/event categories | 05-08, 05-10, 05-11, 05-14 |
+| CONTEXT | D-23..D-29 checkpoint ownership, snapshot fidelity, identity | 05-10, 05-11, 05-12 |
+| CONTEXT | D-30..D-31 metadata/tracing scope fences | 05-08, 05-10, 05-14, 05-16 |
+
+The deferred ideas in `05-CONTEXT.md` remain excluded: no backup provider,
+resume/fetch API, cancel RPC, workflow metadata, per-node spans, or degraded
+mode field is introduced by these continuation plans.
