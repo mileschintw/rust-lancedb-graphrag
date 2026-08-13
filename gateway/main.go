@@ -1011,13 +1011,23 @@ func main() {
 	reconciler := newDurableReconciler(postgresStore{pool}, logger)
 	go reconciler.Run(recCtx)
 
+	sink := NewPostgresCheckpointSink(pool, logger)
+	dispatcher := NewCheckpointDispatcher(sink)
+	defer dispatcher.Close()
+
 	server := newHTTPServer(
 		formatListenAddr(cfg.Gateway.Port),
-		app{store: postgresStore{pool}, engine: grpcEngine{pb.NewLancetServiceClient(conn)}, logger: logger}.routes(),
+		app{
+			store:      postgresStore{pool},
+			engine:     grpcEngine{pb.NewLancetServiceClient(conn)},
+			logger:     logger,
+			dispatcher: dispatcher,
+		}.routes(),
 	)
 	logger.Info("gateway listening", zap.String("addr", server.Addr))
 	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Fatal("gateway stopped", zap.Error(err))
 	}
 }
+
 

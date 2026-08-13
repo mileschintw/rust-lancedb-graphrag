@@ -42,4 +42,17 @@ CREATE TABLE "public"."document_reconciliation_intents" (
   CONSTRAINT "check_desired_status" CHECK ((desired_status)::text = 'failed'::text),
   CONSTRAINT "check_retry_count" CHECK (retry_count >= 0)
 );
+-- Create "workflow_checkpoints" table
+CREATE TABLE "public"."workflow_checkpoints" (
+  "id" character varying(255) NOT NULL,
+  "trace_id" character varying(255) NOT NULL,
+  "sequence_ordinal" integer NOT NULL,
+  "node_name" character varying(100) NOT NULL,
+  "context_snapshot" jsonb NOT NULL,
+  "created_at" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id")
+);
+-- Create index "workflow_checkpoints_trace_id_sequence_ordinal_created_at" to table: "workflow_checkpoints"
+CREATE INDEX "workflow_checkpoints_trace_id_sequence_ordinal_created_at" ON "public"."workflow_checkpoints" ("trace_id", "sequence_ordinal", "created_at");
+
 

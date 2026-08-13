@@ -38,3 +38,12 @@ type User struct {
 	Username  string
 	CreatedAt pgtype.Timestamp
 }
+
+type WorkflowCheckpoint struct {
+	ID              string
+	TraceID         string
+	SequenceOrdinal int32
+	NodeName        string
+	ContextSnapshot []byte
+	CreatedAt       pgtype.Timestamp
+}

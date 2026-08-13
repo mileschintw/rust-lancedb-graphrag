@@ -258,6 +258,55 @@ func (q *Queries) InsertDocument(ctx context.Context, arg InsertDocumentParams) 
 	return i, err
 }
 
+const insertWorkflowCheckpoint = `-- name: InsertWorkflowCheckpoint :one
+INSERT INTO workflow_checkpoints (
+  id,
+  trace_id,
+  sequence_ordinal,
+  node_name,
+  context_snapshot,
+  created_at
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6
+)
+RETURNING id, trace_id, sequence_ordinal, node_name, context_snapshot, created_at
+`
+
+type InsertWorkflowCheckpointParams struct {
+	ID              string
+	TraceID         string
+	SequenceOrdinal int32
+	NodeName        string
+	ContextSnapshot []byte
+	CreatedAt       pgtype.Timestamp
+}
+
+func (q *Queries) InsertWorkflowCheckpoint(ctx context.Context, arg InsertWorkflowCheckpointParams) (WorkflowCheckpoint, error) {
+	row := q.db.QueryRow(ctx, insertWorkflowCheckpoint,
+		arg.ID,
+		arg.TraceID,
+		arg.SequenceOrdinal,
+		arg.NodeName,
+		arg.ContextSnapshot,
+		arg.CreatedAt,
+	)
+	var i WorkflowCheckpoint
+	err := row.Scan(
+		&i.ID,
+		&i.TraceID,
+		&i.SequenceOrdinal,
+		&i.NodeName,
+		&i.ContextSnapshot,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const rescheduleReconciliationIntent = `-- name: RescheduleReconciliationIntent :one
 UPDATE document_reconciliation_intents
 SET

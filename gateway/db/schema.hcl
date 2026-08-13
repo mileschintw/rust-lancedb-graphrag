@@ -133,3 +133,40 @@ table "document_reconciliation_intents" {
   }
 }
 
+table "workflow_checkpoints" {
+  schema = schema.public
+  column "id" {
+    null = false
+    type = varchar(255)
+  }
+  column "trace_id" {
+    null = false
+    type = varchar(255)
+  }
+  column "sequence_ordinal" {
+    null = false
+    type = integer
+  }
+  column "node_name" {
+    null = false
+    type = varchar(100)
+  }
+  column "context_snapshot" {
+    null = false
+    type = jsonb
+  }
+  column "created_at" {
+    null    = false
+    type    = timestamp
+    default = sql("CURRENT_TIMESTAMP")
+  }
+  primary_key {
+    columns = [column.id]
+  }
+  index "workflow_checkpoints_trace_id_sequence_ordinal_created_at" {
+    unique  = false
+    columns = [column.trace_id, column.sequence_ordinal, column.created_at]
+  }
+}
+
+

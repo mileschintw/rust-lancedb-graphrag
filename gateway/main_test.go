@@ -2623,3 +2623,382 @@ func TestWriteJSONEncodeFailureReturns500(t *testing.T) {
 		}
 	})
 }
+
+func newWorkflowCheckpointsIsolatedPostgres(t *testing.T, databaseURL string) (*postgresStore, *pgxpool.Pool, string) {
+	t.Helper()
+	ctx := context.Background()
+	adminPool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("create admin pool: %v", err)
+	}
+	schemaName := "cp_schema_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	_, err = adminPool.Exec(ctx, fmt.Sprintf(`
+		CREATE SCHEMA %q;
+		CREATE TABLE %q.users (LIKE public.users INCLUDING ALL);
+		CREATE TABLE %q.documents (LIKE public.documents INCLUDING ALL);
+		CREATE TABLE %q.document_reconciliation_intents (LIKE public.document_reconciliation_intents INCLUDING ALL);
+		CREATE TABLE %q.workflow_checkpoints (LIKE public.workflow_checkpoints INCLUDING ALL);
+		ALTER TABLE %q.document_reconciliation_intents ADD CONSTRAINT document_reconciliation_intents_document_id_fkey FOREIGN KEY (document_id) REFERENCES %q.documents (id) ON UPDATE NO ACTION ON DELETE CASCADE;
+	`, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName, schemaName))
+	if err != nil {
+		adminPool.Close()
+		t.Fatalf("create isolated workflow_checkpoints schema: %v", err)
+	}
+
+	connConfig, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+		t.Fatalf("parse database URL: %v", err)
+	}
+	if connConfig.ConnConfig.RuntimeParams == nil {
+		connConfig.ConnConfig.RuntimeParams = make(map[string]string)
+	}
+	connConfig.ConnConfig.RuntimeParams["search_path"] = schemaName
+
+	isolatedPool, err := pgxpool.NewWithConfig(ctx, connConfig)
+	if err != nil {
+		_, _ = adminPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+		t.Fatalf("create isolated pool: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		isolatedPool.Close()
+		_, _ = adminPool.Exec(cleanupCtx, fmt.Sprintf("DROP SCHEMA %q CASCADE", schemaName))
+		adminPool.Close()
+	})
+
+	return &postgresStore{pool: isolatedPool}, isolatedPool, schemaName
+}
+
+func TestWorkflowCheckpointSchemaArtifacts(t *testing.T) {
+	hclBytes, err := os.ReadFile("db/schema.hcl")
+	if err != nil {
+		t.Fatalf("read schema.hcl: %v", err)
+	}
+	hcl := string(hclBytes)
+
+	sqlBytes, err := os.ReadFile("db/schema.sql")
+	if err != nil {
+		t.Fatalf("read schema.sql: %v", err)
+	}
+	sqlStr := string(sqlBytes)
+
+	queryBytes, err := os.ReadFile("db/query.sql")
+	if err != nil {
+		t.Fatalf("read query.sql: %v", err)
+	}
+	queryStr := string(queryBytes)
+
+	requiredCols := []string{"id", "trace_id", "sequence_ordinal", "node_name", "context_snapshot", "created_at"}
+	for _, col := range requiredCols {
+		if !strings.Contains(hcl, `column "`+col+`"`) {
+			t.Fatalf("schema.hcl missing column: %s", col)
+		}
+		if !strings.Contains(sqlStr, `"`+col+`"`) {
+			t.Fatalf("schema.sql missing column: %s", col)
+		}
+	}
+
+	if !strings.Contains(hcl, `table "workflow_checkpoints"`) {
+		t.Fatalf("schema.hcl missing table workflow_checkpoints")
+	}
+	if !strings.Contains(sqlStr, `CREATE TABLE "public"."workflow_checkpoints"`) {
+		t.Fatalf("schema.sql missing CREATE TABLE workflow_checkpoints")
+	}
+
+	if !strings.Contains(hcl, "workflow_checkpoints_trace_id_sequence_ordinal_created_at") {
+		t.Fatalf("schema.hcl missing index workflow_checkpoints_trace_id_sequence_ordinal_created_at")
+	}
+	if !strings.Contains(sqlStr, "workflow_checkpoints_trace_id_sequence_ordinal_created_at") {
+		t.Fatalf("schema.sql missing index workflow_checkpoints_trace_id_sequence_ordinal_created_at")
+	}
+
+	if !strings.Contains(queryStr, "InsertWorkflowCheckpoint") {
+		t.Fatalf("query.sql missing InsertWorkflowCheckpoint")
+	}
+
+	var cp db.WorkflowCheckpoint
+	_ = cp.ID
+	_ = cp.TraceID
+	_ = cp.SequenceOrdinal
+	_ = cp.NodeName
+	_ = cp.ContextSnapshot
+	_ = cp.CreatedAt
+
+	var params db.InsertWorkflowCheckpointParams
+	_ = params.ID
+	_ = params.TraceID
+	_ = params.SequenceOrdinal
+	_ = params.NodeName
+	_ = params.ContextSnapshot
+	_ = params.CreatedAt
+
+	if strings.Contains(strings.ToLower(hcl), "ttl") || strings.Contains(strings.ToLower(sqlStr), "ttl") {
+		t.Fatalf("schema contains prohibited TTL / retention cleanup")
+	}
+}
+
+func TestWorkflowCheckpointTracer(t *testing.T) {
+	ev := &pb.WorkflowEvent{
+		SessionId:       "sess-123",
+		TraceId:         "trace-456",
+		SequenceOrdinal: 1,
+		TimestampMs:     1234567890,
+		Event: &pb.WorkflowEvent_Checkpoint{
+			Checkpoint: &pb.CheckpointEvent{
+				CheckpointType:  "reformulate",
+				SequenceOrdinal: 1,
+				ContextSnapshot: `{"original_query":"test query","reformulated_query":"test query reformulated"}`,
+			},
+		},
+	}
+
+	env := NewCheckpointEnvelopeFromEvent(ev)
+	if env == nil {
+		t.Fatalf("expected non-nil envelope")
+	}
+	if env.TraceID != "trace-456" {
+		t.Fatalf("trace_id = %s, want trace-456", env.TraceID)
+	}
+	if env.SequenceOrdinal != 1 {
+		t.Fatalf("sequence_ordinal = %d, want 1", env.SequenceOrdinal)
+	}
+	if env.NodeID != "reformulate" {
+		t.Fatalf("node_id = %s, want reformulate", env.NodeID)
+	}
+
+	inMem := NewInMemoryCheckpointSink()
+	disp := NewCheckpointDispatcher(inMem)
+	res := disp.Submit(env)
+	if res.Kind != DispatchAccepted {
+		t.Fatalf("dispatch result = %v, want DispatchAccepted", res.Kind)
+	}
+	disp.Close()
+
+	cps := inMem.Checkpoints()
+	if len(cps) != 1 {
+		t.Fatalf("in-memory checkpoints count = %d, want 1", len(cps))
+	}
+	if cps[0].TraceID != "trace-456" {
+		t.Fatalf("checkpoint trace_id = %s, want trace-456", cps[0].TraceID)
+	}
+
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL != "" {
+		ctx := t.Context()
+		_, pool, _ := newWorkflowCheckpointsIsolatedPostgres(t, databaseURL)
+		pgSink := NewPostgresCheckpointSink(pool, nil)
+		pgDisp := NewCheckpointDispatcher(pgSink)
+		pgDisp.Submit(env)
+		pgDisp.Close()
+
+		var count int
+		err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM workflow_checkpoints WHERE trace_id = $1", "trace-456").Scan(&count)
+		if err != nil {
+			t.Fatalf("query count: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("persisted count = %d, want 1", count)
+		}
+	}
+
+	dto := toQueryRAGResponseDTO(&pb.QueryRAGResponse{
+		Answer:    "hello",
+		Citations: []string{"doc1"},
+	})
+	dtoBytes, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatalf("marshal dto: %v", err)
+	}
+	if strings.Contains(string(dtoBytes), "context_snapshot") || strings.Contains(string(dtoBytes), "reformulate") {
+		t.Fatalf("SSE DTO leaked checkpoint snapshot data: %s", string(dtoBytes))
+	}
+}
+
+func TestWorkflowCheckpointPersistence(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is required for database integration tests")
+	}
+
+	ctx := t.Context()
+	_, pool, _ := newWorkflowCheckpointsIsolatedPostgres(t, databaseURL)
+	sink := NewPostgresCheckpointSink(pool, nil)
+	dispatcher := NewCheckpointDispatcher(sink)
+
+	traceID := "trace-persistence-" + uuid.NewString()
+
+	envs := []*CheckpointEnvelope{
+		{
+			SessionID:       "sess-p",
+			CorrelationID:   traceID,
+			TraceID:         traceID,
+			NodeID:          "reformulate",
+			SequenceOrdinal: 1,
+			ContextSnapshot: `{"original_query":"q1","reformulated_query":"q1_ref"}`,
+			CreatedAt:       time.Now(),
+		},
+		{
+			SessionID:       "sess-p",
+			CorrelationID:   traceID,
+			TraceID:         traceID,
+			NodeID:          "retrieve",
+			SequenceOrdinal: 2,
+			ContextSnapshot: `{"vector_results":["c1","c2"],"bm25_results":["c1"]}`,
+			CreatedAt:       time.Now(),
+		},
+		{
+			SessionID:       "sess-p",
+			CorrelationID:   traceID,
+			TraceID:         traceID,
+			NodeID:          "generate",
+			SequenceOrdinal: 3,
+			ContextSnapshot: `{"assembled_prompt":"prompt text","answer":"final ans"}`,
+			CreatedAt:       time.Now(),
+		},
+	}
+
+	for _, e := range envs {
+		res := dispatcher.Submit(e)
+		if res.Kind != DispatchAccepted {
+			t.Fatalf("submit failed for ordinal %d: %v", e.SequenceOrdinal, res.Kind)
+		}
+	}
+	dispatcher.Close()
+
+	rows, err := pool.Query(ctx, "SELECT id, trace_id, sequence_ordinal, node_name, context_snapshot, created_at FROM workflow_checkpoints WHERE trace_id = $1 ORDER BY sequence_ordinal ASC", traceID)
+	if err != nil {
+		t.Fatalf("query checkpoints: %v", err)
+	}
+	defer rows.Close()
+
+	var fetched []*db.WorkflowCheckpoint
+	for rows.Next() {
+		var r db.WorkflowCheckpoint
+		if err := rows.Scan(&r.ID, &r.TraceID, &r.SequenceOrdinal, &r.NodeName, &r.ContextSnapshot, &r.CreatedAt); err != nil {
+			t.Fatalf("scan checkpoint row: %v", err)
+		}
+		fetched = append(fetched, &r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows err: %v", err)
+	}
+
+	if len(fetched) != 3 {
+		t.Fatalf("fetched count = %d, want 3", len(fetched))
+	}
+
+	for i, r := range fetched {
+		expectedOrdinal := int32(i + 1)
+		if r.SequenceOrdinal != expectedOrdinal {
+			t.Fatalf("row %d ordinal = %d, want %d", i, r.SequenceOrdinal, expectedOrdinal)
+		}
+		if r.TraceID != traceID {
+			t.Fatalf("row %d trace_id = %s, want %s", i, r.TraceID, traceID)
+		}
+		if len(r.ContextSnapshot) == 0 {
+			t.Fatalf("row %d context_snapshot is empty", i)
+		}
+		var js map[string]any
+		if err := json.Unmarshal(r.ContextSnapshot, &js); err != nil {
+			t.Fatalf("row %d context_snapshot invalid json: %v", i, err)
+		}
+	}
+}
+
+func TestWorkflowCheckpointCancellationAtomicity(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is required for database integration tests")
+	}
+
+	ctx := t.Context()
+	_, pool, _ := newWorkflowCheckpointsIsolatedPostgres(t, databaseURL)
+	sink := NewPostgresCheckpointSink(pool, nil)
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	traceID := "trace-cancel-" + uuid.NewString()
+	env := &CheckpointEnvelope{
+		SessionID:       "sess-c",
+		CorrelationID:   traceID,
+		TraceID:         traceID,
+		NodeID:          "assemble_prompt",
+		SequenceOrdinal: 1,
+		ContextSnapshot: `{"assembled_prompt":"valid prompt"}`,
+		CreatedAt:       time.Now(),
+	}
+
+	err := sink.SaveCheckpoint(canceledCtx, env)
+	if err != nil {
+		t.Fatalf("save checkpoint with canceled context failed: %v", err)
+	}
+
+	var count int
+	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM workflow_checkpoints WHERE trace_id = $1", traceID).Scan(&count)
+	if err != nil {
+		t.Fatalf("query count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("persisted count after cancel = %d, want 1 (sink must use independent background context)", count)
+	}
+}
+
+func TestWorkflowCheckpointBackpressureDoesNotStallSSE(t *testing.T) {
+	inMem := NewInMemoryCheckpointSink()
+	dispatcher := NewCheckpointDispatcher(inMem)
+
+	traceID := "trace-bp-" + uuid.NewString()
+
+	start := time.Now()
+	for i := range 10 {
+		env := &CheckpointEnvelope{
+			SessionID:       "sess-bp",
+			CorrelationID:   traceID,
+			TraceID:         traceID,
+			NodeID:          fmt.Sprintf("node_%d", i),
+			SequenceOrdinal: uint64(i + 1),
+			ContextSnapshot: `{"data":"ok"}`,
+			CreatedAt:       time.Now(),
+		}
+		res := dispatcher.Submit(env)
+		if res.Kind != DispatchAccepted && res.Kind != DispatchPending {
+			t.Fatalf("submit kind = %v, expected Accepted or Pending", res.Kind)
+		}
+	}
+	duration := time.Since(start)
+	if duration > 1*time.Second {
+		t.Fatalf("dispatcher.Submit stalled for %v; backpressure delayed caller", duration)
+	}
+
+	dispatcher.Close()
+
+	cps := inMem.Checkpoints()
+	if len(cps) == 0 {
+		t.Fatalf("expected dispatched checkpoints in sink")
+	}
+}
+
+func TestQueryRAGRealInvalidRequestAndDisconnect(t *testing.T) {
+	req, err := http.NewRequestWithContext(t.Context(), "POST", "/rag/query", strings.NewReader(`{"invalid_json":`))
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	recorder := httptest.NewRecorder()
+
+	a := app{}
+	a.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 Bad Request", recorder.Code)
+	}
+
+	if strings.Contains(recorder.Body.String(), "context_snapshot") {
+		t.Fatalf("error response body leaked context_snapshot: %s", recorder.Body.String())
+	}
+}
+

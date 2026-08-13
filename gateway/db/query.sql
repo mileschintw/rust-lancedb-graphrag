@@ -113,3 +113,22 @@ SELECT * FROM document_reconciliation_intents
 WHERE document_id = $1
 LIMIT 1;
 
+-- name: InsertWorkflowCheckpoint :one
+INSERT INTO workflow_checkpoints (
+  id,
+  trace_id,
+  sequence_ordinal,
+  node_name,
+  context_snapshot,
+  created_at
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6
+)
+RETURNING *;
+
+
