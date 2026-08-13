@@ -133,13 +133,25 @@ without embedding again. 05-03 explicitly owns the production
 `GenerationRequest` equality assertion, and labels `assembled_prompt` as a
 node-output checkpoint field rather than the adapter's wire repack.
 
-05-06 declares all seven timeout keys in the exact `[engine.workflow]` and
-`[engine.graph]` configuration contract across all three overlays and tests
+05-06 declares all seven timeout keys in the exact `[engine.workflow]`
+configuration contract across all three overlays and tests
 the exact-set/annotation/inequality rules. 05-05 makes checkpoint `id` the UUID
 primary key. The review suggestion for automatic checkpoint cleanup is
 explicitly rejected under D-24/D-25: indefinite retention and direct database
 inspection remain the locked contract, with the local-demo storage tradeoff
 accepted and no cleanup job added.
+
+## Targeted continuation revision
+
+The 05-02 admission correction is now assigned to the runner immediately after
+`ReformulateQuery`: `variants.len() <= 8` is checked before
+`ExtractGraphContext`, embedding, graph, dense/BM25 retrieval, RRF, reranking,
+or provenance allocation, and the exact nine-variant test drives the full
+runner while asserting zero downstream calls. All seven workflow timer keys
+are now assigned consistently to `[engine.workflow]` across the three config
+overlays, allowlist, annotations, exact-set checks, and validation matrix;
+`openrouter.generation_timeout_secs` remains the separate per-attempt provider
+timeout.
 
 ## Spec-less fallback dispositions
 
