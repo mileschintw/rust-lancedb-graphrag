@@ -340,6 +340,7 @@ pub enum NodeErrorKind {
     PromptAssemblyFailed = 6,
     ReformulationFailed = 7,
     Internal = 8,
+    InputValidation = 9,
 }
 impl NodeErrorKind {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -357,6 +358,7 @@ impl NodeErrorKind {
             Self::PromptAssemblyFailed => "NODE_ERROR_KIND_PROMPT_ASSEMBLY_FAILED",
             Self::ReformulationFailed => "NODE_ERROR_KIND_REFORMULATION_FAILED",
             Self::Internal => "NODE_ERROR_KIND_INTERNAL",
+            Self::InputValidation => "NODE_ERROR_KIND_INPUT_VALIDATION",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -371,6 +373,7 @@ impl NodeErrorKind {
             "NODE_ERROR_KIND_PROMPT_ASSEMBLY_FAILED" => Some(Self::PromptAssemblyFailed),
             "NODE_ERROR_KIND_REFORMULATION_FAILED" => Some(Self::ReformulationFailed),
             "NODE_ERROR_KIND_INTERNAL" => Some(Self::Internal),
+            "NODE_ERROR_KIND_INPUT_VALIDATION" => Some(Self::InputValidation),
             _ => None,
         }
     }
