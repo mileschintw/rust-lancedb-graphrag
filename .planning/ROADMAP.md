@@ -322,11 +322,16 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 7/7 plans executed
+**Plans:** 12 plans (7 baseline executed, 5 additive gap closure pending)
 
 Plans:
 
 - [x] 05-07-PLAN.md
+- [ ] 05-08-PLAN.md — Production five-node wiring, real adapter dependencies, and WorkflowContext population.
+- [ ] 05-09-PLAN.md — Live workflow settings, real-I/O deadlines, and stream-owned cancellation.
+- [ ] 05-10-PLAN.md — Typed event delivery, retryability, sequence integrity, and full snapshots.
+- [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
+- [ ] 05-12-PLAN.md — Additive historical-summary traceability errata and source coverage audit.
 
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
@@ -348,6 +353,27 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion and the completed Wave 1 dispatcher contract)*
 
 - [x] 05-05-PLAN.md — PostgreSQL-backed workflow_checkpoints persistence (ORCH-04), detached standalone checkpoint events, and full-snapshot fidelity.
+
+**Wave 6** *(baseline Phase 05 execution complete; gap closure follows)*
+
+- [x] 05-05-PLAN.md — Baseline checkpoint persistence and dispatcher contract.
+
+**Wave 7** *(additive gap closure starts; documentation is independent of Rust implementation files)*
+
+- [ ] 05-08-PLAN.md — Production five-node wiring, real adapter dependencies, and WorkflowContext population.
+- [ ] 05-12-PLAN.md — Additive historical-summary traceability errata and source coverage audit.
+
+**Wave 8** *(blocked on production wiring)*
+
+- [ ] 05-09-PLAN.md — Live workflow settings, real-I/O deadlines, and stream-owned cancellation.
+
+**Wave 9** *(blocked on live timeout and cancellation controls)*
+
+- [ ] 05-10-PLAN.md — Typed event delivery, retryability, sequence integrity, and full snapshots.
+
+**Wave 10** *(blocked on the corrected Rust event contract)*
+
+- [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
 
 ### Phase 6: Observability, Evaluation & Polish
 
