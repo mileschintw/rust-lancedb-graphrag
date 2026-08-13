@@ -8,6 +8,8 @@ use engine::pb::lancet;
 use engine::pb::lancet::v1::*;
 use super::*;
 
+pub mod workflow_phase5;
+
 use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
