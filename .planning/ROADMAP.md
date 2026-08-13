@@ -324,27 +324,24 @@ Plans:
 **Plans:** 6 plans
 
 Plans:
-**Wave 1**
+**Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
 - [ ] 05-01-PLAN.md — Tracer: streaming QueryRAG wire contract, one-node Rust Node/WorkflowRunner, and independent checkpoint channel.
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
 - [ ] 05-06-PLAN.md — Generated stream to Go SSE, timeout configuration, and deterministic transport/config regression tests.
 
-**Wave 3** *(blocked on Wave 2 completion)*
+**Wave 2** *(blocked on the Wave 1 atomic landing group)*
 
 - [ ] 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 corrected order, D-07 cross-variant RRF merge, D-03 short-circuit with full retrieval-source context.
 
-**Wave 4** *(blocked on Wave 3 completion)*
+**Wave 3** *(blocked on Wave 2 completion)*
 
 - [ ] 05-03-PLAN.md — AssemblePrompt + GenerateAnswer nodes, D-12/D-13 retry-then-honest-failure, D-01/D-02 AnswerChunk/FinalAnswer, and full accumulated snapshots.
 
-**Wave 5** *(blocked on Wave 4 completion)*
+**Wave 4** *(blocked on Wave 3 completion)*
 
 - [ ] 05-04-PLAN.md — Full deterministic Rust orchestration matrix, cooperative cancellation cleanup, and fault-injection coverage.
 
-**Wave 6** *(blocked on Wave 5 completion; 05-05 depends on 05-04 as well as 05-03 and 05-06)*
+**Wave 5** *(blocked on Wave 4 completion and the completed Wave 1 dispatcher contract)*
 
 - [ ] 05-05-PLAN.md — PostgreSQL-backed workflow_checkpoints persistence (ORCH-04), detached standalone checkpoint events, and full-snapshot fidelity.
 
