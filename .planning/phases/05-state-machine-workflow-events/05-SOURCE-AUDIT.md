@@ -63,7 +63,7 @@ assigned to an executable plan. Deferred and descoped items from
 ## Review Disposition
 
 All current actionable findings in `05-REVIEWS.md` are incorporated into the
-six plans. The revised graph/retrieval plan pins bounded cross-variant score
+baseline and additive plan set. The revised graph/retrieval plan pins bounded cross-variant score
 and provenance semantics; the generation and gateway plans pin 65000ms versus
 30000ms timeout arithmetic, route isolation, live SSE testing, generated-code
 landing order, and no-backoff retry behavior; the checkpoint plans pin
@@ -152,6 +152,21 @@ are now assigned consistently to `[engine.workflow]` across the three config
 overlays, allowlist, annotations, exact-set checks, and validation matrix;
 `openrouter.generation_timeout_secs` remains the separate per-attempt provider
 timeout.
+
+## Revision iteration 4 checker closure
+
+The additive checker revision adds 05-13 as the Wave 9 owner of OpenRouter
+capability preflight, successful-only caching, typed transient transport
+classification, and the D-11/D-12 generation retry contract. 05-09 now owns
+`config/config.verify.toml` and sets the provider-attempt budget to 30 seconds
+while retaining the 7000ms live generation-node timeout proof. 05-10 is the
+Wave 10 owner of exhaustive `NodeKind` dispatch and lists the exact
+`graph_context.rs`, `retrieve.rs`, and `assemble_prompt.rs` node files alongside
+the other five node implementations; it no longer owns OpenRouter preflight or
+generation-attempt policy. 05-11 is Wave 11 and depends explicitly on both
+05-10's event contract and 05-13's retryability contract. The 05-12 errata and
+validation mappings include 05-13, so GOAL, ORCH-01 through ORCH-05, RESEARCH,
+and D-01 through D-31 remain traceable without changing executed artifacts.
 
 ## Spec-less fallback dispositions
 
