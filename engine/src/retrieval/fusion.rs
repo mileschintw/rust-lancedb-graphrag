@@ -11,6 +11,16 @@ use serde::Serialize;
 
 use super::{Candidate, RetrievalError, RetrievalErrorKind, RetrievalSettings};
 
+/// Provenance contribution entry for a variant/source candidate.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct VariantProvenance {
+    pub variant_index: usize,
+    pub source: String,
+    pub rank: usize,
+    pub score: f64,
+    pub contribution: f64,
+}
+
 /// A deduplicated candidate with source provenance and its full-precision RRF score.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FusedCandidate {
@@ -20,6 +30,8 @@ pub struct FusedCandidate {
     pub bm25_rank: Option<usize>,
     pub vector_score: Option<f64>,
     pub bm25_score: Option<f64>,
+    #[serde(default)]
+    pub variant_provenance: Vec<VariantProvenance>,
 }
 
 #[derive(Debug)]
@@ -30,6 +42,7 @@ struct Accumulator {
     bm25_rank: Option<usize>,
     vector_score: Option<f64>,
     bm25_score: Option<f64>,
+    variant_provenance: Vec<VariantProvenance>,
 }
 
 fn deduplicate_source_candidates(
@@ -54,60 +67,106 @@ fn deduplicate_source_candidates(
     Ok(deduplicated)
 }
 
-/// Fuses bounded source rankings using weighted full-precision RRF.
+/// Fuses single-variant vector and BM25 candidate lists.
 pub fn fuse_candidates(
     vector_candidates: Vec<Candidate>,
     bm25_candidates: Vec<Candidate>,
     settings: &RetrievalSettings,
 ) -> Result<Vec<FusedCandidate>, RetrievalError> {
+    fuse_variant_candidates(vector_candidates, vec![bm25_candidates], settings)
+}
+
+/// Fuses variant 0 vector candidates with per-variant BM25 candidate lists across up to 8 variants.
+pub fn fuse_variant_candidates(
+    vector_candidates: Vec<Candidate>,
+    bm25_candidates_per_variant: Vec<Vec<Candidate>>,
+    settings: &RetrievalSettings,
+) -> Result<Vec<FusedCandidate>, RetrievalError> {
     settings.validate()?;
+
+    if bm25_candidates_per_variant.len() > 8 {
+        return Err(RetrievalError::new(
+            RetrievalErrorKind::InvalidSettings,
+            "maximum 8 variants supported in fusion",
+        ));
+    }
+
     let vector_candidates = deduplicate_source_candidates(vector_candidates)?;
-    let bm25_candidates = deduplicate_source_candidates(bm25_candidates)?;
     let mut fused = BTreeMap::new();
+
+    // 1. Vector candidates (associated with variant 0)
     if settings.vector_weight != 0.0 {
         for (rank, candidate) in vector_candidates
             .into_iter()
             .take(settings.candidate_limit)
             .enumerate()
         {
-            add_candidate(
+            add_variant_candidate(
                 &mut fused,
                 candidate,
-                rank + 1,
+                0,
                 Source::Vector,
+                rank + 1,
                 settings.vector_weight,
                 settings.rrf_k,
             )?;
         }
     }
+
+    // 2. BM25 candidates per variant
     if settings.bm25_weight != 0.0 {
-        for (rank, candidate) in bm25_candidates
-            .into_iter()
-            .take(settings.candidate_limit)
-            .enumerate()
-        {
-            add_candidate(
-                &mut fused,
-                candidate,
-                rank + 1,
-                Source::Bm25,
-                settings.bm25_weight,
-                settings.rrf_k,
-            )?;
+        for (variant_idx, bm25_candidates) in bm25_candidates_per_variant.into_iter().enumerate() {
+            let bm25_candidates = deduplicate_source_candidates(bm25_candidates)?;
+            for (rank, candidate) in bm25_candidates
+                .into_iter()
+                .take(settings.candidate_limit)
+                .enumerate()
+            {
+                add_variant_candidate(
+                    &mut fused,
+                    candidate,
+                    variant_idx,
+                    Source::Bm25,
+                    rank + 1,
+                    settings.bm25_weight,
+                    settings.rrf_k,
+                )?;
+            }
         }
     }
 
     let mut results = fused
         .into_values()
-        .map(|value| FusedCandidate {
-            candidate: value.candidate,
-            fused_score: value.fused_score,
-            vector_rank: value.vector_rank,
-            bm25_rank: value.bm25_rank,
-            vector_score: value.vector_score,
-            bm25_score: value.bm25_score,
+        .map(|value| {
+            // Public vector/bm25 rank and score fields use the highest-scoring contribution with lowest variant-index tie-break.
+            let (vector_rank, vector_score) = value
+                .variant_provenance
+                .iter()
+                .filter(|p| p.source == "vector")
+                .min_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.variant_index.cmp(&b.variant_index)))
+                .map(|p| (Some(p.rank), Some(p.score)))
+                .unwrap_or((value.vector_rank, value.vector_score));
+
+            let (bm25_rank, bm25_score) = value
+                .variant_provenance
+                .iter()
+                .filter(|p| p.source == "bm25")
+                .min_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.variant_index.cmp(&b.variant_index)))
+                .map(|p| (Some(p.rank), Some(p.score)))
+                .unwrap_or((value.bm25_rank, value.bm25_score));
+
+            FusedCandidate {
+                candidate: value.candidate,
+                fused_score: value.fused_score,
+                vector_rank,
+                bm25_rank,
+                vector_score,
+                bm25_score,
+                variant_provenance: value.variant_provenance,
+            }
         })
         .collect::<Vec<_>>();
+
     results.sort_by(|left, right| {
         right
             .fused_score
@@ -124,11 +183,12 @@ enum Source {
     Bm25,
 }
 
-fn add_candidate(
+fn add_variant_candidate(
     fused: &mut BTreeMap<String, Accumulator>,
     candidate: Candidate,
-    rank: usize,
+    variant_index: usize,
     source: Source,
+    rank: usize,
     weight: f64,
     rrf_k: f64,
 ) -> Result<(), RetrievalError> {
@@ -163,6 +223,20 @@ fn add_candidate(
             ),
         ));
     }
+
+    let source_str = match source {
+        Source::Vector => "vector",
+        Source::Bm25 => "bm25",
+    };
+
+    let prov = VariantProvenance {
+        variant_index,
+        source: source_str.to_string(),
+        rank,
+        score: source_score,
+        contribution,
+    };
+
     let entry = fused.entry(chunk_id).or_insert_with(|| Accumulator {
         candidate: candidate.clone(),
         fused_score: 0.0,
@@ -170,7 +244,9 @@ fn add_candidate(
         bm25_rank: None,
         vector_score: None,
         bm25_score: None,
+        variant_provenance: Vec::new(),
     });
+
     entry.fused_score += contribution;
     if !entry.fused_score.is_finite() {
         return Err(RetrievalError::new(
@@ -181,6 +257,9 @@ fn add_candidate(
             ),
         ));
     }
+
+    entry.variant_provenance.push(prov);
+
     match source {
         Source::Vector => {
             if entry.vector_rank.is_none() {

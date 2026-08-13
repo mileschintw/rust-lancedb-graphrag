@@ -39,6 +39,7 @@ fn sample_candidate(id: &str, text: &str) -> FusedCandidate {
         bm25_rank: Some(1),
         vector_score: Some(0.95),
         bm25_score: Some(12.5),
+        variant_provenance: Vec::new(),
     }
 }
 

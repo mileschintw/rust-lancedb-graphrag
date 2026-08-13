@@ -9,3 +9,5 @@ pub mod prompt;
 pub mod rerank;
 pub mod retrieval;
 pub mod workflow;
+
+pub use pb::lancet::v1::lancet_service_server::LancetService;

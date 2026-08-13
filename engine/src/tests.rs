@@ -4452,6 +4452,7 @@ fn prompt_evidence_packing_graph_fact_rendering() {
         bm25_rank: None,
         vector_score: Some(0.9),
         bm25_score: None,
+        variant_provenance: Vec::new(),
     };
 
     let blocks = assemble_evidence_blocks(&[candidate]);
@@ -5349,7 +5350,7 @@ async fn seed_single_edge_graph(
 /// as `InvalidArgument` before any table scan is attempted.
 #[tokio::test]
 async fn query_graph_validates_both_blank_seed_inputs_before_db_ops() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     let path = database_path("query-graph-blank-seed");
     let service = query_graph_service(&path).await;
 
@@ -5385,7 +5386,7 @@ async fn query_graph_validates_both_blank_seed_inputs_before_db_ops() {
 /// the shorter stored name and surface as `NotFound`, not `InvalidArgument`.
 #[tokio::test]
 async fn query_graph_rejects_oversized_seed_entity_name() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     use graph::MAX_SEED_ENTITY_NAME_BYTES;
 
     let path = database_path("query-graph-oversized-seed-name");
@@ -5423,7 +5424,7 @@ async fn query_graph_rejects_oversized_seed_entity_name() {
 /// all — validation-only, does not require a matching-seed fixture (unlike Test 8).
 #[tokio::test]
 async fn query_graph_rejects_oversized_relation_type_filter() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     use graph::MAX_RELATION_TYPE_FILTER_BYTES;
 
     let path = database_path("query-graph-oversized-relation-filter");
@@ -5452,7 +5453,7 @@ async fn query_graph_rejects_oversized_relation_type_filter() {
 /// A syntactically invalid UUID in `seed_entity_id` must be rejected as `InvalidArgument`.
 #[tokio::test]
 async fn query_graph_rejects_malformed_seed_id() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     let path = database_path("query-graph-bad-uuid");
     let service = query_graph_service(&path).await;
 
@@ -5488,7 +5489,7 @@ async fn query_graph_rejects_malformed_seed_id() {
 /// success/failure discriminator, not merely a status-code check.
 #[tokio::test]
 async fn query_graph_rejects_out_of_range_hop_depth() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     let path = database_path("query-graph-hop-depth-range");
     let service = query_graph_service(&path).await;
 
@@ -5529,7 +5530,7 @@ async fn query_graph_rejects_out_of_range_hop_depth() {
 /// `narrow_via_cypher` step is correctness-preserving on real, non-adversarial data.
 #[tokio::test]
 async fn query_graph_recovers_multi_hop_edge_relation_properties() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     let path = database_path("query-graph-multihop-recover");
     let database = seed_two_hop_graph(&path).await;
     let service = query_graph_service_with_db(database).await;
@@ -5591,7 +5592,7 @@ async fn query_graph_recovers_multi_hop_edge_relation_properties() {
 /// filtering rather than a full-neighborhood response.
 #[tokio::test]
 async fn query_graph_relation_filter_correct_at_hop_depth_two() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     let path = database_path("query-graph-relation-filter-hop2");
     let database = seed_two_hop_graph(&path).await;
     let service = query_graph_service_with_db(database).await;
@@ -5638,7 +5639,7 @@ async fn query_graph_relation_filter_correct_at_hop_depth_two() {
 /// matching nothing is a valid, successful "no matching relationships" answer).
 #[tokio::test]
 async fn query_graph_relation_filter_returns_empty_on_no_match() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     let path = database_path("query-graph-relation-filter-empty");
     let database = seed_two_hop_graph(&path).await;
     let service = query_graph_service_with_db(database).await;
@@ -5664,7 +5665,7 @@ async fn query_graph_relation_filter_returns_empty_on_no_match() {
 /// that edge in the response (D-24 bidirectionality, reused from `fetch_neighborhood`).
 #[tokio::test]
 async fn query_graph_bidirectional_seed_as_target() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     let path = database_path("query-graph-bidir-seed-target");
     let database = seed_single_edge_graph(&path, "Carol", "Dave", "mentors").await;
     let service = query_graph_service_with_db(database).await;
@@ -5700,7 +5701,7 @@ async fn query_graph_bidirectional_seed_as_target() {
 /// response-semantics contract for the unfiltered case.
 #[tokio::test]
 async fn query_graph_nodes_include_seed_when_unfiltered() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     let path = database_path("query-graph-nodes-include-seed");
     let database = seed_two_hop_graph(&path).await;
     let service = query_graph_service_with_db(database).await;
@@ -5764,6 +5765,7 @@ fn candidate_with_score(id_hint: &str, text: &str, score: f64) -> crate::retriev
         bm25_rank: None,
         vector_score: Some(score),
         bm25_score: None,
+        variant_provenance: Vec::new(),
     }
 }
 
@@ -6421,7 +6423,7 @@ where
 /// records `graph_augmentation = "succeeded"` on the request's tracing span.
 #[tokio::test(flavor = "current_thread")]
 async fn graph_augmentation_succeeded_is_observable_end_to_end() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     use tracing_subscriber::layer::SubscriberExt;
 
     let path = database_path("graph-aug-succeeded-observable");
@@ -6462,7 +6464,7 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
 /// response.
 #[tokio::test(flavor = "current_thread")]
 async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     use tracing_subscriber::layer::SubscriberExt;
 
     let path = database_path("graph-aug-no-match-observable");
@@ -6500,7 +6502,7 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
 /// changes the response contract.
 #[tokio::test(flavor = "current_thread")]
 async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
-    use crate::LancetService;
+    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     use tracing_subscriber::layer::SubscriberExt;
 
     let path = database_path("graph-aug-attempted-failed-observable");
@@ -7076,5 +7078,271 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
 
     let _ = std::fs::remove_dir_all(path);
 }
+
+#[tokio::test]
+async fn workflow_retrieve_graph() {
+    use crate::workflow::Node;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let sink = crate::workflow::WorkflowEventSink::new(
+        tx,
+        Arc::new(crate::workflow::EventSequence::new()),
+        "test-trace".into(),
+        "test-session".into(),
+    );
+
+    let req = QueryRagRequest {
+        query: "rust test".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_graph = Arc::new(crate::workflow::ports::FakeGraphQueryPort::success("fact1 -- rel -- fact2"));
+    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![
+        crate::retrieval::Candidate {
+            document_id: "doc-1".into(),
+            chunk_id: "chunk-1".into(),
+            chunk_index: 0,
+            char_start: 0,
+            char_end: 10,
+            content: "dense content".into(),
+            title: None,
+            section_path: None,
+            content_type: Some("text/plain".into()),
+            embedding_model: None,
+            ingested_at: None,
+            score: 0.9,
+        }
+    ]));
+    let fake_bm25 = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
+
+    let mut runner = crate::workflow::WorkflowRunner::new();
+    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::new());
+    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph.clone())));
+    runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
+        Some(fake_dense.clone()),
+        Some(fake_bm25.clone()),
+        None,
+        crate::retrieval::RetrievalSettings::default(),
+    ));
+
+    let deps = crate::workflow::WorkflowDependencies::new();
+    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
+
+    assert_eq!(fake_embedder.calls(), 1);
+    assert_eq!(fake_graph.calls(), 1);
+    assert_eq!(fake_dense.calls(), 1);
+    assert_eq!(fake_bm25.calls(), 1);
+}
+
+#[tokio::test]
+async fn graph_timeout_degrades_to_empty_context() {
+    use crate::workflow::Node;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let sink = crate::workflow::WorkflowEventSink::new(
+        tx,
+        Arc::new(crate::workflow::EventSequence::new()),
+        "test-trace".into(),
+        "test-session".into(),
+    );
+
+    let req = QueryRagRequest {
+        query: "graph timeout test".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+    let mut ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_graph_stalled = Arc::new(crate::workflow::ports::FakeGraphQueryPort::stall());
+
+    let graph_node = crate::workflow::nodes::ExtractGraphContextNode::new(
+        Some(fake_embedder),
+        Some(fake_graph_stalled),
+    ).with_timeouts(5000, 50);
+
+    let res = graph_node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "Graph timeout must degrade gracefully with Ok(()) per D-09");
+    assert!(ctx.graph_context.is_empty(), "Graph context must be empty on timeout");
+    assert_eq!(ctx.notices.len(), 1, "Must emit exactly 1 degrade notice");
+    assert_eq!(ctx.notices[0].message, "GRAPH_TIMEOUT");
+}
+
+#[tokio::test]
+async fn zero_evidence_short_circuits_generation() {
+    use crate::workflow::Node;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let sink = crate::workflow::WorkflowEventSink::new(
+        tx,
+        Arc::new(crate::workflow::EventSequence::new()),
+        "test-trace".into(),
+        "test-session".into(),
+    );
+
+    let req = QueryRagRequest {
+        query: "zero evidence test".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_dense_empty = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![]));
+    let fake_bm25_empty = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
+
+    let mut runner = crate::workflow::WorkflowRunner::new();
+    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::new());
+    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder), None));
+    runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
+        Some(fake_dense_empty),
+        Some(fake_bm25_empty),
+        None,
+        crate::retrieval::RetrievalSettings::default(),
+    ));
+
+    let deps = crate::workflow::WorkflowDependencies::new();
+    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let node_started_names: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(node_started_names.contains(&"ReformulateQuery".to_string()));
+    assert!(node_started_names.contains(&"ExtractGraphContext".to_string()));
+    assert!(node_started_names.contains(&"RetrieveHybrid".to_string()));
+    assert!(!node_started_names.contains(&"AssemblePrompt".to_string()));
+    assert!(!node_started_names.contains(&"GenerateAnswer".to_string()));
+}
+
+#[tokio::test]
+async fn reranker_failure_maps_to_retrieval_failed() {
+    use crate::workflow::Node;
+    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let sink = crate::workflow::WorkflowEventSink::new(
+        tx,
+        Arc::new(crate::workflow::EventSequence::new()),
+        "test-trace".into(),
+        "test-session".into(),
+    );
+
+    let req = QueryRagRequest {
+        query: "reranker failure test".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+    let mut ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+
+    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![
+        crate::retrieval::Candidate {
+            document_id: "doc-1".into(),
+            chunk_id: "chunk-1".into(),
+            chunk_index: 0,
+            char_start: 0,
+            char_end: 10,
+            content: "content".into(),
+            title: None,
+            section_path: None,
+            content_type: Some("text/plain".into()),
+            embedding_model: None,
+            ingested_at: None,
+            score: 0.9,
+        }
+    ]));
+    let fake_failing_reranker = Arc::new(crate::workflow::ports::FakeReranker::failure());
+
+    let retrieve_node = crate::workflow::nodes::RetrieveHybridNode::new(
+        Some(fake_dense),
+        None,
+        Some(fake_failing_reranker),
+        crate::retrieval::RetrievalSettings::default(),
+    );
+
+    let res = retrieve_node.run(&mut ctx, &cancel).await;
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert_eq!(err.kind, v1::NodeErrorKind::RetrievalFailed);
+    assert!(err.message.contains("Reranker failure"));
+}
+
+#[tokio::test]
+async fn nine_variants_are_rejected_before_retrieval() {
+    use crate::workflow::Node;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let sink = crate::workflow::WorkflowEventSink::new(
+        tx,
+        Arc::new(crate::workflow::EventSequence::new()),
+        "test-trace".into(),
+        "test-session".into(),
+    );
+
+    let req = QueryRagRequest {
+        query: "9 variants test".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+
+    let nine_variants: Vec<String> = (0..9).map(|i| format!("variant-{i}")).collect();
+    let fake_reformulator = Arc::new(crate::workflow::ports::FakeQueryReformulator::new(nine_variants));
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_graph = Arc::new(crate::workflow::ports::FakeGraphQueryPort::success("graph facts"));
+    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![]));
+    let fake_bm25 = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
+
+    let mut runner = crate::workflow::WorkflowRunner::new();
+    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
+    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph.clone())));
+    runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
+        Some(fake_dense.clone()),
+        Some(fake_bm25.clone()),
+        None,
+        crate::retrieval::RetrievalSettings::default(),
+    ));
+
+    let deps = crate::workflow::WorkflowDependencies::new();
+
+    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
+
+    assert_eq!(fake_embedder.calls(), 0, "No embedding call must be made when >8 variants are produced");
+    assert_eq!(fake_graph.calls(), 0, "No graph call must be made when >8 variants are produced");
+    assert_eq!(fake_dense.calls(), 0, "No dense retrieval call must be made when >8 variants are produced");
+    assert_eq!(fake_bm25.calls(), 0, "No BM25 retrieval call must be made when >8 variants are produced");
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let failed_event = events.iter().find_map(|e| match &e.event {
+        Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+        _ => None,
+    }).expect("WorkflowCompleted event must be emitted");
+
+    assert!(!failed_event.success);
+    assert_eq!(failed_event.error_kind, v1::NodeErrorKind::InputValidation as i32);
+}
+
+
+
+
 
 

@@ -22,6 +22,7 @@ fn fused_candidate(chunk_id: &str, score: f64) -> FusedCandidate {
         bm25_rank: Some(2),
         vector_score: Some(score),
         bm25_score: Some(score / 2.0),
+        variant_provenance: Vec::new(),
     }
 }
 

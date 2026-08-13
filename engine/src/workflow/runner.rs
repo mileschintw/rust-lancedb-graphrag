@@ -173,18 +173,43 @@ impl WorkflowRunner {
         let start_time = Instant::now();
         let mut overall_err: Option<NodeError> = None;
 
-        // Run nodes in sequence
         for node in &self.nodes {
+            let node_name = node.name();
             if let Err(err) = self.run_node(node.as_ref(), &mut ctx, &cancel, &sink).await {
                 overall_err = Some(err);
                 break;
             }
+
+            // Post-ReformulateQuery admission check: max 8 variants allowed (D-07/D-08)
+            if node_name == "ReformulateQuery" {
+                if ctx.variants.len() > 8 {
+                    let err = NodeError::new(
+                        NodeErrorKind::InputValidation,
+                        format!(
+                            "Query reformulator produced {} variants, exceeding maximum allowed limit of 8",
+                            ctx.variants.len()
+                        ),
+                    );
+                    sink.send_event(events::node_failed(
+                        "ReformulateQuery",
+                        err.kind.clone(),
+                        &err.message,
+                        false,
+                    ));
+                    overall_err = Some(err);
+                    break;
+                }
+            }
         }
 
-        // If nodes succeeded, run remainder bridge
+        // If all nodes succeeded, check for zero evidence or run remainder bridge
         if overall_err.is_none() {
-            if let Err(err) = remainder_bridge(&mut ctx, deps, &sink, &cancel).await {
-                overall_err = Some(err);
+            let is_zero_evidence = ctx.notices.iter().any(|n| n.code == "NO_EVIDENCE");
+
+            if !is_zero_evidence {
+                if let Err(err) = remainder_bridge(&mut ctx, deps, &sink, &cancel).await {
+                    overall_err = Some(err);
+                }
             }
         }
 

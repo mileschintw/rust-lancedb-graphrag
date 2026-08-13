@@ -34,12 +34,12 @@ impl std::fmt::Debug for DenseRetriever {
 
 impl DenseRetriever {
     /// Creates a dense retriever over the canonical `nodes` table.
-    pub(crate) fn new(table: Table) -> Self {
+    pub fn new(table: Table) -> Self {
         Self { table }
     }
 
     /// Returns bounded nearest-neighbor candidates after applying typed filters.
-    pub(crate) async fn query(
+    pub async fn query(
         &self,
         embedding: &[f32],
         request: &QueryRequest,
@@ -159,7 +159,7 @@ fn escape_sql_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-pub(crate) fn dense_score(distance: f64) -> f64 {
+pub fn dense_score(distance: f64) -> f64 {
     1.0 / (1.0 + distance.max(0.0))
 }
 

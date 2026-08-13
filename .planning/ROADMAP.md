@@ -322,7 +322,7 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 3/7 plans executed
+**Plans:** 4/7 plans executed
 
 Plans:
 
@@ -335,7 +335,7 @@ Plans:
 
 **Wave 2** *(blocked on the Wave 1 atomic landing group)*
 
-- [ ] 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 corrected order, D-07 cross-variant RRF merge, D-03 short-circuit with full retrieval-source context.
+- [x] 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 corrected order, D-07 cross-variant RRF merge, D-03 short-circuit with full retrieval-source context.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 

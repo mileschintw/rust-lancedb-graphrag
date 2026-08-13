@@ -1,6 +1,7 @@
 pub mod events;
 pub mod node;
 pub mod nodes;
+pub mod ports;
 pub mod runner;
 
 use std::sync::Arc;
@@ -8,14 +9,18 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::pb::lancet::v1::{
-    AnswerBasis, DocumentFilter, Notice, QueryRagRequest, QueryRagResponse, RetrievalSnapshot,
-    StructuredCitation,
+    AnswerBasis, DocumentFilter, NodeErrorKind, Notice, NoticeSeverity, QueryRagRequest,
+    QueryRagResponse, RetrievalSnapshot, StructuredCitation,
 };
 use crate::generation::ModelOutput;
 
 pub use events::EventSequence;
 pub use node::{BoxFuture, Node, NodeError, QueryEmbeddingPort};
-pub use nodes::ReformulateQueryNode;
+pub use nodes::{ExtractGraphContextNode, ReformulateQueryNode, RetrieveHybridNode};
+pub use ports::{
+    Bm25RetrievalPort, DenseRetrievalPort, GraphQueryPort, NoOpQueryReformulator,
+    QueryReformulator,
+};
 pub use runner::{WorkflowEventSink, WorkflowRunner};
 
 #[derive(Debug, Clone)]
@@ -82,17 +87,45 @@ impl WorkflowContext {
             crate::generation::AnswerBasis::Mixed => AnswerBasis::Mixed,
             crate::generation::AnswerBasis::ModelOnly => AnswerBasis::ModelOnly,
         };
+        for n in &output.notices {
+            self.notices.push(Notice {
+                code: "NOTICE".into(),
+                message: n.clone(),
+                severity: NoticeSeverity::Info as i32,
+            });
+        }
+        for w in &output.warnings {
+            self.notices.push(Notice {
+                code: "WARNING".into(),
+                message: w.clone(),
+                severity: NoticeSeverity::Warning as i32,
+            });
+        }
     }
 }
 
 pub struct WorkflowDependencies {
+    pub reformulator: Option<Arc<dyn QueryReformulator>>,
     pub embedding_port: Option<Arc<dyn QueryEmbeddingPort>>,
+    pub graph_port: Option<Arc<dyn GraphQueryPort>>,
+    pub dense_port: Option<Arc<dyn DenseRetrievalPort>>,
+    pub bm25_port: Option<Arc<dyn Bm25RetrievalPort>>,
+    pub reranker_port: Option<Arc<dyn crate::rerank::Reranker>>,
+    pub generator: Option<Arc<dyn crate::generation::Generator>>,
+    pub retrieval_settings: crate::retrieval::RetrievalSettings,
 }
 
 impl WorkflowDependencies {
     pub fn new() -> Self {
         Self {
+            reformulator: None,
             embedding_port: None,
+            graph_port: None,
+            dense_port: None,
+            bm25_port: None,
+            reranker_port: None,
+            generator: None,
+            retrieval_settings: crate::retrieval::RetrievalSettings::default(),
         }
     }
 }
@@ -103,21 +136,83 @@ impl Default for WorkflowDependencies {
     }
 }
 
-pub fn run_inline_query_rag_remainder(
-    ctx: &mut WorkflowContext,
-    deps: &WorkflowDependencies,
-    _sink: &WorkflowEventSink,
-    cancel: &CancellationToken,
-) -> Result<(), NodeError> {
-    if cancel.is_cancelled() {
-        return Err(NodeError::cancelled());
-    }
-
-    if ctx.query_embedding.is_none() && !ctx.variants.is_empty() {
-        if let Some(_port) = &deps.embedding_port {
-            // Placeholder for tracer bridge embedding call
+pub fn run_inline_prompt_generation_remainder<'a>(
+    ctx: &'a mut WorkflowContext,
+    deps: &'a WorkflowDependencies,
+    sink: &'a WorkflowEventSink,
+    cancel: &'a CancellationToken,
+) -> BoxFuture<'a, Result<(), NodeError>> {
+    Box::pin(async move {
+        if cancel.is_cancelled() {
+            return Err(NodeError::cancelled());
         }
-    }
 
-    Ok(())
+        // 1. AssemblePrompt
+        let name_prompt = "AssemblePrompt";
+        sink.send_event(events::node_started(name_prompt, ""));
+
+        let evidence_summary = ctx.final_candidates.join("\n");
+        ctx.assembled_prompt = if ctx.graph_context.is_empty() {
+            format!("Query: {}\nEvidence:\n{}", ctx.original_query, evidence_summary)
+        } else {
+            format!(
+                "Query: {}\nGraph Context:\n{}\nEvidence:\n{}",
+                ctx.original_query, ctx.graph_context, evidence_summary
+            )
+        };
+
+        sink.send_event(events::node_completed(name_prompt, "", 1));
+        let seq1 = sink.next_sequence_ordinal();
+        sink.send_event(events::checkpoint("post_assembleprompt", seq1, ctx));
+
+        // 2. GenerateAnswer
+        let name_gen = "GenerateAnswer";
+        sink.send_event(events::node_started(name_gen, ""));
+
+        if let Some(generator) = &deps.generator {
+            let mut gen_req = crate::generation::GenerationRequest::new(
+                ctx.original_query.clone(),
+                vec![],
+            );
+            gen_req.session_id = Some(ctx.session_id.clone());
+            gen_req.correlation_id = Some(ctx.trace_id.clone());
+
+            // D-12: Single retry loop
+            let mut result = generator.generate(gen_req.clone()).await;
+            if result.is_err() && !cancel.is_cancelled() {
+                result = generator.generate(gen_req).await;
+            }
+
+            match result {
+                Ok(output) => {
+                    ctx.update_from_model_output(&output);
+                    sink.send_event(events::answer_chunk(ctx.answer.clone(), true));
+                    sink.send_event(events::node_completed(name_gen, "", 10));
+                    let seq2 = sink.next_sequence_ordinal();
+                    sink.send_event(events::checkpoint("post_generateanswer", seq2, ctx));
+                }
+                Err(err) => {
+                    let node_err = NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
+                        .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
+                    sink.send_event(events::node_failed(
+                        name_gen,
+                        node_err.kind.clone(),
+                        &node_err.message,
+                        false,
+                    ));
+                    return Err(node_err);
+                }
+            }
+        } else {
+            // Default placeholder if no generator is injected
+            ctx.answer = format!("Answer for {}", ctx.original_query);
+            ctx.answer_basis = AnswerBasis::Retrieval;
+            sink.send_event(events::answer_chunk(ctx.answer.clone(), true));
+            sink.send_event(events::node_completed(name_gen, "", 1));
+            let seq2 = sink.next_sequence_ordinal();
+            sink.send_event(events::checkpoint("post_generateanswer", seq2, ctx));
+        }
+
+        Ok(())
+    })
 }

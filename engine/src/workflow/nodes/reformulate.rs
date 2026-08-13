@@ -1,11 +1,22 @@
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
-use super::super::{node::{BoxFuture, Node, NodeError}, WorkflowContext};
+use super::super::{
+    node::{BoxFuture, Node, NodeError},
+    ports::QueryReformulator,
+    WorkflowContext,
+};
 
-pub struct ReformulateQueryNode;
+pub struct ReformulateQueryNode {
+    reformulator: Option<Arc<dyn QueryReformulator>>,
+}
 
 impl ReformulateQueryNode {
     pub fn new() -> Self {
-        Self
+        Self { reformulator: None }
+    }
+
+    pub fn with_reformulator(reformulator: Option<Arc<dyn QueryReformulator>>) -> Self {
+        Self { reformulator }
     }
 }
 
@@ -30,7 +41,10 @@ impl Node for ReformulateQueryNode {
                 return Err(NodeError::cancelled());
             }
 
-            if ctx.variants.is_empty() {
+            if let Some(ref reformulator) = self.reformulator {
+                let variants = reformulator.reformulate(&ctx.original_query, cancel).await?;
+                ctx.variants = variants;
+            } else if ctx.variants.is_empty() {
                 ctx.variants.push(ctx.original_query.clone());
             }
 

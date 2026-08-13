@@ -168,7 +168,7 @@ impl Bm25Index {
     }
 
     /// Builds a snapshot by reading the canonical completed-node columns.
-    pub(crate) async fn from_table(
+    pub async fn from_table(
         table: &Table,
         config: Bm25Config,
     ) -> Result<Self, Bm25BuildError> {

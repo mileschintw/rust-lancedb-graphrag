@@ -33,8 +33,8 @@ use engine::db;
 pub mod generation;
 pub mod graph;
 pub mod prompt;
-mod rerank;
-mod retrieval;
+use engine::rerank;
+use engine::retrieval;
 use engine::workflow;
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
@@ -3170,3 +3170,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests;
+
+
+
+
