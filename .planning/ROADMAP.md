@@ -321,9 +321,13 @@ Plans:
 3. Node timeouts and retries handle failure scenarios predictably.
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
-**Plans:** 6 plans
+
+**Plans:** 3/7 plans executed
 
 Plans:
+
+- [x] 05-07-PLAN.md
+
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
 - [x] 05-01-PLAN.md — Tracer: streaming QueryRAG wire contract, one-node Rust Node/WorkflowRunner, and independent checkpoint channel.
