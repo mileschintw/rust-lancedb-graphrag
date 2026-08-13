@@ -139,6 +139,9 @@ impl WorkflowRunner {
         match &result {
             Ok(()) => {
                 sink.send_event(events::node_completed(name, "", duration_ms));
+                if name == "GenerateAnswer" {
+                    sink.send_event(events::answer_chunk(ctx.answer.clone(), true));
+                }
                 let seq = sink.next_sequence_ordinal();
                 sink.send_event(events::checkpoint(format!("post_{}", name.to_lowercase()), seq, ctx));
             }
@@ -153,6 +156,53 @@ impl WorkflowRunner {
         }
 
         result
+    }
+
+    pub async fn run_workflow(
+        &self,
+        mut ctx: WorkflowContext,
+        cancel: CancellationToken,
+        sink: WorkflowEventSink,
+    ) {
+        let start_time = Instant::now();
+        let mut overall_err: Option<NodeError> = None;
+
+        for node in &self.nodes {
+            let node_name = node.name();
+
+            if (node_name == "AssemblePrompt" || node_name == "GenerateAnswer")
+                && (ctx.notices.iter().any(|n| n.code == "NO_EVIDENCE")
+                    || (ctx.final_candidates.is_empty() && ctx.evidence_blocks.is_empty()))
+            {
+                break;
+            }
+
+            if let Err(err) = self.run_node(node.as_ref(), &mut ctx, &cancel, &sink).await {
+                overall_err = Some(err);
+                break;
+            }
+
+            if node_name == "ReformulateQuery" && ctx.variants.len() > 8 {
+                let err = NodeError::new(
+                    NodeErrorKind::InputValidation,
+                    format!(
+                        "Query reformulator produced {} variants, exceeding maximum allowed limit of 8",
+                        ctx.variants.len()
+                    ),
+                );
+                sink.send_event(events::node_failed(
+                    "ReformulateQuery",
+                    err.kind.clone(),
+                    &err.message,
+                    false,
+                ));
+                overall_err = Some(err);
+                break;
+            }
+        }
+
+        let total_duration_ms = start_time.elapsed().as_millis() as i64;
+        Self::emit_terminal_once(&ctx, &sink, total_duration_ms, overall_err);
     }
 
     pub async fn run_tracer<F>(
@@ -170,19 +220,24 @@ impl WorkflowRunner {
             &'a CancellationToken,
         ) -> BoxFuture<'a, Result<(), NodeError>>,
     {
-        let start_time = Instant::now();
-        let mut overall_err: Option<NodeError> = None;
+        let has_prompt_or_gen = self
+            .nodes
+            .iter()
+            .any(|n| n.name() == "AssemblePrompt" || n.name() == "GenerateAnswer");
+        if has_prompt_or_gen {
+            self.run_workflow(ctx, cancel, sink).await;
+        } else {
+            let start_time = Instant::now();
+            let mut overall_err: Option<NodeError> = None;
 
-        for node in &self.nodes {
-            let node_name = node.name();
-            if let Err(err) = self.run_node(node.as_ref(), &mut ctx, &cancel, &sink).await {
-                overall_err = Some(err);
-                break;
-            }
+            for node in &self.nodes {
+                let node_name = node.name();
+                if let Err(err) = self.run_node(node.as_ref(), &mut ctx, &cancel, &sink).await {
+                    overall_err = Some(err);
+                    break;
+                }
 
-            // Post-ReformulateQuery admission check: max 8 variants allowed (D-07/D-08)
-            if node_name == "ReformulateQuery" {
-                if ctx.variants.len() > 8 {
+                if node_name == "ReformulateQuery" && ctx.variants.len() > 8 {
                     let err = NodeError::new(
                         NodeErrorKind::InputValidation,
                         format!(
@@ -200,21 +255,20 @@ impl WorkflowRunner {
                     break;
                 }
             }
-        }
 
-        // If all nodes succeeded, check for zero evidence or run remainder bridge
-        if overall_err.is_none() {
-            let is_zero_evidence = ctx.notices.iter().any(|n| n.code == "NO_EVIDENCE");
+            if overall_err.is_none() {
+                let is_zero_evidence = ctx.notices.iter().any(|n| n.code == "NO_EVIDENCE");
 
-            if !is_zero_evidence {
-                if let Err(err) = remainder_bridge(&mut ctx, deps, &sink, &cancel).await {
-                    overall_err = Some(err);
+                if !is_zero_evidence {
+                    if let Err(err) = remainder_bridge(&mut ctx, deps, &sink, &cancel).await {
+                        overall_err = Some(err);
+                    }
                 }
             }
-        }
 
-        let total_duration_ms = start_time.elapsed().as_millis() as i64;
-        Self::emit_terminal_once(&ctx, &sink, total_duration_ms, overall_err);
+            let total_duration_ms = start_time.elapsed().as_millis() as i64;
+            Self::emit_terminal_once(&ctx, &sink, total_duration_ms, overall_err);
+        }
     }
 
     pub fn emit_terminal_once(

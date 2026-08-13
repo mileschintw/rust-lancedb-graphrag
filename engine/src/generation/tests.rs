@@ -14,7 +14,7 @@ use crate::{
         AnswerBasis, FakeGenerator, GenerationErrorKind, GenerationRequest, Generator, ModelOutput,
         ModelUsage,
     },
-    prompt::{assemble_evidence_blocks, pack_evidence_prompt, resolve_citations},
+    prompt::{assemble_evidence_blocks, pack_evidence_prompt_sync, resolve_citations},
     retrieval::{fusion::FusedCandidate, Candidate},
 };
 
@@ -123,7 +123,7 @@ fn prompt_evidence_budget_and_boundary() {
     let cand2 = sample_candidate("2", "Second chunk content for context budget testing.");
     let evidence = assemble_evidence_blocks(&[cand1, cand2]);
 
-    let packed = pack_evidence_prompt("What is the architecture?", &evidence, 8192, 2048)
+    let packed = pack_evidence_prompt_sync("What is the architecture?", &evidence, 8192, 2048)
         .expect("pack succeeds");
 
     assert!(packed
@@ -136,7 +136,7 @@ fn prompt_evidence_budget_and_boundary() {
     assert_eq!(packed.evidence[1].id, "[2]");
 
     // Test token limit cutoff: allow first block (~115 tokens) to fit, but cut off second block
-    let small_packed = pack_evidence_prompt("What is the architecture?", &evidence, 300, 50)
+    let small_packed = pack_evidence_prompt_sync("What is the architecture?", &evidence, 300, 50)
         .expect("pack succeeds with limited budget");
     assert_eq!(small_packed.evidence.len(), 1);
     assert!(small_packed
@@ -158,7 +158,7 @@ fn suspicious_evidence_remains_marked_unexecuted() {
     );
 
     let packed =
-        pack_evidence_prompt("Test question?", &evidence, 8192, 2048).expect("pack succeeds");
+        pack_evidence_prompt_sync("Test question?", &evidence, 8192, 2048).expect("pack succeeds");
     assert_eq!(packed.evidence.len(), 1);
     assert!(packed.evidence[0].suspicious);
     assert!(packed.prompt.contains("suspicious=\"true\""));
@@ -182,7 +182,7 @@ fn adversarial_evidence_fields_cannot_forge_prompt_boundary() {
     let evidence = assemble_evidence_blocks(&[cand]);
     assert!(evidence[0].suspicious, "Must be flagged as suspicious");
 
-    let packed = pack_evidence_prompt("What is the prompt boundary?", &evidence, 8192, 2048)
+    let packed = pack_evidence_prompt_sync("What is the prompt boundary?", &evidence, 8192, 2048)
         .expect("pack succeeds");
 
     assert_eq!(packed.evidence.len(), 1);
@@ -218,7 +218,7 @@ fn prompt_rejects_over_budget_first_block_and_unicode_excerpt() {
     let cand = sample_candidate("1", &large_text);
     let evidence = assemble_evidence_blocks(&[cand]);
 
-    let err = pack_evidence_prompt("Question?", &evidence, 100, 80)
+    let err = pack_evidence_prompt_sync("Question?", &evidence, 100, 80)
         .expect_err("Over-budget first block must fail prompt assembly");
 
     match err {

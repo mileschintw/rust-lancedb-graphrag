@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::pb::lancet::v1::DocumentFilter;

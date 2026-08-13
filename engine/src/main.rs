@@ -1398,7 +1398,9 @@ impl LancetServiceImpl {
             self.effective_settings.retrieval.graph_weight,
             limits.evidence_token_budget() as usize,
             limits.max_output_tokens() as usize,
+            cancel,
         )
+        .await
         .map_err(|err| {
             workflow::NodeError::new(
                 v1::NodeErrorKind::PromptAssemblyFailed,

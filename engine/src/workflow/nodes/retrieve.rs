@@ -3,7 +3,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
 use crate::rerank::Reranker;
-use crate::retrieval::{fuse_variant_candidates, Candidate, RetrievalSettings};
+use crate::retrieval::{fuse_variant_candidates, RetrievalSettings};
 use super::super::{
     node::{BoxFuture, Node, NodeError},
     ports::{Bm25RetrievalPort, DenseRetrievalPort},
@@ -134,11 +134,25 @@ impl Node for RetrieveHybridNode {
                 fused_candidates
             };
 
-            ctx.final_candidates = final_fused
+            let taken_candidates: Vec<_> = final_fused
                 .into_iter()
                 .take(self.settings.final_limit)
-                .map(|f| f.candidate.chunk_id)
                 .collect();
+
+            ctx.evidence_blocks = crate::prompt::assemble_evidence_blocks(&taken_candidates);
+            ctx.final_candidates = ctx.evidence_blocks.iter().map(|b| b.chunk_id.clone()).collect();
+
+            ctx.snapshot = Some(crate::pb::lancet::v1::RetrievalSnapshot {
+                index_generation: "".into(),
+                embedding_model: "".into(),
+                vector_weight: self.settings.vector_weight,
+                bm25_weight: self.settings.bm25_weight,
+                rrf_k: self.settings.rrf_k as i32,
+                candidate_limit: self.settings.candidate_limit as i32,
+                final_limit: self.settings.final_limit as i32,
+                active_filter: ctx.filter.clone(),
+                result_hash: "".into(),
+            });
 
             // 5. Zero evidence check
             if ctx.final_candidates.is_empty() {

@@ -4428,7 +4428,7 @@ async fn attempt_graph_augmentation_scoring_and_neighborhood() {
 #[test]
 fn prompt_evidence_packing_graph_fact_rendering() {
     use crate::prompt::{
-        pack_evidence_and_graph_prompt, assemble_evidence_blocks, GraphFactBlock,
+        pack_evidence_and_graph_prompt_sync, assemble_evidence_blocks, GraphFactBlock,
     };
     use crate::graph::context_strategy::GraphFact;
 
@@ -4461,7 +4461,7 @@ fn prompt_evidence_packing_graph_fact_rendering() {
     }];
 
     let packed =
-        pack_evidence_and_graph_prompt("Who knows Bob?", &blocks, &facts, 1.0, 4096, 512).unwrap();
+        pack_evidence_and_graph_prompt_sync("Who knows Bob?", &blocks, &facts, 1.0, 4096, 512).unwrap();
     assert!(packed.prompt.contains("## Related Entities & Relationships"));
     assert!(packed.prompt.contains("Alice —knows→ Bob"));
     assert_eq!(packed.graph_facts.len(), 1);
@@ -5774,7 +5774,7 @@ fn candidate_with_score(id_hint: &str, text: &str, score: f64) -> crate::retriev
 #[test]
 fn graph_facts_interleave_by_normalized_score() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
 
     let candidate = candidate_with_score(
         "hi",
@@ -5786,7 +5786,7 @@ fn graph_facts_interleave_by_normalized_score() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.1),
     }];
 
-    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 1.0, 8192, 512)
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 8192, 512)
         .expect("pack succeeds");
 
     let evidence_pos = packed
@@ -5813,7 +5813,7 @@ fn graph_facts_interleave_by_normalized_score() {
 #[test]
 fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
 
     let reserved = candidate_with_score(
         "reserved",
@@ -5831,7 +5831,7 @@ fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.9),
     }];
 
-    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 1.0, 330, 32)
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 330, 32)
         .expect("pack succeeds");
 
     assert_eq!(
@@ -5852,7 +5852,7 @@ fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
 #[test]
 fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
 
     let reserved = candidate_with_score(
         "reserved",
@@ -5869,7 +5869,7 @@ fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.5),
     }];
 
-    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 1.0, 350, 16)
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 350, 16)
         .expect("pack succeeds");
 
     assert_eq!(packed.evidence.len(), 2);
@@ -5881,7 +5881,7 @@ fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
 #[test]
 fn graph_weight_zero_excludes_graph_facts() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
 
     let candidate = candidate_with_score(
         "only",
@@ -5893,7 +5893,7 @@ fn graph_weight_zero_excludes_graph_facts() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.99),
     }];
 
-    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 0.0, 8192, 512)
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 0.0, 8192, 512)
         .expect("pack succeeds");
 
     assert!(!packed.prompt.contains("<GRAPH_FACT"));
@@ -5908,7 +5908,7 @@ fn graph_weight_zero_excludes_graph_facts() {
 #[test]
 fn graph_weight_zero_excludes_graph_facts_even_with_abundant_budget() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
 
     let candidate = candidate_with_score(
         "only",
@@ -5920,7 +5920,7 @@ fn graph_weight_zero_excludes_graph_facts_even_with_abundant_budget() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.99),
     }];
 
-    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 0.0, 65536, 512)
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 0.0, 65536, 512)
         .expect("pack succeeds");
 
     assert!(!packed.prompt.contains("<GRAPH_FACT"));
@@ -5935,7 +5935,7 @@ fn graph_weight_zero_excludes_graph_facts_even_with_abundant_budget() {
 fn pack_evidence_and_graph_prompt_empty_evidence_still_errors_regardless_of_graph_facts() {
     use crate::graph::context_strategy::GraphFact;
     use crate::prompt::{
-        pack_evidence_and_graph_prompt, EvidenceBlock, GraphFactBlock, PromptAssemblyError,
+        pack_evidence_and_graph_prompt_sync, EvidenceBlock, GraphFactBlock, PromptAssemblyError,
     };
 
     let facts = vec![GraphFactBlock {
@@ -5943,7 +5943,7 @@ fn pack_evidence_and_graph_prompt_empty_evidence_still_errors_regardless_of_grap
     }];
     let empty_evidence: Vec<EvidenceBlock> = Vec::new();
 
-    let err = pack_evidence_and_graph_prompt("Question?", &empty_evidence, &facts, 1.0, 8192, 512)
+    let err = pack_evidence_and_graph_prompt_sync("Question?", &empty_evidence, &facts, 1.0, 8192, 512)
         .expect_err("empty evidence must error even with non-empty graph facts");
     assert_eq!(err, PromptAssemblyError::EmptyEvidence);
 }
@@ -5953,7 +5953,7 @@ fn pack_evidence_and_graph_prompt_empty_evidence_still_errors_regardless_of_grap
 /// `Ok(..)` with zero `<GRAPH_FACT>` blocks — no panic, no error.
 #[test]
 fn pack_evidence_and_graph_prompt_empty_graph_facts_does_not_panic() {
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
 
     let candidate = candidate_with_score(
         "only",
@@ -5963,7 +5963,7 @@ fn pack_evidence_and_graph_prompt_empty_graph_facts_does_not_panic() {
     let evidence = assemble_evidence_blocks(&[candidate]);
     let empty_facts: Vec<GraphFactBlock> = Vec::new();
 
-    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &empty_facts, 1.0, 8192, 512)
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &empty_facts, 1.0, 8192, 512)
         .expect("pack succeeds without panicking on an empty graph_facts slice");
     assert!(!packed.prompt.contains("<GRAPH_FACT"));
     assert!(packed.graph_facts.is_empty());
@@ -5975,7 +5975,7 @@ fn pack_evidence_and_graph_prompt_empty_graph_facts_does_not_panic() {
 /// markers are never renumbered to reflect "sequential in packed order".
 #[test]
 fn packed_chunk_markers_stay_stable_under_interleaving() {
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt};
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync};
 
     let block0 = candidate_with_score(
         "a",
@@ -5997,7 +5997,7 @@ fn packed_chunk_markers_stay_stable_under_interleaving() {
     assert_eq!(evidence[1].id, "[2]");
     assert_eq!(evidence[2].id, "[3]");
 
-    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &[], 1.0, 8192, 512)
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &[], 1.0, 8192, 512)
         .expect("pack succeeds");
 
     assert_eq!(
@@ -6065,7 +6065,7 @@ fn graph_weight_validation_rejects_non_finite_negative_and_oversized() {
 #[test]
 fn reserve_one_citable_chunk_holds_under_interleaving() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
 
     let sole_chunk = candidate_with_score(
         "sole",
@@ -6080,7 +6080,7 @@ fn reserve_one_citable_chunk_holds_under_interleaving() {
     // Budget sized to fit only the reserved chunk block itself -- no room
     // left for the graph fact's header + body, even though the graph fact's
     // raw score would dominate an unreserved competition.
-    let packed = pack_evidence_and_graph_prompt("Question?", &evidence, &facts, 1.0, 300, 16)
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 300, 16)
         .expect("the reserved chunk block always fits, regardless of graph fact score");
 
     assert_eq!(
@@ -7339,6 +7339,528 @@ async fn nine_variants_are_rejected_before_retrieval() {
 
     assert!(!failed_event.success);
     assert_eq!(failed_event.error_kind, v1::NodeErrorKind::InputValidation as i32);
+}
+
+#[tokio::test]
+async fn workflow_generation_tracer() {
+    use engine::pb::lancet::v1;
+    use engine::workflow::EventSequence;
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sequence = Arc::new(EventSequence::new());
+    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-gen".into(), "sess-gen".into());
+
+    let req = v1::QueryRagRequest {
+        session_id: "sess-gen".into(),
+        query: "What is Lancet engine architecture?".into(),
+        filter: None,
+    };
+    let ctx = engine::workflow::WorkflowContext::new("sess-gen".into(), "trace-gen".into(), &req);
+
+    let fake_reformulator = Arc::new(engine::workflow::ports::FakeQueryReformulator::new(vec!["query variant".into()]));
+    let fake_embedder = Arc::new(engine::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_graph = Arc::new(engine::workflow::ports::FakeGraphQueryPort::success("graph context fact"));
+
+    let candidate = candidate_with_score("1", "Lancet uses Rust state machine for RAG orchestration.", 0.95).candidate;
+    let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![candidate.clone()]));
+    let fake_bm25 = Arc::new(engine::workflow::ports::FakeBm25RetrievalPort::success(vec![candidate]));
+
+    let model_out = engine::generation::ModelOutput {
+        answer: "Lancet uses a Rust state machine.".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: engine::generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let fake_generator: Arc<dyn engine::generation::Generator> = Arc::new(engine::generation::FakeGenerator::new(Ok(model_out)));
+
+    let mut runner = engine::workflow::WorkflowRunner::new();
+    runner.add_node(engine::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
+    runner.add_node(engine::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder), Some(fake_graph)));
+    runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(
+        Some(fake_dense),
+        Some(fake_bm25),
+        None,
+        engine::retrieval::RetrievalSettings::default(),
+    ));
+    runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
+    runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(Some(fake_generator)));
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let chunk_count = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::AnswerChunk(_)))).count();
+    let final_count = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::FinalAnswer(_)))).count();
+    assert_eq!(chunk_count, 1, "Exactly one AnswerChunk event must be emitted");
+    assert_eq!(final_count, 1, "Exactly one FinalAnswer event must be emitted");
+
+    let completed = events.iter().find_map(|e| match &e.event {
+        Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+        _ => None,
+    }).expect("WorkflowCompleted event must be emitted");
+
+    assert!(completed.success);
+    assert!(completed.final_response.is_some());
+}
+
+#[tokio::test]
+async fn generation_retry_request_is_byte_identical() {
+    use engine::generation::{GenerationError, GenerationErrorKind, GenerationRequest, Generator, ModelOutput};
+    use engine::workflow::EventSequence;
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
+
+    struct CapturingGenerator {
+        requests: Mutex<Vec<GenerationRequest>>,
+    }
+
+    impl Generator for CapturingGenerator {
+        fn generate<'a>(
+            &'a self,
+            request: GenerationRequest,
+        ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, GenerationError>> {
+            Box::pin(async move {
+                let mut reqs = self.requests.lock().unwrap();
+                reqs.push(request.clone());
+                if reqs.len() == 1 {
+                    Err(GenerationError::new(
+                        GenerationErrorKind::ProviderError,
+                        "Transient HTTP 503 error",
+                    ))
+                } else {
+                    Ok(ModelOutput {
+                        answer: "Retried answer succeeded".into(),
+                        cited_evidence_ids: vec!["[1]".into()],
+                        answer_basis: engine::generation::AnswerBasis::Retrieval,
+                        notices: vec![],
+                        warnings: vec![],
+                        usage: None,
+                    })
+                }
+            })
+        }
+    }
+
+    let capturing_gen = Arc::new(CapturingGenerator {
+        requests: Mutex::new(Vec::new()),
+    });
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sequence = Arc::new(EventSequence::new());
+    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-retry".into(), "sess-retry".into());
+
+    let req = engine::pb::lancet::v1::QueryRagRequest {
+        session_id: "sess-retry".into(),
+        query: "Byte identical query?".into(),
+        filter: None,
+    };
+    let mut ctx = engine::workflow::WorkflowContext::new("sess-retry".into(), "trace-retry".into(), &req);
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".into(),
+        chunk_id: "c1".into(),
+        document_id: "d1".into(),
+        chunk_index: 0,
+        title: Some("Doc".into()),
+        section_path: Some("Sec".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "prov".into(),
+        text: "Sample text".into(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let node = engine::workflow::nodes::GenerateAnswerNode::new(Some(capturing_gen.clone() as Arc<dyn engine::generation::Generator>));
+
+    let runner = engine::workflow::WorkflowRunner::new();
+    let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
+    assert!(res.is_ok(), "GenerateAnswer must succeed on retry attempt 2");
+
+    let reqs = capturing_gen.requests.lock().unwrap().clone();
+    assert_eq!(reqs.len(), 2, "Must make exactly 2 generation attempts");
+    assert_eq!(reqs[0], reqs[1], "Captured GenerationRequest across attempt 1 and attempt 2 must be byte/field-identical");
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let failed_events = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(_)))).count();
+    assert_eq!(failed_events, 0, "No retrying/failed event emitted during internal node retry");
+}
+
+#[tokio::test]
+async fn generation_outer_timeout_allows_retry() {
+    use engine::generation::{GenerationError, GenerationErrorKind, GenerationRequest, Generator, ModelOutput};
+    use engine::workflow::EventSequence;
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
+
+    struct SlowFirstGenerator {
+        calls: Mutex<usize>,
+    }
+
+    impl Generator for SlowFirstGenerator {
+        fn generate<'a>(
+            &'a self,
+            _request: GenerationRequest,
+        ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, GenerationError>> {
+            Box::pin(async move {
+                let mut count = self.calls.lock().unwrap();
+                *count += 1;
+                if *count == 1 {
+                    Err(GenerationError::new(
+                        GenerationErrorKind::Timeout,
+                        "Attempt 1 provider timeout",
+                    ))
+                } else {
+                    Ok(ModelOutput {
+                        answer: "Attempt 2 fast answer".into(),
+                        cited_evidence_ids: vec!["[1]".into()],
+                        answer_basis: engine::generation::AnswerBasis::Retrieval,
+                        notices: vec![],
+                        warnings: vec![],
+                        usage: None,
+                    })
+                }
+            })
+        }
+    }
+
+    let slow_gen = Arc::new(SlowFirstGenerator {
+        calls: Mutex::new(0),
+    });
+
+    let (tx, _rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sequence = Arc::new(EventSequence::new());
+    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-timeout".into(), "sess-timeout".into());
+
+    let req = engine::pb::lancet::v1::QueryRagRequest {
+        session_id: "sess-timeout".into(),
+        query: "Timeout query?".into(),
+        filter: None,
+    };
+    let mut ctx = engine::workflow::WorkflowContext::new("sess-timeout".into(), "trace-timeout".into(), &req);
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".into(),
+        chunk_id: "c1".into(),
+        document_id: "d1".into(),
+        chunk_index: 0,
+        title: Some("Doc".into()),
+        section_path: Some("Sec".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "prov".into(),
+        text: "Sample text".into(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let node = engine::workflow::nodes::GenerateAnswerNode::new(Some(slow_gen.clone() as Arc<dyn engine::generation::Generator>));
+
+    let runner = engine::workflow::WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
+    let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
+
+    assert!(res.is_ok(), "Outer node timeout budget of 65000ms must allow attempt 2 retry to succeed");
+    assert_eq!(*slow_gen.calls.lock().unwrap(), 2);
+}
+
+#[tokio::test]
+async fn generation_cancellation_between_attempts() {
+    use engine::generation::{GenerationError, GenerationErrorKind, GenerationRequest, Generator, ModelOutput};
+    use engine::workflow::EventSequence;
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
+
+    struct CancellingGenerator {
+        calls: Mutex<usize>,
+        cancel: CancellationToken,
+    }
+
+    impl Generator for CancellingGenerator {
+        fn generate<'a>(
+            &'a self,
+            _request: GenerationRequest,
+        ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, GenerationError>> {
+            Box::pin(async move {
+                let mut count = self.calls.lock().unwrap();
+                *count += 1;
+                if *count == 1 {
+                    self.cancel.cancel();
+                    Err(GenerationError::new(
+                        GenerationErrorKind::ProviderError,
+                        "Attempt 1 transient error",
+                    ))
+                } else {
+                    Ok(ModelOutput {
+                        answer: "Should not be reached".into(),
+                        cited_evidence_ids: vec!["[1]".into()],
+                        answer_basis: engine::generation::AnswerBasis::Retrieval,
+                        notices: vec![],
+                        warnings: vec![],
+                        usage: None,
+                    })
+                }
+            })
+        }
+    }
+
+    let cancel = CancellationToken::new();
+    let cancelling_gen = Arc::new(CancellingGenerator {
+        calls: Mutex::new(0),
+        cancel: cancel.clone(),
+    });
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let sequence = Arc::new(EventSequence::new());
+    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-cancel".into(), "sess-cancel".into());
+
+    let req = engine::pb::lancet::v1::QueryRagRequest {
+        session_id: "sess-cancel".into(),
+        query: "Cancel query?".into(),
+        filter: None,
+    };
+    let mut ctx = engine::workflow::WorkflowContext::new("sess-cancel".into(), "trace-cancel".into(), &req);
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".into(),
+        chunk_id: "c1".into(),
+        document_id: "d1".into(),
+        chunk_index: 0,
+        title: Some("Doc".into()),
+        section_path: Some("Sec".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "prov".into(),
+        text: "Sample text".into(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let node = engine::workflow::nodes::GenerateAnswerNode::new(Some(cancelling_gen.clone() as Arc<dyn engine::generation::Generator>));
+
+    let runner = engine::workflow::WorkflowRunner::new();
+    let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
+
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert_eq!(err.kind, engine::pb::lancet::v1::NodeErrorKind::Cancelled);
+    assert_eq!(*cancelling_gen.calls.lock().unwrap(), 1, "Attempt 2 must not be triggered when cancellation token is cancelled between attempts");
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+    let chunk_count = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_)))).count();
+    assert_eq!(chunk_count, 0, "No AnswerChunk event must be emitted on cancelled generation");
+}
+
+#[tokio::test]
+async fn answer_events_have_exact_cardinality() {
+    use engine::pb::lancet::v1;
+    use engine::workflow::EventSequence;
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
+
+    // Scenario A: Happy path with evidence
+    {
+        let (tx, mut rx) = mpsc::channel(100);
+        let cancel = CancellationToken::new();
+        let sequence = Arc::new(EventSequence::new());
+        let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-card-a".into(), "sess-card-a".into());
+
+        let req = v1::QueryRagRequest { session_id: "sess-card-a".into(), query: "Card A".into(), filter: None };
+        let ctx = engine::workflow::WorkflowContext::new("sess-card-a".into(), "trace-card-a".into(), &req);
+
+        let candidate = candidate_with_score("1", "Content 1", 0.9).candidate;
+        let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![candidate]));
+        let fake_gen: Arc<dyn engine::generation::Generator> = Arc::new(engine::generation::FakeGenerator::new(Ok(engine::generation::ModelOutput {
+            answer: "Answer A".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: engine::generation::AnswerBasis::Retrieval,
+            notices: vec![], warnings: vec![], usage: None,
+        })));
+
+        let mut runner = engine::workflow::WorkflowRunner::new();
+        runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(Some(fake_dense), None, None, engine::retrieval::RetrievalSettings::default()));
+        runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
+        runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(Some(fake_gen)));
+
+        runner.run_workflow(ctx, cancel, sink).await;
+
+        let mut events = Vec::new();
+        while let Ok(item) = rx.try_recv() {
+            if let Ok(wf_event) = item { events.push(wf_event); }
+        }
+
+        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::AnswerChunk(_)))).count();
+        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::FinalAnswer(_)))).count();
+        assert_eq!(answer_chunks, 1, "Happy path emits exactly 1 AnswerChunk");
+        assert_eq!(final_answers, 1, "Happy path emits exactly 1 FinalAnswer");
+    }
+
+    // Scenario B: Zero evidence path
+    {
+        let (tx, mut rx) = mpsc::channel(100);
+        let cancel = CancellationToken::new();
+        let sequence = Arc::new(EventSequence::new());
+        let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-card-b".into(), "sess-card-b".into());
+
+        let req = v1::QueryRagRequest { session_id: "sess-card-b".into(), query: "Card B".into(), filter: None };
+        let ctx = engine::workflow::WorkflowContext::new("sess-card-b".into(), "trace-card-b".into(), &req);
+
+        let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![]));
+
+        let mut runner = engine::workflow::WorkflowRunner::new();
+        runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(Some(fake_dense), None, None, engine::retrieval::RetrievalSettings::default()));
+        runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
+        runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(None));
+
+        runner.run_workflow(ctx, cancel, sink).await;
+
+        let mut events = Vec::new();
+        while let Ok(item) = rx.try_recv() {
+            if let Ok(wf_event) = item { events.push(wf_event); }
+        }
+
+        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::AnswerChunk(_)))).count();
+        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::FinalAnswer(_)))).count();
+        assert_eq!(answer_chunks, 0, "Zero evidence path emits 0 AnswerChunk");
+        assert_eq!(final_answers, 1, "Zero evidence path emits exactly 1 FinalAnswer");
+    }
+
+    // Scenario C: Exhausted generation failure
+    {
+        let (tx, mut rx) = mpsc::channel(100);
+        let cancel = CancellationToken::new();
+        let sequence = Arc::new(EventSequence::new());
+        let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-card-c".into(), "sess-card-c".into());
+
+        let req = v1::QueryRagRequest { session_id: "sess-card-c".into(), query: "Card C".into(), filter: None };
+        let ctx = engine::workflow::WorkflowContext::new("sess-card-c".into(), "trace-card-c".into(), &req);
+
+        let candidate = candidate_with_score("1", "Content 1", 0.9).candidate;
+        let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![candidate]));
+        let failing_gen: Arc<dyn engine::generation::Generator> = Arc::new(engine::generation::FakeGenerator::new(Err(engine::generation::GenerationError::new(
+            engine::generation::GenerationErrorKind::ProviderError,
+            "Permanent failure",
+        ))));
+
+        let mut runner = engine::workflow::WorkflowRunner::new();
+        runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(Some(fake_dense), None, None, engine::retrieval::RetrievalSettings::default()));
+        runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
+        runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(Some(failing_gen)));
+
+        runner.run_workflow(ctx, cancel, sink).await;
+
+        let mut events = Vec::new();
+        while let Ok(item) = rx.try_recv() {
+            if let Ok(wf_event) = item { events.push(wf_event); }
+        }
+
+        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::AnswerChunk(_)))).count();
+        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::FinalAnswer(_)))).count();
+        assert_eq!(answer_chunks, 0, "Failing generation emits 0 AnswerChunk");
+        assert_eq!(final_answers, 0, "Failing generation emits 0 FinalAnswer");
+    }
+}
+
+#[tokio::test]
+async fn workflow_answer_contract_preserves_all_fields() {
+    use engine::pb::lancet::v1;
+    use engine::workflow::EventSequence;
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+    use tokio_util::sync::CancellationToken;
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sequence = Arc::new(EventSequence::new());
+    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-fields".into(), "sess-fields".into());
+
+    let req = v1::QueryRagRequest { session_id: "sess-fields".into(), query: "Preserve fields query".into(), filter: None };
+    let ctx = engine::workflow::WorkflowContext::new("sess-fields".into(), "trace-fields".into(), &req);
+
+    let candidate = candidate_with_score("100", "Evidence text for fields preservation test.", 0.88).candidate;
+    let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![candidate]));
+
+    let model_out = engine::generation::ModelOutput {
+        answer: "Detailed answer string preserving fields.".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: engine::generation::AnswerBasis::Retrieval,
+        notices: vec!["Notice 1".into()],
+        warnings: vec!["Warning 1".into()],
+        usage: None,
+    };
+    let fake_gen: Arc<dyn engine::generation::Generator> = Arc::new(engine::generation::FakeGenerator::new(Ok(model_out)));
+
+    let mut runner = engine::workflow::WorkflowRunner::new();
+    runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(Some(fake_dense), None, None, engine::retrieval::RetrievalSettings::default()));
+    runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
+    runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(Some(fake_gen)));
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item { events.push(wf_event); }
+    }
+
+    let final_answer_event = events.iter().find_map(|e| match &e.event {
+        Some(v1::workflow_event::Event::FinalAnswer(fa)) => fa.response.clone(),
+        _ => None,
+    }).expect("FinalAnswer must contain QueryRagResponse");
+
+    assert_eq!(final_answer_event.answer, "Detailed answer string preserving fields.");
+    assert_eq!(final_answer_event.citations, vec!["[1]"]);
+    assert_eq!(final_answer_event.session_id, "sess-fields");
+    assert_eq!(final_answer_event.answer_basis, v1::AnswerBasis::Retrieval as i32);
+    assert!(!final_answer_event.structured_citations.is_empty());
+    assert_eq!(final_answer_event.structured_citations[0].chunk_id, "chk-100");
+    assert_eq!(final_answer_event.structured_citations[0].document_id, "doc-100");
+    assert_eq!(final_answer_event.notices.len(), 2);
+    assert!(final_answer_event.snapshot.is_some());
+    let snapshot = final_answer_event.snapshot.as_ref().unwrap();
+    assert_eq!(snapshot.candidate_limit, 32);
+    assert_eq!(snapshot.final_limit, 8);
+}
+
+#[tokio::test]
+async fn prompt_packing_cancellation_is_cooperative() {
+    use engine::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, PromptAssemblyError};
+    use tokio_util::sync::CancellationToken;
+
+    let mut fused = Vec::new();
+    for i in 0..100 {
+        fused.push(candidate_with_score(&format!("{i}"), &format!("Large content block {i} for cancellation testing. ").repeat(20), 0.9 - (i as f64 * 0.001)));
+    }
+
+    let evidence = assemble_evidence_blocks(&fused);
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+
+    let res = pack_evidence_and_graph_prompt("Cancellation test?", &evidence, &[], 1.0, 65536, 2048, &cancel).await;
+    assert_eq!(res, Err(PromptAssemblyError::Cancelled), "Cooperative prompt packing must return Cancelled when cancellation token is pre-cancelled");
 }
 
 

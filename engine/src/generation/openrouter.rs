@@ -380,6 +380,7 @@ impl OpenRouterGenerator {
         // `request.graph_weight` from the request it was actually handed, not a
         // separately-derived value, so a configured graph_weight provably
         // reaches the wire (REVIEWS.md HIGH).
+        let cancel = tokio_util::sync::CancellationToken::new();
         let packed_evidence = pack_evidence_and_graph_prompt(
             &request.question,
             &request.evidence,
@@ -387,7 +388,9 @@ impl OpenRouterGenerator {
             request.graph_weight,
             self.config.evidence_token_budget(),
             self.config.max_completion_tokens(),
+            &cancel,
         )
+        .await
         .map_err(|err| {
             GenerationError::new(
                 GenerationErrorKind::InvalidRequest,

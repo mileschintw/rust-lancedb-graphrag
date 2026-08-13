@@ -5,7 +5,6 @@ pub mod ports;
 pub mod runner;
 
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::pb::lancet::v1::{
@@ -16,7 +15,10 @@ use crate::generation::ModelOutput;
 
 pub use events::EventSequence;
 pub use node::{BoxFuture, Node, NodeError, QueryEmbeddingPort};
-pub use nodes::{ExtractGraphContextNode, ReformulateQueryNode, RetrieveHybridNode};
+pub use nodes::{
+    AssemblePromptNode, ExtractGraphContextNode, GenerateAnswerNode, ReformulateQueryNode,
+    RetrieveHybridNode,
+};
 pub use ports::{
     Bm25RetrievalPort, DenseRetrievalPort, GraphQueryPort, NoOpQueryReformulator,
     QueryReformulator,
@@ -35,6 +37,7 @@ pub struct WorkflowContext {
     pub vector_results: Vec<String>,
     pub bm25_results: Vec<String>,
     pub final_candidates: Vec<String>,
+    pub evidence_blocks: Vec<crate::prompt::EvidenceBlock>,
     pub assembled_prompt: String,
     pub answer: String,
     pub citations: Vec<String>,
@@ -57,6 +60,7 @@ impl WorkflowContext {
             vector_results: Vec::new(),
             bm25_results: Vec::new(),
             final_candidates: Vec::new(),
+            evidence_blocks: Vec::new(),
             assembled_prompt: String::new(),
             answer: String::new(),
             citations: Vec::new(),

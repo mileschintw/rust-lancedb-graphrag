@@ -137,6 +137,7 @@ pub enum PromptAssemblyError {
         allowed_tokens: usize,
     },
     EmptyEvidence,
+    Cancelled,
 }
 
 impl std::fmt::Display for PromptAssemblyError {
@@ -150,6 +151,7 @@ impl std::fmt::Display for PromptAssemblyError {
                 "No complete evidence block fit within allowed token budget ({allowed_tokens} allowed, minimum required {required_tokens})"
             ),
             Self::EmptyEvidence => write!(f, "No evidence blocks provided for prompt assembly"),
+            Self::Cancelled => write!(f, "Prompt assembly was cancelled"),
         }
     }
 }
@@ -209,11 +211,12 @@ If corpus evidence conflicts, state the conflict clearly and disclose mixed answ
 }
 
 /// Packs complete evidence chunks into prompt context after reserving the answer budget.
-pub fn pack_evidence_prompt(
+pub async fn pack_evidence_prompt(
     question: &str,
     evidence: &[EvidenceBlock],
     max_prompt_tokens: usize,
     answer_token_budget: usize,
+    cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<PackedEvidence, PromptAssemblyError> {
     pack_evidence_and_graph_prompt(
         question,
@@ -222,7 +225,55 @@ pub fn pack_evidence_prompt(
         1.0,
         max_prompt_tokens,
         answer_token_budget,
+        cancel,
     )
+    .await
+}
+
+/// Synchronous bridge for test callers.
+pub fn pack_evidence_prompt_sync(
+    question: &str,
+    evidence: &[EvidenceBlock],
+    max_prompt_tokens: usize,
+    answer_token_budget: usize,
+) -> Result<PackedEvidence, PromptAssemblyError> {
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build test runtime");
+    runtime.block_on(pack_evidence_prompt(
+        question,
+        evidence,
+        max_prompt_tokens,
+        answer_token_budget,
+        &cancel,
+    ))
+}
+
+/// Synchronous bridge for test callers with graph facts.
+pub fn pack_evidence_and_graph_prompt_sync(
+    question: &str,
+    evidence: &[EvidenceBlock],
+    graph_facts: &[GraphFactBlock],
+    graph_weight: f64,
+    max_prompt_tokens: usize,
+    answer_token_budget: usize,
+) -> Result<PackedEvidence, PromptAssemblyError> {
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build test runtime");
+    runtime.block_on(pack_evidence_and_graph_prompt(
+        question,
+        evidence,
+        graph_facts,
+        graph_weight,
+        max_prompt_tokens,
+        answer_token_budget,
+        &cancel,
+    ))
 }
 
 /// One score-interleaving candidate: either a remaining chunk `EvidenceBlock`
@@ -233,33 +284,18 @@ enum PackCandidate<'a> {
     Graph(&'a GraphFactBlock),
 }
 
-/// Packs evidence chunks and optional graph facts into prompt context after reserving the answer budget.
-///
-/// `graph_weight` is a validated (D-30), configurable multiplier applied to
-/// normalized graph-fact scores before they compete with normalized chunk-evidence
-/// scores for the shared token budget (D-29). `graph_weight == 0.0` HARD-EXCLUDES
-/// every graph fact unconditionally, before packing begins — regardless of token
-/// budget size (REVIEWS.md MEDIUM: a weighted-score-of-zero fed into the same
-/// sort/pack path would still be included whenever the budget is large enough to
-/// fit everything, so the exclusion must short-circuit before candidate insertion,
-/// mirroring the existing zero-vector_weight/zero-bm25_weight precedent).
-///
-/// # Errors
-/// Returns [`PromptAssemblyError::EmptyEvidence`] if `evidence` is empty,
-/// regardless of `graph_facts` content (D-27 forbids a compiled answer resting on
-/// graph facts alone, since they are never cited and cannot satisfy
-/// `ModelOutput::validate_grounding_with_limits`'s non-empty `cited_evidence_ids`
-/// requirement). Returns [`PromptAssemblyError::NoEvidenceFits`] if the single
-/// reserved top evidence block does not fit the allowed token budget. Never
-/// panics on an empty `evidence` or empty `graph_facts` slice.
-pub fn pack_evidence_and_graph_prompt(
+pub async fn pack_evidence_and_graph_prompt(
     question: &str,
     evidence: &[EvidenceBlock],
     graph_facts: &[GraphFactBlock],
     graph_weight: f64,
     max_prompt_tokens: usize,
     answer_token_budget: usize,
+    cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<PackedEvidence, PromptAssemblyError> {
+    if cancel.is_cancelled() {
+        return Err(PromptAssemblyError::Cancelled);
+    }
     if evidence.is_empty() {
         return Err(PromptAssemblyError::EmptyEvidence);
     }
@@ -374,11 +410,19 @@ pub fn pack_evidence_and_graph_prompt(
     let mut graph_section_text = String::new();
 
     for (_, candidate) in scored {
+        if cancel.is_cancelled() {
+            return Err(PromptAssemblyError::Cancelled);
+        }
+
         match candidate {
             PackCandidate::Evidence(block) => {
                 let encoded = encode_evidence_block(block);
                 let block_str = encoded.render_prompt_block();
                 let block_tokens = count_tokens(&block_str, bpe.as_ref());
+
+                if cancel.is_cancelled() {
+                    return Err(PromptAssemblyError::Cancelled);
+                }
 
                 if current_tokens + block_tokens > allowed_evidence_tokens {
                     continue;
@@ -404,6 +448,10 @@ pub fn pack_evidence_and_graph_prompt(
                 let fact_tokens = count_tokens(&fact_str, bpe.as_ref());
                 let extra_header_tokens = if header_reserved { 0 } else { header_tokens };
 
+                if cancel.is_cancelled() {
+                    return Err(PromptAssemblyError::Cancelled);
+                }
+
                 if current_tokens + extra_header_tokens + fact_tokens > allowed_evidence_tokens {
                     continue;
                 }
@@ -419,6 +467,15 @@ pub fn pack_evidence_and_graph_prompt(
                 packed_graph_facts.push(fact_block.clone());
             }
         }
+
+        tokio::task::yield_now().await;
+        if cancel.is_cancelled() {
+            return Err(PromptAssemblyError::Cancelled);
+        }
+    }
+
+    if cancel.is_cancelled() {
+        return Err(PromptAssemblyError::Cancelled);
     }
 
     if packed_evidence.is_empty() {
@@ -430,6 +487,10 @@ pub fn pack_evidence_and_graph_prompt(
 
     prompt.push_str(&evidence_text);
     prompt.push_str(&graph_section_text);
+
+    if cancel.is_cancelled() {
+        return Err(PromptAssemblyError::Cancelled);
+    }
 
     Ok(PackedEvidence {
         prompt,
