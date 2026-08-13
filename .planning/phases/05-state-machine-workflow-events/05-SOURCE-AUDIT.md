@@ -97,19 +97,49 @@ alternation/count lower bounds.
 
 The second bounded checker pass is closed in the task actions and must-have
 links, not only in plan-level prose. The Rust event/terminal contract, Go DTO,
-and SSE frame now map and assert non-empty `answer`, `citations`, `session_id`,
+and SSE frame map evidence-bearing `answer`, `citations`, `session_id`,
 `answer_basis`, `structured_citations`, `notices`, and `snapshot` field by
 field, with `snapshot` kept distinct from notices and durable checkpoint
-`context_snapshot`. Graph timeout has one shared semantic owner: a 14000ms
-inner deadline degrades to empty context before the 15000ms runner backstop,
-while the backstop routes to the same successful branch; tests assert one
-notice, successful completion, and no `NodeFailed`. The eight-variant memory
-bound is fail-closed with typed rejection before retrieval for an exact
-nine-variant input, so D-07's all-`Vec` RRF contract cannot be silently
-truncated. The implementing task actions also cite the previously under-traced
-locked decisions D-05, D-09, D-10, D-11, D-13, D-14, D-15, D-17, D-20, D-21,
-D-24, D-25, D-26, D-30, and D-31, including explicit absence assertions for
-the negative/deferred choices.
+`context_snapshot`; notices may be empty, and D-03 zero-evidence success
+remains valid. Graph timeout has one shared semantic owner: a 4000ms inner
+graph-operation deadline follows a 10000ms embedding prelude and fits before
+the 15000ms runner backstop, while the backstop routes to the same successful
+branch; tests assert one notice, successful completion, and no `NodeFailed`.
+The eight-variant memory bound is fail-closed with typed rejection before
+retrieval for an exact nine-variant input, so D-07's all-`Vec` RRF contract
+cannot be silently truncated. The implementing task actions also cite the
+previously under-traced locked decisions D-05, D-09, D-10, D-11, D-13, D-14,
+D-15, D-17, D-20, D-21, D-24, D-25, D-26, D-30, and D-31, including explicit
+absence assertions for the negative/deferred choices.
+
+## Revision iteration 3 review closure
+
+The review-driven revision keeps the six-plan/five-wave graph and makes each
+new ownership boundary executable. 05-01 now owns migration of all 29 existing
+Rust `.query_rag(` call sites in `engine/src/tests.rs` before the focused test
+listing, and 05-06 owns every Go caller in the coordinated generated-API
+landing; their shared protobuf/call-site transition remains effectively
+atomic. The Rust-only `buf clean:true` concern is documented as a confirmed
+non-issue once Go is absent from the configured output list, with the existing
+before/after hash guard retained.
+
+Query embedding is owned by the 05-01 `QueryEmbeddingPort`/`WorkflowContext`
+seam and invoked by 05-02's graph-context prelude: the 10000ms embedding budget
+plus 4000ms graph-operation budget fits strictly inside the 15000ms graph-node
+backstop; embedding transport/invalid-vector failures are `RetrievalFailed`,
+embedding timeout is `Timeout`, and `RetrieveHybrid` reuses the context vector
+without embedding again. 05-03 explicitly owns the production
+`engine/src/generation/openrouter.rs` call site, makes retry identity a complete
+`GenerationRequest` equality assertion, and labels `assembled_prompt` as a
+node-output checkpoint field rather than the adapter's wire repack.
+
+05-06 declares all seven timeout keys in the exact `[engine.workflow]` and
+`[engine.graph]` configuration contract across all three overlays and tests
+the exact-set/annotation/inequality rules. 05-05 makes checkpoint `id` the UUID
+primary key. The review suggestion for automatic checkpoint cleanup is
+explicitly rejected under D-24/D-25: indefinite retention and direct database
+inspection remain the locked contract, with the local-demo storage tradeoff
+accepted and no cleanup job added.
 
 ## Spec-less fallback dispositions
 

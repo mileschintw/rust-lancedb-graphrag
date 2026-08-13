@@ -342,7 +342,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 05-04-PLAN.md — GraphQueryPort/DenseRetrievalPort testability seam, bounded Notify rendezvous cleanup, and full deterministic fault-injection coverage.
+- [ ] 05-04-PLAN.md — Full deterministic Rust orchestration matrix, cooperative cancellation cleanup, and fault-injection coverage.
 
 **Wave 6** *(blocked on Wave 5 completion; 05-05 depends on 05-04 as well as 05-03 and 05-06)*
 
