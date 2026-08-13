@@ -340,23 +340,23 @@ Plans:
 
 **Wave 2** *(blocked on the Wave 1 atomic landing group)*
 
-- [x] 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 corrected order, D-07 cross-variant RRF merge, D-03 short-circuit with full retrieval-source context.
+- [x] 05-07-PLAN.md — Append the typed InputValidation NodeErrorKind member and regenerate the Rust/Go wire bindings.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [x] 05-03-PLAN.md — AssemblePrompt + GenerateAnswer nodes, D-12/D-13 retry-then-honest-failure, D-01/D-02 AnswerChunk/FinalAnswer, and full accumulated snapshots.
+- [x] 05-02-PLAN.md — ExtractGraphContext + RetrieveHybrid nodes, D-06 corrected order, D-07 cross-variant RRF merge, D-03 short-circuit with full retrieval-source context.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
+- [x] 05-03-PLAN.md — AssemblePrompt + GenerateAnswer nodes, D-12/D-13 retry-then-honest-failure, D-01/D-02 AnswerChunk/FinalAnswer, and full accumulated snapshots.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [x] 05-04-PLAN.md — Full deterministic Rust orchestration matrix, cooperative cancellation cleanup, and fault-injection coverage.
 
-**Wave 5** *(blocked on Wave 4 completion and the completed Wave 1 dispatcher contract)*
+**Wave 6** *(blocked on Wave 5 completion and the completed Wave 1 dispatcher contract)*
 
 - [x] 05-05-PLAN.md — PostgreSQL-backed workflow_checkpoints persistence (ORCH-04), detached standalone checkpoint events, and full-snapshot fidelity.
-
-**Wave 6** *(baseline Phase 05 execution complete; gap closure follows)*
-
-- [x] 05-05-PLAN.md — Baseline checkpoint persistence and dispatcher contract.
 
 **Wave 7** *(additive gap closure starts; documentation is independent of Rust implementation files)*
 
