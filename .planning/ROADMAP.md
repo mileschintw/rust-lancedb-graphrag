@@ -326,8 +326,8 @@ Plans:
 Plans:
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
-- [ ] 05-01-PLAN.md — Tracer: streaming QueryRAG wire contract, one-node Rust Node/WorkflowRunner, and independent checkpoint channel.
-- [ ] 05-06-PLAN.md — Generated stream to Go SSE, timeout configuration, and deterministic transport/config regression tests.
+- [x] 05-01-PLAN.md — Tracer: streaming QueryRAG wire contract, one-node Rust Node/WorkflowRunner, and independent checkpoint channel.
+- [x] 05-06-PLAN.md — Generated stream to Go SSE, timeout configuration, and deterministic transport/config regression tests.
 
 **Wave 2** *(blocked on the Wave 1 atomic landing group)*
 

@@ -30,13 +30,16 @@ pub mod lancet_service_server {
             tonic::Response<super::GetIngestionStatusResponse>,
             tonic::Status,
         >;
+        /// Server streaming response type for the QueryRAG method.
+        type QueryRAGStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::WorkflowEvent, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
         async fn query_rag(
             &self,
             request: tonic::Request<super::QueryRagRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::QueryRagResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<Self::QueryRAGStream>, tonic::Status>;
         async fn query_graph(
             &self,
             request: tonic::Request<super::QueryGraphRequest>,
@@ -263,11 +266,12 @@ pub mod lancet_service_server {
                     struct QueryRAGSvc<T: LancetService>(pub Arc<T>);
                     impl<
                         T: LancetService,
-                    > tonic::server::UnaryService<super::QueryRagRequest>
+                    > tonic::server::ServerStreamingService<super::QueryRagRequest>
                     for QueryRAGSvc<T> {
-                        type Response = super::QueryRagResponse;
+                        type Response = super::WorkflowEvent;
+                        type ResponseStream = T::QueryRAGStream;
                         type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
+                            tonic::Response<Self::ResponseStream>,
                             tonic::Status,
                         >;
                         fn call(
@@ -298,7 +302,7 @@ pub mod lancet_service_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let res = grpc.unary(method, req).await;
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

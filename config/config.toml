@@ -7,6 +7,15 @@ engine_addr = "localhost:50051"
 grpc_addr = "[::1]:50051"
 lancedb_path = "./data/lancedb"
 
+[engine.workflow]
+reformulate_timeout_ms = 5000
+query_embedding_timeout_ms = 10000
+retrieve_timeout_ms = 10000
+graph_operation_timeout_ms = 4000
+graph_node_timeout_ms = 15000
+prompt_timeout_ms = 2000
+generation_node_timeout_ms = 65000
+
 [engine.retrieval]
 candidate_limit = 32
 final_limit = 8

@@ -1,2 +1,14 @@
 [engine]
 lancedb_path = "./data/lancedb-verify-02-06"
+
+[openrouter]
+generation_timeout_secs = 1
+
+[engine.workflow]
+reformulate_timeout_ms = 50
+query_embedding_timeout_ms = 100
+retrieve_timeout_ms = 100
+graph_operation_timeout_ms = 40
+graph_node_timeout_ms = 150
+prompt_timeout_ms = 20
+generation_node_timeout_ms = 7000

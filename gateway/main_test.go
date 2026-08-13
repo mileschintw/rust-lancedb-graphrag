@@ -640,11 +640,145 @@ func TestGetDocumentNotFoundMarksFailedAfterRustConfirmsAbsence(t *testing.T) {
 	})
 }
 
+type fakeQueryRAGStream struct {
+	grpc.ClientStream
+	ctx    context.Context
+	events []*pb.WorkflowEvent
+	index  int
+	err    error
+}
+
+func (s *fakeQueryRAGStream) Recv() (*pb.WorkflowEvent, error) {
+	if s.index >= len(s.events) {
+		if s.err != nil {
+			return nil, s.err
+		}
+		return nil, io.EOF
+	}
+	ev := s.events[s.index]
+	s.index++
+	return ev, nil
+}
+
+func (s *fakeQueryRAGStream) Header() (metadata.MD, error) {
+	return nil, nil
+}
+
+func (s *fakeQueryRAGStream) Trailer() metadata.MD {
+	if s.err != nil {
+		if te, ok := s.err.(interface{ Trailer() metadata.MD }); ok {
+			return te.Trailer()
+		}
+	}
+	return nil
+}
+
+func (s *fakeQueryRAGStream) Context() context.Context {
+	if s.ctx != nil {
+		return s.ctx
+	}
+	return context.Background()
+}
+
+func newSingleResponseStream(resp *pb.QueryRAGResponse, err error) pb.LancetService_QueryRAGClient {
+	if err != nil && resp == nil {
+		return &fakeQueryRAGStream{err: err}
+	}
+	var events []*pb.WorkflowEvent
+	if resp != nil {
+		events = []*pb.WorkflowEvent{
+			{
+				SessionId:       resp.GetSessionId(),
+				TraceId:         "00000000-0000-4000-8000-000000000099",
+				SequenceOrdinal: 1,
+				TimestampMs:     time.Now().UnixMilli(),
+				Event: &pb.WorkflowEvent_NodeStarted{
+					NodeStarted: &pb.NodeStartedEvent{
+						NodeName:      "ReformulateQuery",
+						InputsSummary: "inputs",
+					},
+				},
+			},
+			{
+				SessionId:       resp.GetSessionId(),
+				TraceId:         "00000000-0000-4000-8000-000000000099",
+				SequenceOrdinal: 2,
+				TimestampMs:     time.Now().UnixMilli(),
+				Event: &pb.WorkflowEvent_FinalAnswer{
+					FinalAnswer: &pb.FinalAnswerEvent{
+						Response: resp,
+					},
+				},
+			},
+			{
+				SessionId:       resp.GetSessionId(),
+				TraceId:         "00000000-0000-4000-8000-000000000099",
+				SequenceOrdinal: 3,
+				TimestampMs:     time.Now().UnixMilli(),
+				Event: &pb.WorkflowEvent_WorkflowCompleted{
+					WorkflowCompleted: &pb.WorkflowCompletedEvent{
+						Success:       true,
+						FinalResponse: resp,
+					},
+				},
+			},
+		}
+	}
+	return &fakeQueryRAGStream{events: events, err: err}
+}
+
+type sseEvent struct {
+	Event string
+	Data  string
+}
+
+func parseSSEEvents(body string) []sseEvent {
+	var events []sseEvent
+	lines := strings.Split(body, "\n")
+	var currentEvent, currentData string
+	for _, line := range lines {
+		line = strings.TrimRight(line, "\r")
+		if strings.HasPrefix(line, "event: ") {
+			currentEvent = strings.TrimPrefix(line, "event: ")
+		} else if strings.HasPrefix(line, "data: ") {
+			currentData = strings.TrimPrefix(line, "data: ")
+		} else if line == "" && (currentEvent != "" || currentData != "") {
+			events = append(events, sseEvent{Event: currentEvent, Data: currentData})
+			currentEvent = ""
+			currentData = ""
+		}
+	}
+	if currentEvent != "" || currentData != "" {
+		events = append(events, sseEvent{Event: currentEvent, Data: currentData})
+	}
+	return events
+}
+
+func parseTerminalResponseDTO(body string) (queryRAGResponseDTO, error) {
+	events := parseSSEEvents(body)
+	for _, ev := range events {
+		if ev.Event == "final_answer" {
+			var dto queryRAGResponseDTO
+			err := json.Unmarshal([]byte(ev.Data), &dto)
+			return dto, err
+		}
+		if ev.Event == "workflow_completed" {
+			var wc struct {
+				FinalResponse *queryRAGResponseDTO `json:"final_response"`
+			}
+			if err := json.Unmarshal([]byte(ev.Data), &wc); err == nil && wc.FinalResponse != nil {
+				return *wc.FinalResponse, nil
+			}
+		}
+	}
+	return queryRAGResponseDTO{}, fmt.Errorf("no terminal response found in SSE body: %s", body)
+}
+
 type engineFunc struct {
 	ingest    func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome
 	status    *pb.GetIngestionStatusResponse
 	statusErr error
-	queryRAG  func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error)
+	queryRAG  func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error)
 }
 
 func (e engineFunc) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome {
@@ -677,7 +811,7 @@ func (e engineFunc) IngestionStatus(ctx context.Context, id string) (*pb.GetInge
 	}, nil
 }
 
-func (e engineFunc) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+func (e engineFunc) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 	if e.queryRAG != nil {
 		return e.queryRAG(ctx, req)
 	}
@@ -690,8 +824,8 @@ func TestRAGQueryNoResults(t *testing.T) {
 	store := &fakeStore{}
 	sessionID := "00000000-0000-4000-8000-000000000055"
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
-			return &pb.QueryRAGResponse{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			resp := &pb.QueryRAGResponse{
 				Answer:              "",
 				Citations:           []string{},
 				SessionId:           sessionID,
@@ -718,7 +852,8 @@ func TestRAGQueryNoResults(t *testing.T) {
 					},
 					ResultHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 				},
-			}, nil
+			}
+			return newSingleResponseStream(resp, nil), nil
 		},
 	}
 
@@ -733,43 +868,41 @@ func TestRAGQueryNoResults(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 
-	var res map[string]any
-	if err := json.Unmarshal(recorder.Body.Bytes(), &res); err != nil {
+	dto, err := parseTerminalResponseDTO(recorder.Body.String())
+	if err != nil {
 		t.Fatalf("unmarshal error = %v", err)
 	}
 
-	if ans, ok := res["answer"].(string); !ok || ans != "" {
-		t.Fatalf("answer = %v, want empty string", res["answer"])
+	if dto.Answer != "" {
+		t.Fatalf("answer = %v, want empty string", dto.Answer)
 	}
-	if cits, ok := res["citations"].([]any); !ok || len(cits) != 0 {
-		t.Fatalf("citations = %v, want empty array", res["citations"])
+	if len(dto.Citations) != 0 {
+		t.Fatalf("citations = %v, want empty array", dto.Citations)
 	}
-	if scits, ok := res["structured_citations"].([]any); !ok || len(scits) != 0 {
-		t.Fatalf("structured_citations = %v, want empty array", res["structured_citations"])
+	if len(dto.StructuredCitations) != 0 {
+		t.Fatalf("structured_citations = %v, want empty array", dto.StructuredCitations)
 	}
-	if basis, ok := res["answer_basis"].(float64); !ok || basis != 0 {
-		t.Fatalf("answer_basis = %v, want 0", res["answer_basis"])
+	if dto.AnswerBasis != 0 {
+		t.Fatalf("answer_basis = %v, want 0", dto.AnswerBasis)
 	}
-	if sess, ok := res["session_id"].(string); !ok || sess != sessionID {
-		t.Fatalf("session_id = %v, want %s", res["session_id"], sessionID)
-	}
-
-	notices, ok := res["notices"].([]any)
-	if !ok || len(notices) != 1 {
-		t.Fatalf("notices = %v, want 1 notice", res["notices"])
-	}
-	noticeMap := notices[0].(map[string]any)
-	if noticeMap["code"] != "NO_EVIDENCE" {
-		t.Fatalf("notice code = %v, want NO_EVIDENCE", noticeMap["code"])
-	}
-	if noticeMap["message"] != "No completed corpus evidence matched the requested filters." {
-		t.Fatalf("notice message = %v", noticeMap["message"])
-	}
-	if noticeMap["severity"].(float64) != 1 {
-		t.Fatalf("notice severity = %v, want 1", noticeMap["severity"])
+	if dto.SessionID != sessionID {
+		t.Fatalf("session_id = %v, want %s", dto.SessionID, sessionID)
 	}
 
-	if res["snapshot"] == nil {
+	if len(dto.Notices) != 1 {
+		t.Fatalf("notices = %v, want 1 notice", dto.Notices)
+	}
+	if dto.Notices[0].Code != "NO_EVIDENCE" {
+		t.Fatalf("notice code = %v, want NO_EVIDENCE", dto.Notices[0].Code)
+	}
+	if dto.Notices[0].Message != "No completed corpus evidence matched the requested filters." {
+		t.Fatalf("notice message = %v", dto.Notices[0].Message)
+	}
+	if dto.Notices[0].Severity != 1 {
+		t.Fatalf("notice severity = %v, want 1", dto.Notices[0].Severity)
+	}
+
+	if dto.Snapshot == nil {
 		t.Fatalf("snapshot is nil")
 	}
 }
@@ -777,11 +910,11 @@ func TestRAGQueryNoResults(t *testing.T) {
 func TestRAGQueryValidMapping(t *testing.T) {
 	store := &fakeStore{}
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			if req.GetQuery() != "what is lancet?" {
 				t.Errorf("query = %q, want %q", req.GetQuery(), "what is lancet?")
 			}
-			return &pb.QueryRAGResponse{
+			resp := &pb.QueryRAGResponse{
 				Answer:      "Lancet is a hybrid RAG system.",
 				Citations:   []string{"doc-1#chunk-0"},
 				SessionId:   "gen-sess-100",
@@ -801,7 +934,8 @@ func TestRAGQueryValidMapping(t *testing.T) {
 				Snapshot: &pb.RetrievalSnapshot{
 					CandidateLimit: 32,
 				},
-			}, nil
+			}
+			return newSingleResponseStream(resp, nil), nil
 		},
 	}
 
@@ -816,30 +950,30 @@ func TestRAGQueryValidMapping(t *testing.T) {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 
-	var resp map[string]any
-	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("invalid json response: %v", err)
+	dto, err := parseTerminalResponseDTO(recorder.Body.String())
+	if err != nil {
+		t.Fatalf("invalid sse response: %v", err)
 	}
 
-	if resp["answer"] != "Lancet is a hybrid RAG system." {
-		t.Errorf("answer = %v", resp["answer"])
+	if dto.Answer != "Lancet is a hybrid RAG system." {
+		t.Errorf("answer = %v", dto.Answer)
 	}
-	if resp["session_id"] != "gen-sess-100" {
-		t.Errorf("session_id = %v", resp["session_id"])
+	if dto.SessionID != "gen-sess-100" {
+		t.Errorf("session_id = %v", dto.SessionID)
 	}
-	if float64Val, ok := resp["answer_basis"].(float64); !ok || int(float64Val) != int(pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL) {
-		t.Errorf("answer_basis = %v", resp["answer_basis"])
+	if dto.AnswerBasis != int32(pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL) {
+		t.Errorf("answer_basis = %v", dto.AnswerBasis)
 	}
-	if citations, ok := resp["citations"].([]any); !ok || len(citations) != 1 || citations[0] != "doc-1#chunk-0" {
-		t.Errorf("citations = %v", resp["citations"])
+	if len(dto.Citations) != 1 || dto.Citations[0] != "doc-1#chunk-0" {
+		t.Errorf("citations = %v", dto.Citations)
 	}
-	if _, ok := resp["structured_citations"].([]any); !ok {
+	if len(dto.StructuredCitations) != 1 {
 		t.Errorf("structured_citations missing or invalid")
 	}
-	if _, ok := resp["notices"].([]any); !ok {
+	if len(dto.Notices) != 1 {
 		t.Errorf("notices missing or invalid")
 	}
-	if _, ok := resp["snapshot"].(map[string]any); !ok {
+	if dto.Snapshot == nil {
 		t.Errorf("snapshot missing or invalid")
 	}
 }
@@ -850,13 +984,14 @@ func TestRAGQueryCallerSessionAndFilters(t *testing.T) {
 	var receivedSawLiveContext bool
 
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			receivedReq = req
 			receivedSawLiveContext = ctx.Err() == nil
-			return &pb.QueryRAGResponse{
+			resp := &pb.QueryRAGResponse{
 				Answer:    "Filtered answer",
 				SessionId: req.GetSessionId(),
-			}, nil
+			}
+			return newSingleResponseStream(resp, nil), nil
 		},
 	}
 
@@ -895,8 +1030,8 @@ func TestRAGQueryCallerSessionAndFilters(t *testing.T) {
 func TestRAGQueryRejectsUnknownOrTrailingJSON(t *testing.T) {
 	store := &fakeStore{}
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
-			return &pb.QueryRAGResponse{Answer: "should not be called"}, nil
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			return newSingleResponseStream(&pb.QueryRAGResponse{Answer: "should not be called"}, nil), nil
 		},
 	}
 	router := app{store: store, engine: engine, logger: zap.NewNop()}.routes()
@@ -926,7 +1061,7 @@ func TestRAGQueryRejectsUnknownOrTrailingJSON(t *testing.T) {
 func TestRAGQueryInvalidArgumentStatus(t *testing.T) {
 	store := &fakeStore{}
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			return nil, status.Error(codes.InvalidArgument, "invalid query parameter: empty string")
 		},
 	}
@@ -959,7 +1094,7 @@ func TestRAGQueryProviderErrorPreservesIdentity(t *testing.T) {
 	}
 
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			return nil, failingErr
 		},
 	}
@@ -1009,7 +1144,7 @@ func TestRAGQueryEmbeddingTransportIdentity(t *testing.T) {
 	}
 
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			return nil, failingErr
 		},
 	}
@@ -1059,7 +1194,7 @@ func TestRAGQueryEmbeddingInvalidPayloadIdentity(t *testing.T) {
 	}
 
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			return nil, failingErr
 		},
 	}
@@ -1109,7 +1244,7 @@ func TestRAGQueryDenseRetrievalIdentity(t *testing.T) {
 	}
 
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			return nil, failingErr
 		},
 	}
@@ -1159,9 +1294,9 @@ func TestRAGQueryRejectsOversizedBody(t *testing.T) {
 	store := &fakeStore{}
 	engineCalls := 0
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			engineCalls++
-			return &pb.QueryRAGResponse{Answer: "should not be called"}, nil
+			return newSingleResponseStream(&pb.QueryRAGResponse{Answer: "should not be called"}, nil), nil
 		},
 	}
 
@@ -1192,9 +1327,9 @@ func TestRAGQueryRejectsHugeFilterBody(t *testing.T) {
 	store := &fakeStore{}
 	engineCalls := 0
 	engine := engineFunc{
-		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 			engineCalls++
-			return &pb.QueryRAGResponse{Answer: "should not be called"}, nil
+			return newSingleResponseStream(&pb.QueryRAGResponse{Answer: "should not be called"}, nil), nil
 		},
 	}
 
@@ -2164,21 +2299,25 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("real /rag/query status = %d, body = %s; engine output: %s", recorder.Code, recorder.Body.String(), strings.Join(engineLines, " | "))
 	}
-	var response pb.QueryRAGResponse
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode real /rag/query response: %v", err)
+	bodyStr := recorder.Body.String()
+	dto, err := parseTerminalResponseDTO(bodyStr)
+	if err != nil {
+		t.Fatalf("decode real /rag/query response: %v; body: %s", err, bodyStr)
 	}
-	if response.GetSessionId() != "00000000-0000-4000-8000-000000000006" {
-		t.Fatalf("effective session_id = %q", response.GetSessionId())
+	if dto.SessionID != "00000000-0000-4000-8000-000000000006" {
+		t.Fatalf("effective session_id = %q", dto.SessionID)
 	}
-	if response.GetAnswer() != "DENSE_AND_LEXICAL_FIXTURE_MARKER [1]" || response.GetAnswerBasis() != pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL {
-		t.Fatalf("grounded answer = %q, basis = %v", response.GetAnswer(), response.GetAnswerBasis())
+	if dto.Answer != "DENSE_AND_LEXICAL_FIXTURE_MARKER [1]" || dto.AnswerBasis != int32(pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL) {
+		t.Fatalf("grounded answer = %q, basis = %v", dto.Answer, dto.AnswerBasis)
 	}
-	if len(response.GetCitations()) != 1 || response.GetCitations()[0] != "[1]" || len(response.GetStructuredCitations()) != 1 || response.GetStructuredCitations()[0].GetDocumentId() != "00000000-0000-4000-8000-000000000005" {
-		t.Fatalf("citation provenance = %#v / %#v", response.GetCitations(), response.GetStructuredCitations())
+	if len(dto.Citations) != 1 || dto.Citations[0] != "[1]" || len(dto.StructuredCitations) != 1 || dto.StructuredCitations[0].DocumentID != "00000000-0000-4000-8000-000000000005" {
+		t.Fatalf("citation provenance = %#v / %#v", dto.Citations, dto.StructuredCitations)
 	}
-	if response.GetSnapshot() == nil || response.GetSnapshot().GetEmbeddingModel() != "nvidia/llama-nemotron-embed-vl-1b-v2:free" || response.GetSnapshot().GetCandidateLimit() != 32 {
-		t.Fatalf("retrieval snapshot = %#v", response.GetSnapshot())
+	if dto.Snapshot == nil || dto.Snapshot.EmbeddingModel != "nvidia/llama-nemotron-embed-vl-1b-v2:free" || dto.Snapshot.CandidateLimit != 32 {
+		t.Fatalf("retrieval snapshot = %#v", dto.Snapshot)
+	}
+	if dto.Notices == nil {
+		t.Fatalf("notices must be non-nil slice")
 	}
 	state.mu.Lock()
 	chatCalls, metadataCalls, embeddingCalls := state.chatCalls, state.metadataCalls, state.embeddingCalls
@@ -2190,7 +2329,182 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	if !strings.Contains(chatEvidence, "DENSE_FIXTURE_MARKER") || !strings.Contains(chatEvidence, "LEXICAL_FIXTURE_IDENTIFIER_2026") {
 		t.Fatalf("Rust-owned evidence omitted dense or lexical fixture content")
 	}
+}
 
+func TestRAGQuerySSEFirstFrame(t *testing.T) {
+	sessionID := "00000000-0000-4000-8000-000000000055"
+	correlationID := "00000000-0000-4000-8000-000000000099"
+	docID := "00000000-0000-4000-8000-000000000001"
+
+	resp := &pb.QueryRAGResponse{
+		Answer:      "First frame test answer [1]",
+		Citations:   []string{"[1]"},
+		SessionId:   sessionID,
+		AnswerBasis: pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL,
+		StructuredCitations: []*pb.StructuredCitation{
+			{
+				ChunkId:     "c1",
+				DocumentId:  docID,
+				Title:       "Doc Title",
+				SectionPath: "/section",
+				Excerpt:     "excerpt",
+				Rank:        1,
+				ContentType: "text/plain",
+			},
+		},
+		Notices: []*pb.Notice{},
+		Snapshot: &pb.RetrievalSnapshot{
+			IndexGeneration: "gen-1",
+			EmbeddingModel:  "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+			CandidateLimit:  32,
+			FinalLimit:      8,
+		},
+	}
+
+	events := []*pb.WorkflowEvent{
+		{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 1,
+			Event: &pb.WorkflowEvent_NodeStarted{
+				NodeStarted: &pb.NodeStartedEvent{
+					NodeName:      "ReformulateQuery",
+					InputsSummary: "inputs",
+				},
+			},
+		},
+		{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 2,
+			Event: &pb.WorkflowEvent_FinalAnswer{
+				FinalAnswer: &pb.FinalAnswerEvent{
+					Response: resp,
+				},
+			},
+		},
+		{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 3,
+			Event: &pb.WorkflowEvent_WorkflowCompleted{
+				WorkflowCompleted: &pb.WorkflowCompletedEvent{
+					Success:       true,
+					FinalResponse: resp,
+				},
+			},
+		},
+	}
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	server := httptest.NewServer(app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes())
+	defer server.Close()
+
+	reqBody := `{"query":"first frame test","session_id":"` + sessionID + `"}`
+	httpReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/rag/query", strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("create request error: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	res, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		t.Fatalf("execute request error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+
+	if contentType := res.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", contentType)
+	}
+
+	if got := res.Header.Get("X-Lancet-Session-ID"); got != sessionID {
+		t.Fatalf("X-Lancet-Session-ID = %q, want %q", got, sessionID)
+	}
+	if got := res.Header.Get("X-Lancet-Correlation-ID"); got != correlationID {
+		t.Fatalf("X-Lancet-Correlation-ID = %q, want %q", got, correlationID)
+	}
+
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body error: %v", err)
+	}
+
+	bodyStr := string(bodyBytes)
+	sseEvs := parseSSEEvents(bodyStr)
+	if len(sseEvs) < 2 {
+		t.Fatalf("expected at least 2 SSE events, got %d: %s", len(sseEvs), bodyStr)
+	}
+
+	if sseEvs[0].Event != "node_started" {
+		t.Fatalf("first event = %q, want node_started", sseEvs[0].Event)
+	}
+
+	dto, err := parseTerminalResponseDTO(bodyStr)
+	if err != nil {
+		t.Fatalf("parse terminal DTO error: %v", err)
+	}
+
+	if dto.Answer != "First frame test answer [1]" {
+		t.Fatalf("answer = %q", dto.Answer)
+	}
+	if dto.SessionID != sessionID {
+		t.Fatalf("session_id = %q", dto.SessionID)
+	}
+	if dto.AnswerBasis != int32(pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL) {
+		t.Fatalf("answer_basis = %d", dto.AnswerBasis)
+	}
+	if len(dto.Citations) != 1 || dto.Citations[0] != "[1]" {
+		t.Fatalf("citations = %v", dto.Citations)
+	}
+	if len(dto.StructuredCitations) != 1 || dto.StructuredCitations[0].DocumentID != docID {
+		t.Fatalf("structured_citations = %#v", dto.StructuredCitations)
+	}
+	if dto.Snapshot == nil || dto.Snapshot.EmbeddingModel != "nvidia/llama-nemotron-embed-vl-1b-v2:free" {
+		t.Fatalf("snapshot = %#v", dto.Snapshot)
+	}
+	if dto.Notices == nil {
+		t.Fatalf("notices must be non-nil slice")
+	}
+}
+
+func TestCheckpointDispatcherSixthEnvelopeReturnsPending(t *testing.T) {
+	dispatcher := NewCheckpointDispatcher(nil)
+
+	for i := range 5 {
+		env := &CheckpointEnvelope{
+			SessionID:       "sess-1",
+			SequenceOrdinal: uint64(i + 1),
+		}
+		res := dispatcher.Submit(env)
+		if res.Kind != DispatchAccepted {
+			t.Fatalf("envelope %d submitted, expected Accepted, got %v", i+1, res.Kind)
+		}
+	}
+
+	sixthEnv := &CheckpointEnvelope{
+		SessionID:       "sess-1",
+		SequenceOrdinal: 6,
+		NodeID:          "sixth-node",
+	}
+	res := dispatcher.Submit(sixthEnv)
+	if res.Kind != DispatchPending {
+		t.Fatalf("6th envelope submitted, expected DispatchPending, got %v", res.Kind)
+	}
+	if res.Envelope != sixthEnv {
+		t.Fatalf("expected 6th envelope returned in Pending result, got %v", res.Envelope)
+	}
+
+	dispatcher.Close()
 }
 
 func ragChildEnv(extra ...string) []string {

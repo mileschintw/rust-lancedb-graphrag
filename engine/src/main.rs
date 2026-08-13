@@ -35,6 +35,7 @@ pub mod graph;
 pub mod prompt;
 mod rerank;
 mod retrieval;
+use engine::workflow;
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
 use client::{OpenRouterClient, OpenRouterEmbeddingConfig};
@@ -43,14 +44,8 @@ use retrieval::{
     Bm25Config, Bm25Index, DenseRetriever, QueryRequest, RetrievalErrorKind, Retriever,
 };
 
-pub mod lancet {
-    pub mod v1 {
-        include!("pb/lancet/v1/lancet.v1.rs");
-    }
-}
-
-use lancet::v1::lancet_service_server::{LancetService, LancetServiceServer};
-use lancet::v1::{
+use engine::pb::lancet::v1::{self, lancet_service_server::{LancetService, LancetServiceServer}};
+use engine::pb::lancet::v1::{
     GetIngestionStatusRequest, GetIngestionStatusResponse, IngestDocumentRequest,
     IngestDocumentResponse, PingRequest, PingResponse, QueryGraphEdge, QueryGraphNode,
     QueryGraphRequest, QueryGraphResponse, QueryRagRequest, QueryRagResponse,
@@ -1235,6 +1230,311 @@ pub(crate) async fn attempt_graph_augmentation(
     GraphAugmentationOutcome::Succeeded { facts }
 }
 
+impl LancetServiceImpl {
+    pub async fn execute_inline_query_rag_remainder(
+        &self,
+        ctx: &mut workflow::WorkflowContext,
+        query_request: &QueryRequest,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> Result<(), workflow::NodeError> {
+        if cancel.is_cancelled() {
+            return Err(workflow::NodeError::cancelled());
+        }
+
+        let query_embedding = match self
+            .embedder
+            .get_embeddings(&[query_request.query.clone()])
+            .await
+        {
+            Ok(vecs) => {
+                if vecs.len() != 1
+                    || vecs[0].len() != 2048
+                    || vecs[0].iter().any(|f| !f.is_finite())
+                {
+                    return Err(workflow::NodeError::new(
+                        v1::NodeErrorKind::RetrievalFailed,
+                        "embedding provider returned invalid payload",
+                    ));
+                }
+                vecs.into_iter().next().unwrap()
+            }
+            Err(err) => {
+                return Err(workflow::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    format!("embedding provider transport error: {err}"),
+                ));
+            }
+        };
+
+        ctx.query_embedding = Some(query_embedding.clone());
+
+        let graph_outcome = attempt_graph_augmentation(
+            &self.database,
+            &query_embedding,
+            &self.effective_settings.graph,
+        )
+        .await;
+
+        let tag = match &graph_outcome {
+            GraphAugmentationOutcome::Succeeded { .. } => "succeeded",
+            GraphAugmentationOutcome::NoMatchFound => "no_match_found",
+            GraphAugmentationOutcome::AttemptedAndFailed { .. } => "attempted_and_failed",
+        };
+        tracing::Span::current().record("graph_augmentation", tag);
+
+        let graph_facts: Vec<prompt::GraphFactBlock> = match graph_outcome {
+            GraphAugmentationOutcome::Succeeded { facts } => facts
+                .into_iter()
+                .map(|fact| prompt::GraphFactBlock { fact })
+                .collect(),
+            _ => vec![],
+        };
+
+        let dense_retriever = DenseRetriever::new(self.nodes.clone());
+        let dense_candidates = match dense_retriever
+            .query(
+                &query_embedding,
+                query_request,
+                &self.effective_settings.retrieval,
+            )
+            .await
+        {
+            Ok(candidates) => candidates,
+            Err(err) => {
+                return Err(workflow::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    format!("dense retrieval failure: {}", err.message()),
+                ));
+            }
+        };
+
+        let bm25_guard = self.bm25_index.read().await;
+        let bm25_candidates = bm25_guard
+            .retrieve(query_request, &self.effective_settings.retrieval)
+            .await
+            .map_err(|err| {
+                workflow::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    err.to_string(),
+                )
+            })?;
+        drop(bm25_guard);
+
+        let fused = retrieval::fusion::fuse_candidates(
+            dense_candidates,
+            bm25_candidates,
+            &self.effective_settings.retrieval,
+        )
+        .map_err(|err| {
+            workflow::NodeError::new(
+                v1::NodeErrorKind::RetrievalFailed,
+                err.to_string(),
+            )
+        })?;
+
+        let reranked = self
+            .reranker
+            .rerank(fused)
+            .await
+            .map_err(|err| {
+                workflow::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    err.to_string(),
+                )
+            })?;
+
+        let final_candidates: Vec<_> = reranked
+            .into_iter()
+            .take(self.effective_settings.retrieval.final_limit)
+            .collect();
+
+        if final_candidates.is_empty() {
+            let snapshot = v1::RetrievalSnapshot {
+                index_generation: self.effective_settings.index_generation.clone(),
+                embedding_model: self.embedder.model_id().to_owned(),
+                vector_weight: self.effective_settings.retrieval.vector_weight,
+                bm25_weight: self.effective_settings.retrieval.bm25_weight,
+                rrf_k: snapshot_rrf_k(self.effective_settings.retrieval.rrf_k)
+                    .map_err(|e| workflow::NodeError::new(v1::NodeErrorKind::Internal, e.to_string()))?,
+                candidate_limit: snapshot_limit(
+                    self.effective_settings.retrieval.candidate_limit,
+                    "candidate_limit",
+                )
+                .map_err(|e| workflow::NodeError::new(v1::NodeErrorKind::Internal, e.to_string()))?,
+                final_limit: snapshot_limit(
+                    self.effective_settings.retrieval.final_limit,
+                    "final_limit",
+                )
+                .map_err(|e| workflow::NodeError::new(v1::NodeErrorKind::Internal, e.to_string()))?,
+                active_filter: Some(v1::DocumentFilter {
+                    document_ids: query_request.filters.document_ids.clone(),
+                    content_types: query_request.filters.content_types.clone(),
+                }),
+                result_hash: format!("{:x}", {
+                    let hasher = DefaultHasher::new();
+                    hasher.finish()
+                }),
+            };
+
+            ctx.answer = String::new();
+            ctx.citations = vec![];
+            ctx.answer_basis = v1::AnswerBasis::Unspecified;
+            ctx.structured_citations = vec![];
+            ctx.notices = vec![v1::Notice {
+                code: "NO_EVIDENCE".to_string(),
+                message: "No completed corpus evidence matched the requested filters.".to_string(),
+                severity: v1::NoticeSeverity::Info as i32,
+            }];
+            ctx.snapshot = Some(snapshot);
+            return Ok(());
+        }
+
+        let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
+        let limits = self.effective_settings.grounding_limits();
+        let packed_evidence = prompt::pack_evidence_and_graph_prompt(
+            &query_request.query,
+            &evidence_blocks,
+            &graph_facts,
+            self.effective_settings.retrieval.graph_weight,
+            limits.evidence_token_budget() as usize,
+            limits.max_output_tokens() as usize,
+        )
+        .map_err(|err| {
+            workflow::NodeError::new(
+                v1::NodeErrorKind::PromptAssemblyFailed,
+                format!("prompt assembly error: {err}"),
+            )
+        })?;
+
+        ctx.assembled_prompt = packed_evidence.prompt.clone();
+
+        let mut gen_req = generation::GenerationRequest::new(
+            &query_request.query,
+            packed_evidence.evidence.clone(),
+        );
+        gen_req.graph_facts = packed_evidence.graph_facts.clone();
+        gen_req.graph_weight = self.effective_settings.retrieval.graph_weight;
+        gen_req.session_id = Some(ctx.session_id.clone());
+        gen_req.correlation_id = Some(ctx.trace_id.clone());
+
+        let model_output = self.generator.generate(gen_req).await.map_err(|err| {
+            let kind = match err.kind {
+                generation::GenerationErrorKind::Timeout => v1::NodeErrorKind::Timeout,
+                generation::GenerationErrorKind::Cancelled => v1::NodeErrorKind::Cancelled,
+                _ => v1::NodeErrorKind::LlmGenerationFailed,
+            };
+            workflow::NodeError::new(kind, err.message())
+        })?;
+
+        model_output
+            .validate_grounding_with_limits(&packed_evidence.evidence, *limits)
+            .map_err(|err| {
+                workflow::NodeError::new(
+                    v1::NodeErrorKind::LlmGenerationFailed,
+                    err.message(),
+                )
+            })?;
+
+        let resolved_citations = prompt::resolve_citations_with_max_chars(
+            &model_output.cited_evidence_ids,
+            &packed_evidence.evidence,
+            self.effective_settings.citation_excerpt_max_chars,
+        );
+
+        if resolved_citations.len() != model_output.cited_evidence_ids.len() {
+            return Err(workflow::NodeError::new(
+                v1::NodeErrorKind::LlmGenerationFailed,
+                "failed to resolve all cited evidence identities completely",
+            ));
+        }
+
+        let proto_citations: Vec<String> = resolved_citations
+            .iter()
+            .map(|c| c.marker_id.clone())
+            .collect();
+
+        let proto_structured_citations: Vec<v1::StructuredCitation> = resolved_citations
+            .iter()
+            .map(|c| v1::StructuredCitation {
+                chunk_id: c.chunk_id.clone(),
+                document_id: c.document_id.clone(),
+                title: c
+                    .title
+                    .as_deref()
+                    .unwrap_or("Untitled Document")
+                    .to_string(),
+                section_path: c.section_path.as_deref().unwrap_or("Root").to_string(),
+                excerpt: c.bounded_excerpt.clone(),
+                is_truncated: c.is_truncated,
+                score: c.score,
+                rank: c.rank as i32,
+                content_type: c.content_type.clone(),
+            })
+            .collect();
+
+        let proto_answer_basis = match model_output.answer_basis {
+            generation::AnswerBasis::Retrieval => v1::AnswerBasis::Retrieval,
+            generation::AnswerBasis::Mixed => v1::AnswerBasis::Mixed,
+            generation::AnswerBasis::ModelOnly => v1::AnswerBasis::ModelOnly,
+        };
+
+        let mut proto_notices: Vec<v1::Notice> = Vec::new();
+        for notice in &model_output.notices {
+            proto_notices.push(v1::Notice {
+                code: "NOTICE".to_string(),
+                message: notice.clone(),
+                severity: v1::NoticeSeverity::Info as i32,
+            });
+        }
+        for warning in &model_output.warnings {
+            proto_notices.push(v1::Notice {
+                code: "WARNING".to_string(),
+                message: warning.clone(),
+                severity: v1::NoticeSeverity::Warning as i32,
+            });
+        }
+
+        let snapshot = v1::RetrievalSnapshot {
+            index_generation: self.effective_settings.index_generation.clone(),
+            embedding_model: self.embedder.model_id().to_owned(),
+            vector_weight: self.effective_settings.retrieval.vector_weight,
+            bm25_weight: self.effective_settings.retrieval.bm25_weight,
+            rrf_k: snapshot_rrf_k(self.effective_settings.retrieval.rrf_k)
+                .map_err(|e| workflow::NodeError::new(v1::NodeErrorKind::Internal, e.to_string()))?,
+            candidate_limit: snapshot_limit(
+                self.effective_settings.retrieval.candidate_limit,
+                "candidate_limit",
+            )
+            .map_err(|e| workflow::NodeError::new(v1::NodeErrorKind::Internal, e.to_string()))?,
+            final_limit: snapshot_limit(
+                self.effective_settings.retrieval.final_limit,
+                "final_limit",
+            )
+            .map_err(|e| workflow::NodeError::new(v1::NodeErrorKind::Internal, e.to_string()))?,
+            active_filter: Some(v1::DocumentFilter {
+                document_ids: query_request.filters.document_ids.clone(),
+                content_types: query_request.filters.content_types.clone(),
+            }),
+            result_hash: format!("{:x}", {
+                let mut hasher = DefaultHasher::new();
+                for c in &final_candidates {
+                    c.candidate.chunk_id.hash(&mut hasher);
+                }
+                hasher.finish()
+            }),
+        };
+
+        ctx.answer = model_output.answer;
+        ctx.citations = proto_citations;
+        ctx.answer_basis = proto_answer_basis;
+        ctx.structured_citations = proto_structured_citations;
+        ctx.notices = proto_notices;
+        ctx.snapshot = Some(snapshot);
+
+        Ok(())
+    }
+}
+
 #[tonic::async_trait]
 impl LancetService for LancetServiceImpl {
     async fn ping(&self, request: Request<PingRequest>) -> Result<Response<PingResponse>, Status> {
@@ -1343,368 +1643,114 @@ impl LancetService for LancetServiceImpl {
         }
     }
 
+    type QueryRAGStream = std::pin::Pin<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<v1::WorkflowEvent, Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
     async fn query_rag(
         &self,
         request: Request<QueryRagRequest>,
-    ) -> Result<Response<QueryRagResponse>, Status> {
-        let query_span = tracing::info_span!("query_rag", graph_augmentation = tracing::field::Empty);
-        async move {
-            let req = request.into_inner();
+    ) -> Result<Response<Self::QueryRAGStream>, Status> {
+        let req = request.into_inner();
 
-            let session_id = if req.session_id.trim().is_empty() {
-                Uuid::new_v4().to_string()
-            } else {
-                let parsed = Uuid::parse_str(req.session_id.trim()).map_err(|_| {
-                    Status::invalid_argument("session_id must be a valid UUIDv4 string")
-                })?;
-                if parsed.get_version_num() != 4 || parsed.get_variant() != uuid::Variant::RFC4122 {
-                    return Err(Status::invalid_argument(
-                        "session_id must be a valid UUIDv4 string",
-                    ));
-                }
-                parsed.to_string()
-            };
-
-            let correlation_id = Uuid::new_v4().to_string();
-
-            let (doc_ids, content_types) = if let Some(ref filter) = req.filter {
-                (filter.document_ids.clone(), filter.content_types.clone())
-            } else {
-                (vec![], vec![])
-            };
-
-            let query_request = QueryRequest::from_values(
-                &req.query,
-                doc_ids,
-                content_types,
-                &self.effective_settings.retrieval,
-            )
-            .map_err(|err| match err.kind {
-                RetrievalErrorKind::EmptyQuery
-                | RetrievalErrorKind::QueryTooLong
-                | RetrievalErrorKind::InvalidDocumentId
-                | RetrievalErrorKind::UnsupportedContentType
-                | RetrievalErrorKind::EmptyFilterValue
-                | RetrievalErrorKind::FilterLimitExceeded
-                | RetrievalErrorKind::InvalidSettings => Status::invalid_argument(err.message()),
-                RetrievalErrorKind::NonFiniteScore | RetrievalErrorKind::Snapshot => {
-                    Status::internal(err.message())
-                }
+        let session_id = if req.session_id.trim().is_empty() {
+            Uuid::new_v4().to_string()
+        } else {
+            let parsed = Uuid::parse_str(req.session_id.trim()).map_err(|_| {
+                Status::invalid_argument("session_id must be a valid UUIDv4 string")
             })?;
-
-            let query_embedding = match self
-                .embedder
-                .get_embeddings(&[query_request.query.clone()])
-                .await
-            {
-                Ok(vecs) => {
-                    if vecs.len() != 1
-                        || vecs[0].len() != 2048
-                        || vecs[0].iter().any(|f| !f.is_finite())
-                    {
-                        return Err(d1_status(
-                            tonic::Code::Internal,
-                            "embedding provider returned invalid payload",
-                            &session_id,
-                            &correlation_id,
-                            "embedding_invalid_payload",
-                        ));
-                    }
-                    vecs.into_iter().next().unwrap()
-                }
-                Err(err) => {
-                    return Err(d1_status(
-                        tonic::Code::Unavailable,
-                        format!("embedding provider transport error: {err}"),
-                        &session_id,
-                        &correlation_id,
-                        "embedding_transport",
-                    ));
-                }
-            };
-
-            let graph_outcome = attempt_graph_augmentation(
-                &self.database,
-                &query_embedding,
-                &self.effective_settings.graph,
-            )
-            .await;
-
-            tracing::Span::current().record(
-                "graph_augmentation",
-                match &graph_outcome {
-                    GraphAugmentationOutcome::Succeeded { .. } => "succeeded",
-                    GraphAugmentationOutcome::NoMatchFound => "no_match_found",
-                    GraphAugmentationOutcome::AttemptedAndFailed { .. } => "attempted_and_failed",
-                },
-            );
-
-            let graph_facts: Vec<prompt::GraphFactBlock> = match graph_outcome {
-                GraphAugmentationOutcome::Succeeded { facts } => facts
-                    .into_iter()
-                    .map(|fact| prompt::GraphFactBlock { fact })
-                    .collect(),
-                _ => vec![],
-            };
-
-            let dense_retriever = DenseRetriever::new(self.nodes.clone());
-            let dense_candidates = match dense_retriever
-                .query(
-                    &query_embedding,
-                    &query_request,
-                    &self.effective_settings.retrieval,
-                )
-                .await
-            {
-                Ok(candidates) => candidates,
-                Err(err) => {
-                    let (code, kind_str) = match err.kind {
-                        RetrievalErrorKind::Snapshot => (tonic::Code::Unavailable, "dense_retrieval"),
-                        RetrievalErrorKind::NonFiniteScore => {
-                            (tonic::Code::Internal, "non_finite_score")
-                        }
-                        _ => (tonic::Code::Internal, "dense_retrieval_internal"),
-                    };
-                    return Err(d1_status(
-                        code,
-                        format!("dense retrieval failure: {}", err.message()),
-                        &session_id,
-                        &correlation_id,
-                        kind_str,
-                    ));
-                }
-            };
-
-            let bm25_guard = self.bm25_index.read().await;
-            let bm25_candidates = bm25_guard
-                .retrieve(&query_request, &self.effective_settings.retrieval)
-                .await
-                .map_err(|err| Status::internal(err.to_string()))?;
-            drop(bm25_guard);
-
-            let fused = retrieval::fusion::fuse_candidates(
-                dense_candidates,
-                bm25_candidates,
-                &self.effective_settings.retrieval,
-            )
-            .map_err(|err| match err.kind {
-                RetrievalErrorKind::NonFiniteScore => {
-                    Status::internal(format!("non-finite fusion score: {err}"))
-                }
-                _ => Status::internal(err.to_string()),
-            })?;
-
-            let reranked = self
-                .reranker
-                .rerank(fused)
-                .await
-                .map_err(|err| Status::internal(err.to_string()))?;
-
-            let final_candidates: Vec<_> = reranked
-                .into_iter()
-                .take(self.effective_settings.retrieval.final_limit)
-                .collect();
-
-            if final_candidates.is_empty() {
-                let snapshot = lancet::v1::RetrievalSnapshot {
-                    index_generation: self.effective_settings.index_generation.clone(),
-                    embedding_model: self.embedder.model_id().to_owned(),
-                    vector_weight: self.effective_settings.retrieval.vector_weight,
-                    bm25_weight: self.effective_settings.retrieval.bm25_weight,
-                    rrf_k: snapshot_rrf_k(self.effective_settings.retrieval.rrf_k)?,
-                    candidate_limit: snapshot_limit(
-                        self.effective_settings.retrieval.candidate_limit,
-                        "candidate_limit",
-                    )?,
-                    final_limit: snapshot_limit(
-                        self.effective_settings.retrieval.final_limit,
-                        "final_limit",
-                    )?,
-                    active_filter: Some(lancet::v1::DocumentFilter {
-                        document_ids: query_request.filters.document_ids.clone(),
-                        content_types: query_request.filters.content_types.clone(),
-                    }),
-                    result_hash: format!("{:x}", {
-                        let hasher = DefaultHasher::new();
-                        hasher.finish()
-                    }),
-                };
-
-                return Ok(Response::new(QueryRagResponse {
-                    answer: String::new(),
-                    citations: vec![],
-                    session_id,
-                    answer_basis: lancet::v1::AnswerBasis::Unspecified as i32,
-                    structured_citations: vec![],
-                    notices: vec![lancet::v1::Notice {
-                        code: "NO_EVIDENCE".to_string(),
-                        message: "No completed corpus evidence matched the requested filters."
-                            .to_string(),
-                        severity: lancet::v1::NoticeSeverity::Info as i32,
-                    }],
-                    snapshot: Some(snapshot),
-                }));
+            if parsed.get_version_num() != 4 || parsed.get_variant() != uuid::Variant::RFC4122 {
+                return Err(Status::invalid_argument(
+                    "session_id must be a valid UUIDv4 string",
+                ));
             }
+            parsed.to_string()
+        };
 
-            let evidence_blocks = prompt::assemble_evidence_blocks(&final_candidates);
-            let limits = self.effective_settings.grounding_limits();
-            let packed_evidence = prompt::pack_evidence_and_graph_prompt(
-                &query_request.query,
-                &evidence_blocks,
-                &graph_facts,
-                self.effective_settings.retrieval.graph_weight,
-                limits.evidence_token_budget() as usize,
-                limits.max_output_tokens() as usize,
-            )
-            .map_err(|err| Status::invalid_argument(format!("prompt assembly error: {err}")))?;
+        let correlation_id = Uuid::new_v4().to_string();
 
-            let mut gen_req = generation::GenerationRequest::new(
-                &query_request.query,
-                packed_evidence.evidence.clone(),
-            );
-            gen_req.graph_facts = packed_evidence.graph_facts.clone();
-            gen_req.graph_weight = self.effective_settings.retrieval.graph_weight;
-            gen_req.session_id = Some(session_id.clone());
-            gen_req.correlation_id = Some(correlation_id.clone());
+        let (doc_ids, content_types) = if let Some(ref filter) = req.filter {
+            (filter.document_ids.clone(), filter.content_types.clone())
+        } else {
+            (vec![], vec![])
+        };
 
-        let model_output = self.generator.generate(gen_req).await.map_err(|err| {
-            let (code, err_kind_str) = match err.kind {
-                generation::GenerationErrorKind::InvalidRequest => {
-                    (tonic::Code::InvalidArgument, "invalid_request")
-                }
-                generation::GenerationErrorKind::SupportedParameters => {
-                    (tonic::Code::Internal, "supported_parameters")
-                }
-                generation::GenerationErrorKind::ProviderError => {
-                    (tonic::Code::Internal, "provider_error")
-                }
-                generation::GenerationErrorKind::SchemaValidation => {
-                    (tonic::Code::Internal, "schema_validation")
-                }
-                generation::GenerationErrorKind::Timeout => (tonic::Code::Internal, "timeout"),
-                generation::GenerationErrorKind::Cancelled => (tonic::Code::Internal, "cancelled"),
-                generation::GenerationErrorKind::SessionCorrelation => {
-                    (tonic::Code::Internal, "session_correlation")
-                }
-            };
-            d1_status(
-                code,
-                err.message(),
-                &session_id,
-                &correlation_id,
-                err_kind_str,
-            )
+        let query_request = QueryRequest::from_values(
+            &req.query,
+            doc_ids,
+            content_types,
+            &self.effective_settings.retrieval,
+        )
+        .map_err(|err| match err.kind {
+            RetrievalErrorKind::EmptyQuery
+            | RetrievalErrorKind::QueryTooLong
+            | RetrievalErrorKind::InvalidDocumentId
+            | RetrievalErrorKind::UnsupportedContentType
+            | RetrievalErrorKind::EmptyFilterValue
+            | RetrievalErrorKind::FilterLimitExceeded
+            | RetrievalErrorKind::InvalidSettings => Status::invalid_argument(err.message()),
+            RetrievalErrorKind::NonFiniteScore | RetrievalErrorKind::Snapshot => {
+                Status::internal(err.message())
+            }
         })?;
 
-        model_output
-            .validate_grounding_with_limits(&packed_evidence.evidence, *limits)
-            .map_err(|err| {
-                d1_status(
-                    tonic::Code::Internal,
-                    err.message(),
-                    &session_id,
-                    &correlation_id,
-                    "schema_validation",
-                )
-            })?;
+        let (tx, rx) = mpsc::channel(100);
+        let stream: Self::QueryRAGStream = Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx));
 
-        let resolved_citations = prompt::resolve_citations_with_max_chars(
-            &model_output.cited_evidence_ids,
-            &packed_evidence.evidence,
-            self.effective_settings.citation_excerpt_max_chars,
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let sequence = Arc::new(workflow::EventSequence::new());
+        let sink = workflow::WorkflowEventSink::new(
+            tx,
+            sequence,
+            correlation_id.clone(),
+            session_id.clone(),
         );
 
-        if resolved_citations.len() != model_output.cited_evidence_ids.len() {
-            return Err(Status::internal(
-                "failed to resolve all cited evidence identities completely",
-            ));
-        }
+        let ctx = workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
+        let mut runner = workflow::WorkflowRunner::new();
+        runner.add_node(workflow::nodes::ReformulateQueryNode::new());
 
-        let proto_citations: Vec<String> = resolved_citations
-            .iter()
-            .map(|c| c.marker_id.clone())
-            .collect();
+        let deps = workflow::WorkflowDependencies::new();
+        let service = self.clone();
+        let query_request_owned = query_request.clone();
 
-        let proto_structured_citations: Vec<lancet::v1::StructuredCitation> = resolved_citations
-            .iter()
-            .map(|c| lancet::v1::StructuredCitation {
-                chunk_id: c.chunk_id.clone(),
-                document_id: c.document_id.clone(),
-                title: c
-                    .title
-                    .as_deref()
-                    .unwrap_or("Untitled Document")
-                    .to_string(),
-                section_path: c.section_path.as_deref().unwrap_or("Root").to_string(),
-                excerpt: c.bounded_excerpt.clone(),
-                is_truncated: c.is_truncated,
-                score: c.score,
-                rank: c.rank as i32,
-                content_type: c.content_type.clone(),
-            })
-            .collect();
+        let parent_span = tracing::info_span!(
+            "query_rag",
+            graph_augmentation = tracing::field::Empty,
+            session_id = %session_id,
+            correlation_id = %correlation_id,
+        );
 
-        let proto_answer_basis = match model_output.answer_basis {
-            generation::AnswerBasis::Retrieval => lancet::v1::AnswerBasis::Retrieval as i32,
-            generation::AnswerBasis::Mixed => lancet::v1::AnswerBasis::Mixed as i32,
-            generation::AnswerBasis::ModelOnly => lancet::v1::AnswerBasis::ModelOnly as i32,
-        };
+        tokio::spawn(
+            async move {
+                runner
+                    .run_tracer(
+                        ctx,
+                        cancel.clone(),
+                        sink,
+                        &deps,
+                        move |ctx, _deps, _sink, cancel| {
+                            let service = service.clone();
+                            let query_request = query_request_owned.clone();
+                            Box::pin(async move {
+                                service.execute_inline_query_rag_remainder(
+                                    ctx,
+                                    &query_request,
+                                    cancel,
+                                ).await
+                            })
+                        },
+                    )
+                    .await;
+            }
+            .instrument(parent_span),
+        );
 
-        let mut proto_notices: Vec<lancet::v1::Notice> = Vec::new();
-        for notice in &model_output.notices {
-            proto_notices.push(lancet::v1::Notice {
-                code: "NOTICE".to_string(),
-                message: notice.clone(),
-                severity: lancet::v1::NoticeSeverity::Info as i32,
-            });
-        }
-        for warning in &model_output.warnings {
-            proto_notices.push(lancet::v1::Notice {
-                code: "WARNING".to_string(),
-                message: warning.clone(),
-                severity: lancet::v1::NoticeSeverity::Warning as i32,
-            });
-        }
-
-        let snapshot = lancet::v1::RetrievalSnapshot {
-            index_generation: self.effective_settings.index_generation.clone(),
-            embedding_model: self.embedder.model_id().to_owned(),
-            vector_weight: self.effective_settings.retrieval.vector_weight,
-            bm25_weight: self.effective_settings.retrieval.bm25_weight,
-            rrf_k: snapshot_rrf_k(self.effective_settings.retrieval.rrf_k)?,
-            candidate_limit: snapshot_limit(
-                self.effective_settings.retrieval.candidate_limit,
-                "candidate_limit",
-            )?,
-            final_limit: snapshot_limit(
-                self.effective_settings.retrieval.final_limit,
-                "final_limit",
-            )?,
-            active_filter: Some(lancet::v1::DocumentFilter {
-                document_ids: query_request.filters.document_ids.clone(),
-                content_types: query_request.filters.content_types.clone(),
-            }),
-            result_hash: format!("{:x}", {
-                let mut hasher = DefaultHasher::new();
-                for c in &final_candidates {
-                    c.candidate.chunk_id.hash(&mut hasher);
-                }
-                hasher.finish()
-            }),
-        };
-
-            Ok(Response::new(QueryRagResponse {
-                answer: model_output.answer,
-                citations: proto_citations,
-                session_id,
-                answer_basis: proto_answer_basis,
-                structured_citations: proto_structured_citations,
-                notices: proto_notices,
-                snapshot: Some(snapshot),
-            }))
-        }
-        .instrument(query_span)
-        .await
+        Ok(Response::new(stream))
     }
 
     /// Traverses the knowledge graph from a seed entity and returns a hop-bounded neighborhood.

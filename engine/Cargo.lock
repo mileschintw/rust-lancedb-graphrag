@@ -3531,6 +3531,8 @@ dependencies = [
  "serde_json",
  "tiktoken-rs",
  "tokio",
+ "tokio-stream",
+ "tokio-util",
  "tonic",
  "tonic-prost",
  "tracing",

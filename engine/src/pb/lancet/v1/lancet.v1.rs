@@ -170,6 +170,100 @@ pub struct QueryGraphResponse {
     #[prost(message, repeated, tag="2")]
     pub edges: ::prost::alloc::vec::Vec<QueryGraphEdge>,
 }
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NodeStartedEvent {
+    #[prost(string, tag="1")]
+    pub node_name: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub inputs_summary: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NodeCompletedEvent {
+    #[prost(string, tag="1")]
+    pub node_name: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub outputs_summary: ::prost::alloc::string::String,
+    #[prost(int64, tag="3")]
+    pub duration_ms: i64,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct NodeFailedEvent {
+    #[prost(string, tag="1")]
+    pub node_name: ::prost::alloc::string::String,
+    #[prost(enumeration="NodeErrorKind", tag="2")]
+    pub category: i32,
+    #[prost(string, tag="3")]
+    pub message: ::prost::alloc::string::String,
+    #[prost(bool, tag="4")]
+    pub retryable: bool,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AnswerChunkEvent {
+    #[prost(string, tag="1")]
+    pub chunk: ::prost::alloc::string::String,
+    #[prost(bool, tag="2")]
+    pub is_final: bool,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FinalAnswerEvent {
+    #[prost(message, optional, tag="1")]
+    pub response: ::core::option::Option<QueryRagResponse>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CheckpointEvent {
+    #[prost(string, tag="1")]
+    pub checkpoint_type: ::prost::alloc::string::String,
+    #[prost(uint64, tag="2")]
+    pub sequence_ordinal: u64,
+    #[prost(string, tag="3")]
+    pub context_snapshot: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorkflowCompletedEvent {
+    #[prost(bool, tag="1")]
+    pub success: bool,
+    #[prost(int64, tag="2")]
+    pub duration_ms: i64,
+    #[prost(enumeration="NodeErrorKind", tag="3")]
+    pub error_kind: i32,
+    #[prost(string, tag="4")]
+    pub error_message: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="5")]
+    pub final_response: ::core::option::Option<QueryRagResponse>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorkflowEvent {
+    #[prost(string, tag="1")]
+    pub trace_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag="3")]
+    pub sequence_ordinal: u64,
+    #[prost(int64, tag="4")]
+    pub timestamp_ms: i64,
+    #[prost(oneof="workflow_event::Event", tags="5, 6, 7, 8, 9, 10, 11")]
+    pub event: ::core::option::Option<workflow_event::Event>,
+}
+/// Nested message and enum types in `WorkflowEvent`.
+pub mod workflow_event {
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Event {
+        #[prost(message, tag="5")]
+        NodeStarted(super::NodeStartedEvent),
+        #[prost(message, tag="6")]
+        NodeCompleted(super::NodeCompletedEvent),
+        #[prost(message, tag="7")]
+        NodeFailed(super::NodeFailedEvent),
+        #[prost(message, tag="8")]
+        AnswerChunk(super::AnswerChunkEvent),
+        #[prost(message, tag="9")]
+        FinalAnswer(super::FinalAnswerEvent),
+        #[prost(message, tag="10")]
+        Checkpoint(super::CheckpointEvent),
+        #[prost(message, tag="11")]
+        WorkflowCompleted(super::WorkflowCompletedEvent),
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum AnswerBasis {
@@ -230,6 +324,53 @@ impl NoticeSeverity {
             "NOTICE_SEVERITY_INFO" => Some(Self::Info),
             "NOTICE_SEVERITY_WARNING" => Some(Self::Warning),
             "NOTICE_SEVERITY_ERROR" => Some(Self::Error),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum NodeErrorKind {
+    Unspecified = 0,
+    Timeout = 1,
+    Cancelled = 2,
+    LlmGenerationFailed = 3,
+    RetrievalFailed = 4,
+    GraphFailed = 5,
+    PromptAssemblyFailed = 6,
+    ReformulationFailed = 7,
+    Internal = 8,
+}
+impl NodeErrorKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "NODE_ERROR_KIND_UNSPECIFIED",
+            Self::Timeout => "NODE_ERROR_KIND_TIMEOUT",
+            Self::Cancelled => "NODE_ERROR_KIND_CANCELLED",
+            Self::LlmGenerationFailed => "NODE_ERROR_KIND_LLM_GENERATION_FAILED",
+            Self::RetrievalFailed => "NODE_ERROR_KIND_RETRIEVAL_FAILED",
+            Self::GraphFailed => "NODE_ERROR_KIND_GRAPH_FAILED",
+            Self::PromptAssemblyFailed => "NODE_ERROR_KIND_PROMPT_ASSEMBLY_FAILED",
+            Self::ReformulationFailed => "NODE_ERROR_KIND_REFORMULATION_FAILED",
+            Self::Internal => "NODE_ERROR_KIND_INTERNAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "NODE_ERROR_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "NODE_ERROR_KIND_TIMEOUT" => Some(Self::Timeout),
+            "NODE_ERROR_KIND_CANCELLED" => Some(Self::Cancelled),
+            "NODE_ERROR_KIND_LLM_GENERATION_FAILED" => Some(Self::LlmGenerationFailed),
+            "NODE_ERROR_KIND_RETRIEVAL_FAILED" => Some(Self::RetrievalFailed),
+            "NODE_ERROR_KIND_GRAPH_FAILED" => Some(Self::GraphFailed),
+            "NODE_ERROR_KIND_PROMPT_ASSEMBLY_FAILED" => Some(Self::PromptAssemblyFailed),
+            "NODE_ERROR_KIND_REFORMULATION_FAILED" => Some(Self::ReformulationFailed),
+            "NODE_ERROR_KIND_INTERNAL" => Some(Self::Internal),
             _ => None,
         }
     }

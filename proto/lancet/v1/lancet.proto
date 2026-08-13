@@ -8,7 +8,7 @@ service LancetService {
   rpc Ping(PingRequest) returns (PingResponse);
   rpc IngestDocument(stream IngestDocumentRequest) returns (IngestDocumentResponse);
   rpc GetIngestionStatus(GetIngestionStatusRequest) returns (GetIngestionStatusResponse);
-  rpc QueryRAG(QueryRAGRequest) returns (QueryRAGResponse);
+  rpc QueryRAG(QueryRAGRequest) returns (stream WorkflowEvent);
   rpc QueryGraph(QueryGraphRequest) returns (QueryGraphResponse);
 }
 
@@ -134,3 +134,73 @@ message QueryGraphResponse {
   repeated QueryGraphNode nodes = 1;
   repeated QueryGraphEdge edges = 2;
 }
+
+enum NodeErrorKind {
+  NODE_ERROR_KIND_UNSPECIFIED = 0;
+  NODE_ERROR_KIND_TIMEOUT = 1;
+  NODE_ERROR_KIND_CANCELLED = 2;
+  NODE_ERROR_KIND_LLM_GENERATION_FAILED = 3;
+  NODE_ERROR_KIND_RETRIEVAL_FAILED = 4;
+  NODE_ERROR_KIND_GRAPH_FAILED = 5;
+  NODE_ERROR_KIND_PROMPT_ASSEMBLY_FAILED = 6;
+  NODE_ERROR_KIND_REFORMULATION_FAILED = 7;
+  NODE_ERROR_KIND_INTERNAL = 8;
+}
+
+message NodeStartedEvent {
+  string node_name = 1;
+  string inputs_summary = 2;
+}
+
+message NodeCompletedEvent {
+  string node_name = 1;
+  string outputs_summary = 2;
+  int64 duration_ms = 3;
+}
+
+message NodeFailedEvent {
+  string node_name = 1;
+  NodeErrorKind category = 2;
+  string message = 3;
+  bool retryable = 4;
+}
+
+message AnswerChunkEvent {
+  string chunk = 1;
+  bool is_final = 2;
+}
+
+message FinalAnswerEvent {
+  QueryRAGResponse response = 1;
+}
+
+message CheckpointEvent {
+  string checkpoint_type = 1;
+  uint64 sequence_ordinal = 2;
+  string context_snapshot = 3;
+}
+
+message WorkflowCompletedEvent {
+  bool success = 1;
+  int64 duration_ms = 2;
+  NodeErrorKind error_kind = 3;
+  string error_message = 4;
+  QueryRAGResponse final_response = 5;
+}
+
+message WorkflowEvent {
+  string trace_id = 1;
+  string session_id = 2;
+  uint64 sequence_ordinal = 3;
+  int64 timestamp_ms = 4;
+  oneof event {
+    NodeStartedEvent node_started = 5;
+    NodeCompletedEvent node_completed = 6;
+    NodeFailedEvent node_failed = 7;
+    AnswerChunkEvent answer_chunk = 8;
+    FinalAnswerEvent final_answer = 9;
+    CheckpointEvent checkpoint = 10;
+    WorkflowCompletedEvent workflow_completed = 11;
+  }
+}
+

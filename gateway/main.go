@@ -204,7 +204,7 @@ type engine interface {
 	Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome
 	IngestionStatus(context.Context, string) (*pb.GetIngestionStatusResponse, error)
 	Ping(context.Context) (time.Duration, error)
-	QueryRAG(context.Context, *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error)
+	QueryRAG(context.Context, *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error)
 }
 
 type grpcEngine struct{ client pb.LancetServiceClient }
@@ -277,13 +277,13 @@ func (e trailerError) Trailer() metadata.MD {
 	return e.trailer
 }
 
-func (e grpcEngine) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.QueryRAGResponse, error) {
+func (e grpcEngine) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
 	var trailer metadata.MD
-	resp, err := e.client.QueryRAG(ctx, req, grpc.Trailer(&trailer))
+	stream, err := e.client.QueryRAG(ctx, req, grpc.Trailer(&trailer))
 	if err != nil {
-		return resp, trailerError{err: err, trailer: trailer}
+		return nil, trailerError{err: err, trailer: trailer}
 	}
-	return resp, nil
+	return stream, nil
 }
 
 type app struct {
@@ -291,6 +291,7 @@ type app struct {
 	engine     engine
 	logger     *zap.Logger
 	retrySleep func(int)
+	dispatcher *CheckpointDispatcher
 }
 
 func (a app) backoff(attempt int) {
@@ -461,11 +462,16 @@ func (r *durableReconciler) rescheduleIntent(ctx context.Context, intent db.Docu
 
 func (a app) routes() http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer, middleware.Timeout(60*time.Second))
-	r.Get("/health", a.health)
-	r.Post("/documents", a.createDocument)
-	r.Get("/documents/{id}", a.getDocument)
-	r.Post("/rag/query", a.queryRAG)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer, middleware.Timeout(60*time.Second))
+		r.Get("/health", a.health)
+		r.Post("/documents", a.createDocument)
+		r.Get("/documents/{id}", a.getDocument)
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
+		r.Post("/rag/query", a.queryRAG)
+	})
 	return r
 }
 
@@ -688,30 +694,137 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp, err := a.engine.QueryRAG(r.Context(), req)
+	stream, err := a.engine.QueryRAG(r.Context(), req)
 	if err != nil {
-		if te, ok := err.(interface{ Trailer() metadata.MD }); ok {
-			tr := te.Trailer()
-			if vals := tr.Get("x-lancet-session-id"); len(vals) > 0 && vals[0] != "" {
-				w.Header().Set("X-Lancet-Session-ID", vals[0])
-			}
-			if vals := tr.Get("x-lancet-correlation-id"); len(vals) > 0 && vals[0] != "" {
-				w.Header().Set("X-Lancet-Correlation-ID", vals[0])
-			}
-			if vals := tr.Get("x-lancet-error-kind"); len(vals) > 0 && vals[0] != "" {
-				w.Header().Set("X-Lancet-Error-Kind", vals[0])
-			}
-		}
-
-		if status.Code(err) == codes.InvalidArgument {
-			http.Error(w, status.Convert(err).Message(), http.StatusBadRequest)
-			return
-		}
-		http.Error(w, "engine query failed", http.StatusBadGateway)
+		a.handlePreStreamError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toQueryRAGResponseDTO(resp))
+	firstFrame, err := stream.Recv()
+	if err != nil {
+		a.handlePreStreamError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	if sid := firstFrame.GetSessionId(); sid != "" {
+		w.Header().Set("X-Lancet-Session-ID", sid)
+	}
+	if cid := firstFrame.GetTraceId(); cid != "" {
+		w.Header().Set("X-Lancet-Correlation-ID", cid)
+	}
+
+	w.WriteHeader(http.StatusOK)
+
+	rc := http.NewResponseController(w)
+	a.writeWorkflowEventSSE(w, rc, firstFrame)
+
+	for {
+		ev, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			break
+		}
+		a.writeWorkflowEventSSE(w, rc, ev)
+	}
+}
+
+func (a app) handlePreStreamError(w http.ResponseWriter, err error) {
+	if te, ok := err.(interface{ Trailer() metadata.MD }); ok {
+		tr := te.Trailer()
+		if vals := tr.Get("x-lancet-session-id"); len(vals) > 0 && vals[0] != "" {
+			w.Header().Set("X-Lancet-Session-ID", vals[0])
+		}
+		if vals := tr.Get("x-lancet-correlation-id"); len(vals) > 0 && vals[0] != "" {
+			w.Header().Set("X-Lancet-Correlation-ID", vals[0])
+		}
+		if vals := tr.Get("x-lancet-error-kind"); len(vals) > 0 && vals[0] != "" {
+			w.Header().Set("X-Lancet-Error-Kind", vals[0])
+		}
+	}
+
+	if status.Code(err) == codes.InvalidArgument {
+		http.Error(w, status.Convert(err).Message(), http.StatusBadRequest)
+		return
+	}
+	http.Error(w, "engine query failed", http.StatusBadGateway)
+}
+
+func (a app) writeWorkflowEventSSE(w http.ResponseWriter, rc *http.ResponseController, ev *pb.WorkflowEvent) {
+	if ev == nil {
+		return
+	}
+
+	if cp := ev.GetCheckpoint(); cp != nil {
+		if a.dispatcher != nil {
+			env := NewCheckpointEnvelopeFromEvent(ev)
+			a.dispatcher.Submit(env)
+		}
+		return
+	}
+
+	var eventType string
+	var payload any
+
+	switch e := ev.Event.(type) {
+	case *pb.WorkflowEvent_NodeStarted:
+		eventType = "node_started"
+		payload = map[string]any{
+			"node_name":        e.NodeStarted.GetNodeName(),
+			"inputs_summary":   e.NodeStarted.GetInputsSummary(),
+			"sequence_ordinal": ev.GetSequenceOrdinal(),
+		}
+	case *pb.WorkflowEvent_NodeCompleted:
+		eventType = "node_completed"
+		payload = map[string]any{
+			"node_name":       e.NodeCompleted.GetNodeName(),
+			"outputs_summary": e.NodeCompleted.GetOutputsSummary(),
+			"duration_ms":     e.NodeCompleted.GetDurationMs(),
+		}
+	case *pb.WorkflowEvent_NodeFailed:
+		eventType = "node_failed"
+		payload = map[string]any{
+			"node_name":     e.NodeFailed.GetNodeName(),
+			"error_kind":    int32(e.NodeFailed.GetCategory()),
+			"error_message": e.NodeFailed.GetMessage(),
+		}
+	case *pb.WorkflowEvent_AnswerChunk:
+		eventType = "answer_chunk"
+		payload = map[string]any{
+			"chunk_text": e.AnswerChunk.GetChunk(),
+			"is_final":   e.AnswerChunk.GetIsFinal(),
+		}
+	case *pb.WorkflowEvent_FinalAnswer:
+		eventType = "final_answer"
+		payload = toQueryRAGResponseDTO(e.FinalAnswer.GetResponse())
+	case *pb.WorkflowEvent_WorkflowCompleted:
+		eventType = "workflow_completed"
+		wcPayload := map[string]any{
+			"success":           e.WorkflowCompleted.GetSuccess(),
+			"total_duration_ms": e.WorkflowCompleted.GetDurationMs(),
+			"error_kind":        int32(e.WorkflowCompleted.GetErrorKind()),
+			"error_message":     e.WorkflowCompleted.GetErrorMessage(),
+		}
+		if e.WorkflowCompleted.GetFinalResponse() != nil {
+			wcPayload["final_response"] = toQueryRAGResponseDTO(e.WorkflowCompleted.GetFinalResponse())
+		}
+		payload = wcPayload
+	default:
+		return
+	}
+
+	dataBytes, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, dataBytes)
+	_ = rc.Flush()
 }
 
 type queryRAGResponseDTO struct {

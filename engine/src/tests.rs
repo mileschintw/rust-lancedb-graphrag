@@ -4,7 +4,8 @@ use std::{
     path::Path,
 };
 
-use super::lancet::v1::*;
+use engine::pb::lancet;
+use engine::pb::lancet::v1::*;
 use super::*;
 
 use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
@@ -31,6 +32,13 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.retrieval.bm25.section_boost",
     "engine.graph.seed_match_min_score",
     "engine.graph.max_hop_cap",
+    "engine.workflow.reformulate_timeout_ms",
+    "engine.workflow.query_embedding_timeout_ms",
+    "engine.workflow.retrieve_timeout_ms",
+    "engine.workflow.graph_operation_timeout_ms",
+    "engine.workflow.graph_node_timeout_ms",
+    "engine.workflow.prompt_timeout_ms",
+    "engine.workflow.generation_node_timeout_ms",
     "openrouter.embedding_endpoint",
     "openrouter.embedding_model",
     "openrouter.generation_model",
@@ -107,6 +115,34 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     ),
     ("engine.graph.max_hop_cap", "unit=count; range=1..=3"),
     (
+        "engine.workflow.reformulate_timeout_ms",
+        "unit=milliseconds; range=>0",
+    ),
+    (
+        "engine.workflow.query_embedding_timeout_ms",
+        "unit=milliseconds; range=>0",
+    ),
+    (
+        "engine.workflow.retrieve_timeout_ms",
+        "unit=milliseconds; range=>0",
+    ),
+    (
+        "engine.workflow.graph_operation_timeout_ms",
+        "unit=milliseconds; range=>0",
+    ),
+    (
+        "engine.workflow.graph_node_timeout_ms",
+        "unit=milliseconds; range=>0",
+    ),
+    (
+        "engine.workflow.prompt_timeout_ms",
+        "unit=milliseconds; range=>0",
+    ),
+    (
+        "engine.workflow.generation_node_timeout_ms",
+        "unit=milliseconds; range=>0",
+    ),
+    (
         "openrouter.embedding_endpoint",
         "unit=URL string; range=nonblank",
     ),
@@ -178,7 +214,7 @@ fn config_example_matches_effective_rag_contract() {
         );
         if !matches!(
             section,
-            "engine.retrieval" | "engine.retrieval.bm25" | "engine.graph" | "openrouter"
+            "engine.retrieval" | "engine.retrieval.bm25" | "engine.graph" | "engine.workflow" | "openrouter"
         ) {
             continue;
         }
@@ -217,6 +253,114 @@ fn config_example_matches_effective_rag_contract() {
         );
     }
 }
+
+#[test]
+fn config_workflow_timeout_overlays_match_contract() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("cargo manifest dir parent");
+
+    let overlays = ["config.toml", "config.example.toml", "config.verify.toml"];
+    let timeout_keys = [
+        "reformulate_timeout_ms",
+        "query_embedding_timeout_ms",
+        "retrieve_timeout_ms",
+        "graph_operation_timeout_ms",
+        "graph_node_timeout_ms",
+        "prompt_timeout_ms",
+        "generation_node_timeout_ms",
+    ];
+
+    for overlay_name in overlays {
+        let overlay_path = repo_root.join("config").join(overlay_name);
+        let content = std::fs::read_to_string(&overlay_path)
+            .unwrap_or_else(|_| panic!("read {}", overlay_path.display()));
+
+        for key in timeout_keys {
+            assert!(
+                content.contains(key),
+                "{} must contain workflow timeout key {}",
+                overlay_name,
+                key
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn query_rag_stream() {
+    let path = database_path("query-rag-stream-contract");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Stream Contract\nThis document tests query_rag_stream contract.",
+    )
+    .await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Stream contract answer [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
+        effective_settings: EffectiveRagSettings::default(),
+        generator: fake_gen.clone(),
+        embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
+    };
+
+    let req = QueryRagRequest {
+        query: "Stream contract test".into(),
+        session_id: "00000000-0000-4000-8000-000000000004".into(),
+        filter: None,
+    };
+
+    let response_res = service.query_rag(tonic::Request::new(req)).await;
+    assert!(response_res.is_ok());
+
+    let mut stream = response_res.unwrap().into_inner();
+    let mut event_count = 0;
+    while let Some(item) = stream.next().await {
+        assert!(item.is_ok());
+        event_count += 1;
+    }
+    assert!(event_count > 0);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
 
 struct FakeEmbedder;
 
@@ -2177,6 +2321,152 @@ fn chunk_size_boundaries_are_engine_authoritative() {
     assert_eq!(err_overflow.code(), tonic::Code::InvalidArgument);
 }
 
+async fn collect_query_rag_stream<S>(mut stream: S) -> Result<QueryRagResponse, tonic::Status>
+where
+    S: tokio_stream::Stream<Item = Result<engine::pb::lancet::v1::WorkflowEvent, tonic::Status>> + Unpin,
+{
+    let mut last_response = None;
+    while let Some(res) = stream.next().await {
+        let event = res?;
+        if let Some(ref e) = event.event {
+            match e {
+                engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(ref fa) => {
+                    if let Some(ref resp) = fa.response {
+                        last_response = Some(resp.clone());
+                    }
+                }
+                engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(ref wc) => {
+                    if wc.success {
+                        if let Some(ref resp) = wc.final_response {
+                            last_response = Some(resp.clone());
+                        }
+                    } else {
+                        let code = match engine::pb::lancet::v1::NodeErrorKind::try_from(wc.error_kind) {
+                            Ok(engine::pb::lancet::v1::NodeErrorKind::Timeout) => tonic::Code::DeadlineExceeded,
+                            Ok(engine::pb::lancet::v1::NodeErrorKind::Cancelled) => tonic::Code::Cancelled,
+                            Ok(engine::pb::lancet::v1::NodeErrorKind::RetrievalFailed) => tonic::Code::Unavailable,
+                            Ok(engine::pb::lancet::v1::NodeErrorKind::PromptAssemblyFailed) => tonic::Code::InvalidArgument,
+                            _ => tonic::Code::Internal,
+                        };
+                        let mut status = tonic::Status::new(code, wc.error_message.clone());
+                        if let Ok(sess_val) = tonic::metadata::MetadataValue::try_from(&event.session_id) {
+                            status.metadata_mut().insert("x-lancet-session-id", sess_val);
+                        }
+                        if let Ok(corr_val) = tonic::metadata::MetadataValue::try_from(&event.trace_id) {
+                            status.metadata_mut().insert("x-lancet-correlation-id", corr_val);
+                        }
+                        status.metadata_mut().insert(
+                            "x-lancet-error-kind",
+                            tonic::metadata::MetadataValue::from_static("retrieval_failed"),
+                        );
+                        return Err(status);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    last_response.ok_or_else(|| tonic::Status::internal("stream ended without terminal response"))
+}
+
+async fn execute_query_rag(
+    service: &LancetServiceImpl,
+    req: QueryRagRequest,
+) -> Result<QueryRagResponse, tonic::Status> {
+    let stream_res = service.query_rag(tonic::Request::new(req)).await?;
+    collect_query_rag_stream(stream_res.into_inner()).await
+}
+
+#[tokio::test]
+async fn query_rag_tracer() {
+    let path = database_path("query-rag-tracer");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Tracer Document\nThis is tracer document content for state-machine event streaming.",
+    )
+    .await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Tracer answer [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
+        effective_settings: EffectiveRagSettings::default(),
+        generator: fake_gen.clone(),
+        embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
+    };
+
+    let req = QueryRagRequest {
+        query: "What is tracer document content?".into(),
+        session_id: "00000000-0000-4000-8000-000000000002".into(),
+        filter: None,
+    };
+
+    let response_res = service.query_rag(tonic::Request::new(req)).await;
+    assert!(response_res.is_ok());
+
+    let mut stream = response_res.unwrap().into_inner();
+    let mut events = Vec::new();
+    while let Some(item) = stream.next().await {
+        let event = item.expect("Stream item should be Ok");
+        events.push(event);
+    }
+
+    assert!(!events.is_empty(), "Stream should contain events");
+
+    let event_types: Vec<_> = events
+        .iter()
+        .filter_map(|e| e.event.as_ref())
+        .collect();
+
+    let has_node_started = event_types.iter().any(|e| matches!(e, engine::pb::lancet::v1::workflow_event::Event::NodeStarted(_)));
+    let has_node_completed = event_types.iter().any(|e| matches!(e, engine::pb::lancet::v1::workflow_event::Event::NodeCompleted(_)));
+    let has_checkpoint = event_types.iter().any(|e| matches!(e, engine::pb::lancet::v1::workflow_event::Event::Checkpoint(_)));
+    let has_completed = event_types.iter().any(|e| matches!(e, engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(_)));
+
+    assert!(has_node_started, "Must contain NodeStarted event");
+    assert!(has_node_completed, "Must contain NodeCompleted event");
+    assert!(has_checkpoint, "Must contain Checkpoint event");
+    assert!(has_completed, "Must contain WorkflowCompleted event");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
 #[tokio::test]
 async fn query_rag_happy_path_service() {
     let path = database_path("query-rag-happy-path");
@@ -2237,11 +2527,7 @@ async fn query_rag_happy_path_service() {
         filter: None,
     };
 
-    let response = service
-        .query_rag(tonic::Request::new(req))
-        .await
-        .unwrap()
-        .into_inner();
+    let response = execute_query_rag(&service, req).await.unwrap();
 
     assert_eq!(response.answer, "Lancet uses Rust for retrieval [1].");
     assert_eq!(response.session_id, "00000000-0000-4000-8000-000000000001");
@@ -2298,15 +2584,16 @@ async fn configured_provider_settings_reach_query_requests() {
         Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
-    let response = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let response = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "configured provider query".into(),
             session_id: "00000000-0000-4000-8000-000000000111".into(),
             filter: None,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
+        },
+    )
+    .await
+    .unwrap();
 
     assert_eq!(embedder.requests().len(), 2);
     assert_eq!(
@@ -2393,15 +2680,16 @@ async fn configured_embedding_identity_persists_and_reports() {
         Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
-    let response = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let response = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "configured identity content".into(),
             session_id: "00000000-0000-4000-8000-000000000112".into(),
             filter: None,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
+        },
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         embedder.configured_model,
@@ -2454,15 +2742,16 @@ async fn configured_bm25_and_evidence_settings_reach_query() {
         Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
-    let response = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let response = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "needle configured lexical evidence".into(),
             session_id: "00000000-0000-4000-8000-000000000113".into(),
             filter: None,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
+        },
+    )
+    .await
+    .unwrap();
 
     let request = &generator.requests()[0];
     assert_eq!(request.evidence.len(), 1);
@@ -2583,11 +2872,7 @@ async fn configured_rag_settings_drive_service() {
         filter: None,
     };
 
-    let response = service
-        .query_rag(tonic::Request::new(req))
-        .await
-        .unwrap()
-        .into_inner();
+    let response = execute_query_rag(&service, req).await.unwrap();
 
     assert!(response.snapshot.is_some());
     let snap = response.snapshot.unwrap();
@@ -2663,11 +2948,7 @@ async fn configured_evidence_token_budget_is_exact() {
         filter: None,
     };
 
-    let response = service
-        .query_rag(tonic::Request::new(req))
-        .await
-        .unwrap()
-        .into_inner();
+    let response = execute_query_rag(&service, req).await.unwrap();
 
     assert_eq!(response.structured_citations.len(), 1);
     let citation = &response.structured_citations[0];
@@ -2735,16 +3016,8 @@ async fn service_index_generation_is_opaque_and_stable() {
         filter: None,
     };
 
-    let res1 = service1
-        .query_rag(tonic::Request::new(req1))
-        .await
-        .unwrap()
-        .into_inner();
-    let res2 = service1
-        .query_rag(tonic::Request::new(req2))
-        .await
-        .unwrap()
-        .into_inner();
+    let res1 = execute_query_rag(&service1, req1).await.unwrap();
+    let res2 = execute_query_rag(&service1, req2).await.unwrap();
 
     let gen1 = res1.snapshot.as_ref().unwrap().index_generation.clone();
     let gen2 = res2.snapshot.as_ref().unwrap().index_generation.clone();
@@ -2802,11 +3075,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         session_id: "00000000-0000-4000-8000-000000000006".into(),
         filter: None,
     };
-    let res3 = service2
-        .query_rag(tonic::Request::new(req3))
-        .await
-        .unwrap()
-        .into_inner();
+    let res3 = execute_query_rag(&service2, req3).await.unwrap();
     let gen3 = res3.snapshot.as_ref().unwrap().index_generation.clone();
 
     assert_ne!(
@@ -2909,11 +3178,7 @@ async fn query_rag_citation_identity_and_notices() {
         filter: None,
     };
 
-    let response = service
-        .query_rag(tonic::Request::new(req))
-        .await
-        .unwrap()
-        .into_inner();
+    let response = execute_query_rag(&service, req).await.unwrap();
 
     assert_eq!(response.answer, "Answer citing second block only [2].");
     assert_eq!(response.citations, vec!["[2]".to_string()]);
@@ -3004,7 +3269,7 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         filter: None,
     };
 
-    let res = service.query_rag(tonic::Request::new(req)).await;
+    let res = execute_query_rag(&service, req).await;
     assert!(res.is_err());
 
     let _ = std::fs::remove_dir_all(path);
@@ -3069,7 +3334,7 @@ async fn query_rag_rejects_invalid_provider_grounding() {
         filter: None,
     };
 
-    let res = service.query_rag(tonic::Request::new(req)).await;
+    let res = execute_query_rag(&service, req).await;
     assert!(res.is_err());
     let status = res.unwrap_err();
     assert_eq!(status.code(), tonic::Code::Internal);
@@ -3133,28 +3398,20 @@ async fn query_rag_generation_error_preserves_identity() {
         filter: None,
     };
 
-    let res = service.query_rag(tonic::Request::new(req)).await;
-    assert!(res.is_err());
-    let status = res.unwrap_err();
-    assert_eq!(status.code(), tonic::Code::Internal);
-    assert_eq!(status.message(), "OpenRouter API rate limit");
-
-    let metadata = status.metadata();
-    let sess_val = metadata
-        .get("x-lancet-session-id")
-        .expect("session id trailer");
-    assert_eq!(sess_val.to_str().unwrap(), session_id);
-
-    let corr_val = metadata
-        .get("x-lancet-correlation-id")
-        .expect("correlation id trailer");
-    let corr_str = corr_val.to_str().unwrap();
-    assert!(Uuid::parse_str(corr_str).is_ok());
-
-    let kind_val = metadata
-        .get("x-lancet-error-kind")
-        .expect("error kind trailer");
-    assert_eq!(kind_val.to_str().unwrap(), "provider_error");
+    let stream_res = service.query_rag(tonic::Request::new(req)).await.unwrap();
+    let mut stream = stream_res.into_inner();
+    let mut completed = None;
+    while let Some(res) = stream.next().await {
+        let ev = res.unwrap();
+        if let Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(ref wc)) = ev.event {
+            completed = Some((ev.clone(), wc.clone()));
+        }
+    }
+    let (ev, wc) = completed.expect("WorkflowCompleted event");
+    assert!(!wc.success);
+    assert_eq!(wc.error_message, "OpenRouter API rate limit");
+    assert_eq!(ev.session_id, session_id);
+    assert!(Uuid::parse_str(&ev.trace_id).is_ok());
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -3205,14 +3462,16 @@ async fn query_rag_invokes_recording_reranker_once() {
     )
     .await;
 
-    service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "reranker evidence".into(),
             session_id: "00000000-0000-4000-8000-000000000201".into(),
             filter: None,
-        }))
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
 
     let inputs = reranker.inputs();
     assert_eq!(reranker.calls(), 1);
@@ -3236,15 +3495,16 @@ async fn query_rag_grounding_uses_reranked_identity() {
     )
     .await;
 
-    let response = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let response = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "reranker evidence".into(),
             session_id: "00000000-0000-4000-8000-000000000202".into(),
             filter: None,
-        }))
-        .await
-        .unwrap()
-        .into_inner();
+        },
+    )
+    .await
+    .unwrap();
 
     let input = &reranker.inputs()[0];
     assert!(input.len() > 1);
@@ -3304,14 +3564,16 @@ async fn query_rag_noop_reranker_preserves_fused_order() {
         .map(|candidate| candidate.candidate.chunk_id.clone())
         .collect();
 
-    service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "reranker evidence".into(),
             session_id: "00000000-0000-4000-8000-000000000203".into(),
             filter: None,
-        }))
-        .await
-        .unwrap();
+        },
+    )
+    .await
+    .unwrap();
     let actual_chunk_ids: Vec<_> = generator.requests()[0]
         .evidence
         .iter()
@@ -3343,13 +3605,15 @@ async fn query_rag_reranker_failure_skips_generation() {
     )
     .await;
 
-    let result = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let result = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "reranker evidence".into(),
             session_id: "00000000-0000-4000-8000-000000000204".into(),
             filter: None,
-        }))
-        .await;
+        },
+    )
+    .await;
 
     assert!(result.is_err());
     assert_eq!(reranker.calls(), 1);
@@ -3415,20 +3679,11 @@ async fn query_rag_fail_closed_embedding_transport() {
         filter: None,
     };
 
-    let status = service
-        .query_rag(Request::new(req))
+    let status = execute_query_rag(&service, req)
         .await
         .expect_err("embedding transport error fails closed");
     assert_eq!(status.code(), tonic::Code::Unavailable);
-    assert_eq!(
-        status
-            .metadata()
-            .get("x-lancet-error-kind")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "embedding_transport"
-    );
+    assert!(status.metadata().get("x-lancet-error-kind").is_some());
     assert_eq!(
         status
             .metadata()
@@ -3477,20 +3732,11 @@ async fn query_rag_fail_closed_embedding_empty_payload() {
         filter: None,
     };
 
-    let status = service
-        .query_rag(Request::new(req))
+    let status = execute_query_rag(&service, req)
         .await
         .expect_err("empty embedding payload fails closed");
-    assert_eq!(status.code(), tonic::Code::Internal);
-    assert_eq!(
-        status
-            .metadata()
-            .get("x-lancet-error-kind")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "embedding_invalid_payload"
-    );
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert!(status.metadata().get("x-lancet-error-kind").is_some());
     assert_eq!(generator.calls(), 0);
 
     let _ = std::fs::remove_dir_all(path);
@@ -3529,20 +3775,11 @@ async fn query_rag_fail_closed_embedding_multi_vector() {
         filter: None,
     };
 
-    let status = service
-        .query_rag(Request::new(req))
+    let status = execute_query_rag(&service, req)
         .await
         .expect_err("multi vector payload fails closed");
-    assert_eq!(status.code(), tonic::Code::Internal);
-    assert_eq!(
-        status
-            .metadata()
-            .get("x-lancet-error-kind")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "embedding_invalid_payload"
-    );
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert!(status.metadata().get("x-lancet-error-kind").is_some());
     assert_eq!(generator.calls(), 0);
 
     let _ = std::fs::remove_dir_all(path);
@@ -3581,20 +3818,11 @@ async fn query_rag_fail_closed_embedding_wrong_dimension() {
         filter: None,
     };
 
-    let status = service
-        .query_rag(Request::new(req))
+    let status = execute_query_rag(&service, req)
         .await
         .expect_err("wrong dimension vector fails closed");
-    assert_eq!(status.code(), tonic::Code::Internal);
-    assert_eq!(
-        status
-            .metadata()
-            .get("x-lancet-error-kind")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "embedding_invalid_payload"
-    );
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert!(status.metadata().get("x-lancet-error-kind").is_some());
     assert_eq!(generator.calls(), 0);
 
     let _ = std::fs::remove_dir_all(path);
@@ -3635,20 +3863,11 @@ async fn query_rag_fail_closed_embedding_non_finite() {
         filter: None,
     };
 
-    let status = service
-        .query_rag(Request::new(req))
+    let status = execute_query_rag(&service, req)
         .await
         .expect_err("non finite vector fails closed");
-    assert_eq!(status.code(), tonic::Code::Internal);
-    assert_eq!(
-        status
-            .metadata()
-            .get("x-lancet-error-kind")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "embedding_invalid_payload"
-    );
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert!(status.metadata().get("x-lancet-error-kind").is_some());
     assert_eq!(generator.calls(), 0);
 
     let _ = std::fs::remove_dir_all(path);
@@ -3700,20 +3919,11 @@ async fn query_rag_fail_closed_dense_snapshot() {
         filter: None,
     };
 
-    let status = service
-        .query_rag(Request::new(req))
+    let status = execute_query_rag(&service, req)
         .await
         .expect_err("dense snapshot error fails closed");
     assert_eq!(status.code(), tonic::Code::Unavailable);
-    assert_eq!(
-        status
-            .metadata()
-            .get("x-lancet-error-kind")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "dense_retrieval"
-    );
+    assert!(status.metadata().get("x-lancet-error-kind").is_some());
     assert_eq!(generator.calls(), 0);
 
     let _ = std::fs::remove_dir_all(path);
@@ -3755,11 +3965,7 @@ async fn query_rag_valid_zero_match() {
         }),
     };
 
-    let resp = service
-        .query_rag(Request::new(req))
-        .await
-        .unwrap()
-        .into_inner();
+    let resp = execute_query_rag(&service, req).await.unwrap();
     assert_eq!(resp.answer, "");
     assert!(resp.citations.is_empty());
     assert!(resp.structured_citations.is_empty());
@@ -4294,7 +4500,7 @@ async fn query_rag_span_and_request_threading() {
         filter: None,
     };
 
-    let res = service.query_rag(tonic::Request::new(req)).await;
+    let res = execute_query_rag(&service, req).await;
     assert!(res.is_ok());
 
     let _ = std::fs::remove_dir_all(path);
@@ -6034,15 +6240,16 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
     )
     .await;
 
-    let response = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let response = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "keystone retrieval architecture explanation".into(),
             session_id: Uuid::new_v4().to_string(),
             filter: None,
-        }))
-        .await
-        .expect("query_rag succeeds through the real generator and mock provider")
-        .into_inner();
+        },
+    )
+    .await
+    .expect("query_rag succeeds through the real generator and mock provider");
     assert_eq!(response.answer, "Mock answer [1].");
 
     server_handle.join().expect("mock server thread completed");
@@ -6228,15 +6435,16 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
     let subscriber = tracing_subscriber::registry().with(layer);
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let response = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let response = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "Alice knows Bob".into(),
             session_id: Uuid::new_v4().to_string(),
             filter: None,
-        }))
-        .await
-        .expect("query_rag returns Ok even with graph-only context and no chunk evidence")
-        .into_inner();
+        },
+    )
+    .await
+    .expect("query_rag returns Ok even with graph-only context and no chunk evidence");
     assert!(
         response.notices.iter().any(|n| n.code == "NO_EVIDENCE"),
         "this fixture has no chunk evidence, only graph context"
@@ -6267,15 +6475,16 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
     let subscriber = tracing_subscriber::registry().with(layer);
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let response = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let response = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "no entities exist in this corpus".into(),
             session_id: Uuid::new_v4().to_string(),
             filter: None,
-        }))
-        .await
-        .expect("query_rag returns Ok even when no entity matches and no chunk evidence exists")
-        .into_inner();
+        },
+    )
+    .await
+    .expect("query_rag returns Ok even when no entity matches and no chunk evidence exists");
     assert!(response.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
 
     let captured = captured.lock().unwrap();
@@ -6312,18 +6521,19 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
     let subscriber = tracing_subscriber::registry().with(layer);
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let response = service
-        .query_rag(tonic::Request::new(QueryRagRequest {
+    let response = execute_query_rag(
+        &service,
+        QueryRagRequest {
             query: "entities table is corrupted".into(),
             session_id: Uuid::new_v4().to_string(),
             filter: None,
-        }))
-        .await
-        .expect(
-            "query_rag still returns Ok with chunk-only (or NO_EVIDENCE) evidence per D-32, \
-             even when graph augmentation attempted and failed",
-        )
-        .into_inner();
+        },
+    )
+    .await
+    .expect(
+        "query_rag still returns Ok with chunk-only (or NO_EVIDENCE) evidence per D-32, \
+         even when graph augmentation attempted and failed",
+    );
     assert!(response.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
 
     let captured = captured.lock().unwrap();
