@@ -608,19 +608,23 @@ VALIDATION_MAP_SUPERSESSION: historical examples above are superseded for curren
 
 | Plan | Current Rust named filters | Current Go named filters |
 |---|---|---|
-| 05-08 | workflow_phase5_production_five_node; workflow_phase5_production_dependencies_are_real; workflow_phase5_production_context_population; workflow_phase5_production_reachability | — |
+| 05-08 | production test bodies for workflow_phase5_production_five_node; workflow_phase5_production_dependencies_are_real; workflow_phase5_production_context_population; workflow_phase5_production_reachability (source/body and compile checks only; exact binary runs deferred to 05-20) | — |
 | 05-09 | workflow_phase5_settings_applied_to_production; workflow_phase5_config_verify_generation_timeout | — |
 | 05-10 | workflow_phase5_event_delivery_tracer; workflow_phase5_checkpoint_full_snapshot; workflow_phase5_terminal_idempotence | — |
-| 05-11 | — | TestRAGQueryCrossRuntime; TestRAGQueryPostOpenRecvFailureSSE; TestRAGQueryEOFWithoutTerminalSSE; TestWorkflowCheckpointPendingDrainAndPersistence |
+| 05-11 | — | TestRAGQueryCrossRuntime; TestRAGQueryPostOpenRecvFailureSSE; TestRAGQueryEOFWithoutTerminalSSE; TestRAGQueryClientDisconnectCancelsRustWorkflow; TestRetrievalSnapshotWireContract; TestWorkflowCheckpointPendingDrainAndPersistence |
 | 05-12 | — | — |
-| 05-13 | workflow_phase5_generation_retry_tracer; openrouter_preflight_transport_is_retryable; openrouter_capabilities_cache_success_only; workflow_phase5_generation_retry_exhausted | — |
-| 05-14 | workflow_phase5_nodekind_tracer; workflow_phase5_nodekind_dispatch; workflow_phase5_nodekind_exhaustive | — |
+| 05-13 | openrouter_preflight_transport_is_retryable; openrouter_capabilities_cache_success_only; production bodies for workflow_phase5_generation_retry_tracer and workflow_phase5_generation_retry_exhausted (exact binary runs deferred to 05-20) | — |
+| 05-14 | production bodies for workflow_phase5_nodekind_tracer; workflow_phase5_nodekind_dispatch; workflow_phase5_nodekind_exhaustive (source/body and compile checks only; exact binary runs deferred to 05-20) | — |
 | 05-15 | workflow_phase5_prompt_api_surface; workflow_phase5_prompt_graph_weight_semantics; workflow_phase5_fake_ports_test_only | — |
 | 05-16 | workflow_phase5_graph_notice_merge; workflow_phase5_retrieval_snapshot_variants; workflow_phase5_bm25_snapshot_releases_lock | — |
-| 05-17 | retrieval_snapshot_variant_provenance_wire_contract | TestRetrievalSnapshotWireContract |
+| 05-17 | retrieval_snapshot_variant_provenance_wire_contract | — (Go wire fixture owned by 05-11) |
 | 05-18 | workflow_phase5_happy_path; workflow_phase5_library_target_fake_ports_compile | — |
 | 05-19 | workflow_phase5_failure_terminal_notices_tracer; workflow_phase5_failure_terminal_preserves_notices_without_answer_events | TestRAGQueryFailureTerminalNoticesSSE |
-| 05-20 | workflow_phase5_generation_preflight_bootstrap_tracer; workflow_phase5_generation_preflight_worst_case_budget; workflow_phase5_reformulate_predeadline_4999ms_no_timeout; workflow_phase5_happy_path | — |
+| 05-20 | workflow_phase5_generation_preflight_bootstrap_tracer; workflow_phase5_generation_preflight_worst_case_budget; workflow_phase5_reformulate_predeadline_4999ms_no_timeout; workflow_phase5_retrieve_predeadline_9999ms_no_timeout; workflow_phase5_happy_path; workflow_phase5_production_five_node; workflow_phase5_production_dependencies_are_real; workflow_phase5_generation_retry_tracer; workflow_phase5_generation_retry_exhausted; workflow_phase5_nodekind_tracer; workflow_phase5_nodekind_dispatch; workflow_phase5_nodekind_exhaustive; workflow_phase5_production_context_population; workflow_phase5_production_reachability (exact binary runs after 05-18) | — |
 | 05-21 | fusion_variant_provenance_source_tracer; fusion_variant_provenance_source_is_typed | — |
 
+The 05-20 retrieval predeadline entry uses the exact filter `workflow_phase5_retrieve_predeadline_9999ms_no_timeout` with `cargo test --lib --manifest-path engine/Cargo.toml --locked -- --exact workflow_phase5_retrieve_predeadline_9999ms_no_timeout --nocapture`; required evidence is a deterministic 9999ms retrieval completing without `Timeout` classification at the 10000ms boundary. The production-binary filters listed on the 05-20 row are intentionally executed only after 05-18 registers `workflow_phase5_production.rs` in `engine/src/tests.rs`; early plans retain source/body and compile evidence without claiming binary registration.
+
 All current Cargo commands use a literal-safe list guard, immediate native exit handling, an exact registration assertion, and one exact filter per run. All current Go commands use explicit `go -C gateway` module execution with immediate native exit handling.
+
+For 05-11, the definitive cancellation filter is `go -C gateway test -run '^TestRAGQueryClientDisconnectCancelsRustWorkflow$' -count=1`. Required evidence is a real `httptest.NewServer` plus `http.Client` request that closes the live SSE response after `GenerateAnswer` `node_started`, observes cancellation on the stalled provider request context, records no later node/answer/workflow_completed/stream_error event, and proves no second provider call.
