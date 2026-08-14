@@ -32,7 +32,9 @@ created: 2026-08-12
 - **After every task commit:** Run every automated command in that task's verification block. Each registration guard lists exact test names and captures the native command exit code before inspecting output.
 - **After Wave 1:** Run the coordinated Rust/Go transition checks and code-generation/order guard; do not claim a partial pre-migration suite as evidence.
 - **After Wave 2:** Run the graph/retrieval Rust focused checks against the completed Wave 1 stream contract.
-- **After every later wave:** Run the full suite command above plus the current wave's focused commands.
+- **Intermediate compile-order exception (Waves 7–13 inclusive):** Do not run the full suite command after Waves 7, 8, 9, 10, 11, 12, or 13. The exception is required because 05-18's `#[cfg(test)]` BM25 fixture migration lands before 05-16 changes the production BM25 field; running the full suite in that window would sample an intentionally incomplete cross-target handoff. During the window, run each wave's focused commands and any `cargo check --bin engine` guard owned by that wave. cargo check --bin engine is insufficient for this handoff because it does not compile binary `#[cfg(test)]` code.
+- **Post-handoff compile gate:** 05-16 Task 2 owns the first `cargo test --bin engine --manifest-path engine/Cargo.toml --locked --no-run` check after both the 05-18 fixture shape and 05-16 production BM25 field exist. Only after that command passes does full-suite sampling resume, beginning with Wave 14 and continuing for every later wave.
+- **After every later wave once resumed:** Run the full suite command above plus the current wave's focused commands.
 - **Before `/gsd-verify-work`:** Full suite must be green; database tests may skip only for an absent `TEST_DATABASE_URL` where their plan explicitly permits it.
 - **Max feedback latency:** 60 seconds for local checks, excluding an explicitly unavailable PostgreSQL environment.
 
