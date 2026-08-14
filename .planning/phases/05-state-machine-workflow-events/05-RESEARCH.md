@@ -596,3 +596,31 @@ func (e grpcEngine) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (*pb.
 
 **Research date:** 2026-08-10
 **Valid until:** 30 days (stable — no fast-moving external dependencies; the Rust/Go ecosystem versions pinned here are unlikely to require re-verification within a normal phase-execution timeframe)
+
+## Current Validation Authority (2026-08-13 continuation)
+
+The historical validation map above is retained as research history. For the current checker continuation, the machine-checkable authority is the following artifact and named filters:
+
+CURRENT_VALIDATION_AUTHORITY: .planning/phases/05-state-machine-workflow-events/05-VALIDATION.md
+CURRENT_RUST_TEST_FILE: engine/src/tests/workflow_phase5.rs
+CURRENT_GO_TEST_MODULE: gateway
+VALIDATION_MAP_SUPERSESSION: historical examples above are superseded for current execution by 05-VALIDATION.md, the current Rust test file, the gateway module, and the named filters below.
+
+| Plan | Current Rust named filters | Current Go named filters |
+|---|---|---|
+| 05-08 | workflow_phase5_production_five_node; workflow_phase5_production_dependencies_are_real; workflow_phase5_production_context_population; workflow_phase5_production_reachability | — |
+| 05-09 | workflow_phase5_settings_applied_to_production; workflow_phase5_config_verify_generation_timeout | — |
+| 05-10 | workflow_phase5_event_delivery_tracer; workflow_phase5_checkpoint_full_snapshot; workflow_phase5_terminal_idempotence | — |
+| 05-11 | — | TestRAGQueryCrossRuntime; TestRAGQueryPostOpenRecvFailureSSE; TestRAGQueryEOFWithoutTerminalSSE; TestWorkflowCheckpointPendingDrainAndPersistence |
+| 05-12 | — | — |
+| 05-13 | workflow_phase5_generation_retry_tracer; openrouter_preflight_transport_is_retryable; openrouter_capabilities_cache_success_only; workflow_phase5_generation_retry_exhausted | — |
+| 05-14 | workflow_phase5_nodekind_tracer; workflow_phase5_nodekind_dispatch; workflow_phase5_nodekind_exhaustive | — |
+| 05-15 | workflow_phase5_prompt_api_surface; workflow_phase5_prompt_graph_weight_semantics; workflow_phase5_fake_ports_test_only | — |
+| 05-16 | workflow_phase5_graph_notice_merge; workflow_phase5_retrieval_snapshot_variants; workflow_phase5_bm25_snapshot_releases_lock | — |
+| 05-17 | retrieval_snapshot_variant_provenance_wire_contract | TestRetrievalSnapshotWireContract |
+| 05-18 | workflow_phase5_happy_path; workflow_phase5_library_target_fake_ports_compile | — |
+| 05-19 | workflow_phase5_failure_terminal_notices_tracer; workflow_phase5_failure_terminal_preserves_notices_without_answer_events | TestRAGQueryFailureTerminalNoticesSSE |
+| 05-20 | workflow_phase5_generation_preflight_bootstrap_tracer; workflow_phase5_generation_preflight_worst_case_budget; workflow_phase5_reformulate_predeadline_4999ms_no_timeout; workflow_phase5_happy_path | — |
+| 05-21 | fusion_variant_provenance_source_tracer; fusion_variant_provenance_source_is_typed | — |
+
+All current Cargo commands use a literal-safe list guard, immediate native exit handling, an exact registration assertion, and one exact filter per run. All current Go commands use explicit `go -C gateway` module execution with immediate native exit handling.

@@ -224,3 +224,37 @@ checker has an executable owner:
 The deferred ideas in `05-CONTEXT.md` remain excluded: no backup provider,
 resume/fetch API, cancel RPC, workflow metadata, per-node spans, or degraded
 mode field is introduced by these continuation plans.
+
+## Revision continuation iteration 5
+
+This additive iteration closes all four current checker blockers and four warnings without changing 05-01 through 05-07 artifacts. Each new source item has a task owner and a pending validation row in 05-VALIDATION.md.
+
+| Checker item | Executable owner | Closure proof |
+|---|---|---|
+| cross_plan_data_contracts | 05-17 | Proto ownership, Buf generation, four checked-in generated bindings, every Rust/Go RetrievalSnapshot literal, field/tag assertions, and wire round-trip tests. |
+| task_completeness target-aware fake seam | 05-18 then 05-15 | Library-only Phase 5 registration, target-correct imports, six-fake compile probe, binary compile guard, then cfg(test) gating. |
+| WR-07 failure terminal notices | 05-19 | Typed WorkflowCompletedEvent.notices, Rust failure ordering/no-answer assertions, and raw Go SSE notice assertions. |
+| verification_derivation timing | 05-20 | Generator/Node preparation hook before the node timer, paused-clock 5000 + 2 x 30000 proof, 4999ms boundary test, and bounded happy-path drain. |
+| AGENTS.md Rust guidance | 05-10, 05-14, 05-15, 05-16, 05-17, 05-18, 05-19, 05-20, 05-21 | Every Rust-modifying task read_first names rust-guidelines.md; Go-modifying tasks name go-guidelines.md. |
+| IN-02/IN-03 fusion cleanup | 05-21 | Typed provenance enum, enum filters, dead serde-default removal, serialization regression, and source guards. |
+| IN-05 timing/liveness assertions | 05-20 | Exact 4999ms no-timeout registration and five-second workflow_phase5_happy_path receiver drain. |
+| numeric factual authority | 05-12 | 05-RESEARCH.md contains the machine-checkable current validation authority marker and current named filters. |
+
+### Iteration 5 multi-source coverage
+
+| Source | Items | Plans |
+|---|---|---|
+| GOAL | Formalized Rust RAG state machine with predictable failures, streamed events, retries, snapshots, and ORCH-05 pass-through | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15, 05-16, 05-17, 05-18, 05-19, 05-20, 05-21 |
+| REQ | ORCH-01 | 05-08, 05-14, 05-16, 05-17, 05-18, 05-20 |
+| REQ | ORCH-02 | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15, 05-17, 05-18, 05-19, 05-20 |
+| REQ | ORCH-03 | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15, 05-16, 05-18, 05-19, 05-20, 05-21 |
+| REQ | ORCH-04 | 05-08, 05-10, 05-11, 05-12, 05-16, 05-17, 05-19, 05-21 |
+| REQ | ORCH-05 | 05-08, 05-12 |
+| RESEARCH | Buf is the protobuf source of truth; Rust owns orchestration; Go relays SSE; provider attempt and node budgets are distinct; fakes need an explicit test boundary; fusion provenance is typed | 05-08, 05-09, 05-11, 05-13, 05-15, 05-17, 05-18, 05-19, 05-20, 05-21 |
+| CONTEXT | D-05 in-band typed failure and no fabricated answer | 05-17, 05-19, 05-20 |
+| CONTEXT | D-07/D-08 variant fusion, ordered identities, and variant-zero embedding | 05-16, 05-17, 05-21 |
+| CONTEXT | D-11/D-17 bounded retry, 30-second attempts, 5-second preflight, 65-second node timer | 05-09, 05-13, 05-20 |
+| CONTEXT | D-18/D-19 streaming and SSE terminal mapping | 05-11, 05-17, 05-19 |
+| CONTEXT | D-30 no generic workflow metadata | 05-08, 05-10, 05-16, 05-17, 05-19, 05-20, 05-21 |
+
+No deferred idea is implemented: no backup provider, resume/fetch API, cancel RPC, generic workflow metadata, per-node spans, or degraded-mode field is added.

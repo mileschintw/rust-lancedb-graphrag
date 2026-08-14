@@ -21,3 +21,7 @@ reasoned no-external-API declaration:
   the Go-owned checkpoint table and detached insert path in 05-05.
 - `QueryGraph` RPC: existing internal API explicitly left unchanged per D-10 in
   05-02; it is a scope fence, not a new external capability.
+
+## Continuation coverage note (2026-08-13)
+
+Plans 05-17 through 05-21 modify only the existing internal protobuf/runtime contract, Rust workflow seams, Go SSE mapping, and retrieval fusion types. They add no vendor endpoint, SDK, credential, third-party service, or external API capability; the protobuf additions are source-owned and generated through the repository's existing Buf configuration.
