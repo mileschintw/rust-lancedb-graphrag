@@ -3,7 +3,9 @@ phase: 5
 scope: gap-closure
 reviewers: [antigravity, claude]
 successful_reviewers: [antigravity, claude]
-reviewed_at: 2026-08-14T02:38:30.3432085Z
+reviewed_at: 2026-08-14T05:49:07.4873436Z
+source_head: d4007206b2367577c2bf625488dae4e874a0f54a
+stale_review_excluded: true
 plans_reviewed:
   - 05-08-PLAN.md
   - 05-09-PLAN.md
@@ -25,390 +27,329 @@ reviewer_models:
 reviewer_effort:
   antigravity: high
   claude: high
+reviewer_output_bytes:
+  antigravity: 18464
+  claude: 22484
 ---
-# Cross-AI Plan Review — Phase 05 Gap Closure
+# Cross-AI Plan Review — Phase 05 Gap Closure (Fresh)
 
-Scope: pending additive plans 05-08 through 05-21. Original plans 05-01 through 05-06 and executed plan 05-07 are baseline context only.
-
----
+Review scope is the current pending additive plan set 05-08 through 05-21 at d4007206b2367577c2bf625488dae4e874a0f54a. The prior 05-REVIEWS.md was excluded from both reviewer prompts.
 
 ## Antigravity Review (gemini-3.7-flash-high, high)
 
-# Phase 05 Gap-Closure Plan Review: Plans 05-08 through 05-21
+# Cross-AI Plan Review: Lancet Phase 5 Additive Gap Closure (Plans 05-08 through 05-21)
 
 ## 1. Summary
 
-The Phase 05 gap-closure plan suite (`05-08-PLAN.md` through `05-21-PLAN.md`) represents a rigorous, highly disciplined, and comprehensive remediation program that addresses every architectural shortfall, test-isolation flaw, and operational hazard identified in the baseline review. Rather than masking defects with artificial test harnesses or mock boundaries, these 14 additive plans systematically wire the real five-node orchestration pipeline ([`engine/src/main.rs:1716-1753`](file:///D:/Repos/lancet/engine/src/main.rs#L1716-L1753)), establish live configuration and cancellation drop guards ([`engine/src/main.rs:171-189`](file:///D:/Repos/lancet/engine/src/main.rs#L171-L189)), enforce single-allocation sequence ordinals and lossless checkpoint queuing ([`gateway/checkpoint_sink.go:148-247`](file:///D:/Repos/lancet/gateway/checkpoint_sink.go#L148-L247)), synchronize the shared Protobuf wire schema ([`proto/lancet/v1/lancet.proto:100-207`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto#L100-L207)), and isolate OpenRouter preflight and retry budgets ([`engine/src/generation/openrouter.rs:289-400`](file:///D:/Repos/lancet/engine/src/generation/openrouter.rs#L289-L400)). The dependency graph across Waves 7 through 17 forms a strictly monotonic, acyclic Directed Acyclic Graph (DAG) with well-separated concerns, zero circularity, and robust verification gates. When executed in sequence, this suite completely closes all 27 previous code review and verification findings (`CR-01`–`CR-08`, `WR-01`–`WR-14`, `IN-01`–`IN-05`) and fulfills the five core Phase 05 roadmap requirements (`ORCH-01` through `ORCH-05`).
+The additive gap-closure plan suite for Phase 5 ([`05-08-PLAN.md`](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-08-PLAN.md) through [`05-21-PLAN.md`](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-21-PLAN.md), 14 plans in total) provides a comprehensive, rigorous, and source-grounded strategy to bridge the gap between the baseline state-machine library implementation and true production reachability. By systematically decomposing work into focused waves—retiring the legacy inline remainder in [`engine/src/main.rs`](file:///D:/Repos/lancet/engine/src/main.rs#L1733-L1750), wiring real adapter dependencies into [`WorkflowDependencies`](file:///D:/Repos/lancet/engine/src/workflow/ports.rs#L24-L34), enforcing live TOML workflow timeouts and stream-disconnect cancellation, isolating OpenRouter capability preflight from the generation node timer, enforcing typed `NodeKind` dispatch, resolving Rust test-target collisions between binary and library crates, preserving failed terminal notices through Protobuf and Go SSE, ensuring lock-free BM25 retrieval across async yields, and making checkpoint persistence lossless under backpressure—the updated plan set effectively addresses the architectural, concurrency, and validation shortcomings identified in prior audits while strictly honoring the locked phase boundaries and decision invariants (D-01 through D-31).
 
 ---
 
-## 2. Plan-by-Plan Assessment
+## 2. Strengths
 
-### 05-08-PLAN.md — Production Five-Node Wiring & Real Adapter Dependencies (Wave 7)
-- **Strengths:** Directly dismantles the monolithic fallback bridge [`execute_inline_query_rag_remainder`](file:///D:/Repos/lancet/engine/src/main.rs#L1234-L1537) and replaces it with `build_production_workflow`, registering all five concrete nodes (`ReformulateQueryNode`, `ExtractGraphContextNode`, `RetrieveHybridNode`, `AssemblePromptNode`, `GenerateAnswerNode`) backed by real engine services. Eliminates synthetic evidence fabrication in [`AssemblePromptNode::run`](file:///D:/Repos/lancet/engine/src/workflow/nodes/assemble_prompt.rs#L55-L77) and populates all [`WorkflowContext`](file:///D:/Repos/lancet/engine/src/workflow/mod.rs#L29-L48) fields from real query execution.
-- **Concerns:** High blast radius across [`engine/src/main.rs`](file:///D:/Repos/lancet/engine/src/main.rs) and [`engine/src/workflow/`](file:///D:/Repos/lancet/engine/src/workflow/); requires careful coordination with existing gRPC handlers.
-- **Verdict:** **Approved**. Fully closes `CR-02`, `CR-03`, `WR-05`, and `IN-04`.
+1. **Definitive Production Wiring & Elimination of Dual Paths ([05-08](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-08-PLAN.md)):**
+   - In the live codebase, [`query_rag`](file:///D:/Repos/lancet/engine/src/main.rs#L1656-L1755) registers only `ReformulateQueryNode` on a runner with empty dependencies (`deps = WorkflowDependencies::new()`, where all slots are `None` per [`ports.rs:24-34`](file:///D:/Repos/lancet/engine/src/workflow/ports.rs#L24-L34)), delegating the actual pipeline execution to [`execute_inline_query_rag_remainder`](file:///D:/Repos/lancet/engine/src/main.rs#L1234-L1647).
+   - Plan 05-08 introduces `build_production_workflow` to construct concrete `Arc<dyn ...>` adapters for all 6 service ports (`EmbeddingProvider`, `GraphQueryPort`, `DenseRetrievalPort`, `Bm25RetrievalPort`, `Reranker`, `Generator`) and registers all 5 nodes in strict D-06 order (`ReformulateQueryNode` -> `ExtractGraphContextNode` -> `RetrieveHybridNode` -> `AssemblePromptNode` -> `GenerateAnswerNode`).
+   - Fixes a subtle bug in [`GenerateAnswerNode::run`](file:///D:/Repos/lancet/engine/src/workflow/nodes/generate.rs#L53-L60), where `req.graph_facts` was omitted during `GenerationRequest` instantiation despite graph augmentation succeeding upstream.
 
-### 05-09-PLAN.md — Live Workflow Settings, Deadlines & Stream Cancellation (Wave 8)
-- **Strengths:** Adds complete TOML deserialization and semantic validation for all seven `[engine.workflow]` configuration keys into [`EngineSettings`](file:///D:/Repos/lancet/engine/src/main.rs#L171-L179) with `deny_unknown_fields`. Wraps the Tonic gRPC response stream in a `GuardedStream` carrying a `DropGuard` on the `CancellationToken`, ensuring client disconnects (`r.Context().Done()`) immediately abort active Tokio tasks and LLM requests.
-- **Concerns:** None. Explicitly decouples deterministic sub-second unit tests from wall-clock verification (`config.verify.toml` with 7000ms timeout).
-- **Verdict:** **Approved**. Fully closes `CR-01`, `CR-04`, and `SC3`.
+2. **Decoupled Preflight & Multi-Attempt Generation Timing ([05-09](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-09-PLAN.md), [05-13](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-13-PLAN.md), [05-20](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-20-PLAN.md)):**
+   - In [`engine/src/generation/openrouter.rs`](file:///D:/Repos/lancet/engine/src/generation/openrouter.rs#L600-L636), capability preflight was executed within `execute_one_call`, sharing the 30s per-attempt budget and mapping transport errors to non-retryable errors.
+   - Plan 05-13 moves preflight to a dedicated 5s timeout with successful-only caching (preventing transient failure caching), and Plan 05-20 introduces a `Node::prepare` / `Generator::prepare` lifecycle hook executed *before* the 65s `GenerateAnswer` node timer begins.
+   - Correctly sizes the end-to-end worst-case pipeline latency budget ($5\text{s} + 10\text{s} + 15\text{s} + 2\text{s} + 65\text{s} = 97\text{s}$ node sequential total $+ 5\text{s}$ preflight bootstrap $= 102\text{s}$), ensuring the 65s generation node timer provides two full 30s provider attempts ($30\text{s} + 30\text{s} + 5\text{s}$ inter-attempt slack) without preflight stealing retry budget.
 
-### 05-10-PLAN.md — Reliable Event Delivery, Sequence Integrity & Full Snapshots (Wave 14)
-- **Strengths:** Replaces fire-and-forget `try_send` in [`WorkflowEventSink::send_event`](file:///D:/Repos/lancet/engine/src/workflow/runner.rs#L39-L48) with bounded asynchronous dispatch and explicit pending tracking, preventing silent event loss. Fixes the double-increment sequence bug ([`engine/src/workflow/runner.rs:40`](file:///D:/Repos/lancet/engine/src/workflow/runner.rs#L40) vs [`145`](file:///D:/Repos/lancet/engine/src/workflow/runner.rs#L145)) by enforcing single sequence allocation inside `wrap_event`. Implements atomic terminal event idempotence (`AtomicBool`) and serializes full execution snapshots in `events::checkpoint`.
-- **Concerns:** Depends on Protobuf wire updates from 05-17 and typed nodes from 05-14/05-16. Wave 14 placement correctly satisfies these prerequisites.
-- **Verdict:** **Approved**. Fully closes `CR-05`, `WR-03`, and `WR-13`.
+3. **Concurrency Safety & Lock-Free BM25 Async Yield ([05-16](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-16-PLAN.md)):**
+   - Guarding against holding an `RwLockReadGuard` on `Bm25Index` across `.await` points avoids stalling background document ingestion workers in [`engine/src/main.rs:1880`](file:///D:/Repos/lancet/engine/src/main.rs). Plan 05-16 mandates obtaining an $O(1)$ immutable snapshot handle (`Arc<RwLock<Arc<Bm25Index>>>` or index handle clone) and immediately releasing the lock prior to running async lexical scoring.
 
-### 05-11-PLAN.md — Gateway SSE Stream Hardening & Lossless Checkpoint Backpressure (Wave 17)
-- **Strengths:** Eliminates the silent gRPC stream termination bug on receive errors ([`gateway/main.go:730-732`](file:///D:/Repos/lancet/gateway/main.go#L730-L732)) by emitting explicit `stream_error` SSE frames. Guards against nil terminal response panics in [`toQueryRAGResponseDTO`](file:///D:/Repos/lancet/gateway/main.go#L875-L950). Refactors [`CheckpointDispatcher`](file:///D:/Repos/lancet/gateway/checkpoint_sink.go#L148-L247) to guarantee full queue draining on `Close()` and synchronous handling of `DispatchPending` overflow items without silent loss. Adds cross-runtime end-to-end integration test `TestRAGQueryCrossRuntime`.
-- **Concerns:** Must maintain strict database schema isolation conventions per [`AGENTS.md`](file:///D:/Repos/lancet/AGENTS.md) when testing against PostgreSQL.
-- **Verdict:** **Approved**. Fully closes `CR-06`, `CR-07`, `CR-08`, and `WR-12`.
+4. **Target-Aware Test Architecture & Fake Gating ([05-15](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-15-PLAN.md), [05-18](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-18-PLAN.md)):**
+   - Resolves the Rust crate target collision where test doubles (`FakeQueryReformulator`, `FakeDenseRetrievalPort`, `FakeGenerator`, etc. in [`engine/src/workflow/ports.rs`](file:///D:/Repos/lancet/engine/src/workflow/ports.rs#L89-L358)) could not be gated with `#[cfg(test)]` without breaking binary-target tests in [`engine/src/tests.rs`](file:///D:/Repos/lancet/engine/src/tests.rs#L11).
+   - Plan 05-18 separates generic workflow unit tests into [`engine/src/lib.rs`](file:///D:/Repos/lancet/engine/src/lib.rs) (`cargo test --lib`), while keeping binary-owned production tests in [`engine/src/tests/workflow_phase5_production.rs`](file:///D:/Repos/lancet/engine/src/tests/workflow_phase5_production.rs) (`cargo test --bin engine`).
 
-### 05-12-PLAN.md — Additive Traceability Errata & Multi-Source Audit (Wave 7)
-- **Strengths:** Strictly preserves historical summary immutability by creating `05-12-TRACEABILITY-ERRATA.md` and asserting byte-for-byte Git blob hashes across all 14 historical baseline files (`05-01` through `05-07`). Corrects historical overclaiming narratives and requirement cross-references without mutating executed records.
-- **Concerns:** Purely documentation and verification metadata; zero runtime execution impact.
-- **Verdict:** **Approved**. Fully closes `SC5` and traceability defects.
+5. **Lossless Checkpoint Dispatching & Strict Schema Isolation ([05-11](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-11-PLAN.md)):**
+   - In [`gateway/checkpoint_sink.go`](file:///D:/Repos/lancet/gateway/checkpoint_sink.go#L168-L189) and [`gateway/main.go:765-767`](file:///D:/Repos/lancet/gateway/main.go#L765-L767), `DispatchPending` results were previously unhandled and discarded when channel overflowed. Plan 05-11 ensures `CheckpointDispatcher` tracks and drains pending/overflow queues completely on `Close()`.
+   - Adheres strictly to the `AGENTS.md` review convention requiring per-test schema isolation (`search_path`) and fatal assertions on snapshot queries for PostgreSQL integration tests.
 
-### 05-13-PLAN.md — OpenRouter Preflight Classification, Caching & Generation Retry (Wave 9)
-- **Strengths:** Extracts `check_supported_parameters` out of the per-request path ([`engine/src/generation/openrouter.rs:376`](file:///D:/Repos/lancet/engine/src/generation/openrouter.rs#L376)) into a dedicated 5-second deadline with a success-only model capability cache. Reclassifies network transport errors (connect, timeout, reset) as retryable `ProviderError` while preserving parameter rejections as non-retryable `SupportedParameters`. Restricts [`GenerateAnswerNode`](file:///D:/Repos/lancet/engine/src/workflow/nodes/generate.rs) to exactly one immediate retry using byte-identical request snapshots.
-- **Concerns:** None. Coordinates cleanly with 05-20 for preflight runner bootstrap timing.
-- **Verdict:** **Approved**. Fully closes `WR-02` and `WR-04`.
-
-### 05-14-PLAN.md — Typed NodeKind Dispatch & Early Variant Admission (Wave 10)
-- **Strengths:** Replaces stringly pattern matching across runner dispatch ([`engine/src/workflow/runner.rs:104-113`](file:///D:/Repos/lancet/engine/src/workflow/runner.rs#L104-L113)) with an exhaustive, closed `NodeKind` enum (`ReformulateQuery`, `ExtractGraphContext`, `RetrieveHybrid`, `AssemblePrompt`, `GenerateAnswer`). Moves the `variants.len() <= 8` boundary check to occur immediately upon reformulation completion, preventing unnecessary downstream retrieval or LLM fanout.
-- **Concerns:** None. Keeps public wire event strings intact while hardening internal Rust dispatch.
-- **Verdict:** **Approved**. Fully closes `WR-01` and `IN-01`.
-
-### 05-15-PLAN.md — Async Prompt API Contract & cfg(test) Fake-Port Gates (Wave 12)
-- **Strengths:** Fully documents public asynchronous prompt APIs ([`engine/src/prompt.rs`](file:///D:/Repos/lancet/engine/src/prompt.rs)), establishes formal semantic tests for `graph_weight = 0.0` (complete graph exclusion) versus positive values, removes public blocking synchronous helpers, and places all test doubles (`FakeQueryReformulator`, `FakeGraphQueryPort`, etc.) in [`engine/src/workflow/ports.rs`](file:///D:/Repos/lancet/engine/src/workflow/ports.rs) strictly behind `#[cfg(test)]`.
-- **Concerns:** Relies on 05-18 to establish the library-target test compilation seam first.
-- **Verdict:** **Approved**. Fully closes `WR-10`, `WR-11`, and test double pollution.
-
-### 05-16-PLAN.md — Graph Notice Codes, Retrieval Provenance & BM25 Snapshotting (Wave 13)
-- **Strengths:** Standardizes graph notices to machine-readable `GRAPH_TIMEOUT` and `GRAPH_DEGRADED` codes, implementing append/merge logic that preserves prior notices across subsequent node failures. Exposes multi-variant provenance (`variant_count`, `variant_identities`) in `RetrievalSnapshot`. Solves the `RwLock` concurrency hazard in BM25 retrieval by taking an owned immutable snapshot before any `.await` point, preventing blocked document ingestion workers.
-- **Concerns:** Depends on Protobuf field updates from 05-17.
-- **Verdict:** **Approved**. Fully closes `WR-06`, `WR-07`, `WR-08`, `WR-09`, and `WR-14`.
-
-### 05-17-PLAN.md — Wire Schema Sync: Retrieval Provenance & Terminal Notices (Wave 11)
-- **Strengths:** Extends [`proto/lancet/v1/lancet.proto`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto) in a backward- and wire-compatible manner by adding `variant_count` (tag 10) and `variant_identities` (tag 11) to `RetrievalSnapshot`, and `notices` (tag 6) to `WorkflowCompletedEvent`. Executes `buf generate` and updates all Rust prost/tonic and Go protobuf struct literals across the repository.
-- **Concerns:** Any manual drift between `.proto` and generated files will break CI; automated round-trip assertions in both Rust and Go mitigate this risk.
-- **Verdict:** **Approved**. Fully closes protobuf synchronization gaps.
-
-### 05-18-PLAN.md — Library-Target Phase 5 Test Module Migration (Wave 11)
-- **Strengths:** Moves `mod workflow_phase5;` from the binary root [`engine/src/tests.rs:11`](file:///D:/Repos/lancet/engine/src/tests.rs#L11) into library scope [`engine/src/lib.rs`](file:///D:/Repos/lancet/engine/src/lib.rs) under `#[cfg(test)]`. This resolves the classic Rust visibility constraint where `#[cfg(test)]` items in `ports.rs` are inaccessible to binary integration tests, ensuring tests run cleanly under `cargo test --lib`.
-- **Concerns:** None.
-- **Verdict:** **Approved**. Fully enables clean `#[cfg(test)]` compilation for 05-15.
-
-### 05-19-PLAN.md — Failure-Terminal Notice Preservation through Rust & Go SSE (Wave 15)
-- **Strengths:** Ensures that when a workflow fails downstream, all accumulated notices (such as `GRAPH_TIMEOUT` or `GRAPH_DEGRADED`) are preserved on the terminal `WorkflowCompletedEvent` and serialized through Go raw SSE without emitting misleading `answer_chunk` or `final_answer` frames.
-- **Concerns:** None. Verifies both Rust runner event streams and Go HTTP/SSE wire output.
-- **Verdict:** **Approved**. Fully completes failure-mode observability under `WR-07`.
-
-### 05-20-PLAN.md — Preflight Bootstrap Timing & 102s Workflow Budget Proof (Wave 16)
-- **Strengths:** Introduces a `Node::prepare` lifecycle hook that executes capability preflight before the 65-second `GenerateAnswer` timer starts. Provides deterministic mathematical proofs and boundary tests demonstrating that the worst-case cumulative workflow latency across all 5 nodes fits within a 102-second budget. Adds 4999ms boundary regressions and bounded happy-path drain tests.
-- **Concerns:** None.
-- **Verdict:** **Approved**. Fully closes timeout coupling and latency budget ambiguity.
-
-### 05-21-PLAN.md — Typed Fusion Provenance Enum & Serde Cleanup (Wave 14)
-- **Strengths:** Replaces stringly `"vector"` / `"bm25"` matches in [`engine/src/retrieval/fusion.rs:145-153`](file:///D:/Repos/lancet/engine/src/retrieval/fusion.rs#L145-L153) with a strongly typed `VariantProvenanceSource` enum. Cleans up dead `#[serde(default)]` annotations on serialize-only structs like `FusedCandidate`.
-- **Concerns:** None.
-- **Verdict:** **Approved**. Fully closes `IN-02` and `IN-03`.
+6. **Wire-Synchronized Provenance & Terminal Notices ([05-17](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-17-PLAN.md), [05-19](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-19-PLAN.md)):**
+   - Adds additive field tags to [`proto/lancet/v1/lancet.proto`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto#L91-L101) (`RetrievalSnapshot.variant_count = 10`, `variant_identities = 11`) and [`WorkflowCompletedEvent.notices = 6`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto#L184-L190).
+   - Generates Rust tonic/prost and Go protobuf bindings synchronously via `buf generate` and guarantees that degraded or failed workflows surface accumulated notices (such as `GRAPH_TIMEOUT` and `GRAPH_DEGRADED`) in-band over SSE without fabricating an answer or final response.
 
 ---
 
-## 3. Concerns (Categorized by Severity)
+## 3. Concerns
 
-### HIGH Severity
-*None.* The 14-plan gap-closure design eliminates all previously identified architectural, data-loss, and deadlocking hazards.
+### [MEDIUM] Concern 1: Gateway SSE Stream Error Writing on Client Disconnect
+- **File & Location:** [`gateway/main.go#L725-L735`](file:///D:/Repos/lancet/gateway/main.go#L725-L735) (addressed in [05-11-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-11-PLAN.md))
+- **Mechanism:** Plan 05-11 specifies converting mid-stream gRPC receive errors (`stream.Recv()`) into terminal `stream_error` frames (`GRPC_RECV_ERROR` or `STREAM_EOF_WITHOUT_TERMINAL`). If the reason `stream.Recv()` failed was a client-initiated HTTP disconnect (`r.Context().Done()`), attempting to write and flush the `stream_error` frame to `http.ResponseWriter` will result in a broken pipe / write error.
+- **Risk:** If write errors are treated as fatal panics or unhandled errors, it could pollute gateway error logs.
+- **Mitigation:** Ensure `writeWorkflowEventSSE` explicitly checks `r.Context().Err()` prior to writing a `stream_error` frame and swallows/logs expected broken pipe errors as debug info when the client has already disconnected.
 
-### MEDIUM Severity
+### [LOW] Concern 2: Dead Code & Unused Warnings upon Retiring Inline Remainder
+- **File & Location:** [`engine/src/main.rs#L872`](file:///D:/Repos/lancet/engine/src/main.rs#L872), [`engine/src/main.rs#L1047`](file:///D:/Repos/lancet/engine/src/main.rs#L1047), [`engine/src/main.rs#L1234-L1647`](file:///D:/Repos/lancet/engine/src/main.rs#L1234-L1647)
+- **Mechanism:** When `query_rag` switches to `build_production_workflow` in [05-08-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-08-PLAN.md), helper functions such as `execute_inline_query_rag_remainder`, `d1_status`, and several graph extraction helpers (e.g. `cypher_confirmed_neighbor_ids`, `extract_with_retry`) become unreferenced from production entry points.
+- **Risk:** Cargo builds currently emit unused warnings (verified during `cargo check`). While not a compilation blocker, unreferenced functions could accumulate as dead code or trigger compiler warnings in `--deny warnings` environments.
+- **Mitigation:** Plan 05-08 and 05-15 should explicitly remove dead remainder helper functions or gate test-only helpers behind `#[cfg(test)]`.
 
-- **Protobuf Generation Precedence & Build Ordering**
-  - **Source Evidence:** [`proto/lancet/v1/lancet.proto:100-207`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto#L100-L207), [`engine/src/pb/lancet/v1/lancet.v1.rs`](file:///D:/Repos/lancet/engine/src/pb/lancet/v1/lancet.v1.rs), [`gateway/proto/lancet/v1/lancet.pb.go`](file:///D:/Repos/lancet/gateway/proto/lancet/v1/lancet.pb.go).
-  - **Mechanism:** Plan 05-17 introduces new Protobuf fields (`variant_count = 10`, `variant_identities = 11`, `notices = 6`). If downstream plans (05-10, 05-16, 05-19) are executed in a workspace where `buf generate` has not run or where generated code is out of sync, compilation will fail with missing struct fields.
-  - **Mitigation:** The plan DAG correctly places 05-17 in Wave 11, strictly prior to 05-16 (Wave 13), 05-10 (Wave 14), and 05-19 (Wave 15). Verification tasks in 05-17 explicitly include Git diff and cross-runtime round-trip tests to ensure generated files are committed before downstream tasks execute.
-
-- **PostgreSQL Test Schema Isolation Convention Enforcement**
-  - **Source Evidence:** [`AGENTS.md:17-23`](file:///D:/Repos/lancet/AGENTS.md#L17-L23), [`gateway/main_test.go`](file:///D:/Repos/lancet/gateway/main_test.go), [`gateway/checkpoint_sink.go`](file:///D:/Repos/lancet/gateway/checkpoint_sink.go).
-  - **Mechanism:** Plan 05-11 introduces cross-runtime and checkpoint persistence tests. If integration tests executing against PostgreSQL fail to use isolated per-test schemas or if count queries do not fail fatally on error (`t.Fatalf`), concurrent test execution could cause false-positive test passes or flaky state pollution.
-  - **Mitigation:** The acceptance criteria for 05-11 require explicit schema isolation and fatal assertion checks on all database fixtures.
-
-### LOW Severity
-
-- **Transient vs Hard Failure Classification Granularity**
-  - **Source Evidence:** [`engine/src/generation/openrouter.rs:297-312`](file:///D:/Repos/lancet/engine/src/generation/openrouter.rs#L297-L312).
-  - **Mechanism:** In 05-13, HTTP status codes 429 and 5xx from OpenRouter are classified as transient and retryable, whereas 400/422 are classified as non-retryable `SupportedParameters` or `InvalidRequest`. Unhandled edge cases (such as 401 Unauthorized or 403 Forbidden) must not trigger infinite or wasteful retries.
-  - **Mitigation:** The single-retry limit (`max_retries = 1`) and explicit HTTP status match arms prevent retry loops on authentication or permission errors.
+### [LOW] Concern 3: Stream Drop Guard Race with Normal Completion EOF
+- **File & Location:** [`engine/src/main.rs#L1704-L1706`](file:///D:/Repos/lancet/engine/src/main.rs#L1704-L1706) (addressed in [05-09-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-09-PLAN.md) & [05-10-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-10-PLAN.md))
+- **Mechanism:** When the client finishes reading the stream and tonic drops the `ReceiverStream`, the drop guard triggers `cancel.cancel()`. If the spawned runner task has completed all nodes but is executing terminal cleanup, `cancel.cancel()` could trigger concurrently.
+- **Risk:** Race condition could cause a spurious `Cancelled` log or secondary event emission if the runner checks cancellation during shutdown.
+- **Mitigation:** Plan 05-10's atomic compare-and-set terminal guard (`WorkflowEventSink`) correctly guarantees that once `WorkflowCompleted` has been emitted, subsequent cancellation signals are ignored and cannot emit duplicate or conflicting events.
 
 ---
 
 ## 4. Suggestions
 
-1. **Explicit Buf Generation Preflight Assertion in CI:**
-   Add a repository-level check in CI that runs `buf generate` and validates `git diff --exit-code` across `engine/src/pb/` and `gateway/proto/` to permanently prevent checked-in binding drift.
-2. **Schema-Isolation Linter for Go Gateway Tests:**
-   While `AGENTS.md` notes that test database schema isolation is a review convention, adding a lightweight test helper in Go (e.g. `NewIsolatedTestDB(t *testing.T)`) will guarantee compliance with `t.Fatalf` assertions.
-3. **Rust Doc-Test Coverage for Public Prompt APIs:**
-   In 05-15, include `/// ```rust` doc-tests in `pack_evidence_and_graph_prompt` to ensure rustdoc examples compile directly as part of `cargo test --doc`.
+1. **Explicit Client Disconnect Check in Gateway SSE Handler:**
+   - In [`gateway/main.go`](file:///D:/Repos/lancet/gateway/main.go), inside the `for { ev, recvErr := stream.Recv(); ... }` loop, wrap the stream error emission in a context check:
+     ```go
+     if recvErr != nil {
+         if errors.Is(r.Context().Err(), context.Canceled) {
+             return // Client initiated disconnect; skip writing SSE error frame
+         }
+         a.writeSSEStreamError(w, rc, "GRPC_RECV_ERROR", recvErr.Error())
+         return
+     }
+     ```
+   - This prevents redundant write attempts to a closed connection.
+
+2. **Automate Buf Synchronization Guard in CI / Pre-commit:**
+   - In [05-17-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-17-PLAN.md), ensure that `git diff --exit-code engine/src/pb gateway/proto` is asserted after running `buf generate` to guarantee that generated files are always in sync with [`proto/lancet/v1/lancet.proto`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto).
+
+3. **Verify Timeout Ordering in Unit Test Fixtures:**
+   - In [05-09-PLAN.md](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-09-PLAN.md), when testing timeout handling in `ExtractGraphContextNode`, ensure the graph operation timeout ($4\text{s}$) is strictly tested as nested within the outer graph node backstop ($15\text{s}$) so that degradation occurs before the node-level deadline aborts.
 
 ---
 
 ## 5. Coverage Assessment
 
-The 14 gap-closure plans comprehensively map to and resolve all historical review findings and phase requirements:
-
-| Finding / Requirement | Description | Resolving Plan(s) | Status |
+| Success Criteria / Requirement | Primary Plan(s) | Verification Mechanism | Status |
 |---|---|---|---|
-| **CR-01 / SC3** | Dead `[engine.workflow]` settings & unparsed TOML | **05-09** | **Closed** |
-| **CR-02 / SC1** | Single-node runner registration & inline remainder | **05-08** | **Closed** |
-| **CR-03** | Synthetic evidence fabrication in AssemblePrompt | **05-08** | **Closed** |
-| **CR-04** | Uncancelled gRPC stream tokens on client disconnect | **05-09** | **Closed** |
-| **CR-05 / SC2** | Silent event loss via unhandled `try_send` | **05-10** | **Closed** |
-| **CR-06** | Gateway panic on nil terminal gRPC response | **05-11** | **Closed** |
-| **CR-07** | Gateway swallows gRPC stream errors after headers | **05-11** | **Closed** |
-| **CR-08 / SC4** | Loss of `DispatchPending` checkpoints on dispatcher close | **05-11** | **Closed** |
-| **WR-01** | Late validation of reformulation variant counts | **05-14** | **Closed** |
-| **WR-02** | Hardcoded `NodeFailed.retryable` booleans | **05-13, 05-10** | **Closed** |
-| **WR-03** | Sequence ordinal double-increment in checkpoints | **05-10** | **Closed** |
-| **WR-04** | Capability preflight transport failures mapped as hard errors | **05-13** | **Closed** |
-| **WR-05** | Inline bridge coupling in `main.rs` | **05-08** | **Closed** |
-| **WR-06** | Stringly graph error categorization | **05-16** | **Closed** |
-| **WR-07** | Overwritten notices & dropped failure terminal notices | **05-16, 05-19** | **Closed** |
-| **WR-08 / WR-09** | Missing variant provenance in `RetrievalSnapshot` | **05-16, 05-17** | **Closed** |
-| **WR-10 / WR-11** | Undocumented prompt APIs & blocking sync wrappers | **05-15** | **Closed** |
-| **WR-12** | Indefinite checkpoint retention policy clarity | **05-11, 05-12** | **Closed** |
-| **WR-13** | Late cancellation / terminal event race | **05-10** | **Closed** |
-| **WR-14** | BM25 `RwLockReadGuard` held across `.await` | **05-16** | **Closed** |
-| **IN-01** | Stringly node dispatch in runner | **05-14** | **Closed** |
-| **IN-02 / IN-03** | Stringly source matching & dead serde attributes in fusion | **05-21** | **Closed** |
-| **IN-04** | Empty `WorkflowDependencies` struct | **05-08** | **Closed** |
-| **IN-05** | Missing library-target Phase 5 test module | **05-18** | **Closed** |
-| **ORCH-01** | Fixed five-node state machine execution | **05-08, 05-14, 05-16** | **Closed** |
-| **ORCH-02** | Typed lifecycle, answer, completion & error events | **05-08, 05-10, 05-13, 05-19** | **Closed** |
-| **ORCH-03** | Cancellation, timeout, retry & graph degradation | **05-09, 05-13, 05-16, 05-20** | **Closed** |
-| **ORCH-04** | Atomic checkpoints & full execution snapshots | **05-10, 05-11, 05-16, 05-17** | **Closed** |
-| **ORCH-05** | Pass-through query reformulation port contract | **05-08, 05-12, 05-14** | **Closed** |
+| **SC-1 / ORCH-01:** RAG pipeline formalized into Rust state machine | [05-08](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-08-PLAN.md), [05-14](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-14-PLAN.md) | `workflow_phase5_production_five_node`, `workflow_phase5_nodekind_exhaustive` | **Covered** |
+| **SC-2 / ORCH-02:** Workflow events stream Rust -> Go -> Client | [05-08](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-08-PLAN.md), [05-10](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-10-PLAN.md), [05-11](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-11-PLAN.md), [05-19](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-19-PLAN.md) | `TestRAGQueryCrossRuntime`, `workflow_phase5_event_delivery_tracer`, `TestRAGQueryFailureTerminalNoticesSSE` | **Covered** |
+| **SC-3 / ORCH-03:** Node timeouts, single retry, cancellation handling | [05-09](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-09-PLAN.md), [05-13](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-13-PLAN.md), [05-20](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-20-PLAN.md) | `workflow_phase5_config_verify_generation_timeout`, `workflow_phase5_generation_retry_tracer`, `workflow_phase5_generation_preflight_worst_case_budget` | **Covered** |
+| **SC-4 / ORCH-04:** Checkpoints & full state snapshots | [05-08](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-08-PLAN.md), [05-10](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-10-PLAN.md), [05-11](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-11-PLAN.md), [05-16](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-16-PLAN.md), [05-17](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-17-PLAN.md) | `workflow_phase5_checkpoint_full_snapshot`, `TestWorkflowCheckpointPendingDrainAndPersistence` | **Covered** |
+| **SC-5 / ORCH-05:** `QueryReformulator` pass-through port | [05-08](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-08-PLAN.md), [05-12](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-12-PLAN.md), [05-14](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-14-PLAN.md) | `workflow_phase5_production_reachability`, `workflow_phase5_nodekind_tracer` | **Covered** |
+
+### Prior Gap Theme Disposition
+- **CR-01 (Dead settings) & CR-04 (Dead cancellation):** Fully closed by [05-09](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-09-PLAN.md).
+- **CR-02 (Production dual path) & CR-03 (Missing graph facts in request):** Fully closed by [05-08](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-08-PLAN.md).
+- **CR-05 (Send outcomes) & WR-13 (Terminal idempotence):** Fully closed by [05-10](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-10-PLAN.md).
+- **CR-06 / CR-07 (Stream error visibility) & CR-08 (Pending checkpoint loss):** Fully closed by [05-11](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-11-PLAN.md).
+- **WR-01 (Early 9-variant admission):** Fully closed by [05-14](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-14-PLAN.md).
+- **WR-02 / WR-04 (Preflight classification & retry):** Fully closed by [05-13](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-13-PLAN.md) and [05-20](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-20-PLAN.md).
+- **WR-06 / WR-07 (Graph notices & failure terminal notices):** Fully closed by [05-16](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-16-PLAN.md), [05-17](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-17-PLAN.md), and [05-19](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-19-PLAN.md).
+- **WR-09 / WR-14 (Variant provenance & BM25 lock release):** Fully closed by [05-16](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-16-PLAN.md) and [05-17](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-17-PLAN.md).
+- **WR-10 / WR-11 (Prompt API docs & fakes isolation):** Fully closed by [05-15](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-15-PLAN.md) and [05-18](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-18-PLAN.md).
+- **IN-01 / IN-02 / IN-03 (Typed dispatch & fusion types):** Fully closed by [05-14](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-14-PLAN.md) and [05-21](file:///D:/Repos/lancet/.planning/phases/05-state-machine-workflow-events/05-21-PLAN.md).
 
 ---
 
 ## 6. Risk Assessment
 
-- **Overall Rating:** **LOW**
-- **Justification:** The gap-closure plan suite exhibits exceptional engineering rigor. Each of the 14 plans isolates a specific, bounded architectural seam with explicit must-have invariants, comprehensive threat modeling (STRIDE), exact cargo/go test registration assertions, and reversibility classifications. Wave ordering is strictly causal and acyclic. The suite preserves execution history immutability while delivering complete, verified production behavior across both the Rust engine and Go gateway runtimes. Execution may proceed with high confidence.
+**Overall Risk Rating: LOW**
+
+**Justification:**
+1. **Zero Architectural Drift:** The plan suite rigorously maintains the split-service architecture (Go HTTP/PostgreSQL control plane, Rust data plane), reuses established communication contracts (server-streaming gRPC), and strictly preserves all locked decisions (D-01 through D-31).
+2. **Deterministic & Staged Dependency Ordering:** The dependency graph across Waves 7 through 17 is strictly acyclic and structured so that lower-level foundational traits, wire bindings, and compilation boundaries land before higher-level node integrations, event sinks, and gateway SSE mappings.
+3. **Execution Feasibility:** The codebase is healthy (Rust `cargo check` and Go tests compile cleanly), historical frozen hashes match HEAD exactly, and test coverage spans both deterministic fast paused-clock unit tests and live wall-clock cross-runtime integration tests.
+4. **Resilience & Defensiveness:** Every known failure mode (timeouts, cancellations, backpressure, transient provider errors, corrupt caches, and lock contention) is backed by an explicit typed handler and automated regression test.
+
+The additive gap-closure plans are complete, well-scoped, and ready for execution.
 
 
 ---
 
 ## Claude Review (opus, high)
 
-# Cross-AI Gap-Closure Plan Review — Phase 05 (05-08 … 05-21)
+# Cross-AI Plan Review — Phase 5 Additive Gap Closure (05-08 … 05-21)
 
-*Repository read at `D:\Repos\lancet`, branch `main`, HEAD `16bda3f`. No files were edited and no plan file was written — output is the review only, per the request.*
+*Independent review performed against the working tree at `D:\Repos\lancet`, HEAD `d400720`. Every claim below was checked against source; the stale `05-REVIEWS.md` was not consulted for conclusions. No files were edited.*
 
 ---
 
 ## 1. Summary
 
-This is an unusually well-grounded gap-closure set. I spot-checked the plans' factual claims against source and they hold up: `[engine.workflow]` really is dead configuration (`config/config.toml:11-18` defines seven keys; the only Rust consumer is a text-scan at `engine/src/tests.rs:260-290`, and no `WorkflowSettings` type exists), production really does register one node and delegate to the pre-existing monolith (`engine/src/main.rs:1716-1717`, `:1742-1746`), OpenRouter preflight really is inside the per-attempt body with no deadline and no cache (`engine/src/generation/openrouter.rs:376` calling `:290`), checkpoint JSON really is partial (`engine/src/workflow/events.rs:106-115` serializes 7 of 18 context fields), and 05-12's fourteen frozen blob hashes all verify byte-for-byte against `git rev-parse HEAD:<path>`. The wave DAG is mostly sound and the `--lib`/`--bin` split I initially suspected of being broken resolves correctly on inspection (05-13's and 05-17's library tests live in `generation/tests.rs` / `retrieval/tests.rs`, which `engine/src/lib.rs` already exports; 05-10 reaches 05-18 transitively through 05-15).
+This is a strong, source-accurate plan set. I sampled the load-bearing factual claims and they hold: production `query_rag` genuinely registers exactly one node and delegates to the pre-existing monolith (`engine/src/main.rs:1716-1717`, `:1742-1746`; `grep -c add_node` = 1); `[engine.workflow]` is genuinely dead configuration (`config/config.toml:10-17` vs. `EngineSettings` with no `workflow` field); the `CancellationToken` at `main.rs:1706` is genuinely never cancelled; OpenRouter preflight genuinely runs inside every attempt with no cache and maps *all* transport errors — including timeouts — to the non-retryable `SupportedParameters` kind (`openrouter.rs:376`, `:297-302` vs. `generate.rs:73-76`); `events.rs:106-115` genuinely serializes 7 of 18 context fields; the BM25 read guard genuinely spans an unbounded await (`main.rs:1311-1320`); and all six 05-12 frozen blob hashes I spot-checked match `git rev-parse HEAD:<path>` byte-for-byte. The wave DAG is acyclic and strictly monotonic (verified below). Two concerns raised by the prior review cycle — the graph-fact carrier and the binary/library test-target collision — have been genuinely addressed in this revision (05-08 Task 2 and the 05-08/05-18 module split), and 05-09's live-overlay reachability is now closed by committing realistic upstream values and asserting `NodeStarted{GenerateAnswer}`.
 
-The problem is not design quality — it is that two structural defects let the whole set execute to completion with every automated gate green while the phase goal remains unmet. First, **graph facts still never reach the model**: `assemble_prompt.rs:92` passes `&[]` for graph facts, `generate.rs:53-56` constructs `GenerationRequest::new(question, evidence)` leaving `graph_facts: Vec::new()` (`generation/mod.rs:396`), and no plan changes the `GraphQueryPort` return type (`ports.rs:44`, `Result<String, NodeError>`), adds a typed carrier to `WorkflowContext`, or touches `GenerationRequest.graph_facts` — so ORCH-01's graph-augmented answer path can be "fully wired" with D-06 and D-09 satisfied and zero graph evidence on the wire. Second, **05-18 destroys 05-08's and 05-16's production proofs**: those plans put the production builder and BM25 adapter in `engine/src/main.rs` (bin-only, method on `LancetServiceImpl` at `main.rs:859`) and their tests in `engine/src/tests/workflow_phase5.rs`, which 05-18 then moves to the library target where bin items are unreachable. Because 05-08's guard runs at wave 7 and nothing re-checks it after wave 11, the phase can finish with its production-reachability evidence deleted and the ledger reporting closure.
+The risk is not design; it is **executability**. Four defects will each produce a deterministic build or test failure at a specific wave, and three of them stem from the same root cause: a plan's `<action>` mandates a change to a file its `files_modified` inventory does not own. They are all fixable with bounded edits.
 
 ---
 
-## 2. Plan-by-plan assessment
+## 2. Strengths
 
-### 05-08 — Production five-node wiring, real adapters, WorkflowContext population *(wave 7)*
-**Verdict: closes the headline gap, but with two exploitable holes and one downstream collision.**
+**The DAG is genuinely correct.** I walked every `depends_on` against every `wave:`:
 
-**Strengths.** The Task 1 guard is the strongest in the set: it extracts the `query_rag` and `build_production_workflow` regions from `main.rs`, requires `self.embedder`/`self.database`/`self.bm25_index`/`self.reranker`/`self.generator` (all real fields — verified at `main.rs:859-870`), requires ≥7 `Some(` slots against the seven-field `WorkflowDependencies` (`workflow/mod.rs:111-120`), counts exactly five `add_node` calls, asserts positional D-06 ordering, rejects `Fake*` references, and rejects `execute_inline_query_rag_remainder` — a function that genuinely exists at `main.rs:1234`. This is a guard that cannot be satisfied by a library-only change.
+| Plan | Wave | depends_on (their waves) |
+|---|---|---|
+| 05-08, 05-12 | 7 | 05-05, 05-07 (executed) |
+| 05-09 | 8 | 05-08 (7) |
+| 05-13 | 9 | 05-09 (8) |
+| 05-14 | 10 | 05-09 (8), 05-13 (9) |
+| 05-17, 05-18 | 11 | 05-14 (10); 05-08 (7) + 05-14 (10) |
+| 05-15 | 12 | 05-13 (9), 05-18 (11) |
+| 05-16 | 13 | 05-14 (10), 05-15 (12), 05-17 (11) |
+| 05-10, 05-21 | 14 | 05-14/15/16 (10/12/13); 05-16 (13) |
+| 05-19 | 15 | 05-10 (14), 05-16 (13), 05-17 (11), 05-18 (11) |
+| 05-20 | 16 | 05-13, 05-14, 05-16, 05-19 (all ≤ 15) |
+| 05-11 | 17 | 05-10, 05-13, 05-16, 05-19, 05-20 (all ≤ 16) |
 
-**Concerns.**
-- Task 2's forbidden-behavior list ("must not fabricate evidence text", "no production call path reaches the sink-less inline monolith or the test-only prompt-generation bridge") is prose only. Its sole verification is `cargo test --exact workflow_phase5_production_context_population`, whose contents are unspecified. The fabrication branch is concrete and still present: `assemble_prompt.rs:62-75` synthesizes `document_id: format!("doc_{}", chunk_id)` and `text: format!("Content of chunk {}", chunk_id)`; `workflow/mod.rs:212` fabricates `format!("Answer for {}", ctx.original_query)`. Task 1 shows exactly how to guard this at source level; Task 2 doesn't.
-- Graph-fact delivery (see HIGH-1 below).
-- `self.nodes` (`main.rs:863`), the LanceDB table `DenseRetriever` is built from (`main.rs:1293`), is not in the required-fields list, so the dense adapter's real backing store is unasserted.
+No cycle, no back-edge. 05-18's explicit rejection of a direct 05-16 dependency (`05-18-PLAN.md:47-48`) is correct reasoning — 05-16 → 05-15 → 05-18 already exists, so the suggested edge would have closed a cycle.
 
-### 05-09 — Live workflow settings, real-I/O deadlines, stream-owned cancellation *(wave 8)*
-**Verdict: the semantic half closes; the live wall-clock proof is not executable as written.**
+**The bin/lib target seam is now correctly modelled.** `engine/src/lib.rs:1-13` exports `workflow` but not `main.rs`; `main.rs:1656+`'s `query_rag` and `LancetServiceImpl` (`:859-870`) are binary-only. 05-08 creating a *binary-owned* `engine/src/tests/workflow_phase5_production.rs` (which does not exist today — `ls engine/src/tests/` returns only `workflow_phase5.rs`) and 05-18 moving only the generic module to the library target is the right structural resolution, and 05-16/05-20 re-run all four production tests after their adapter changes (`05-16-PLAN.md:126-129`, `05-20-PLAN.md:106-109`).
 
-**Strengths.** The seven keys and the asserted production values (5000/10000/10000/4000/15000/2000/65000) match `config/config.toml:11-18` and `config/config.example.toml` exactly. The `deny_unknown_fields` requirement follows an established in-repo precedent (`generation/mod.rs:47`, `graph/extraction.rs:20`). The stream-drop cancellation design is the right fix for `main.rs:1706` — the token is created and never cancelled. The D-17 arithmetic (30s per attempt vs. 65s node budget) is kept correctly separate.
+**05-08's Task 1 guard is the strongest in the set.** It extracts the `query_rag` and `build_production_workflow` regions by regex, requires all five real service fields (`self.embedder`, `self.database`, `self.bm25_index`, `self.reranker`, `self.generator` — all verified present at `main.rs:859-870`), requires ≥7 `Some(` slots against the seven-field `WorkflowDependencies` (`workflow/mod.rs:111-120`), counts exactly five `add_node` calls, asserts positional D-06 ordering, and rejects both `Fake*` and `execute_inline_query_rag_remainder`. A library-only change cannot satisfy it.
 
-**Concerns.** `config/config.verify.toml` currently sets `generation_timeout_secs = 1`; 05-09 correctly claims ownership and raises it to 30. But it keeps the other overlay values (`reformulate_timeout_ms = 50`, `query_embedding_timeout_ms = 100`, `retrieve_timeout_ms = 100`, `graph_operation_timeout_ms = 40`, `graph_node_timeout_ms = 150`, `prompt_timeout_ms = 20`) untouched while requiring `workflow_phase5_config_verify_generation_timeout` to "load the committed `config/config.verify.toml`, start a running slow provider/engine harness" and reach `GenerateAnswer`. Nothing currently loads that file at runtime — `engine/src/tests.rs:265` only text-scans it — so there is no precedent to lean on, and a real five-node run against real LanceDB/embedding I/O will hit `Timeout` at `ExtractGraphContext` (150 ms) or `RetrieveHybrid` (100 ms) long before generation. See MEDIUM-1.
+**05-13's provider analysis is exactly right.** `execute_one_call` calls `check_supported_parameters()` unconditionally at `openrouter.rs:376`; that function has no timeout, no cache, and maps every `reqwest` error — including `is_timeout()` — to `GenerationErrorKind::SupportedParameters` (`:297-302`), which `generate.rs:73-76` treats as non-retryable. A transient DNS blip currently suppresses the D-12 mandated retry. The fix targets the precise mechanism.
 
-### 05-10 — Reliable typed event delivery, terminal idempotence, sequence integrity, full snapshots *(wave 14)*
-**Verdict: closes as specified.** Every claim verifies. `send_event` drops events silently via `try_send` on a 100-slot channel (`runner.rs:47`, `main.rs:1703`). `emit_terminal_once` (`runner.rs:274`) has no guard despite its name. The double-increment is real: `next_sequence_ordinal()` returns N and `send_event` then allocates N+1 for the envelope, so the outer stream skips an ordinal at every checkpoint (`runner.rs:145-146`, `events.rs:40-52`). The 18-field checkpoint list is a strict superset of the 7 fields serialized today (`events.rs:106-115`). Dependency chain to the library target is correct via 05-15 → 05-18.
+**05-11's cross-runtime guard is now function-scoped** (`(?s)func\s+TestRAGQueryCrossRuntime\b.*?(?=\nfunc\s|\z)`) and requires `enginePath` and `LANCET_OPENROUTER__CHAT_ENDPOINT` inside the extracted region — both of which exist only inside that function today (`main_test.go:2167`, `:2205`). The harness it builds on is real and non-skippable: it runs `cargo build` and `t.Fatalf`s if the binary is missing (`:2160-2177`).
 
-### 05-11 — Real engine-to-gateway SSE and lossless checkpoint dispatch *(wave 17)*
-**Verdict: closes as specified, behind a guard weak enough to pass on the wrong code.**
-
-**Strengths.** The plan reuses a genuinely existing harness: `TestRAGQueryCrossRuntime` at `gateway/main_test.go:2028` already builds the engine (`:2161`), seeds a fixture (`:2182`), and stands up a mock OpenRouter that enforces the strict JSON-schema contract (`:2109`), single-input embedding (`:2052`, i.e. D-08 variant-zero), and dense+lexical evidence markers (`:2115`). The gaps it targets are real: `node_failed` SSE omits `retryable` (`gateway/main.go:789-795`) and the receive loop breaks silently on error (`:730-732`), which today looks identical to a clean EOF.
-
-**Concerns.** The Task 1 guard is file-scoped (`Get-Content 'gateway/main_test.go' -Raw` then `.Contains(...)`), not function-scoped. Eleven of its sixteen needles already exist elsewhere in the file today (`exec.Command` ×6, `httptest.NewRequest` ×33, `"/rag/query"` ×14, `parseSSEEvents` ×3, `node_started` ×2, `ReformulateQuery` ×2, plus `final_answer` and `workflow_completed`). The five new node names could be added to any unrelated fake-stream test and the guard passes while `TestRAGQueryCrossRuntime` asserts nothing new.
-
-### 05-12 — Traceability errata and source coverage audit *(wave 7)*
-**Verdict: closes as specified; one stale embedded artifact and one over-broad guard.**
-
-**Strengths.** All fourteen frozen blob hashes verify against both `git rev-parse HEAD:<path>` and `git hash-object` — I checked every one. The preservation-guard design (hash + staged + unstaged + `git diff --check`) is genuinely machine-checkable, and the "additive errata, never rewrite history" rule is the right call.
-
-**Concerns.** The embedded **Multi-source coverage audit** (lines 111-126) maps GOAL/REQ/RESEARCH/CONTEXT rows only to 05-08 … 05-13, while the action text at line 157 instructs mapping 05-14 … 05-21 and the plan says to "Include the source-audit and gap-disposition tables from this plan." Executing literally reproduces a matrix that is stale by eight plans. The gap-disposition table (lines 131-148) likewise has no row for WR-10, WR-11, IN-02, IN-03, or IN-05 — those appear only in the prose action. Separately, the wave-7 guard runs `git diff --check` unscoped over the whole worktree while 05-08 is executing in the same wave against `engine/src/main.rs`.
-
-### 05-13 — OpenRouter preflight classification, successful-only caching, bounded retry *(wave 9)*
-**Verdict: closes as specified. The most accurately-targeted plan in the set.** Every claim checks out against `engine/src/generation/openrouter.rs`: preflight is called unconditionally inside `execute_one_call` (`:376`), has no timeout and no cache (`:290-369`), and maps *all* transport failures — including timeouts and resets — to `GenerationErrorKind::SupportedParameters` (`:297-302`), which `generate.rs:73-76` treats as non-retryable. That is precisely the bug: a transient network blip during preflight is currently classified as a permanent capability failure and suppresses D-12's mandated retry. The `--bin`/`--lib` split is correct (workflow tests bin, `openrouter_*` tests in the lib-exported `generation` module).
-
-### 05-14 — Exhaustive typed NodeKind dispatch, early reformulation admission *(wave 10)*
-**Verdict: closes as specified.** `timeout_for_node` is a string match with a silent 5000 ms fallback for unknown names (`runner.rs:104-113`), and `run_node`'s answer-chunk decision is `if name == "GenerateAnswer"` (`:142`). The nine-variant check fires *after* `run_node` has already emitted `NodeCompleted` and a checkpoint (`:180-201`), so today a node both completes and fails — moving admission to the successful-ReformulateQuery boundary is the correct fix.
-
-### 05-15 — Prompt API contract and cfg(test)-only workflow fakes *(wave 12)*
-**Verdict: closes as specified, with one omission.** The six named ports are all currently public and ungated (`workflow/ports.rs:69,90,142,194,247,320`; the only `cfg(test)` in that file is none). Both sync helpers are public (`prompt.rs:234`, `:255`). But `FakeGenerator` is equally public and ungated at `generation/mod.rs:467-512`, is imported by the phase test module (`tests/workflow_phase5.rs:12`), and is excluded from 05-15's list; 05-20 further entrenches it ("does not break FakeGenerator"). The test-double hygiene finding therefore closes for ports and stays open for generators.
-
-### 05-16 — Graph notice merge, variant provenance, immutable BM25 snapshotting *(wave 13)*
-**Verdict: closes the notice/provenance gaps; the BM25 fix carries a performance risk and a target collision.**
-
-**Strengths.** The notice defect is exact: `graph_context.rs:116-125` emits `code: "GRAPH_TIMEOUT"` for *both* timeout and logical degradation, varying only the message — so `GRAPH_DEGRADED` is unreachable and code-based client logic cannot distinguish them. `ctx.notices.push` is append-only there, but `update_from_model_output` (`workflow/mod.rs:94-107`) also pushes, and nothing in the terminal path preserves them on failure — 05-19 picks that up. The lock-across-await is real: `main.rs:1311-1314` holds `bm25_guard` across `.retrieve(...).await`.
-
-**Concerns.** "acquire the RwLock only long enough to clone/copy the index data needed by the query" invites an O(corpus) deep copy per request — `Bm25Index` derives `Clone` and owns `Vec<IndexedDocument>` plus a `HashMap` (`retrieval/bm25.rs:113-119`). And `workflow_phase5_bm25_snapshot_releases_lock` is verified with `cargo test --lib` while Task 2 modifies the production adapter in `engine/src/main.rs` — same bin/lib collision as 05-08.
-
-### 05-17 — Shared protobuf provenance and failure-terminal notice fields *(wave 11)*
-**Verdict: closes as specified.** Additive tags 10/11 on `RetrievalSnapshot` and tag 6 on `WorkflowCompletedEvent`, no renumbering, `buf generate` from `buf.gen.yaml`, all four checked-in bindings regenerated, and cross-runtime round-trip tests in both runtimes. The `--lib` Rust test lands in `engine/src/retrieval/tests.rs`, already inside the library target (`lib.rs` exports `pub mod retrieval`), so it is executable at wave 11 independent of 05-18.
-
-### 05-18 — Library-target Phase 5 tests and cfg(test) fake-port seam *(wave 11)*
-**Verdict: structurally conflicts with 05-08 and 05-16. Do not execute as written.**
-
-The move itself is feasible against *today's* file — `tests/workflow_phase5.rs` uses only `engine::` paths and contains zero `crate::` references, and `lib.rs:1` already has `extern crate self as engine;`. But by wave 11 the file will also hold four production tests from 05-08, two from 05-09, two from 05-13/05-14, and one from 05-16, all of which reach into `engine/src/main.rs`. See HIGH-2.
-
-### 05-19 — Failure-terminal notice preservation through Go SSE *(wave 15)*
-**Verdict: closes as specified.** Correctly depends on 05-17 for the generated `WorkflowCompletedEvent.notices` field, and correctly identifies that `emit_terminal_once`'s failure arm passes `None` for the response and no notices at all (`runner.rs:294-301`), so every accumulated notice is dropped on failure today. The gateway side maps cleanly onto the existing `noticeDTO` (`gateway/main.go:836`, `:900`).
-
-### 05-20 — Preflight bootstrap timing, worst-case retry budget, bounded tests *(wave 16)*
-**Verdict: closes as specified; one sub-finding left partly open.** The timing derivation is arithmetically sound and consistent with the committed config: 5000 + (5000 + 15000 + 10000 + 2000 + 65000) = 102000, with the graph node counted once at 15000 (the 10000 embedding and 4000 graph-operation deadlines nest inside it, 14000 ≤ 15000). Hoisting preflight out of the node timer is the right structural answer to D-17's slack question. However IN-05 names *two* tests — `workflow_phase5_reformulate_timeout_five_seconds` (`tests/workflow_phase5.rs:311`) and `workflow_phase5_retrieve_timeout_ten_seconds` (`:377`) — and 05-20 adds a pre-deadline assertion only for reformulate.
-
-### 05-21 — Typed fusion provenance and review cleanup guards *(wave 14)*
-**Verdict: closes as specified.** Both findings verify exactly: `#[serde(default)]` on a `Serialize`-only derive is inert (`retrieval/fusion.rs:25-34`), and the enum `Source` (`:180-184`) is stringified on the way in and then compared as `p.source == "vector"` on the way out (`:130-146`), where a typo silently falls through to `unwrap_or`. Both files are in the library target, so the `--lib` verification is executable at wave 14.
+**05-12's preservation guard is machine-checkable and now correctly path-scoped.** `git diff --check -- <14 frozen paths>` no longer collides with 05-08 editing `engine/src/main.rs` in the same wave.
 
 ---
 
 ## 3. Concerns
 
-### HIGH-1 — Graph facts still never reach the model; the plans specify the outcome in prose but change nothing that could deliver it
-**Evidence.** `engine/src/workflow/nodes/assemble_prompt.rs:89-97` calls `pack_evidence_and_graph_prompt(&ctx.original_query, &evidence, &[], 1.0, …)` — a literal empty graph-fact slice. `engine/src/workflow/nodes/generate.rs:53-56` builds `GenerationRequest::new(ctx.original_query.clone(), ctx.evidence_blocks.clone())`, and `GenerationRequest::new` defaults `graph_facts: Vec::new()` (`engine/src/generation/mod.rs:396`). `ctx.assembled_prompt` is never read by `GenerateAnswerNode` at all; the *actual* outbound prompt is re-packed inside the adapter from `request.evidence` and `request.graph_facts` (`engine/src/generation/openrouter.rs:384-392`). The carrier is stringly all the way down: `GraphQueryPort::query_graph` returns `Result<String, NodeError>` (`engine/src/workflow/ports.rs:44`) and `WorkflowContext.graph_context` is a `String` (`engine/src/workflow/mod.rs:36`).
+### HIGH-1 — `buf generate` with `clean: true` deletes `engine/src/pb/mod.rs`, and 05-17 has no machine check for it
 
-**Why the plans don't close it.** 05-08 Task 2 asserts "AssemblePrompt must consume real evidence and graph context" and criterion "The prompt contains the real evidence blocks and graph facts" — but 05-08's `files_modified` adds no type change, its automated verification is one unnamed-content test, and no plan in 05-08 … 05-21 mentions `graph_facts`, `graph_weight`, or `GraphFactBlock` on the node path (05-15 documents the *helper's* `graph_weight` semantics in isolation; that is the only hit). 05-10's enumerated 18-field checkpoint list keeps `graph_context` and adds no typed graph-fact field, confirming no such carrier is planned.
+`buf.gen.yaml:2` sets `clean: true`, and the prost/tonic plugins both output to `engine/src/pb` (`:4-9`). `engine/src/pb/mod.rs` is **hand-written module glue** living inside that output directory:
 
-**Failure mode.** Every 05-08 gate passes (five nodes registered in D-06 order, real adapters, non-empty `graph_context`, `GRAPH_DEGRADED` notices merging per 05-16, `variant_identities` populated per 05-17), the cross-runtime test passes (it asserts `DENSE_FIXTURE_MARKER` and `LEXICAL_FIXTURE_IDENTIFIER_2026` only — `gateway/main_test.go:2115`), and the model receives zero graph facts. ORCH-01's graph-augmented state machine ships as a chunk-only RAG path with graph telemetry attached.
+```rust
+pub mod lancet { pub mod v1 { include!("lancet/v1/lancet.v1.rs"); } }
+```
 
-### HIGH-2 — 05-18 makes 05-08's and 05-16's production tests uncompilable, and no gate re-checks them
-**Evidence.** 05-08's guard extracts `fn build_production_workflow` from `engine/src/main.rs` and requires it to reference `self.embedder`, `self.database`, `self.bm25_index`, `self.reranker`, `self.generator` — fields of `LancetServiceImpl`, declared at `engine/src/main.rs:859-870` in the **binary** target. `engine/src/lib.rs:1-13` exports `client`, `db`, `generation`, `graph`, `pb`, `prompt`, `rerank`, `retrieval`, `workflow` — `main.rs` is not part of the library crate. 05-08's four tests (`workflow_phase5_production_five_node`, `…_production_dependencies_are_real`, `…_production_context_population`, `…_production_reachability`) live in `engine/src/tests/workflow_phase5.rs` and are verified with `cargo test --bin engine`. 05-18 then registers that exact file under `lib.rs` cfg(test) and asserts `engine/src/tests.rs` contains no `mod workflow_phase5;` (its Task 2 guard regex is explicit about this). 05-16 Task 2 repeats the pattern: it modifies the `main.rs` BM25 adapter but verifies `workflow_phase5_bm25_snapshot_releases_lock` with `cargo test --lib`.
+It is not produced by any plugin. Running `buf generate` from the repo root wipes `engine/src/pb` and removes it, after which `engine/src/main.rs:47` (`use engine::pb::lancet::v1::...`) and the entire engine crate fail to compile.
 
-**Failure mode.** Either 05-18 fails to compile at wave 11, or it "succeeds" by dropping the production tests. 05-18's own verification only probes `workflow_phase5_happy_path` and `workflow_phase5_library_target_fake_ports_compile` — neither would notice. 05-08's guard ran at wave 7 and is never re-run, so the phase can end with the production-reachability proof deleted and every gate green.
+This is a *recurring, previously-realized* hazard: `05-VERIFICATION.md:201` records that "`engine/src/pb/mod.rs` was hand-restored per the 05-07 SUMMARY." 05-17 acknowledges it in prose — acceptance criterion five states "the existing `engine/src/pb/mod.rs` module glue remains present and unchanged … Buf generation does not silently remove it" — but its `<verify>` block checks only the four generated artifacts and never `Test-Path engine/src/pb/mod.rs`, and `files_modified` omits the file entirely. The one acceptance criterion protecting a whole-crate build break is the only one with no corresponding guard.
 
-### MEDIUM-1 — 05-09's live overlay proof is unreachable with the values 05-09 commits
-`config/config.verify.toml` currently carries `reformulate_timeout_ms = 50`, `query_embedding_timeout_ms = 100`, `retrieve_timeout_ms = 100`, `graph_operation_timeout_ms = 40`, `graph_node_timeout_ms = 150`, `prompt_timeout_ms = 20`. 05-09 changes only `generation_timeout_secs` (1 → 30) and retains 7000 for the node budget, explicitly keeping the rest. A live harness that must "start a running slow provider/engine harness" and observe a `Timeout` "near 7000ms" has to traverse `ReformulateQuery` → `ExtractGraphContext` → `RetrieveHybrid` → `AssemblePrompt` under 50/150/100/20 ms of real I/O first. Since nothing loads this file today (`engine/src/tests.rs:265` text-scans it), there is no working precedent to inherit.
+### HIGH-2 — 05-08 mandates a typed graph-fact carrier but does not own `engine/src/workflow/ports.rs`
 
-### MEDIUM-2 — 05-08's anti-fabrication contract has no machine check
-`assemble_prompt.rs:62-75` fabricates `document_id`, `title: Some("Document")`, `section_path: Some("Root")`, and `text: format!("Content of chunk {}", chunk_id)`; `workflow/mod.rs:210-218` fabricates `format!("Answer for {}", ctx.original_query)` with `answer_basis = Retrieval`. 05-08 Task 2 forbids both in prose and verifies with one test whose assertions are unspecified. Compare Task 1, which does have a source-level regex guard for the analogous requirement.
+05-08 Task 2 requires: "Add a typed graph-fact carrier using the existing `prompt::GraphFactBlock` representation … to WorkflowContext, make ExtractGraphContext populate it." `ExtractGraphContextNode`'s only graph source is `GraphQueryPort`, whose signature is
 
-### MEDIUM-3 — 05-11's cross-runtime guard cannot distinguish the real harness from a fake one
-File-scoped `.Contains` over `gateway/main_test.go`; 11/16 needles already present today (counts in §2). The plan's own text — "must fail if it only observes a library or fake stream" — has no corresponding check.
+```rust
+fn query_graph<'a>(…) -> BoxFuture<'a, Result<String, NodeError>>;   // ports.rs:39-45
+```
 
-### MEDIUM-4 — 05-16's BM25 snapshot wording invites an O(corpus) copy per query
-`Bm25Index` (`engine/src/retrieval/bm25.rs:113-119`) owns `Vec<IndexedDocument>` (full chunk text), a `HashMap<String, usize>` document-frequency table, and derives `Clone`. "Clone/copy the index data needed by the query" deep-copies the corpus on every request in a service whose stated value is high-performance data-plane engineering.
+A `String` cannot populate `Vec<GraphFactBlock>`. The trait must change — and `engine/src/workflow/ports.rs` is not in 05-08's `files_modified` (which lists `main.rs`, `workflow/mod.rs`, the four node files, and three test files). The plan's own Task 2 guard (`if ($production -notmatch 'graph_facts|GraphFactBlock')`) will therefore fail against a file inventory that forbids the change needed to satisfy it. `WorkflowContext` itself is fine — it lives in `workflow/mod.rs:29-48`, which *is* owned.
 
-### MEDIUM-5 — 05-12 embeds a coverage matrix that is stale by eight plans
-Lines 111-126 map sources to 05-08 … 05-13 only; lines 131-148 have no rows for WR-10, WR-11, IN-02, IN-03, IN-05. The action text at line 157 does instruct mapping 05-14 … 05-21, but also instructs including these tables — the two instructions conflict, and the tables are what the automated check reads.
+### HIGH-3 — 05-11 requires a graph-fact marker the cross-runtime fixture cannot produce, and no plan owns the seeder
 
-### LOW-1 — `FakeGenerator` remains a production symbol
-`engine/src/generation/mod.rs:467-512`, public and ungated; imported by `engine/src/tests/workflow_phase5.rs:12`. 05-15 gates six workflow ports and stops there.
+05-11 Task 1 requires "the running mock provider to observe the graph-fact marker in the outbound generation request." Tracing that end-to-end:
 
-### LOW-2 — IN-05 closes for one of the two tests it names
-05-20 adds `workflow_phase5_reformulate_predeadline_4999ms_no_timeout`; `workflow_phase5_retrieve_timeout_ten_seconds` (`engine/src/tests/workflow_phase5.rs:377`) keeps the same "asserts the deadline fired, never that it didn't fire earlier" shape.
+- `attempt_graph_augmentation` reads `database.entities_table()` (`main.rs:1056`) and, for edges, `entity_edges_table()` — the 04.1 restructured schema.
+- The cross-runtime fixture is seeded by `engine/src/bin/seed_rag_fixture.rs`, which touches `documents_table` (`:73`), `nodes_table` (`:74`, chunks), and `edges_table` (`:75`). `grep -c entities engine/src/bin/seed_rag_fixture.rs` returns **0**.
+- With no entities, graph augmentation returns `NoMatchFound`, graph facts are empty, and the mock's content check (`main_test.go:2117`) returns HTTP 400 — the same mechanism that currently enforces `DENSE_FIXTURE_MARKER` / `LEXICAL_FIXTURE_IDENTIFIER_2026`.
 
-### LOW-3 — Cancellation cannot interrupt prompt packing inside the provider adapter
-`engine/src/generation/openrouter.rs:383` mints a fresh `CancellationToken::new()` for `pack_evidence_and_graph_prompt`, so the workflow token never reaches it. Low impact (CPU-bound, bounded by token budget), but it is a real hole in 05-09's "cancellation drops in-flight work" claim and no plan names it.
+`engine/src/bin/seed_rag_fixture.rs` appears in no plan's `files_modified` across 05-08 … 05-21. As written, `TestRAGQueryCrossRuntime` fails deterministically at wave 17 — the last wave, after everything else is green.
 
-### LOW-4 — 05-12's `git diff --check` is unscoped in a shared wave
-The hash/staged/unstaged checks are correctly path-scoped to the fourteen frozen files; the trailing `git diff --check` is not, and 05-08 is modifying `engine/src/main.rs` in the same wave.
+### HIGH-4 — 05-16's `bm25_index` type change breaks 17 construction sites in a file it does not own
 
-### LOW-5 — Roadmap wave-11 rationale contradicts the DAG
-The roadmap describes wave 11 as "blocked on typed dispatch and prompt/fake boundaries," but 05-15 (the prompt/fake boundary) is wave 12. Documentation-only; the `depends_on` graph is correct.
+05-16 Task 2 requires "`Arc<RwLock<Arc<Bm25Index>>>` or an equivalent existing ownership pattern." The field is declared `Arc<tokio::sync::RwLock<Bm25Index>>` (`main.rs:864`). `grep -rn "bm25_index: Arc::new"` returns **19 sites across two files**: 2 in `engine/src/main.rs` (owned) and **17 in `engine/src/tests.rs`** (e.g. `:338`, `:878`, `:1862`, `:1941`), which is *not* in 05-16's `files_modified` (`main.rs`, `workflow/mod.rs`, `nodes/graph_context.rs`, `nodes/retrieve.rs`, `tests/workflow_phase5.rs`, `tests/workflow_phase5_production.rs`). Every one of those literals stops compiling, and 05-16's own verify block runs four `--bin engine` tests that will fail to build.
+
+### MEDIUM-1 — 05-16's BM25 acceptance criterion tests a writer that does not exist in production
+
+The lock-across-await fix itself is correct and worth doing — holding a read guard across an unbounded, uncancellable await (`main.rs:1311-1320`) is wrong regardless of who else contends. But the acceptance criterion — "A stalled retrieval does not wedge a concurrent BM25 ingestion/write operation" — implies a production writer. There is none: `grep -rn "bm25_index.write"` over `engine/src` returns **zero hits**, and the only non-test build site is `Bm25Index::from_table` at `main.rs:3077`, executed once at startup and never rebuilt. The test must synthesize its own `.write()` contender. That is acceptable, but the criterion should say so rather than asserting a property of an ingestion path that isn't wired.
+
+### MEDIUM-2 — 05-09 Task 2's file ownership can strand production-builder tests in a file 05-18 later relocates
+
+05-09 (wave 8) lists `engine/src/tests/workflow_phase5.rs` in Task 2's `<files>` and instructs "fast semantic cases that exercise the production builder from 05-08." The production builder lives in `main.rs` (binary-only). At wave 8 `workflow_phase5.rs` is bin-registered (`engine/src/tests.rs:11` — `pub mod workflow_phase5;`), so such tests compile. At wave 11, 05-18 moves that exact file to the library target, where `build_production_workflow` is unreachable. 05-18's guard would surface this as a compile failure (its `cargo test --lib -- --list` exits non-zero), so it is caught — but it is caught as a wave-11 breakage rather than prevented. 05-09 Task 1 correctly scopes its production test to the binary-owned module; Task 2 should carry the same constraint explicitly.
+
+### MEDIUM-3 — 05-17 and 05-16 both claim ownership of populating the variant provenance fields in `retrieve.rs`
+
+05-17 Task 2 says to "populate `variant_count` and ordered `variant_identities` at the production retrieve-node boundary" (`files_modified` includes `nodes/retrieve.rs`). 05-16 Task 2 says to "Set the count equal to the accepted reformulation count and the identities to the corresponding reformulated query strings in order" (same file). Both cannot be the first writer. On the positive side, 05-17's literal coverage claim checks out: the only non-generated `RetrievalSnapshot` construction sites are `engine/src/workflow/nodes/retrieve.rs` (1), `engine/src/main.rs` (2), and `gateway/main_test.go` (3) — all three files are in 05-17's inventory. The Rust literals use exhaustive field initialization (`retrieve.rs:145-155`), so adding tags 10/11 does break them, which is exactly what 05-17 is guarding.
+
+### MEDIUM-4 — 05-10's 19-field checkpoint is a real storage and payload commitment with no bound
+
+05-10 Task 2 enumerates 19 fields including `query_embedding` and `evidence_blocks`. `query_embedding` is a 2048-dimension `Vec<f32>` (fixture at `tests/workflow_phase5.rs:85` uses `vec![0.1; 2048]`); serialized to JSON text that is tens of kilobytes. `evidence_blocks` carries full chunk text. That payload crosses the wire as `CheckpointEvent.context_snapshot` (a proto3 `string`, `lancet.proto:181`) through a 100-slot `mpsc` channel (`main.rs:1703`), then into a `jsonb NOT NULL` column (`schema.sql:51`) retained indefinitely by D-24. Five checkpoints per query. The plan neither bounds nor acknowledges this; given the project's "high-performance systems" framing, an explicit decision (truncate embeddings, or state the accepted cost) belongs in the plan rather than emerging at runtime.
+
+### LOW-1 — 05-12's own regex guard can be tripped by documenting the historical errors
+
+The check `if ($raw -match 'requirements-completed:\s*\[[^\]]*(GEN-|EVENT-|RAG-)') { throw }` rejects any `requirements-completed:` line containing `GEN-`, `EVENT-`, or `RAG-`. The two errors being corrected are exactly `requirements-completed: [GEN-01, GEN-02, GEN-03, EVENT-03]` (`05-03-SUMMARY.md:46`) and `[ORCH-03, RAG-01, RAG-02]` (`05-02-SUMMARY.md:47`). Reading the action text carefully, 05-12 only *requires* recording the corrected PLAN declarations, so quoting the originals is optional — this is a drafting trap, not a contradiction. Worth one sentence of guidance in the plan so the executor doesn't hit it.
+
+### LOW-2 — 05-15's `FakeGenerator` gating survives only by way of a known debt item
+
+05-15 Task 2 requires gating `FakeGenerator` (`generation/mod.rs:467-512`) under `cfg(test)`, while `engine/src/tests.rs` references it **29 times**. This does not break, because `main.rs:31` declares `pub mod generation;` — the binary compiles its own copy of the generation module, with `cfg(test)` active under `cargo test --bin engine`. That is `DEBT-P3-MODULE-GRAPH` ("dual lib/bin production module graph", `STATE.md:67`) doing load-bearing work. It is correct today; it will silently stop being correct if that debt is ever paid. Worth one line in 05-15 so the dependency is explicit.
+
+### LOW-3 — 05-08's prose and its own guard disagree about the inline remainder
+
+Task 2's prose allows the helper to survive for isolated tests ("if a helper remains for isolated tests, it must not be callable by `query_rag`"), while its second guard throws if `execute_inline_query_rag_remainder` appears anywhere in `main.rs`. The guard is the stricter and better contract; the prose should match it. Related: `run_inline_prompt_generation_remainder` has 4 call sites across `engine/src/workflow/mod.rs` (definition, `:143`) and `engine/src/tests.rs` — both files are owned, so removal is feasible.
+
+### LOW-4 (open question, not a claim) — server-level timeout vs. the 102s budget
+
+`newHTTPServer` sets `ReadTimeout: 60 * time.Second` (`gateway/main.go:983`) with no `WriteTimeout`, while 05-20 derives a 102-second worst-case end-to-end budget. `/rag/query` is correctly exempted from chi's `middleware.Timeout` (route group at `main.go:471-474` vs. `:466`), so that half is closed. Whether Go's `connReader.backgroundRead` read deadline can terminate a >60s SSE response is **not verified** — I did not confirm the semantics. Flagging as an open question worth a five-minute empirical check during wave 17 rather than a finding.
 
 ---
 
 ## 4. Suggestions
 
-1. **Add a graph-fact task to 05-08** (or a new plan before 05-16). Concretely: widen `GraphQueryPort::query_graph` to return `Vec<GraphFactBlock>` (or add a parallel typed method), add `graph_facts: Vec<crate::prompt::GraphFactBlock>` to `WorkflowContext`, have `AssemblePromptNode` pass `&ctx.graph_facts` instead of `&[]` at `assemble_prompt.rs:92`, and have `GenerateAnswerNode` set `req.graph_facts` / `req.graph_weight` from context. Add to 05-08 Task 2's verification a source guard in the Task 1 style: fail if `assemble_prompt.rs` still contains a literal `&[]` graph argument, and fail if `generate.rs` constructs `GenerationRequest` without assigning `graph_facts`. Extend the mock at `gateway/main_test.go:2115` to require a graph-fact marker in `messages[1].content`, which turns 05-11's cross-runtime test into the end-to-end proof. Add `graph_facts` to 05-10's 18-field checkpoint list (making it 19).
-
-2. **Resolve the 05-08/05-16/05-18 target conflict.** Preferred: move the production seam into the library — put `build_production_workflow` and the BM25 snapshot adapter in `engine/src/workflow/` (e.g. a `production.rs` module) taking the service's ports as arguments, leave `main.rs` as a thin call site, and update 05-08's guard to extract the builder from the library file while still asserting `query_rag` in `main.rs` invokes it. Alternative: split `workflow_phase5.rs` into a lib-target file and a retained bin-target `workflow_phase5_production.rs`, and change 05-18's Task 2 guard from "no binary registration" to "no *duplicate* registration." Either way, add `05-08` and `05-16` to 05-18's `depends_on`, and add a re-verification step to 05-18 that re-runs 05-08's four production test names in whichever target owns them.
-
-3. **Make 05-09's live proof self-consistent.** Give 05-09 explicit ownership of *all* seven `config.verify.toml` workflow values and raise the four upstream deadlines to values a real engine run can meet (e.g. 5000/10000/10000/4000/15000/2000 with only `generation_node_timeout_ms` held at 7000), or state explicitly which upstream ports the live harness stubs and add an acceptance criterion that the workflow reaches `NodeStarted{GenerateAnswer}` before the timeout fires. Either way, add an assertion that the observed failure is at `GenerateAnswer` — a `Timeout` at `RetrieveHybrid` must not satisfy the gate.
-
-4. **Give 05-08 Task 2 a source guard.** Fail if `engine/src/workflow/nodes/assemble_prompt.rs` matches `Content of chunk`, if `engine/src/workflow/mod.rs` matches `Answer for \{`, and if `run_inline_prompt_generation_remainder` is reachable from any non-`cfg(test)` path. (05-08's existing negative check covers only `execute_inline_query_rag_remainder`; the second, divergent remainder at `workflow/mod.rs:143` is not covered by any guard in the set.)
-
-5. **Scope 05-11's guard to the function.** Extract the `TestRAGQueryCrossRuntime` body by regex before the `.Contains` checks, and add a needle that only the real harness can satisfy — e.g. require `enginePath` or the mock-server env assignment (`LANCET_OPENROUTER__CHAT_ENDPOINT`) inside the extracted region.
-
-6. **Fix 05-16's BM25 wording.** Specify `Arc<tokio::sync::RwLock<Arc<Bm25Index>>>` (or `arc-swap`) so the guard clone is a refcount bump, not a corpus copy, and state the acceptance criterion as "the snapshot operation is O(1) in corpus size."
-
-7. **Regenerate 05-12's tables.** Rewrite the embedded coverage-audit and gap-disposition tables to span 05-08 … 05-21 with explicit rows for WR-10/WR-11 → 05-15, IN-02/IN-03 → 05-21, IN-05 → 05-20, and path-scope the trailing `git diff --check` to the fourteen frozen files.
-
-8. **Small additions.** Gate `FakeGenerator` under `cfg(test)` in 05-15 (or state explicitly why it stays public). Add the retrieve-node 9999 ms pre-deadline case to 05-20 Task 2 alongside the reformulate 4999 ms case. Add `self.nodes` to 05-08's required-field list. Thread the workflow `CancellationToken` into `openrouter.rs:383` in 05-13 or 05-20.
+1. **05-17** — add `engine/src/pb/mod.rs` to `files_modified`, and add to the Task 1 `<verify>` block, immediately after `buf generate`: assert `Test-Path engine/src/pb/mod.rs` and that its content still contains `include!("lancet/v1/lancet.v1.rs")`. Alternatively (cleaner) move the glue out of the buf output tree — e.g. declare the module inline in `lib.rs` — so `clean: true` can never reach it.
+2. **05-08** — add `engine/src/workflow/ports.rs` to `files_modified` and state the target signature in Task 2's action (e.g. `query_graph(…) -> Result<Vec<GraphFactBlock>, NodeError>`, or a parallel typed method preserving the existing `String` for `graph_context`). Add a source guard asserting `ports.rs` no longer returns a bare `String` from the graph port.
+3. **05-11** (or a new task in 05-08) — add `engine/src/bin/seed_rag_fixture.rs` to a plan's `files_modified` and seed `entities` / `entity_edges` rows whose `name_vector` matches the fixture query embedding, so `attempt_graph_augmentation` returns `Succeeded`. Without this the graph-fact marker requirement is unsatisfiable at wave 17.
+4. **05-16** — add `engine/src/tests.rs` to `files_modified` (17 `bm25_index: Arc::new` literals), and reword the second acceptance criterion to "a stalled retrieval does not block a concurrent writer acquiring the `bm25_index` write lock (the test supplies the writer; no production rebuild path exists today)."
+5. **05-09** — constrain Task 2 explicitly: any test that touches `build_production_workflow` or `LancetServiceImpl` goes in `engine/src/tests/workflow_phase5_production.rs`; only fake-port/paused-clock tests may go in `engine/src/tests/workflow_phase5.rs`.
+6. **05-16 / 05-17** — state that 05-17 introduces the fields *and* the initial production population, and 05-16 only adds the auditability assertions, so `retrieve.rs:145-155` has one owner.
+7. **05-10** — add an explicit decision on `query_embedding` and `evidence_blocks` in the checkpoint payload (bound, elide, or accept-and-document), since D-24 retains every row indefinitely.
+8. **05-12** — note in the action that quoting the erroneous historical `requirements-completed:` lists verbatim will trip the plan's own regex guard.
 
 ---
 
-## 5. Coverage assessment
+## 5. Coverage Assessment
 
-**Review ledger (`05-REVIEW.md`: 8 critical / 14 warning / 5 info).** Every finding has a named owner across the set: CR-01 → 05-09; CR-02/CR-03 → 05-08; CR-04 → 05-09; CR-05 → 05-10; CR-06/CR-07/CR-08 → 05-11; WR-01/WR-03 → 05-10 and 05-14; WR-02/WR-04 → 05-13 + 05-10; WR-05 → 05-08; WR-06/WR-07 → 05-16 + 05-19; WR-08/WR-09 → 05-16 + 05-17; WR-10/WR-11 → 05-15; WR-12 → 05-11 (accepted, no behavior); WR-13 → 05-10; WR-14 → 05-16; IN-01/IN-04 → 05-14 and 05-08; IN-02/IN-03 → 05-21; IN-05 → 05-20 (partial, LOW-2). **No ledger item is orphaned.** The only ledger-level defect is that 05-12's *embedded* disposition table has not caught up (MEDIUM-5).
+Mapped independently against `ROADMAP.md:317-323` and `05-VERIFICATION.md`, not against the prior review.
 
-**Verification gaps (`05-VERIFICATION.md` SC1-SC4 plus the fifth snapshot gap).** SC1 → 05-08, SC2 → 05-08/05-10/05-11, SC3 → 05-09/05-13/05-10, SC4 → 05-08/05-10/05-11. Correctly mapped.
+| Roadmap success criterion | Plans | Assessment |
+|---|---|---|
+| 1. RAG pipeline formalized into a defined state machine | 05-08, 05-14, 05-16 | **Covered by design; blocked by HIGH-2.** Five-node registration, real adapters, and D-06 ordering are guarded at source level. The graph-fact half cannot be implemented under 05-08's current file inventory. |
+| 2. Workflow events stream Rust → Go → Client | 05-08, 05-10, 05-17, 05-19, 05-11 | **Covered; blocked by HIGH-3 at wave 17.** Typed delivery, terminal idempotence, one-source ordinals, failure-terminal notices, and post-open `stream_error` frames are all owned. The end-to-end proof cannot pass without a graph-seeded fixture. |
+| 3. Node timeouts and retries handle failures predictably | 05-09, 05-13, 05-14, 05-20 | **Covered.** Seven typed settings with `deny_unknown_fields`, stream-drop cancellation, dedicated 5s preflight hoisted outside the node timer, the `102000 = 97000 + 5000` derivation (graph node counted once at 15s with 10s+4s nested — arithmetic checks out), and both 4999ms/9999ms pre-deadline regressions. The prior cycle's live-overlay concern is genuinely closed: 05-09 now commits 5000/10000/10000/4000/15000/2000 upstream and asserts `NodeStarted{GenerateAnswer}` before the 7000ms timeout, with `generation_timeout_secs = 30` outlasting it. |
+| 4. Snapshots capturable for debugging | 05-10, 05-11, 05-16 | **Covered.** 19-field serialization, explicit `DispatchPending` ownership, drain-on-close, context-honoring sink, isolated-schema PostgreSQL tests. MEDIUM-4 is a cost concern, not a coverage gap. |
+| 5. QueryReformulator pass-through in the state machine | 05-08, 05-14 | **Covered.** Retained on the production path with typed `NodeKind::ReformulateQuery` and early nine-variant admission (correctly moved ahead of `NodeCompleted`, fixing the current `runner.rs:180-201` completed-then-failed sequence). |
 
-**Phase success criteria.**
-| # | Criterion | Closed by | Assessment |
-|---|---|---|---|
-| 1 | RAG pipeline formalized into a defined state machine | 05-08, 05-14 | **Partial.** Structure closes; the graph-augmented *content* does not (HIGH-1). Proof is fragile (HIGH-2). |
-| 2 | Workflow events stream Rust → Go → Client | 05-08, 05-10, 05-17, 05-19, 05-11 | **Closes**, subject to MEDIUM-3's guard weakness. |
-| 3 | Node timeouts and retries handle failure predictably | 05-09, 05-13, 05-20 | **Closes semantically**; the wall-clock evidence class does not (MEDIUM-1). |
-| 4 | Snapshots of workflow state captured for debugging | 05-10, 05-11 | **Closes.** 18-field serialization + Go-owned persistence with explicit pending ownership. |
-| 5 | QueryReformulator pass-through in the state machine | 05-08, 05-14 | **Closes.** ORCH-05 retained on the production path and asserted. |
+**Review-ledger coverage** (`05-REVIEW.md`, 8 CR / 14 WR / 5 IN): every finding has a named owner. CR-01/04 → 05-09; CR-02/03 → 05-08; CR-05 → 05-10; CR-06/07/08 → 05-11; WR-01 → 05-14; WR-02/04 → 05-13 + 05-10; WR-03/13 → 05-10; WR-05 → 05-08; WR-06 → 05-16; WR-07 → 05-16 + 05-19; WR-08/09 → 05-16 + 05-17; WR-10/11 → 05-15; WR-12 → accepted under D-24; WR-14 → 05-16 (with MEDIUM-1's caveat); IN-01/04 → 05-14 + 05-08; IN-02/03 → 05-21; IN-05 → 05-20 (now covering **both** named tests — `workflow_phase5_reformulate_predeadline_4999ms_no_timeout` and `workflow_phase5_retrieve_predeadline_9999ms_no_timeout`, `05-20-PLAN.md:94`). No orphans.
 
-**Locked decisions.** No regression against `05-CONTEXT.md` found. D-04, D-10, D-18, D-19, D-21, D-23-D-29 are preserved; D-30/D-31 scope fences are respected (05-17 correctly frames `variant_count`/`variant_identities` as D-07/D-08 provenance rather than deferred metadata). D-17's amended 30s/65s split is honored throughout. Two additions sit within CONTEXT's "Claude's Discretion — exact SSE framing details": 05-11's new `stream_error` event with `GRPC_RECV_ERROR` / `STREAM_EOF_WITHOUT_TERMINAL` codes. That is defensible, but it is a client-visible contract addition; it deserves an explicit line in 05-12's errata rather than arriving implicitly at wave 17. No scope creep otherwise — all fourteen plans stay inside ORCH-01 … ORCH-05, and none touch the `QueryGraph` RPC (D-10).
+**Locked-decision compliance:** no regression found. D-04 (pre-stream validation), D-10 (`QueryGraph` untouched — still unary at `lancet.proto:12`, no plan modifies it), D-18/D-19, D-21, D-23–D-29 are all preserved; D-30/D-31 fences are respected, and 05-17 correctly frames `variant_count`/`variant_identities` as D-07/D-08 provenance rather than deferred metadata. One client-visible addition — 05-11's `stream_error` event with `GRPC_RECV_ERROR` / `STREAM_EOF_WITHOUT_TERMINAL` codes (neither string exists in `gateway/` today) — sits inside CONTEXT's "Claude's Discretion — exact SSE framing details" and is recorded in 05-12's errata. Defensible.
 
 ---
 
 ## 6. Risk Assessment
 
-**Overall: HIGH.**
+**MEDIUM-HIGH — on executability, not on design.**
 
-Not because the set is poorly designed — the opposite is true. The plans are grounded in real source, the guards are unusually specific, the wave DAG is executable, 05-12's frozen hashes verify exactly, 05-13's provider analysis is precisely right, and 05-11 builds on a cross-runtime harness that genuinely exists and already enforces the D-01/D-08 contracts. Most of what I checked, I checked expecting to find drift and found accuracy instead.
+The design risk is low. The plans target real mechanisms at real line numbers, the guards are unusually specific (05-08's region-extraction regex and 05-12's blob-hash preservation are both stronger than typical), the DAG is provably acyclic, and the two structural objections from the prior cycle have been genuinely resolved rather than papered over.
 
-The risk is HIGH because two defects share a common shape: **the gates can all go green while the phase's actual value stays unbuilt.** HIGH-1 means the demoable outcome — graph-augmented, cited answers produced by the state machine — can be reported as delivered with zero graph facts ever reaching the model, and the strongest end-to-end test in the repo would not notice. HIGH-2 means the one guard that *cannot* be satisfied by a library-only change runs at wave 7 and is structurally invalidated at wave 11, with no re-check — which is the exact failure mode (`05-VERIFICATION.md`: "the state machine exists as a library only") this entire gap-closure set was created to correct. MEDIUM-1 compounds it by making the phase's designated wall-clock evidence class unreachable as configured.
+The execution risk is elevated because four defects will each stop the wave they land in, and three of them (HIGH-1, HIGH-2, HIGH-4) share one root cause: an `<action>` mandating a change to a file outside its own `files_modified`. HIGH-3 is the most consequential in scheduling terms — it fails at wave 17, the final wave, after every other gate is green, and it fails inside the one test the set relies on as its end-to-end proof.
 
-Both HIGH items are fixable with bounded edits before execution: one added task plus two source guards in 05-08, and one seam relocation across 05-08/05-16/05-18 with a re-verification step. With those in place — and with suggestions 3-5 applied — I would rate this set MEDIUM and recommend execution.
+None of the four requires re-architecting. Three are one-line additions to a `files_modified` inventory plus a guard; the fourth is a fixture-seeding task that needs an owner. With those applied, and with MEDIUM-1's acceptance-criterion wording corrected and MEDIUM-2's file scoping tightened, I would rate this set **LOW-MEDIUM** and recommend execution.
 
 
 ---
 
 ## Consensus Summary
 
-Both reviewers found the 14-plan gap-closure set substantially stronger than the original baseline and agreed that its wave ordering, production-wiring intent, typed event/protobuf work, timeout/retry design, and checkpoint/SSE hardening are well targeted. Both reviews had repository access and produced source-cited feedback; the AgY review was broadly approving, while Claude identified concrete closure blockers that should control the planning follow-up.
+Both reviewers independently examined the current additive plans 05-08 through 05-21 against HEAD `d400720` and did not use the stale `05-REVIEWS.md` as review evidence. They agree that the revised set is materially stronger than the prior version: the wave DAG is acyclic and monotonic, production five-node wiring is now guarded against the old one-node/inline path, the graph-fact transfer is explicitly asserted in the intended path, the live timeout overlay reaches `GenerateAnswer`, the cross-runtime guard is function-scoped, and the OpenRouter preflight/retry and bin/lib test-target seams are well targeted.
 
-### Agreed strengths
+### Agreed Strengths
 
-- The gap-closure plans target the real production seams identified by the current code review: the one-node production runner and inline remainder, dead workflow configuration, event/sequence handling, generated wire fields, OpenRouter preflight/retry classification, and gateway stream/checkpoint behavior.
-- The dependency graph from Waves 7 through 17 is broadly causal and the plans use exact file/test/source guards more often than the original set.
-- The plans preserve the phase's locked behavior around graph-before-retrieval ordering, bounded reformulation admission, generation-only retry, in-band terminal failure, and Go-owned checkpoint persistence.
-- The reviewers agreed that the protobuf regeneration and cross-runtime synchronization work in 05-17 is appropriately placed before consumers.
+- The plans target real current production seams rather than merely expanding test-only scaffolding: `engine/src/main.rs`, `engine/src/workflow/`, `engine/src/generation/openrouter.rs`, `gateway/main.go`, checkpoint dispatch, and the generated protobuf boundaries.
+- Dependency ordering from Waves 7 through 17 is internally consistent and preserves the locked Phase 5 decisions, including D-06 node ordering, D-07/D-08 variant behavior, D-09 graph degradation, D-12 retry limits, D-17 timing, and D-30/D-31 scope fences.
+- 05-08's production-region/source guards, 05-09's realistic verification overlay and `GenerateAnswer` reachability assertion, 05-13's provider-error classification, 05-18's library/binary target separation, and 05-11's function-scoped cross-runtime guard are concrete improvements over the prior review cycle.
+- The five roadmap success criteria are covered by design and have named focused verification, although execution remains blocked by the priority concerns below.
 
-### Priority concerns
+### Agreed Concerns
 
-- **HIGH — Graph facts still have no end-to-end carrier to generation.** Claude cites engine/src/workflow/nodes/assemble_prompt.rs:89-97, where the node passes an empty graph-fact slice, and engine/src/workflow/nodes/generate.rs:53-56 / engine/src/generation/mod.rs:396, where GenerationRequest is built with an empty graph_facts vector. The gap-closure plans do not add a typed graph-fact field/port or assign it into the outbound request, so the state machine can be production-wired while answers remain graph-free.
-- **HIGH — 05-18 can invalidate earlier production proofs.** Claude cites the binary-only ownership of engine/src/main.rs production builders and BM25 adapters versus 05-18's move of engine/src/tests/workflow_phase5.rs into the library target. The set does not re-run the 05-08 production-reachability tests or preserve a bin-target seam after that move; the plan can therefore finish with green library tests while the production wiring proof is gone or uncompilable.
-- **MEDIUM — 05-09's live timeout proof is inconsistent with its committed overlay.** Claude notes that config/config.verify.toml retains 50/100/100/40/150/20 ms upstream values while the plan asks a real workflow to reach GenerateAnswer and observe the 7000 ms node timeout. The harness needs either realistic upstream values, explicit stubs, or an assertion that the observed timeout is specifically at GenerateAnswer.
-- **MEDIUM — Several verification guards are weaker than their claimed behavior.** Claude identifies a file-scoped 05-11 cross-runtime guard that can be satisfied by unrelated tests, a prose-only anti-fabrication check in 05-08, and stale/incomplete embedded traceability tables and unscoped git diff --check in 05-12. These should be converted into function/source-scoped checks and regenerated coverage tables.
-- **MEDIUM/LOW — Remaining targeted omissions.** Claude flags the potential O(corpus) BM25 clone wording in 05-16, ungated FakeGenerator despite 05-15's fake-port hygiene, only one of the two pre-deadline timeout regressions named by IN-05 in 05-20, and cancellation not reaching the fresh token used for prompt packing in engine/src/generation/openrouter.rs:383.
+The reviewers did not converge on a shared blocker: AgY rated the revised set LOW risk and considered the prior ledger closed, while Claude rated execution MEDIUM-HIGH and identified four deterministic wave failures. Those source-cited Claude findings are therefore recorded as priority concerns rather than mislabeled as consensus approval.
 
-### Divergent views
+### Priority Source-Grounded Concerns
 
-- AgY rates the plan set LOW risk and says the full baseline issue set and ORCH-01 through ORCH-05 are closed, with generated-code synchronization as its only material concern.
-- Claude rates the set HIGH risk because the two HIGH findings permit all automated gates to pass while the graph-augmented production outcome or production-reachability evidence remains absent. Claude's findings are more specific and source-grounded, so they should drive revision before execution.
-- AgY treats 05-18's library-target migration as clean; Claude found a binary/library target collision that requires explicit re-verification. This disagreement should be resolved by checking target ownership in the plan tasks, not by relying on the favorable aggregate verdict.
+- **HIGH — Protobuf generation can delete required module glue.** `buf.gen.yaml:2-9` uses `clean: true` with output under `engine/src/pb`, while `engine/src/pb/mod.rs` is hand-written glue. 05-17 protects its presence only in prose; its file inventory and automated guard omit `engine/src/pb/mod.rs`, so `buf generate` can remove the module required by `engine/src/main.rs:47`.
+- **HIGH — The typed graph-fact carrier has no owning plan boundary.** 05-08 requires `GraphFactBlock` data to flow through `WorkflowContext`, but the current `GraphQueryPort` still returns `Result<String, NodeError>` in `engine/src/workflow/ports.rs:39-45`, and 05-08's owned-file lists omit `ports.rs`. Its own guard therefore requires a change outside its declared inventory.
+- **HIGH — The final cross-runtime graph-fact assertion has no fixture seeder.** 05-11 requires the mock provider to observe a graph-fact marker, but `engine/src/bin/seed_rag_fixture.rs` seeds documents/chunks/edges without the entities/entity-edges needed by the graph augmentation path. No current gap-closure plan owns that fixture file, so the wave-17 end-to-end proof can fail after earlier gates pass.
+- **HIGH — The BM25 ownership change omits existing construction sites.** 05-16 requires changing the production `bm25_index` ownership to an `Arc` snapshot pattern, but many `bm25_index: Arc::new(...)` fixtures remain in `engine/src/tests.rs`, which 05-16 does not own. The binary tests it invokes can therefore stop compiling.
+- **MEDIUM — Additional execution clarity is needed.** 05-16's writer-progress acceptance test should state that the test supplies the writer because no production BM25 write path exists; 05-09 should keep production-builder tests in the binary-owned module that 05-18 does not move; 05-16/05-17 should assign one owner for variant provenance population; and 05-10 should explicitly bound or accept the retained size of 19-field checkpoint payloads containing embeddings and evidence text.
 
-### Recommended planning follow-up
+### Divergent Views
 
-Run /gsd-plan-phase 5 --reviews with this gap-closure review and revise before execution. At minimum, add a typed graph-fact carrier and outbound generation assignment with source-guarded tests; resolve the 05-08/05-16/05-18 binary-versus-library test ownership and re-run the production proof after the move; make 05-09's live overlay harness reach GenerateAnswer; and strengthen 05-08, 05-11, and 05-12's guards. Then independently re-check the revised plan graph and verification contracts.
+- AgY assessed the plans as LOW risk and emphasized architectural fidelity, staged dependencies, and complete prior-gap disposition. It additionally raised a medium gateway client-disconnect/SSE write concern and low dead-code/drop-guard concerns.
+- Claude assessed the plans as MEDIUM-HIGH execution risk, with the four HIGH findings above and lower-severity guard/ownership issues. Claude's findings cite exact file inventories, source signatures, fixture rows, and the specific wave where each failure would appear; they should control the next planning revision until disproved or owned.
+
+### Recommended Planning Follow-up
+
+Before execution, revise the additive plans to: (1) guard or relocate `engine/src/pb/mod.rs` around `buf generate`; (2) give 05-08 ownership of the typed graph-port/carrier change; (3) give a plan ownership of graph-bearing fixture seeding for the cross-runtime marker; (4) include `engine/src/tests.rs` or otherwise make the BM25 ownership migration compile-safe; and (5) tighten the 05-09/05-16/05-17 ownership and checkpoint-payload wording. Then rerun an independent plan checker/review before executing the phase.
