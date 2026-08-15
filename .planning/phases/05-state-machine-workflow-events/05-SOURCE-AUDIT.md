@@ -258,3 +258,29 @@ This additive iteration closes all four current checker blockers and four warnin
 | CONTEXT | D-30 no generic workflow metadata | 05-08, 05-10, 05-16, 05-17, 05-19, 05-20, 05-21 |
 
 No deferred idea is implemented: no backup provider, resume/fetch API, cancel RPC, generic workflow metadata, per-node spans, or degraded-mode field is added.
+
+## Revision continuation iteration 6
+
+This revision preserves the executed 05-01 through 05-07 baseline and keeps the current validation authority aligned with the executable plan graph. The production handoff and generated-binding boundary are split so each pending plan stays within its file-ownership target; the binary test-target no-run gate is ordered explicitly across 05-18, 05-15, 05-16, and 05-20.
+
+| Checker item | Executable owner | Closure proof |
+|---|---|---|
+| 05-15 binary target gate | 05-15 Task 2 | After cfg(test) gating, run `cargo test --bin engine --manifest-path engine/Cargo.toml --locked --no-run` with immediate native `$LASTEXITCODE` handling. |
+| Superseded validation exception | 05-12 Task 1 and 05-VALIDATION.md | 05-23 wire/compile repair -> 05-18 first complete binary no-run -> 05-15 cfg(test) rerun -> 05-16 BM25 rerun -> 05-20 rerun before binary list/exact; no accepted Waves 7–13 compile-break exception. |
+| 05-08 scope ownership | 05-08 then 05-22 | 05-08 owns the seven-file production builder/context boundary; 05-22 owns prompt/generation provider reachability and exact production assertions. |
+| 05-17 scope ownership | 05-17 then 05-23 | 05-17 owns schema, Buf configuration, and six generated bindings; 05-23 owns Rust literal compile repair and the Rust wire-contract regression. |
+
+### Iteration 6 multi-source coverage
+
+| Source | Items | Plans |
+|---|---|---|
+| GOAL | Formalized Rust RAG state machine with predictable failures, streamed events, retries, snapshots, and ORCH-05 pass-through | 05-08, 05-09, 05-10, 05-11, 05-12, 05-13, 05-14, 05-15, 05-16, 05-17, 05-18, 05-19, 05-20, 05-21, 05-22, 05-23 |
+| REQ | ORCH-01 | 05-08, 05-14, 05-16, 05-17, 05-18, 05-20, 05-22, 05-23 |
+| REQ | ORCH-02 | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15, 05-17, 05-18, 05-19, 05-20, 05-22, 05-23 |
+| REQ | ORCH-03 | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15, 05-16, 05-18, 05-19, 05-20, 05-21, 05-22, 05-23 |
+| REQ | ORCH-04 | 05-08, 05-10, 05-11, 05-12, 05-16, 05-17, 05-19, 05-21, 05-23 |
+| REQ | ORCH-05 | 05-08, 05-12, 05-22 |
+| RESEARCH | Buf source-of-truth generation, Rust-owned orchestration, typed graph-fact handoff, explicit fake-port boundary, binary test-target verification, and typed fusion provenance | 05-08, 05-12, 05-15, 05-16, 05-17, 05-18, 05-21, 05-22, 05-23 |
+| CONTEXT | D-01/D-02 answer cardinality, D-03 zero-evidence completion, D-05 typed failure, D-06 ordering, D-07/D-08 provenance, D-09 graph degradation, D-30/D-31 metadata/tracing fences | 05-08, 05-14, 05-16, 05-17, 05-19, 05-20, 05-21, 05-22, 05-23 |
+
+No deferred idea is implemented by this revision. The new plans add no provider, RPC, metadata, tracing, or persistence scope beyond the locked D-01 through D-31 contract.

@@ -322,7 +322,7 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 21 plans (7 baseline executed, 14 additive gap closure pending)
+**Plans:** 23 plans (7 baseline executed, 16 additive gap closure pending)
 
 Plans:
 
@@ -341,6 +341,8 @@ Plans:
 - [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
 - [ ] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
 - [ ] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
+- [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
+- [ ] 05-23-PLAN.md — Generated-field Rust compile repair and RetrievalSnapshot wire-contract proof.
 
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
@@ -388,32 +390,37 @@ Plans:
 
 - [ ] 05-17-PLAN.md — Shared protobuf provenance and failure-terminal notice fields with synchronized Rust/Go bindings.
 
-**Wave 12** *(blocked on the shared protobuf contract and production wiring)*
+**Wave 12** *(blocked on the shared protobuf contract and generated-field compile repair)*
+
+- [ ] 05-23-PLAN.md — Repair generated Rust message literals and prove the additive RetrievalSnapshot wire contract.
+
+**Wave 13** *(blocked on generated-field compile repair, production wiring, and target-aware handoff)*
 
 - [ ] 05-18-PLAN.md — Library-target Phase 5 tests, BM25 ownership migration, and cfg(test) fake-port seam.
 
-**Wave 13** *(blocked on the target-aware fixture seam)*
+**Wave 14** *(blocked on the target-aware fixture seam)*
 
 - [ ] 05-15-PLAN.md — Prompt API contract and cfg(test)-only workflow fakes.
 
-**Wave 14** *(blocked on the prompt/fake seam and shared protobuf contract)*
+**Wave 15** *(blocked on the prompt/fake seam and shared protobuf contract)*
 
 - [ ] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
 
-**Wave 15** *(parallel after the shared retrieval/event contracts)*
+**Wave 16** *(parallel after the shared retrieval/event contracts)*
 
 - [ ] 05-10-PLAN.md — Reliable typed event delivery, terminal idempotence, sequence integrity, and full snapshots.
 - [ ] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
+- [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 
-**Wave 16** *(blocked on terminal contract and test-target ownership)*
+**Wave 17** *(blocked on terminal contract and test-target ownership)*
 
 - [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
 
-**Wave 17** *(blocked on provider retry and terminal-event seams)*
+**Wave 18** *(blocked on provider retry and terminal-event seams)*
 
 - [ ] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
 
-**Wave 18** *(blocked on all engine event/timing and terminal contract work)*
+**Wave 19** *(blocked on all engine event/timing and terminal contract work)*
 
 - [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
 
