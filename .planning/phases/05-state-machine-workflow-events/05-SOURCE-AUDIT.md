@@ -284,3 +284,30 @@ This revision preserves the executed 05-01 through 05-07 baseline and keeps the 
 | CONTEXT | D-01/D-02 answer cardinality, D-03 zero-evidence completion, D-05 typed failure, D-06 ordering, D-07/D-08 provenance, D-09 graph degradation, D-30/D-31 metadata/tracing fences | 05-08, 05-14, 05-16, 05-17, 05-19, 05-20, 05-21, 05-22, 05-23 |
 
 No deferred idea is implemented by this revision. The new plans add no provider, RPC, metadata, tracing, or persistence scope beyond the locked D-01 through D-31 contract.
+
+## Revision continuation iteration 7
+
+This revision preserves the executed 05-01 through 05-07 baseline, including the immutable 05-02 plan and summary, and preserves the reviewed scope of 05-21. The current checker blocker is closed additively by 05-24: the pending plan now owns the executable two-pass cross-variant fusion contract that 05-RESEARCH.md marks resolved but that the frozen 05-02 task text does not specify precisely enough.
+
+| Checker item | Executable owner | Closure proof |
+|---|---|---|
+| Resolved cross-variant RRF algorithm | 05-24 Task 1 | RetrieveHybrid calls fuse_candidates once per admitted ordered variant, then calls fuse_cross_variant_candidates over the per-variant fused outputs; the helper documents the exact one-based-rank formula, finite-score handling, one-variant identity, metadata selection, and tie/order rules. |
+| Exact two-variant assertion | 05-24 Task 1 | cross_variant_rrf_two_variant_exact_scores asserts numerical scores from two per-variant outputs and verifies retained vector/BM25 VariantProvenance. |
+| Call-site and tie-order guard | 05-24 Task 2 | A RetrieveHybrid-region source guard checks the per-variant call count, later second-pass call, variant-zero dense branch, and absence of request flattening; a focused regression proves deterministic tie order. |
+| Downstream integration ordering | 05-11 frontmatter | The final engine-to-gateway SSE/checkpoint plan now depends explicitly on 05-24, so cross-runtime evidence cannot precede the resolved retrieval contract. |
+
+### Iteration 7 multi-source coverage
+
+| Source | Items | Plans |
+|---|---|---|
+| GOAL | Formalized Rust RAG state machine with predictable failures, streamed events, retries, snapshots, and ORCH-05 pass-through | 05-08, 05-09, 05-10, 05-11, 05-12, 05-13, 05-14, 05-15, 05-16, 05-17, 05-18, 05-19, 05-20, 05-21, 05-22, 05-23, 05-24 |
+| REQ | ORCH-01 | 05-08, 05-14, 05-16, 05-17, 05-18, 05-20, 05-22, 05-23, 05-24 |
+| REQ | ORCH-02 | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15, 05-17, 05-18, 05-19, 05-20, 05-22, 05-23 |
+| REQ | ORCH-03 | 05-08, 05-09, 05-10, 05-11, 05-13, 05-14, 05-15, 05-16, 05-18, 05-19, 05-20, 05-21, 05-22, 05-23, 05-24 |
+| REQ | ORCH-04 | 05-08, 05-10, 05-11, 05-12, 05-16, 05-17, 05-19, 05-21, 05-23 |
+| REQ | ORCH-05 | 05-08, 05-12, 05-22, 05-24 |
+| RESEARCH | Resolved Pitfall 5/Open Question 2: one fuse_candidates call per variant, a second cross-variant RRF merge over per-variant fused outputs, documented one-based-rank scoring, deterministic tie/order behavior, and exact two-variant scores | 05-24 |
+| RESEARCH | Buf source-of-truth generation, Rust-owned orchestration, typed graph-fact handoff, explicit fake-port boundary, binary test-target verification, and typed fusion provenance | 05-08, 05-12, 05-15, 05-16, 05-17, 05-18, 05-21, 05-22, 05-23 |
+| CONTEXT | D-01/D-02 answer cardinality, D-03 zero-evidence completion, D-05 typed failure, D-06 ordering, D-07/D-08 two-pass variant fusion and variant-zero embedding, D-09 graph degradation, D-30/D-31 metadata/tracing fences | 05-08, 05-14, 05-16, 05-17, 05-19, 05-20, 05-21, 05-22, 05-23, 05-24 |
+
+No deferred idea is implemented by this revision. Plan 05-24 adds no provider, RPC, metadata, tracing, persistence, or real reformulation strategy scope, and it does not alter the executed 05-02 artifact.

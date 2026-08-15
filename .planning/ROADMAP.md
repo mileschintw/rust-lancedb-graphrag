@@ -322,7 +322,7 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 23 plans (7 baseline executed, 16 additive gap closure pending)
+**Plans:** 24 plans (7 baseline executed, 17 additive gap closure pending)
 
 Plans:
 
@@ -343,6 +343,7 @@ Plans:
 - [ ] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
 - [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 - [ ] 05-23-PLAN.md — Generated-field Rust compile repair and RetrievalSnapshot wire-contract proof.
+- [ ] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
 
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
@@ -412,9 +413,10 @@ Plans:
 - [ ] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
 - [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 
-**Wave 17** *(blocked on terminal contract and test-target ownership)*
+**Wave 17** *(blocked on terminal contract, test-target ownership, and the resolved cross-variant fusion contract)*
 
 - [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
+- [ ] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
 
 **Wave 18** *(blocked on provider retry and terminal-event seams)*
 
