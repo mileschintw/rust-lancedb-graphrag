@@ -407,15 +407,15 @@ Plans:
 
 - [ ] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
 
-**Wave 16** *(parallel after the shared retrieval/event contracts)*
+**Wave 16** *(parallel after the shared retrieval/event contracts; 05-10 owns the shared workflow event/context module before 05-22)*
 
 - [ ] 05-10-PLAN.md — Reliable typed event delivery, terminal idempotence, sequence integrity, and full snapshots.
 - [ ] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
-- [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 
-**Wave 17** *(blocked on terminal contract, test-target ownership, and the resolved cross-variant fusion contract)*
+**Wave 17** *(blocked on terminal contract, test-target ownership, resolved cross-variant fusion contract, and 05-10 workflow event/context ownership)*
 
 - [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
+- [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 - [ ] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
 
 **Wave 18** *(blocked on provider retry and terminal-event seams)*

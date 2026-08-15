@@ -332,4 +332,27 @@ This targeted revision preserves the 24-plan scope and closes the fresh review's
 | RESEARCH | Binary test-target evidence is only authoritative after the ordered target handoff gates | 05-12 validation window; 05-13; 05-14; 05-20-02 |
 | CONTEXT | D-11/D-12/D-13 generation-only bounded retry, exact request replay, cancellation, and no fabricated answer | 05-13, 05-20, 05-22 |
 
-No deferred idea is implemented by this revision. No new plan, package, provider, RPC, metadata, tracing, or persistence scope is introduced, and all dependency/wave relationships remain acyclic and unchanged.
+No deferred idea is implemented by Iteration 8. No new plan, package, provider, RPC, metadata, tracing, or persistence scope was introduced there; its dependency/wave state was acyclic before the targeted Iteration 9 serialization below.
+
+## Revision continuation iteration 9
+
+This targeted checker revision preserves the 24-plan scope and executed 05-01 through 05-07 baseline. The shared `engine/src/workflow/mod.rs` ownership is now serialized: 05-10 remains the Wave 16 event-delivery/snapshot owner, and 05-22 depends on 05-10 and moves to Wave 17 for provider-facing graph-fact transfer and production reachability. The validation map's Wave column is regenerated from current plan frontmatter, and the ordered binary evidence narrative now places the 05-22 handoff before 05-20's authoritative post-handoff matrix.
+
+| Checker/source item | Executable owner | Closure proof |
+|---|---|---|
+| Shared workflow module ownership | 05-10 -> 05-22 | 05-10 owns event delivery, terminal idempotence, and full snapshot behavior in `engine/src/workflow/mod.rs`; 05-22 declares `depends_on: [05-10]`, is Wave 17, and owns only the provider-facing graph-fact and production reachability expansion. |
+| Timeout cancellation before terminal failure | 05-09 Task 1/Task 2 | Timeout handling calls `cancel.cancel()` before `NodeFailed(Timeout)` and `workflow_phase5_timeout_cancels_stalled_provider` uses bounded stalled-I/O evidence to prove the underlying provider stops; stream-drop cancellation remains separately covered. |
+| Per-request construction overhead | 05-08 Task 1 | The production builder clones shared Arc-backed handles, avoids resource reinitialization, and the repeated-builder dependency regression checks pointer identity or an equivalent construction counter. |
+| Nested workflow environment parity | 05-09 Task 2 | `config_workflow_nested_env_overrides_match_contract` sets all seven `LANCET_ENGINE__WORKFLOW__*` variables, invokes the actual loader, asserts typed values, and restores the environment under serialization. |
+| Wave 1 atomic scope warning | 05-01/05-06 scope rationale | Generated-binding boundaries, file ownership, executor-context budgets, atomic coordination, and post-landing validation commands are explicit; the warning remains an intentional coordination exception rather than an unverified assertion of small scope. |
+
+### Iteration 9 multi-source coverage
+
+| Source | Items | Plans |
+|---|---|---|
+| GOAL | Formalized Rust RAG state machine with predictable failures, streamed events, retries, snapshots, and ORCH-05 pass-through | 05-08, 05-09, 05-10, 05-11, 05-12, 05-13, 05-14, 05-15, 05-16, 05-17, 05-18, 05-19, 05-20, 05-21, 05-22, 05-23, 05-24 |
+| REQ | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 | Existing requirement ownership is unchanged; 05-22 remains an ORCH-01/02/03/04/05 owner after 05-10. |
+| RESEARCH | Rust-owned orchestration, typed graph-fact handoff, cancellation reaching stalled provider I/O, nested TOML/env settings, and explicit binary target validation | 05-08, 05-09, 05-10, 05-12, 05-18, 05-20, 05-22 |
+| CONTEXT | D-01/D-02 answer cardinality, D-03 zero-evidence completion, D-06 ordering, D-09 graph degradation, D-16 cancellation, D-17 timeout separation, and D-30/D-31 metadata/tracing fences | 05-08, 05-09, 05-10, 05-14, 05-16, 05-19, 05-20, 05-22 |
+
+No deferred idea is implemented by this revision; no new plan, production code, package, provider, RPC, metadata, tracing, or persistence scope is introduced.
