@@ -384,33 +384,36 @@ Plans:
 
 - [ ] 05-14-PLAN.md — Exhaustive typed NodeKind dispatch and early reformulation admission.
 
-**Wave 11** *(blocked on typed dispatch and prompt/fake boundaries)*
+**Wave 11** *(blocked on typed dispatch; generated wire contract lands before target-aware fixture migration)*
 
 - [ ] 05-17-PLAN.md — Shared protobuf provenance and failure-terminal notice fields with synchronized Rust/Go bindings.
-- [ ] 05-18-PLAN.md — Library-target Phase 5 tests and cfg(test) fake-port seam.
 
-**Wave 12** *(blocked on the library-target test seam)*
+**Wave 12** *(blocked on the shared protobuf contract and production wiring)*
+
+- [ ] 05-18-PLAN.md — Library-target Phase 5 tests, BM25 ownership migration, and cfg(test) fake-port seam.
+
+**Wave 13** *(blocked on the target-aware fixture seam)*
 
 - [ ] 05-15-PLAN.md — Prompt API contract and cfg(test)-only workflow fakes.
 
-**Wave 13** *(blocked on the prompt/fake seam and shared protobuf contract)*
+**Wave 14** *(blocked on the prompt/fake seam and shared protobuf contract)*
 
 - [ ] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
 
-**Wave 14** *(parallel after the shared retrieval/event contracts)*
+**Wave 15** *(parallel after the shared retrieval/event contracts)*
 
 - [ ] 05-10-PLAN.md — Reliable typed event delivery, terminal idempotence, sequence integrity, and full snapshots.
 - [ ] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
 
-**Wave 15** *(blocked on terminal contract and test-target ownership)*
+**Wave 16** *(blocked on terminal contract and test-target ownership)*
 
 - [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
 
-**Wave 16** *(blocked on provider retry and terminal-event seams)*
+**Wave 17** *(blocked on provider retry and terminal-event seams)*
 
 - [ ] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
 
-**Wave 17** *(blocked on all engine event/timing and terminal contract work)*
+**Wave 18** *(blocked on all engine event/timing and terminal contract work)*
 
 - [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
 
