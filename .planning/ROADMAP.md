@@ -415,14 +415,17 @@ Plans:
 **Wave 17** *(blocked on terminal contract, test-target ownership, resolved cross-variant fusion contract, and 05-10 workflow event/context ownership)*
 
 - [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
-- [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 - [ ] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
 
-**Wave 18** *(blocked on provider retry and terminal-event seams)*
+**Wave 18** *(blocked on 05-19 terminal ownership, generated-field repair, provider retry, and production wiring seams)*
+
+- [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
+
+**Wave 19** *(blocked on provider retry, target handoff, terminal-event, and serialized 05-22 seams)*
 
 - [ ] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
 
-**Wave 19** *(blocked on all engine event/timing and terminal contract work)*
+**Wave 20** *(blocked on all engine event/timing, terminal, retrieval, and checkpoint contract work)*
 
 - [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
 
