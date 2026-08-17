@@ -33,8 +33,8 @@ Context budget: ~15% orchestrator, 100% fresh per subagent.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/execute-phase.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/execute-phase.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <runtime_note>

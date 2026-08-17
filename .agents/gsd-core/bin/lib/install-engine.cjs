@@ -28,8 +28,10 @@ const runtimeArtifactInstallPlan = require("./runtime-artifact-install-plan.cjs"
 const runtimeNamePolicy = require("./runtime-name-policy.cjs");
 const installProfiles = require("./install-profiles.cjs");
 const installerMigrations = require("./installer-migrations.cjs");
+const retiredArtifactCleanup = require("./retired-artifact-cleanup.cjs");
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 const external_descriptor_trust_cjs_1 = require("./external-descriptor-trust.cjs");
+const commonjs_marker_cjs_1 = require("./commonjs-marker.cjs");
 const { processAttribution } = runtimeArtifactConversion;
 // resolveRuntimeArtifactLayout: accessed via module ref (not destructured) so
 // test stubs that monkeypatch the module's exports are seen at call time.
@@ -115,6 +117,7 @@ function convertClaudeCommandToKiloSkill(content, skillName) {
 const SKILLS_CONVERTER_REGISTRY = {
     convertClaudeCommandToOpencodeSkill,
     convertClaudeCommandToKiloSkill,
+    convertClaudeCommandToKimiCodeSkill: runtimeArtifactConversion.convertClaudeCommandToKimiCodeSkill,
 };
 // ---------------------------------------------------------------------------
 // User-artifact preservation helpers
@@ -314,13 +317,25 @@ function migrateLegacyDevPreferencesToSkill(targetDir, saved, runtime, scope = '
     if (!saved || !saved.has('dev-preferences.md'))
         return false;
     let skillDir;
+    // #2911: the actual install root the skill dir resolves under — defaults to
+    // targetDir, but a skills-kind `home` override (e.g. Codex -> $HOME/.agents)
+    // moves it entirely outside targetDir. Every confinement/guard check below
+    // must confine against installRoot, not targetDir, or it would flag the
+    // legitimate override destination as an escape.
+    let installRoot = targetDir;
     if (runtime) {
         const layout = runtimeArtifactLayout.resolveRuntimeArtifactLayout(runtime, targetDir, scope);
         const skillsKindEntry = layout.kinds.find((k) => k.kind === 'skills');
         if (!skillsKindEntry)
             return false; // runtime has no skills layout at this scope (e.g. cline local)
         const stemName = skillsKindEntry.prefix === '' ? 'dev-preferences' : 'gsd-dev-preferences';
-        skillDir = node_path_1.default.join(runtimeArtifactInstallPlan.assertDestWithinConfigHome(targetDir, skillsKindEntry.destSubpath), stemName);
+        // #2911: same destination-root defect as _copyStaged/applySurface — honor
+        // skillsKindEntry.home as a FALLBACK-preferred override (e.g. Codex skills
+        // -> $HOME/.agents) instead of always resolving against targetDir, so a
+        // legacy dev-preferences migration lands in the SAME tree the installer
+        // and surface-apply use. Runtimes with no `home` override are unaffected.
+        installRoot = skillsKindEntry.home ?? targetDir;
+        skillDir = node_path_1.default.join(runtimeArtifactInstallPlan.assertDestWithinConfigHome(installRoot, skillsKindEntry.destSubpath), stemName);
     }
     else {
         // Legacy fallback for callers that have not yet been updated to pass runtime
@@ -329,11 +344,11 @@ function migrateLegacyDevPreferencesToSkill(targetDir, saved, runtime, scope = '
     const skillFile = node_path_1.default.join(skillDir, 'SKILL.md');
     if (node_fs_1.default.existsSync(skillFile))
         return false;
-    // Symlink-escape guard: reject if any path component between targetDir and
-    // skillDir is a symlink that would redirect writes outside the config root.
+    // Symlink-escape guard: reject if any path component between installRoot and
+    // skillDir is a symlink that would redirect writes outside the install root.
     // #2393: honor GSD_ALLOW_SYMLINKED_DEST for intentional user-owned symlink layouts.
-    if (hasExistingSymlinkBetween(node_path_1.default.resolve(targetDir), skillDir, { allowOptInFollow: isSymlinkedDestOptIn() })) {
-        throw new Error(`migrateLegacyDevPreferencesToSkill: skillDir "${skillDir}" contains a symlink the install root "${targetDir}" does not trust — refusing to write. If this is an intentional user-owned symlink layout, re-run with GSD_ALLOW_SYMLINKED_DEST=1.`);
+    if (hasExistingSymlinkBetween(node_path_1.default.resolve(installRoot), skillDir, { allowOptInFollow: isSymlinkedDestOptIn() })) {
+        throw new Error(`migrateLegacyDevPreferencesToSkill: skillDir "${skillDir}" contains a symlink the install root "${installRoot}" does not trust — refusing to write. If this is an intentional user-owned symlink layout, re-run with GSD_ALLOW_SYMLINKED_DEST=1.`);
     }
     try {
         node_fs_1.default.mkdirSync(skillDir, { recursive: true });
@@ -674,6 +689,10 @@ function _runLegacyUninstallCleanup(runtime, configDir, scope = 'global') {
  *   (fail closed), matching the layout resolver's own optional-registry contract.
  */
 function installRuntimeArtifacts(runtime, configDir, scope, resolvedProfile, resolveAttribution = () => undefined, capabilityRegistry) {
+    // A removed descriptor kind is no longer visited by the layout loop, so it
+    // cannot prune its own previous output. Clean manifest-proven retired files
+    // before materializing the current layout (#2644).
+    retiredArtifactCleanup.pruneRetiredRuntimeArtifacts(runtime, configDir);
     // Combined-family runtimes (OpenCode/Kilo, ADR-1239 / #2087): route through
     // the dedicated combined commands+skills+plugin orchestrator instead of the
     // generic layout-driven loop below, mirroring the bespoke install path that
@@ -848,12 +867,19 @@ function installOpencodeFamilySkills(runtime, targetDir, rawCommandsDir, pathPre
     if (!converter) {
         throw new TypeError(`installOpencodeFamilySkills: unknown skills converter '${String(converterName)}' for runtime '${runtime}'`);
     }
-    const dest = runtimeArtifactInstallPlan.assertDestWithinConfigHome(targetDir, skillsKindEntry.destSubpath);
-    // Symlink-escape guard: reject if any path component between targetDir and
-    // dest is a symlink that would redirect writes outside the config root.
+    // #2911: same destination-root defect as _copyStaged/migrateLegacyDevPreferencesToSkill
+    // — honor skillsKindEntry.home as a FALLBACK-preferred override (e.g. Codex skills
+    // -> $HOME/.agents) instead of always resolving against targetDir, so this bespoke
+    // OpenCode/Kilo writer lands in the SAME tree the installer and surface-apply use.
+    // Runtimes with no `home` override (opencode, kilo today) are unaffected. Must stay
+    // in lockstep with the sibling writers — the destination-parity test enforces it.
+    const installRoot = skillsKindEntry.home ?? targetDir;
+    const dest = runtimeArtifactInstallPlan.assertDestWithinConfigHome(installRoot, skillsKindEntry.destSubpath);
+    // Symlink-escape guard: reject if any path component between installRoot and
+    // dest is a symlink that would redirect writes outside the install root.
     // #2393: honor GSD_ALLOW_SYMLINKED_DEST for intentional user-owned symlink layouts.
-    if (hasExistingSymlinkBetween(node_path_1.default.resolve(targetDir), dest, { allowOptInFollow: isSymlinkedDestOptIn() })) {
-        throw new Error(`installOpencodeFamilySkills: destDir "${dest}" contains a symlink the install root "${targetDir}" does not trust — refusing to write. If this is an intentional user-owned symlink layout, re-run with GSD_ALLOW_SYMLINKED_DEST=1.`);
+    if (hasExistingSymlinkBetween(node_path_1.default.resolve(installRoot), dest, { allowOptInFollow: isSymlinkedDestOptIn() })) {
+        throw new Error(`installOpencodeFamilySkills: destDir "${dest}" contains a symlink the install root "${installRoot}" does not trust — refusing to write. If this is an intentional user-owned symlink layout, re-run with GSD_ALLOW_SYMLINKED_DEST=1.`);
     }
     node_fs_1.default.mkdirSync(dest, { recursive: true });
     // Preserve user-owned GSD-prefixed skill dirs across the gsd-* prune.
@@ -1036,6 +1062,30 @@ function _installNativePluginIfDeclared(runtime, configDir, behaviors, src) {
             const destPath = runtimeArtifactInstallPlan.assertDestWithinConfigHome(configDir, node_path_1.default.join(np.dir, np.file));
             node_fs_1.default.mkdirSync(node_path_1.default.dirname(destPath), { recursive: true });
             node_fs_1.default.copyFileSync(pluginSrc, destPath);
+            // #2544: the staged adapter is a `.js` file, so Node decides its module
+            // type by walking up for the nearest package.json. It used to find the
+            // marker the installer wrote at the config root — the write that
+            // clobbered user-authored files. Pin it from the plugin's own directory
+            // instead, leaving the config root alone. The marker cannot disturb
+            // plugin discovery: OpenCode auto-discovers `plugins/*.{ts,js}` and pi's
+            // isExtensionFile() accepts only `.ts`/`.js` (see installer-migration
+            // 006), so a package.json here is never treated as a plugin. Never
+            // written over a package.json GSD does not own — but when one is already
+            // there, say so: the adapter is CommonJS and will not load under a
+            // foreign `"type": "module"`, and a silent no-op would leave every guard
+            // the adapter spawns dead with no diagnostic (the #2305 failure shape).
+            const markerOutcome = (0, commonjs_marker_cjs_1.ensureCommonJsMarker)(node_path_1.default.dirname(destPath));
+            if (markerOutcome === 'preserved-foreign') {
+                console.warn(`  ⚠  ${np.dir}/package.json is not GSD's CommonJS marker — left untouched. `
+                    + `If it declares "type": "module", ${np.file} will not load.`);
+            }
+            else if (markerOutcome === 'failed') {
+                // Best-effort, never fatal: an unwritable plugin dir must not abort the
+                // install. Same warn-and-continue posture as the foreign-marker branch —
+                // the adapter is staged either way, it just may not resolve as CommonJS.
+                console.warn(`  ⚠  Could not write ${np.dir}/package.json (CommonJS marker) — install continued. `
+                    + `If the config root declares "type": "module", ${np.file} will not load.`);
+            }
         }
     }
 }
@@ -1179,6 +1229,11 @@ function installOpencodeFamilyArtifacts(runtime, configDir, scope, resolvedProfi
  * @param scope
  */
 function uninstallRuntimeArtifacts(runtime, configDir, scope) {
+    // A retired descriptor kind is absent from the current uninstall plan, just
+    // as it is absent from the install plan. Sweep manifest-proven output from
+    // retired kinds before removing the current layout so a direct uninstall
+    // cannot leave stale runtime surfaces behind (#2644).
+    retiredArtifactCleanup.pruneRetiredRuntimeArtifacts(runtime, configDir);
     // Legacy cleanup before layout-driven removal (scope-aware to avoid
     // removing the agent local commands/gsd/ which is the primary install dir).
     // Returns saved user artifacts so we can migrate AFTER layout removal

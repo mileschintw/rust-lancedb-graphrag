@@ -17,9 +17,35 @@ Read all files referenced by the invoking prompt's execution_context before star
 Parse arguments and load project state:
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 PHASE_ARG="${1}"
-INIT=$(gsd_run query init.phase-op "${PHASE_ARG}")
+
+# Parse all code-review flags into a structured IR via code-review-flags.cjs.
+# This is the canonical flag-parsing surface — do not replicate inline bash parsing
+# for --fix/--all/--auto here; the module handles all flag extraction and implication
+# logic (e.g., --all and --auto imply --fix). Resolved BEFORE the init call below so
+# the section-manifest gate forwards the RESOLVED (post-implication) fix decision, not
+# just a literal --fix token check.
+FLAGS_JSON=$(node -e "
+  const { parseCodeReviewFlags } = require('./gsd-core/bin/lib/code-review-flags.cjs');
+  const flags = parseCodeReviewFlags(process.argv.slice(1));
+  process.stdout.write(JSON.stringify(flags));
+" -- "$@" 2>/dev/null)
+
+# Extract individual flag values from the IR
+FIX_FLAG=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).fix))")
+FIX_ALL=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).all))")
+FIX_AUTO=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).auto))")
+DEPTH_OVERRIDE=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).depth)")
+FILES_OVERRIDE=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).files)")
+
+# Forward the resolved fix decision (--fix itself, or --all/--auto implying it) to
+# init.code-review so section_manifest's flag:--fix gating (dispatch-fix section)
+# matches code-review-flags.cjs's own implication logic rather than a raw token scan.
+FIX_PARAM=""
+if [ "$FIX_FLAG" = "true" ]; then FIX_PARAM="--fix"; fi
+
+INIT=$(gsd_run query init.code-review "${PHASE_ARG}" $FIX_PARAM)
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 AGENT_SKILLS_REVIEWER=$(gsd_run query agent-skills gsd-code-reviewer)
 # #2072: resolve the routed model so model_overrides / models.verification are honored
@@ -27,7 +53,7 @@ AGENT_SKILLS_REVIEWER=$(gsd_run query agent-skills gsd-code-reviewer)
 REVIEWER_MODEL=$(gsd_run query resolve-model gsd-code-reviewer --raw)
 ```
 
-Parse from init JSON: `phase_found`, `phase_dir`, `phase_number`, `phase_name`, `padded_phase`, `commit_docs`.
+Parse from init JSON: `phase_found`, `phase_dir`, `phase_number`, `phase_name`, `padded_phase`, `commit_docs`, `fallow_enabled`, `fallow_scope`, `fallow_profile`, `fallow_mcp`, `fallow_max_crap`.
 
 **Input sanitization (defense-in-depth):**
 ```bash
@@ -45,27 +71,6 @@ Error: Phase ${PHASE_ARG} not found. Run /gsd-progress to see available phases.
 ```
 
 This runs BEFORE config gate check so user errors are surfaced immediately regardless of config state.
-
-Parse optional flags from $ARGUMENTS using the typed flag parser:
-
-```bash
-# Parse all code-review flags into a structured IR via code-review-flags.cjs.
-# This is the canonical flag-parsing surface — do not replicate inline bash parsing
-# for --fix/--all/--auto here; the module handles all flag extraction and implication
-# logic (e.g., --all and --auto imply --fix).
-FLAGS_JSON=$(node -e "
-  const { parseCodeReviewFlags } = require('./gsd-core/bin/lib/code-review-flags.cjs');
-  const flags = parseCodeReviewFlags(process.argv.slice(1));
-  process.stdout.write(JSON.stringify(flags));
-" -- "$@" 2>/dev/null)
-
-# Extract individual flag values from the IR
-FIX_FLAG=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).fix))")
-FIX_ALL=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).all))")
-FIX_AUTO=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).auto))")
-DEPTH_OVERRIDE=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).depth)")
-FILES_OVERRIDE=$(echo "$FLAGS_JSON" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8')).files)")
-```
 
 If FILES_OVERRIDE is set, split by comma into array:
 ```bash
@@ -171,43 +176,40 @@ if [ -z "$FILES_OVERRIDE" ]; then
       EXTRACTED=$(node -e "
         const fs = require('fs');
         const content = fs.readFileSync('$summary', 'utf-8');
-        const match = content.match(/^---\n([\s\S]*?)\n---/);
+        const match = content.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---/);
         if (!match) { process.exit(0); }
         const yaml = match[1];
         const files = [];
-        let inKeyFiles = false;
         let inSection = null;
-        function inlineArrayItems(str) {
-          const items = [];
-          const re = /['\"]([^'\"]+)['\"]/g;
-          let m;
-          while ((m = re.exec(str))) items.push(m[1]);
-          return items;
-        }
         for (const line of yaml.split('\n')) {
-          if (/^[\w-]+:/.test(line)) {
-            inKeyFiles = /^key[-_]files:\s*$/.test(line);
-            inSection = null;
-            if (!inKeyFiles) continue;
-          }
-          if (!inKeyFiles) continue;
-          const createdInline = line.match(/^\s+created:\s*\[(.*)\]\s*$/);
-          const modifiedInline = line.match(/^\s+modified:\s*\[(.*)\]\s*$/);
-          if (createdInline) { files.push(...inlineArrayItems(createdInline[1])); inSection = null; continue; }
-          if (modifiedInline) { files.push(...inlineArrayItems(modifiedInline[1])); inSection = null; continue; }
-          if (/^\s+created:\s*$/.test(line)) { inSection = 'created'; continue; }
-          if (/^\s+modified:\s*$/.test(line)) { inSection = 'modified'; continue; }
-          if (/^\s+[\w-]+:/.test(line) && !/^\s*-/.test(line)) { inSection = null; continue; }
+          if (/^\s+created:/.test(line)) { inSection = 'created'; continue; }
+          if (/^\s+modified:/.test(line)) { inSection = 'modified'; continue; }
+          if (/^\s*[\w-]+:/.test(line) && !/^\s*-/.test(line)) { inSection = null; continue; }
           if (inSection && /^\s+-\s+(.+)/.test(line)) {
             let raw = line.match(/^\s+-\s+(.+)/)[1].trim();
             raw = raw.replace(/^['"]|['"]$/g, '');
             raw = raw.replace(/\s+\([^)]*\)\s*$/, '');
             raw = raw.split(/\s+—\s/)[0].trim();
-            files.push(raw);
+            // #2666: accept root-level paths (no `/`) and known extensionless build
+            // files, not only nested paths with a trailing extension. The pre-fix
+            // guard required BOTH a directory separator AND a trailing dot-extension,
+            // which silently dropped every repository-root file (Dockerfile,
+            // renovate.json, AGENTS.md, package.json, .gitlab-ci.yml, …) and every
+            // extensionless build file anywhere in the tree (**/Dockerfile, **/Makefile).
+            // Prose bullets are rejected by the known-filename / has-extension
+            // distinction, with the post-processing existence check (`[ -f ]`) as a
+            // backstop — a prose string is never a real file on disk.
+            const KNOWN_EXTENSIONLESS_BUILD_FILES = new Set([
+              'dockerfile', 'containerfile', 'makefile', 'justfile', 'procfile',
+            ]);
+            const hasExtension = /\.[A-Za-z0-9]+$/.test(raw);
+            const basename = raw.split('/').pop().toLowerCase();
+            if (hasExtension || KNOWN_EXTENSIONLESS_BUILD_FILES.has(basename)) {
+              files.push(raw);
+            }
           }
         }
-        const filtered = files.filter(raw => /\//.test(raw) && /\.[A-Za-z0-9]+$/.test(raw));
-        if (filtered.length) console.log(filtered.join('\n'));
+        if (files.length) console.log(files.join('\n'));
       " 2>/dev/null)
       
       # Add extracted files to REVIEW_FILES array
@@ -227,50 +229,84 @@ if [ -z "$FILES_OVERRIDE" ]; then
 fi
 ```
 
-**Tier 3 — Git diff fallback (per D-02):**
+**Tier 3 — Git diff fallback (per D-02) and SUMMARY/diff cross-check (per #2666):**
 
-If no SUMMARY.md files found OR no files extracted from them:
+If no SUMMARY.md files found OR no files extracted from them, fall back to the git diff.
+Additionally, whenever a reliable diff base is available, cross-check the SUMMARY scope
+against the diff and warn about (then add) any changed files the SUMMARY extractor did not
+surface — so a partial SUMMARY result can no longer silently mask the rest of the phase.
 ```bash
+# Compute diff base from phase commits — fail closed if no reliable base found.
+# #2989: anchor the grep to the phase-mention convention ("Phase N" / "phase N"
+# with a word boundary) so a bare digit substring doesn't match version strings,
+# dates, issue refs, or other phases' numbers. With --extended-regexp, \b is
+# a word boundary. When no commit genuinely references the phase, this yields
+# empty and the fail-closed warning below actually fires.
+PHASE_COMMITS=$(git log --oneline --all --grep="[Pp]hase ${PADDED_PHASE}\b" --extended-regexp --format="%H" 2>/dev/null)
+DIFF_BASE=""
+if [ -n "$PHASE_COMMITS" ]; then
+  DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)^
+  # Verify the parent commit exists (first commit in repo has no parent)
+  if ! git rev-parse "${DIFF_BASE}" >/dev/null 2>&1; then
+    DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)
+  fi
+fi
+
 if [ ${#REVIEW_FILES[@]} -eq 0 ]; then
-  # Compute diff base from phase commits — fail closed if no reliable base found
-  # Anchor the grep to the conventional-commit scope parens (e.g. "(04)", "(04-01)",
-  # "(999.6)") instead of a bare substring — a bare "${PADDED_PHASE}" would also match
-  # unrelated commits whose subject/body merely contains that digit sequence (dates,
-  # other phase/task IDs, etc.), especially for short/common phase numbers.
-  ESCAPED_PADDED_PHASE=$(printf '%s' "${PADDED_PHASE}" | sed 's/\./\\./g')
-  PHASE_GREP_PATTERN="\\(${ESCAPED_PADDED_PHASE}([.-][0-9]+)*\\)"
-  PHASE_COMMITS=$(git log --oneline --all -E --grep="${PHASE_GREP_PATTERN}" --format="%H" 2>/dev/null)
-  
-  if [ -n "$PHASE_COMMITS" ]; then
-    DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)^
-    
-    # Verify the parent commit exists (first commit in repo has no parent)
-    if ! git rev-parse "${DIFF_BASE}" >/dev/null 2>&1; then
-      DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)
-    fi
-    
+  # Full git-diff fallback (per D-02): SUMMARY scoping yielded nothing.
+  if [ -n "$DIFF_BASE" ]; then
     # Run git diff with specific exclusions (per D-03)
     DIFF_FILES=$(git diff --name-only "${DIFF_BASE}..HEAD" -- . \
       ':!.planning/' ':!ROADMAP.md' ':!STATE.md' \
       ':!*-SUMMARY.md' ':!*-VERIFICATION.md' ':!*-PLAN.md' \
       ':!package-lock.json' ':!yarn.lock' ':!Gemfile.lock' ':!poetry.lock' 2>/dev/null)
-    
+
     while IFS= read -r file; do
       [ -n "$file" ] && REVIEW_FILES+=("$file")
     done <<< "$DIFF_FILES"
-    
+
     echo "File scope: ${#REVIEW_FILES[@]} files from git diff (base: ${DIFF_BASE})"
   else
     # Fail closed — no reliable diff base found. Do not use arbitrary HEAD~N.
     echo "Warning: No phase commits found for '${PADDED_PHASE}'. Cannot determine reliable diff scope."
     echo "Use --files flag to specify files explicitly: /gsd-code-review ${PHASE_ARG} --files=file1,file2,..."
   fi
+elif [ -n "$DIFF_BASE" ]; then
+  # #2666 cross-check: SUMMARY yielded a non-empty (possibly partial) scope.
+  # Warn about — and add — any changed files the SUMMARY extractor did not surface,
+  # so a partial result can no longer silently ship an incomplete review scope.
+  DIFF_FILES=$(git diff --name-only "${DIFF_BASE}..HEAD" -- . \
+    ':!.planning/' ':!ROADMAP.md' ':!STATE.md' \
+    ':!*-SUMMARY.md' ':!*-VERIFICATION.md' ':!*-PLAN.md' \
+    ':!package-lock.json' ':!yarn.lock' ':!Gemfile.lock' ':!poetry.lock' 2>/dev/null)
+
+  # Build a newline-delimited list of already-scoped files for exact membership
+  # testing (portable — bash 3.2 on macOS has no associative arrays). grep -Fxq
+  # matches the WHOLE line exactly, so a short basename (e.g. root `Dockerfile`)
+  # does NOT substring-match a longer scoped path (e.g. `docker/Dockerfile`).
+  IN_SCOPE=$(printf '%s\n' "${REVIEW_FILES[@]}")
+
+  MISSING_FROM_SUMMARY=()
+  while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    # Exact whole-line match; grep nonzero-exit => not in scope.
+    if printf '%s\n' "${REVIEW_FILES[@]}" | grep -Fxq -- "$file" 2>/dev/null; then
+      : # already scoped
+    else
+      MISSING_FROM_SUMMARY+=("$file"); REVIEW_FILES+=("$file")
+    fi
+  done <<< "$DIFF_FILES"
+
+  if [ ${#MISSING_FROM_SUMMARY[@]} -gt 0 ]; then
+    echo "Warning: SUMMARY scope was missing ${#MISSING_FROM_SUMMARY[@]} changed file(s) the git diff surfaced; adding them to the review scope:"
+    printf '  - %s\n' "${MISSING_FROM_SUMMARY[@]}"
+  fi
 fi
 ```
 
 **Post-processing (all tiers):**
 
-1. **Expand tilde paths:** SUMMARY.md `key-files` entries may record a `~/...`-prefixed path (e.g. `D:/Repos/lancet/.claude/gsd-core/workflows/verify-phase.md`). Bash only tilde-expands a literal `~` written in source text, never one arriving as the value of an already-expanded variable, so every later `[ -f "$file" ]` check must see a real, expanded path or it misclassifies the file as deleted.
+1. **Expand tilde paths:** SUMMARY.md `key-files` entries may record a `~/...`-prefixed path (e.g. `C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/verify-phase.md`). Bash only tilde-expands a literal `~` written in source text, never one arriving as the value of an already-expanded variable, so every later `[ -f "$file" ]` check must see a real, expanded path or it misclassifies the file as deleted.
 ```bash
 EXPANDED_FILES=()
 for file in "${REVIEW_FILES[@]}"; do
@@ -363,20 +399,7 @@ Exit workflow. Do NOT spawn agent or create REVIEW.md.
 <step name="structural_pre_pass">
 Optional structural cross-module pass powered by fallow.
 
-Read fallow config gates:
-```bash
-FALLOW_ENABLED=$(gsd_run query config-get code_quality.fallow.enabled 2>/dev/null || echo "false")
-FALLOW_SCOPE=$(gsd_run query config-get code_quality.fallow.scope 2>/dev/null || echo "phase")
-FALLOW_PROFILE=$(gsd_run query config-get code_quality.fallow.profile 2>/dev/null || echo "standard")
-FALLOW_MCP=$(gsd_run query config-get code_quality.fallow.mcp 2>/dev/null || echo "false")
-# profile maps to a --max-crap threshold since fallow has no native profile concept.
-# minimal=50 (more lenient), standard=30 (default), strict=15 (tighter).
-case "$FALLOW_PROFILE" in
-  minimal) FALLOW_MAX_CRAP=50 ;;
-  strict)  FALLOW_MAX_CRAP=15 ;;
-  *)       FALLOW_MAX_CRAP=30 ;;  # standard (default)
-esac
-```
+Parse `fallow_enabled`, `fallow_scope`, `fallow_profile`, `fallow_mcp`, `fallow_max_crap` from the init JSON as `FALLOW_ENABLED`, `FALLOW_SCOPE`, `FALLOW_PROFILE`, `FALLOW_MCP`, `FALLOW_MAX_CRAP`. These are resolved once by `init.code-review` at init time — consuming the pre-resolved values here (instead of a `config-get` call inside this step) avoids gating this section's own inclusion on a fact its own body would otherwise compute (see `state:fallow-enabled` in docs/reference/workflow-fragments.md).
 
 Defaults are fail-closed and opt-in:
 - `enabled=false` (skip entirely)
@@ -384,75 +407,7 @@ Defaults are fail-closed and opt-in:
 - `profile=standard` (maps to `--max-crap 30`; minimal=50, standard=30, strict=15 — fallow has no native profile concept)
 - `mcp=false`
 
-When `FALLOW_ENABLED=true`:
-
-1) Resolve binary via PATH first, then `node_modules/.bin/fallow`.
-```bash
-FALLOW_BIN=$(FALLOW_CWD="$(pwd)" node -e "
-const { resolveFallowBinary } = require('./gsd-core/bin/lib/fallow-runner.cjs');
-const resolved = resolveFallowBinary({ cwd: process.env.FALLOW_CWD });
-if (resolved) process.stdout.write(resolved);
-")
-```
-
-2) If binary is missing, fail with actionable message:
-```bash
-if [ -z \"$FALLOW_BIN\" ]; then
-  echo \"Error: fallow is enabled but no binary was found.\"
-  echo \"Install fallow via \`npm install -D fallow\` or \`cargo install fallow\`.\"
-  # Exit workflow
-fi
-```
-
-3) Execute structural pass and persist JSON (bounded at 120s). Note: `fallow audit` exits 0 when clean and 1 when issues are found — BOTH are successful runs. Only a timeout (124), usage error (2), or crash yields no usable JSON; success is decided by whether the output parses as a valid fallow report, not by exit code:
-```bash
-FALLOW_JSON_PATH="${PHASE_DIR}/FALLOW.json"
-FALLOW_STDERR_TMP=$(mktemp)
-
-# Phase scope uses fallow's native changed-files scoping (--changed-since <base>).
-# Derive the phase base commit; if none is found, fall back to repo scope (fallow
-# auto-detects the base branch).
-FALLOW_SCOPE_ARGS=()
-if [ \"$FALLOW_SCOPE\" = \"phase\" ]; then
-  FALLOW_ESCAPED_PHASE=$(printf '%s' \"${PADDED_PHASE}\" | sed 's/\./\\\\./g')
-  FALLOW_GREP_PATTERN=\"\\\\(${FALLOW_ESCAPED_PHASE}([.-][0-9]+)*\\\\)\"
-  FALLOW_PHASE_COMMITS=$(git log --oneline --all -E --grep=\"${FALLOW_GREP_PATTERN}\" --format=\"%H\" 2>/dev/null)
-  if [ -n \"$FALLOW_PHASE_COMMITS\" ]; then
-    FALLOW_BASE=$(echo \"$FALLOW_PHASE_COMMITS\" | tail -1)^
-    FALLOW_SCOPE_ARGS=(--changed-since \"$FALLOW_BASE\")
-  fi
-fi
-
-gsd_run run-with-timeout 120 -- \"$FALLOW_BIN\" audit --format json --quiet --max-crap \"$FALLOW_MAX_CRAP\" \"${FALLOW_SCOPE_ARGS[@]+\"${FALLOW_SCOPE_ARGS[@]}\"}\" > \"${FALLOW_JSON_PATH}.tmp\" 2>\"$FALLOW_STDERR_TMP\"
-FALLOW_EXIT=$?
-
-# fallow exits 0 (clean) or 1 (issues found) — BOTH are successful runs that produce a
-# valid JSON report. Only a timeout (124), usage error (2), or crash yields no usable JSON.
-# Decide success by whether the output parses as a fallow report, not by exit code.
-FALLOW_OK=$(FALLOW_TMP=\"${FALLOW_JSON_PATH}.tmp\" node -e \"
-  try {
-    const fs = require('fs');
-    const txt = fs.readFileSync(process.env.FALLOW_TMP, 'utf8');
-    const o = JSON.parse(txt);
-    process.stdout.write(o && typeof o === 'object' && 'verdict' in o ? '1' : '0');
-  } catch { process.stdout.write('0'); }
-\")
-if [ \"$FALLOW_OK\" != \"1\" ]; then
-  FALLOW_STDERR_SUMMARY=$(head -5 \"$FALLOW_STDERR_TMP\")
-  rm -f \"${FALLOW_JSON_PATH}.tmp\" \"$FALLOW_STDERR_TMP\"
-  echo \"WARNING: fallow structural pre-pass failed (exit ${FALLOW_EXIT}): ${FALLOW_STDERR_SUMMARY}\"
-  FALLOW_JSON_PATH=\"\"
-else
-  mv \"${FALLOW_JSON_PATH}.tmp\" \"$FALLOW_JSON_PATH\"
-  rm -f \"$FALLOW_STDERR_TMP\"
-fi
-```
-
-On any failure of the structural pre-pass (binary missing, timeout, empty output, or unparseable JSON), the workflow continues with no `<structural_findings>` injection; the reviewer agent receives a normal review request.
-
-4) Optional MCP bridge path (runtime-dependent):
-- If `FALLOW_MCP=true`, set reviewer input mode to MCP-backed structural findings.
-- Otherwise pass static JSON findings from `FALLOW.json`.
+If `section_manifest` is `null` or `"structural-pre-pass"` is in its `included` list: read and execute `gsd-core/workflows/code-review/steps/structural-pre-pass.md`. Otherwise skip — do not read the file.
 
 When disabled, set:
 ```bash
@@ -468,9 +423,7 @@ REVIEW_PATH="${PHASE_DIR}/${PADDED_PHASE}-REVIEW.md"
 
 Compute DIFF_BASE for agent context (in case agent needs it):
 ```bash
-ESCAPED_PADDED_PHASE=$(printf '%s' "${PADDED_PHASE}" | sed 's/\./\\./g')
-PHASE_GREP_PATTERN="\\(${ESCAPED_PADDED_PHASE}([.-][0-9]+)*\\)"
-PHASE_COMMITS=$(git log --oneline --all -E --grep="${PHASE_GREP_PATTERN}" --format="%H" 2>/dev/null)
+PHASE_COMMITS=$(git log --oneline --all --grep="${PADDED_PHASE}" --format="%H" 2>/dev/null)
 if [ -n "$PHASE_COMMITS" ]; then
   DIFF_BASE=$(echo "$PHASE_COMMITS" | tail -1)^
 else
@@ -523,6 +476,14 @@ Spawn the gsd-code-reviewer agent:
 
 Print: `◆ Spawning code reviewer... (runs in a subagent — no output until it returns, ~1–5 min; expected, not a freeze)`
 
+<!-- #2508 runtime-aware-dispatch -->
+
+> **Runtime-aware dispatch (#2508 Phase 4).** GSD workflows dispatch specialized subagents by role. Before dispatching on a built-in-only runtime (kimi-code — three built-ins only), resolve the role to a built-in via `gsd_run query resolve-dispatch-type --requested <role> --raw`. On named-dispatch runtimes (Claude/OpenCode/…) the role is returned unchanged; on kimi-code it maps to `coder`/`explore`/`plan` by role-suffix. The persona rides `${AGENT_SKILLS_<ROLE>}` (Phase 3) regardless. See @gsd-core/references/runtime-aware-dispatch.md.
+
+<!-- #2517 model-omit-on-inherit -->
+
+> **Model omission (#2517).** Omit the `model` parameter entirely when the value it would carry (`REVIEWER_MODEL`) is `"inherit"` or empty. An empty value 404s on runtimes without native tier aliases — the default on non-Claude runtimes. Omitting it inherits the orchestrator's model. See @gsd-core/references/model-profile-resolution.md.
+
 ```
 Agent(subagent_type="gsd-code-reviewer", model="{REVIEWER_MODEL}", prompt="
 <files_to_read>
@@ -568,7 +529,7 @@ if [ -f "${REVIEW_PATH}" ]; then
   HAS_STATUS=$(REVIEW_PATH="${REVIEW_PATH}" node -e "
     const fs = require('fs');
     const content = fs.readFileSync(process.env.REVIEW_PATH, 'utf-8');
-    const match = content.match(/^---\n([\s\S]*?)\n---/);
+    const match = content.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---/);
     if (match && /status:/.test(match[1])) { console.log('valid'); } else { console.log('invalid'); }
   " 2>/dev/null)
   
@@ -591,45 +552,7 @@ fi
 ```
 </step>
 
-<step name="dispatch_fix">
-If the `--fix` flag was passed (`FIX_FLAG=true`), delegate to the `code-review-fix.md` workflow
-to auto-apply findings from the REVIEW.md that was just written (or that already existed).
-
-This step runs AFTER `commit_review` so REVIEW.md is guaranteed to be on disk before the fixer
-is invoked. If REVIEW.md was not created (agent failed, scope was empty, etc.), the `code-review-fix.md`
-workflow handles the missing-review error and exits cleanly.
-
-```bash
-if [ "$FIX_FLAG" = "true" ]; then
-  echo ""
-  echo "─────────────────────────────────────────────────────────────────"
-  echo "  --fix: delegating to code-review-fix.md"
-  echo "─────────────────────────────────────────────────────────────────"
-  echo ""
-
-  # Build the fix sub-arguments: pass phase arg plus any --all/--auto flags
-  FIX_ARGS="${PHASE_ARG}"
-  if [ "$FIX_ALL" = "true" ]; then
-    FIX_ARGS="${FIX_ARGS} --all"
-  fi
-  if [ "$FIX_AUTO" = "true" ]; then
-    FIX_ARGS="${FIX_ARGS} --auto"
-  fi
-
-  # Load and execute the code-review-fix workflow.
-  # The fix workflow is the canonical implementation for all fix logic:
-  # gsd-code-fixer agent dispatch, --auto iteration loop, REVIEW-FIX.md commit,
-  # and result presentation. Do not duplicate that logic here.
-  Workflow(workflow="gsd-core/workflows/code-review-fix.md", args="${FIX_ARGS}")
-
-  # Exit after fix workflow completes — present_results is for review-only output.
-  # The fix workflow has its own present_results step.
-  # Exit workflow.
-fi
-```
-
-If `FIX_FLAG` is false, skip this step entirely and proceed to `present_results`.
-</step>
+If `section_manifest` is `null` or `"dispatch-fix"` is in its `included` list: read and execute `gsd-core/workflows/code-review/steps/dispatch-fix.md`. Otherwise skip — do not read the file; proceed to `present_results`.
 
 <step name="present_results">
 Read the REVIEW.md YAML frontmatter to extract finding counts.
@@ -641,7 +564,7 @@ Extract frontmatter between `---` delimiters first to avoid matching values in t
 FRONTMATTER=$(REVIEW_PATH="${REVIEW_PATH}" node -e "
   const fs = require('fs');
   const content = fs.readFileSync(process.env.REVIEW_PATH, 'utf-8');
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  const match = content.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---/);
   if (match) process.stdout.write(match[1]);
 " 2>/dev/null)
 

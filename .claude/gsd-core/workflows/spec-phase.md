@@ -56,7 +56,7 @@ Rotate through these perspectives — each naturally surfaces different blindspo
 ## Step 1: Initialize
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 INIT=$(gsd_run init phase-op "${PHASE}")
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
@@ -126,7 +126,7 @@ Acceptance Criteria:[score 0.0–1.0]
 Ambiguity: [score] ([calculate])
 ```
 
-**If `--auto` and initial ambiguity already ≤ 0.20 with all minimums met:** Skip interview — derive SPEC.md directly from roadmap + requirements. Log: `[auto] Phase requirements are already sufficiently clear — generating SPEC.md from existing context.` Jump to Step 6.
+**If `--auto` and initial ambiguity already ≤ 0.20 with all minimums met:** Skip interview — derive SPEC.md directly from roadmap + requirements. Log: `[auto] Phase requirements are already sufficiently clear — generating SPEC.md from existing context.` Jump to Step 5.5.
 
 **Otherwise:** Continue to Step 4.
 
@@ -159,15 +159,15 @@ After round [N]:
 
 If gate passes (ambiguity ≤ 0.20 AND all minimums met):
 
-**If `--auto`:** Jump to Step 6.
+**If `--auto`:** Jump to Step 5.5.
 
 **Otherwise:** AskUserQuestion:
 - header: "Spec Gate Passed"
 - question: "Ambiguity is [score] — requirements are clear enough to write SPEC.md. Proceed?"
 - options:
-  - "Yes — write SPEC.md" → Jump to Step 6
+  - "Yes — write SPEC.md" → Jump to Step 5.5
   - "One more round" → Continue interview
-  - "Done talking — write it" → Jump to Step 6
+  - "Done talking — write it" → Jump to Step 5.5
 
 **If max rounds reached (6) and gate not passed:**
 
@@ -190,21 +190,21 @@ If gate passes (ambiguity ≤ 0.20 AND all minimums met):
 ## Step 5.5: Edge-Completeness Probe
 
 Run AFTER the ambiguity gate passes (you probe edges of clear requirements, not vague
-ones). Reference: @D:/Repos/lancet/.claude/gsd-core/references/edge-probe.md.
+ones). Reference: @C:/Users/user3/repos/lancet/.claude/gsd-core/references/edge-probe.md.
 
 **Runtime coverage compute — resolve and invoke edge-probe.cjs:**
 
 ```bash
 # Resolve the compiled edge-probe.cjs against the GSD install dir via RUNTIME_DIR (#448)
-# — NOT the consuming project's git root — falling back to git toplevel / D:/Repos/lancet/.claude.
+# — NOT the consuming project's git root — falling back to git toplevel / C:/Users/user3/repos/lancet/.claude.
 # Mirrors the ui-safety-gate.cjs resolution idiom at autonomous.md:290 / plan-phase.md:631.
 _GSD_RT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 EDGE_PROBE_JS=$(for _c in \
   "$_GSD_RT/gsd-core/bin/lib/edge-probe.cjs" \
   "$_GSD_RT/bin/lib/edge-probe.cjs" \
   "$_GSD_RT/.claude/bin/lib/edge-probe.cjs" \
-  "D:/Repos/lancet/.claude/gsd-core/bin/lib/edge-probe.cjs" \
-  "D:/Repos/lancet/.claude/bin/lib/edge-probe.cjs"; do
+  "C:/Users/user3/repos/lancet/.claude/gsd-core/bin/lib/edge-probe.cjs" \
+  "C:/Users/user3/repos/lancet/.claude/bin/lib/edge-probe.cjs"; do
   [ -f "$_c" ] && { echo "$_c"; break; }
 done)
 
@@ -220,8 +220,8 @@ if [ -z "$EDGE_PROBE_JS" ]; then
       "$_GSD_RT/gsd-core/bin/lib/edge-probe.cjs" \
       "$_GSD_RT/bin/lib/edge-probe.cjs" \
       "$_GSD_RT/.claude/bin/lib/edge-probe.cjs" \
-      "D:/Repos/lancet/.claude/gsd-core/bin/lib/edge-probe.cjs" \
-      "D:/Repos/lancet/.claude/bin/lib/edge-probe.cjs"; do
+      "C:/Users/user3/repos/lancet/.claude/gsd-core/bin/lib/edge-probe.cjs" \
+      "C:/Users/user3/repos/lancet/.claude/bin/lib/edge-probe.cjs"; do
       [ -f "$_c" ] && { echo "$_c"; break; }
     done)
   fi
@@ -251,7 +251,8 @@ if ! node -e 'const a=require(process.argv[1]);if(!Array.isArray(a)||a.length===
   exit 1
 fi
 # Invoke the compiled engine and CAPTURE its report — it computes which categories apply per
-# requirement. The covered/backstop/dismissed/unresolved rows in $COVERAGE drive the
+# requirement. The resolved/dismissed/unresolved rows in $COVERAGE (resolved items carry
+# verification: explicit|backstop) drive the
 # resolution loop below (canonical taxonomy compute, NOT LLM re-derivation from prose).
 # The engine FAILS CLOSED (exit 2) on an invalid authored shape or bad input — so the capture
 # MUST be exit-checked. A bare `COVERAGE=$(node …)` swallows that exit code, leaves $COVERAGE
@@ -288,21 +289,22 @@ an empty `## Edge Coverage` section after explicit confirmation.
 For each Requirement gathered so far:
 1. Classify its shape and raise only applicable edge categories (relevance filter — see
    the taxonomy in the reference). Reuse any edges the Round-4 Failure Analyst already
-   surfaced as pre-`covered`.
+   surfaced as pre-resolved.
 2. For each raised category, propose a CONCRETE candidate edge (not "consider
    boundaries" — e.g. "R2 merges intervals; what about `[[1,2],[2,3]]` that only touch?").
 3. Resolve each with the user (AskUserQuestion; text mode → numbered list):
    - **Specify it** → write a new pass/fail line into Acceptance Criteria AND mark the
-     edge `covered`.
+     edge `resolved` with `verification: explicit`.
    - **Dismiss (reason)** → mark `dismissed` with a required non-empty reason.
-   - **Backstop with a test** → mark `backstop`; note "held-out edge test" for plan-phase.
+   - **Backstop with a test** → mark `resolved` with `verification: backstop`; note
+     "held-out edge test" for plan-phase.
    - **Defer** → leave `unresolved`.
    - An `unclassified` row (probe `unclassified — review manually`) means the requirement's
      prose matched no shape cue (#1110) — treat it like any other candidate (**Specify**,
      **Dismiss (reason)**, or **Defer**). A manual-review nudge, not a hard block.
 
 **Soft gate (after resolving):**
-- All applicable edges resolved → proceed to Step 6.
+- All applicable edges resolved → proceed to Step 5.6.
 - Any `unresolved` → AskUserQuestion:
   - header: "Edge Coverage"
   - question: "[N] edge(s) are unresolved: [list]. What do you want to do?"
@@ -311,13 +313,14 @@ For each Requirement gathered so far:
   - On "anyway": write SPEC.md with those rows marked `⚠ Edge unresolved — planner must
     treat as assumption`.
 
-**`--auto` mode:** auto-`covered` where a defensible acceptance criterion can be written;
-otherwise auto-`backstop` (never auto-dismiss — a wrong dismissal is the exact silent
-failure being eliminated). Log: `[auto] edge coverage: C covered, B backstop, U unresolved`.
+**`--auto` mode:** auto-`resolved` (verification: explicit) where a defensible acceptance
+criterion can be written; otherwise auto-`resolved` (verification: backstop) (never
+auto-dismiss — a wrong dismissal is the exact silent failure being eliminated). Log:
+`[auto] edge coverage: E explicit, B backstop, U unresolved`.
 
 **`unclassified` exception (#1110):** `--auto` leaves an `unclassified` candidate
 **`unresolved`** (the soft gate surfaces it as a flagged planner assumption) — it never
-auto-`backstop`s it. A missing shape is not evidence an edge exists, so minting a held-out
+auto-resolves it with `verification: backstop`. A missing shape is not evidence an edge exists, so minting a held-out
 edge obligation on a requirement that may be genuinely edge-free would be a false claim and
 risks a vacuous edge test. Leaving it `unresolved` keeps the zero-cue requirement visible
 (never a silent drop) without fabricating an edge — which is exactly #1110's purpose: surface
@@ -328,7 +331,7 @@ Populate the `## Edge Coverage` section of SPEC.md from the resolved edges.
 ## Step 5.6: Prohibition-Completeness Probe (must-NOT)
 
 Run AFTER Step 5.5 (you probe the must-NOT axis of clear requirements, over the same
-requirement list). Reference: @D:/Repos/lancet/.claude/gsd-core/references/prohibition-probe.md — the
+requirement list). Reference: @C:/Users/user3/repos/lancet/.claude/gsd-core/references/prohibition-probe.md — the
 portable two-stage protocol, the canon-referral rule, and the status×verification schema
 live there (size-cap discipline; keep this step lean).
 
@@ -423,9 +426,9 @@ downstream rather than blocking authoring.
 
 ## Step 6: Generate SPEC.md
 
-Use the SPEC.md template from @D:/Repos/lancet/.claude/gsd-core/templates/spec.md.
+Use the SPEC.md template from @C:/Users/user3/repos/lancet/.claude/gsd-core/templates/spec.md.
 
-- Populate the **Edge Coverage** section from Step 5.5 (covered/dismissed/backstop/unresolved rows).
+- Populate the **Edge Coverage** section from Step 5.5 (resolved/dismissed/unresolved rows; resolved items carry `verification: explicit|backstop`).
 - Populate the **Prohibitions** section from Step 5.6 (resolved/dismissed/unresolved rows with the test|judgment tier).
 
 **Requirements for every requirement entry:**

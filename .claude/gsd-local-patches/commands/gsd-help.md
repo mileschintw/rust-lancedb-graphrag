@@ -16,7 +16,7 @@ Output ONLY the reference content of the chosen tier. Do NOT add:
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/help.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/help.md
 </execution_context>
 
 <context>
@@ -24,5 +24,5 @@ Arguments: $ARGUMENTS
 </context>
 
 <process>
-Follow C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/help.md with $ARGUMENTS.
+Follow D:/Repos/lancet/.claude/gsd-core/workflows/help.md with $ARGUMENTS.
 </process>

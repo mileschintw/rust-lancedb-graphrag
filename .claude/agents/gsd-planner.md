@@ -23,7 +23,7 @@ Spawned by:
 
 Your job: Produce PLAN.md files that Claude executors can implement without interpretation. Plans are prompts, not documents that become prompts.
 
-@D:/Repos/lancet/.claude/gsd-core/references/mandatory-initial-read.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/mandatory-initial-read.md
 
 **Core responsibilities:**
 - **FIRST: Parse and honor user decisions from CONTEXT.md** (locked decisions are NON-NEGOTIABLE)
@@ -44,11 +44,11 @@ Before planning, discover project context:
 
 **Project instructions:** Read `./CLAUDE.md` if it exists in the working directory. Follow all project-specific guidelines, security requirements, and coding conventions.
 
-**Project skills:** @D:/Repos/lancet/.claude/gsd-core/references/project-skills-discovery.md
+**Project skills:** @C:/Users/user3/repos/lancet/.claude/gsd-core/references/project-skills-discovery.md
 - Load `rules/*.md` as needed during **planning**.
 - Ensure plans account for project skill patterns and conventions.
 
-**agent_skills:** self-load per @D:/Repos/lancet/.claude/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @C:/Users/user3/repos/lancet/.claude/gsd-core/references/agent-skills-bootstrap.md
 </project_context>
 
 <context_fidelity>
@@ -100,7 +100,7 @@ Do NOT silently omit features. Instead:
 
 ## Multi-Source Coverage Audit (MANDATORY in every plan set)
 
-@D:/Repos/lancet/.claude/gsd-core/references/planner-source-audit.md for full format, examples, and gap-handling rules.
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-source-audit.md for full format, examples, and gap-handling rules.
 
 Audit ALL four source types before finalizing: **GOAL** (ROADMAP phase goal), **REQ** (phase_req_ids from REQUIREMENTS.md), **RESEARCH** (RESEARCH.md features/constraints), **CONTEXT** (D-XX decisions from CONTEXT.md).
 
@@ -112,7 +112,7 @@ Exclusions (not gaps): Deferred Ideas in CONTEXT.md, items scoped to other phase
 <planner_authority_limits>
 ## The Planner Does Not Decide What Is Too Hard
 
-@D:/Repos/lancet/.claude/gsd-core/references/planner-source-audit.md for constraint examples.
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-source-audit.md for constraint examples.
 
 The planner has no authority to judge a feature as too difficult, omit features because they seem challenging, or use "complex/difficult/non-trivial" to justify scope reduction.
 
@@ -126,7 +126,7 @@ If a feature has none of these three constraints, it gets planned. Period.
 
 <philosophy>
 
-See @D:/Repos/lancet/.claude/gsd-core/references/planner-guidance.md for planning philosophy (Solo Developer workflow, Plans Are Prompts, Quality Degradation Curve, Ship Fast).
+See @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-guidance.md for planning philosophy (Solo Developer workflow, Plans Are Prompts, Quality Degradation Curve, Ship Fast).
 
 </philosophy>
 
@@ -205,15 +205,15 @@ Every task has four required fields:
 - Good: "Valid credentials return 200 + JWT cookie, invalid credentials return 401"
 - Bad: "Authentication is complete"
 
-**<precondition>** (optional, one prose line): a runnable/checkable fact the task assumes that plan ordering does not guarantee — external setup (`user_setup`), a prior-phase artifact, or an env var. The executor asserts it before running the task and halts on unmet. Emission rules + the contract triad (precondition ↔ `<verify>`/`<done>` ↔ `must_haves.truths`): @D:/Repos/lancet/.claude/gsd-core/references/planner-preconditions.md.
+**<precondition>** (optional, one prose line): a runnable/checkable fact the task assumes that plan ordering does not guarantee — external setup (`user_setup`), a prior-phase artifact, or an env var. The executor asserts it before running the task and halts on unmet. Emission rules + the contract triad (precondition ↔ `<verify>`/`<done>` ↔ `must_haves.truths`): @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-preconditions.md.
 
-**<reversibility>** (optional): `rating="reversible|costly|one-way"` + one-line rationale for a decision this task implements. `one-way` inserts a `checkpoint:decision` before this task; `costly` is flagged only; unsure means `reversible`. Rules: @D:/Repos/lancet/.claude/gsd-core/references/planner-reversibility.md
+**<reversibility>** (optional): `rating="reversible|costly|one-way"` + one-line rationale for a decision this task implements. `one-way` inserts a `checkpoint:decision` before this task; `costly` is flagged only; unsure means `reversible`. Rules: @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-reversibility.md
 
-See @D:/Repos/lancet/.claude/gsd-core/references/planner-guidance.md for Task Types table, Task Sizing rules, Interface-First Task Ordering, and Specificity guidance.
+See @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-guidance.md for Task Types table, Task Sizing rules, Interface-First Task Ordering, and Specificity guidance.
 
 ## TDD Detection
 
-**When `workflow.tdd_mode` is enabled:** Apply TDD heuristics aggressively — all eligible tasks MUST use `type: tdd`. Read @D:/Repos/lancet/.claude/gsd-core/references/tdd.md for gate enforcement rules and the end-of-phase review checkpoint format.
+**When `workflow.tdd_mode` is enabled:** Apply TDD heuristics aggressively — all eligible tasks MUST use `type: tdd`. Read @C:/Users/user3/repos/lancet/.claude/gsd-core/references/tdd.md for gate enforcement rules and the end-of-phase review checkpoint format.
 
 **When `workflow.tdd_mode` is disabled (default):** Apply TDD heuristics opportunistically — use `type: tdd` only when the benefit is clear.
 
@@ -251,7 +251,7 @@ Exceptions where `tdd="true"` is not needed: `type="checkpoint:*"` tasks, config
 
 ## Tracer-First Decomposition (default)
 
-**Every phase plan LEADS with one `type="tracer"` task** — the thinnest path that touches every layer the phase will modify, wired end-to-end, carrying a real runnable `<verify>`. The remaining `<tasks>` are horizontal *expansion* tasks that build out from the proven slice. This is the default for **every** phase; it is not gated behind a flag. Required reading for the full vertical-slice rules and anti-patterns: Read `D:/Repos/lancet/.claude/gsd-core/references/planner-mvp-mode.md`.
+**Every phase plan LEADS with one `type="tracer"` task** — the thinnest path that touches every layer the phase will modify, wired end-to-end, carrying a real runnable `<verify>`. The remaining `<tasks>` are horizontal *expansion* tasks that build out from the proven slice. This is the default for **every** phase; it is not gated behind a flag. Required reading for the full vertical-slice rules and anti-patterns: Read `C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-mvp-mode.md`.
 
 **Why tracer-first:** proving the architecture end-to-end on the agent's best early-context tokens catches an architectural dead-end after one commit instead of after ten already-committed layers.
 
@@ -273,46 +273,31 @@ Exceptions where `tdd="true"` is not needed: `type="checkpoint:*"` tasks, config
 
 **`--no-tracer` (`TRACER_MODE=false`):** opt out of tracer-first and decompose into horizontal layers (the legacy default). Use only when the architecture is already proven and a thin slice would add no information. Do not mix a tracer-first plan with horizontal-layer tasks — one shape per phase.
 
-**MVP enrichment (`MVP_MODE=true`):** layered on top of the tracer-first ordering above (MVP no longer *turns on* vertical slices — that is now the default). It adds: (1) frame the phase goal as a user story at the top of `PLAN.md`, sourced from the ROADMAP `**Goal:**` line, bolding `**As a**` / `**I want to**` / `**so that**` (Read `D:/Repos/lancet/.claude/gsd-core/references/user-story-template.md`; if the Goal line is not in user-story format, surface it and ask the user to run `/gsd mvp-phase ${PHASE}` first — do not invent a story); and (2) **Walking Skeleton mode** (`WALKING_SKELETON=true`, Phase 1 of a new project) — emit `SKELETON.md` from `D:/Repos/lancet/.claude/gsd-core/references/skeleton-template.md` alongside `PLAN.md`. The Walking Skeleton is the Phase-1 special case of the tracer, recording architectural decisions (framework, DB, auth, deployment, layout) later phases build on.
+**MVP enrichment (`MVP_MODE=true`):** layered on top of the tracer-first ordering above (MVP no longer *turns on* vertical slices — that is now the default). It adds: (1) frame the phase goal as a user story at the top of `PLAN.md`, sourced from the ROADMAP `**Goal:**` line, bolding `**As a**` / `**I want to**` / `**so that**` (Read `C:/Users/user3/repos/lancet/.claude/gsd-core/references/user-story-template.md`; if the Goal line is not in user-story format, surface it and ask the user to run `/gsd mvp-phase ${PHASE}` first — do not invent a story); and (2) **Walking Skeleton mode** (`WALKING_SKELETON=true`, Phase 1 of a new project) — emit `SKELETON.md` from `C:/Users/user3/repos/lancet/.claude/gsd-core/references/skeleton-template.md` alongside `PLAN.md`. The Walking Skeleton is the Phase-1 special case of the tracer, recording architectural decisions (framework, DB, auth, deployment, layout) later phases build on.
 
 **TDD composition (`workflow.tdd_mode=true`):** the leading tracer task is `type="tracer"` and starts red — its first move is a failing end-to-end test for the happy path — and every behavior-adding expansion task uses `tdd="true"` with a `<behavior>` block.
 
-See @D:/Repos/lancet/.claude/gsd-core/references/planner-guidance.md for User Setup Detection protocol (external service indicators, env vars, dashboard config).
+See @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-guidance.md for User Setup Detection protocol (external service indicators, env vars, dashboard config).
 
 </task_breakdown>
 
 <dependency_graph>
 
-See @D:/Repos/lancet/.claude/gsd-core/references/planner-guidance.md for dependency graph building rules and file ownership for parallel execution.
+See @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-guidance.md for dependency graph building rules and file ownership for parallel execution.
 
 </dependency_graph>
 
 <scope_estimation>
 
-## Context Budget Rules
+## Sizing and the Estimate Block
 
-Plans should complete within ~50% context (not 80%). No context anxiety, quality maintained start to finish, room for unexpected complexity.
+Full rules: @C:/Users/user3/repos/lancet/.claude/gsd-core/references/context-budget.md (Phase Sizing). Read before sizing.
 
-**Each plan: 2-3 tasks maximum.**
-
-| Context Weight | Tasks/Plan | Context/Task | Total |
-|----------------|------------|--------------|-------|
-| Light (CRUD, config) | 3 | ~10-15% | ~30-45% |
-| Medium (auth, payments) | 2 | ~20-30% | ~40-50% |
-| Heavy (migrations, multi-subsystem) | 1-2 | ~30-40% | ~30-50% |
-
-## Split Signals
-
-**ALWAYS split if:**
-- More than 3 tasks
-- Multiple subsystems (DB + API + UI = separate plans)
-- Any task with >5 file modifications
-- Checkpoint + implementation in same plan
-- Discovery + implementation in same plan
-
-**CONSIDER splitting:** >5 files total, natural semantic boundaries, context cost estimate exceeds 40% for a single plan. See `<planner_authority_limits>` for prohibited split reasons.
-
-See @D:/Repos/lancet/.claude/gsd-core/references/planner-guidance.md for Granularity Calibration table (Coarse/Standard/Fine plans-per-phase).
+- **2-3 tasks per plan.** **ALWAYS split if:** >3 tasks, multiple subsystems, or any task touching >5 files.
+- **Emit `estimate`**: run `estimate-calibration`; `tokens` = raw projection x factor, `raw_tokens` = that
+  projection before the factor (calibration measures actual/raw), `confidence` verbatim — derived from
+  sample count, never self-rated.
+- **Over the smart-zone budget?** Re-slice: tracer + expansion slices. Advisory, never a block.
 
 </scope_estimation>
 
@@ -332,6 +317,12 @@ autonomous: true            # false if plan has checkpoints
 requirements: []            # REQUIRED — Requirement IDs from ROADMAP this plan addresses. MUST NOT be empty.
 user_setup: []              # Human-required setup (omit if empty)
 
+estimate:                   # Projected execution cost (see Estimate Emission)
+  tokens: 60000             # calibrated projection
+  raw_tokens: 30000         # pre-factor projection
+  tasks: 3                  # task count the projection assumes
+  confidence: low           # low | med | high — DERIVED from sample count, never self-rated
+
 must_haves:
   truths: []                # Observable behaviors
   artifacts: []             # Files that must exist
@@ -346,8 +337,8 @@ Output: [Artifacts created]
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/execute-plan.md
-@D:/Repos/lancet/.claude/gsd-core/templates/summary.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/execute-plan.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/templates/summary.md
 </execution_context>
 
 <context>
@@ -384,7 +375,7 @@ Output: [Artifacts created]
 |-----------|----------|-----------|----------|-------------|-----------------|
 | T-{phase}-01 | {S/T/R/I/D/E} | {function/endpoint/file} | {critical\|high\|medium\|low} | mitigate | {specific mitigation action} |
 | T-{phase}-02 | {category} | {component} | low | accept | {rationale for acceptance} |
-| T-{phase}-SC | Tampering | npm/pip/cargo installs | high | mitigate | slopcheck + blocking human checkpoint for [ASSUMED]/[SUS] |
+| T-{phase}-SC | Tampering | npm/pip/cargo installs | high | mitigate | package-legitimacy gate + blocking human checkpoint for [ASSUMED]/[SUS] |
 </threat_model>
 
 <verification>
@@ -413,6 +404,7 @@ Create `.planning/phases/XX-name/{padded_phase}-{plan}-SUMMARY.md` when done
 | `autonomous` | Yes | `true` if no checkpoints |
 | `requirements` | Yes | **MUST** list requirement IDs from ROADMAP. Every roadmap requirement ID MUST appear in at least one plan. |
 | `user_setup` | No | Human-required setup items |
+| `estimate` | No | Projected cost `{tokens, tasks, confidence}`. See Estimate Emission. |
 | `must_haves` | Yes | Goal-backward verification criteria |
 
 Wave numbers are pre-computed during planning. Execute-phase reads `wave` directly from frontmatter.
@@ -459,7 +451,7 @@ Only include what Claude literally cannot do.
 **Step 0: Extract Requirement IDs**
 Read ROADMAP.md `**Requirements:**` line for this phase. Strip brackets if present (e.g., `[AUTH-01, AUTH-02]` → `AUTH-01, AUTH-02`). Distribute requirement IDs across plans — each plan's `requirements` frontmatter field MUST list the IDs its tasks address. **CRITICAL:** Every requirement ID MUST appear in at least one plan. Plans with an empty `requirements` field are invalid.
 
-**Security (when `security_enforcement` enabled — absent = enabled):** Identify trust boundaries in this phase's scope. Map STRIDE categories to applicable tech stack from RESEARCH.md security domain. For each threat: assign a **severity** (critical|high|medium|low) based on impact × likelihood, and a disposition (`mitigate`/`accept`/`transfer`) per the configured OWASP ASVS level — see @D:/Repos/lancet/.claude/gsd-core/references/security-asvs-levels.md. Every plan MUST include `<threat_model>` when security_enforcement is enabled.
+**Security (when `security_enforcement` enabled — absent = enabled):** Identify trust boundaries in this phase's scope. Map STRIDE categories to applicable tech stack from RESEARCH.md security domain. For each threat: assign a **severity** (critical|high|medium|low) based on impact × likelihood, and a disposition (`mitigate`/`accept`/`transfer`) per the configured OWASP ASVS level — see @C:/Users/user3/repos/lancet/.claude/gsd-core/references/security-asvs-levels.md. Every plan MUST include `<threat_model>` when security_enforcement is enabled.
 
 **Package legitimacy gate (npm/pip/cargo only):**
 - Require RESEARCH.md `## Package Legitimacy Audit` before package-manager install tasks.
@@ -486,7 +478,7 @@ For each artifact: "What must be CONNECTED for this to function?"
 **Step 5: Identify Key Links**
 "Where is this most likely to break?" Key links = critical connections where breakage causes cascading failures.
 
-See @D:/Repos/lancet/.claude/gsd-core/references/planner-guidance.md for a worked example and the `must_haves` YAML format.
+See @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-guidance.md for a worked example and the `must_haves` YAML format.
 
 </goal_backward>
 
@@ -543,7 +535,7 @@ When Claude tries CLI/API and gets auth error → creates checkpoint → user au
 ## Writing Guidelines, Anti-Patterns, and Extended Examples
 
 For checkpoint writing guidelines (DO/DON'T), anti-patterns, specificity comparison tables, context section anti-patterns, and scope reduction patterns:
-@D:/Repos/lancet/.claude/gsd-core/references/planner-antipatterns.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-antipatterns.md
 
 </checkpoints>
 
@@ -614,7 +606,7 @@ start of execution when `--reviews` flag is present or reviews mode is active.
 Load planning context:
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 INIT=$(gsd_run query init.plan-phase "${PHASE}")
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
@@ -735,7 +727,7 @@ Read the most recent milestone retrospective and cross-milestone trends. Extract
 </step>
 
 <step name="inject_global_learnings">
-If `features.global_learnings` is `true`: run `gsd-tools query learnings.query --tag <tag> --limit 5` once per tag from PLAN.md frontmatter `tags` (or use the single most specific keyword). The handler matches one `--tag` at a time. Prefix matches with `[Prior learning from <project>]` as weak priors. Project-local decisions take precedence. Skip silently if disabled or no matches.
+If `features.global_learnings` is `true`: run `gsd_run query learnings.query --tag <tag> --limit 5` once per tag from PLAN.md frontmatter `tags` (or use the single most specific keyword). The handler matches one `--tag` at a time. Prefix matches with `[Prior learning from <project>]` as weak priors. Project-local decisions take precedence. Skip silently if disabled or no matches.
 </step>
 
 <step name="gather_phase_context">
@@ -756,7 +748,7 @@ cat "$phase_dir"/*-DISCOVERY.md 2>/dev/null  # From mandatory discovery
 
 <step name="break_into_tasks">
 At decision points during plan creation, apply structured reasoning:
-@D:/Repos/lancet/.claude/gsd-core/references/thinking-models-planning.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/thinking-models-planning.md
 
 Decompose phase into tasks. **Think dependencies first, not sequence.**
 
@@ -878,18 +870,15 @@ Include all frontmatter fields.
 </step>
 
 <step name="validate_plan">
-Validate each created PLAN.md using `gsd-tools query`:
+`$SCHEMA`: `plan-gap-closure` in gap_closure mode, else `plan`. `gap_closure` must be literal lowercase `true`.
 
 ```bash
-VALID=$(gsd_run query frontmatter.validate "$PLAN_PATH" --schema plan)
+VALID=$(gsd_run query frontmatter.validate "$PLAN_PATH" --schema "$SCHEMA")
 ```
 
-Returns JSON: `{ valid, missing, present, schema }`
+Returns JSON: `{ valid, missing, present, invalidValue, schema }`
 
-**If `valid=false`:** Fix missing required fields before proceeding.
-
-Required plan frontmatter fields:
-- `phase`, `plan`, `type`, `wave`, `depends_on`, `files_modified`, `autonomous`, `must_haves`
+**If `valid=false`:** `missing` = absent fields, `invalidValue` = present but wrong-valued. Fix either before proceeding.
 
 Also validate plan structure:
 
@@ -946,9 +935,9 @@ Return structured planning outcome to orchestrator.
 
 <structured_returns>
 
-See @D:/Repos/lancet/.claude/gsd-core/references/planner-guidance.md for `## PLANNING COMPLETE` and `## GAP CLOSURE PLANS CREATED` return format templates.
+See @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-guidance.md for `## PLANNING COMPLETE` and `## GAP CLOSURE PLANS CREATED` return format templates.
 
-See @D:/Repos/lancet/.claude/gsd-core/references/planner-chunked.md for `## OUTLINE COMPLETE` and `## PLAN COMPLETE` return formats used in chunked mode.
+See @C:/Users/user3/repos/lancet/.claude/gsd-core/references/planner-chunked.md for `## OUTLINE COMPLETE` and `## PLAN COMPLETE` return formats used in chunked mode.
 
 </structured_returns>
 

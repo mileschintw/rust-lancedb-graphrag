@@ -20,7 +20,7 @@ Output: Forensic report saved to `.planning/forensics/`, presented inline, with 
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/forensics.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/forensics.md
 </execution_context>
 
 <context>

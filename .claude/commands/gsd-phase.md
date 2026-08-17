@@ -31,10 +31,10 @@ Mode routing:
 </routing>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/add-phase.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/insert-phase.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/remove-phase.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/edit-phase.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/add-phase.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/insert-phase.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/remove-phase.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/edit-phase.md
 </execution_context>
 
 <context>

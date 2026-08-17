@@ -28,7 +28,7 @@ If the prompt contains a `<required_reading>` block, you MUST use the `Read` too
 
 **Project skills:** Check `.claude/skills/` or `.agents/skills/` directory if either exists:
 
-**agent_skills:** self-load per @D:/Repos/lancet/.claude/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @C:/Users/user3/repos/lancet/.claude/gsd-core/references/agent-skills-bootstrap.md
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation
@@ -434,11 +434,11 @@ This annotation is consumed by downstream workflows (`new-project`, `progress`) 
 | 2. Name | 0/2 | Not started | - |
 ```
 
-Reference full template: `D:/Repos/lancet/.claude/gsd-core/templates/roadmap.md`
+Reference full template: `C:/Users/user3/repos/lancet/.claude/gsd-core/templates/roadmap.md`
 
 ## STATE.md Structure
 
-Use template from `D:/Repos/lancet/.claude/gsd-core/templates/state.md`.
+Use template from `C:/Users/user3/repos/lancet/.claude/gsd-core/templates/state.md`.
 
 Key sections:
 - Project Reference (core value, current focus)
@@ -561,9 +561,27 @@ If gaps found, include in draft for user decision.
 
 Write files first, then return. This ensures artifacts persist even if context is lost.
 
-1. **Write ROADMAP.md** using output format
+**Arm the write-guard sentinel before each curated write, when the target already exists.** On a
+`/gsd-new-milestone` run `.planning/ROADMAP.md` and `.planning/STATE.md` still hold the *outgoing*
+milestone's content, and the replacement carries only the new milestone's phases — a legitimate,
+intentional shrink that the `gsd-write-guard` PreToolUse hook (#2255) hard-blocks on curated
+`.planning/` artifacts. A hook inherits the *runtime's* environment, so no per-step env var can reach
+it; the hatch is a **single-use sentinel file the guard itself consumes**. It is path-bound and
+single-use, so arm it immediately before each Write — one arming can never cover both files. On a
+`/gsd-new-project` run neither target exists, the guard exempts the write (ENOENT), and the `[ -f ]`
+test skips the arming so no unconsumed token is left on disk.
 
-2. **Write STATE.md** using output format
+1. **Write ROADMAP.md** using output format — arm first, then Write:
+
+   ```bash
+   [ -f .planning/ROADMAP.md ] && printf '.planning/ROADMAP.md\n' > .planning/.gsd-allow-shrink
+   ```
+
+2. **Write STATE.md** using output format — arm first, then Write:
+
+   ```bash
+   [ -f .planning/STATE.md ] && printf '.planning/STATE.md\n' > .planning/.gsd-allow-shrink
+   ```
 
 3. **Update REQUIREMENTS.md traceability section**
 

@@ -19,8 +19,8 @@ Produces EVAL-REVIEW.md with score, verdict, gaps, and remediation plan.
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/eval-review.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ai-evals.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/eval-review.md
+@D:/Repos/lancet/.claude/gsd-core/references/ai-evals.md
 </execution_context>
 
 <context>

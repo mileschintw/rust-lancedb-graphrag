@@ -18,7 +18,7 @@ Closes the plan → execute → verify → ship loop.
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/ship.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/ship.md
 </execution_context>
 
-Execute the ship workflow from @C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/ship.md end-to-end.
+Execute the ship workflow from @D:/Repos/lancet/.claude/gsd-core/workflows/ship.md end-to-end.

@@ -186,6 +186,8 @@ function evaluateUatPassed(phaseFullDir, opts) {
             blockers,
             no_uat_artifacts,
             policy: { require_verification: requireVerification },
+            // readVerificationStatus was never reached on this early-return path.
+            verification_stale_check_indeterminate: false,
         };
     }
     // Filter UAT and VERIFICATION files using the same filter as cmdPhaseComplete
@@ -194,9 +196,10 @@ function evaluateUatPassed(phaseFullDir, opts) {
     // ── Process UAT files ──────────────────────────────────────────────────────
     for (const file of uatFileNames) {
         uatFiles.push(file);
+        const uatFilePath = node_path_1.default.join(phaseFullDir, file);
         let raw = '';
         try {
-            raw = node_fs_1.default.readFileSync(node_path_1.default.join(phaseFullDir, file), 'utf-8');
+            raw = node_fs_1.default.readFileSync(uatFilePath, 'utf-8');
         }
         catch {
             blockers.push(`${file}: could not read file`);
@@ -210,7 +213,7 @@ function evaluateUatPassed(phaseFullDir, opts) {
         if (unterminatedFence || unterminatedComment) {
             blockers.push(`${file}: malformed markdown (unterminated fence or comment)`);
         }
-        const fm = extractFrontmatter(raw);
+        const fm = extractFrontmatter(raw, uatFilePath);
         // File-level frontmatter status check
         if (fm['status'] && BLOCKING_UAT_FM_STATUSES.has(fm['status'])) {
             blockers.push(`${file}: frontmatter status=${fm['status']}`);
@@ -240,15 +243,16 @@ function evaluateUatPassed(phaseFullDir, opts) {
     let hasPassingVerification = false;
     for (const file of verFileNames) {
         verificationFiles.push(file);
+        const verificationFilePath = node_path_1.default.join(phaseFullDir, file);
         let raw = '';
         try {
-            raw = node_fs_1.default.readFileSync(node_path_1.default.join(phaseFullDir, file), 'utf-8');
+            raw = node_fs_1.default.readFileSync(verificationFilePath, 'utf-8');
         }
         catch {
             blockers.push(`${file}: could not read verification file`);
             continue;
         }
-        const vfm = extractFrontmatter(raw);
+        const vfm = extractFrontmatter(raw, verificationFilePath);
         const vStatus = vfm['status'];
         if (vStatus && BLOCKING_VERIFICATION_FM_STATUSES.has(vStatus)) {
             blockers.push(`${file}: verification status=${vStatus}`);
@@ -261,8 +265,15 @@ function evaluateUatPassed(phaseFullDir, opts) {
         // (handled by the requireVerification policy check below if needed)
     }
     // ── Policy: requireVerification ───────────────────────────────────────────
+    // #3057 B3: routing here is UNCHANGED — an indeterminate staleness check
+    // still falls through to the same `verificationStatus !== 'passed'` branch
+    // it always did (the pre-existing fail-open contract). `verificationStaleCheckIndeterminate`
+    // only records the fact for the report below; it never itself gates `blockers`.
+    let verificationStaleCheckIndeterminate = false;
     if (requireVerification) {
-        const verificationStatus = readVerificationStatus(phaseFullDir).status;
+        const verificationResult = readVerificationStatus(phaseFullDir);
+        const verificationStatus = verificationResult.status;
+        verificationStaleCheckIndeterminate = verificationResult.staleCheckIndeterminate === true;
         if (verificationStatus === 'stale') {
             blockers.push('policy: verification status=stale');
         }
@@ -286,6 +297,7 @@ function evaluateUatPassed(phaseFullDir, opts) {
         policy: {
             require_verification: requireVerification,
         },
+        verification_stale_check_indeterminate: verificationStaleCheckIndeterminate,
     };
 }
 module.exports = {

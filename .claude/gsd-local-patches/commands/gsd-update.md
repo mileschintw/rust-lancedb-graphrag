@@ -25,7 +25,7 @@ Routes to the update workflow which handles:
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/update.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/update.md
 </execution_context>
 
 <flags>
@@ -44,6 +44,6 @@ Parse the first token of $ARGUMENTS:
 </process>
 
 <execution_context_extended>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/sync-skills.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/reapply-patches.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/sync-skills.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/reapply-patches.md
 </execution_context_extended>

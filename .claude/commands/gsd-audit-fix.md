@@ -26,7 +26,7 @@ Flags:
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/audit-fix.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/audit-fix.md
 </execution_context>
 
 <process>

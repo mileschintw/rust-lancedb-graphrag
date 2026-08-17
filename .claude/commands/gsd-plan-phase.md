@@ -1,7 +1,7 @@
 ---
 name: gsd-plan-phase
 description: Create detailed phase plan (PLAN.md) with verification loop
-argument-hint: "[phase] [--auto] [--research] [--skip-research] [--research-phase <N>] [--view] [--gaps] [--skip-verify] [--prd <file>] [--ingest <path-or-glob>] [--ingest-format <auto|nygard|madr|narrative>] [--reviews] [--text] [--tdd] [--mvp] [--no-tracer] [--no-reversibility-gates]"
+argument-hint: "[phase] [--auto] [--research] [--skip-research] [--research-phase <N>] [--view] [--gaps] [--skip-verify] [--skip-ui] [--prd <file>] [--ingest <path-or-glob>] [--ingest-format <auto|nygard|madr|narrative>] [--reviews] [--text] [--bounce] [--skip-bounce] [--chunked] [--tdd] [--mvp] [--granularity <coarse|standard|fine>] [--no-tracer] [--no-reversibility-gates]"
 effort: max
 allowed-tools:
   - Read
@@ -31,8 +31,8 @@ Create executable phase prompts (PLAN.md files) for a roadmap phase with integra
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/plan-phase.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/plan-phase.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <runtime_note>

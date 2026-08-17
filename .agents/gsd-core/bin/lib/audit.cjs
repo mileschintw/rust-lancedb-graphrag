@@ -28,6 +28,9 @@ const { extractFrontmatter } = frontmatter;
 const phaseIdMod = require("./phase-id.cjs");
 const { PHASE_NUMBER_TOKEN_SOURCE } = phaseIdMod;
 const security_cjs_1 = require("./security.cjs");
+// The SCOPE BOUNDARY convention's filename (`agents/gsd-executor.md`), shared
+// verbatim with the #2287 phase-boundary reader in `uat.cts`.
+const DEFERRED_ITEMS_FILENAME = 'deferred-items.md';
 // Terminal UAT states: `complete` (legacy) and `resolved` (post-gap-closure
 // per workflows/execute-phase.md). Hoisted outside scanUatGaps so the Set is
 // not recreated on each loop iteration.
@@ -66,7 +69,7 @@ function scanDebugSessions(planDir) {
         const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
         if (content === null)
             continue;
-        const fm = extractFrontmatter(content);
+        const fm = extractFrontmatter(content, safeFilePath);
         const status = (fm.status || 'unknown').toLowerCase();
         if (status === 'resolved' || status === 'complete')
             continue;
@@ -148,7 +151,7 @@ function scanQuickTasks(planDir) {
                 status = 'unreadable';
             }
             else {
-                const fm = extractFrontmatter(content);
+                const fm = extractFrontmatter(content, safeSum);
                 status = (fm.status || 'unknown').toLowerCase();
             }
         }
@@ -205,7 +208,7 @@ function scanThreads(planDir) {
         const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
         if (content === null)
             continue;
-        const fm = extractFrontmatter(content);
+        const fm = extractFrontmatter(content, safeFilePath);
         let status = (fm.status || '').toLowerCase().trim();
         // Fall back to scanning body for ## Status: OPEN / IN PROGRESS
         if (!status) {
@@ -266,7 +269,7 @@ function scanTodos(planDir) {
         const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
         if (content === null)
             continue;
-        const fm = extractFrontmatter(content);
+        const fm = extractFrontmatter(content, safeFilePath);
         // Extract first line of body after frontmatter
         const bodyMatch = content.replace(/^---[\s\S]*?---\n?/, '');
         const firstLine = bodyMatch.trim().split('\n')[0] || '';
@@ -317,7 +320,7 @@ function scanSeeds(planDir) {
         const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
         if (content === null)
             continue;
-        const fm = extractFrontmatter(content);
+        const fm = extractFrontmatter(content, safeFilePath);
         const status = (fm.status || 'dormant').toLowerCase();
         if (!unimplementedStatuses.has(status))
             continue;
@@ -382,7 +385,7 @@ function scanUatGaps(planDir) {
             const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
             if (content === null)
                 continue;
-            const fm = extractFrontmatter(content);
+            const fm = extractFrontmatter(content, safeFilePath);
             const status = (fm.status || 'unknown').toLowerCase();
             const result = (fm.result || '').toLowerCase();
             // Also accept `result: all_pass` as a fallback when status is absent
@@ -445,7 +448,7 @@ function scanVerificationGaps(planDir) {
             const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
             if (content === null)
                 continue;
-            const fm = extractFrontmatter(content);
+            const fm = extractFrontmatter(content, safeFilePath);
             const status = (fm.status || 'unknown').toLowerCase();
             if (status !== 'gaps_found' && status !== 'human_needed')
                 continue;
@@ -500,7 +503,7 @@ function scanContextQuestions(planDir) {
             const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
             if (content === null)
                 continue;
-            const fm = extractFrontmatter(content);
+            const fm = extractFrontmatter(content, safeFilePath);
             // Check frontmatter open_questions field
             let questions = [];
             if (fm.open_questions) {
@@ -529,6 +532,72 @@ function scanContextQuestions(planDir) {
                 file: (0, security_cjs_1.sanitizeForDisplay)(file),
                 question_count: questions.length,
                 questions: questions.slice(0, 3),
+            });
+        }
+    }
+    return results;
+}
+// ─── scanDeferredItems ────────────────────────────────────────────────────────
+/**
+ * Scan phase directories for UNRESOLVED entries in `deferred-items.md` (#2646).
+ *
+ * The SCOPE BOUNDARY convention (`agents/gsd-executor.md`) has a phase agent
+ * log an out-of-scope discovery here rather than fix it. #2287 made that file
+ * readable at the PHASE boundary (`/gsd-progress` check 7, `audit-uat`); this
+ * scanner closes the remaining reader gap one boundary up, so an entry still
+ * unresolved at MILESTONE close surfaces in the pre-close audit alongside the
+ * other eight categories and the existing `[R]/[A]/[C]` prompt applies to it.
+ * Without this, phase directories archive to `milestones/vX.Y-phases/` (#1871)
+ * and the entry leaves the live tree having never been triaged.
+ *
+ * The resolved/unresolved predicate is NOT reimplemented here: `uat.cjs`
+ * already exports `parseDeferredItems`, which owns the parsing rule (entries
+ * under a `## Deferred Items` level-2 heading, else the whole file fail-safe;
+ * RESOLVED only on an explicit case-insensitive `status: resolved` field).
+ * Duplicating that inequality is how two readers of the same file drift into
+ * disagreeing about what "open" means. The require is deliberately LAZY,
+ * inside the scan, to preserve `audit-command-router.cts`'s property that a
+ * route never loads the module it does not need.
+ */
+function scanDeferredItems(planDir) {
+    const phasesDir = node_path_1.default.join(planDir, 'phases');
+    if (!node_fs_1.default.existsSync(phasesDir))
+        return [];
+    let dirs;
+    try {
+        dirs = node_fs_1.default.readdirSync(phasesDir, { withFileTypes: true })
+            .filter(e => e.isDirectory())
+            .map(e => e.name)
+            .sort();
+    }
+    catch {
+        return [{ scan_error: true, phase: '', file: '', text: '' }];
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+    const uat = require('./uat.cjs');
+    const results = [];
+    for (const dir of dirs) {
+        const phaseDir = node_path_1.default.join(phasesDir, dir);
+        const phaseMatch = dir.match(new RegExp(`^(${PHASE_NUMBER_TOKEN_SOURCE})`, 'i'));
+        const phaseNum = phaseMatch ? phaseMatch[1] : dir;
+        const filePath = node_path_1.default.join(phaseDir, DEFERRED_ITEMS_FILENAME);
+        if (!node_fs_1.default.existsSync(filePath))
+            continue;
+        let safeFilePath;
+        try {
+            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'deferred items file', { allowAbsolute: true });
+        }
+        catch {
+            continue;
+        }
+        const content = (0, shell_command_projection_cjs_1.platformReadSync)(safeFilePath);
+        if (content === null)
+            continue;
+        for (const item of uat.parseDeferredItems(content)) {
+            results.push({
+                phase: (0, security_cjs_1.sanitizeForDisplay)(phaseNum),
+                file: DEFERRED_ITEMS_FILENAME,
+                text: (0, security_cjs_1.sanitizeForDisplay)(item.name),
             });
         }
     }
@@ -607,6 +676,14 @@ function auditOpenArtifacts(cwd) {
             return [{ scan_error: true, phase: '', file: '', question_count: 0, questions: [] }];
         }
     })();
+    const deferredItems = (() => {
+        try {
+            return scanDeferredItems(planDir);
+        }
+        catch {
+            return [{ scan_error: true, phase: '', file: '', text: '' }];
+        }
+    })();
     // Count real items (not scan_error sentinels)
     const countReal = (arr) => arr.filter(i => !i.scan_error && !i._remainder_count).length;
     const counts = {
@@ -618,9 +695,10 @@ function auditOpenArtifacts(cwd) {
         uat_gaps: countReal(uatGaps),
         verification_gaps: countReal(verificationGaps),
         context_questions: countReal(contextQuestions),
+        deferred_items: countReal(deferredItems),
         total: 0,
     };
-    counts.total = counts.debug_sessions + counts.quick_tasks + counts.threads + counts.todos + counts.seeds + counts.uat_gaps + counts.verification_gaps + counts.context_questions;
+    counts.total = counts.debug_sessions + counts.quick_tasks + counts.threads + counts.todos + counts.seeds + counts.uat_gaps + counts.verification_gaps + counts.context_questions + counts.deferred_items;
     return {
         scanned_at: new Date().toISOString(),
         has_open_items: counts.total > 0,
@@ -634,6 +712,7 @@ function auditOpenArtifacts(cwd) {
             uat_gaps: uatGaps,
             verification_gaps: verificationGaps,
             context_questions: contextQuestions,
+            deferred_items: deferredItems,
         },
     };
 }
@@ -736,6 +815,15 @@ function formatAuditReport(auditResult) {
             for (const q of item.questions) {
                 lines.push(`     - ${q}`);
             }
+        }
+    }
+    // Deferred items (deferred decisions — blue). Out-of-scope discoveries a
+    // phase agent recorded rather than fixed, still unresolved at close (#2646).
+    if (counts.deferred_items > 0) {
+        lines.push('');
+        lines.push(`🔵 Deferred Items (${counts.deferred_items} unresolved)`);
+        for (const item of items.deferred_items.filter(i => !i.scan_error)) {
+            lines.push(`   • Phase ${item.phase}: ${item.text}`);
         }
     }
     lines.push('');

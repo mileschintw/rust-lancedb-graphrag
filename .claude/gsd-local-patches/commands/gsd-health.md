@@ -22,7 +22,7 @@ Validate `.planning/` directory integrity and report actionable issues. Checks f
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/health.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/health.md
 </execution_context>
 
 <process>
