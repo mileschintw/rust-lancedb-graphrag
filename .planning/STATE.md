@@ -4,15 +4,15 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 5
 current_phase_name: State Machine & Workflow Events
-current_plan: 14
+current_plan: 17
 status: executing
-stopped_at: Phase 5 Wave 10 plan 05-14 executed successfully (exhaustive typed NodeKind dispatch and early variant admission).
-last_updated: "2026-08-17T21:30:00.000Z"
+stopped_at: Phase 5 Wave 11 plan 05-17 executed successfully (additive protobuf fields and synchronized generated bindings).
+last_updated: "2026-08-17T21:35:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 83
-  completed_plans: 69
+  completed_plans: 70
 ---
 
 # Project State
@@ -26,15 +26,16 @@ progress:
 - Phase 04.1 Plan 03 executed: concurrent bounded extraction, WR-01 IPC multi-batch bridge fix, extraction retries with confidence validation, and re-ingestion rollback proof.
 - Phase 04.1 Plan 04 executed: QueryGraph RPC as a Cypher-constrained induced-neighborhood query with bounded/validated input, including a fix for a pre-existing fetch_neighborhood bidirectional-BFS edge-duplication bug.
 - Phase 05 Wave 10 Plan 05-14 executed: closed `NodeKind` enum with 5 variants, exhaustive typed runner dispatch, early 9-variant admission rejection, and focused dispatch tests.
+- Phase 05 Wave 11 Plan 05-17 executed: additive protobuf fields (RetrievalSnapshot tags 10/11, WorkflowCompletedEvent tag 6) and synchronized Rust/Go bindings with protected module glue.
 
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
 - **Status:** In Progress
-- **Current Plan:** 14 (Wave 10)
+- **Current Plan:** 17 (Wave 11)
 - **Total Plans in Phase:** 24
-- **Completed Plans in Phase:** 12
-- **Progress:** [██████████] 50%
+- **Completed Plans in Phase:** 13
+- **Progress:** [███████████] 54%
 
 ## Completed Phases
 
@@ -152,6 +153,7 @@ progress:
 - [Phase 04.1-03]: Enforce 2 retries (3 total attempts) with confidence range validation [0.0, 1.0] and log coverage regressions on re-ingestion.
 - [Phase 04.1-04]: Fixed a pre-existing fetch_neighborhood bug where bidirectional multi-hop BFS double-counted an edge re-matched from a later hop's frontier; deduplicated by (source, target, relation_type, weight) identity.
 - [Phase 04.1-04]: QueryGraph seed_entity_name lookup case-folds via .trim().to_lowercase() (this codebase's D-05 write-time merge convention) over a full table scan, returning Status::not_found on zero matches.
+- [Phase 05-17]: Protobuf schema introduces additive RetrievalSnapshot variant fields (tags 10/11) and WorkflowCompletedEvent notices (tag 6) with clean: false Buf protection for hand-written Rust module glue; compile repair is owned by 05-23.
 
 ## Session
 
