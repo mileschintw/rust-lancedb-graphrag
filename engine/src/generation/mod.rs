@@ -7,10 +7,12 @@ use std::{
     fmt::{Display, Formatter},
     future::Future,
     pin::Pin,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
+};
+
+#[cfg(test)]
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Mutex,
 };
 
 use serde::{Deserialize, Serialize};
@@ -479,11 +481,13 @@ pub trait Generator: Send + Sync {
 }
 
 /// Deterministic fake generator for unit tests and local contract verification.
+#[cfg(test)]
 pub struct FakeGenerator {
     pub call_count: AtomicUsize,
     pub responses: Mutex<Vec<Result<ModelOutput, GenerationError>>>,
 }
 
+#[cfg(test)]
 impl FakeGenerator {
     pub fn new(response: Result<ModelOutput, GenerationError>) -> Self {
         Self {
@@ -504,6 +508,7 @@ impl FakeGenerator {
     }
 }
 
+#[cfg(test)]
 impl Generator for FakeGenerator {
     fn generate<'a>(
         &'a self,

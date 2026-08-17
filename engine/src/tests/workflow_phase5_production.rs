@@ -6,7 +6,7 @@ use crate::{
     db::DatabaseManager,
     generation::{self, AnswerBasis, ModelOutput},
     rerank,
-    tests::{configured_service, database_path, FakeEmbedder},
+    tests::{configured_service, database_path, FakeEmbedder, FakeGenerator},
     workflow::{
         self,
         events::EventSequence,
@@ -24,7 +24,7 @@ async fn workflow_phase5_production_five_node() {
         &db,
         crate::EffectiveRagSettings::default(),
         Arc::new(FakeEmbedder),
-        Arc::new(generation::FakeGenerator::new(Ok(ModelOutput {
+        Arc::new(FakeGenerator::new(Ok(ModelOutput {
             answer: "Production answer".into(),
             cited_evidence_ids: vec![],
             answer_basis: AnswerBasis::ModelOnly,
@@ -94,7 +94,7 @@ async fn workflow_phase5_production_dependencies_are_real() {
     let path = database_path("prod-deps-real");
     let db = DatabaseManager::initialize(&path).await.unwrap();
     let embedder: Arc<dyn crate::EmbeddingProvider> = Arc::new(FakeEmbedder);
-    let generator: Arc<dyn generation::Generator> = Arc::new(generation::FakeGenerator::new(Ok(ModelOutput {
+    let generator: Arc<dyn generation::Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
         answer: "Answer".into(),
         cited_evidence_ids: vec![],
         answer_basis: AnswerBasis::ModelOnly,
@@ -134,7 +134,7 @@ async fn workflow_phase5_production_context_population() {
         &db,
         crate::EffectiveRagSettings::default(),
         Arc::new(FakeEmbedder),
-        Arc::new(generation::FakeGenerator::new(Ok(ModelOutput {
+        Arc::new(FakeGenerator::new(Ok(ModelOutput {
             answer: "Populated answer".into(),
             cited_evidence_ids: vec![],
             answer_basis: AnswerBasis::ModelOnly,
@@ -194,7 +194,7 @@ async fn workflow_phase5_settings_applied_to_production() {
         &db,
         custom_settings,
         Arc::new(FakeEmbedder),
-        Arc::new(generation::FakeGenerator::new(Ok(ModelOutput {
+        Arc::new(FakeGenerator::new(Ok(ModelOutput {
             answer: "Settings answer".into(),
             cited_evidence_ids: vec![],
             answer_basis: AnswerBasis::ModelOnly,

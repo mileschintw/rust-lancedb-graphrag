@@ -5,7 +5,9 @@ use tokio_util::sync::CancellationToken;
 use crate::pb::lancet::v1::DocumentFilter;
 use crate::prompt::GraphFactBlock;
 use crate::retrieval::bm25::Bm25Index;
-use crate::retrieval::{Candidate, FusedCandidate, RetrievalError, RetrievalErrorKind};
+use crate::retrieval::Candidate;
+#[cfg(test)]
+use crate::retrieval::{FusedCandidate, RetrievalError, RetrievalErrorKind};
 use super::node::{BoxFuture, NodeError};
 
 pub type Bm25IndexStore = Arc<RwLock<Arc<Bm25Index>>>;
@@ -72,16 +74,19 @@ pub trait Bm25RetrievalPort: Send + Sync {
 // Request-Local Fake Implementations for Tests
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
 pub struct FakeQueryReformulator {
     variants: Vec<String>,
 }
 
+#[cfg(test)]
 impl FakeQueryReformulator {
     pub fn new(variants: Vec<String>) -> Self {
         Self { variants }
     }
 }
 
+#[cfg(test)]
 impl QueryReformulator for FakeQueryReformulator {
     fn reformulate<'a>(
         &'a self,
@@ -93,12 +98,14 @@ impl QueryReformulator for FakeQueryReformulator {
     }
 }
 
+#[cfg(test)]
 pub struct FakeQueryEmbeddingPort {
     embedding: Result<Vec<f32>, NodeError>,
     stall: bool,
     call_count: std::sync::atomic::AtomicUsize,
 }
 
+#[cfg(test)]
 impl FakeQueryEmbeddingPort {
     pub fn success(embedding: Vec<f32>) -> Self {
         Self {
@@ -129,6 +136,7 @@ impl FakeQueryEmbeddingPort {
     }
 }
 
+#[cfg(test)]
 impl super::node::QueryEmbeddingPort for FakeQueryEmbeddingPort {
     fn embed_variant_zero<'a>(
         &'a self,
@@ -145,22 +153,26 @@ impl super::node::QueryEmbeddingPort for FakeQueryEmbeddingPort {
     }
 }
 
+#[cfg(test)]
 pub trait IntoGraphFacts {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock>;
 }
 
+#[cfg(test)]
 impl IntoGraphFacts for Vec<crate::prompt::GraphFactBlock> {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
         self
     }
 }
 
+#[cfg(test)]
 impl IntoGraphFacts for &[crate::prompt::GraphFactBlock] {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
         self.to_vec()
     }
 }
 
+#[cfg(test)]
 impl IntoGraphFacts for &str {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
         let parts: Vec<&str> = self.split("--").map(|s| s.trim()).collect();
@@ -185,30 +197,35 @@ impl IntoGraphFacts for &str {
     }
 }
 
+#[cfg(test)]
 impl IntoGraphFacts for String {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
         self.as_str().into_graph_facts()
     }
 }
 
+#[cfg(test)]
 impl IntoGraphFacts for Vec<String> {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
         self.iter().flat_map(|s| s.as_str().into_graph_facts()).collect()
     }
 }
 
+#[cfg(test)]
 impl IntoGraphFacts for Vec<&str> {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
         self.into_iter().flat_map(|s| s.into_graph_facts()).collect()
     }
 }
 
+#[cfg(test)]
 pub struct FakeGraphQueryPort {
     graph_facts: Result<Vec<crate::prompt::GraphFactBlock>, NodeError>,
     stall: bool,
     call_count: std::sync::atomic::AtomicUsize,
 }
 
+#[cfg(test)]
 impl FakeGraphQueryPort {
     pub fn success(facts: impl IntoGraphFacts) -> Self {
         Self {
@@ -239,6 +256,7 @@ impl FakeGraphQueryPort {
     }
 }
 
+#[cfg(test)]
 impl GraphQueryPort for FakeGraphQueryPort {
     fn query_graph<'a>(
         &'a self,
@@ -255,12 +273,14 @@ impl GraphQueryPort for FakeGraphQueryPort {
     }
 }
 
+#[cfg(test)]
 pub struct FakeDenseRetrievalPort {
     candidates: Result<Vec<Candidate>, NodeError>,
     stall: bool,
     call_count: std::sync::atomic::AtomicUsize,
 }
 
+#[cfg(test)]
 impl FakeDenseRetrievalPort {
     pub fn success(candidates: Vec<Candidate>) -> Self {
         Self {
@@ -291,6 +311,7 @@ impl FakeDenseRetrievalPort {
     }
 }
 
+#[cfg(test)]
 impl DenseRetrievalPort for FakeDenseRetrievalPort {
     fn retrieve_dense<'a>(
         &'a self,
@@ -308,6 +329,7 @@ impl DenseRetrievalPort for FakeDenseRetrievalPort {
     }
 }
 
+#[cfg(test)]
 pub struct FakeBm25RetrievalPort {
     candidates_per_query: std::sync::Mutex<Vec<(String, Result<Vec<Candidate>, NodeError>)>>,
     default_candidates: Result<Vec<Candidate>, NodeError>,
@@ -315,6 +337,7 @@ pub struct FakeBm25RetrievalPort {
     call_count: std::sync::atomic::AtomicUsize,
 }
 
+#[cfg(test)]
 impl FakeBm25RetrievalPort {
     pub fn success(candidates: Vec<Candidate>) -> Self {
         Self {
@@ -357,6 +380,7 @@ impl FakeBm25RetrievalPort {
     }
 }
 
+#[cfg(test)]
 impl Bm25RetrievalPort for FakeBm25RetrievalPort {
     fn retrieve_bm25<'a>(
         &'a self,
@@ -381,11 +405,13 @@ impl Bm25RetrievalPort for FakeBm25RetrievalPort {
     }
 }
 
+#[cfg(test)]
 pub struct FakeReranker {
     call_count: std::sync::atomic::AtomicUsize,
     should_fail: bool,
 }
 
+#[cfg(test)]
 impl FakeReranker {
     pub fn success() -> Self {
         Self {
@@ -406,6 +432,7 @@ impl FakeReranker {
     }
 }
 
+#[cfg(test)]
 impl crate::rerank::Reranker for FakeReranker {
     fn rerank<'a>(
         &'a self,

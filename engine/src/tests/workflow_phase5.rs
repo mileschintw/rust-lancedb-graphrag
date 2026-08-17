@@ -1656,13 +1656,187 @@ async fn prompt_packing_cancellation_is_cooperative() {
     assert_eq!(res, Err(PromptAssemblyError::Cancelled), "Cooperative prompt packing must return Cancelled when cancellation token is pre-cancelled");
 }
 
+#[tokio::test]
+async fn workflow_phase5_prompt_api_surface() {
+    use engine::prompt::{
+        assemble_evidence_blocks, pack_evidence_and_graph_prompt, pack_evidence_prompt,
+        GraphFactBlock, PromptAssemblyError,
+    };
+    use engine::graph::context_strategy::GraphFact;
+
+    let candidate1 = candidate_with_score("1", "Lancet prompt assembly surface test text 1.", 0.95);
+    let candidate2 = candidate_with_score("2", "Lancet prompt assembly surface test text 2.", 0.85);
+    let evidence = assemble_evidence_blocks(&[candidate1, candidate2]);
+    let empty_evidence: Vec<engine::prompt::EvidenceBlock> = Vec::new();
+    let facts = vec![GraphFactBlock {
+        fact: GraphFact::new("Lancet", "implements", "PromptAssembly", None, 0.9),
+    }];
+
+    let cancel = CancellationToken::new();
+
+    // 1. Empty evidence returns PromptAssemblyError::EmptyEvidence for both helpers
+    let empty_res1 = pack_evidence_prompt("Test question?", &empty_evidence, 8192, 2048, &cancel).await;
+    assert_eq!(empty_res1, Err(PromptAssemblyError::EmptyEvidence));
+
+    let empty_res2 = pack_evidence_and_graph_prompt("Test question?", &empty_evidence, &facts, 1.0, 8192, 2048, &cancel).await;
+    assert_eq!(empty_res2, Err(PromptAssemblyError::EmptyEvidence));
+
+    // 2. Pre-cancelled token returns PromptAssemblyError::Cancelled
+    let pre_cancel = CancellationToken::new();
+    pre_cancel.cancel();
+
+    let cancel_res1 = pack_evidence_prompt("Test question?", &evidence, 8192, 2048, &pre_cancel).await;
+    assert_eq!(cancel_res1, Err(PromptAssemblyError::Cancelled));
+
+    let cancel_res2 = pack_evidence_and_graph_prompt("Test question?", &evidence, &facts, 1.0, 8192, 2048, &pre_cancel).await;
+    assert_eq!(cancel_res2, Err(PromptAssemblyError::Cancelled));
+
+    // 3. NoEvidenceFits error when token budget is insufficient for even the first block
+    let tight_budget_res = pack_evidence_prompt("Test question?", &evidence, 50, 40, &cancel).await;
+    assert!(matches!(tight_budget_res, Err(PromptAssemblyError::NoEvidenceFits { .. })));
+
+    // 4. Successful async packing returns structured PackedEvidence
+    let packed = pack_evidence_prompt("Test question?", &evidence, 8192, 2048, &cancel).await
+        .expect("pack_evidence_prompt succeeds");
+    assert!(!packed.prompt.is_empty());
+    assert_eq!(packed.evidence.len(), 2);
+    assert_eq!(packed.encoded_blocks.len(), 2);
+    assert!(packed.graph_facts.is_empty());
+}
+
+#[tokio::test]
+async fn workflow_phase5_prompt_graph_weight_semantics() {
+    use engine::prompt::{
+        assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock,
+    };
+    use engine::graph::context_strategy::GraphFact;
+
+    let candidate1 = candidate_with_score("1", "First citable chunk content.", 0.95);
+    let candidate2 = candidate_with_score("2", "Second citable chunk content.", 0.85);
+    let evidence = assemble_evidence_blocks(&[candidate1, candidate2]);
+
+    let fact1 = GraphFactBlock {
+        fact: GraphFact::new("EntityA", "relates_to", "EntityB", None, 0.99),
+    };
+    let fact2 = GraphFactBlock {
+        fact: GraphFact::new("EntityC", "relates_to", "EntityD", None, 0.75),
+    };
+    let graph_facts = vec![fact1, fact2];
+
+    let cancel = CancellationToken::new();
+
+    // 1. graph_weight == 0.0 hard-excludes graph facts unconditionally
+    let packed_zero = pack_evidence_and_graph_prompt(
+        "Graph weight zero question?",
+        &evidence,
+        &graph_facts,
+        0.0,
+        65536,
+        2048,
+        &cancel,
+    )
+    .await
+    .expect("packing with graph_weight 0.0 succeeds");
+
+    assert!(packed_zero.graph_facts.is_empty(), "graph_weight 0.0 must exclude all graph facts");
+    assert!(
+        !packed_zero.prompt.contains("Related Entities & Relationships"),
+        "graph_weight 0.0 prompt must not contain graph section header"
+    );
+    assert_eq!(packed_zero.evidence.len(), 2, "evidence chunks must remain included");
+    assert_eq!(packed_zero.evidence[0].id, "[1]");
+
+    // 2. graph_weight > 0.0 includes graph facts without altering evidence-selection authority
+    let packed_positive = pack_evidence_and_graph_prompt(
+        "Graph weight positive question?",
+        &evidence,
+        &graph_facts,
+        1.0,
+        65536,
+        2048,
+        &cancel,
+    )
+    .await
+    .expect("packing with graph_weight 1.0 succeeds");
+
+    assert!(!packed_positive.graph_facts.is_empty(), "positive graph_weight includes graph facts");
+    assert!(
+        packed_positive.prompt.contains("Related Entities & Relationships"),
+        "positive graph_weight prompt contains graph section header"
+    );
+    assert_eq!(packed_positive.evidence[0].id, "[1]", "evidence selection authority is preserved");
+}
+
 #[test]
-fn workflow_phase5_library_target_fake_ports_compile() {
-    let _reformulator = FakeQueryReformulator::new(vec!["variant".to_string()]);
-    let _embedder = FakeQueryEmbeddingPort::success(vec![0.1; 2048]);
-    let _graph = FakeGraphQueryPort::success("fact1 -- rel -- fact2");
+fn workflow_phase5_fake_ports_test_only() {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("cargo manifest dir parent");
+
+    // 1. Verify ports.rs has all Fake* types gated under cfg(test)
+    let ports_path = repo_root.join("engine/src/workflow/ports.rs");
+    let ports_src = std::fs::read_to_string(&ports_path).expect("read workflow/ports.rs");
+
+    let fake_port_types = [
+        "FakeQueryReformulator",
+        "FakeQueryEmbeddingPort",
+        "FakeGraphQueryPort",
+        "FakeDenseRetrievalPort",
+        "FakeBm25RetrievalPort",
+        "FakeReranker",
+    ];
+
+    for type_name in fake_port_types {
+        let decl_pattern = format!("pub struct {type_name}");
+        let decl_pos = ports_src.find(&decl_pattern)
+            .unwrap_or_else(|| panic!("declaration of {type_name} not found in ports.rs"));
+
+        // Preceding non-empty line must be #[cfg(test)]
+        let prefix = &ports_src[..decl_pos];
+        let last_attr = prefix.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+        assert!(
+            last_attr.contains("#[cfg(test)]"),
+            "{type_name} in ports.rs must be directly preceded by #[cfg(test)], found: {last_attr}"
+        );
+    }
+
+    // Ensure NoOpQueryReformulator is NOT gated by #[cfg(test)] (it is a production pass-through)
+    let noop_pos = ports_src.find("pub struct NoOpQueryReformulator")
+        .expect("NoOpQueryReformulator in ports.rs");
+    let noop_prefix = &ports_src[..noop_pos];
+    let noop_last_line = noop_prefix.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+    assert!(
+        !noop_last_line.contains("#[cfg(test)]"),
+        "NoOpQueryReformulator must remain available in production"
+    );
+
+    // 2. Verify generation/mod.rs has FakeGenerator gated under cfg(test)
+    let gen_path = repo_root.join("engine/src/generation/mod.rs");
+    let gen_src = std::fs::read_to_string(&gen_path).expect("read generation/mod.rs");
+
+    let fake_gen_pos = gen_src.find("pub struct FakeGenerator")
+        .expect("FakeGenerator in generation/mod.rs");
+    let fake_gen_prefix = &gen_src[..fake_gen_pos];
+    let fake_gen_last_attr = fake_gen_prefix.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+    assert!(
+        fake_gen_last_attr.contains("#[cfg(test)]"),
+        "FakeGenerator in generation/mod.rs must be preceded by #[cfg(test)], found: {fake_gen_last_attr}"
+    );
+
+    // 3. Verify that under test compilation, the fake types are constructible and usable
+    let _reformulator = FakeQueryReformulator::new(vec!["test_variant".to_string()]);
+    let _embedder = FakeQueryEmbeddingPort::success(vec![0.5; 2048]);
+    let _graph = FakeGraphQueryPort::success("entity1 -- rel -- entity2");
     let _dense = FakeDenseRetrievalPort::success(vec![]);
     let _bm25 = FakeBm25RetrievalPort::success(vec![]);
     let _reranker = FakeReranker::success();
+    let _gen = FakeGenerator::new(Ok(ModelOutput {
+        answer: "Test answer [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    }));
 }
 

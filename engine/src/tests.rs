@@ -391,7 +391,7 @@ async fn query_rag_stream() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Stream contract answer [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -436,7 +436,7 @@ async fn query_rag_stream() {
 }
 
 
-struct FakeEmbedder;
+pub(crate) struct FakeEmbedder;
 
 impl EmbeddingProvider for FakeEmbedder {
     fn get_embeddings<'a>(
@@ -444,6 +444,53 @@ impl EmbeddingProvider for FakeEmbedder {
         texts: &'a [String],
     ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
         Box::pin(async move { Ok(texts.iter().map(|_| vec![0.25; 2048]).collect()) })
+    }
+}
+
+pub(crate) struct FakeGenerator {
+    pub call_count: std::sync::atomic::AtomicUsize,
+    pub responses: std::sync::Mutex<Vec<Result<generation::ModelOutput, generation::GenerationError>>>,
+}
+
+impl FakeGenerator {
+    pub fn new(response: Result<generation::ModelOutput, generation::GenerationError>) -> Self {
+        Self {
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+            responses: std::sync::Mutex::new(vec![response]),
+        }
+    }
+
+    pub fn with_responses(responses: Vec<Result<generation::ModelOutput, generation::GenerationError>>) -> Self {
+        Self {
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+            responses: std::sync::Mutex::new(responses),
+        }
+    }
+
+    pub fn calls(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+impl generation::Generator for FakeGenerator {
+    fn generate<'a>(
+        &'a self,
+        request: generation::GenerationRequest,
+    ) -> generation::BoxFuture<'a, Result<generation::ModelOutput, generation::GenerationError>> {
+        Box::pin(async move {
+            self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let mut guard = self.responses.lock().unwrap();
+            if guard.is_empty() {
+                Err(generation::GenerationError::new(
+                    generation::GenerationErrorKind::ProviderError,
+                    "FakeGenerator ran out of configured responses",
+                )
+                .with_correlation(request.session_id, request.correlation_id))
+            } else {
+                let res = guard.remove(0);
+                res.map_err(|err| err.with_correlation(request.session_id, request.correlation_id))
+            }
+        })
     }
 }
 
@@ -1935,7 +1982,7 @@ async fn staging_read_error_is_unavailable() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(generation::FakeGenerator::new(Ok(
+        generator: Arc::new(FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Fake answer".into(),
                 cited_evidence_ids: vec![],
@@ -2018,7 +2065,7 @@ async fn staging_delete_failure_remains_replayable() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(generation::FakeGenerator::new(Ok(
+        generator: Arc::new(FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Fake answer".into(),
                 cited_evidence_ids: vec![],
@@ -2265,7 +2312,7 @@ async fn d04_cross_runtime_grpc_fixture() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(generation::FakeGenerator::new(Ok(
+        generator: Arc::new(FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Fake answer".into(),
                 cited_evidence_ids: vec![],
@@ -2330,7 +2377,7 @@ async fn status_falls_back_to_staged_document() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(generation::FakeGenerator::new(Ok(
+        generator: Arc::new(FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Fake answer".into(),
                 cited_evidence_ids: vec![],
@@ -2482,7 +2529,7 @@ async fn query_rag_tracer() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Tracer answer [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -2572,7 +2619,7 @@ async fn query_rag_happy_path_service() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Lancet uses Rust for retrieval [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -2918,7 +2965,7 @@ async fn configured_rag_settings_drive_service() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Custom answer [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -2994,7 +3041,7 @@ async fn configured_evidence_token_budget_is_exact() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Answer with excerpt test [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -3063,7 +3110,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         warnings: vec![],
         usage: None,
     };
-    let fake_gen1 = Arc::new(generation::FakeGenerator::with_responses(vec![
+    let fake_gen1 = Arc::new(FakeGenerator::with_responses(vec![
         Ok(model_out1.clone()),
         Ok(model_out1),
     ]));
@@ -3131,7 +3178,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index2))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings2,
-        generator: Arc::new(generation::FakeGenerator::new(Ok(
+        generator: Arc::new(FakeGenerator::new(Ok(
             generation::ModelOutput {
                 answer: "Answer 2 [1].".into(),
                 cited_evidence_ids: vec!["[1]".into()],
@@ -3219,7 +3266,7 @@ async fn query_rag_citation_identity_and_notices() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Answer citing second block only [2].".into(),
             cited_evidence_ids: vec!["[2]".into()],
@@ -3314,7 +3361,7 @@ async fn query_rag_rejects_unknown_marker_without_response() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Answer citing nonexistent marker [99].".into(),
             cited_evidence_ids: vec!["[99]".into()],
@@ -3379,7 +3426,7 @@ async fn query_rag_rejects_invalid_provider_grounding() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(generation::FakeGenerator::new(Ok(
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Model-only response without grounding.".into(),
             cited_evidence_ids: vec![],
@@ -3446,7 +3493,7 @@ async fn query_rag_generation_error_preserves_identity() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let failing_gen = Arc::new(generation::FakeGenerator::new(Err(
+    let failing_gen = Arc::new(FakeGenerator::new(Err(
         generation::GenerationError::new(
             generation::GenerationErrorKind::ProviderError,
             "OpenRouter API rate limit",
@@ -3662,7 +3709,7 @@ async fn query_rag_noop_reranker_preserves_fused_order() {
 #[tokio::test]
 async fn query_rag_reranker_failure_skips_generation() {
     let reranker = FailingReranker::new();
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+    let generator = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "This answer must never be generated".into(),
             cited_evidence_ids: vec![],
@@ -3727,7 +3774,7 @@ async fn query_rag_fail_closed_embedding_transport() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FailingEmbedder("network unreachable".into()));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+    let generator = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Should not be called [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -3780,7 +3827,7 @@ async fn query_rag_fail_closed_embedding_empty_payload() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![]));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+    let generator = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Should not be called [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -3823,7 +3870,7 @@ async fn query_rag_fail_closed_embedding_multi_vector() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![vec![0.25; 2048], vec![0.25; 2048]]));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+    let generator = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Should not be called [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -3866,7 +3913,7 @@ async fn query_rag_fail_closed_embedding_wrong_dimension() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![vec![0.25; 512]]));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+    let generator = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Should not be called [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -3911,7 +3958,7 @@ async fn query_rag_fail_closed_embedding_non_finite() {
     let mut vec_nan = vec![0.25; 2048];
     vec_nan[10] = f32::NAN;
     let embedder = Arc::new(PayloadEmbedder(vec![vec_nan]));
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+    let generator = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Should not be called [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -3954,7 +4001,7 @@ async fn query_rag_fail_closed_dense_snapshot() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FakeEmbedder);
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+    let generator = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Should not be called [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -4010,7 +4057,7 @@ async fn query_rag_valid_zero_match() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FakeEmbedder);
-    let generator = Arc::new(generation::FakeGenerator::new(Ok(
+    let generator = Arc::new(FakeGenerator::new(Ok(
         generation::ModelOutput {
             answer: "Should not be called [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
@@ -4503,7 +4550,7 @@ async fn attempt_graph_augmentation_scoring_and_neighborhood() {
 #[test]
 fn prompt_evidence_packing_graph_fact_rendering() {
     use crate::prompt::{
-        pack_evidence_and_graph_prompt_sync, assemble_evidence_blocks, GraphFactBlock,
+        assemble_evidence_blocks, GraphFactBlock,
     };
     use crate::graph::context_strategy::GraphFact;
 
@@ -4558,7 +4605,7 @@ async fn query_rag_span_and_request_threading() {
         &database,
         settings,
         Arc::new(FakeEmbedder),
-        Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
             answer: "Answer [1].".into(),
             cited_evidence_ids: vec!["[1]".into()],
             answer_basis: generation::AnswerBasis::Retrieval,
@@ -5299,7 +5346,7 @@ async fn query_graph_service_with_db(database: DatabaseManager) -> LancetService
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
+        generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
             answer: "unused".into(),
             cited_evidence_ids: vec![],
             answer_basis: generation::AnswerBasis::Retrieval,
@@ -5817,6 +5864,30 @@ async fn query_graph_nodes_include_seed_when_unfiltered() {
 // graph_weight, plus end-to-end graph_augmentation observability.
 // ---------------------------------------------------------------------------
 
+fn pack_evidence_and_graph_prompt_sync(
+    question: &str,
+    evidence: &[crate::prompt::EvidenceBlock],
+    graph_facts: &[crate::prompt::GraphFactBlock],
+    graph_weight: f64,
+    max_prompt_tokens: usize,
+    answer_token_budget: usize,
+) -> Result<crate::prompt::PackedEvidence, crate::prompt::PromptAssemblyError> {
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build test runtime");
+    runtime.block_on(crate::prompt::pack_evidence_and_graph_prompt(
+        question,
+        evidence,
+        graph_facts,
+        graph_weight,
+        max_prompt_tokens,
+        answer_token_budget,
+        &cancel,
+    ))
+}
+
 /// Builds a `FusedCandidate` with a controllable `fused_score`/`score` for
 /// score-interleaving fixtures.
 fn candidate_with_score(id_hint: &str, text: &str, score: f64) -> crate::retrieval::FusedCandidate {
@@ -5849,7 +5920,7 @@ fn candidate_with_score(id_hint: &str, text: &str, score: f64) -> crate::retriev
 #[test]
 fn graph_facts_interleave_by_normalized_score() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, GraphFactBlock};
 
     let candidate = candidate_with_score(
         "hi",
@@ -5888,7 +5959,7 @@ fn graph_facts_interleave_by_normalized_score() {
 #[test]
 fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, GraphFactBlock};
 
     let reserved = candidate_with_score(
         "reserved",
@@ -5927,7 +5998,7 @@ fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
 #[test]
 fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, GraphFactBlock};
 
     let reserved = candidate_with_score(
         "reserved",
@@ -5956,7 +6027,7 @@ fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
 #[test]
 fn graph_weight_zero_excludes_graph_facts() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, GraphFactBlock};
 
     let candidate = candidate_with_score(
         "only",
@@ -5983,7 +6054,7 @@ fn graph_weight_zero_excludes_graph_facts() {
 #[test]
 fn graph_weight_zero_excludes_graph_facts_even_with_abundant_budget() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, GraphFactBlock};
 
     let candidate = candidate_with_score(
         "only",
@@ -6010,7 +6081,7 @@ fn graph_weight_zero_excludes_graph_facts_even_with_abundant_budget() {
 fn pack_evidence_and_graph_prompt_empty_evidence_still_errors_regardless_of_graph_facts() {
     use crate::graph::context_strategy::GraphFact;
     use crate::prompt::{
-        pack_evidence_and_graph_prompt_sync, EvidenceBlock, GraphFactBlock, PromptAssemblyError,
+        EvidenceBlock, GraphFactBlock, PromptAssemblyError,
     };
 
     let facts = vec![GraphFactBlock {
@@ -6028,7 +6099,7 @@ fn pack_evidence_and_graph_prompt_empty_evidence_still_errors_regardless_of_grap
 /// `Ok(..)` with zero `<GRAPH_FACT>` blocks — no panic, no error.
 #[test]
 fn pack_evidence_and_graph_prompt_empty_graph_facts_does_not_panic() {
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, GraphFactBlock};
 
     let candidate = candidate_with_score(
         "only",
@@ -6050,7 +6121,7 @@ fn pack_evidence_and_graph_prompt_empty_graph_facts_does_not_panic() {
 /// markers are never renumbered to reflect "sequential in packed order".
 #[test]
 fn packed_chunk_markers_stay_stable_under_interleaving() {
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync};
+    use crate::prompt::assemble_evidence_blocks;
 
     let block0 = candidate_with_score(
         "a",
@@ -6140,7 +6211,7 @@ fn graph_weight_validation_rejects_non_finite_negative_and_oversized() {
 #[test]
 fn reserve_one_citable_chunk_holds_under_interleaving() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt_sync, GraphFactBlock};
+    use crate::prompt::{assemble_evidence_blocks, GraphFactBlock};
 
     let sole_chunk = candidate_with_score(
         "sole",
