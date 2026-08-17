@@ -1,9 +1,14 @@
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::pb::lancet::v1::DocumentFilter;
 use crate::prompt::GraphFactBlock;
+use crate::retrieval::bm25::Bm25Index;
 use crate::retrieval::{Candidate, FusedCandidate, RetrievalError, RetrievalErrorKind};
 use super::node::{BoxFuture, NodeError};
+
+pub type Bm25IndexStore = Arc<RwLock<Arc<Bm25Index>>>;
 
 pub trait QueryReformulator: Send + Sync {
     fn reformulate<'a>(

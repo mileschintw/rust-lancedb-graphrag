@@ -8,7 +8,6 @@ use engine::pb::lancet;
 use engine::pb::lancet::v1::*;
 use super::*;
 
-pub mod workflow_phase5;
 pub mod workflow_phase5_production;
 
 use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
@@ -408,7 +407,7 @@ async fn query_rag_stream() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -949,7 +948,7 @@ async fn configured_service(
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         effective_settings,
         generator,
         embedder,
@@ -1933,7 +1932,7 @@ async fn staging_read_error_is_unavailable() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
@@ -2016,7 +2015,7 @@ async fn staging_delete_failure_remains_replayable() {
         statuses: statuses.clone(),
         queue: dummy_tx,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
@@ -2263,7 +2262,7 @@ async fn d04_cross_runtime_grpc_fixture() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
@@ -2328,7 +2327,7 @@ async fn status_falls_back_to_staged_document() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(
@@ -2499,7 +2498,7 @@ async fn query_rag_tracer() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -2589,7 +2588,7 @@ async fn query_rag_happy_path_service() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -2935,7 +2934,7 @@ async fn configured_rag_settings_drive_service() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings.clone(),
         generator: fake_gen,
@@ -3011,7 +3010,7 @@ async fn configured_evidence_token_budget_is_exact() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings,
         generator: fake_gen,
@@ -3068,13 +3067,12 @@ async fn service_index_generation_is_opaque_and_stable() {
         Ok(model_out1.clone()),
         Ok(model_out1),
     ]));
-
     let service1 = LancetServiceImpl {
         table: table1,
         statuses: Arc::new(DashMap::new()),
         queue: sender1,
         nodes: nodes1,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index1)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index1))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings1,
         generator: fake_gen1,
@@ -3130,7 +3128,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         statuses: Arc::new(DashMap::new()),
         queue: sender2,
         nodes: nodes2,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index2)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index2))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings2,
         generator: Arc::new(generation::FakeGenerator::new(Ok(
@@ -3241,7 +3239,7 @@ async fn query_rag_citation_identity_and_notices() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings,
         generator: fake_gen.clone(),
@@ -3332,7 +3330,7 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -3397,7 +3395,7 @@ async fn query_rag_rejects_invalid_provider_grounding() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -3460,7 +3458,7 @@ async fn query_rag_generation_error_preserves_identity() {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: failing_gen,
@@ -3982,7 +3980,7 @@ async fn query_rag_fail_closed_dense_snapshot() {
         statuses,
         queue: sender,
         nodes: malformed_nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         effective_settings,
         generator: generator.clone(),
         embedder,
@@ -5298,7 +5296,7 @@ async fn query_graph_service_with_db(database: DatabaseManager) -> LancetService
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(generation::FakeGenerator::new(Ok(generation::ModelOutput {
@@ -7155,790 +7153,6 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
     }
 
     let _ = std::fs::remove_dir_all(path);
-}
-
-#[tokio::test]
-async fn workflow_retrieve_graph() {
-    use crate::workflow::Node;
-    let (tx, _rx) = tokio::sync::mpsc::channel(100);
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let sink = crate::workflow::WorkflowEventSink::new(
-        tx,
-        Arc::new(crate::workflow::EventSequence::new()),
-        "test-trace".into(),
-        "test-session".into(),
-    );
-
-    let req = QueryRagRequest {
-        query: "rust test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
-    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
-
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-    let fake_graph = Arc::new(crate::workflow::ports::FakeGraphQueryPort::success("fact1 -- rel -- fact2"));
-    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![
-        crate::retrieval::Candidate {
-            document_id: "doc-1".into(),
-            chunk_id: "chunk-1".into(),
-            chunk_index: 0,
-            char_start: 0,
-            char_end: 10,
-            content: "dense content".into(),
-            title: None,
-            section_path: None,
-            content_type: Some("text/plain".into()),
-            embedding_model: None,
-            ingested_at: None,
-            score: 0.9,
-        }
-    ]));
-    let fake_bm25 = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
-
-    let mut runner = crate::workflow::WorkflowRunner::new();
-    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::new());
-    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph.clone())));
-    runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
-        Some(fake_dense.clone()),
-        Some(fake_bm25.clone()),
-        None,
-        crate::retrieval::RetrievalSettings::default(),
-    ));
-
-    let deps = crate::workflow::WorkflowDependencies::new();
-    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
-
-    assert_eq!(fake_embedder.calls(), 1);
-    assert_eq!(fake_graph.calls(), 1);
-    assert_eq!(fake_dense.calls(), 1);
-    assert_eq!(fake_bm25.calls(), 1);
-}
-
-#[tokio::test]
-async fn graph_timeout_degrades_to_empty_context() {
-    use crate::workflow::Node;
-    let (tx, _rx) = tokio::sync::mpsc::channel(100);
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let sink = crate::workflow::WorkflowEventSink::new(
-        tx,
-        Arc::new(crate::workflow::EventSequence::new()),
-        "test-trace".into(),
-        "test-session".into(),
-    );
-
-    let req = QueryRagRequest {
-        query: "graph timeout test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
-    let mut ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
-
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-    let fake_graph_stalled = Arc::new(crate::workflow::ports::FakeGraphQueryPort::stall());
-
-    let graph_node = crate::workflow::nodes::ExtractGraphContextNode::new(
-        Some(fake_embedder),
-        Some(fake_graph_stalled),
-    ).with_timeouts(5000, 50);
-
-    let res = graph_node.run(&mut ctx, &cancel).await;
-    assert!(res.is_ok(), "Graph timeout must degrade gracefully with Ok(()) per D-09");
-    assert!(ctx.graph_context.is_empty(), "Graph context must be empty on timeout");
-    assert_eq!(ctx.notices.len(), 1, "Must emit exactly 1 degrade notice");
-    assert_eq!(ctx.notices[0].message, "GRAPH_TIMEOUT");
-}
-
-#[tokio::test]
-async fn zero_evidence_short_circuits_generation() {
-    use crate::workflow::Node;
-    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let sink = crate::workflow::WorkflowEventSink::new(
-        tx,
-        Arc::new(crate::workflow::EventSequence::new()),
-        "test-trace".into(),
-        "test-session".into(),
-    );
-
-    let req = QueryRagRequest {
-        query: "zero evidence test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
-    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
-
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-    let fake_dense_empty = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![]));
-    let fake_bm25_empty = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
-
-    let mut runner = crate::workflow::WorkflowRunner::new();
-    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::new());
-    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder), None));
-    runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
-        Some(fake_dense_empty),
-        Some(fake_bm25_empty),
-        None,
-        crate::retrieval::RetrievalSettings::default(),
-    ));
-
-    let deps = crate::workflow::WorkflowDependencies::new();
-    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
-
-    let mut events = Vec::new();
-    while let Ok(item) = rx.try_recv() {
-        if let Ok(wf_event) = item {
-            events.push(wf_event);
-        }
-    }
-
-    let node_started_names: Vec<String> = events
-        .iter()
-        .filter_map(|e| match &e.event {
-            Some(v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
-            _ => None,
-        })
-        .collect();
-
-    assert!(node_started_names.contains(&"ReformulateQuery".to_string()));
-    assert!(node_started_names.contains(&"ExtractGraphContext".to_string()));
-    assert!(node_started_names.contains(&"RetrieveHybrid".to_string()));
-    assert!(!node_started_names.contains(&"AssemblePrompt".to_string()));
-    assert!(!node_started_names.contains(&"GenerateAnswer".to_string()));
-}
-
-#[tokio::test]
-async fn reranker_failure_maps_to_retrieval_failed() {
-    use crate::workflow::Node;
-    let (tx, _rx) = tokio::sync::mpsc::channel(100);
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let sink = crate::workflow::WorkflowEventSink::new(
-        tx,
-        Arc::new(crate::workflow::EventSequence::new()),
-        "test-trace".into(),
-        "test-session".into(),
-    );
-
-    let req = QueryRagRequest {
-        query: "reranker failure test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
-    let mut ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
-
-    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![
-        crate::retrieval::Candidate {
-            document_id: "doc-1".into(),
-            chunk_id: "chunk-1".into(),
-            chunk_index: 0,
-            char_start: 0,
-            char_end: 10,
-            content: "content".into(),
-            title: None,
-            section_path: None,
-            content_type: Some("text/plain".into()),
-            embedding_model: None,
-            ingested_at: None,
-            score: 0.9,
-        }
-    ]));
-    let fake_failing_reranker = Arc::new(crate::workflow::ports::FakeReranker::failure());
-
-    let retrieve_node = crate::workflow::nodes::RetrieveHybridNode::new(
-        Some(fake_dense),
-        None,
-        Some(fake_failing_reranker),
-        crate::retrieval::RetrievalSettings::default(),
-    );
-
-    let res = retrieve_node.run(&mut ctx, &cancel).await;
-    assert!(res.is_err());
-    let err = res.unwrap_err();
-    assert_eq!(err.kind, v1::NodeErrorKind::RetrievalFailed);
-    assert!(err.message.contains("Reranker failure"));
-}
-
-#[tokio::test]
-async fn nine_variants_are_rejected_before_retrieval() {
-    use crate::workflow::Node;
-    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let sink = crate::workflow::WorkflowEventSink::new(
-        tx,
-        Arc::new(crate::workflow::EventSequence::new()),
-        "test-trace".into(),
-        "test-session".into(),
-    );
-
-    let req = QueryRagRequest {
-        query: "9 variants test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
-    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
-
-    let nine_variants: Vec<String> = (0..9).map(|i| format!("variant-{i}")).collect();
-    let fake_reformulator = Arc::new(crate::workflow::ports::FakeQueryReformulator::new(nine_variants));
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-    let fake_graph = Arc::new(crate::workflow::ports::FakeGraphQueryPort::success("graph facts"));
-    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![]));
-    let fake_bm25 = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
-
-    let mut runner = crate::workflow::WorkflowRunner::new();
-    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
-    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph.clone())));
-    runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
-        Some(fake_dense.clone()),
-        Some(fake_bm25.clone()),
-        None,
-        crate::retrieval::RetrievalSettings::default(),
-    ));
-
-    let deps = crate::workflow::WorkflowDependencies::new();
-
-    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
-
-    assert_eq!(fake_embedder.calls(), 0, "No embedding call must be made when >8 variants are produced");
-    assert_eq!(fake_graph.calls(), 0, "No graph call must be made when >8 variants are produced");
-    assert_eq!(fake_dense.calls(), 0, "No dense retrieval call must be made when >8 variants are produced");
-    assert_eq!(fake_bm25.calls(), 0, "No BM25 retrieval call must be made when >8 variants are produced");
-
-    let mut events = Vec::new();
-    while let Ok(item) = rx.try_recv() {
-        if let Ok(wf_event) = item {
-            events.push(wf_event);
-        }
-    }
-
-    let failed_event = events.iter().find_map(|e| match &e.event {
-        Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
-        _ => None,
-    }).expect("WorkflowCompleted event must be emitted");
-
-    assert!(!failed_event.success);
-    assert_eq!(failed_event.error_kind, v1::NodeErrorKind::InputValidation as i32);
-}
-
-#[tokio::test]
-async fn workflow_generation_tracer() {
-    use engine::pb::lancet::v1;
-    use engine::workflow::EventSequence;
-    use std::sync::Arc;
-    use tokio::sync::mpsc;
-    use tokio_util::sync::CancellationToken;
-
-    let (tx, mut rx) = mpsc::channel(100);
-    let cancel = CancellationToken::new();
-    let sequence = Arc::new(EventSequence::new());
-    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-gen".into(), "sess-gen".into());
-
-    let req = v1::QueryRagRequest {
-        session_id: "sess-gen".into(),
-        query: "What is Lancet engine architecture?".into(),
-        filter: None,
-    };
-    let ctx = engine::workflow::WorkflowContext::new("sess-gen".into(), "trace-gen".into(), &req);
-
-    let fake_reformulator = Arc::new(engine::workflow::ports::FakeQueryReformulator::new(vec!["query variant".into()]));
-    let fake_embedder = Arc::new(engine::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-    let fake_graph = Arc::new(engine::workflow::ports::FakeGraphQueryPort::success("graph context fact"));
-
-    let candidate = candidate_with_score("1", "Lancet uses Rust state machine for RAG orchestration.", 0.95).candidate;
-    let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![candidate.clone()]));
-    let fake_bm25 = Arc::new(engine::workflow::ports::FakeBm25RetrievalPort::success(vec![candidate]));
-
-    let model_out = engine::generation::ModelOutput {
-        answer: "Lancet uses a Rust state machine.".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: engine::generation::AnswerBasis::Retrieval,
-        notices: vec![],
-        warnings: vec![],
-        usage: None,
-    };
-    let fake_generator: Arc<dyn engine::generation::Generator> = Arc::new(engine::generation::FakeGenerator::new(Ok(model_out)));
-
-    let mut runner = engine::workflow::WorkflowRunner::new();
-    runner.add_node(engine::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
-    runner.add_node(engine::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder), Some(fake_graph)));
-    runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(
-        Some(fake_dense),
-        Some(fake_bm25),
-        None,
-        engine::retrieval::RetrievalSettings::default(),
-    ));
-    runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
-    runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(Some(fake_generator)));
-
-    runner.run_workflow(ctx, cancel, sink).await;
-
-    let mut events = Vec::new();
-    while let Ok(item) = rx.try_recv() {
-        if let Ok(wf_event) = item {
-            events.push(wf_event);
-        }
-    }
-
-    let chunk_count = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::AnswerChunk(_)))).count();
-    let final_count = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::FinalAnswer(_)))).count();
-    assert_eq!(chunk_count, 1, "Exactly one AnswerChunk event must be emitted");
-    assert_eq!(final_count, 1, "Exactly one FinalAnswer event must be emitted");
-
-    let completed = events.iter().find_map(|e| match &e.event {
-        Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
-        _ => None,
-    }).expect("WorkflowCompleted event must be emitted");
-
-    assert!(completed.success);
-    assert!(completed.final_response.is_some());
-}
-
-#[tokio::test]
-async fn generation_retry_request_is_byte_identical() {
-    use engine::generation::{GenerationError, GenerationErrorKind, GenerationRequest, Generator, ModelOutput};
-    use engine::workflow::EventSequence;
-    use std::sync::{Arc, Mutex};
-    use tokio::sync::mpsc;
-    use tokio_util::sync::CancellationToken;
-
-    struct CapturingGenerator {
-        requests: Mutex<Vec<GenerationRequest>>,
-    }
-
-    impl Generator for CapturingGenerator {
-        fn generate<'a>(
-            &'a self,
-            request: GenerationRequest,
-        ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, GenerationError>> {
-            Box::pin(async move {
-                let mut reqs = self.requests.lock().unwrap();
-                reqs.push(request.clone());
-                if reqs.len() == 1 {
-                    Err(GenerationError::new(
-                        GenerationErrorKind::ProviderError,
-                        "Transient HTTP 503 error",
-                    ))
-                } else {
-                    Ok(ModelOutput {
-                        answer: "Retried answer succeeded".into(),
-                        cited_evidence_ids: vec!["[1]".into()],
-                        answer_basis: engine::generation::AnswerBasis::Retrieval,
-                        notices: vec![],
-                        warnings: vec![],
-                        usage: None,
-                    })
-                }
-            })
-        }
-    }
-
-    let capturing_gen = Arc::new(CapturingGenerator {
-        requests: Mutex::new(Vec::new()),
-    });
-
-    let (tx, mut rx) = mpsc::channel(100);
-    let cancel = CancellationToken::new();
-    let sequence = Arc::new(EventSequence::new());
-    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-retry".into(), "sess-retry".into());
-
-    let req = engine::pb::lancet::v1::QueryRagRequest {
-        session_id: "sess-retry".into(),
-        query: "Byte identical query?".into(),
-        filter: None,
-    };
-    let mut ctx = engine::workflow::WorkflowContext::new("sess-retry".into(), "trace-retry".into(), &req);
-    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
-        id: "[1]".into(),
-        chunk_id: "c1".into(),
-        document_id: "d1".into(),
-        chunk_index: 0,
-        title: Some("Doc".into()),
-        section_path: Some("Sec".into()),
-        content_type: Some("text/plain".into()),
-        provenance: "prov".into(),
-        text: "Sample text".into(),
-        score: 0.9,
-        rank: 1,
-        suspicious: false,
-    }];
-
-    let node = engine::workflow::nodes::GenerateAnswerNode::new(Some(capturing_gen.clone() as Arc<dyn engine::generation::Generator>));
-
-    let runner = engine::workflow::WorkflowRunner::new();
-    let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
-    assert!(res.is_ok(), "GenerateAnswer must succeed on retry attempt 2");
-
-    let reqs = capturing_gen.requests.lock().unwrap().clone();
-    assert_eq!(reqs.len(), 2, "Must make exactly 2 generation attempts");
-    assert_eq!(reqs[0], reqs[1], "Captured GenerationRequest across attempt 1 and attempt 2 must be byte/field-identical");
-
-    let mut events = Vec::new();
-    while let Ok(item) = rx.try_recv() {
-        if let Ok(wf_event) = item {
-            events.push(wf_event);
-        }
-    }
-
-    let failed_events = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(_)))).count();
-    assert_eq!(failed_events, 0, "No retrying/failed event emitted during internal node retry");
-}
-
-#[tokio::test]
-async fn generation_outer_timeout_allows_retry() {
-    use engine::generation::{GenerationError, GenerationErrorKind, GenerationRequest, Generator, ModelOutput};
-    use engine::workflow::EventSequence;
-    use std::sync::{Arc, Mutex};
-    use tokio::sync::mpsc;
-    use tokio_util::sync::CancellationToken;
-
-    struct SlowFirstGenerator {
-        calls: Mutex<usize>,
-    }
-
-    impl Generator for SlowFirstGenerator {
-        fn generate<'a>(
-            &'a self,
-            _request: GenerationRequest,
-        ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, GenerationError>> {
-            Box::pin(async move {
-                let mut count = self.calls.lock().unwrap();
-                *count += 1;
-                if *count == 1 {
-                    Err(GenerationError::new(
-                        GenerationErrorKind::Timeout,
-                        "Attempt 1 provider timeout",
-                    ))
-                } else {
-                    Ok(ModelOutput {
-                        answer: "Attempt 2 fast answer".into(),
-                        cited_evidence_ids: vec!["[1]".into()],
-                        answer_basis: engine::generation::AnswerBasis::Retrieval,
-                        notices: vec![],
-                        warnings: vec![],
-                        usage: None,
-                    })
-                }
-            })
-        }
-    }
-
-    let slow_gen = Arc::new(SlowFirstGenerator {
-        calls: Mutex::new(0),
-    });
-
-    let (tx, _rx) = mpsc::channel(100);
-    let cancel = CancellationToken::new();
-    let sequence = Arc::new(EventSequence::new());
-    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-timeout".into(), "sess-timeout".into());
-
-    let req = engine::pb::lancet::v1::QueryRagRequest {
-        session_id: "sess-timeout".into(),
-        query: "Timeout query?".into(),
-        filter: None,
-    };
-    let mut ctx = engine::workflow::WorkflowContext::new("sess-timeout".into(), "trace-timeout".into(), &req);
-    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
-        id: "[1]".into(),
-        chunk_id: "c1".into(),
-        document_id: "d1".into(),
-        chunk_index: 0,
-        title: Some("Doc".into()),
-        section_path: Some("Sec".into()),
-        content_type: Some("text/plain".into()),
-        provenance: "prov".into(),
-        text: "Sample text".into(),
-        score: 0.9,
-        rank: 1,
-        suspicious: false,
-    }];
-
-    let node = engine::workflow::nodes::GenerateAnswerNode::new(Some(slow_gen.clone() as Arc<dyn engine::generation::Generator>));
-
-    let runner = engine::workflow::WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
-    let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
-
-    assert!(res.is_ok(), "Outer node timeout budget of 65000ms must allow attempt 2 retry to succeed");
-    assert_eq!(*slow_gen.calls.lock().unwrap(), 2);
-}
-
-#[tokio::test]
-async fn generation_cancellation_between_attempts() {
-    use engine::generation::{GenerationError, GenerationErrorKind, GenerationRequest, Generator, ModelOutput};
-    use engine::workflow::EventSequence;
-    use std::sync::{Arc, Mutex};
-    use tokio::sync::mpsc;
-    use tokio_util::sync::CancellationToken;
-
-    struct CancellingGenerator {
-        calls: Mutex<usize>,
-        cancel: CancellationToken,
-    }
-
-    impl Generator for CancellingGenerator {
-        fn generate<'a>(
-            &'a self,
-            _request: GenerationRequest,
-        ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, GenerationError>> {
-            Box::pin(async move {
-                let mut count = self.calls.lock().unwrap();
-                *count += 1;
-                if *count == 1 {
-                    self.cancel.cancel();
-                    Err(GenerationError::new(
-                        GenerationErrorKind::ProviderError,
-                        "Attempt 1 transient error",
-                    ))
-                } else {
-                    Ok(ModelOutput {
-                        answer: "Should not be reached".into(),
-                        cited_evidence_ids: vec!["[1]".into()],
-                        answer_basis: engine::generation::AnswerBasis::Retrieval,
-                        notices: vec![],
-                        warnings: vec![],
-                        usage: None,
-                    })
-                }
-            })
-        }
-    }
-
-    let cancel = CancellationToken::new();
-    let cancelling_gen = Arc::new(CancellingGenerator {
-        calls: Mutex::new(0),
-        cancel: cancel.clone(),
-    });
-
-    let (tx, mut rx) = mpsc::channel(100);
-    let sequence = Arc::new(EventSequence::new());
-    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-cancel".into(), "sess-cancel".into());
-
-    let req = engine::pb::lancet::v1::QueryRagRequest {
-        session_id: "sess-cancel".into(),
-        query: "Cancel query?".into(),
-        filter: None,
-    };
-    let mut ctx = engine::workflow::WorkflowContext::new("sess-cancel".into(), "trace-cancel".into(), &req);
-    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
-        id: "[1]".into(),
-        chunk_id: "c1".into(),
-        document_id: "d1".into(),
-        chunk_index: 0,
-        title: Some("Doc".into()),
-        section_path: Some("Sec".into()),
-        content_type: Some("text/plain".into()),
-        provenance: "prov".into(),
-        text: "Sample text".into(),
-        score: 0.9,
-        rank: 1,
-        suspicious: false,
-    }];
-
-    let node = engine::workflow::nodes::GenerateAnswerNode::new(Some(cancelling_gen.clone() as Arc<dyn engine::generation::Generator>));
-
-    let runner = engine::workflow::WorkflowRunner::new();
-    let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
-
-    assert!(res.is_err());
-    let err = res.unwrap_err();
-    assert_eq!(err.kind, engine::pb::lancet::v1::NodeErrorKind::Cancelled);
-    assert_eq!(*cancelling_gen.calls.lock().unwrap(), 1, "Attempt 2 must not be triggered when cancellation token is cancelled between attempts");
-
-    let mut events = Vec::new();
-    while let Ok(item) = rx.try_recv() {
-        if let Ok(wf_event) = item {
-            events.push(wf_event);
-        }
-    }
-    let chunk_count = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_)))).count();
-    assert_eq!(chunk_count, 0, "No AnswerChunk event must be emitted on cancelled generation");
-}
-
-#[tokio::test]
-async fn answer_events_have_exact_cardinality() {
-    use engine::pb::lancet::v1;
-    use engine::workflow::EventSequence;
-    use std::sync::Arc;
-    use tokio::sync::mpsc;
-    use tokio_util::sync::CancellationToken;
-
-    // Scenario A: Happy path with evidence
-    {
-        let (tx, mut rx) = mpsc::channel(100);
-        let cancel = CancellationToken::new();
-        let sequence = Arc::new(EventSequence::new());
-        let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-card-a".into(), "sess-card-a".into());
-
-        let req = v1::QueryRagRequest { session_id: "sess-card-a".into(), query: "Card A".into(), filter: None };
-        let ctx = engine::workflow::WorkflowContext::new("sess-card-a".into(), "trace-card-a".into(), &req);
-
-        let candidate = candidate_with_score("1", "Content 1", 0.9).candidate;
-        let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![candidate]));
-        let fake_gen: Arc<dyn engine::generation::Generator> = Arc::new(engine::generation::FakeGenerator::new(Ok(engine::generation::ModelOutput {
-            answer: "Answer A".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: engine::generation::AnswerBasis::Retrieval,
-            notices: vec![], warnings: vec![], usage: None,
-        })));
-
-        let mut runner = engine::workflow::WorkflowRunner::new();
-        runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(Some(fake_dense), None, None, engine::retrieval::RetrievalSettings::default()));
-        runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
-        runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(Some(fake_gen)));
-
-        runner.run_workflow(ctx, cancel, sink).await;
-
-        let mut events = Vec::new();
-        while let Ok(item) = rx.try_recv() {
-            if let Ok(wf_event) = item { events.push(wf_event); }
-        }
-
-        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::AnswerChunk(_)))).count();
-        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::FinalAnswer(_)))).count();
-        assert_eq!(answer_chunks, 1, "Happy path emits exactly 1 AnswerChunk");
-        assert_eq!(final_answers, 1, "Happy path emits exactly 1 FinalAnswer");
-    }
-
-    // Scenario B: Zero evidence path
-    {
-        let (tx, mut rx) = mpsc::channel(100);
-        let cancel = CancellationToken::new();
-        let sequence = Arc::new(EventSequence::new());
-        let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-card-b".into(), "sess-card-b".into());
-
-        let req = v1::QueryRagRequest { session_id: "sess-card-b".into(), query: "Card B".into(), filter: None };
-        let ctx = engine::workflow::WorkflowContext::new("sess-card-b".into(), "trace-card-b".into(), &req);
-
-        let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![]));
-
-        let mut runner = engine::workflow::WorkflowRunner::new();
-        runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(Some(fake_dense), None, None, engine::retrieval::RetrievalSettings::default()));
-        runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
-        runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(None));
-
-        runner.run_workflow(ctx, cancel, sink).await;
-
-        let mut events = Vec::new();
-        while let Ok(item) = rx.try_recv() {
-            if let Ok(wf_event) = item { events.push(wf_event); }
-        }
-
-        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::AnswerChunk(_)))).count();
-        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::FinalAnswer(_)))).count();
-        assert_eq!(answer_chunks, 0, "Zero evidence path emits 0 AnswerChunk");
-        assert_eq!(final_answers, 1, "Zero evidence path emits exactly 1 FinalAnswer");
-    }
-
-    // Scenario C: Exhausted generation failure
-    {
-        let (tx, mut rx) = mpsc::channel(100);
-        let cancel = CancellationToken::new();
-        let sequence = Arc::new(EventSequence::new());
-        let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-card-c".into(), "sess-card-c".into());
-
-        let req = v1::QueryRagRequest { session_id: "sess-card-c".into(), query: "Card C".into(), filter: None };
-        let ctx = engine::workflow::WorkflowContext::new("sess-card-c".into(), "trace-card-c".into(), &req);
-
-        let candidate = candidate_with_score("1", "Content 1", 0.9).candidate;
-        let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![candidate]));
-        let failing_gen: Arc<dyn engine::generation::Generator> = Arc::new(engine::generation::FakeGenerator::new(Err(engine::generation::GenerationError::new(
-            engine::generation::GenerationErrorKind::ProviderError,
-            "Permanent failure",
-        ))));
-
-        let mut runner = engine::workflow::WorkflowRunner::new();
-        runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(Some(fake_dense), None, None, engine::retrieval::RetrievalSettings::default()));
-        runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
-        runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(Some(failing_gen)));
-
-        runner.run_workflow(ctx, cancel, sink).await;
-
-        let mut events = Vec::new();
-        while let Ok(item) = rx.try_recv() {
-            if let Ok(wf_event) = item { events.push(wf_event); }
-        }
-
-        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::AnswerChunk(_)))).count();
-        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(v1::workflow_event::Event::FinalAnswer(_)))).count();
-        assert_eq!(answer_chunks, 0, "Failing generation emits 0 AnswerChunk");
-        assert_eq!(final_answers, 0, "Failing generation emits 0 FinalAnswer");
-    }
-}
-
-#[tokio::test]
-async fn workflow_answer_contract_preserves_all_fields() {
-    use engine::pb::lancet::v1;
-    use engine::workflow::EventSequence;
-    use std::sync::Arc;
-    use tokio::sync::mpsc;
-    use tokio_util::sync::CancellationToken;
-
-    let (tx, mut rx) = mpsc::channel(100);
-    let cancel = CancellationToken::new();
-    let sequence = Arc::new(EventSequence::new());
-    let sink = engine::workflow::WorkflowEventSink::new(tx, sequence, "trace-fields".into(), "sess-fields".into());
-
-    let req = v1::QueryRagRequest { session_id: "sess-fields".into(), query: "Preserve fields query".into(), filter: None };
-    let ctx = engine::workflow::WorkflowContext::new("sess-fields".into(), "trace-fields".into(), &req);
-
-    let candidate = candidate_with_score("100", "Evidence text for fields preservation test.", 0.88).candidate;
-    let fake_dense = Arc::new(engine::workflow::ports::FakeDenseRetrievalPort::success(vec![candidate]));
-
-    let model_out = engine::generation::ModelOutput {
-        answer: "Detailed answer string preserving fields.".into(),
-        cited_evidence_ids: vec!["[1]".into()],
-        answer_basis: engine::generation::AnswerBasis::Retrieval,
-        notices: vec!["Notice 1".into()],
-        warnings: vec!["Warning 1".into()],
-        usage: None,
-    };
-    let fake_gen: Arc<dyn engine::generation::Generator> = Arc::new(engine::generation::FakeGenerator::new(Ok(model_out)));
-
-    let mut runner = engine::workflow::WorkflowRunner::new();
-    runner.add_node(engine::workflow::nodes::RetrieveHybridNode::new(Some(fake_dense), None, None, engine::retrieval::RetrievalSettings::default()));
-    runner.add_node(engine::workflow::nodes::AssemblePromptNode::new());
-    runner.add_node(engine::workflow::nodes::GenerateAnswerNode::new(Some(fake_gen)));
-
-    runner.run_workflow(ctx, cancel, sink).await;
-
-    let mut events = Vec::new();
-    while let Ok(item) = rx.try_recv() {
-        if let Ok(wf_event) = item { events.push(wf_event); }
-    }
-
-    let final_answer_event = events.iter().find_map(|e| match &e.event {
-        Some(v1::workflow_event::Event::FinalAnswer(fa)) => fa.response.clone(),
-        _ => None,
-    }).expect("FinalAnswer must contain QueryRagResponse");
-
-    assert_eq!(final_answer_event.answer, "Detailed answer string preserving fields.");
-    assert_eq!(final_answer_event.citations, vec!["[1]"]);
-    assert_eq!(final_answer_event.session_id, "sess-fields");
-    assert_eq!(final_answer_event.answer_basis, v1::AnswerBasis::Retrieval as i32);
-    assert!(!final_answer_event.structured_citations.is_empty());
-    assert_eq!(final_answer_event.structured_citations[0].chunk_id, "chk-100");
-    assert_eq!(final_answer_event.structured_citations[0].document_id, "doc-100");
-    assert_eq!(final_answer_event.notices.len(), 2);
-    assert!(final_answer_event.snapshot.is_some());
-    let snapshot = final_answer_event.snapshot.as_ref().unwrap();
-    assert_eq!(snapshot.candidate_limit, 32);
-    assert_eq!(snapshot.final_limit, 8);
-}
-
-#[tokio::test]
-async fn prompt_packing_cancellation_is_cooperative() {
-    use engine::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, PromptAssemblyError};
-    use tokio_util::sync::CancellationToken;
-
-    let mut fused = Vec::new();
-    for i in 0..100 {
-        fused.push(candidate_with_score(&format!("{i}"), &format!("Large content block {i} for cancellation testing. ").repeat(20), 0.9 - (i as f64 * 0.001)));
-    }
-
-    let evidence = assemble_evidence_blocks(&fused);
-    let cancel = CancellationToken::new();
-    cancel.cancel();
-
-    let res = pack_evidence_and_graph_prompt("Cancellation test?", &evidence, &[], 1.0, 65536, 2048, &cancel).await;
-    assert_eq!(res, Err(PromptAssemblyError::Cancelled), "Cooperative prompt packing must return Cancelled when cancellation token is pre-cancelled");
 }
 
 

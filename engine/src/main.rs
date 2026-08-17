@@ -1016,7 +1016,7 @@ pub struct LancetServiceImpl {
     statuses: Arc<DashMap<String, IngestionStatus>>,
     queue: mpsc::Sender<IngestionJob>,
     nodes: Table,
-    bm25_index: Arc<tokio::sync::RwLock<Bm25Index>>,
+    bm25_index: workflow::ports::Bm25IndexStore,
     pub effective_settings: EffectiveRagSettings,
     generator: Arc<dyn generation::Generator>,
     embedder: Arc<dyn EmbeddingProvider>,
@@ -1506,7 +1506,7 @@ impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
 }
 
 struct ProductionBm25RetrievalPort {
-    bm25_index: Arc<tokio::sync::RwLock<Bm25Index>>,
+    bm25_index: workflow::ports::Bm25IndexStore,
     retrieval_settings: retrieval::RetrievalSettings,
 }
 
@@ -3552,7 +3552,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(bm25_index)),
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         effective_settings,
         generator,
         embedder: embedder.clone(),
