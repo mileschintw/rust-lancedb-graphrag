@@ -22,6 +22,26 @@ reasoned no-external-API declaration:
 - `QueryGraph` RPC: existing internal API explicitly left unchanged per D-10 in
   05-02; it is a scope fence, not a new external capability.
 
-## Continuation coverage note (2026-08-13)
+## Phase 05 Gap-Closure Plan Index and API Scope
 
-Plans 05-17 through 05-21 modify only the existing internal protobuf/runtime contract, Rust workflow seams, Go SSE mapping, and retrieval fusion types. They add no vendor endpoint, SDK, credential, third-party service, or external API capability; the protobuf additions are source-owned and generated through the repository's existing Buf configuration.
+The revised executable gap-closure plans (05-08 through 05-24) modify only existing internal components, workflow engines, serialization formats, and test fixtures:
+
+- **05-08:** Production Five-Node State Machine Query Reachability
+- **05-09:** Workflow Timeouts and Stream Disconnect Cancellation
+- **05-10:** Event Delivery Reliability, Retry Classification, and Checkpoint Digests
+- **05-11:** Gateway SSE Streaming and Checkpoint Persistence Verification
+- **05-12:** Additive Traceability Errata and Multi-Source Coverage
+- **05-13:** OpenRouter Model Metadata Cache and Retry Classification
+- **05-14:** Explicit NodeKind Exhaustive Dispatch
+- **05-15:** Test Double and Fake Port Isolation
+- **05-16:** Production BM25 O(1) Arc Snapshots and Retrieval Provenance
+- **05-17:** Additive Wire Schema and Generated Protobuf Bindings (modifies only the internal protobuf contract; adds no external API/vendor capability)
+- **05-18:** Library and Binary Target Split with BM25 Fixture Migration
+- **05-19:** Terminal Error and Notice Serialization
+- **05-20:** Preflight Bootstrap Timing and Wall-Clock Assertions
+- **05-21:** Typed Retrieval and Fusion Provenance
+- **05-22:** Retire Inline Remainder and Prove Five-Node Production Reachability
+- **05-23:** Generated Wire Contract Repair and Protobuf Literal Compilation
+- **05-24:** Two-Pass Multi-Variant RRF Fusion (including executable tasks 05-24-01 and 05-24-02)
+
+Plans 05-08 through 05-24 add no vendor endpoint, SDK, credential, third-party service, or external API capability; the protobuf additions are source-owned and generated through the repository's existing Buf configuration.

@@ -291,10 +291,10 @@ This revision preserves the executed 05-01 through 05-07 baseline, including the
 
 | Checker item | Executable owner | Closure proof |
 |---|---|---|
-| Resolved cross-variant RRF algorithm | 05-24 Task 1 | RetrieveHybrid calls fuse_candidates once per admitted ordered variant, then calls fuse_cross_variant_candidates over the per-variant fused outputs; the helper documents the exact one-based-rank formula, finite-score handling, one-variant identity, metadata selection, and tie/order rules. |
-| Exact two-variant assertion | 05-24 Task 1 | cross_variant_rrf_two_variant_exact_scores asserts numerical scores from two per-variant outputs and verifies retained vector/BM25 VariantProvenance. |
-| Call-site and tie-order guard | 05-24 Task 2 | A RetrieveHybrid-region source guard checks the per-variant call count, later second-pass call, variant-zero dense branch, and absence of request flattening; a focused regression proves deterministic tie order. |
-| Downstream integration ordering | 05-11 frontmatter | The final engine-to-gateway SSE/checkpoint plan now depends explicitly on 05-24, so cross-runtime evidence cannot precede the resolved retrieval contract. |
+| Resolved cross-variant RRF algorithm | 05-24 Task 1 (05-24-01) | RetrieveHybrid calls fuse_candidates once per admitted ordered variant, then calls fuse_cross_variant_candidates over the per-variant fused outputs; the helper documents the exact one-based-rank formula, finite-score handling, one-variant identity, metadata selection, and tie/order rules. |
+| Exact two-variant assertion | 05-24 Task 1 (05-24-01) | cross_variant_rrf_two_variant_exact_scores asserts numerical scores from two per-variant outputs and verifies retained vector/BM25 VariantProvenance. |
+| Call-site and tie-order guard | 05-24 Task 2 (05-24-02) | A RetrieveHybrid-region source guard checks the per-variant call count, later second-pass call, variant-zero dense branch, and absence of request flattening; a focused regression proves deterministic tie order. |
+| Downstream integration ordering | 05-11 frontmatter | The final engine-to-gateway SSE/checkpoint plan now depends explicitly on 05-24 (including 05-24-01 and 05-24-02), so cross-runtime evidence cannot precede the resolved retrieval contract. |
 
 ### Iteration 7 multi-source coverage
 
