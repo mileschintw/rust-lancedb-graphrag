@@ -134,5 +134,6 @@ pub fn workflow_completed(
         error_kind: error_kind as i32,
         error_message: error_message.into(),
         final_response,
+        notices: Vec::new(),
     })
 }

@@ -1769,6 +1769,8 @@ impl LancetServiceImpl {
                     let hasher = DefaultHasher::new();
                     hasher.finish()
                 }),
+                variant_count: 0,
+                variant_identities: Vec::new(),
             };
 
             ctx.answer = String::new();
@@ -1919,6 +1921,8 @@ impl LancetServiceImpl {
                 }
                 hasher.finish()
             }),
+            variant_count: 0,
+            variant_identities: Vec::new(),
         };
 
         ctx.answer = model_output.answer;
