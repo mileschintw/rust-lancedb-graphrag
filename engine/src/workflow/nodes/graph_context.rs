@@ -109,10 +109,23 @@ impl Node for ExtractGraphContextNode {
 
                 match graph_res {
                     Ok(facts) => {
-                        ctx.graph_context = facts;
+                        ctx.graph_context = facts
+                            .iter()
+                            .map(|f| {
+                                format!(
+                                    "{} -- {} -- {}",
+                                    f.fact.entity_a_name(),
+                                    f.fact.relation_type(),
+                                    f.fact.entity_b_name()
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        ctx.graph_facts = facts;
                     }
                     Err(err) => {
                         ctx.graph_context = String::new();
+                        ctx.graph_facts = Vec::new();
                         let notice_msg = if err.kind == NodeErrorKind::Timeout {
                             "GRAPH_TIMEOUT".to_string()
                         } else {
@@ -128,6 +141,7 @@ impl Node for ExtractGraphContextNode {
                 }
             } else {
                 ctx.graph_context = String::new();
+                ctx.graph_facts = Vec::new();
             }
 
             Ok(())

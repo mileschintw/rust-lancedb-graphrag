@@ -286,7 +286,7 @@ pub async fn traverse_filtered_by_relation_type(
     bridge::bridge_batch_back(&result_lg)
 }
 
-pub(crate) fn escape_sql_literal(value: &str) -> String {
+pub fn escape_sql_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
 
@@ -644,7 +644,7 @@ pub(crate) fn constrain_to_cypher_matched(
     Ok((constrained_entities, constrained_edges))
 }
 
-pub(crate) async fn narrow_via_cypher(
+pub async fn narrow_via_cypher(
     entities: &arrow_array::RecordBatch,
     edges: &arrow_array::RecordBatch,
     seed_id: &str,

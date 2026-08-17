@@ -30,9 +30,9 @@ use uuid::Uuid;
 mod chunker;
 use engine::client;
 use engine::db;
-pub mod generation;
-pub mod graph;
-pub mod prompt;
+use engine::generation;
+use engine::graph;
+use engine::prompt;
 use engine::rerank;
 use engine::retrieval;
 use engine::workflow;
@@ -1230,7 +1230,234 @@ pub(crate) async fn attempt_graph_augmentation(
     GraphAugmentationOutcome::Succeeded { facts }
 }
 
+struct ProductionEmbeddingPort {
+    embedder: Arc<dyn EmbeddingProvider>,
+}
+
+impl workflow::node::QueryEmbeddingPort for ProductionEmbeddingPort {
+    fn embed_variant_zero<'a>(
+        &'a self,
+        variant: &'a str,
+        cancel: &'a tokio_util::sync::CancellationToken,
+    ) -> workflow::node::BoxFuture<'a, Result<Vec<f32>, workflow::node::NodeError>> {
+        Box::pin(async move {
+            if cancel.is_cancelled() {
+                return Err(workflow::node::NodeError::cancelled());
+            }
+            let vecs = self
+                .embedder
+                .get_embeddings(&[variant.to_string()])
+                .await
+                .map_err(|err| {
+                    workflow::node::NodeError::new(
+                        v1::NodeErrorKind::RetrievalFailed,
+                        format!("embedding provider transport error: {err}"),
+                    )
+                })?;
+            if vecs.len() != 1 || vecs[0].len() != 2048 || vecs[0].iter().any(|f| !f.is_finite()) {
+                return Err(workflow::node::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    "embedding provider returned invalid payload",
+                ));
+            }
+            Ok(vecs.into_iter().next().unwrap())
+        })
+    }
+}
+
+struct ProductionGraphQueryPort {
+    database: DatabaseManager,
+    graph_settings: GraphSettings,
+}
+
+impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
+    fn query_graph<'a>(
+        &'a self,
+        query_embedding: &'a [f32],
+        cancel: &'a tokio_util::sync::CancellationToken,
+    ) -> workflow::node::BoxFuture<'a, Result<Vec<prompt::GraphFactBlock>, workflow::node::NodeError>> {
+        Box::pin(async move {
+            if cancel.is_cancelled() {
+                return Err(workflow::node::NodeError::cancelled());
+            }
+            let graph_outcome = attempt_graph_augmentation(
+                &self.database,
+                query_embedding,
+                &self.graph_settings,
+            )
+            .await;
+
+            let tag = match &graph_outcome {
+                GraphAugmentationOutcome::Succeeded { .. } => "succeeded",
+                GraphAugmentationOutcome::NoMatchFound => "no_match_found",
+                GraphAugmentationOutcome::AttemptedAndFailed { .. } => "attempted_and_failed",
+            };
+            tracing::Span::current().record("graph_augmentation", tag);
+
+            let facts: Vec<prompt::GraphFactBlock> = match graph_outcome {
+                GraphAugmentationOutcome::Succeeded { facts } => facts
+                    .into_iter()
+                    .map(|fact| prompt::GraphFactBlock { fact })
+                    .collect(),
+                _ => vec![],
+            };
+            Ok(facts)
+        })
+    }
+}
+
+struct ProductionDenseRetrievalPort {
+    nodes: Table,
+    retrieval_settings: retrieval::RetrievalSettings,
+}
+
+impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
+    fn retrieve_dense<'a>(
+        &'a self,
+        query_embedding: &'a [f32],
+        filter: Option<&'a v1::DocumentFilter>,
+        cancel: &'a tokio_util::sync::CancellationToken,
+    ) -> workflow::node::BoxFuture<'a, Result<Vec<retrieval::Candidate>, workflow::node::NodeError>> {
+        Box::pin(async move {
+            if cancel.is_cancelled() {
+                return Err(workflow::node::NodeError::cancelled());
+            }
+            let (doc_ids, content_types) = if let Some(f) = filter {
+                (f.document_ids.clone(), f.content_types.clone())
+            } else {
+                (vec![], vec![])
+            };
+            let query_req = QueryRequest::from_values(
+                "query",
+                doc_ids,
+                content_types,
+                &self.retrieval_settings,
+            )
+            .map_err(|err| {
+                workflow::node::NodeError::new(v1::NodeErrorKind::RetrievalFailed, err.message())
+            })?;
+            let dense_retriever = DenseRetriever::new(self.nodes.clone());
+            dense_retriever
+                .query(query_embedding, &query_req, &self.retrieval_settings)
+                .await
+                .map_err(|err| {
+                    workflow::node::NodeError::new(
+                        v1::NodeErrorKind::RetrievalFailed,
+                        format!("dense retrieval failure: {}", err.message()),
+                    )
+                })
+        })
+    }
+}
+
+struct ProductionBm25RetrievalPort {
+    bm25_index: Arc<tokio::sync::RwLock<Bm25Index>>,
+    retrieval_settings: retrieval::RetrievalSettings,
+}
+
+impl workflow::ports::Bm25RetrievalPort for ProductionBm25RetrievalPort {
+    fn retrieve_bm25<'a>(
+        &'a self,
+        query: &'a str,
+        filter: Option<&'a v1::DocumentFilter>,
+        cancel: &'a tokio_util::sync::CancellationToken,
+    ) -> workflow::node::BoxFuture<'a, Result<Vec<retrieval::Candidate>, workflow::node::NodeError>> {
+        Box::pin(async move {
+            if cancel.is_cancelled() {
+                return Err(workflow::node::NodeError::cancelled());
+            }
+            let (doc_ids, content_types) = if let Some(f) = filter {
+                (f.document_ids.clone(), f.content_types.clone())
+            } else {
+                (vec![], vec![])
+            };
+            let query_req = QueryRequest::from_values(
+                query,
+                doc_ids,
+                content_types,
+                &self.retrieval_settings,
+            )
+            .map_err(|err| {
+                workflow::node::NodeError::new(v1::NodeErrorKind::RetrievalFailed, err.message())
+            })?;
+            let bm25_guard = self.bm25_index.read().await;
+            let res = bm25_guard
+                .retrieve(&query_req, &self.retrieval_settings)
+                .await
+                .map_err(|err| {
+                    workflow::node::NodeError::new(
+                        v1::NodeErrorKind::RetrievalFailed,
+                        err.to_string(),
+                    )
+                });
+            drop(bm25_guard);
+            res
+        })
+    }
+}
+
 impl LancetServiceImpl {
+    pub fn build_production_workflow(
+        &self,
+    ) -> (workflow::WorkflowRunner, workflow::WorkflowDependencies) {
+        // Concrete adapters wrapping EmbeddingProvider, GraphQueryPort, DenseRetrievalPort, Bm25RetrievalPort, Reranker, Generator
+        let embedder_adapter: Arc<dyn workflow::node::QueryEmbeddingPort> =
+            Arc::new(ProductionEmbeddingPort {
+                embedder: Arc::clone(&self.embedder),
+            });
+        let graph_adapter: Arc<dyn workflow::ports::GraphQueryPort> =
+            Arc::new(ProductionGraphQueryPort {
+                database: self.database.clone(),
+                graph_settings: self.effective_settings.graph.clone(),
+            });
+        let dense_adapter: Arc<dyn workflow::ports::DenseRetrievalPort> =
+            Arc::new(ProductionDenseRetrievalPort {
+                nodes: self.nodes.clone(),
+                retrieval_settings: self.effective_settings.retrieval.clone(),
+            });
+        let bm25_adapter: Arc<dyn workflow::ports::Bm25RetrievalPort> =
+            Arc::new(ProductionBm25RetrievalPort {
+                bm25_index: Arc::clone(&self.bm25_index),
+                retrieval_settings: self.effective_settings.retrieval.clone(),
+            });
+        let reranker_adapter: Arc<dyn rerank::Reranker> = Arc::clone(&self.reranker);
+        let generator_adapter: Arc<dyn generation::Generator> = Arc::clone(&self.generator);
+        let reformulator_adapter: Arc<dyn workflow::ports::QueryReformulator> =
+            Arc::new(workflow::ports::NoOpQueryReformulator::new());
+
+        let deps = workflow::WorkflowDependencies {
+            reformulator: Some(reformulator_adapter),
+            embedding_port: Some(embedder_adapter),
+            graph_port: Some(graph_adapter),
+            dense_port: Some(dense_adapter),
+            bm25_port: Some(bm25_adapter),
+            reranker_port: Some(reranker_adapter),
+            generator: Some(generator_adapter),
+            retrieval_settings: self.effective_settings.retrieval.clone(),
+        };
+
+        let mut runner = workflow::WorkflowRunner::new();
+        runner.add_node(workflow::nodes::ReformulateQueryNode::with_reformulator(
+            deps.reformulator.clone(),
+        ));
+        runner.add_node(workflow::nodes::ExtractGraphContextNode::new(
+            deps.embedding_port.clone(),
+            deps.graph_port.clone(),
+        ));
+        runner.add_node(workflow::nodes::RetrieveHybridNode::new(
+            deps.dense_port.clone(),
+            deps.bm25_port.clone(),
+            deps.reranker_port.clone(),
+            deps.retrieval_settings.clone(),
+        ));
+        runner.add_node(workflow::nodes::AssemblePromptNode::new());
+        runner.add_node(workflow::nodes::GenerateAnswerNode::new(
+            deps.generator.clone(),
+        ));
+
+        (runner, deps)
+    }
+
     pub async fn execute_inline_query_rag_remainder(
         &self,
         ctx: &mut workflow::WorkflowContext,
@@ -1713,12 +1940,7 @@ impl LancetService for LancetServiceImpl {
         );
 
         let ctx = workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
-        let mut runner = workflow::WorkflowRunner::new();
-        runner.add_node(workflow::nodes::ReformulateQueryNode::new());
-
-        let deps = workflow::WorkflowDependencies::new();
-        let service = self.clone();
-        let query_request_owned = query_request.clone();
+        let (runner, deps) = self.build_production_workflow();
 
         let parent_span = tracing::info_span!(
             "query_rag",
@@ -1729,25 +1951,8 @@ impl LancetService for LancetServiceImpl {
 
         tokio::spawn(
             async move {
-                runner
-                    .run_tracer(
-                        ctx,
-                        cancel.clone(),
-                        sink,
-                        &deps,
-                        move |ctx, _deps, _sink, cancel| {
-                            let service = service.clone();
-                            let query_request = query_request_owned.clone();
-                            Box::pin(async move {
-                                service.execute_inline_query_rag_remainder(
-                                    ctx,
-                                    &query_request,
-                                    cancel,
-                                ).await
-                            })
-                        },
-                    )
-                    .await;
+                let _ = &deps;
+                runner.run_workflow(ctx, cancel, sink).await;
             }
             .instrument(parent_span),
         );

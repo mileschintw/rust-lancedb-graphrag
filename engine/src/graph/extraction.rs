@@ -84,7 +84,7 @@ pub(crate) fn validate_extraction_output(output: &ExtractionOutput) -> Result<()
 /// NEVER the raw extracted text or model output (a deliberate, documented deviation
 /// from AI-SPEC §4b.1's literal instruction, preserving T-04.1-07 and GraphSpikeError
 /// no-row-values-in-logs discipline).
-pub(crate) async fn extract_with_retry(
+pub async fn extract_with_retry(
     generator: &dyn ExtractionGenerator,
     request: ExtractionRequest,
 ) -> Result<ExtractionOutput, GenerationError> {

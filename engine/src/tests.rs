@@ -9,6 +9,7 @@ use engine::pb::lancet::v1::*;
 use super::*;
 
 pub mod workflow_phase5;
+pub mod workflow_phase5_production;
 
 use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
 use futures::TryStreamExt;

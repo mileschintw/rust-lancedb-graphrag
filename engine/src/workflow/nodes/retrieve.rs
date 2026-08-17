@@ -60,7 +60,7 @@ impl Node for RetrieveHybridNode {
 
             let embedding = ctx.query_embedding.as_deref().unwrap_or(&[]);
 
-            // 1. Dense retrieval (variant 0)
+            // 1. Dense retrieval for variant-zero embedding
             let dense_candidates = if let Some(dense_port) = &self.dense_port {
                 match dense_port
                     .retrieve_dense(embedding, ctx.filter.as_ref(), cancel)

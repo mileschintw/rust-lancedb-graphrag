@@ -34,6 +34,7 @@ pub struct WorkflowContext {
     pub variants: Vec<String>,
     pub query_embedding: Option<Vec<f32>>,
     pub graph_context: String,
+    pub graph_facts: Vec<crate::prompt::GraphFactBlock>,
     pub vector_results: Vec<String>,
     pub bm25_results: Vec<String>,
     pub final_candidates: Vec<String>,
@@ -57,6 +58,7 @@ impl WorkflowContext {
             variants: Vec::new(),
             query_embedding: None,
             graph_context: String::new(),
+            graph_facts: Vec::new(),
             vector_results: Vec::new(),
             bm25_results: Vec::new(),
             final_candidates: Vec::new(),
@@ -208,13 +210,18 @@ pub fn run_inline_prompt_generation_remainder<'a>(
                 }
             }
         } else {
-            // Default placeholder if no generator is injected
-            ctx.answer = format!("Answer for {}", ctx.original_query);
-            ctx.answer_basis = AnswerBasis::Retrieval;
-            sink.send_event(events::answer_chunk(ctx.answer.clone(), true));
-            sink.send_event(events::node_completed(name_gen, "", 1));
-            let seq2 = sink.next_sequence_ordinal();
-            sink.send_event(events::checkpoint("post_generateanswer", seq2, ctx));
+            let node_err = NodeError::new(
+                NodeErrorKind::LlmGenerationFailed,
+                "No generator configured for GenerateAnswer remainder",
+            )
+            .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
+            sink.send_event(events::node_failed(
+                name_gen,
+                node_err.kind.clone(),
+                &node_err.message,
+                false,
+            ));
+            return Err(node_err);
         }
 
         Ok(())

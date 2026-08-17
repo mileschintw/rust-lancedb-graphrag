@@ -1,6 +1,7 @@
 use tokio_util::sync::CancellationToken;
 
 use crate::pb::lancet::v1::DocumentFilter;
+use crate::prompt::GraphFactBlock;
 use crate::retrieval::{Candidate, FusedCandidate, RetrievalError, RetrievalErrorKind};
 use super::node::{BoxFuture, NodeError};
 
@@ -41,7 +42,7 @@ pub trait GraphQueryPort: Send + Sync {
         &'a self,
         query_embedding: &'a [f32],
         cancel: &'a CancellationToken,
-    ) -> BoxFuture<'a, Result<String, NodeError>>;
+    ) -> BoxFuture<'a, Result<Vec<GraphFactBlock>, NodeError>>;
 }
 
 pub trait DenseRetrievalPort: Send + Sync {
@@ -139,16 +140,74 @@ impl super::node::QueryEmbeddingPort for FakeQueryEmbeddingPort {
     }
 }
 
+pub trait IntoGraphFacts {
+    fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock>;
+}
+
+impl IntoGraphFacts for Vec<crate::prompt::GraphFactBlock> {
+    fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
+        self
+    }
+}
+
+impl IntoGraphFacts for &[crate::prompt::GraphFactBlock] {
+    fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
+        self.to_vec()
+    }
+}
+
+impl IntoGraphFacts for &str {
+    fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
+        let parts: Vec<&str> = self.split("--").map(|s| s.trim()).collect();
+        let fact = if parts.len() >= 3 {
+            crate::graph::context_strategy::GraphFact::new(
+                parts[0],
+                parts[1],
+                parts[2],
+                None,
+                1.0,
+            )
+        } else {
+            crate::graph::context_strategy::GraphFact::new(
+                self,
+                "related_to",
+                self,
+                None,
+                1.0,
+            )
+        };
+        vec![crate::prompt::GraphFactBlock { fact }]
+    }
+}
+
+impl IntoGraphFacts for String {
+    fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
+        self.as_str().into_graph_facts()
+    }
+}
+
+impl IntoGraphFacts for Vec<String> {
+    fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
+        self.iter().flat_map(|s| s.as_str().into_graph_facts()).collect()
+    }
+}
+
+impl IntoGraphFacts for Vec<&str> {
+    fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
+        self.into_iter().flat_map(|s| s.into_graph_facts()).collect()
+    }
+}
+
 pub struct FakeGraphQueryPort {
-    graph_context: Result<String, NodeError>,
+    graph_facts: Result<Vec<crate::prompt::GraphFactBlock>, NodeError>,
     stall: bool,
     call_count: std::sync::atomic::AtomicUsize,
 }
 
 impl FakeGraphQueryPort {
-    pub fn success(context: impl Into<String>) -> Self {
+    pub fn success(facts: impl IntoGraphFacts) -> Self {
         Self {
-            graph_context: Ok(context.into()),
+            graph_facts: Ok(facts.into_graph_facts()),
             stall: false,
             call_count: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -156,7 +215,7 @@ impl FakeGraphQueryPort {
 
     pub fn failure(err: NodeError) -> Self {
         Self {
-            graph_context: Err(err),
+            graph_facts: Err(err),
             stall: false,
             call_count: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -164,7 +223,7 @@ impl FakeGraphQueryPort {
 
     pub fn stall() -> Self {
         Self {
-            graph_context: Ok(String::new()),
+            graph_facts: Ok(vec![]),
             stall: true,
             call_count: std::sync::atomic::AtomicUsize::new(0),
         }
@@ -180,13 +239,13 @@ impl GraphQueryPort for FakeGraphQueryPort {
         &'a self,
         _query_embedding: &'a [f32],
         _cancel: &'a CancellationToken,
-    ) -> BoxFuture<'a, Result<String, NodeError>> {
+    ) -> BoxFuture<'a, Result<Vec<crate::prompt::GraphFactBlock>, NodeError>> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Box::pin(async move {
             if self.stall {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
             }
-            self.graph_context.clone()
+            self.graph_facts.clone()
         })
     }
 }
