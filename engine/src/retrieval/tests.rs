@@ -727,3 +727,93 @@ fn cross_variant_provenance_is_bounded() {
     assert!(fused.iter().all(|c| c.candidate.chunk_id != "chunk-3"));
 }
 
+#[test]
+fn retrieval_snapshot_variant_provenance_wire_contract() {
+    use prost::Message;
+
+    let original = crate::pb::lancet::v1::RetrievalSnapshot {
+        index_generation: "gen-2026-test".to_string(),
+        embedding_model: "test-embedding-model-v1".to_string(),
+        vector_weight: 1.0,
+        bm25_weight: 0.8,
+        rrf_k: 60,
+        candidate_limit: 32,
+        final_limit: 8,
+        active_filter: Some(crate::pb::lancet::v1::DocumentFilter {
+            document_ids: vec!["doc-001".to_string(), "doc-002".to_string()],
+            content_types: vec!["text/markdown".to_string()],
+        }),
+        result_hash: "deadbeef01234567".to_string(),
+        variant_count: 3,
+        variant_identities: vec![
+            "v0:original-query".to_string(),
+            "v1:rephrased-query".to_string(),
+            "v2:expanded-query".to_string(),
+        ],
+    };
+
+    let mut buf = Vec::new();
+    original.encode(&mut buf).expect("RetrievalSnapshot encoding must succeed");
+    assert!(!buf.is_empty(), "encoded wire buffer must not be empty");
+
+    // Decode tags present on the wire to prove field numbers 1..=11
+    let mut tags = std::collections::BTreeSet::new();
+    let mut slice = &buf[..];
+    while !slice.is_empty() {
+        let (tag, wire_type) = prost::encoding::decode_key(&mut slice)
+            .expect("protobuf wire key must decode cleanly");
+        tags.insert(tag);
+        prost::encoding::skip_field(
+            wire_type,
+            tag,
+            &mut slice,
+            prost::encoding::DecodeContext::default(),
+        )
+        .expect("protobuf field must skip cleanly");
+    }
+
+    // Historical fields 1 through 9 remain present and intact
+    for historical_tag in 1..=9 {
+        assert!(
+            tags.contains(&historical_tag),
+            "historical field tag {} must be present in encoded RetrievalSnapshot wire",
+            historical_tag
+        );
+    }
+
+    // Additive variant provenance fields 10 and 11
+    assert!(
+        tags.contains(&10),
+        "tag 10 (variant_count) must be present in encoded wire"
+    );
+    assert!(
+        tags.contains(&11),
+        "tag 11 (variant_identities) must be present in encoded wire"
+    );
+
+    // Decode and verify round-trip equivalence and exact ordered identities
+    let decoded = crate::pb::lancet::v1::RetrievalSnapshot::decode(&buf[..])
+        .expect("RetrievalSnapshot decoding must succeed");
+
+    assert_eq!(decoded.index_generation, original.index_generation);
+    assert_eq!(decoded.embedding_model, original.embedding_model);
+    assert_eq!(decoded.vector_weight, original.vector_weight);
+    assert_eq!(decoded.bm25_weight, original.bm25_weight);
+    assert_eq!(decoded.rrf_k, original.rrf_k);
+    assert_eq!(decoded.candidate_limit, original.candidate_limit);
+    assert_eq!(decoded.final_limit, original.final_limit);
+    assert_eq!(decoded.active_filter, original.active_filter);
+    assert_eq!(decoded.result_hash, original.result_hash);
+    assert_eq!(decoded.variant_count, 3);
+    assert_eq!(
+        decoded.variant_identities,
+        vec![
+            "v0:original-query".to_string(),
+            "v1:rephrased-query".to_string(),
+            "v2:expanded-query".to_string(),
+        ]
+    );
+    assert_eq!(decoded, original);
+}
+
+
