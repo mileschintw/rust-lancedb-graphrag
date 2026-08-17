@@ -322,18 +322,18 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 24 plans (7 baseline executed, 17 additive gap closure pending)
+**Plans:** 12/24 plans executed
 
 Plans:
 
 - [x] 05-07-PLAN.md
-- [ ] 05-08-PLAN.md — Production five-node wiring, real adapter dependencies, and WorkflowContext population.
-- [ ] 05-09-PLAN.md — Live workflow settings, real-I/O deadlines, and stream-owned cancellation.
+- [x] 05-08-PLAN.md — Production five-node wiring, real adapter dependencies, and WorkflowContext population.
+- [x] 05-09-PLAN.md — Live workflow settings, real-I/O deadlines, and stream-owned cancellation.
 - [ ] 05-10-PLAN.md — Reliable typed event delivery, terminal idempotence, sequence integrity, and full snapshots.
 - [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
-- [ ] 05-12-PLAN.md — Additive historical-summary traceability errata and source coverage audit.
-- [ ] 05-13-PLAN.md — OpenRouter preflight classification, successful-only capability caching, and bounded generation retry.
-- [ ] 05-14-PLAN.md — Exhaustive typed NodeKind dispatch and early reformulation admission.
+- [x] 05-12-PLAN.md — Additive historical-summary traceability errata and source coverage audit.
+- [x] 05-13-PLAN.md — OpenRouter preflight classification, successful-only capability caching, and bounded generation retry.
+- [x] 05-14-PLAN.md — Exhaustive typed NodeKind dispatch and early reformulation admission.
 - [ ] 05-15-PLAN.md — Prompt API contract and cfg(test)-only workflow fakes.
 - [ ] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
 - [ ] 05-17-PLAN.md — Shared protobuf provenance and failure-terminal notice fields with synchronized Rust/Go bindings.
