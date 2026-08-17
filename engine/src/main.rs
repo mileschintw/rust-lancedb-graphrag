@@ -48,7 +48,7 @@ use engine::pb::lancet::v1::{self, lancet_service_server::{LancetService, Lancet
 use engine::pb::lancet::v1::{
     GetIngestionStatusRequest, GetIngestionStatusResponse, IngestDocumentRequest,
     IngestDocumentResponse, PingRequest, PingResponse, QueryGraphEdge, QueryGraphNode,
-    QueryGraphRequest, QueryGraphResponse, QueryRagRequest, QueryRagResponse,
+    QueryGraphRequest, QueryGraphResponse, QueryRagRequest,
 };
 
 const MAX_DOCUMENT_BYTES: usize = 10 << 20;
@@ -168,10 +168,125 @@ pub struct GraphSettings {
     pub max_hop_cap: u32,
 }
 
+fn default_reformulate_timeout_ms() -> u64 {
+    5000
+}
+fn default_query_embedding_timeout_ms() -> u64 {
+    10000
+}
+fn default_retrieve_timeout_ms() -> u64 {
+    10000
+}
+fn default_graph_operation_timeout_ms() -> u64 {
+    4000
+}
+fn default_graph_node_timeout_ms() -> u64 {
+    15000
+}
+fn default_prompt_timeout_ms() -> u64 {
+    2000
+}
+fn default_generation_node_timeout_ms() -> u64 {
+    65000
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowConfigSettings {
+    #[serde(default = "default_reformulate_timeout_ms")]
+    pub reformulate_timeout_ms: u64,
+    #[serde(default = "default_query_embedding_timeout_ms")]
+    pub query_embedding_timeout_ms: u64,
+    #[serde(default = "default_retrieve_timeout_ms")]
+    pub retrieve_timeout_ms: u64,
+    #[serde(default = "default_graph_operation_timeout_ms")]
+    pub graph_operation_timeout_ms: u64,
+    #[serde(default = "default_graph_node_timeout_ms")]
+    pub graph_node_timeout_ms: u64,
+    #[serde(default = "default_prompt_timeout_ms")]
+    pub prompt_timeout_ms: u64,
+    #[serde(default = "default_generation_node_timeout_ms")]
+    pub generation_node_timeout_ms: u64,
+}
+
+impl Default for WorkflowConfigSettings {
+    fn default() -> Self {
+        Self {
+            reformulate_timeout_ms: default_reformulate_timeout_ms(),
+            query_embedding_timeout_ms: default_query_embedding_timeout_ms(),
+            retrieve_timeout_ms: default_retrieve_timeout_ms(),
+            graph_operation_timeout_ms: default_graph_operation_timeout_ms(),
+            graph_node_timeout_ms: default_graph_node_timeout_ms(),
+            prompt_timeout_ms: default_prompt_timeout_ms(),
+            generation_node_timeout_ms: default_generation_node_timeout_ms(),
+        }
+    }
+}
+
+impl WorkflowConfigSettings {
+    pub fn to_workflow_settings(&self) -> WorkflowSettings {
+        WorkflowSettings {
+            reformulate_timeout_ms: self.reformulate_timeout_ms,
+            query_embedding_timeout_ms: self.query_embedding_timeout_ms,
+            retrieve_timeout_ms: self.retrieve_timeout_ms,
+            graph_operation_timeout_ms: self.graph_operation_timeout_ms,
+            graph_node_timeout_ms: self.graph_node_timeout_ms,
+            prompt_timeout_ms: self.prompt_timeout_ms,
+            generation_node_timeout_ms: self.generation_node_timeout_ms,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkflowSettings {
+    pub reformulate_timeout_ms: u64,
+    pub query_embedding_timeout_ms: u64,
+    pub retrieve_timeout_ms: u64,
+    pub graph_operation_timeout_ms: u64,
+    pub graph_node_timeout_ms: u64,
+    pub prompt_timeout_ms: u64,
+    pub generation_node_timeout_ms: u64,
+}
+
+impl Default for WorkflowSettings {
+    fn default() -> Self {
+        WorkflowConfigSettings::default().to_workflow_settings()
+    }
+}
+
+impl WorkflowSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.reformulate_timeout_ms == 0 {
+            return Err("invalid reformulate_timeout_ms: must be greater than 0".into());
+        }
+        if self.query_embedding_timeout_ms == 0 {
+            return Err("invalid query_embedding_timeout_ms: must be greater than 0".into());
+        }
+        if self.retrieve_timeout_ms == 0 {
+            return Err("invalid retrieve_timeout_ms: must be greater than 0".into());
+        }
+        if self.graph_operation_timeout_ms == 0 {
+            return Err("invalid graph_operation_timeout_ms: must be greater than 0".into());
+        }
+        if self.graph_node_timeout_ms == 0 {
+            return Err("invalid graph_node_timeout_ms: must be greater than 0".into());
+        }
+        if self.prompt_timeout_ms == 0 {
+            return Err("invalid prompt_timeout_ms: must be greater than 0".into());
+        }
+        if self.generation_node_timeout_ms == 0 {
+            return Err("invalid generation_node_timeout_ms: must be greater than 0".into());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct EngineSettings {
     pub grpc_addr: String,
     pub lancedb_path: String,
+    #[serde(default)]
+    pub workflow: WorkflowConfigSettings,
     #[serde(default)]
     pub retrieval: RetrievalConfigSettings,
     #[serde(default)]
@@ -183,6 +298,7 @@ impl Default for EngineSettings {
         Self {
             grpc_addr: "[::1]:50051".into(),
             lancedb_path: "./data/lancedb".into(),
+            workflow: WorkflowConfigSettings::default(),
             retrieval: RetrievalConfigSettings::default(),
             graph: GraphConfigSettings::default(),
         }
@@ -335,6 +451,7 @@ fn new_index_generation() -> String {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EffectiveRagSettings {
+    pub workflow: WorkflowSettings,
     pub retrieval: retrieval::RetrievalSettings,
     pub graph: GraphSettings,
     pub evidence_token_budget: usize,
@@ -362,6 +479,7 @@ impl EffectiveRagSettings {
     }
 
     pub fn try_from_settings(settings: &Settings) -> Result<Self, String> {
+        let workflow = settings.engine.workflow.to_workflow_settings();
         let retrieval = settings.engine.retrieval.to_retrieval_settings();
         let graph = GraphSettings {
             seed_match_min_score: settings.engine.graph.seed_match_min_score,
@@ -372,6 +490,7 @@ impl EffectiveRagSettings {
         let limits = generation::GroundingLimits::new(ev, settings.openrouter.max_output_tokens)
             .map_err(|err| err.message().to_string())?;
         let effective = Self {
+            workflow,
             retrieval,
             graph,
             evidence_token_budget: settings.engine.retrieval.evidence_token_budget,
@@ -393,6 +512,7 @@ impl EffectiveRagSettings {
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        self.workflow.validate()?;
         self.retrieval
             .validate()
             .map_err(|err| format!("invalid retrieval settings: {}", err.message()))?;
@@ -486,6 +606,41 @@ fn load_settings() -> Result<Settings, config::ConfigError> {
     if let Ok(value) = std::env::var("LANCET_ENGINE__LANCEDB_PATH") {
         if !value.trim().is_empty() {
             settings.engine.lancedb_path = value;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__REFORMULATE_TIMEOUT_MS") {
+        if let Ok(val) = value.trim().parse::<u64>() {
+            settings.engine.workflow.reformulate_timeout_ms = val;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__QUERY_EMBEDDING_TIMEOUT_MS") {
+        if let Ok(val) = value.trim().parse::<u64>() {
+            settings.engine.workflow.query_embedding_timeout_ms = val;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS") {
+        if let Ok(val) = value.trim().parse::<u64>() {
+            settings.engine.workflow.retrieve_timeout_ms = val;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS") {
+        if let Ok(val) = value.trim().parse::<u64>() {
+            settings.engine.workflow.graph_operation_timeout_ms = val;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS") {
+        if let Ok(val) = value.trim().parse::<u64>() {
+            settings.engine.workflow.graph_node_timeout_ms = val;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS") {
+        if let Ok(val) = value.trim().parse::<u64>() {
+            settings.engine.workflow.prompt_timeout_ms = val;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS") {
+        if let Ok(val) = value.trim().parse::<u64>() {
+            settings.engine.workflow.generation_node_timeout_ms = val;
         }
     }
     if let Ok(value) = std::env::var("LANCET_OPENROUTER__EMBEDDING_ENDPOINT") {
@@ -1436,14 +1591,27 @@ impl LancetServiceImpl {
             retrieval_settings: self.effective_settings.retrieval.clone(),
         };
 
-        let mut runner = workflow::WorkflowRunner::new();
+        let wf = &self.effective_settings.workflow;
+        let mut runner = workflow::WorkflowRunner::new().with_timeouts(
+            wf.reformulate_timeout_ms,
+            wf.graph_node_timeout_ms,
+            wf.retrieve_timeout_ms,
+            wf.prompt_timeout_ms,
+            wf.generation_node_timeout_ms,
+        );
         runner.add_node(workflow::nodes::ReformulateQueryNode::with_reformulator(
             deps.reformulator.clone(),
         ));
-        runner.add_node(workflow::nodes::ExtractGraphContextNode::new(
-            deps.embedding_port.clone(),
-            deps.graph_port.clone(),
-        ));
+        runner.add_node(
+            workflow::nodes::ExtractGraphContextNode::new(
+                deps.embedding_port.clone(),
+                deps.graph_port.clone(),
+            )
+            .with_timeouts(
+                wf.query_embedding_timeout_ms,
+                wf.graph_operation_timeout_ms,
+            ),
+        );
         runner.add_node(workflow::nodes::RetrieveHybridNode::new(
             deps.dense_port.clone(),
             deps.bm25_port.clone(),
@@ -1908,7 +2076,7 @@ impl LancetService for LancetServiceImpl {
             (vec![], vec![])
         };
 
-        let query_request = QueryRequest::from_values(
+        let _query_request = QueryRequest::from_values(
             &req.query,
             doc_ids,
             content_types,
@@ -1927,10 +2095,36 @@ impl LancetService for LancetServiceImpl {
             }
         })?;
 
-        let (tx, rx) = mpsc::channel(100);
-        let stream: Self::QueryRAGStream = Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx));
+struct CancelOnDropStream<S> {
+    inner: S,
+    cancel: tokio_util::sync::CancellationToken,
+}
 
+impl<S: futures::Stream + Unpin> futures::Stream for CancelOnDropStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::pin::Pin::new(&mut self.inner).poll_next(cx)
+    }
+}
+
+impl<S> Drop for CancelOnDropStream<S> {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
+}
+
+        let (tx, rx) = mpsc::channel(100);
         let cancel = tokio_util::sync::CancellationToken::new();
+        let receiver_stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+        let stream: Self::QueryRAGStream = Box::pin(CancelOnDropStream {
+            inner: receiver_stream,
+            cancel: cancel.clone(),
+        });
+
         let sequence = Arc::new(workflow::EventSequence::new());
         let sink = workflow::WorkflowEventSink::new(
             tx,

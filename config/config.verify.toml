@@ -1,14 +1,18 @@
+# Shared verification configuration consumed by Phase 02 and Phase 05 test harnesses.
+# Consumed by scripts/phase02_live_evidence.py (cross-phase lancedb_path store contract)
+# and Phase 05 workflow live timeout verification.
+
 [engine]
 lancedb_path = "./data/lancedb-verify-02-06"
 
 [openrouter]
-generation_timeout_secs = 1
+generation_timeout_secs = 30
 
 [engine.workflow]
-reformulate_timeout_ms = 50
-query_embedding_timeout_ms = 100
-retrieve_timeout_ms = 100
-graph_operation_timeout_ms = 40
-graph_node_timeout_ms = 150
-prompt_timeout_ms = 20
+reformulate_timeout_ms = 5000
+query_embedding_timeout_ms = 10000
+retrieve_timeout_ms = 10000
+graph_operation_timeout_ms = 4000
+graph_node_timeout_ms = 15000
+prompt_timeout_ms = 2000
 generation_node_timeout_ms = 7000

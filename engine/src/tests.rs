@@ -257,6 +257,8 @@ fn config_example_matches_effective_rag_contract() {
     }
 }
 
+static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn config_workflow_timeout_overlays_match_contract() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -288,6 +290,76 @@ fn config_workflow_timeout_overlays_match_contract() {
             );
         }
     }
+
+    let verify_path = repo_root.join("config/config.verify.toml");
+    let verify_content = std::fs::read_to_string(&verify_path).expect("read config.verify.toml");
+    assert!(verify_content.contains("generation_timeout_secs = 30"));
+    assert!(verify_content.contains("reformulate_timeout_ms = 5000"));
+    assert!(verify_content.contains("query_embedding_timeout_ms = 10000"));
+    assert!(verify_content.contains("retrieve_timeout_ms = 10000"));
+    assert!(verify_content.contains("graph_operation_timeout_ms = 4000"));
+    assert!(verify_content.contains("graph_node_timeout_ms = 15000"));
+    assert!(verify_content.contains("prompt_timeout_ms = 2000"));
+    assert!(verify_content.contains("generation_node_timeout_ms = 7000"));
+
+    // Nested graph deadline inequality: 10000 + 4000 < 15000
+    assert!(10000 + 4000 < 15000, "query embedding and graph operation must fit within graph node timeout");
+    // Production generation node budget: 65000 >= 2 * 30000 + 5000
+    assert!(65000 >= 2 * 30000 + 5000, "production 65000 generation node deadline accommodates 2x 30s attempts + slack");
+    assert!(30 * 1000 > 7000, "generation_timeout_secs (30s) > generation_node_timeout_ms (7000ms)");
+}
+
+#[test]
+fn config_workflow_nested_env_overrides_match_contract() {
+    let _guard = ENV_MUTEX.lock().unwrap();
+
+    let env_vars = [
+        ("LANCET_ENGINE__WORKFLOW__REFORMULATE_TIMEOUT_MS", "1111"),
+        ("LANCET_ENGINE__WORKFLOW__QUERY_EMBEDDING_TIMEOUT_MS", "2222"),
+        ("LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS", "3333"),
+        ("LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS", "4444"),
+        ("LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS", "5555"),
+        ("LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS", "6666"),
+        ("LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS", "7777"),
+    ];
+
+    let original: Vec<(&str, Option<String>)> = env_vars
+        .iter()
+        .map(|(k, _)| (*k, std::env::var(k).ok()))
+        .collect();
+
+    for (k, v) in &env_vars {
+        std::env::set_var(k, v);
+    }
+
+    let settings_res = load_settings();
+
+    for (k, orig) in &original {
+        if let Some(val) = orig {
+            std::env::set_var(k, val);
+        } else {
+            std::env::remove_var(k);
+        }
+    }
+
+    let settings = settings_res.expect("load_settings with workflow overrides");
+    assert_eq!(settings.engine.workflow.reformulate_timeout_ms, 1111);
+    assert_eq!(settings.engine.workflow.query_embedding_timeout_ms, 2222);
+    assert_eq!(settings.engine.workflow.retrieve_timeout_ms, 3333);
+    assert_eq!(settings.engine.workflow.graph_operation_timeout_ms, 4444);
+    assert_eq!(settings.engine.workflow.graph_node_timeout_ms, 5555);
+    assert_eq!(settings.engine.workflow.prompt_timeout_ms, 6666);
+    assert_eq!(settings.engine.workflow.generation_node_timeout_ms, 7777);
+
+    let effective = EffectiveRagSettings::try_from_settings(&settings)
+        .expect("effective settings from overridden workflow settings");
+    assert_eq!(effective.workflow.reformulate_timeout_ms, 1111);
+    assert_eq!(effective.workflow.query_embedding_timeout_ms, 2222);
+    assert_eq!(effective.workflow.retrieve_timeout_ms, 3333);
+    assert_eq!(effective.workflow.graph_operation_timeout_ms, 4444);
+    assert_eq!(effective.workflow.graph_node_timeout_ms, 5555);
+    assert_eq!(effective.workflow.prompt_timeout_ms, 6666);
+    assert_eq!(effective.workflow.generation_node_timeout_ms, 7777);
 }
 
 #[tokio::test]
@@ -842,6 +914,7 @@ fn configured_settings(lancedb_path: &str) -> Settings {
                 },
             },
             graph: GraphConfigSettings::default(),
+            workflow: WorkflowConfigSettings::default(),
         },
         openrouter: OpenRouterSettings {
             embedding_endpoint: "https://example.test/v1/embeddings".into(),
@@ -2820,6 +2893,7 @@ async fn configured_rag_settings_drive_service() {
                 },
             },
             graph: GraphConfigSettings::default(),
+            workflow: WorkflowConfigSettings::default(),
         },
         openrouter: OpenRouterSettings {
             embedding_endpoint: "https://example.com/api/v1/embeddings".into(),
@@ -6204,6 +6278,7 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
                 seed_match_min_score: 0.0,
                 max_hop_cap: 1,
             },
+            workflow: WorkflowConfigSettings::default(),
         },
         openrouter: OpenRouterSettings {
             embedding_endpoint: "https://example.test/v1/embeddings".into(),

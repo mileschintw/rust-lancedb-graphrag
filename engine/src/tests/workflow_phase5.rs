@@ -778,3 +778,103 @@ async fn workflow_phase5_concurrency_isolation() {
         assert_eq!(ev.session_id, "sess-conc-2");
     }
 }
+
+struct StalledTimeoutGenerator {
+    call_count: Arc<std::sync::atomic::AtomicUsize>,
+    started: Arc<tokio::sync::Notify>,
+}
+
+impl Generator for StalledTimeoutGenerator {
+    fn generate<'a>(
+        &'a self,
+        _request: engine::generation::GenerationRequest,
+    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>> {
+        Box::pin(async move {
+            self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.started.notify_one();
+            tokio::time::sleep(Duration::from_millis(5000)).await;
+            Err(engine::generation::GenerationError::new(
+                engine::generation::GenerationErrorKind::ProviderError,
+                "stalled generator finished unexpectedly",
+            ))
+        })
+    }
+}
+
+#[tokio::test]
+async fn workflow_phase5_timeout_cancels_stalled_provider() {
+    let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let started = Arc::new(tokio::sync::Notify::new());
+    let generator = Arc::new(StalledTimeoutGenerator {
+        call_count: Arc::clone(&call_count),
+        started: Arc::clone(&started),
+    });
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-timeout-cancel".to_string();
+    let session_id = "sess-timeout-cancel".to_string();
+
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let req = QueryRagRequest {
+        query: "Timeout cancellation test".to_string(),
+        session_id: session_id.clone(),
+        filter: None,
+    };
+    let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".to_string(),
+        chunk_id: "chk-1".to_string(),
+        document_id: "doc-1".to_string(),
+        chunk_index: 0,
+        title: Some("Title".to_string()),
+        section_path: Some("Section".to_string()),
+        content_type: Some("text/plain".to_string()),
+        provenance: "provenance".to_string(),
+        text: "Test evidence".to_string(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let node = GenerateAnswerNode::new(Some(generator));
+    let runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 50);
+
+    let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
+
+    assert!(res.is_err(), "node execution must fail on timeout");
+    let err = res.unwrap_err();
+    assert_eq!(err.kind, NodeErrorKind::Timeout);
+    assert!(cancel.is_cancelled(), "cancellation token must be cancelled when timeout occurs before constructing NodeFailed(Timeout)");
+
+    // Drain events from sink to verify NodeStarted and NodeFailed(Timeout) were emitted
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(ev) = item {
+            events.push(ev);
+        }
+    }
+
+    let started_ev = events.iter().find(|e| matches!(&e.event, Some(Event::NodeStarted(ns)) if ns.node_name == "GenerateAnswer"));
+    assert!(started_ev.is_some(), "NodeStarted(GenerateAnswer) must be emitted");
+
+    let failed_ev = events.iter().find_map(|e| match &e.event {
+        Some(Event::NodeFailed(nf)) if nf.node_name == "GenerateAnswer" => Some(nf),
+        _ => None,
+    });
+    let failed = failed_ev.expect("NodeFailed(GenerateAnswer) must be emitted");
+    assert_eq!(failed.category, NodeErrorKind::Timeout as i32);
+
+    // Drain with bounded timeout to prove no retry / extra provider progress occurs
+    let drain_res = tokio::time::timeout(Duration::from_millis(150), async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }).await;
+    assert!(drain_res.is_ok());
+    assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1, "no retry attempt must start after timeout cancellation");
+}

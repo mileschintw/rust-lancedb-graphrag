@@ -130,7 +130,10 @@ impl WorkflowRunner {
             _ = cancel.cancelled() => Err(NodeError::cancelled()),
             res = timeout(node_timeout, node.run(ctx, cancel)) => match res {
                 Ok(inner) => inner,
-                Err(_) => Err(NodeError::timeout(name)),
+                Err(_) => {
+                    cancel.cancel();
+                    Err(NodeError::timeout(name))
+                }
             },
         };
 
