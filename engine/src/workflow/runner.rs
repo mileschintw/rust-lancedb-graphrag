@@ -1,4 +1,6 @@
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use futures::future::BoxFuture;
 use tokio::sync::mpsc;
@@ -14,16 +16,38 @@ use super::{
     WorkflowContext, WorkflowDependencies,
 };
 
+const MAX_PENDING_CHECKPOINTS: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientEventDelivery {
+    Sent,
+    Closed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointDelivery {
+    Sent,
+    Pending,
+    Closed,
+    OwnershipFailure { sequence_ordinal: u64 },
+}
+
+type EventEnvelope = Result<WorkflowEvent, tonic::Status>;
+
+#[derive(Clone)]
 pub struct WorkflowEventSink {
-    tx: mpsc::Sender<Result<WorkflowEvent, tonic::Status>>,
+    tx: mpsc::Sender<EventEnvelope>,
     sequence: Arc<EventSequence>,
     trace_id: String,
     session_id: String,
+    pending_checkpoints: Arc<Mutex<VecDeque<WorkflowEvent>>>,
+    terminal_emitted: Arc<AtomicBool>,
 }
 
 impl WorkflowEventSink {
     pub fn new(
-        tx: mpsc::Sender<Result<WorkflowEvent, tonic::Status>>,
+        tx: mpsc::Sender<EventEnvelope>,
         sequence: Arc<EventSequence>,
         trace_id: String,
         session_id: String,
@@ -33,18 +57,202 @@ impl WorkflowEventSink {
             sequence,
             trace_id,
             session_id,
+            pending_checkpoints: Arc::new(Mutex::new(VecDeque::new())),
+            terminal_emitted: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    pub fn send_event(&self, event: Event) {
+    fn lock_pending_checkpoints(&self) -> std::sync::MutexGuard<'_, VecDeque<WorkflowEvent>> {
+        self.pending_checkpoints
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn wrap_next_event(&self, event: Event) -> WorkflowEvent {
         let seq = self.sequence.next();
-        let wf_event = events::wrap_event(
+        events::wrap_event(
             event,
             seq,
             self.trace_id.clone(),
             self.session_id.clone(),
-        );
-        let _ = self.tx.try_send(Ok(wf_event));
+        )
+    }
+
+    async fn send_envelope(
+        &self,
+        event: WorkflowEvent,
+        cancel: &CancellationToken,
+    ) -> ClientEventDelivery {
+        if self.tx.is_closed() {
+            return ClientEventDelivery::Closed;
+        }
+
+        if self.tx.capacity() > 0 {
+            return match self.tx.reserve().await {
+                Ok(permit) => {
+                    permit.send(Ok(event));
+                    ClientEventDelivery::Sent
+                }
+                Err(_) => ClientEventDelivery::Closed,
+            };
+        }
+
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => ClientEventDelivery::Cancelled,
+            result = self.tx.reserve() => match result {
+                Ok(permit) => {
+                    permit.send(Ok(event));
+                    ClientEventDelivery::Sent
+                }
+                Err(_) => ClientEventDelivery::Closed,
+            },
+        }
+    }
+
+    async fn flush_pending_checkpoints(
+        &self,
+        cancel: &CancellationToken,
+    ) -> ClientEventDelivery {
+        loop {
+            let Some(event) = self.lock_pending_checkpoints().pop_front() else {
+                return ClientEventDelivery::Sent;
+            };
+
+            if self.tx.is_closed() {
+                return ClientEventDelivery::Closed;
+            }
+
+            if self.tx.capacity() > 0 {
+                match self.tx.reserve().await {
+                    Ok(permit) => permit.send(Ok(event)),
+                    Err(_) => return ClientEventDelivery::Closed,
+                }
+                continue;
+            }
+
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    self.lock_pending_checkpoints().push_front(event);
+                    return ClientEventDelivery::Cancelled;
+                }
+                result = self.tx.reserve() => match result {
+                    Ok(permit) => permit.send(Ok(event)),
+                    Err(_) => return ClientEventDelivery::Closed,
+                },
+            }
+        }
+    }
+
+    /// Deliver a client-visible event with cancellation-aware backpressure.
+    pub async fn send_event(
+        &self,
+        event: Event,
+        cancel: &CancellationToken,
+    ) -> ClientEventDelivery {
+        let pending_delivery = self.flush_pending_checkpoints(cancel).await;
+        if pending_delivery != ClientEventDelivery::Sent {
+            return pending_delivery;
+        }
+
+        self.send_envelope(self.wrap_next_event(event), cancel).await
+    }
+
+    /// Convert a failed client delivery into cooperative workflow cancellation.
+    pub async fn send_event_or_cancel(
+        &self,
+        event: Event,
+        cancel: &CancellationToken,
+    ) -> Result<(), NodeError> {
+        match self.send_event(event, cancel).await {
+            ClientEventDelivery::Sent => Ok(()),
+            ClientEventDelivery::Closed => {
+                cancel.cancel();
+                Err(NodeError::cancelled())
+            }
+            ClientEventDelivery::Cancelled => Err(NodeError::cancelled()),
+        }
+    }
+
+    /// Nonblocking checkpoint handoff. A full client channel retains the owned
+    /// envelope in a bounded queue; it never silently drops the checkpoint.
+    pub fn send_checkpoint(
+        &self,
+        checkpoint_type: impl Into<String>,
+        context: &WorkflowContext,
+    ) -> CheckpointDelivery {
+        let sequence_ordinal = self.sequence.next();
+        let event = self.wrap_event(events::checkpoint(
+            checkpoint_type,
+            sequence_ordinal,
+            context,
+        ));
+
+        let mut pending = self.lock_pending_checkpoints();
+        if !pending.is_empty() {
+            if pending.len() >= MAX_PENDING_CHECKPOINTS {
+                return CheckpointDelivery::OwnershipFailure { sequence_ordinal };
+            }
+            pending.push_back(event);
+            return CheckpointDelivery::Pending;
+        }
+        drop(pending);
+
+        match self.tx.try_send(Ok(event)) {
+            Ok(()) => CheckpointDelivery::Sent,
+            Err(mpsc::error::TrySendError::Full(Ok(event))) => {
+                let mut pending = self.lock_pending_checkpoints();
+                if pending.len() >= MAX_PENDING_CHECKPOINTS {
+                    return CheckpointDelivery::OwnershipFailure { sequence_ordinal };
+                }
+                pending.push_back(event);
+                CheckpointDelivery::Pending
+            }
+            Err(mpsc::error::TrySendError::Closed(Ok(_))) => CheckpointDelivery::Closed,
+            Err(mpsc::error::TrySendError::Full(Err(_)))
+            | Err(mpsc::error::TrySendError::Closed(Err(_))) => {
+                CheckpointDelivery::OwnershipFailure { sequence_ordinal }
+            }
+        }
+    }
+
+    pub fn send_checkpoint_or_error(
+        &self,
+        checkpoint_type: impl Into<String>,
+        context: &WorkflowContext,
+        cancel: &CancellationToken,
+    ) -> Result<(), NodeError> {
+        match self.send_checkpoint(checkpoint_type, context) {
+            CheckpointDelivery::Sent | CheckpointDelivery::Pending => Ok(()),
+            CheckpointDelivery::Closed => {
+                cancel.cancel();
+                Err(NodeError::cancelled())
+            }
+            CheckpointDelivery::OwnershipFailure { sequence_ordinal } => Err(NodeError::new(
+                NodeErrorKind::Internal,
+                format!(
+                    "Checkpoint envelope ownership capacity exhausted at sequence {sequence_ordinal}"
+                ),
+            )),
+        }
+    }
+
+    pub fn pending_checkpoint_count(&self) -> usize {
+        self.lock_pending_checkpoints().len()
+    }
+
+    fn wrap_event(&self, event: Event) -> WorkflowEvent {
+        let sequence_ordinal = match &event {
+            Event::Checkpoint(checkpoint) => checkpoint.sequence_ordinal,
+            _ => unreachable!("checkpoint helper must pass a checkpoint event"),
+        };
+        events::wrap_event(
+            event,
+            sequence_ordinal,
+            self.trace_id.clone(),
+            self.session_id.clone(),
+        )
     }
 
     pub fn trace_id(&self) -> &str {
@@ -55,9 +263,6 @@ impl WorkflowEventSink {
         &self.session_id
     }
 
-    pub fn next_sequence_ordinal(&self) -> u64 {
-        self.sequence.next()
-    }
 }
 
 pub struct WorkflowRunner {
@@ -131,7 +336,8 @@ impl WorkflowRunner {
     ) -> Result<(), NodeError> {
         let kind = node.kind();
         let name = kind.name();
-        sink.send_event(events::node_started(name, ""));
+        sink.send_event_or_cancel(events::node_started(name, ""), cancel)
+            .await?;
 
         let start_time = Instant::now();
         let node_timeout = self.timeout_for_kind(kind);
@@ -152,33 +358,26 @@ impl WorkflowRunner {
 
         match &result {
             Ok(()) => {
-                sink.send_event(events::node_completed(name, "", duration_ms));
+                sink.send_event_or_cancel(events::node_completed(name, "", duration_ms), cancel)
+                    .await?;
                 match kind {
                     NodeKind::GenerateAnswer => {
-                        sink.send_event(events::answer_chunk(ctx.answer.clone(), true));
+                        sink.send_event_or_cancel(events::answer_chunk(ctx.answer.clone(), true), cancel)
+                            .await?;
                     }
                     NodeKind::ReformulateQuery
                     | NodeKind::ExtractGraphContext
                     | NodeKind::RetrieveHybrid
                     | NodeKind::AssemblePrompt => {}
                 }
-                let seq = sink.next_sequence_ordinal();
-                let checkpoint_label = match kind {
-                    NodeKind::ReformulateQuery => "post_reformulatequery",
-                    NodeKind::ExtractGraphContext => "post_extractgraphcontext",
-                    NodeKind::RetrieveHybrid => "post_retrievehybrid",
-                    NodeKind::AssemblePrompt => "post_assembleprompt",
-                    NodeKind::GenerateAnswer => "post_generateanswer",
-                };
-                sink.send_event(events::checkpoint(checkpoint_label, seq, ctx));
+                sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel)?;
             }
             Err(err) => {
-                sink.send_event(events::node_failed(
-                    name,
-                    err.kind.clone(),
-                    &err.message,
-                    err.retryable,
-                ));
+                sink.send_event_or_cancel(
+                    events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
+                    cancel,
+                )
+                .await?;
             }
         }
 
@@ -217,7 +416,7 @@ impl WorkflowRunner {
         }
 
         let total_duration_ms = start_time.elapsed().as_millis() as i64;
-        Self::emit_terminal_once(&ctx, &sink, total_duration_ms, overall_err);
+        Self::emit_terminal_once(&ctx, &sink, &cancel, total_duration_ms, overall_err).await;
     }
 
     pub async fn run_tracer<F>(
@@ -263,38 +462,73 @@ impl WorkflowRunner {
             }
 
             let total_duration_ms = start_time.elapsed().as_millis() as i64;
-            Self::emit_terminal_once(&ctx, &sink, total_duration_ms, overall_err);
+            Self::emit_terminal_once(&ctx, &sink, &cancel, total_duration_ms, overall_err).await;
         }
     }
 
-    pub fn emit_terminal_once(
+    pub async fn emit_terminal_once(
         ctx: &WorkflowContext,
         sink: &WorkflowEventSink,
+        cancel: &CancellationToken,
         duration_ms: i64,
         error: Option<NodeError>,
     ) {
+        if sink
+            .terminal_emitted
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+
         match error {
             None => {
                 let response = ctx.to_query_rag_response();
-                sink.send_event(events::final_answer(response.clone()));
-                let seq = sink.next_sequence_ordinal();
-                sink.send_event(events::checkpoint("terminal_success", seq, ctx));
-                sink.send_event(events::workflow_completed(
-                    true,
-                    duration_ms,
-                    NodeErrorKind::Unspecified,
-                    "",
-                    Some(response),
-                ));
+                if sink
+                    .send_event_or_cancel(events::final_answer(response.clone()), cancel)
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                if sink
+                    .send_checkpoint_or_error("terminal_success", ctx, cancel)
+                    .is_err()
+                {
+                    return;
+                }
+                match sink
+                    .send_event_or_cancel(
+                        events::workflow_completed(
+                            true,
+                            duration_ms,
+                            NodeErrorKind::Unspecified,
+                            "",
+                            Some(response),
+                        ),
+                        cancel,
+                    )
+                    .await
+                {
+                    Ok(()) | Err(_) => {}
+                }
             }
             Some(err) => {
-                sink.send_event(events::workflow_completed(
-                    false,
-                    duration_ms,
-                    err.kind,
-                    err.message,
-                    None,
-                ));
+                match sink
+                    .send_event_or_cancel(
+                        events::workflow_completed(
+                            false,
+                            duration_ms,
+                            err.kind,
+                            err.message,
+                            None,
+                        ),
+                        cancel,
+                    )
+                    .await
+                {
+                    Ok(()) | Err(_) => {}
+                }
             }
         }
     }

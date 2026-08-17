@@ -15,7 +15,7 @@ use engine::pb::lancet::v1::{
 };
 use engine::retrieval::{Candidate, RetrievalSettings};
 use engine::workflow::{
-    events::EventSequence,
+    events::{self, EventSequence},
     node::{Node, NodeError},
     nodes::{
         AssemblePromptNode, ExtractGraphContextNode, GenerateAnswerNode, ReformulateQueryNode,
@@ -57,9 +57,9 @@ fn make_candidate(doc_id: &str, chunk_id: &str, score: f64) -> Candidate {
     }
 }
 
-/// Task 1 & Matrix: Exact happy-path test for Phase 5 orchestration.
+/// Task 1 tracer: exact production-shaped five-node lifecycle and event contract.
 #[tokio::test]
-async fn workflow_phase5_happy_path() {
+async fn workflow_phase5_event_delivery_tracer() {
     let (tx, mut rx) = mpsc::channel(100);
     let cancel = CancellationToken::new();
     let trace_id = "trace-happy-01".to_string();
@@ -254,6 +254,75 @@ async fn workflow_phase5_happy_path() {
     assert_eq!(completed_res.citations, final_res.citations);
     assert_eq!(completed_res.session_id, final_res.session_id);
     assert_eq!(completed_res.answer_basis, final_res.answer_basis);
+
+    // Every delivered outer event consumes exactly one ordinal, with no gaps.
+    for (index, event) in events.iter().enumerate() {
+        assert_eq!(event.sequence_ordinal, (index + 1) as u64);
+    }
+
+    // Checkpoint payload ordinals are the same ordinal as their outer envelope.
+    for event in &events {
+        if let Some(Event::Checkpoint(checkpoint)) = &event.event {
+            assert_eq!(checkpoint.sequence_ordinal, event.sequence_ordinal);
+        }
+    }
+
+    let started_count = events
+        .iter()
+        .filter(|event| matches!(event.event, Some(Event::NodeStarted(_))))
+        .count();
+    let completed_count = events
+        .iter()
+        .filter(|event| matches!(event.event, Some(Event::NodeCompleted(_))))
+        .count();
+    assert_eq!(started_count, 5, "tracer must start exactly five nodes");
+    assert_eq!(completed_count, 5, "tracer must complete exactly five nodes");
+}
+
+/// Task 1: bounded checkpoint handoff retains ownership while client delivery
+/// remains cancellation-aware and never turns a full channel into a hang.
+#[tokio::test]
+async fn workflow_phase5_event_delivery_bounded_cancellation() {
+    let (tx, mut rx) = mpsc::channel(1);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-bounded".to_string(),
+        "sess-bounded".to_string(),
+    );
+    let req = QueryRagRequest {
+        query: "bounded delivery".to_string(),
+        session_id: "sess-bounded".to_string(),
+        filter: None,
+    };
+    let ctx = WorkflowContext::new(
+        "sess-bounded".to_string(),
+        "trace-bounded".to_string(),
+        &req,
+    );
+
+    assert_eq!(
+        sink.send_event(events::node_started("first", ""), &cancel).await,
+        engine::workflow::runner::ClientEventDelivery::Sent
+    );
+    assert_eq!(sink.pending_checkpoint_count(), 0);
+    assert_eq!(
+        sink.send_checkpoint("bounded", &ctx),
+        engine::workflow::runner::CheckpointDelivery::Pending
+    );
+    assert_eq!(sink.pending_checkpoint_count(), 1);
+
+    cancel.cancel();
+    assert_eq!(
+        sink.send_event(events::node_started("cancelled", ""), &cancel)
+            .await,
+        engine::workflow::runner::ClientEventDelivery::Cancelled
+    );
+
+    let first = rx.recv().await.expect("first client event").expect("event");
+    assert!(matches!(first.event, Some(Event::NodeStarted(_))));
+    assert_eq!(sink.pending_checkpoint_count(), 1);
 }
 
 /// Task 2 & Matrix: Graph timeout degrades gracefully to empty context.
@@ -1908,4 +1977,3 @@ async fn workflow_phase5_graph_notice_merge() {
     assert_eq!(resp.notices[2].code, "GRAPH_DEGRADED");
     assert_eq!(resp.notices[3].code, "GRAPH_TIMEOUT");
 }
-

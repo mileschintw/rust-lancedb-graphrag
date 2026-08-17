@@ -174,7 +174,8 @@ pub fn run_inline_prompt_generation_remainder<'a>(
 
         // 1. AssemblePrompt
         let name_prompt = "AssemblePrompt";
-        sink.send_event(events::node_started(name_prompt, ""));
+        sink.send_event_or_cancel(events::node_started(name_prompt, ""), cancel)
+            .await?;
 
         let evidence_summary = ctx.final_candidates.join("\n");
         ctx.assembled_prompt = if ctx.graph_context.is_empty() {
@@ -186,13 +187,14 @@ pub fn run_inline_prompt_generation_remainder<'a>(
             )
         };
 
-        sink.send_event(events::node_completed(name_prompt, "", 1));
-        let seq1 = sink.next_sequence_ordinal();
-        sink.send_event(events::checkpoint("post_assembleprompt", seq1, ctx));
+        sink.send_event_or_cancel(events::node_completed(name_prompt, "", 1), cancel)
+            .await?;
+        sink.send_checkpoint_or_error("post_assembleprompt", ctx, cancel)?;
 
         // 2. GenerateAnswer
         let name_gen = "GenerateAnswer";
-        sink.send_event(events::node_started(name_gen, ""));
+        sink.send_event_or_cancel(events::node_started(name_gen, ""), cancel)
+            .await?;
 
         if let Some(generator) = &deps.generator {
             let mut gen_req = crate::generation::GenerationRequest::new(
@@ -211,20 +213,25 @@ pub fn run_inline_prompt_generation_remainder<'a>(
             match result {
                 Ok(output) => {
                     ctx.update_from_model_output(&output);
-                    sink.send_event(events::answer_chunk(ctx.answer.clone(), true));
-                    sink.send_event(events::node_completed(name_gen, "", 10));
-                    let seq2 = sink.next_sequence_ordinal();
-                    sink.send_event(events::checkpoint("post_generateanswer", seq2, ctx));
+                    sink.send_event_or_cancel(events::answer_chunk(ctx.answer.clone(), true), cancel)
+                        .await?;
+                    sink.send_event_or_cancel(events::node_completed(name_gen, "", 10), cancel)
+                        .await?;
+                    sink.send_checkpoint_or_error("post_generateanswer", ctx, cancel)?;
                 }
                 Err(err) => {
                     let node_err = NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
                         .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
-                    sink.send_event(events::node_failed(
-                        name_gen,
-                        node_err.kind.clone(),
-                        &node_err.message,
-                        false,
-                    ));
+                    sink.send_event_or_cancel(
+                        events::node_failed(
+                            name_gen,
+                            node_err.kind.clone(),
+                            &node_err.message,
+                            false,
+                        ),
+                        cancel,
+                    )
+                    .await?;
                     return Err(node_err);
                 }
             }
@@ -234,12 +241,16 @@ pub fn run_inline_prompt_generation_remainder<'a>(
                 "No generator configured for GenerateAnswer remainder",
             )
             .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
-            sink.send_event(events::node_failed(
-                name_gen,
-                node_err.kind.clone(),
-                &node_err.message,
-                false,
-            ));
+            sink.send_event_or_cancel(
+                events::node_failed(
+                    name_gen,
+                    node_err.kind.clone(),
+                    &node_err.message,
+                    false,
+                ),
+                cancel,
+            )
+            .await?;
             return Err(node_err);
         }
 
