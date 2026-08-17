@@ -82,6 +82,37 @@ fn write_json_response(stream: &mut std::net::TcpStream, payload: serde_json::Va
         .expect("write mock response");
 }
 
+fn accept_with_deadline(
+    listener: &TcpListener,
+) -> std::io::Result<(std::net::TcpStream, std::net::SocketAddr)> {
+    let start = Instant::now();
+    let timeout = Duration::from_secs(5);
+    listener
+        .set_nonblocking(true)
+        .expect("set non-blocking for listener");
+    loop {
+        match listener.accept() {
+            Ok((stream, addr)) => {
+                stream.set_nonblocking(false).expect("set stream blocking");
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .expect("set stream read timeout");
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(2)))
+                    .expect("set stream write timeout");
+                return Ok((stream, addr));
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if start.elapsed() > timeout {
+                    panic!("accept_with_deadline timed out waiting for connection after {:?}", timeout);
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 #[tokio::test]
 async fn generation_bounded_evidence_valid_marker() {
     let candidate = sample_candidate("1", "Dense and BM25 candidates are fused with RRF.");
@@ -300,61 +331,59 @@ async fn openrouter_json_schema_and_finish_reason_contract() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 4096];
-            let _ = stream.read(&mut buf);
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let mut buf = [0u8; 4096];
+        let _ = stream.read(&mut buf);
 
-            let models_payload = json!({
-                "data": [
-                    {
-                        "id": "mock/strict-model",
-                        "supported_parameters": ["response_format", "json_schema"]
-                    }
-                ]
-            });
-            let body = models_payload.to_string();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(response.as_bytes());
-        }
+        let models_payload = json!({
+            "data": [
+                {
+                    "id": "mock/strict-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }
+            ]
+        });
+        let body = models_payload.to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let _ = stream.write_all(response.as_bytes());
 
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 8192];
-            let n = stream.read(&mut buf).unwrap_or(0);
-            let req_str = String::from_utf8_lossy(&buf[..n]);
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let mut buf = [0u8; 8192];
+        let n = stream.read(&mut buf).unwrap_or(0);
+        let req_str = String::from_utf8_lossy(&buf[..n]);
 
-            assert!(req_str.contains("\"json_schema\""));
-            assert!(req_str.contains("\"strict\":true"));
-            assert!(req_str.contains("\"additionalProperties\":false"));
+        assert!(req_str.contains("\"json_schema\""));
+        assert!(req_str.contains("\"strict\":true"));
+        assert!(req_str.contains("\"additionalProperties\":false"));
 
-            let chat_resp_payload = json!({
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": json!({
-                                "answer": "Truncated answer [1]",
-                                "cited_evidence_ids": ["[1]"],
-                                "answer_basis": "retrieval",
-                                "notices": [],
-                                "warnings": []
-                            }).to_string()
-                        },
-                        "finish_reason": "length"
-                    }
-                ]
-            });
-            let body = chat_resp_payload.to_string();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(response.as_bytes());
-        }
+        let chat_resp_payload = json!({
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": "Truncated answer [1]",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "length"
+                }
+            ]
+        });
+        let body = chat_resp_payload.to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let _ = stream.write_all(response.as_bytes());
     });
 
     let mock_chat_url = format!("http://{addr}/chat/completions");
@@ -363,6 +392,8 @@ async fn openrouter_json_schema_and_finish_reason_contract() {
     let adapter = OpenRouterGenerator::new("test-key", "mock/strict-model")
         .expect("adapter created")
         .with_endpoints(mock_chat_url, mock_models_url);
+
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
 
     let candidate = sample_candidate("1", "Test content.");
     let evidence = assemble_evidence_blocks(&[candidate]);
@@ -409,68 +440,66 @@ async fn openrouter_supported_parameters_one_call() {
 
     let server_handle = thread::spawn(move || {
         // First connection: /api/v1/models
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 4096];
-            let _ = stream.read(&mut buf);
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let mut buf = [0u8; 4096];
+        let _ = stream.read(&mut buf);
 
-            let models_payload = json!({
-                "data": [
-                    {
-                        "id": "mock/test-model",
-                        "supported_parameters": ["response_format", "temperature", "max_tokens"]
-                    }
-                ]
-            });
-            let body = models_payload.to_string();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(response.as_bytes());
-        }
+        let models_payload = json!({
+            "data": [
+                {
+                    "id": "mock/test-model",
+                    "supported_parameters": ["response_format", "temperature", "max_tokens"]
+                }
+            ]
+        });
+        let body = models_payload.to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let _ = stream.write_all(response.as_bytes());
 
         // Second connection: /api/v1/chat/completions
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 8192];
-            let n = stream.read(&mut buf).unwrap_or(0);
-            let req_str = String::from_utf8_lossy(&buf[..n]);
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let mut buf = [0u8; 8192];
+        let n = stream.read(&mut buf).unwrap_or(0);
+        let req_str = String::from_utf8_lossy(&buf[..n]);
 
-            assert!(req_str.contains("POST /chat/completions"));
+        assert!(req_str.contains("POST /chat/completions"));
 
-            let model_output_json = json!({
-                "answer": "Mock answer based on evidence [1].",
-                "cited_evidence_ids": ["[1]"],
-                "answer_basis": "retrieval",
-                "notices": [],
-                "warnings": []
-            })
-            .to_string();
+        let model_output_json = json!({
+            "answer": "Mock answer based on evidence [1].",
+            "cited_evidence_ids": ["[1]"],
+            "answer_basis": "retrieval",
+            "notices": [],
+            "warnings": []
+        })
+        .to_string();
 
-            let chat_resp_payload = json!({
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": model_output_json
-                        },
-                        "finish_reason": "stop"
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": 100,
-                    "completion_tokens": 30,
-                    "total_tokens": 130
+        let chat_resp_payload = json!({
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": model_output_json
+                    },
+                    "finish_reason": "stop"
                 }
-            });
-            let body = chat_resp_payload.to_string();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(response.as_bytes());
-        }
+            ],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 30,
+                "total_tokens": 130
+            }
+        });
+        let body = chat_resp_payload.to_string();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let _ = stream.write_all(response.as_bytes());
     });
 
     let mock_chat_url = format!("http://{addr}/chat/completions");
@@ -479,6 +508,8 @@ async fn openrouter_supported_parameters_one_call() {
     let adapter = OpenRouterGenerator::new("test-key", "mock/test-model")
         .expect("adapter created")
         .with_endpoints(mock_chat_url, mock_models_url);
+
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
 
     let candidate = sample_candidate("1", "Test chunk content.");
     let evidence = assemble_evidence_blocks(&[candidate]);
@@ -503,7 +534,7 @@ async fn generation_request_uses_effective_settings() {
     let captured_chat_for_server = captured_chat.clone();
 
     let server_handle = thread::spawn(move || {
-        let (mut models_stream, _) = listener.accept().expect("accept models request");
+        let (mut models_stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let models_request = read_http_request(&mut models_stream);
         assert!(models_request.starts_with("GET /configured/models "));
         write_json_response(
@@ -516,7 +547,7 @@ async fn generation_request_uses_effective_settings() {
             }),
         );
 
-        let (mut chat_stream, _) = listener.accept().expect("accept chat request");
+        let (mut chat_stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let chat_request = read_http_request(&mut chat_stream);
         assert!(chat_request.starts_with("POST /configured/chat "));
         *captured_chat_for_server.lock().unwrap() = Some(chat_request);
@@ -554,6 +585,8 @@ async fn generation_request_uses_effective_settings() {
     let adapter = OpenRouterGenerator::new_with_config("test-key", config)
         .expect("configured adapter created");
 
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
+
     let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Configured content.")]);
     let response = adapter
         .generate(GenerationRequest::new("Configured question?", evidence))
@@ -584,7 +617,7 @@ async fn generation_timeout_uses_one_effective_value() {
     let addr = listener.local_addr().unwrap();
     let timeout = Duration::from_millis(120);
     let server_handle = thread::spawn(move || {
-        let (mut models_stream, _) = listener.accept().expect("accept models request");
+        let (mut models_stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let _ = read_http_request(&mut models_stream);
         write_json_response(
             &mut models_stream,
@@ -596,7 +629,7 @@ async fn generation_timeout_uses_one_effective_value() {
             }),
         );
 
-        let (_chat_stream, _) = listener.accept().expect("accept chat request");
+        let (_chat_stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         thread::sleep(Duration::from_millis(600));
     });
 
@@ -613,6 +646,9 @@ async fn generation_timeout_uses_one_effective_value() {
     .expect("timeout generation settings are valid");
     let adapter = OpenRouterGenerator::new_with_config("test-key", config)
         .expect("configured timeout adapter created");
+
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
+
     let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Timeout content.")]);
 
     let started = Instant::now();
@@ -624,8 +660,8 @@ async fn generation_timeout_uses_one_effective_value() {
 
     assert_eq!(error.kind, GenerationErrorKind::Timeout);
     assert!(
-        elapsed >= timeout / 2,
-        "request returned before the configured timeout window: {elapsed:?}"
+        elapsed >= Duration::from_millis(100),
+        "observed timeout elapsed {elapsed:?} must be close to configured {timeout:?}"
     );
     assert!(
         elapsed < Duration::from_millis(1500),
@@ -746,41 +782,39 @@ async fn openrouter_schema_declares_output_bounds() {
     let captured_request_server = captured_request.clone();
 
     let server_handle = thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "data": [{
-                        "id": "mock/bounded-model",
-                        "supported_parameters": ["response_format", "json_schema"]
-                    }]
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "data": [{
+                    "id": "mock/bounded-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
 
-        if let Ok((mut stream, _)) = listener.accept() {
-            let req_str = read_http_request(&mut stream);
-            *captured_request_server.lock().unwrap() = Some(req_str);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": json!({
-                                "answer": "Answer [1]",
-                                "cited_evidence_ids": ["[1]"],
-                                "answer_basis": "retrieval",
-                                "notices": [],
-                                "warnings": []
-                            }).to_string()
-                        },
-                        "finish_reason": "stop"
-                    }]
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let req_str = read_http_request(&mut stream);
+        *captured_request_server.lock().unwrap() = Some(req_str);
+        write_json_response(
+            &mut stream,
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": "Answer [1]",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }]
+            }),
+        );
     });
 
     let adapter = OpenRouterGenerator::new("test-key", "mock/bounded-model")
@@ -789,6 +823,8 @@ async fn openrouter_schema_declares_output_bounds() {
             format!("http://{addr}/chat"),
             format!("http://{addr}/models"),
         );
+
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -820,46 +856,44 @@ async fn openrouter_rejects_oversized_response_body() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "data": [{
-                        "id": "mock/big-body-model",
-                        "supported_parameters": ["response_format", "json_schema"]
-                    }]
-                }),
-            );
-        }
-
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            let huge_padding = "x".repeat(300 * 1024);
-            let body = json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": json!({
-                            "answer": "Answer [1]",
-                            "cited_evidence_ids": ["[1]"],
-                            "answer_basis": "retrieval",
-                            "notices": [huge_padding],
-                            "warnings": []
-                        }).to_string()
-                    },
-                    "finish_reason": "stop"
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "data": [{
+                    "id": "mock/big-body-model",
+                    "supported_parameters": ["response_format", "json_schema"]
                 }]
-            })
-            .to_string();
+            }),
+        );
 
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(response.as_bytes());
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let _ = read_http_request(&mut stream);
+        let huge_padding = "x".repeat(300 * 1024);
+        let body = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": json!({
+                        "answer": "Answer [1]",
+                        "cited_evidence_ids": ["[1]"],
+                        "answer_basis": "retrieval",
+                        "notices": [huge_padding],
+                        "warnings": []
+                    }).to_string()
+                },
+                "finish_reason": "stop"
+            }]
+        })
+        .to_string();
+
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let _ = stream.write_all(response.as_bytes());
     });
 
     let adapter = OpenRouterGenerator::new("test-key", "mock/big-body-model")
@@ -868,6 +902,8 @@ async fn openrouter_rejects_oversized_response_body() {
             format!("http://{addr}/chat"),
             format!("http://{addr}/models"),
         );
+
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -887,41 +923,39 @@ async fn openrouter_rejects_oversized_model_output_fields() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "data": [{
-                        "id": "mock/field-limit-model",
-                        "supported_parameters": ["response_format", "json_schema"]
-                    }]
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "data": [{
+                    "id": "mock/field-limit-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
 
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            let long_answer = "a".repeat(17000) + " [1]";
-            write_json_response(
-                &mut stream,
-                json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": json!({
-                                "answer": long_answer,
-                                "cited_evidence_ids": ["[1]"],
-                                "answer_basis": "retrieval",
-                                "notices": [],
-                                "warnings": []
-                            }).to_string()
-                        },
-                        "finish_reason": "stop"
-                    }]
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let _ = read_http_request(&mut stream);
+        let long_answer = "a".repeat(17000) + " [1]";
+        write_json_response(
+            &mut stream,
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": long_answer,
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }]
+            }),
+        );
     });
 
     let adapter = OpenRouterGenerator::new("test-key", "mock/field-limit-model")
@@ -930,6 +964,8 @@ async fn openrouter_rejects_oversized_model_output_fields() {
             format!("http://{addr}/chat"),
             format!("http://{addr}/models"),
         );
+
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -949,45 +985,43 @@ async fn openrouter_rejects_invalid_usage() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "data": [{
-                        "id": "mock/usage-limit-model",
-                        "supported_parameters": ["response_format", "json_schema"]
-                    }]
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "data": [{
+                    "id": "mock/usage-limit-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
 
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": json!({
-                                "answer": "Answer [1]",
-                                "cited_evidence_ids": ["[1]"],
-                                "answer_basis": "retrieval",
-                                "notices": [],
-                                "warnings": []
-                            }).to_string()
-                        },
-                        "finish_reason": "stop"
-                    }],
-                    "usage": {
-                        "prompt_tokens": 9000,
-                        "completion_tokens": 100,
-                        "total_tokens": 9100
-                    }
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": "Answer [1]",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 9000,
+                    "completion_tokens": 100,
+                    "total_tokens": 9100
+                }
+            }),
+        );
     });
 
     let adapter = OpenRouterGenerator::new("test-key", "mock/usage-limit-model")
@@ -996,6 +1030,8 @@ async fn openrouter_rejects_invalid_usage() {
             format!("http://{addr}/chat"),
             format!("http://{addr}/models"),
         );
+
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -1015,45 +1051,43 @@ async fn openrouter_valid_bounded_response() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "data": [{
-                        "id": "mock/valid-model",
-                        "supported_parameters": ["response_format", "json_schema"]
-                    }]
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "data": [{
+                    "id": "mock/valid-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
 
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": json!({
-                                "answer": "Valid answer text with citation [1].",
-                                "cited_evidence_ids": ["[1]"],
-                                "answer_basis": "retrieval",
-                                "notices": ["Valid notice"],
-                                "warnings": []
-                            }).to_string()
-                        },
-                        "finish_reason": "stop"
-                    }],
-                    "usage": {
-                        "prompt_tokens": 500,
-                        "completion_tokens": 100,
-                        "total_tokens": 600
-                    }
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": "Valid answer text with citation [1].",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": ["Valid notice"],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 500,
+                    "completion_tokens": 100,
+                    "total_tokens": 600
+                }
+            }),
+        );
     });
 
     let adapter = OpenRouterGenerator::new("test-key", "mock/valid-model")
@@ -1062,6 +1096,8 @@ async fn openrouter_valid_bounded_response() {
             format!("http://{addr}/chat"),
             format!("http://{addr}/models"),
         );
+
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -1082,93 +1118,89 @@ async fn openrouter_effective_usage_limits() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        // 1. Models endpoint
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _req = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "data": [{
-                        "id": "mock/limits-model",
-                        "supported_parameters": ["response_format", "json_schema"]
-                    }]
-                }),
-            );
-        }
+        // 1. Models endpoint for adapter 1
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models 1");
+        let _req = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "data": [{
+                    "id": "mock/limits-model-1",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
 
         // 2. Chat completion 1 (valid non-default usage: 9000 prompt + 2500 completion = 11500 total)
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _req = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": json!({
-                                "answer": "G1 effective limits answer [1].",
-                                "cited_evidence_ids": ["[1]"],
-                                "answer_basis": "retrieval",
-                                "notices": [],
-                                "warnings": []
-                            }).to_string()
-                        },
-                        "finish_reason": "stop"
-                    }],
-                    "usage": {
-                        "prompt_tokens": 9000,
-                        "completion_tokens": 2500,
-                        "total_tokens": 11500
-                    }
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat 1");
+        let _req = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": "G1 effective limits answer [1].",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 9000,
+                    "completion_tokens": 2500,
+                    "total_tokens": 11500
+                }
+            }),
+        );
 
-        // 3. Models endpoint for second call
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _req = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "data": [{
-                        "id": "mock/limits-model",
-                        "supported_parameters": ["response_format", "json_schema"]
-                    }]
-                }),
-            );
-        }
+        // 3. Models endpoint for adapter 2
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models 2");
+        let _req = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "data": [{
+                    "id": "mock/limits-model-2",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
 
         // 4. Chat completion 2 (over-limit usage: 10001 prompt tokens > 10000 budget)
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _req = read_http_request(&mut stream);
-            write_json_response(
-                &mut stream,
-                json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": json!({
-                                "answer": "Over budget answer [1].",
-                                "cited_evidence_ids": ["[1]"],
-                                "answer_basis": "retrieval",
-                                "notices": [],
-                                "warnings": []
-                            }).to_string()
-                        },
-                        "finish_reason": "stop"
-                    }],
-                    "usage": {
-                        "prompt_tokens": 10001,
-                        "completion_tokens": 500,
-                        "total_tokens": 10501
-                    }
-                }),
-            );
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat 2");
+        let _req = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": json!({
+                            "answer": "Over budget answer [1].",
+                            "cited_evidence_ids": ["[1]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        }).to_string()
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 10001,
+                    "completion_tokens": 500,
+                    "total_tokens": 10501
+                }
+            }),
+        );
     });
 
-    let config = OpenRouterGenerationConfig::new(
-        "mock/limits-model",
+    let config1 = OpenRouterGenerationConfig::new(
+        "mock/limits-model-1",
         format!("http://{addr}/chat"),
         format!("http://{addr}/models"),
         Duration::from_secs(5),
@@ -1179,20 +1211,37 @@ async fn openrouter_effective_usage_limits() {
     )
     .expect("config created with 10k evidence and 3k output limits");
 
-    let adapter = OpenRouterGenerator::new_with_config("test-key", config).unwrap();
+    let adapter1 = OpenRouterGenerator::new_with_config("test-key", config1).unwrap();
+    adapter1.check_supported_parameters().await.expect("prepare 1 succeeds");
+
     let cand = sample_candidate("1", "Content for G1 limits test.");
     let evidence = assemble_evidence_blocks(&[cand]);
 
     // First call: 9000 prompt + 2500 completion is accepted under 10000 / 3000 effective limits
-    let res = adapter
+    let res = adapter1
         .generate(GenerationRequest::new("Question?", evidence.clone()))
         .await
         .expect("in-limit non-default usage succeeds");
     assert_eq!(res.usage.as_ref().unwrap().prompt_tokens, 9000);
     assert_eq!(res.usage.as_ref().unwrap().completion_tokens, 2500);
 
+    let config2 = OpenRouterGenerationConfig::new(
+        "mock/limits-model-2",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        3000,
+        10000,
+    )
+    .expect("config created with 10k evidence and 3k output limits");
+
+    let adapter2 = OpenRouterGenerator::new_with_config("test-key", config2).unwrap();
+    adapter2.check_supported_parameters().await.expect("prepare 2 succeeds");
+
     // Second call: 10001 prompt tokens exceeds 10000 limit -> fails schema validation
-    let err = adapter
+    let err = adapter2
         .generate(GenerationRequest::new("Question?", evidence))
         .await
         .expect_err("over-limit usage fails schema validation");
@@ -1251,28 +1300,27 @@ async fn openrouter_chat_rejects_oversized_streaming_body() {
 
     let server_handle = thread::spawn(move || {
         // First connection: /models preflight
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 8192];
-            let _ = stream.read(&mut buf);
-            let models_body =
-                r#"{"data":[{"id":"test-model","supported_parameters":["response_format"]}]}"#;
-            let header = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n", models_body.len());
-            let _ = stream.write_all(header.as_bytes());
-            let _ = stream.write_all(models_body.as_bytes());
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models");
+        let mut buf = [0u8; 8192];
+        let _ = stream.read(&mut buf);
+        let models_body =
+            r#"{"data":[{"id":"test-model","supported_parameters":["response_format"]}]}"#;
+        let header = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n", models_body.len());
+        let _ = stream.write_all(header.as_bytes());
+        let _ = stream.write_all(models_body.as_bytes());
+
         // Second connection: /chat response (oversized)
-        if let Ok((mut stream, _)) = listener.accept() {
-            let mut buf = [0u8; 8192];
-            let _ = stream.read(&mut buf);
-            let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
-            let _ = stream.write_all(header.as_bytes());
-            let chunk_data = vec![b' '; 262145];
-            let chunk_header = format!("{:x}\r\n", chunk_data.len());
-            let _ = stream.write_all(chunk_header.as_bytes());
-            let _ = stream.write_all(&chunk_data);
-            let _ = stream.write_all(b"\r\n0\r\n\r\n");
-            thread::sleep(Duration::from_millis(50));
-        }
+        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat");
+        let mut buf = [0u8; 8192];
+        let _ = stream.read(&mut buf);
+        let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+        let _ = stream.write_all(header.as_bytes());
+        let chunk_data = vec![b' '; 262145];
+        let chunk_header = format!("{:x}\r\n", chunk_data.len());
+        let _ = stream.write_all(chunk_header.as_bytes());
+        let _ = stream.write_all(&chunk_data);
+        let _ = stream.write_all(b"\r\n0\r\n\r\n");
+        thread::sleep(Duration::from_millis(50));
     });
 
     let limits = Arc::new(super::GroundingLimits::default_limits());
@@ -1289,6 +1337,8 @@ async fn openrouter_chat_rejects_oversized_streaming_body() {
 
     let adapter =
         super::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap();
+    adapter.check_supported_parameters().await.expect("prepare succeeds");
+
     let cand = sample_candidate("1", "Content");
     let evidence = assemble_evidence_blocks(&[cand]);
 
@@ -1315,7 +1365,7 @@ async fn openrouter_metadata_rejects_oversized_streaming_body() {
     let models_endpoint = format!("http://{addr}/models");
 
     let server_handle = thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
+        if let Ok((mut stream, _)) = accept_with_deadline(&listener) {
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf);
             let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
@@ -1352,4 +1402,241 @@ async fn openrouter_metadata_rejects_oversized_streaming_body() {
     assert!(err.message().contains("exceeds maximum body limit"));
 
     server_handle.join().expect("server completed");
+}
+
+#[tokio::test]
+async fn openrouter_preflight_transport_is_retryable() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let attempts_server = Arc::clone(&attempts);
+
+    let server_handle = thread::spawn(move || {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(5) {
+            match accept_with_deadline(&listener) {
+                Ok((mut stream, _)) => {
+                    let count = attempts_server.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let mut buf = [0u8; 4096];
+                    let _ = stream.read(&mut buf);
+                    if count == 0 {
+                        // First attempt: close connection immediately to simulate reset
+                        drop(stream);
+                    } else {
+                        // Second attempt: succeed
+                        let payload = json!({
+                            "data": [{
+                                "id": "mock/retry-preflight-model",
+                                "supported_parameters": ["response_format", "json_schema"]
+                            }]
+                        });
+                        write_json_response(&mut stream, payload);
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let config = OpenRouterGenerationConfig::new(
+        "mock/retry-preflight-model",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap()
+    .with_preflight_timeout(Duration::from_millis(500));
+
+    let adapter = OpenRouterGenerator::new_with_config("test-key", config).unwrap();
+
+    // Call 1 fails with ProviderError (retryable) because connection was reset
+    let err1 = adapter.check_supported_parameters().await.expect_err("preflight reset must fail");
+    assert_eq!(err1.kind, GenerationErrorKind::ProviderError);
+
+    // Call 2 retries and succeeds because failed preflight was not cached!
+    adapter.check_supported_parameters().await.expect("preflight retry must succeed");
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+    server_handle.join().expect("server handle join");
+}
+
+#[tokio::test]
+async fn openrouter_capabilities_cache_success_only() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let request_count_server = Arc::clone(&request_count);
+
+    let server_handle = thread::spawn(move || {
+        for _ in 0..2 {
+            match accept_with_deadline(&listener) {
+                Ok((mut stream, _)) => {
+                    request_count_server.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    let mut buf = [0u8; 4096];
+                    let n = stream.read(&mut buf).unwrap_or(0);
+                    let req_str = String::from_utf8_lossy(&buf[..n]);
+
+                    let model_id = if req_str.contains("/models-b") {
+                        "model-b"
+                    } else {
+                        "model-a"
+                    };
+
+                    let payload = json!({
+                        "data": [{
+                            "id": model_id,
+                            "supported_parameters": ["response_format", "json_schema"]
+                        }]
+                    });
+                    write_json_response(&mut stream, payload);
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let config_a = OpenRouterGenerationConfig::new(
+        "model-a",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models-a"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap();
+
+    let adapter = OpenRouterGenerator::new_with_config("test-key", config_a).unwrap();
+
+    // Call 1 on model-a: makes request
+    adapter.check_supported_parameters().await.expect("first call succeeds");
+    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    // Call 2 on same adapter with model-a: cached, no new request
+    adapter.check_supported_parameters().await.expect("second call cached");
+    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    // Call on different model/endpoint: fresh request
+    let config_b = OpenRouterGenerationConfig::new(
+        "model-b",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models-b"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap();
+    let adapter_b = OpenRouterGenerator::new_with_config("test-key", config_b).unwrap();
+    adapter_b.check_supported_parameters().await.expect("model-b call succeeds");
+    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+    server_handle.join().expect("server handle join");
+}
+
+#[tokio::test]
+async fn openrouter_capabilities_cache_single_flight() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let request_count_server = Arc::clone(&request_count);
+
+    let server_handle = thread::spawn(move || {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(5) {
+            match accept_with_deadline(&listener) {
+                Ok((mut stream, _)) => {
+                    request_count_server.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    // Slight delay to allow concurrent callers to arrive and wait on OnceCell
+                    thread::sleep(Duration::from_millis(50));
+                    let mut buf = [0u8; 4096];
+                    let _ = stream.read(&mut buf);
+                    let payload = json!({
+                        "data": [{
+                            "id": "mock/single-flight-model",
+                            "supported_parameters": ["response_format", "json_schema"]
+                        }]
+                    });
+                    write_json_response(&mut stream, payload);
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let config = OpenRouterGenerationConfig::new(
+        "mock/single-flight-model",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap();
+
+    let adapter = Arc::new(OpenRouterGenerator::new_with_config("test-key", config).unwrap());
+
+    // Spawn 10 concurrent tasks calling prepare
+    let mut handles = Vec::new();
+    for _ in 0..10 {
+        let gen = Arc::clone(&adapter);
+        handles.push(tokio::spawn(async move {
+            gen.check_supported_parameters().await
+        }));
+    }
+
+    for h in handles {
+        let res = h.await.expect("task join");
+        assert!(res.is_ok(), "all concurrent calls must succeed");
+    }
+
+    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1, "exactly one /models request was issued");
+
+    server_handle.join().expect("server handle join");
+}
+
+#[test]
+fn openrouter_prompt_packing_does_not_create_fresh_cancellation_token() {
+    let source = include_str!("openrouter.rs");
+    assert!(!source.contains("CancellationToken::new()"), "OpenRouter adapter must not construct a fresh CancellationToken");
+}
+
+#[tokio::test]
+async fn openrouter_cancellation_before_request_aborts() {
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel();
+
+    let candidate = sample_candidate("1", "Some content");
+    let evidence = assemble_evidence_blocks(&[candidate]);
+    let mut req = GenerationRequest::new("Question?", evidence);
+    req.cancel = Some(cancel);
+
+    let config = OpenRouterGenerationConfig::new(
+        "mock/model",
+        "http://127.0.0.1:9999/chat",
+        "http://127.0.0.1:9999/models",
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap();
+
+    let adapter = OpenRouterGenerator::new_with_config("test-key", config).unwrap();
+    let err = adapter.generate(req).await.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::Cancelled);
 }

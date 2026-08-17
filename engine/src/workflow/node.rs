@@ -22,6 +22,7 @@ pub struct NodeError {
     pub message: String,
     pub session_id: Option<String>,
     pub correlation_id: Option<String>,
+    pub retryable: bool,
 }
 
 impl NodeError {
@@ -31,6 +32,7 @@ impl NodeError {
             message: message.into(),
             session_id: None,
             correlation_id: None,
+            retryable: false,
         }
     }
 
@@ -43,6 +45,11 @@ impl NodeError {
 
     pub fn cancelled() -> Self {
         Self::new(NodeErrorKind::Cancelled, "Workflow execution cancelled")
+    }
+
+    pub fn with_retryable(mut self, retryable: bool) -> Self {
+        self.retryable = retryable;
+        self
     }
 
     pub fn with_context(mut self, session_id: Option<String>, correlation_id: Option<String>) -> Self {

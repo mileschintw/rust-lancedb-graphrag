@@ -353,3 +353,270 @@ async fn workflow_phase5_config_verify_generation_timeout() {
     assert_eq!(failed.category, v1::NodeErrorKind::Timeout as i32);
     assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn workflow_phase5_generation_retry_tracer() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+    use serde_json::json;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let models_calls = Arc::new(AtomicUsize::new(0));
+    let chat_calls = Arc::new(AtomicUsize::new(0));
+    let captured_chat_requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+    let models_calls_server = Arc::clone(&models_calls);
+    let chat_calls_server = Arc::clone(&chat_calls);
+    let captured_chat_requests_server = Arc::clone(&captured_chat_requests);
+
+    let server_handle = std::thread::spawn(move || {
+        listener.set_nonblocking(true).unwrap();
+        let start = std::time::Instant::now();
+        let mut conn_count = 0;
+        while conn_count < 3 && start.elapsed() < Duration::from_secs(5) {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    conn_count += 1;
+                    stream.set_nonblocking(false).unwrap();
+                    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                    let mut buf = [0u8; 8192];
+                    let n = stream.read(&mut buf).unwrap_or(0);
+                    let req_str = String::from_utf8_lossy(&buf[..n]).to_string();
+
+                    if req_str.contains("GET /models") {
+                        models_calls_server.fetch_add(1, Ordering::SeqCst);
+                        let body = json!({
+                            "data": [{
+                                "id": "mock/retry-model",
+                                "supported_parameters": ["response_format", "json_schema"]
+                            }]
+                        }).to_string();
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(), body
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                    } else if req_str.contains("POST /chat") {
+                        let count = chat_calls_server.fetch_add(1, Ordering::SeqCst);
+                        captured_chat_requests_server.lock().unwrap().push(req_str);
+                        if count == 0 {
+                            // First attempt: transient 500 error
+                            let resp = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                            let _ = stream.write_all(resp.as_bytes());
+                        } else {
+                            // Second attempt: success
+                            let model_output = json!({
+                                "answer": "Retried answer [1].",
+                                "cited_evidence_ids": ["[1]"],
+                                "answer_basis": "retrieval",
+                                "notices": [],
+                                "warnings": []
+                            }).to_string();
+                            let chat_resp = json!({
+                                "choices": [{
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": model_output
+                                    },
+                                    "finish_reason": "stop"
+                                }]
+                            }).to_string();
+                            let resp = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                chat_resp.len(), chat_resp
+                            );
+                            let _ = stream.write_all(resp.as_bytes());
+                        }
+                    }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let config = generation::openrouter::OpenRouterGenerationConfig::new(
+        "mock/retry-model",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap()
+    .with_preflight_timeout(Duration::from_millis(2000));
+
+    let generator = Arc::new(generation::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap());
+
+    // 1. Explicitly prepare capabilities and verify cache
+    generator.check_supported_parameters().await.expect("prepare succeeds");
+    generator.check_supported_parameters().await.expect("cached prepare succeeds");
+    assert_eq!(models_calls.load(Ordering::SeqCst), 1, "capabilities must be cached after 1 call");
+
+    // 2. Run GenerateAnswer node
+    let req = QueryRagRequest {
+        query: "What is retry tracer query?".into(),
+        session_id: "00000000-0000-4000-8000-000000000077".into(),
+        filter: None,
+    };
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000077".into(),
+        "trace-retry-test".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![crate::prompt::EvidenceBlock {
+        id: "[1]".to_string(),
+        chunk_id: "chk-retry-1".to_string(),
+        document_id: "doc-retry-1".to_string(),
+        chunk_index: 0,
+        title: Some("Title".to_string()),
+        section_path: Some("Section".to_string()),
+        content_type: Some("text/plain".to_string()),
+        provenance: "provenance".to_string(),
+        text: "Evidence for retry tracer".to_string(),
+        score: 0.95,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator));
+    let cancel = CancellationToken::new();
+
+    generate_node.run(&mut ctx, &cancel).await.expect("retry succeeds on 2nd attempt");
+
+    assert_eq!(chat_calls.load(Ordering::SeqCst), 2, "exactly two chat attempts");
+    assert_eq!(ctx.answer.as_str(), "Retried answer [1].");
+
+    server_handle.join().expect("server join");
+
+    let requests = captured_chat_requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    let body1 = requests[0].split_once("\r\n\r\n").unwrap().1;
+    let body2 = requests[1].split_once("\r\n\r\n").unwrap().1;
+    assert_eq!(body1, body2, "GenerationRequest payloads must be byte-identical on retry");
+}
+
+#[tokio::test]
+async fn workflow_phase5_openrouter_cancellation_propagates() {
+    use std::io::Read;
+    use std::net::TcpListener;
+    use std::time::Duration;
+    use crate::generation::Generator;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            // Stalls without replying
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    });
+
+    let config = generation::openrouter::OpenRouterGenerationConfig::new(
+        "mock/cancel-model",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(30),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap();
+
+    let generator = Arc::new(generation::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap());
+
+    let cancel = CancellationToken::new();
+    let evidence = vec![crate::prompt::EvidenceBlock {
+        id: "[1]".to_string(),
+        chunk_id: "chk-cancel-1".to_string(),
+        document_id: "doc-cancel-1".to_string(),
+        chunk_index: 0,
+        title: Some("Title".to_string()),
+        section_path: Some("Section".to_string()),
+        content_type: Some("text/plain".to_string()),
+        provenance: "provenance".to_string(),
+        text: "Evidence for cancellation test".to_string(),
+        score: 0.95,
+        rank: 1,
+        suspicious: false,
+    }];
+    let mut req = generation::GenerationRequest::new("Question?", evidence);
+    req.cancel = Some(cancel.clone());
+
+    let cancel_trigger = cancel.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        cancel_trigger.cancel();
+    });
+
+    let result = generator.generate(req).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, generation::GenerationErrorKind::Cancelled);
+
+    server_handle.join().expect("server join");
+}
+
+#[tokio::test]
+async fn workflow_phase5_generation_retry_exhausted() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let call_count_gen = Arc::clone(&call_count);
+
+    struct ExhaustedFakeGenerator {
+        count: Arc<AtomicUsize>,
+    }
+
+    impl generation::Generator for ExhaustedFakeGenerator {
+        fn generate<'a>(
+            &'a self,
+            _request: generation::GenerationRequest,
+        ) -> generation::BoxFuture<'a, Result<ModelOutput, generation::GenerationError>> {
+            Box::pin(async move {
+                self.count.fetch_add(1, Ordering::SeqCst);
+                Err(generation::GenerationError::new(
+                    generation::GenerationErrorKind::ProviderError,
+                    "Transient 503 Service Unavailable",
+                ))
+            })
+        }
+    }
+
+    let generator: Arc<dyn generation::Generator> = Arc::new(ExhaustedFakeGenerator {
+        count: call_count_gen,
+    });
+
+    let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator));
+    let req = QueryRagRequest {
+        query: "Exhausted query?".into(),
+        session_id: "00000000-0000-4000-8000-000000000088".into(),
+        filter: None,
+    };
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000088".into(),
+        "trace-exhausted".into(),
+        &req,
+    );
+    let cancel = CancellationToken::new();
+
+    let res = generate_node.run(&mut ctx, &cancel).await;
+    assert!(res.is_err(), "must fail when retries are exhausted");
+    let err = res.unwrap_err();
+    assert_eq!(err.kind, v1::NodeErrorKind::LlmGenerationFailed);
+    assert!(!err.retryable, "exhausted error must be non-retryable");
+    assert_eq!(call_count.load(Ordering::SeqCst), 2, "must attempt exactly 2 times");
+    assert!(ctx.answer.is_empty(), "no answer may be fabricated on failure");
+}

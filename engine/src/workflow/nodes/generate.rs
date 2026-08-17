@@ -56,6 +56,7 @@ impl Node for GenerateAnswerNode {
             );
             req.session_id = Some(ctx.session_id.clone());
             req.correlation_id = Some(ctx.trace_id.clone());
+            req.cancel = Some(cancel.clone());
 
             let request_snapshot = req;
 
@@ -65,19 +66,22 @@ impl Node for GenerateAnswerNode {
             let final_result = match result1 {
                 Ok(output) => Ok(output),
                 Err(err1) => {
-                    if cancel.is_cancelled() {
-                        return Err(NodeError::cancelled());
+                    if cancel.is_cancelled() || err1.kind == GenerationErrorKind::Cancelled {
+                        return Err(NodeError::cancelled()
+                            .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone())));
                     }
 
-                    // Non-retryable errors
-                    if err1.kind == GenerationErrorKind::InvalidRequest
-                        || err1.kind == GenerationErrorKind::SupportedParameters
-                    {
+                    // Only retry transient errors (Timeout and transient ProviderError)
+                    let is_retryable = err1.kind == GenerationErrorKind::Timeout
+                        || err1.kind == GenerationErrorKind::ProviderError;
+
+                    if !is_retryable {
                         Err(err1)
                     } else {
                         // Retry attempt 2 immediately with byte-identical request snapshot
                         if cancel.is_cancelled() {
-                            return Err(NodeError::cancelled());
+                            return Err(NodeError::cancelled()
+                                .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone())));
                         }
                         generator.generate(request_snapshot.clone()).await
                     }
@@ -104,14 +108,16 @@ impl Node for GenerateAnswerNode {
                     Ok(())
                 }
                 Err(err) => {
-                    if cancel.is_cancelled() {
-                        return Err(NodeError::cancelled());
+                    if cancel.is_cancelled() || err.kind == GenerationErrorKind::Cancelled {
+                        return Err(NodeError::cancelled()
+                            .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone())));
                     }
                     let node_kind = match err.kind {
                         GenerationErrorKind::Timeout => NodeErrorKind::Timeout,
                         _ => NodeErrorKind::LlmGenerationFailed,
                     };
                     Err(NodeError::new(node_kind, err.message())
+                        .with_retryable(false)
                         .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone())))
                 }
             }

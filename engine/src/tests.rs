@@ -6306,10 +6306,10 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
         effective_settings.grounding_limits_arc(),
     )
     .expect("generation config must be valid");
-    let generator: Arc<dyn generation::Generator> = Arc::new(
-        generation::openrouter::OpenRouterGenerator::new_with_config("test-key", generation_config)
-            .expect("generator must construct"),
-    );
+    let openrouter_gen = generation::openrouter::OpenRouterGenerator::new_with_config("test-key", generation_config)
+        .expect("generator must construct");
+    openrouter_gen.check_supported_parameters().await.expect("prepare succeeds");
+    let generator: Arc<dyn generation::Generator> = Arc::new(openrouter_gen);
 
     let service = configured_service(
         database,

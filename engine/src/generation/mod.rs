@@ -371,7 +371,7 @@ fn extract_inline_markers(text: &str) -> Vec<String> {
 }
 
 /// A structured input request passed to a `Generator`.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GenerationRequest {
     pub system_policy: String,
     pub question: String,
@@ -385,6 +385,20 @@ pub struct GenerationRequest {
     pub graph_weight: f64,
     pub session_id: Option<String>,
     pub correlation_id: Option<String>,
+    #[serde(skip)]
+    pub cancel: Option<tokio_util::sync::CancellationToken>,
+}
+
+impl PartialEq for GenerationRequest {
+    fn eq(&self, other: &Self) -> bool {
+        self.system_policy == other.system_policy
+            && self.question == other.question
+            && self.evidence == other.evidence
+            && self.graph_facts == other.graph_facts
+            && (self.graph_weight - other.graph_weight).abs() < f64::EPSILON
+            && self.session_id == other.session_id
+            && self.correlation_id == other.correlation_id
+    }
 }
 
 impl GenerationRequest {
@@ -397,6 +411,7 @@ impl GenerationRequest {
             graph_weight: 1.0,
             session_id: None,
             correlation_id: None,
+            cancel: None,
         }
     }
 }

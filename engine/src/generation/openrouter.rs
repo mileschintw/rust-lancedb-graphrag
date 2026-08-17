@@ -4,7 +4,7 @@
 //! the configured model metadata advertises structured output before making
 //! exactly one timeout-bounded HTTP call with strict JSON Schema output bounds.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4o-mini";
 pub const DEFAULT_CHAT_ENDPOINT: &str = "https://openrouter.ai/api/v1/chat/completions";
 pub const DEFAULT_MODELS_ENDPOINT: &str = "https://openrouter.ai/api/v1/models";
 pub const GENERATION_TIMEOUT: Duration = Duration::from_secs(30);
+pub const DEFAULT_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_TEMPERATURE: f64 = 0.0;
 const DEFAULT_TOP_P: f64 = 1.0;
 const DEFAULT_MAX_COMPLETION_TOKENS: usize = 2048;
@@ -35,12 +36,24 @@ fn build_http_client(timeout: Duration) -> Result<Client, GenerationError> {
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CapabilityKey {
+    pub models_endpoint: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelCapabilities {
+    pub supports_structured_outputs: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct OpenRouterGenerationConfig {
     model: String,
     chat_endpoint: String,
     models_endpoint: String,
     timeout: Duration,
+    preflight_timeout: Duration,
     temperature: f64,
     top_p: f64,
     pub grounding_limits: Arc<GroundingLimits>,
@@ -96,6 +109,7 @@ impl OpenRouterGenerationConfig {
             chat_endpoint: chat_endpoint.into(),
             models_endpoint: models_endpoint.into(),
             timeout,
+            preflight_timeout: DEFAULT_PREFLIGHT_TIMEOUT,
             temperature,
             top_p,
             grounding_limits: limits,
@@ -124,6 +138,15 @@ impl OpenRouterGenerationConfig {
         )
     }
 
+    pub fn with_preflight_timeout(mut self, timeout: Duration) -> Self {
+        self.preflight_timeout = timeout;
+        self
+    }
+
+    pub fn preflight_timeout(&self) -> Duration {
+        self.preflight_timeout
+    }
+
     pub fn max_completion_tokens(&self) -> usize {
         self.grounding_limits.max_output_tokens() as usize
     }
@@ -138,6 +161,10 @@ impl OpenRouterGenerationConfig {
 
     pub fn chat_endpoint(&self) -> &str {
         &self.chat_endpoint
+    }
+
+    pub fn models_endpoint(&self) -> &str {
+        &self.models_endpoint
     }
 
     pub fn timeout(&self) -> Duration {
@@ -177,6 +204,12 @@ impl OpenRouterGenerationConfig {
                 "OpenRouter generation timeout must be greater than zero",
             ));
         }
+        if self.preflight_timeout.is_zero() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::InvalidRequest,
+                "OpenRouter preflight timeout must be greater than zero",
+            ));
+        }
         if !self.temperature.is_finite() || self.temperature < 0.0 || self.temperature > 2.0 {
             return Err(GenerationError::new(
                 GenerationErrorKind::InvalidRequest,
@@ -198,6 +231,7 @@ pub struct OpenRouterGenerator {
     http: Client,
     api_key: String,
     config: OpenRouterGenerationConfig,
+    capabilities_cache: Arc<tokio::sync::Mutex<HashMap<CapabilityKey, Arc<tokio::sync::OnceCell<ModelCapabilities>>>>>,
 }
 
 impl OpenRouterGenerator {
@@ -219,6 +253,7 @@ impl OpenRouterGenerator {
             http,
             api_key,
             config,
+            capabilities_cache: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         })
     }
 
@@ -286,101 +321,156 @@ impl OpenRouterGenerator {
         self
     }
 
+    pub fn with_preflight_timeout(mut self, timeout: Duration) -> Self {
+        self.config.preflight_timeout = timeout;
+        self
+    }
+
+    pub async fn prepare(&self) -> Result<(), GenerationError> {
+        self.check_supported_parameters().await
+    }
+
     /// Verifies that the model metadata advertises structured outputs (`response_format` / `json_schema`).
+    /// Uses the single-flight successful-only cache keyed by `(models_endpoint, model)`.
     pub async fn check_supported_parameters(&self) -> Result<(), GenerationError> {
-        let response = self
-            .http
-            .get(&self.config.models_endpoint)
-            .bearer_auth(&self.api_key)
-            .send()
-            .await
-            .map_err(|err| {
-                GenerationError::new(
-                    GenerationErrorKind::SupportedParameters,
-                    format!("failed to fetch model capabilities: {err}"),
-                )
-            })?;
+        let key = CapabilityKey {
+            models_endpoint: self.config.models_endpoint.clone(),
+            model: self.config.model.clone(),
+        };
 
-        if !response.status().is_success() {
-            return Err(GenerationError::new(
-                GenerationErrorKind::SupportedParameters,
-                format!(
-                    "model capabilities check returned HTTP {}",
-                    response.status()
-                ),
-            ));
-        }
+        let cell = {
+            let mut cache = self.capabilities_cache.lock().await;
+            cache
+                .entry(key)
+                .or_insert_with(|| Arc::new(tokio::sync::OnceCell::new()))
+                .clone()
+        };
 
-        let body_bytes =
-            crate::client::read_body_limited(response)
+        let _caps = cell
+            .get_or_try_init(|| async {
+                self.fetch_and_validate_capabilities().await
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    async fn fetch_and_validate_capabilities(&self) -> Result<ModelCapabilities, GenerationError> {
+        let preflight_fut = async {
+            let response = self
+                .http
+                .get(&self.config.models_endpoint)
+                .bearer_auth(&self.api_key)
+                .send()
                 .await
-                .map_err(|err| match err {
-                    crate::client::BoundedBodyError::TooLarge => GenerationError::new(
-                        GenerationErrorKind::SupportedParameters,
-                        format!(
-                            "model capabilities response exceeds maximum body limit of {} bytes",
-                            crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
-                        ),
-                    ),
-                    crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
-                        GenerationErrorKind::SupportedParameters,
-                        format!("failed to read model capabilities response body: {msg}"),
-                    ),
+                .map_err(|err| {
+                    GenerationError::new(
+                        GenerationErrorKind::ProviderError,
+                        format!("failed to fetch model capabilities: {err}"),
+                    )
                 })?;
 
-        let models_resp =
-            serde_json::from_slice::<OpenRouterModelsResponse>(&body_bytes).map_err(|err| {
-                GenerationError::new(
-                    GenerationErrorKind::SupportedParameters,
-                    format!("invalid models metadata JSON: {err}"),
-                )
-            })?;
-
-        let model_meta = models_resp
-            .data
-            .into_iter()
-            .find(|m| m.id == self.config.model)
-            .ok_or_else(|| {
-                GenerationError::new(
-                    GenerationErrorKind::SupportedParameters,
-                    format!(
-                        "model metadata for '{}' not found in OpenRouter list",
-                        self.config.model
-                    ),
-                )
-            })?;
-
-        if let Some(params) = model_meta.supported_parameters {
-            if params.contains(&"response_format".to_string())
-                || params.contains(&"json_schema".to_string())
-                || params.contains(&"structured_outputs".to_string())
-            {
-                return Ok(());
+            let status = response.status();
+            if !status.is_success() {
+                let kind = if status.is_server_error() {
+                    GenerationErrorKind::ProviderError
+                } else {
+                    GenerationErrorKind::SupportedParameters
+                };
+                return Err(GenerationError::new(
+                    kind,
+                    format!("model capabilities check returned HTTP {status}"),
+                ));
             }
-        }
 
-        Err(GenerationError::new(
-            GenerationErrorKind::SupportedParameters,
-            format!(
-                "model '{}' does not advertise response_format/structured_outputs support",
-                self.config.model
-            ),
-        ))
+            let body_bytes =
+                crate::client::read_body_limited(response)
+                    .await
+                    .map_err(|err| match err {
+                        crate::client::BoundedBodyError::TooLarge => GenerationError::new(
+                            GenerationErrorKind::SupportedParameters,
+                            format!(
+                                "model capabilities response exceeds maximum body limit of {} bytes",
+                                crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
+                            ),
+                        ),
+                        crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
+                            GenerationErrorKind::ProviderError,
+                            format!("failed to read model capabilities response body: {msg}"),
+                        ),
+                    })?;
+
+            let models_resp =
+                serde_json::from_slice::<OpenRouterModelsResponse>(&body_bytes).map_err(|err| {
+                    GenerationError::new(
+                        GenerationErrorKind::SupportedParameters,
+                        format!("invalid models metadata JSON: {err}"),
+                    )
+                })?;
+
+            let model_meta = models_resp
+                .data
+                .into_iter()
+                .find(|m| m.id == self.config.model)
+                .ok_or_else(|| {
+                    GenerationError::new(
+                        GenerationErrorKind::SupportedParameters,
+                        format!(
+                            "model metadata for '{}' not found in OpenRouter list",
+                            self.config.model
+                        ),
+                    )
+                })?;
+
+            if let Some(params) = model_meta.supported_parameters {
+                if params.contains(&"response_format".to_string())
+                    || params.contains(&"json_schema".to_string())
+                    || params.contains(&"structured_outputs".to_string())
+                {
+                    return Ok(ModelCapabilities {
+                        supports_structured_outputs: true,
+                    });
+                }
+            }
+
+            Err(GenerationError::new(
+                GenerationErrorKind::SupportedParameters,
+                format!(
+                    "model '{}' does not advertise response_format/structured_outputs support",
+                    self.config.model
+                ),
+            ))
+        };
+
+        match timeout(self.config.preflight_timeout, preflight_fut).await {
+            Ok(res) => res,
+            Err(_) => Err(GenerationError::new(
+                GenerationErrorKind::ProviderError,
+                format!(
+                    "model capabilities check timed out after {:?}",
+                    self.config.preflight_timeout
+                ),
+            )),
+        }
     }
 
     async fn execute_one_call(
         &self,
         request: GenerationRequest,
     ) -> Result<ModelOutput, GenerationError> {
-        // Preflight supported parameters check per D-27
-        self.check_supported_parameters().await?;
+        let cancel = request.cancel.clone().unwrap_or_default();
+        if cancel.is_cancelled() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::Cancelled,
+                "OpenRouter request cancelled before prompt assembly",
+            ));
+        }
 
         // This is the call site whose packed prompt becomes the real outbound
         // `messages[1].content` — it reads `request.graph_facts` and
         // `request.graph_weight` from the request it was actually handed, not a
         // separately-derived value, so a configured graph_weight provably
         // reaches the wire (REVIEWS.md HIGH).
-        let cancel = tokio_util::sync::CancellationToken::new();
         let packed_evidence = pack_evidence_and_graph_prompt(
             &request.question,
             &request.evidence,
@@ -391,12 +481,23 @@ impl OpenRouterGenerator {
             &cancel,
         )
         .await
-        .map_err(|err| {
-            GenerationError::new(
+        .map_err(|err| match err {
+            crate::prompt::PromptAssemblyError::Cancelled => GenerationError::new(
+                GenerationErrorKind::Cancelled,
+                "prompt assembly cancelled",
+            ),
+            _ => GenerationError::new(
                 GenerationErrorKind::InvalidRequest,
                 format!("prompt assembly failed: {err}"),
-            )
+            ),
         })?;
+
+        if cancel.is_cancelled() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::Cancelled,
+                "OpenRouter request cancelled after prompt assembly",
+            ));
+        }
 
         let system_msg = request.system_policy.clone();
         let user_msg = packed_evidence.prompt;
@@ -466,14 +567,15 @@ impl OpenRouterGenerator {
             },
         };
 
-        let response = self
+        let send_fut = self
             .http
             .post(&self.config.chat_endpoint)
             .bearer_auth(&self.api_key)
             .json(&payload)
-            .send()
-            .await
-            .map_err(|err| {
+            .send();
+
+        let response = tokio::select! {
+            res = send_fut => res.map_err(|err| {
                 if err.is_timeout() {
                     GenerationError::new(
                         GenerationErrorKind::Timeout,
@@ -485,13 +587,27 @@ impl OpenRouterGenerator {
                         format!("OpenRouter request failed: {err}"),
                     )
                 }
-            })?;
+            })?,
+            _ = cancel.cancelled() => {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::Cancelled,
+                    "OpenRouter request cancelled",
+                ));
+            }
+        };
 
         let status = response.status();
         if !status.is_success() {
             return Err(GenerationError::new(
                 GenerationErrorKind::ProviderError,
                 format!("OpenRouter chat completion returned HTTP {status}"),
+            ));
+        }
+
+        if cancel.is_cancelled() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::Cancelled,
+                "OpenRouter request cancelled",
             ));
         }
 
@@ -511,6 +627,13 @@ impl OpenRouterGenerator {
                         format!("failed to read OpenRouter response body: {msg}"),
                     ),
                 })?;
+
+        if cancel.is_cancelled() {
+            return Err(GenerationError::new(
+                GenerationErrorKind::Cancelled,
+                "OpenRouter request cancelled",
+            ));
+        }
 
         let chat_resp: OpenRouterChatResponse =
             serde_json::from_slice(&body_bytes).map_err(|err| {
