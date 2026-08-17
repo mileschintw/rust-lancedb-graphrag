@@ -620,3 +620,433 @@ async fn workflow_phase5_generation_retry_exhausted() {
     assert_eq!(call_count.load(Ordering::SeqCst), 2, "must attempt exactly 2 times");
     assert!(ctx.answer.is_empty(), "no answer may be fabricated on failure");
 }
+
+#[tokio::test]
+async fn workflow_phase5_nodekind_tracer() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use workflow::node::NodeKind;
+
+    struct NineVariantReformulator;
+    impl workflow::ports::QueryReformulator for NineVariantReformulator {
+        fn reformulate<'a>(
+            &'a self,
+            _query: &'a str,
+            _cancel: &'a CancellationToken,
+        ) -> workflow::node::BoxFuture<'a, Result<Vec<String>, workflow::node::NodeError>> {
+            Box::pin(async move {
+                Ok((1..=9).map(|i| format!("variant {i}")).collect())
+            })
+        }
+    }
+
+    struct SpyEmbedder {
+        calls: Arc<AtomicUsize>,
+    }
+    impl workflow::node::QueryEmbeddingPort for SpyEmbedder {
+        fn embed_variant_zero<'a>(
+            &'a self,
+            _variant: &'a str,
+            _cancel: &'a CancellationToken,
+        ) -> workflow::node::BoxFuture<'a, Result<Vec<f32>, workflow::node::NodeError>> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok(vec![0.0; 2048])
+            })
+        }
+    }
+
+    struct SpyGraphPort {
+        calls: Arc<AtomicUsize>,
+    }
+    impl workflow::ports::GraphQueryPort for SpyGraphPort {
+        fn query_graph<'a>(
+            &'a self,
+            _embedding: &'a [f32],
+            _cancel: &'a CancellationToken,
+        ) -> workflow::node::BoxFuture<'a, Result<Vec<crate::prompt::GraphFactBlock>, workflow::node::NodeError>> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok(vec![])
+            })
+        }
+    }
+
+    let embed_calls = Arc::new(AtomicUsize::new(0));
+    let graph_calls = Arc::new(AtomicUsize::new(0));
+
+    let reformulate_node = workflow::nodes::ReformulateQueryNode::with_reformulator(Some(Arc::new(NineVariantReformulator)));
+    assert_eq!(reformulate_node.kind(), NodeKind::ReformulateQuery);
+    assert_eq!(reformulate_node.name(), "ReformulateQuery");
+
+    let extract_node = workflow::nodes::ExtractGraphContextNode::new(
+        Some(Arc::new(SpyEmbedder { calls: Arc::clone(&embed_calls) })),
+        Some(Arc::new(SpyGraphPort { calls: Arc::clone(&graph_calls) })),
+    );
+    let retrieve_node = workflow::nodes::RetrieveHybridNode::default();
+    let prompt_node = workflow::nodes::AssemblePromptNode::default();
+    let generate_node = workflow::nodes::GenerateAnswerNode::default();
+
+    let mut runner = workflow::WorkflowRunner::new();
+    assert_eq!(runner.timeout_for_kind(NodeKind::ReformulateQuery).as_millis(), 5000);
+    runner.add_node(reformulate_node);
+    runner.add_node(extract_node);
+    runner.add_node(retrieve_node);
+    runner.add_node(prompt_node);
+    runner.add_node(generate_node);
+
+    let req = QueryRagRequest {
+        query: "Nine variant admission rejection test".into(),
+        session_id: "00000000-0000-4000-8000-000000000091".into(),
+        filter: None,
+    };
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-tracer-test".into(),
+        "00000000-0000-4000-8000-000000000091".into(),
+    );
+    let ctx = WorkflowContext::new("00000000-0000-4000-8000-000000000091".into(), "trace-tracer-test".into(), &req);
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    // 1. Exactly one NodeStarted for ReformulateQuery
+    let started_nodes: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(started_nodes, vec!["ReformulateQuery".to_string()]);
+
+    // 2. Exactly one NodeFailed for ReformulateQuery with category InputValidation
+    let failed_nodes: Vec<(String, i32, String, bool)> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::NodeFailed(nf)) => {
+                Some((nf.node_name.clone(), nf.category, nf.message.clone(), nf.retryable))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(failed_nodes.len(), 1);
+    let (failed_name, category, error_msg, retryable) = &failed_nodes[0];
+    assert_eq!(failed_name, "ReformulateQuery");
+    assert_eq!(*category, v1::NodeErrorKind::InputValidation as i32);
+    assert!(error_msg.contains("exceeding maximum allowed limit of 8"));
+    assert!(!retryable);
+
+    // 3. No NodeCompleted for ReformulateQuery
+    let completed_nodes: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::NodeCompleted(nc)) => Some(nc.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(completed_nodes.is_empty(), "No NodeCompleted should be emitted for rejected node");
+
+    // 4. No checkpoint for post_reformulatequery
+    let checkpoints: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::Checkpoint(cp)) => Some(cp.checkpoint_type.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(checkpoints.is_empty(), "No checkpoint should be emitted on early admission failure");
+
+    // 5. Zero downstream port calls
+    assert_eq!(embed_calls.load(Ordering::SeqCst), 0, "No embedding calls on reformulate rejection");
+    assert_eq!(graph_calls.load(Ordering::SeqCst), 0, "No graph calls on reformulate rejection");
+
+    // 6. Terminal WorkflowCompleted with success = false
+    let terminal = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("Terminal WorkflowCompleted must be emitted");
+    assert!(!terminal.success);
+    assert_eq!(terminal.error_kind, v1::NodeErrorKind::InputValidation as i32);
+}
+
+#[tokio::test]
+async fn workflow_phase5_nodekind_dispatch() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use workflow::node::NodeKind;
+
+    let reformulate = workflow::nodes::ReformulateQueryNode::new();
+    let graph_context = workflow::nodes::ExtractGraphContextNode::new(None, None);
+    let retrieve = workflow::nodes::RetrieveHybridNode::default();
+
+    assert_eq!(reformulate.kind(), NodeKind::ReformulateQuery);
+    assert_eq!(graph_context.kind(), NodeKind::ExtractGraphContext);
+    assert_eq!(retrieve.kind(), NodeKind::RetrieveHybrid);
+
+    assert_eq!(reformulate.name(), "ReformulateQuery");
+    assert_eq!(graph_context.name(), "ExtractGraphContext");
+    assert_eq!(retrieve.name(), "RetrieveHybrid");
+
+    let runner = workflow::WorkflowRunner::new();
+    assert_eq!(runner.timeout_for_kind(NodeKind::ReformulateQuery).as_millis(), 5000);
+    assert_eq!(runner.timeout_for_kind(NodeKind::ExtractGraphContext).as_millis(), 15000);
+    assert_eq!(runner.timeout_for_kind(NodeKind::RetrieveHybrid).as_millis(), 10000);
+
+    assert_eq!(NodeKind::ReformulateQuery.checkpoint_label(), "post_reformulatequery");
+    assert_eq!(NodeKind::ExtractGraphContext.checkpoint_label(), "post_extractgraphcontext");
+    assert_eq!(NodeKind::RetrieveHybrid.checkpoint_label(), "post_retrievehybrid");
+
+    // Verify D-08 variant-zero embedding and D-07 all-variant retrieval
+    struct MockEmbedder {
+        embedded_variants: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+    impl workflow::node::QueryEmbeddingPort for MockEmbedder {
+        fn embed_variant_zero<'a>(
+            &'a self,
+            variant: &'a str,
+            _cancel: &'a CancellationToken,
+        ) -> workflow::node::BoxFuture<'a, Result<Vec<f32>, workflow::node::NodeError>> {
+            let v = variant.to_string();
+            Box::pin(async move {
+                self.embedded_variants.lock().unwrap().push(v);
+                Ok(vec![0.1; 2048])
+            })
+        }
+    }
+
+    struct MockBm25Port {
+        retrieved_variants: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+    impl workflow::ports::Bm25RetrievalPort for MockBm25Port {
+        fn retrieve_bm25<'a>(
+            &'a self,
+            query: &'a str,
+            _filter: Option<&'a v1::DocumentFilter>,
+            _cancel: &'a CancellationToken,
+        ) -> workflow::node::BoxFuture<'a, Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>> {
+            let q = query.to_string();
+            Box::pin(async move {
+                self.retrieved_variants.lock().unwrap().push(q);
+                Ok(vec![])
+            })
+        }
+    }
+
+    let embedded = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let retrieved = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000092".into(),
+        "trace-dispatch".into(),
+        &QueryRagRequest {
+            query: "Multi variant query".into(),
+            session_id: "00000000-0000-4000-8000-000000000092".into(),
+            filter: None,
+        },
+    );
+    ctx.variants = vec!["variant_0".into(), "variant_1".into(), "variant_2".into()];
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-dispatch".into(),
+        "00000000-0000-4000-8000-000000000092".into(),
+    );
+
+    let graph_node = workflow::nodes::ExtractGraphContextNode::new(
+        Some(Arc::new(MockEmbedder { embedded_variants: Arc::clone(&embedded) })),
+        None,
+    );
+    runner.run_node(&graph_node, &mut ctx, &cancel, &sink).await.unwrap();
+
+    // D-08: Only variant zero embedded
+    assert_eq!(*embedded.lock().unwrap(), vec!["variant_0".to_string()]);
+
+    let retrieve_node = workflow::nodes::RetrieveHybridNode::new(
+        None,
+        Some(Arc::new(MockBm25Port { retrieved_variants: Arc::clone(&retrieved) })),
+        None,
+        Default::default(),
+    );
+    runner.run_node(&retrieve_node, &mut ctx, &cancel, &sink).await.unwrap();
+
+    // D-07: All variants retrieved
+    assert_eq!(*retrieved.lock().unwrap(), vec!["variant_0".to_string(), "variant_1".to_string(), "variant_2".to_string()]);
+
+    // Check typed retryability forwarding without extra retrying event (D-15)
+    struct FailingDensePort;
+    impl workflow::ports::DenseRetrievalPort for FailingDensePort {
+        fn retrieve_dense<'a>(
+            &'a self,
+            _embedding: &'a [f32],
+            _filter: Option<&'a v1::DocumentFilter>,
+            _cancel: &'a CancellationToken,
+        ) -> workflow::node::BoxFuture<'a, Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>> {
+            Box::pin(async move {
+                Err(workflow::node::NodeError::new(v1::NodeErrorKind::RetrievalFailed, "Transient DB connection drop")
+                    .with_retryable(true))
+            })
+        }
+    }
+
+    let failing_retrieve_node = workflow::nodes::RetrieveHybridNode::new(
+        Some(Arc::new(FailingDensePort)),
+        None,
+        None,
+        Default::default(),
+    );
+    let fail_res = runner.run_node(&failing_retrieve_node, &mut ctx, &cancel, &sink).await;
+    assert!(fail_res.is_err());
+    let err = fail_res.unwrap_err();
+    assert!(err.retryable);
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let failed_retrieve = events.iter().find_map(|e| match &e.event {
+        Some(v1::workflow_event::Event::NodeFailed(nf)) if nf.node_name == "RetrieveHybrid" => Some(nf),
+        _ => None,
+    }).expect("NodeFailed event for RetrieveHybrid must exist");
+    assert!(failed_retrieve.retryable, "NodeFailed.retryable must be true when forwarded from NodeError");
+}
+
+#[tokio::test]
+async fn workflow_phase5_nodekind_exhaustive() {
+    use workflow::node::NodeKind;
+
+    // 1. Closed enum of exactly 5 variants
+    assert_eq!(NodeKind::ALL.len(), 5);
+    assert_eq!(
+        NodeKind::ALL,
+        [
+            NodeKind::ReformulateQuery,
+            NodeKind::ExtractGraphContext,
+            NodeKind::RetrieveHybrid,
+            NodeKind::AssemblePrompt,
+            NodeKind::GenerateAnswer,
+        ]
+    );
+
+    // 2. All 5 production nodes implement Node::kind returning matching variant
+    let n1 = workflow::nodes::ReformulateQueryNode::new();
+    let n2 = workflow::nodes::ExtractGraphContextNode::new(None, None);
+    let n3 = workflow::nodes::RetrieveHybridNode::default();
+    let n4 = workflow::nodes::AssemblePromptNode::new();
+    let n5 = workflow::nodes::GenerateAnswerNode::new(None);
+
+    assert_eq!(n1.kind(), NodeKind::ReformulateQuery);
+    assert_eq!(n2.kind(), NodeKind::ExtractGraphContext);
+    assert_eq!(n3.kind(), NodeKind::RetrieveHybrid);
+    assert_eq!(n4.kind(), NodeKind::AssemblePrompt);
+    assert_eq!(n5.kind(), NodeKind::GenerateAnswer);
+
+    // 3. Exhaustive runner timeouts and checkpoint labels
+    let runner = workflow::WorkflowRunner::new();
+    for kind in NodeKind::ALL {
+        let name = kind.name();
+        let timeout = runner.timeout_for_kind(kind);
+        let cp_label = kind.checkpoint_label();
+
+        match kind {
+            NodeKind::ReformulateQuery => {
+                assert_eq!(name, "ReformulateQuery");
+                assert_eq!(timeout.as_millis(), 5000);
+                assert_eq!(cp_label, "post_reformulatequery");
+            }
+            NodeKind::ExtractGraphContext => {
+                assert_eq!(name, "ExtractGraphContext");
+                assert_eq!(timeout.as_millis(), 15000);
+                assert_eq!(cp_label, "post_extractgraphcontext");
+            }
+            NodeKind::RetrieveHybrid => {
+                assert_eq!(name, "RetrieveHybrid");
+                assert_eq!(timeout.as_millis(), 10000);
+                assert_eq!(cp_label, "post_retrievehybrid");
+            }
+            NodeKind::AssemblePrompt => {
+                assert_eq!(name, "AssemblePrompt");
+                assert_eq!(timeout.as_millis(), 2000);
+                assert_eq!(cp_label, "post_assembleprompt");
+            }
+            NodeKind::GenerateAnswer => {
+                assert_eq!(name, "GenerateAnswer");
+                assert_eq!(timeout.as_millis(), 65000);
+                assert_eq!(cp_label, "post_generateanswer");
+            }
+        }
+    }
+
+    // 4. Exhaustive D-03 zero-evidence skip in full workflow
+    let mut zero_ev_runner = workflow::WorkflowRunner::new();
+    zero_ev_runner.add_node(workflow::nodes::ReformulateQueryNode::new());
+    zero_ev_runner.add_node(workflow::nodes::ExtractGraphContextNode::new(None, None));
+    zero_ev_runner.add_node(workflow::nodes::RetrieveHybridNode::default());
+    zero_ev_runner.add_node(workflow::nodes::AssemblePromptNode::new());
+    zero_ev_runner.add_node(workflow::nodes::GenerateAnswerNode::new(None));
+
+    let req = QueryRagRequest {
+        query: "Zero evidence exhaustive query".into(),
+        session_id: "00000000-0000-4000-8000-000000000093".into(),
+        filter: None,
+    };
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-exhaustive".into(),
+        "00000000-0000-4000-8000-000000000093".into(),
+    );
+    let ctx = WorkflowContext::new("00000000-0000-4000-8000-000000000093".into(), "trace-exhaustive".into(), &req);
+
+    zero_ev_runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let started_nodes: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        started_nodes,
+        vec!["ReformulateQuery", "ExtractGraphContext", "RetrieveHybrid"]
+    );
+    assert!(!started_nodes.contains(&"AssemblePrompt".to_string()));
+    assert!(!started_nodes.contains(&"GenerateAnswer".to_string()));
+
+    let terminal = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("Terminal WorkflowCompleted must be emitted");
+    assert!(terminal.success);
+}
+

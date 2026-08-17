@@ -5,7 +5,7 @@ use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
 use crate::rerank::Reranker;
 use crate::retrieval::{fuse_variant_candidates, RetrievalSettings};
 use super::super::{
-    node::{BoxFuture, Node, NodeError},
+    node::{BoxFuture, Node, NodeError, NodeKind},
     ports::{Bm25RetrievalPort, DenseRetrievalPort},
     WorkflowContext,
 };
@@ -40,8 +40,8 @@ impl Default for RetrieveHybridNode {
 }
 
 impl Node for RetrieveHybridNode {
-    fn name(&self) -> &'static str {
-        "RetrieveHybrid"
+    fn kind(&self) -> NodeKind {
+        NodeKind::RetrieveHybrid
     }
 
     fn run<'a>(

@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use super::super::{
-    node::{BoxFuture, Node, NodeError},
+    node::{BoxFuture, Node, NodeError, NodeKind},
     ports::QueryReformulator,
     WorkflowContext,
 };
+use crate::pb::lancet::v1::NodeErrorKind;
 
 pub struct ReformulateQueryNode {
     reformulator: Option<Arc<dyn QueryReformulator>>,
@@ -27,8 +28,8 @@ impl Default for ReformulateQueryNode {
 }
 
 impl Node for ReformulateQueryNode {
-    fn name(&self) -> &'static str {
-        "ReformulateQuery"
+    fn kind(&self) -> NodeKind {
+        NodeKind::ReformulateQuery
     }
 
     fn run<'a>(
@@ -43,9 +44,26 @@ impl Node for ReformulateQueryNode {
 
             if let Some(ref reformulator) = self.reformulator {
                 let variants = reformulator.reformulate(&ctx.original_query, cancel).await?;
+                if variants.len() > 8 {
+                    return Err(NodeError::new(
+                        NodeErrorKind::InputValidation,
+                        format!(
+                            "Query reformulator produced {} variants, exceeding maximum allowed limit of 8",
+                            variants.len()
+                        ),
+                    ));
+                }
                 ctx.variants = variants;
             } else if ctx.variants.is_empty() {
                 ctx.variants.push(ctx.original_query.clone());
+            } else if ctx.variants.len() > 8 {
+                return Err(NodeError::new(
+                    NodeErrorKind::InputValidation,
+                    format!(
+                        "Query reformulator produced {} variants, exceeding maximum allowed limit of 8",
+                        ctx.variants.len()
+                    ),
+                ));
             }
 
             Ok(())

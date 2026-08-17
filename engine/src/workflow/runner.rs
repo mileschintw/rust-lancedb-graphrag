@@ -10,7 +10,7 @@ use crate::pb::lancet::v1::{
 };
 use super::{
     events::{self, EventSequence},
-    node::{Node, NodeError},
+    node::{Node, NodeError, NodeKind},
     WorkflowContext, WorkflowDependencies,
 };
 
@@ -101,13 +101,23 @@ impl WorkflowRunner {
         self.nodes.push(Box::new(node));
     }
 
+    pub fn timeout_for_kind(&self, kind: NodeKind) -> Duration {
+        match kind {
+            NodeKind::ReformulateQuery => self.reformulate_timeout,
+            NodeKind::ExtractGraphContext => self.graph_timeout,
+            NodeKind::RetrieveHybrid => self.retrieve_timeout,
+            NodeKind::AssemblePrompt => self.prompt_timeout,
+            NodeKind::GenerateAnswer => self.generation_timeout,
+        }
+    }
+
     pub fn timeout_for_node(&self, name: &str) -> Duration {
         match name {
-            "ReformulateQuery" => self.reformulate_timeout,
-            "ExtractGraphContext" => self.graph_timeout,
-            "RetrieveHybrid" => self.retrieve_timeout,
-            "AssemblePrompt" => self.prompt_timeout,
-            "GenerateAnswer" => self.generation_timeout,
+            "ReformulateQuery" => self.timeout_for_kind(NodeKind::ReformulateQuery),
+            "ExtractGraphContext" => self.timeout_for_kind(NodeKind::ExtractGraphContext),
+            "RetrieveHybrid" => self.timeout_for_kind(NodeKind::RetrieveHybrid),
+            "AssemblePrompt" => self.timeout_for_kind(NodeKind::AssemblePrompt),
+            "GenerateAnswer" => self.timeout_for_kind(NodeKind::GenerateAnswer),
             _ => Duration::from_millis(5000),
         }
     }
@@ -119,11 +129,12 @@ impl WorkflowRunner {
         cancel: &CancellationToken,
         sink: &WorkflowEventSink,
     ) -> Result<(), NodeError> {
-        let name = node.name();
+        let kind = node.kind();
+        let name = kind.name();
         sink.send_event(events::node_started(name, ""));
 
         let start_time = Instant::now();
-        let node_timeout = self.timeout_for_node(name);
+        let node_timeout = self.timeout_for_kind(kind);
 
         let result = tokio::select! {
             biased;
@@ -142,18 +153,31 @@ impl WorkflowRunner {
         match &result {
             Ok(()) => {
                 sink.send_event(events::node_completed(name, "", duration_ms));
-                if name == "GenerateAnswer" {
-                    sink.send_event(events::answer_chunk(ctx.answer.clone(), true));
+                match kind {
+                    NodeKind::GenerateAnswer => {
+                        sink.send_event(events::answer_chunk(ctx.answer.clone(), true));
+                    }
+                    NodeKind::ReformulateQuery
+                    | NodeKind::ExtractGraphContext
+                    | NodeKind::RetrieveHybrid
+                    | NodeKind::AssemblePrompt => {}
                 }
                 let seq = sink.next_sequence_ordinal();
-                sink.send_event(events::checkpoint(format!("post_{}", name.to_lowercase()), seq, ctx));
+                let checkpoint_label = match kind {
+                    NodeKind::ReformulateQuery => "post_reformulatequery",
+                    NodeKind::ExtractGraphContext => "post_extractgraphcontext",
+                    NodeKind::RetrieveHybrid => "post_retrievehybrid",
+                    NodeKind::AssemblePrompt => "post_assembleprompt",
+                    NodeKind::GenerateAnswer => "post_generateanswer",
+                };
+                sink.send_event(events::checkpoint(checkpoint_label, seq, ctx));
             }
             Err(err) => {
                 sink.send_event(events::node_failed(
                     name,
                     err.kind.clone(),
                     &err.message,
-                    false,
+                    err.retryable,
                 ));
             }
         }
@@ -171,34 +195,22 @@ impl WorkflowRunner {
         let mut overall_err: Option<NodeError> = None;
 
         for node in &self.nodes {
-            let node_name = node.name();
+            let kind = node.kind();
 
-            if (node_name == "AssemblePrompt" || node_name == "GenerateAnswer")
-                && (ctx.notices.iter().any(|n| n.code == "NO_EVIDENCE")
-                    || (ctx.final_candidates.is_empty() && ctx.evidence_blocks.is_empty()))
-            {
-                break;
+            match kind {
+                NodeKind::AssemblePrompt | NodeKind::GenerateAnswer => {
+                    if ctx.notices.iter().any(|n| n.code == "NO_EVIDENCE")
+                        || (ctx.final_candidates.is_empty() && ctx.evidence_blocks.is_empty())
+                    {
+                        break;
+                    }
+                }
+                NodeKind::ReformulateQuery
+                | NodeKind::ExtractGraphContext
+                | NodeKind::RetrieveHybrid => {}
             }
 
             if let Err(err) = self.run_node(node.as_ref(), &mut ctx, &cancel, &sink).await {
-                overall_err = Some(err);
-                break;
-            }
-
-            if node_name == "ReformulateQuery" && ctx.variants.len() > 8 {
-                let err = NodeError::new(
-                    NodeErrorKind::InputValidation,
-                    format!(
-                        "Query reformulator produced {} variants, exceeding maximum allowed limit of 8",
-                        ctx.variants.len()
-                    ),
-                );
-                sink.send_event(events::node_failed(
-                    "ReformulateQuery",
-                    err.kind.clone(),
-                    &err.message,
-                    false,
-                ));
                 overall_err = Some(err);
                 break;
             }
@@ -226,7 +238,7 @@ impl WorkflowRunner {
         let has_prompt_or_gen = self
             .nodes
             .iter()
-            .any(|n| n.name() == "AssemblePrompt" || n.name() == "GenerateAnswer");
+            .any(|n| matches!(n.kind(), NodeKind::AssemblePrompt | NodeKind::GenerateAnswer));
         if has_prompt_or_gen {
             self.run_workflow(ctx, cancel, sink).await;
         } else {
@@ -234,26 +246,7 @@ impl WorkflowRunner {
             let mut overall_err: Option<NodeError> = None;
 
             for node in &self.nodes {
-                let node_name = node.name();
                 if let Err(err) = self.run_node(node.as_ref(), &mut ctx, &cancel, &sink).await {
-                    overall_err = Some(err);
-                    break;
-                }
-
-                if node_name == "ReformulateQuery" && ctx.variants.len() > 8 {
-                    let err = NodeError::new(
-                        NodeErrorKind::InputValidation,
-                        format!(
-                            "Query reformulator produced {} variants, exceeding maximum allowed limit of 8",
-                            ctx.variants.len()
-                        ),
-                    );
-                    sink.send_event(events::node_failed(
-                        "ReformulateQuery",
-                        err.kind.clone(),
-                        &err.message,
-                        false,
-                    ));
                     overall_err = Some(err);
                     break;
                 }

@@ -14,7 +14,7 @@ use crate::pb::lancet::v1::{
 use crate::generation::ModelOutput;
 
 pub use events::EventSequence;
-pub use node::{BoxFuture, Node, NodeError, QueryEmbeddingPort};
+pub use node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort};
 pub use nodes::{
     AssemblePromptNode, ExtractGraphContextNode, GenerateAnswerNode, ReformulateQueryNode,
     RetrieveHybridNode,

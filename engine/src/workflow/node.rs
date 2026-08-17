@@ -67,8 +67,57 @@ impl fmt::Display for NodeError {
 
 impl std::error::Error for NodeError {}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NodeKind {
+    ReformulateQuery,
+    ExtractGraphContext,
+    RetrieveHybrid,
+    AssemblePrompt,
+    GenerateAnswer,
+}
+
+impl NodeKind {
+    pub const ALL: [NodeKind; 5] = [
+        NodeKind::ReformulateQuery,
+        NodeKind::ExtractGraphContext,
+        NodeKind::RetrieveHybrid,
+        NodeKind::AssemblePrompt,
+        NodeKind::GenerateAnswer,
+    ];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            NodeKind::ReformulateQuery => "ReformulateQuery",
+            NodeKind::ExtractGraphContext => "ExtractGraphContext",
+            NodeKind::RetrieveHybrid => "RetrieveHybrid",
+            NodeKind::AssemblePrompt => "AssemblePrompt",
+            NodeKind::GenerateAnswer => "GenerateAnswer",
+        }
+    }
+
+    pub fn checkpoint_label(&self) -> &'static str {
+        match self {
+            NodeKind::ReformulateQuery => "post_reformulatequery",
+            NodeKind::ExtractGraphContext => "post_extractgraphcontext",
+            NodeKind::RetrieveHybrid => "post_retrievehybrid",
+            NodeKind::AssemblePrompt => "post_assembleprompt",
+            NodeKind::GenerateAnswer => "post_generateanswer",
+        }
+    }
+}
+
+impl fmt::Display for NodeKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
 pub trait Node: Send + Sync {
-    fn name(&self) -> &'static str;
+    fn kind(&self) -> NodeKind;
+
+    fn name(&self) -> &'static str {
+        self.kind().name()
+    }
 
     fn run<'a>(
         &'a self,
@@ -76,3 +125,4 @@ pub trait Node: Send + Sync {
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<(), NodeError>>;
 }
+

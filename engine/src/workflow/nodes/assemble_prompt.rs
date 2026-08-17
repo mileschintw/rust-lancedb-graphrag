@@ -6,7 +6,7 @@ use crate::prompt::{
     DEFAULT_ANSWER_TOKEN_BUDGET, DEFAULT_MAX_PROMPT_TOKENS,
 };
 use super::super::{
-    node::{BoxFuture, Node, NodeError},
+    node::{BoxFuture, Node, NodeError, NodeKind},
     WorkflowContext,
 };
 
@@ -38,8 +38,8 @@ impl Default for AssemblePromptNode {
 }
 
 impl Node for AssemblePromptNode {
-    fn name(&self) -> &'static str {
-        "AssemblePrompt"
+    fn kind(&self) -> NodeKind {
+        NodeKind::AssemblePrompt
     }
 
     fn run<'a>(

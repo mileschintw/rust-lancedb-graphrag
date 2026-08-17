@@ -5,7 +5,7 @@ use crate::generation::{GenerationErrorKind, GenerationRequest, Generator};
 use crate::pb::lancet::v1::NodeErrorKind;
 use crate::prompt::resolve_citations;
 use super::super::{
-    node::{BoxFuture, Node, NodeError},
+    node::{BoxFuture, Node, NodeError, NodeKind},
     WorkflowContext,
 };
 
@@ -26,8 +26,8 @@ impl Default for GenerateAnswerNode {
 }
 
 impl Node for GenerateAnswerNode {
-    fn name(&self) -> &'static str {
-        "GenerateAnswer"
+    fn kind(&self) -> NodeKind {
+        NodeKind::GenerateAnswer
     }
 
     fn run<'a>(

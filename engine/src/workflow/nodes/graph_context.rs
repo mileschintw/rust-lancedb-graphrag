@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
 use super::super::{
-    node::{BoxFuture, Node, NodeError, QueryEmbeddingPort},
+    node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort},
     ports::GraphQueryPort,
     WorkflowContext,
 };
@@ -48,8 +48,8 @@ impl Default for ExtractGraphContextNode {
 }
 
 impl Node for ExtractGraphContextNode {
-    fn name(&self) -> &'static str {
-        "ExtractGraphContext"
+    fn kind(&self) -> NodeKind {
+        NodeKind::ExtractGraphContext
     }
 
     fn run<'a>(
