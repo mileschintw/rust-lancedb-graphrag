@@ -109,31 +109,41 @@ impl Node for ExtractGraphContextNode {
 
                 match graph_res {
                     Ok(facts) => {
-                        ctx.graph_context = facts
-                            .iter()
-                            .map(|f| {
-                                format!(
-                                    "{} -- {} -- {}",
-                                    f.fact.entity_a_name(),
-                                    f.fact.relation_type(),
-                                    f.fact.entity_b_name()
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        ctx.graph_facts = facts;
+                        if facts.is_empty() {
+                            ctx.graph_context = String::new();
+                            ctx.graph_facts = Vec::new();
+                            ctx.add_notice(Notice {
+                                code: "GRAPH_DEGRADED".into(),
+                                message: "No graph facts matched query".into(),
+                                severity: NoticeSeverity::Info as i32,
+                            });
+                        } else {
+                            ctx.graph_context = facts
+                                .iter()
+                                .map(|f| {
+                                    format!(
+                                        "{} -- {} -- {}",
+                                        f.fact.entity_a_name(),
+                                        f.fact.relation_type(),
+                                        f.fact.entity_b_name()
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            ctx.graph_facts = facts;
+                        }
                     }
                     Err(err) => {
                         ctx.graph_context = String::new();
                         ctx.graph_facts = Vec::new();
-                        let notice_msg = if err.kind == NodeErrorKind::Timeout {
-                            "GRAPH_TIMEOUT".to_string()
+                        let (code, msg) = if err.kind == NodeErrorKind::Timeout {
+                            ("GRAPH_TIMEOUT", if err.message.is_empty() { "GRAPH_TIMEOUT".to_string() } else { err.message })
                         } else {
-                            format!("graph_degrade: {}", err.message)
+                            ("GRAPH_DEGRADED", format!("graph_degrade: {}", err.message))
                         };
-                        ctx.notices.push(Notice {
-                            code: "GRAPH_TIMEOUT".into(),
-                            message: notice_msg,
+                        ctx.add_notice(Notice {
+                            code: code.into(),
+                            message: msg,
                             severity: NoticeSeverity::Info as i32,
                         });
                         return Ok(());

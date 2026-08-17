@@ -152,8 +152,8 @@ impl Node for RetrieveHybridNode {
                 final_limit: self.settings.final_limit as i32,
                 active_filter: ctx.filter.clone(),
                 result_hash: "".into(),
-                variant_count: 0,
-                variant_identities: Vec::new(),
+                variant_count: ctx.variants.len() as u32,
+                variant_identities: ctx.variants.clone(),
             });
 
             // 5. Zero evidence check

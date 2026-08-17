@@ -1840,3 +1840,72 @@ fn workflow_phase5_fake_ports_test_only() {
     }));
 }
 
+#[tokio::test]
+async fn workflow_phase5_graph_notice_merge() {
+    let cancel = CancellationToken::new();
+    let req = QueryRagRequest {
+        query: "graph notice merge test".into(),
+        session_id: "sess-notice-merge".into(),
+        filter: None,
+    };
+    let mut ctx = WorkflowContext::new("sess-notice-merge".into(), "trace-notice-merge".into(), &req);
+
+    // 1. Pre-existing notice (e.g. from retrieval or pre-step)
+    let initial_notice = engine::pb::lancet::v1::Notice {
+        code: "RETRIEVAL_INFO".into(),
+        message: "dense retrieval returned 5 candidates".into(),
+        severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+    };
+    ctx.add_notice(initial_notice.clone());
+    assert_eq!(ctx.notices.len(), 1);
+
+    // 2. Test notice merge and deduplication
+    ctx.merge_notices(vec![
+        initial_notice.clone(), // duplicate: should not be added again
+        engine::pb::lancet::v1::Notice {
+            code: "EARLY_WARNING".into(),
+            message: "low confidence variant".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Warning as i32,
+        },
+    ]);
+    assert_eq!(ctx.notices.len(), 2);
+    assert_eq!(ctx.notices[0].code, "RETRIEVAL_INFO");
+    assert_eq!(ctx.notices[1].code, "EARLY_WARNING");
+
+    // 3. Graph node with error outcome -> GRAPH_DEGRADED notice appended
+    let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_graph_fail = Arc::new(FakeGraphQueryPort::failure(NodeError::new(
+        NodeErrorKind::GraphFailed,
+        "cypher engine unavailable",
+    )));
+    let graph_node = ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph_fail));
+    let res = graph_node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "Graph degradation must not fail workflow per D-09");
+    assert!(ctx.graph_context.is_empty(), "Graph context must be empty on degradation");
+    assert_eq!(ctx.notices.len(), 3);
+    assert_eq!(ctx.notices[2].code, "GRAPH_DEGRADED");
+    assert!(ctx.notices[2].message.contains("cypher engine unavailable"));
+
+    // 4. Graph node with timeout outcome -> GRAPH_TIMEOUT notice appended
+    let fake_graph_stall = Arc::new(FakeGraphQueryPort::stall());
+    let timeout_node = ExtractGraphContextNode::new(Some(fake_embedder), Some(fake_graph_stall)).with_timeouts(5000, 50);
+    let res2 = timeout_node.run(&mut ctx, &cancel).await;
+    assert!(res2.is_ok(), "Graph timeout must degrade gracefully with Ok(()) per D-09");
+    assert_eq!(ctx.notices.len(), 4);
+    assert_eq!(ctx.notices[3].code, "GRAPH_TIMEOUT");
+
+    // 5. Subsequent terminal failure preserves all accumulated notices in order
+    assert_eq!(ctx.notices[0].code, "RETRIEVAL_INFO");
+    assert_eq!(ctx.notices[1].code, "EARLY_WARNING");
+    assert_eq!(ctx.notices[2].code, "GRAPH_DEGRADED");
+    assert_eq!(ctx.notices[3].code, "GRAPH_TIMEOUT");
+
+    // Response conversion also preserves notice history
+    let resp = ctx.to_query_rag_response();
+    assert_eq!(resp.notices.len(), 4);
+    assert_eq!(resp.notices[0].code, "RETRIEVAL_INFO");
+    assert_eq!(resp.notices[1].code, "EARLY_WARNING");
+    assert_eq!(resp.notices[2].code, "GRAPH_DEGRADED");
+    assert_eq!(resp.notices[3].code, "GRAPH_TIMEOUT");
+}
+

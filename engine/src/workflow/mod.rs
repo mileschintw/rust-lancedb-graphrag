@@ -25,6 +25,9 @@ pub use ports::{
 };
 pub use runner::{WorkflowEventSink, WorkflowRunner};
 
+pub const GRAPH_TIMEOUT: &str = "GRAPH_TIMEOUT";
+pub const GRAPH_DEGRADED: &str = "GRAPH_DEGRADED";
+
 #[derive(Debug, Clone)]
 pub struct WorkflowContext {
     pub session_id: String,
@@ -73,6 +76,22 @@ impl WorkflowContext {
         }
     }
 
+    pub fn add_notice(&mut self, notice: Notice) {
+        if !self
+            .notices
+            .iter()
+            .any(|n| n.code == notice.code && n.message == notice.message)
+        {
+            self.notices.push(notice);
+        }
+    }
+
+    pub fn merge_notices(&mut self, new_notices: impl IntoIterator<Item = Notice>) {
+        for notice in new_notices {
+            self.add_notice(notice);
+        }
+    }
+
     pub fn to_query_rag_response(&self) -> QueryRagResponse {
         QueryRagResponse {
             answer: self.answer.clone(),
@@ -94,14 +113,14 @@ impl WorkflowContext {
             crate::generation::AnswerBasis::ModelOnly => AnswerBasis::ModelOnly,
         };
         for n in &output.notices {
-            self.notices.push(Notice {
+            self.add_notice(Notice {
                 code: "NOTICE".into(),
                 message: n.clone(),
                 severity: NoticeSeverity::Info as i32,
             });
         }
         for w in &output.warnings {
-            self.notices.push(Notice {
+            self.add_notice(Notice {
                 code: "WARNING".into(),
                 message: w.clone(),
                 severity: NoticeSeverity::Warning as i32,

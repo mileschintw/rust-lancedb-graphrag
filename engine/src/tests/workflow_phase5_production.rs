@@ -783,7 +783,6 @@ async fn workflow_phase5_nodekind_tracer() {
 
 #[tokio::test]
 async fn workflow_phase5_nodekind_dispatch() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use workflow::node::NodeKind;
 
     let reformulate = workflow::nodes::ReformulateQueryNode::new();
@@ -1048,5 +1047,99 @@ async fn workflow_phase5_nodekind_exhaustive() {
         })
         .expect("Terminal WorkflowCompleted must be emitted");
     assert!(terminal.success);
+}
+
+#[tokio::test]
+async fn workflow_phase5_retrieval_snapshot_variants() {
+    let path = database_path("prod-snapshot-variants");
+    let db = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &db,
+        crate::EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let req = QueryRagRequest {
+        query: "multi-variant snapshot test".into(),
+        session_id: "00000000-0000-4000-8000-000000000095".into(),
+        filter: None,
+    };
+    let cancel = CancellationToken::new();
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000095".into(),
+        "trace-variants".into(),
+        &req,
+    );
+    ctx.variants = vec!["variant alpha".to_string(), "variant beta".to_string()];
+    ctx.query_embedding = Some(vec![0.1; 2048]);
+
+    let (_runner, deps) = service.build_production_workflow();
+    let retrieve_node = workflow::nodes::RetrieveHybridNode::new(
+        deps.dense_port.clone(),
+        deps.bm25_port.clone(),
+        deps.reranker_port.clone(),
+        deps.retrieval_settings.clone(),
+    );
+
+    let res = retrieve_node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "RetrieveHybridNode must run successfully");
+    let snapshot = ctx.snapshot.as_ref().expect("RetrievalSnapshot must be populated");
+    assert_eq!(snapshot.variant_count, 2);
+    assert_eq!(
+        snapshot.variant_identities,
+        vec!["variant alpha".to_string(), "variant beta".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn workflow_phase5_bm25_snapshot_releases_lock() {
+    let path = database_path("prod-bm25-lock-release");
+    let db = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &db,
+        crate::EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let (_runner, deps) = service.build_production_workflow();
+    let bm25_port = deps.bm25_port.expect("bm25 port must exist in production deps");
+
+    let cancel = CancellationToken::new();
+    let retrieval_fut = bm25_port.retrieve_bm25("query terms", None, &cancel);
+
+    // Concurrently acquire write lock on the shared Bm25IndexStore and replace the index
+    let mut write_guard = service.bm25_index.write().await;
+    let new_index = Arc::new(
+        crate::retrieval::Bm25Index::from_candidates(
+            vec![],
+            crate::retrieval::Bm25Config::default(),
+        )
+        .expect("empty Bm25Index must construct"),
+    );
+    *write_guard = new_index;
+    drop(write_guard);
+
+    let res = retrieval_fut.await;
+    assert!(res.is_ok(), "BM25 retrieval must succeed using its immutable Arc snapshot");
 }
 

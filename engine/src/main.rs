@@ -35,7 +35,7 @@ use engine::graph;
 use engine::prompt;
 use engine::rerank;
 use engine::retrieval;
-use engine::workflow;
+use engine::workflow::{self, ports::Bm25RetrievalPort};
 
 use chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
 use client::{OpenRouterClient, OpenRouterEmbeddingConfig};
@@ -1510,7 +1510,7 @@ struct ProductionBm25RetrievalPort {
     retrieval_settings: retrieval::RetrievalSettings,
 }
 
-impl workflow::ports::Bm25RetrievalPort for ProductionBm25RetrievalPort {
+impl Bm25RetrievalPort for ProductionBm25RetrievalPort {
     fn retrieve_bm25<'a>(
         &'a self,
         query: &'a str,
@@ -1535,8 +1535,11 @@ impl workflow::ports::Bm25RetrievalPort for ProductionBm25RetrievalPort {
             .map_err(|err| {
                 workflow::node::NodeError::new(v1::NodeErrorKind::RetrievalFailed, err.message())
             })?;
-            let bm25_guard = self.bm25_index.read().await;
-            let res = bm25_guard
+            let index_snapshot = {
+                let guard = self.bm25_index.read().await;
+                Arc::clone(&*guard)
+            };
+            index_snapshot
                 .retrieve(&query_req, &self.retrieval_settings)
                 .await
                 .map_err(|err| {
@@ -1544,9 +1547,7 @@ impl workflow::ports::Bm25RetrievalPort for ProductionBm25RetrievalPort {
                         v1::NodeErrorKind::RetrievalFailed,
                         err.to_string(),
                     )
-                });
-            drop(bm25_guard);
-            res
+                })
         })
     }
 }
@@ -1769,8 +1770,8 @@ impl LancetServiceImpl {
                     let hasher = DefaultHasher::new();
                     hasher.finish()
                 }),
-                variant_count: 0,
-                variant_identities: Vec::new(),
+                variant_count: ctx.variants.len() as u32,
+                variant_identities: ctx.variants.clone(),
             };
 
             ctx.answer = String::new();
@@ -1921,8 +1922,8 @@ impl LancetServiceImpl {
                 }
                 hasher.finish()
             }),
-            variant_count: 0,
-            variant_identities: Vec::new(),
+            variant_count: ctx.variants.len() as u32,
+            variant_identities: ctx.variants.clone(),
         };
 
         ctx.answer = model_output.answer;
