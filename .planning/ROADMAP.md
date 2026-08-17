@@ -342,7 +342,7 @@ Plans:
 - [ ] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
 - [ ] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
 - [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
-- [ ] 05-23-PLAN.md — Generated-field Rust compile repair and RetrievalSnapshot wire-contract proof.
+- [x] 05-23-PLAN.md — Generated-field Rust compile repair and RetrievalSnapshot wire-contract proof.
 - [ ] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
 
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
@@ -393,7 +393,7 @@ Plans:
 
 **Wave 12** *(blocked on the shared protobuf contract and generated-field compile repair)*
 
-- [ ] 05-23-PLAN.md — Repair generated Rust message literals and prove the additive RetrievalSnapshot wire contract.
+- [x] 05-23-PLAN.md — Repair generated Rust message literals and prove the additive RetrievalSnapshot wire contract.
 
 **Wave 13** *(blocked on generated-field compile repair, production wiring, and target-aware handoff)*
 
