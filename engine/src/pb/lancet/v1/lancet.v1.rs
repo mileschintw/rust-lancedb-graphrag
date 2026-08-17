@@ -114,6 +114,10 @@ pub struct RetrievalSnapshot {
     pub active_filter: ::core::option::Option<DocumentFilter>,
     #[prost(string, tag="9")]
     pub result_hash: ::prost::alloc::string::String,
+    #[prost(uint32, tag="10")]
+    pub variant_count: u32,
+    #[prost(string, repeated, tag="11")]
+    pub variant_identities: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryRagResponse {
@@ -230,6 +234,8 @@ pub struct WorkflowCompletedEvent {
     pub error_message: ::prost::alloc::string::String,
     #[prost(message, optional, tag="5")]
     pub final_response: ::core::option::Option<QueryRagResponse>,
+    #[prost(message, repeated, tag="6")]
+    pub notices: ::prost::alloc::vec::Vec<Notice>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkflowEvent {

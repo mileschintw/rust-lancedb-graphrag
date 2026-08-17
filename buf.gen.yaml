@@ -1,5 +1,5 @@
 version: v2
-clean: true
+clean: false
 plugins:
   - remote: buf.build/community/neoeinstein-prost:v0.5.0
     out: engine/src/pb

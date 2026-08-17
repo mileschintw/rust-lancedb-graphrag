@@ -98,6 +98,8 @@ message RetrievalSnapshot {
   int32 final_limit = 7;
   DocumentFilter active_filter = 8;
   string result_hash = 9;
+  uint32 variant_count = 10;
+  repeated string variant_identities = 11;
 }
 
 message QueryRAGResponse {
@@ -187,6 +189,7 @@ message WorkflowCompletedEvent {
   NodeErrorKind error_kind = 3;
   string error_message = 4;
   QueryRAGResponse final_response = 5;
+  repeated Notice notices = 6;
 }
 
 message WorkflowEvent {

@@ -2,3 +2,9 @@ version: v2
 modules:
   - path: proto
     name: buf.build/lancet/lancet
+lint:
+  use:
+    - STANDARD
+  except:
+    - RPC_RESPONSE_STANDARD_NAME
+
