@@ -322,7 +322,7 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 15/24 plans executed
+**Plans:** 17/24 plans executed
 
 Plans:
 
@@ -334,8 +334,8 @@ Plans:
 - [x] 05-12-PLAN.md — Additive historical-summary traceability errata and source coverage audit.
 - [x] 05-13-PLAN.md — OpenRouter preflight classification, successful-only capability caching, and bounded generation retry.
 - [x] 05-14-PLAN.md — Exhaustive typed NodeKind dispatch and early reformulation admission.
-- [ ] 05-15-PLAN.md — Prompt API contract and cfg(test)-only workflow fakes.
-- [ ] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
+- [x] 05-15-PLAN.md — Prompt API contract and cfg(test)-only workflow fakes.
+- [x] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
 - [x] 05-17-PLAN.md — Shared protobuf provenance and failure-terminal notice fields with synchronized Rust/Go bindings.
 - [x] 05-18-PLAN.md — Library-target Phase 5 tests and cfg(test) fake-port seam.
 - [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
@@ -397,7 +397,7 @@ Plans:
 
 **Wave 13** *(blocked on generated-field compile repair, production wiring, and target-aware handoff)*
 
-- [ ] 05-18-PLAN.md — Library-target Phase 5 tests, BM25 ownership migration, and cfg(test) fake-port seam.
+- [x] 05-18-PLAN.md — Library-target Phase 5 tests, BM25 ownership migration, and cfg(test) fake-port seam.
 
 **Wave 14** *(blocked on the target-aware fixture seam)*
 
