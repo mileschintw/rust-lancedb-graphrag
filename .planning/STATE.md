@@ -4,15 +4,15 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 5
 current_phase_name: State Machine & Workflow Events
-current_plan: 23
+current_plan: 18
 status: executing
-stopped_at: Phase 5 Wave 12 plan 05-23 executed successfully (exhaustive Rust message construction repair and RetrievalSnapshot wire contract regression test).
-last_updated: "2026-08-17T21:43:00.000Z"
+stopped_at: Phase 5 Wave 13 plan 05-18 executed successfully (split workflow tests by target, migrated BM25 ownership alias, and proved library/binary test compilation).
+last_updated: "2026-08-17T21:50:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 83
-  completed_plans: 71
+  completed_plans: 72
 ---
 
 # Project State
@@ -28,15 +28,16 @@ progress:
 - Phase 05 Wave 10 Plan 05-14 executed: closed `NodeKind` enum with 5 variants, exhaustive typed runner dispatch, early 9-variant admission rejection, and focused dispatch tests.
 - Phase 05 Wave 11 Plan 05-17 executed: additive protobuf fields (RetrievalSnapshot tags 10/11, WorkflowCompletedEvent tag 6) and synchronized Rust/Go bindings with protected module glue.
 - Phase 05 Wave 12 Plan 05-23 executed: repaired exhaustive Rust RetrievalSnapshot and WorkflowCompletedEvent message literals, verified clean compilation, and proved additive tags 10/11 round-trip fidelity.
+- Phase 05 Wave 13 Plan 05-18 executed: split Phase 5 workflow tests into library unit-test target (`workflow_phase5`) and binary-owned production module (`workflow_phase5_production`), introduced `Bm25IndexStore` alias, migrated 18 BM25 test constructions, and verified library execution and binary compilation.
 
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
 - **Status:** In Progress
-- **Current Plan:** 23 (Wave 12)
+- **Current Plan:** 18 (Wave 13)
 - **Total Plans in Phase:** 24
-- **Completed Plans in Phase:** 14
-- **Progress:** [████████████] 58%
+- **Completed Plans in Phase:** 15
+- **Progress:** [█████████████] 62%
 
 ## Completed Phases
 
