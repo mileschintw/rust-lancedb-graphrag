@@ -292,7 +292,7 @@ async fn workflow_phase5_generation_preflight_bootstrap_tracer() {
 
 /// Task 1 tracer: exact production-shaped five-node lifecycle and event contract.
 #[tokio::test]
-async fn workflow_phase5_happy_path() {
+async fn workflow_phase5_event_delivery_tracer() {
     let (tx, mut rx) = mpsc::channel(100);
     let cancel = CancellationToken::new();
     let trace_id = "trace-happy-01".to_string();
