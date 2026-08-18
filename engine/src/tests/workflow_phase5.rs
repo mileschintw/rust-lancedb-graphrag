@@ -1461,7 +1461,7 @@ fn candidate_with_score(id_hint: &str, text: &str, score: f64) -> crate::retriev
 
 #[tokio::test]
 async fn workflow_retrieve_graph() {
-    let (tx, _rx) = tokio::sync::mpsc::channel(100);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
     let cancel = tokio_util::sync::CancellationToken::new();
     let sink = crate::workflow::WorkflowEventSink::new(
         tx,
@@ -1514,6 +1514,18 @@ async fn workflow_retrieve_graph() {
     assert_eq!(fake_graph.calls(), 1);
     assert_eq!(fake_dense.calls(), 1);
     assert_eq!(fake_bm25.calls(), 1);
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+    let failed = events.iter().find_map(|e| match &e.event {
+        Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(nf)) => Some(nf),
+        _ => None,
+    }).expect("NodeFailed event must exist for no-generator remainder");
+    assert_eq!(failed.category, NodeErrorKind::LlmGenerationFailed as i32);
 }
 
 #[tokio::test]

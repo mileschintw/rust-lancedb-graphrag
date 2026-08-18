@@ -425,12 +425,30 @@ async fn query_rag_stream() {
     assert!(response_res.is_ok());
 
     let mut stream = response_res.unwrap().into_inner();
-    let mut event_count = 0;
+    let mut events = Vec::new();
     while let Some(item) = stream.next().await {
-        assert!(item.is_ok());
-        event_count += 1;
+        let event = item.expect("Stream item should be Ok");
+        events.push(event);
     }
-    assert!(event_count > 0);
+    assert!(!events.is_empty());
+
+    let started_nodes: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(started_nodes.contains(&"ExtractGraphContext".to_string()));
+    assert!(started_nodes.contains(&"RetrieveHybrid".to_string()));
+    assert!(started_nodes.contains(&"AssemblePrompt".to_string()));
+    assert!(started_nodes.contains(&"GenerateAnswer".to_string()));
+
+    let has_chunk = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_))));
+    let has_completed = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(_))));
+    assert!(has_chunk, "Must contain AnswerChunk");
+    assert!(has_completed, "Must contain WorkflowCompleted");
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -2571,20 +2589,114 @@ async fn query_rag_tracer() {
 
     assert!(!events.is_empty(), "Stream should contain events");
 
-    let event_types: Vec<_> = events
+    let started_nodes: Vec<String> = events
         .iter()
-        .filter_map(|e| e.event.as_ref())
+        .filter_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
         .collect();
 
-    let has_node_started = event_types.iter().any(|e| matches!(e, engine::pb::lancet::v1::workflow_event::Event::NodeStarted(_)));
-    let has_node_completed = event_types.iter().any(|e| matches!(e, engine::pb::lancet::v1::workflow_event::Event::NodeCompleted(_)));
-    let has_checkpoint = event_types.iter().any(|e| matches!(e, engine::pb::lancet::v1::workflow_event::Event::Checkpoint(_)));
-    let has_completed = event_types.iter().any(|e| matches!(e, engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(_)));
+    assert_eq!(
+        started_nodes,
+        vec![
+            "ReformulateQuery",
+            "ExtractGraphContext",
+            "RetrieveHybrid",
+            "AssemblePrompt",
+            "GenerateAnswer"
+        ]
+    );
 
-    assert!(has_node_started, "Must contain NodeStarted event");
-    assert!(has_node_completed, "Must contain NodeCompleted event");
-    assert!(has_checkpoint, "Must contain Checkpoint event");
-    assert!(has_completed, "Must contain WorkflowCompleted event");
+    let has_chunk = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_))));
+    let has_final = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(_))));
+    let has_completed = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(_))));
+
+    assert!(has_chunk, "Must contain AnswerChunk");
+    assert!(has_final, "Must contain FinalAnswer");
+    assert!(has_completed, "Must contain WorkflowCompleted");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_rag_generation_failure() {
+    let path = database_path("query-rag-gen-fail");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = Uuid::new_v4().to_string();
+
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Generation Failure Document\nThis document tests LlmGenerationFailed handling.",
+    )
+    .await;
+
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+    process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(DashMap::new());
+    let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
+
+    let failing_gen = Arc::new(FakeGenerator::new(Err(
+        generation::GenerationError::new(
+            generation::GenerationErrorKind::ProviderError,
+            "Permanent provider failure",
+        ),
+    )));
+
+    let service = LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
+        effective_settings: EffectiveRagSettings::default(),
+        generator: failing_gen,
+        embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
+    };
+
+    let req = QueryRagRequest {
+        query: "Generation failure query".into(),
+        session_id: "00000000-0000-4000-8000-000000000099".into(),
+        filter: None,
+    };
+
+    let response_res = service.query_rag(tonic::Request::new(req)).await;
+    assert!(response_res.is_ok());
+
+    let mut stream = response_res.unwrap().into_inner();
+    let mut events = Vec::new();
+    while let Some(item) = stream.next().await {
+        let event = item.expect("Stream item should be Ok");
+        events.push(event);
+    }
+
+    let node_failed = events.iter().find_map(|e| match &e.event {
+        Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(nf)) if nf.node_name == "GenerateAnswer" => Some(nf),
+        _ => None,
+    }).expect("NodeFailed event for GenerateAnswer must be emitted");
+    assert_eq!(node_failed.category, engine::pb::lancet::v1::NodeErrorKind::LlmGenerationFailed as i32);
+
+    let terminal = events.iter().find_map(|e| match &e.event {
+        Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+        _ => None,
+    }).expect("WorkflowCompleted event must be emitted");
+    assert!(!terminal.success);
+    assert_eq!(terminal.error_kind, engine::pb::lancet::v1::NodeErrorKind::LlmGenerationFailed as i32);
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -6574,7 +6686,6 @@ where
 /// records `graph_augmentation = "succeeded"` on the request's tracing span.
 #[tokio::test(flavor = "current_thread")]
 async fn graph_augmentation_succeeded_is_observable_end_to_end() {
-    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     use tracing_subscriber::layer::SubscriberExt;
 
     let path = database_path("graph-aug-succeeded-observable");
@@ -6615,7 +6726,6 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
 /// response.
 #[tokio::test(flavor = "current_thread")]
 async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
-    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     use tracing_subscriber::layer::SubscriberExt;
 
     let path = database_path("graph-aug-no-match-observable");
@@ -6653,7 +6763,6 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
 /// changes the response contract.
 #[tokio::test(flavor = "current_thread")]
 async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
-    use engine::pb::lancet::v1::lancet_service_server::LancetService;
     use tracing_subscriber::layer::SubscriberExt;
 
     let path = database_path("graph-aug-attempted-failed-observable");
