@@ -6,13 +6,13 @@ current_phase: 5
 current_phase_name: State Machine & Workflow Events
 current_plan: 3
 status: executing
-stopped_at: Completed Wave 17 (05-19-PLAN.md, 05-24-PLAN.md)
-last_updated: "2026-08-18T03:59:00.000Z"
+stopped_at: Completed Wave 19 (05-20-PLAN.md)
+last_updated: "2026-08-18T05:42:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 86
-  completed_plans: 83
+  completed_plans: 85
 ---
 
 # Project State
@@ -31,15 +31,17 @@ progress:
 - Phase 05 Wave 13 Plan 05-18 executed: split Phase 5 workflow tests into library unit-test target (`workflow_phase5`) and binary-owned production module (`workflow_phase5_production`), introduced `Bm25IndexStore` alias, migrated 18 BM25 test constructions, and verified library execution and binary compilation.
 - Phase 05 Wave 17 Plan 05-19 executed: preserved accumulated notices on failure terminal events through Rust runner and Go raw SSE stream while keeping failure terminals answer-free.
 - Phase 05 Wave 17 Plan 05-24 executed: closed resolved cross-variant RRF contract with two-pass fusion (`fuse_candidates` in loop, `fuse_cross_variant_candidates` merge pass), retired `fuse_variant_candidates`, and verified exact scoring and deterministic tie resolution.
+- Phase 05 Wave 18 Plan 05-22 executed: completed production typed graph-fact handoff and end-to-end query_rag workflow tests.
+- Phase 05 Wave 19 Plan 05-20 executed: separated capability preflight from the GenerateAnswer node timer and proved the two-attempt retry path fits the 65s node timer with paused-clock timing proofs.
 
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
-- **Status:** Ready to execute
-- **Current Plan:** 22
+- **Status:** Ready to execute Wave 20 (Plan 05-11)
+- **Current Plan:** 11
 - **Total Plans in Phase:** 24
-- **Completed Plans in Phase:** 21
-- **Progress:** [█████████░] 87.5%
+- **Completed Plans in Phase:** 23
+- **Progress:** [█████████░] 95.8%
 
 ## Completed Phases
 
