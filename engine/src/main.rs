@@ -1142,6 +1142,33 @@ fn internal(err: impl std::fmt::Display) -> Status {
     Status::internal(err.to_string())
 }
 
+/// Builds a `Status` carrying the `x-lancet-*` gRPC trailers that
+/// `gateway/main.go::handlePreStreamError` reads to surface error identity on
+/// pre-stream `QueryRAG` failures (session/request validation, before the
+/// workflow stream is opened). See WR-05 in 05-VERIFICATION.md.
+fn d1_status(
+    code: tonic::Code,
+    message: impl Into<String>,
+    session_id: &str,
+    correlation_id: &str,
+    error_kind: &str,
+) -> Status {
+    let msg = message.into();
+    tracing::warn!(%session_id, %correlation_id, %error_kind, "QueryRAG pre-stream failure: {msg}");
+    let mut status = Status::new(code, msg);
+    let metadata = status.metadata_mut();
+    if let Ok(val) = session_id.parse() {
+        metadata.insert("x-lancet-session-id", val);
+    }
+    if let Ok(val) = correlation_id.parse() {
+        metadata.insert("x-lancet-correlation-id", val);
+    }
+    if let Ok(val) = error_kind.parse() {
+        metadata.insert("x-lancet-error-kind", val);
+    }
+    status
+}
+
 fn validate_document_id(document_id: &str) -> Result<(), Status> {
     let id = Uuid::parse_str(document_id)
         .map_err(|_| Status::invalid_argument("document_id must be a UUIDv4 string"))?;
@@ -1730,22 +1757,32 @@ impl LancetService for LancetServiceImpl {
         request: Request<QueryRagRequest>,
     ) -> Result<Response<Self::QueryRAGStream>, Status> {
         let req = request.into_inner();
+        let correlation_id = Uuid::new_v4().to_string();
 
         let session_id = if req.session_id.trim().is_empty() {
             Uuid::new_v4().to_string()
         } else {
-            let parsed = Uuid::parse_str(req.session_id.trim()).map_err(|_| {
-                Status::invalid_argument("session_id must be a valid UUIDv4 string")
+            let raw_session_id = req.session_id.trim().to_string();
+            let parsed = Uuid::parse_str(&raw_session_id).map_err(|_| {
+                d1_status(
+                    tonic::Code::InvalidArgument,
+                    "session_id must be a valid UUIDv4 string",
+                    &raw_session_id,
+                    &correlation_id,
+                    "invalid_session_id",
+                )
             })?;
             if parsed.get_version_num() != 4 || parsed.get_variant() != uuid::Variant::RFC4122 {
-                return Err(Status::invalid_argument(
+                return Err(d1_status(
+                    tonic::Code::InvalidArgument,
                     "session_id must be a valid UUIDv4 string",
+                    &raw_session_id,
+                    &correlation_id,
+                    "invalid_session_id",
                 ));
             }
             parsed.to_string()
         };
-
-        let correlation_id = Uuid::new_v4().to_string();
 
         let (doc_ids, content_types) = if let Some(ref filter) = req.filter {
             (filter.document_ids.clone(), filter.content_types.clone())
@@ -1759,17 +1796,33 @@ impl LancetService for LancetServiceImpl {
             content_types,
             &self.effective_settings.retrieval,
         )
-        .map_err(|err| match err.kind {
-            RetrievalErrorKind::EmptyQuery
-            | RetrievalErrorKind::QueryTooLong
-            | RetrievalErrorKind::InvalidDocumentId
-            | RetrievalErrorKind::UnsupportedContentType
-            | RetrievalErrorKind::EmptyFilterValue
-            | RetrievalErrorKind::FilterLimitExceeded
-            | RetrievalErrorKind::InvalidSettings => Status::invalid_argument(err.message()),
-            RetrievalErrorKind::NonFiniteScore | RetrievalErrorKind::Snapshot => {
-                Status::internal(err.message())
-            }
+        .map_err(|err| {
+            let (code, err_kind_str) = match err.kind {
+                RetrievalErrorKind::EmptyQuery => (tonic::Code::InvalidArgument, "empty_query"),
+                RetrievalErrorKind::QueryTooLong => {
+                    (tonic::Code::InvalidArgument, "query_too_long")
+                }
+                RetrievalErrorKind::InvalidDocumentId => {
+                    (tonic::Code::InvalidArgument, "invalid_document_id")
+                }
+                RetrievalErrorKind::UnsupportedContentType => {
+                    (tonic::Code::InvalidArgument, "unsupported_content_type")
+                }
+                RetrievalErrorKind::EmptyFilterValue => {
+                    (tonic::Code::InvalidArgument, "empty_filter_value")
+                }
+                RetrievalErrorKind::FilterLimitExceeded => {
+                    (tonic::Code::InvalidArgument, "filter_limit_exceeded")
+                }
+                RetrievalErrorKind::InvalidSettings => {
+                    (tonic::Code::InvalidArgument, "invalid_settings")
+                }
+                RetrievalErrorKind::NonFiniteScore => {
+                    (tonic::Code::Internal, "non_finite_score")
+                }
+                RetrievalErrorKind::Snapshot => (tonic::Code::Internal, "snapshot"),
+            };
+            d1_status(code, err.message(), &session_id, &correlation_id, err_kind_str)
         })?;
 
 struct CancelOnDropStream<S> {
