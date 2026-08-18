@@ -2477,6 +2477,183 @@ func TestRAGQuerySSEFirstFrame(t *testing.T) {
 	}
 }
 
+func TestRAGQueryFailureTerminalNoticesSSE(t *testing.T) {
+	sessionID := "00000000-0000-4000-8000-000000000055"
+	correlationID := "00000000-0000-4000-8000-000000000099"
+
+	events := []*pb.WorkflowEvent{
+		{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 1,
+			Event: &pb.WorkflowEvent_NodeStarted{
+				NodeStarted: &pb.NodeStartedEvent{
+					NodeName:      "ExtractGraphContext",
+					InputsSummary: "inputs",
+				},
+			},
+		},
+		{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 2,
+			Event: &pb.WorkflowEvent_NodeFailed{
+				NodeFailed: &pb.NodeFailedEvent{
+					NodeName:  "ExtractGraphContext",
+					Category:  pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT,
+					Message:   "graph timed out",
+					Retryable: false,
+				},
+			},
+		},
+		{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 3,
+			Event: &pb.WorkflowEvent_WorkflowCompleted{
+				WorkflowCompleted: &pb.WorkflowCompletedEvent{
+					Success:       false,
+					DurationMs:    120,
+					ErrorKind:     pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT,
+					ErrorMessage:  "graph timed out",
+					FinalResponse: nil,
+					Notices: []*pb.Notice{
+						{
+							Code:     "GRAPH_TIMEOUT",
+							Message:  "Graph query timed out",
+							Severity: pb.NoticeSeverity_NOTICE_SEVERITY_WARNING,
+						},
+						{
+							Code:     "GRAPH_DEGRADED",
+							Message:  "Graph context degraded",
+							Severity: pb.NoticeSeverity_NOTICE_SEVERITY_INFO,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	server := httptest.NewServer(app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes())
+	defer server.Close()
+
+	reqBody := `{"query":"failure terminal test","session_id":"` + sessionID + `"}`
+	httpReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/rag/query", strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("create request error: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	res, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		t.Fatalf("execute request error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+
+	if contentType := res.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", contentType)
+	}
+
+	if got := res.Header.Get("X-Lancet-Session-ID"); got != sessionID {
+		t.Fatalf("X-Lancet-Session-ID = %q, want %q", got, sessionID)
+	}
+	if got := res.Header.Get("X-Lancet-Correlation-ID"); got != correlationID {
+		t.Fatalf("X-Lancet-Correlation-ID = %q, want %q", got, correlationID)
+	}
+
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body error: %v", err)
+	}
+
+	bodyStr := string(bodyBytes)
+	sseEvs := parseSSEEvents(bodyStr)
+	if len(sseEvs) != 3 {
+		t.Fatalf("expected 3 SSE events, got %d: %s", len(sseEvs), bodyStr)
+	}
+
+	for _, ev := range sseEvs {
+		if ev.Event == "answer_chunk" {
+			t.Fatalf("unexpected answer_chunk event in failure stream: %s", ev.Data)
+		}
+		if ev.Event == "final_answer" {
+			t.Fatalf("unexpected final_answer event in failure stream: %s", ev.Data)
+		}
+	}
+
+	var nodeFailedIdx, workflowCompletedIdx = -1, -1
+	for i, ev := range sseEvs {
+		if ev.Event == "node_failed" {
+			nodeFailedIdx = i
+		}
+		if ev.Event == "workflow_completed" {
+			workflowCompletedIdx = i
+		}
+	}
+
+	if nodeFailedIdx == -1 {
+		t.Fatalf("missing node_failed event in SSE stream: %s", bodyStr)
+	}
+	if workflowCompletedIdx == -1 {
+		t.Fatalf("missing workflow_completed event in SSE stream: %s", bodyStr)
+	}
+	if nodeFailedIdx >= workflowCompletedIdx {
+		t.Fatalf("node_failed (%d) must precede workflow_completed (%d)", nodeFailedIdx, workflowCompletedIdx)
+	}
+
+	wcData := sseEvs[workflowCompletedIdx].Data
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(wcData), &rawFields); err != nil {
+		t.Fatalf("unmarshal workflow_completed data error: %v", err)
+	}
+
+	if _, exists := rawFields["final_response"]; exists {
+		t.Fatalf("final_response must be omitted on failed terminal, got: %s", string(rawFields["final_response"]))
+	}
+
+	var wcPayload struct {
+		Success         bool        `json:"success"`
+		TotalDurationMs int64       `json:"total_duration_ms"`
+		ErrorKind       int32       `json:"error_kind"`
+		ErrorMessage    string      `json:"error_message"`
+		Notices         []noticeDTO `json:"notices"`
+	}
+	if err := json.Unmarshal([]byte(wcData), &wcPayload); err != nil {
+		t.Fatalf("unmarshal typed workflow_completed payload error: %v", err)
+	}
+
+	if wcPayload.Success {
+		t.Fatalf("expected success=false, got %v", wcPayload.Success)
+	}
+	if wcPayload.ErrorKind != int32(pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT) {
+		t.Fatalf("error_kind = %d, want %d", wcPayload.ErrorKind, pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT)
+	}
+	if wcPayload.ErrorMessage != "graph timed out" {
+		t.Fatalf("error_message = %q, want 'graph timed out'", wcPayload.ErrorMessage)
+	}
+
+	if len(wcPayload.Notices) != 2 {
+		t.Fatalf("expected 2 notices, got %d: %#v", len(wcPayload.Notices), wcPayload.Notices)
+	}
+	if wcPayload.Notices[0].Code != "GRAPH_TIMEOUT" || wcPayload.Notices[0].Message != "Graph query timed out" || wcPayload.Notices[0].Severity != int32(pb.NoticeSeverity_NOTICE_SEVERITY_WARNING) {
+		t.Fatalf("notices[0] mismatch: %#v", wcPayload.Notices[0])
+	}
+	if wcPayload.Notices[1].Code != "GRAPH_DEGRADED" || wcPayload.Notices[1].Message != "Graph context degraded" || wcPayload.Notices[1].Severity != int32(pb.NoticeSeverity_NOTICE_SEVERITY_INFO) {
+		t.Fatalf("notices[1] mismatch: %#v", wcPayload.Notices[1])
+	}
+}
+
 func TestCheckpointDispatcherSixthEnvelopeReturnsPending(t *testing.T) {
 	dispatcher := NewCheckpointDispatcher(nil)
 

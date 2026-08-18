@@ -812,6 +812,19 @@ func (a app) writeWorkflowEventSSE(w http.ResponseWriter, rc *http.ResponseContr
 		}
 		if e.WorkflowCompleted.GetFinalResponse() != nil {
 			wcPayload["final_response"] = toQueryRAGResponseDTO(e.WorkflowCompleted.GetFinalResponse())
+		} else {
+			notices := make([]noticeDTO, 0, len(e.WorkflowCompleted.GetNotices()))
+			for _, n := range e.WorkflowCompleted.GetNotices() {
+				if n == nil {
+					continue
+				}
+				notices = append(notices, noticeDTO{
+					Code:     n.Code,
+					Message:  n.Message,
+					Severity: int32(n.Severity),
+				})
+			}
+			wcPayload["notices"] = notices
 		}
 		payload = wcPayload
 	default:

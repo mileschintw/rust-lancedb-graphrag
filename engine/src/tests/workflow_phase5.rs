@@ -2767,3 +2767,365 @@ async fn workflow_phase5_terminal_idempotence() {
         "failed workflows must not emit answer-shaped events"
     );
 }
+
+#[tokio::test]
+async fn workflow_phase5_failure_terminal_notices_tracer() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-failure-tracer-01".to_string();
+    let session_id = "sess-failure-tracer-01".to_string();
+
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let req = QueryRagRequest {
+        query: "failure tracer query".to_string(),
+        session_id: session_id.clone(),
+        filter: None,
+    };
+    let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+    ctx.merge_notices(vec![
+        engine::pb::lancet::v1::Notice {
+            code: "GRAPH_TIMEOUT".into(),
+            message: "Graph query timed out".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Warning as i32,
+        },
+        engine::pb::lancet::v1::Notice {
+            code: "GRAPH_DEGRADED".into(),
+            message: "Graph context degraded".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+        },
+    ]);
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".into(),
+        chunk_id: "chunk-1".into(),
+        document_id: "doc-1".into(),
+        chunk_index: 0,
+        title: Some("Title".into()),
+        section_path: Some("Section".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "test".into(),
+        text: "Sample text".into(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::with_responses(vec![
+        Err(engine::generation::GenerationError::new(
+            engine::generation::GenerationErrorKind::Timeout,
+            "generation timeout",
+        )),
+        Err(engine::generation::GenerationError::new(
+            engine::generation::GenerationErrorKind::Timeout,
+            "generation timeout",
+        )),
+    ]));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+    let _guard = AbortOnDrop(Some(handle));
+
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
+        }
+        events
+    })
+    .await
+    .expect("failure event stream must complete");
+
+    for ev in &events {
+        assert_eq!(ev.trace_id, trace_id);
+        assert_eq!(ev.session_id, session_id);
+    }
+
+    let node_failed_idx = events
+        .iter()
+        .position(|e| matches!(&e.event, Some(Event::NodeFailed(_))))
+        .expect("NodeFailed event must exist");
+
+    let completed_idx = events
+        .iter()
+        .position(|e| matches!(&e.event, Some(Event::WorkflowCompleted(_))))
+        .expect("WorkflowCompleted event must exist");
+
+    assert!(
+        node_failed_idx < completed_idx,
+        "NodeFailed must precede WorkflowCompleted"
+    );
+
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_)))),
+        "failed workflow must omit AnswerChunk and FinalAnswer"
+    );
+
+    let completed = match &events[completed_idx].event {
+        Some(Event::WorkflowCompleted(wc)) => wc,
+        _ => unreachable!(),
+    };
+    assert!(!completed.success);
+    assert!(completed.final_response.is_none());
+    assert_eq!(completed.notices.len(), 2);
+    assert_eq!(completed.notices[0].code, "GRAPH_TIMEOUT");
+    assert_eq!(completed.notices[0].message, "Graph query timed out");
+    assert_eq!(
+        completed.notices[0].severity,
+        engine::pb::lancet::v1::NoticeSeverity::Warning as i32
+    );
+    assert_eq!(completed.notices[1].code, "GRAPH_DEGRADED");
+    assert_eq!(completed.notices[1].message, "Graph context degraded");
+    assert_eq!(
+        completed.notices[1].severity,
+        engine::pb::lancet::v1::NoticeSeverity::Info as i32
+    );
+}
+
+#[tokio::test]
+async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_events() {
+    // 1. Test failure path
+    {
+        let (tx, mut rx) = mpsc::channel(100);
+        let cancel = CancellationToken::new();
+        let trace_id = "trace-failure-preserves-01".to_string();
+        let session_id = "sess-failure-preserves-01".to_string();
+
+        let sink = WorkflowEventSink::new(
+            tx,
+            Arc::new(EventSequence::new()),
+            trace_id.clone(),
+            session_id.clone(),
+        );
+
+        let req = QueryRagRequest {
+            query: "failure preserves notices query".to_string(),
+            session_id: session_id.clone(),
+            filter: None,
+        };
+        let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+        ctx.merge_notices(vec![
+            engine::pb::lancet::v1::Notice {
+                code: "GRAPH_DEGRADED".into(),
+                message: "graph degraded early".into(),
+                severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+            },
+            engine::pb::lancet::v1::Notice {
+                code: "GRAPH_TIMEOUT".into(),
+                message: "graph query timed out later".into(),
+                severity: engine::pb::lancet::v1::NoticeSeverity::Warning as i32,
+            },
+        ]);
+        ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+            id: "[1]".into(),
+            chunk_id: "chunk-1".into(),
+            document_id: "doc-1".into(),
+            chunk_index: 0,
+            title: Some("Title".into()),
+            section_path: Some("Section".into()),
+            content_type: Some("text/plain".into()),
+            provenance: "test".into(),
+            text: "Sample text".into(),
+            score: 0.9,
+            rank: 1,
+            suspicious: false,
+        }];
+
+        let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::with_responses(vec![
+            Err(engine::generation::GenerationError::new(
+                engine::generation::GenerationErrorKind::ProviderError,
+                "provider down",
+            )),
+            Err(engine::generation::GenerationError::new(
+                engine::generation::GenerationErrorKind::ProviderError,
+                "provider down",
+            )),
+        ]));
+
+        let mut runner = WorkflowRunner::new();
+        runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+        let handle = tokio::spawn(async move {
+            runner.run_workflow(ctx, cancel, sink).await;
+        });
+        let _guard = AbortOnDrop(Some(handle));
+
+        let events = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut events = Vec::new();
+            while let Some(event) = rx.recv().await {
+                if let Ok(wf_event) = event {
+                    events.push(wf_event);
+                }
+            }
+            events
+        })
+        .await
+        .expect("failure stream completes");
+
+        let node_failed_events: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(&e.event, Some(Event::NodeFailed(_))))
+            .collect();
+        assert_eq!(
+            node_failed_events.len(),
+            1,
+            "exactly one NodeFailed event must be emitted"
+        );
+
+        let completed_events: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(&e.event, Some(Event::WorkflowCompleted(_))))
+            .collect();
+        assert_eq!(
+            completed_events.len(),
+            1,
+            "exactly one WorkflowCompleted event must be emitted"
+        );
+
+        let node_failed_pos = events
+            .iter()
+            .position(|e| matches!(&e.event, Some(Event::NodeFailed(_))))
+            .unwrap();
+        let completed_pos = events
+            .iter()
+            .position(|e| matches!(&e.event, Some(Event::WorkflowCompleted(_))))
+            .unwrap();
+        assert!(
+            node_failed_pos < completed_pos,
+            "NodeFailed must precede WorkflowCompleted"
+        );
+
+        let completed = match &completed_events[0].event {
+            Some(Event::WorkflowCompleted(wc)) => wc,
+            _ => unreachable!(),
+        };
+        assert!(!completed.success);
+        assert!(completed.final_response.is_none());
+        assert_eq!(
+            completed.error_kind,
+            NodeErrorKind::LlmGenerationFailed as i32
+        );
+        assert_eq!(completed.error_message, "provider down");
+        assert_eq!(completed.notices.len(), 2);
+        assert_eq!(completed.notices[0].code, "GRAPH_DEGRADED");
+        assert_eq!(completed.notices[0].message, "graph degraded early");
+        assert_eq!(
+            completed.notices[0].severity,
+            engine::pb::lancet::v1::NoticeSeverity::Info as i32
+        );
+        assert_eq!(completed.notices[1].code, "GRAPH_TIMEOUT");
+        assert_eq!(completed.notices[1].message, "graph query timed out later");
+        assert_eq!(
+            completed.notices[1].severity,
+            engine::pb::lancet::v1::NoticeSeverity::Warning as i32
+        );
+
+        assert!(
+            events
+                .iter()
+                .all(|e| !matches!(&e.event, Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_)))),
+            "failed stream must contain no AnswerChunk or FinalAnswer"
+        );
+    }
+
+    // 2. Test success path preserves final answer and response notices
+    {
+        let (tx, mut rx) = mpsc::channel(100);
+        let cancel = CancellationToken::new();
+        let trace_id = "trace-success-preserves-01".to_string();
+        let session_id = "sess-success-preserves-01".to_string();
+
+        let sink = WorkflowEventSink::new(
+            tx,
+            Arc::new(EventSequence::new()),
+            trace_id.clone(),
+            session_id.clone(),
+        );
+
+        let req = QueryRagRequest {
+            query: "success preserves notices query".to_string(),
+            session_id: session_id.clone(),
+            filter: None,
+        };
+        let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+        ctx.merge_notices(vec![engine::pb::lancet::v1::Notice {
+            code: "GRAPH_DEGRADED".into(),
+            message: "graph degraded during success".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+        }]);
+        ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+            id: "[1]".into(),
+            chunk_id: "chunk-1".into(),
+            document_id: "doc-1".into(),
+            chunk_index: 0,
+            title: Some("Title".into()),
+            section_path: Some("Section".into()),
+            content_type: Some("text/plain".into()),
+            provenance: "test".into(),
+            text: "Sample text".into(),
+            score: 0.9,
+            rank: 1,
+            suspicious: false,
+        }];
+
+        let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+            answer: "Successful answer [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        })));
+
+        let mut runner = WorkflowRunner::new();
+        runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+        let handle = tokio::spawn(async move {
+            runner.run_workflow(ctx, cancel, sink).await;
+        });
+        let _guard = AbortOnDrop(Some(handle));
+
+        let events = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut events = Vec::new();
+            while let Some(event) = rx.recv().await {
+                if let Ok(wf_event) = event {
+                    events.push(wf_event);
+                }
+            }
+            events
+        })
+        .await
+        .expect("success stream completes");
+
+        let completed = events
+            .iter()
+            .find_map(|e| match &e.event {
+                Some(Event::WorkflowCompleted(wc)) => Some(wc),
+                _ => None,
+            })
+            .expect("WorkflowCompleted event exists");
+
+        assert!(completed.success);
+        let final_resp = completed
+            .final_response
+            .as_ref()
+            .expect("final_response must be present on success");
+        assert_eq!(final_resp.answer, "Successful answer [1].");
+        assert_eq!(final_resp.notices.len(), 1);
+        assert_eq!(final_resp.notices[0].code, "GRAPH_DEGRADED");
+        assert_eq!(completed.notices.len(), 1);
+        assert_eq!(completed.notices[0].code, "GRAPH_DEGRADED");
+    }
+}
