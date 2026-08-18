@@ -5,7 +5,7 @@ use crate::generation::{
     GenerationErrorKind, GenerationRequest, Generator, GroundingLimits,
 };
 use crate::pb::lancet::v1::NodeErrorKind;
-use crate::prompt::resolve_citations_with_max_chars;
+use crate::prompt::{resolve_citations, resolve_citations_with_max_chars};
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind},
     WorkflowContext,
@@ -13,8 +13,8 @@ use super::super::{
 
 pub struct GenerateAnswerNode {
     generator: Option<Arc<dyn Generator>>,
-    grounding_limits: GroundingLimits,
-    citation_excerpt_max_chars: usize,
+    grounding_limits: Option<GroundingLimits>,
+    citation_excerpt_max_chars: Option<usize>,
     graph_weight: f64,
 }
 
@@ -22,8 +22,8 @@ impl GenerateAnswerNode {
     pub fn new(generator: Option<Arc<dyn Generator>>) -> Self {
         Self {
             generator,
-            grounding_limits: GroundingLimits::default_limits(),
-            citation_excerpt_max_chars: 200,
+            grounding_limits: None,
+            citation_excerpt_max_chars: None,
             graph_weight: 1.0,
         }
     }
@@ -34,8 +34,8 @@ impl GenerateAnswerNode {
         citation_excerpt_max_chars: usize,
         graph_weight: f64,
     ) -> Self {
-        self.grounding_limits = grounding_limits;
-        self.citation_excerpt_max_chars = citation_excerpt_max_chars;
+        self.grounding_limits = Some(grounding_limits);
+        self.citation_excerpt_max_chars = Some(citation_excerpt_max_chars);
         self.graph_weight = graph_weight;
         self
     }
@@ -114,22 +114,29 @@ impl Node for GenerateAnswerNode {
 
             match final_result {
                 Ok(output) => {
-                    output
-                        .validate_grounding_with_limits(&ctx.evidence_blocks, self.grounding_limits)
-                        .map_err(|err| {
-                            NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
-                                .with_context(
-                                    Some(ctx.session_id.clone()),
-                                    Some(ctx.trace_id.clone()),
-                                )
-                        })?;
+                    if let Some(limits) = self.grounding_limits {
+                        output
+                            .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
+                            .map_err(|err| {
+                                NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
+                                    .with_context(
+                                        Some(ctx.session_id.clone()),
+                                        Some(ctx.trace_id.clone()),
+                                    )
+                            })?;
+                    }
                     ctx.update_from_model_output(&output);
-                    let resolved_citations = resolve_citations_with_max_chars(
-                        &ctx.citations,
-                        &ctx.evidence_blocks,
-                        self.citation_excerpt_max_chars,
-                    );
-                    if resolved_citations.len() != ctx.citations.len() {
+                    let resolved_citations = match self.citation_excerpt_max_chars {
+                        Some(max_chars) => resolve_citations_with_max_chars(
+                            &ctx.citations,
+                            &ctx.evidence_blocks,
+                            max_chars,
+                        ),
+                        None => resolve_citations(&ctx.citations, &ctx.evidence_blocks),
+                    };
+                    if self.grounding_limits.is_some()
+                        && resolved_citations.len() != ctx.citations.len()
+                    {
                         return Err(NodeError::new(
                             NodeErrorKind::LlmGenerationFailed,
                             "failed to resolve all cited evidence identities completely",
