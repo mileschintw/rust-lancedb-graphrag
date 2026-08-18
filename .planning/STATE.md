@@ -6,8 +6,8 @@ current_phase: 5
 current_phase_name: State Machine & Workflow Events
 current_plan: 11
 status: complete
-stopped_at: Completed Wave 20 (05-11-PLAN.md)
-last_updated: "2026-08-18T06:05:00.000Z"
+stopped_at: Phase 05 gates run — code review + regression gate + verification complete; awaiting UAT
+last_updated: "2026-08-18T10:07:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
@@ -34,11 +34,16 @@ progress:
 - Phase 05 Wave 18 Plan 05-22 executed: completed production typed graph-fact handoff and end-to-end query_rag workflow tests.
 - Phase 05 Wave 19 Plan 05-20 executed: separated capability preflight from the GenerateAnswer node timer and proved the two-attempt retry path fits the 65s node timer with paused-clock timing proofs.
 - Phase 05 Wave 20 Plan 05-11 executed: proved and hardened real engine-to-gateway SSE stream across 5-node lifecycle and graph fixtures, verified client cancellation propagation, structured stream error framing, and lossless checkpoint persistence under backpressure.
+- Phase 05 post-execution gates run (2026-08-18): all 24 plans complete; ROADMAP plan checkboxes reconciled for 05-19/20/21/22/24.
+  - Code review refreshed (05-REVIEW.md, standard depth, 36 production files): 1 Critical, 11 Warnings, 15 Info. Generated code (4 files) and tests (7 files, 787KB) excluded from line-by-line review and recorded in the report.
+  - Regression gate PASSED: `cargo test --manifest-path engine/Cargo.toml --locked` 280 passed / 0 failed / 1 ignored; `go test ./...` all gateway packages ok.
+  - Verification refreshed (05-VERIFICATION.md): 5/5 roadmap success criteria verified, superseding the stale 2026-08-13 verdict of 1/5. Status is `human_needed`, not `passed` — 4 items persisted to 05-UAT.md.
+  - Phase NOT marked complete: `phase.complete` is gated on verification returning `passed`. Next: `/gsd-verify-work 5`.
 
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
-- **Status:** Wave 20 (Plan 05-11) executed
+- **Status:** All 24 plans executed; code review + regression gate + verification refreshed; awaiting UAT (05-UAT.md)
 - **Current Plan:** 11
 - **Total Plans in Phase:** 24
 - **Completed Plans in Phase:** 24
