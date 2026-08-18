@@ -4,15 +4,15 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 5
 current_phase_name: State Machine & Workflow Events
-current_plan: 18 (Wave 13)
+current_plan: 2
 status: executing
-stopped_at: Phase 5 Wave 13 plan 05-18 executed successfully (split workflow tests by target, migrated BM25 ownership alias, and proved library/binary test compilation).
-last_updated: "2026-08-17T22:20:12.272Z"
+stopped_at: Completed 05-10-PLAN.md
+last_updated: "2026-08-18T01:14:16.913Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 86
-  completed_plans: 79
+  completed_plans: 80
 ---
 
 # Project State
@@ -33,11 +33,11 @@ progress:
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
-- **Status:** In Progress
-- **Current Plan:** 18 (Wave 13)
+- **Status:** Ready to execute
+- **Current Plan:** 2
 - **Total Plans in Phase:** 24
 - **Completed Plans in Phase:** 15
-- **Progress:** [█████████░] 92%
+- **Progress:** [█████████░] 93%
 
 ## Completed Phases
 
@@ -113,6 +113,7 @@ progress:
 | Phase 04.1 P02 | 40min | 3 tasks | 10 files |
 | Phase 04.1 P03 | 45min | 3 tasks | 5 files |
 | Phase 04.1 P04 | 50min | 2 tasks | 5 files |
+| Phase 05 P10 | 112m | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -157,12 +158,15 @@ progress:
 - [Phase 04.1-04]: QueryGraph seed_entity_name lookup case-folds via .trim().to_lowercase() (this codebase's D-05 write-time merge convention) over a full table scan, returning Status::not_found on zero matches.
 - [Phase 05-17]: Protobuf schema introduces additive RetrievalSnapshot variant fields (tags 10/11) and WorkflowCompletedEvent notices (tag 6) with clean: false Buf protection for hand-written Rust module glue; compile repair is owned by 05-23.
 - [Phase 05-23]: Repaired exhaustive Rust message literals across engine/src (retrieve.rs, events.rs, main.rs) with explicit additive field initialization and proved the RetrievalSnapshot wire contract and tag ordering (tags 1..=11) in retrieval::tests.
+- [Phase ?]: CheckpointSnapshot in events.rs is the canonical Rust-owned nineteen-field stable JSON contract.
+- [Phase ?]: query_embedding is represented by dimension plus a deterministic fixed-size hexadecimal digest, not the raw vector.
+- [Phase ?]: WorkflowCompleted carries the accumulated ordered notices so degradation remains visible through terminal failure.
 
 ## Session
 
-**Last session:** 2026-08-10T08:15:36.854Z
-**Stopped at:** Phase 05 plan revision complete; ready to execute
-**Resume file:** .planning/phases/05-state-machine-workflow-events/05-CONTEXT.md
+**Last session:** 2026-08-18T01:14:16.859Z
+**Stopped at:** Completed 05-10-PLAN.md
+**Resume file:** None
 
 ## Accumulated Context
 

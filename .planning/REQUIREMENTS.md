@@ -30,9 +30,9 @@
 ## Orchestration & State
 
 - [ ] **ORCH-01**: Implement a lightweight Rust state machine for the fixed RAG path (query -> reformulate -> retrieve -> graph -> prompt -> answer -> complete/failed).
-- [ ] **ORCH-02**: Emit client-facing workflow events (node started/completed/failed, answer chunks, final answer, completed).
-- [ ] **ORCH-03**: Add cancellation, timeouts, and retry/fallback behavior for node execution.
-- [ ] **ORCH-04**: Add lightweight checkpoints or snapshots for workflow state during development and debugging.
+- [x] **ORCH-02**: Emit client-facing workflow events (node started/completed/failed, answer chunks, final answer, completed).
+- [x] **ORCH-03**: Add cancellation, timeouts, and retry/fallback behavior for node execution.
+- [x] **ORCH-04**: Add lightweight checkpoints or snapshots for workflow state during development and debugging.
 - [ ] **ORCH-05**: Include a dedicated `reformulate` stage in the Rust state machine, defaulting to a pass-through node in v1, leaving a clean slot for future expansion (Port for 999.3).
 
 ## Observability & Evaluation
