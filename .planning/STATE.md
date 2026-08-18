@@ -4,15 +4,15 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 5
 current_phase_name: State Machine & Workflow Events
-current_plan: 3
-status: executing
-stopped_at: Completed Wave 19 (05-20-PLAN.md)
-last_updated: "2026-08-18T05:42:00.000Z"
+current_plan: 11
+status: complete
+stopped_at: Completed Wave 20 (05-11-PLAN.md)
+last_updated: "2026-08-18T06:05:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 86
-  completed_plans: 85
+  completed_plans: 86
 ---
 
 # Project State
@@ -33,15 +33,16 @@ progress:
 - Phase 05 Wave 17 Plan 05-24 executed: closed resolved cross-variant RRF contract with two-pass fusion (`fuse_candidates` in loop, `fuse_cross_variant_candidates` merge pass), retired `fuse_variant_candidates`, and verified exact scoring and deterministic tie resolution.
 - Phase 05 Wave 18 Plan 05-22 executed: completed production typed graph-fact handoff and end-to-end query_rag workflow tests.
 - Phase 05 Wave 19 Plan 05-20 executed: separated capability preflight from the GenerateAnswer node timer and proved the two-attempt retry path fits the 65s node timer with paused-clock timing proofs.
+- Phase 05 Wave 20 Plan 05-11 executed: proved and hardened real engine-to-gateway SSE stream across 5-node lifecycle and graph fixtures, verified client cancellation propagation, structured stream error framing, and lossless checkpoint persistence under backpressure.
 
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
-- **Status:** Ready to execute Wave 20 (Plan 05-11)
+- **Status:** Wave 20 (Plan 05-11) executed
 - **Current Plan:** 11
 - **Total Plans in Phase:** 24
-- **Completed Plans in Phase:** 23
-- **Progress:** [█████████░] 95.8%
+- **Completed Plans in Phase:** 24
+- **Progress:** [██████████] 100.0%
 
 ## Completed Phases
 

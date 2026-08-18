@@ -322,7 +322,7 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 19/24 plans executed
+**Plans:** 20/24 plans executed
 
 Plans:
 
@@ -330,7 +330,7 @@ Plans:
 - [x] 05-08-PLAN.md — Production five-node wiring, real adapter dependencies, and WorkflowContext population.
 - [x] 05-09-PLAN.md — Live workflow settings, real-I/O deadlines, and stream-owned cancellation.
 - [x] 05-10-PLAN.md — Reliable typed event delivery, terminal idempotence, sequence integrity, and full snapshots.
-- [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
+- [x] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
 - [x] 05-12-PLAN.md — Additive historical-summary traceability errata and source coverage audit.
 - [x] 05-13-PLAN.md — OpenRouter preflight classification, successful-only capability caching, and bounded generation retry.
 - [x] 05-14-PLAN.md — Exhaustive typed NodeKind dispatch and early reformulation admission.
@@ -427,7 +427,7 @@ Plans:
 
 **Wave 20** *(blocked on all engine event/timing, terminal, retrieval, and checkpoint contract work)*
 
-- [ ] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
+- [x] 05-11-PLAN.md — Real engine-to-gateway SSE and lossless checkpoint dispatch under backpressure.
 
 ### Phase 6: Observability, Evaluation & Polish
 
