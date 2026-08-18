@@ -6,13 +6,13 @@ current_phase: 5
 current_phase_name: State Machine & Workflow Events
 current_plan: 3
 status: executing
-stopped_at: Completed 05-21-PLAN.md
-last_updated: "2026-08-18T01:31:41.545Z"
+stopped_at: Completed Wave 17 (05-19-PLAN.md, 05-24-PLAN.md)
+last_updated: "2026-08-18T03:59:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 86
-  completed_plans: 81
+  completed_plans: 83
 ---
 
 # Project State
@@ -29,15 +29,17 @@ progress:
 - Phase 05 Wave 11 Plan 05-17 executed: additive protobuf fields (RetrievalSnapshot tags 10/11, WorkflowCompletedEvent tag 6) and synchronized Rust/Go bindings with protected module glue.
 - Phase 05 Wave 12 Plan 05-23 executed: repaired exhaustive Rust RetrievalSnapshot and WorkflowCompletedEvent message literals, verified clean compilation, and proved additive tags 10/11 round-trip fidelity.
 - Phase 05 Wave 13 Plan 05-18 executed: split Phase 5 workflow tests into library unit-test target (`workflow_phase5`) and binary-owned production module (`workflow_phase5_production`), introduced `Bm25IndexStore` alias, migrated 18 BM25 test constructions, and verified library execution and binary compilation.
+- Phase 05 Wave 17 Plan 05-19 executed: preserved accumulated notices on failure terminal events through Rust runner and Go raw SSE stream while keeping failure terminals answer-free.
+- Phase 05 Wave 17 Plan 05-24 executed: closed resolved cross-variant RRF contract with two-pass fusion (`fuse_candidates` in loop, `fuse_cross_variant_candidates` merge pass), retired `fuse_variant_candidates`, and verified exact scoring and deterministic tie resolution.
 
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
 - **Status:** Ready to execute
-- **Current Plan:** 3
+- **Current Plan:** 22
 - **Total Plans in Phase:** 24
-- **Completed Plans in Phase:** 15
-- **Progress:** [█████████░] 94%
+- **Completed Plans in Phase:** 21
+- **Progress:** [█████████░] 87.5%
 
 ## Completed Phases
 
