@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 05-state-machine-workflow-events
 source: [05-VERIFICATION.md]
 started: 2026-08-18T10:06:50Z
@@ -58,6 +58,53 @@ blocked: 0
   reason: "User reported: Error: \"LanceDB schema drift detected for nodes: expected [...19 fields...], found [...19 fields plus community_ids, summary, summary_vector, unsummarized_refs]\" — engine.exe exits with code 1 on startup, before the gateway or /rag/query could even be reached."
   severity: blocker
   test: 1
-  artifacts: []  # Filled by diagnosis
+  debug_session: ".planning/debug/g-05-1-engine-startup-blockers.md"
+  root_cause: |
+    Two independent root causes, both must be fixed before Test 1 can be attempted:
+
+    BLOCKER A (engine won't start): engine/src/db/mod.rs::validate_schema (line
+    161-174) does a strict fail-closed field-equality check with no migration
+    path. Commit 2302f79 (2026-08-07, "feat(04.1-01): promote graph module and
+    restructure graph schemas in LanceDB") removed community_ids, summary,
+    summary_vector, unsummarized_refs from nodes_schema() (23 -> 19 fields),
+    moving them onto the new entities_schema(). The local dev store at
+    ./data/lancedb was created by a pre-2302f79 binary and was never
+    regenerated, so it still has the wider 23-field schema on disk. This is
+    stale local dev data, not REQUIREMENTS.md DATA-06/DATA-07 (still unchecked)
+    arriving early — those fields were REMOVED from nodes on 2026-08-07, not
+    added ahead of schedule. Only the nodes table is affected; the other 6
+    tables (communities, documents, edges, entities, entity_edges,
+    staged_documents_v2) already validate cleanly. Automated tests use
+    isolated temp LanceDB paths so this is invisible to CI — it only surfaces
+    against a long-lived, manually-run local dev instance.
+
+    BLOCKER B (generation fails even once the engine starts): commit f776296
+    (2026-08-18, today, single-line unreviewed chore commit) changed
+    config/config.toml's [openrouter].generation_model from
+    "openai/gpt-4o-mini" to "nvidia/nemotron-3.5-lightning:free" — confirmed
+    via web search to be a REAL, currently-listed OpenRouter model (NVIDIA
+    Nemotron 3.5 Lightning, released 2026-08-11), not invalid or misspelled.
+    gateway/main_test.go's TestRAGQueryCrossRuntime and
+    TestRAGQueryClientDisconnectCancelsRustWorkflow spawn the real engine
+    binary and override OpenRouter endpoint URLs via env vars but never
+    override generation_model, so the spawned engine reads the new model from
+    ambient config.toml — while the tests' httptest mocks still hardcode a
+    single canned /models entry for openai/gpt-4o-mini (5 call sites:
+    main_test.go:2074,2111,2142,2397,3457). The "not found" error is test-double
+    staleness, not an invalid model ID. Unresolved: could not confirm from web
+    search whether nvidia/nemotron-3.5-lightning:free's real /models response
+    advertises structured-output support (response_format/json_schema),
+    required by the capability preflight at
+    engine/src/generation/openrouter.rs:425-434 — needs a live OPENROUTER_API_KEY
+    to check.
+  artifacts:
+    - path: "engine/src/db/mod.rs"
+      issue: "validate_schema (161-174) has no migration path for the nodes table; nodes_schema() (19 fields) no longer matches the 23-field on-disk store left by pre-2302f79 local dev data."
+    - path: "config/config.toml"
+      issue: "generation_model changed to nvidia/nemotron-3.5-lightning:free (f776296) without updating gateway/main_test.go's hardcoded mock fixtures or config/config.example.toml (still openai/gpt-4o-mini)."
+    - path: "gateway/main_test.go"
+      issue: "Hardcodes openai/gpt-4o-mini in httptest /models mocks (lines 2074, 2111, 2142, 2397, 3457) and does not override LANCET_OPENROUTER__GENERATION_MODEL in the spawned engine's env (~line 2206), so it silently depends on ambient config.toml."
   missing:
-    - "Second, independent blocker discovered while re-verifying: config/config.toml's generation_model was changed to \"nvidia/nemotron-3.5-lightning:free\" in commit f776296, which OpenRouter's /models list does not recognize (\"model metadata for 'nvidia/nemotron-3.5-lightning:free' not found in OpenRouter list\"). Confirmed pre-existing on main (reproduced via TestRAGQueryCrossRuntime / TestRAGQueryClientDisconnectCancelsRustWorkflow with the schema-drift fix stashed out). Both issues must be resolved before Test 1 can be attempted."
+    - "Migrate or rebuild the local ./data/lancedb nodes table to the current 19-field schema (data-side fix), and re-seed/re-ingest so Test 1's retrieval still has real data to answer against."
+    - "Decide whether validate_schema should stay strict-only or gain an explicit reconciliation path for known-safe column removals during future schema-restructure phases (code-side design decision, STATE.md currently records: fail startup on any LanceDB schema field drift)."
+    - "Confirm (with a real OPENROUTER_API_KEY) whether nvidia/nemotron-3.5-lightning:free supports structured outputs; if yes, decouple gateway/main_test.go's real-engine tests from ambient config.toml by adding a LANCET_OPENROUTER__GENERATION_MODEL env override; if no, revert config/config.toml's generation_model to openai/gpt-4o-mini (the only value with codebase-wide default/example support)."
