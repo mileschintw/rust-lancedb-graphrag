@@ -131,3 +131,13 @@ Verification rules:
 - **Wave 16:** 05-19 (Terminal Notice Serialization & Error Formatting)
 - **Wave 17:** 05-20 (Node Preparation & Wall-Clock Timing Assertions), 05-22 (Retire Inline Remainder)
 - **Wave 18:** 05-11 (Gateway SSE Streaming, Disconnect Cancellation & PostgreSQL Checkpoints)
+
+---
+
+## 8. GATE-* Requirement Reconciliation (UAT, 2026-08-18)
+
+Phase 05 verification flagged that `05-11-SUMMARY.md`'s `requirements-completed` list and its D2/D3 coverage entries reference `GATE-01`, `GATE-02`, and `GATE-03`, none of which existed as defined requirements in `REQUIREMENTS.md`. Human disposition, applied here:
+
+- **GATE-01** and **GATE-02** are genuine Phase 05 scope not captured by ORCH-01..05 — wire contract roundtrip/error framing for SSE streaming (GATE-01, backed by `TestRetrievalSnapshotWireContract`, `TestRAGQueryPostOpenRecvFailureSSE`, `TestRAGQueryEOFWithoutTerminalSSE`) and checkpoint ownership across backpressure/shutdown/PostgreSQL persistence (GATE-02, backed by `TestWorkflowCheckpointPendingDrainAndPersistence`). Both retroactively added to `REQUIREMENTS.md` under Orchestration & State, marked satisfied.
+- **GATE-03** had no coverage entry anywhere in `05-11-SUMMARY.md` backing it — it was listed as completed with zero evidence pointer. Removed from `05-11-SUMMARY.md`'s `requirements-completed` list rather than retroactively inventing a definition for it. If a real GATE-03 requirement was intended, it must be re-specified and re-verified from scratch, not assumed satisfied.
+- **ORCH-01** and **ORCH-05** were unchecked in `REQUIREMENTS.md` despite being completed and evidenced (ORCH-01 via 05-11-SUMMARY D1's passing `TestRAGQueryCrossRuntime`/`TestRAGQueryClientDisconnectCancelsRustWorkflow`; both via the §5 coverage matrix mapping to executed closure plans). Both checked off.

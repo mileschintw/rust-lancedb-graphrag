@@ -29,11 +29,13 @@
 
 ## Orchestration & State
 
-- [ ] **ORCH-01**: Implement a lightweight Rust state machine for the fixed RAG path (query -> reformulate -> retrieve -> graph -> prompt -> answer -> complete/failed).
+- [x] **ORCH-01**: Implement a lightweight Rust state machine for the fixed RAG path (query -> reformulate -> retrieve -> graph -> prompt -> answer -> complete/failed). **SATISFIED — Phase 05.**
 - [x] **ORCH-02**: Emit client-facing workflow events (node started/completed/failed, answer chunks, final answer, completed).
 - [x] **ORCH-03**: Add cancellation, timeouts, and retry/fallback behavior for node execution.
 - [x] **ORCH-04**: Add lightweight checkpoints or snapshots for workflow state during development and debugging.
-- [ ] **ORCH-05**: Include a dedicated `reformulate` stage in the Rust state machine, defaulting to a pass-through node in v1, leaving a clean slot for future expansion (Port for 999.3).
+- [x] **ORCH-05**: Include a dedicated `reformulate` stage in the Rust state machine, defaulting to a pass-through node in v1, leaving a clean slot for future expansion (Port for 999.3). **SATISFIED — Phase 05.**
+- [x] **GATE-01**: Wire contract roundtrip and error framing for SSE streaming between the Rust engine and Go gateway (retrieval snapshot wire compatibility, post-open receive failure and EOF-without-terminal framing). **SATISFIED — Phase 05.** Added during Phase 05 planning as a quality-gate requirement not covered by ORCH-01..05; retroactively formalized here (see 05-12-TRACEABILITY-ERRATA.md §8).
+- [x] **GATE-02**: Preserve workflow checkpoint ownership across pending backpressure, graceful shutdown, and PostgreSQL persistence (strict FIFO drain: primary -> overflow -> pending). **SATISFIED — Phase 05.** Added during Phase 05 planning as a quality-gate requirement not covered by ORCH-01..05; retroactively formalized here (see 05-12-TRACEABILITY-ERRATA.md §8).
 
 ## Observability & Evaluation
 

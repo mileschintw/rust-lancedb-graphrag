@@ -39,7 +39,7 @@ patterns-established:
   - "SSE streaming checks client context err prior to writing frames to prevent broken-pipe panics."
   - "Deterministic fixture seeders validate all schema fields and nearest-vector column bindings."
 
-requirements-completed: [ORCH-01, ORCH-02, ORCH-03, ORCH-04, GATE-01, GATE-02, GATE-03]
+requirements-completed: [ORCH-01, ORCH-02, ORCH-03, ORCH-04, GATE-01, GATE-02]
 
 coverage:
   - id: D1
