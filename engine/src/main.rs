@@ -1454,7 +1454,13 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
                     .into_iter()
                     .map(|fact| prompt::GraphFactBlock { fact })
                     .collect(),
-                _ => vec![],
+                GraphAugmentationOutcome::NoMatchFound => vec![],
+                GraphAugmentationOutcome::AttemptedAndFailed { reason } => {
+                    return Err(workflow::node::NodeError::new(
+                        v1::NodeErrorKind::GraphFailed,
+                        format!("graph augmentation failed: {reason}"),
+                    ));
+                }
             };
             Ok(facts)
         })
@@ -1469,6 +1475,7 @@ struct ProductionDenseRetrievalPort {
 impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
     fn retrieve_dense<'a>(
         &'a self,
+        query: &'a str,
         query_embedding: &'a [f32],
         filter: Option<&'a v1::DocumentFilter>,
         cancel: &'a tokio_util::sync::CancellationToken,
@@ -1483,7 +1490,7 @@ impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
                 (vec![], vec![])
             };
             let query_req = QueryRequest::from_values(
-                "query",
+                query,
                 doc_ids,
                 content_types,
                 &self.retrieval_settings,
@@ -1613,16 +1620,30 @@ impl LancetServiceImpl {
                 wf.graph_operation_timeout_ms,
             ),
         );
-        runner.add_node(workflow::nodes::RetrieveHybridNode::new(
-            deps.dense_port.clone(),
-            deps.bm25_port.clone(),
-            deps.reranker_port.clone(),
-            deps.retrieval_settings.clone(),
+        runner.add_node(
+            workflow::nodes::RetrieveHybridNode::new(
+                deps.dense_port.clone(),
+                deps.bm25_port.clone(),
+                deps.reranker_port.clone(),
+                deps.retrieval_settings.clone(),
+            )
+            .with_snapshot_metadata(
+                self.effective_settings.index_generation.clone(),
+                self.effective_settings.embedding_model.clone(),
+            ),
+        );
+        runner.add_node(workflow::nodes::AssemblePromptNode::with_settings(
+            self.effective_settings.grounding_limits().evidence_token_budget() as usize,
+            self.effective_settings.grounding_limits().max_output_tokens() as usize,
+            self.effective_settings.retrieval.graph_weight,
         ));
-        runner.add_node(workflow::nodes::AssemblePromptNode::new());
-        runner.add_node(workflow::nodes::GenerateAnswerNode::new(
-            deps.generator.clone(),
-        ));
+        runner.add_node(
+            workflow::nodes::GenerateAnswerNode::new(deps.generator.clone()).with_settings(
+                *self.effective_settings.grounding_limits(),
+                self.effective_settings.citation_excerpt_max_chars,
+                self.effective_settings.retrieval.graph_weight,
+            ),
+        );
 
         (runner, deps)
     }

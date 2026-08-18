@@ -2,7 +2,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::pb::lancet::v1::NodeErrorKind;
 use crate::prompt::{
-    pack_evidence_and_graph_prompt, EvidenceBlock, PromptAssemblyError,
+    pack_evidence_and_graph_prompt, PromptAssemblyError,
     DEFAULT_ANSWER_TOKEN_BUDGET, DEFAULT_MAX_PROMPT_TOKENS,
 };
 use super::super::{
@@ -13,6 +13,7 @@ use super::super::{
 pub struct AssemblePromptNode {
     max_prompt_tokens: usize,
     answer_token_budget: usize,
+    graph_weight: f64,
 }
 
 impl AssemblePromptNode {
@@ -20,6 +21,7 @@ impl AssemblePromptNode {
         Self {
             max_prompt_tokens: DEFAULT_MAX_PROMPT_TOKENS,
             answer_token_budget: DEFAULT_ANSWER_TOKEN_BUDGET,
+            graph_weight: 1.0,
         }
     }
 
@@ -27,6 +29,19 @@ impl AssemblePromptNode {
         Self {
             max_prompt_tokens,
             answer_token_budget,
+            graph_weight: 1.0,
+        }
+    }
+
+    pub fn with_settings(
+        max_prompt_tokens: usize,
+        answer_token_budget: usize,
+        graph_weight: f64,
+    ) -> Self {
+        Self {
+            max_prompt_tokens,
+            answer_token_budget,
+            graph_weight,
         }
     }
 }
@@ -52,34 +67,7 @@ impl Node for AssemblePromptNode {
                 return Err(NodeError::cancelled());
             }
 
-            let evidence = if ctx.evidence_blocks.is_empty() {
-                if ctx.final_candidates.is_empty() {
-                    Vec::new()
-                } else {
-                    ctx.final_candidates
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, chunk_id)| EvidenceBlock {
-                            id: format!("[{}]", idx + 1),
-                            chunk_id: chunk_id.clone(),
-                            document_id: format!("doc_{}", chunk_id),
-                            chunk_index: idx as i32,
-                            title: Some("Document".into()),
-                            section_path: Some("Root".into()),
-                            content_type: Some("text/plain".into()),
-                            provenance: format!("document_id=doc_{}, chunk_index={}", chunk_id, idx),
-                            text: format!("Content of chunk {}", chunk_id),
-                            score: 1.0,
-                            rank: idx + 1,
-                            suspicious: false,
-                        })
-                        .collect()
-                }
-            } else {
-                ctx.evidence_blocks.clone()
-            };
-
-            if evidence.is_empty() {
+            if ctx.evidence_blocks.is_empty() {
                 return Err(NodeError::new(
                     NodeErrorKind::PromptAssemblyFailed,
                     "No evidence blocks provided for prompt assembly",
@@ -88,9 +76,9 @@ impl Node for AssemblePromptNode {
 
             match pack_evidence_and_graph_prompt(
                 &ctx.original_query,
-                &evidence,
-                &[],
-                1.0,
+                &ctx.evidence_blocks,
+                &ctx.graph_facts,
+                self.graph_weight,
                 self.max_prompt_tokens,
                 self.answer_token_budget,
                 cancel,
@@ -100,6 +88,7 @@ impl Node for AssemblePromptNode {
                 Ok(packed) => {
                     ctx.assembled_prompt = packed.prompt;
                     ctx.evidence_blocks = packed.evidence;
+                    ctx.graph_facts = packed.graph_facts;
                     Ok(())
                 }
                 Err(PromptAssemblyError::Cancelled) => Err(NodeError::cancelled()),

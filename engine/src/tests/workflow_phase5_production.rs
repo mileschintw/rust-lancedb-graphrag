@@ -890,6 +890,7 @@ async fn workflow_phase5_nodekind_dispatch() {
     impl workflow::ports::DenseRetrievalPort for FailingDensePort {
         fn retrieve_dense<'a>(
             &'a self,
+            _query: &'a str,
             _embedding: &'a [f32],
             _filter: Option<&'a v1::DocumentFilter>,
             _cancel: &'a CancellationToken,
@@ -1142,4 +1143,3 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
     let res = retrieval_fut.await;
     assert!(res.is_ok(), "BM25 retrieval must succeed using its immutable Arc snapshot");
 }
-

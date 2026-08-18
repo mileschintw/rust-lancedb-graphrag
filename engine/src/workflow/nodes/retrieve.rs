@@ -1,3 +1,5 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -15,6 +17,8 @@ pub struct RetrieveHybridNode {
     bm25_port: Option<Arc<dyn Bm25RetrievalPort>>,
     reranker: Option<Arc<dyn Reranker>>,
     settings: RetrievalSettings,
+    index_generation: String,
+    embedding_model: String,
 }
 
 impl RetrieveHybridNode {
@@ -29,7 +33,19 @@ impl RetrieveHybridNode {
             bm25_port,
             reranker,
             settings,
+            index_generation: String::new(),
+            embedding_model: String::new(),
         }
+    }
+
+    pub fn with_snapshot_metadata(
+        mut self,
+        index_generation: impl Into<String>,
+        embedding_model: impl Into<String>,
+    ) -> Self {
+        self.index_generation = index_generation.into();
+        self.embedding_model = embedding_model.into();
+        self
     }
 }
 
@@ -63,7 +79,12 @@ impl Node for RetrieveHybridNode {
             // 1. Dense retrieval for variant-zero embedding
             let dense_candidates = if let Some(dense_port) = &self.dense_port {
                 match dense_port
-                    .retrieve_dense(embedding, ctx.filter.as_ref(), cancel)
+                    .retrieve_dense(
+                        &ctx.original_query,
+                        embedding,
+                        ctx.filter.as_ref(),
+                        cancel,
+                    )
                     .await
                 {
                     Ok(c) => c,
@@ -139,26 +160,31 @@ impl Node for RetrieveHybridNode {
                 .take(self.settings.final_limit)
                 .collect();
 
+            let mut result_hasher = DefaultHasher::new();
+            for candidate in &taken_candidates {
+                candidate.candidate.chunk_id.hash(&mut result_hasher);
+            }
+
             ctx.evidence_blocks = crate::prompt::assemble_evidence_blocks(&taken_candidates);
             ctx.final_candidates = ctx.evidence_blocks.iter().map(|b| b.chunk_id.clone()).collect();
 
             ctx.snapshot = Some(crate::pb::lancet::v1::RetrievalSnapshot {
-                index_generation: "".into(),
-                embedding_model: "".into(),
+                index_generation: self.index_generation.clone(),
+                embedding_model: self.embedding_model.clone(),
                 vector_weight: self.settings.vector_weight,
                 bm25_weight: self.settings.bm25_weight,
                 rrf_k: self.settings.rrf_k as i32,
                 candidate_limit: self.settings.candidate_limit as i32,
                 final_limit: self.settings.final_limit as i32,
                 active_filter: ctx.filter.clone(),
-                result_hash: "".into(),
+                result_hash: format!("{:x}", result_hasher.finish()),
                 variant_count: ctx.variants.len() as u32,
                 variant_identities: ctx.variants.clone(),
             });
 
             // 5. Zero evidence check
             if ctx.final_candidates.is_empty() {
-                ctx.notices.push(Notice {
+                ctx.add_notice(Notice {
                     code: "NO_EVIDENCE".into(),
                     message: "No completed corpus evidence matched the requested filters.".into(),
                     severity: NoticeSeverity::Info as i32,

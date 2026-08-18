@@ -55,6 +55,7 @@ pub trait GraphQueryPort: Send + Sync {
 pub trait DenseRetrievalPort: Send + Sync {
     fn retrieve_dense<'a>(
         &'a self,
+        query: &'a str,
         query_embedding: &'a [f32],
         filter: Option<&'a DocumentFilter>,
         cancel: &'a CancellationToken,
@@ -315,6 +316,7 @@ impl FakeDenseRetrievalPort {
 impl DenseRetrievalPort for FakeDenseRetrievalPort {
     fn retrieve_dense<'a>(
         &'a self,
+        _query: &'a str,
         _query_embedding: &'a [f32],
         _filter: Option<&'a DocumentFilter>,
         _cancel: &'a CancellationToken,

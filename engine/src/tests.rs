@@ -3493,12 +3493,16 @@ async fn query_rag_generation_error_preserves_identity() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let failing_gen = Arc::new(FakeGenerator::new(Err(
-        generation::GenerationError::new(
+    let failing_gen = Arc::new(FakeGenerator::with_responses(vec![
+        Err(generation::GenerationError::new(
             generation::GenerationErrorKind::ProviderError,
             "OpenRouter API rate limit",
-        ),
-    )));
+        )),
+        Err(generation::GenerationError::new(
+            generation::GenerationErrorKind::ProviderError,
+            "OpenRouter API rate limit",
+        )),
+    ]));
 
     let service = LancetServiceImpl {
         table,

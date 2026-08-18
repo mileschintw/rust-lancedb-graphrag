@@ -112,11 +112,6 @@ impl Node for ExtractGraphContextNode {
                         if facts.is_empty() {
                             ctx.graph_context = String::new();
                             ctx.graph_facts = Vec::new();
-                            ctx.add_notice(Notice {
-                                code: "GRAPH_DEGRADED".into(),
-                                message: "No graph facts matched query".into(),
-                                severity: NoticeSeverity::Info as i32,
-                            });
                         } else {
                             ctx.graph_context = facts
                                 .iter()
