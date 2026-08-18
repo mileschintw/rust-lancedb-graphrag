@@ -3,6 +3,7 @@
 //! Provides deterministic end-to-end tests and unit cases covering
 //! the complete Rust state-machine edge matrix against request-local fakes.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -1976,4 +1977,309 @@ async fn workflow_phase5_graph_notice_merge() {
     assert_eq!(resp.notices[1].code, "EARLY_WARNING");
     assert_eq!(resp.notices[2].code, "GRAPH_DEGRADED");
     assert_eq!(resp.notices[3].code, "GRAPH_TIMEOUT");
+}
+
+#[tokio::test]
+async fn workflow_phase5_checkpoint_full_snapshot() {
+    let request = QueryRagRequest {
+        query: "full snapshot query".into(),
+        session_id: "sess-checkpoint-full".into(),
+        filter: Some(engine::pb::lancet::v1::DocumentFilter {
+            document_ids: vec!["doc-filter".into()],
+            content_types: vec!["text/plain".into()],
+        }),
+    };
+    let mut ctx = WorkflowContext::new(
+        "sess-checkpoint-full".into(),
+        "trace-checkpoint-full".into(),
+        &request,
+    );
+
+    ctx.variants = vec!["full snapshot query".into(), "expanded snapshot query".into()];
+    ctx.query_embedding = Some((0..2048).map(|index| index as f32 / 10.0).collect());
+    ctx.graph_context = "Lancet -- uses -- LanceDB".into();
+    ctx.graph_facts = vec![engine::prompt::GraphFactBlock {
+        fact: engine::graph::context_strategy::GraphFact::new(
+            "Lancet",
+            "uses",
+            "LanceDB",
+            Some("graph evidence"),
+            0.91,
+        ),
+    }];
+    ctx.vector_results = vec!["vector-chunk-1".into()];
+    ctx.bm25_results = vec!["bm25-chunk-1".into()];
+    ctx.final_candidates = vec!["final-chunk-1".into()];
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".into(),
+        chunk_id: "final-chunk-1".into(),
+        document_id: "doc-evidence".into(),
+        chunk_index: 2,
+        title: Some("Evidence title".into()),
+        section_path: Some("Evidence section".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "document_id=doc-evidence".into(),
+        text: "lossless evidence text".into(),
+        score: 0.88,
+        rank: 1,
+        suspicious: false,
+    }];
+    ctx.assembled_prompt = "assembled prompt remains lossless".into();
+    ctx.answer = "lossless answer".into();
+    ctx.citations = vec!["[1]".into()];
+    ctx.answer_basis = engine::pb::lancet::v1::AnswerBasis::Retrieval;
+    ctx.structured_citations = vec![engine::pb::lancet::v1::StructuredCitation {
+        chunk_id: "final-chunk-1".into(),
+        document_id: "doc-evidence".into(),
+        title: "Evidence title".into(),
+        section_path: "Evidence section".into(),
+        excerpt: "lossless excerpt".into(),
+        is_truncated: false,
+        score: 0.88,
+        rank: 1,
+        content_type: "text/plain".into(),
+    }];
+    ctx.merge_notices(vec![
+        engine::pb::lancet::v1::Notice {
+            code: "RETRIEVAL_INFO".into(),
+            message: "retrieval completed".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+        },
+        engine::pb::lancet::v1::Notice {
+            code: "GRAPH_DEGRADED".into(),
+            message: "graph degraded after retrieval".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+        },
+        engine::pb::lancet::v1::Notice {
+            code: "GRAPH_TIMEOUT".into(),
+            message: "graph timeout was observed".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+        },
+    ]);
+    ctx.snapshot = Some(engine::pb::lancet::v1::RetrievalSnapshot {
+        index_generation: "generation-7".into(),
+        embedding_model: "embedding-model".into(),
+        vector_weight: 0.7,
+        bm25_weight: 0.3,
+        rrf_k: 60,
+        candidate_limit: 32,
+        final_limit: 8,
+        active_filter: request.filter.clone(),
+        result_hash: "result-hash".into(),
+        variant_count: 2,
+        variant_identities: ctx.variants.clone(),
+    });
+
+    let event = events::checkpoint("full_snapshot", 77, &ctx);
+    let checkpoint = match event {
+        Event::Checkpoint(checkpoint) => checkpoint,
+        other => panic!("expected checkpoint event, got {other:?}"),
+    };
+    let serialized_bytes = checkpoint.context_snapshot.len();
+    println!("checkpoint serialized bytes: {serialized_bytes}");
+    assert!(serialized_bytes > 0, "checkpoint JSON must have serialized bytes");
+    assert!(serialized_bytes < 20_000, "embedding must remain fixed-size");
+
+    let payload: serde_json::Value = serde_json::from_str(&checkpoint.context_snapshot)
+        .expect("checkpoint snapshot must round-trip as valid JSON");
+    let object = payload
+        .as_object()
+        .expect("checkpoint snapshot must be a JSON object");
+    let actual_keys: BTreeSet<String> = object.keys().cloned().collect();
+    let expected_keys: BTreeSet<String> = events::CHECKPOINT_SNAPSHOT_KEYS
+        .iter()
+        .map(|key| (*key).to_string())
+        .collect();
+    assert_eq!(actual_keys, expected_keys, "checkpoint stable key set");
+
+    assert_eq!(payload["session_id"], "sess-checkpoint-full");
+    assert_eq!(payload["trace_id"], "trace-checkpoint-full");
+    assert_eq!(payload["original_query"], "full snapshot query");
+    assert_eq!(payload["filter"]["document_ids"], serde_json::json!(["doc-filter"]));
+    assert_eq!(payload["filter"]["content_types"], serde_json::json!(["text/plain"]));
+    assert_eq!(
+        payload["variants"],
+        serde_json::json!(["full snapshot query", "expanded snapshot query"])
+    );
+
+    let digest = payload["query_embedding"]
+        .as_object()
+        .expect("query_embedding must be an object digest, not a raw array");
+    assert_eq!(digest["dimension"], 2048);
+    let digest_hash = digest["hash"]
+        .as_str()
+        .expect("query embedding digest hash must be a string");
+    assert_eq!(digest_hash.len(), 16, "digest hash must have fixed length");
+    assert!(digest_hash.chars().all(|character| character.is_ascii_hexdigit()));
+    assert!(!payload["query_embedding"].is_array());
+    let repeated_payload: serde_json::Value = serde_json::from_str(
+        &events::CheckpointSnapshot::from_context(&ctx).to_json(),
+    )
+    .expect("repeated checkpoint serialization must be valid JSON");
+    assert_eq!(repeated_payload["query_embedding"]["hash"], digest["hash"]);
+
+    assert_eq!(payload["graph_context"], "Lancet -- uses -- LanceDB");
+    assert_eq!(
+        payload["graph_facts"][0]["fact"]["entity_a_name"],
+        "Lancet"
+    );
+    assert_eq!(payload["vector_results"], serde_json::json!(["vector-chunk-1"]));
+    assert_eq!(payload["bm25_results"], serde_json::json!(["bm25-chunk-1"]));
+    assert_eq!(payload["final_candidates"], serde_json::json!(["final-chunk-1"]));
+    assert_eq!(payload["evidence_blocks"][0]["text"], "lossless evidence text");
+    assert_eq!(payload["assembled_prompt"], "assembled prompt remains lossless");
+    assert_eq!(payload["answer"], "lossless answer");
+    assert_eq!(payload["citations"], serde_json::json!(["[1]"]));
+    assert_eq!(
+        payload["answer_basis"],
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    assert_eq!(
+        payload["structured_citations"][0]["excerpt"],
+        "lossless excerpt"
+    );
+    assert_eq!(
+        payload["notices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|notice| notice["code"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["RETRIEVAL_INFO", "GRAPH_DEGRADED", "GRAPH_TIMEOUT"]
+    );
+    assert_eq!(payload["snapshot"]["index_generation"], "generation-7");
+    assert_eq!(payload["snapshot"]["variant_count"], 2);
+    assert_eq!(
+        payload["snapshot"]["variant_identities"],
+        serde_json::json!(["full snapshot query", "expanded snapshot query"])
+    );
+
+    let empty_context = WorkflowContext::new(
+        "sess-empty".into(),
+        "trace-empty".into(),
+        &QueryRagRequest {
+            query: "empty".into(),
+            session_id: "sess-empty".into(),
+            filter: None,
+        },
+    );
+    let empty_payload: serde_json::Value = serde_json::from_str(
+        &events::CheckpointSnapshot::from_context(&empty_context).to_json(),
+    )
+    .expect("empty checkpoint snapshot must be valid JSON");
+    assert!(empty_payload["filter"].is_null());
+    assert!(empty_payload["query_embedding"].is_null());
+    assert!(empty_payload["snapshot"].is_null());
+    assert_eq!(empty_payload["variants"], serde_json::json!([]));
+    assert_eq!(empty_payload["notices"], serde_json::json!([]));
+
+    let response = ctx.to_query_rag_response();
+    assert_eq!(response.answer, "lossless answer");
+    assert_eq!(response.snapshot, ctx.snapshot);
+    let response_debug = format!("{response:?}");
+    assert!(!response_debug.contains("context_snapshot"));
+    assert!(!response_debug.contains("assembled_prompt"));
+}
+
+#[tokio::test]
+async fn workflow_phase5_terminal_idempotence() {
+    let (tx, mut rx) = mpsc::channel(16);
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-terminal-idempotence".into(),
+        "sess-terminal-idempotence".into(),
+    );
+    let cancel = CancellationToken::new();
+    let request = QueryRagRequest {
+        query: "terminal failure query".into(),
+        session_id: "sess-terminal-idempotence".into(),
+        filter: None,
+    };
+    let mut ctx = WorkflowContext::new(
+        "sess-terminal-idempotence".into(),
+        "trace-terminal-idempotence".into(),
+        &request,
+    );
+    ctx.merge_notices(vec![
+        engine::pb::lancet::v1::Notice {
+            code: "RETRIEVAL_INFO".into(),
+            message: "retrieval notice before graph degradation".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+        },
+        engine::pb::lancet::v1::Notice {
+            code: "GRAPH_DEGRADED".into(),
+            message: "graph degraded before terminal failure".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+        },
+        engine::pb::lancet::v1::Notice {
+            code: "GRAPH_TIMEOUT".into(),
+            message: "graph timeout before terminal failure".into(),
+            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
+        },
+    ]);
+
+    let first_context = ctx.clone();
+    let second_context = ctx.clone();
+    let first_sink = sink.clone();
+    let second_sink = sink.clone();
+    let first_cancel = cancel.clone();
+    let second_cancel = cancel.clone();
+    let first_error = NodeError::new(NodeErrorKind::LlmGenerationFailed, "provider failed");
+    let second_error = first_error.clone();
+
+    tokio::join!(
+        WorkflowRunner::emit_terminal_once(
+            &first_context,
+            &first_sink,
+            &first_cancel,
+            10,
+            Some(first_error),
+        ),
+        WorkflowRunner::emit_terminal_once(
+            &second_context,
+            &second_sink,
+            &second_cancel,
+            11,
+            Some(second_error),
+        ),
+    );
+
+    // A later successful cleanup attempt must also be ignored after failure wins.
+    WorkflowRunner::emit_terminal_once(&ctx, &sink, &cancel, 12, None).await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(event) = item {
+            events.push(event);
+        }
+    }
+
+    let terminal_events: Vec<_> = events
+        .iter()
+        .filter_map(|event| match &event.event {
+            Some(Event::WorkflowCompleted(completed)) => Some(completed),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(terminal_events.len(), 1, "terminal emission must be idempotent");
+    assert!(!terminal_events[0].success);
+    assert_eq!(
+        terminal_events[0].error_kind,
+        NodeErrorKind::LlmGenerationFailed as i32
+    );
+    assert_eq!(
+        terminal_events[0]
+            .notices
+            .iter()
+            .map(|notice| notice.code.as_str())
+            .collect::<Vec<_>>(),
+        vec!["RETRIEVAL_INFO", "GRAPH_DEGRADED", "GRAPH_TIMEOUT"]
+    );
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event.event, Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_)))),
+        "failed workflows must not emit answer-shaped events"
+    );
 }

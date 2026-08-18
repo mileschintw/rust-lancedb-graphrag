@@ -505,6 +505,7 @@ impl WorkflowRunner {
                             NodeErrorKind::Unspecified,
                             "",
                             Some(response),
+                            ctx.notices.clone(),
                         ),
                         cancel,
                     )
@@ -522,6 +523,7 @@ impl WorkflowRunner {
                             err.kind,
                             err.message,
                             None,
+                            ctx.notices.clone(),
                         ),
                         cancel,
                     )
