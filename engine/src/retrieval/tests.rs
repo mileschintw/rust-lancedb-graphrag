@@ -726,6 +726,81 @@ fn fusion_variant_provenance_source_tracer() {
 }
 
 #[test]
+fn fusion_variant_provenance_source_is_typed() {
+    assert_eq!(VariantProvenanceSource::Vector, VariantProvenanceSource::Vector);
+    assert_ne!(VariantProvenanceSource::Vector, VariantProvenanceSource::Bm25);
+    assert_eq!(
+        serde_json::to_string(&VariantProvenanceSource::Vector).unwrap(),
+        "\"vector\""
+    );
+    assert_eq!(
+        serde_json::to_string(&VariantProvenanceSource::Bm25).unwrap(),
+        "\"bm25\""
+    );
+
+    let settings = RetrievalSettings::default();
+    let mut vector_candidate = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "shared",
+        "vector content",
+    );
+    vector_candidate.score = 0.9;
+    let mut bm25_variant_zero = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "shared",
+        "bm25 variant zero",
+    );
+    bm25_variant_zero.score = 0.4;
+    let mut bm25_variant_one = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "shared",
+        "bm25 variant one",
+    );
+    bm25_variant_one.score = 0.8;
+
+    let fused = fuse_variant_candidates(
+        vec![vector_candidate],
+        vec![vec![bm25_variant_zero], vec![bm25_variant_one]],
+        &settings,
+    )
+    .unwrap();
+
+    assert_eq!(fused.len(), 1);
+    let shared = &fused[0];
+    assert_eq!(shared.vector_rank, Some(1));
+    assert_eq!(shared.vector_score, Some(0.9));
+    assert_eq!(shared.bm25_rank, Some(1));
+    assert_eq!(shared.bm25_score, Some(0.8));
+    assert_eq!(shared.fused_score, 3.0 / 61.0);
+
+    let vector_entries: Vec<_> = shared
+        .variant_provenance
+        .iter()
+        .filter(|entry| entry.source == VariantProvenanceSource::Vector)
+        .collect();
+    let bm25_entries: Vec<_> = shared
+        .variant_provenance
+        .iter()
+        .filter(|entry| entry.source == VariantProvenanceSource::Bm25)
+        .collect();
+    assert_eq!(vector_entries.len(), 1);
+    assert_eq!(vector_entries[0].variant_index, 0);
+    assert_eq!(vector_entries[0].rank, 1);
+    assert_eq!(vector_entries[0].score, 0.9);
+    assert_eq!(bm25_entries.len(), 2);
+    assert_eq!(bm25_entries[0].variant_index, 0);
+    assert_eq!(bm25_entries[0].rank, 1);
+    assert_eq!(bm25_entries[0].score, 0.4);
+    assert_eq!(bm25_entries[1].variant_index, 1);
+    assert_eq!(bm25_entries[1].rank, 1);
+    assert_eq!(bm25_entries[1].score, 0.8);
+    assert!(shared
+        .variant_provenance
+        .iter()
+        .all(|entry| entry.contribution == 1.0 / 61.0));
+}
+
+#[test]
 fn variant_zero_one_variant_matches_existing_scores() {
     let settings = RetrievalSettings::default();
     let cand_vec = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "vector content");
