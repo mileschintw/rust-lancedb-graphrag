@@ -339,6 +339,22 @@ impl WorkflowRunner {
         sink.send_event_or_cancel(events::node_started(name, ""), cancel)
             .await?;
 
+        let preparation = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Err(NodeError::cancelled()),
+            result = node.prepare() => result,
+        };
+
+        if let Err(err) = preparation {
+            cancel.cancel();
+            sink.send_event_or_cancel(
+                events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
+                cancel,
+            )
+            .await?;
+            return Err(err);
+        }
+
         let start_time = Instant::now();
         let node_timeout = self.timeout_for_kind(kind);
 

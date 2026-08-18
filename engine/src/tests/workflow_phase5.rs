@@ -4,7 +4,7 @@
 //! the complete Rust state-machine edge matrix against request-local fakes.
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -56,6 +56,102 @@ fn make_candidate(doc_id: &str, chunk_id: &str, score: f64) -> Candidate {
         ingested_at: Some(1700000000),
         score,
     }
+}
+
+struct PreparationOrderGenerator {
+    steps: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl Generator for PreparationOrderGenerator {
+    fn prepare<'a>(
+        &'a self,
+    ) -> engine::generation::BoxFuture<'a, Result<(), engine::generation::GenerationError>> {
+        self.steps.lock().unwrap().push("prepare");
+        Box::pin(async { Ok(()) })
+    }
+
+    fn generate<'a>(
+        &'a self,
+        _request: engine::generation::GenerationRequest,
+    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>> {
+        let steps = Arc::clone(&self.steps);
+        Box::pin(async move {
+            steps.lock().unwrap().push("generate");
+            Ok(ModelOutput {
+                answer: "Prepared answer [1].".into(),
+                cited_evidence_ids: vec!["[1]".into()],
+                answer_basis: AnswerBasis::Retrieval,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn workflow_phase5_generation_preflight_bootstrap_tracer() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-generation-prepare".into(),
+        "sess-generation-prepare".into(),
+    );
+    let request = QueryRagRequest {
+        query: "Preparation ordering".into(),
+        session_id: "sess-generation-prepare".into(),
+        filter: None,
+    };
+    let mut ctx = WorkflowContext::new(
+        "sess-generation-prepare".into(),
+        "trace-generation-prepare".into(),
+        &request,
+    );
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".into(),
+        chunk_id: "chunk-1".into(),
+        document_id: "document-1".into(),
+        chunk_index: 0,
+        title: Some("Preparation test".into()),
+        section_path: Some("Root".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "test".into(),
+        text: "Evidence for preparation ordering.".into(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let steps = Arc::new(Mutex::new(Vec::new()));
+    let generator: Arc<dyn Generator> = Arc::new(PreparationOrderGenerator {
+        steps: Arc::clone(&steps),
+    });
+    let node = GenerateAnswerNode::new(Some(generator));
+
+    WorkflowRunner::new()
+        .run_node(&node, &mut ctx, &cancel, &sink)
+        .await
+        .expect("prepared generation node succeeds");
+
+    assert_eq!(ctx.answer, "Prepared answer [1].");
+    assert_eq!(&*steps.lock().unwrap(), &["prepare", "generate"]);
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(event) = item {
+            events.push(event);
+        }
+    }
+    assert!(matches!(
+        events.first().and_then(|event| event.event.as_ref()),
+        Some(Event::NodeStarted(started)) if started.node_name == "GenerateAnswer"
+    ));
+    assert!(events.iter().any(|event| matches!(
+        &event.event,
+        Some(Event::NodeCompleted(completed)) if completed.node_name == "GenerateAnswer"
+    )));
 }
 
 /// Task 1 tracer: exact production-shaped five-node lifecycle and event contract.

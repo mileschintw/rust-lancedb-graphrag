@@ -474,6 +474,15 @@ impl std::error::Error for GenerationError {}
 
 /// Provider-neutral object-safe async trait for structured generation.
 pub trait Generator: Send + Sync {
+    /// Prepare provider capabilities before the timed generation node body.
+    ///
+    /// The default is intentionally a successful no-op so existing generators
+    /// remain source-compatible while adapters that need capability discovery
+    /// can opt in.
+    fn prepare<'a>(&'a self) -> BoxFuture<'a, Result<(), GenerationError>> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn generate<'a>(
         &'a self,
         request: GenerationRequest,

@@ -52,6 +52,23 @@ impl Node for GenerateAnswerNode {
         NodeKind::GenerateAnswer
     }
 
+    fn prepare<'a>(&'a self) -> BoxFuture<'a, Result<(), NodeError>> {
+        Box::pin(async move {
+            let Some(generator) = &self.generator else {
+                return Ok(());
+            };
+
+            generator.prepare().await.map_err(|err| {
+                let kind = match err.kind {
+                    GenerationErrorKind::Cancelled => NodeErrorKind::Cancelled,
+                    GenerationErrorKind::Timeout => NodeErrorKind::Timeout,
+                    _ => NodeErrorKind::LlmGenerationFailed,
+                };
+                NodeError::new(kind, err.message()).with_retryable(false)
+            })
+        })
+    }
+
     fn run<'a>(
         &'a self,
         ctx: &'a mut WorkflowContext,

@@ -119,6 +119,12 @@ pub trait Node: Send + Sync {
         self.kind().name()
     }
 
+    /// Prepare external capabilities before the node's elapsed-time budget
+    /// starts. Most nodes have no bootstrap work.
+    fn prepare<'a>(&'a self) -> BoxFuture<'a, Result<(), NodeError>> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn run<'a>(
         &'a self,
         ctx: &'a mut WorkflowContext,
