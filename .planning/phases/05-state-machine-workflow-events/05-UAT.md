@@ -91,20 +91,38 @@ blocked: 0
     ambient config.toml — while the tests' httptest mocks still hardcode a
     single canned /models entry for openai/gpt-4o-mini (5 call sites:
     main_test.go:2074,2111,2142,2397,3457). The "not found" error is test-double
-    staleness, not an invalid model ID. Unresolved: could not confirm from web
-    search whether nvidia/nemotron-3.5-lightning:free's real /models response
-    advertises structured-output support (response_format/json_schema),
-    required by the capability preflight at
-    engine/src/generation/openrouter.rs:425-434 — needs a live OPENROUTER_API_KEY
-    to check.
+    staleness, not an invalid model ID.
+
+    RESOLVED post-diagnosis: queried OpenRouter's live /api/v1/models endpoint
+    directly (no key needed for listing) for nvidia/nemotron-3.5-lightning:free's
+    real supported_parameters — it does NOT include response_format,
+    json_schema, or structured_outputs (only include_reasoning, max_tokens,
+    reasoning, seed, temperature, tool_choice, tools, top_p). The engine's
+    capability preflight (engine/src/generation/openrouter.rs:425-434) hard-requires
+    one of the first three. So this model would ALSO fail live generation with
+    a real API key — a third, now-confirmed failure mode beyond test-fixture
+    staleness. User chose to switch generation_model to
+    dots-studio/dots-3-note-preview:free instead (confirmed via the same live
+    query to advertise both response_format and structured_outputs). Applied
+    in config/config.toml (commit 989003b). gateway/main_test.go's 5 hardcoded
+    openai/gpt-4o-mini mock call sites are unaffected by this switch (they were
+    already stale relative to the prior nemotron value too) and still need a
+    fix — either updated to the new model string or decoupled from ambient
+    config.toml via a LANCET_OPENROUTER__GENERATION_MODEL env override (not
+    currently in engine/src/main.rs's explicit override list at lines 601-670,
+    would need to be added there for the override to be guaranteed to take
+    effect per that code's own stated rationale for why the explicit list
+    exists alongside the generic config::Environment source).
   artifacts:
     - path: "engine/src/db/mod.rs"
       issue: "validate_schema (161-174) has no migration path for the nodes table; nodes_schema() (19 fields) no longer matches the 23-field on-disk store left by pre-2302f79 local dev data."
     - path: "config/config.toml"
-      issue: "generation_model changed to nvidia/nemotron-3.5-lightning:free (f776296) without updating gateway/main_test.go's hardcoded mock fixtures or config/config.example.toml (still openai/gpt-4o-mini)."
+      issue: "RESOLVED — generation_model switched from nvidia/nemotron-3.5-lightning:free to dots-studio/dots-3-note-preview:free (commit 989003b) after confirming the former lacks structured-output support and the latter has it, via OpenRouter's live /api/v1/models. gateway/main_test.go's hardcoded mocks and config/config.example.toml (still openai/gpt-4o-mini) remain out of sync."
     - path: "gateway/main_test.go"
-      issue: "Hardcodes openai/gpt-4o-mini in httptest /models mocks (lines 2074, 2111, 2142, 2397, 3457) and does not override LANCET_OPENROUTER__GENERATION_MODEL in the spawned engine's env (~line 2206), so it silently depends on ambient config.toml."
+      issue: "Hardcodes openai/gpt-4o-mini in httptest /models mocks (lines 2074, 2111, 2142, 2397, 3457) and does not override LANCET_OPENROUTER__GENERATION_MODEL in the spawned engine's env (~line 2206), so it silently depends on ambient config.toml. Still needs a fix — the model value changed again (now dots-studio/dots-3-note-preview:free) so these mocks are stale regardless of which fix direction is chosen."
+    - path: "engine/src/main.rs"
+      issue: "Lines 601-670 maintain an explicit env-var override list (LANCET_OPENROUTER__EMBEDDING_ENDPOINT, MODEL_METADATA_ENDPOINT, CHAT_ENDPOINT, MAX_OUTPUT_TOKENS, etc.) alongside the generic config::Environment source, per the code's own comment about version-specific parsing reliability. generation_model is not in this explicit list — if the test-decoupling fix direction is chosen, it should be added here to guarantee LANCET_OPENROUTER__GENERATION_MODEL actually overrides config.toml."
   missing:
     - "Migrate or rebuild the local ./data/lancedb nodes table to the current 19-field schema (data-side fix), and re-seed/re-ingest so Test 1's retrieval still has real data to answer against."
     - "Decide whether validate_schema should stay strict-only or gain an explicit reconciliation path for known-safe column removals during future schema-restructure phases (code-side design decision, STATE.md currently records: fail startup on any LanceDB schema field drift)."
-    - "Confirm (with a real OPENROUTER_API_KEY) whether nvidia/nemotron-3.5-lightning:free supports structured outputs; if yes, decouple gateway/main_test.go's real-engine tests from ambient config.toml by adding a LANCET_OPENROUTER__GENERATION_MODEL env override; if no, revert config/config.toml's generation_model to openai/gpt-4o-mini (the only value with codebase-wide default/example support)."
+    - "Update gateway/main_test.go's 5 hardcoded openai/gpt-4o-mini mock call sites to match dots-studio/dots-3-note-preview:free, OR decouple the real-engine tests from ambient config.toml by adding generation_model to engine/src/main.rs's explicit env-override list and passing LANCET_OPENROUTER__GENERATION_MODEL in ragChildEnv (structurally prevents this exact class of break recurring on any future config.toml change)."
