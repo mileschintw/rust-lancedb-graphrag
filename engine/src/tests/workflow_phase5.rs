@@ -4,8 +4,12 @@
 //! the complete Rust state-machine edge matrix against request-local fakes.
 
 use std::collections::BTreeSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::task::{Context, Poll};
 
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -58,8 +62,140 @@ fn make_candidate(doc_id: &str, chunk_id: &str, score: f64) -> Candidate {
     }
 }
 
+struct TimerStartedSleep {
+    sleep: Pin<Box<tokio::time::Sleep>>,
+    started: Arc<tokio::sync::Notify>,
+    notified: bool,
+}
+
+impl TimerStartedSleep {
+    fn new(duration: Duration, started: Arc<tokio::sync::Notify>) -> Self {
+        Self {
+            sleep: Box::pin(tokio::time::sleep(duration)),
+            started,
+            notified: false,
+        }
+    }
+}
+
+impl Future for TimerStartedSleep {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        let result = this.sleep.as_mut().poll(cx);
+        if !this.notified {
+            this.started.notify_one();
+            this.notified = true;
+        }
+        result
+    }
+}
+
 struct PreparationOrderGenerator {
     steps: Arc<Mutex<Vec<&'static str>>>,
+}
+
+struct WorstCaseGeneration {
+    preparation_started: Arc<tokio::sync::Notify>,
+    preparation_finished: Arc<tokio::sync::Notify>,
+    attempt_two_started: Arc<tokio::sync::Notify>,
+    preparation_complete: Arc<AtomicBool>,
+    attempts: Arc<AtomicUsize>,
+}
+
+impl Generator for WorstCaseGeneration {
+    fn prepare<'a>(
+        &'a self,
+    ) -> engine::generation::BoxFuture<'a, Result<(), engine::generation::GenerationError>> {
+        let preparation_started = Arc::clone(&self.preparation_started);
+        let preparation_finished = Arc::clone(&self.preparation_finished);
+        let preparation_complete = Arc::clone(&self.preparation_complete);
+        Box::pin(async move {
+            TimerStartedSleep::new(Duration::from_millis(5000), preparation_started).await;
+            preparation_complete.store(true, Ordering::SeqCst);
+            preparation_finished.notify_one();
+            Ok(())
+        })
+    }
+
+    fn generate<'a>(
+        &'a self,
+        _request: engine::generation::GenerationRequest,
+    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>> {
+        let preparation_complete = Arc::clone(&self.preparation_complete);
+        let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
+        let attempt_two_started = Arc::clone(&self.attempt_two_started);
+        Box::pin(async move {
+            assert!(
+                preparation_complete.load(Ordering::SeqCst),
+                "generation must not start before preparation completes"
+            );
+            let timer_started = if attempt == 2 {
+                attempt_two_started
+            } else {
+                Arc::new(tokio::sync::Notify::new())
+            };
+            TimerStartedSleep::new(Duration::from_millis(30000), timer_started).await;
+            if attempt == 1 {
+                Err(engine::generation::GenerationError::new(
+                    engine::generation::GenerationErrorKind::Timeout,
+                    "first worst-case attempt timed out",
+                ))
+            } else {
+                Ok(ModelOutput {
+                    answer: "Worst-case retry succeeded [1].".into(),
+                    cited_evidence_ids: vec!["[1]".into()],
+                    answer_basis: AnswerBasis::Retrieval,
+                    notices: vec![],
+                    warnings: vec![],
+                    usage: None,
+                })
+            }
+        })
+    }
+}
+
+struct PredeadlineReformulator {
+    started: Arc<tokio::sync::Notify>,
+}
+
+impl QueryReformulator for PredeadlineReformulator {
+    fn reformulate<'a>(
+        &'a self,
+        query: &'a str,
+        _cancel: &'a CancellationToken,
+    ) -> engine::workflow::node::BoxFuture<'a, Result<Vec<String>, NodeError>> {
+        let started = Arc::clone(&self.started);
+        Box::pin(async move {
+            TimerStartedSleep::new(Duration::from_millis(4999), started).await;
+            Ok(vec![query.to_string()])
+        })
+    }
+}
+
+struct PredeadlineDenseRetrieval {
+    started: Arc<tokio::sync::Notify>,
+}
+
+impl engine::workflow::ports::DenseRetrievalPort for PredeadlineDenseRetrieval {
+    fn retrieve_dense<'a>(
+        &'a self,
+        _query: &'a str,
+        _query_embedding: &'a [f32],
+        _filter: Option<&'a engine::pb::lancet::v1::DocumentFilter>,
+        _cancel: &'a CancellationToken,
+    ) -> engine::workflow::node::BoxFuture<'a, Result<Vec<Candidate>, NodeError>> {
+        let started = Arc::clone(&self.started);
+        Box::pin(async move {
+            TimerStartedSleep::new(Duration::from_millis(9999), started).await;
+            Ok(vec![make_candidate(
+                "predeadline-doc",
+                "predeadline-chunk",
+                0.9,
+            )])
+        })
+    }
 }
 
 impl Generator for PreparationOrderGenerator {
@@ -156,7 +292,7 @@ async fn workflow_phase5_generation_preflight_bootstrap_tracer() {
 
 /// Task 1 tracer: exact production-shaped five-node lifecycle and event contract.
 #[tokio::test]
-async fn workflow_phase5_event_delivery_tracer() {
+async fn workflow_phase5_happy_path() {
     let (tx, mut rx) = mpsc::channel(100);
     let cancel = CancellationToken::new();
     let trace_id = "trace-happy-01".to_string();
@@ -225,12 +361,17 @@ async fn workflow_phase5_event_delivery_tracer() {
 
     let _guard = AbortOnDrop(Some(handle));
 
-    let mut events = Vec::new();
-    while let Some(event) = rx.recv().await {
-        if let Ok(wf_event) = event {
-            events.push(wf_event);
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
         }
-    }
+        events
+    })
+    .await
+    .expect("happy-path event receiver must close within five seconds");
 
     // 1. Assert trace_id consistency across all events
     for ev in &events {
@@ -374,6 +515,253 @@ async fn workflow_phase5_event_delivery_tracer() {
         .count();
     assert_eq!(started_count, 5, "tracer must start exactly five nodes");
     assert_eq!(completed_count, 5, "tracer must complete exactly five nodes");
+}
+
+/// Task 2: paused-clock proof that the separate 5000ms preparation does not
+/// consume the 65000ms GenerateAnswer budget for two 30000ms attempts.
+#[tokio::test]
+async fn workflow_phase5_generation_preflight_worst_case_budget() {
+    tokio::time::pause();
+
+    const PREFLIGHT_MS: u64 = 5000;
+    const ATTEMPT_MS: u64 = 30000;
+    const INTER_ATTEMPT_SLACK_MS: u64 = 5000;
+    const GENERATION_NODE_BUDGET_MS: u64 = 65000;
+    const PRE_PREFLIGHT_WORKFLOW_MS: u64 = 97000;
+    const DERIVED_WHOLE_WORKFLOW_BOUND_MS: u64 = PRE_PREFLIGHT_WORKFLOW_MS + PREFLIGHT_MS;
+
+    assert_eq!(
+        GENERATION_NODE_BUDGET_MS,
+        ATTEMPT_MS * 2 + INTER_ATTEMPT_SLACK_MS,
+        "the node timer covers two attempts plus inter-attempt slack"
+    );
+    assert_eq!(
+        DERIVED_WHOLE_WORKFLOW_BOUND_MS, 102000,
+        "102000ms is derived arithmetic only; runner.rs does not enforce a global deadline"
+    );
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-worst-case-preflight".into(),
+        "sess-worst-case-preflight".into(),
+    );
+    let request = QueryRagRequest {
+        query: "Worst-case preparation budget".into(),
+        session_id: "sess-worst-case-preflight".into(),
+        filter: None,
+    };
+    let mut ctx = WorkflowContext::new(
+        "sess-worst-case-preflight".into(),
+        "trace-worst-case-preflight".into(),
+        &request,
+    );
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".into(),
+        chunk_id: "worst-case-chunk".into(),
+        document_id: "worst-case-document".into(),
+        chunk_index: 0,
+        title: Some("Worst-case preparation".into()),
+        section_path: Some("Root".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "test".into(),
+        text: "Evidence for the worst-case generation budget.".into(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let preparation_started = Arc::new(tokio::sync::Notify::new());
+    let preparation_waiter = preparation_started.notified();
+    let preparation_finished = Arc::new(tokio::sync::Notify::new());
+    let preparation_finished_waiter = preparation_finished.notified();
+    let attempt_two_started = Arc::new(tokio::sync::Notify::new());
+    let attempt_two_waiter = attempt_two_started.notified();
+    let preparation_complete = Arc::new(AtomicBool::new(false));
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let generator: Arc<dyn Generator> = Arc::new(WorstCaseGeneration {
+        preparation_started: Arc::clone(&preparation_started),
+        preparation_finished: Arc::clone(&preparation_finished),
+        attempt_two_started: Arc::clone(&attempt_two_started),
+        preparation_complete: Arc::clone(&preparation_complete),
+        attempts: Arc::clone(&attempts),
+    });
+    let mut runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
+    runner.add_node(GenerateAnswerNode::new(Some(generator)));
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+
+    preparation_waiter.await;
+    for _ in 0..3 {
+        tokio::task::yield_now().await;
+    }
+    assert!(!preparation_complete.load(Ordering::SeqCst));
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
+
+    tokio::time::advance(Duration::from_millis(PREFLIGHT_MS - 1)).await;
+    for _ in 0..3 {
+        tokio::task::yield_now().await;
+    }
+    assert!(!preparation_complete.load(Ordering::SeqCst));
+    assert_eq!(attempts.load(Ordering::SeqCst), 0);
+
+    tokio::time::advance(Duration::from_millis(1)).await;
+    for _ in 0..3 {
+        tokio::task::yield_now().await;
+    }
+    preparation_finished_waiter.await;
+    assert!(preparation_complete.load(Ordering::SeqCst));
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+
+    tokio::time::advance(Duration::from_millis(ATTEMPT_MS)).await;
+    attempt_two_waiter.await;
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
+
+    tokio::time::advance(Duration::from_millis(ATTEMPT_MS)).await;
+    handle.await.expect("worst-case workflow task must finish");
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(event) = item {
+            events.push(event);
+        }
+    }
+    let completed = events
+        .iter()
+        .find_map(|event| match &event.event {
+            Some(Event::WorkflowCompleted(completed)) => Some(completed),
+            _ => None,
+        })
+        .expect("worst-case workflow must emit WorkflowCompleted");
+    assert!(completed.success, "second generation attempt must succeed");
+    assert_eq!(attempts.load(Ordering::SeqCst), 2, "no third attempt is allowed");
+}
+
+/// Task 2: semantic paused-clock check for the 4999ms reformulation boundary;
+/// the live 7000ms overlay proof remains owned by 05-09.
+#[tokio::test]
+async fn workflow_phase5_reformulate_predeadline_4999ms_no_timeout() {
+    tokio::time::pause();
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-reformulate-predeadline".into(),
+        "sess-reformulate-predeadline".into(),
+    );
+    let request = QueryRagRequest {
+        query: "Reformulate predeadline".into(),
+        session_id: "sess-reformulate-predeadline".into(),
+        filter: None,
+    };
+    let ctx = WorkflowContext::new(
+        "sess-reformulate-predeadline".into(),
+        "trace-reformulate-predeadline".into(),
+        &request,
+    );
+    let started = Arc::new(tokio::sync::Notify::new());
+    let started_waiter = started.notified();
+    let node = ReformulateQueryNode::with_reformulator(Some(Arc::new(
+        PredeadlineReformulator {
+            started: Arc::clone(&started),
+        },
+    )));
+    let runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
+
+    let handle = tokio::spawn(async move {
+        let mut ctx = ctx;
+        let result = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
+        (result, ctx)
+    });
+
+    started_waiter.await;
+    for _ in 0..3 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::advance(Duration::from_millis(4999)).await;
+    let (result, ctx) = handle.await.expect("reformulation task must finish");
+
+    assert!(result.is_ok(), "4999ms reformulation must not time out");
+    assert_eq!(ctx.variants, vec!["Reformulate predeadline"]);
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(event) = item {
+            events.push(event);
+        }
+    }
+    assert!(!events.iter().any(|event| matches!(
+        &event.event,
+        Some(Event::NodeFailed(failed)) if failed.category == NodeErrorKind::Timeout as i32
+    )));
+}
+
+/// Task 2: semantic paused-clock check for the 9999ms retrieval boundary;
+/// the live 7000ms overlay proof remains owned by 05-09.
+#[tokio::test]
+async fn workflow_phase5_retrieve_predeadline_9999ms_no_timeout() {
+    tokio::time::pause();
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-retrieve-predeadline".into(),
+        "sess-retrieve-predeadline".into(),
+    );
+    let request = QueryRagRequest {
+        query: "Retrieve predeadline".into(),
+        session_id: "sess-retrieve-predeadline".into(),
+        filter: None,
+    };
+    let ctx = WorkflowContext::new(
+        "sess-retrieve-predeadline".into(),
+        "trace-retrieve-predeadline".into(),
+        &request,
+    );
+    let started = Arc::new(tokio::sync::Notify::new());
+    let started_waiter = started.notified();
+    let node = RetrieveHybridNode::new(
+        Some(Arc::new(PredeadlineDenseRetrieval {
+            started: Arc::clone(&started),
+        })),
+        None,
+        None,
+        RetrievalSettings::default(),
+    );
+    let runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
+
+    let handle = tokio::spawn(async move {
+        let mut ctx = ctx;
+        let result = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
+        (result, ctx)
+    });
+
+    started_waiter.await;
+    for _ in 0..3 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::advance(Duration::from_millis(9999)).await;
+    let (result, ctx) = handle.await.expect("retrieval task must finish");
+
+    assert!(result.is_ok(), "9999ms retrieval must not time out");
+    assert_eq!(ctx.evidence_blocks.len(), 1);
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(event) = item {
+            events.push(event);
+        }
+    }
+    assert!(!events.iter().any(|event| matches!(
+        &event.event,
+        Some(Event::NodeFailed(failed)) if failed.category == NodeErrorKind::Timeout as i32
+    )));
 }
 
 /// Task 1: bounded checkpoint handoff retains ownership while client delivery

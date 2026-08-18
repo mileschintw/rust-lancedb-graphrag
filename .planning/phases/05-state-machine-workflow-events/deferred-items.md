@@ -1,4 +1,3 @@
 # Deferred Items
 
-- **Pre-existing formatting debt (out of scope for 05-21):** `cargo fmt --manifest-path engine/Cargo.toml -- --check` reports baseline formatting differences across unrelated engine files. No formatting-only changes were made outside the two planned retrieval files.
-- **Pre-existing binary dead-code warnings (out of scope for 05-21):** `cargo check --bin engine --manifest-path engine/Cargo.toml --locked` passes while warning that `d1_status` and `AttemptedAndFailed::reason` are unused in `engine/src/main.rs`. The warnings are unrelated to typed fusion provenance and were not changed.
+- 05-20 Task 2 binary verification remains incomplete for `workflow_phase5_production_reachability`: the test is absent from the current binary target and from preserved commit `71895ab`. Pending plan 05-22 explicitly owns adding it in `engine/src/tests/workflow_phase5_production.rs`; it was not added here because 05-20 is bounded to the generation preparation seam and unrelated pending plans must not be executed.
