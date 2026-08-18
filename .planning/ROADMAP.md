@@ -322,7 +322,7 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 20/24 plans executed
+**Plans:** 24/24 plans executed
 
 Plans:
 
@@ -338,12 +338,12 @@ Plans:
 - [x] 05-16-PLAN.md — Graph notice merge, variant provenance, and immutable BM25 snapshotting.
 - [x] 05-17-PLAN.md — Shared protobuf provenance and failure-terminal notice fields with synchronized Rust/Go bindings.
 - [x] 05-18-PLAN.md — Library-target Phase 5 tests and cfg(test) fake-port seam.
-- [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
-- [ ] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
+- [x] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
+- [x] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
 - [x] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
-- [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
+- [x] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 - [x] 05-23-PLAN.md — Generated-field Rust compile repair and RetrievalSnapshot wire-contract proof.
-- [ ] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
+- [x] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
 
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
@@ -410,20 +410,20 @@ Plans:
 **Wave 16** *(parallel after the shared retrieval/event contracts; 05-10 owns the shared workflow event/context module before 05-22)*
 
 - [x] 05-10-PLAN.md — Reliable typed event delivery, terminal idempotence, sequence integrity, and full snapshots.
-- [ ] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
+- [x] 05-21-PLAN.md — Typed fusion provenance and review cleanup guards.
 
 **Wave 17** *(blocked on terminal contract, test-target ownership, resolved cross-variant fusion contract, and 05-10 workflow event/context ownership)*
 
-- [ ] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
-- [ ] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
+- [x] 05-19-PLAN.md — Failure-terminal notice preservation from Rust workflow events through Go SSE.
+- [x] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
 
 **Wave 18** *(blocked on 05-19 terminal ownership, generated-field repair, provider retry, and production wiring seams)*
 
-- [ ] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
+- [x] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 
 **Wave 19** *(blocked on provider retry, target handoff, terminal-event, and serialized 05-22 seams)*
 
-- [ ] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
+- [x] 05-20-PLAN.md — Preflight bootstrap timing, worst-case retry budget, and bounded workflow tests.
 
 **Wave 20** *(blocked on all engine event/timing, terminal, retrieval, and checkpoint contract work)*
 
