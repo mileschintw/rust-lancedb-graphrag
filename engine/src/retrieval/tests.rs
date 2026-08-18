@@ -8,9 +8,11 @@ use engine::db::DatabaseManager;
 use uuid::Uuid;
 
 use super::bm25::analyze;
+use super::fusion::VariantProvenanceSource;
 use super::{
-    fuse_candidates, fuse_variant_candidates, Bm25Config, Bm25Index, Candidate, DenseRetriever, QueryFilters, QueryRequest,
-    RetrievalErrorKind, RetrievalSettings, MAX_SERVICE_CANDIDATE_LIMIT, MAX_SERVICE_FINAL_LIMIT,
+    fuse_candidates, fuse_variant_candidates, Bm25Config, Bm25Index, Candidate, DenseRetriever,
+    QueryFilters, QueryRequest, RetrievalErrorKind, RetrievalSettings, MAX_SERVICE_CANDIDATE_LIMIT,
+    MAX_SERVICE_FINAL_LIMIT,
 };
 
 fn candidate(document_id: &str, chunk_id: &str, content: &str) -> Candidate {
@@ -674,6 +676,56 @@ fn fusion_cross_variant_tracer() {
 }
 
 #[test]
+fn fusion_variant_provenance_source_tracer() {
+    let settings = RetrievalSettings::default();
+    let mut vector_candidate = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "shared",
+        "vector content",
+    );
+    vector_candidate.score = 0.75;
+    let mut bm25_candidate = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "shared",
+        "bm25 content",
+    );
+    bm25_candidate.score = 0.25;
+
+    let fused = fuse_candidates(
+        vec![vector_candidate],
+        vec![bm25_candidate],
+        &settings,
+    )
+    .unwrap();
+
+    assert_eq!(fused.len(), 1);
+    let shared = &fused[0];
+    assert_eq!(shared.candidate.chunk_id, "shared");
+    assert_eq!(shared.fused_score, 2.0 / 61.0);
+    assert_eq!(shared.vector_rank, Some(1));
+    assert_eq!(shared.vector_score, Some(0.75));
+    assert_eq!(shared.bm25_rank, Some(1));
+    assert_eq!(shared.bm25_score, Some(0.25));
+    assert_eq!(shared.variant_provenance.len(), 2);
+    assert_eq!(
+        shared.variant_provenance[0].source,
+        VariantProvenanceSource::Vector
+    );
+    assert_eq!(shared.variant_provenance[0].variant_index, 0);
+    assert_eq!(shared.variant_provenance[0].rank, 1);
+    assert_eq!(shared.variant_provenance[0].score, 0.75);
+    assert_eq!(shared.variant_provenance[0].contribution, 1.0 / 61.0);
+    assert_eq!(
+        shared.variant_provenance[1].source,
+        VariantProvenanceSource::Bm25
+    );
+    assert_eq!(shared.variant_provenance[1].variant_index, 0);
+    assert_eq!(shared.variant_provenance[1].rank, 1);
+    assert_eq!(shared.variant_provenance[1].score, 0.25);
+    assert_eq!(shared.variant_provenance[1].contribution, 1.0 / 61.0);
+}
+
+#[test]
 fn variant_zero_one_variant_matches_existing_scores() {
     let settings = RetrievalSettings::default();
     let cand_vec = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "vector content");
@@ -815,5 +867,3 @@ fn retrieval_snapshot_variant_provenance_wire_contract() {
     );
     assert_eq!(decoded, original);
 }
-
-

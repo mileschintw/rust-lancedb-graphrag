@@ -11,11 +11,20 @@ use serde::Serialize;
 
 use super::{Candidate, RetrievalError, RetrievalErrorKind, RetrievalSettings};
 
+/// Identifies the retrieval path that contributed a provenance entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum VariantProvenanceSource {
+    #[serde(rename = "vector")]
+    Vector,
+    #[serde(rename = "bm25")]
+    Bm25,
+}
+
 /// Provenance contribution entry for a variant/source candidate.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct VariantProvenance {
     pub variant_index: usize,
-    pub source: String,
+    pub source: VariantProvenanceSource,
     pub rank: usize,
     pub score: f64,
     pub contribution: f64,
@@ -30,7 +39,6 @@ pub struct FusedCandidate {
     pub bm25_rank: Option<usize>,
     pub vector_score: Option<f64>,
     pub bm25_score: Option<f64>,
-    #[serde(default)]
     pub variant_provenance: Vec<VariantProvenance>,
 }
 
@@ -105,7 +113,7 @@ pub fn fuse_variant_candidates(
                 &mut fused,
                 candidate,
                 0,
-                Source::Vector,
+                VariantProvenanceSource::Vector,
                 rank + 1,
                 settings.vector_weight,
                 settings.rrf_k,
@@ -126,7 +134,7 @@ pub fn fuse_variant_candidates(
                     &mut fused,
                     candidate,
                     variant_idx,
-                    Source::Bm25,
+                    VariantProvenanceSource::Bm25,
                     rank + 1,
                     settings.bm25_weight,
                     settings.rrf_k,
@@ -142,16 +150,24 @@ pub fn fuse_variant_candidates(
             let (vector_rank, vector_score) = value
                 .variant_provenance
                 .iter()
-                .filter(|p| p.source == "vector")
-                .min_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.variant_index.cmp(&b.variant_index)))
+                .filter(|p| p.source == VariantProvenanceSource::Vector)
+                .min_by(|a, b| {
+                    b.score
+                        .total_cmp(&a.score)
+                        .then_with(|| a.variant_index.cmp(&b.variant_index))
+                })
                 .map(|p| (Some(p.rank), Some(p.score)))
                 .unwrap_or((value.vector_rank, value.vector_score));
 
             let (bm25_rank, bm25_score) = value
                 .variant_provenance
                 .iter()
-                .filter(|p| p.source == "bm25")
-                .min_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.variant_index.cmp(&b.variant_index)))
+                .filter(|p| p.source == VariantProvenanceSource::Bm25)
+                .min_by(|a, b| {
+                    b.score
+                        .total_cmp(&a.score)
+                        .then_with(|| a.variant_index.cmp(&b.variant_index))
+                })
                 .map(|p| (Some(p.rank), Some(p.score)))
                 .unwrap_or((value.bm25_rank, value.bm25_score));
 
@@ -177,17 +193,11 @@ pub fn fuse_variant_candidates(
     Ok(results)
 }
 
-#[derive(Clone, Copy)]
-enum Source {
-    Vector,
-    Bm25,
-}
-
 fn add_variant_candidate(
     fused: &mut BTreeMap<String, Accumulator>,
     candidate: Candidate,
     variant_index: usize,
-    source: Source,
+    source: VariantProvenanceSource,
     rank: usize,
     weight: f64,
     rrf_k: f64,
@@ -224,14 +234,9 @@ fn add_variant_candidate(
         ));
     }
 
-    let source_str = match source {
-        Source::Vector => "vector",
-        Source::Bm25 => "bm25",
-    };
-
     let prov = VariantProvenance {
         variant_index,
-        source: source_str.to_string(),
+        source,
         rank,
         score: source_score,
         contribution,
@@ -261,7 +266,7 @@ fn add_variant_candidate(
     entry.variant_provenance.push(prov);
 
     match source {
-        Source::Vector => {
+        VariantProvenanceSource::Vector => {
             if entry.vector_rank.is_none() {
                 entry.vector_rank = Some(rank);
                 entry.vector_score = Some(source_score);
@@ -270,7 +275,7 @@ fn add_variant_candidate(
                 }
             }
         }
-        Source::Bm25 => {
+        VariantProvenanceSource::Bm25 => {
             if entry.bm25_rank.is_none() {
                 entry.bm25_rank = Some(rank);
                 entry.bm25_score = Some(source_score);
