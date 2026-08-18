@@ -19,7 +19,7 @@ pub mod fusion;
 
 pub use bm25::{Bm25Config, Bm25Index};
 pub use dense::DenseRetriever;
-pub use fusion::{fuse_candidates, fuse_variant_candidates, FusedCandidate, VariantProvenance};
+pub use fusion::{fuse_candidates, fuse_cross_variant_candidates, FusedCandidate, VariantProvenance};
 
 pub const DEFAULT_CANDIDATE_LIMIT: usize = 32;
 pub const DEFAULT_FINAL_LIMIT: usize = 8;
