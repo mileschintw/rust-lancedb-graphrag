@@ -19,6 +19,7 @@
     "workflow.auto_advance",
     "workflow.node_repair",
     "workflow.node_repair_budget",
+    "workflow.smart_zone_tokens",
     "workflow.human_verify_mode",
     "workflow.text_mode",
     "workflow.research_before_questions",
@@ -48,9 +49,6 @@
     "planning.commit_docs",
     "planning.search_gitignored",
     "planning.sub_repos",
-    "review.ollama_host",
-    "review.lm_studio_host",
-    "review.llama_cpp_host",
     "review.default_reviewers",
     "review.max_prompt_tokens",
     "review.max_prompt_tokens_per_reviewer",
@@ -65,6 +63,8 @@
     "workflow.context_guard_mode",
     "executor.stall_detect_interval_minutes",
     "executor.stall_threshold_minutes",
+    "planner.stall_detect_interval_minutes",
+    "planner.stall_threshold_minutes",
     "workflow.inline_plan_threshold",
     "hooks.context_warnings",
     "hooks.workflow_guard",
@@ -116,11 +116,6 @@
       "topLevel": "agent_skills",
       "source": "^agent_skills\\.[a-zA-Z0-9_-]+$",
       "description": "agent_skills.<agent-type>"
-    },
-    {
-      "topLevel": "review",
-      "source": "^review\\.models\\.[a-zA-Z0-9_-]+$",
-      "description": "review.models.<cli-name>"
     },
     {
       "topLevel": "features",
@@ -176,11 +171,6 @@
       "topLevel": "fast_mode",
       "source": "^fast_mode\\.agent_overrides\\.[a-zA-Z0-9_-]+$",
       "description": "fast_mode.agent_overrides.<agent-id>"
-    },
-    {
-      "topLevel": "review",
-      "source": "^review\\.max_prompt_tokens_per_reviewer\\.[a-zA-Z0-9_-]+$",
-      "description": "review.max_prompt_tokens_per_reviewer.<reviewer-slug>"
     },
     {
       "topLevel": "review",

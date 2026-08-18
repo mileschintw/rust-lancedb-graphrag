@@ -1,7 +1,7 @@
 ---
 name: gsd-new-milestone
 description: Start a new milestone cycle — update PROJECT.md and route to requirements
-argument-hint: "[milestone name, e.g., 'v1.1 Notifications'] [--ws <name>]"
+argument-hint: "[milestone name, e.g., 'v1.1 Notifications'] [--ws <name>] [--reset-phase-numbers]"
 allowed-tools:
   - Read
   - Write
@@ -26,11 +26,11 @@ Brownfield equivalent of new-project. Project exists, PROJECT.md has history. Ga
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/new-milestone.md
-@D:/Repos/lancet/.claude/gsd-core/references/questioning.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
-@D:/Repos/lancet/.claude/gsd-core/templates/project.md
-@D:/Repos/lancet/.claude/gsd-core/templates/requirements.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/new-milestone.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/questioning.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/templates/project.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/templates/requirements.md
 </execution_context>
 
 <context>

@@ -29,32 +29,107 @@ function routeInitCommand({ init, args, cwd, raw, error }) {
         error,
         unknownMessage: (_subcommand, available) => `Unknown init workflow: ${_subcommand}\nAvailable: ${available.join(', ')}`,
         handlers: {
+            // #2932/#2992: `parseNamedArgs` never yields `undefined` for an absent
+            // flag (value-flags default to `null`, booleanFlags default to `false`);
+            // `buildSectionManifestField`'s flags-Set builder (src/init.cts) is the
+            // single source of truth for flag ABSENCE and gates on value truthiness,
+            // so `namedArgs` is passed through here uncoerced.
             'execute-phase': () => {
-                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['validate', 'tdd']);
-                init.cmdInitExecutePhase(cwd, args[2], raw, { validate: namedArgs['validate'], tdd: namedArgs['tdd'] });
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['validate', 'tdd', 'wave']);
+                init.cmdInitExecutePhase(cwd, args[2], raw, {
+                    validate: namedArgs['validate'],
+                    tdd: namedArgs['tdd'],
+                    wave: namedArgs['wave'],
+                });
             },
             'plan-phase': () => {
-                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, ['granularity'], ['validate', 'tdd']);
-                init.cmdInitPlanPhase(cwd, args[2], raw, { validate: namedArgs['validate'], tdd: namedArgs['tdd'], granularity: namedArgs['granularity'] });
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, ['granularity', 'prd', 'ingest', 'research-phase'], ['validate', 'tdd', 'reviews', 'chunked']);
+                init.cmdInitPlanPhase(cwd, args[2], raw, {
+                    validate: namedArgs['validate'],
+                    tdd: namedArgs['tdd'],
+                    granularity: namedArgs['granularity'],
+                    prd: namedArgs['prd'],
+                    ingest: namedArgs['ingest'],
+                    'research-phase': namedArgs['research-phase'],
+                    reviews: namedArgs['reviews'],
+                    chunked: namedArgs['chunked'],
+                });
             },
-            'new-project': () => init.cmdInitNewProject(cwd, raw),
-            'new-milestone': () => init.cmdInitNewMilestone(cwd, raw),
+            'new-project': () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['auto']);
+                init.cmdInitNewProject(cwd, raw, { auto: namedArgs['auto'] });
+            },
+            'new-milestone': () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['reset-phase-numbers']);
+                init.cmdInitNewMilestone(cwd, raw, {
+                    'reset-phase-numbers': namedArgs['reset-phase-numbers'],
+                });
+            },
             onboard: () => {
                 const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['fast', 'text']);
                 init.cmdInitOnboard(cwd, raw, { fast: namedArgs['fast'], text: namedArgs['text'] });
             },
-            quick: () => init.cmdInitQuick(cwd, args.slice(2).join(' '), raw),
+            quick: () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['discuss', 'research', 'validate', 'full']);
+                // #2994: `args.slice(2)` is the free-text description, but section-manifest
+                // gating (buildSectionManifestField, src/init.cts) now requires forwarding
+                // --discuss/--research/--validate/--full alongside it — a plain `.join(' ')`
+                // would otherwise fold those recognized flag tokens straight into the
+                // description text. Strip them before joining so the description stays
+                // exactly what it was before this workflow started forwarding flags.
+                const quickFlagTokens = new Set(['--discuss', '--research', '--validate', '--full']);
+                const description = args
+                    .slice(2)
+                    .filter((token) => !quickFlagTokens.has(token))
+                    .join(' ');
+                init.cmdInitQuick(cwd, description, raw, {
+                    discuss: namedArgs['discuss'],
+                    research: namedArgs['research'],
+                    validate: namedArgs['validate'],
+                    full: namedArgs['full'],
+                });
+            },
             'ingest-docs': () => init.cmdInitIngestDocs(cwd, raw),
             resume: () => init.cmdInitResume(cwd, raw),
             'verify-work': () => init.cmdInitVerifyWork(cwd, args[2], raw),
             'phase-op': () => init.cmdInitPhaseOp(cwd, args[2], raw),
+            'code-review': () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['fix']);
+                init.cmdInitCodeReview(cwd, args[2], raw, { fix: namedArgs['fix'] });
+            },
+            review: () => init.cmdInitReview(cwd, args[2], raw, {}),
+            'discuss-phase-assumptions': () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['auto']);
+                init.cmdInitDiscussPhaseAssumptions(cwd, args[2], raw, { auto: namedArgs['auto'] });
+            },
             todos: () => init.cmdInitTodos(cwd, args[2], raw),
             'milestone-op': () => init.cmdInitMilestoneOp(cwd, raw),
             'map-codebase': () => init.cmdInitMapCodebase(cwd, raw),
-            progress: () => init.cmdInitProgress(cwd, raw),
+            progress: () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['forensic']);
+                init.cmdInitProgress(cwd, raw, { forensic: namedArgs['forensic'] });
+            },
             // Keep manager on CJS for now so runtime-specific command rendering
             // (e.g. $gsd-* for codex) stays consistent with runtime-slash helpers.
             manager: () => init.cmdInitManager(cwd, raw),
+            'complete-milestone': () => init.cmdInitCompleteMilestone(cwd, raw),
+            autonomous: () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['converge', 'cross-ai']);
+                init.cmdInitAutonomous(cwd, raw, {
+                    converge: namedArgs['converge'],
+                    'cross-ai': namedArgs['cross-ai'],
+                });
+            },
+            'docs-update': () => init.cmdInitDocsUpdate(cwd, raw, {}),
+            update: () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['next', 'rc']);
+                init.cmdInitUpdate(cwd, raw, { next: namedArgs['next'], rc: namedArgs['rc'] });
+            },
+            transition: () => init.cmdInitTransition(cwd, raw, {}),
+            debug: () => {
+                const namedArgs = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, [], ['diagnose']);
+                init.cmdInitDebug(cwd, raw, { diagnose: namedArgs['diagnose'] });
+            },
             'new-workspace': () => init.cmdInitNewWorkspace(cwd, raw),
             'list-workspaces': () => init.cmdInitListWorkspaces(cwd, raw),
             'remove-workspace': () => init.cmdInitRemoveWorkspace(cwd, args[2], raw),

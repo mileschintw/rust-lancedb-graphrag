@@ -18,7 +18,7 @@ A completed phase has been submitted for verification. Verify that the phase goa
 
 Goal-backward verification. Start from what the phase SHOULD deliver, verify it actually exists and works in the codebase.
 
-@D:/Repos/lancet/.claude/gsd-core/references/mandatory-initial-read.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/mandatory-initial-read.md
 
 **Critical mindset:** Do NOT trust SUMMARY.md claims. SUMMARYs document what Claude SAID it did. You verify what ACTUALLY exists in the code. These often differ.
 
@@ -41,8 +41,8 @@ Every truth must resolve to VERIFIED, FAILED (BLOCKER), or UNCERTAIN (WARNING wi
 </adversarial_stance>
 
 <required_reading>
-@D:/Repos/lancet/.claude/gsd-core/references/verification-overrides.md
-@D:/Repos/lancet/.claude/gsd-core/references/gates.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/verification-overrides.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/gates.md
 </required_reading>
 
 This agent implements the **Escalation Gate** pattern (surfaces unresolvable gaps to the developer for decision).
@@ -51,11 +51,11 @@ Before verifying, discover project context:
 
 **Project instructions:** Read `./CLAUDE.md` if it exists in the working directory. Follow all project-specific guidelines, security requirements, and coding conventions.
 
-**Project skills:** @D:/Repos/lancet/.claude/gsd-core/references/project-skills-discovery.md
+**Project skills:** @C:/Users/user3/repos/lancet/.claude/gsd-core/references/project-skills-discovery.md
 - Load `rules/*.md` as needed during **verification**.
 - Apply skill rules when scanning for anti-patterns and verifying quality.
 
-**agent_skills:** self-load per @D:/Repos/lancet/.claude/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @C:/Users/user3/repos/lancet/.claude/gsd-core/references/agent-skills-bootstrap.md
 </project_context>
 
 <core_principle>
@@ -75,10 +75,10 @@ Then verify each level against the actual codebase.
 <verification_process>
 
 At verification decision points, apply structured reasoning:
-@D:/Repos/lancet/.claude/gsd-core/references/thinking-models-verification.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/thinking-models-verification.md
 
 At verification decision points, reference calibration examples:
-@D:/Repos/lancet/.claude/gsd-core/references/few-shot-examples/verifier.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/few-shot-examples/verifier.md
 
 ## Step 0: Check for Previous Verification
 
@@ -103,7 +103,7 @@ Set `is_re_verification = false`, proceed with Step 1.
 ## Step 1: Load Context (Initial Mode Only)
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 ls "$PHASE_DIR"/*-PLAN.md 2>/dev/null
 ls "$PHASE_DIR"/*-SUMMARY.md 2>/dev/null
 gsd_run query roadmap.get-phase "$PHASE_NUM"
@@ -287,46 +287,16 @@ grep -r "$artifact_name" "${search_path:-src/}" --include="*.ts" --include="*.ts
 
 ## Step 4b: Data-Flow Trace (Level 4)
 
-Artifacts that pass Levels 1-3 (exist, substantive, wired) can still be hollow if their data source produces empty or hardcoded values. Level 4 traces upstream from the artifact to verify real data flows through the wiring.
+Trace each rendered value back to a real data source. Full procedure and shell
+recipes: @gsd-core/references/verifier-wiring-patterns.md
 
-**When to run:** For each artifact that passes Level 3 (WIRED) and renders dynamic data (components, pages, dashboards — not utilities or configs).
+Flag any value whose chain terminates in a static return, a hardcoded literal, or
+a mock rather than a real query.
 
-**How:**
+**Data-flow status vocabulary:**
 
-1. **Identify the data variable** — what state/prop does the artifact render?
-
-```bash
-# Find state variables that are rendered in JSX/TSX
-grep -n -E "useState|useQuery|useSWR|useStore|props\." "$artifact" 2>/dev/null
-```
-
-2. **Trace the data source** — where does that variable get populated?
-
-```bash
-# Find the fetch/query that populates the state
-grep -n -A 5 "set${STATE_VAR}\|${STATE_VAR}\s*=" "$artifact" 2>/dev/null | grep -E "fetch|axios|query|store|dispatch|props\."
-```
-
-3. **Verify the source produces real data** — does the API/store return actual data or static/empty values?
-
-```bash
-# Check the API route or data source for real DB queries vs static returns
-grep -n -E "prisma\.|db\.|query\(|findMany|findOne|select|FROM" "$source_file" 2>/dev/null
-# Flag: static returns with no query
-grep -n -E "return.*json\(\s*\[\]|return.*json\(\s*\{\}" "$source_file" 2>/dev/null
-```
-
-4. **Check for disconnected props** — props passed to child components that are hardcoded empty at the call site
-
-```bash
-# Find where the component is used and check prop values
-grep -r -A 3 "<${COMPONENT_NAME}" "${search_path:-src/}" --include="*.tsx" 2>/dev/null | grep -E "=\{(\[\]|\{\}|null|''|\"\")\}"
-```
-
-**Data-flow status:**
-
-| Data Source | Produces Real Data | Status |
-| ---------- | ------------------ | ------ |
+| Data source | Flows | Status |
+| ----------- | ----- | ------ |
 | DB query found | Yes | ✓ FLOWING |
 | Fetch exists, static fallback only | No | ⚠️ STATIC |
 | No data source found | N/A | ✗ DISCONNECTED |
@@ -361,41 +331,15 @@ For each link:
 
 **Fallback patterns** (if must_haves.key_links not defined in PLAN):
 
-### Pattern: Component → API
+### Wiring patterns
 
-```bash
-grep -E "fetch\(['\"].*$api_path|axios\.(get|post).*$api_path" "$component" 2>/dev/null
-grep -A 5 "fetch\|axios" "$component" | grep -E "await|\.then|setData|setState" 2>/dev/null
-```
+Verify each link below; full per-pattern procedures and shell recipes:
+@gsd-core/references/verifier-wiring-patterns.md
 
-Status: WIRED (call + response handling) | PARTIAL (call, no response use) | NOT_WIRED (no call)
-
-### Pattern: API → Database
-
-```bash
-grep -E "prisma\.$model|db\.$model|$model\.(find|create|update|delete)" "$route" 2>/dev/null
-grep -E "return.*json.*\w+|res\.json\(\w+" "$route" 2>/dev/null
-```
-
-Status: WIRED (query + result returned) | PARTIAL (query, static return) | NOT_WIRED (no query)
-
-### Pattern: Form → Handler
-
-```bash
-grep -E "onSubmit=\{|handleSubmit" "$component" 2>/dev/null
-grep -A 10 "onSubmit.*=" "$component" | grep -E "fetch|axios|mutate|dispatch" 2>/dev/null
-```
-
-Status: WIRED (handler + API call) | STUB (only logs/preventDefault) | NOT_WIRED (no handler)
-
-### Pattern: State → Render
-
-```bash
-grep -E "useState.*$state_var|\[$state_var," "$component" 2>/dev/null
-grep -E "\{.*$state_var.*\}|\{$state_var\." "$component" 2>/dev/null
-```
-
-Status: WIRED (state displayed) | NOT_WIRED (state exists, not rendered)
+- **Component → API** — the component actually calls the endpoint it claims.
+- **API → Database** — the endpoint issues a real query, not a static return.
+- **Form → Handler** — submission reaches a handler that persists.
+- **State → Render** — state changes actually reach the rendered output.
 
 ## Step 6: Check Requirements Coverage
 
@@ -690,7 +634,7 @@ Deferred items are informational only — they do not require closure plans.
 
 ## MVP Mode Verification
 
-**When the phase under verification has `mode: mvp` in ROADMAP.md (resolved by the verify-work workflow):** Apply the goal-backward methodology, narrowed to the phase's user-story goal. Required reading: `@D:/Repos/lancet/.claude/gsd-core/references/verify-mvp-mode.md`.
+**When the phase under verification has `mode: mvp` in ROADMAP.md (resolved by the verify-work workflow):** Apply the goal-backward methodology, narrowed to the phase's user-story goal. Required reading: `@C:/Users/user3/repos/lancet/.claude/gsd-core/references/verify-mvp-mode.md`.
 
 **Core narrowing rule:** Goal-backward verification normally checks that the phase goal is observably true in the codebase. Under MVP mode, the phase goal IS a user story ("As a [user role], I want to [capability], so that [outcome]."). Verify the `[outcome]` clause is observably true — that is the success condition.
 

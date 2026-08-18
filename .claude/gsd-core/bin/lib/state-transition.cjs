@@ -111,8 +111,28 @@ function applyStatePreservation(input) {
             const derived = (postFm['progress'] ?? {});
             const merged = { ...derived };
             if (curated) {
+                // #2440: total_plans and total_phases always take the derived value.
+                // #2969: completed_plans and completed_phases take the derived value
+                // when it is GREATER than the curated value (gap-closure plans that
+                // completed after the plan count grew) — ratcheting UP only, never
+                // deriving downward (preserves the #3242 curated-progress protection
+                // for cases unrelated to plan-count growth, e.g. a deleted SUMMARY).
+                // percent also takes the derived value — the resync recomputed it from
+                // disk counts, and a stale curated percent would be incoherent against
+                // the ratcheted-up completed counts (e.g. 54/54 at 93%).
+                const ratchetUpKeys = new Set(['completed_plans', 'completed_phases']);
                 for (const [key, value] of Object.entries(curated)) {
-                    if (key !== 'total_plans' && key !== 'total_phases') {
+                    if (key === 'total_plans' || key === 'total_phases' || key === 'percent')
+                        continue;
+                    if (ratchetUpKeys.has(key)) {
+                        const derivedNum = typeof derived[key] === 'number' ? derived[key] : -Infinity;
+                        const curatedNum = typeof value === 'number' ? value : -Infinity;
+                        // Take the derived value only when it ratchets up; else keep curated.
+                        if (derivedNum > curatedNum)
+                            continue;
+                        merged[key] = value;
+                    }
+                    else {
                         merged[key] = value;
                     }
                 }
@@ -241,7 +261,7 @@ function beginPhaseCore(content, intent, deps) {
     // #1255: body-field replacements operate on body only (frontmatter stripped),
     // not on the full content. The YAML `status:` key matches `^Status:\s*`
     // before the body pipe-table row if full content is passed.
-    const existingFm = extractFrontmatter(content);
+    const existingFm = extractFrontmatter(content, deps.sourcePath);
     const hasFrontmatter = Object.keys(existingFm).length > 0;
     let body = stripFrontmatter(content);
     const reassemble = (b) => hasFrontmatter
@@ -314,7 +334,11 @@ function beginPhaseCore(content, intent, deps) {
         // (do not touch Plan:, Phase:, Status:, stopped_at, progress.percent).
         body = mutateCurrentPositionResume(body, intent, today, updated);
     }
-    return { content: reassemble(body), updated };
+    // #2736: surface the #3127 resume decision so the adapter can drop its
+    // intent-first current_phase_name override on a resume — the core just
+    // preserved the mid-flight name, and an override would drift frontmatter
+    // away from the preserved body value.
+    return { content: reassemble(body), updated, data: { resumed: isAlreadyExecuting } };
 }
 /**
  * Find the `## Current Position` section, return its `{start, end}` byte
@@ -335,7 +359,24 @@ function locateCurrentPosition(body) {
     let end = body.length;
     for (let j = idx + 1; j < hs.length; j++) {
         if (STOP_H2_PLUS(hs[j].level)) {
-            end = hs[j].offset - 1;
+            // Exclude the newline that separates this section from the next
+            // heading. Walk back over a bare `\n`, then over a `\r` if one
+            // immediately precedes it (CRLF), so a CRLF document's slice does not
+            // retain a stray unpaired trailing `\r` (#3118).
+            let e = hs[j].offset;
+            if (e > 0 && body[e - 1] === '\n') {
+                e -= 1;
+                if (e > 0 && body[e - 1] === '\r')
+                    e -= 1;
+            }
+            // Clamp so the span can never invert (#3118 review): when the section
+            // is empty and the next heading follows with no blank line between,
+            // walking back over the newline(s) can land `e` before `start`. An
+            // inverted span makes every mutator's `body.slice(0, start) +
+            // sectionBody + body.slice(end)` reassembly duplicate the bytes in
+            // `[end, start)`. A zero-length span (`end === start`) is the correct
+            // representation of an empty-but-present section.
+            end = Math.max(e, start);
             break;
         }
     }
@@ -523,7 +564,7 @@ function advancePlanCore(content, deps) {
     // not on the full content. The YAML `status:` key matches `^Status:\s*`
     // before the body field if full content is passed (codex Phase 2 review:
     // HIGH blocking finding — same pattern beginPhaseCore already handles).
-    const existingFm = extractFrontmatter(content);
+    const existingFm = extractFrontmatter(content, deps.sourcePath);
     const hasFrontmatter = Object.keys(existingFm).length > 0;
     let body = stripFrontmatter(content);
     const reassemble = (b) => hasFrontmatter
@@ -645,7 +686,7 @@ function completePhaseCore(content, intent, deps) {
     }
     // #1255: body-field replacements operate on body only (frontmatter stripped),
     // so the YAML `status:` / `current_phase:` keys cannot shadow the body fields.
-    const existingFm = extractFrontmatter(content);
+    const existingFm = extractFrontmatter(content, deps.sourcePath);
     const hasFrontmatter = Object.keys(existingFm).length > 0;
     let body = stripFrontmatter(content);
     const reassemble = (b) => hasFrontmatter
@@ -740,8 +781,17 @@ function completePhaseCore(content, intent, deps) {
             if (derived.totalPhases !== null)
                 derivedTotalPhases = derived.totalPhases;
         }
+        // #3057 B9: only mark 'Completed Phases' updated when the text actually
+        // changed. `stateReplaceField` returns the full (re-)substituted content
+        // whenever the field pattern matches, REGARDLESS of whether newCompleted
+        // differs from the value already in `body` — so a truthy-only check here
+        // marked the field 'updated' even when the roadmap was unavailable and
+        // newCompleted is just completedRaw parsed back to itself. That collapsed
+        // "recomputed from roadmap" and "left as-is" into the same `updated`
+        // signal. Comparing to `body` (the idiom every other field in this
+        // function already uses) restores the distinction.
         const completedAfter = (0, state_document_cjs_1.stateReplaceField)(body, 'Completed Phases', String(newCompleted));
-        if (completedAfter) {
+        if (completedAfter !== null && completedAfter !== body) {
             body = completedAfter;
             updated.push('Completed Phases');
         }
@@ -749,8 +799,9 @@ function completePhaseCore(content, intent, deps) {
         const totalPhases = derivedTotalPhases || (totalRaw ? parseInt(totalRaw, 10) : null);
         if (totalPhases && totalPhases > 0) {
             const newPercent = (0, phase_lifecycle_cjs_1.clampPercent)(newCompleted, totalPhases);
+            // Same guard as 'Completed Phases' above, and for the same reason.
             const progAfter = (0, state_document_cjs_1.stateReplaceField)(body, 'Progress', `${newPercent}%`);
-            if (progAfter) {
+            if (progAfter !== null && progAfter !== body) {
                 body = progAfter;
                 updated.push('Progress');
             }
@@ -789,7 +840,7 @@ function plannedPhaseCore(content, intent, deps) {
         }
     }
     // #1255: body-field replacements operate on body only.
-    const existingFm = extractFrontmatter(content);
+    const existingFm = extractFrontmatter(content, deps.sourcePath);
     const hasFrontmatter = Object.keys(existingFm).length > 0;
     let body = stripFrontmatter(content);
     const reassemble = (b) => hasFrontmatter
@@ -831,6 +882,18 @@ function plannedPhaseCore(content, intent, deps) {
     }, statusDefaults, lastActivityDefaults);
     if (body !== beforePos)
         updated.push('Current Position');
+    // #2400 Bug B: sync progress.total_plans to the frontmatter when a plan count
+    // is given. This writes the explicitly-provided count — it is NOT a re-derivation
+    // from disk (#500 RC1 is about deriving from a half-planned snapshot, not about
+    // refusing to write an explicitly-passed argument).
+    if (intent.planCount !== null && intent.planCount !== undefined && hasFrontmatter) {
+        const fmProgress = existingFm['progress'] || {};
+        if (fmProgress['total_plans'] !== intent.planCount) {
+            fmProgress['total_plans'] = intent.planCount;
+            existingFm['progress'] = fmProgress;
+            updated.push('progress.total_plans');
+        }
+    }
     return { content: reassemble(body), updated };
 }
 // ----------------------------------------------------------------------------
@@ -868,7 +931,7 @@ function milestoneSwitchCore(content, intent, deps) {
         'progress',
         'Current Position',
     ];
-    const existingFm = extractFrontmatter(content);
+    const existingFm = extractFrontmatter(content, deps.sourcePath);
     const body = stripFrontmatter(content);
     const resolvedName = (intent.name && intent.name.trim()) || 'milestone';
     // ## Current Position reset body (mirrors state.cts:2371-2375).
@@ -1013,7 +1076,7 @@ function milestoneCompleteCore(content, intent, deps) {
         }
     }
     // #1255: body-field replacements operate on body only.
-    const existingFm = extractFrontmatter(content);
+    const existingFm = extractFrontmatter(content, deps.sourcePath);
     const hasFrontmatter = Object.keys(existingFm).length > 0;
     let body = stripFrontmatter(content);
     const reassemble = (b) => hasFrontmatter
@@ -1336,11 +1399,14 @@ function truncateForLog(s) {
 function rebuildCore(content, _intent, deps) {
     const timestamp = deps.clock.nowIso();
     const log = [];
+    const phaseInventoryScan = { failed: false, reason: null };
     let modified = content;
     // §2 Decision: re-derive derived sections, preserve others. Order is
     // oldest-section-first so log entries appear in body order.
-    modified = reconcileCurrentPosition(modified, timestamp, log);
-    modified = reconcileByPhaseTable(modified, deps, timestamp, log);
+    // sourcePath threaded so `state rebuild --dry-run` names the file: that branch reads STATE.md
+    // directly rather than through readModifyWriteStateMd, so nothing upstream has named it yet.
+    modified = reconcileCurrentPosition(modified, timestamp, log, deps.sourcePath);
+    modified = reconcileByPhaseTable(modified, deps, timestamp, log, phaseInventoryScan);
     modified = stripTemplatePlaceholders(modified, timestamp, log);
     modified = deduplicateSessionArchive(modified, timestamp, log);
     // §3 + §4: append the audit log ONLY when mutations occurred. The
@@ -1357,6 +1423,11 @@ function rebuildCore(content, _intent, deps) {
             mutated: log.length > 0,
             mutations: log.length,
             log,
+            // #3057 B1: distinguishable from a clean "nothing to reconcile" — a
+            // failed phase-inventory scan means the by-phase table was NOT
+            // verified against disk, even though `mutated` may still be false.
+            phase_inventory_scan_failed: phaseInventoryScan.failed,
+            ...(phaseInventoryScan.reason !== null ? { phase_inventory_scan_reason: phaseInventoryScan.reason } : {}),
         },
     };
 }
@@ -1373,8 +1444,8 @@ function rebuildCore(content, _intent, deps) {
  * the key (Leaky-Abstractions guard — don't synthesize values the canonical
  * source doesn't have).
  */
-function reconcileCurrentPosition(content, timestamp, log) {
-    const fm = extractFrontmatter(content);
+function reconcileCurrentPosition(content, timestamp, log, sourcePath) {
+    const fm = extractFrontmatter(content, sourcePath);
     if (!fm || typeof fm !== 'object')
         return content;
     let modified = content;
@@ -1433,12 +1504,24 @@ function reconcileCurrentPosition(content, timestamp, log) {
  * Leaky-Abstractions guard (ADR-1817 §1): when `phaseInventoryProvider` is
  * absent (no disk scan wired), this step is a no-op. The core stays pure and
  * testable without disk I/O.
+ *
+ * A DIFFERENT case is a scan that ran but failed (`ok:false`): that is NOT a
+ * no-op-equivalent "nothing to reconcile" — the table is left untouched (we
+ * have no trustworthy inventory to reconcile against) but the failure is
+ * recorded into `meta` so the caller (`rebuildCore`) can surface it instead
+ * of reporting a clean, fully-reconciled rebuild (#3057 B1).
  */
-function reconcileByPhaseTable(content, deps, timestamp, log) {
+function reconcileByPhaseTable(content, deps, timestamp, log, meta) {
     if (!deps.phaseInventoryProvider)
         return content;
-    const inventory = deps.phaseInventoryProvider();
-    if (!inventory || inventory.length === 0)
+    const result = deps.phaseInventoryProvider();
+    if (!result.ok) {
+        meta.failed = true;
+        meta.reason = result.reason;
+        return content; // cannot reconcile without a trustworthy inventory — leave the table as-is
+    }
+    const inventory = result.phases;
+    if (inventory.length === 0)
         return content;
     // The canonical table shape (from gsd-core/templates/state.md):
     //   | Phase | Plans | Total | Avg/Plan |

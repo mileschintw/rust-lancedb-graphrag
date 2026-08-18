@@ -31,8 +31,22 @@ roadmapPhaseLookupSources, } = phaseIdModule;
 const planningWorkspace = require("./planning-workspace.cjs");
 const { planningDir } = planningWorkspace;
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const unusableInputMod = require("./unusable-input.cjs");
+const { UNUSABLE_REASON, warnUnusableInput } = unusableInputMod;
 const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
 // ─── Roadmap milestone scoping ───────────────────────────────────────────────
+/**
+ * Markers that classify a MILESTONE HEADING (or `<summary>`) as closed/shipped
+ * versus still active. Hoisted to module scope in #2562 — three call sites
+ * (`extractCurrentMilestone`, `currentMilestoneRawRanges`,
+ * `isMilestoneShippedInRoadmap`) previously kept byte-identical copies.
+ */
+const MILESTONE_CLOSED_MARKER_PATTERN = /\b(?:CLOSED|ARCHIVED|ABANDONED|SHIPPED|FAILED)\b|✅|🗄/i;
+const MILESTONE_ACTIVE_MARKER_PATTERN = /\b(?:STARTED|ACTIVE|WIP)\b|in\s+progress|🚧|🔄/i;
+function isClosedMilestoneHeading(headingText) {
+    return MILESTONE_CLOSED_MARKER_PATTERN.test(headingText) && !MILESTONE_ACTIVE_MARKER_PATTERN.test(headingText);
+}
 /**
  * Strip shipped milestone content wrapped in <details> blocks.
  */
@@ -40,14 +54,58 @@ function stripShippedMilestones(content) {
     return (0, markdown_sectionizer_cjs_1.stripTaggedBlocks)(content, 'details');
 }
 /**
- * Extract the current milestone section from ROADMAP.md by positive lookup.
+ * #2562: is the milestone `version` marked SHIPPED by the ROADMAP itself?
+ *
+ * Scoped deliberately narrowly, because a false positive here reproduces the
+ * exact symptom #2562 reports ("milestone complete" while phases are unstarted):
+ *
+ * - Only a MILESTONE HEADING (`^#{1,3}` that is not a `Phase N:` heading) or a
+ *   `<summary>` line can carry the signal. A bullet or checklist item that
+ *   merely NAMES the version (`- [x] 03-01: ship the v2.0 login endpoint ✅`)
+ *   is prose about a phase, not a milestone verdict, and is ignored.
+ * - The version token is boundary-matched with `(?![\w.-])` (mirrors the #730
+ *   sub-milestone boundary at `extractCurrentMilestone`), so `v2.0` does not
+ *   match inside `v2.0.1` — `\b` alone would, since `.` is a non-word char.
+ * - Shipped/active classification reuses the same marker patterns the milestone
+ *   sectioniser uses, so an in-progress marker on the line always wins.
+ *
+ * Both patterns are anchored and use only complementary character classes
+ * (`[^\n]`, `[^<]`, `[^>]`) with no overlapping alternation, so matching stays
+ * linear in the ROADMAP's length — an untrusted ROADMAP cannot drive backtracking.
  */
-function extractCurrentMilestone(content, cwd) {
+function isMilestoneShippedInRoadmap(content, version) {
+    const boundedVersion = `${escapeRegex(version)}(?![\\w.-])`;
+    const candidates = [
+        // A milestone heading: `## v2.0 Launch — ✅ SHIPPED`.
+        new RegExp(`^#{1,3}[^\\S\\n]+(?!Phase\\s+\\S)[^\\n]*${boundedVersion}[^\\n]*$`, 'gmi'),
+        // A collapsed shipped block's own summary: `<summary>✅ v2.0 … SHIPPED</summary>`.
+        new RegExp(`<summary[^>]*>[^<]*${boundedVersion}[^<]*<\\/summary>`, 'gi'),
+    ];
+    for (const pattern of candidates) {
+        for (const match of content.matchAll(pattern)) {
+            if (isClosedMilestoneHeading(match[0]))
+                return true;
+        }
+    }
+    return false;
+}
+/**
+ * Extract the current milestone section from ROADMAP.md by positive lookup.
+ *
+ * @param content - ROADMAP.md content.
+ * @param cwd - Project working directory, used to read the companion STATE.md
+ *   for the current `milestone:` version.
+ * @param ws - #2562: workstream name, so the companion STATE.md is read from
+ *   `.planning/workstreams/<ws>/` instead of the project root. Omitted (the
+ *   default) preserves the prior `planningDir(cwd)` resolution exactly,
+ *   including its `GSD_WORKSTREAM` env fallback.
+ */
+function extractCurrentMilestone(content, cwd, ws) {
     if (!cwd)
         return stripShippedMilestones(content);
     let version = null;
     try {
-        const statePath = node_path_1.default.join(planningDir(cwd), 'STATE.md');
+        const statePath = node_path_1.default.join(planningDir(cwd, ws), 'STATE.md');
         const stateRaw = (0, shell_command_projection_cjs_1.platformReadSync)(statePath);
         if (stateRaw !== null) {
             const milestoneMatch = stateRaw.match(/^milestone:\s*(.+)/m);
@@ -94,9 +152,7 @@ function extractCurrentMilestone(content, cwd) {
         return stripShippedMilestones(content);
     }
     const allMatches = headingMatches;
-    const closedMarkerPattern = /\b(?:CLOSED|ARCHIVED|ABANDONED|SHIPPED|FAILED)\b|✅|🗄/i;
-    const activeMarkerPattern = /\b(?:STARTED|ACTIVE|WIP)\b|in\s+progress|🚧|🔄/i;
-    const isClosed = (h) => closedMarkerPattern.test(h) && !activeMarkerPattern.test(h);
+    const isClosed = isClosedMilestoneHeading;
     const firstMatch = allMatches[0];
     const selected = allMatches.find((m) => !isClosed(m[1])) || firstMatch;
     const sectionStart = selected.index;
@@ -153,26 +209,36 @@ function extractCurrentMilestone(content, cwd) {
         const detailsStart = detailsMatch.index ?? 0;
         detailsSection = content.slice(detailsStart, computeSectionEnd(detailsMatch[0], detailsStart));
     }
+    // #2947: the preamble strip removes `### Phase N:` detail headings from the
+    // pre-milestone region so they don't duplicate the ones inside the selected
+    // milestone section. But when the phase list lives under a non-version-bearing
+    // `## Phases` heading (the shipped greenfield template's own shape) and the
+    // selected version-bearing heading is a LATER progress/notes sub-heading with
+    // NO phase details of its own, stripping the preamble phases silently drops
+    // every phase (phase_count: 0, exit 0). Only strip preamble phase details when
+    // the selected milestone section actually contains its own — otherwise the
+    // preamble phases ARE this milestone's phases and must be preserved.
+    const currentSectionHasPhaseDetails = /^#{2,4}\s*Phase\s+\S/im.test(currentSection);
     const preamble = (0, markdown_sectionizer_cjs_1.stripTaggedBlocks)(beforeMilestones, 'details')
         // #1729: `(?:\s*\([^)\n]{0,200}\))?` tolerates a pre-colon ( ) tag (literal mirror of OPTIONAL_PHASE_TAG_SOURCE).
-        .replace(/^#{2,4}\s*Phase\s+[\w][\w.-]*(?:\s*\([^)\n]{0,200}\))?\s*:[^\n]*(?:\n(?!#{1,6}\s)[^\n]*)*\n?/gim, '')
+        .replace(currentSectionHasPhaseDetails ? /^#{2,4}\s*Phase\s+[\w][\w.-]*(?:\s*\([^)\n]{0,200}\))?\s*:[^\n]*(?:\n(?!#{1,6}\s)[^\n]*)*\n?/gim : /$/, '')
         .replace(/^#{1,4}\s*Phase Details\b[^\n]*\n?/gim, '');
     return detailsSection
         ? preamble + currentSection + '\n' + detailsSection
         : preamble + currentSection;
 }
-/**
- * Replace a pattern only in the current milestone section of ROADMAP.md.
- */
 function replaceInCurrentMilestone(content, pattern, replacement) {
+    const apply = (src) => typeof replacement === 'function'
+        ? src.replace(pattern, replacement)
+        : src.replace(pattern, replacement);
     const lastDetailsClose = content.lastIndexOf('</details>');
     if (lastDetailsClose === -1) {
-        return content.replace(pattern, replacement);
+        return apply(content);
     }
     const offset = lastDetailsClose + '</details>'.length;
     const before = content.slice(0, offset);
     const after = content.slice(offset);
-    return before + after.replace(pattern, replacement);
+    return before + apply(after);
 }
 /**
  * Resolve a single phase's detail-section heading (`### Phase N: …`, any level
@@ -271,10 +337,18 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
     const normalizedPhase = stripProjectCodePrefix(phaseNum);
     if (/^999(?:\.|$)/.test(normalizedPhase))
         return null;
-    const roadmapPath = node_path_1.default.join(planningDir(cwd), 'ROADMAP.md');
-    if (!node_fs_1.default.existsSync(roadmapPath))
-        return null;
+    // Resolved INSIDE the try for the same reason as getMilestoneInfo below: planningDir
+    // throws a plain Error for an invalid GSD_WORKSTREAM/GSD_PROJECT segment, and resolving
+    // it outside let that escape uncaught, crashing every caller for a malformed workstream
+    // name. ADR-227 is explicit that throwing breaks pipeline continuity, and this read path
+    // has no reason to be the exception -- it already degrades to null for every other
+    // failure. Absence still returns null before any diagnostic, and when the path never
+    // resolved there is nothing to name.
+    let roadmapPath;
     try {
+        roadmapPath = node_path_1.default.join(planningDir(cwd), 'ROADMAP.md');
+        if (!node_fs_1.default.existsSync(roadmapPath))
+            return null;
         const roadmapRaw = (0, shell_command_projection_cjs_1.platformReadSync)(roadmapPath);
         if (roadmapRaw === null)
             throw new Error('missing');
@@ -301,9 +375,32 @@ function getRoadmapPhaseInternal(cwd, phaseNum) {
         }
         return null;
     }
-    catch {
+    catch (err) {
+        // Absence already returned above via existsSync; anything caught here is a read fault
+        // or the synthetic missing-marker. The null is preserved exactly either way.
+        if (roadmapPath !== undefined)
+            reportUnreadableRoadmap(err, roadmapPath);
         return null;
     }
+}
+/**
+ * Report a ROADMAP.md that exists but could not be read (#1881, ADR-1411).
+ *
+ * The discriminator is the errno, and it matters in the SILENT direction.
+ * platformReadSync returns null for ENOENT and both callers convert that null into a
+ * synthetic Error carrying no code, which lands in the same catch as a real EACCES.
+ * Reporting unconditionally here would flag every project that has no ROADMAP.md yet --
+ * every brand-new project -- as corrupt. A genuine read fault always carries an errno;
+ * absence never does.
+ *
+ * The parse itself is regex over text and cannot throw, so anything reaching a catch is
+ * either a read fault or that synthetic absence marker. Nothing else gets here.
+ */
+function reportUnreadableRoadmap(err, roadmapPath) {
+    const code = err?.code;
+    if (typeof code !== 'string')
+        return;
+    warnUnusableInput({ reason: UNUSABLE_REASON.ROADMAP_UNREADABLE, source: roadmapPath });
 }
 /**
  * Strip a leading delimiter run (whitespace, em/en-dash, colon, hyphen) from a
@@ -318,8 +415,16 @@ function stripLeadingDelimiter(s) {
     return s.replace(/^[\s—–:-]+/, '').trim();
 }
 function getMilestoneInfo(cwd) {
+    // Declared here but RESOLVED INSIDE the try, so the catch can name the file without
+    // moving planningDir() out of the protected region. planningDir throws a plain Error
+    // for an invalid GSD_WORKSTREAM/GSD_PROJECT segment, and hoisting the call let that
+    // escape uncaught — breaking the invariant #2245 relies on, that this function never
+    // throws. When the path never resolved there is nothing to name, so the diagnostic is
+    // skipped and the default is returned exactly as before.
+    let roadmapPath;
     try {
-        const roadmap = (0, shell_command_projection_cjs_1.platformReadSync)(node_path_1.default.join(planningDir(cwd), 'ROADMAP.md'));
+        roadmapPath = node_path_1.default.join(planningDir(cwd), 'ROADMAP.md');
+        const roadmap = (0, shell_command_projection_cjs_1.platformReadSync)(roadmapPath);
         if (roadmap === null)
             throw new Error('missing');
         let stateVersion = null;
@@ -388,7 +493,13 @@ function getMilestoneInfo(cwd) {
             name: 'milestone',
         };
     }
-    catch {
+    catch (err) {
+        // This function has no existsSync guard, so an absent ROADMAP arrives here too, as a
+        // synthetic Error with no errno. Only a real read fault is reported; the populated
+        // default is returned unchanged either way, and a plausible-looking default needs the
+        // diagnostic more than an empty sentinel does, not less (ADR-1411).
+        if (roadmapPath !== undefined)
+            reportUnreadableRoadmap(err, roadmapPath);
         return { version: 'v1.0', name: 'milestone' };
     }
 }
@@ -404,16 +515,24 @@ function getMilestoneInfo(cwd) {
  *   free-form ROADMAPs that lack versioned milestone headings. When absent or
  *   any other value, the warning is suppressed — legacy/default projects must
  *   never see spurious warnings.
+ * @param ws - #2562: workstream name, so the ROADMAP/STATE pair is read from
+ *   `.planning/workstreams/<ws>/` instead of the project root. Required by any
+ *   caller that iterates workstreams (it cannot set `GSD_WORKSTREAM` per
+ *   iteration). Omitted (the default) preserves the prior `planningDir(cwd)`
+ *   resolution exactly, including its `GSD_WORKSTREAM` env fallback — every
+ *   pre-#2562 call site is unaffected.
  */
-function getMilestonePhaseFilter(cwd, versionOverride, phaseIdConvention) {
+function getMilestonePhaseFilter(cwd, versionOverride, phaseIdConvention, ws) {
     const milestonePhaseNums = new Set();
     let missingExplicitVersion = false;
+    let versionScoped = false;
+    let versionSectionFound = false;
     try {
-        const roadmapPath = node_path_1.default.join(planningDir(cwd), 'ROADMAP.md');
+        const roadmapPath = node_path_1.default.join(planningDir(cwd, ws), 'ROADMAP.md');
         const roadmapContent = (0, shell_command_projection_cjs_1.platformReadSync)(roadmapPath);
         if (roadmapContent === null)
             throw new Error('missing');
-        let roadmap = extractCurrentMilestone(roadmapContent, cwd);
+        let roadmap = extractCurrentMilestone(roadmapContent, cwd, ws);
         const hasVersionedMilestonesGlobal = /^#{1,3}\s+.*v\d+\.\d+/mi.test(roadmapContent);
         const hasPhaseHeadings = /#{2,4}\s*(?:\[[^\]]{1,200}\]\s*)?Phase\s+[\w]/i.test(roadmapContent);
         if (!hasVersionedMilestonesGlobal && hasPhaseHeadings && phaseIdConvention === 'milestone-prefixed') {
@@ -445,6 +564,8 @@ function getMilestonePhaseFilter(cwd, versionOverride, phaseIdConvention) {
                 }
             }
             else {
+                versionScoped = true;
+                versionSectionFound = true;
                 const sectionStart = sectionMatch.index;
                 const headingLevel = (sectionMatch[1].match(/^(#{1,3})\s/) ?? ['', '#'])[1].length;
                 const afterHeading = sectionStart + sectionMatch[0].length;
@@ -504,12 +625,20 @@ function getMilestonePhaseFilter(cwd, versionOverride, phaseIdConvention) {
         const passAll = (() => true);
         passAll.phaseCount = 0;
         passAll.missingExplicitVersion = missingExplicitVersion;
+        passAll.versionScoped = false;
+        // #2562: preserved through the pass-all degrade precisely BECAUSE
+        // `versionScoped` is reset here — this is the only surviving evidence that
+        // the current milestone exists in the ROADMAP and simply has no phases yet.
+        passAll.versionSectionFound = versionSectionFound;
         return passAll;
     }
-    const normalized = new Set([...milestonePhaseNums].map(n => n.split('-').map(seg => (seg.replace(/^0+(?=\d)/, '') || '0')).join('-').toLowerCase()));
     function normalizePhaseIdSegments(id) {
         return id.split('-').map(seg => seg.replace(/^0+(?=\d)/, '') || '0').join('-');
     }
+    // #2562: derive BOTH sides of every membership comparison from
+    // normalizePhaseIdSegments. This set previously inlined a byte-identical
+    // second copy of that logic — the drift-prone shape this issue is about.
+    const normalized = new Set([...milestonePhaseNums].map(n => normalizePhaseIdSegments(n).toLowerCase()));
     const roadmapUsesHyphenedIds = [...normalized].some(n => n.includes('-'));
     // #2043: milestone-prefixed sub-phase components must be zero-padded — so a
     // single-digit slug word after the phase
@@ -539,6 +668,8 @@ function getMilestonePhaseFilter(cwd, versionOverride, phaseIdConvention) {
     }
     isDirInMilestone.phaseCount = milestonePhaseNums.size;
     isDirInMilestone.missingExplicitVersion = missingExplicitVersion;
+    isDirInMilestone.versionScoped = versionScoped;
+    isDirInMilestone.versionSectionFound = versionSectionFound;
     return isDirInMilestone;
 }
 /**
@@ -580,9 +711,7 @@ function currentMilestoneRawRanges(content, cwd) {
     const headingMatches = [...content.matchAll(sectionPattern)];
     if (headingMatches.length === 0)
         return null;
-    const closedMarkerPattern = /\b(?:CLOSED|ARCHIVED|ABANDONED|SHIPPED|FAILED)\b|✅|🗄/i;
-    const activeMarkerPattern = /\b(?:STARTED|ACTIVE|WIP)\b|in\s+progress|🚧|🔄/i;
-    const isClosed = (h) => closedMarkerPattern.test(h) && !activeMarkerPattern.test(h);
+    const isClosed = isClosedMilestoneHeading;
     const firstMatch = headingMatches[0];
     const selected = headingMatches.find((m) => !isClosed(m[1])) || firstMatch;
     const sectionStart = selected.index ?? 0;
@@ -623,6 +752,7 @@ function currentMilestoneRawRanges(content, cwd) {
 module.exports = {
     stripShippedMilestones,
     extractCurrentMilestone,
+    isMilestoneShippedInRoadmap,
     replaceInCurrentMilestone,
     getRoadmapPhaseInternal,
     getMilestoneInfo,

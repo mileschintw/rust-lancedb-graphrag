@@ -21,7 +21,7 @@ Routes to the settings workflow which handles:
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/settings.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/settings.md
 </execution_context>
 
 <process>

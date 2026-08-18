@@ -19,7 +19,7 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_os_1 = __importDefault(require("node:os"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const installProfiles = require("./install-profiles.cjs");
-const { stageSkillsForProfile, stageAgentsForProfile, stageAgentsForRuntimeWithConverter, stageSkillsForRuntimeAsSkills, stageCommandsForRuntimeFlat, } = installProfiles;
+const { stageSkillsForProfile, stageAgentsForRuntimeWithConverter, stageSkillsForRuntimeAsSkills, stageCommandsForRuntimeFlat, } = installProfiles;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const runtimeArtifactConversion = require("./runtime-artifact-conversion.cjs");
 const conversionExports = runtimeArtifactConversion;
@@ -117,7 +117,17 @@ function agentsKind(destSubpath, prefix, configDir) {
         kind: 'agents',
         destSubpath,
         prefix,
-        stage: (resolved) => stageAgentsForProfile(findAgentsSourceRoot(configDir), resolved),
+        // #2995: a `converter: null` agents entry (claude local, zcode) previously
+        // staged via stageAgentsForProfile — a RAW byte copy that never reads content
+        // into JS, so gsd-section markers shipped verbatim. Route through the
+        // composing stager with an identity converter instead: same output as the raw
+        // copy for an unmarked agent, markers stripped for a marked one. Routing both
+        // agent kinds through the stager collapses what were five independent agent
+        // read points down to three compose call sites: this stager, bin/install.js's
+        // inline agent loop, and installCodexConfig's per-agent .toml writer. The
+        // exhaustive per-runtime sweep in tests/agent-fragments-emission.install.test.cjs
+        // is what keeps a fourth from appearing uncomposed.
+        stage: (resolved) => stageAgentsForRuntimeWithConverter(findAgentsSourceRoot(configDir), resolved, (content) => content),
     };
 }
 /**
@@ -185,7 +195,9 @@ function kimiAgentsKind(destSubpath, prefix, configDir) {
         prefix,
         stage: (resolved) => {
             const buildKimiAgentArtifacts = conversionExports['buildKimiAgentArtifacts'];
-            const stagedAgents = stageAgentsForProfile(findAgentsSourceRoot(configDir), resolved);
+            // #2995: compose at staging (identity converter) so the readFileSync below
+            // sees marker-free content — same single composing stager as agentsKind.
+            const stagedAgents = stageAgentsForRuntimeWithConverter(findAgentsSourceRoot(configDir), resolved, (content) => content);
             const subagents = [];
             if (node_fs_1.default.existsSync(stagedAgents)) {
                 for (const entry of node_fs_1.default.readdirSync(stagedAgents, { withFileTypes: true })) {
@@ -316,7 +328,7 @@ function dispatchKindEntry(entry, runtime, configDir, scope, capabilityRegistry)
         default:
             throw new TypeError(`resolveRuntimeArtifactLayout: unknown kind '${kind}' in descriptor for runtime '${runtime}'`);
     }
-    if (typeof entry.home === 'string' && entry.home !== '') {
+    if (scope === 'global' && typeof entry.home === 'string' && entry.home !== '') {
         result.home = node_path_1.default.join(node_os_1.default.homedir(), entry.home);
     }
     return result;

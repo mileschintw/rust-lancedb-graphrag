@@ -21,8 +21,8 @@ Flow: Validate → Research UI → Verify UI-SPEC → Done
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/ui-phase.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/ui-phase.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

@@ -69,7 +69,7 @@ Each item disabled removes its schema from every subsequent turn for the rest of
 
 ### How to toggle
 
-The keys live in `.codex/settings.json` (project) or `C:/Users/user3/repos/lancet/.codex/settings.json` (global) — **not** in `.planning/config.json`:
+The keys live in `.codex/settings.json` (project) or `D:/Repos/lancet/.codex/settings.json` (global) — **not** in `.planning/config.json`:
 
 ```json
 {

@@ -14,6 +14,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.stripFencedCode = stripFencedCode;
 exports.stripInlineCode = stripInlineCode;
 exports.scanInlineCodeSpans = scanInlineCodeSpans;
+exports.scanFencedBlocks = scanFencedBlocks;
 exports.extractFencedBlock = extractFencedBlock;
 exports.tokenizeHeadings = tokenizeHeadings;
 exports.collectSections = collectSections;
@@ -206,6 +207,11 @@ function stripInlineCodeLine(line) {
  * Tracked duplication (same status as `tokenizeHeadings`'s copy, see its
  * comment above): this is a second independent copy of the fence state
  * machine, pending a T-tier consolidation.
+ *
+ * Exported so `context-predicates.cts` can consume this seam directly for its
+ * line-preserving fenced-line skip detection, instead of carrying a third
+ * independent copy of the fence state machine (see that module's doc
+ * comment).
  */
 function scanFencedBlocks(lines) {
     const delimRe = /^( {0,3})(`{3,}|~{3,})(.*)$/;

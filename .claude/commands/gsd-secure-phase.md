@@ -23,7 +23,7 @@ Output: updated SECURITY.md.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/secure-phase.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/secure-phase.md
 </execution_context>
 
 <context>

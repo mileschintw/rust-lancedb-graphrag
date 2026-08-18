@@ -28,9 +28,9 @@ Guide brownfield onboarding for an existing codebase by routing through the exis
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/onboard.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
-@D:/Repos/lancet/.claude/gsd-core/references/gate-prompts.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/onboard.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/gate-prompts.md
 </execution_context>
 
 <context>

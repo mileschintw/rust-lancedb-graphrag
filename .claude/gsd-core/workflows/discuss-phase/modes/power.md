@@ -8,7 +8,7 @@
 ## Dispatch
 
 ```
-Read @D:/Repos/lancet/.claude/gsd-core/workflows/discuss-phase-power.md
+Read @C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/discuss-phase-power.md
 ```
 
 Execute it end-to-end. Do not continue with the standard interactive steps.

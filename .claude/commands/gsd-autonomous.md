@@ -27,8 +27,8 @@ Uses ROADMAP.md phase discovery and Skill() flat invocations for each phase comm
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/autonomous.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/autonomous.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

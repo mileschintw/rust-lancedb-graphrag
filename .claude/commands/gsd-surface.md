@@ -10,9 +10,9 @@ requires: [config, update]
 ---
 
 <objective>
-Manage the runtime skill surface without reinstall. Reads/writes `D:/Repos/lancet/.claude/.gsd-surface.json`
-(sibling to `D:/Repos/lancet/.claude/.gsd-profile`) and re-stages the active skills directory in place.
-Skill dirs live at `D:/Repos/lancet/.claude/skills/gsd-*/`.
+Manage the runtime skill surface without reinstall. Reads/writes `C:/Users/user3/repos/lancet/.claude/.gsd-surface.json`
+(sibling to `C:/Users/user3/repos/lancet/.claude/.gsd-profile`) and re-stages the active skills directory in place.
+Skill dirs live at `C:/Users/user3/repos/lancet/.claude/skills/gsd-*/`.
 
 Sub-commands: list · status · profile · disable · enable · reset
 </objective>
@@ -123,11 +123,11 @@ Valid cluster names: `core_loop`, `audit_review`, `milestone`, `research_ideate`
 ## runtimeConfigDir resolution
 
 The `runtimeConfigDir` for `applySurface` is the **base Claude config directory**
-(`~/.claude`), NOT the skills sub-directory (`D:/Repos/lancet/.claude/skills`).
+(`~/.claude`), NOT the skills sub-directory (`C:/Users/user3/repos/lancet/.claude/skills`).
 
 This matches `installRuntimeArtifacts` and `uninstallRuntimeArtifacts`, which also
 receive `~/.claude` as `configDir`. The skill dirs themselves live at
-`D:/Repos/lancet/.claude/skills/gsd-*/` because the `claude global` layout has `destSubpath =
+`C:/Users/user3/repos/lancet/.claude/skills/gsd-*/` because the `claude global` layout has `destSubpath =
 'skills'` — they are derived from `configDir`, not the root for it.
 
 ```bash
@@ -141,7 +141,7 @@ SCOPE="global"
 ```
 
 Surface state is stored at `${RUNTIME_CONFIG_DIR}/.gsd-surface.json`
-(i.e. `D:/Repos/lancet/.claude/.gsd-surface.json`).
+(i.e. `C:/Users/user3/repos/lancet/.claude/.gsd-surface.json`).
 
 All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 
@@ -154,9 +154,9 @@ All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 - Missing `surface.cjs` → prompt: "Run `npm i -g @opengsd/gsd-core` to reinstall GSD."
 
 <execution_context>
-Surface state file: `D:/Repos/lancet/.claude/.gsd-surface.json`
-Install profile marker: `D:/Repos/lancet/.claude/.gsd-profile`
-Skill dirs: `D:/Repos/lancet/.claude/skills/gsd-*/`
-Engine module: `D:/Repos/lancet/.claude/gsd-core/bin/lib/surface.cjs`
-Cluster definitions: `D:/Repos/lancet/.claude/gsd-core/bin/lib/clusters.cjs`
+Surface state file: `C:/Users/user3/repos/lancet/.claude/.gsd-surface.json`
+Install profile marker: `C:/Users/user3/repos/lancet/.claude/.gsd-profile`
+Skill dirs: `C:/Users/user3/repos/lancet/.claude/skills/gsd-*/`
+Engine module: `C:/Users/user3/repos/lancet/.claude/gsd-core/bin/lib/surface.cjs`
+Cluster definitions: `C:/Users/user3/repos/lancet/.claude/gsd-core/bin/lib/clusters.cjs`
 </execution_context>

@@ -20,7 +20,7 @@ planning via /gsd-plan-phase --reviews.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/review.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/review.md
 </execution_context>
 
 <context>

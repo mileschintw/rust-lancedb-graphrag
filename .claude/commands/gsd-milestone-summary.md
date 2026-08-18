@@ -19,7 +19,7 @@ Output: MILESTONE_SUMMARY written to `.planning/reports/`, presented inline, opt
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/milestone-summary.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/milestone-summary.md
 </execution_context>
 
 <context>

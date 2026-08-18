@@ -34,11 +34,11 @@ Initialize a new project through unified flow: questioning → research (optiona
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/new-project.md
-@D:/Repos/lancet/.claude/gsd-core/references/questioning.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
-@D:/Repos/lancet/.claude/gsd-core/templates/project.md
-@D:/Repos/lancet/.claude/gsd-core/templates/requirements.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/new-project.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/questioning.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/templates/project.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/templates/requirements.md
 </execution_context>
 
 <process>

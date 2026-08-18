@@ -18,7 +18,7 @@ changes that are irrelevant to code review.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/pr-branch.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/pr-branch.md
 </execution_context>
 
 <process>

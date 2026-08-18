@@ -19,7 +19,7 @@ Accepts an optional topic argument: `/gsd-explore authentication strategy`
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/explore.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/explore.md
 </execution_context>
 
 <process>

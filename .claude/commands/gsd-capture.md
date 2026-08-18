@@ -38,13 +38,13 @@ Mode routing:
 </routing>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/add-todo.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/note.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/add-backlog.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/plant-seed.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/check-todos.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/list-seeds.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/add-todo.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/note.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/add-backlog.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/plant-seed.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/check-todos.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/list-seeds.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

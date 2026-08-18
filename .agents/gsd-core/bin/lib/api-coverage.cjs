@@ -238,6 +238,30 @@ const SURFACE_DESCRIPTOR_WORDS = new Set([
  *  EXTERNAL-API surface signal. Only unambiguously-internal words: "external"
  *  is deliberately absent (an external API IS external). */
 const INTERNAL_DESCRIPTORS = new Set(['internal', 'in-house', 'local', 'first-party', 'private']);
+/** #2784: negation suppression. A clause that pairs an integration verb with an
+ *  API noun but the verb itself is directly negated (e.g. "does not integrate",
+ *  "integrates no external API") is suppressed. Two windows are checked: a
+ *  negation qualifier within 2 words directly before the verb, or "no"/"zero"/
+ *  "none" between the verb and a following noun.
+ *  KNOWN LIMIT (deliberate, not a bug to fix later): a negation further than 2
+ *  words before the verb, or a clause where the noun precedes the verb, is NOT
+ *  suppressed — e.g. "Ships without any API integration." still reports
+ *  detected:true, because "without" sits outside the verb's 2-word lookback
+ *  and the noun precedes the verb. This is intentional: detectApiIntegration
+ *  is fail-closed — an unsuppressed false positive costs a one-line
+ *  COVERAGE.md declaration, while widening the suppression window risks a
+ *  false negative that silently lets a real external-API phase past a
+ *  blocking gate.
+ *  Hoisted to module scope (#3127 regression fix): this was previously
+ *  allocated fresh on every source line, which is wasted work on documents
+ *  with many lines. */
+const NEGATION_QUALIFIERS = new Set([
+    'no', 'not', 'without', 'zero', 'neither', 'nor', 'none', "don't", "doesn't", "didn't", "won't", "can't", "cannot",
+]);
+/** Negation tokens checked BETWEEN a verb and a later noun (narrower than
+ *  NEGATION_QUALIFIERS — "not" and "without" are checked only immediately
+ *  before the verb, via NEGATION_QUALIFIERS above). */
+const NEGATION_NOUN_TOKENS = new Set(['no', 'zero', 'none']);
 /** A capitalized compound modifier ("Resolver-only", "Read-only", "E-commerce"
  *  — lowercase letter right after the hyphen) is an adjective phrase, not a
  *  service name. Real hyphenated services capitalize the second segment
@@ -421,11 +445,45 @@ function detectApiIntegration(text, terms) {
         // boundary is the whole relationship test. Nouns are NOT filtered on
         // "internal" qualification here — "integrate the internal API" is a
         // fail-closed positive; the declaration dismisses it if wrong.
+        //
+        // #2784: negation suppression. A clause that pairs an integration verb with
+        // an API noun but the verb itself is directly negated (e.g. "does not
+        // integrate", "integrates no external API") is suppressed. The check is
+        // scoped to the verb's immediate context (the word directly before the
+        // verb, or the word directly between verb and noun) — NOT a blanket
+        // clause-wide scan, because "without changing runtime dependencies" in a
+        // long clause does NOT negate the integration.
+        // KNOWN LIMIT (deliberate, not a bug to fix later): a negation further than
+        // 2 words before the verb, or a clause where the noun precedes the verb, is
+        // NOT suppressed — e.g. "Ships without any API integration." is NOT
+        // suppressed today (pinned by a test in tests/api-coverage.test.cjs).
+        // detectApiIntegration is fail-closed by design: an unsuppressed false
+        // positive costs a one-line COVERAGE.md declaration, while widening the
+        // window trades that for a silent false negative on a blocking gate.
         if (verbRe && nounRe) {
             for (const clause of clauses) {
                 const verbs = collectTermMatches(verbRe, clause.text);
                 if (verbs.length === 0)
                     continue;
+                // #2784: check if any verb is immediately preceded by a negation
+                // qualifier (within 2 words before the verb match).
+                //
+                // OFFSET NOTE: `v.start`/`n.start` (from collectTermMatches below and
+                // above) are already CLAUSE-LOCAL — collectTermMatches was called with
+                // `clause.text`, not the full line — and so is `clauseText`
+                // (`clause.text.toLowerCase()`). They must be used AS-IS to index into
+                // `clauseText`; do not re-base them against `clause.start` (that field
+                // is the clause's offset within the LINE, a different coordinate space,
+                // used only to map line-level spans like `extraNouns`/`masked` into a
+                // clause). Subtracting `clause.start` here double-offsets the slice
+                // bounds for every clause after the first on a line (#3127 follow-up).
+                const clauseText = clause.text.toLowerCase();
+                const hasNegatedVerb = verbs.some((v) => {
+                    const before = clauseText.slice(Math.max(0, v.start - 20), v.start);
+                    const beforeWords = before.split(/\s+/).filter(Boolean).slice(-2);
+                    return beforeWords.some((w) => NEGATION_QUALIFIERS.has(w.replace(/[^a-z']/g, '')));
+                });
+                // Also check if "no"/"zero"/"none" appears between the verb and the noun.
                 const nouns = collectTermMatches(nounRe, clause.text);
                 const nounTerms = new Set(nouns.map((t) => t.term));
                 for (const u of extraNouns) {
@@ -434,6 +492,68 @@ function detectApiIntegration(text, terms) {
                     }
                 }
                 if (nounTerms.size === 0)
+                    continue;
+                // Check for negation between verb and noun.
+                //
+                // #3127 regression: the original form of this check was
+                // O(verbs × nouns), re-slicing and re-splitting the clause text for
+                // every (verb, noun) pair — effectively cubic in clause length (a
+                // clause of N repeated "integrate api" pairs did O(N^2) pair checks,
+                // each doing an O(N) slice/split). On a clause with 800 repeated
+                // pairs this took ~8.5s; fast-check's property test then generated
+                // documents large enough to hang the whole test file past node:test's
+                // 600s timeout. It ALSO subtracted `clause.start` from `v.start`/
+                // `n.start` before slicing `clauseText` — but `v.start`/`n.start` are
+                // already local to `clause.text` (collectTermMatches was called with
+                // clause.text, not the full line), and `clauseText` is exactly
+                // `clause.text.toLowerCase()`. So that subtraction double-offset the
+                // slice bounds for every clause after the first on a line, sliding
+                // (and for negative results, JS's negative-index slice() wraparound
+                // non-monotonically re-mapping) the window to characters unrelated to
+                // the verb/noun pair — an independent latent bug, fixed here as part
+                // of establishing a well-defined O(1) predicate (a piecewise/clamped
+                // window has no single "widest span" to reason about at all).
+                //
+                // EXACT-EQUIVALENCE, single pass: the predicate is "does any pair
+                // (v, n) with n.start > v.start have a negation token in the span
+                // (v.end, n.start)". Every such span is a SUBSET of the widest
+                // possible span for a given noun: [min(v.end) over verbs valid for
+                // that noun, n.start). And since that window only widens as a
+                // noun's start increases (more verbs become valid, and the noun
+                // bound itself grows), the single widest span across the WHOLE
+                // clause is anchored at the noun with the maximum start, using the
+                // minimum verb-end among verbs valid for THAT noun (not the global
+                // minimum verb-end, which could belong to a verb that starts after
+                // this noun and so is never a valid pairing with it — a mismatch
+                // that would either miss or falsely include a negation). If that one
+                // substring contains no negation token, no narrower pair-specific
+                // substring can either; if it does, the (minVerb, maxNoun) pair
+                // itself contains it. This drops the check to O(verbs + nouns).
+                let hasNegatedNoun = false;
+                if (nouns.length > 0) {
+                    let minVerbStart = Infinity;
+                    for (const v of verbs)
+                        if (v.start < minVerbStart)
+                            minVerbStart = v.start;
+                    let maxNounStart = -Infinity;
+                    for (const n of nouns)
+                        if (n.start > maxNounStart)
+                            maxNounStart = n.start;
+                    if (maxNounStart > minVerbStart) {
+                        let minQualifyingVerbEnd = Infinity;
+                        for (const v of verbs) {
+                            if (v.start < maxNounStart) {
+                                const vEnd = v.start + v.term.length;
+                                if (vEnd < minQualifyingVerbEnd)
+                                    minQualifyingVerbEnd = vEnd;
+                            }
+                        }
+                        const between = clauseText.slice(minQualifyingVerbEnd, maxNounStart);
+                        const betweenWords = between.split(/\s+/).filter(Boolean);
+                        hasNegatedNoun = betweenWords.some((w) => NEGATION_NOUN_TOKENS.has(w.replace(/[^a-z']/g, '')));
+                    }
+                }
+                if (hasNegatedVerb || hasNegatedNoun)
                     continue;
                 for (const vTerm of new Set(verbs.map((t) => t.term))) {
                     for (const nTerm of nounTerms)
@@ -562,13 +682,19 @@ function parseCoverageMatrix(text) {
         }
         return out;
     }
-    // (2) markdown table — collect table rows whose decision column parses.
+    // (2) markdown table — collect rows from coverage matrix tables only (#2366).
+    // Track whether we are inside a recognized coverage matrix (after a header
+    // row, before a non-pipe line ends the table). This prevents summary tables
+    // elsewhere in the file from being parsed as data (#2366 bug 1) and allows
+    // multi-section matrices with repeated headers (#2366 bug 2).
     const lines = src.split('\n');
-    let sawHeader = false;
+    let inMatrix = false;
     for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed.startsWith('|'))
+        if (!trimmed.startsWith('|')) {
+            inMatrix = false;
             continue;
+        }
         const cells = trimmed.slice(1, trimmed.endsWith('|') ? -1 : trimmed.length).split('|');
         if (cells.length < 2)
             continue;
@@ -577,13 +703,21 @@ function parseCoverageMatrix(text) {
         // is not mistaken for a separator.
         if (cleaned.every((c) => /^:?-{3,}:?$/.test(c)))
             continue;
-        const decisionCell = (cleaned[1] || '').toUpperCase();
-        // header detection
-        if (!sawHeader && cleaned[0].toLowerCase() === 'capability') {
-            sawHeader = true;
-            out.format = 'table';
+        // Strip markdown emphasis (**, *, __, _, `) from the decision cell before
+        // comparison so **OPT-OUT** parses correctly (#2366 bug 3).
+        const decisionCell = (cleaned[1] || '').replace(/[*_`]/g, '').trim().toUpperCase();
+        // header detection — recognized by 'capability' in column 0; allows multiple
+        // headers for multi-section matrices (#2366 bug 2).
+        if (cleaned[0].toLowerCase() === 'capability') {
+            inMatrix = true;
+            if (out.format === 'none')
+                out.format = 'table';
             continue;
         }
+        // Only parse data rows from inside a recognized coverage matrix table.
+        // A pipe-table outside the matrix (e.g., a summary table) is ignored (#2366 bug 1).
+        if (!inMatrix)
+            continue;
         if (!VALID_DECISIONS.has(decisionCell)) {
             // A row that otherwise looks like data (≥3 cells, non-empty capability)
             // but carries a malformed decision is a real error, not a row to skip

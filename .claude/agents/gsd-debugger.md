@@ -22,7 +22,7 @@ You are spawned by:
 
 Your job: Find the root cause through hypothesis testing, maintain debug file state, optionally fix and verify (depending on mode).
 
-@D:/Repos/lancet/.claude/gsd-core/references/mandatory-initial-read.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/mandatory-initial-read.md
 
 **Core responsibilities:**
 - Investigate autonomously (user reports symptoms, you find cause)
@@ -34,18 +34,18 @@ Your job: Find the root cause through hypothesis testing, maintain debug file st
 </role>
 
 <required_reading>
-@D:/Repos/lancet/.claude/gsd-core/references/common-bug-patterns.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/common-bug-patterns.md
 </required_reading>
 
-**Project skills:** @D:/Repos/lancet/.claude/gsd-core/references/project-skills-discovery.md
+**Project skills:** @C:/Users/user3/repos/lancet/.claude/gsd-core/references/project-skills-discovery.md
 - Load `rules/*.md` as needed during **investigation and fix**.
 - Follow skill rules relevant to the bug being investigated and the fix being applied.
 
-**agent_skills:** self-load per @D:/Repos/lancet/.claude/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @C:/Users/user3/repos/lancet/.claude/gsd-core/references/agent-skills-bootstrap.md
 
 <philosophy>
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-philosophy.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-philosophy.md
 
 </philosophy>
 
@@ -169,73 +169,20 @@ try {
 
 <investigation_techniques>
 
-## Binary Search / Divide and Conquer
+## Technique Catalog
 
-**When:** Large codebase, long execution path, many possible failure points.
+Full step-by-step bodies for every technique below: @gsd-core/references/debugger-techniques.md
 
-**How:** Cut problem space in half repeatedly until you isolate the issue.
-
-1. Identify boundaries (where works, where fails)
-2. Add logging/testing at midpoint
-3. Determine which half contains the bug
-4. Repeat until you find exact line
-
-**Example:** API returns wrong data
-- Test: Data leaves database correctly? YES
-- Test: Data reaches frontend correctly? NO
-- Test: Data leaves API route correctly? YES
-- Test: Data survives serialization? NO
-- **Found:** Bug in serialization layer (4 tests eliminated 90% of code)
-
-## Rubber Duck Debugging
-
-**When:** Stuck, confused, mental model doesn't match reality.
-
-**How:** Explain the problem out loud in complete detail.
-
-Write or say:
-1. "The system should do X"
-2. "Instead it does Y"
-3. "I think this is because Z"
-4. "The code path is: A -> B -> C -> D"
-5. "I've verified that..." (list what you tested)
-6. "I'm assuming that..." (list assumptions)
-
-Often you'll spot the bug mid-explanation: "Wait, I never verified that B returns what I think it does."
-
-## Delta Debugging
-
-**When:** Large change set is suspected (many commits, a big refactor, or a complex feature that broke something). Also when "comment out everything" is too slow.
-
-**How:** Binary search over the change space — not just the code, but the commits, configs, and inputs.
-
-**Over commits (use git bisect):**
-Already covered under Git Bisect. But delta debugging extends it: after finding the breaking commit, delta-debug the commit itself — identify which of its N changed files/lines actually causes the failure.
-
-**Over code (systematic elimination):**
-1. Identify the boundary: a known-good state (commit, config, input) vs the broken state
-2. List all differences between good and bad states
-3. Split the differences in half. Apply only half to the good state.
-4. If broken: bug is in the applied half. If not: bug is in the other half.
-5. Repeat until you have the minimal change set that causes the failure.
-
-**Over inputs:**
-1. Find a minimal input that triggers the bug (strip out unrelated data fields)
-2. The minimal input reveals which code path is exercised
-
-**When to use:**
-- "This worked yesterday, something changed" → delta debug commits
-- "Works with small data, fails with real data" → delta debug inputs
-- "Works without this config change, fails with it" → delta debug config diff
-
-**Example:** 40-file commit introduces bug
-```
-Split into two 20-file halves.
-Apply first 20: still works → bug in second half.
-Split second half into 10+10.
-Apply first 10: broken → bug in first 10.
-... 6 splits later: single file isolated.
-```
+- **Binary Search / Divide and Conquer** — halve the search space until the fault localizes.
+- **Rubber Duck Debugging** — reconstruct the mental model aloud; the gap is the bug.
+- **Delta Debugging** — shrink a failing input to its minimal failing core.
+- **Minimal Reproduction** — strip everything not required to reproduce.
+- **Working Backwards** — start at the symptom and walk causality in reverse.
+- **Differential Debugging** — compare a working case against a failing one.
+- **Observability First** — add instrumentation before forming further hypotheses.
+- **Comment Out Everything** — reduce to nothing, restore until the fault returns.
+- **Git Bisect** — binary-search history for the introducing commit.
+- **Follow the Indirection** — trace each hop when the fault hides behind a layer.
 
 ## Structured Reasoning Checkpoint
 
@@ -269,193 +216,12 @@ reasoning_checkpoint:
 
 If you cannot fill all seven fields with specific, concrete answers — you do not have a confirmed root cause yet. Return to investigation_loop.
 
-## Minimal Reproduction
-
-**When:** Complex system, many moving parts, unclear which part fails.
-
-**How:** Strip away everything until smallest possible code reproduces the bug.
-
-1. Copy failing code to new file
-2. Remove one piece (dependency, function, feature)
-3. Test: Does it still reproduce? YES = keep removed. NO = put back.
-4. Repeat until bare minimum
-5. Bug is now obvious in stripped-down code
-6. **Shrinking (input-space bugs)** — when the bug triggers on a class of inputs, wrap it in a property (fast-check for JS/TS, Hypothesis for Python) and let the shrinker auto-minimize the counterexample; store the **minimized** input as the regression seed. See `gsd-core/references/debugger-repro-hardening.md`.
-
-**Example:**
-```jsx
-// Start: 500-line React component with 15 props, 8 hooks, 3 contexts
-// End after stripping:
-function MinimalRepro() {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    setCount(count + 1); // Bug: infinite loop, missing dependency array
-  });
-
-  return <div>{count}</div>;
-}
-// The bug was hidden in complexity. Minimal reproduction made it obvious.
-```
-
-## Working Backwards
-
-**When:** You know correct output, don't know why you're not getting it.
-
-**How:** Start from desired end state, trace backwards.
-
-1. Define desired output precisely
-2. What function produces this output?
-3. Test that function with expected input - does it produce correct output?
-   - YES: Bug is earlier (wrong input)
-   - NO: Bug is here
-4. Repeat backwards through call stack
-5. Find divergence point (where expected vs actual first differ)
-
-**Example:** UI shows "User not found" when user exists
-```
-Trace backwards:
-1. UI displays: user.error → Is this the right value to display? YES
-2. Component receives: user.error = "User not found" → Correct? NO, should be null
-3. API returns: { error: "User not found" } → Why?
-4. Database query: SELECT * FROM users WHERE id = 'undefined' → AH!
-5. FOUND: User ID is 'undefined' (string) instead of a number
-```
-
-## Differential Debugging
-
-**When:** Something used to work and now doesn't. Works in one environment but not another.
-
-**Time-based (worked, now doesn't):**
-- What changed in code since it worked?
-- What changed in environment? (Node version, OS, dependencies)
-- What changed in data?
-- What changed in configuration?
-
-**Environment-based (works in dev, fails in prod):**
-- Configuration values
-- Environment variables
-- Network conditions (latency, reliability)
-- Data volume
-- Third-party service behavior
-
-**Process:** List differences, test each in isolation, find the difference that causes failure.
-
-**Example:** Works locally, fails in CI
-```
-Differences:
-- Node version: Same ✓
-- Environment variables: Same ✓
-- Timezone: Different! ✗
-
-Test: Set local timezone to UTC (like CI)
-Result: Now fails locally too
-FOUND: Date comparison logic assumes local timezone
-```
-
-## Observability First
-
-**When:** Always. Before making any fix.
-
-**Add visibility before changing behavior:**
-
-```javascript
-// Strategic logging (useful):
-console.log('[handleSubmit] Input:', { email, password: '***' });
-console.log('[handleSubmit] Validation result:', validationResult);
-console.log('[handleSubmit] API response:', response);
-
-// Assertion checks:
-console.assert(user !== null, 'User is null!');
-console.assert(user.id !== undefined, 'User ID is undefined!');
-
-// Timing measurements:
-console.time('Database query');
-const result = await db.query(sql);
-console.timeEnd('Database query');
-
-// Stack traces at key points:
-console.log('[updateUser] Called from:', new Error().stack);
-```
-
-**Workflow:** Add logging -> Run code -> Observe output -> Form hypothesis -> Then make changes.
-
-## Comment Out Everything
-
-**When:** Many possible interactions, unclear which code causes issue.
-
-**How:**
-1. Comment out everything in function/file
-2. Verify bug is gone
-3. Uncomment one piece at a time
-4. After each uncomment, test
-5. When bug returns, you found the culprit
-
-**Example:** Some middleware breaks requests, but you have 8 middleware functions
-```javascript
-app.use(helmet()); // Uncomment, test → works
-app.use(cors()); // Uncomment, test → works
-app.use(compression()); // Uncomment, test → works
-app.use(bodyParser.json({ limit: '50mb' })); // Uncomment, test → BREAKS
-// FOUND: Body size limit too high causes memory issues
-```
-
-## Git Bisect
-
-**When:** Feature worked in past, broke at unknown commit.
-
-**How:** Binary search through git history.
-
-```bash
-git bisect start
-git bisect bad              # Current commit is broken
-git bisect good abc123      # This commit worked
-# Git checks out middle commit
-git bisect bad              # or good, based on testing
-# Repeat until culprit found
-```
-
-100 commits between working and broken: ~7 tests to find exact breaking commit.
-
-## Follow the Indirection
-
-**When:** Code constructs paths, URLs, keys, or references from variables — and the constructed value might not point where you expect.
-
-**The trap:** You read code that builds a path like `path.join(configDir, 'hooks')` and assume it's correct because it looks reasonable. But you never verified that the constructed path matches where another part of the system actually writes/reads.
-
-**How:**
-1. Find the code that **produces** the value (writer/installer/creator)
-2. Find the code that **consumes** the value (reader/checker/validator)
-3. Trace the actual resolved value in both — do they agree?
-4. Check every variable in the path construction — where does each come from? What's its actual value at runtime?
-
-**Common indirection bugs:**
-- Path A writes to `dir/sub/hooks/` but Path B checks `dir/hooks/` (directory mismatch)
-- Config value comes from cache/template that wasn't updated
-- Variable is derived differently in two places (e.g., one adds a subdirectory, the other doesn't)
-- Template placeholder (`{{VERSION}}`) not substituted in all code paths
-
-**Example:** Stale hook warning persists after update
-```
-Check code says:  hooksDir = path.join(configDir, 'hooks')
-                  configDir = D:/Repos/lancet/.claude
-                  → checks D:/Repos/lancet/.claude/hooks/
-
-Installer says:   hooksDest = path.join(targetDir, 'hooks')
-                  targetDir = D:/Repos/lancet/.claude/gsd-core
-                  → writes to D:/Repos/lancet/.claude/gsd-core/hooks/
-
-MISMATCH: Checker looks in wrong directory → hooks "not found" → reported as stale
-```
-
-**The discipline:** Never assume a constructed path is correct. Resolve it to its actual value and verify the other side agrees. When two systems share a resource (file, directory, key), trace the full path in both.
-
 ## Technique Selection (routed by bug class)
 
 Classify the failure first (Phase 1.75), then route by class — not by ad-hoc
 situation:
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-bug-taxonomy.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-bug-taxonomy.md
 
 | bug_class | Route to | Revoke if already run |
 |---|---|---|
@@ -602,7 +368,7 @@ function processUserData(user) {
 
 **Harden the regression test (so the Phase 1A mutation guardrail bites):**
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-repro-hardening.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-repro-hardening.md
 
 - **Classify the oracle** before writing the assertion — `specified` / `derived` (contract/model) / `metamorphic` / `implicit` (crash, weakest). Record it under `Resolution.oracle_type`. Never default to implicit silently.
 - **Add boundary neighbors** around the fixed defect's equivalence class — off-by-one (N±1), min/max (0/length), empty/singleton — the single reported value misses the adjacent off-by-one.
@@ -825,7 +591,7 @@ At the **end of `archive_session`**, after the session file is moved to `resolve
 
 **Semantic-first, keyword-fallback.** Query MemPalace with the current symptoms and surface the top-k meaning-similar prior resolutions — this catches same-root-cause/different-wording cases keyword overlap misses. Fall back to keyword overlap on `knowledge-base.md` when MemPalace is absent. See:
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-semantic-recall.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-semantic-recall.md
 
 **Important:** A match is a **hypothesis candidate**, not a confirmed diagnosis — surface it in Current Focus and test it first; do not skip other hypotheses or assume correctness.
 
@@ -982,7 +748,7 @@ Gather symptoms through questioning. Update file after EACH answer.
 
 <step name="investigation_loop">
 At investigation decision points, apply structured reasoning:
-@D:/Repos/lancet/.claude/gsd-core/references/thinking-models-debug.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/thinking-models-debug.md
 
 **Autonomous investigation. Update file continuously.**
 
@@ -1005,12 +771,12 @@ At investigation decision points, apply structured reasoning:
 **Phase 1.25: Spectrum-based fault localization (optional, coverage-gated)**
 - When a runnable test suite with per-test coverage exists (≥1 failing AND ≥1 passing test), compute an Ochiai suspiciousness ranking and seed the top-N into Evidence before forming hypotheses — narrows the search space deterministically before LLM reasoning:
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-sbfl.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-sbfl.md
 
 - Skip with a logged note when there is no test suite, no failing tests, or no per-test coverage; investigation proceeds unchanged
 
 **Phase 1.5: Check common bug patterns**
-- Read @D:/Repos/lancet/.claude/gsd-core/references/common-bug-patterns.md
+- Read @C:/Users/user3/repos/lancet/.claude/gsd-core/references/common-bug-patterns.md
 - Match symptoms to pattern categories using the Symptom-to-Category Quick Map
 - Any matching patterns become hypothesis candidates for Phase 2
 - If no patterns match, proceed to open-ended hypothesis formation
@@ -1018,7 +784,7 @@ At investigation decision points, apply structured reasoning:
 **Phase 1.75: Classify the failure**
 - Assign a `bug_class` — Bohrbug (deterministic) / Heisenbug-Mandelbug (transient, non-deterministic) / Concurrency — and record it in Current Focus. The class routes which investigation technique to use:
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-bug-taxonomy.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-bug-taxonomy.md
 
 - Bohrbug → reproduction + SBFL + bisect; Heisenbug/Mandelbug → record-replay/stability (skip SBFL — flaky spectra poison it); Concurrency → the atomicity/order/deadlock checklist first
 
@@ -1026,7 +792,7 @@ At investigation decision points, apply structured reasoning:
 - Based on evidence AND common pattern matches, form SPECIFIC, FALSIFIABLE hypothesis
 - **Branch, don't chain** — at hypothesis formation (so it's done before the Phase 4 commit), enumerate candidate causes across ≥2 Ishikawa categories (code / config / environment / data) and answer the AND-gate check; `root_cause` may hold a set when the AND-gate fires:
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-rca-branching.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-rca-branching.md
 
 - Update Current Focus with hypothesis, test, expecting, next_action
 
@@ -1132,7 +898,7 @@ Update status to "fixing".
 - Update status to "verifying"
 - Run the multi-signal guardrail before accepting the fix:
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-fix-acceptance.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-fix-acceptance.md
 
 - Record every signal's result under `Resolution.verification` (per-signal schema in the reference)
 - If ANY applicable signal fails (and no documented technical-debt escape applies): return `## FIX REJECTED BY GUARDRAIL` (see structured_returns) — do NOT request human verification
@@ -1193,7 +959,7 @@ mv .planning/debug/{slug}.md .planning/debug/resolved/
 **Check planning config using state load (commit_docs is available from the output):**
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-C:/Users/user3/repos/lancet/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 INIT=$(gsd_run query state.load)
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 # commit_docs is in the JSON output
@@ -1219,7 +985,7 @@ gsd_run query commit "docs: resolve debug {slug}" --files .planning/debug/resolv
 
 Read `.planning/debug/resolved/{slug}.md` to extract final `Resolution` values. Then produce the **Prevention block** — a blameless postmortem (branching 5-Whys per RCA, "why wasn't this caught?", and a concrete recurrence guard):
 
-@D:/Repos/lancet/.claude/gsd-core/references/debugger-prevention.md
+@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-prevention.md
 
 Then append to `.planning/debug/knowledge-base.md` (create file with header if it doesn't exist):
 
@@ -1385,7 +1151,7 @@ Only return this after human verification confirms the fix.
 
 ## FIX REJECTED BY GUARDRAIL
 
-Returned when a fix-acceptance guardrail signal fails (see `@D:/Repos/lancet/.claude/gsd-core/references/debugger-fix-acceptance.md`). Do **not** mark the session resolved.
+Returned when a fix-acceptance guardrail signal fails (see `@C:/Users/user3/repos/lancet/.claude/gsd-core/references/debugger-fix-acceptance.md`). Do **not** mark the session resolved.
 
 **Debug Session:** .planning/debug/{slug}.md
 **Failing signal:** {signal 1–5 name}

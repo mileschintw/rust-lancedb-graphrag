@@ -32,9 +32,9 @@ Mode routing:
 </routing>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/settings.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/settings-advanced.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/settings-integrations.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/settings.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/settings-advanced.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/settings-integrations.md
 </execution_context>
 
 <context>
