@@ -463,14 +463,14 @@ func (r *durableReconciler) rescheduleIntent(ctx context.Context, intent db.Docu
 func (a app) routes() http.Handler {
 	r := chi.NewRouter()
 	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
+		r.Post("/rag/query", a.queryRAG)
+	})
+	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer, middleware.Timeout(60*time.Second))
 		r.Get("/health", a.health)
 		r.Post("/documents", a.createDocument)
 		r.Get("/documents/{id}", a.getDocument)
-	})
-	r.Group(func(r chi.Router) {
-		r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
-		r.Post("/rag/query", a.queryRAG)
 	})
 	return r
 }
@@ -720,18 +720,52 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	rc := http.NewResponseController(w)
-	a.writeWorkflowEventSSE(w, rc, firstFrame)
+	var sawWorkflowCompleted bool
+	if firstFrame.GetWorkflowCompleted() != nil {
+		sawWorkflowCompleted = true
+	}
+	if r.Context().Err() == nil {
+		a.writeWorkflowEventSSE(w, rc, firstFrame)
+	}
 
 	for {
+		if r.Context().Err() != nil {
+			return
+		}
 		ev, recvErr := stream.Recv()
 		if errors.Is(recvErr, io.EOF) {
-			break
+			if !sawWorkflowCompleted && r.Context().Err() == nil {
+				a.writeStreamErrorSSE(w, rc, "STREAM_EOF_WITHOUT_TERMINAL", "stream ended before workflow_completed")
+			}
+			return
 		}
 		if recvErr != nil {
-			break
+			if r.Context().Err() == nil {
+				a.writeStreamErrorSSE(w, rc, "GRPC_RECV_ERROR", recvErr.Error())
+			}
+			return
+		}
+		if r.Context().Err() != nil {
+			return
+		}
+		if ev.GetWorkflowCompleted() != nil {
+			sawWorkflowCompleted = true
 		}
 		a.writeWorkflowEventSSE(w, rc, ev)
 	}
+}
+
+func (a app) writeStreamErrorSSE(w http.ResponseWriter, rc *http.ResponseController, code, message string) {
+	payload := map[string]any{
+		"code":    code,
+		"message": message,
+	}
+	dataBytes, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(w, "event: stream_error\ndata: %s\n\n", dataBytes)
+	_ = rc.Flush()
 }
 
 func (a app) handlePreStreamError(w http.ResponseWriter, err error) {
@@ -763,7 +797,12 @@ func (a app) writeWorkflowEventSSE(w http.ResponseWriter, rc *http.ResponseContr
 	if cp := ev.GetCheckpoint(); cp != nil {
 		if a.dispatcher != nil {
 			env := NewCheckpointEnvelopeFromEvent(ev)
-			a.dispatcher.Submit(env)
+			res := a.dispatcher.Submit(env)
+			if res.Kind == DispatchPending && res.Envelope != nil {
+				if err := a.dispatcher.RetainPending(res.Envelope); err != nil && a.logger != nil {
+					a.logger.Error("retain pending checkpoint failed", zap.Error(err), zap.String("trace_id", env.TraceID))
+				}
+			}
 		}
 		return
 	}
@@ -792,6 +831,7 @@ func (a app) writeWorkflowEventSSE(w http.ResponseWriter, rc *http.ResponseContr
 			"node_name":     e.NodeFailed.GetNodeName(),
 			"error_kind":    int32(e.NodeFailed.GetCategory()),
 			"error_message": e.NodeFailed.GetMessage(),
+			"retryable":     e.NodeFailed.GetRetryable(),
 		}
 	case *pb.WorkflowEvent_AnswerChunk:
 		eventType = "answer_chunk"
@@ -886,6 +926,13 @@ type retrievalSnapshotDTO struct {
 }
 
 func toQueryRAGResponseDTO(resp *pb.QueryRAGResponse) queryRAGResponseDTO {
+	if resp == nil {
+		return queryRAGResponseDTO{
+			Citations:           make([]string, 0),
+			StructuredCitations: make([]structuredCitationDTO, 0),
+			Notices:             make([]noticeDTO, 0),
+		}
+	}
 	citations := make([]string, 0)
 	if len(resp.Citations) > 0 {
 		citations = resp.Citations

@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/lancet/gateway/db"
 	pb "github.com/lancet/gateway/proto/lancet/v1"
@@ -2112,7 +2114,11 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 				http.Error(w, "strict chat request contract failed", http.StatusBadRequest)
 				return
 			}
-			if !strings.Contains(request.Messages[1].Content, "DENSE_FIXTURE_MARKER") || !strings.Contains(request.Messages[1].Content, "LEXICAL_FIXTURE_IDENTIFIER_2026") {
+			if !strings.Contains(request.Messages[1].Content, "DENSE_FIXTURE_MARKER") ||
+				!strings.Contains(request.Messages[1].Content, "LEXICAL_FIXTURE_IDENTIFIER_2026") ||
+				!strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_SEED") ||
+				!strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_NEIGHBOR") ||
+				!strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_RELATION") {
 				t.Logf("EVIDENCE FAIL: content=%q", request.Messages[1].Content)
 				http.Error(w, "retrieval evidence is incomplete", http.StatusBadRequest)
 				return
@@ -2291,15 +2297,80 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 		t.Fatalf("generated gRPC Ping did not succeed within 30 seconds: %v; engine output: %s", lastPingErr, strings.Join(engineLines, " | "))
 	}
 
+	server := httptest.NewServer(app{store: &fakeStore{}, engine: grpcEngine{client: client}, logger: zap.NewNop()}.routes())
+	defer server.Close()
+
+	httpClient := &http.Client{}
 	requestBody := `{"query":"What does LEXICAL_FIXTURE_IDENTIFIER_2026 prove?","session_id":"00000000-0000-4000-8000-000000000006"}`
-	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(requestBody)).WithContext(t.Context())
-	req.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	app{store: &fakeStore{}, engine: grpcEngine{client: client}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("real /rag/query status = %d, body = %s; engine output: %s", recorder.Code, recorder.Body.String(), strings.Join(engineLines, " | "))
+	httpReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/rag/query", strings.NewReader(requestBody))
+	if err != nil {
+		t.Fatalf("create request: %v", err)
 	}
-	bodyStr := recorder.Body.String()
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	httpResp, err := httpClient.Do(httpReq)
+	if err != nil {
+		t.Fatalf("execute request: %v", err)
+	}
+	defer httpResp.Body.Close()
+
+	if httpResp.StatusCode != http.StatusOK {
+		t.Fatalf("real /rag/query status = %d; engine output: %s", httpResp.StatusCode, strings.Join(engineLines, " | "))
+	}
+
+	rawBodyBytes, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		t.Fatalf("read SSE response body: %v", err)
+	}
+	bodyStr := string(rawBodyBytes)
+
+	sseEvs := parseSSEEvents(bodyStr)
+	var hasStreamError bool
+	seenNodes := make(map[string]struct{})
+	var sawAnswerChunk, sawFinalAnswer, sawWorkflowCompleted bool
+	for _, ev := range sseEvs {
+		if ev.Event == "stream_error" {
+			hasStreamError = true
+		}
+		if ev.Event == "node_started" || ev.Event == "node_completed" {
+			var nodePayload struct {
+				NodeName string `json:"node_name"`
+			}
+			_ = json.Unmarshal([]byte(ev.Data), &nodePayload)
+			seenNodes[ev.Event+":"+nodePayload.NodeName] = struct{}{}
+		}
+		if ev.Event == "answer_chunk" {
+			sawAnswerChunk = true
+		}
+		if ev.Event == "final_answer" {
+			sawFinalAnswer = true
+		}
+		if ev.Event == "workflow_completed" {
+			sawWorkflowCompleted = true
+		}
+	}
+	if hasStreamError {
+		t.Fatalf("unexpected stream_error in SSE events: %s", bodyStr)
+	}
+	for _, node := range []string{"ReformulateQuery", "ExtractGraphContext", "RetrieveHybrid", "AssemblePrompt", "GenerateAnswer"} {
+		if _, ok := seenNodes["node_started:"+node]; !ok {
+			t.Fatalf("missing node_started for %s in %s", node, bodyStr)
+		}
+		if _, ok := seenNodes["node_completed:"+node]; !ok {
+			t.Fatalf("missing node_completed for %s in %s", node, bodyStr)
+		}
+	}
+	if !sawAnswerChunk {
+		t.Fatalf("missing answer_chunk event in %s", bodyStr)
+	}
+	if !sawFinalAnswer {
+		t.Fatalf("missing final_answer event in %s", bodyStr)
+	}
+	if !sawWorkflowCompleted {
+		t.Fatalf("missing workflow_completed event in %s", bodyStr)
+	}
+
 	dto, err := parseTerminalResponseDTO(bodyStr)
 	if err != nil {
 		t.Fatalf("decode real /rag/query response: %v; body: %s", err, bodyStr)
@@ -2326,8 +2397,12 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	if embeddingCalls != 1 || metadataCalls != 1 || chatCalls != 1 || chatModel != "openai/gpt-4o-mini" || !usageReturned || !strictChat {
 		t.Fatalf("mock call contract = embeddings:%d metadata:%d chat:%d model:%q usage:%v strict:%v", embeddingCalls, metadataCalls, chatCalls, chatModel, usageReturned, strictChat)
 	}
-	if !strings.Contains(chatEvidence, "DENSE_FIXTURE_MARKER") || !strings.Contains(chatEvidence, "LEXICAL_FIXTURE_IDENTIFIER_2026") {
-		t.Fatalf("Rust-owned evidence omitted dense or lexical fixture content")
+	if !strings.Contains(chatEvidence, "DENSE_FIXTURE_MARKER") ||
+		!strings.Contains(chatEvidence, "LEXICAL_FIXTURE_IDENTIFIER_2026") ||
+		!strings.Contains(chatEvidence, "GRAPH_FIXTURE_MARKER_SEED") ||
+		!strings.Contains(chatEvidence, "GRAPH_FIXTURE_MARKER_NEIGHBOR") ||
+		!strings.Contains(chatEvidence, "GRAPH_FIXTURE_MARKER_RELATION") {
+		t.Fatalf("Rust-owned evidence omitted graph, dense or lexical fixture content")
 	}
 }
 
@@ -3096,9 +3171,6 @@ func TestWorkflowCheckpointCancellationAtomicity(t *testing.T) {
 	_, pool, _ := newWorkflowCheckpointsIsolatedPostgres(t, databaseURL)
 	sink := NewPostgresCheckpointSink(pool, nil)
 
-	canceledCtx, cancel := context.WithCancel(ctx)
-	cancel()
-
 	traceID := "trace-cancel-" + uuid.NewString()
 	env := &CheckpointEnvelope{
 		SessionID:       "sess-c",
@@ -3110,18 +3182,36 @@ func TestWorkflowCheckpointCancellationAtomicity(t *testing.T) {
 		CreatedAt:       time.Now(),
 	}
 
-	err := sink.SaveCheckpoint(canceledCtx, env)
-	if err != nil {
-		t.Fatalf("save checkpoint with canceled context failed: %v", err)
+	dispatcher := NewCheckpointDispatcher(sink)
+	res := dispatcher.Submit(env)
+	if res.Kind != DispatchAccepted {
+		t.Fatalf("submit: %v", res.Kind)
 	}
+	dispatcher.Close()
 
 	var count int
-	err = pool.QueryRow(ctx, "SELECT COUNT(*) FROM workflow_checkpoints WHERE trace_id = $1", traceID).Scan(&count)
+	err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM workflow_checkpoints WHERE trace_id = $1", traceID).Scan(&count)
 	if err != nil {
 		t.Fatalf("query count: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("persisted count after cancel = %d, want 1 (sink must use independent background context)", count)
+		t.Fatalf("persisted count after dispatcher = %d, want 1", count)
+	}
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	directTraceID := "trace-direct-cancel-" + uuid.NewString()
+	directEnv := &CheckpointEnvelope{
+		SessionID:       "sess-c",
+		CorrelationID:   directTraceID,
+		TraceID:         directTraceID,
+		NodeID:          "assemble_prompt",
+		SequenceOrdinal: 1,
+		ContextSnapshot: `{"assembled_prompt":"valid prompt"}`,
+		CreatedAt:       time.Now(),
+	}
+	if err := sink.SaveCheckpoint(canceledCtx, directEnv); err == nil {
+		t.Fatalf("expected error saving with directly canceled context, got nil")
 	}
 }
 
@@ -3176,6 +3266,601 @@ func TestQueryRAGRealInvalidRequestAndDisconnect(t *testing.T) {
 
 	if strings.Contains(recorder.Body.String(), "context_snapshot") {
 		t.Fatalf("error response body leaked context_snapshot: %s", recorder.Body.String())
+	}
+}
+
+func TestRAGQueryPostOpenRecvFailureSSE(t *testing.T) {
+	sessionID := "00000000-0000-4000-8000-000000000055"
+	correlationID := "00000000-0000-4000-8000-000000000099"
+
+	events := []*pb.WorkflowEvent{
+		{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 1,
+			Event: &pb.WorkflowEvent_NodeStarted{
+				NodeStarted: &pb.NodeStartedEvent{
+					NodeName:      "ReformulateQuery",
+					InputsSummary: "inputs",
+				},
+			},
+		},
+	}
+
+	stream := &fakeQueryRAGStream{
+		events: events,
+		err:    status.Error(codes.Unavailable, "engine crashed mid-stream"),
+	}
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			return stream, nil
+		},
+	}
+
+	server := httptest.NewServer(app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes())
+	defer server.Close()
+
+	reqBody := `{"query":"post open recv fail test","session_id":"` + sessionID + `"}`
+	httpReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/rag/query", strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("create request error: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	res, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		t.Fatalf("execute request error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d (StatusOK)", res.StatusCode, http.StatusOK)
+	}
+	if contentType := res.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", contentType)
+	}
+
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body error: %v", err)
+	}
+	bodyStr := string(bodyBytes)
+	sseEvs := parseSSEEvents(bodyStr)
+
+	var streamErrorEvent *sseEvent
+	var sawWorkflowCompleted bool
+	for i, ev := range sseEvs {
+		if ev.Event == "stream_error" {
+			streamErrorEvent = &sseEvs[i]
+		}
+		if ev.Event == "workflow_completed" {
+			sawWorkflowCompleted = true
+		}
+	}
+
+	if streamErrorEvent == nil {
+		t.Fatalf("expected stream_error event in SSE stream, got: %s", bodyStr)
+	}
+	if !strings.Contains(streamErrorEvent.Data, "GRPC_RECV_ERROR") {
+		t.Fatalf("stream_error data missing GRPC_RECV_ERROR code: %s", streamErrorEvent.Data)
+	}
+	if sawWorkflowCompleted {
+		t.Fatalf("workflow_completed must not be sent on mid-stream gRPC failure: %s", bodyStr)
+	}
+}
+
+func TestRAGQueryEOFWithoutTerminalSSE(t *testing.T) {
+	sessionID := "00000000-0000-4000-8000-000000000055"
+	correlationID := "00000000-0000-4000-8000-000000000099"
+
+	events := []*pb.WorkflowEvent{
+		{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 1,
+			Event: &pb.WorkflowEvent_NodeStarted{
+				NodeStarted: &pb.NodeStartedEvent{
+					NodeName:      "ReformulateQuery",
+					InputsSummary: "inputs",
+				},
+			},
+		},
+	}
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	server := httptest.NewServer(app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes())
+	defer server.Close()
+
+	reqBody := `{"query":"eof without terminal test","session_id":"` + sessionID + `"}`
+	httpReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/rag/query", strings.NewReader(reqBody))
+	if err != nil {
+		t.Fatalf("create request error: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	res, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		t.Fatalf("execute request error: %v", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d (StatusOK)", res.StatusCode, http.StatusOK)
+	}
+	if contentType := res.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", contentType)
+	}
+
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("read body error: %v", err)
+	}
+	bodyStr := string(bodyBytes)
+	sseEvs := parseSSEEvents(bodyStr)
+
+	var streamErrorEvent *sseEvent
+	for i, ev := range sseEvs {
+		if ev.Event == "stream_error" {
+			streamErrorEvent = &sseEvs[i]
+		}
+	}
+
+	if streamErrorEvent == nil {
+		t.Fatalf("expected stream_error event on EOF without terminal completion, got: %s", bodyStr)
+	}
+	if !strings.Contains(streamErrorEvent.Data, "STREAM_EOF_WITHOUT_TERMINAL") {
+		t.Fatalf("stream_error data missing STREAM_EOF_WITHOUT_TERMINAL code: %s", streamErrorEvent.Data)
+	}
+}
+
+func TestRAGQueryClientDisconnectCancelsRustWorkflow(t *testing.T) {
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("resolve repository root: %v", err)
+	}
+
+	chatStarted := make(chan struct{}, 1)
+	chatCanceled := make(chan struct{}, 1)
+	var chatCalls atomic.Int32
+
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			http.Error(w, "unexpected authorization", http.StatusUnauthorized)
+			return
+		}
+
+		switch r.URL.Path {
+		case "/api/v1/embeddings":
+			var request struct {
+				Model string   `json:"model"`
+				Input []string `json:"input"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid embedding request", http.StatusBadRequest)
+				return
+			}
+			vector := make([]float32, 2048)
+			vector[0] = 1
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"embedding": vector}}})
+
+		case "/api/v1/models":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{
+				"id":                   "openai/gpt-4o-mini",
+				"supported_parameters": []string{"response_format", "structured_outputs"},
+			}}})
+
+		case "/api/v1/chat/completions":
+			_, _ = io.Copy(io.Discard, r.Body)
+			_ = r.Body.Close()
+			chatCalls.Add(1)
+			select {
+			case chatStarted <- struct{}{}:
+			default:
+			}
+			select {
+			case <-r.Context().Done():
+				select {
+				case chatCanceled <- struct{}{}:
+				default:
+				}
+				return
+			case <-time.After(10 * time.Second):
+				http.Error(w, "timeout waiting for cancellation", http.StatusGatewayTimeout)
+				return
+			}
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mock.Close()
+
+	tempRoot := t.TempDir()
+	lancedbPath := filepath.Join(tempRoot, "lancedb")
+	releasedPath := filepath.Join(tempRoot, "lancedb-released")
+	defer releaseRAGPath(t, lancedbPath, releasedPath)
+	port := getFreePort(t)
+	engineAddr := fmt.Sprintf("127.0.0.1:%d", port)
+
+	enginePath := filepath.Join(repoRoot, "engine", "target", "debug", "engine.exe")
+	seederPath := filepath.Join(repoRoot, "engine", "target", "debug", "seed_rag_fixture.exe")
+	if runtime.GOOS != "windows" {
+		enginePath = filepath.Join(repoRoot, "engine", "target", "debug", "engine")
+		seederPath = filepath.Join(repoRoot, "engine", "target", "debug", "seed_rag_fixture")
+	}
+
+	seederEnv := ragChildEnv()
+	assertCleanRAGChildEnv(t, seederEnv)
+	seeder := exec.Command(seederPath, "--lancedb-path", lancedbPath)
+	seeder.Dir = repoRoot
+	seeder.Env = seederEnv
+	if output, err := seeder.CombinedOutput(); err != nil {
+		t.Fatalf("run fixture seeder: %v\n%s", err, output)
+	}
+
+	engineEnv := ragChildEnv(
+		"LANCET_ENGINE__GRPC_ADDR="+engineAddr,
+		"LANCET_ENGINE__LANCEDB_PATH="+lancedbPath,
+		"LANCET_OPENROUTER__EMBEDDING_ENDPOINT="+mock.URL+"/api/v1/embeddings",
+		"LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT="+mock.URL+"/api/v1/models",
+		"LANCET_OPENROUTER__CHAT_ENDPOINT="+mock.URL+"/api/v1/chat/completions",
+		"OPENROUTER_API_KEY=test-key",
+	)
+	assertCleanRAGChildEnv(t, engineEnv)
+	engineCmd := exec.Command(enginePath)
+	engineCmd.Dir = repoRoot
+	engineCmd.Env = engineEnv
+	var conn *grpc.ClientConn
+	stdout, err := engineCmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("capture engine stdout: %v", err)
+	}
+	stderr, err := engineCmd.StderrPipe()
+	if err != nil {
+		t.Fatalf("capture engine stderr: %v", err)
+	}
+	if err := engineCmd.Start(); err != nil {
+		t.Fatalf("start Rust engine: %v", err)
+	}
+	engineDone := make(chan struct{})
+	go func() {
+		_ = engineCmd.Wait()
+		close(engineDone)
+	}()
+	lines := make(chan string, 64)
+	go scanRAGOutput(stdout, lines)
+	go scanRAGOutput(stderr, lines)
+	defer func() {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		terminateRAGProcess(engineCmd, nil)
+		<-engineDone
+	}()
+
+	var mu sync.Mutex
+	var engineLines []string
+	servedChan := make(chan struct{})
+	var servedOnce sync.Once
+	go func() {
+		for line := range lines {
+			mu.Lock()
+			engineLines = append(engineLines, line)
+			mu.Unlock()
+			if strings.Contains(line, "Rust RAG Engine serving") {
+				servedOnce.Do(func() { close(servedChan) })
+			}
+		}
+	}()
+
+	select {
+	case <-servedChan:
+	case <-engineDone:
+		t.Fatal("Rust engine exited before readiness")
+	case <-time.After(30 * time.Second):
+		t.Fatal("Rust engine did not emit serving milestone within 30 seconds")
+	}
+
+	conn, err = grpc.NewClient(engineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial exact Rust gRPC endpoint: %v", err)
+	}
+	client := pb.NewLancetServiceClient(conn)
+
+	pinged := false
+	var lastPingErr error
+	pingDeadline := time.Now().Add(30 * time.Second)
+	for delay := 10 * time.Millisecond; time.Now().Before(pingDeadline); delay = min(delay*2, 250*time.Millisecond) {
+		pingCtx, pingCancel := context.WithTimeout(t.Context(), 2*time.Second)
+		_, pingErr := client.Ping(pingCtx, &pb.PingRequest{Value: "ping"})
+		lastPingErr = pingErr
+		pingCancel()
+		if pingErr == nil {
+			pinged = true
+			break
+		}
+		select {
+		case <-engineDone:
+			t.Fatalf("Rust engine exited during Ping readiness probe")
+		default:
+		}
+		time.Sleep(delay)
+	}
+	if !pinged {
+		t.Fatalf("generated gRPC Ping did not succeed within 30 seconds: %v", lastPingErr)
+	}
+
+	gwServer := httptest.NewServer(app{store: &fakeStore{}, engine: grpcEngine{client: client}, logger: zap.NewNop()}.routes())
+	defer gwServer.Close()
+
+	httpClient := &http.Client{}
+	clientCtx, clientCancel := context.WithCancel(t.Context())
+	defer clientCancel()
+	requestBody := `{"query":"What does LEXICAL_FIXTURE_IDENTIFIER_2026 prove?","session_id":"00000000-0000-4000-8000-000000000007"}`
+	httpReq, err := http.NewRequestWithContext(clientCtx, http.MethodPost, gwServer.URL+"/rag/query", strings.NewReader(requestBody))
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	resp, err := httpClient.Do(httpReq)
+	if err != nil {
+		t.Fatalf("execute request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, readErr := reader.ReadString('\n')
+		if readErr != nil {
+			break
+		}
+		if strings.Contains(line, "GenerateAnswer") {
+			break
+		}
+	}
+
+	select {
+	case <-chatStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("chat completions call was not received by mock provider within 10s")
+	}
+
+	resp.Body.Close()
+	clientCancel()
+
+	select {
+	case <-chatCanceled:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("mock OpenRouter did not observe request context cancellation within 5s; engine output: %s", strings.Join(engineLines, " | "))
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	if calls := chatCalls.Load(); calls != 1 {
+		t.Fatalf("expected exactly 1 chat call, got %d", calls)
+	}
+}
+
+func TestRetrievalSnapshotWireContract(t *testing.T) {
+	orig := &pb.RetrievalSnapshot{
+		IndexGeneration: "gen-12345",
+		EmbeddingModel:  "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+		VectorWeight:    1.0,
+		Bm25Weight:      1.0,
+		RrfK:            60,
+		CandidateLimit:  32,
+		FinalLimit:      8,
+		ActiveFilter: &pb.DocumentFilter{
+			DocumentIds:  []string{"doc-1", "doc-2"},
+			ContentTypes: []string{"text/markdown"},
+		},
+		ResultHash:        "hash-abcdef0123456789",
+		VariantCount:      3,
+		VariantIdentities: []string{"orig", "var1", "var2"},
+	}
+
+	data, err := proto.Marshal(orig)
+	if err != nil {
+		t.Fatalf("proto.Marshal failed: %v", err)
+	}
+
+	var roundtrip pb.RetrievalSnapshot
+	if err := proto.Unmarshal(data, &roundtrip); err != nil {
+		t.Fatalf("proto.Unmarshal failed: %v", err)
+	}
+
+	if roundtrip.IndexGeneration != orig.IndexGeneration ||
+		roundtrip.EmbeddingModel != orig.EmbeddingModel ||
+		roundtrip.VectorWeight != orig.VectorWeight ||
+		roundtrip.Bm25Weight != orig.Bm25Weight ||
+		roundtrip.RrfK != orig.RrfK ||
+		roundtrip.CandidateLimit != orig.CandidateLimit ||
+		roundtrip.FinalLimit != orig.FinalLimit ||
+		roundtrip.ResultHash != orig.ResultHash {
+		t.Fatalf("scalar fields mismatch after roundtrip: got %#v, want %#v", roundtrip, orig)
+	}
+
+	if roundtrip.VariantCount != 3 {
+		t.Fatalf("VariantCount = %d, want 3", roundtrip.VariantCount)
+	}
+
+	if len(roundtrip.VariantIdentities) != 3 ||
+		roundtrip.VariantIdentities[0] != "orig" ||
+		roundtrip.VariantIdentities[1] != "var1" ||
+		roundtrip.VariantIdentities[2] != "var2" {
+		t.Fatalf("VariantIdentities = %#v, want %#v", roundtrip.VariantIdentities, orig.VariantIdentities)
+	}
+}
+
+type gatingCheckpointSink struct {
+	target CheckpointSink
+	gate   chan struct{}
+}
+
+func (g *gatingCheckpointSink) SaveCheckpoint(ctx context.Context, env *CheckpointEnvelope) error {
+	<-g.gate
+	return g.target.SaveCheckpoint(ctx, env)
+}
+
+func TestWorkflowCheckpointPendingDrainAndPersistence(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	_, pool, _ := newWorkflowCheckpointsIsolatedPostgres(t, databaseURL)
+
+	realSink := NewPostgresCheckpointSink(pool, zap.NewNop())
+	gate := make(chan struct{})
+	gatedSink := &gatingCheckpointSink{
+		target: realSink,
+		gate:   gate,
+	}
+	dispatcher := NewCheckpointDispatcher(gatedSink)
+
+	traceID := uuid.NewString()
+
+	canonicalSnapshot := `{
+		"session_id": "00000000-0000-4000-8000-000000000001",
+		"trace_id": "` + traceID + `",
+		"original_query": "test query",
+		"variants": ["test query"],
+		"vector_results": [],
+		"bm25_results": [],
+		"final_candidates": [],
+		"graph_context": null,
+		"graph_facts": [],
+		"evidence_blocks": [],
+		"assembled_prompt": null,
+		"answer": null,
+		"citations": [],
+		"answer_basis": 0,
+		"structured_citations": [],
+		"notices": [],
+		"snapshot": null,
+		"query_embedding": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+		"snapshot_state": "accumulated"
+	}`
+
+	if !json.Valid([]byte(canonicalSnapshot)) {
+		t.Fatalf("canonicalSnapshot is not valid JSON")
+	}
+
+	var acceptedCount, pendingCount int
+	for i := 1; i <= 10; i++ {
+		env := &CheckpointEnvelope{
+			TraceID:         traceID,
+			SequenceOrdinal: uint64(i),
+			NodeID:          fmt.Sprintf("Node-%d", i),
+			CheckpointType:  "NodeCompleted",
+			ContextSnapshot: canonicalSnapshot,
+			CreatedAt:       time.Now(),
+		}
+		res := dispatcher.Submit(env)
+		if res.Kind == DispatchAccepted {
+			acceptedCount++
+		} else if res.Kind == DispatchPending {
+			pendingCount++
+			if res.Envelope != env {
+				t.Fatalf("envelope %d expected res.Envelope to match env", i)
+			}
+			if err := dispatcher.RetainPending(res.Envelope); err != nil {
+				t.Fatalf("retain pending envelope %d: %v", i, err)
+			}
+		} else {
+			t.Fatalf("envelope %d unexpected dispatch result kind: %v", i, res.Kind)
+		}
+	}
+	if acceptedCount < 4 {
+		t.Fatalf("expected at least 4 accepted envelopes, got %d", acceptedCount)
+	}
+	if pendingCount < 4 {
+		t.Fatalf("expected at least 4 pending envelopes, got %d", pendingCount)
+	}
+
+	close(gate)
+	dispatcher.Close()
+
+	rows, err := pool.Query(t.Context(), `
+		SELECT id, trace_id, sequence_ordinal, node_name, context_snapshot, created_at
+		FROM workflow_checkpoints
+		WHERE trace_id = $1
+		ORDER BY sequence_ordinal ASC
+	`, traceID)
+	if err != nil {
+		t.Fatalf("query workflow_checkpoints: %v", err)
+	}
+	defer rows.Close()
+
+	type persistedRow struct {
+		ID              string
+		TraceID         string
+		SequenceOrdinal int32
+		NodeName        string
+		ContextSnapshot []byte
+		CreatedAt       time.Time
+	}
+
+	var persisted []persistedRow
+	for rows.Next() {
+		var r persistedRow
+		if err := rows.Scan(&r.ID, &r.TraceID, &r.SequenceOrdinal, &r.NodeName, &r.ContextSnapshot, &r.CreatedAt); err != nil {
+			t.Fatalf("scan workflow_checkpoint row: %v", err)
+		}
+		persisted = append(persisted, r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows error: %v", err)
+	}
+
+	if len(persisted) != 10 {
+		t.Fatalf("expected 10 persisted checkpoints, got %d", len(persisted))
+	}
+
+	requiredKeys := []string{
+		"session_id", "trace_id", "original_query", "variants",
+		"vector_results", "bm25_results", "final_candidates",
+		"graph_context", "graph_facts", "evidence_blocks",
+		"assembled_prompt", "answer", "citations", "answer_basis",
+		"structured_citations", "notices", "snapshot", "query_embedding", "snapshot_state",
+	}
+
+	for i, r := range persisted {
+		expectedOrdinal := int32(i + 1)
+		if r.SequenceOrdinal != expectedOrdinal {
+			t.Fatalf("row %d sequence_ordinal = %d, want %d", i, r.SequenceOrdinal, expectedOrdinal)
+		}
+		if r.NodeName != fmt.Sprintf("Node-%d", expectedOrdinal) {
+			t.Fatalf("row %d node_name = %q, want %q", i, r.NodeName, fmt.Sprintf("Node-%d", expectedOrdinal))
+		}
+		if !json.Valid(r.ContextSnapshot) {
+			t.Fatalf("row %d context_snapshot is not valid JSON", i)
+		}
+
+		var snapshotMap map[string]any
+		if err := json.Unmarshal(r.ContextSnapshot, &snapshotMap); err != nil {
+			t.Fatalf("row %d unmarshal context_snapshot: %v", i, err)
+		}
+
+		for _, k := range requiredKeys {
+			if _, exists := snapshotMap[k]; !exists {
+				t.Fatalf("row %d context_snapshot missing exact required key %q", i, k)
+			}
+		}
 	}
 }
 

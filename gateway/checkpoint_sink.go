@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -81,6 +82,9 @@ func (s *PostgresCheckpointSink) SaveCheckpoint(ctx context.Context, env *Checkp
 	if env == nil {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	id := uuid.NewString()
 
 	nodeName := env.NodeID
@@ -96,7 +100,7 @@ func (s *PostgresCheckpointSink) SaveCheckpoint(ctx context.Context, env *Checkp
 		createdAt = time.Now()
 	}
 
-	writeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	params := db.InsertWorkflowCheckpointParams{
@@ -144,10 +148,10 @@ func (s *InMemoryCheckpointSink) Checkpoints() []*CheckpointEnvelope {
 	return out
 }
 
-
 type CheckpointDispatcher struct {
 	primary  chan *CheckpointEnvelope
 	overflow []*CheckpointEnvelope
+	pending  []*CheckpointEnvelope
 	mu       sync.Mutex
 	sink     CheckpointSink
 	closed   bool
@@ -158,6 +162,7 @@ func NewCheckpointDispatcher(sink CheckpointSink) *CheckpointDispatcher {
 	d := &CheckpointDispatcher{
 		primary:  make(chan *CheckpointEnvelope, 1),
 		overflow: make([]*CheckpointEnvelope, 0, 4),
+		pending:  make([]*CheckpointEnvelope, 0, 16),
 		sink:     sink,
 		done:     make(chan struct{}),
 	}
@@ -188,6 +193,19 @@ func (d *CheckpointDispatcher) Submit(env *CheckpointEnvelope) DispatchResult {
 	}
 }
 
+func (d *CheckpointDispatcher) RetainPending(env *CheckpointEnvelope) error {
+	if env == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.pending) >= 16 {
+		return errors.New("checkpoint pending queue is full")
+	}
+	d.pending = append(d.pending, env)
+	return nil
+}
+
 func (d *CheckpointDispatcher) loop() {
 	defer close(d.done)
 	for {
@@ -204,6 +222,17 @@ func (d *CheckpointDispatcher) loop() {
 func (d *CheckpointDispatcher) nextEnvelope() *CheckpointEnvelope {
 	d.mu.Lock()
 
+	// Drain primary first to preserve submission order
+	select {
+	case env, ok := <-d.primary:
+		if ok {
+			d.mu.Unlock()
+			return env
+		}
+	default:
+	}
+
+	// Drain overflow in FIFO order
 	if len(d.overflow) > 0 {
 		env := d.overflow[0]
 		d.overflow = d.overflow[1:]
@@ -211,23 +240,34 @@ func (d *CheckpointDispatcher) nextEnvelope() *CheckpointEnvelope {
 		return env
 	}
 
-	select {
-	case env, ok := <-d.primary:
+	// Drain pending in FIFO order
+	if len(d.pending) > 0 {
+		env := d.pending[0]
+		d.pending = d.pending[1:]
 		d.mu.Unlock()
-		if !ok {
-			return nil
-		}
 		return env
-	default:
-		if d.closed {
-			d.mu.Unlock()
-			return nil
-		}
+	}
+
+	if d.closed {
+		d.mu.Unlock()
+		return nil
 	}
 
 	d.mu.Unlock()
 	env, ok := <-d.primary
 	if !ok {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if len(d.overflow) > 0 {
+			env = d.overflow[0]
+			d.overflow = d.overflow[1:]
+			return env
+		}
+		if len(d.pending) > 0 {
+			env = d.pending[0]
+			d.pending = d.pending[1:]
+			return env
+		}
 		return nil
 	}
 	return env
@@ -237,6 +277,7 @@ func (d *CheckpointDispatcher) Close() {
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
+		<-d.done
 		return
 	}
 	d.closed = true

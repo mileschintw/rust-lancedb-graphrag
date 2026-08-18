@@ -1790,6 +1790,7 @@ impl<S: futures::Stream + Unpin> futures::Stream for CancelOnDropStream<S> {
 
 impl<S> Drop for CancelOnDropStream<S> {
     fn drop(&mut self) {
+        tracing::info!("CancelOnDropStream::drop called, cancelling workflow token");
         self.cancel.cancel();
     }
 }
