@@ -130,18 +130,43 @@ async fn workflow_phase5_production_dependencies_are_real() {
 async fn workflow_phase5_production_context_population() {
     let path = database_path("prod-ctx-pop");
     let db = DatabaseManager::initialize(&path).await.unwrap();
+
+    let captured_req = Arc::new(std::sync::Mutex::new(None));
+    let captured_req_clone = Arc::clone(&captured_req);
+
+    struct CapturingGenerator {
+        captured: Arc<std::sync::Mutex<Option<generation::GenerationRequest>>>,
+    }
+
+    impl generation::Generator for CapturingGenerator {
+        fn generate<'a>(
+            &'a self,
+            request: generation::GenerationRequest,
+        ) -> generation::BoxFuture<'a, Result<ModelOutput, generation::GenerationError>> {
+            let captured = Arc::clone(&self.captured);
+            Box::pin(async move {
+                *captured.lock().unwrap() = Some(request);
+                Ok(ModelOutput {
+                    answer: "Populated answer [1]".into(),
+                    cited_evidence_ids: vec!["[1]".into()],
+                    answer_basis: AnswerBasis::Retrieval,
+                    notices: vec![],
+                    warnings: vec![],
+                    usage: None,
+                })
+            })
+        }
+    }
+
+    let generator = Arc::new(CapturingGenerator {
+        captured: captured_req_clone,
+    });
+
     let service = configured_service(
         &db,
         crate::EffectiveRagSettings::default(),
         Arc::new(FakeEmbedder),
-        Arc::new(FakeGenerator::new(Ok(ModelOutput {
-            answer: "Populated answer".into(),
-            cited_evidence_ids: vec![],
-            answer_basis: AnswerBasis::ModelOnly,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        }))),
+        generator,
         Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
@@ -172,6 +197,309 @@ async fn workflow_phase5_production_context_population() {
     );
     retrieve_node.run(&mut ctx, &cancel).await.unwrap();
     assert!(ctx.snapshot.is_some());
+
+    // Populate seeded GraphFactBlock and EvidenceBlock to test AssemblePrompt and GenerateAnswer
+    ctx.graph_facts = vec![crate::prompt::GraphFactBlock {
+        fact: crate::graph::context_strategy::GraphFact::new(
+            "SeededGraphFactMarker",
+            "relates_to",
+            "ProductionContextTest",
+            None,
+            0.9,
+        ),
+    }];
+    ctx.evidence_blocks = vec![crate::prompt::EvidenceBlock {
+        id: "[1]".to_string(),
+        chunk_id: "chk-pop-1".to_string(),
+        document_id: "doc-pop-1".to_string(),
+        chunk_index: 0,
+        title: Some("Title".to_string()),
+        section_path: Some("Section".to_string()),
+        content_type: Some("text/plain".to_string()),
+        provenance: "provenance".to_string(),
+        text: "Evidence for population test".to_string(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let assemble_node = workflow::nodes::AssemblePromptNode::new();
+    assemble_node.run(&mut ctx, &cancel).await.unwrap();
+    assert!(ctx.assembled_prompt.contains("SeededGraphFactMarker"));
+
+    let generate_node = workflow::nodes::GenerateAnswerNode::new(deps.generator.clone());
+    generate_node.run(&mut ctx, &cancel).await.unwrap();
+
+    let captured = captured_req.lock().unwrap();
+    let gen_req: &generation::GenerationRequest = captured.as_ref().expect("GenerationRequest must be captured at provider boundary");
+    assert_eq!(gen_req.graph_facts.len(), 1);
+    assert_eq!(gen_req.graph_facts[0].fact.entity_a_name(), "SeededGraphFactMarker");
+    assert_eq!(gen_req.evidence.len(), 1);
+    assert_eq!(gen_req.evidence[0].id, "[1]");
+}
+
+#[tokio::test]
+async fn workflow_phase5_production_reachability() {
+    let path = database_path("prod-reachability");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let doc_id = uuid::Uuid::new_v4().to_string();
+
+    crate::tests::stage_document(
+        &database,
+        &doc_id,
+        b"# Reachability Document\nThis document tests full production workflow reachability and event ordering.",
+    )
+    .await;
+
+    let job = crate::tests::read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+
+    crate::tests::process_job(&job, &database, &FakeEmbedder).await.unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = crate::retrieval::Bm25Index::from_table(&nodes, crate::retrieval::Bm25Config::default())
+        .await
+        .unwrap();
+    let table = database.staged_documents_table().await.unwrap();
+    let statuses = Arc::new(dashmap::DashMap::new());
+    let (sender, _receiver) = mpsc::channel(crate::QUEUE_CAPACITY);
+
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(
+        generation::ModelOutput {
+            answer: "Reachability answer [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        },
+    )));
+
+    let service = crate::LancetServiceImpl {
+        table,
+        statuses,
+        queue: sender,
+        nodes,
+        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
+        reranker: Arc::new(rerank::NoOpReranker::new()),
+        effective_settings: crate::EffectiveRagSettings::default(),
+        generator: fake_gen.clone(),
+        embedder: Arc::new(FakeEmbedder),
+        database: database.clone(),
+    };
+
+    // 1. Happy path: full five-node execution with evidence
+    let (runner, _deps) = service.build_production_workflow();
+    let req = QueryRagRequest {
+        query: "What is reachability document content?".into(),
+        session_id: "00000000-0000-4000-8000-000000000010".into(),
+        filter: None,
+    };
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-reachability".into(),
+        "00000000-0000-4000-8000-000000000010".into(),
+    );
+    let ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000010".into(),
+        "trace-reachability".into(),
+        &req,
+    );
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(ev) = item {
+            events.push(ev);
+        }
+    }
+
+    // Assert D-06 NodeStarted ordering: ReformulateQuery, ExtractGraphContext, RetrieveHybrid, AssemblePrompt, GenerateAnswer
+    let started_nodes: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        started_nodes,
+        vec![
+            "ReformulateQuery",
+            "ExtractGraphContext",
+            "RetrieveHybrid",
+            "AssemblePrompt",
+            "GenerateAnswer"
+        ]
+    );
+
+    // Assert exactly one full AnswerChunk (D-01) and one distinct FinalAnswer (D-02)
+    let answer_chunks: Vec<_> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::AnswerChunk(ac)) => Some(ac),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(answer_chunks.len(), 1, "exactly one full AnswerChunk must be emitted");
+    assert_eq!(answer_chunks[0].chunk, "Reachability answer [1].");
+
+    let final_answers: Vec<_> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::FinalAnswer(fa)) => Some(fa),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(final_answers.len(), 1, "exactly one distinct FinalAnswer must be emitted");
+    assert_eq!(
+        final_answers[0]
+            .response
+            .as_ref()
+            .expect("FinalAnswer must contain response")
+            .answer,
+        "Reachability answer [1]."
+    );
+
+    // Assert successful completion
+    let terminal = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("WorkflowCompleted must be emitted");
+    assert!(terminal.success);
+
+    // 2. D-03 zero evidence short-circuiting: AssemblePrompt and GenerateAnswer skipped
+    let zero_req = QueryRagRequest {
+        query: "Nonexistent document query".into(),
+        session_id: "00000000-0000-4000-8000-000000000011".into(),
+        filter: Some(v1::DocumentFilter {
+            document_ids: vec!["00000000-0000-4000-8000-000000000099".to_string()],
+            content_types: vec![],
+        }),
+    };
+    let (tx_zero, mut rx_zero) = mpsc::channel(100);
+    let cancel_zero = CancellationToken::new();
+    let sink_zero = WorkflowEventSink::new(
+        tx_zero,
+        Arc::new(EventSequence::new()),
+        "trace-reachability-zero".into(),
+        "00000000-0000-4000-8000-000000000011".into(),
+    );
+    let ctx_zero = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000011".into(),
+        "trace-reachability-zero".into(),
+        &zero_req,
+    );
+
+    runner.run_workflow(ctx_zero, cancel_zero, sink_zero).await;
+
+    let mut zero_events = Vec::new();
+    while let Ok(item) = rx_zero.try_recv() {
+        if let Ok(ev) = item {
+            zero_events.push(ev);
+        }
+    }
+
+    let zero_started_nodes: Vec<String> = zero_events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        zero_started_nodes,
+        vec!["ReformulateQuery", "ExtractGraphContext", "RetrieveHybrid"]
+    );
+    assert!(!zero_started_nodes.contains(&"AssemblePrompt".to_string()));
+    assert!(!zero_started_nodes.contains(&"GenerateAnswer".to_string()));
+
+    let zero_terminal = zero_events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("Zero evidence must emit successful WorkflowCompleted");
+    assert!(zero_terminal.success);
+
+    // 3. Typed retrieval failure
+    struct FailingDensePort;
+    impl workflow::ports::DenseRetrievalPort for FailingDensePort {
+        fn retrieve_dense<'a>(
+            &'a self,
+            _query: &'a str,
+            _embedding: &'a [f32],
+            _filter: Option<&'a v1::DocumentFilter>,
+            _cancel: &'a CancellationToken,
+        ) -> workflow::node::BoxFuture<'a, Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>> {
+            Box::pin(async move {
+                Err(workflow::node::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    "Hard database failure",
+                ))
+            })
+        }
+    }
+
+    let (_, fail_deps) = service.build_production_workflow();
+    let mut failing_runner = workflow::WorkflowRunner::new();
+    failing_runner.add_node(workflow::nodes::ReformulateQueryNode::new());
+    failing_runner.add_node(workflow::nodes::ExtractGraphContextNode::new(fail_deps.embedding_port.clone(), None));
+    failing_runner.add_node(workflow::nodes::RetrieveHybridNode::new(
+        Some(Arc::new(FailingDensePort)),
+        None,
+        None,
+        Default::default(),
+    ));
+    failing_runner.add_node(workflow::nodes::AssemblePromptNode::new());
+    failing_runner.add_node(workflow::nodes::GenerateAnswerNode::new(None));
+
+    let (tx_fail, mut rx_fail) = mpsc::channel(100);
+    let cancel_fail = CancellationToken::new();
+    let sink_fail = WorkflowEventSink::new(
+        tx_fail,
+        Arc::new(EventSequence::new()),
+        "trace-fail".into(),
+        "00000000-0000-4000-8000-000000000012".into(),
+    );
+    let ctx_fail = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000012".into(),
+        "trace-fail".into(),
+        &req,
+    );
+
+    failing_runner.run_workflow(ctx_fail, cancel_fail, sink_fail).await;
+
+    let mut fail_events = Vec::new();
+    while let Ok(item) = rx_fail.try_recv() {
+        if let Ok(ev) = item {
+            fail_events.push(ev);
+        }
+    }
+
+    let fail_terminal = fail_events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("Failed workflow must emit WorkflowCompleted");
+    assert!(!fail_terminal.success);
+    assert_eq!(fail_terminal.error_kind, v1::NodeErrorKind::RetrievalFailed as i32);
+
+    let _ = std::fs::remove_dir_all(path);
 }
 
 #[tokio::test]
