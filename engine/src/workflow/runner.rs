@@ -346,12 +346,13 @@ impl WorkflowRunner {
         };
 
         if let Err(err) = preparation {
+            let _ = sink
+                .send_event_or_cancel(
+                    events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
+                    cancel,
+                )
+                .await;
             cancel.cancel();
-            sink.send_event_or_cancel(
-                events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
-                cancel,
-            )
-            .await?;
             return Err(err);
         }
 
@@ -363,10 +364,7 @@ impl WorkflowRunner {
             _ = cancel.cancelled() => Err(NodeError::cancelled()),
             res = timeout(node_timeout, node.run(ctx, cancel)) => match res {
                 Ok(inner) => inner,
-                Err(_) => {
-                    cancel.cancel();
-                    Err(NodeError::timeout(name))
-                }
+                Err(_) => Err(NodeError::timeout(name)),
             },
         };
 
@@ -389,11 +387,15 @@ impl WorkflowRunner {
                 sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel)?;
             }
             Err(err) => {
-                sink.send_event_or_cancel(
-                    events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
-                    cancel,
-                )
-                .await?;
+                let _ = sink
+                    .send_event_or_cancel(
+                        events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
+                        cancel,
+                    )
+                    .await;
+                if err.kind == NodeErrorKind::Timeout {
+                    cancel.cancel();
+                }
             }
         }
 
