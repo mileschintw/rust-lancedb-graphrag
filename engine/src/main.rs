@@ -277,6 +277,15 @@ impl WorkflowSettings {
         if self.generation_node_timeout_ms == 0 {
             return Err("invalid generation_node_timeout_ms: must be greater than 0".into());
         }
+        let graph_required = self
+            .query_embedding_timeout_ms
+            .saturating_add(self.graph_operation_timeout_ms);
+        if self.graph_node_timeout_ms < graph_required {
+            return Err(format!(
+                "invalid graph_node_timeout_ms ({}): must be >= query_embedding_timeout_ms + graph_operation_timeout_ms ({})",
+                self.graph_node_timeout_ms, graph_required
+            ));
+        }
         Ok(())
     }
 }

@@ -315,11 +315,11 @@ fn config_workflow_nested_env_overrides_match_contract() {
     let env_vars = [
         ("LANCET_ENGINE__WORKFLOW__REFORMULATE_TIMEOUT_MS", "1111"),
         ("LANCET_ENGINE__WORKFLOW__QUERY_EMBEDDING_TIMEOUT_MS", "2222"),
-        ("LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS", "3333"),
-        ("LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS", "4444"),
-        ("LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS", "5555"),
-        ("LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS", "6666"),
-        ("LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS", "7777"),
+        ("LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS", "4444"),
+        ("LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS", "3333"),
+        ("LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS", "6666"),
+        ("LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS", "7777"),
+        ("LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS", "8888"),
     ];
 
     let original: Vec<(&str, Option<String>)> = env_vars
@@ -344,21 +344,21 @@ fn config_workflow_nested_env_overrides_match_contract() {
     let settings = settings_res.expect("load_settings with workflow overrides");
     assert_eq!(settings.engine.workflow.reformulate_timeout_ms, 1111);
     assert_eq!(settings.engine.workflow.query_embedding_timeout_ms, 2222);
-    assert_eq!(settings.engine.workflow.retrieve_timeout_ms, 3333);
-    assert_eq!(settings.engine.workflow.graph_operation_timeout_ms, 4444);
-    assert_eq!(settings.engine.workflow.graph_node_timeout_ms, 5555);
-    assert_eq!(settings.engine.workflow.prompt_timeout_ms, 6666);
-    assert_eq!(settings.engine.workflow.generation_node_timeout_ms, 7777);
+    assert_eq!(settings.engine.workflow.retrieve_timeout_ms, 4444);
+    assert_eq!(settings.engine.workflow.graph_operation_timeout_ms, 3333);
+    assert_eq!(settings.engine.workflow.graph_node_timeout_ms, 6666);
+    assert_eq!(settings.engine.workflow.prompt_timeout_ms, 7777);
+    assert_eq!(settings.engine.workflow.generation_node_timeout_ms, 8888);
 
     let effective = EffectiveRagSettings::try_from_settings(&settings)
         .expect("effective settings from overridden workflow settings");
     assert_eq!(effective.workflow.reformulate_timeout_ms, 1111);
     assert_eq!(effective.workflow.query_embedding_timeout_ms, 2222);
-    assert_eq!(effective.workflow.retrieve_timeout_ms, 3333);
-    assert_eq!(effective.workflow.graph_operation_timeout_ms, 4444);
-    assert_eq!(effective.workflow.graph_node_timeout_ms, 5555);
-    assert_eq!(effective.workflow.prompt_timeout_ms, 6666);
-    assert_eq!(effective.workflow.generation_node_timeout_ms, 7777);
+    assert_eq!(effective.workflow.retrieve_timeout_ms, 4444);
+    assert_eq!(effective.workflow.graph_operation_timeout_ms, 3333);
+    assert_eq!(effective.workflow.graph_node_timeout_ms, 6666);
+    assert_eq!(effective.workflow.prompt_timeout_ms, 7777);
+    assert_eq!(effective.workflow.generation_node_timeout_ms, 8888);
 }
 
 #[test]
