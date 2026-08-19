@@ -1370,7 +1370,7 @@ async fn openrouter_metadata_rejects_oversized_streaming_body() {
             let _ = stream.read(&mut buf);
             let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
             let _ = stream.write_all(header.as_bytes());
-            let chunk_data = vec![b' '; 262145];
+            let chunk_data = vec![b' '; crate::client::MAX_MODELS_METADATA_BODY_BYTES + 1];
             let chunk_header = format!("{:x}\r\n", chunk_data.len());
             let _ = stream.write_all(chunk_header.as_bytes());
             let _ = stream.write_all(&chunk_data);

@@ -334,3 +334,79 @@ async fn embedding_client_rejects_oversized_streaming_body() {
         "got error: {err}"
     );
 }
+
+#[tokio::test]
+async fn read_body_limited_with_limit_accepts_payload_within_custom_limit() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let payload_size = 512 * 1024; // 512 KB (exceeds default 256KB but within 10MB)
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let body = vec![b'x'; payload_size];
+            let header = format!("HTTP/1.1 200 OK\r\nContent-Length: {payload_size}\r\n\r\n");
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(&body);
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client.get(format!("http://{addr}")).send().await.unwrap();
+    let bytes = super::read_body_limited_with_limit(
+        resp,
+        super::MAX_MODELS_METADATA_BODY_BYTES,
+    )
+    .await
+    .unwrap();
+    assert_eq!(bytes.len(), payload_size);
+}
+
+#[tokio::test]
+async fn read_body_limited_with_limit_rejects_content_length_exceeding_custom_limit() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let limit = 1024;
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let header = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", limit + 1);
+            let _ = stream.write_all(header.as_bytes());
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client.get(format!("http://{addr}")).send().await.unwrap();
+    let err = super::read_body_limited_with_limit(resp, limit)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, super::BoundedBodyError::TooLarge));
+}
+
+#[tokio::test]
+async fn read_body_limited_with_limit_rejects_chunked_stream_exceeding_custom_limit() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let limit = 1024;
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+            let _ = stream.write_all(header.as_bytes());
+            let chunk_data = vec![b'c'; limit + 1];
+            let chunk_header = format!("{:x}\r\n", chunk_data.len());
+            let _ = stream.write_all(chunk_header.as_bytes());
+            let _ = stream.write_all(&chunk_data);
+            let _ = stream.write_all(b"\r\n0\r\n\r\n");
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client.get(format!("http://{addr}")).send().await.unwrap();
+    let err = super::read_body_limited_with_limit(resp, limit)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, super::BoundedBodyError::TooLarge));
+}

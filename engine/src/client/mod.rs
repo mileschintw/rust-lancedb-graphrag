@@ -13,6 +13,7 @@ const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 
 pub const MAX_PROVIDER_RESPONSE_BODY_BYTES: usize = 256 * 1024;
+pub const MAX_MODELS_METADATA_BODY_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug)]
 pub enum BoundedBodyError {
@@ -35,10 +36,17 @@ impl std::fmt::Display for BoundedBodyError {
 impl std::error::Error for BoundedBodyError {}
 
 pub async fn read_body_limited(
+    response: reqwest::Response,
+) -> Result<Vec<u8>, BoundedBodyError> {
+    read_body_limited_with_limit(response, MAX_PROVIDER_RESPONSE_BODY_BYTES).await
+}
+
+pub async fn read_body_limited_with_limit(
     mut response: reqwest::Response,
+    max_bytes: usize,
 ) -> Result<Vec<u8>, BoundedBodyError> {
     if let Some(content_length) = response.content_length() {
-        if content_length > MAX_PROVIDER_RESPONSE_BODY_BYTES as u64 {
+        if content_length > max_bytes as u64 {
             return Err(BoundedBodyError::TooLarge);
         }
     }
@@ -50,7 +58,7 @@ pub async fn read_body_limited(
         .await
         .map_err(|err| BoundedBodyError::Read(err.to_string()))?
     {
-        if buffer.len() + chunk.len() > MAX_PROVIDER_RESPONSE_BODY_BYTES {
+        if buffer.len() + chunk.len() > max_bytes {
             return Err(BoundedBodyError::TooLarge);
         }
         buffer.extend_from_slice(&chunk);

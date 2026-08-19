@@ -383,22 +383,24 @@ impl OpenRouterGenerator {
                 ));
             }
 
-            let body_bytes =
-                crate::client::read_body_limited(response)
-                    .await
-                    .map_err(|err| match err {
-                        crate::client::BoundedBodyError::TooLarge => GenerationError::new(
-                            GenerationErrorKind::SupportedParameters,
-                            format!(
-                                "model capabilities response exceeds maximum body limit of {} bytes",
-                                crate::client::MAX_PROVIDER_RESPONSE_BODY_BYTES
-                            ),
-                        ),
-                        crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
-                            GenerationErrorKind::ProviderError,
-                            format!("failed to read model capabilities response body: {msg}"),
-                        ),
-                    })?;
+            let body_bytes = crate::client::read_body_limited_with_limit(
+                response,
+                crate::client::MAX_MODELS_METADATA_BODY_BYTES,
+            )
+            .await
+            .map_err(|err| match err {
+                crate::client::BoundedBodyError::TooLarge => GenerationError::new(
+                    GenerationErrorKind::SupportedParameters,
+                    format!(
+                        "model capabilities response exceeds maximum body limit of {} bytes",
+                        crate::client::MAX_MODELS_METADATA_BODY_BYTES
+                    ),
+                ),
+                crate::client::BoundedBodyError::Read(msg) => GenerationError::new(
+                    GenerationErrorKind::ProviderError,
+                    format!("failed to read model capabilities response body: {msg}"),
+                ),
+            })?;
 
             let models_resp =
                 serde_json::from_slice::<OpenRouterModelsResponse>(&body_bytes).map_err(|err| {
