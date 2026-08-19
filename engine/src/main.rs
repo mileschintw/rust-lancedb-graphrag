@@ -658,6 +658,16 @@ fn load_settings() -> Result<Settings, config::ConfigError> {
             settings.openrouter.chat_endpoint = value;
         }
     }
+    if let Ok(value) = std::env::var("LANCET_OPENROUTER__GENERATION_MODEL") {
+        if !value.trim().is_empty() {
+            settings.openrouter.generation_model = value;
+        }
+    }
+    if let Ok(value) = std::env::var("LANCET_OPENROUTER__EMBEDDING_MODEL") {
+        if !value.trim().is_empty() {
+            settings.openrouter.embedding_model = value;
+        }
+    }
     if let Ok(value) = std::env::var("LANCET_ENGINE__RETRIEVAL__EVIDENCE_TOKEN_BUDGET") {
         if let Ok(budget) = value.trim().parse::<usize>() {
             settings.engine.retrieval.evidence_token_budget = budget;

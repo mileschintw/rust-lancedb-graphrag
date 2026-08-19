@@ -361,6 +361,56 @@ fn config_workflow_nested_env_overrides_match_contract() {
     assert_eq!(effective.workflow.generation_node_timeout_ms, 7777);
 }
 
+#[test]
+fn config_openrouter_model_env_overrides_match_contract() {
+    let _guard = ENV_MUTEX.lock().unwrap();
+
+    let env_vars = [
+        (
+            "LANCET_OPENROUTER__GENERATION_MODEL",
+            "custom/generation-model-test",
+        ),
+        (
+            "LANCET_OPENROUTER__EMBEDDING_MODEL",
+            "custom/embedding-model-test",
+        ),
+    ];
+
+    let original: Vec<(&str, Option<String>)> = env_vars
+        .iter()
+        .map(|(k, _)| (*k, std::env::var(k).ok()))
+        .collect();
+
+    for (k, v) in &env_vars {
+        std::env::set_var(k, v);
+    }
+
+    let settings_res = load_settings();
+
+    for (k, orig) in &original {
+        if let Some(val) = orig {
+            std::env::set_var(k, val);
+        } else {
+            std::env::remove_var(k);
+        }
+    }
+
+    let settings = settings_res.expect("load_settings with openrouter model overrides");
+    assert_eq!(
+        settings.openrouter.generation_model,
+        "custom/generation-model-test"
+    );
+    assert_eq!(
+        settings.openrouter.embedding_model,
+        "custom/embedding-model-test"
+    );
+
+    let effective = EffectiveRagSettings::try_from_settings(&settings)
+        .expect("effective settings from overridden openrouter model settings");
+    assert_eq!(effective.generation_model, "custom/generation-model-test");
+    assert_eq!(effective.embedding_model, "custom/embedding-model-test");
+}
+
 #[tokio::test]
 async fn query_rag_stream() {
     let path = database_path("query-rag-stream-contract");

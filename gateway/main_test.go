@@ -2209,6 +2209,7 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 		"LANCET_OPENROUTER__EMBEDDING_ENDPOINT="+mock.URL+"/api/v1/embeddings",
 		"LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT="+mock.URL+"/api/v1/models",
 		"LANCET_OPENROUTER__CHAT_ENDPOINT="+mock.URL+"/api/v1/chat/completions",
+		"LANCET_OPENROUTER__GENERATION_MODEL=openai/gpt-4o-mini",
 		"OPENROUTER_API_KEY=test-key",
 	)
 	assertCleanRAGChildEnv(t, engineEnv)
@@ -2782,6 +2783,8 @@ func assertCleanRAGChildEnv(t *testing.T, env []string) {
 		"LANCET_OPENROUTER__EMBEDDING_ENDPOINT":      true,
 		"LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT": true,
 		"LANCET_OPENROUTER__CHAT_ENDPOINT":           true,
+		"LANCET_OPENROUTER__GENERATION_MODEL":        true,
+		"LANCET_OPENROUTER__EMBEDDING_MODEL":         true,
 		"OPENROUTER_API_KEY":                         true,
 	}
 	for _, entry := range env {
@@ -3513,6 +3516,7 @@ func TestRAGQueryClientDisconnectCancelsRustWorkflow(t *testing.T) {
 		"LANCET_OPENROUTER__EMBEDDING_ENDPOINT="+mock.URL+"/api/v1/embeddings",
 		"LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT="+mock.URL+"/api/v1/models",
 		"LANCET_OPENROUTER__CHAT_ENDPOINT="+mock.URL+"/api/v1/chat/completions",
+		"LANCET_OPENROUTER__GENERATION_MODEL=openai/gpt-4o-mini",
 		"OPENROUTER_API_KEY=test-key",
 	)
 	assertCleanRAGChildEnv(t, engineEnv)
