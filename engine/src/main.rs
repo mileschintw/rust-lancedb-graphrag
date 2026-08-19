@@ -1161,6 +1161,13 @@ fn internal(err: impl std::fmt::Display) -> Status {
     Status::internal(err.to_string())
 }
 
+fn sanitize_header_value(s: &str, max_len: usize) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_graphic())
+        .take(max_len)
+        .collect()
+}
+
 /// Builds a `Status` carrying the `x-lancet-*` gRPC trailers that
 /// `gateway/main.go::handlePreStreamError` reads to surface error identity on
 /// pre-stream `QueryRAG` failures (session/request validation, before the
@@ -1173,16 +1180,24 @@ fn d1_status(
     error_kind: &str,
 ) -> Status {
     let msg = message.into();
-    tracing::warn!(%session_id, %correlation_id, %error_kind, "QueryRAG pre-stream failure: {msg}");
+    let safe_session_id = sanitize_header_value(session_id, 128);
+    let safe_correlation_id = sanitize_header_value(correlation_id, 128);
+    let safe_error_kind = sanitize_header_value(error_kind, 64);
+    tracing::warn!(
+        session_id = %safe_session_id,
+        correlation_id = %safe_correlation_id,
+        error_kind = %safe_error_kind,
+        "QueryRAG pre-stream failure: {msg}"
+    );
     let mut status = Status::new(code, msg);
     let metadata = status.metadata_mut();
-    if let Ok(val) = session_id.parse() {
+    if let Ok(val) = safe_session_id.parse() {
         metadata.insert("x-lancet-session-id", val);
     }
-    if let Ok(val) = correlation_id.parse() {
+    if let Ok(val) = safe_correlation_id.parse() {
         metadata.insert("x-lancet-correlation-id", val);
     }
-    if let Ok(val) = error_kind.parse() {
+    if let Ok(val) = safe_error_kind.parse() {
         metadata.insert("x-lancet-error-kind", val);
     }
     status
