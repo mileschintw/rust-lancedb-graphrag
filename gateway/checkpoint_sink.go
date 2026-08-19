@@ -209,6 +209,9 @@ func (d *CheckpointDispatcher) RetainPending(env *CheckpointEnvelope) error {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.closed {
+		return errors.New("checkpoint dispatcher is closed")
+	}
 	if len(d.pending) >= 16 {
 		return errors.New("checkpoint pending queue is full")
 	}
