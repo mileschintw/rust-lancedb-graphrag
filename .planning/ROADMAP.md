@@ -322,7 +322,7 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 27/27 plans executed (gap-closure plans 05-25, 05-26 landed 2026-08-18 — G-05-1 blockers A and B closed; 05-27 landed 2026-08-19 — G-05-1 root cause closed in code)
+**Plans:** 27/27 plans complete
 
 Plans:
 

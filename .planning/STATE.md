@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 5
-current_phase_name: State Machine & Workflow Events
-current_plan: 11
-status: complete
-stopped_at: Phase 05 tail gates RE-RUN at HEAD bb58a60 after the 16 code-review fix commits + 05-27 — code review, regression gate and verification all refreshed; verification returns human_needed; awaiting UAT (4 pending + 1 issue) and /gsd-secure-phase
-last_updated: "2026-08-19T07:20:00.000Z"
+current_phase: 6
+current_phase_name: Observability, Evaluation & Polish
+current_plan: Not started
+status: planning
+stopped_at: "Phase 05 UAT complete: 10/10 passed, 0 issues. Verification canonicalized to passed (5/5 success criteria). Phase 05 marked complete; ready to plan Phase 6."
+last_updated: "2026-08-19T09:52:20.653Z"
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 89
   completed_plans: 89
 ---
@@ -54,15 +54,16 @@ progress:
   - TRACE-01 RECONCILED: ROADMAP.md said "26/26" and its checkbox list ended at 05-26 while `05-27-PLAN.md` existed with a SUMMARY and landed `e831be3` — the commit closing the gap the roadmap tracks. Corrected to 27/27 with 05-27 added to both the plan list and a new Wave 22.
   - Security gate UNCHANGED: `workflow.security_enforcement` is active and NO 05-SECURITY.md exists — `/gsd-secure-phase 5` still required before advancing.
   - Phase still NOT marked complete: verification returns `human_needed`, not `passed`. Next: `/gsd-verify-work 5`.
+- Phase 05 UAT completed (2026-08-19) via `/gsd-verify-work 5`, resuming the in-flight session. G-05-1 reconciled `resolved` (root causes closed in code by 05-25/05-26/05-27). Test 1 re-run live against real OpenRouter: full 5-node frame sequence, no `stream_error`, citations grounded in the local dev LanceDB store's fixture data (fixture content, not a real corpus — pipeline mechanics fully proven). Tests 7-10 (judgment-tier dispositions) resolved: buffer-depth invariant re-accepted at the post-`5354d1e` code site (Test 7); gateway bind-failure exit-code regression found ALREADY fixed by `fe83e71` and verified empirically (`exit=1`) (Test 8); terminal-event suppression on FinalAnswer failure found ALREADY fixed by `0c96720a` (Test 9); checkpoint sequence-ordinal burning on failed delivery accepted as debt, `wrap_next_event` found already lazy via the same `0c96720a` refactor (Test 10). Final: **10/10 passed, 0 issues**. `05-SECURITY.md` confirmed present with `threats_open: 0` (security gate clear). Verification canonicalized `human_needed` → `passed`. Phase 05 marked complete via `phase.complete`; PROJECT.md evolved (4 requirements moved to Validated, 4 new Key Decisions logged); next phase = Phase 6.
 
 ## Active Phase
 
-- **Phase:** 5 — State Machine & Workflow Events
-- **Status:** All 27 plans executed (incl. gap-closure 05-25, 05-26, 05-27); code review + regression gate + verification refreshed at HEAD bb58a60; verification 5/5 but human_needed; awaiting UAT (05-UAT.md — 4 pending + 1 issue) and /gsd-secure-phase
-- **Current Plan:** 11
-- **Total Plans in Phase:** 27
-- **Completed Plans in Phase:** 27
-- **Progress:** [██████████] 100.0%
+- **Phase:** 6 — Observability, Evaluation & Polish
+- **Status:** Ready to plan
+- **Current Plan:** Not started
+- **Total Plans in Phase:** Not yet planned
+- **Completed Plans in Phase:** 0
+- **Progress:** [░░░░░░░░░░] 0.0%
 
 ## Completed Phases
 
@@ -190,8 +191,8 @@ progress:
 
 ## Session
 
-**Last session:** 2026-08-18T01:31:41.486Z
-**Stopped at:** Completed 05-21-PLAN.md
+**Last session:** 2026-08-19T09:52:20.653Z
+**Stopped at:** Phase 5 complete, ready to plan Phase 6
 **Resume file:** None
 
 ## Accumulated Context

@@ -17,6 +17,10 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - ✓ Define a stable gRPC contract between the Go API gateway and Rust RAG engine. — Phase 01
 - ✓ Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB. — Phase 04.1
 - ✓ Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context, including a `ContextAssemblyStrategy` enum/trait supporting `PrecomputedSemantics` and `SourceChunks` (fallback). — Phase 04.1
+- ✓ Implement a lightweight Rust state machine for the fixed RAG path: receive query, reformulate, retrieve hybrid, extract graph context, assemble prompt, generate answer, complete/failed. — Phase 05 (confirmed live end-to-end against real OpenRouter: all five nodes, no stream_error)
+- ✓ Emit client-facing workflow events such as node started/completed/failed, answer chunks, final answer, and workflow completed. — Phase 05 (confirmed live: node_started/node_completed pairs, one answer_chunk, one final_answer, one workflow_completed)
+- ✓ Add cancellation, timeouts, and retry/fallback behavior for node execution. — Phase 05
+- ✓ Add lightweight checkpoints or snapshots for workflow state during development and debugging. — Phase 05 (PostgreSQL-backed `workflow_checkpoints`; FIFO drain and cancellation atomicity proven against live Postgres)
 
 ### Active
 - [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
@@ -26,11 +30,7 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - [ ] Persist chunks and metadata in LanceDB as the local-first vector/graph store.
   - *Port:* Define separate `nodes` and `edges` tables with nullable `summary`, `summary_vector`, and `unsummarized_refs` columns.
 - [ ] Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
-- [ ] Implement a lightweight Rust state machine for the fixed RAG path: receive query, reformulate, retrieve hybrid, extract graph context, assemble prompt, generate answer, complete/failed.
-- [ ] Emit client-facing workflow events such as node started/completed/failed, answer chunks, final answer, and workflow completed.
 - [ ] Support degraded mode when graph extraction or one retrieval path fails, while still returning a useful vector/BM25-backed answer when possible.
-- [ ] Add cancellation, timeouts, and retry/fallback behavior for node execution.
-- [ ] Add lightweight checkpoints or snapshots for workflow state during development and debugging.
 - [ ] Add OpenTelemetry-compatible tracing across Go, gRPC, Rust nodes, retrieval, graph queries, and LLM calls.
 - [ ] Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval recall, context precision, groundedness, and faithfulness.
 - [ ] Provide a local development path with `go run`, `cargo run`, and Docker Compose for PostgreSQL/Jaeger and optional local LLM fallback.
@@ -85,6 +85,9 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | In-place protobuf generation | Simple build chain using Buf | ✓ Phase 01 |
 | Standalone Atlas CLI for Windows | Avoids incorrect winget GUI tool package | ✓ Phase 01 |
 | `lance-graph` 0.5.4 + arrow-version IPC bridge for Cypher graph traversal | De-risked the `lancedb`/`lance-graph`/arrow-version compatibility unknown before committing to full GraphRAG extraction/query implementation | ✓ Confirmed, Phase 04 (spike only — full extraction/storage/query deferred to Phase 04.1) |
+| Event-sink buffer depth (100-slot `mpsc::channel`) accepted as a load-bearing invariant instead of adding a timeout arm to `send_terminal_event`'s permit acquisition | A workflow emits ~19-30 events max, so the channel cannot fill today; a timeout risks dropping the terminal frame it exists to guarantee. Revisit if per-token `AnswerChunk` streaming (999.x), a smaller buffer, or a shared/cloned sink ships | ✓ Accepted, Phase 05 UAT (re-confirmed against `runner.rs:161-170` at HEAD after `5354d1e` moved the risk site) |
+| Gateway restores non-zero exit on bind failure via exit-code-after-defers, not `logger.Fatal` | `logger.Fatal`/`os.Exit` would skip `dispatcher.Close()` and lose buffered checkpoints — the exact defect the graceful-shutdown work (WR-01) was written to close | ✓ Shipped, Phase 05 (`fe83e71`; verified empirically — occupied port, `go run .` exits 1) |
+| Checkpoint sequence-ordinal burning on failed delivery accepted as debt; client-event ordinal allocation made lazy | `send_checkpoint`'s ordinal is embedded in the event struct at construction, so deferring it changes branch ordering, not a one-line fix; the gap is confined to the failed-delivery edge (queue exhaustion/closed channel), and happy-path contiguity is proven live against Postgres | ✓ Accepted, Phase 05 UAT (`wrap_next_event` already lazy since `0c96720a`; `send_checkpoint:185` left eager) |
 
 ## Evolution
 
@@ -104,4 +107,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-09 after Phase 04.1*
+*Last updated: 2026-08-19 after Phase 05*
