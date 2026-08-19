@@ -78,27 +78,6 @@ impl WorkflowEventSink {
         )
     }
 
-    async fn send_envelope(
-        &self,
-        event: WorkflowEvent,
-        cancel: &CancellationToken,
-    ) -> ClientEventDelivery {
-        if self.tx.is_closed() {
-            return ClientEventDelivery::Closed;
-        }
-
-        tokio::select! {
-            biased;
-            _ = cancel.cancelled() => ClientEventDelivery::Cancelled,
-            result = self.tx.reserve() => match result {
-                Ok(permit) => {
-                    permit.send(Ok(event));
-                    ClientEventDelivery::Sent
-                }
-                Err(_) => ClientEventDelivery::Closed,
-            },
-        }
-    }
 
     async fn flush_pending_checkpoints(
         &self,
@@ -127,8 +106,7 @@ impl WorkflowEventSink {
         }
     }
 
-    /// Deliver a client-visible event with cancellation-aware backpressure.
-    pub async fn send_event(
+    async fn send_event_lazy(
         &self,
         event: Event,
         cancel: &CancellationToken,
@@ -138,7 +116,30 @@ impl WorkflowEventSink {
             return pending_delivery;
         }
 
-        self.send_envelope(self.wrap_next_event(event), cancel).await
+        if self.tx.is_closed() {
+            return ClientEventDelivery::Closed;
+        }
+
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => ClientEventDelivery::Cancelled,
+            result = self.tx.reserve() => match result {
+                Ok(permit) => {
+                    permit.send(Ok(self.wrap_next_event(event)));
+                    ClientEventDelivery::Sent
+                }
+                Err(_) => ClientEventDelivery::Closed,
+            },
+        }
+    }
+
+    /// Deliver a client-visible event with cancellation-aware backpressure.
+    pub async fn send_event(
+        &self,
+        event: Event,
+        cancel: &CancellationToken,
+    ) -> ClientEventDelivery {
+        self.send_event_lazy(event, cancel).await
     }
 
     /// Convert a failed client delivery into cooperative workflow cancellation.
@@ -159,12 +160,17 @@ impl WorkflowEventSink {
 
     /// Deliver the final terminal event to the client unless the connection is closed.
     pub async fn send_terminal_event(&self, event: Event) {
+        const TERMINAL_DELIVERY_BUDGET: Duration = Duration::from_secs(5);
         if self.tx.is_closed() {
             return;
         }
         let uncancelled = CancellationToken::new();
-        let _ = self.flush_pending_checkpoints(&uncancelled).await;
-        if let Ok(permit) = self.tx.reserve().await {
+        let _ = timeout(
+            TERMINAL_DELIVERY_BUDGET,
+            self.flush_pending_checkpoints(&uncancelled),
+        )
+        .await;
+        if let Ok(Ok(permit)) = timeout(TERMINAL_DELIVERY_BUDGET, self.tx.reserve()).await {
             permit.send(Ok(self.wrap_next_event(event)));
         }
     }
@@ -378,7 +384,15 @@ impl WorkflowRunner {
                     | NodeKind::RetrieveHybrid
                     | NodeKind::AssemblePrompt => {}
                 }
-                sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel)?;
+                if let Err(err) = sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel) {
+                    let _ = sink
+                        .send_event_or_cancel(
+                            events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
+                            cancel,
+                        )
+                        .await;
+                    return Err(err);
+                }
             }
             Err(err) => {
                 let _ = sink
@@ -496,13 +510,9 @@ impl WorkflowRunner {
         match error {
             None => {
                 let response = ctx.to_query_rag_response();
-                if sink
+                let _ = sink
                     .send_event_or_cancel(events::final_answer(response.clone()), cancel)
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
+                    .await;
                 if let Err(err) = sink.send_checkpoint_or_error("terminal_success", ctx, cancel) {
                     tracing::warn!(error = %err, "terminal checkpoint dropped; continuing to terminal event");
                 }
