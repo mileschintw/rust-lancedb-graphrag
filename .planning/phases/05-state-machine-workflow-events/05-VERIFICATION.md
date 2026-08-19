@@ -294,6 +294,16 @@ HEAD, not carried forward from an older one; and (b) it is durably human-recorde
 is `result: pass` with a written resolution, so the evidence survives this container going away
 again.
 
+**Precondition, on the record so this grade cannot oscillate silently.** The evidence above exists
+only when `TEST_DATABASE_URL` is exported AND a Postgres instance with the `workflow_checkpoints`
+schema is reachable — this run used `postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable`
+against the `lancet-postgres` container. **Neither is part of the project's configured test command**
+(`workflow.test_command` = `cargo test --manifest-path engine/Cargo.toml --locked && (cd gateway && go test ./...)`),
+which leaves those 11 tests skipped. A future verification run on a machine without that container
+will observe 54 passed / 11 skipped and must regrade SC4 back to ⚠️ PRESENT_BEHAVIOR_UNVERIFIED —
+**that would be a change in available evidence, not a code regression**, and must be reported as such.
+Reading it as a regression is the specific error this note exists to prevent.
+
 ---
 
 ## Required Artifacts
