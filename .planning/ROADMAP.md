@@ -322,7 +322,7 @@ Plans:
 4. Snapshots of the workflow state can be captured for debugging.
 5. QueryReformulator trait defined with pass-through node in state machine (Port for 999.3).
 
-**Plans:** 24/26 plans executed (2 gap-closure plans pending — G-05-1)
+**Plans:** 26/26 plans executed (gap-closure plans 05-25, 05-26 landed 2026-08-18 — G-05-1 blockers A and B closed)
 
 Plans:
 
@@ -344,8 +344,8 @@ Plans:
 - [x] 05-22-PLAN.md — Typed graph-fact prompt/generation handoff and exact production reachability assertions.
 - [x] 05-23-PLAN.md — Generated-field Rust compile repair and RetrievalSnapshot wire-contract proof.
 - [x] 05-24-PLAN.md — Executable two-pass cross-variant RRF contract with exact scores and deterministic ordering.
-- [ ] 05-25-PLAN.md — Gap closure (G-05-1 Blocker A): rebuild/reseed the stale local LanceDB nodes table and add a remediation hint to validate_schema's fail-closed error.
-- [ ] 05-26-PLAN.md — Gap closure (G-05-1 Blocker B): decouple gateway's real-engine integration tests from ambient config.toml's generation_model via an explicit env override.
+- [x] 05-25-PLAN.md — Gap closure (G-05-1 Blocker A): rebuild/reseed the stale local LanceDB nodes table and add a remediation hint to validate_schema's fail-closed error.
+- [x] 05-26-PLAN.md — Gap closure (G-05-1 Blocker B): decouple gateway's real-engine integration tests from ambient config.toml's generation_model via an explicit env override.
 
 **Wave 1** *(atomic coordinated landing group: 05-01 + 05-06; validate and land together)*
 
@@ -433,8 +433,8 @@ Plans:
 
 **Wave 21** *(gap closure for G-05-1, discovered during UAT Test 1; both plans are independent — no file overlap, no dependency on each other)*
 
-- [ ] 05-25-PLAN.md — Rebuild/reseed the stale local LanceDB nodes table; add a remediation hint to validate_schema's fail-closed error.
-- [ ] 05-26-PLAN.md — Decouple gateway's real-engine integration tests from ambient config.toml's generation_model via an explicit env override.
+- [x] 05-25-PLAN.md — Rebuild/reseed the stale local LanceDB nodes table; add a remediation hint to validate_schema's fail-closed error.
+- [x] 05-26-PLAN.md — Decouple gateway's real-engine integration tests from ambient config.toml's generation_model via an explicit env override.
 
 ### Phase 6: Observability, Evaluation & Polish
 

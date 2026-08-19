@@ -12,7 +12,7 @@ progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 88
-  completed_plans: 86
+  completed_plans: 88
 ---
 
 # Project State
@@ -43,10 +43,10 @@ progress:
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
-- **Status:** All 24 plans executed; code review + regression gate + verification refreshed; awaiting UAT (05-UAT.md)
+- **Status:** All 26 plans executed (incl. gap-closure 05-25, 05-26); post-execution gates re-running
 - **Current Plan:** 11
 - **Total Plans in Phase:** 26
-- **Completed Plans in Phase:** 24
+- **Completed Plans in Phase:** 26
 - **Progress:** [██████████] 100.0%
 
 ## Completed Phases
