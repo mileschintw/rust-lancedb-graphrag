@@ -104,7 +104,12 @@ async fn schema_drift_fails_database_initialization() {
         Err(error) => error,
     };
     assert!(error.contains("schema drift detected for documents"));
-    assert!(error.contains("Remediation: schema reconciliation is fail-closed by design"));
+    let remediation_at = error.find("Remediation:").expect("remediation guidance present");
+    let details_at = error.find("Details - expected:").expect("schema details present");
+    assert!(
+        remediation_at < details_at,
+        "remediation guidance must precede the schema dump; got remediation@{remediation_at} details@{details_at}"
+    );
     let _ = std::fs::remove_dir_all(path);
 }
 
