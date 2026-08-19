@@ -9,9 +9,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -1084,9 +1086,24 @@ func main() {
 			dispatcher: dispatcher,
 		}.routes(),
 	)
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("gateway stopped", zap.Error(err))
+			stop()
+		}
+	}()
 	logger.Info("gateway listening", zap.String("addr", server.Addr))
-	if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		logger.Fatal("gateway stopped", zap.Error(err))
+
+	<-sigCtx.Done()
+	logger.Info("gateway shutting down")
+
+	shutCtx, cancelShut := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelShut()
+	if err := server.Shutdown(shutCtx); err != nil {
+		logger.Warn("gateway server shutdown error", zap.Error(err))
 	}
 }
 
