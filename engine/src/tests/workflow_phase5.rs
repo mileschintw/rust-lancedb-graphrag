@@ -1738,6 +1738,53 @@ async fn nine_variants_are_rejected_before_retrieval() {
 }
 
 #[tokio::test]
+async fn zero_variants_are_rejected_before_retrieval() {
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let sink = crate::workflow::WorkflowEventSink::new(
+        tx,
+        Arc::new(crate::workflow::EventSequence::new()),
+        "test-trace".into(),
+        "test-session".into(),
+    );
+
+    let req = QueryRagRequest {
+        query: "0 variants test".into(),
+        session_id: "00000000-0000-4000-8000-000000000001".into(),
+        filter: None,
+    };
+    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+
+    let fake_reformulator = Arc::new(crate::workflow::ports::FakeQueryReformulator::new(vec![]));
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+
+    let mut runner = crate::workflow::WorkflowRunner::new();
+    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
+    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder.clone()), None));
+
+    let deps = crate::workflow::WorkflowDependencies::new();
+
+    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
+
+    assert_eq!(fake_embedder.calls(), 0, "No embedding call must be made when 0 variants are produced");
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let failed_event = events.iter().find_map(|e| match &e.event {
+        Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+        _ => None,
+    }).expect("WorkflowCompleted event must be emitted");
+
+    assert!(!failed_event.success);
+    assert_eq!(failed_event.error_kind, NodeErrorKind::InputValidation as i32);
+}
+
+#[tokio::test]
 async fn workflow_generation_tracer() {
     let (tx, mut rx) = mpsc::channel(100);
     let cancel = CancellationToken::new();
