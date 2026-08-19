@@ -286,6 +286,10 @@ pub async fn traverse_filtered_by_relation_type(
     bridge::bridge_batch_back(&result_lg)
 }
 
+/// Escapes a value for interpolation into a DataFusion/LanceDB string literal.
+/// Relies on the SQL-standard dialect (no backslash escapes in string literals);
+/// see `only_if` predicate construction. Callers must still validate identifier
+/// shape — this is not a substitute for parameterization.
 pub fn escape_sql_literal(value: &str) -> String {
     value.replace('\'', "''")
 }

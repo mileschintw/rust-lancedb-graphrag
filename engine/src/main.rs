@@ -1060,7 +1060,7 @@ async fn get_max_staged_generation(
     table: &Table,
     document_id: &str,
 ) -> Result<Option<i64>, String> {
-    let pred = format!("document_id = '{}'", sql_string(document_id));
+    let pred = format!("document_id = '{}'", escape_sql_literal(document_id));
     let batches: Vec<RecordBatch> = table
         .query()
         .only_if(&pred)
@@ -1128,7 +1128,7 @@ async fn persist_raw_with_boundary(
 
     let verify_pred = format!(
         "document_id = '{}' AND generation = {new_gen}",
-        sql_string(&job.document_id)
+        escape_sql_literal(&job.document_id)
     );
     let verified_batches: Vec<RecordBatch> = table
         .query()
@@ -1151,7 +1151,7 @@ async fn persist_raw_with_boundary(
     if let Some(old_g) = old_max_gen {
         let delete_pred = format!(
             "document_id = '{}' AND generation <= {old_g}",
-            sql_string(&job.document_id)
+            escape_sql_literal(&job.document_id)
         );
         boundary
             .delete(ReplacementMutation::StagingDelete, table, &delete_pred)
@@ -1771,7 +1771,7 @@ impl LancetService for LancetServiceImpl {
                 error_message: state.error_message.clone(),
             }));
         }
-        let predicate = format!("document_id = '{}'", sql_string(&id));
+        let predicate = format!("document_id = '{}'", escape_sql_literal(&id));
         match self.table.count_rows(Some(predicate)).await {
             Ok(count) => {
                 if count > 0 {
@@ -2219,9 +2219,6 @@ impl EmbeddingProvider for OpenRouterClient {
     }
 }
 
-fn sql_string(value: &str) -> String {
-    value.replace('\'', "''")
-}
 
 fn content_hash(content: &str) -> String {
     let mut hasher = DefaultHasher::new();
@@ -2339,7 +2336,7 @@ async fn replace_document_with_faults(
         .map_err(|error| error.to_string())?;
     let nodes_version = nodes.version().await.map_err(|error| error.to_string())?;
     let edges_version = edges.version().await.map_err(|error| error.to_string())?;
-    let predicate = format!("document_id = '{}'", sql_string(&job.document_id));
+    let predicate = format!("document_id = '{}'", escape_sql_literal(&job.document_id));
     let operation = async {
         let staged = database
             .staged_documents_table()
@@ -3201,7 +3198,7 @@ fn spawn_worker_with_boundary(
                     tracing::info!(%job.document_id, chunk_count, "indexing completed");
                 }
                 Err(error) => {
-                    let predicate = format!("document_id = '{}'", sql_string(&document_id));
+                    let predicate = format!("document_id = '{}'", escape_sql_literal(&document_id));
                     let delete_res = async {
                         let staged = database
                             .staged_documents_table()
