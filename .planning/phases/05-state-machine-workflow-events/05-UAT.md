@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 05-state-machine-workflow-events
 source: [05-VERIFICATION.md]
 started: 2026-08-18T10:06:50Z
-updated: 2026-08-19T06:10:00Z
+updated: 2026-08-19T06:15:00Z
 regapped: 2026-08-19T03:20:00Z  # merged fresh human_verification items from the 05-VERIFICATION.md re-verification at HEAD 721485c; Tests 2-4 and their recorded human resolutions preserved verbatim
 ---
 
@@ -93,7 +93,7 @@ blocked: 0
   reason: "User reported: GenerateAnswer failed: model capabilities response exceeds maximum body limit of 262144 bytes; workflow_completed success: false"
   severity: blocker
   test: 1
-  debug_session: ".planning/debug/g-05-1-engine-startup-blockers.md"
+  debug_session: ".planning/debug/g-05-1-models-metadata-body-limit.md"
   root_cause: |
     Live OpenRouter /api/v1/models response body exceeds MAX_PROVIDER_RESPONSE_BODY_BYTES (262,144 bytes / 256 KB) in engine/src/generation/openrouter.rs:387-401 via read_body_limited, causing GenerateAnswer capability check to fail on live runs.
   artifacts:
