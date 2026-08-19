@@ -165,7 +165,7 @@ async fn validate_schema(name: &str, table: &Table, expected: &SchemaRef) -> Res
         .map_err(|error| format!("failed to read LanceDB schema for {name}: {error}"))?;
     if actual.fields() != expected.fields() {
         return Err(format!(
-            "LanceDB schema drift detected for {name}: expected {:?}, found {:?}. Remediation: schema reconciliation is fail-closed by design; rename or remove the stale LanceDB store directory and regenerate tables (e.g. via seed_rag_fixture or re-ingestion).",
+            "LanceDB schema drift detected for {name}. Remediation: schema reconciliation is fail-closed by design; rename or remove the stale LanceDB store directory and regenerate tables (e.g. via seed_rag_fixture or re-ingestion). Details - expected: {:?}, found: {:?}",
             expected.fields(),
             actual.fields()
         ));
