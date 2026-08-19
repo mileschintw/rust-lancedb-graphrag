@@ -84,6 +84,9 @@ func loadConfig() (Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return Config{}, err
 	}
+	if strings.TrimSpace(cfg.Gateway.DatabaseURL) == "" {
+		return Config{}, errors.New("gateway.database_url must not be empty (set LANCET_GATEWAY__DATABASE_URL)")
+	}
 	return cfg, nil
 }
 
