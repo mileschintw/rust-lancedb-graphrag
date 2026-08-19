@@ -919,7 +919,7 @@ fn null_count(rows: &[RecordBatch], column: &str) -> usize {
         .sum()
 }
 
-fn binary_hash(rows: &[RecordBatch], column: &str) -> u64 {
+fn binary_hash(rows: &[RecordBatch], column: &str) -> String {
     let values = rows
         .iter()
         .flat_map(|batch| {
@@ -931,20 +931,20 @@ fn binary_hash(rows: &[RecordBatch], column: &str) -> u64 {
                 .unwrap()
                 .iter()
                 .map(|value| {
-                    let mut hasher = DefaultHasher::new();
-                    value.unwrap().hash(&mut hasher);
-                    hasher.finish()
+                    let mut hasher = blake3::Hasher::new();
+                    hasher.update(value.unwrap());
+                    hasher.finalize().to_hex().to_string()
                 })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
     assert_eq!(values.len(), 1);
-    values[0]
+    values[0].clone()
 }
 
 #[derive(Debug, Eq, PartialEq)]
 struct CanonicalState {
-    raw_hash: u64,
+    raw_hash: String,
     node_ids: BTreeSet<String>,
     node_indexes: BTreeSet<i32>,
     edge_ids: BTreeSet<String>,
@@ -955,7 +955,7 @@ struct CanonicalState {
 }
 
 async fn canonical_state(database: &DatabaseManager, document_id: &str) -> CanonicalState {
-    let predicate = format!("document_id = '{}'", sql_string(document_id));
+    let predicate = format!("document_id = '{}'", escape_sql_literal(document_id));
     let documents = query_rows(&database.documents_table().await.unwrap(), &predicate).await;
     let nodes = query_rows(&database.nodes_table().await.unwrap(), &predicate).await;
     let edges = query_rows(&database.edges_table().await.unwrap(), &predicate).await;
@@ -1336,7 +1336,7 @@ async fn persisted_node_summary_is_arrow_null() {
     )
     .await
     .unwrap();
-    let empty_predicate = format!("document_id = '{}'", sql_string(&empty_job.document_id));
+    let empty_predicate = format!("document_id = '{}'", escape_sql_literal(&empty_job.document_id));
     assert_eq!(
         database
             .documents_table()
@@ -1387,7 +1387,7 @@ async fn persisted_node_summary_is_arrow_null() {
     .unwrap();
     let rows = query_rows(
         &database.edges_table().await.unwrap(),
-        &format!("document_id = '{}'", sql_string(&job.document_id)),
+        &format!("document_id = '{}'", escape_sql_literal(&job.document_id)),
     )
     .await;
     let summary = rows[0]
@@ -2967,7 +2967,7 @@ async fn configured_embedding_identity_persists_and_reports() {
     let nodes = database.nodes_table().await.unwrap();
     let rows = query_rows(
         &nodes,
-        &format!("document_id = '{}'", sql_string(&document_id)),
+        &format!("document_id = '{}'", escape_sql_literal(&document_id)),
     )
     .await;
     assert_eq!(
