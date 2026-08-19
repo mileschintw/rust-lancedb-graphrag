@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    hash::{DefaultHasher, Hash, Hasher},
     path::Path,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -2221,9 +2220,9 @@ impl EmbeddingProvider for OpenRouterClient {
 
 
 fn content_hash(content: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(content.as_bytes());
+    hasher.finalize().to_hex().to_string()
 }
 
 fn content_type(filename: &str) -> &'static str {

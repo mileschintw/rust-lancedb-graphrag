@@ -1,5 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -167,9 +165,10 @@ impl RetrieveHybridNode {
             .take(self.settings.final_limit)
             .collect();
 
-        let mut result_hasher = DefaultHasher::new();
+        let mut result_hasher = blake3::Hasher::new();
         for candidate in &taken_candidates {
-            candidate.candidate.chunk_id.hash(&mut result_hasher);
+            result_hasher.update(candidate.candidate.chunk_id.as_bytes());
+            result_hasher.update(b"\x00");
         }
 
         ctx.evidence_blocks = crate::prompt::assemble_evidence_blocks(&taken_candidates);
@@ -184,7 +183,7 @@ impl RetrieveHybridNode {
             candidate_limit: self.settings.candidate_limit as i32,
             final_limit: self.settings.final_limit as i32,
             active_filter: ctx.filter.clone(),
-            result_hash: format!("{:x}", result_hasher.finish()),
+            result_hash: result_hasher.finalize().to_hex().to_string(),
             variant_count: ctx.variants.len() as u32,
             variant_identities: ctx.variants.clone(),
         });

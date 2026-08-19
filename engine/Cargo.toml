@@ -32,3 +32,4 @@ lance-graph = { version = "0.5.4", default-features = false }
 arrow-ipc = { version = "~58.3" }
 arrow-lg = { package = "arrow", version = "^56.2" }
 arrow-ipc-lg = { package = "arrow-ipc", version = "^56.2" }
+blake3 = "1"

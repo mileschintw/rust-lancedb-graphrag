@@ -1,6 +1,4 @@
 use std::{
-    collections::hash_map::DefaultHasher,
-    hash::{Hash, Hasher},
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -77,13 +75,13 @@ fn lancedb_path() -> Result<String, String> {
 }
 
 fn content_hash(content: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(content.as_bytes());
+    hasher.finalize().to_hex().to_string()
 }
 
 fn dense_score(distance: f32) -> f32 {
-    1.0 / (1.0 + distance)
+    1.0 / (1.0 + distance.max(0.0))
 }
 
 #[tokio::main]
