@@ -1618,6 +1618,7 @@ impl LancetServiceImpl {
             reranker_port: Some(reranker_adapter),
             generator: Some(generator_adapter),
             retrieval_settings: self.effective_settings.retrieval.clone(),
+            graph_weight: self.effective_settings.retrieval.graph_weight,
         };
 
         let wf = &self.effective_settings.workflow;

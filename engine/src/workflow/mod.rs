@@ -138,6 +138,7 @@ pub struct WorkflowDependencies {
     pub reranker_port: Option<Arc<dyn crate::rerank::Reranker>>,
     pub generator: Option<Arc<dyn crate::generation::Generator>>,
     pub retrieval_settings: crate::retrieval::RetrievalSettings,
+    pub graph_weight: f64,
 }
 
 impl WorkflowDependencies {
@@ -151,6 +152,7 @@ impl WorkflowDependencies {
             reranker_port: None,
             generator: None,
             retrieval_settings: crate::retrieval::RetrievalSettings::default(),
+            graph_weight: 0.0,
         }
     }
 }
@@ -202,6 +204,7 @@ pub fn run_inline_prompt_generation_remainder<'a>(
                 ctx.evidence_blocks.clone(),
             );
             gen_req.graph_facts = ctx.graph_facts.clone();
+            gen_req.graph_weight = deps.graph_weight;
             gen_req.session_id = Some(ctx.session_id.clone());
             gen_req.correlation_id = Some(ctx.trace_id.clone());
             gen_req.cancel = Some(cancel.clone());
@@ -228,16 +231,17 @@ pub fn run_inline_prompt_generation_remainder<'a>(
                 Err(err) => {
                     let node_err = NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
                         .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
-                    sink.send_event_or_cancel(
-                        events::node_failed(
-                            name_gen,
-                            node_err.kind.clone(),
-                            &node_err.message,
-                            false,
-                        ),
-                        cancel,
-                    )
-                    .await?;
+                    let _ = sink
+                        .send_event_or_cancel(
+                            events::node_failed(
+                                name_gen,
+                                node_err.kind.clone(),
+                                &node_err.message,
+                                false,
+                            ),
+                            cancel,
+                        )
+                        .await;
                     return Err(node_err);
                 }
             }
@@ -247,16 +251,17 @@ pub fn run_inline_prompt_generation_remainder<'a>(
                 "No generator configured for GenerateAnswer remainder",
             )
             .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
-            sink.send_event_or_cancel(
-                events::node_failed(
-                    name_gen,
-                    node_err.kind.clone(),
-                    &node_err.message,
-                    false,
-                ),
-                cancel,
-            )
-            .await?;
+            let _ = sink
+                .send_event_or_cancel(
+                    events::node_failed(
+                        name_gen,
+                        node_err.kind.clone(),
+                        &node_err.message,
+                        false,
+                    ),
+                    cancel,
+                )
+                .await;
             return Err(node_err);
         }
 
