@@ -362,6 +362,25 @@ fn config_workflow_nested_env_overrides_match_contract() {
 }
 
 #[test]
+fn graph_node_timeout_below_component_sum_is_rejected() {
+    let mut s = crate::WorkflowSettings::default();
+    s.query_embedding_timeout_ms = 10_000;
+    s.graph_operation_timeout_ms = 4_000;
+    s.graph_node_timeout_ms = 13_999;
+    let err = s.validate().expect_err("must reject inverted graph timer");
+    assert!(err.contains("graph_node_timeout_ms"));
+}
+
+#[test]
+fn generation_node_timeout_below_retry_budget_is_rejected() {
+    let mut s = crate::WorkflowSettings::default();
+    s.generation_node_timeout_ms = 59_999;
+    let err = s.validate_against_provider(30).expect_err("must reject generation node timeout below 2x provider budget");
+    assert!(err.contains("generation_node_timeout_ms"));
+    assert!(err.contains("60000"));
+}
+
+#[test]
 fn config_openrouter_model_env_overrides_match_contract() {
     let _guard = ENV_MUTEX.lock().unwrap();
 

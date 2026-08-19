@@ -288,6 +288,18 @@ impl WorkflowSettings {
         }
         Ok(())
     }
+
+    pub fn validate_against_provider(&self, generation_timeout_secs: u64) -> Result<(), String> {
+        const GENERATION_ATTEMPTS: u64 = 2; // GenerateAnswerNode performs up to 2 attempts
+        let required = GENERATION_ATTEMPTS.saturating_mul(generation_timeout_secs.saturating_mul(1000));
+        if self.generation_node_timeout_ms < required {
+            return Err(format!(
+                "invalid generation_node_timeout_ms ({}): must be >= {} ({} attempts x {}s provider timeout)",
+                self.generation_node_timeout_ms, required, GENERATION_ATTEMPTS, generation_timeout_secs
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
