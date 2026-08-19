@@ -600,8 +600,15 @@ impl OpenRouterGenerator {
 
         let status = response.status();
         if !status.is_success() {
+            let kind = if status.is_server_error()
+                || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            {
+                GenerationErrorKind::ProviderError
+            } else {
+                GenerationErrorKind::InvalidRequest
+            };
             return Err(GenerationError::new(
-                GenerationErrorKind::ProviderError,
+                kind,
                 format!("OpenRouter chat completion returned HTTP {status}"),
             ));
         }
