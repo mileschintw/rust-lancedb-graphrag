@@ -104,6 +104,7 @@ async fn schema_drift_fails_database_initialization() {
         Err(error) => error,
     };
     assert!(error.contains("schema drift detected for documents"));
+    assert!(error.contains("Remediation: schema reconciliation is fail-closed by design"));
     let _ = std::fs::remove_dir_all(path);
 }
 
