@@ -87,16 +87,6 @@ impl WorkflowEventSink {
             return ClientEventDelivery::Closed;
         }
 
-        if self.tx.capacity() > 0 {
-            return match self.tx.reserve().await {
-                Ok(permit) => {
-                    permit.send(Ok(event));
-                    ClientEventDelivery::Sent
-                }
-                Err(_) => ClientEventDelivery::Closed,
-            };
-        }
-
         tokio::select! {
             biased;
             _ = cancel.cancelled() => ClientEventDelivery::Cancelled,
@@ -121,14 +111,6 @@ impl WorkflowEventSink {
 
             if self.tx.is_closed() {
                 return ClientEventDelivery::Closed;
-            }
-
-            if self.tx.capacity() > 0 {
-                match self.tx.reserve().await {
-                    Ok(permit) => permit.send(Ok(event)),
-                    Err(_) => return ClientEventDelivery::Closed,
-                }
-                continue;
             }
 
             tokio::select! {
@@ -175,6 +157,18 @@ impl WorkflowEventSink {
         }
     }
 
+    /// Deliver the final terminal event to the client unless the connection is closed.
+    pub async fn send_terminal_event(&self, event: Event) {
+        if self.tx.is_closed() {
+            return;
+        }
+        let uncancelled = CancellationToken::new();
+        let _ = self.flush_pending_checkpoints(&uncancelled).await;
+        if let Ok(permit) = self.tx.reserve().await {
+            permit.send(Ok(self.wrap_next_event(event)));
+        }
+    }
+
     /// Nonblocking checkpoint handoff. A full client channel retains the owned
     /// envelope in a bounded queue; it never silently drops the checkpoint.
     pub fn send_checkpoint(
@@ -183,7 +177,7 @@ impl WorkflowEventSink {
         context: &WorkflowContext,
     ) -> CheckpointDelivery {
         let sequence_ordinal = self.sequence.next();
-        let event = self.wrap_event(events::checkpoint(
+        let event = self.wrap_checkpoint_event(events::checkpoint(
             checkpoint_type,
             sequence_ordinal,
             context,
@@ -242,10 +236,10 @@ impl WorkflowEventSink {
         self.lock_pending_checkpoints().len()
     }
 
-    fn wrap_event(&self, event: Event) -> WorkflowEvent {
+    fn wrap_checkpoint_event(&self, event: Event) -> WorkflowEvent {
         let sequence_ordinal = match &event {
             Event::Checkpoint(checkpoint) => checkpoint.sequence_ordinal,
-            _ => unreachable!("checkpoint helper must pass a checkpoint event"),
+            _ => self.sequence.next(),
         };
         events::wrap_event(
             event,
@@ -512,40 +506,26 @@ impl WorkflowRunner {
                 if let Err(err) = sink.send_checkpoint_or_error("terminal_success", ctx, cancel) {
                     tracing::warn!(error = %err, "terminal checkpoint dropped; continuing to terminal event");
                 }
-                match sink
-                    .send_event_or_cancel(
-                        events::workflow_completed(
-                            true,
-                            duration_ms,
-                            NodeErrorKind::Unspecified,
-                            "",
-                            Some(response),
-                            ctx.notices.clone(),
-                        ),
-                        cancel,
-                    )
-                    .await
-                {
-                    Ok(()) | Err(_) => {}
-                }
+                let event = events::workflow_completed(
+                    true,
+                    duration_ms,
+                    NodeErrorKind::Unspecified,
+                    "",
+                    Some(response),
+                    ctx.notices.clone(),
+                );
+                sink.send_terminal_event(event).await;
             }
             Some(err) => {
-                match sink
-                    .send_event_or_cancel(
-                        events::workflow_completed(
-                            false,
-                            duration_ms,
-                            err.kind,
-                            err.message,
-                            None,
-                            ctx.notices.clone(),
-                        ),
-                        cancel,
-                    )
-                    .await
-                {
-                    Ok(()) | Err(_) => {}
-                }
+                let event = events::workflow_completed(
+                    false,
+                    duration_ms,
+                    err.kind,
+                    err.message,
+                    None,
+                    ctx.notices.clone(),
+                );
+                sink.send_terminal_event(event).await;
             }
         }
     }
