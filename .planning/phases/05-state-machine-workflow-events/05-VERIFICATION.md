@@ -1,7 +1,7 @@
 ---
 phase: 05-state-machine-workflow-events
 verified: 2026-08-19T07:05:00Z
-status: human_needed
+status: passed
 mode: mvp
 head: bb58a60
 head_note: |
@@ -21,12 +21,14 @@ criterion_scores:
   SC4_workflow_snapshots: VERIFIED
   SC5_queryreformulator_port: VERIFIED
 regressions: # top-level mirror; full derivations under re_verification.regressions
+
   - id: REG-01
     title: "send_terminal_event acquires the client channel with a bare, un-cancellable, un-timeouted reserve().await"
     introduced_by: 5354d1e
     file: "engine/src/workflow/runner.rs:161-170"
     breaks_a_success_criterion: false
     disposition: "05-UAT.md Test 7 (pending)"
+
   - id: REG-02
     title: "Gateway exits with status 0 when it fails to bind its listener"
     introduced_by: e8982d0
@@ -34,6 +36,7 @@ regressions: # top-level mirror; full derivations under re_verification.regressi
     breaks_a_success_criterion: false
     disposition: "05-UAT.md Test 8 (pending)"
 gaps_remaining: # top-level mirror; full derivation under re_verification.gaps_remaining
+
   - id: G-05-1
     state: code_closed_live_unproven
     detail: "Models-metadata body limit raised to 10MB by e831be3 (client/mod.rs:16, applied at openrouter.rs:386-388), closing the reported root cause in code. No live-provider run has exercised it. Not counted against any success criterion -- no SC asserts live-provider behaviour. Tracked as 05-UAT.md Test 1 (result: issue, now UNBLOCKED)."
@@ -48,6 +51,7 @@ re_verification:
     following landed: e831be3 (plan 05-27, OpenRouter model-metadata body limit 256KB -> 10MB),
     ac3db6e (CR-01), e8982d0..ccef730 (WR-01..WR-15, 15 commits), bb58a60 + 25d4fda (docs).
   gaps_closed:
+
     - "SC4 moved present-behavior-unverified -> VERIFIED. Reason: the three Postgres-backed tests that carry SC4's state-transition invariants were SKIPPED at the previous pass (no container) and RAN AND PASSED at this HEAD against postgres:16-alpine with the workflow_checkpoints schema applied: TestWorkflowCheckpointPersistence (0.04s), TestWorkflowCheckpointCancellationAtomicity (0.04s), TestWorkflowCheckpointPendingDrainAndPersistence (0.05s). The whole gateway suite went 54 passed/11 skipped -> 65 passed/0 skipped."
     - "prior CR-01 (run_node cancels before emitting NodeFailed) — CLOSED in code by ac3db6e. Re-derived at runner.rs:342-351 (preparation-failure branch) and runner.rs:383-393 (run branch): send_event_or_cancel(node_failed..) with `let _ =` runs BEFORE cancel.cancel(), and `return Err(err)` preserves the real NodeError instead of masking it via `?`. The latent-precondition arithmetic the previous report relied on is no longer load-bearing for this defect."
     - "prior WR-12 (capacity() > 0 check-then-act TOCTOU) — the TOCTOU is gone. runner.rs:86-101 (send_envelope) and runner.rs:107-128 (flush_pending_checkpoints) are now unconditional `tokio::select! { biased; cancel.cancelled() => .., tx.reserve() => .. }`. See regressions[0] for what 5354d1e introduced in its place."
@@ -56,6 +60,7 @@ re_verification:
     - "prior WR-11 (unbounded session_id reflected into a gRPC trailer) — CLOSED. main.rs sanitize_header_value filters to is_ascii_graphic() and truncates (128/128/64) before both the tracing::warn! and the metadata.insert."
     - "G-05-1 root cause — CLOSED IN CODE ONLY. client/mod.rs:16 defines MAX_MODELS_METADATA_BODY_BYTES = 10 * 1024 * 1024, and openrouter.rs:386-388 applies it via read_body_limited_with_limit on the capability-preflight path (the 256KB MAX_PROVIDER_RESPONSE_BODY_BYTES remains for chat/embeddings). This closes the reported failure mode; it does NOT constitute the live run. See gaps_remaining[0]."
   gaps_remaining:
+
     - id: G-05-1
       state: code_closed_live_unproven
       detail: |
@@ -67,6 +72,7 @@ re_verification:
         and a human observer. This gap is deliberately NOT counted against any success
         criterion — no SC asserts live-provider behaviour — but it must not be silently dropped.
   regressions:
+
     - id: REG-01
       title: "send_terminal_event acquires the client channel with a bare, un-cancellable, un-timeouted reserve().await"
       introduced_by: 5354d1e
@@ -81,6 +87,7 @@ re_verification:
         full. Bound check at HEAD: the sink channel is per-request `mpsc::channel(100)`
         (main.rs:1885) feeding exactly one `WorkflowEventSink::new` (main.rs:1894), with no
         production `.clone()` of the sink; one workflow emits 5 x (node_started + node_completed
+
         + checkpoint) = 15, plus exactly one AnswerChunk (runner.rs:376-379, is_final=true — the
         AI-SPEC D-01 decision, no token streaming), plus final_answer + terminal checkpoint +
         workflow_completed = 19 on the clean path, ~30 with every node retried. The channel
@@ -91,6 +98,7 @@ re_verification:
         with an unbounded await rather than a timeout. It goes live the moment per-token
         AnswerChunks are added (planned 999.x), the 100-slot buffer shrinks, or the sink is
         cloned. Routed to 05-UAT.md Test 7 (see human_verification[0]).
+
     - id: REG-02
       title: "Gateway exits with status 0 when it fails to bind its listener"
       introduced_by: e8982d0
@@ -110,37 +118,46 @@ gaps: []
 deferred: []
 behavior_unverified_items: []
 human_verification:
+
   - test: "Re-confirm the CR-01/WR-12 cancellation-path disposition against the code shape that actually exists at HEAD (05-UAT.md Test 7 — NEW)."
     expected: "Either send_terminal_event's reserve().await gains a bounded timeout arm, or the buffer-depth invariant is re-accepted against runner.rs:161-170 specifically."
     why_human: "05-UAT.md Test 6 records a human acceptance of 'the capacity() fast path at runner.rs:90-98'. That code no longer exists — 5354d1e deleted it (applying the review's recommended fix) and introduced a different un-cancellable await in a different function with a different reachability story. The recorded acceptance no longer describes the artifact it accepted; only its buffer-depth premise carries over. Re-confirming is a design-debt decision, not a defect with one correct fix."
+
   - test: "Decide the disposition of the gateway bind-failure exit-code regression (05-UAT.md Test 8 — NEW)."
     expected: "Either the ListenAndServe error path restores a non-zero exit (e.g. an exitCode variable propagated to os.Exit after the defers, or logger.Fatal restored with the dispatcher drained first), or exit 0 on bind failure is explicitly accepted."
     why_human: "The naive fix (logger.Fatal) reintroduces the very defect e8982d0 was written to close — os.Exit skips the deferred dispatcher.Close(), losing buffered checkpoints. Correct resolution requires a product call about the shutdown-vs-exit-code trade-off."
+
   - test: "Decide the disposition of terminal-event suppression on FinalAnswer delivery failure (05-UAT.md Test 9 — NEW)."
     expected: "Either emit_terminal_once falls through to send_terminal_event when FinalAnswer delivery fails (mirroring the fix already applied one line later for the terminal checkpoint), or the early return is explicitly accepted as unreachable-with-a-live-client."
     why_human: "runner.rs:499-505 returns before WorkflowCompleted with terminal_emitted already latched at 488-494. 7ea20f2 removed the checkpoint early-return but left this one. The verifier derived it as currently benign — the only cancel source on the request path is CancelOnDropStream::drop (main.rs:1878-1882), which fires because the receiver was dropped, which also closes the channel, so no live client can observe the loss — but that is an emergent property of there being exactly one canceller today, not an enforced invariant."
+
   - test: "Decide the disposition of sequence-ordinal burning on failed delivery (05-UAT.md Test 10 — NEW)."
     expected: "Either wrap_next_event/send_checkpoint allocate the ordinal lazily inside the successful-permit arm (the idiom send_terminal_event:168 already uses), or ordinal gaps under failed delivery are accepted as indistinguishable from lost events."
     why_human: "A debugging consumer of workflow_checkpoints cannot tell a burned ordinal from a lost checkpoint. Contiguity IS behaviourally proven on the paths that matter (see the Behavioural Spot-Checks table), so this is a debt-acceptance call about the failure edge, not a defect."
+
   - test: "Run one real query against the live OpenRouter provider end-to-end (05-UAT.md Test 1 — EXISTING, still result: issue, now UNBLOCKED)."
     expected: "node_started/node_completed for all five nodes, one answer_chunk, one final_answer, one workflow_completed, no stream_error; the answer is grounded with real citations."
     why_human: "Requires a real OPENROUTER_API_KEY and a human observer. Its blocking root cause is closed in code by e831be3, and both earlier blockers (G-05-1 A and B) were closed by 05-25/05-26 — but closing blockers unblocks the test, it does not constitute it. Reinforced by WARN-01 below: after 05-26 the real-engine tests pin openai/gpt-4o-mini while production ships dots-studio/dots-3-note-preview:free, so the structured-output capability preflight is exercised against the shipped model by NO automated test."
 warnings:
+
   - id: WARN-01
     title: "The real-engine cross-runtime tests are pinned to a model that is not the shipped one"
     file: "gateway/main_test.go:2212, 3519; config/config.toml:39"
     severity: warning
     detail: "Deliberate trade (structural test stability over config fidelity), not a defect — but it is an independent reason the live run remains mandatory. Carried forward from the previous pass and re-confirmed by grep at HEAD."
+
   - id: WARN-02
     title: "config/config.toml and config/config.example.toml commit a default Postgres DSN with sslmode=disable; a007b89's non-empty guard cannot fire in the shipped configuration"
     file: "config/config.toml:3, config/config.example.toml:7, gateway/main.go:87-89"
     severity: warning
     detail: "Re-derived: the guard rejects an EMPTY database_url, but the committed config always supplies a non-empty one, so the guard is inert as shipped. Local-dev credential, not a leaked secret; no live secret is committed anywhere in the phase's file set."
+
   - id: WARN-03
     title: "Checkpoint sink errors are logged only for the concrete *PostgresCheckpointSink type; there is still no retry and no dead-letter path"
     file: "gateway/checkpoint_sink.go:229-239"
     severity: warning
     detail: "8b692a5 closed the json.Valid half of the finding (checkpoint_sink.go:105-111, confirmed) but the error-handling half is a type-asserted log. Any other CheckpointSink implementation still discards silently. Does not affect SC4 as shipped, because the shipped sink IS *PostgresCheckpointSink (main.go:1084)."
+
   - id: WARN-04
     title: "run_inline_prompt_generation_remainder is `pub` with no production consumer and still contains the CR-01 `?`-masking pattern"
     file: "engine/src/workflow/mod.rs:164, :240, :259"
@@ -155,6 +172,7 @@ warnings:
       has no non-test caller. Production takes `runner.run_workflow(...)` (main.rs:1914). The
       `?`-masking therefore CANNOT affect SC3 in production. Real finding, wrong severity
       attribution — filed as cleanup debt (make it #[cfg(test)] or delete it), not an SC risk.
+
   - id: WARN-05
     title: "The generation retry-budget invariant (generation_node_timeout_ms >= 2 x generation_timeout_secs x 1000) is not machine-enforced"
     file: "engine/src/main.rs:280-289; config/config.verify.toml:19"
@@ -162,13 +180,16 @@ warnings:
     verifier_correction: |
       The refreshed review reports this as 'a committed config still violates it' and routes it
       at SC3. Independently re-derived, and the conclusion is materially different:
+
         - The SHIPPED config satisfies it. config/config.toml has
           generation_node_timeout_ms = 65000 against generation_timeout_secs = 30
           (65000 >= 60000). Production has a full 2-attempt budget.
+
         - The violating file, config/config.verify.toml:19 (7000 against 30s), is a
           verification-harness OVERLAY, not a runtime config. Its consumers are
           engine/src/tests.rs:267/293, engine/src/tests/workflow_phase5_production.rs:575, and
           scripts/phase02_live_evidence.py:179 — no production load path reads it.
+
         - It is an INTENTIONAL fixture. workflow_phase5_production::
           workflow_phase5_config_verify_generation_timeout (read in full at :568-640) asserts
           generation_node_timeout_ms == 7000 and generation_timeout_secs == 30, then drives a
@@ -177,17 +198,20 @@ warnings:
       Residual real finding: 7da662a added only the graph invariant (main.rs:280-289), so the
       generation invariant is undefended against a future bad production config. Genuine debt,
       but SC3 is not compromised and no shipped config violates anything.
+
   - id: WARN-06
     title: "The schema-drift reorder shipped without regression protection"
     file: "engine/src/db/mod.rs:167-171; engine/src/db/tests.rs:107"
     severity: warning
     detail: "4196dff correctly moved the Remediation clause to the front of the message, but touched only db/mod.rs. The test still asserts substring PRESENCE, which passed before the reorder and passes after it. The deliverable exists; the property it delivers (operator-visible placement) is unguarded."
+
   - id: WARN-07
     title: "workflow_checkpoints has no uniqueness constraint on (trace_id, sequence_ordinal), and no SELECT is generated for it"
     file: "gateway/db/schema.sql:45-56; gateway/db/query.sql:117"
     severity: info-leaning
     detail: "query.sql defines only the INSERT; there is no sqlc-generated read path. Not a gap against SC4 — 'snapshots CAN BE captured' is satisfied by a durable jsonb table with a purpose-built (trace_id, sequence_ordinal, created_at) index, and the tests read it with raw SQL exactly as a debugging human would. Recorded so it is a known property rather than a surprise."
 traceability_findings:
+
   - id: TRACE-01
     severity: blocker_for_roadmap_accuracy
     detail: |
@@ -196,6 +220,7 @@ traceability_findings:
       closes G-05-1's root cause) — and appears NOWHERE in ROADMAP.md. The roadmap therefore
       under-reports the phase by one plan and omits the plan that closes the phase's only open
       gap. Reported, not fixed — the orchestrator reconciles ROADMAP.md.
+
   - id: TRACE-02
     severity: resolved
     detail: |
@@ -205,6 +230,7 @@ traceability_findings:
       decision recorded in 05-UAT.md Test 3 and documented in 05-12-TRACEABILITY-ERRATA.md §8,
       and both are independently verified in the Requirements Coverage table below.
 evidence_commands:
+
   - "git show --stat --oneline 25d4fda -> 1 file changed (05-REVIEW.md only). git status --porcelain -> empty. Run by this verifier."
   - "cargo test --manifest-path engine/Cargo.toml --locked -> 285 passed / 0 failed / 1 ignored (exit 0). Collected by the orchestrator at this HEAD; cited, not re-run."
   - "cd gateway && TEST_DATABASE_URL=postgres://.../lancet?sslmode=disable go test ./... -> 65 passed / 0 failed / 0 skipped (exit 0). Collected by the orchestrator at this HEAD against a live postgres:16-alpine; cited, not re-run. Previous pass was 54 passed / 11 SKIPPED."
@@ -217,6 +243,14 @@ evidence_commands:
   - "grep -n 'MAX_MODELS_METADATA_BODY_BYTES' engine/src/client/mod.rs -> :16 = 10 * 1024 * 1024; engine/src/generation/openrouter.rs -> :387, :396. Run by this verifier."
   - "grep -rn 'TODO|FIXME|XXX|HACK|PLACEHOLDER|unimplemented!|todo!' over engine/src/workflow, engine/src/generation/openrouter.rs, gateway/main.go, gateway/checkpoint_sink.go -> 0 hits. Run by this verifier."
   - "find scripts -path '*probe*' -> 0 hits; no PLAN declares a probe. Step 7c not applicable."
+
+title: Gateway exits with status 0 when it fails to bind its listener
+introduced_by: e8982d0
+file: "gateway/main.go:1094-1098"
+breaks_a_success_criterion: false
+disposition: 05-UAT.md Test 8 (pending)
+state: code_closed_live_unproven
+detail: "Models-metadata body limit raised to 10MB by e831be3 (client/mod.rs:16, applied at openrouter.rs:386-388), closing the reported root cause in code. No live-provider run has exercised it. Not counted against any success criterion -- no SC asserts live-provider behaviour. Tracked as 05-UAT.md Test 1 (result: issue, now UNBLOCKED)."
 ---
 
 # Phase 5: State Machine & Workflow Events — Verification Report
