@@ -3,13 +3,21 @@ status: diagnosed
 phase: 05-state-machine-workflow-events
 source: [05-VERIFICATION.md]
 started: 2026-08-18T10:06:50Z
-updated: 2026-08-19T06:15:00Z
+updated: 2026-08-19T07:05:00Z
 regapped: 2026-08-19T03:20:00Z  # merged fresh human_verification items from the 05-VERIFICATION.md re-verification at HEAD 721485c; Tests 2-4 and their recorded human resolutions preserved verbatim
+status_note: |
+  status stays `diagnosed` (the controlled vocabulary is diagnosed | partial | complete, per
+  gsd-core/workflows/progress.md:230-235 and verify-work.md:637). The `## Gaps` block for G-05-1
+  is still open: its root cause is closed in code by e831be3, which is exactly the
+  gap-already-fixed case verify-work.md:427-429 reconciles, so `diagnosed` routes correctly.
+  An earlier edit in this session briefly set `in_progress`; that token is not in the vocabulary
+  and was reverted.
+regapped_2: 2026-08-19T07:05:00Z  # MERGE, not regeneration. Tests 1-6 preserved verbatim including every `result:` line and every recorded `resolution:`; the `## Gaps` block for G-05-1 preserved intact. Added Tests 7-10 from the full re-verification at HEAD bb58a60. Test 1 keeps `result: issue` -- its root cause is now closed in code by e831be3, which UNBLOCKS the re-test but does not perform it. Summary counts recomputed.
 ---
 
 ## Current Test
 
-[testing complete]
+[4 new dispositions pending -- Tests 7, 8, 9, 10; Test 1 awaiting an unblocked live re-run]
 
 ## Tests
 
@@ -37,6 +45,19 @@ added_risk: |
   production ships dots-studio/dots-3-note-preview:free, so the structured-output capability preflight
   at engine/src/generation/openrouter.rs:425-434 is now exercised by NO automated test. This makes the
   live run more necessary, not less.
+
+unblocked_by_2: |
+  Re-verification at HEAD bb58a60 (2026-08-19): the reported failure -- "model capabilities
+  response exceeds maximum body limit of 262144 bytes" -- is CLOSED IN CODE by plan 05-27,
+  commit e831be3. Verified from source, not from the summary:
+    - engine/src/client/mod.rs:16 defines MAX_MODELS_METADATA_BODY_BYTES = 10 * 1024 * 1024.
+    - engine/src/generation/openrouter.rs:386-388 applies it via read_body_limited_with_limit on
+      the /api/v1/models capability-preflight path (the 256KB MAX_PROVIDER_RESPONSE_BODY_BYTES is
+      correctly retained for chat/embeddings).
+  This test therefore remains `result: issue` DELIBERATELY. All three of its root causes (G-05-1
+  Blocker A, Blocker B, and the models body limit) are now closed in code, so the run is fully
+  UNBLOCKED -- but it still requires a real OPENROUTER_API_KEY and a human observer, and a
+  verifier cannot perform it. Correct next action: re-run and record the observed frame sequence.
 
 ### 2. Decide and apply the disposition of the WR-05 `x-lancet-*` trailer regression
 
@@ -76,14 +97,107 @@ why_human: Not a gap today. The verifier re-derived the arithmetic from source a
 result: pass
 resolution: "User accepted Option 1: current behaviour accepted with the buffer-depth invariant (mpsc::channel(100) vs ~19 events) recorded as a load-bearing assumption."
 
+### 7. Re-confirm the CR-01 / WR-12 cancellation-path disposition against the code shape at HEAD
+
+expected: Either `send_terminal_event`'s permit acquisition gains a bounded timeout arm, or the buffer-depth invariant is explicitly re-accepted against `engine/src/workflow/runner.rs:161-170` specifically.
+why_human: |
+  Test 6 above records a human acceptance of "the `capacity()` fast path at runner.rs:90-98".
+  **That code no longer exists at HEAD bb58a60.** Commit 5354d1e deleted both capacity() fast
+  paths -- applying the code review's own recommended fix -- and runner.rs:86-101 and :107-128 are
+  now unconditional `tokio::select! { biased; cancel.cancelled() => .., tx.reserve() => .. }`.
+  The same commit introduced a NEW un-cancellable, un-timeouted `self.tx.reserve().await` at
+  runner.rs:167, plus `flush_pending_checkpoints(&uncancelled)` at :166 which loops the same
+  unbounded reserve per pending envelope.
+  So the artifact that was accepted is gone; only the buffer-depth premise carries over. And the
+  new site has a DIFFERENT reachability story: `send_terminal_event` is deliberately
+  cancellation-immune (that immunity is what actually closes prior CR-01's tail and guarantees a
+  terminal frame reaches the client), so it cannot simply inherit the old acceptance.
+  Verifier's re-derivation at HEAD: the sink channel is a per-request `mpsc::channel(100)`
+  (main.rs:1885) feeding exactly one `WorkflowEventSink::new` (main.rs:1894) with no production
+  `.clone()`; one workflow emits ~19 events on the clean path (~30 with every node retried), and
+  `send_terminal_event` short-circuits on `tx.is_closed()`, so a dropped receiver is safe. The
+  channel cannot fill at HEAD and no success criterion is compromised. The exposure is a receiver
+  that is alive but not draining -- which becomes live if per-token AnswerChunks are added
+  (planned 999.x), the 100-slot buffer shrinks, or the sink is cloned/shared across workflows.
+result: pending
+
+### 8. Decide the disposition of the gateway bind-failure exit-code regression
+
+expected: Either the `ListenAndServe` error path restores a non-zero process exit, or exit 0 on bind failure is explicitly accepted and recorded.
+command: |
+  # occupy the configured port, then:
+  cd gateway && go run . ; echo "exit=$?"
+why_human: |
+  REGRESSION introduced by e8982d0 (the fix for prior WR-01). gateway/main.go:1094-1098 is now
+  `go func() { if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+  logger.Error("gateway stopped", ...); stop() } }()`. `stop()` cancels sigCtx, `<-sigCtx.Done()`
+  returns, Shutdown runs, and main returns normally -> **exit 0**. Before e8982d0 this path was a
+  `logger.Fatal` (exit 1). A supervisor (systemd `Restart=on-failure`, a k8s liveness contract,
+  CI) now reads "port already in use" as a clean shutdown.
+  This is a product/ops decision, not a defect with one correct fix: the naive repair
+  (`logger.Fatal`) reintroduces exactly the defect e8982d0 was written to close, because
+  `os.Exit` skips the deferred `dispatcher.Close()` and loses buffered checkpoints. A correct fix
+  needs an exit-code variable propagated after the defers run, or an equivalent restructure.
+  Outside all five success criteria and outside ORCH-01..05 -- not a gap against the phase goal,
+  but a real behaviour regression introduced by this phase's own remediation work.
+result: pending
+
+### 9. Decide the disposition of terminal-event suppression on FinalAnswer delivery failure
+
+expected: Either `emit_terminal_once` falls through to `send_terminal_event` when `FinalAnswer` delivery fails (mirroring the fix already applied one line later for the terminal checkpoint), or the early return is explicitly accepted as unreachable-with-a-live-client.
+why_human: |
+  engine/src/workflow/runner.rs:499-505 still `return`s before `WorkflowCompleted` when
+  `send_event_or_cancel(final_answer)` fails, with `terminal_emitted` already latched at 488-494
+  -- so no later call can emit the terminal event either. Commit 7ea20f2 (prior WR-02) removed the
+  *checkpoint* early-return at :506-508, replacing it with a `tracing::warn!` fall-through, but
+  left this one. The class of defect (an upstream delivery failure suppressing the protocol
+  terminal event) survives one step earlier in the same function.
+  Verifier's re-derivation at HEAD: currently benign. `send_event_or_cancel` returns Err only on
+  Closed (the receiver is gone, so no client can observe anything) or Cancelled -- and the only
+  canceller on the request path is `CancelOnDropStream::drop` (main.rs:1878-1882), which fires
+  *because* the receiver was dropped, which also closes the channel. So no live client can observe
+  the loss today. But that is an emergent property of there being exactly one canceller, not an
+  enforced invariant, and it is one added cancel source away from being a real dropped-terminal
+  bug on the SUCCESS path.
+result: pending
+
+### 10. Decide the disposition of sequence-ordinal burning on failed delivery
+
+expected: Either `wrap_next_event` and `send_checkpoint` allocate the ordinal lazily inside the successful-permit arm -- the idiom `send_terminal_event:168` already uses -- or ordinal gaps under failed delivery are accepted and documented as expected behaviour.
+why_human: |
+  Prior WR-09 was never fixed (5354d1e's commit message names only WR-10 and WR-12). At HEAD,
+  runner.rs:71-79 (`wrap_next_event`) calls `self.sequence.next()` and builds the envelope
+  *before* `send_envelope` is attempted (:141), and `send_checkpoint:179` allocates the ordinal
+  before `try_send`. When delivery then fails, the ordinal is burned, producing a hole in the
+  sequence that a debugging consumer of `workflow_checkpoints` cannot distinguish from a lost
+  event. Note that both idioms now sit in the same file: `send_terminal_event:168` allocates
+  lazily inside `if let Ok(permit)`, i.e. the correct pattern was applied in exactly one place.
+  Verifier's re-derivation at HEAD: contiguity IS behaviourally proven on the paths that matter --
+  `engine/src/tests/workflow_phase5.rs:507` asserts `event.sequence_ordinal == index + 1` across
+  the whole happy-path event stream, and `gateway/main_test.go:3849`
+  (TestWorkflowCheckpointPendingDrainAndPersistence, which ran against live Postgres this pass)
+  asserts exactly 10 persisted rows with contiguous ordinals 1..10 in FIFO node order THROUGH the
+  backpressure/pending path. The exposure is confined to the failed-delivery edge, which is
+  untested. SC4 is not compromised; this is a debt-acceptance call about failure-path
+  debuggability.
+result: pending
+
 ## Summary
 
-total: 6
+total: 10
 passed: 5
 issues: 1
-pending: 0
+pending: 4
 skipped: 0
 blocked: 0
+
+recount_note: |
+  Recomputed 2026-08-19T07:05:00Z after merging Tests 7-10 from the HEAD bb58a60
+  re-verification. Tests 1-6 are unchanged: Test 1 remains the single `issue` (live run, now
+  unblocked by e831be3 but still unperformed), Tests 2-6 remain `pass` with their original
+  human-recorded resolutions verbatim. The 4 new items are design-debt / regression dispositions
+  requiring a human decision -- none is a code gap against a success criterion, and the phase
+  scored 5/5 on the ROADMAP success criteria with all four of these open.
 
 ## Gaps
 
