@@ -1,14 +1,20 @@
 ---
-status: diagnosed
+status: testing
 phase: 05-state-machine-workflow-events
 source: [05-VERIFICATION.md]
 started: 2026-08-18T10:06:50Z
-updated: 2026-08-18T23:30:00Z
+updated: 2026-08-19T03:20:00Z
+regapped: 2026-08-19T03:20:00Z  # merged fresh human_verification items from the 05-VERIFICATION.md re-verification at HEAD 721485c; Tests 2-4 and their recorded human resolutions preserved verbatim
 ---
 
 ## Current Test
 
-[testing complete]
+number: 1
+name: Live OpenRouter end-to-end SSE run (re-test — both G-05-1 blockers now closed in code)
+expected: |
+  node_started/node_completed for all five nodes, one answer_chunk, one final_answer,
+  one workflow_completed, no stream_error; the answer is grounded with real citations.
+awaiting: user response
 
 ## Tests
 
@@ -16,9 +22,24 @@ updated: 2026-08-18T23:30:00Z
 
 expected: node_started/node_completed for all five nodes, one answer_chunk, one final_answer, one workflow_completed, no stream_error; the answer is grounded with real citations.
 why_human: Every automated proof of the pipeline — including the decisive TestRAGQueryCrossRuntime — substitutes an httptest mock for OpenRouter's /embeddings, /models, and /chat/completions. The one live-provider test in the repo (generation::tests::openrouter_structured_output_smoke) is `#[ignore]` and did not run. Real provider latency, streaming semantics, and structured-output conformance have never been exercised against this state machine.
-result: issue
-reported: "Error: \"LanceDB schema drift detected for nodes: expected [...19 fields ending in content_type...], found [...same 19 fields plus community_ids, summary, summary_vector, unsummarized_refs]\" — engine.exe exits with code 1 on startup, before the gateway or /rag/query could even be reached."
-severity: blocker
+result: pending
+prior_result: issue
+prior_reported: "Error: \"LanceDB schema drift detected for nodes: expected [...19 fields ending in content_type...], found [...same 19 fields plus community_ids, summary, summary_vector, unsummarized_refs]\" — engine.exe exits with code 1 on startup, before the gateway or /rag/query could even be reached."
+prior_severity: blocker
+unblocked_by: |
+  Both G-05-1 root causes are now closed in code (plans 05-25 and 05-26, commits 967a897 and c815af1):
+    - Blocker A: validate_schema carries an actionable remediation clause (engine/src/db/mod.rs:167-172);
+      the stale local store was rebuilt. Verified empirically this pass — inspect_lancedb.exe reaches and
+      passes DatabaseManager::open_and_validate against ./data/lancedb. data/lancedb.pre-05-25.bak preserved.
+    - Blocker B: explicit LANCET_OPENROUTER__GENERATION_MODEL / __EMBEDDING_MODEL overrides added
+      (engine/src/main.rs:661-668); gateway real-engine tests no longer read ambient config.toml for the model.
+  Closing the blockers UNBLOCKS this test; it does not constitute it. The run still needs a real
+  OPENROUTER_API_KEY and a human observer.
+added_risk: |
+  Per 05-VERIFICATION.md WARN-NEW-01: after 05-26 the real-engine tests pin openai/gpt-4o-mini while
+  production ships dots-studio/dots-3-note-preview:free, so the structured-output capability preflight
+  at engine/src/generation/openrouter.rs:425-434 is now exercised by NO automated test. This makes the
+  live run more necessary, not less.
 
 ### 2. Decide and apply the disposition of the WR-05 `x-lancet-*` trailer regression
 
@@ -41,12 +62,27 @@ why_human: None declares a `verification:` tier, so all 15 are judgment-tier per
 result: pass
 resolution: "User accepted all 15 prohibitions as-is, including the two flagged non-authoritative spot-verdicts (#7 DB tests silently skip in default go test ./... run; #15 05-07's file-touch prohibition cannot be re-derived at HEAD since later plans legitimately modified those files). No rejections; no new gaps from this test."
 
+### 5. Restore Postgres and run the 11 TEST_DATABASE_URL-gated tests
+
+expected: All 11 PASS — `TestWorkflowCheckpointPersistence`, `TestWorkflowCheckpointCancellationAtomicity`, `TestWorkflowCheckpointPendingDrainAndPersistence`, `TestEmbeddingFailureRestartConvergesAcrossRuntime`, plus the 7 gateway/db document/reconciliation-intent tests.
+command: |
+  docker compose up -d postgres
+  cd gateway && TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable go test . ./db -count=1
+why_human: These 11 tests are TEST_DATABASE_URL-gated and SKIPPED in the 2026-08-19 regression-gate run (Docker Desktop not running; nothing listening on 127.0.0.1:5432). SC4's persistence half — FIFO drain ordering (primary -> overflow -> pending) and cancellation atomicity — is a state-transition invariant. The presence of InsertWorkflowCheckpoint (gateway/checkpoint_sink.go:106-115) and RetainPending (main.go:802) proves the code is wired, not that the ordering invariant holds. The prior verification counted these as PASS against a container that is no longer up; that evidence is not reproducible at HEAD.
+result: pending
+
+### 6. Decide the disposition of CR-01 + WR-12 (coupled cancellation-path defects in engine/src/workflow/runner.rs)
+
+expected: Either the `capacity()` fast path at runner.rs:90-98 is deleted in favour of the unconditional biased select (the review's recommended fix, with the failure event emitted before `cancel.cancel()`), or the current behaviour is explicitly accepted with the buffer-depth invariant recorded as a load-bearing assumption.
+why_human: Not a gap today. The verifier re-derived the arithmetic from source at HEAD — the sink channel is per-request `mpsc::channel(100)` (main.rs:1861) with no production `.clone()`, and a workflow emits at most ~19 events (~30 with every node retried), so `capacity()` never reaches 0, the biased arm is never entered, and SC3 is not compromised. But that guard is an emergent property of a size constant, not an enforced invariant. It becomes live if per-token streaming AnswerChunks are added (planned 999.x), the 100-slot buffer is reduced, or the sink is cloned/shared. This is a design-debt acceptance decision, not a defect with one correct fix.
+result: pending
+
 ## Summary
 
-total: 4
+total: 6
 passed: 3
-issues: 1
-pending: 0
+issues: 0
+pending: 3
 skipped: 0
 blocked: 0
 
@@ -54,7 +90,9 @@ blocked: 0
 
 - gap_id: G-05-1
   truth: "Engine starts cleanly and completes a live /rag/query with node_started/node_completed for all five nodes, one answer_chunk, one final_answer, one workflow_completed, no stream_error."
-  status: failed
+  status: closed_in_code
+  closed_by: [05-25-PLAN.md (967a897), 05-26-PLAN.md (c815af1)]
+  closed_note: "Both root causes fixed and re-verified at HEAD 721485c. The gap is NOT fully retired until UAT Test 1 (the live end-to-end run) is actually performed — closing the blockers unblocks the test, it does not constitute it."
   reason: "User reported: Error: \"LanceDB schema drift detected for nodes: expected [...19 fields...], found [...19 fields plus community_ids, summary, summary_vector, unsummarized_refs]\" — engine.exe exits with code 1 on startup, before the gateway or /rag/query could even be reached."
   severity: blocker
   test: 1
