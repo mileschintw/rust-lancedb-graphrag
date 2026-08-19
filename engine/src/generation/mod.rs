@@ -393,13 +393,23 @@ pub struct GenerationRequest {
 
 impl PartialEq for GenerationRequest {
     fn eq(&self, other: &Self) -> bool {
-        self.system_policy == other.system_policy
-            && self.question == other.question
-            && self.evidence == other.evidence
-            && self.graph_facts == other.graph_facts
-            && (self.graph_weight - other.graph_weight).abs() < f64::EPSILON
-            && self.session_id == other.session_id
-            && self.correlation_id == other.correlation_id
+        let Self {
+            system_policy,
+            question,
+            evidence,
+            graph_facts,
+            graph_weight,
+            session_id,
+            correlation_id,
+            cancel: _,
+        } = self;
+        *system_policy == other.system_policy
+            && *question == other.question
+            && *evidence == other.evidence
+            && *graph_facts == other.graph_facts
+            && graph_weight.to_bits() == other.graph_weight.to_bits()
+            && *session_id == other.session_id
+            && *correlation_id == other.correlation_id
     }
 }
 
