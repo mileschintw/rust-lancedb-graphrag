@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -98,6 +100,14 @@ func (s *PostgresCheckpointSink) SaveCheckpoint(ctx context.Context, env *Checkp
 	createdAt := env.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now()
+	}
+
+	if !json.Valid([]byte(env.ContextSnapshot)) {
+		err := fmt.Errorf("checkpoint %s/%d has invalid JSON context_snapshot", env.TraceID, env.SequenceOrdinal)
+		if s.logger != nil {
+			s.logger.Error("save workflow checkpoint failed: invalid JSON", zap.String("trace_id", env.TraceID), zap.Uint64("sequence_ordinal", env.SequenceOrdinal), zap.Error(err))
+		}
+		return err
 	}
 
 	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -214,7 +224,15 @@ func (d *CheckpointDispatcher) loop() {
 			break
 		}
 		if d.sink != nil {
-			_ = d.sink.SaveCheckpoint(context.Background(), env)
+			if err := d.sink.SaveCheckpoint(context.Background(), env); err != nil {
+				if ps, ok := d.sink.(*PostgresCheckpointSink); ok && ps.logger != nil {
+					ps.logger.Warn("checkpoint dispatcher dropped envelope on sink error",
+						zap.String("trace_id", env.TraceID),
+						zap.Uint64("sequence_ordinal", env.SequenceOrdinal),
+						zap.Error(err),
+					)
+				}
+			}
 		}
 	}
 }
