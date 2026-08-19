@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 05-state-machine-workflow-events
 source: [05-VERIFICATION.md]
 started: 2026-08-18T10:06:50Z
-updated: 2026-08-19T07:05:00Z
+updated: 2026-08-19T09:51:19Z
 regapped: 2026-08-19T03:20:00Z  # merged fresh human_verification items from the 05-VERIFICATION.md re-verification at HEAD 721485c; Tests 2-4 and their recorded human resolutions preserved verbatim
 status_note: |
   status stays `diagnosed` (the controlled vocabulary is diagnosed | partial | complete, per
@@ -17,7 +17,7 @@ regapped_2: 2026-08-19T07:05:00Z  # MERGE, not regeneration. Tests 1-6 preserved
 
 ## Current Test
 
-[4 new dispositions pending -- Tests 7, 8, 9, 10; Test 1 awaiting an unblocked live re-run]
+[testing complete]
 
 ## Tests
 
@@ -25,9 +25,8 @@ regapped_2: 2026-08-19T07:05:00Z  # MERGE, not regeneration. Tests 1-6 preserved
 
 expected: node_started/node_completed for all five nodes, one answer_chunk, one final_answer, one workflow_completed, no stream_error; the answer is grounded with real citations.
 why_human: Every automated proof of the pipeline — including the decisive TestRAGQueryCrossRuntime — substitutes an httptest mock for OpenRouter's /embeddings, /models, and /chat/completions. The one live-provider test in the repo (generation::tests::openrouter_structured_output_smoke) is `#[ignore]` and did not run. Real provider latency, streaming semantics, and structured-output conformance have never been exercised against this state machine.
-result: issue
-reported: "GenerateAnswer failed: model capabilities response exceeds maximum body limit of 262144 bytes; workflow_completed success: false"
-severity: blocker
+result: pass
+resolution: "Live run against real OpenRouter (LANCET_GATEWAY__DATABASE_URL + OPENROUTER_API_KEY set) produced the full expected frame sequence: node_started/node_completed for all five nodes (ReformulateQuery, ExtractGraphContext, RetrieveHybrid, AssemblePrompt, GenerateAnswer), one answer_chunk (is_final: true), one final_answer, one workflow_completed (success: true), no stream_error. Citations present and structured (chunk_id/document_id backed). Note: cited source was a local fixture document (\"Dense retrieval fixture\", DENSE_FIXTURE_MARKER excerpt) since the dev LanceDB store holds fixture data, not a real corpus — pipeline mechanics (grounding, citation wiring, SSE framing) are fully proven end-to-end; user confirmed this matches expectations."
 prior_result: issue
 prior_reported: "Error: \"LanceDB schema drift detected for nodes: expected [...19 fields ending in content_type...], found [...same 19 fields plus community_ids, summary, summary_vector, unsummarized_refs]\" — engine.exe exits with code 1 on startup, before the gateway or /rag/query could even be reached."
 prior_severity: blocker
@@ -119,7 +118,8 @@ why_human: |
   channel cannot fill at HEAD and no success criterion is compromised. The exposure is a receiver
   that is alive but not draining -- which becomes live if per-token AnswerChunks are added
   (planned 999.x), the 100-slot buffer shrinks, or the sink is cloned/shared across workflows.
-result: pending
+result: pass
+resolution: "User chose Option B: explicitly re-accepted the buffer-depth invariant against the current code shape (engine/src/workflow/runner.rs:161-170 / send_terminal_event's reserve at :167). Same call as Test 6, re-pointed at the new post-5354d1e code location. Rationale: risk profile unchanged from Test 6 (still cannot occur at HEAD -- 100-slot channel vs ~19-30 events, receiver-dropped case already handled via tx.is_closed() short-circuit); only becomes live if planned 999.x per-token AnswerChunk streaming ships, the buffer shrinks, or the sink is cloned/shared. No code change; invariant re-recorded as load-bearing."
 
 ### 8. Decide the disposition of the gateway bind-failure exit-code regression
 
@@ -140,7 +140,8 @@ why_human: |
   needs an exit-code variable propagated after the defers run, or an equivalent restructure.
   Outside all five success criteria and outside ORCH-01..05 -- not a gap against the phase goal,
   but a real behaviour regression introduced by this phase's own remediation work.
-result: pending
+result: pass
+resolution: "User chose Option A: restore non-zero exit on bind failure via a correctly-ordered fix (exit code decided after deferred cleanup runs, not via logger.Fatal/os.Exit which would skip dispatcher.Close() and lose buffered checkpoints). Discovered this was ALREADY implemented by commit fe83e71 (fix(05): WR-04 WR-05 WR-08 WR-09..., landed earlier this session, prior to this UAT re-verification pass being drafted): main() now calls run() error and os.Exit(1) only after run() returns, so all defers (pool.Close, conn.Close, dispatcher.Close, etc.) execute first; ListenAndServe errors are routed through a serveErr channel into a `fatal` return value instead of calling stop() directly. Verified empirically: occupied port 8080, ran `cd gateway && go run .`, observed 'bind: Only one usage of each socket address...' followed by `exit=1`. No further code change needed."
 
 ### 9. Decide the disposition of terminal-event suppression on FinalAnswer delivery failure
 
@@ -159,7 +160,8 @@ why_human: |
   the loss today. But that is an emergent property of there being exactly one canceller, not an
   enforced invariant, and it is one added cancel source away from being a real dropped-terminal
   bug on the SUCCESS path.
-result: pending
+result: pass
+resolution: "User chose Option A. Discovered ALREADY implemented by commit 0c96720a (fix(05): WR-01 WR-02 WR-03 WR-12 event sink concurrency, lazy ordinals, and terminal delivery, landed 2026-08-19T01:50:00-07:00, prior to this UAT pass being drafted). engine/src/workflow/runner.rs:513 now reads `let _ = sink.send_event_or_cancel(events::final_answer(response.clone()), cancel).await;` -- discarding the delivery error instead of early-returning -- so execution unconditionally falls through the checkpoint send (already a warn-and-continue per 7ea20f2) to `sink.send_terminal_event(event).await` at :527. Verified via git show 0c96720a and git blame on the line. No further code change needed; the described suppression defect does not exist at HEAD."
 
 ### 10. Decide the disposition of sequence-ordinal burning on failed delivery
 
@@ -180,14 +182,15 @@ why_human: |
   backpressure/pending path. The exposure is confined to the failed-delivery edge, which is
   untested. SC4 is not compromised; this is a debt-acceptance call about failure-path
   debuggability.
-result: pending
+result: pass
+resolution: "Split finding: wrap_next_event (client events, runner.rs:71-79) is ALREADY lazy -- the 0c96720a refactor (same commit that fixed Test 9) moved its call site inside send_event_lazy's Ok(permit) success arm at :128, matching the send_terminal_event:174 idiom. send_checkpoint (runner.rs:185) remains eager -- sequence.next() runs before the try_send/pending/OwnershipFailure branch is known, so a checkpoint lost to OwnershipFailure or Closed still burns its ordinal. User chose Option B for the remaining send_checkpoint gap: accepted as documented behaviour, confined to the failed-delivery edge (pending-queue exhaustion or an already-closing channel, which coincides with cancel.cancel() anyway); happy-path contiguity including the backpressure/pending-drain path remains proven by engine/src/tests/workflow_phase5.rs:507 and gateway/main_test.go:3849 (TestWorkflowCheckpointPendingDrainAndPersistence, verified against live Postgres this session). No code change to send_checkpoint."
 
 ## Summary
 
 total: 10
-passed: 5
-issues: 1
-pending: 4
+passed: 10
+issues: 0
+pending: 0
 skipped: 0
 blocked: 0
 
@@ -203,7 +206,9 @@ recount_note: |
 
 - gap_id: G-05-1
   truth: "Engine starts cleanly and completes a live /rag/query with node_started/node_completed for all five nodes, one answer_chunk, one final_answer, one workflow_completed, no stream_error."
-  status: failed
+  status: resolved
+  resolved_by: "05-25-PLAN.md, 05-26-PLAN.md, 05-27-PLAN.md (05-27 closed the models-body-limit root cause reported by this test; 05-25/05-26 closed the two earlier root causes recorded in the test's unblocked_by note)"
+  resolved_at: 2026-08-19
   reason: "User reported: GenerateAnswer failed: model capabilities response exceeds maximum body limit of 262144 bytes; workflow_completed success: false"
   severity: blocker
   test: 1
