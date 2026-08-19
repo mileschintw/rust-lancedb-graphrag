@@ -3519,6 +3519,7 @@ dependencies = [
  "arrow-ipc 58.3.0",
  "arrow-schema 58.3.0",
  "arrow-select 58.3.0",
+ "blake3",
  "config",
  "dashmap",
  "futures",
