@@ -1,8 +1,9 @@
 ---
 phase: 05-state-machine-workflow-events
-reviewed: 2026-08-19T02:02:00Z
+reviewed: 2026-08-19T05:40:00Z
+head: bb58a60
 depth: standard
-files_reviewed: 37
+files_reviewed: 33
 files_reviewed_list:
   - .gitignore
   - buf.gen.yaml
@@ -11,18 +12,16 @@ files_reviewed_list:
   - config/config.toml
   - config/config.verify.toml
   - engine/src/bin/seed_rag_fixture.rs
+  - engine/src/client/mod.rs
   - engine/src/db/mod.rs
-  - engine/src/db/tests.rs
   - engine/src/generation/mod.rs
   - engine/src/generation/openrouter.rs
+  - engine/src/graph/mod.rs
   - engine/src/lib.rs
   - engine/src/main.rs
   - engine/src/pb/mod.rs
   - engine/src/prompt.rs
-  - engine/src/retrieval/bm25.rs
-  - engine/src/retrieval/dense.rs
   - engine/src/retrieval/fusion.rs
-  - engine/src/retrieval/mod.rs
   - engine/src/workflow/events.rs
   - engine/src/workflow/mod.rs
   - engine/src/workflow/node.rs
@@ -32,495 +31,335 @@ files_reviewed_list:
   - engine/src/workflow/nodes/mod.rs
   - engine/src/workflow/nodes/reformulate.rs
   - engine/src/workflow/nodes/retrieve.rs
-  - engine/src/workflow/ports.rs
   - engine/src/workflow/runner.rs
   - gateway/checkpoint_sink.go
-  - gateway/db/models.go
   - gateway/db/query.sql
   - gateway/db/schema.hcl
   - gateway/db/schema.sql
   - gateway/main.go
   - proto/lancet/v1/lancet.proto
 findings:
-  critical: 1
-  warning: 15
-  info: 18
-  total: 34
+  critical: 0
+  warning: 13
+  info: 24
+  total: 37
 status: issues_found
 ---
 
 # Phase 05: Code Review Report
 
-**Reviewed:** 2026-08-19T02:02:00Z (refresh at HEAD `e6e153f`)
+**Reviewed:** 2026-08-19T05:40:00Z
+**HEAD:** `bb58a60`
 **Depth:** standard
-**Files Reviewed:** 37
+**Files Reviewed:** 33 (of 49 declared — see Scope narrowing)
 **Status:** issues_found
 
 ## Summary
 
-This is a **refresh** of the 2026-08-18T09:43:44Z review. Every finding below was re-derived
-against the working tree at HEAD (`e6e153f`), not carried forward. The prior report predated
-`edaf907` (d1_status restoration), `989003b` (generation_model switch), `967a897` (plan 05-25) and
-`c815af1` (plan 05-26).
+This is a **full re-derivation** at HEAD `bb58a60`, not a carry-forward. The prior report was
+written at HEAD `e6e153f` and reported 1 Critical / 15 Warnings / 18 Info; 16 remediation commits
+have landed since (`ac3db6e` … `ccef730`), and `05-REVIEW-FIX.md` claims all 16 are closed. Every
+finding below was re-derived from the working tree and is renumbered from scratch. Findings
+introduced **by** the remediation commits are called out explicitly.
+
+**`critical: 0` is a real result, not an oversight.** Prior CR-01 (`run_node` cancelling the
+workflow before emitting `NodeFailed`) is genuinely closed — verified at `runner.rs:342-351` and
+`runner.rs:383-393`, where `NodeFailed` is now emitted first, the real `NodeError` is preserved
+rather than replaced via `?`, and `cancel.cancel()` on the timeout branch moved after the emit. No
+finding at HEAD rises to Critical. See the fix-verification table in §2. Nothing below has been
+inflated to compensate.
+
+**Of the 16 claimed fixes: 9 CLOSED, 4 PARTIALLY CLOSED, 1 NOT CLOSED, 2 REGRESSED.** The two
+regressions are the highest-value items in this report: `5354d1e` deleted one un-cancellable
+`reserve().await` and introduced another (WR-01), and `e8982d0` turned a non-zero-exit bind failure
+into a silent exit 0 (WR-04). The one NOT CLOSED (prior WR-14) was closed against a **restated**
+finding, not the one that was written.
 
 ### Scope narrowing (recorded verbatim, on the record)
 
-> This refresh's declared file set was 48 files. 11 files were deliberately excluded from
-> line-by-line review and are NOT in `files_reviewed_list`; 37 were reviewed:
->   Generated code (machine output; wire contract proven by plan 05-23, regenerated from
->   `proto/lancet/v1/lancet.proto` and `gateway/db/query.sql`, both of which WERE reviewed):
->     - engine/src/pb/lancet/v1/lancet.v1.rs (15KB)
->     - gateway/proto/lancet/v1/lancet.pb.go (91KB)
->     - gateway/proto/lancet/v1/lancet_grpc.pb.go (12KB)
->     - gateway/db/query.sql.go (9KB)
->   Test files (claim-vs-actual test adequacy is the phase verifier's job, not code review's;
->   this exclusion is by *role*, not by size — it applies equally to the 1KB rerank tests):
->     - engine/src/tests.rs (7396 lines)
->     - engine/src/tests/workflow_phase5.rs (3152 lines)
->     - engine/src/tests/workflow_phase5_production.rs (1473 lines)
->     - engine/src/generation/tests.rs
->     - engine/src/retrieval/tests.rs
->     - engine/src/rerank/tests.rs
->     - gateway/main_test.go (3870 lines)
+> The raw `git diff --name-only 8d4db491bba31484f44dd6919b9c038e7e996a1a^..HEAD` surfaced
+> **2,051 changed paths**, of which **2,002 are vendored GSD runtime installs** under `.codex/`,
+> `.claude/` and `.agents/`. Those are tooling, not Phase 05 project source, and were excluded by
+> the orchestrator before this agent was spawned. The declared in-scope set handed to this review
+> is **49 files**. 33 were reviewed line-by-line and appear in `files_reviewed_list`. The
+> remaining 16 were NOT reviewed line-by-line, for the reasons below.
 >
-> Arithmetic: 48 declared - 11 excluded = 37 reviewed, matching `files_reviewed`.
+> **Generated code — 5 files (machine output; the hand-written contracts they are generated from,
+> `proto/lancet/v1/lancet.proto` and `gateway/db/query.sql`, WERE reviewed):**
+>   - `engine/src/pb/lancet/v1/lancet.v1.rs`
+>   - `gateway/proto/lancet/v1/lancet.pb.go`
+>   - `gateway/proto/lancet/v1/lancet_grpc.pb.go`
+>   - `gateway/db/query.sql.go`
+>   - `gateway/db/models.go` (sqlc-generated; the persisted column set was instead verified from
+>     `gateway/db/schema.sql:45-56` and `gateway/db/schema.hcl:136-170`, both reviewed)
 >
-> Two deviations from that blanket exclusion, both deliberate:
->   - `engine/src/db/tests.rs` (212 lines) was read in full and IS in `files_reviewed_list`; it
->     carries the plan 05-25 assertion and is explicitly in scope for this refresh (IN-15).
->   - `engine/src/tests.rs` and `gateway/main_test.go` carry the plan 05-26 hunks. Both remain
->     excluded from `files_reviewed_list` (so a downstream `--auto` re-review does not pull a
->     7396-line and a 3870-line test file back into full scope), but their `6243d2b..HEAD` diff
->     hunks (+50 and +4 lines respectively) WERE read. Neither hunk yielded a finding: the Rust
->     hunk adds env-override assertions, the Go hunk adds four env-map entries.
-
-### Prior-finding ledger (persist / resolved / new)
-
-**RESOLVED since the prior review (1):**
-- **WR-05** (prior) — "`d1_status` was deleted; the engine no longer emits `x-lancet-*` trailers."
-  **Fixed by `edaf907`.** `d1_status` now exists at `engine/src/main.rs:1159-1180` and is the
-  error constructor on all three production pre-stream paths (`main.rs:1777`, `1786`, `1835`).
-  The gateway reader at `gateway/main.go:771-783` now has a real producer. *(But the restored
-  helper introduces a new defect of its own — WR-11.)*
-
-**DROPPED as out of scope (1):**
-- **IN-01** (prior) — "`engine/src/workflow/context.rs` never existed; SUMMARY overclaim." The
-  target of that finding is a planning artifact (`05-01-SUMMARY.md`), which is excluded from
-  code-review scope. The underlying code fact is unchanged and benign
-  (`WorkflowContext` lives at `workflow/mod.rs:32`). Not re-filed.
-
-**PERSIST, verified at HEAD (24):** prior CR-01 → CR-01; prior WR-01→WR-04 → WR-01→WR-04;
-prior WR-06→WR-11 → WR-05→WR-10; prior IN-02→IN-13 and IN-15 → IN-01→IN-13. Prior IN-14
-(config secrets scan) is **re-derived with a corrected premise** and promoted to WR-14: it stated
-`config/config.toml` "is not part of this phase's diff," which is false for this refresh —
-`config/config.toml` is in the declared file list and was changed by `989003b`.
-
-**NEW in this refresh (10):** WR-11, WR-12, WR-13, WR-14, WR-15, IN-14, IN-15, IN-16, IN-17, IN-18.
-WR-13/IN-15 cover plan 05-25 (`db/mod.rs`, `db/tests.rs`); IN-14 covers plan 05-26 (`main.rs`
-env overrides); WR-11 covers the `edaf907` `d1_status` restoration; WR-14 covers `989003b`'s
-config file now being in scope; IN-16 covers the `.gitignore` change.
+> **Test files — 8 files.** Excluded by *role*, not by size: claim-vs-actual test adequacy is the
+> phase verifier's job, not code review's. This exclusion applies equally to the 1 KB and the
+> 7,000-line files.
+>   - `engine/src/client/tests.rs`
+>   - `engine/src/db/tests.rs` *(exception — see below)*
+>   - `engine/src/generation/tests.rs`
+>   - `engine/src/retrieval/tests.rs`
+>   - `engine/src/tests.rs` *(exception — see below)*
+>   - `engine/src/tests/workflow_phase5.rs` *(exception — see below)*
+>   - `engine/src/tests/workflow_phase5_production.rs`
+>   - `gateway/main_test.go`
+>
+>   **Three deliberate exceptions, read to verify specific fix claims** (these regions were read;
+>   the files remain out of `files_reviewed_list` so a downstream `--auto` re-review does not pull
+>   7,400- and 3,900-line test files into full scope):
+>   - `engine/src/db/tests.rs:90-110` — the WR-13 drift assertion. Read; yielded WR-13 and IN-15.
+>   - `engine/src/tests.rs:315-360` — the hunk `7da662a` touched for WR-03. Read; yielded IN-23.
+>   - `engine/src/tests/workflow_phase5.rs:1740-1786` — the `zero_variants_are_rejected_before_retrieval`
+>     test added by `ccef730` for WR-15. Read in full; it is a genuine regression test.
+>
+> **Reviewed only in targeted regions, not end to end — 3 files.** These are in
+> `files_reviewed_list` because findings were derived from them, but coverage is partial and is
+> disclosed here rather than implied complete:
+>   - `engine/src/prompt.rs` (603 lines) — cancellation-check sites and `EmptyEvidence` path only.
+>     Unchanged since `e6e153f`.
+>   - `engine/src/graph/mod.rs` (669 lines) — SQL-predicate construction and `escape_sql_literal`
+>     only. Unchanged since `e6e153f`.
+>   - `engine/src/bin/seed_rag_fixture.rs` (396 lines) — the local `dense_score`/`content_hash`
+>     helpers only. Unchanged since `e6e153f`.
+>
+> **Not opened at all — 3 files**, all unchanged since `e6e153f` and covered by the prior pass:
+>   - `engine/src/graph/extraction.rs`
+>   - `engine/src/retrieval/mod.rs`
+>   - `engine/src/workflow/ports.rs`
+>   (`ports.rs` behaviour relevant to WR-15 — `NoOpQueryReformulator` returning exactly one
+>   variant — was confirmed indirectly from `reformulate.rs` and the prior report, not re-read.)
+>
+> Arithmetic: 49 declared − 5 generated − 8 test − 3 unopened = 33 reviewed.
+>
+> **Diff-scoped focus.** Only 14 non-planning source files changed between the prior review HEAD
+> `e6e153f` and `bb58a60`: `engine/src/{client/mod.rs, client/tests.rs, db/mod.rs, generation/mod.rs,
+> generation/openrouter.rs, main.rs, tests.rs, tests/workflow_phase5.rs, workflow/mod.rs,
+> workflow/nodes/reformulate.rs, workflow/runner.rs}` and `gateway/{checkpoint_sink.go, main.go}`.
+> Those 13 non-test files received the deepest scrutiny; the unchanged remainder was re-derived at
+> the level needed to confirm prior findings still hold.
 
 ### Assessment
 
-**Production wiring — CONFIRMED GENUINE at HEAD.** `build_production_workflow`
-(`main.rs:1560-1645`) registers all five nodes on the real `WorkflowRunner` with real adapters;
-`query_rag` (`main.rs:1860-1895`) spawns `runner.run_workflow(...)` directly. No test-only path
-carries production work. A second, inline, always-broken remainder path is still exported from
-`workflow/mod.rs` (WR-05).
+**Event delivery path (`runner.rs`) reviewed as a whole**, per instruction, rather than fix-by-fix.
+Four remediations landed in this one file (`ac3db6e`, `7ea20f2`, `5354d1e`, plus WR-02's change).
+Reading the resulting path end to end:
 
-**Event emission.** NodeStarted / NodeCompleted / AnswerChunk / FinalAnswer / Checkpoint /
-WorkflowCompleted are all emitted on the production path. One reachable defect (CR-01) drops
-both `NodeFailed` and `WorkflowCompleted` and misclassifies `Timeout` as `Cancelled` under client
-backpressure. Note that the `capacity() > 0` fast path at `runner.rs:90-98` is what *bounds*
-CR-01 to the zero-capacity case — and it is itself a check-then-act race (WR-12).
+- The **`biased` cancellation arm is now universal** in `send_envelope` (86-101) and
+  `flush_pending_checkpoints` (107-128). The `capacity() > 0` TOCTOU is gone. Confirmed.
+- The **terminal event is now cancellation-immune** via `send_terminal_event` (161-170), which is
+  what actually closes prior CR-01's tail (`WorkflowCompleted` no longer suppressed by a
+  pre-cancelled token). But that function acquires its permit with a bare `self.tx.reserve().await`
+  — **no cancellation arm and no timeout** (WR-01). The commit deleted one unbounded reserve and
+  added another.
+- **Ordinal gaps were not addressed at all.** `wrap_next_event` (71-79) still calls
+  `sequence.next()` before `send_envelope` is attempted, and `send_checkpoint` (179) still
+  allocates before `try_send`. `5354d1e`'s message names only WR-10 and WR-12; WR-09 was never in
+  it (WR-03 below). Note that `send_terminal_event:168` allocates the ordinal *lazily*, inside
+  `if let Ok(permit)` — so both idioms now sit in the same file and the correct one was applied in
+  exactly one place.
+- **One terminal-drop path survives.** `emit_terminal_once:499-505` still `return`s before
+  `WorkflowCompleted` if `FinalAnswer` delivery fails, with `terminal_emitted` already latched
+  (488-494). WR-02's fix removed the *checkpoint* early-return but not the *final_answer* one
+  (WR-02 below).
+- **No double-emission and no deadlock-on-closed-channel found.** `terminal_emitted` is a
+  `compare_exchange` latch; `send_terminal_event` short-circuits on `tx.is_closed()`; a dropped
+  receiver makes `reserve()` return `Err`, so a *closed* channel is safe. The exposure is a
+  receiver that is alive but not draining.
 
-**Rust→Go SSE transport.** Cancellation still propagates correctly (`CancelOnDropStream` cancels
-the workflow token on stream drop; `r.Context().Err()` guards every write). The checkpoint
-dispatcher's drain ordering is sound — re-verified: `nextEnvelope` drains `primary` → `overflow`
-→ `pending` before ever parking at `checkpoint_sink.go:257`, and `Submit`/`Close` both mutate
-`primary` under `d.mu`, so there is **no send-on-closed-channel race**. Its shutdown is
-nonetheless unreachable (WR-01).
+**Rust→Go SSE transport.** Cancellation still propagates (`CancelOnDropStream::drop` at
+`main.rs:1878-1882`). The checkpoint dispatcher's drain ordering is re-verified sound:
+`nextEnvelope` drains `primary` → `overflow` → `pending` before parking at `checkpoint_sink.go:278`,
+and `Submit`/`Close` both mutate under `d.mu`, so there is **no send-on-closed-channel race**. What
+changed is that `Close()` is now *reachable* (WR-09 below).
 
-**Timeouts / retries.** Capability preflight is correctly hoisted out of the node timer into
-`Node::prepare()` (`generate.rs:55-70`, `runner.rs:342-346`). The cross-field timeout invariants
-the 2-attempt retry design depends on remain unvalidated and are still violated in a committed
-config (WR-03); every non-2xx chat response is still classified retryable (WR-04).
+**Secrets scan.** No API keys or tokens are committed. `config/config.example.toml:1-3` correctly
+routes the OpenRouter credential to `OPENROUTER_API_KEY`. Both `config/config.toml:3` and
+`config/config.example.toml:7` still carry a default Postgres DSN with `sslmode=disable` (WR-05).
 
-**Checkpoint persistence.** SQL still goes through sqlc-generated parameterized statements
-(`gateway/db/query.sql:116-133`) — **no injection**. Errors are still logged-and-discarded with no
-retry, and `context_snapshot` still reaches a `jsonb NOT NULL` column unvalidated (WR-06).
-
-**Config secrets scan.** No API keys or tokens are committed. `config/config.example.toml:1-3`
-correctly routes the OpenRouter credential to `OPENROUTER_API_KEY`. `config/config.toml:3` carries
-a default Postgres credential with `sslmode=disable` — **in scope this pass** (WR-14).
-
-**Preflight-vs-committed-model check (new investigation).** `fetch_and_validate_capabilities`
-(`openrouter.rs:417-441`) hard-fails `prepare()` unless the configured model is present in the
-OpenRouter `/models` list *and* advertises one of `response_format` / `json_schema` /
-`structured_outputs`. `config/config.toml:41` now pins
-`generation_model = "dots-studio/dots-3-note-preview:free"`. Per `05-UAT.md:120` this value was
-selected *specifically because* it was confirmed against the live `/api/v1/models` to advertise
-structured-output support. **Not a finding** — recorded so the check is on the record rather than
-assumed. `config/config.example.toml` still says `openai/gpt-4o-mini`, which is a documentation
-drift, not a defect.
+**SQL construction.** Checkpoint persistence still goes through sqlc-generated parameterized
+statements (`gateway/db/query.sql:116-133`) — **no injection**. The LanceDB/DataFusion predicate
+paths use two identical hand-rolled quote-doubling escapers; every input was traced to a
+UUID-validated or DB-sourced value, so **no exploitable path was found** (WR-11 is filed for
+duplication and hazard, not as an injection finding).
 
 ---
 
-## Critical Issues
+## §2 Fix Verification (prior findings CR-01, WR-01 … WR-15)
 
-### CR-01: `run_node` cancels the workflow *before* emitting `NodeFailed`, poisoning its own delivery path
+**ID-space warning:** the IDs in this table are the **prior report's** IDs. The narrative findings
+in §3/§4/§5 are renumbered from scratch and do **not** correspond. Prior IDs are prefixed `prior`.
 
-**File:** `engine/src/workflow/runner.rs:348-356`, `engine/src/workflow/runner.rs:361-371`, `engine/src/workflow/runner.rs:391-398`
+| Prior ID | Commit | Verdict | Evidence actually read |
+|---|---|---|---|
+| **prior CR-01** — cancel before `NodeFailed` | `ac3db6e` | **CLOSED** | `runner.rs:342-351`: `send_event_or_cancel(node_failed…)` with `let _ =` runs *before* `cancel.cancel()`; `return Err(err)` preserves the real error. `runner.rs:383-393`: same shape; `cancel.cancel()` moved after the emit and gated to `NodeErrorKind::Timeout`. The `?`-masking is gone from both branches. |
+| **prior WR-01** — `dispatcher.Close()` unreachable | `e8982d0` | **CLOSED** *(with a regression — see new WR-04)* | `main.go:1092-1110`: `signal.NotifyContext` + goroutine `ListenAndServe` + `<-sigCtx.Done()` + `server.Shutdown(15s)`; `main` now returns normally so defers run. Defer LIFO order verified at `main.go:1058/1067/1072/1075/1081/1093/1107` → `cancelShut, stop, dispatcher.Close, recCancel, conn.Close, pool.Close, logger.Sync`, i.e. the dispatcher drains while the pgx pool is still live. Correct. |
+| **prior WR-02** — terminal checkpoint suppresses `WorkflowCompleted` | `7ea20f2` | **PARTIALLY CLOSED** | `runner.rs:506-508`: the checkpoint early-return is replaced by `tracing::warn!` and falls through. But `runner.rs:499-505` still `return`s before `WorkflowCompleted` when `send_event_or_cancel(final_answer)` fails, with `terminal_emitted` latched at 488-494. The class of defect (an upstream delivery failure suppressing the protocol terminal event) survives one step earlier. Re-filed as new **WR-02**. |
+| **prior WR-03** — cross-field timeout invariants unvalidated | `7da662a` | **PARTIALLY CLOSED** | `main.rs:280-289` adds **only** the graph invariant (`graph_node_timeout_ms >= query_embedding + graph_operation`). The *primary* complaint — `generation_node_timeout_ms >= 2 × generation_timeout_secs × 1000`, the invariant the 2-attempt retry at `generate.rs:105`/`generate.rs:127` depends on — is **not** implemented. `config/config.verify.toml:19` still commits `generation_node_timeout_ms = 7000` against `generation_timeout_secs = 30` (line 9), the exact violating config the original finding cited. Re-filed as new **WR-06**. |
+| **prior WR-04** — every non-2xx chat status retryable | `58cede3` | **CLOSED** | `openrouter.rs:602-612`: 5xx and `TOO_MANY_REQUESTS` → `ProviderError`; all other non-success → `InvalidRequest`. `generate.rs:116-120` retries only `Timeout`/`ProviderError`, so 400/401/402/403 now fail fast. |
+| **prior WR-05** — `run_inline_prompt_generation_remainder` broken by construction | `0969a2b` | **PARTIALLY CLOSED** | `workflow/mod.rs:200-207` now passes `ctx.evidence_blocks`, sets `graph_facts`, and sets `gen_req.cancel`; `mod.rs:211-217` gates the retry to `Timeout`/`ProviderError`. So it can now succeed. But: (a) it is still `pub` with no production consumer — the finding's actual recommendation (`#[cfg(test)]` or delete) was not applied; (b) `graph_weight` is never set, diverging from `generate.rs:97`; (c) `mod.rs:240` and `mod.rs:259` still do `send_event_or_cancel(node_failed…).await?`, whose `?` replaces `node_err` with `Cancelled` — **the prior CR-01 defect verbatim, in a function `ac3db6e` did not touch**; (d) hardcoded `duration_ms` of `1` (`mod.rs:190`) and `10` (`mod.rs:224`) remain. Re-filed as new **WR-07**. |
+| **prior WR-06** — checkpoint errors swallowed; `context_snapshot` unvalidated | `8b692a5` | **PARTIALLY CLOSED** | `checkpoint_sink.go:105-111`: `json.Valid` guard added — that half is **closed**. `checkpoint_sink.go:229-239`: the error is now logged, but only inside `if ps, ok := d.sink.(*PostgresCheckpointSink); ok && ps.logger != nil` — any other `CheckpointSink` implementation still discards silently. There is still **no retry and no dead-letter**, which was the substance of the finding. Re-filed as new **WR-08**. |
+| **prior WR-07** — `RetainPending` accepts after `Close()` | `71fad09` | **CLOSED** | `checkpoint_sink.go:212-214`: `if d.closed { return errors.New("checkpoint dispatcher is closed") }` under `d.mu`. Caller at `main.go:807-809` logs the error via `a.logger.Error`. |
+| **prior WR-08** — `PartialEq` misuses `f64::EPSILON` | `2a7c541` | **CLOSED** | `generation/mod.rs:394-413`: full `let Self { … cancel: _ } = self;` destructure (new fields will fail to compile) and `graph_weight.to_bits() == other.graph_weight.to_bits()`. |
+| **prior WR-09** — ordinals consumed on failed delivery | `5354d1e` | **NOT CLOSED** | The `5354d1e` diff touches `runner.rs` only at the `capacity()` fast paths, `wrap_event`→`wrap_checkpoint_event`, `send_terminal_event`, and `emit_terminal_once`. `wrap_next_event` is unchanged: `runner.rs:71-79` calls `self.sequence.next()` and `runner.rs:141` then passes the built envelope to `send_envelope`, which can return `Cancelled`/`Closed`. `send_checkpoint:179` still allocates before `try_send`. The commit message itself names only WR-10 and WR-12. Re-filed as new **WR-03**. |
+| **prior WR-10** — `unreachable!()` in `wrap_event` | `5354d1e` | **CLOSED** | `runner.rs:239-243`: the panic is replaced by `_ => self.sequence.next()`. The panic hazard is gone. The recommended *structural* fix (accept a `CheckpointEvent`, not an `Event`) was not applied, leaving a dead arm that silently burns an ordinal — filed as new **IN-19**, not as a reopen. |
+| **prior WR-11** — unbounded `session_id` reflected into trailer + logs | `94275b6` | **CLOSED** | `main.rs:1164-1169`: `sanitize_header_value` filters to `is_ascii_graphic()` then `.take(max_len)`. `main.rs:1182-1185`: applied to `session_id` (128), `correlation_id` (128) and `error_kind` (64) **before** the `tracing::warn!` at 1186-1191 and before `metadata.insert` at 1194-1202. Both unbounded-reflection paths (log at `main.rs:1186`, header via `gateway/main.go:774-776`) are bounded and control-character-free. |
+| **prior WR-12** — `capacity() > 0` check-then-act race | `5354d1e` | **REGRESSED** | The TOCTOU itself is **gone** — both fast paths deleted; `runner.rs:90-100` and `runner.rs:116-126` are now unconditional `biased` selects. **But the same commit added a new un-cancellable, un-timeouted `self.tx.reserve().await` at `runner.rs:167`**, plus `flush_pending_checkpoints(&uncancelled)` at `runner.rs:166` which loops the same unbounded reserve per pending envelope. One unbounded reserve was deleted and another introduced. Filed as new **WR-01**. |
+| **prior WR-13** — drift guidance after multi-KB schema dumps | `4196dff` | **NOT CLOSED** | Production message **was** reordered — `db/mod.rs:167-171` now leads with `"LanceDB schema drift detected for {name}. Remediation: …"` and appends `"Details - expected: {:?}, found: {:?}"`. However `4196dff` **touches only `engine/src/db/mod.rs`** (`git show 4196dff --stat`): the test file was not modified, and `engine/src/db/tests.rs:107` still reads `assert!(error.contains("Remediation: schema reconciliation is fail-closed by design"))` — a presence assertion that passed *before* the reorder and passes *after* it. Per the stated criterion, the property the plan meant to deliver (operator-visible **placement**) has no regression protection. Re-filed as new **WR-13**. |
+| **prior WR-14** — committed default Postgres DSN with `sslmode=disable` | `a007b89` | **NOT CLOSED** | `a007b89` adds `if strings.TrimSpace(cfg.Gateway.DatabaseURL) == ""` at `gateway/main.go:87-89` — a guard against an *empty* URL. That is not the finding that was written. `git log e6e153f..HEAD -- config/config.toml` is **empty**: `config/config.toml:3` still reads `postgres://postgres:postgres@localhost:5432/lancet?sslmode=disable`, and `config/config.example.toml:7` carries the same value. Because the committed config always supplies a non-empty DSN, the new guard is **inert in the shipped configuration** — it cannot fire. The fix report's row 28 restates the finding as "empty string allows unconfigured startup", which is a different finding. Re-filed unchanged as new **WR-05**. |
+| **prior WR-15** — no non-empty floor on reformulator output | `ccef730` | **CLOSED** | `reformulate.rs:47-52`: `if variants.is_empty() { return Err(NodeError::new(NodeErrorKind::InputValidation, …)) }`, placed before the `> 8` ceiling check at 53-61. Regression test `zero_variants_are_rejected_before_retrieval` read in full at `engine/src/tests/workflow_phase5.rs:1740-1786`: it drives a `FakeQueryReformulator::new(vec![])` through the real runner, asserts `fake_embedder.calls() == 0` (proving the failure precedes retrieval) and asserts `WorkflowCompleted{ success: false, error_kind: InputValidation }`. This is a genuine behavioural test, not a tautology. |
 
-**Issue:** On the preparation-failure branch (`runner.rs:349`) and the timeout branch
-(`runner.rs:367`), `cancel.cancel()` is called *before* the corresponding `NodeFailed` event is
-emitted. `send_event` → `flush_pending_checkpoints` (113-146) and `send_envelope` (100-110) use a
-`biased` `tokio::select!` whose first arm is `cancel.cancelled()`. Once the token is already
-cancelled, that arm wins deterministically whenever the slow path is taken.
+**Tally:** CLOSED 9 · PARTIALLY CLOSED 4 · NOT CLOSED 1 · REGRESSED 2. (prior WR-01 counts as
+CLOSED; the exit-code regression it introduced is filed separately as new WR-04 rather than
+recharacterising the fix.)
 
-**Precondition (stated so this is not read as speculation):** reachable when
-`self.tx.capacity() == 0` — all 100 buffered events outstanding (`main.rs:1860`,
-`mpsc::channel(100)`) — which is exactly what a slow SSE consumer produces via gRPC flow control
-back onto the engine. Above zero capacity the fast path at `runner.rs:90-98` bypasses the
-cancellation arm, which is why this is bounded rather than universal. In the zero-capacity state:
+---
 
-1. `NodeFailed` is never delivered — the client never learns which node failed.
-2. `send_event_or_cancel` returns `NodeError::cancelled()`, and the `?` at line 354 / 396
-   **replaces the real error**, so a `Timeout` is reported upward as `Cancelled`. The
-   `return Err(err)` at line 355 is unreachable in this case.
-3. `emit_terminal_once` (485) then runs with the same cancelled token, takes the same branch, and
-   drops `WorkflowCompleted` too — the stream ends with no terminal event, and `terminal_emitted`
-   is already latched (492-498) so nothing retries. The gateway then reports
-   `STREAM_EOF_WITHOUT_TERMINAL` (`gateway/main.go:737-739`).
+## §3 Critical Issues
 
-The detail that makes this unambiguous: **`cancel.cancel()` on the timeout branch is not needed to
-stop the node.** `tokio::time::timeout` has already dropped the node future by the time line 367
-runs. The call's only effect is to poison the sink's own delivery path.
+None at HEAD `bb58a60`. Prior CR-01 is closed — see the first row of §2.
 
-**Fix:** Emit the failure event first, then cancel; never let a delivery failure replace the node
-error.
+---
+
+## §4 Warnings
+
+### WR-01: `send_terminal_event` acquires the client channel with no cancellation arm and no timeout — the workflow task can park indefinitely (REGRESSION, introduced by `5354d1e`)
+
+**File:** `engine/src/workflow/runner.rs:161-170` (also `runner.rs:166`)
+
+**Issue:** `5354d1e` removed the `capacity() > 0` TOCTOU (prior WR-12) but introduced a new
+unbounded await in the same commit:
 
 ```rust
-// preparation branch (348-356)
-if let Err(err) = preparation {
-    let _ = sink
-        .send_event_or_cancel(
-            events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
-            cancel,
-        )
-        .await;                 // do NOT `?` — that would mask `err`
-    cancel.cancel();
-    return Err(err);
-}
-
-// timeout branch (361-371): drop the cancel() entirely — timeout() already dropped the future
-res = timeout(node_timeout, node.run(ctx, cancel)) => match res {
-    Ok(inner) => inner,
-    Err(_) => Err(NodeError::timeout(name)),
-},
-
-// failure-emit branch (391-398)
-Err(err) => {
-    let _ = sink
-        .send_event_or_cancel(
-            events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
-            cancel,
-        )
-        .await;                 // preserve `err`; never replace it with Cancelled
-}
-```
-
----
-
-## Warnings
-
-### WR-01: `dispatcher.Close()` is unreachable — buffered checkpoints are lost and an in-flight write is abandoned on every exit
-
-**File:** `gateway/main.go:1076`, `gateway/main.go:1088-1089`, `gateway/checkpoint_sink.go:276-288`
-
-**Issue:** `defer dispatcher.Close()` is registered at `main.go:1076`, but the only exit path from
-`main` is `logger.Fatal("gateway stopped", ...)` at `main.go:1089`, and `zap.Logger.Fatal` calls
-`os.Exit(1)` — **deferred functions do not run**. There is no signal handler and nothing calls
-`server.Shutdown()`, so `ListenAndServe` never returns `http.ErrServerClosed` either. `Close()` is
-dead in every realistic exit path, including SIGTERM in a container.
-
-At exit, up to 1 (`primary`, cap 1) + 4 (`overflow`) + 16 (`pending`) buffered envelopes are
-dropped unwritten, and any `SaveCheckpoint` in flight is abandoned. `defer pool.Close()`
-(`main.go:1062`), `defer conn.Close()` (`main.go:1067`), `defer recCancel()` (`main.go:1069`) and
-`defer logger.Sync()` (`main.go:1053`) are dead for the same reason.
-
-**Fix:** Replace the fatal-exit shutdown with a graceful one so the existing `Close()` drain runs.
-
-```go
-go func() {
-    if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-        logger.Error("gateway stopped", zap.Error(err))
+pub async fn send_terminal_event(&self, event: Event) {
+    if self.tx.is_closed() {                              // 164 — snapshot, not a guarantee
+        return;
     }
-}()
-sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-defer stop()
-<-sigCtx.Done()
-shutCtx, cancelShut := context.WithTimeout(context.Background(), 15*time.Second)
-defer cancelShut()
-_ = server.Shutdown(shutCtx)
-dispatcher.Close() // now actually reached; drains primary/overflow/pending
+    let uncancelled = CancellationToken::new();           // 165 — deliberately un-cancellable
+    let _ = self.flush_pending_checkpoints(&uncancelled).await;  // 166 — loops reserve() per envelope
+    if let Ok(permit) = self.tx.reserve().await {         // 167 — no select!, no timeout
+        permit.send(Ok(self.wrap_next_event(event)));
+    }
+}
 ```
 
-### WR-02: A terminal-checkpoint failure can suppress the client-visible `WorkflowCompleted`
+The un-cancellable token is *intentional* — it is the mechanism that closes prior CR-01's tail, so
+a cancellation arm cannot simply be reinstated. But nothing bounds the wait.
 
-**File:** `engine/src/workflow/runner.rs:510-515`
+**Failure scenario (inputs/state → outcome):** a client opens `POST /rag/query`, reads a handful of
+SSE frames, then stops reading without closing the connection (HTTP/2 flow-control window
+exhausted, or a paused browser tab). The gateway's `stream.Recv()` loop blocks, so `rx`
+(`main.rs:1885`, `mpsc::channel(100)`) is alive but undrained and fills. The workflow finishes and
+calls `emit_terminal_once` → `send_terminal_event`. `tx.is_closed()` is false (the receiver still
+exists), so line 167 parks. There is no cancellation escape and no timer. The spawned task
+(`main.rs:1911-1915`) and everything it owns — the full `WorkflowContext`, all `Arc<dyn …>` port
+clones, the evidence blocks and assembled prompt — are retained until the TCP connection actually
+dies and `rx` is dropped.
 
-**Issue:** `emit_terminal_once` sends `FinalAnswer`, then
-`send_checkpoint_or_error("terminal_success", ...)`, then `WorkflowCompleted`. If the checkpoint
-returns `Err`, the function `return`s at line 514 and never emits `WorkflowCompleted`, with
-`terminal_emitted` already latched so nothing retries. The client sees a `final_answer` frame
-followed by an abrupt EOF; the gateway reports `STREAM_EOF_WITHOUT_TERMINAL`
-(`gateway/main.go:737-739`).
+**Bounded, and stated as such:** if the receiver is *dropped*, `tx` becomes closed and `reserve()`
+returns `Err`, so the task exits. The exposure is the "alive but not draining" window, not a
+permanent leak, which is why this is a Warning rather than a Critical. Sustained per-connection
+accumulation cannot be demonstrated by reading alone.
 
-Today the dangerous variant is unreachable: reaching line 510 requires
-`send_event_or_cancel(final_answer)` to have returned `Sent` (guard at 503-509), which means
-`flush_pending_checkpoints` drained `pending` to empty, so the immediately following
-`send_checkpoint` sees `pending.is_empty()` (line 193), takes `try_send`, and can return at most
-`Pending` — never `OwnershipFailure`. The remaining `Err` case is `Closed`, where
-`WorkflowCompleted` was undeliverable anyway.
+`flush_pending_checkpoints(&uncancelled)` at line 166 has the same shape and can loop up to
+`MAX_PENDING_CHECKPOINTS` (32, `runner.rs:19`) times before the terminal event is even attempted.
 
-This is control flow in which an **observability** failure is structurally able to suppress a
-**protocol** event, held safe only by a drain invariant that nothing asserts and that any
-reordering of `emit_terminal_once` would break.
-
-**Fix:** Make the terminal event unconditional; degrade the checkpoint to a log.
+**Fix:** bound the wait with a timer rather than a token, since cancellation-immunity is the point.
 
 ```rust
+pub async fn send_terminal_event(&self, event: Event) {
+    const TERMINAL_DELIVERY_BUDGET: Duration = Duration::from_secs(5);
+    if self.tx.is_closed() { return; }
+    let uncancelled = CancellationToken::new();
+    let _ = timeout(TERMINAL_DELIVERY_BUDGET, self.flush_pending_checkpoints(&uncancelled)).await;
+    if let Ok(Ok(permit)) = timeout(TERMINAL_DELIVERY_BUDGET, self.tx.reserve()).await {
+        permit.send(Ok(self.wrap_next_event(event)));
+    }
+}
+```
+
+### WR-02: `emit_terminal_once` still returns before `WorkflowCompleted` when `FinalAnswer` delivery fails, with the terminal latch already set
+
+**File:** `engine/src/workflow/runner.rs:499-505`, `engine/src/workflow/runner.rs:488-494`
+
+**Issue:** `7ea20f2` (prior WR-02) removed the *checkpoint* early-return at 506-508, and `5354d1e`
+made the `WorkflowCompleted` send cancellation-immune. The **`FinalAnswer` early-return survives**:
+
+```rust
+if sink
+    .send_event_or_cancel(events::final_answer(response.clone()), cancel)
+    .await
+    .is_err()
+{
+    return;                       // 504 — WorkflowCompleted never attempted
+}
+```
+
+`terminal_emitted` was already latched by the `compare_exchange` at 488-494, so nothing retries.
+The result is the asymmetry the two fixes were meant to eliminate: `WorkflowCompleted` is now
+immune to cancellation *if it is reached*, but a cancelled `FinalAnswer` prevents it from being
+reached at all.
+
+**Failure scenario:** the workflow succeeds; the token is cancelled while `rx` is still alive. Then
+`send_event_or_cancel` → `send_event` → `flush_pending_checkpoints`'s `biased` first arm
+(`runner.rs:118`) wins, returns `Cancelled`, `send_event_or_cancel` maps it to
+`Err(NodeError::cancelled())` (`runner.rs:156`), and line 504 returns. The stream ends with neither
+`final_answer` nor `workflow_completed`; the gateway emits `STREAM_EOF_WITHOUT_TERMINAL`
+(`gateway/main.go:743`).
+
+**Reachability, stated precisely rather than asserted:** the window requires "cancelled but not yet
+closed". `CancelOnDropStream::drop` (`main.rs:1878-1882`) calls `self.cancel.cancel()` in the `Drop`
+body, *before* the struct's `inner` field (which owns `rx`) is dropped — so such a window does
+exist by construction. However the client is already disconnecting inside it, so the user-visible
+impact is bounded and could not be reproduced by reading alone. The finding is the structural one:
+an observability/delivery failure on one event can still suppress the protocol terminal event.
+
+**Fix:** route the terminal event through `send_terminal_event` unconditionally, exactly as the
+error branch at 528 already does.
+
+```rust
+let _ = sink.send_event_or_cancel(events::final_answer(response.clone()), cancel).await;
 if let Err(err) = sink.send_checkpoint_or_error("terminal_success", ctx, cancel) {
     tracing::warn!(error = %err, "terminal checkpoint dropped; continuing to terminal event");
-    // fall through — WorkflowCompleted must always be attempted
 }
-let _ = sink
-    .send_event_or_cancel(
-        events::workflow_completed(true, duration_ms, NodeErrorKind::Unspecified, "",
-                                   Some(response), ctx.notices.clone()),
-        cancel,
-    )
-    .await;
+sink.send_terminal_event(events::workflow_completed(
+    true, duration_ms, NodeErrorKind::Unspecified, "", Some(response), ctx.notices.clone(),
+)).await;
 ```
 
-### WR-03: `WorkflowSettings::validate()` enforces only non-zero — the cross-field invariants the retry design depends on are unchecked, and a committed config already violates them
+### WR-03: Sequence ordinals are still consumed on failed deliveries, producing gaps indistinguishable from lost events (prior WR-09 was never fixed)
 
-**File:** `engine/src/main.rs:258-280` (`WorkflowSettings::validate`, seven `== 0` checks), `config/config.verify.toml:12-19`, `engine/src/workflow/nodes/generate.rs:105`, `engine/src/workflow/nodes/generate.rs:127`
+**File:** `engine/src/workflow/runner.rs:71-79`, `engine/src/workflow/runner.rs:141`,
+`engine/src/workflow/runner.rs:179`
 
-**Issue:** `GenerateAnswerNode::run` makes up to **two** provider attempts (`generate.rs:105` and
-`generate.rs:127`) inside a **single** node timer. The design therefore requires
-`generation_node_timeout_ms >= 2 * generation_timeout_secs * 1000`. Production
-(`config/config.toml:17` = 65000 vs `config/config.toml:44` = 30s → 60000ms) satisfies this by 5s
-— by coincidence, not by enforcement. `config/config.verify.toml` inverts it outright:
-`generation_node_timeout_ms = 7000` against `generation_timeout_secs = 30`, so the node timer fires
-before even the *first* attempt can complete and the retry budget is unreachable.
-
-The same shape applies to graph: `ExtractGraphContextNode` runs `query_embedding_timeout_ms`
-(10000, `graph_context.rs:74`) then `graph_operation_timeout_ms` (4000, `graph_context.rs:97`)
-sequentially = 14000 inside `graph_node_timeout_ms` = 15000 — a 1s unenforced margin.
-`validate()` accepts every inversion silently, in production.
-
-**Fix:** Validate the cross-field relations where the provider timeout is in scope
-(`EffectiveRagSettings::try_from_settings`, which already reads `settings.openrouter`).
+**Issue:** `wrap_next_event` allocates the ordinal eagerly, before delivery is even attempted:
 
 ```rust
-pub fn validate_against_provider(&self, generation_timeout_secs: u64) -> Result<(), String> {
-    const GENERATION_ATTEMPTS: u64 = 2; // GenerateAnswerNode performs up to 2 attempts
-    let required = GENERATION_ATTEMPTS
-        .saturating_mul(generation_timeout_secs.saturating_mul(1000));
-    if self.generation_node_timeout_ms < required {
-        return Err(format!(
-            "generation_node_timeout_ms ({}) must be >= {} ({} attempts x {}s provider timeout)",
-            self.generation_node_timeout_ms, required, GENERATION_ATTEMPTS, generation_timeout_secs
-        ));
-    }
-    let graph_required = self.query_embedding_timeout_ms + self.graph_operation_timeout_ms;
-    if self.graph_node_timeout_ms < graph_required {
-        return Err(format!(
-            "graph_node_timeout_ms ({}) must be >= query_embedding_timeout_ms + graph_operation_timeout_ms ({})",
-            self.graph_node_timeout_ms, graph_required
-        ));
-    }
-    Ok(())
+fn wrap_next_event(&self, event: Event) -> WorkflowEvent {
+    let seq = self.sequence.next();          // 72 — allocated unconditionally
+    events::wrap_event(event, seq, self.trace_id.clone(), self.session_id.clone())
 }
+…
+self.send_envelope(self.wrap_next_event(event), cancel).await   // 141 — may return Cancelled/Closed
 ```
 
-### WR-04: Every non-2xx chat response is classified `ProviderError`, so a 401/400 is retried for a second full provider timeout
+`send_checkpoint:179` does the same before `try_send`, and `CheckpointDelivery::OwnershipFailure`
+(`runner.rs:226-231`) even reports the abandoned ordinal in its error text — proving the gap is
+known at the source and never communicated downstream.
 
-**File:** `engine/src/generation/openrouter.rs:597-603`, `engine/src/workflow/nodes/generate.rs:116-128`
+**Failure scenario:** the client receives ordinals 1..7. Node 4 fails; `NodeFailed` is built at
+`runner.rs:386` (ordinal 8 allocated), `flush_pending_checkpoints` sees the token already cancelled
+by a prior `send_event_or_cancel` and returns `Cancelled` — ordinal 8 is burned. The terminal event
+then goes out as ordinal 9 (allocated lazily at `runner.rs:168`). A consumer doing gap detection on
+`WorkflowEvent.sequence_ordinal` (a strictly monotonic counter, `events.rs:255-263`) sees 7 → 9 and
+cannot tell "dropped in transit" from "reserved then abandoned". The gateway persists the same
+value as `workflow_checkpoints.sequence_ordinal` (`gateway/db/schema.sql:49`) for ordering.
 
-**Issue:** The chat path maps **all** unsuccessful HTTP statuses to
-`GenerationErrorKind::ProviderError`. `GenerateAnswerNode` treats `ProviderError` as retryable
-(`generate.rs:116-117`) and re-issues a byte-identical request. A permanently failing condition —
-bad or expired API key (401), malformed payload (400), model not permitted (403), quota exhausted
-(402) — therefore burns a second full `generation_timeout_secs` window and a second billable call
-before failing, doubling user-visible latency on the most common misconfiguration.
+**Sharpening detail:** `send_terminal_event:168` allocates the ordinal *inside* `if let Ok(permit)`
+— i.e. lazily, only once capacity is held. The correct idiom is present in this very file and was
+applied to exactly one of the three call sites.
 
-The preflight path in the same file *does* discriminate correctly (`status.is_server_error()` →
-`ProviderError`, else `SupportedParameters`, at `openrouter.rs:373-383`); the chat path does not.
-The two should not disagree.
-
-**Fix:** Mirror the preflight classification on the chat path.
-
-```rust
-let status = response.status();
-if !status.is_success() {
-    let kind = if status.is_server_error()
-        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
-    {
-        GenerationErrorKind::ProviderError      // transient -> retryable
-    } else {
-        GenerationErrorKind::InvalidRequest     // 4xx -> do not retry
-    };
-    return Err(GenerationError::new(
-        kind,
-        format!("OpenRouter chat completion returned HTTP {status}"),
-    ));
-}
-```
-
-### WR-05: `run_inline_prompt_generation_remainder` is exported production API that can never succeed against the real generator
-
-**File:** `engine/src/workflow/mod.rs:164-259`, `engine/src/workflow/runner.rs:438-483`
-
-**Issue:** This `pub` function is dead in production (`query_rag` uses `run_workflow`; only tests
-call `run_tracer`), but it is not merely a lower-fidelity duplicate — it is **broken by
-construction**:
-
-- Lines 200-203 build `GenerationRequest::new(ctx.original_query.clone(), vec![])` — **empty
-  evidence**. `OpenRouterGenerator::execute_one_call` passes that into
-  `pack_evidence_and_graph_prompt`, which returns `PromptAssemblyError::EmptyEvidence`
-  (`prompt.rs:330-332`) → `GenerationErrorKind::InvalidRequest`. Against a real generator this
-  path *always* fails.
-- The `ctx.assembled_prompt` it builds at 181-188 is never transmitted anywhere.
-- Lines 208-211 retry unconditionally on any error, ignoring the error class (contradicting the
-  discriminating policy in `GenerateAnswerNode`) and without setting `gen_req.cancel`, so the
-  retry is not cancellation-aware and the provider call cannot observe cancellation.
-- Lines 190 and 218 emit hardcoded fake `duration_ms` values of `1` and `10`.
-
-Shipping this as public API invites a caller to wire it up and get an always-failing pipeline.
-`WorkflowDependencies` (`mod.rs:132-162`) exists solely to feed it and likewise has no production
-consumer.
-
-**Fix:** Gate `run_inline_prompt_generation_remainder`, `WorkflowRunner::run_tracer`, and
-`WorkflowDependencies` behind `#[cfg(test)]` (or move them into the test module), or delete them.
-If they must stay, pass `ctx.evidence_blocks.clone()` / `ctx.graph_facts.clone()` into the
-request, set `gen_req.cancel`, and remove the unconditional retry.
-
-### WR-06: Checkpoint persistence failures are swallowed, and `context_snapshot` is written to a `jsonb NOT NULL` column without validation
-
-**File:** `gateway/checkpoint_sink.go:216-218`, `gateway/checkpoint_sink.go:111`, `gateway/db/schema.sql:51`
-
-**Issue:** `loop()` discards the result: `_ = d.sink.SaveCheckpoint(context.Background(), env)`.
-There is no retry and no dead-letter path — a transient Postgres error permanently loses that
-checkpoint. `PostgresCheckpointSink` logs internally (116-118), but the `CheckpointSink` interface
-makes no such guarantee and `InMemoryCheckpointSink` does not. `go-guidelines.md`'s modern-Go
-error handling expects unchecked error returns to be handled explicitly rather than assigned to
-`_`.
-
-Separately, `ContextSnapshot` is passed through as raw `[]byte` (line 111) into a `jsonb NOT NULL`
-column with no validation. `NewCheckpointEnvelopeFromEvent` (31-51) accepts whatever the engine
-sent; an empty or non-JSON string produces `invalid input syntax for type json`, which is then
-swallowed by the same discard. The Rust side happens to always emit valid JSON
-(`events.rs:243-247`), but nothing on the Go side depends on or checks that.
-
-**Fix:**
-
-```go
-// SaveCheckpoint — fail fast and legibly instead of at the wire
-if !json.Valid([]byte(env.ContextSnapshot)) {
-    return fmt.Errorf("checkpoint %s/%d has invalid JSON context_snapshot",
-        env.TraceID, env.SequenceOrdinal)
-}
-
-// loop()
-if d.sink != nil {
-    if err := d.sink.SaveCheckpoint(context.Background(), env); err != nil {
-        d.recordDropped(env, err) // counter / dead-letter; at minimum an explicit log at this level
-    }
-}
-```
-
-### WR-07: Checkpoints submitted or retained after `Close()` are silently discarded
-
-**File:** `gateway/checkpoint_sink.go:180-182`, `gateway/checkpoint_sink.go:196-207`, `gateway/main.go:800-805`
-
-**Issue:** After `Close()` sets `d.closed`, `Submit` returns `DispatchPending` with the envelope
-(180-182). The caller at `main.go:801-805` then calls `RetainPending`, which appends to
-`d.pending` — but `loop()` has already exited, so nothing will ever drain it. The envelope is lost
-with no error and no log. `RetainPending` returns an error only when the queue is *full*
-(line 202), never when the dispatcher is closed, so the caller's error branch (`main.go:802-804`)
-does not fire.
-
-**Fix:**
-
-```go
-func (d *CheckpointDispatcher) RetainPending(env *CheckpointEnvelope) error {
-    if env == nil { return nil }
-    d.mu.Lock()
-    defer d.mu.Unlock()
-    if d.closed {
-        return errors.New("checkpoint dispatcher is closed")
-    }
-    if len(d.pending) >= 16 {
-        return errors.New("checkpoint pending queue is full")
-    }
-    d.pending = append(d.pending, env)
-    return nil
-}
-```
-
-### WR-08: Hand-written `PartialEq for GenerationRequest` misuses `f64::EPSILON` and will silently ignore future fields
-
-**File:** `engine/src/generation/mod.rs:392-403`
-
-**Issue:** Two defects in one impl, introduced when the new `cancel` field forced removal of
-`#[derive(PartialEq)]` (`mod.rs:376`, `mod.rs:389-390`):
-
-1. Line 398 compares `graph_weight` with `(a - b).abs() < f64::EPSILON`. `f64::EPSILON` (~2.22e-16)
-   is the ULP at 1.0. `graph_weight`'s validated range is `0.0..=16.0`; near the top of that range
-   this is *stricter* than a meaningful tolerance (an exact-bit test wearing a tolerance's
-   clothes), and for values near zero it reports equality for genuinely different numbers.
-   `graph_weight` is a config value copied verbatim (`generate.rs:97`), never computed — a
-   tolerance is not wanted at all.
-2. Because the impl is manual, any field added to `GenerationRequest` is silently excluded from
-   equality — and this type's equality is exactly what the phase's "byte-identical retry snapshot"
-   assertions rest on.
-
-**Fix:** Compare exactly, and destructure so new fields break the build.
-
-```rust
-impl PartialEq for GenerationRequest {
-    fn eq(&self, other: &Self) -> bool {
-        let Self { system_policy, question, evidence, graph_facts, graph_weight,
-                   session_id, correlation_id, cancel: _ } = self; // new fields fail to compile
-        *system_policy == other.system_policy
-            && *question == other.question
-            && *evidence == other.evidence
-            && *graph_facts == other.graph_facts
-            && graph_weight.to_bits() == other.graph_weight.to_bits()
-            && *session_id == other.session_id
-            && *correlation_id == other.correlation_id
-    }
-}
-```
-
-### WR-09: Sequence ordinals are consumed on failed deliveries, producing gaps that look like lost events
-
-**File:** `engine/src/workflow/runner.rs:71-79`, `engine/src/workflow/runner.rs:185-218`
-
-**Issue:** `wrap_next_event` (line 72) and `send_checkpoint` (line 185) both call
-`self.sequence.next()` *before* delivery is attempted. When delivery then returns `Closed`,
-`Cancelled`, or `OwnershipFailure`, the ordinal is burned and never appears on the wire. Since
-`WorkflowEvent.sequence_ordinal` is a strictly monotonic counter (`events.rs:250-264`) that a
-consumer would naturally use for gap detection — and the gateway persists it as
-`workflow_checkpoints.sequence_ordinal` for ordering — consumers cannot distinguish "event dropped
-in transit" from "ordinal reserved then abandoned". `CheckpointDelivery::OwnershipFailure` even
-reports the abandoned ordinal in its error text (232-237), confirming the gap is known at the
-source but never communicated downstream.
-
-**Fix:** Allocate the ordinal only on successful hand-off, keeping the cancellation-aware reserve.
+**Fix:** allocate on successful hand-off everywhere.
 
 ```rust
 async fn send_envelope_lazy(
@@ -529,224 +368,112 @@ async fn send_envelope_lazy(
     cancel: &CancellationToken,
 ) -> ClientEventDelivery {
     if self.tx.is_closed() { return ClientEventDelivery::Closed; }
-    let permit = tokio::select! {
+    tokio::select! {
         biased;
-        _ = cancel.cancelled() => return ClientEventDelivery::Cancelled,
+        _ = cancel.cancelled() => ClientEventDelivery::Cancelled,
         res = self.tx.reserve() => match res {
-            Ok(p) => p,
-            Err(_) => return ClientEventDelivery::Closed,
+            Ok(permit) => { permit.send(Ok(make(self.sequence.next()))); ClientEventDelivery::Sent }
+            Err(_) => ClientEventDelivery::Closed,
         },
-    };
-    permit.send(Ok(make(self.sequence.next()))); // ordinal issued only once capacity is held
-    ClientEventDelivery::Sent
+    }
 }
 ```
 
-### WR-10: `WorkflowEventSink::wrap_event` panics via `unreachable!()` on a shared, cloneable sink
+(`send_checkpoint` needs the ordinal inside the payload, so it must either reserve first, or
+explicitly document ordinal reservation as part of the wire contract.)
 
-**File:** `engine/src/workflow/runner.rs:245-256`
+### WR-04: The gateway now exits with status 0 when it fails to bind (REGRESSION, introduced by `e8982d0`)
 
-**Issue:** `wrap_event` matches the event and calls `unreachable!("checkpoint helper must pass a
-checkpoint event")` for any non-checkpoint variant. The invariant is enforced only by the single
-current caller (`send_checkpoint`, line 186); nothing in the type system prevents a future caller
-from passing another variant. `WorkflowEventSink` is `Clone` and is moved into the spawned workflow
-task (`main.rs:1887-1892`), so a panic here aborts that task, drops `tx`, and terminates the client
-stream with no terminal event and no diagnostic beyond a panic message. Per `rust-guidelines.md`
-M-PANIC-IS-STOP, a panic means "stop the program" — a private formatting helper should not be able
-to kill a request.
+**File:** `gateway/main.go:1095-1100`
 
-**Fix:** Make the invariant structural rather than a runtime assertion.
+**Issue:** `e8982d0` replaced `logger.Fatal("gateway stopped", …)` — which calls `os.Exit(1)` — with:
 
-```rust
-fn wrap_checkpoint_event(&self, checkpoint: CheckpointEvent) -> WorkflowEvent {
-    let sequence_ordinal = checkpoint.sequence_ordinal;
-    events::wrap_event(
-        Event::Checkpoint(checkpoint),
-        sequence_ordinal,
-        self.trace_id.clone(),
-        self.session_id.clone(),
-    )
+```go
+go func() {
+    if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+        logger.Error("gateway stopped", zap.Error(err))   // 1097 — no longer fatal
+        stop()                                            // 1098 — unblocks <-sigCtx.Done()
+    }
+}()
+```
+
+`stop()` is the `context.CancelFunc` from `signal.NotifyContext` (`main.go:1092`), so cancelling it
+unblocks `<-sigCtx.Done()` at `main.go:1103`; `main` then falls through the graceful-shutdown block
+and **returns normally**, giving process exit status **0**.
+
+**Failure scenario:** the gateway is deployed with `gateway.port = "8080"` on a host where 8080 is
+already bound. `ListenAndServe` returns `listen tcp :8080: bind: address already in use`. One
+`ERROR` line is written, then the process exits 0. systemd with `Restart=on-failure` will not
+restart it; a Kubernetes `Deployment` records a `Completed` pod rather than `CrashLoopBackOff`; a CI
+smoke test that checks `$?` passes. Before `e8982d0` this exited 1. The failure is now silent to
+every supervisor.
+
+**Fix:** distinguish the two exits.
+
+```go
+serveErr := make(chan error, 1)
+go func() {
+    if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+        serveErr <- err
+    }
+    close(serveErr)
+}()
+
+var fatal error
+select {
+case err, ok := <-serveErr:
+    if ok && err != nil {
+        logger.Error("gateway stopped", zap.Error(err))
+        fatal = err
+    }
+case <-sigCtx.Done():
+    logger.Info("gateway shutting down")
+}
+
+shutCtx, cancelShut := context.WithTimeout(context.Background(), 15*time.Second)
+defer cancelShut()
+_ = server.Shutdown(shutCtx)
+
+if fatal != nil {
+    stop(); dispatcher.Close(); recCancel(); conn.Close(); pool.Close(); _ = logger.Sync()
+    os.Exit(1)   // deferred cleanup already run explicitly
 }
 ```
 
-### WR-11 (NEW): Restored `d1_status` reflects an unvalidated, unbounded, client-supplied `session_id` into a gRPC trailer and thence an HTTP response header
+### WR-05: `config/config.toml` and `config/config.example.toml` still commit a default Postgres credential with TLS disabled; the new non-empty guard is inert (prior WR-14 NOT closed)
 
-**File:** `engine/src/main.rs:1159-1180`, `engine/src/main.rs:1775-1792`, `gateway/main.go:771-783`
+**File:** `config/config.toml:3`, `config/config.example.toml:7`, `gateway/main.go:87-89`,
+`gateway/main.go:1063`
 
-**Issue:** `edaf907` restored trailer emission (correctly resolving prior WR-05), but the two
-`invalid_session_id` call sites pass **`&raw_session_id`** — the client's rejected input, verbatim
-and unbounded — as the `x-lancet-session-id` trailer value:
+**Issue:** `a007b89` added
 
-```rust
-let raw_session_id = req.session_id.trim().to_string();   // main.rs:1775 — no length bound
-let parsed = Uuid::parse_str(&raw_session_id).map_err(|_| {
-    d1_status(tonic::Code::InvalidArgument, "session_id must be a valid UUIDv4 string",
-              &raw_session_id, &correlation_id, "invalid_session_id")   // main.rs:1777-1783
-})?;
-```
-
-There is **no length bound anywhere on this path**: the `query_max_bytes` ceiling applies only to
-`query` (`main.rs:1808-1811`), and `session_id` is only ever `trim()`-ed. Three consequences, in
-descending order of how directly the code proves them:
-
-1. **Unbounded reflection into structured logs.** `d1_status` itself logs the raw value at `warn`
-   on every rejected request (`main.rs:1168`):
-   ```rust
-   tracing::warn!(%session_id, %correlation_id, %error_kind, "QueryRAG pre-stream failure: {msg}");
-   ```
-   Arbitrary attacker-controlled content, one `warn` line per rejected request, with no rate limit
-   and no length bound — log forging and log-volume amplification from an unauthenticated path.
-2. **Unbounded reflection into an HTTP response header.** `gateway/main.go:773-775` promotes the
-   trailer verbatim into `X-Lancet-Session-ID`, echoing the rejected input back to the caller.
-3. **Inconsistent provenance.** On the success path the header comes from
-   `firstFrame.GetSessionId()` (`main.go:714-716`), a server-validated UUID. On the error path it
-   is raw attacker input. A consumer cannot tell which it got.
-
-A multi-kilobyte `session_id` **may also** overflow the peer's HTTP/2
-`SETTINGS_MAX_HEADER_LIST_SIZE` and convert a clean `InvalidArgument` into a connection-level
-protocol failure — recorded as a plausible secondary effect, not verified against h2's behaviour
-in this review.
-
-*Verified not a finding:* header/CRLF injection is **not** possible here. `session_id.parse()`
-(`main.rs:1170`) produces a `MetadataValue<Ascii>` and rejects any byte outside the printable-ASCII
-header-value set, so a malformed value is silently skipped rather than injected. The residual risk
-is size and provenance, not injection.
-
-**Fix:** Bound and sanitize before reflecting *or* logging; echo a redacted marker rather than the
-raw input.
-
-```rust
-const MAX_ECHOED_SESSION_ID: usize = 64; // UUIDv4 is 36 chars
-let echoed = if raw_session_id.len() > MAX_ECHOED_SESSION_ID
-    || !raw_session_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-{
-    "<rejected>"
-} else {
-    raw_session_id.as_str()
-};
-d1_status(tonic::Code::InvalidArgument, "session_id must be a valid UUIDv4 string",
-          echoed, &correlation_id, "invalid_session_id")
-```
-
-Apply the same bound inside `d1_status` before the `tracing::warn!` so no caller can reintroduce
-the log exposure.
-
-### WR-12 (NEW): `send_envelope`'s `capacity() > 0` fast path is a check-then-act race that forfeits cancellation safety
-
-**File:** `engine/src/workflow/runner.rs:90-98`, `engine/src/workflow/runner.rs:126-132`
-
-**Issue:** Both `send_envelope` and `flush_pending_checkpoints` branch on `self.tx.capacity() > 0`
-and, if true, call `self.tx.reserve().await` **outside** any `tokio::select!` with a
-`cancel.cancelled()` arm:
-
-```rust
-if self.tx.capacity() > 0 {
-    return match self.tx.reserve().await {          // no cancellation arm
-        Ok(permit) => { permit.send(Ok(event)); ClientEventDelivery::Sent }
-        Err(_) => ClientEventDelivery::Closed,
-    };
+```go
+if strings.TrimSpace(cfg.Gateway.DatabaseURL) == "" {
+    return Config{}, errors.New("gateway.database_url must not be empty (set LANCET_GATEWAY__DATABASE_URL)")
 }
 ```
 
-`capacity()` is a snapshot. `WorkflowEventSink` is `Clone` (line 38-46) and is cloned into the
-spawned task; nothing in the type prevents a second holder. If another sender consumes the last
-permit between the `capacity()` read and the `reserve()`, this await blocks until a consumer drains
-— with **no** cancellation escape. On a client that has stopped reading but not yet dropped the
-stream, that parks the workflow task past its own cancellation.
-
-This is also the mechanism that *bounds* CR-01: above zero capacity the cancellation arm is
-skipped, which is why CR-01 only bites at `capacity() == 0`. The two behaviours are coupled and
-should be fixed together.
-
-**Fix:** Delete the fast path and always use the `biased` select — it costs nothing when capacity
-is available, and removes the TOCTOU.
-
-```rust
-tokio::select! {
-    biased;
-    _ = cancel.cancelled() => ClientEventDelivery::Cancelled,
-    result = self.tx.reserve() => match result {
-        Ok(permit) => { permit.send(Ok(event)); ClientEventDelivery::Sent }
-        Err(_) => ClientEventDelivery::Closed,
-    },
-}
-```
-
-(If the fast path exists deliberately so that already-cancelled workflows can still flush terminal
-events, encode that intent explicitly with a `force: bool` parameter rather than inferring it from
-a racy capacity reading — and then fix CR-01 by passing `force = true` on the failure paths.)
-
-### WR-13 (NEW): Plan 05-25's remediation guidance is appended *after* two full schema dumps, where an operator will not see it
-
-**File:** `engine/src/db/mod.rs:166-172`
-
-**Issue:** The whole point of `967a897` was to make schema drift actionable. The guidance is placed
-last:
-
-```rust
-return Err(format!(
-    "LanceDB schema drift detected for {name}: expected {:?}, found {:?}. Remediation: schema \
-     reconciliation is fail-closed by design; rename or remove the stale LanceDB store directory \
-     and regenerate tables (e.g. via seed_rag_fixture or re-ingestion).",
-    expected.fields(),
-    actual.fields()
-));
-```
-
-`expected.fields()` and `actual.fields()` are `Vec<FieldRef>` rendered with `{:?}` — for
-`nodes_schema()` that is 19 `Field` structs, each with name, `DataType` (including the 2048-element
-`FixedSizeList` descriptor), nullability and metadata map. The resulting string is multiple
-kilobytes, and the one actionable sentence sits at the very end of it. This error propagates up
-through `DatabaseManager::initialize` → engine startup, where it is logged as a single line. In
-practice the operator sees a wall of `Field { name: ..., data_type: ... }` and the remediation
-scrolls off.
-
-`engine/src/db/tests.rs:107` asserts only `error.contains("Remediation: ...")`, which passes
-regardless of position — so the test does not protect the property that actually matters.
-
-**Fix:** Lead with the actionable sentence; put the diagnostic dumps last, and prefer a field-name
-diff over a full `{:?}` of both schemas.
-
-```rust
-return Err(format!(
-    "LanceDB schema drift detected for {name}. Remediation: schema reconciliation is fail-closed \
-     by design; rename or remove the stale LanceDB store directory and regenerate tables \
-     (e.g. via seed_rag_fixture or re-ingestion). Expected fields: {:?}; found fields: {:?}",
-    expected.fields().iter().map(|f| f.name()).collect::<Vec<_>>(),
-    actual.fields().iter().map(|f| f.name()).collect::<Vec<_>>(),
-));
-```
-
-### WR-14 (NEW / re-derived from prior IN-14): `config/config.toml` commits a default Postgres credential with TLS disabled — and this file is in scope this pass
-
-**File:** `config/config.toml:3`, `config/config.example.toml:7`, `gateway/main.go:1058`
-
-**Issue:** The prior review recorded this as out-of-diff context. That premise is **false for this
-refresh**: `config/config.toml` is in the declared file list and was changed by `989003b`.
-Re-derived as an in-scope finding:
+but the finding was never about an empty URL. `git log e6e153f..HEAD -- config/config.toml` returns
+no commits; line 3 is unchanged:
 
 ```toml
 database_url = "postgres://postgres:postgres@localhost:5432/lancet?sslmode=disable"
 ```
 
-This is the file `loadConfig()` (`gateway/main.go:983-1013`) reads by default, and the value is
-handed straight to `pgxpool.New` at `main.go:1058` with no validation and no environment-source
-requirement. Two properties make it worth flagging rather than waving through as a dev default:
+`loadConfig()` (`main.go:57-88`) reads this file by default and the value goes straight to
+`pgxpool.New` at `main.go:1063`. **The added guard can never fire in the shipped configuration**,
+because `config.toml` always supplies a non-empty value — it protects only a deployment that has
+already deleted the line.
 
-- `sslmode=disable` is a *sticky* default. Anyone who repoints `database_url` at a non-localhost
-  host by editing this line — the obvious action — carries plaintext transport with them.
-- The credential-shaped literal in a tracked file trains operators to edit-in-place rather than
-  override, and there is no fail-closed guard that rejects a default credential outside dev.
+**Failure scenario:** an operator repoints the service at a managed Postgres by editing line 3 in
+place — the obvious action given a credential-shaped literal sits there. `sslmode=disable` travels
+with the edit, and the DSN now carries plaintext credentials across a network boundary. Nothing
+fails closed: the connection succeeds. Viper's `AutomaticEnv` +
+`SetEnvKeyReplacer(".", "__")` (`main.go:71-73`) already makes `LANCET_GATEWAY__DATABASE_URL` work
+as an override, so the safe mechanism exists and is unused.
 
-Viper's `AutomaticEnv` + `SetEnvKeyReplacer(".", "__")` (`main.go:69-71`) means
-`LANCET_GATEWAY__DATABASE_URL` already works as an override for keys present in the config file —
-so the mechanism to fix this exists and is simply not used.
-
-`config/config.example.toml:1-3` correctly directs the OpenRouter credential to
-`OPENROUTER_API_KEY` and is not part of this finding. **No API keys, tokens, or real secrets are
-committed anywhere in the reviewed set.**
-
-**Fix:** Blank the committed value and require the environment variable; fail closed if unset.
+**Fix:** blank the committed value so the existing guard becomes load-bearing, and reject
+`sslmode=disable` outside development.
 
 ```toml
 # Supplied via LANCET_GATEWAY__DATABASE_URL; never commit a real DSN.
@@ -754,389 +481,711 @@ database_url = ""
 ```
 
 ```go
-if strings.TrimSpace(cfg.Gateway.DatabaseURL) == "" {
-    return Config{}, errors.New("gateway.database_url must be set (LANCET_GATEWAY__DATABASE_URL)")
+if os.Getenv("LANCET_ENV") == "prod" && strings.Contains(cfg.Gateway.DatabaseURL, "sslmode=disable") {
+    return Config{}, errors.New("gateway.database_url must not disable TLS in prod")
 }
 ```
 
-### WR-15 (NEW): `ReformulateQueryNode` enforces the 8-variant ceiling but not a non-empty floor, so an empty reformulator result silently degrades to zero evidence
+### WR-06: The retry-budget timeout invariant is still unenforced, and a committed config still violates it (prior WR-03 half-fixed)
 
-**File:** `engine/src/workflow/nodes/reformulate.rs:43-66`
+**File:** `engine/src/main.rs:257-290`, `config/config.verify.toml:9`,
+`config/config.verify.toml:19`, `engine/src/workflow/nodes/generate.rs:105`,
+`engine/src/workflow/nodes/generate.rs:127`
 
-**Issue:** The validation is asymmetric. When a reformulator is configured, an over-limit result is
-rejected with `InputValidation` (46-53), but an **empty** result is accepted verbatim:
+**Issue:** `7da662a` added exactly one cross-field check (`main.rs:280-288`, the graph timer). The
+invariant that the phase's retry design actually rests on was not added.
+`GenerateAnswerNode::run` makes up to **two** provider attempts — `generate.rs:105` and
+`generate.rs:127` — inside a **single** node timer (`runner.rs:354`, `runner.rs:359`), so it
+requires `generation_node_timeout_ms >= 2 × generation_timeout_secs × 1000`.
+
+**Failure scenario:** run the Phase 05 live verification with `LANCET_CONFIG_DIR` pointing at
+`config/config.verify.toml`. `generation_timeout_secs = 30` (line 9) and
+`generation_node_timeout_ms = 7000` (line 19). `validate()` accepts it — all seven `== 0` checks
+pass and the graph check (10000 + 4000 ≤ 15000) passes. At runtime the node timer fires at 7 s,
+23 s before the *first* provider attempt can even time out. The node always reports
+`NodeErrorKind::Timeout`, the 2-attempt retry budget is provably unreachable, and no diagnostic
+distinguishes this from a slow provider. Production (`config.toml:17` = 65000 vs 2 × 30000 = 60000)
+satisfies it by 5 s **by coincidence, not by enforcement** — an operator raising
+`generation_timeout_secs` to 35 silently breaks it.
+
+**Fix:** validate where the provider timeout is in scope (`EffectiveRagSettings::try_from_settings`
+already reads `settings.openrouter`).
 
 ```rust
-if let Some(ref reformulator) = self.reformulator {
-    let variants = reformulator.reformulate(&ctx.original_query, cancel).await?;
-    if variants.len() > 8 { return Err(...); }
-    ctx.variants = variants;                 // no is_empty() guard
-} else if ctx.variants.is_empty() {
-    ctx.variants.push(ctx.original_query.clone());   // fallback exists only on this branch
+pub fn validate_against_provider(&self, generation_timeout_secs: u64) -> Result<(), String> {
+    const GENERATION_ATTEMPTS: u64 = 2; // GenerateAnswerNode performs up to 2 attempts
+    let required = GENERATION_ATTEMPTS.saturating_mul(generation_timeout_secs.saturating_mul(1000));
+    if self.generation_node_timeout_ms < required {
+        return Err(format!(
+            "generation_node_timeout_ms ({}) must be >= {} ({} attempts x {}s provider timeout)",
+            self.generation_node_timeout_ms, required, GENERATION_ATTEMPTS, generation_timeout_secs
+        ));
+    }
+    Ok(())
 }
 ```
 
-The `else` branch has an original-query fallback; the reformulator branch does not. With
-`ctx.variants == []`, `RetrieveHybridNode::execute` re-inserts the original query at
-`retrieve.rs:60-62` — so the *retrieval* recovers — but `ctx.snapshot.variant_count` is then `1`
-while the reformulator actually produced `0`, and `ExtractGraphContextNode` (`graph_context.rs:64-68`)
-applies its own independent re-insertion. Three separate places silently repair the same invariant,
-each with different provenance consequences, and none of them records a notice.
+and correct `config/config.verify.toml:19` to `>= 60000` (or lower `generation_timeout_secs`).
 
-Latent today (`NoOpQueryReformulator` always returns one element, `ports.rs:23`), but this is
-exactly the code that activates when a real reformulator lands — the same activation event as
-IN-02/IN-06.
+### WR-07: `run_inline_prompt_generation_remainder` still masks the node error with `Cancelled`, never sets `graph_weight`, and remains public with no production consumer
 
-**Fix:** Enforce the floor where the ceiling is enforced, and record the repair.
+**File:** `engine/src/workflow/mod.rs:231-241`, `engine/src/workflow/mod.rs:250-260`,
+`engine/src/workflow/mod.rs:200-207`, `engine/src/workflow/mod.rs:164`
+
+**Issue:** `0969a2b` fixed the always-fails-by-construction defect (empty evidence, no cancel token,
+indiscriminate retry) but left three problems, one of which is the fixed Critical reappearing in a
+function the Critical's fix did not touch:
 
 ```rust
-let variants = reformulator.reformulate(&ctx.original_query, cancel).await?;
-if variants.is_empty() {
-    return Err(NodeError::new(
-        NodeErrorKind::InputValidation,
-        "Query reformulator produced 0 variants; at least the original query is required",
-    ));
+sink.send_event_or_cancel(
+    events::node_failed(name_gen, node_err.kind.clone(), &node_err.message, false),
+    cancel,
+)
+.await?;                    // 240 — the `?` discards node_err and returns Cancelled
+return Err(node_err);       // 241 — unreachable whenever delivery fails
+```
+
+Identical at `mod.rs:259`/`mod.rs:260`. This is exactly the shape `ac3db6e` corrected in
+`runner.rs:383-393` (`let _ = …await;`), applied there and not here.
+
+**Failure scenario:** the tracer path runs with the client channel full or the token already
+cancelled; the generator returns `SchemaValidation`. `NodeFailed` cannot be delivered, so line 240's
+`?` returns `NodeError::cancelled()`. `run_tracer:470-472` stores that as `overall_err`, and
+`emit_terminal_once` reports `WorkflowCompleted{ success: false, error_kind: Cancelled }` — the real
+`LlmGenerationFailed` cause is gone from every observable surface.
+
+Two further residuals: (a) `gen_req.graph_weight` is never assigned (`mod.rs:200-207`), so this path
+uses `GenerationRequest::new`'s default rather than the configured value that `generate.rs:97`
+applies — the two paths can pack graph facts differently for the same request; (b) the function is
+still `pub` (`mod.rs:164`) with no production consumer (`query_rag` uses `run_workflow`,
+`main.rs:1914`; only `run_tracer` calls it), and `WorkflowDependencies` (`mod.rs:132-156`) exists
+solely to feed it. The prior finding's recommendation — `#[cfg(test)]` or delete — was not applied.
+
+**Fix:** apply the CR-01 pattern (`let _ = …await;` then `return Err(node_err);`), set
+`gen_req.graph_weight`, and gate the function and `WorkflowDependencies` behind `#[cfg(test)]`.
+
+### WR-08: Checkpoint sink errors are logged only for one concrete sink type, and there is still no retry or dead-letter path (prior WR-06 half-fixed)
+
+**File:** `gateway/checkpoint_sink.go:229-239`, `gateway/checkpoint_sink.go:67-69`
+
+**Issue:** `8b692a5` replaced `_ = d.sink.SaveCheckpoint(…)` with:
+
+```go
+if err := d.sink.SaveCheckpoint(context.Background(), env); err != nil {
+    if ps, ok := d.sink.(*PostgresCheckpointSink); ok && ps.logger != nil {   // 231
+        ps.logger.Warn("checkpoint dispatcher dropped envelope on sink error", …)
+    }
 }
-if variants.len() > 8 { /* existing check */ }
-ctx.variants = variants;
+```
+
+The dispatcher type-asserts on a concrete implementation to reach a logger. Any other
+`CheckpointSink` — `InMemoryCheckpointSink` (`checkpoint_sink.go:132-151`), or any future
+implementation — falls through the `if` with the error **still discarded**, which is the original
+defect. `CheckpointDispatcher` has no `logger` field of its own.
+
+More importantly, the substance of the finding is untouched: there is **no retry and no
+dead-letter**. A transient Postgres error (failover, connection storm, the 5 s `writeCtx` timeout at
+`checkpoint_sink.go:113` expiring) permanently loses that checkpoint. The envelope is already popped
+off `primary`/`overflow`/`pending` by `nextEnvelope` before `SaveCheckpoint` is called, so nothing
+can recover it.
+
+**Failure scenario:** Postgres is briefly unavailable during a 5-node workflow. All five checkpoints
+drain out of the dispatcher, each fails, each produces one `WARN`, and the workflow's persisted
+provenance record is empty — while `workflow_completed` reports `success: true` to the client. There
+is no counter, no metric and no queryable trace of the loss.
+
+**Fix:** give the dispatcher its own `*zap.Logger` (drop the type assertion), and add a bounded
+retry with a dropped-envelope counter.
+
+```go
+type CheckpointDispatcher struct { …; logger *zap.Logger; dropped atomic.Uint64 }
+
+if err := d.sink.SaveCheckpoint(ctx, env); err != nil {
+    d.dropped.Add(1)
+    if d.logger != nil {
+        d.logger.Error("checkpoint permanently dropped",
+            zap.String("trace_id", env.TraceID),
+            zap.Uint64("sequence_ordinal", env.SequenceOrdinal),
+            zap.Uint64("dropped_total", d.dropped.Load()),
+            zap.Error(err))
+    }
+}
+```
+
+### WR-09: `dispatcher.Close()` has an unbounded drain — newly reachable because prior WR-01's fix made it live
+
+**File:** `gateway/checkpoint_sink.go:297-309`, `gateway/checkpoint_sink.go:113`,
+`gateway/main.go:1081`
+
+**Issue:** `Close()` sets `d.closed`, closes `primary`, then blocks on `<-d.done` (line 308) until
+`loop()` has drained every buffered envelope. Each iteration calls `SaveCheckpoint`, which uses a
+**5-second** per-write context (`checkpoint_sink.go:113`). The buffers hold up to 1 (`primary`,
+cap 1) + 4 (`overflow`) + 16 (`pending`) = **21 envelopes**. With Postgres unresponsive, `Close()`
+blocks for roughly 21 × 5 s ≈ **105 seconds** with no ceiling of its own.
+
+This code predates the remediation; what is new is its **reachability**. Before `e8982d0`,
+`defer dispatcher.Close()` at `main.go:1081` never ran (`logger.Fatal` → `os.Exit`). It now runs on
+every SIGTERM.
+
+**Failure scenario:** a Kubernetes rolling update sends SIGTERM with the default
+`terminationGracePeriodSeconds: 30`. `server.Shutdown` consumes up to 15 s
+(`main.go:1108`) waiting for in-flight SSE streams, then the deferred `dispatcher.Close()`
+starts a drain that can need 105 s. At t=30 s the kubelet sends SIGKILL: the pool is torn down
+mid-write, remaining envelopes are lost anyway, and the graceful shutdown the fix was written to
+provide does not complete. The two 15 s and 5 s budgets were chosen independently and do not
+compose.
+
+**Fix:** bound the drain and make the budget explicit.
+
+```go
+func (d *CheckpointDispatcher) CloseWithTimeout(budget time.Duration) error {
+    d.mu.Lock()
+    if !d.closed { d.closed = true; close(d.primary) }
+    d.mu.Unlock()
+    select {
+    case <-d.done:
+        return nil
+    case <-time.After(budget):
+        return errors.New("checkpoint dispatcher drain timed out")
+    }
+}
+```
+
+and call it explicitly after `server.Shutdown` with a budget that fits inside the pod grace period.
+
+### WR-10: `result_hash` — the retrieval snapshot's reproducibility field — is computed with `DefaultHasher`, whose algorithm `std` documents as unspecified
+
+**File:** `engine/src/workflow/nodes/retrieve.rs:170-173`,
+`engine/src/workflow/nodes/retrieve.rs:187`, `engine/src/main.rs:2213-2217`,
+`engine/src/bin/seed_rag_fixture.rs:79-83`
+
+**Issue:**
+
+```rust
+let mut result_hasher = DefaultHasher::new();
+for candidate in &taken_candidates {
+    candidate.candidate.chunk_id.hash(&mut result_hasher);
+}
+…
+result_hash: format!("{:x}", result_hasher.finish()),
+```
+
+**Premise stated exactly, because it is easy to get wrong:** `DefaultHasher::new()` is *not*
+randomly seeded — it uses fixed keys, so the value is stable within a single build and across
+process restarts. The defect is different: `std` explicitly documents `DefaultHasher`'s algorithm as
+an implementation detail that may change between Rust releases, and `Hash` impls (notably `str`'s
+length-prefixing) are likewise unspecified.
+
+**Failure scenario:** `RetrievalSnapshot.result_hash` is serialized into every checkpoint
+(`events.rs:152-158`, persisted to `workflow_checkpoints.context_snapshot`) and returned to the client
+in `QueryRagResponse` — its whole purpose is reproducible provenance. The engine is rebuilt on a
+newer Rust toolchain with no source change. The same query over the same index now emits a
+different `result_hash`. Every historical checkpoint becomes incomparable to every new one, and a
+reproducibility check reports drift where none occurred. The same pattern backs `content_hash`
+(`main.rs:2213`), whose output is written into a persisted LanceDB `nodes` column at
+`main.rs:2401-2404` — so the same cross-toolchain instability applies to already-ingested data.
+*Its downstream consumers were not traced in this pass;* only the write site was verified. The seed
+fixture (`seed_rag_fixture.rs:79-83`) carries a third copy of the pattern.
+
+**Fix:** use a specified, version-stable hash for anything persisted as provenance.
+
+```rust
+// Cargo.toml: blake3 = "1"
+let mut hasher = blake3::Hasher::new();
+for candidate in &taken_candidates {
+    hasher.update(candidate.candidate.chunk_id.as_bytes());
+    hasher.update(b"\x00");   // unambiguous separator
+}
+let result_hash = hasher.finalize().to_hex().to_string();
+```
+
+### WR-11: Two identical hand-rolled SQL-literal escapers, applied to every LanceDB predicate
+
+**File:** `engine/src/graph/mod.rs:289-291`, `engine/src/main.rs:2209-2211`
+
+**Issue:** The same three-line function exists twice under two names:
+
+```rust
+pub fn escape_sql_literal(value: &str) -> String { value.replace('\'', "''") }   // graph/mod.rs:289
+fn sql_string(value: &str) -> String { value.replace('\'', "''") }               // main.rs:2209
+```
+
+`main.rs:26` already imports `graph::escape_sql_literal`, and both are used in the *same file* —
+`main.rs:2896` and `main.rs:2919` use `escape_sql_literal` while `main.rs:1051`, `main.rs:1119`,
+`main.rs:1142`, `main.rs:1761`, `main.rs:2329` and `main.rs:3191` use `sql_string`. A reader cannot
+tell whether the two are meant to differ.
+
+**No exploitable path found, stated explicitly.** Every value reaching these predicates was traced:
+`document_id` is UUID-validated by `validate_document_id` (`main.rs:1206-1216`); `seed_entity_id` is
+UUID-parsed at `graph/mod.rs:313-319`; the `frontier`/`visited` ID sets at `graph/mod.rs:323-327`
+and `graph/mod.rs:424-429` are read back out of the DB. `seed_entity_name` — the one
+attacker-controlled string in this area — is byte-bounded at `main.rs:1949` and used for an
+in-memory case-folded comparison (`main.rs:1997`), never spliced into a predicate. **This is filed
+as duplication and latent hazard, not as an injection finding.**
+
+The hazard is that quote-doubling alone is only sufficient because DataFusion's parser does not
+treat backslash as an escape character in string literals. That is an undocumented dependency on a
+third-party parser dialect, guarding a `pub` function (`graph/mod.rs:289`) that any caller can now
+reach.
+
+**Fix:** delete `sql_string`, keep the single `escape_sql_literal`, and document the dialect
+assumption at its definition:
+
+```rust
+/// Escapes a value for interpolation into a DataFusion/LanceDB string literal.
+/// Relies on the SQL-standard dialect (no backslash escapes in string literals);
+/// see `only_if` predicate construction. Callers must still validate identifier
+/// shape — this is not a substitute for parameterization.
+pub fn escape_sql_literal(value: &str) -> String { value.replace('\'', "''") }
+```
+
+### WR-12: A checkpoint ownership failure aborts a *successful* node with no `NodeFailed` event
+
+**File:** `engine/src/workflow/runner.rs:381`, `engine/src/workflow/runner.rs:226-231`,
+`engine/src/workflow/runner.rs:188-190`
+
+**Issue:** In `run_node`'s success branch:
+
+```rust
+sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel)?;   // 381
+```
+
+The `?` propagates `CheckpointDelivery::OwnershipFailure` as
+`NodeError::new(NodeErrorKind::Internal, "Checkpoint envelope ownership capacity exhausted at
+sequence N")` and returns from `run_node` immediately — **without** emitting `NodeFailed`, because
+the `Err(err)` arm at 383-393 belongs to `result`, which is `Ok(())` here.
+
+**Failure scenario:** a slow SSE consumer lets `pending` reach `MAX_PENDING_CHECKPOINTS` = 32
+(`runner.rs:19`, `runner.rs:188-190`). `RetrieveHybrid` completes successfully — `node_completed` is
+already on the wire — and then its checkpoint hits the ownership ceiling. `run_workflow:424-427`
+records the error and breaks; `emit_terminal_once` emits
+`WorkflowCompleted{ success: false, error_kind: Internal }`. The client sees
+`node_started → node_completed → workflow_completed(success=false)` for the same node, with **no
+`node_failed`** anywhere in the stream — a sequence no consumer state machine would expect. It also
+means a purely *observability* backpressure condition kills a request whose retrieval already
+succeeded.
+
+**Fix:** emit `NodeFailed` on this path too, and consider degrading ownership failure to a notice
+rather than a request-killing error.
+
+```rust
+if let Err(err) = sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel) {
+    let _ = sink.send_event_or_cancel(
+        events::node_failed(name, err.kind.clone(), &err.message, err.retryable), cancel,
+    ).await;
+    return Err(err);
+}
+```
+
+### WR-13: The schema-drift test asserts presence, not placement — `4196dff`'s deliverable has no regression protection (prior WR-13 NOT closed)
+
+**File:** `engine/src/db/tests.rs:106-108`, `engine/src/db/mod.rs:167-171`
+
+**Issue:** `git show 4196dff --stat` shows **one file changed: `engine/src/db/mod.rs`**. The
+production message was reordered correctly (`db/mod.rs:167-171` now leads with
+`"LanceDB schema drift detected for {name}. Remediation: …"` and appends
+`"Details - expected: {:?}, found: {:?}"`), but the test that was cited in the original finding as
+inadequate is byte-for-byte unchanged:
+
+```rust
+assert!(error.contains("schema drift detected for documents"));                        // 106
+assert!(error.contains("Remediation: schema reconciliation is fail-closed by design")); // 107
+```
+
+`contains` passed before the reorder and passes after it. The property the plan set out to deliver
+— that the actionable sentence is **visible before** the multi-kilobyte `{:?}` dump of 19 `Field`
+structs (each including a 2048-element `FixedSizeList` descriptor) — is not asserted anywhere.
+
+**Failure scenario:** a future refactor moves the `Details - expected: …` fragment back in front of
+the remediation sentence, or reintroduces the original single-`format!` ordering. The full Rust test
+suite passes green. The operator-facing regression ships undetected, and the phase's own evidence
+(the passing test) argues that it did not.
+
+**Fix:** assert ordering, not presence.
+
+```rust
+let remediation_at = error.find("Remediation:").expect("remediation guidance present");
+let details_at = error.find("Details - expected:").expect("schema details present");
+assert!(
+    remediation_at < details_at,
+    "remediation guidance must precede the schema dump; got remediation@{remediation_at} details@{details_at}"
+);
 ```
 
 ---
 
-## Info
+## §5 Info
 
-### IN-01: Widened `pub(crate)` → `pub` visibility is a consequence of the crate split, not test hygiene
+### IN-01: Widened `pub(crate)` → `pub` visibility permanently enlarges the library's public surface
 
-**File:** `engine/src/main.rs:33-38`, `engine/src/lib.rs:3-11`, `engine/src/retrieval/bm25.rs:171`, `engine/src/retrieval/dense.rs:37`, `engine/src/retrieval/dense.rs:42`, `engine/src/retrieval/dense.rs:162`, `engine/src/retrieval/mod.rs:62`
+**File:** `engine/src/lib.rs:3-11`, `engine/src/main.rs:26`, `engine/src/graph/mod.rs:289`
 
-**Issue:** `main.rs` uses `use engine::{generation, graph, prompt, rerank, retrieval}`. The binary
-is a **separate crate** from the `engine` library, so every item it touches had to leave
-`pub(crate)`. That is the correct mechanical consequence — but it permanently enlarges the
-library's public API: `Bm25Index::from_table`, `DenseRetriever::new`, `DenseRetriever::query`,
-`dense::dense_score`, and `RetrievalError::new` are now callable by any downstream consumer
-without the surrounding validation that made them safe. This contradicts `rust-guidelines.md`
-M-SINGLE-ITEM-PATH's intent of a deliberate, minimal public surface.
+**Issue:** The binary is a separate crate from the `engine` library (`lib.rs:1`
+`extern crate self as engine;`), so every item `main.rs` touches had to leave `pub(crate)`.
+Mechanically correct, but items like `graph::escape_sql_literal` are now callable by any downstream
+consumer without the UUID validation that makes them safe (see WR-11). Contradicts
+`rust-guidelines.md` M-SINGLE-ITEM-PATH's intent of a deliberate, minimal public surface.
 
-*Scope note:* the prior review's most security-relevant citation for this finding
-(`graph::escape_sql_literal`, `engine/src/graph/mod.rs`) is **out of scope for this refresh** —
-`engine/src/graph/*` is absent from the declared file list. It is not re-asserted here; only the
-in-scope `retrieval::*` widenings are.
+**Fix:** a `#[doc(hidden)] pub mod internal` re-export module, or a `binary-internals` Cargo feature.
 
-**Fix:** Introduce a `#[doc(hidden)] pub mod internal` re-export module, or gate these behind a
-`binary-internals` Cargo feature, so the intended public surface stays small.
+### IN-02: Production always takes the single-variant path — cross-variant RRF is unexercised
 
-### IN-02: Production always takes the single-variant fusion path — cross-variant RRF is unexercised
+**File:** `engine/src/workflow/nodes/reformulate.rs:45`, `engine/src/retrieval/fusion.rs:236-244`
 
-**File:** `engine/src/main.rs:1586-1587`, `engine/src/workflow/ports.rs:23`, `engine/src/retrieval/fusion.rs:236-244`
+**Issue:** `build_production_workflow` wires `NoOpQueryReformulator`, which returns exactly one
+variant. So `ctx.variants.len() == 1` always, and `fuse_cross_variant_candidates` hits the
+`len() == 1` early return at `fusion.rs:236`. In production the two-pass cross-variant RRF, both
+8-variant caps (`reformulate.rs:53`, `fusion.rs:225`), and multi-element `variant_identities` are
+never reached. Recorded so the capability is not assumed production-proven by this phase.
 
-**Issue:** `build_production_workflow` wires `NoOpQueryReformulator`, whose `reformulate` returns
-`vec![query.to_string()]`. So `ctx.variants.len() == 1` always, `per_variant_fused` has exactly one
-entry, and `fuse_cross_variant_candidates` hits the `len() == 1` early return at line 236. In
-production the entire two-pass cross-variant RRF (plan 05-24), the 8-variant caps
-(`reformulate.rs:46-53`, `fusion.rs:230-235`), and `RetrievalSnapshot.variant_count > 1` /
-multi-element `variant_identities` are never reached. Recorded so the capability is not assumed
-production-proven by this phase.
+**Fix:** document the activation path at `build_production_workflow`, or mark cross-variant
+behaviour as production-unreached in the phase verification record.
 
-**Fix:** Document the intended activation path (a real reformulator) at
-`build_production_workflow`, or mark plan 05-24's cross-variant behavior as production-unreached in
-the phase verification record.
-
-### IN-03: Single-variant fusion path skips the `candidate_limit` truncation the multi-variant path applies
+### IN-03: The single-variant fusion path skips the `candidate_limit` truncation the multi-variant path applies
 
 **File:** `engine/src/retrieval/fusion.rs:236-244`, `engine/src/retrieval/fusion.rs:249-253`
 
-**Issue:** The multi-variant path truncates each variant list with `.take(settings.candidate_limit)`
-(line 252); the `len() == 1` early return (236-244) returns the list untouched. Because
-`fuse_candidates` unions two sources each capped at `candidate_limit`, the single-variant result
-can contain up to `2 * candidate_limit` entries where the multi-variant path caps at
-`candidate_limit`. Only the downstream `final_limit` take (`retrieve.rs:165-168`) masks the
-difference — and it changes which candidates reach the reranker.
+**Issue:** The multi-variant path truncates each list with `.take(settings.candidate_limit)`
+(`fusion.rs:251`); the `len() == 1` early return returns the list untouched. Since `fuse_candidates`
+unions two sources each capped at `candidate_limit`, the single-variant result can hold up to
+`2 × candidate_limit` entries. Only the downstream `final_limit` take (`retrieve.rs:162-165`) masks
+it — and it changes which candidates reach the reranker.
 
-**Fix:** Apply the same truncation on the single-variant branch:
-`single_list.truncate(settings.candidate_limit);`
+**Fix:** `single_list.truncate(settings.candidate_limit);` on the early-return branch.
 
-### IN-04: `WorkflowRunner::timeout_for_node` is dead code with a magic fallback
+### IN-04: `timeout_for_node` is dead code with a magic fallback; `pending_checkpoint_count` is test-only
 
-**File:** `engine/src/workflow/runner.rs:319-328`, `engine/src/workflow/runner.rs:241-243`
+**File:** `engine/src/workflow/runner.rs:313-322`, `engine/src/workflow/runner.rs:235-237`
 
-**Issue:** `timeout_for_node(&str)` has no production caller — all dispatch goes through the
-exhaustive typed `timeout_for_kind(NodeKind)` at 309-317 (the only call site is
-`run_node`, line 359). It duplicates that mapping via string matching and adds an
-unreachable-in-practice `_ => Duration::from_millis(5000)` magic fallback: exactly the
-stringly-typed dispatch the phase's `NodeKind` work set out to eliminate, and a
-silent-wrong-timeout hazard if a node name is ever misspelled. `pending_checkpoint_count`
-(241-243) is likewise test-only.
+**Issue:** `timeout_for_node(&str)` has no production caller — dispatch goes through the exhaustive
+typed `timeout_for_kind(NodeKind)` at 303-311 (sole call site `runner.rs:354`). It duplicates that
+mapping via string matching and adds an unreachable `_ => Duration::from_millis(5000)` magic
+fallback: precisely the stringly-typed dispatch that `NodeKind` was introduced to eliminate, plus a
+silent-wrong-timeout hazard if a name is ever misspelled.
 
-**Fix:** Delete `timeout_for_node`; gate `pending_checkpoint_count` behind `#[cfg(test)]`.
+**Fix:** delete `timeout_for_node`; gate `pending_checkpoint_count` behind `#[cfg(test)]`.
 
 ### IN-05: `buf.gen.yaml` `clean: false` is forced by a hand-written file inside the generated tree
 
 **File:** `buf.gen.yaml:2`, `engine/src/pb/mod.rs:1-5`
 
 **Issue:** The prost/tonic plugins write to `out: engine/src/pb`, and `engine/src/pb/mod.rs` is
-**hand-written** — a 5-line `include!("lancet/v1/lancet.v1.rs")` wrapper. `clean: true` would
-delete it on every regeneration, so the flip was necessary rather than careless. The cost is that
-stale generated artifacts now survive: a removed or renamed proto message leaves a compilable,
-importable orphan behind, and the generated tree can silently diverge from `proto/`. This phase
-already required a hand-repair of generated Rust literals (commit `253d612`) — the symptom this
-setting makes permanent.
+hand-written — a 5-line `include!("lancet/v1/lancet.v1.rs")` wrapper that `clean: true` would delete
+on every regeneration. The cost is that stale generated artifacts survive: a removed or renamed
+proto message leaves a compilable, importable orphan and the generated tree can silently diverge
+from `proto/`.
 
-**Fix:** Move the hand-written wrapper out of the generated tree (e.g. `engine/src/pb.rs`
-declaring `#[path = "pb/lancet/v1/lancet.v1.rs"]`) and restore `clean: true`; otherwise add a CI
-check that `git status` is clean after regeneration.
+**Fix:** move the wrapper out of the generated tree (`engine/src/pb.rs` with
+`#[path = "pb/lancet/v1/lancet.v1.rs"]`) and restore `clean: true`; otherwise add a CI check that
+`git status` is clean after regeneration.
 
 ### IN-06: `ctx.bm25_results` accumulates duplicate chunk IDs across variants
 
-**File:** `engine/src/workflow/nodes/retrieve.rs:115-117`
+**File:** `engine/src/workflow/nodes/retrieve.rs:112-114`
 
-**Issue:** The per-variant loop pushes every BM25 candidate's `chunk_id` into `ctx.bm25_results`
-with no deduplication, while `ctx.vector_results` (84-87) is assigned once from a deduplicated
-dense list. With N variants, a chunk matched by every variant appears N times. `ctx.bm25_results`
-is serialized verbatim into every checkpoint snapshot (`events.rs:188-189`), so the persisted
-provenance record would misreport BM25 recall and grow super-linearly.
+**Issue:** The per-variant loop pushes every BM25 candidate's `chunk_id` with no deduplication,
+while `ctx.vector_results` (`retrieve.rs:80-83`) is assigned once from a deduplicated dense list.
+With N variants, a chunk matched by all of them appears N times. `ctx.bm25_results` is serialized
+verbatim into every checkpoint (`events.rs:186-187`), so persisted provenance would misreport BM25
+recall and grow super-linearly. Latent today per IN-02.
 
-Currently latent: per IN-02, production runs exactly one variant, so the loop body executes once.
-This activates the moment a real reformulator lands.
-
-**Fix:**
-
-```rust
-let mut seen_bm25 = std::collections::HashSet::new();
-// inside the variant loop
-for candidate in &bm25_candidates {
-    if seen_bm25.insert(candidate.chunk_id.clone()) {
-        ctx.bm25_results.push(candidate.chunk_id.clone());
-    }
-}
-```
+**Fix:** guard the push with a `HashSet<String>` of seen chunk IDs.
 
 ### IN-07: `uint64` → `int32` narrowing on `sequence_ordinal`
 
-**File:** `gateway/checkpoint_sink.go:109`, `gateway/db/schema.sql:48`, `gateway/db/models.go:45`, `proto/lancet/v1/lancet.proto:182`, `proto/lancet/v1/lancet.proto:198`
+**File:** `gateway/checkpoint_sink.go:119`, `gateway/db/schema.sql:49`,
+`proto/lancet/v1/lancet.proto:182`, `proto/lancet/v1/lancet.proto:198`
 
-**Issue:** `SequenceOrdinal: int32(env.SequenceOrdinal)` narrows a protobuf `uint64` (verified:
-`uint64 sequence_ordinal` at `lancet.proto:182` and `:198`) to the schema's `integer` column with
-no bounds check; values ≥ 2^31 wrap to negative. Not realistically
-reachable (2^31 events in one workflow), but it is an unchecked lossy conversion on a persisted
+**Issue:** `SequenceOrdinal: int32(env.SequenceOrdinal)` narrows a protobuf `uint64` (verified at
+`lancet.proto:182` and `:198`) into an `integer` column with no bounds check; values ≥ 2³¹ wrap
+negative. Not realistically reachable, but it is an unchecked lossy conversion on a persisted
 ordering key.
 
-**Fix:** Widen the column to `bigint` and the sqlc model to `int64`, or reject out-of-range values
-explicitly before insert.
+**Fix:** widen the column to `bigint` and the sqlc model to `int64`, or reject out-of-range values.
 
-### IN-08: `notices` must be read from two different places depending on success
+### IN-08: `notices` must be read from two different places depending on `success`
 
-**File:** `gateway/main.go:853-868`
+**File:** `gateway/main.go:855-873`
 
-**Issue:** On success the gateway writes `final_response` (whose DTO already carries `notices`,
-sourced from `WorkflowContext::to_query_rag_response` at `workflow/mod.rs:102`); on failure it
-writes a top-level `wcPayload["notices"]`. Content is equivalent — this is not a loss — but a
-client must check two locations depending on the `success` flag.
+**Issue:** On success the gateway writes `final_response` (whose DTO already carries `notices`, from
+`WorkflowContext::to_query_rag_response`, `workflow/mod.rs:102`); on failure it writes a top-level
+`wcPayload["notices"]`. Content is equivalent, but a client must check two locations depending on
+the `success` flag.
 
-**Fix:** Always emit top-level `notices` on `workflow_completed`, in addition to `final_response`.
+**Fix:** always emit top-level `notices` on `workflow_completed`, in addition to `final_response`.
 
-### IN-09: Seven redundant cancellation checks inside one prompt-packing loop
+### IN-09: Seven cancellation checks in one prompt-packing function, most of which cannot observe a state change
 
-**File:** `engine/src/prompt.rs:446`, `:456`, `:484`, `:504-505`, `:510`, `:524`
+**File:** `engine/src/prompt.rs:329`, `:446`, `:456`, `:484`, `:505`, `:510`, `:524`
 
-**Issue:** `pack_evidence_and_graph_prompt` checks `cancel.is_cancelled()` at the top of the loop
-(446), again inside each match arm (456, 484), again after `yield_now()` (505), and twice more
+**Issue:** `pack_evidence_and_graph_prompt` checks `cancel.is_cancelled()` at function entry (329),
+at the loop top (446), inside each match arm (456, 484), after `yield_now()` (505), and twice more
 after the loop (510, 524). Between the arm checks and the post-yield check there is no `await`, so
-those cannot observe a state change. The redundancy obscures where cancellation is actually
-meaningful — the `yield_now().await` at 504 is the only true suspension point in the loop.
+those cannot observe a change. The redundancy obscures where cancellation is actually meaningful —
+the `yield_now().await` before 505 is the only true suspension point.
 
-**Fix:** Keep the entry check (329), the post-`yield_now()` check (505), and one pre-return check;
-delete 456, 484, and 510.
+**Fix:** keep 329, 505 and one pre-return check; delete 456, 484 and 510.
 
-### IN-10: `let _ = &deps;` keep-alive hack in the spawned workflow task
+### IN-10: `let _ = &deps;` keep-alive in the spawned workflow task
 
-**File:** `engine/src/main.rs:1889`, `engine/src/main.rs:1878`
+**File:** `engine/src/main.rs:1913`, `engine/src/main.rs:1902`
 
-**Issue:** `build_production_workflow` returns `(runner, deps)`, but `deps` has no production
-consumer — the nodes already own their `Arc` clones (`main.rs:1608-1644`). The spawned task
-contains `let _ = &deps;` purely to move the value into the closure and suppress an
-unused-variable warning. A reader cannot tell whether that lifetime is load-bearing. Directly
-coupled to WR-05: `WorkflowDependencies` exists only for the dead inline remainder.
+**Issue:** `build_production_workflow` returns `(runner, deps)` but `deps` has no production
+consumer — the nodes already own their `Arc` clones. The spawned task contains `let _ = &deps;`
+purely to move the value into the closure and suppress a warning; a reader cannot tell whether that
+lifetime is load-bearing. Directly coupled to WR-07: `WorkflowDependencies` exists only for the dead
+inline remainder.
 
-**Fix:** Have `build_production_workflow` return only the runner (add a `#[cfg(test)]`-gated
-variant returning `deps` for the tracer tests), and drop the `let _ = &deps;` line.
+**Fix:** return only the runner from `build_production_workflow` (with a `#[cfg(test)]` variant that
+also returns `deps`), and delete the line.
 
 ### IN-11: Model-capability cache never expires, and `ModelCapabilities` is written but never read
 
-**File:** `engine/src/generation/openrouter.rs:234`, `engine/src/generation/openrouter.rs:339-353`
+**File:** `engine/src/generation/openrouter.rs:234`, `engine/src/generation/openrouter.rs:342-353`
 
 **Issue:** `capabilities_cache: HashMap<CapabilityKey, Arc<OnceCell<ModelCapabilities>>>` caches a
-successful preflight for the entire process lifetime. If OpenRouter later withdraws
-`response_format` / `structured_outputs` support for the configured model — a real risk given
-`config/config.toml` now pins a `:free` *preview* model — the process keeps sending strict-schema
-requests until restart. The success-only semantics are correct (errors leave the `OnceCell`
-uninitialized, so they are retried); the missing TTL is the gap. Separately,
-`ModelCapabilities.supports_structured_outputs` is constructed but never read (`let _caps = ...`
-at line 348); the cell's mere existence carries the whole signal, making the struct field dead
-weight.
+successful preflight for the process lifetime. If OpenRouter later withdraws
+`response_format`/`structured_outputs` for the configured model — a real risk given
+`config/config.toml:41` pins a `:free` *preview* model — the process keeps sending strict-schema
+requests until restart. Errors correctly leave the `OnceCell` uninitialized, so only the TTL is
+missing. Separately, `ModelCapabilities.supports_structured_outputs` (`openrouter.rs:47`) is
+constructed at `openrouter.rs:431-433` but never read (`let _caps = …` at `openrouter.rs:349`) — the
+cell's existence carries the whole signal.
 
-**Fix:** Store `(ModelCapabilities, Instant)` and re-validate after a configurable TTL, or read
-`supports_structured_outputs` at the call site so the field earns its place.
+**Fix:** store `(ModelCapabilities, Instant)` and re-validate after a configurable TTL, or read the
+field at the call site.
 
 ### IN-12: `workflow_checkpoints` has no uniqueness constraint on `(trace_id, sequence_ordinal)`
 
-**File:** `gateway/db/schema.sql:45-57`, `gateway/db/schema.hcl:166-169`, `gateway/db/query.sql:116-133`
+**File:** `gateway/db/schema.sql:46-56`, `gateway/db/schema.hcl:163-169`,
+`gateway/db/query.sql:116-133`, `gateway/checkpoint_sink.go:90`
 
-**Issue:** The table's primary key is a client-generated `uuid.NewString()`
-(`checkpoint_sink.go:88`) in a `varchar(255)` column, and the
-`(trace_id, sequence_ordinal, created_at)` index is explicitly `unique = false`
-(`schema.hcl:167`). Any duplicate delivery or replay of the same checkpoint inserts a second row
-indistinguishable from a legitimate one; nothing enforces at-most-once per ordinal, and the insert
-is a plain `INSERT ... RETURNING *` with no conflict handling. This becomes load-bearing if WR-06's
-recommended retry is ever added.
+**Issue:** The primary key is a client-generated `uuid.NewString()` in a `varchar(255)` column, and
+the `(trace_id, sequence_ordinal, created_at)` index is explicitly `unique = false`
+(`schema.hcl:167`). Any duplicate delivery or replay inserts a second, indistinguishable row; the
+statement is a plain `INSERT … RETURNING *` with no conflict handling. This becomes load-bearing the
+moment WR-08's recommended retry is added.
 
-**Fix:** Make the index unique on `(trace_id, sequence_ordinal)` and change the statement to
-`INSERT ... ON CONFLICT (trace_id, sequence_ordinal) DO NOTHING` so retried deliveries are
-idempotent. Consider a native `uuid` column type for `id`.
+**Fix:** make the index unique on `(trace_id, sequence_ordinal)` and change the statement to
+`INSERT … ON CONFLICT (trace_id, sequence_ordinal) DO NOTHING`. Consider a native `uuid` type for
+`id`.
 
-### IN-13: `seed_rag_fixture` defines a local `f32` copy of `dense_score` and then asserts against its own copy
+### IN-13: `seed_rag_fixture` defines a local `f32` copy of `dense_score` and asserts against its own copy
 
-**File:** `engine/src/bin/seed_rag_fixture.rs:85-87`, `engine/src/retrieval/dense.rs:162-164`
+**File:** `engine/src/bin/seed_rag_fixture.rs:85-87`
 
-**Issue:** The fixture binary defines `fn dense_score(distance: f32) -> f32 { 1.0 / (1.0 + distance) }`,
-a near-duplicate of the production `retrieval::dense::dense_score(f64)` — which the phase made
-`pub` (IN-01), so it is now directly importable. The local copy omits the production version's
-`distance.max(0.0)` clamp, so a negative distance produces a different result. The two assertions
-at the end of the fixture exercise the local copy, not the production function, so they prove
-nothing about retrieval scoring (`rust-guidelines.md` M-TAUTOLOGICAL-TESTS). No production code
-path is affected.
+**Issue:** The fixture defines `fn dense_score(distance: f32) -> f32 { 1.0 / (1.0 + distance) }`, a
+near-duplicate of the production `retrieval::dense::dense_score(f64)` — which this phase made `pub`
+(IN-01), so it is directly importable. The local copy omits the production `distance.max(0.0)`
+clamp, so a negative distance diverges. The fixture's closing assertions exercise the local copy, so
+they prove nothing about retrieval scoring (`rust-guidelines.md` M-TAUTOLOGICAL-TESTS). No
+production path is affected.
 
-**Fix:** Delete the local helper and call `engine::retrieval::dense::dense_score` so the assertion
-guards the production formula, or drop the two tautological assertions.
+**Fix:** call `engine::retrieval::dense::dense_score`, or drop the two tautological assertions.
 
-### IN-14 (NEW): Plan 05-26's new env overrides assign the raw, untrimmed value
+### IN-14: Env-var string overrides guard on the trimmed value but assign the untrimmed one; numeric overrides fail open
 
-**File:** `engine/src/main.rs:661-670`
+**File:** `engine/src/main.rs:655-679`, `engine/src/main.rs:611-654`
 
-**Issue:** The two overrides added by `c815af1` guard on the *trimmed* value but assign the
-*untrimmed* one:
-
-```rust
-if let Ok(value) = std::env::var("LANCET_OPENROUTER__GENERATION_MODEL") {
-    if !value.trim().is_empty() {
-        settings.openrouter.generation_model = value;   // untrimmed
-    }
-}
-```
-
+**Issue:** All seven string overrides share the pattern
+`if !value.trim().is_empty() { settings.x = value; }` — assigning the **untrimmed** value.
 `" openai/gpt-4o-mini "` passes the guard, passes `EffectiveRagSettings::validate()` (which also
-only checks `trim().is_empty()`, `main.rs:540`), and lands verbatim in the outbound `model` field
-and in the `/models` lookup key at `openrouter.rs:411`, where `m.id == self.config.model` fails
-with a confusing "model metadata for ' openai/gpt-4o-mini ' not found" error. Consistent with the
-five sibling string overrides at `main.rs:646-660`, so this is a pre-existing pattern the new code
-inherited — but it is new code, so it is recorded here.
+only checks `trim().is_empty()`), and lands verbatim in the outbound `model` field and the `/models`
+lookup key at `openrouter.rs:416`, producing a confusing
+`"model metadata for ' openai/gpt-4o-mini ' not found"`.
 
-Related, and also pre-existing: the numeric overrides (`main.rs:611-645`) use
-`if let Ok(val) = value.trim().parse::<u64>()`, so a typo like
+Related: the numeric overrides use `if let Ok(val) = value.trim().parse::<u64>()`, so a typo like
 `LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS=65s` is **silently ignored** and the config
-value is used instead. A deployment-time misconfiguration produces no diagnostic at all.
+value is used instead — a deployment-time misconfiguration with no diagnostic at all.
 
-**Fix:** Trim on assignment, and fail closed on unparseable numerics.
+**Fix:** assign `value.trim().to_string()`, and return `Err` on unparseable numerics.
 
-```rust
-if let Ok(value) = std::env::var("LANCET_OPENROUTER__GENERATION_MODEL") {
-    let trimmed = value.trim();
-    if !trimmed.is_empty() {
-        settings.openrouter.generation_model = trimmed.to_string();
-    }
-}
-```
+### IN-15: The schema-drift test asserts on human prose and leaks a temp directory on failure
 
-### IN-15 (NEW): Plan 05-25's test asserts on remediation *prose*, and leaks a temp directory on failure
+**File:** `engine/src/db/tests.rs:106-108`
 
-**File:** `engine/src/db/tests.rs:106-108`, `engine/src/db/tests.rs:23-32`
+**Issue:** Two test-reliability nits alongside WR-13. (1) Line 107 asserts a 55-character substring
+of a prose sentence in `db/mod.rs:168`; any wording improvement — including WR-13's recommended one
+— breaks the test with no behavioural change. (2) `let _ = std::fs::remove_dir_all(path);` at line
+108 is the last statement, not RAII: when either assertion fails the `assert!` panics first and a
+LanceDB store is orphaned in `std::env::temp_dir()`. Same pattern at `db/tests.rs:56`, `:141`,
+`:200`.
 
-**Issue:** Two test-reliability nits in `schema_drift_fails_database_initialization`:
+**Fix:** assert on a stable greppable marker (e.g. a `LANCEDB_SCHEMA_DRIFT` code constant in
+`db/mod.rs`), and use `tempfile::TempDir` or a drop guard so cleanup survives a panic.
 
-1. Line 107 asserts `error.contains("Remediation: schema reconciliation is fail-closed by design")`
-   — a 55-character substring of a human-facing prose sentence in `db/mod.rs:168`. Any wording
-   improvement (including the one WR-13 recommends) breaks this test without any behavioural
-   change. More importantly it verifies only *presence*, not the property that matters
-   (operator-visible *placement*), so it does not actually protect the deliverable of plan 05-25.
-2. `let _ = std::fs::remove_dir_all(path);` at line 108 is the last statement, not RAII. When
-   either assertion fails, the `assert!` panics before cleanup and a LanceDB store is orphaned in
-   `std::env::temp_dir()`. The same pattern appears at lines 56, 141, and 200.
-
-**Fix:** Assert on a stable prefix/marker rather than prose, and make cleanup unconditional.
-
-```rust
-// db/mod.rs — stable, greppable marker independent of wording
-const DRIFT_REMEDIATION_CODE: &str = "LANCEDB_SCHEMA_DRIFT";
-// db/tests.rs
-assert!(error.contains("LANCEDB_SCHEMA_DRIFT"));
-```
-
-Use a drop-guard (or `tempfile::TempDir`) so the store is removed even on panic.
-
-### IN-16 (NEW): `.gitignore` now blanket-ignores `data/`, leaving two dead entries below it
+### IN-16: `.gitignore` blanket-ignores `data/`, leaving two dead entries below it
 
 **File:** `.gitignore:59-61`
 
-**Issue:** `967a897` added `data/` immediately above the pre-existing, now-unreachable
-`data/lancedb-verify-02-06/` and `data/.phase02-lancedb-preclean-*/` entries. Verified:
-`git check-ignore -v data/lancedb` reports `.gitignore:59:data/`, and `git ls-files data/` is
-empty, so nothing tracked was newly ignored — this does not break anything today.
+**Issue:** Line 59 `data/` sits immediately above the now-unreachable
+`data/lancedb-verify-02-06/` (60) and `data/.phase02-lancedb-preclean-*/` (61). Nothing tracked was
+newly ignored, so this breaks nothing today. The residual cost is that any file intentionally
+committed under `data/` in future (a small regression fixture, a README explaining the layout) is
+silently invisible to `git add` without `-f`, and the two stale lines misdescribe the actual rule.
 
-The residual cost is that any file intentionally committed under `data/` in future (a small
-regression fixture, a README explaining the layout) will be silently invisible to `git add`
-without `-f`, and the two stale lines below now misdescribe the actual rule.
+**Fix:** delete lines 60-61 and add a negation for anything meant to be tracked, e.g.
+`!data/README.md`.
 
-**Fix:** Delete lines 60-61 as redundant, and add a negation for anything meant to be tracked:
+### IN-17: `CheckpointEnvelope` carries four fields that are never persisted, and `NodeID` is always equal to `CheckpointType`
 
-```gitignore
-data/
-!data/README.md
-```
+**File:** `gateway/checkpoint_sink.go:41-53`, `gateway/checkpoint_sink.go:92-98`,
+`gateway/db/schema.sql:46-54`
 
-### IN-17 (NEW): `CheckpointEnvelope` carries four fields that are never persisted, and `NodeID` is always equal to `CheckpointType`
+**Issue:** `NewCheckpointEnvelopeFromEvent` populates `SessionID`, `CorrelationID`, `EventSequence`
+and `TimestampMs`, but `SaveCheckpoint` writes only
+`ID / TraceID / SequenceOrdinal / NodeName / ContextSnapshot / CreatedAt` — the table has **no
+`session_id` column at all** (`schema.sql:46-54`), so checkpoints cannot be queried by session.
+Whether that is intended is not recorded anywhere. Separately, `NodeID` and `CheckpointType` are
+both assigned `cp.GetCheckpointType()` (lines 46-47), so the three-step fallback at 92-98 can only
+collapse to `nodeName = env.CheckpointType` and its second branch is dead.
+`CorrelationID: ev.GetTraceId()` (line 43) also silently equates two concepts the engine keeps
+separate.
 
-**File:** `gateway/checkpoint_sink.go:18-51`, `gateway/checkpoint_sink.go:90-96`, `gateway/db/models.go:39-46`
+**Fix:** either persist the fields (add `session_id`, `event_sequence`, `timestamp_ms` columns) or
+delete them from the envelope so the struct describes what is stored. Collapse the dead branch.
 
-**Issue:** `NewCheckpointEnvelopeFromEvent` populates `SessionID`, `CorrelationID`,
-`EventSequence`, and `TimestampMs`, but `SaveCheckpoint` writes only
-`ID / TraceID / SequenceOrdinal / NodeName / ContextSnapshot / CreatedAt`. Grepped across all
-non-test Go: those four fields have no reader anywhere. Two consequences:
+### IN-18: `rrf_k` is truncated from `f64` to `i32` in the persisted retrieval snapshot
 
-- The `workflow_checkpoints` table has **no `session_id` column at all**, so persisted checkpoints
-  cannot be queried by session — only by `trace_id`. Whether that is intended is not recorded
-  anywhere.
-- `NodeID` and `CheckpointType` are both assigned `cp.GetCheckpointType()` (lines 44-45), so the
-  three-step fallback chain in `SaveCheckpoint` (90-96) can only ever collapse to
-  `nodeName = env.CheckpointType`, and its second branch is dead.
-
-`CorrelationID: ev.GetTraceId()` (line 41) also silently equates two distinct concepts that the
-engine keeps separate.
-
-**Fix:** Either persist the fields (add `session_id`, `event_sequence`, `timestamp_ms` columns) or
-delete them from the envelope so the struct describes what is actually stored. Collapse the dead
-fallback branch in `SaveCheckpoint`.
-
-### IN-18 (NEW): `rrf_k` is truncated from `f64` to `i32` in the persisted retrieval snapshot
-
-**File:** `engine/src/workflow/nodes/retrieve.rs:183`, `proto/lancet/v1/lancet.proto:94-97`
+**File:** `engine/src/workflow/nodes/retrieve.rs:183`, `proto/lancet/v1/lancet.proto:94-96`
 
 **Issue:** `rrf_k: self.settings.rrf_k as i32` narrows the `f64` fusion constant to the proto's
-`int32` field. `rrf_k` is validated as a finite `1.0..=1_000_000.0` float and is used as an `f64`
-in the actual RRF denominator (`fusion.rs:252-254`). A configured `60.5` is persisted and reported
-as `60`.
+`int32` field. `rrf_k` is validated as a finite `1.0..=1_000_000.0` float and used as `f64` in the
+actual RRF denominator (`fusion.rs:252`). A configured `60.5` is persisted and reported as `60` —
+in the one struct whose purpose is reproducible provenance. Harmless with the committed `60.0`.
+Verified in the proto: `double vector_weight = 3;` (94) and `double bm25_weight = 4;` (95) sit
+directly above `int32 rrf_k = 5;` (96), so the narrowing is an inconsistency within a three-line
+span, not a considered wire decision.
 
-The whole purpose of `RetrievalSnapshot` is reproducible provenance — misreporting the fusion
-constant is precisely the class of drift it exists to prevent. Harmless with the current committed
-value (`config/config.toml:29` = `60.0`), which is why this is Info rather than a Warning.
-Verified in the proto: `double vector_weight = 3;` (line 94) and `double bm25_weight = 4;`
-(line 95) sit directly above `int32 rrf_k = 5;` (line 96) in the same message — so the narrowing
-is an inconsistency within a three-line span, not a considered wire-format decision.
+**Fix:** change `RetrievalSnapshot.rrf_k` to `double` and regenerate, or reject non-integral `rrf_k`
+at config validation so the snapshot cannot lie.
 
-**Fix:** Change `RetrievalSnapshot.rrf_k` to `double` in `proto/lancet/v1/lancet.proto` (matching
-`vector_weight` / `bm25_weight`), regenerate, and drop the cast. If the wire type must stay
-`int32`, reject non-integral `rrf_k` at config validation so the snapshot cannot lie.
+### IN-19 (NEW, from prior WR-10's fix): `wrap_checkpoint_event`'s fallback arm is dead code that silently burns an ordinal
+
+**File:** `engine/src/workflow/runner.rs:239-243`
+
+**Issue:** `5354d1e` replaced `unreachable!("checkpoint helper must pass a checkpoint event")` with
+`_ => self.sequence.next()`. The panic hazard is correctly gone, but the recommended *structural*
+fix (take a `CheckpointEvent`, not an `Event`) was not applied. The result is a dead arm — the sole
+caller `send_checkpoint:180` always passes `Event::Checkpoint` — that, if ever reached, would
+allocate a **second** ordinal for an event whose payload already carries a different one, silently
+compounding WR-03's gap problem instead of failing loudly.
+
+**Fix:** change the signature to `fn wrap_checkpoint_event(&self, checkpoint: CheckpointEvent)` and
+read `checkpoint.sequence_ordinal` directly, so the arm cannot exist.
+
+### IN-20 (NEW): `BoundedBodyError::TooLarge` always reports the 256 KB limit, even on the 10 MB path
+
+**File:** `engine/src/client/mod.rs:26-30`, `engine/src/client/mod.rs:15-16`,
+`engine/src/client/mod.rs:44-67`
+
+**Issue:** `read_body_limited_with_limit` takes `max_bytes` as a parameter, but the `Display` impl
+for `TooLarge` hardcodes `MAX_PROVIDER_RESPONSE_BODY_BYTES` (256 KB). `e831be3` added a second
+caller using `MAX_MODELS_METADATA_BODY_BYTES` (10 MB), so a models-metadata overflow now renders as
+"provider response exceeded maximum body limit of 262144 bytes" when the actual limit was
+10485760 — a misleading diagnostic on the exact path the commit was written to widen. The
+`openrouter.rs:393-396` call site happens to build its own correct message, which is why the defect
+is latent rather than user-visible today.
+
+**Fix:** carry the limit in the variant: `TooLarge { limit: usize }`.
+
+### IN-21 (NEW, from prior WR-06's fix): checkpoint persistence errors are logged twice
+
+**File:** `gateway/checkpoint_sink.go:107-110`, `gateway/checkpoint_sink.go:126-128`,
+`gateway/checkpoint_sink.go:229-238`
+
+**Issue:** `SaveCheckpoint` logs at `ERROR` on both the invalid-JSON path (107-110) and the insert
+path (126-128), *and* returns the error; `loop()` then logs the same failure again at `WARN`
+(231-237). Every failed checkpoint produces two log lines at two severities with the same
+`trace_id`/`sequence_ordinal`, which will inflate alert counts and mislead anyone building on the
+error rate.
+
+**Fix:** log once. Either have `SaveCheckpoint` return the error silently and let the dispatcher own
+the logging, or drop the dispatcher-level log.
+
+### IN-22 (NEW): `CheckpointSnapshot::to_json` panics via `.expect` in the request path
+
+**File:** `engine/src/workflow/events.rs:241-244`
+
+**Issue:** `serde_json::to_string(self).expect("WorkflowContext checkpoint snapshot must serialize
+as valid JSON")` runs inside the spawned workflow task (`main.rs:1902-1908`). A panic there aborts
+the task, drops `tx`, and ends the client stream with no terminal event. Per
+`rust-guidelines.md` M-PANIC-IS-STOP, a panic means "stop the program"; a serialization helper
+should not be able to kill a request.
+
+**Labelled not reproducible by reading, with the mechanism verified against the pinned dependency
+rather than asserted from memory:** `Cargo.lock` pins `serde_json 1.0.151`, whose
+`src/ser.rs:169-180` handles the value position as
+
+```rust
+fn serialize_f64(self, value: f64) -> Result<()> {
+    match value.classify() {
+        FpCategory::Nan | FpCategory::Infinite =>
+            self.formatter.write_null(&mut self.writer).map_err(Error::io),
+        _ => self.formatter.write_f64(&mut self.writer, value).map_err(Error::io),
+    }
+}
+```
+
+— i.e. a non-finite float in a **value** position serializes as `null`, it does **not** error. The
+error path (`float_key_must_be_finite`, `src/ser.rs:1042-1045`) belongs to `MapKeySerializer`, which
+applies only to floats used as **map keys**. `CheckpointSnapshot` has no map-keyed floats: every
+float field (`CheckpointRetrievalSnapshot::{vector_weight, bm25_weight}`,
+`CheckpointStructuredCitation::score`) is a struct field. No other error source was identified — all
+remaining fields are plain owned types. So the `expect` appears unreachable at HEAD and this is
+filed for the structural hazard only.
+
+One second-order consequence worth noting: because non-finite floats become `null` rather than
+failing, a NaN reranker `score` would be persisted silently as `"score": null` in
+`workflow_checkpoints.context_snapshot` and would still pass the Go-side `json.Valid` guard at
+`checkpoint_sink.go:105`. That is a provenance-fidelity gap, not a crash.
+
+**Fix:** return `Result<String, serde_json::Error>` (or fall back to a minimal
+`{"error":"snapshot_serialization_failed"}` literal, which also keeps the Go-side `json.Valid` guard
+at `checkpoint_sink.go:105` satisfied).
+
+### IN-23 (NEW): `7da662a`'s new graph timeout invariant has no negative test
+
+**File:** `engine/src/main.rs:280-288`, `engine/src/tests.rs:315-360`
+
+**Issue:** `7da662a` added the `graph_node_timeout_ms >= query_embedding + graph_operation` check to
+`WorkflowSettings::validate()`, but the only test change was to `config_workflow_nested_env_overrides_match_contract`,
+which merely **renumbered the fixture values** (`3333`/`4444`/`5555`/`6666`/`7777` →
+`4444`/`3333`/`6666`/`7777`/`8888`) so the existing happy path would keep satisfying the new
+inequality. No test asserts that a violating configuration is **rejected**. Nothing prevents the
+check from being deleted or inverted without a test failing.
+
+**Fix:** add a direct unit test.
+
+```rust
+#[test]
+fn graph_node_timeout_below_component_sum_is_rejected() {
+    let mut s = WorkflowSettings::default();
+    s.query_embedding_timeout_ms = 10_000;
+    s.graph_operation_timeout_ms = 4_000;
+    s.graph_node_timeout_ms = 13_999;
+    let err = s.validate().expect_err("must reject inverted graph timer");
+    assert!(err.contains("graph_node_timeout_ms"));
+}
+```
+
+### IN-24: `config/config.example.toml` documents a different generation model than `config/config.toml` ships
+
+**File:** `config/config.example.toml:78`, `config/config.toml:41`
+
+**Issue:** The example pins `generation_model = "openai/gpt-4o-mini"` while the shipped config pins
+`"dots-studio/dots-3-note-preview:free"`. `fetch_and_validate_capabilities`
+(`openrouter.rs:414-443`) hard-fails `prepare()` unless the configured model is present in the
+OpenRouter `/models` list *and* advertises `response_format` / `json_schema` /
+`structured_outputs`, so an operator who copies the example verbatim gets a startup-time preflight
+failure if `gpt-4o-mini` ever stops advertising one of those. Documentation drift, not a defect —
+recorded so the divergence is on the record rather than assumed intentional.
+
+**Fix:** keep the example in sync with the shipped value, or add a comment explaining why they
+differ.
 
 ---
 
-_Reviewed: 2026-08-19T02:02:00Z (refresh at HEAD `e6e153f`)_
+_Reviewed: 2026-08-19T05:40:00Z (full re-derivation at HEAD `bb58a60`)_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
