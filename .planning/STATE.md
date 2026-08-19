@@ -6,8 +6,8 @@ current_phase: 5
 current_phase_name: State Machine & Workflow Events
 current_plan: 11
 status: complete
-stopped_at: Phase 05 gates run — code review + regression gate + verification complete; awaiting UAT
-last_updated: "2026-08-19T01:05:02.913Z"
+stopped_at: Phase 05 gates RE-RUN at HEAD after 05-25/05-26 — code review + regression gate + verification refreshed; awaiting UAT (3 pending items) and /gsd-secure-phase
+last_updated: "2026-08-19T03:25:00.000Z"
 progress:
   total_phases: 6
   completed_phases: 5
@@ -34,16 +34,20 @@ progress:
 - Phase 05 Wave 18 Plan 05-22 executed: completed production typed graph-fact handoff and end-to-end query_rag workflow tests.
 - Phase 05 Wave 19 Plan 05-20 executed: separated capability preflight from the GenerateAnswer node timer and proved the two-attempt retry path fits the 65s node timer with paused-clock timing proofs.
 - Phase 05 Wave 20 Plan 05-11 executed: proved and hardened real engine-to-gateway SSE stream across 5-node lifecycle and graph fixtures, verified client cancellation propagation, structured stream error framing, and lossless checkpoint persistence under backpressure.
-- Phase 05 post-execution gates run (2026-08-18): all 24 plans complete; ROADMAP plan checkboxes reconciled for 05-19/20/21/22/24.
-  - Code review refreshed (05-REVIEW.md, standard depth, 36 production files): 1 Critical, 11 Warnings, 15 Info. Generated code (4 files) and tests (7 files, 787KB) excluded from line-by-line review and recorded in the report.
-  - Regression gate PASSED: `cargo test --manifest-path engine/Cargo.toml --locked` 280 passed / 0 failed / 1 ignored; `go test ./...` exit 0 for all gateway packages. Caveat: that Go run silently SKIPPED 11 DB tests (including all three checkpoint-persistence tests) because `TEST_DATABASE_URL` was unset; the verifier re-ran them against live Postgres separately and they pass.
-  - Verification refreshed (05-VERIFICATION.md): 5/5 roadmap success criteria verified, superseding the stale 2026-08-13 verdict of 1/5. Status is `human_needed`, not `passed` — 4 items persisted to 05-UAT.md.
-  - Phase NOT marked complete: `phase.complete` is gated on verification returning `passed`. Next: `/gsd-verify-work 5`.
+- Phase 05 post-execution gates RE-RUN (2026-08-19) after gap-closure plans 05-25 and 05-26 landed: all 26 plans complete; ROADMAP plan checkboxes and plan counts reconciled for 05-25/05-26 (commit e6e153f).
+  - Code review REFRESHED at HEAD (05-REVIEW.md, standard depth, 37 of 48 scoped files, commit 721485c): 1 Critical, 15 Warnings, 18 Info (34 total), superseding the stale 2026-08-18T09:43 report of 27. Every finding re-derived at HEAD, not carried forward. Prior WR-05 (`x-lancet-*` trailer regression) confirmed RESOLVED by edaf907. `engine/src/db/mod.rs` + `db/tests.rs` newly in scope (05-25). 10 new findings, incl. WR-12 (runner.rs capacity() TOCTOU, coupled to CR-01) and WR-13/IN-15 (05-25's remediation hint is appended after multi-KB schema dumps; its test asserts only `contains`, so it does not protect the property the plan meant to deliver). 11 files excluded (generated code + large test files), recorded verbatim in the report.
+  - Regression gate PASSED: `cargo test --manifest-path engine/Cargo.toml --locked` 281 passed / 0 failed / 1 ignored, exit 0; `cd gateway && go test ./...` 54 passed / 0 failed / 11 SKIPPED, exit 0. The 11 skips are ALL `TEST_DATABASE_URL`-gated and could NOT be run here (Docker Desktop not running; nothing listening on 127.0.0.1:5432) — recorded explicitly, NOT counted as passes. 05-26's actual risk surface is not env-gated and DID run: TestRAGQueryCrossRuntime (3.09s) and TestRAGQueryClientDisconnectCancelsRustWorkflow (2.22s) both pass.
+  - Verification REFRESHED (05-VERIFICATION.md, commit e604f5f): 4/5 roadmap success criteria verified, 1 present-but-behavior-unverified. Score moved 5/5 -> 4/5 NOT from a regression but from honest re-grading — the prior pass counted three Postgres-backed checkpoint tests as PASS against a container that is no longer up. SC4 splits: capture half provable from source (CHECKPOINT_SNAPSHOT_KEYS, 19 keys); persistence half (FIFO drain, cancellation atomicity) has no fresh evidence. SC3 stands — CR-01/WR-12's precondition re-derived as unreachable at the current 100-slot buffer depth. Requirements traceability clean: ORCH-01..05 all [x], GATE-01/02 formalized, GATE-03 removed as unbacked, no orphans. `regressions: []`, `gaps_remaining: []`.
+  - G-05-1 CLOSED IN CODE by 05-25 + 05-26 (Blocker A verified empirically — inspect_lancedb.exe passes open_and_validate against ./data/lancedb; Blocker B closed at main.rs:661-668). Closing the blockers UNBLOCKS UAT Test 1; it does not constitute it. The live OpenRouter run still requires a real API key and a human.
+  - New warning the plans did not flag (WARN-NEW-01): 05-26's decoupling pins the real-engine tests to `openai/gpt-4o-mini` while production ships `dots-studio/dots-3-note-preview:free`, so the structured-output capability preflight (openrouter.rs:425-434) is now exercised by NO automated test.
+  - 05-UAT.md MERGED, not regenerated: Tests 2/3/4 and their three recorded human resolutions preserved verbatim; Test 1 reopened as `pending` (blockers closed) with its prior failure kept on the record; Tests 5 (Postgres-gated suite) and 6 (CR-01/WR-12 disposition) added. Now 6 total / 3 passed / 3 pending.
+  - Security gate: `workflow.security_enforcement` is active and NO 05-SECURITY.md exists — run `/gsd-secure-phase 5` before advancing.
+  - Phase NOT marked complete: `phase.complete` is gated on verification returning `passed`; it returns `human_needed`. Next: `/gsd-verify-work 5`.
 
 ## Active Phase
 
 - **Phase:** 5 — State Machine & Workflow Events
-- **Status:** All 26 plans executed (incl. gap-closure 05-25, 05-26); post-execution gates re-running
+- **Status:** All 26 plans executed (incl. gap-closure 05-25, 05-26); code review + regression gate + verification refreshed at HEAD; awaiting UAT (05-UAT.md — 3 pending) and /gsd-secure-phase
 - **Current Plan:** 11
 - **Total Plans in Phase:** 26
 - **Completed Plans in Phase:** 26
