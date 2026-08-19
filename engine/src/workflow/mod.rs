@@ -199,15 +199,21 @@ pub fn run_inline_prompt_generation_remainder<'a>(
         if let Some(generator) = &deps.generator {
             let mut gen_req = crate::generation::GenerationRequest::new(
                 ctx.original_query.clone(),
-                vec![],
+                ctx.evidence_blocks.clone(),
             );
+            gen_req.graph_facts = ctx.graph_facts.clone();
             gen_req.session_id = Some(ctx.session_id.clone());
             gen_req.correlation_id = Some(ctx.trace_id.clone());
+            gen_req.cancel = Some(cancel.clone());
 
-            // D-12: Single retry loop
+            // D-12: Single retry loop for retryable errors
             let mut result = generator.generate(gen_req.clone()).await;
-            if result.is_err() && !cancel.is_cancelled() {
-                result = generator.generate(gen_req).await;
+            if let Err(ref err) = result {
+                let is_retryable = err.kind == crate::generation::GenerationErrorKind::Timeout
+                    || err.kind == crate::generation::GenerationErrorKind::ProviderError;
+                if is_retryable && !cancel.is_cancelled() {
+                    result = generator.generate(gen_req).await;
+                }
             }
 
             match result {
