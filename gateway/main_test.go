@@ -3868,3 +3868,52 @@ func TestWorkflowCheckpointPendingDrainAndPersistence(t *testing.T) {
 	}
 }
 
+func TestLoadConfigValidation(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("[gateway]\nport = \"8080\"\nengine_addr = \"localhost:50051\"\n"), 0o644); err != nil {
+		t.Fatalf("write temp config.toml: %v", err)
+	}
+	t.Setenv("LANCET_CONFIG_DIR", tempDir)
+
+	t.Run("rejects empty database url", func(t *testing.T) {
+		t.Setenv("LANCET_GATEWAY__DATABASE_URL", "   ")
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatal("expected error on blank database_url, got nil")
+		}
+		if !strings.Contains(err.Error(), "gateway.database_url must not be empty") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("rejects sslmode disable in prod", func(t *testing.T) {
+		t.Setenv("LANCET_ENV", "prod")
+		prodPath := filepath.Join(tempDir, "config.prod.toml")
+		if err := os.WriteFile(prodPath, []byte(""), 0o644); err != nil {
+			t.Fatalf("write temp config.prod.toml: %v", err)
+		}
+		t.Setenv("LANCET_GATEWAY__DATABASE_URL", "postgres://user:pass@localhost:5432/db?sslmode=disable")
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatal("expected error on sslmode=disable in prod, got nil")
+		}
+		if !strings.Contains(err.Error(), "gateway.database_url must not disable TLS in prod") {
+			t.Fatalf("unexpected error message: %v", err)
+		}
+	})
+}
+
+func TestCheckpointDispatcherCloseWithTimeout(t *testing.T) {
+	sink := NewInMemoryCheckpointSink()
+	d := NewCheckpointDispatcher(sink)
+	res := d.Submit(&CheckpointEnvelope{TraceID: "t1", SequenceOrdinal: 1})
+	if res.Kind != DispatchAccepted {
+		t.Fatalf("expected accepted, got %v", res.Kind)
+	}
+	err := d.CloseWithTimeout(5 * time.Second)
+	if err != nil {
+		t.Fatalf("expected clean close, got %v", err)
+	}
+}
+

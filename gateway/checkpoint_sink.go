@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -164,16 +165,23 @@ type CheckpointDispatcher struct {
 	pending  []*CheckpointEnvelope
 	mu       sync.Mutex
 	sink     CheckpointSink
+	logger   *zap.Logger
+	dropped  atomic.Uint64
 	closed   bool
 	done     chan struct{}
 }
 
 func NewCheckpointDispatcher(sink CheckpointSink) *CheckpointDispatcher {
+	return NewCheckpointDispatcherWithLogger(sink, nil)
+}
+
+func NewCheckpointDispatcherWithLogger(sink CheckpointSink, logger *zap.Logger) *CheckpointDispatcher {
 	d := &CheckpointDispatcher{
 		primary:  make(chan *CheckpointEnvelope, 1),
 		overflow: make([]*CheckpointEnvelope, 0, 4),
 		pending:  make([]*CheckpointEnvelope, 0, 16),
 		sink:     sink,
+		logger:   logger,
 		done:     make(chan struct{}),
 	}
 	go d.loop()
@@ -227,11 +235,30 @@ func (d *CheckpointDispatcher) loop() {
 			break
 		}
 		if d.sink != nil {
-			if err := d.sink.SaveCheckpoint(context.Background(), env); err != nil {
-				if ps, ok := d.sink.(*PostgresCheckpointSink); ok && ps.logger != nil {
-					ps.logger.Warn("checkpoint dispatcher dropped envelope on sink error",
+			var err error
+			for attempt := range 3 {
+				err = d.sink.SaveCheckpoint(context.Background(), env)
+				if err == nil {
+					break
+				}
+				if attempt < 2 {
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+			if err != nil {
+				d.dropped.Add(1)
+				if d.logger != nil {
+					d.logger.Error("checkpoint dispatcher dropped envelope on sink error",
 						zap.String("trace_id", env.TraceID),
 						zap.Uint64("sequence_ordinal", env.SequenceOrdinal),
+						zap.Uint64("dropped_total", d.dropped.Load()),
+						zap.Error(err),
+					)
+				} else if ps, ok := d.sink.(*PostgresCheckpointSink); ok && ps.logger != nil {
+					ps.logger.Error("checkpoint dispatcher dropped envelope on sink error",
+						zap.String("trace_id", env.TraceID),
+						zap.Uint64("sequence_ordinal", env.SequenceOrdinal),
+						zap.Uint64("dropped_total", d.dropped.Load()),
 						zap.Error(err),
 					)
 				}
@@ -294,16 +321,29 @@ func (d *CheckpointDispatcher) nextEnvelope() *CheckpointEnvelope {
 	return env
 }
 
-func (d *CheckpointDispatcher) Close() {
+func (d *CheckpointDispatcher) CloseWithTimeout(budget time.Duration) error {
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
-		<-d.done
-		return
+		select {
+		case <-d.done:
+			return nil
+		case <-time.After(budget):
+			return errors.New("checkpoint dispatcher drain timed out")
+		}
 	}
 	d.closed = true
 	close(d.primary)
 	d.mu.Unlock()
 
-	<-d.done
+	select {
+	case <-d.done:
+		return nil
+	case <-time.After(budget):
+		return errors.New("checkpoint dispatcher drain timed out")
+	}
+}
+
+func (d *CheckpointDispatcher) Close() {
+	_ = d.CloseWithTimeout(10 * time.Second)
 }

@@ -71,6 +71,9 @@ func loadConfig() (Config, error) {
 	v.SetEnvPrefix("LANCET")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "__"))
 	v.AutomaticEnv()
+	_ = v.BindEnv("gateway.port", "LANCET_GATEWAY__PORT")
+	_ = v.BindEnv("gateway.database_url", "LANCET_GATEWAY__DATABASE_URL")
+	_ = v.BindEnv("gateway.engine_addr", "LANCET_GATEWAY__ENGINE_ADDR")
 	if err := v.ReadInConfig(); err != nil {
 		return Config{}, err
 	}
@@ -86,6 +89,9 @@ func loadConfig() (Config, error) {
 	}
 	if strings.TrimSpace(cfg.Gateway.DatabaseURL) == "" {
 		return Config{}, errors.New("gateway.database_url must not be empty (set LANCET_GATEWAY__DATABASE_URL)")
+	}
+	if os.Getenv("LANCET_ENV") == "prod" && strings.Contains(cfg.Gateway.DatabaseURL, "sslmode=disable") {
+		return Config{}, errors.New("gateway.database_url must not disable TLS in prod")
 	}
 	return cfg, nil
 }
@@ -1051,23 +1057,32 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 }
 
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	logger, err := zap.NewDevelopment()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer logger.Sync()
 	cfg, err := loadConfig()
 	if err != nil {
-		logger.Fatal("load configuration", zap.Error(err))
+		logger.Error("load configuration", zap.Error(err))
+		return err
 	}
 	pool, err := pgxpool.New(context.Background(), cfg.Gateway.DatabaseURL)
 	if err != nil {
-		logger.Fatal("connect postgres", zap.Error(err))
+		logger.Error("connect postgres", zap.Error(err))
+		return err
 	}
 	defer pool.Close()
 	conn, err := grpc.NewClient(cfg.Gateway.EngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		logger.Fatal("dial engine", zap.Error(err))
+		logger.Error("dial engine", zap.Error(err))
+		return err
 	}
 	defer conn.Close()
 
@@ -1077,7 +1092,7 @@ func main() {
 	go reconciler.Run(recCtx)
 
 	sink := NewPostgresCheckpointSink(pool, logger)
-	dispatcher := NewCheckpointDispatcher(sink)
+	dispatcher := NewCheckpointDispatcherWithLogger(sink, logger)
 	defer dispatcher.Close()
 
 	server := newHTTPServer(
@@ -1092,22 +1107,32 @@ func main() {
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	serveErr := make(chan error, 1)
 	go func() {
 		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("gateway stopped", zap.Error(err))
-			stop()
+			serveErr <- err
 		}
+		close(serveErr)
 	}()
 	logger.Info("gateway listening", zap.String("addr", server.Addr))
 
-	<-sigCtx.Done()
-	logger.Info("gateway shutting down")
+	var fatal error
+	select {
+	case err, ok := <-serveErr:
+		if ok && err != nil {
+			fatal = err
+		}
+	case <-sigCtx.Done():
+		logger.Info("gateway shutting down")
+	}
 
 	shutCtx, cancelShut := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelShut()
 	if err := server.Shutdown(shutCtx); err != nil {
 		logger.Warn("gateway server shutdown error", zap.Error(err))
 	}
+	return fatal
 }
 
 

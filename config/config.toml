@@ -1,6 +1,7 @@
 [gateway]
 port = "8080"
-database_url = "postgres://postgres:postgres@localhost:5432/lancet?sslmode=disable"
+# Supplied via LANCET_GATEWAY__DATABASE_URL; never commit a real DSN.
+database_url = ""
 engine_addr = "localhost:50051"
 
 [engine]
