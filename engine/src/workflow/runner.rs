@@ -509,11 +509,8 @@ impl WorkflowRunner {
                 {
                     return;
                 }
-                if sink
-                    .send_checkpoint_or_error("terminal_success", ctx, cancel)
-                    .is_err()
-                {
-                    return;
+                if let Err(err) = sink.send_checkpoint_or_error("terminal_success", ctx, cancel) {
+                    tracing::warn!(error = %err, "terminal checkpoint dropped; continuing to terminal event");
                 }
                 match sink
                     .send_event_or_cancel(
