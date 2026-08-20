@@ -1796,7 +1796,21 @@ verbatim.)*
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> **All five resolved by the /gsd-plan-phase 6 orchestrator** (config `mode: yolo` — no interactive
+> checkpoint). Each was resolved with the recommendation recorded below it, and each resolution is
+> traced into executable plan content. They are recorded in the owning plans as re-openable
+> assumptions, not as settled fact.
+>
+> | # | Resolution | Owning plan |
+> |---|---|---|
+> | Q1 | Unmatched filter → **200 + `NO_EVIDENCE`**, as an explicit matrix disposition | `06-12-PLAN.md` (lines 28, 165) |
+> | Q2 | `WorkflowMetadata` token fields land as **shape only, zero-valued**; populated in Phase 6.2, never fabricated | `06-07-PLAN.md` (line 319, with a matching threat-model row) |
+> | Q3 | D-80 **also moves the ingestion worker** (Phases 6.1 and 6.2 both attach to it) | `06-02-PLAN.md` (line 71) |
+> | Q4 | Phase 6's D-08 plan **owns `disable_graph_context`'s behavior**, with a notice distinct from `GRAPH_UNAVAILABLE` (`GRAPH_CONTEXT_DISABLED`, tag 18) | `06-08-PLAN.md` (lines 24, 71) |
+> | Q5 | `runner.rs`'s two `n.code == "NO_EVIDENCE"` comparisons **migrate to `typed_code` in the D-74 plan** | `06-07-PLAN.md` (line 273) |
+
 
 1. **Does an "unmatched" filter reject or succeed?**
    - What we know: Phase 03 shipped a *"valid zero-match success branch"* (`03/deferred-items.md`,
