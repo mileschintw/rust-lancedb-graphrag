@@ -423,6 +423,22 @@ shipped reality, not intent.
   `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` as the governing decision
   record**, and Phase 6's own entry gets one too — it currently has none, which is why this
   document's canonical refs had to be assembled from scratch.
+
+  **More load-bearing still: each of 6.1–6.4 MUST carry `**Depends on:** Phase 6`.**
+  `plan-phase.md:705` loads CONTEXT.md/SUMMARY.md/LEARNINGS.md from every phase named in
+  `Depends on:` **regardless of recency**, whereas the default window is only the 3 most recent
+  phases (`plan-phase.md:87`). Without the explicit dependency, `06-CONTEXT.md` still reaches
+  6.1's planner by recency but **silently falls out of the window by 6.4**, whose three most
+  recent phases are 6.1, 6.2 and 6.3. Phase 04.1 already uses this field
+  (`.planning/ROADMAP.md:265`), so it is an established pattern here.
+
+  **Known consequence, accepted:** with no local CONTEXT.md, `plan-phase` will prompt "No
+  CONTEXT.md found for Phase X" — answer **"Continue without context"**; the decisions arrive via
+  the dependency load, not a local file. The cost is that the plan-checker's decision-coverage
+  gate (`plan-phase.md:1211-1251`, "every trackable decision in `<decisions>` is referenced by at
+  least one plan") **skips itself when the phase has no local CONTEXT.md**. Each sub-phase's
+  planning must therefore assert its decision coverage manually — name which of the 86 decisions
+  it implements — since the automated check will not run.
 - **D-78:** **ROADMAP.md gets phases 6.1–6.4 inserted as the immediate next step**, before any
   planning — mirroring how Phase 04.1 was inserted. Requirement mapping: RAG-03 → 6 and 6.1;
   OBS-01 → 6.2; OBS-02 and OBS-04 → 6.3; OBS-03 → 6.4.
