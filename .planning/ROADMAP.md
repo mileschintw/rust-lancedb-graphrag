@@ -1,6 +1,6 @@
 # Project Roadmap
 
-**6 phases** | **23 requirements mapped** | All v1 requirements covered ✓
+**10 phases** | **23 requirements mapped** | All v1 requirements covered ✓
 
 | # | Phase | Goal | Requirements |
 |---|-------|------|--------------|
@@ -9,7 +9,11 @@
 | 3 | 23/23 | Complete (ADR-03-003 force-close; DEBT-P3-* to Phase 6) | 2026-08-05 |
 | 4 | Knowledge Graph Extraction & Query | Extract entities/relations, store in LanceDB, and compile into context | DATA-04, DATA-05, RAG-05 |
 | 5 | State Machine & Workflow Events | Formalize orchestration via Rust state machine with streaming events | ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05 |
-| 6 | Observability, Evaluation & Polish | Add OpenTelemetry tracing, offline eval script, README, and RAG hardening | RAG-03, OBS-01, OBS-02, OBS-03, OBS-04 |
+| 6 | Observability, Evaluation & Polish (module graph, wire contract, RAG-03 core) | Module-graph restructure, consolidated wire contract, degraded-mode/citation-repair/bad-input/graph-unavailable hardening | RAG-03 |
+| 6.1 | Index Rebuild-and-Swap, BU Proofs, CR-04/CR-05 Review (INSERTED) | Rebuild-and-swap index lifecycle, DEBT-BU-01/02 deterministic proofs, documented CR-04/CR-05 review | RAG-03 |
+| 6.2 | OpenTelemetry Traces, Metrics and Logs (INSERTED) | OTel across Go and Rust via Collector to Jaeger/Prometheus/Loki/Grafana | OBS-01 |
+| 6.3 | Evaluation Harness, Corpora and Recorded Run (INSERTED) | Python eval harness against MultiHop-RAG with deterministic + LLM-judged metrics | OBS-02, OBS-04 |
+| 6.4 | Docs Suite, Verified Quickstart and v1 Closure (INSERTED) | README/docs suite, verified quickstart, debt backlog promotion, milestone closure | OBS-03 |
 
 ## Phase Details
 
@@ -443,18 +447,92 @@ Plans:
 
 ### Phase 6: Observability, Evaluation & Polish
 
-**Goal:** Add OpenTelemetry tracing, offline eval script, README, and post-MVP hardening
+**Goal:** Rust + Go module-graph restructure, consolidated additive wire-contract change, and RAG-03 degraded-mode hardening (model-only answers, citation repair, bad-input matrix, graph-unavailable notice)
 **Mode:** mvp
-**Requirements:** RAG-03, OBS-01, OBS-02, OBS-03, OBS-04
+**Requirements:** RAG-03 (DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-05, DEBT-RAG-06 clauses)
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Sub-phases carry the same reference; there is one source of truth.
 **Success Criteria:**
 
-1. OpenTelemetry traces span Go, gRPC, and Rust components.
-2. Offline eval script successfully scores retrieval and answer quality on a test set.
-3. README provides clear architecture docs and instructions on how to run/evaluate.
-4. Include placeholder metric for global GraphRAG evaluation.
-5. Close `DEBT-BU-01` and `DEBT-BU-02` with their recorded behavioral proofs before declaring the v1 MVP complete.
-6. Review `DEBT-CR-04` and `DEBT-CR-05` as conditional security/resource gates if neither has triggered earlier; any non-loopback/shared/remote/public caller or bulk/scheduled/concurrent/larger-uncontrolled ingestion trigger makes the corresponding review immediate and overrides Phase 6 timing.
-7. Implement and verify the deferred RAG-03 hardening target, including DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 acceptance criteria, before claiming degraded/citation-repair/re-ingestion coverage.
+> Phase 6's original seven success criteria were rewritten and redistributed across the five-phase split per 06-CONTEXT.md D-79. Mapping: SC1 → 6.2; SC2 and SC4 → 6.3; SC3 → 6.4; SC5 and SC6 → 6.1; SC7 → 6 and 6.1.
+
+1. The Rust binary imports all production modules from the library crate; the dual `lib.rs`/`main.rs` declaration ends (`DEBT-P3-MODULE-GRAPH`, D-80), landed as the first Phase 6 plan (D-81). The Go gateway's `main.go` is symmetrically split into packages (telemetry setup, SSE handling, engine client, config) before telemetry work lands (D-82).
+2. One consolidated additive protobuf change — the model-only request flag, the graph-ablation request flag, `WorkflowCompletedEvent` workflow-metadata fields, and the typed notice-code enum — lands with regenerated Rust and Go bindings before any behavior plan starts (D-74, D-76).
+3. When both retrieval paths fail or evidence is absent and the caller has opted in (default off), the workflow returns `answer_basis = MODEL_ONLY` with an explicit notice and zero citations; with the flag off, today's fail-closed behavior is unchanged (D-10, D-11, D-12).
+4. One retrieval path failing keeps `answer_basis = RETRIEVAL` with a machine-readable `RETRIEVAL_DEGRADED` notice naming the failed path (D-13).
+5. Citation repair (`DEBT-RAG-03`) normalizes near-miss markers locally, strips anything still unresolved, emits `CITATION_REPAIRED`/`CITATION_DROPPED`, and downgrades the basis if all grounding is lost — no second provider call (D-14).
+6. The bad-input matrix (`DEBT-RAG-05`) is an enumerated, table-driven test (gRPC and HTTP) covering malformed query/session/document IDs, content type, and filter bounds, all rejecting before retrieval or provider work with stable HTTP 400 / gRPC `InvalidArgument` (D-15).
+7. The graph-unavailable notice (`DEBT-RAG-06`) fires on the two silent-degrade paths (empty-result and absent-`graph_port`) that don't already emit `GRAPH_TIMEOUT`/`GRAPH_DEGRADED`; source-chunk queries are proven to never require graph data (D-08).
+
+### Phase 6.1: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
+
+**Goal:** Wire index rebuild-and-swap with cross-index corpus generation (DEBT-RAG-04), close DEBT-BU-01/DEBT-BU-02 with deterministic proofs, and complete the documented-only DEBT-CR-04/DEBT-CR-05 review
+**Mode:** mvp
+**Requirements:** RAG-03 (DEBT-RAG-04 clause)
+**Depends on:** Phase 6
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record.
+**Success Criteria:**
+
+1. On ingestion batch completion, BM25 is rebuilt from the nodes table and atomically swapped into the existing `Arc<RwLock<Arc<Bm25Index>>>`, debounced/coalesced so a burst of documents causes one rebuild, triggered from the Rust ingestion worker (D-20, D-23).
+2. A query concurrent with an index swap returns results from exactly one generation, proven by a generation-stamped assertion test; queries never block on a rebuild and keep serving the previous generation until the instantaneous swap (D-21, D-22).
+3. A single corpus generation covers both dense and BM25 representations — a query is served entirely from one generation or the other, never mixed (D-24), derived at startup from persisted LanceDB state with no stored counter (D-26).
+4. A failed startup build stops the engine (fail-closed); a failed post-ingest rebuild keeps the previous generation serving with a warning notice and error-level logs/spans (D-25).
+5. `DEBT-BU-01` closes via a deterministic test using a controlled/injected clock: matching challenge/evidence identity and issue times, exceeding only `issued_at`→`generated_at`, asserting the dedicated complete-run-window error classification (D-07).
+6. `DEBT-BU-02` closes via a deterministic test: caller-fixture SHA-256 and bytes preserved across success plus representative early and post-upload failures, using script-created temporary inputs only, no live run (D-07).
+7. `DEBT-CR-04` (network auth/authz/TLS/quotas) and `DEBT-CR-05` (pre-admission bounds) are reviewed as documented-only conditional gates: the loopback guardrail is verified to hold, no trigger fired, re-acceptance is recorded, and no new code ships for either (D-06).
+
+### Phase 6.2: OpenTelemetry Traces, Metrics and Logs (OBS-01) (INSERTED)
+
+**Goal:** Ship production-grade OTel traces, metrics and logs across Go and Rust, exported through a Collector to Jaeger/Prometheus/Loki with Grafana as the correlated pane, provisioned as code
+**Mode:** mvp
+**Requirements:** OBS-01
+**Depends on:** Phase 6
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record.
+**Success Criteria:**
+
+1. The OTel trace ID is authoritative; `correlation_id` is retained as a span attribute for continuity (D-27). Inbound W3C `traceparent` is honoured when present, otherwise the gateway starts the root (D-28).
+2. Every RAG query produces roughly 8–10 spans: the five existing node spans plus a child span per real external call (embedding request, dense LanceDB search, BM25 query, graph Cypher traversal, and each LLM attempt) (D-29). The root span covers the whole SSE stream and carries the terminal outcome (`answer_basis`, degraded flags) as attributes plus span status (D-31).
+3. Ingestion is fully traced end to end: upload → admission → chunking → embedding → staging write → graph extraction → index rebuild (D-30), making Phase 6.1's rebuild-and-swap observable.
+4. Metrics ship with a real backend — a RAG-quality operational set (query latency by outcome, retrieval-path failure counter, degraded-answer counter by `answer_basis`, citation repair/drop counter, generation retry counter, evidence-set size histogram, ingest document/chunk counters, index rebuild duration and corpus generation gauge) (D-33, D-35).
+5. Both services export OTLP to an OpenTelemetry Collector, fanning out to Jaeger (traces), Prometheus (metrics), and Loki (logs), correlated in Grafana by `trace_id` (D-34).
+6. `docker-compose` exposes a core profile (PostgreSQL only) and an `observability` profile (Collector, Jaeger, Prometheus, Loki, Grafana); Collector pipelines, scrape/log config, and Grafana datasources/dashboards are committed and auto-provisioned with no manual UI state, dashboards generated from typed code (D-39, D-40).
+7. A missing collector degrades silently to stdout in both services — telemetry initialization never fails the service (D-38). Service identity (`service.name`, `service.version`, `deployment.environment`) is set via the standard resource detector (D-43).
+8. Phase 05 D-30's workflow metadata lands both as span attributes and as additive `WorkflowCompletedEvent` protobuf fields (D-41).
+
+### Phase 6.3: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04) (INSERTED)
+
+**Goal:** Build the Python evaluation harness against MultiHop-RAG, run and commit a scored evaluation report with deterministic and LLM-judged metrics
+**Mode:** mvp
+**Requirements:** OBS-02, OBS-04
+**Depends on:** Phase 6
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record.
+**Success Criteria:**
+
+1. MultiHop-RAG (~500 sampled questions, fixed committed seed) is the primary benchmark; GraphRAG-Bench (Novel) is an optional graph-showcase supplement on the same corpus-agnostic harness — only MultiHop-RAG results are required for closure (D-44, D-53, D-59).
+2. The harness is Python, drives the gateway's `/rag/query` HTTP/SSE endpoint like a real client, and lives in a dedicated `eval/` directory with `pyproject.toml` plus a lockfile run via `uv` (D-48, D-49). The SSE client asserts the wire contract (terminal event, exactly one `final_answer`, notices attached) (D-65).
+3. Deterministic metrics (retrieval recall@k, context precision, MRR/nDCG, answer EM/F1) run over the full set with no LLM and require no API key; LLM-as-judge scores only groundedness and faithfulness, using a judge model pinned distinct from the generator, temperature 0, with judgements cached by `(question, answer, evidence)` hash (D-50, D-52, D-62).
+4. Graph capability is measured by ablation — the same question set run with graph context on and off via a per-request flag on one running engine, scored as its own dimension, kept distinct from the model-only opt-in (D-46, D-47).
+5. OBS-04's placeholder dimension registers and returns an explicit `skipped` status with a reason — never a fabricated number (D-51).
+6. The eval store is fully isolated (its own LanceDB path and PostgreSQL schema via the existing Atlas migrations), seeded once through the real ingestion path over a documented reduced document subset, reseed is an explicit command (D-55, D-56, D-57).
+7. The harness preflights gateway/engine reachability, eval-store seed state and generation, and API key presence for judged dimensions, failing fast with guidance rather than 40 minutes in (D-64).
+8. Output is a committed Markdown report plus machine-readable JSON, advisory only (no pass/fail gate), reported per corpus with run metadata (judge model, sample size, date, index generation, commit SHA) and no cross-corpus aggregate (D-54, D-60, D-61).
+9. At least one automated test exercises the shipped generation model's (`dots-studio/dots-3-note-preview:free`) structured-output preflight, closing Phase 05's WARN-NEW-01 (D-63).
+
+### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
+
+**Goal:** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone
+**Mode:** mvp
+**Requirements:** OBS-03
+**Depends on:** Phase 6
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record.
+**Success Criteria:**
+
+1. The README stays the readable front door (story, architecture sketch, quickstart, headline results, links); `docs/` gains a design narrative (alternatives-considered, linking ADRs), an observability walkthrough following one real query end to end, and an evaluation methodology + results page — each written after the implementation it documents (D-66, D-67, D-72, D-73).
+2. The quickstart is executable and verified end-to-end on a clean checkout — compose up, migrate, `cargo run`/`go run`, ingest, query, open Jaeger and Grafana, run the eval — on both Windows native and Linux via WSL (D-68).
+3. Four Mermaid diagrams (system/deployment topology, query-path state machine including degraded branches, ingestion pipeline through index rebuild-and-swap, telemetry topology) plus three captured artifacts (Jaeger trace screenshot, Grafana dashboard, eval-results chart) are present (D-69).
+4. The README carries an honest limitations section: local-only by design (no auth/TLS/quotas, DEBT-CR-04's trigger conditions), the open debt themes linked to their backlog phases, and what the eval does and does not measure, including the unmeasured evidence-vs-priors claim (D-71).
+5. The notice-code vocabulary (`NO_EVIDENCE`, `GRAPH_DEGRADED`, `GRAPH_TIMEOUT`, `RETRIEVAL_DEGRADED`, `CITATION_REPAIRED`/`CITATION_DROPPED`, `MODEL_ONLY`, `GRAPH_UNAVAILABLE`, index-staleness codes) is documented in `docs/` as part of the API contract (D-76).
+6. The 18 un-selected `DEBT-*` items are promoted to five themed `999.x` backlog phases in ROADMAP.md (Security & transport hardening; Ingestion & staging robustness; Config & settings hygiene; API contract & DX; Test & evidence hygiene), each phase listing its member IDs, cross-linked to the source `deferred-items.md` files (D-02, D-03, D-04).
+7. v1 milestone closure — requirements reconciliation and the debt ledger — lands as a Phase 6.4 task rather than a separate post-phase workflow (D-86).
 
 ## Backlog
 

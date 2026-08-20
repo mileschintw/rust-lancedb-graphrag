@@ -7,9 +7,9 @@ current_phase_name: Observability, Evaluation & Polish
 current_plan: Not started
 status: planning
 stopped_at: Phase 6 context gathered (governs 6, 6.1, 6.2, 6.3, 6.4)
-last_updated: "2026-08-20T01:01:23.439Z"
+last_updated: "2026-08-20T01:39:58.209Z"
 progress:
-  total_phases: 7
+  total_phases: 11
   completed_phases: 6
   total_plans: 89
   completed_plans: 89
@@ -201,3 +201,7 @@ progress:
 ### Roadmap Evolution
 
 - Phase 04.1 inserted after Phase 4: Knowledge Graph Extraction & Query (Full Implementation) (URGENT)
+- Phase 6.1 inserted after Phase 6: Phase 6 split into 6, 6.1-6.4 per 06-CONTEXT.md D-77 (scope too large for one phase)
+- Phase 6.2 inserted after Phase 6: OTel traces/metrics/logs (OBS-01), split from Phase 6 per 06-CONTEXT.md D-77
+- Phase 6.3 inserted after Phase 6: Evaluation harness (OBS-02, OBS-04), split from Phase 6 per 06-CONTEXT.md D-77
+- Phase 6.4 inserted after Phase 6: Docs suite + v1 closure (OBS-03), split from Phase 6 per 06-CONTEXT.md D-77

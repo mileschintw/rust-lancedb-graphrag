@@ -49,8 +49,12 @@
 | Requirement | Current phase mapping | Scope status |
 |---|---|---|
 | RAG-02 | Phase 03 | Current MVP acceptance: successful dense/BM25 hybrid retrieval, valid filters, deterministic fusion, and deduplication. |
-| RAG-03 | Phase 06 | Deferred hardening target; not covered or accepted by Phase 03. |
+| RAG-03 | Phase 06, Phase 06.1 | Deferred hardening target; not covered or accepted by Phase 03. Split during Phase 6 discussion (06-CONTEXT.md D-77/D-78): DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-05 and DEBT-RAG-06 clauses → Phase 06; DEBT-RAG-04 (index rebuild-and-swap) → Phase 06.1. |
 | RAG-04 | Phase 03 | Current MVP acceptance: async `Reranker` port and `NoOpReranker` pass-through. |
+| OBS-01 | Phase 06.2 | OpenTelemetry traces, metrics and logs across Go and Rust (06-CONTEXT.md D-78). |
+| OBS-02 | Phase 06.3 | Offline evaluation harness against MultiHop-RAG (06-CONTEXT.md D-78). |
+| OBS-03 | Phase 06.4 | README/design-narrative suite and verified quickstart (06-CONTEXT.md D-78). |
+| OBS-04 | Phase 06.3 | Placeholder global-evaluation metric, registered as an explicit `skipped` dimension (06-CONTEXT.md D-78, D-51). |
 
 The Phase 03 source audit and coverage matrix must show RAG-03 as opted out/deferred rather than covered.
 
