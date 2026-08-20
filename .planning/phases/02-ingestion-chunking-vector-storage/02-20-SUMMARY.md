@@ -1,7 +1,7 @@
 # Phase 02-20 Summary: Inspector Read-Only Enforcement, Vector Sanitization, and Missing Schema Rollback Seam
 
 ## Summary
-- **Plan File:** [02-20-PLAN.md](file:///d:/Repos/lancet/.planning/phases/02-ingestion-chunking-vector-storage/02-20-PLAN.md)
+- **Plan File:** [02-20-PLAN.md](./02-20-PLAN.md)
 - **Status:** Completed
 - **Findings Addressed:** CR-06, WR-05, BU-03, BU-04, WR-03 (Rust paths)
 
@@ -41,8 +41,8 @@
 - `cargo fmt --manifest-path engine/Cargo.toml -- --check`: **PASS** (clean formatting)
 
 ## Key Files Modified
-- [engine/src/db/mod.rs](file:///d:/Repos/lancet/engine/src/db/mod.rs): Added `DatabaseManager::open_and_validate(path)` and derived `Debug` implementation.
-- [engine/src/bin/inspect_lancedb.rs](file:///d:/Repos/lancet/engine/src/bin/inspect_lancedb.rs): Switched to `open_and_validate` and sanitized unknown model errors to class-only output.
-- [engine/src/inspect_lancedb_tests.rs](file:///d:/Repos/lancet/engine/src/inspect_lancedb_tests.rs): Added tests for sentinel omission, store immutability, missing tables, and discrete null/NaN/+inf/-inf/finite vector fixtures.
-- [engine/src/main.rs](file:///d:/Repos/lancet/engine/src/main.rs): Extended `ReplacementMutationBoundary` with `field_with_name`, updated `rollback_replacement` to clear staging, and added `spawn_worker_with_boundary`.
-- [engine/src/tests.rs](file:///d:/Repos/lancet/engine/src/tests.rs): Added `FaultingSchemaFieldBoundary` and replaced fault test with `schema_field_lookup_failure_rolls_back_and_worker_survives`.
+- [engine/src/db/mod.rs](../../../engine/src/db/mod.rs): Added `DatabaseManager::open_and_validate(path)` and derived `Debug` implementation.
+- [engine/src/bin/inspect_lancedb.rs](../../../engine/src/bin/inspect_lancedb.rs): Switched to `open_and_validate` and sanitized unknown model errors to class-only output.
+- [engine/src/inspect_lancedb_tests.rs](../../../engine/src/inspect_lancedb_tests.rs): Added tests for sentinel omission, store immutability, missing tables, and discrete null/NaN/+inf/-inf/finite vector fixtures.
+- [engine/src/main.rs](../../../engine/src/main.rs): Extended `ReplacementMutationBoundary` with `field_with_name`, updated `rollback_replacement` to clear staging, and added `spawn_worker_with_boundary`.
+- [engine/src/tests.rs](../../../engine/src/tests.rs): Added `FaultingSchemaFieldBoundary` and replaced fault test with `schema_field_lookup_failure_rolls_back_and_worker_survives`.

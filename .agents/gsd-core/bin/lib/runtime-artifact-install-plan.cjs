@@ -9,6 +9,12 @@
 // In .cts (CommonJS output) files, `require` is available as a global.
 const _require = require;
 const path = _require('node:path');
+// #2870: InstallScope is owned by install-scope.cts, not re-declared here.
+// `isGlobalScope` centralizes the `scope === 'global'` boolean projection
+// this module needs at `_computePathPrefix`'s `isGlobal: boolean` boundary
+// (see the module-level doc comment on `isGlobalScope` for why the
+// projection is centralized rather than eliminated).
+const install_scope_cjs_1 = require("./install-scope.cjs");
 /**
  * Asserts that `destSubpath` resolves to a path inside `configDir`.
  *
@@ -71,12 +77,18 @@ function createRuntimeArtifactInstallPlan(args) {
     const homedirFn = homedir ?? (() => os.homedir());
     const resolvedTarget = posixNormalize(path.resolve(layout.configDir));
     const homeDir = posixNormalize(homedirFn());
-    const isGlobal = scope === 'global';
+    // #2870: `scope` above is already the module-owned `InstallScope` value
+    // (`layout.scope ?? 'global'`, defaulted before this point, so it is never
+    // `undefined` here) — `isGlobalScope` projects it to the boolean
+    // `_computePathPrefix`'s existing `isGlobal: boolean` API requires.
+    const isGlobal = (0, install_scope_cjs_1.isGlobalScope)(scope);
     const isOpencode = layout.runtime === 'opencode';
     const isWindowsHost = (platform ?? process.platform) === 'win32';
     const pathPrefix = conversionExports._computePathPrefix({ isGlobal, isOpencode, isWindowsHost, resolvedTarget, homeDir });
     const attribution = resolveAttribution ? resolveAttribution(layout.runtime) : undefined;
-    const agentCtx = { runtime: layout.runtime, pathPrefix, attribution };
+    // #2875 Part 2 (row I1): layout.configDir IS the install root the inline
+    // agent loop called `targetDir` — same value, same resolution.
+    const agentCtx = { runtime: layout.runtime, pathPrefix, attribution, targetDir: layout.configDir };
     for (const kind of layout.kinds) {
         let stagedDir;
         try {

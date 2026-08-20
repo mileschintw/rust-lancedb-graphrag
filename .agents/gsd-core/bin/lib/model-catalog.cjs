@@ -10,12 +10,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RUNTIMES_WITH_FAST_MODE = exports.EFFORT_ARGV = exports.EFFORT_RENDERING = exports.KNOWN_PROVIDERS = exports.PROVIDER_PRESETS = exports.RUNTIMES_WITH_REASONING_EFFORT = exports.KNOWN_RUNTIMES = exports.RUNTIME_PROFILE_MAP = exports.MODEL_ALIAS_MAP = exports.AGENT_DEFAULT_TIERS = exports.AGENT_TO_PHASE_TYPE = exports.MODEL_PROFILES = exports.ADAPTIVE_TIER_VALUES = exports.VALID_TIERS = exports.VALID_AGENT_TIERS = exports.VALID_PHASE_TYPES = exports.VALID_PROFILES = exports.catalog = void 0;
+exports.RUNTIMES_WITH_FAST_MODE = exports.EFFORT_ARGV = exports.EFFORT_RENDERING = exports.CLAUDE_AGENT_ALIASES = exports.KNOWN_PROVIDERS = exports.PROVIDER_PRESETS = exports.RUNTIMES_WITH_REASONING_EFFORT = exports.KNOWN_RUNTIMES = exports.RUNTIME_PROFILE_MAP = exports.MODEL_ALIAS_MAP = exports.AGENT_DEFAULT_TIERS = exports.AGENT_TO_PHASE_TYPE = exports.MODEL_PROFILES = exports.ADAPTIVE_TIER_VALUES = exports.VALID_TIERS = exports.VALID_AGENT_TIERS = exports.VALID_PHASE_TYPES = exports.VALID_PROFILES = exports.catalog = void 0;
+exports.isAnthropicFlavoredModel = isAnthropicFlavoredModel;
 exports.nextTier = nextTier;
 exports.formatAgentToModelMapAsTable = formatAgentToModelMapAsTable;
 exports.getAgentToModelMapForProfile = getAgentToModelMapForProfile;
 exports.renderEffortArgv = renderEffortArgv;
 exports.renderEffortForRuntime = renderEffortForRuntime;
+exports.mergeEffortTierDefaults = mergeEffortTierDefaults;
 const node_path_1 = __importDefault(require("node:path"));
 // In .cts (CommonJS output) files, `require` is available as a global;
 // we use it directly to load JSON candidates.
@@ -103,6 +105,27 @@ exports.PROVIDER_PRESETS = _catalog.providerPresets ?? {};
 exports.KNOWN_PROVIDERS = new Set(Object.entries(exports.PROVIDER_PRESETS)
     .filter(([, tiers]) => Object.values(tiers).some((budgets) => budgets && Object.values(budgets).some((entry) => entry && entry.model)))
     .map(([name]) => name));
+// ─── #3241 — Anthropic-flavored model detection ──────────────────────────────
+//
+// Moved here from src/model-resolver.cts (the "seam decision" in
+// .gsd/phase/feat-3241-codex-omit-model-by-default/40-design.md): this leaf
+// module is the one common dependency both model-resolver and the (layering-
+// restricted) install-time Codex-posture checks can share without pulling
+// model-resolver's config-loader dependency chain into a "pure read/verify"
+// caller. model-resolver re-exports both names for back-compat.
+//
+// #2310 — True if `model` is an Anthropic-flavored value that must never appear as a
+// Codex agent `.toml` `model`. Two forms: (a) a bare the agent Agent-tool tier alias
+// (opus/sonnet/haiku/fable — CLAUDE_AGENT_ALIASES below); (b) any the agent model id in
+// any provider namespacing — `claude-*`, `anthropic/claude-*`, `us.anthropic.claude-*`
+// (the forms the catalog assigns to opencode/hermes/kilo, reachable on a Codex .toml
+// via the runtime-resolver path). No OpenAI/Codex model id contains "claude", so a
+// case-insensitive substring test is a safe, exhaustive guard for (b). Codex/ChatGPT
+// rejects all of these.
+exports.CLAUDE_AGENT_ALIASES = new Set(['opus', 'sonnet', 'haiku', 'fable']);
+function isAnthropicFlavoredModel(model) {
+    return typeof model === 'string' && (exports.CLAUDE_AGENT_ALIASES.has(model) || model.toLowerCase().includes('claude'));
+}
 function nextTier(currentTier) {
     const order = ['light', 'standard', 'heavy'];
     const idx = order.indexOf(String(currentTier));
@@ -205,6 +228,13 @@ function renderEffortArgv(host, universalEffort, effortSurface) {
  * Render a universal effort string for a specific runtime.
  */
 function renderEffortForRuntime(runtime, universalEffort) {
+    // #3533 (10d): 'inherit' is not a wire level on ANY runtime — it means
+    // "omit the key / pass no argument and follow the session/host default".
+    // Renderers must never emit it as a literal; null param/channel tells
+    // resolve-execution consumers there is no propagation.
+    if (universalEffort === 'inherit') {
+        return { value: 'inherit', param: null, channel: null };
+    }
     const spec = exports.EFFORT_RENDERING[runtime];
     if (!spec) {
         return { value: universalEffort, param: null, channel: null };
@@ -214,6 +244,34 @@ function renderEffortForRuntime(runtime, universalEffort) {
         param: spec.param,
         channel: spec.channel,
     };
+}
+/**
+ * #3531 (10c) — Merge a config `effort.routing_tier_defaults` block over the
+ * manifest tier defaults instead of replacing them. A partial config must not
+ * discard built-ins: per tier, a valid override value wins and an invalid one
+ * is ignored so the manifest value for that tier surfaces (ADR-443 D1's
+ * "invalid values fall through" holds within the merged layer).
+ *
+ * Pure: returns a new object and never mutates either input — the manifest
+ * constants (`CANONICAL_CONFIG_DEFAULTS`, the catalog cache) stay frozen. The
+ * validator is injected because `EFFORT_SET` lives in model-resolver, which
+ * imports this leaf (a reverse import would be a cycle); both effort
+ * resolvers pass their own `(v) => typeof v === 'string' && EFFORT_SET.has(v)`.
+ */
+function mergeEffortTierDefaults(manifest, override, isValid) {
+    const merged = { ...(manifest || {}) };
+    if (override && typeof override === 'object' && !Array.isArray(override)) {
+        for (const [tier, value] of Object.entries(override)) {
+            // House pollution guard (mirrors _deepMergeConfig in config-loader): the
+            // string-only validator already makes these inert, but an explicit skip
+            // keeps this merge safe even if a caller's validator is ever relaxed.
+            if (tier === '__proto__' || tier === 'constructor' || tier === 'prototype')
+                continue;
+            if (isValid(value))
+                merged[tier] = value;
+        }
+    }
+    return merged;
 }
 // ─── Fast mode propagation ───────────────────────────────────────────────────
 exports.RUNTIMES_WITH_FAST_MODE = new Set(['api']);

@@ -746,9 +746,9 @@ Subsequent: Research what's needed to add [target features] to an existing [doma
 What's the standard 2025 stack for [domain]?
 </question>
 
-<files_to_read>
+<required_reading>
 - {project_path} (Project context and goals)
-</files_to_read>
+</required_reading>
 
 ${AGENT_SKILLS_RESEARCHER}
 
@@ -790,9 +790,9 @@ Subsequent: How do [target features] typically work? What's expected behavior?
 What features do [domain] products have? What's table stakes vs differentiating?
 </question>
 
-<files_to_read>
+<required_reading>
 - {project_path} (Project context)
-</files_to_read>
+</required_reading>
 
 ${AGENT_SKILLS_RESEARCHER}
 
@@ -830,9 +830,9 @@ Subsequent: How do [target features] integrate with existing [domain] architectu
 How are [domain] systems typically structured? What are major components?
 </question>
 
-<files_to_read>
+<required_reading>
 - {project_path} (Project context)
-</files_to_read>
+</required_reading>
 
 ${AGENT_SKILLS_RESEARCHER}
 
@@ -870,9 +870,9 @@ Subsequent: What are common mistakes when adding [target features] to [domain]?
 What do [domain] projects commonly get wrong? Critical mistakes?
 </question>
 
-<files_to_read>
+<required_reading>
 - {project_path} (Project context)
-</files_to_read>
+</required_reading>
 
 ${AGENT_SKILLS_RESEARCHER}
 
@@ -906,12 +906,12 @@ Agent(prompt="
 Synthesize research outputs into SUMMARY.md.
 </task>
 
-<files_to_read>
+<required_reading>
 - {research_dir}/STACK.md
 - {research_dir}/FEATURES.md
 - {research_dir}/ARCHITECTURE.md
 - {research_dir}/PITFALLS.md
-</files_to_read>
+</required_reading>
 
 ${AGENT_SKILLS_SYNTHESIZER}
 
@@ -1155,12 +1155,12 @@ Spawn gsd-roadmapper agent with path references:
 Agent(prompt="
 <planning_context>
 
-<files_to_read>
+<required_reading>
 - {project_path} (Project context)
 - {requirements_path} (v1 Requirements)
 - {research_dir}/SUMMARY.md (Research findings - if exists)
 - {config_path} (Granularity and mode settings)
-</files_to_read>
+</required_reading>
 
 ${AGENT_SKILLS_ROADMAPPER}
 
@@ -1256,9 +1256,9 @@ Use AskUserQuestion:
   User feedback on roadmap:
   [user's notes]
 
-  <files_to_read>
+  <required_reading>
   - {roadmap_path} (Current roadmap to revise)
-  </files_to_read>
+  </required_reading>
 
   ${AGENT_SKILLS_ROADMAPPER}
 

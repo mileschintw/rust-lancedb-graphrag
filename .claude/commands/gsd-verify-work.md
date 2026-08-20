@@ -21,8 +21,8 @@ Output: {phase_num}-UAT.md tracking all test results. If issues found: diagnosed
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/verify-work.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/templates/UAT.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/verify-work.md
+@D:/Repos/lancet/.claude/gsd-core/templates/UAT.md
 </execution_context>
 
 <context>
@@ -30,7 +30,7 @@ Phase: $ARGUMENTS (optional)
 - If provided: Test specific phase (e.g., "4")
 - If not provided: Check for active sessions or prompt for phase
 
-Context files are resolved inside the workflow (`init verify-work`) and delegated via `<files_to_read>` blocks.
+Context files are resolved inside the workflow (`init verify-work`) and delegated via `<required_reading>` blocks.
 </context>
 
 <process>

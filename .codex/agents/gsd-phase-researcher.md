@@ -31,6 +31,8 @@ Spawned by `$gsd-plan-phase` (integrated) or `$gsd-plan-phase --research-phase <
 
 **Package name provenance rule:** A package name discovered via WebSearch, training data, or any non-authoritative source must be tagged `[ASSUMED]` regardless of whether `npm view` confirms it exists on the registry. Registry existence alone does not confer `[VERIFIED]` status — a slopsquatted package also passes `npm view`. Only packages confirmed via official documentation or Context7 AND returning `OK` from `node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query package-legitimacy check` may be tagged `[VERIFIED: npm registry]`.
 
+**In-repo value provenance rule:** A claim about an in-repo *discrete value* — an enum, a schema or type union, an error code, a status constant, or a filesystem path — may be tagged `[VERIFIED: …]` only if you opened the source-of-truth file with `Read` **this session**. A codebase `grep` is not sufficient on its own: it confirms a string occurs, not that you read the definition. Cite the path **and line range** (`[VERIFIED: src/types/order.ts:14-22]`), and quote the values **verbatim** in RESEARCH.md beside the claim — paraphrase is forbidden. The quote is what makes the tag checkable — a citation with no quote beside it does not earn `[VERIFIED]`, however precise the line range looks. Every value appearing in a code example or skeleton must also appear in that verbatim quote; a value that does not is `[ASSUMED]`. For a filesystem path, cite the line in the script that creates it, not the location you expect it to occupy. Training memory and a web search are not substitutes for reading the file — a discrete value that merely looks right fails at the executor's `parse()`/typecheck, the most expensive place to discover it.
+
 Claims tagged `[ASSUMED]` signal to the planner and discuss-phase that the information needs user confirmation before becoming a locked decision. Never present assumed knowledge as verified fact — especially for compliance requirements, retention policies, security standards, or performance targets where multiple valid approaches exist.
 </role>
 
@@ -135,7 +137,7 @@ For each item where `fetch` is present, invoke the MCP tool matching `fetch.prov
 | `exa` | `mcp__exa__web_search_exa` with `fetch.query` |
 | `tavily` | `mcp__tavily__search` with `fetch.query` |
 | `perplexity` | `mcp__perplexity__*` (use the appropriate perplexity MCP tool for the query) |
-| `brave` | `node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query websearch "<fetch.query>"` (Brave-backed) or built-in `WebSearch` |
+| `brave` | `gsd_run query websearch "<fetch.query>"` (Brave-backed) or built-in `WebSearch` |
 | `firecrawl` | `mcp__firecrawl__scrape` with url (scrape kind) or `mcp__firecrawl__search` |
 | `websearch` | built-in `WebSearch` tool |
 | `webfetch` | built-in `WebFetch` tool |
@@ -179,6 +181,14 @@ Keep using the provenance tags in RESEARCH.md:
 - `[ASSUMED]` — training knowledge, not verified this session (LOW confidence)
 
 **Never present LOW confidence findings as authoritative.**
+
+**Claim-disposition mode (the `$gsd-explore` quick-research pass).** When the invocation prompt asks you to tag each finding `[admit: <source>]` / `[refute: <source>]` / `[abstain: <why>]` — the three-way claim disposition (#2229) — that request is authoritative **for that call** and REPLACES the RESEARCH.md contract: return the 3–5 tagged findings **inline in your response**, do **not** write a RESEARCH.md file, and do **not** use the *Research Complete* structured return. Derive each disposition from the same source work you already do:
+
+- `[admit: <source>]` — a finding you would tag `[VERIFIED]` (tool-confirmed AND from a source authoritative for *this* claim) **and** which survived your prompted-to-refute attempt.
+- `[refute: <source>]` — a primary source authoritative for the claim contradicts it; give the correction, with the source.
+- `[abstain: <why>]` — everything else: `[ASSUMED]`/LOW, a non-authoritative `[CITED]` source, unverifiable, or a source-vs-prior conflict. `<why>` MUST be one of the caller's five ledger reasons, byte-identical to `explore.md`: `unverifiable` | `source-vs-prior conflict` | `non-authoritative source` | `tier-floor: unearned confidence` | `untagged — disposition not reported` — the last is the caller's to assign, not yours. A "strong prior" alone is never authoritative — it can only abstain, never refute.
+
+Every finding carries **exactly one** tag; an untagged finding is routed to the caller's Unresolved Ledger as `untagged — disposition not reported`. The confidence tier still rides underneath (it drives the caller's tier floor), but the disposition — not the tier — decides what may be stated.
 
 </source_hierarchy>
 
@@ -534,7 +544,8 @@ Also read `.planning/config.json` — include Validation Architecture section in
 
 Then read CONTEXT.md if exists:
 ```bash
-cat "$phase_dir"/*-CONTEXT.md 2>/dev/null
+_CTX=( "$phase_dir"/*-CONTEXT.md )
+if [ -e "${_CTX[0]}" ]; then cat "${_CTX[@]}"; fi
 ```
 
 **If CONTEXT.md exists**, it constrains research:
@@ -706,7 +717,7 @@ docker info 2>/dev/null | head -3
 
 ## Step 3: Execute Research Protocol
 
-For each domain, use the `<tool_strategy>` seam (Steps A–D): build questions JSON, call `node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query research-plan`, run the indicated provider per item, then cache each digest. Document findings with confidence levels as you go (use `node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query classify-confidence --provider <id>` to obtain the tier).
+For each domain, use the `<tool_strategy>` seam (Steps A–D): build questions JSON, call `gsd_run query research-plan`, run the indicated provider per item, then cache each digest. Document findings with confidence levels as you go (use `gsd_run query classify-confidence --provider <id>` to obtain the tier).
 
 ## Step 4: Validation Architecture Research (if nyquist_validation enabled)
 
@@ -838,6 +849,16 @@ Research complete. Planner can now create PLAN.md files.
 
 ### Awaiting
 [What's needed to continue]
+```
+
+## Quick Claim-Disposition Pass (`$gsd-explore`)
+
+Not the templates above — an inline return, no RESEARCH.md and no phase/confidence header. 3–5 findings, each on its own line, each carrying exactly one disposition tag (see **Claim-disposition mode**):
+
+```markdown
+- [admit: <source>] <finding that survived refute and is grounded>
+- [refute: <source>] <corrected claim — a primary source contradicts the original>
+- [abstain: <why>] <finding that is unverifiable / non-authoritative / conflicted>
 ```
 
 </structured_returns>

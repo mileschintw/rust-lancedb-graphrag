@@ -11,11 +11,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
+const text_lines_cjs_1 = require("./text-lines.cjs");
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 const security_cjs_1 = require("./security.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ioMod = require("./io.cjs");
-const { output, error } = ioMod;
+const { output, error, ERROR_REASON } = ioMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const configLoaderMod = require("./config-loader.cjs");
 const { loadConfig, isGitIgnored } = configLoaderMod;
@@ -24,20 +25,28 @@ const coreUtilsMod = require("./core-utils.cjs");
 const { toPosixPath, generateSlugInternal, extractOneLinerFromBody } = coreUtilsMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const phaseIdMod = require("./phase-id.cjs");
-const { normalizePhaseName, comparePhaseNum, extractPhaseToken, PHASE_NUMBER_TOKEN_SOURCE } = phaseIdMod;
+const { normalizePhaseName, comparePhaseNum, extractPhaseToken, PHASE_NUMBER_TOKEN_SOURCE, isSentinelPhaseId } = phaseIdMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const phaseLocatorMod = require("./phase-locator.cjs");
-const { getArchivedPhaseDirs, findPhaseInternal } = phaseLocatorMod;
+const { getArchivedPhaseDirs, findPhaseInternal, listMilestonePhaseDirs } = phaseLocatorMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const roadmapParserMod = require("./roadmap-parser.cjs");
-const { extractCurrentMilestone, stripShippedMilestones: _stripShippedMilestones, getMilestoneInfo, getMilestonePhaseFilter, getRoadmapPhaseInternal } = roadmapParserMod;
+const { extractCurrentMilestone, stripShippedMilestones: _stripShippedMilestones, getMilestoneInfo, getRoadmapPhaseInternal } = roadmapParserMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const planningScopeMod = require("./planning-scope.cjs");
+const { SCOPE } = planningScopeMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const modelResolverMod = require("./model-resolver.cjs");
-const { resolveModelInternal, resolveModelForTier, resolveProviderEscalation, resolveEffortInternal, resolveFastModeInternal, resolveEffortForTier, resolveGranularityInternal, assertValidGranularityOverride } = modelResolverMod;
+const { resolveModelInternal, resolveTierInternal, resolveModelForTier, resolveProviderEscalation, resolveEffortInternal, resolveFastModeInternal, resolveEffortForTier, resolveGranularityInternal, assertValidGranularityOverride } = modelResolverMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const agentCommandRouterMod = require("./agent-command-router.cjs");
 const { AGENT_FAILURE_CLASSES } = agentCommandRouterMod;
 const model_catalog_cjs_1 = require("./model-catalog.cjs");
+// #3243 (ADR-2313 D7) — the Codex `.toml` sync's typed IR: parse/render/strip
+// primitives moved from agent-install-check.cts's Phase-2 parsing into this
+// leaf so both consumers share one block-range detector. See
+// codex-agent-toml.cts's module header for the reader/writer reconciliation.
+const codex_agent_toml_cjs_1 = require("./codex-agent-toml.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const hostIntegrationMod = require("./host-integration.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -51,6 +60,13 @@ const modelProfiles = require("./model-profiles.cjs");
 const { MODEL_PROFILES, VALID_PHASE_TYPES } = modelProfiles;
 const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
 const clock_cjs_1 = require("./clock.cjs");
+const phase_lifecycle_cjs_1 = require("./phase-lifecycle.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const planScanMod = require("./plan-scan.cjs");
+const { scanPhasePlans } = planScanMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- verification.cjs is an export= CommonJS module
+const verificationMod = require("./verification.cjs");
+const { resolveVerificationFile } = verificationMod;
 // ─── Phase Status ─────────────────────────────────────────────────────────────
 /**
  * Phase-status precedence ladder — furthest-along wins (#2408).
@@ -104,7 +120,16 @@ function determinePhaseStatus(plans, summaries, phaseDir, defaultPending) {
     // summaries >= plans — check verification
     try {
         const files = node_fs_1.default.readdirSync(phaseDir);
-        const verificationFile = files.find(f => f === 'VERIFICATION.md' || f.endsWith('-VERIFICATION.md'));
+        // #3473 F2: routed through the shared resolver (readdir order is
+        // filesystem-dependent, so the prior hand-rolled `.find()` could pick
+        // either file when a phase held both a canonical report and an ad-hoc
+        // `-CORRECTION-VERIFICATION.md` worksheet — see #3357).
+        // #3492: pin selection to THIS phase's own token so a stray cross-phase
+        // or sentinel-numbered canonically-shaped file cannot outrank this
+        // phase's own (possibly non-canonical) report.
+        const phaseDirName = node_path_1.default.basename(phaseDir);
+        const phaseToken = extractPhaseToken(phaseDirName);
+        const verificationFile = resolveVerificationFile(files, { allowBare: true, phaseToken, phaseDirName });
         if (verificationFile) {
             const verificationFilePath = node_path_1.default.join(phaseDir, verificationFile);
             const content = (0, shell_command_projection_cjs_1.platformReadSync)(verificationFilePath) || '';
@@ -143,7 +168,7 @@ function cmdGenerateSlug(text, raw) {
     output(result, raw, slug);
 }
 function cmdCurrentTimestamp(format, raw) {
-    const now = new Date();
+    const now = new Date(clock_cjs_1.realClock.now());
     let result;
     switch (format) {
         case 'date':
@@ -348,7 +373,14 @@ function cmdHistoryDigest(cwd, raw) {
     }
     try {
         for (const { name: dir, fullPath: dirPath } of allPhaseDirs) {
-            const summaries = node_fs_1.default.readdirSync(dirPath).filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md');
+            // #3183: canonical summary set (root+nested) from the single owner.
+            // This call also opens every plan file's frontmatter to check
+            // superseded status even though cmdHistoryDigest never uses planFiles
+            // or the superseded distinction — that per-phase-dir cost is accepted
+            // deliberately (correctness/single-ownership over micro-optimization;
+            // summaryFiles itself is not superseded-filtered either way). Do not
+            // "optimize" this back into a second hand-rolled summary derivation.
+            const summaries = scanPhasePlans(dirPath).summaryFiles;
             for (const summary of summaries) {
                 const summaryFilePath = node_path_1.default.join(dirPath, summary);
                 const content = (0, shell_command_projection_cjs_1.platformReadSync)(summaryFilePath);
@@ -419,10 +451,20 @@ function cmdResolveModel(cwd, agentType, raw) {
     const profile = config['model_profile'] || 'balanced';
     const model = resolveModelInternal(cwd, agentType);
     const effort = resolveEffortInternal(cwd, agentType);
-    const agentModels = MODEL_PROFILES[agentType];
+    // Own-property guard: agentType is an unvalidated CLI positional, so a
+    // prototype-chain value ("toString", "constructor") would otherwise return
+    // an inherited truthy member from this plain object and misreport a
+    // genuinely unknown agent as known (unknown_agent dropped from the result).
+    const agentModelsMap = MODEL_PROFILES;
+    const agentModels = Object.hasOwn(agentModelsMap, agentType) ? agentModelsMap[agentType] : undefined;
+    // #2229: `tier` is additive — existing keys and their values are untouched, so
+    // every `--pick model` / `--pick profile` / `--raw` consumer is unaffected. It
+    // exists because the model id is deliberately blank under resolve_model_ids:"omit",
+    // which leaves a tier-sensitive guard with nothing to read.
+    const tier = resolveTierInternal(cwd, agentType);
     const result = agentModels
-        ? { model, profile, effort }
-        : { model, profile, effort, unknown_agent: true };
+        ? { model, profile, effort, tier }
+        : { model, profile, effort, tier, unknown_agent: true };
     output(result, raw, model);
 }
 function cmdResolveGranularity(cwd, phaseType, raw, override) {
@@ -489,7 +531,52 @@ function cmdResolveExecution(cwd, agentType, raw, opts) {
     const runtime = config['runtime'] || 'claude';
     const rendered = (0, model_catalog_cjs_1.renderEffortForRuntime)(runtime, effort);
     const fastModeSupported = model_catalog_cjs_1.RUNTIMES_WITH_FAST_MODE.has(runtime);
-    const agentModels = MODEL_PROFILES[agentType];
+    // #3534 (10a): the effective effort — what the installed agent will actually
+    // run at. `effort` above is the config cascade; for the claude runtime the
+    // per-agent frontmatter key is the source of truth (Claude Code's Agent tool
+    // has no per-spawn effort parameter), so the query reads the installed file.
+    // An ABSENT key is a real state — the agent follows the session effort
+    // ('inherit'), not drift. No file / no frontmatter / any read failure means
+    // no evidence: the resolved value is reported, flagged 'resolved' so a
+    // consumer can tell evidence from echo. Additive only — every existing key
+    // is unchanged.
+    let effortEffectiveSource = 'resolved';
+    let effortEffective = effort;
+    if (runtime === 'claude') {
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/unbound-method
+            const { getGlobalConfigDir } = require('./runtime-homes.cjs');
+            const agentsDirEff = node_path_1.default.join(getGlobalConfigDir(runtime), 'agents');
+            const agentPath = node_path_1.default.join(agentsDirEff, `${agentType}.md`);
+            // agentType is an unvalidated CLI positional: keep the read inside the
+            // agents dir so `../../x` cannot point it elsewhere (defense in depth —
+            // the reflected surface is only a frontmatter effort line).
+            if (!node_path_1.default.resolve(agentPath).startsWith(node_path_1.default.resolve(agentsDirEff) + node_path_1.default.sep)) {
+                throw new Error('agent path escapes the agents directory');
+            }
+            const agentContent = node_fs_1.default.readFileSync(agentPath, 'utf8');
+            // eslint-disable-next-line local/no-unbounded-quantifier -- same lazy `*?` bounded by the `^---$/m` closing anchor as the sibling frontmatter regexes in this file
+            const fmMatchEff = /^---\r?\n([\s\S]*?)^---\r?$/m.exec(agentContent);
+            if (fmMatchEff) {
+                const effortLine = /^effort:[ \t]*(.+?)[ \t]*$/m.exec(fmMatchEff[1]);
+                if (effortLine) {
+                    effortEffective = effortLine[1];
+                    effortEffectiveSource = 'frontmatter';
+                }
+                else {
+                    effortEffective = 'inherit';
+                    effortEffectiveSource = 'frontmatter-absent';
+                }
+            }
+        }
+        catch { /* no frontmatter evidence — stay on the resolved value */ }
+    }
+    // Own-property guard: agentType is an unvalidated CLI positional, so a
+    // prototype-chain value ("toString", "constructor") would otherwise return
+    // an inherited truthy member from this plain object and misreport a
+    // genuinely unknown agent as known (unknown_agent dropped from the result).
+    const agentModelsMap = MODEL_PROFILES;
+    const agentModels = Object.hasOwn(agentModelsMap, agentType) ? agentModelsMap[agentType] : undefined;
     const result = {
         model,
         profile,
@@ -497,6 +584,8 @@ function cmdResolveExecution(cwd, agentType, raw, opts) {
         effort_rendered: rendered.value,
         effort_param: rendered.param,
         effort_propagation: rendered.channel,
+        effort_effective: effortEffective,
+        effort_effective_source: effortEffectiveSource,
         fast_mode: fastMode,
         fast_mode_supported: fastModeSupported,
     };
@@ -567,6 +656,29 @@ function setEffortFrontmatter(content, effortValue) {
     return content.slice(0, closingStart) + `effort: ${effortValue}${eol}` + content.slice(closingStart);
 }
 /**
+ * #3533 (10d) — remove exactly the frontmatter `effort:` line (and its line
+ * ending) so an agent configured for `inherit` carries NO key. Mirrors the
+ * codex-agent-toml strip discipline: targeted line removal, EOL-aware, every
+ * other byte (comments, sibling keys, the body) untouched.
+ */
+function removeEffortFrontmatter(content) {
+    // Scoped to the FIRST frontmatter block (not a whole-file /m match): a
+    // preamble or body line starting with `effort:` (a fenced config example,
+    // a thematic-break flanked fragment) must never be the line removed.
+    const fmRe = /^---\r?\n([\s\S]*?)^---\r?$/m;
+    const match = fmRe.exec(content);
+    if (!match)
+        return content;
+    const fmBody = match[1];
+    const lineRe = /^effort:[ \t]*.*\r?\n?/m;
+    if (!lineRe.test(fmBody))
+        return content;
+    const strippedFm = fmBody.replace(lineRe, '');
+    const openLen = 3 + (/^---\r\n/.test(content) ? 2 : 1);
+    const closingStart = match.index + openLen + fmBody.length;
+    return content.slice(0, match.index + openLen) + strippedFm + content.slice(closingStart);
+}
+/**
  * #488 — Re-sync effort: frontmatter in all installed gsd-*.md agent files to
  * match the current effort config, without requiring a full reinstall.
  *
@@ -581,6 +693,14 @@ function cmdEffortSync(cwd, raw, opts) {
     const dryRun = opts.dryRun !== false;
     const config = loadConfig(cwd);
     const runtime = opts.runtime || config['runtime'] || 'claude';
+    // ADR-2313 D7 (#3243) — Codex gets its own `.toml` sync path (strip a stale
+    // Anthropic/tier `model` and an orphaned `model_reasoning_effort`, leaving a
+    // legal pin untouched). Every other non-claude runtime keeps the prior
+    // early-return; the claude branch below is untouched byte-for-byte.
+    if (runtime === 'codex') {
+        cmdEffortSyncCodex(raw, dryRun, opts.configDir);
+        return;
+    }
     if (runtime !== 'claude') {
         output({ synced: 0, skipped: 0, changes: [], dry_run: dryRun, reason: `runtime '${runtime}' does not use effort: frontmatter` }, raw, '');
         return;
@@ -619,8 +739,32 @@ function cmdEffortSync(cwd, raw, opts) {
         const content = node_fs_1.default.readFileSync(filePath, 'utf8');
         // Resolve using install-time logic: home defaults merged with project config.
         const universalEffort = resolveInstallTimeEffort(effortCfg, agentName);
+        // #3533 (10d): 'inherit' means the key must NOT exist. An absent key is
+        // the CORRECT state (in sync, skipped) — before #3533 absence read as null
+        // drift and the sync re-added a hand-stripped key on every apply. A
+        // present key under inherit is stripped, reported as {from, to: null}.
+        if (universalEffort === 'inherit') {
+            // eslint-disable-next-line local/no-unbounded-quantifier -- same lazy `*?` bounded by the `^---$/m` closing anchor as the concrete-path fmMatch below; duplicated here so the inherit branch validates against the same frontmatter span the strip targets
+            const fmMatchInherit = /^---\r?\n([\s\S]*?)^---\r?$/m.exec(content);
+            if (!fmMatchInherit) {
+                skipped++;
+                continue;
+            }
+            const effortMatchInherit = /^effort:[ \t]*(.+?)[ \t]*$/m.exec(fmMatchInherit[1]);
+            if (!effortMatchInherit) {
+                skipped++;
+                continue;
+            }
+            changes.push({ agent: agentName, from: effortMatchInherit[1], to: null });
+            synced++;
+            if (!dryRun) {
+                node_fs_1.default.writeFileSync(filePath, removeEffortFrontmatter(content));
+            }
+            continue;
+        }
         const rendered = (0, model_catalog_cjs_1.renderEffortForRuntime)(runtime, universalEffort);
         const newEffortValue = rendered.value;
+        // eslint-disable-next-line local/no-unbounded-quantifier -- lazy `*?` bounded by the `^---$/m` closing anchor, no nested quantifier, measured linear to 5MB (no-closing-marker adversarial input)
         const fmMatch = /^---\r?\n([\s\S]*?)^---\r?$/m.exec(content);
         if (!fmMatch) {
             skipped++;
@@ -639,6 +783,112 @@ function cmdEffortSync(cwd, raw, opts) {
         }
     }
     output({ synced, skipped, changes, dry_run: dryRun, agents_dir: agentsDir }, raw, synced > 0 ? 'changed' : 'ok');
+}
+/**
+ * ADR-2313 D7 (#3243) — the Codex branch of `cmdEffortSync`. Strips a stale
+ * Anthropic-flavored/tier `model` pin and an orphaned `model_reasoning_effort`
+ * from every installed `~/.codex/agents/<agent>.toml`, leaving a legal
+ * real-Codex pin (and its coupled effort) untouched. Dry-run by default; every
+ * strip reported as a structured `{agent, field, from}` change; an unparseable
+ * document is refused and reported, never partially rewritten (40-design.md
+ * "Reconciliation" — parseCodexAgentToml is the STRICT half of the reader/
+ * writer split). Result shape is additive over the claude branch's
+ * `{synced, skipped, changes, dry_run, agents_dir}` — `refused` and
+ * `write_failures` are new fields, never a reshape of the existing ones.
+ */
+function cmdEffortSyncCodex(raw, dryRun, configDir) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/unbound-method
+    const { getGlobalConfigDir } = require('./runtime-homes.cjs');
+    const agentsDir = node_path_1.default.join(configDir || getGlobalConfigDir('codex'), 'agents');
+    if (!node_fs_1.default.existsSync(agentsDir)) {
+        output({ synced: 0, skipped: 0, changes: [], dry_run: dryRun, agents_dir: agentsDir, reason: 'agents directory not found' }, raw, '');
+        return;
+    }
+    // Skip symlinks — matches the claude branch's existing guard above (only
+    // write regular files, never follow a symlink into clobbering its target).
+    const files = node_fs_1.default
+        .readdirSync(agentsDir)
+        .filter(f => {
+        if (!f.endsWith('.toml'))
+            return false;
+        try {
+            return node_fs_1.default.lstatSync(node_path_1.default.join(agentsDir, f)).isFile();
+        }
+        catch {
+            return false;
+        }
+    })
+        .sort();
+    const changes = [];
+    const refused = [];
+    const writeFailures = [];
+    let synced = 0;
+    let skipped = 0;
+    for (const file of files) {
+        const agentName = file.replace(/\.toml$/, '');
+        const filePath = node_path_1.default.join(agentsDir, file);
+        const content = node_fs_1.default.readFileSync(filePath, 'utf8');
+        const parsed = (0, codex_agent_toml_cjs_1.parseCodexAgentToml)(content);
+        if (!parsed.ok) {
+            // Never partially rewritten (40-design.md, ADR-2313 reader/writer
+            // boundary): an unparseable document is skipped and reported, not
+            // guessed at.
+            skipped++;
+            refused.push({ agent: agentName, file: filePath, reason: parsed.reason });
+            continue;
+        }
+        let doc = parsed.doc;
+        const stripModelNeeded = doc.model !== null && (0, model_catalog_cjs_1.isAnthropicFlavoredModel)(doc.model);
+        // #838 coupling: an orphaned effort (no model) is always stale; a stale
+        // model's effort is coupled to it and strips with it. A legal pin's effort
+        // (model present, not Anthropic-flavored) is left untouched (rows 4-5).
+        const stripEffortNeeded = doc.reasoningEffort !== null && (stripModelNeeded || doc.model === null);
+        if (!stripModelNeeded && !stripEffortNeeded) {
+            // Posture-clean, OR a legal pin (and its coupled effort) — reported
+            // skipped, never synced (ADR-2313 reader/writer boundary).
+            skipped++;
+            continue;
+        }
+        const pendingChanges = [];
+        if (stripModelNeeded) {
+            pendingChanges.push({ agent: agentName, field: 'model', from: doc.model, to: null });
+            doc = (0, codex_agent_toml_cjs_1.stripModel)(doc);
+        }
+        if (stripEffortNeeded) {
+            pendingChanges.push({ agent: agentName, field: 'model_reasoning_effort', from: doc.reasoningEffort, to: null });
+            doc = (0, codex_agent_toml_cjs_1.stripReasoningEffort)(doc);
+        }
+        if (!dryRun) {
+            // Atomic publish (ADR-2313 "never partially rewritten"): write the
+            // rendered TOML to a sibling tmp file, then rename it over the target.
+            // Same-filesystem rename is atomic, so filePath is either the old bytes
+            // or the new ones, never truncated/half-written mid-crash. Deliberately
+            // NOT platformWriteSync — its normalizeContent step rewrites CRLF/
+            // trailing-newline bytes, which would break the byte-identical
+            // round-trip (A14) this writer must preserve. retryRenameSync (not a
+            // bare fs.renameSync) carries the transient-Windows-lock retry per
+            // DEFECT.WINDOWS-FS-OPS.
+            const tmpPath = `${filePath}.tmp.${process.pid}`;
+            try {
+                node_fs_1.default.writeFileSync(tmpPath, (0, codex_agent_toml_cjs_1.renderCodexAgentToml)(doc));
+                (0, shell_command_projection_cjs_1.retryRenameSync)(tmpPath, filePath);
+            }
+            catch (err) {
+                // Reported, not thrown — the remaining agents still get processed.
+                // Clean up the orphaned tmp file; filePath itself was never touched.
+                try {
+                    node_fs_1.default.unlinkSync(tmpPath);
+                }
+                catch { /* already gone or never created */ }
+                skipped++;
+                writeFailures.push({ agent: agentName, file: filePath, error: err instanceof Error ? err.message : String(err) });
+                continue;
+            }
+        }
+        changes.push(...pendingChanges);
+        synced++;
+    }
+    output({ synced, skipped, changes, dry_run: dryRun, agents_dir: agentsDir, refused, write_failures: writeFailures }, raw, synced > 0 ? 'changed' : 'ok');
 }
 /**
  * Detect the phase number for a commit from its `--files` path list.
@@ -693,6 +943,71 @@ function detectPhaseNumberFromFiles(files) {
     }
     return null;
 }
+/**
+ * #3587: resolve the `phase_commit_docs.<phase-id>` override for `phaseNum`
+ * against `config['phase_commit_docs']` (a `{ "<phase-id>": boolean }` map, the
+ * same shape `agent_skills`/`features` use for their dynamic key families).
+ * Returns `undefined` — "no override applies" — when: no phase is known (B7),
+ * the map carries no entry for THIS phase (B5: no cross-phase leak), or the
+ * entry exists but is not a boolean (B6: never silently coerced). Both sides of
+ * the comparison route through `normalizePhaseName` so `3`, `03`, and `PROJ-03`
+ * all resolve to the same entry (B4/B9), reusing the single-owner phase-id
+ * normalizer rather than a second, looser string-equality rule.
+ */
+function resolvePhaseCommitDocsOverride(config, phaseNum) {
+    if (!phaseNum)
+        return undefined;
+    const overrides = config['phase_commit_docs'];
+    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides))
+        return undefined;
+    const target = normalizePhaseName(phaseNum);
+    for (const [key, value] of Object.entries(overrides)) {
+        if (normalizePhaseName(key) === target) {
+            return typeof value === 'boolean' ? value : undefined;
+        }
+    }
+    return undefined;
+}
+/**
+ * #3587: the four-tier `commit_docs` precedence chain for a single commit —
+ * `phase_commit_docs.<phase-id>` (tier 1, resolved HERE because this call site
+ * is the one place that knows the phase — see 40-design.md "Rejected" §1: NOT
+ * inside `loadConfig`, which has no phase context and is called by nearly every
+ * command), then the pre-existing explicit `commit_docs` (tier 2), `.gitignore`
+ * auto-detect (tier 3), and manifest default (tier 4). Tiers 2-4 are byte-for-
+ * behaviour identical to the pre-#3587 inline checks (epic #2292 AC4): when no
+ * phase override applies, `resolved` matches exactly what those checks computed
+ * and `source` merely labels which of the three decided it.
+ *
+ * `isPlanningGitIgnored` is a thunk, not a plain boolean, so the pre-existing
+ * short-circuit is preserved byte-for-behaviour: the original inline checks
+ * only ever ran `isGitIgnored` (a real `git check-ignore` subprocess) when
+ * `commit_docs` was truthy, and a phase override or an explicit `commit_docs:
+ * false` must keep skipping that call entirely, not just its result. Passing
+ * a thunk also keeps this function pure and directly property-testable
+ * (test matrix F1) without spawning git.
+ */
+function resolveCommitDocsPolicy(config, phaseNum, isPlanningGitIgnored) {
+    const phaseOverride = resolvePhaseCommitDocsOverride(config, phaseNum);
+    if (phaseOverride !== undefined)
+        return { resolved: phaseOverride, source: 'phase' };
+    if (!config['commit_docs'])
+        return { resolved: false, source: 'config' };
+    if (isPlanningGitIgnored())
+        return { resolved: false, source: 'gitignore' };
+    return { resolved: true, source: 'default' };
+}
+// Reason string per commit_docs-resolution source, for the tier-1/tier-2 skip
+// envelope below. `phase` gets its OWN reason (`skipped_commit_docs_phase_false`)
+// rather than reusing `skipped_commit_docs_false` — telling a user "commit_docs
+// is false" when their project setting is actually `true` would be actively
+// misleading (design "Rejected" §3). `config` keeps the pre-existing string
+// unchanged: `agents/gsd-executor.md` pattern-matches on it (D2).
+const COMMIT_DOCS_SKIP_REASON = {
+    phase: 'skipped_commit_docs_phase_false',
+    config: 'skipped_commit_docs_false',
+    gitignore: 'skipped_gitignored',
+};
 function cmdCommit(cwd, message, files, raw, amend, noVerify) {
     if (!message && !amend) {
         error('commit message required');
@@ -706,18 +1021,20 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
         sanitizedMessage = sanitizeForPrompt(sanitizedMessage);
     }
     const config = loadConfig(cwd);
-    // Check commit_docs config
+    // Check commit_docs config — #3587: resolved through the tier 1
+    // (phase_commit_docs.<phase-id>) → tier 2 (commit_docs) → tier 3 (.gitignore)
+    // → tier 4 (default) precedence chain; see resolveCommitDocsPolicy above.
     // `skipped: true` is explicit so agent prompts can match on a first-class
     // success signal rather than inferring "skip" from "committed is missing"
     // and improvising raw git fallbacks (#3678).
-    if (!config['commit_docs']) {
-        const result = { committed: false, skipped: true, hash: null, reason: 'skipped_commit_docs_false' };
-        output(result, raw, 'skipped');
-        return;
-    }
-    // Check if .planning is gitignored
-    if (isGitIgnored(cwd, '.planning')) {
-        const result = { committed: false, skipped: true, hash: null, reason: 'skipped_gitignored' };
+    const commitDocsPolicy = resolveCommitDocsPolicy(config, detectPhaseNumberFromFiles(files), () => isGitIgnored(cwd, '.planning'));
+    if (!commitDocsPolicy.resolved) {
+        const result = {
+            committed: false,
+            skipped: true,
+            hash: null,
+            reason: COMMIT_DOCS_SKIP_REASON[commitDocsPolicy.source],
+        };
         output(result, raw, 'skipped');
         return;
     }
@@ -752,7 +1069,19 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
             }
         }
         else if (branchingStrategy === 'milestone') {
-            const milestone = getMilestoneInfo(cwd);
+            const milestoneInfo = getMilestoneInfo(cwd);
+            // #3216 review Finding 3: explicit scope gate instead of plain truthiness.
+            // COMPLETE and TRUNCATED both carry a real `version` (ADR-3180 §7.2 rule
+            // 6 — TRUNCATED means the version resolved but the milestone's NAME did
+            // not), so a TRUNCATED identity is acceptable here: `milestone.version`
+            // only feeds a BRANCH NAME, and `generateSlugInternal(null) || 'milestone'`
+            // already degrades the missing name to the literal "milestone" slug on
+            // purpose. This differs from `archivePhaseDirectories` (milestone.cts),
+            // which uses the same value as a DIRECTORY NAME and therefore demands
+            // COMPLETE only — a real-but-unnamed version is not safe enough there.
+            const milestone = milestoneInfo.scope === SCOPE.COMPLETE || milestoneInfo.scope === SCOPE.TRUNCATED
+                ? milestoneInfo.value
+                : null;
             if (milestone && milestone.version) {
                 branchName = config['milestone_branch_template']
                     .replace('{milestone}', milestone.version)
@@ -762,22 +1091,28 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
         if (branchName) {
             const currentBranch = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd });
             if (currentBranch.exitCode === 0 && currentBranch.stdout.trim() !== branchName) {
-                // #2539/#3079: the #1278 intent is to CREATE the phase/milestone branch
-                // before the FIRST commit on it — not to force-switch an already-
-                // checked-out working branch onto a DIFFERENT existing branch. The
-                // prior `git checkout -b` both created AND switched (silently moving
-                // HEAD), which resurrected merged-and-deleted phase branches (#3079).
-                // Now: create-if-absent WITHOUT switching, using `git branch` instead
-                // of `git checkout -b`. The commit always lands on the current branch.
-                // If the resolved branch already exists, log the resolution so the
-                // operator sees that the phase branch was resolved and deliberately
-                // not switched to (#2539 AC2: an auto-checkout mid-commit must never
-                // happen silently).
+                // #2539/#3079/#3207: two cases the prior (#3079) code collapsed into one.
+                // #1278 intent: CREATE the phase/milestone branch before the FIRST commit
+                // on it so the phase's work accumulates there. #3079/#2539 hazard: never
+                // silently switch an already-checked-out working branch onto a DIFFERENT
+                // EXISTING branch — that resurrects merged-and-deleted phase branches and
+                // silently moves HEAD onto a stale ref (#2539 AC2: an auto-checkout
+                // mid-commit must never happen silently).
+                // Reconciliation (#3207): a brand-new branch has no resurrection target,
+                // so create-and-switch is safe here and is exactly the #1278 intent; an
+                // EXISTING branch is never switched to (the else arm logs + commits in
+                // place). The fresh create is logged so the first phase-scoped commit is
+                // not silent about where the work is landing (#3207 AC3).
                 const verify = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--verify', `refs/heads/${branchName}`], { cwd });
                 if (verify.exitCode !== 0) {
-                    // Branch does not exist — create it WITHOUT switching.
-                    const create = (0, shell_command_projection_cjs_1.execGit)(['branch', branchName], { cwd });
-                    if (create.exitCode !== 0) {
+                    // Branch does not exist — CREATE AND SWITCH (the #1278 first-commit
+                    // case). checkout -b cannot resurrect anything: the branch was just
+                    // verified absent, so it is created fresh at HEAD.
+                    const create = (0, shell_command_projection_cjs_1.execGit)(['checkout', '-b', branchName], { cwd });
+                    if (create.exitCode === 0) {
+                        process.stderr.write(`${branchingStrategy} branch "${branchName}" created; switched to it for this commit.\n`);
+                    }
+                    else {
                         process.stderr.write(`Warning: could not create ${branchingStrategy} branch "${branchName}" ` +
                             `(${create.stderr.trim()}); committing on the current branch "${currentBranch.stdout.trim()}".\n`);
                     }
@@ -1384,20 +1719,28 @@ async function cmdWebsearch(query, options, raw) {
 }
 function cmdProgressRender(cwd, format, raw) {
     const phasesDir = planningPaths(cwd).phases;
-    const milestone = getMilestoneInfo(cwd);
+    const milestone = getMilestoneInfo(cwd).value;
     const phases = [];
     let totalPlans = 0;
     let totalSummaries = 0;
+    let phaseScope = null;
     try {
-        const entries = node_fs_1.default.readdirSync(phasesDir, { withFileTypes: true });
-        const dirs = entries.filter(e => e.isDirectory()).map(e => e.name).sort((a, b) => comparePhaseNum(a, b));
+        // #3185 (ADR-3180 Decision 1): the single owner applies the milestone
+        // window AND the sentinel filter and returns dirs already sorted by
+        // comparePhaseNum. This command previously read the phases directory
+        // directly with neither, which is why `query progress` listed 999.*
+        // backlog directories as current-milestone phases (#3167).
+        const { value: dirs, scope } = listMilestonePhaseDirs(phasesDir, { cwd });
+        phaseScope = scope;
         for (const dir of dirs) {
             const dm = dir.match(/^(\d+(?:\.\d+)*)-?(.*)/);
             const phaseNum = dm ? dm[1] : dir;
             const phaseName = dm && dm[2] ? dm[2].replace(/-/g, ' ') : '';
-            const phaseFiles = node_fs_1.default.readdirSync(node_path_1.default.join(phasesDir, dir));
-            const plans = phaseFiles.filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md').length;
-            const summaries = phaseFiles.filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md').length;
+            // #3183: canonical plan/summary counts (root+nested, superseded-excluded,
+            // canonical pairing) from the single owner.
+            const phaseScan = scanPhasePlans(node_path_1.default.join(phasesDir, dir));
+            const plans = phaseScan.planCount;
+            const summaries = phaseScan.summaryCount;
             totalPlans += plans;
             totalSummaries += summaries;
             const status = determinePhaseStatus(plans, summaries, node_path_1.default.join(phasesDir, dir), 'Pending');
@@ -1405,14 +1748,24 @@ function cmdProgressRender(cwd, format, raw) {
         }
     }
     catch { /* intentionally empty */ }
-    const percent = totalPlans > 0 ? Math.min(100, Math.round((totalSummaries / totalPlans) * 100)) : 0;
+    // #3217 (ADR-3180 §7.6 rule 4): `phaseScope` was already computed above
+    // (Phase 3, #3222) but never consulted before rendering — a percentage was
+    // rendered from counts the scope said were not answers (TRUNCATED /
+    // UNSCOPED / UNREADABLE). Withhold the percentage itself (never `0` — a
+    // real `0` under COMPLETE must still render, rule 2's territory) when the
+    // scope is not COMPLETE. `phaseScope` stays `null` only if the try block
+    // above threw before assigning it; treat that the same as non-COMPLETE.
+    const percent = phaseScope === SCOPE.COMPLETE
+        ? (0, phase_lifecycle_cjs_1.clampPercent)(totalSummaries, totalPlans)
+        : null;
     if (format === 'table') {
         // Render markdown table
         const barWidth = 10;
-        const filled = Math.round((percent / 100) * barWidth);
+        const filled = percent === null ? 0 : Math.round((percent / 100) * barWidth);
         const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-        let out = `# ${milestone.version} ${milestone.name}\n\n`;
-        out += `**Progress:** [${bar}] ${totalSummaries}/${totalPlans} plans (${percent}%)\n\n`;
+        const percentSuffix = percent === null ? '' : ` (${percent}%)`;
+        let out = `# ${milestone?.version ?? ''} ${milestone?.name ?? ''}\n\n`;
+        out += `**Progress:** [${bar}] ${totalSummaries}/${totalPlans} plans${percentSuffix}\n\n`;
         out += `| Phase | Name | Plans | Status |\n`;
         out += `|-------|------|-------|--------|\n`;
         for (const p of phases) {
@@ -1422,20 +1775,24 @@ function cmdProgressRender(cwd, format, raw) {
     }
     else if (format === 'bar') {
         const barWidth = 20;
-        const filled = Math.round((percent / 100) * barWidth);
+        const filled = percent === null ? 0 : Math.round((percent / 100) * barWidth);
         const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-        const text = `[${bar}] ${totalSummaries}/${totalPlans} plans (${percent}%)`;
+        const percentSuffix = percent === null ? '' : ` (${percent}%)`;
+        const text = `[${bar}] ${totalSummaries}/${totalPlans} plans${percentSuffix}`;
         output({ bar: text, percent, completed: totalSummaries, total: totalPlans }, raw, text);
     }
     else {
         // JSON format
         output({
-            milestone_version: milestone.version,
-            milestone_name: milestone.name,
+            milestone_version: milestone?.version ?? null,
+            milestone_name: milestone?.name ?? null,
             phases,
             total_plans: totalPlans,
             total_summaries: totalSummaries,
             percent,
+            // #3185 (ADR-3180 Decision 2): the enumeration's scope, so a consumer
+            // can tell a genuinely-empty milestone from one it could not scope.
+            phase_scope: phaseScope,
         }, raw, undefined);
     }
 }
@@ -1492,7 +1849,9 @@ function cmdTodoMatchPhase(cwd, phase, raw) {
     if (phaseInfoDisk && phaseInfoDisk['found']) {
         try {
             const phaseDir = node_path_1.default.join(cwd, phaseInfoDisk['directory']);
-            const planFiles = node_fs_1.default.readdirSync(phaseDir).filter(f => f.endsWith('-PLAN.md'));
+            // #3183: canonical plan set (root+nested, superseded-excluded) from the
+            // single owner, rather than a root-only hand-rolled readdirSync filter.
+            const planFiles = scanPhasePlans(phaseDir).planFiles;
             for (const pf of planFiles) {
                 const planContent = (0, shell_command_projection_cjs_1.platformReadSync)(node_path_1.default.join(phaseDir, pf));
                 if (planContent === null)
@@ -1629,12 +1988,12 @@ function cmdStats(cwd, format, raw) {
     const roadmapPath = planningPaths(cwd).roadmap;
     const reqPath = planningPaths(cwd).requirements;
     const statePath = planningPaths(cwd).state;
-    const milestone = getMilestoneInfo(cwd);
-    const isDirInMilestone = getMilestonePhaseFilter(cwd);
+    const milestone = getMilestoneInfo(cwd).value;
     // Phase & plan stats (reuse progress pattern)
     const phasesByNumber = new Map();
     let totalPlans = 0;
     let totalSummaries = 0;
+    let phaseScope = null;
     try {
         const roadmapRaw = (0, shell_command_projection_cjs_1.platformReadSync)(roadmapPath);
         if (roadmapRaw === null)
@@ -1643,9 +2002,22 @@ function cmdStats(cwd, format, raw) {
         // Matches both plain numeric (Phase 1:) and milestone-prefixed (Phase 2-01:) headings.
         // Also tolerates optional [bracket-token] scope prefix on phase headings.
         // #1729: `(?:\s*\([^)\n]{0,200}\))?` tolerates a pre-colon ( ) tag (literal mirror of OPTIONAL_PHASE_TAG_SOURCE).
-        const headingPattern = /#{2,4}\s*(?:\[[^\]]{1,200}\]\s*)?Phase\s+([\w][\w.-]*)(?:\s*\([^)\n]{0,200}\))?\s*:\s*([^\n]+)/gi;
+        // #3569: the id capture is the canonical #3036 shape (digit REQUIRED — incl.
+        // letter-prefixed B7, decimals, milestone 2-01), the same group roadmap.cts's
+        // collectAnalyzePhases uses. The former `([\w][\w.-]*)` matched ANY word, so
+        // prose mentioning `### Phase N:` inside an inline code span produced a phantom
+        // Not-Started row and made phases_total disagree with roadmap analyze.
+        // phase-id-owner: uses the [.-] (dot-or-dash) separator variant, not the canonical dot-only token; a swap to PHASE_NUMBER_TOKEN_SOURCE would drop hyphenated phase-id matches.
+        const headingPattern = /#{2,4}\s*(?:\[[^\]]{1,200}\]\s*)?Phase\s+([A-Za-z]?\d+[A-Z]?(?:[.-]\d+)*)(?:\s*\([^)\n]{0,200}\))?\s*:\s*([^\n]+)/gi;
         let match;
         while ((match = headingPattern.exec(roadmapContent)) !== null) {
+            // #3185: the heading seed carried no sentinel filter, so a
+            // `### Phase 999.1:` backlog heading produced a stats row even with no
+            // directory on disk. Uses the canonical predicate (phase-id.cts), not a
+            // local literal — the rule had five copies and three regex variants
+            // before this phase, disagreeing about Phase 0.
+            if (isSentinelPhaseId(match[1]))
+                continue;
             const key = normalizePhaseName(match[1]);
             phasesByNumber.set(key, {
                 number: key,
@@ -1658,12 +2030,13 @@ function cmdStats(cwd, format, raw) {
     }
     catch { /* intentionally empty */ }
     try {
-        const entries = node_fs_1.default.readdirSync(phasesDir, { withFileTypes: true });
-        const dirs = entries
-            .filter(e => e.isDirectory())
-            .map(e => e.name)
-            .filter(isDirInMilestone)
-            .sort((a, b) => comparePhaseNum(a, b));
+        // #3185 (ADR-3180 Decision 1): route through the single owner. This
+        // previously applied the milestone window but NOT a directory-level
+        // sentinel filter — and getMilestonePhaseFilter degrades to a pass-all
+        // predicate when its heading set is empty, at which point every directory
+        // on disk passed, backlog included (#3167).
+        const { value: dirs, scope } = listMilestonePhaseDirs(phasesDir, { cwd });
+        phaseScope = scope;
         for (const dir of dirs) {
             // Use extractPhaseToken to correctly parse M-NN-style and code-prefixed dir names.
             const phaseToken = extractPhaseToken(dir);
@@ -1671,9 +2044,11 @@ function cmdStats(cwd, format, raw) {
             // phaseName is everything after the token (strip leading '-')
             const afterToken = dir.slice(phaseToken ? phaseToken.length : 0).replace(/^-/, '');
             const phaseName = afterToken ? afterToken.replace(/-/g, ' ') : '';
-            const phaseFiles = node_fs_1.default.readdirSync(node_path_1.default.join(phasesDir, dir));
-            const plans = phaseFiles.filter(f => f.endsWith('-PLAN.md') || f === 'PLAN.md').length;
-            const summaries = phaseFiles.filter(f => f.endsWith('-SUMMARY.md') || f === 'SUMMARY.md').length;
+            // #3183: canonical plan/summary counts (root+nested, superseded-excluded,
+            // canonical pairing) from the single owner.
+            const phaseScan = scanPhasePlans(node_path_1.default.join(phasesDir, dir));
+            const plans = phaseScan.planCount;
+            const summaries = phaseScan.summaryCount;
             totalPlans += plans;
             totalSummaries += summaries;
             const status = determinePhaseStatus(plans, summaries, node_path_1.default.join(phasesDir, dir), 'Not Started');
@@ -1696,8 +2071,12 @@ function cmdStats(cwd, format, raw) {
     catch { /* intentionally empty */ }
     const phases = [...phasesByNumber.values()].sort((a, b) => comparePhaseNum(a.number, b.number));
     const completedPhases = phases.filter(p => p.status === 'Complete').length;
-    const planPercent = totalPlans > 0 ? Math.min(100, Math.round((totalSummaries / totalPlans) * 100)) : 0;
-    const percent = phases.length > 0 ? Math.min(100, Math.round((completedPhases / phases.length) * 100)) : 0;
+    // #3217 (ADR-3180 §7.6 rule 4): both percentages here are derived from the
+    // same `phaseScope`-carrying directory enumeration above (Phase 3, #3222) —
+    // withhold both when that scope is not COMPLETE, same rationale as
+    // cmdProgressRender above. A real `0` under COMPLETE still renders.
+    const planPercent = phaseScope === SCOPE.COMPLETE ? (0, phase_lifecycle_cjs_1.clampPercent)(totalSummaries, totalPlans) : null;
+    const percent = phaseScope === SCOPE.COMPLETE ? (0, phase_lifecycle_cjs_1.clampPercent)(completedPhases, phases.length) : null;
     // Requirements stats
     let requirementsTotal = 0;
     let requirementsComplete = 0;
@@ -1735,8 +2114,8 @@ function cmdStats(cwd, format, raw) {
         }
     }
     const result = {
-        milestone_version: milestone.version,
-        milestone_name: milestone.name,
+        milestone_version: milestone?.version ?? null,
+        milestone_name: milestone?.name ?? null,
         phases,
         phases_completed: completedPhases,
         phases_total: phases.length,
@@ -1749,14 +2128,18 @@ function cmdStats(cwd, format, raw) {
         git_commits: gitCommits,
         git_first_commit_date: gitFirstCommitDate,
         last_activity: lastActivity,
+        // #3185 (ADR-3180 Decision 2): the enumeration's scope, so a consumer
+        // can tell a genuinely-empty milestone from one it could not scope.
+        phase_scope: phaseScope,
     };
     if (format === 'table') {
         const barWidth = 10;
-        const filled = Math.round((percent / 100) * barWidth);
+        const filled = percent === null ? 0 : Math.round((percent / 100) * barWidth);
         const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
-        let out = `# ${milestone.version} ${milestone.name} — Statistics\n\n`;
-        out += `**Progress:** [${bar}] ${completedPhases}/${phases.length} phases (${percent}%)\n`;
-        if (totalPlans > 0) {
+        let out = `# ${milestone?.version ?? ''} ${milestone?.name ?? ''} — Statistics\n\n`;
+        const percentSuffix = percent === null ? '' : ` (${percent}%)`;
+        out += `**Progress:** [${bar}] ${completedPhases}/${phases.length} phases${percentSuffix}\n`;
+        if (totalPlans > 0 && planPercent !== null) {
             out += `**Plans:** ${totalSummaries}/${totalPlans} complete (${planPercent}%)\n`;
         }
         out += `**Phases:** ${completedPhases}/${phases.length} complete\n`;
@@ -1784,29 +2167,203 @@ function cmdStats(cwd, format, raw) {
     }
 }
 /**
- * Check whether a commit should be allowed based on commit_docs config.
- * When commit_docs is false, rejects commits that stage .planning/ files.
- * Intended for use as a pre-commit hook guard.
+ * Check whether a commit should be allowed based on the `commit_docs`
+ * precedence chain, INCLUDING any `phase_commit_docs.<phase-id>` override
+ * (#3587/#3601). Rejects commits that stage `.planning/` files when the
+ * resolved policy is false. Intended for use as a pre-commit hook guard —
+ * see `commit-docs-guard enable` above.
+ *
+ * The phase is derived from the STAGED `.planning/` paths via the single-
+ * owner `detectPhaseNumberFromFiles` (the same helper `cmdCommit` uses), and
+ * the policy itself is resolved via the single-owner `resolveCommitDocsPolicy`
+ * (also shared with `cmdCommit`) — this function never re-derives phase
+ * detection or precedence, so it cannot diverge from `cmdCommit`'s decision
+ * for the same staged tree (#3588 Part 1: this guard was previously
+ * phase-blind, reading only project-level `commit_docs` and directly
+ * contradicting `gsd-tools query commit`'s phase-aware resolution).
+ *
+ * Staged paths are read via `git diff --cached --name-only -z`, NUL-
+ * delimited, rather than the LF-delimited default. Without `-z`, git
+ * C-style-quotes (wraps in double quotes, octal-escapes) any path containing
+ * a non-ASCII byte, a space-adjacent special character, or a literal quote —
+ * `.planning/café.md` is reported as `".planning/caf\303\251.md"`, which
+ * does not start with `.planning/`, so the old LF-based filter silently
+ * missed it and allowed the commit (#3588 F2: a false negative in the harm
+ * direction this guard exists to prevent). `-z` disables that quoting
+ * entirely and NUL-terminates each path instead, so every staged path is
+ * read as literal, unquoted bytes and no unquoting logic is needed.
  */
 function cmdCheckCommit(cwd, raw) {
     const config = loadConfig(cwd);
-    // If commit_docs is true (or not set), allow all commits
-    if (config['commit_docs'] !== false) {
-        output({ allowed: true, reason: 'commit_docs_enabled' }, raw, 'allowed');
-        return;
-    }
-    // commit_docs is false — check if any .planning/ files are staged
-    const stagedResult = (0, shell_command_projection_cjs_1.execGit)(['diff', '--cached', '--name-only'], { cwd });
+    const stagedResult = (0, shell_command_projection_cjs_1.execGit)(['diff', '--cached', '--name-only', '-z'], { cwd });
     if (stagedResult.exitCode === 0) {
-        const planningFiles = stagedResult.stdout.split('\n').filter(f => f.startsWith('.planning/') || f.startsWith('.planning\\'));
+        const files = stagedResult.stdout.split('\0').filter(Boolean);
+        const planningFiles = files.filter(f => f.startsWith('.planning/'));
         if (planningFiles.length > 0) {
-            error(`commit_docs is false but ${planningFiles.length} .planning/ file(s) are staged:\n` +
-                planningFiles.map(f => `  ${f}`).join('\n') +
-                `\n\nTo unstage: git reset HEAD ${planningFiles.join(' ')}`);
+            const policy = resolveCommitDocsPolicy(config, detectPhaseNumberFromFiles(planningFiles), () => isGitIgnored(cwd, '.planning'));
+            if (!policy.resolved) {
+                error(`commit_docs is false but ${planningFiles.length} .planning/ file(s) are staged:\n` +
+                    planningFiles.map(f => `  ${f}`).join('\n') +
+                    `\n\nTo unstage: git reset HEAD ${planningFiles.join(' ')}`);
+                return;
+            }
+            output({ allowed: true, reason: policy.source === 'phase' ? 'phase_commit_docs_true' : 'commit_docs_enabled' }, raw, 'allowed');
+            return;
         }
     }
-    // exitCode !== 0 → no staged files or not a git repo — allow
+    // exitCode !== 0 (no staged files / not a git repo) or no .planning/ files staged — allow
     output({ allowed: true, reason: 'no_planning_files_staged' }, raw, 'allowed');
+}
+// ─── commit-docs-guard: opt-in pre-commit hook (#3588) ─────────────────────
+/**
+ * Stable sentinel line identifying a `.git/hooks/pre-commit` file as ours.
+ * Detection is by PRESENCE of this line, not byte-equality (design "Identifying
+ * 'our' hook") — a user who appends a line to a GSD-written hook must not make
+ * it unrecognizable, and a hook lacking this line must never be overwritten or
+ * deleted by `commit-docs-guard enable`/`disable`.
+ */
+const COMMIT_DOCS_GUARD_MARKER = '# gsd-core:commit-docs-guard';
+/**
+ * Locate `gsd-core/workflows/_runtime-launcher.snippet.sh` — the SAME
+ * gsd-tools-resolution chain every shipped workflow/agent bash block uses
+ * (scripts/sync-runtime-launcher.cjs) — by walking up from this module's own
+ * compiled location rather than a fixed literal `../..` join, so the walk
+ * tolerates the module living at a different depth under an alternate build
+ * or bundling layout (same defensive shape as
+ * runtime-artifact-layout.cts#findInstallSourceRoot).
+ */
+function findRuntimeLauncherSnippet() {
+    let dir = __dirname;
+    for (let i = 0; i < 8; i++) {
+        const candidate = node_path_1.default.join(dir, 'workflows', '_runtime-launcher.snippet.sh');
+        if (node_fs_1.default.existsSync(candidate))
+            return candidate;
+        const parent = node_path_1.default.dirname(dir);
+        if (parent === dir)
+            break;
+        dir = parent;
+    }
+    throw new Error(`commit-docs-guard: could not locate workflows/_runtime-launcher.snippet.sh from ${__dirname}`);
+}
+/**
+ * Build the literal `.git/hooks/pre-commit` content `commit-docs-guard enable`
+ * writes. Reuses the canonical gsd_run resolution preamble byte-for-byte
+ * (read from disk, never hand-copied — see findRuntimeLauncherSnippet) so this
+ * hook resolves `gsd-tools` exactly the way every other shipped workflow bash
+ * block does, and cannot drift from it.
+ *
+ * LF-only (#3588 A2): the snippet file and every literal line here are joined
+ * with `\n`; platformWriteSync additionally normalizes CRLF→LF on write, so a
+ * CRLF shebang — which is not executable under Git Bash — cannot reach disk.
+ */
+function buildCommitDocsGuardHookScript() {
+    const snippetPath = findRuntimeLauncherSnippet();
+    const preamble = (0, text_lines_cjs_1.normalizeEol)(node_fs_1.default.readFileSync(snippetPath, 'utf8')).replace(/\n+$/, '');
+    const lines = [
+        '#!/usr/bin/env bash',
+        COMMIT_DOCS_GUARD_MARKER,
+        '# Refuses a commit that stages .planning/ files when `commit_docs` resolves',
+        '# false (honoring any per-phase override). Installed by',
+        '# `gsd-tools commit-docs-guard enable`; remove with',
+        '# `gsd-tools commit-docs-guard disable`. See',
+        '# docs/how-to/keep-planning-docs-private.md.',
+        'set -euo pipefail',
+        '',
+        preamble,
+        '',
+        'gsd_run check-commit --raw',
+    ];
+    return lines.join('\n') + '\n';
+}
+/**
+ * Resolve the real git hooks directory for `cwd` via `git rev-parse
+ * --git-path hooks` — never a literal `.git/hooks` join (#3588 row 8: a
+ * linked worktree or submodule's `.git` is a FILE pointing elsewhere, and
+ * this is the one git-native call that already resolves that correctly).
+ */
+function resolveCommitDocsGuardHooksDir(cwd) {
+    const gitDirResult = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--git-dir'], { cwd });
+    if (gitDirResult.exitCode !== 0) {
+        return { ok: false, reason: 'not_a_git_repo' };
+    }
+    const hooksPathResult = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--git-path', 'hooks'], { cwd });
+    if (hooksPathResult.exitCode !== 0) {
+        return { ok: false, reason: 'not_a_git_repo' };
+    }
+    const hooksDirRaw = hooksPathResult.stdout.trim();
+    const hooksDir = node_path_1.default.isAbsolute(hooksDirRaw) ? hooksDirRaw : node_path_1.default.join(cwd, hooksDirRaw);
+    return { ok: true, dir: hooksDir };
+}
+/** Marker presence, not byte-equality (#3588 row B10). */
+function isCommitDocsGuardHook(content) {
+    return content.includes(COMMIT_DOCS_GUARD_MARKER);
+}
+/**
+ * `gsd-tools commit-docs-guard enable` — write `.git/hooks/pre-commit`.
+ * Behavior table (40-design.md rows 1-3, 8-9): refuses to clobber a foreign
+ * hook, refuses when `core.hooksPath` would make our own write inert, and is
+ * idempotent when already enabled.
+ */
+function cmdCommitDocsGuardEnable(cwd, raw) {
+    const hooksDir = resolveCommitDocsGuardHooksDir(cwd);
+    if (!hooksDir.ok || !hooksDir.dir) {
+        error('not a git repository (or any of the parent directories)', ERROR_REASON.COMMIT_DOCS_GUARD_NOT_A_REPO);
+        return;
+    }
+    // core.hooksPath already set: our .git/hooks/pre-commit would be inert —
+    // git would never invoke it. Silently writing an ignored file is worse
+    // than refusing (design row 9).
+    const hooksPathConfig = (0, shell_command_projection_cjs_1.execGit)(['config', '--get', 'core.hooksPath'], { cwd });
+    if (hooksPathConfig.exitCode === 0 && hooksPathConfig.stdout.trim() !== '') {
+        const configuredPath = hooksPathConfig.stdout.trim();
+        error(`core.hooksPath is set to "${configuredPath}"; a hook written to ${node_path_1.default.join(hooksDir.dir, 'pre-commit')} ` +
+            `would never run. Wire commit-docs-guard into "${configuredPath}" manually, or unset core.hooksPath first.`, ERROR_REASON.COMMIT_DOCS_GUARD_HOOKS_PATH_SET);
+        return;
+    }
+    const hookPath = node_path_1.default.join(hooksDir.dir, 'pre-commit');
+    const existing = (0, shell_command_projection_cjs_1.platformReadSync)(hookPath);
+    if (existing !== null) {
+        if (!isCommitDocsGuardHook(existing)) {
+            error(`refusing to overwrite an existing pre-commit hook at ${hookPath} that GSD did not write. ` +
+                `Remove or rename it, or wire commit-docs-guard into it by hand.`, ERROR_REASON.COMMIT_DOCS_GUARD_FOREIGN_HOOK);
+        }
+        // Already ours — idempotent no-op (row 3). Leave any user edits intact;
+        // just make sure the executable bit survived.
+        try {
+            node_fs_1.default.chmodSync(hookPath, 0o755);
+        }
+        catch { /* best-effort */ }
+        output({ enabled: true, action: 'already_enabled', path: hookPath }, raw, 'already_enabled');
+        return;
+    }
+    (0, shell_command_projection_cjs_1.platformWriteSync)(hookPath, buildCommitDocsGuardHookScript());
+    node_fs_1.default.chmodSync(hookPath, 0o755);
+    output({ enabled: true, action: 'written', path: hookPath }, raw, 'enabled');
+}
+/**
+ * `gsd-tools commit-docs-guard disable` — remove `.git/hooks/pre-commit`
+ * ONLY when it is the hook we wrote (marker presence). Never deletes a
+ * foreign hook (design row 5); a missing hook is a no-op success, not an
+ * error (row 6).
+ */
+function cmdCommitDocsGuardDisable(cwd, raw) {
+    const hooksDir = resolveCommitDocsGuardHooksDir(cwd);
+    if (!hooksDir.ok || !hooksDir.dir) {
+        error('not a git repository (or any of the parent directories)', ERROR_REASON.COMMIT_DOCS_GUARD_NOT_A_REPO);
+        return;
+    }
+    const hookPath = node_path_1.default.join(hooksDir.dir, 'pre-commit');
+    const existing = (0, shell_command_projection_cjs_1.platformReadSync)(hookPath);
+    if (existing === null) {
+        output({ disabled: true, action: 'noop', path: hookPath }, raw, 'noop');
+        return;
+    }
+    if (!isCommitDocsGuardHook(existing)) {
+        error(`refusing to remove the pre-commit hook at ${hookPath}: it does not carry the ` +
+            `${COMMIT_DOCS_GUARD_MARKER} marker, so GSD did not write it.`, ERROR_REASON.COMMIT_DOCS_GUARD_FOREIGN_HOOK);
+    }
+    node_fs_1.default.unlinkSync(hookPath);
+    output({ disabled: true, action: 'removed', path: hookPath }, raw, 'disabled');
 }
 module.exports = {
     groupFilesBySubrepo,
@@ -1824,6 +2381,10 @@ module.exports = {
     cmdResolveGranularity,
     cmdResolveExecution,
     cmdEffortSync,
+    detectPhaseNumberFromFiles,
+    resolvePhaseCommitDocsOverride,
+    resolveCommitDocsPolicy,
+    COMMIT_DOCS_SKIP_REASON,
     cmdCommit,
     cmdCommitToSubrepo,
     cmdPrSubrepo,
@@ -1835,5 +2396,9 @@ module.exports = {
     cmdScaffold,
     cmdStats,
     cmdCheckCommit,
+    COMMIT_DOCS_GUARD_MARKER,
+    buildCommitDocsGuardHookScript,
+    cmdCommitDocsGuardEnable,
+    cmdCommitDocsGuardDisable,
     _wsParseRetryAfter,
 };

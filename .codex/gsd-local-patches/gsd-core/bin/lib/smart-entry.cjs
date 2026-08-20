@@ -61,6 +61,9 @@ const { stateExtractField } = stateDocument;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const phaseId = require("./phase-id.cjs");
 const { comparePhaseNum, extractPhaseToken, normalizePhaseName, phaseTokenMatches } = phaseId;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const unusableInput = require("./unusable-input.cjs");
+const { warnUnusableInput, UNUSABLE_REASON } = unusableInput;
 // ─── Constants ────────────────────────────────────────────────────────────────
 /**
  * Staleness threshold for idle-stranded detection. A clean tree whose last
@@ -224,7 +227,7 @@ function readStateFile(statePath) {
     catch {
         return null;
     }
-    const fm = extractFrontmatter(content);
+    const fm = extractFrontmatter(content, statePath);
     const body = content.replace(/^---[\s\S]*?---\s*/, '');
     return { fm, body };
 }
@@ -290,7 +293,16 @@ function detectSignals(cwd, now = Date.now) {
     // Stale = no recorded activity for IDLE_STALE_MS. Used only by idle-stranded.
     // Computed here (with the clock seam) so the pure classify() stays a function
     // of (signals, staleActivity) and detectSignals owns all disk reads.
+    // #3099 (ADR-1411 amendment): if last_activity is present but unparseable,
+    // emit a diagnostic so the silent fallback (stale_activity: false) is visible.
+    // The fallback itself stays — continuity is correct, the silence was the defect.
     const lastActivityMs = parseActivityTimestamp(lastActivityRaw);
+    if (lastActivityRaw && lastActivityMs === null) {
+        warnUnusableInput({
+            reason: UNUSABLE_REASON.LAST_ACTIVITY_UNPARSEABLE,
+            source: paths.state,
+        });
+    }
     const staleActivity = lastActivityMs !== null && now() - lastActivityMs > IDLE_STALE_MS;
     // Verify-failed may be signalled either by STATE.md status or by a failed
     // STATUS: marker on the current phase's summary/verify artifact.

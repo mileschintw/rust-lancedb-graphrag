@@ -63,6 +63,7 @@ exports.parseCoverageMatrix = parseCoverageMatrix;
 exports.validateCoverageMatrix = validateCoverageMatrix;
 exports.renderCoverageMatrix = renderCoverageMatrix;
 const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
+const pattern_cjs_1 = require("./pattern.cjs");
 /**
  * Curated default trigger vocabulary. ADDITIVE-ONLY (Hyrum's Law). Tunable via
  * the `terms` parameter.
@@ -155,9 +156,6 @@ function resolveTerms(terms) {
         return Array.isArray(t) ? normalizeTerms(t) : [...exports.DEFAULT_API_COVERAGE_TERMS[key]];
     };
     return { verbs: merge('verbs'), nouns: merge('nouns') };
-}
-function escapeRegex(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 function makeSnippet(line, anchor) {
     const cleaned = line.replace(/\s+/g, ' ').trim();
@@ -402,10 +400,10 @@ function detectApiIntegration(text, terms) {
     // Trailing boundary is a LOOKAHEAD (not consumed) so back-to-back terms
     // separated by one boundary char are both found.
     const verbRe = hasCompoundTerms
-        ? new RegExp('(^|[^a-zA-Z0-9])(' + effective.verbs.map(escapeRegex).join('|') + ')(?=[^a-zA-Z0-9]|$)', 'gi')
+        ? new RegExp('(^|[^a-zA-Z0-9])(' + effective.verbs.map(pattern_cjs_1.escapeRegex).join('|') + ')(?=[^a-zA-Z0-9]|$)', 'gi')
         : null;
     const nounRe = hasCompoundTerms
-        ? new RegExp('(^|[^a-zA-Z0-9])(' + effective.nouns.map(escapeRegex).join('|') + ')(?=[^a-zA-Z0-9]|$)', 'gi')
+        ? new RegExp('(^|[^a-zA-Z0-9])(' + effective.nouns.map(pattern_cjs_1.escapeRegex).join('|') + ')(?=[^a-zA-Z0-9]|$)', 'gi')
         : null;
     const surfaceRe = new RegExp(SERVICE_SURFACE_API_RE.source, 'g');
     const nounSet = new Set(effective.nouns);

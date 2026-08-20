@@ -19,14 +19,52 @@ const modelProfiles = require("./model-profiles.cjs");
 const { MODEL_PROFILES } = modelProfiles;
 const runtime_homes_cjs_1 = require("./runtime-homes.cjs");
 const runtime_name_policy_cjs_1 = require("./runtime-name-policy.cjs");
+// #3242 — model-catalog is a genuine leaf (only node:path + its own JSON), which is
+// exactly why Phase 1 (#3241) moved isAnthropicFlavoredModel there: this module can
+// consume it without dragging model-resolver's config-loader chain into a
+// pure read/verify surface.
+const model_catalog_cjs_1 = require("./model-catalog.cjs");
+// #3243 — the Codex `.toml` block-range/BOM/scan primitives moved into the typed
+// IR module (Phase 3), which this reader now imports rather than defining
+// locally. Behavior is unchanged: scanTomlLines/stripBOM here are the exact
+// same lenient functions that used to live in this file — see
+// codex-agent-toml.cts's module header for the reader/writer reconciliation.
+const codex_agent_toml_cjs_1 = require("./codex-agent-toml.cjs");
+/**
+ * Frozen reason enum for {@link checkCodexModelPosture}. Per CONTRIBUTING's
+ * typed-IR rule ("Error / status / reason → a frozen enum"): callers and tests
+ * assert on these wire values, never on prose. Adding a member is a deliberate
+ * three-way coordinated change — enum, emitting site, and the enum-lock test.
+ */
+const POSTURE_REASON = Object.freeze({
+    ANTHROPIC_FLAVORED_MODEL: 'anthropic_flavored_model',
+    ORPHANED_REASONING_EFFORT: 'orphaned_reasoning_effort',
+    UNREADABLE: 'unreadable',
+    NOT_CODEX: 'not_codex',
+    AGENTS_DIR_MISSING: 'agents_dir_missing',
+});
+// Matches the value-truncation convention in bin/install.js's
+// _warnCodexModelOverrideDropped: values over 64 chars are capped so an
+// oversized or secret-shaped config value can never reach a report in full.
+function truncatePostureValue(value) {
+    return value.length > 64 ? `${value.slice(0, 64)}…` : value;
+}
 /**
  * Resolve the agents directory for the given runtime.
  *
  * Priority:
  *   1. GSD_AGENTS_DIR env var (explicit override, any runtime)
- *   2. For claude runtime: __dirname-relative path (agents/ sibling of gsd-core/)
- *      This is correct for both repo runs and real installs (the runtime config dir's
- *      agents/ folder) because gsd-tools.cjs lives inside gsd-core/bin/ in both cases.
+ *   2. For claude runtime: __dirname-relative path (agents/ sibling of
+ *      gsd-core/) — correct for repo runs and runtime-config-dir installs,
+ *      where the sibling agents/ IS the user's agents dir — UNLESS that path
+ *      carries an exact node_modules segment. gsd-tools.cjs lives inside
+ *      gsd-core/bin/ in every install shape, but on an npm-global install
+ *      gsd-core/ sits inside the package (not the runtime config dir) and the
+ *      package ships its own agents/, so the install-relative path resolves
+ *      to the bundled copy and the check validates the package against
+ *      itself — agents_installed can never be false. In that case resolve
+ *      getGlobalConfigDir('claude')/agents (honours CLAUDE_CONFIG_DIR) like
+ *      every other runtime (#3203).
  *   3. For non-claude runtimes with a manifest-backed project-local install:
  *      <projectRoot>/<localConfigDir>/agents (or <projectRoot>/agents when
  *      the runtime's local install targets the project root). Requiring the
@@ -43,7 +81,16 @@ function getAgentsDir(runtime, projectRoot) {
     }
     const resolved = runtime ?? (process.env['GSD_RUNTIME'] || 'claude');
     if (resolved === 'claude') {
-        return node_path_1.default.join(__dirname, '..', '..', '..', 'agents');
+        const installRelative = node_path_1.default.join(__dirname, '..', '..', '..', 'agents');
+        // #3203: a lexical guard, not an install-shape test. It targets the
+        // layouts where the sibling agents/ is the package's own bundled copy and
+        // the check would otherwise validate the package against itself; a path
+        // merely carrying a directory of that name resolves the same way, and a
+        // non-empty GSD_AGENTS_DIR overrides both.
+        if (installRelative.split(node_path_1.default.sep).includes('node_modules')) {
+            return node_path_1.default.join((0, runtime_homes_cjs_1.getGlobalConfigDir)('claude'), 'agents');
+        }
+        return installRelative;
     }
     if (projectRoot) {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -94,18 +141,7 @@ function checkAgentsInstalled(runtime, projectRoot) {
         };
     }
     for (const agent of expectedAgents) {
-        const agentFile = node_path_1.default.join(agentsDir, `${agent}.md`);
-        const agentFileCopilot = node_path_1.default.join(agentsDir, `${agent}.agent.md`);
-        const agentFileCodex = node_path_1.default.join(agentsDir, `${agent}.toml`);
-        const agentFileKimiYaml = node_path_1.default.join(agentsDir, 'subagents', `${agent}.yaml`);
-        const agentFileKimiPrompt = node_path_1.default.join(agentsDir, 'subagents', `${agent}.md`);
-        const kimiAgentInstalled = resolvedRuntime === 'kimi' &&
-            node_fs_1.default.existsSync(agentFileKimiYaml) &&
-            node_fs_1.default.existsSync(agentFileKimiPrompt);
-        if (node_fs_1.default.existsSync(agentFile) ||
-            node_fs_1.default.existsSync(agentFileCopilot) ||
-            node_fs_1.default.existsSync(agentFileCodex) ||
-            kimiAgentInstalled) {
+        if (agentFileExists(agentsDir, agent, resolvedRuntime)) {
             installed.push(agent);
         }
         else {
@@ -119,22 +155,13 @@ function checkAgentsInstalled(runtime, projectRoot) {
     // when the plain presence check above passed (e.g. .md present, .toml absent).
     // If no manifest is found the check is a no-op (graceful for claude/bundled).
     const incomplete = [];
-    const manifestPath = node_path_1.default.join(node_path_1.default.dirname(agentsDir), 'gsd-file-manifest.json');
-    let manifestFiles = {};
-    try {
-        const raw = node_fs_1.default.readFileSync(manifestPath, 'utf8');
-        const parsed = JSON.parse(raw);
-        if (parsed !== null &&
-            typeof parsed === 'object' &&
-            'files' in parsed &&
-            typeof parsed['files'] === 'object' &&
-            parsed['files'] !== null) {
-            manifestFiles = parsed['files'];
-        }
-    }
-    catch {
-        // No manifest or unreadable — completeness check is skipped
-    }
+    // #2872: the manifest read is the Installer Migration Module's, not a
+    // fourth private copy of it. Lazily required — matching this file's own
+    // capability-registry idiom — so a pure read/verify surface on the
+    // init/verify hot path takes no new static dependency.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readInstallManifest } = require('./installer-migrations.cjs');
+    const manifestFiles = readInstallManifest(node_path_1.default.dirname(agentsDir)).files;
     if (Object.keys(manifestFiles).length > 0) {
         for (const agent of expectedAgents) {
             // Find all manifest keys that belong to this agent:
@@ -169,7 +196,178 @@ function checkAgentsInstalled(runtime, projectRoot) {
         agent_runtime: resolvedRuntime,
     };
 }
+/**
+ * Validate Codex `.toml` agent files for Anthropic-flavored `model` pins and
+ * orphaned `model_reasoning_effort` values (ADR-2313 D6, #3242).
+ *
+ * A new sibling export to {@link checkAgentsInstalled}, deliberately — that
+ * function carries 33 upstream dependents and cyclomatic complexity 25, so this
+ * posture check gets zero new branches there (see 40-design.md "Rejected" #1).
+ * Presence is `checkAgentsInstalled`'s job; this function's job starts only once
+ * the runtime is confirmed `codex` and only inspects posture, never presence.
+ *
+ * Read-only: detects, never repairs (repair is Phase 3, #3243).
+ *
+ * @param runtime - the active runtime name; defaults to GSD_RUNTIME env, then 'claude'
+ * @param projectRoot - canonical project root for local-install discovery
+ */
+function checkCodexModelPosture(runtime, projectRoot) {
+    // Short-circuit BEFORE any filesystem access: a non-codex runtime must never
+    // have its agents directory resolved or a stray .toml inspected, however
+    // violating that file's contents would be if it were ever read (#3242 row 25).
+    const resolvedRuntime = runtime ?? (process.env['GSD_RUNTIME'] || 'claude');
+    if (resolvedRuntime !== 'codex') {
+        return {
+            ok: true,
+            violations: [],
+            checked: [],
+            agents_dir: '',
+            agent_runtime: resolvedRuntime,
+            reason: POSTURE_REASON.NOT_CODEX,
+        };
+    }
+    const agentsDir = getAgentsDir(resolvedRuntime, projectRoot);
+    if (!node_fs_1.default.existsSync(agentsDir)) {
+        // Presence is checkAgentsInstalled's job — an absent agents dir here is a
+        // distinct, non-violating outcome, not a failure of this check.
+        return {
+            ok: true,
+            violations: [],
+            checked: [],
+            agents_dir: agentsDir,
+            agent_runtime: resolvedRuntime,
+            reason: POSTURE_REASON.AGENTS_DIR_MISSING,
+        };
+    }
+    // Skip symlinks — matches cmdEffortSync's existing idiom in commands.cts
+    // ("Skip symlinks — only write regular files..."). Here the risk is reading
+    // (not writing) through a symlink: readFileSync follows symlinks, so an
+    // agents-dir symlink pointing at an arbitrary file would let that target's
+    // contents be echoed into this function's `value` field. A symlinked agent
+    // file is a structural install choice (checkAgentsInstalled's territory),
+    // not a model-content posture defect, so it is silently excluded from
+    // `checked` rather than reported as a distinct violation — same shape as
+    // cmdEffortSync, which silently drops symlinks from its file list rather
+    // than inventing a new skip/violation reason.
+    const tomlFiles = node_fs_1.default
+        .readdirSync(agentsDir)
+        .filter((entry) => {
+        if (!entry.endsWith('.toml'))
+            return false;
+        try {
+            return node_fs_1.default.lstatSync(node_path_1.default.join(agentsDir, entry)).isFile();
+        }
+        catch {
+            return false;
+        }
+    })
+        .sort();
+    const checked = [];
+    const violations = [];
+    for (const entry of tomlFiles) {
+        const agentName = entry.slice(0, -'.toml'.length);
+        const filePath = node_path_1.default.join(agentsDir, entry);
+        checked.push(agentName);
+        let raw;
+        try {
+            raw = node_fs_1.default.readFileSync(filePath, 'utf8');
+        }
+        catch {
+            // Never throws, never silently skips — an unreadable file is reported and
+            // the loop continues checking the rest (40-design.md "Rejected" #5).
+            violations.push({ agent: agentName, file: filePath, reason: POSTURE_REASON.UNREADABLE });
+            continue;
+        }
+        const { model, hasReasoningEffort } = (0, codex_agent_toml_cjs_1.scanTomlLines)((0, codex_agent_toml_cjs_1.stripBOM)(raw));
+        if (model !== null && (0, model_catalog_cjs_1.isAnthropicFlavoredModel)(model)) {
+            violations.push({
+                agent: agentName,
+                file: filePath,
+                reason: POSTURE_REASON.ANTHROPIC_FLAVORED_MODEL,
+                value: truncatePostureValue(model),
+            });
+        }
+        else if (model === null && hasReasoningEffort) {
+            // #838 coupling: a reasoning-effort pin with no model pin means Codex
+            // inherits the session model while the effort pin silently disagrees.
+            violations.push({
+                agent: agentName,
+                file: filePath,
+                reason: POSTURE_REASON.ORPHANED_REASONING_EFFORT,
+            });
+        }
+    }
+    return {
+        ok: violations.length === 0,
+        violations,
+        checked,
+        agents_dir: agentsDir,
+        agent_runtime: resolvedRuntime,
+    };
+}
+/**
+ * Probe a single agents dir for `<name>` across runtime filename variants.
+ * Mirrors {@link checkAgentsInstalled}'s probe (`.md`, `.agent.md`, `.toml`,
+ * and the kimi `subagents/<name>.{yaml,md}` pair) so the two can never disagree
+ * about which on-disk shapes count as "installed". Not exported — internal to
+ * {@link resolveAgentHint}.
+ */
+function agentFileExists(agentsDir, name, runtime) {
+    const base = node_path_1.default.join(agentsDir, `${name}.md`);
+    const copilot = node_path_1.default.join(agentsDir, `${name}.agent.md`);
+    const codex = node_path_1.default.join(agentsDir, `${name}.toml`);
+    if (node_fs_1.default.existsSync(base) || node_fs_1.default.existsSync(copilot) || node_fs_1.default.existsSync(codex)) {
+        return true;
+    }
+    // kimi requires BOTH the persona yaml and the prompt md (same as checkAgentsInstalled).
+    const kimiYaml = node_path_1.default.join(agentsDir, 'subagents', `${name}.yaml`);
+    const kimiPrompt = node_path_1.default.join(agentsDir, 'subagents', `${name}.md`);
+    return runtime === 'kimi' && node_fs_1.default.existsSync(kimiYaml) && node_fs_1.default.existsSync(kimiPrompt);
+}
+/**
+ * Resolve a per-plan `agent_hint` specialist name to a dispatchable subagent
+ * type on the active runtime (#1689). Unlike {@link checkAgentsInstalled},
+ * which validates the fixed GSD roster, this answers "does an agent file for
+ * this ARBITRARY name exist in the active runtime's agent dir(s)?" — so a plan
+ * can opt into a domain specialist (e.g. a Flutter engineer) that shares the
+ * gsd-executor contract without being part of the built-in roster.
+ *
+ * Probes BOTH the runtime-canonical agents dir ({@link getAgentsDir}, which
+ * honors `GSD_AGENTS_DIR`, project-local manifest-backed installs, and the
+ * claude install-relative path) AND the runtime's global config agents dir, so
+ * a specialist installed at either level is recognized. The decision in #1689
+ * explicitly requires consulting the active runtime's agent dir rather than
+ * only the the agent runtime's user-global and project-local agent dirs.
+ *
+ * @returns the name when a matching agent file exists; `null` when it does not
+ *   (the caller falls back to `gsd-executor`). An empty/whitespace name always
+ *   returns `null`.
+ */
+function resolveAgentHint(name, runtime, projectRoot) {
+    const trimmed = String(name ?? '').trim();
+    if (trimmed === '')
+        return null;
+    // A hint is a bare agent name. Reject path separators and `..` so a value
+    // like `../../README` cannot path-traverse out of the agents dir via
+    // path.join and match an unrelated file — that would echo an invalid
+    // subagent_type and block the wave, defeating fail-closed resolution.
+    if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('..'))
+        return null;
+    const resolvedRuntime = runtime ?? (process.env['GSD_RUNTIME'] || 'claude');
+    const candidateDirs = new Set();
+    candidateDirs.add(getAgentsDir(resolvedRuntime, projectRoot));
+    candidateDirs.add(node_path_1.default.join((0, runtime_homes_cjs_1.getGlobalConfigDir)(resolvedRuntime), 'agents'));
+    for (const dir of candidateDirs) {
+        if (agentFileExists(dir, trimmed, resolvedRuntime)) {
+            return trimmed;
+        }
+    }
+    return null;
+}
 module.exports = {
     getAgentsDir,
     checkAgentsInstalled,
+    checkCodexModelPosture,
+    POSTURE_REASON,
+    resolveAgentHint,
 };

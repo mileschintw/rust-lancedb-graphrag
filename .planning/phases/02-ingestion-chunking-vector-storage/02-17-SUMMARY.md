@@ -1,7 +1,7 @@
 # Phase 02-17 Summary: Configuration Discovery, Chunk Settings Contract, and Loopback Guardrail
 
 ## Summary
-- **Plan File:** [02-17-PLAN.md](file:///d:/Repos/lancet/.planning/phases/02-ingestion-chunking-vector-storage/02-17-PLAN.md)
+- **Plan File:** [02-17-PLAN.md](./02-17-PLAN.md)
 - **Status:** Completed
 - **Findings Addressed:** CR-01, CR-02, CR-04 (local guardrail)
 
@@ -38,9 +38,9 @@
 - `go vet ./...` (gateway): **PASS** (0 issues)
 
 ## Key Files Modified
-- [engine/src/main.rs](file:///d:/Repos/lancet/engine/src/main.rs): `load_settings()`, `ChunkSettings`, `parse_chunk_settings`, `ingest_document` first-frame metadata validation.
-- [engine/src/tests.rs](file:///d:/Repos/lancet/engine/src/tests.rs): `IngestionJob::new` helper and `chunk_metadata_contract` unit tests.
-- [engine/tests/config_startup.rs](file:///d:/Repos/lancet/engine/tests/config_startup.rs): Process-level configuration discovery & precedence regression suite.
-- [gateway/main.go](file:///d:/Repos/lancet/gateway/main.go): Multipart chunk settings parsing, gRPC first-frame metadata streaming, `formatListenAddr` loopback bind.
-- [gateway/main_test.go](file:///d:/Repos/lancet/gateway/main_test.go): `TestCreateDocumentChunkSettingsContract`, `TestGrpcEngineStreamsChunkSettings`, `TestGatewayAddressIsLoopback`.
-- [README.md](file:///d:/Repos/lancet/README.md): Documented local-only exposure constraint and `DEBT-CR-04` triggers.
+- [engine/src/main.rs](../../../engine/src/main.rs): `load_settings()`, `ChunkSettings`, `parse_chunk_settings`, `ingest_document` first-frame metadata validation.
+- [engine/src/tests.rs](../../../engine/src/tests.rs): `IngestionJob::new` helper and `chunk_metadata_contract` unit tests.
+- [engine/tests/config_startup.rs](../../../engine/tests/config_startup.rs): Process-level configuration discovery & precedence regression suite.
+- [gateway/main.go](../../../gateway/main.go): Multipart chunk settings parsing, gRPC first-frame metadata streaming, `formatListenAddr` loopback bind.
+- [gateway/main_test.go](../../../gateway/main_test.go): `TestCreateDocumentChunkSettingsContract`, `TestGrpcEngineStreamsChunkSettings`, `TestGatewayAddressIsLoopback`.
+- [README.md](../../../README.md): Documented local-only exposure constraint and `DEBT-CR-04` triggers.

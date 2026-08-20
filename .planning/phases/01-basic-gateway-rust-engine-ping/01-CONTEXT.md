@@ -41,8 +41,8 @@ Establish the foundational split-service architecture (Go control plane + Rust d
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Architecture & Decisions
-- [final_implementation_decision_document.md](file:///d:/Repos/lancet/.discussion/final_implementation_decision_document.md) — Main architecture split, boundaries, and tech stack choices.
-- [lightweight_state_machine_plan.md](file:///d:/Repos/lancet/.discussion/lightweight_state_machine_plan.md) — Reference for future orchestration states and integration patterns.
+- [final_implementation_decision_document.md](../../../.discussion/final_implementation_decision_document.md) — Main architecture split, boundaries, and tech stack choices.
+- [lightweight_state_machine_plan.md](../../../.discussion/lightweight_state_machine_plan.md) — Reference for future orchestration states and integration patterns.
 
 </canonical_refs>
 

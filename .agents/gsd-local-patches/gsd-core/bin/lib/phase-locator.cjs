@@ -30,7 +30,67 @@ const { readSubdirectories, getPhaseFileStats, extractCanonicalPlanId, toPosixPa
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
 const { planningDir } = planningWorkspace;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const frontmatterModule = require("./frontmatter.cjs");
+const { extractFrontmatter } = frontmatterModule;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const planDependencyGraphModule = require("./plan-dependency-graph.cjs");
+const { computeHaltPropagation, buildSummaryFileIndex, isSummaryFileHalted } = planDependencyGraphModule;
+/**
+ * #2830: parse a plan file's `depends_on` frontmatter. Returns [] — never
+ * throws — on a missing/unreadable/malformed plan or absent field, matching
+ * this primitive's existing fail-safe posture (a plan directory this
+ * primitive can otherwise read must never throw here).
+ */
+function parsePlanDependsOn(phaseDir, planFile) {
+    try {
+        const planPath = node_path_1.default.join(phaseDir, planFile);
+        const content = node_fs_1.default.readFileSync(planPath, 'utf-8');
+        const fm = extractFrontmatter(content, planPath);
+        const fmDeps = fm['depends_on'];
+        if (Array.isArray(fmDeps))
+            return fmDeps.map(String);
+        if (typeof fmDeps === 'string' && fmDeps.trim() !== '')
+            return [fmDeps];
+        return [];
+    }
+    catch {
+        return [];
+    }
+}
 // ─── Phase search helpers ─────────────────────────────────────────────────────
+/**
+ * #2855: single source of truth for resolving and enumerating a project's
+ * (or, when a workstream is active, that workstream's OWN) archived-milestone
+ * directories — `<planningDir(cwd)>/milestones/vX.Y-phases/`. Both
+ * `findPhaseInternal`'s archive fallback and `getArchivedPhaseDirs` used to
+ * carry independent copies of this resolve-then-enumerate logic, which is
+ * exactly the shape that let the original #2855 bug (hardcoded root path)
+ * exist in one copy and not the other. Sharing this seam means a future
+ * change to how the archive tree is located only needs to happen once.
+ * Most-recent-milestone-first order (reverse-sorted directory names).
+ * Never throws: an absent/unreadable milestones/ dir yields [].
+ */
+function listArchiveVersionDirs(cwd) {
+    const milestonesDir = node_path_1.default.join(planningDir(cwd), 'milestones');
+    if (!node_fs_1.default.existsSync(milestonesDir))
+        return [];
+    try {
+        const milestoneEntries = node_fs_1.default.readdirSync(milestonesDir, { withFileTypes: true });
+        return milestoneEntries
+            .filter(e => e.isDirectory() && /^v[\d.]+-phases$/.test(e.name))
+            .map(e => e.name)
+            .sort()
+            .reverse()
+            .map(archiveName => ({
+            version: archiveName.match(/^(v[\d.]+)-phases$/)[1],
+            archivePath: node_path_1.default.join(milestonesDir, archiveName),
+        }));
+    }
+    catch {
+        return [];
+    }
+}
 function searchPhaseInDir(baseDir, relBase, normalized) {
     try {
         const dirs = readSubdirectories(baseDir, true);
@@ -55,6 +115,9 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
                 has_verification: false,
                 has_reviews: false,
                 ambiguous_matches: matches,
+                halted_plans: [],
+                blocked_by: {},
+                runnable_plans: [],
             };
         }
         const match = matches[0];
@@ -76,6 +139,50 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
             const canonical = extractCanonicalPlanId(p);
             return !completedPlanIds.has(planId) && !completedPlanIds.has(canonical);
         });
+        // #2830: reverse lookup from a completed plan's id (exact or canonical) to
+        // its actual summary filename. Shared builder (also used by phase.cts's
+        // cmdPhasePlanIndex) so the two can never disagree about which summary
+        // belongs to which plan.
+        const summaryFileByPlanId = buildSummaryFileIndex(summaries, extractCanonicalPlanId);
+        // #2830: this primitive previously never parsed depends_on at all — see
+        // src/plan-dependency-graph.cts's file header. Build the same
+        // PlanHaltNode[] shape phase.cts's cmdPhasePlanIndex builds (id resolution
+        // mirrors its planMap/canonicalToId pattern) and hand it to the ONE
+        // shared halt-propagation traversal so this reader and the wave-grouping
+        // reader can never diverge on the halt rule again.
+        const planIds = plans.map(p => p.replace('-PLAN.md', '').replace('PLAN.md', ''));
+        const planIdByLower = new Map(planIds.map(id => [id.toLowerCase(), id]));
+        const canonicalToPlanId = new Map(plans.map((p, i) => [extractCanonicalPlanId(p).toLowerCase(), planIds[i]]));
+        const haltNodes = plans.map((p, i) => {
+            const planId = planIds[i];
+            const canonical = extractCanonicalPlanId(p);
+            const summaryFile = summaryFileByPlanId.get(planId) ?? summaryFileByPlanId.get(canonical);
+            const halted = summaryFile !== undefined && isSummaryFileHalted(node_path_1.default.join(phaseDir, summaryFile));
+            const resolvedDependsOn = parsePlanDependsOn(phaseDir, p)
+                .map((dep) => {
+                const lower = dep.toLowerCase();
+                return planIdByLower.get(lower) ?? canonicalToPlanId.get(lower) ?? null;
+            })
+                .filter((id) => id !== null);
+            return { id: planId, resolvedDependsOn, halted };
+        });
+        const { blockedBy } = computeHaltPropagation(haltNodes);
+        const haltedPlans = plans.filter((_, i) => haltNodes[i].halted);
+        const incompletePlanSet = new Set(incompletePlans);
+        const blockedByFiles = {};
+        const runnablePlans = [];
+        for (let i = 0; i < plans.length; i++) {
+            const p = plans[i];
+            if (!incompletePlanSet.has(p))
+                continue;
+            const causes = blockedBy.get(planIds[i]) ?? [];
+            if (causes.length > 0) {
+                blockedByFiles[p] = causes;
+            }
+            else {
+                runnablePlans.push(p);
+            }
+        }
         return {
             found: true,
             directory: toPosixPath(node_path_1.default.join(relBase, match)),
@@ -89,6 +196,9 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
             has_context: hasContext,
             has_verification: hasVerification,
             has_reviews: hasReviews,
+            halted_plans: haltedPlans,
+            blocked_by: blockedByFiles,
+            runnable_plans: runnablePlans,
         };
     }
     catch {
@@ -104,59 +214,42 @@ function findPhaseInternal(cwd, phase) {
     const current = searchPhaseInDir(phasesDir, relPhasesDir, normalized);
     if (current)
         return current;
-    const milestonesDir = node_path_1.default.join(cwd, '.planning', 'milestones');
-    if (!node_fs_1.default.existsSync(milestonesDir))
-        return null;
-    try {
-        const milestoneEntries = node_fs_1.default.readdirSync(milestonesDir, { withFileTypes: true });
-        const archiveDirs = milestoneEntries
-            .filter(e => e.isDirectory() && /^v[\d.]+-phases$/.test(e.name))
-            .map(e => e.name)
-            .sort()
-            .reverse();
-        for (const archiveName of archiveDirs) {
-            const versionMatch = archiveName.match(/^(v[\d.]+)-phases$/);
-            const version = versionMatch[1];
-            const archivePath = node_path_1.default.join(milestonesDir, archiveName);
-            const relBase = '.planning/milestones/' + archiveName;
-            const result = searchPhaseInDir(archivePath, relBase, normalized);
-            if (result) {
-                result.archived = version;
-                return result;
-            }
+    // #2855: scope the archived-milestone fallback to the SAME workstream as the
+    // active-phase search above (planningDir(cwd) resolves GSD_WORKSTREAM/GSD_PROJECT
+    // the identical way both places), not the hardcoded project-root tree. Archived
+    // phases genuinely live under a workstream's own `.planning/workstreams/<ws>/
+    // milestones/` — that is where archivePhaseDirectories (milestone.cts) writes
+    // them via the same planningDir(cwd) resolution. Hardcoding root here let a
+    // pending workstream phase resolve to an unrelated workstream's (or a flat-mode
+    // project's) archived phase that merely shares a phase number. Shared with
+    // getArchivedPhaseDirs via listArchiveVersionDirs (see its doc comment).
+    for (const { version, archivePath } of listArchiveVersionDirs(cwd)) {
+        const relBase = toPosixPath(node_path_1.default.relative(cwd, archivePath));
+        const result = searchPhaseInDir(archivePath, relBase, normalized);
+        if (result) {
+            result.archived = version;
+            return result;
         }
     }
-    catch { /* intentionally empty */ }
     return null;
 }
 function getArchivedPhaseDirs(cwd) {
-    const milestonesDir = node_path_1.default.join(cwd, '.planning', 'milestones');
+    // #2855: same workstream-scoped resolution as findPhaseInternal above, via
+    // the shared listArchiveVersionDirs helper. `phase.list --include-archived`
+    // (the primary non-init consumer) must not leak a different workstream's
+    // archive either.
     const results = [];
-    if (!node_fs_1.default.existsSync(milestonesDir))
-        return results;
-    try {
-        const milestoneEntries = node_fs_1.default.readdirSync(milestonesDir, { withFileTypes: true });
-        const phaseDirs = milestoneEntries
-            .filter(e => e.isDirectory() && /^v[\d.]+-phases$/.test(e.name))
-            .map(e => e.name)
-            .sort()
-            .reverse();
-        for (const archiveName of phaseDirs) {
-            const versionMatch = archiveName.match(/^(v[\d.]+)-phases$/);
-            const version = versionMatch[1];
-            const archivePath = node_path_1.default.join(milestonesDir, archiveName);
-            const dirs = readSubdirectories(archivePath, true);
-            for (const dir of dirs) {
-                results.push({
-                    name: dir,
-                    milestone: version,
-                    basePath: node_path_1.default.join('.planning', 'milestones', archiveName),
-                    fullPath: node_path_1.default.join(archivePath, dir),
-                });
-            }
+    for (const { version, archivePath } of listArchiveVersionDirs(cwd)) {
+        const dirs = readSubdirectories(archivePath, true);
+        for (const dir of dirs) {
+            results.push({
+                name: dir,
+                milestone: version,
+                basePath: toPosixPath(node_path_1.default.relative(cwd, archivePath)),
+                fullPath: node_path_1.default.join(archivePath, dir),
+            });
         }
     }
-    catch { /* intentionally empty */ }
     return results;
 }
 module.exports = {

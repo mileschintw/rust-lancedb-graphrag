@@ -37,6 +37,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_ASSUMPTION_DELTA_TERMS = void 0;
 exports.detectAssumptionDelta = detectAssumptionDelta;
 const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
+const pattern_cjs_1 = require("./pattern.cjs");
 /**
  * Curated default trigger vocabulary. Each kind lists cue terms that signal a
  * core-assumption monopoly has been lost. ADDITIVE-ONLY (Hyrum's Law: once
@@ -168,7 +169,7 @@ function detectAssumptionDelta(text, terms) {
             continue;
         // Word-boundary anchored, case-insensitive — same shape as ui-safety-gate.
         // (^|[^a-zA-Z0-9])(TERM)([^a-zA-Z0-9]|$) prevents interior-substring matches.
-        const escaped = cueTerms.map(escapeRegex).join('|');
+        const escaped = cueTerms.map(pattern_cjs_1.escapeRegex).join('|');
         const pattern = new RegExp('(^|[^a-zA-Z0-9])(' + escaped + ')([^a-zA-Z0-9]|$)', 'gi');
         const seen = new Set();
         for (const line of stripped.split('\n')) {
@@ -187,9 +188,6 @@ function detectAssumptionDelta(text, terms) {
         }
     }
     return { detected: signals.length > 0, signals, terms: effective };
-}
-function escapeRegex(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 // ── CLI entry point ──────────────────────────────────────────────────────────
 // Reads phase-section text from STDIN (not argv) to avoid OS ARG_MAX limits.

@@ -24,6 +24,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LANE_UNAVAILABLE = void 0;
+exports.configString = configString;
 exports.normalizeHost = normalizeHost;
 exports.isEmptyReview = isEmptyReview;
 exports.fileRefPrompt = fileRefPrompt;
@@ -74,6 +75,9 @@ const KNOWN_HANDLERS = new Set(['antigravity', 'openai-compatible', 'opencode'])
  *
  * A non-string (number, bool, object, array) is NOT coerced. `String(0)` would put `"0"` into argv
  * as a model name; a wrong model silently reviewed is worse than no model override.
+ *
+ * Exported and shared with the runner's model-recovery arms (#2295) — "what counts as unset" has
+ * ONE source, so the plan resolver and the runner's recovered-model normalization cannot disagree.
  */
 function configString(raw) {
     if (typeof raw !== 'string')
@@ -212,6 +216,10 @@ function resolveLanePlan(input) {
         ? lane.timeoutFloorMs
         : 900_000;
     const emptyOutput = lane.emptyOutput === 'handler-owned' ? 'handler-owned' : 'stub-with-stderr';
+    // #3194: only an EXACT 'diff-only' declaration exempts a lane from evidence verification.
+    // Anything else — including a missing or garbage value on a third-party overlay body —
+    // resolves as 'source-grounded', so the runner verifies rather than trusts it.
+    const evidenceClass = lane.evidenceClass === 'diff-only' ? 'diff-only' : 'source-grounded';
     const requiresBinaries = Array.isArray(lane.requiresBinaries)
         ? lane.requiresBinaries.filter((b) => typeof b === 'string')
         : [];
@@ -255,6 +263,7 @@ function resolveLanePlan(input) {
                 errPath,
                 timeoutMs,
                 emptyOutput,
+                evidenceClass,
                 handler,
                 requiresBinaries,
                 probe: lane.probe,
@@ -325,6 +334,23 @@ function resolveLanePlan(input) {
             argv.push(token);
         }
     }
+    // Per-invocation env pairs (#2483). Own string-valued entries only — a non-string is dropped,
+    // never coerced, and prototype members never resolve (same lookup discipline as the argv
+    // expansions above). An empty or absent declaration resolves to `null`, so the runner has one
+    // shape to test.
+    let env = null;
+    const declaredEnv = inv.env;
+    if (declaredEnv !== null && typeof declaredEnv === 'object' && !Array.isArray(declaredEnv)) {
+        const source = declaredEnv;
+        const pairs = {};
+        for (const k of Object.keys(source)) {
+            const v = source[k];
+            if (typeof v === 'string')
+                pairs[k] = v;
+        }
+        if (Object.keys(pairs).length > 0)
+            env = pairs;
+    }
     return {
         ok: true,
         warnings,
@@ -333,6 +359,8 @@ function resolveLanePlan(input) {
             slug,
             binary,
             argv,
+            model: modelExpansion.length > 0 ? model : null,
+            effort: effortExpansion.length > 0 ? (configString(input.effortValue) ?? null) : null,
             stdin,
             promptPath,
             outputTarget,
@@ -340,9 +368,11 @@ function resolveLanePlan(input) {
             errPath,
             timeoutMs,
             emptyOutput,
+            evidenceClass,
             handler,
             requiresBinaries,
             probe: lane.probe,
+            env,
         },
     };
 }

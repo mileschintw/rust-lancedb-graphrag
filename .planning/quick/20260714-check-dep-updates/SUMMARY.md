@@ -38,6 +38,6 @@ We upgraded the Go dependencies to their latest minor/patch versions:
   - Jaeger v2 is based on the OpenTelemetry Collector framework.
   - Image repository is now `cr.jaegertracing.io/jaegertracing/jaeger:2.19.0` instead of `jaegertracing/all-in-one:latest`.
 - **Configuration & Integration:**
-  - Created a new standard [jaeger-config.yaml](file:///c:/Users/user3/repos/lancet/jaeger-config.yaml) in the workspace root with OTel Collector trace pipelines, OTLP gRPC/HTTP receivers, and in-memory trace storage.
-  - Modified [docker-compose.yml](file:///c:/Users/user3/repos/lancet/docker-compose.yml) to mount the new configuration file and run the container with the `--config` parameter.
+  - Created a new standard [jaeger-config.yaml](../../../jaeger-config.yaml) in the workspace root with OTel Collector trace pipelines, OTLP gRPC/HTTP receivers, and in-memory trace storage.
+  - Modified [docker-compose.yml](../../../docker-compose.yml) to mount the new configuration file and run the container with the `--config` parameter.
   - **Verification:** Ran `docker compose config` and successfully validated the updated service definition.

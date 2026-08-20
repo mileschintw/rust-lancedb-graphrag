@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gsd-hook-version: 1.10.0
+// gsd-hook-version: 1.11.0
 // gsd-cursor-pre-tool.js — Cursor preToolUse hook (ADR-1239 / #2089)
 //
 // Cursor invokes this script before each tool call executes.
@@ -21,9 +21,6 @@
 // Cursor docs: https://cursor.com/docs/hooks
 
 'use strict';
-
-const fs = require('fs');
-const path = require('path');
 
 const WRITE_TOOL_RE = /write|edit|replace|create|delete|remove|append|apply|patch|insert|mkdir/i;
 const PATH_KEY_RE = /^(path|file|file_?path|filepath|target_?path|target|dir|directory|uri|filename)$/i;

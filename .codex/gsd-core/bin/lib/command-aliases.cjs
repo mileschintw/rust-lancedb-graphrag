@@ -612,6 +612,14 @@ exports.ROADMAP_COMMAND_ALIASES = [
         "mutation": false
     },
     {
+        "canonical": "roadmap.milestone-scope",
+        "aliases": [
+            "roadmap milestone-scope"
+        ],
+        "subcommand": "milestone-scope",
+        "mutation": false
+    },
+    {
         "canonical": "roadmap.get-phase",
         "aliases": [
             "roadmap get-phase"
@@ -682,6 +690,20 @@ exports.NON_FAMILY_COMMAND_ALIASES = [
     {
         "canonical": "commit",
         "aliases": [],
+        "mutation": true
+    },
+    {
+        "canonical": "commit-docs-guard.disable",
+        "aliases": [
+            "commit-docs-guard disable"
+        ],
+        "mutation": true
+    },
+    {
+        "canonical": "commit-docs-guard.enable",
+        "aliases": [
+            "commit-docs-guard enable"
+        ],
         "mutation": true
     },
     {

@@ -40,13 +40,13 @@ Granular flags are composable: `--discuss --research --validate` gives the same 
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/quick.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/quick.md
 </execution_context>
 
 <context>
 $ARGUMENTS
 
-Context files are resolved inside the workflow (`init quick`) and delegated via `<files_to_read>` blocks.
+Context files are resolved inside the workflow (`init quick`) and delegated via `<required_reading>` blocks.
 </context>
 
 <process>

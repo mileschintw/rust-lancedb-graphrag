@@ -83,13 +83,13 @@ Ingest text/markdown files asynchronously, parse structure-aware markdown elemen
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Architecture & Decisions
-- [.discussion/final_implementation_decision_document.md](file:///c:/Users/user3/repos/lancet/.discussion/final_implementation_decision_document.md) — Main architecture split, boundaries, and tech stack choices.
-- [.discussion/lightweight_state_machine_plan.md](file:///c:/Users/user3/repos/lancet/.discussion/lightweight_state_machine_plan.md) — Reference for future orchestration states and integration patterns.
-- [.discussion/decisions/phases/02/2026-07-29-ADR-02-002-refreshed-review-disposition.md](file:///D:/Repos/lancet/.discussion/decisions/phases/02/2026-07-29-ADR-02-002-refreshed-review-disposition.md) — Accepted source of truth for the five refreshed review findings, their concrete acceptance criteria, and the Rust-engine/Go-gateway responsibility boundary.
+- [.discussion/final_implementation_decision_document.md](../../../.discussion/final_implementation_decision_document.md) — Main architecture split, boundaries, and tech stack choices.
+- [.discussion/lightweight_state_machine_plan.md](../../../.discussion/lightweight_state_machine_plan.md) — Reference for future orchestration states and integration patterns.
+- [.discussion/decisions/phases/02/2026-07-29-ADR-02-002-refreshed-review-disposition.md](../../../.discussion/decisions/phases/02/2026-07-29-ADR-02-002-refreshed-review-disposition.md) — Accepted source of truth for the five refreshed review findings, their concrete acceptance criteria, and the Rust-engine/Go-gateway responsibility boundary.
 
 ### Requirements & Roadmap
-- [.planning/REQUIREMENTS.md](file:///c:/Users/user3/repos/lancet/.planning/REQUIREMENTS.md) — Main project requirements list.
-- [.planning/ROADMAP.md](file:///c:/Users/user3/repos/lancet/.planning/ROADMAP.md) — Milestone roadmap and phase success criteria.
+- [.planning/REQUIREMENTS.md](../../REQUIREMENTS.md) — Main project requirements list.
+- [.planning/ROADMAP.md](../../ROADMAP.md) — Milestone roadmap and phase success criteria.
 
 </canonical_refs>
 

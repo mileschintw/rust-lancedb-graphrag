@@ -21,6 +21,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.extractDecisions = extractDecisions;
 exports.parseDecisions = parseDecisions;
 const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
+const token_scanner_cjs_1 = require("./token-scanner.cjs");
 const DISCRETION_HEADINGS = new Set([
     "claude's discretion",
     'claudes discretion',
@@ -89,12 +90,14 @@ function parseDecisionLines(block) {
     let category = '';
     let inDiscretion = false;
     let current = null;
+    let openIndent = null;
     let parseMisses = 0;
     const flush = () => {
         if (current) {
             current.text = current.text.trim();
             out.push(current);
             current = null;
+            openIndent = null;
         }
     };
     for (const line of lines) {
@@ -115,6 +118,23 @@ function parseDecisionLines(block) {
             inDiscretion = DISCRETION_HEADINGS.has(normalized);
             continue;
         }
+        // Nested bullet under an open decision (#3212 Phase 3, #3169): a bullet
+        // indented deeper than the currently-open decision's own bullet is that
+        // decision's elaboration (e.g. a cross-reference to a sibling decision),
+        // not a fresh declaration attempt — fold it into current.text exactly
+        // like a continuation line, before it ever reaches the declaration/
+        // parse-miss regexes below. A bullet at the SAME or a SHALLOWER indent
+        // is unaffected — tested exactly as before this fix. See design doc
+        // .gsd/phase/chore-3414-tokenizer-first-seam/40-design.md §1.3 for why
+        // nesting depth, not bullet content, is the signal that distinguishes
+        // this from a genuinely malformed top-level declaration.
+        if (current &&
+            openIndent !== null &&
+            trimmed.startsWith('-') &&
+            (0, token_scanner_cjs_1.indentWidth)(line) > openIndent) {
+            current.text += ' ' + trimmed;
+            continue;
+        }
         // Colon form: `- **D-NN[ [tags]]:** text`
         const colonMatch = line.match(bulletColonRe);
         if (colonMatch) {
@@ -125,6 +145,7 @@ function parseDecisionLines(block) {
                 : [];
             const trackable = !inDiscretion && !tags.some((t) => NON_TRACKABLE_TAGS.has(t));
             current = { id, text: colonMatch[3], category, tags, trackable };
+            openIndent = (0, token_scanner_cjs_1.indentWidth)(line);
             continue;
         }
         // Em-dash form: `- **D-NN[ [tags]] — title** body`
@@ -140,6 +161,7 @@ function parseDecisionLines(block) {
             // title itself is embedded in the bold run but we report the body as text
             // (consistent with how the gate cares only about coverage, not title/body split).
             current = { id, text: emDashMatch[3] || '', category, tags, trackable };
+            openIndent = (0, token_scanner_cjs_1.indentWidth)(line);
             continue;
         }
         // Titled-colon form: `- **D-NN[ [tags]]: Title.** body` (#1639). Checked LAST — it is
@@ -155,6 +177,7 @@ function parseDecisionLines(block) {
                 : [];
             const trackable = !inDiscretion && !tags.some((t) => NON_TRACKABLE_TAGS.has(t));
             current = { id, text: titledColonMatch[3] || '', category, tags, trackable };
+            openIndent = (0, token_scanner_cjs_1.indentWidth)(line);
             continue;
         }
         // Parse-miss guard (FIX B + #1343): a line that looks like a `D-NN` decision

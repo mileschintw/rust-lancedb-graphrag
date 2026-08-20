@@ -128,6 +128,15 @@ exports.REVIEWER_LANES = Object.freeze([
             ...SPAWN_STDIN_STDOUT,
             modelArg: '--model',
             effortChannel: 'argv',
+            // #2483: without these the claude leg is the only reviewer that additionally inherits the
+            // invoking user's global GEMINI.md, the project GEMINI.md, and Claude Code auto-memory —
+            // a context asymmetry against the independent-review premise (gemini sees only the
+            // assembled prompt; codex runs --ephemeral). Both flags, not just the first: GEMINI.md
+            // loading and auto-memory are independently-toggled mechanisms, and an environment
+            // exporting CLAUDE_CODE_DISABLE_AUTO_MEMORY=0 forces auto-memory back ON — the explicit
+            // pair is robust against that. Applies when /gsd-review runs from a non-Claude-Code host;
+            // inside Claude Code the claude lane self-skips for independence.
+            env: { CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' },
         },
         timeoutFloorMs: 1_200_000,
         emptyOutput: 'stub-with-stderr',
@@ -462,10 +471,10 @@ exports.REVIEWER_LANES = Object.freeze([
  *                   (`loadRegistry({ includeInstalled: true })`); only its
  *                   `capabilities` map is read. A cap contributes a lane iff it
  *                   carries an object `reviewer` body with a non-empty,
- *                   grammar-valid `slug`. The `role:"runtime"` legacy
- *                   `reviewerCli` alias contributes NO lane here — it has no lane
- *                   descriptor, and the selection roster (`deriveReviewerSlugs`)
- *                   is a separate surface.
+ *                   grammar-valid `slug`. The `role:"runtime"` `reviewerCli`
+ *                   alias never contributed a lane here, and as of #2801 it no
+ *                   longer contributes to the selection roster
+ *                   (`deriveReviewerSlugs`) either — the two surfaces now agree.
  * @returns A NEW array: first-party lanes (in order) followed by accepted overlay
  *          lanes (in registry iteration order). Callers must not mutate it.
  */

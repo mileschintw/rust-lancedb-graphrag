@@ -16,6 +16,7 @@ const ioMod = require("./io.cjs");
 const { output, error } = ioMod;
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 const validate_cjs_1 = require("./validate.cjs");
+const text_lines_cjs_1 = require("./text-lines.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const unusableInputMod = require("./unusable-input.cjs");
 const { UNUSABLE_REASON, warnUnusableInput } = unusableInputMod;
@@ -83,13 +84,87 @@ const UNTERMINATED_KEY_THRESHOLD = 2;
  * has a false-positive class the other closes.
  */
 function isFrontmatterShaped(region) {
-    const lines = region.split(/\r?\n/).filter((line) => line.trim() !== '');
+    const lines = (0, text_lines_cjs_1.splitLines)(region).filter((line) => line.trim() !== '');
     if (lines.length === 0)
         return false;
     return lines.every((line) => (/^\s*[a-zA-Z0-9_-]+:/.test(line) // key: value
         || /^\s*-\s+/.test(line) // - list item
         || /^\s+\S/.test(line) // indented continuation of a nested value
     ));
+}
+/**
+ * #3257: a Symbol-keyed channel that carries full-line (column-0 `#`) YAML
+ * comments through a parse → reconstruct round-trip. Comments are otherwise
+ * unrepresentable on the Frontmatter object (Record<string, ...>) and were
+ * silently dropped by reconstructFrontmatter. The Symbol is invisible to
+ * Object.entries / Object.keys / JSON.stringify / for-in, so every existing
+ * reader is unchanged; only reconstructFrontmatter reads it. Leading comments
+ * are attached to the top-level key that follows them; comments after the last
+ * key go to `trailing`. Only set when a comment is actually seen, so comment-less
+ * frontmatter parses byte-identically to before.
+ */
+const FULL_LINE_COMMENTS = Symbol('fullLineComments');
+/**
+ * Unescape the interior of a YAML double-quoted scalar — the exact inverse of
+ * `escapeDoubleQuoted` (#3497). The writer has escaped `\`/`"`/`\n`/`\t`/`\r`/
+ * `\xHH` since #1779, but the reader only stripped the delimiters, so
+ * parse(serialize(x)) ≠ x for any quoted scalar carrying a `"` or `\`: each
+ * read-modify-write round-trip doubled the backslashes (b → 2b+1), growing a
+ * repeatedly-synced field — and its document — without bound until tooling
+ * OOMed. Recognized escapes decode per YAML double-quoted semantics; an
+ * unrecognized `\c` is kept literally (backslash + char), matching the
+ * strip-only behavior hand-authored files had before this fix.
+ */
+function unescapeDoubleQuoted(s) {
+    let out = '';
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (ch !== '\\' || i === s.length - 1) {
+            out += ch;
+            continue;
+        }
+        const next = s[++i];
+        if (next === '\\' || next === '"') {
+            out += next;
+        }
+        else if (next === 'n') {
+            out += '\n';
+        }
+        else if (next === 't') {
+            out += '\t';
+        }
+        else if (next === 'r') {
+            out += '\r';
+        }
+        else if (next === 'x') {
+            const hex = s.slice(i + 1, i + 3);
+            if (/^[0-9a-fA-F]{2}$/.test(hex)) {
+                out += String.fromCharCode(parseInt(hex, 16));
+                i += 2;
+            }
+            else {
+                out += '\\x'; // not \xHH — keep literally
+            }
+        }
+        else {
+            out += '\\' + next; // unrecognized escape — keep literally
+        }
+    }
+    return out;
+}
+/**
+ * Strip the quote delimiters off a parsed YAML scalar, un-escaping the interior
+ * when the scalar is double-quoted (#3497 — the parse-side complement of
+ * `escapeDoubleQuoted`). Single-quoted scalars keep the historical strip-only
+ * behavior (the writer never emits them; `''` → `'` folding is out of scope).
+ * A scalar wrapped in double quotes un-escapes; anything else keeps the exact
+ * prior delimiter-strip behavior, including a stray unpaired boundary quote.
+ */
+function parseQuotedScalar(value) {
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+        return unescapeDoubleQuoted(value.slice(1, -1));
+    }
+    return value.replace(/^["']|["']$/g, '');
 }
 /**
  * Parse one already-delimited YAML region into a Frontmatter object.
@@ -100,12 +175,20 @@ function isFrontmatterShaped(region) {
  */
 function parseYamlRegion(yaml) {
     const frontmatter = {};
-    const lines = yaml.split(/\r?\n/);
+    const lines = (0, text_lines_cjs_1.splitLines)(yaml);
+    // #3257: pending column-0 full-line comments, attached to the next top-level key.
+    let pendingComments = [];
+    let commentChannel;
     const stack = [{ obj: frontmatter, key: null, indent: -1 }];
     for (const line of lines) {
         // Skip empty lines
         if (line.trim() === '')
             continue;
+        // #3257: capture column-0 full-line comments; attach them to the next top-level key.
+        if (/^#/.test(line)) {
+            pendingComments.push(line);
+            continue;
+        }
         // Calculate indentation (number of leading spaces)
         const indentMatch = line.match(/^(\s*)/);
         const indent = indentMatch ? indentMatch[1].length : 0;
@@ -118,6 +201,13 @@ function parseYamlRegion(yaml) {
         const keyMatch = line.match(/^(\s*)([a-zA-Z0-9_-]+):\s*(.*)/);
         if (keyMatch) {
             const key = keyMatch[2];
+            // #3257: attach any pending comments to this (top-level) key.
+            if (pendingComments.length) {
+                if (!commentChannel)
+                    commentChannel = { leading: {}, trailing: [] };
+                commentChannel.leading[key] = pendingComments;
+                pendingComments = [];
+            }
             const value = keyMatch[3].trim();
             if (value === '' || value === '[') {
                 // Key with no value or opening bracket — could be nested object or array
@@ -134,13 +224,13 @@ function parseYamlRegion(yaml) {
             }
             else {
                 // Simple key: value
-                current.obj[key] = value.replace(/^["']|["']$/g, '');
+                current.obj[key] = parseQuotedScalar(value);
                 current.key = null;
             }
         }
         else if (line.trim().startsWith('- ')) {
             // Array item
-            const itemValue = line.trim().slice(2).replace(/^["']|["']$/g, '');
+            const itemValue = parseQuotedScalar(line.trim().slice(2));
             // If current context is an empty object, convert to array
             if (typeof current.obj === 'object' && !Array.isArray(current.obj) && Object.keys(current.obj).length === 0) {
                 // Find the key in parent that points to this object and convert it
@@ -159,6 +249,15 @@ function parseYamlRegion(yaml) {
                 current.obj.push(itemValue);
             }
         }
+    }
+    // #3257: trailing comments (after the last key) + attach the channel if any comment was seen.
+    if (pendingComments.length) {
+        if (!commentChannel)
+            commentChannel = { leading: {}, trailing: [] };
+        commentChannel.trailing = pendingComments;
+    }
+    if (commentChannel) {
+        frontmatter[FULL_LINE_COMMENTS] = commentChannel;
     }
     return frontmatter;
 }
@@ -273,9 +372,17 @@ function scalarNeedsDoubleQuoting(s) {
 }
 function reconstructFrontmatter(obj) {
     const lines = [];
+    // #3257: read the full-line-comment channel (set by parseYamlRegion when comments
+    // were present). Object.entries skips the Symbol key, so the data loop is unchanged.
+    const commentChannel = obj[FULL_LINE_COMMENTS];
     for (const [key, value] of Object.entries(obj)) {
         if (value === null || value === undefined)
             continue;
+        // #3257: re-emit this key's leading full-line comments before the key itself.
+        const leading = commentChannel?.leading[key];
+        if (leading)
+            for (const c of leading)
+                lines.push(c);
         if (Array.isArray(value)) {
             if (value.length === 0) {
                 lines.push(`${key}: []`);
@@ -348,7 +455,34 @@ function reconstructFrontmatter(obj) {
             }
         }
     }
+    // #3257: re-emit any trailing full-line comments (those after the last key).
+    if (commentChannel?.trailing?.length) {
+        for (const c of commentChannel.trailing)
+            lines.push(c);
+    }
     return lines.join('\n');
+}
+/**
+ * #3257: copy the full-line-comment channel from `source` onto `target`, filtering
+ * `leading` to keys still present in `target` (a deleted key's annotation goes with
+ * it — AC5). No-op when `source` carries no channel. Consumers that rebuild their
+ * target object fresh (syncStateFrontmatter builds derivedFm via buildStateFrontmatter
+ * and copies keys with Object.keys, which skips the Symbol) MUST call this before
+ * reconstructFrontmatter, or the channel parseYamlRegion attached to the extracted
+ * source is lost.
+ */
+function propagateCommentChannel(source, target) {
+    const channel = source[FULL_LINE_COMMENTS];
+    if (!channel)
+        return;
+    const filtered = { leading: {}, trailing: channel.trailing };
+    for (const [key, comments] of Object.entries(channel.leading)) {
+        if (key in target)
+            filtered.leading[key] = comments;
+    }
+    if (filtered.trailing.length || Object.keys(filtered.leading).length) {
+        target[FULL_LINE_COMMENTS] = filtered;
+    }
 }
 /**
  * Slice a frontmatter YAML body into per-top-level-key raw text segments. Each segment
@@ -359,7 +493,7 @@ function reconstructFrontmatter(obj) {
  * not modify (e.g. must_haves.artifacts / .prohibitions).
  */
 function sliceTopLevelFrontmatterSegments(yaml) {
-    const lines = yaml.split(/\r?\n/);
+    const lines = (0, text_lines_cjs_1.splitLines)(yaml);
     const segments = [];
     let current = null;
     for (const line of lines) {
@@ -423,7 +557,7 @@ function spliceFrontmatter(content, newObj) {
         // unrelated `must_haves` block. Keys absent from the original (genuinely new) are
         // regenerated and appended; keys absent from `newObj` are preserved (never silently
         // deleted by a set/merge).
-        const fmLines = fmBlock.split(/\r?\n/);
+        const fmLines = (0, text_lines_cjs_1.splitLines)(fmBlock);
         const inner = fmLines.slice(1, -1).join('\n'); // drop the opening `---` and closing `---`
         let originalParsed;
         try {
@@ -504,27 +638,27 @@ function parseMustHavesBlock(content, blockName) {
     if (!fmMatch)
         return [];
     const yaml = fmMatch[1];
-    // Find must_haves: first to detect its indentation level
-    const mustHavesMatch = yaml.match(/^(\s*)must_haves:\s*$/m);
-    if (!mustHavesMatch)
+    const yamlLines = (0, text_lines_cjs_1.splitLines)(yaml);
+    // Find must_haves: first to detect its indentation level. Split-then-scan
+    // (rather than a whole-string /m match) so a CRLF or blank-line boundary
+    // can never be absorbed into the indent capture (#3360) — see
+    // .gsd/phase/chore-3413-text-lines-seam/40-design.md.
+    const mustHavesLinePattern = /^(\s*)must_haves:\s*$/;
+    const mustHavesLineIndex = yamlLines.findIndex((line) => mustHavesLinePattern.test(line));
+    if (mustHavesLineIndex === -1)
         return [];
-    const mustHavesIndent = mustHavesMatch[1].length;
+    const mustHavesIndent = yamlLines[mustHavesLineIndex].match(/^(\s*)/)[1].length;
     // Find the block (e.g., "truths:", "artifacts:", "key_links:") under must_haves
     // It must be indented more than must_haves but we detect the actual indent dynamically
-    const blockPattern = new RegExp(`^(\\s+)${blockName}:\\s*$`, 'm');
-    const blockMatch = yaml.match(blockPattern);
-    if (!blockMatch)
+    const blockLinePattern = new RegExp(`^(\\s+)${blockName}:\\s*$`);
+    const blockLineIndex = yamlLines.findIndex((line) => blockLinePattern.test(line));
+    if (blockLineIndex === -1)
         return [];
-    const blockIndent = blockMatch[1].length;
+    const blockIndent = yamlLines[blockLineIndex].match(/^(\s*)/)[1].length;
     // The block must be nested under must_haves (more indented)
     if (blockIndent <= mustHavesIndent)
         return [];
-    // Find where the block starts in the yaml string
-    const blockStart = yaml.indexOf(blockMatch[0]);
-    if (blockStart === -1)
-        return [];
-    const afterBlock = yaml.slice(blockStart);
-    const blockLines = afterBlock.split(/\r?\n/).slice(1); // skip the header line
+    const blockLines = yamlLines.slice(blockLineIndex + 1); // skip the header line
     // List items are indented one level deeper than blockIndent
     // Continuation KVs are indented one level deeper than list items
     const items = [];
@@ -865,4 +999,5 @@ module.exports = {
     cmdFrontmatterSet,
     cmdFrontmatterMerge,
     cmdFrontmatterValidate,
+    propagateCommentChannel,
 };

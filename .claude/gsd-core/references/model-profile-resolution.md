@@ -26,7 +26,7 @@ string** when nothing resolved.
 
 ## Lookup Table
 
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/model-profiles.md
+@D:/Repos/lancet/.claude/gsd-core/references/model-profiles.md
 
 ## Passing the model to a spawn
 

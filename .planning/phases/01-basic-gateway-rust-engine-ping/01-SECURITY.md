@@ -36,32 +36,32 @@ All mitigations were verified by executing grep checks over the implemented code
 ### 1. HTTP Server Panic Recovery
 * **Target Mitigation**: `middleware.Recoverer` registered on the Chi router.
 * **Evidence**:
-  * **File**: [gateway/main.go](file:///c:/Users/user3/repos/lancet/gateway/main.go#L58)
+  * **File**: [gateway/main.go](../../../gateway/main.go#L58)
   * **Line**: 58 (`r.Use(middleware.Recoverer)`)
 * **Verification Command**: `grep_search` for `middleware.Recoverer`
 
 ### 2. HTTP Server & Connection Timeout Management
 * **Target Mitigation**: Global request timeout and explicit gRPC client context timeout.
 * **Evidence**:
-  * **File**: [gateway/main.go](file:///c:/Users/user3/repos/lancet/gateway/main.go#L59)
+  * **File**: [gateway/main.go](../../../gateway/main.go#L59)
     * **Line**: 59 (`r.Use(middleware.Timeout(60 * time.Second))`)
-  * **File**: [gateway/main.go](file:///c:/Users/user3/repos/lancet/gateway/main.go#L63)
+  * **File**: [gateway/main.go](../../../gateway/main.go#L63)
     * **Line**: 63 (`ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)`)
 * **Verification Command**: `grep_search` for `middleware.Timeout` and `context.WithTimeout`
 
 ### 3. Container Network Isolation (Localhost Port Binding)
 * **Target Mitigation**: Port binding mapped strictly to loopback IP (`127.0.0.1`) instead of all interfaces (`0.0.0.0`).
 * **Evidence**:
-  * **File**: [docker-compose.yml](file:///c:/Users/user3/repos/lancet/docker-compose.yml#L12)
+  * **File**: [docker-compose.yml](../../../docker-compose.yml#L12)
     * **Line**: 12 (`"127.0.0.1:5432:5432"`)
-  * **File**: [docker-compose.yml](file:///c:/Users/user3/repos/lancet/docker-compose.yml#L25-L27)
+  * **File**: [docker-compose.yml](../../../docker-compose.yml#L25-L27)
     * **Lines**: 25-27 (`"127.0.0.1:16686:16686"`, `"127.0.0.1:4317:4317"`, `"127.0.0.1:4318:4318"`)
 * **Verification Command**: `grep_search` for `127.0.0.1`
 
 ### 4. gRPC Server Network Isolation
 * **Target Mitigation**: Tonic gRPC server bound strictly to loopback interface.
 * **Evidence**:
-  * **File**: [engine/src/main.rs](file:///c:/Users/user3/repos/lancet/engine/src/main.rs#L91)
+  * **File**: [engine/src/main.rs](../../../engine/src/main.rs#L91)
     * **Line**: 91 (`let addr = "[::1]:50051".parse()?;`)
 * **Verification Command**: `grep_search` for `[::1]:50051`
 

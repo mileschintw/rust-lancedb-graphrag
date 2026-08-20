@@ -27,6 +27,7 @@ const node_path_1 = __importDefault(require("node:path"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
 const clock_cjs_1 = require("./clock.cjs");
+const phase_lifecycle_cjs_1 = require("./phase-lifecycle.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- core-utils.cjs is an export= CommonJS module
 const coreUtilsMod = require("./core-utils.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -126,6 +127,12 @@ function parseTaskMustHaves(content) {
 /**
  * Read all task plan files from a GSD-2 tasks/ directory.
  */
+// #3183 (ADR-3180 Decision 4(a) — bucket B, out of scope for the
+// scanPhasePlans migration): this reads a FOREIGN GSD-2 legacy project's own
+// `tasks/` directory convention (`T##-PLAN.md`) during a one-time import —
+// it is not this project's `.planning/phases/<phase>/` layout at all, has no
+// nested-plans/superseded-status concept, and scanPhasePlans's grammar
+// (which is scoped to GSD's OWN phase directories) does not apply here.
 function readTasksDir(tasksDir) {
     if (!node_fs_1.default.existsSync(tasksDir))
         return [];
@@ -294,7 +301,9 @@ function buildStateMd(phaseMap) {
     const currentEntry = phaseMap.find(p => !p.slice.done);
     const totalPhases = phaseMap.length;
     const donePhases = phaseMap.filter(p => p.slice.done).length;
-    const pct = totalPhases > 0 ? Math.round((donePhases / totalPhases) * 100) : 0;
+    // ADR-3180 D7: one owner for completion percent. clampPercent's 100 ceiling is
+    // unreachable here (donePhases is a subset of totalPhases) — the value is unchanged.
+    const pct = (0, phase_lifecycle_cjs_1.clampPercent)(donePhases, totalPhases);
     const currentPhaseNum = currentEntry ? zeroPad(currentEntry.phaseNum) : zeroPad(totalPhases);
     const currentSlug = currentEntry ? slugify(currentEntry.slice.title) : 'complete';
     const status = currentEntry ? 'Ready to plan' : 'All phases complete';

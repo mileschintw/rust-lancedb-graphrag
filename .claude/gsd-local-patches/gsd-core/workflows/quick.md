@@ -47,7 +47,6 @@ RESPONSE_LANGUAGE=$(gsd_run query config-get response_language --default "" 2>/d
 
 If `$DESCRIPTION` is empty after parsing, prompt user interactively:
 
-
 **Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `AskUserQuestion` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Gemini CLI, etc.) where `AskUserQuestion` is not available.
 
 ```
@@ -132,7 +131,11 @@ If `$VALIDATE_MODE` only:
 **Step 2: Initialize**
 
 ```bash
-INIT=$(gsd_run query init.quick "$DESCRIPTION")
+DISCUSS_PARAM=""; if [[ "$ARGUMENTS" =~ (^|[[:space:]])--discuss([[:space:]]|$) ]]; then DISCUSS_PARAM="--discuss"; fi
+RESEARCH_PARAM=""; if [[ "$ARGUMENTS" =~ (^|[[:space:]])--research([[:space:]]|$) ]]; then RESEARCH_PARAM="--research"; fi
+VALIDATE_PARAM=""; if [[ "$ARGUMENTS" =~ (^|[[:space:]])--validate([[:space:]]|$) ]]; then VALIDATE_PARAM="--validate"; fi
+FULL_PARAM=""; if [[ "$ARGUMENTS" =~ (^|[[:space:]])--full([[:space:]]|$) ]]; then FULL_PARAM="--full"; fi
+INIT=$(gsd_run query init.quick "$DESCRIPTION" $DISCUSS_PARAM $RESEARCH_PARAM $VALIDATE_PARAM $FULL_PARAM)
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 AGENT_SKILLS_PLANNER=$(gsd_run query agent-skills gsd-planner)
 AGENT_SKILLS_EXECUTOR=$(gsd_run query agent-skills gsd-executor)
@@ -237,7 +240,11 @@ else
   # On success HEAD is exactly at origin/$DEFAULT_BRANCH, so a post-creation
   # merge-base / "ahead-of" guard would be unreachable — the explicit base
   # argument here is the single source of correctness for #2916.
-  git checkout -b "$branch_name" "origin/$DEFAULT_BRANCH" \
+  # --no-track: with the default branch.autoSetupMerge=true, checkout -b from a
+  # remote-tracking ref wires branch.<name>.merge to refs/heads/$DEFAULT_BRANCH
+  # (origin/master), so a GUI sync pushes quick-task commits straight onto
+  # origin/$DEFAULT_BRANCH, bypassing PR review (#2498).
+  git checkout -b "$branch_name" "origin/$DEFAULT_BRANCH" --no-track \
     || { echo "ERROR: Could not create '$branch_name' from origin/$DEFAULT_BRANCH (#2916)." >&2; exit 1; }
 fi
 ```
@@ -273,197 +280,11 @@ Store `$QUICK_DIR` for use in orchestration.
 
 ---
 
-**Step 4.5: Discussion phase (only when `$DISCUSS_MODE`)**
-
-Skip this step entirely if NOT `$DISCUSS_MODE`.
-
-Display banner:
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► DISCUSSING QUICK TASK
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-◆ Surfacing gray areas for: ${DESCRIPTION}
-```
-
-**4.5a. Identify gray areas**
-
-Analyze `$DESCRIPTION` to identify 2-4 gray areas — implementation decisions that would change the outcome and that the user should weigh in on.
-
-Use the domain-aware heuristic to generate phase-specific (not generic) gray areas:
-- Something users **SEE** → layout, density, interactions, states
-- Something users **CALL** → responses, errors, auth, versioning
-- Something users **RUN** → output format, flags, modes, error handling
-- Something users **READ** → structure, tone, depth, flow
-- Something being **ORGANIZED** → criteria, grouping, naming, exceptions
-
-Each gray area should be a concrete decision point, not a vague category. Example: "Loading behavior" not "UX".
-
-**4.5b. Present gray areas**
-
-```
-AskUserQuestion(
-  header: "Gray Areas",
-  question: "Which areas need clarification before planning?",
-  options: [
-    { label: "${area_1}", description: "${why_it_matters_1}" },
-    { label: "${area_2}", description: "${why_it_matters_2}" },
-    { label: "${area_3}", description: "${why_it_matters_3}" },
-    { label: "All clear", description: "Skip discussion — I know what I want" }
-  ],
-  multiSelect: true
-)
-```
-
-If user selects "All clear" → skip to Step 5 (no CONTEXT.md written).
-
-**4.5c. Discuss selected areas**
-
-For each selected area, ask 1-2 focused questions via AskUserQuestion:
-
-```
-AskUserQuestion(
-  header: "${area_name}",
-  question: "${specific_question_about_this_area}",
-  options: [
-    { label: "${concrete_choice_1}", description: "${what_this_means}" },
-    { label: "${concrete_choice_2}", description: "${what_this_means}" },
-    { label: "${concrete_choice_3}", description: "${what_this_means}" },
-    { label: "You decide", description: "Claude's discretion" }
-  ],
-  multiSelect: false
-)
-```
-
-Rules:
-- Options must be concrete choices, not abstract categories
-- Highlight recommended choice where you have a clear opinion
-- If user selects "Other" with freeform text, switch to plain text follow-up (per questioning.md freeform rule)
-- If user selects "You decide", capture as Claude's Discretion in CONTEXT.md
-- Max 2 questions per area — this is lightweight, not a deep dive
-
-Collect all decisions into `$DECISIONS`.
-
-**4.5d. Write CONTEXT.md**
-
-Write `${QUICK_DIR}/${quick_id}-CONTEXT.md` using the standard context template structure:
-
-```markdown
-# Quick Task ${quick_id}: ${DESCRIPTION} - Context
-
-**Gathered:** ${date}
-**Status:** Ready for planning
-
-<domain>
-## Task Boundary
-
-${DESCRIPTION}
-
-</domain>
-
-<decisions>
-## Implementation Decisions
-
-### ${area_1_name}
-- ${decision_from_discussion}
-
-### ${area_2_name}
-- ${decision_from_discussion}
-
-### Claude's Discretion
-${areas_where_user_said_you_decide_or_areas_not_discussed}
-
-</decisions>
-
-<specifics>
-## Specific Ideas
-
-${any_specific_references_or_examples_from_discussion}
-
-[If none: "No specific requirements — open to standard approaches"]
-
-</specifics>
-
-<canonical_refs>
-## Canonical References
-
-${any_specs_adrs_or_docs_referenced_during_discussion}
-
-[If none: "No external specs — requirements fully captured in decisions above"]
-
-</canonical_refs>
-```
-
-Note: Quick task CONTEXT.md omits `<code_context>` and `<deferred>` sections (no codebase scouting, no phase scope to defer to). Keep it lean. The `<canonical_refs>` section is included when external docs were referenced — omit it only if no external docs apply.
-
-Report: `Context captured: ${QUICK_DIR}/${quick_id}-CONTEXT.md`
+If `section_manifest` is `null` or `"discussion-phase"` is in its `included` list: read and execute `gsd-core/workflows/quick/steps/discussion-phase.md`. Otherwise skip — do not read the file.
 
 ---
 
-**Step 4.75: Research phase (only when `$RESEARCH_MODE`)**
-
-Skip this step entirely if NOT `$RESEARCH_MODE`.
-
-Display banner:
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► RESEARCHING QUICK TASK
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-◆ Investigating approaches for: ${DESCRIPTION} (runs in a subagent — no output until it returns, ~1–5 min; expected, not a freeze)
-```
-
-Spawn a single focused researcher (not 4 parallel researchers like full phases — quick tasks need targeted research, not broad domain surveys):
-
-```
-Agent(
-  prompt="
-<research_context>
-
-**Mode:** quick-task
-**Task:** ${DESCRIPTION}
-**Output:** ${QUICK_DIR}/${quick_id}-RESEARCH.md
-
-<files_to_read>
-- ${STATE_PATH} (Project state — what's already built)
-- ${PROJECT_PATH} (Project context)
-- ./CLAUDE.md or ./.claude/CLAUDE.md (if exists — project-specific guidelines)
-${DISCUSS_MODE ? '- ' + QUICK_DIR + '/' + quick_id + '-CONTEXT.md (User decisions — research should align with these)' : ''}
-</files_to_read>
-
-${AGENT_SKILLS_PLANNER}
-
-</research_context>
-
-<focus>
-This is a quick task, not a full phase. Research should be concise and targeted:
-1. Best libraries/patterns for this specific task
-2. Common pitfalls and how to avoid them
-3. Integration points with existing codebase
-4. Any constraints or gotchas worth knowing before planning
-
-Do NOT produce a full domain survey. Target 1-2 pages of actionable findings.
-</focus>
-
-<output>
-Write research to: ${QUICK_DIR}/${quick_id}-RESEARCH.md
-Use standard research format but keep it lean — skip sections that don't apply.
-Return: ## RESEARCH COMPLETE with file path
-</output>
-",
-  subagent_type="gsd-phase-researcher",
-  model="{planner_model}",
-  description="Research: ${DESCRIPTION}"
-)
-```
-
-> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Agent() above, stop working on this task immediately. Do not read more files, edit code, or run tests related to this task while the subagent is active. Wait for the subagent to return its result. This prevents duplicate work, conflicting edits, and wasted context. Only resume when the subagent result is available.
-
-After researcher returns:
-1. Verify research exists at `${QUICK_DIR}/${quick_id}-RESEARCH.md`
-2. Report: "Research complete: ${QUICK_DIR}/${quick_id}-RESEARCH.md"
-
-If research file not found, warn but continue: "Research agent did not produce output — proceeding to planning without research."
+If `section_manifest` is `null` or `"research-phase"` is in its `included` list: read and execute `gsd-core/workflows/quick/steps/research-phase.md`. Otherwise skip — do not read the file.
 
 ---
 
@@ -528,156 +349,11 @@ If plan not found, error: "Planner failed to create ${quick_id}-PLAN.md"
 
 ---
 
-**Step 5.5: Plan-checker loop (only when `$VALIDATE_MODE`)**
-
-Skip this step entirely if NOT `$VALIDATE_MODE`.
-
-Display banner:
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► CHECKING PLAN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-◆ Spawning plan checker... (runs in a subagent — no output until it returns, ~1–5 min; expected, not a freeze)
-```
-
-Checker prompt:
-
-```markdown
-<verification_context>
-**Mode:** quick-full
-**Task Description:** ${DESCRIPTION}
-
-<files_to_read>
-- ${QUICK_DIR}/${quick_id}-PLAN.md (Plan to verify)
-</files_to_read>
-
-${AGENT_SKILLS_CHECKER}
-
-**Scope:** This is a quick task, not a full phase. Skip checks that require a ROADMAP phase goal.
-</verification_context>
-
-<check_dimensions>
-- Requirement coverage: Does the plan address the task description?
-- Task completeness: Do tasks have files, action, verify, done fields?
-- Key links: Are referenced files real?
-- Scope sanity: Is this appropriately sized for a quick task (1-3 tasks)?
-- must_haves derivation: Are must_haves traceable to the task description?
-
-Skip: cross-plan deps (single plan), ROADMAP alignment
-${DISCUSS_MODE ? '- Context compliance: Does the plan honor locked decisions from CONTEXT.md?' : '- Skip: context compliance (no CONTEXT.md)'}
-</check_dimensions>
-
-<expected_output>
-- ## VERIFICATION PASSED — all checks pass
-- ## ISSUES FOUND — structured issue list
-</expected_output>
-```
-
-```
-Agent(
-  prompt=checker_prompt,
-  subagent_type="gsd-plan-checker",
-  model="{checker_model}",
-  description="Check quick plan: ${DESCRIPTION}"
-)
-```
-
-> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Agent() above, stop working on this task immediately. Do not read more files, edit code, or run tests related to this task while the subagent is active. Wait for the subagent to return its result. This prevents duplicate work, conflicting edits, and wasted context. Only resume when the subagent result is available.
-
-**Handle checker return:**
-
-- **`## VERIFICATION PASSED`:** Display confirmation, proceed to step 6.
-- **`## ISSUES FOUND`:** Display issues, check iteration count, enter revision loop.
-
-**Revision loop (max 2 iterations):**
-
-Track `iteration_count` (starts at 1 after initial plan + check).
-
-**If iteration_count < 2:**
-
-Display: `Sending back to planner for revision... (iteration ${N}/2)`
-
-Revision prompt:
-
-```markdown
-<revision_context>
-**Mode:** quick-full (revision)
-
-<files_to_read>
-- ${QUICK_DIR}/${quick_id}-PLAN.md (Existing plan)
-</files_to_read>
-
-${AGENT_SKILLS_PLANNER}
-
-**Checker issues:** ${structured_issues_from_checker}
-
-</revision_context>
-
-<instructions>
-Make targeted updates to address checker issues.
-Do NOT replan from scratch unless issues are fundamental.
-Return what changed.
-</instructions>
-```
-
-```
-Agent(
-  prompt=revision_prompt,
-  subagent_type="gsd-planner",
-  model="{planner_model}",
-  description="Revise quick plan: ${DESCRIPTION}"
-)
-```
-
-> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Agent() above, stop working on this task immediately. Do not read more files, edit code, or run tests related to this task while the subagent is active. Wait for the subagent to return its result. This prevents duplicate work, conflicting edits, and wasted context. Only resume when the subagent result is available.
-
-After planner returns → spawn checker again, increment iteration_count.
-
-**If iteration_count >= 2:**
-
-Display: `Max iterations reached. ${N} issues remain:` + issue list
-
-Offer: 1) Force proceed, 2) Abort
+If `section_manifest` is `null` or `"plan-checker-loop"` is in its `included` list: read and execute `gsd-core/workflows/quick/steps/plan-checker-loop.md`. Otherwise skip — do not read the file.
 
 ---
 
-**Step 5.6: Pre-dispatch plan commit (worktree mode only)**
-
-When `USE_WORKTREES !== "false"`, commit PLAN.md to the current branch **before** spawning the executor. This ensures the worktree inherits PLAN.md at its branch HEAD so the executor can read it via a worktree-rooted path — avoiding the main-repo path priming that triggers CC #36182 path-resolution drift.
-
-Skip this step entirely if `USE_WORKTREES === "false"` (non-worktree mode: PLAN.md is committed in Step 8 as usual).
-
-```bash
-QUICK_PLAN_PARENT=""
-QUICK_PLAN_COMMIT=""
-if [ "${USE_WORKTREES}" != "false" ]; then
-  QUICK_PLAN_PARENT=$(git rev-parse HEAD)
-  COMMIT_DOCS=$(gsd_run query config-get commit_docs 2>/dev/null || echo "true")
-  if [ "$COMMIT_DOCS" != "false" ]; then
-    git add "${QUICK_DIR}/${quick_id}-PLAN.md"
-    # No-op skip if nothing actually staged (idempotent re-runs).
-    if git diff --cached --quiet -- "${QUICK_DIR}/${quick_id}-PLAN.md"; then
-      echo "ℹ Pre-dispatch PLAN.md commit skipped (no staged changes)"
-    else
-      # Run hooks normally (#2924). If a project opts out via
-      # workflow.worktree_skip_hooks=true, honor that opt-in only.
-      SKIP_HOOKS=$(gsd_run query config-get workflow.worktree_skip_hooks 2>/dev/null || echo "false")
-      if [ "$SKIP_HOOKS" = "true" ]; then
-        git commit --no-verify -m "docs(${quick_id}): pre-dispatch plan for ${DESCRIPTION}" -- "${QUICK_DIR}/${quick_id}-PLAN.md" \
-          || { echo "ERROR: pre-dispatch PLAN.md commit failed (--no-verify path). Aborting before executor dispatch." >&2; exit 1; }
-      else
-        git commit -m "docs(${quick_id}): pre-dispatch plan for ${DESCRIPTION}" -- "${QUICK_DIR}/${quick_id}-PLAN.md" \
-          || { echo "ERROR: pre-dispatch PLAN.md commit failed — likely a pre-commit hook failure. Fix the hook output above (or set workflow.worktree_skip_hooks=true to bypass) and re-run." >&2; exit 1; }
-      fi
-      QUICK_PLAN_COMMIT=$(git rev-parse HEAD)
-    fi
-  fi
-  if [ -z "$QUICK_PLAN_COMMIT" ]; then
-    QUICK_PLAN_COMMIT=$(git rev-parse HEAD)
-  fi
-fi
-```
+If `section_manifest` is `null` or `"worktree-pre-dispatch-commit"` is in its `included` list: read and execute `gsd-core/workflows/quick/steps/worktree-pre-dispatch-commit.md`. Otherwise skip — do not read the file.
 
 ---
 
@@ -890,52 +566,7 @@ If review produces findings, display advisory message. **Error handling:** Failu
 
 ---
 
-**Step 6.5: Verification (only when `$VALIDATE_MODE`)**
-
-Skip this step entirely if NOT `$VALIDATE_MODE`.
-
-Display banner:
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► VERIFYING RESULTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-◆ Spawning verifier... (runs in a subagent — no output until it returns, ~1–5 min; expected, not a freeze)
-```
-
-```
-Agent(
-  prompt="Verify quick task goal achievement.
-Task directory: ${QUICK_DIR}
-Task goal: ${DESCRIPTION}
-
-<files_to_read>
-- ${QUICK_DIR}/${quick_id}-PLAN.md (Plan)
-</files_to_read>
-
-${AGENT_SKILLS_VERIFIER}
-
-Check must_haves against actual codebase. Create VERIFICATION.md at ${QUICK_DIR}/${quick_id}-VERIFICATION.md.",
-  subagent_type="gsd-verifier",
-  model="{verifier_model}",
-  description="Verify: ${DESCRIPTION}"
-)
-```
-
-> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Agent() above, stop working on this task immediately. Do not read more files, edit code, or run tests related to this task while the subagent is active. Wait for the subagent to return its result. This prevents duplicate work, conflicting edits, and wasted context. Only resume when the subagent result is available.
-
-Read verification status:
-```bash
-grep "^status:" "${QUICK_DIR}/${quick_id}-VERIFICATION.md" | cut -d: -f2 | tr -d ' '
-```
-
-Store as `$VERIFICATION_STATUS`.
-
-| Status | Action |
-|--------|--------|
-| `passed` | Store `$VERIFICATION_STATUS = "Verified"`, continue to step 7 |
-| `human_needed` | Display items needing manual check, store `$VERIFICATION_STATUS = "Needs Review"`, continue |
-| `gaps_found` | Display gap summary, offer: 1) Re-run executor to fix gaps, 2) Accept as-is. Store `$VERIFICATION_STATUS = "Gaps"` |
+If `section_manifest` is `null` or `"quick-verification"` is in its `included` list: read and execute `gsd-core/workflows/quick/steps/quick-verification.md`. Otherwise skip — do not read the file.
 
 ---
 
@@ -983,7 +614,7 @@ Use `date` from init:
 | ${quick_id} | ${DESCRIPTION} | ${date} | ${commit_hash} | [${quick_id}-${slug}](./quick/${quick_id}-${slug}/) |
 ```
 
-For a schema-safe append outside this workflow (e.g. from fast.md), `gsd-tools quick-tasks-append --task <text>` performs the equivalent write via the shared, schema-backed `appendQuickTaskRow` helper (#2133, ADR-2143 §3/§7).
+For a schema-safe append outside this workflow (e.g. from fast.md), `gsd_run quick-tasks-append --task <text>` performs the equivalent write via the shared, schema-backed `appendQuickTaskRow` helper (#2133, ADR-2143 §3/§7).
 
 **7d. Update "Last activity" line:**
 

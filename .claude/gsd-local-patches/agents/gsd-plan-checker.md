@@ -254,6 +254,19 @@ issue:
 1. Count tasks per plan
 2. Estimate files modified per plan
 3. Check against thresholds
+4. **Smart-zone estimate check (#2631, ADR-2629).** For each plan carrying an `estimate` block, run the
+   `estimate-check --calibrated` verb against its `estimate.tokens` (the `--calibrated` flag is required —
+   the plan's figure already has the factor applied, and omitting it would square the correction) (invoked in Step 1 below, after the launcher
+   preamble). The verb reads `workflow.smart_zone_tokens` and applies the project's calibration. Report
+   one line per plan: plan id, estimated tokens, the budget, and — when `over_budget` is true — the
+   returned `recommendation`, which names how many slices the phase should become.
+
+   **Over budget is a WARNING, never a blocker** (ADR-2629 Decision 5). Recommend re-slicing into a tracer
+   plus expansion slices; never fail the check on it. Report `estimate.confidence` alongside: `low` means
+   fewer than 3 completed phases carry actuals, so the figure is not yet calibrated for this project — say
+   so rather than presenting it as precise, and weigh the task/file thresholds above more heavily.
+
+   A plan with no `estimate` block is not a defect; the field is optional and additive.
 
 **Thresholds:**
 | Metric | Target | Warning | Blocker |
@@ -703,11 +716,21 @@ Extract from init JSON: `phase_dir`, `phase_number`, `has_plans`, `plan_count`.
 Orchestrator provides CONTEXT.md content in the verification prompt. If provided, parse for locked decisions, discretion areas, deferred ideas.
 
 ```bash
+# #2962: zsh aborts the block on an unmatched for-list glob (nomatch); bash passes it through. nullglob both.
+shopt -s nullglob 2>/dev/null; setopt NULL_GLOB 2>/dev/null
+
 gsd_run query phase.list-plans "$phase_number"
 # Research / brief artifacts (deterministic listing)
 gsd_run query phase.list-artifacts "$phase_number" --type research
 gsd_run query roadmap.get-phase "$phase_number"
 gsd_run query phase.list-artifacts "$phase_number" --type summary
+
+# Smart-zone estimate check (#2631) — advisory, never fails the check.
+for plan in "${phase_dir:-$PHASE_DIR}"/*-PLAN.md; do
+  [ -f "$plan" ] || continue   # unmatched glob leaves the literal pattern — skip it
+  EST=$(sed -n '/^estimate:/,/^[a-z_]*:/p' "$plan" | grep -o 'tokens: *[0-9]*' | head -1 | grep -o '[0-9]*')
+  [ -n "$EST" ] && gsd_run query estimate-check --tokens "$EST" --calibrated 2>/dev/null || true
+done
 ```
 
 **Extract:** Phase goal, requirements (decompose goal), locked decisions, deferred ideas.
@@ -717,6 +740,9 @@ gsd_run query phase.list-artifacts "$phase_number" --type summary
 Use `gsd-tools query` to validate plan structure:
 
 ```bash
+# #2962: zsh aborts the block on an unmatched for-list glob (nomatch); bash passes it through. nullglob both.
+shopt -s nullglob 2>/dev/null; setopt NULL_GLOB 2>/dev/null
+
 for plan in "$PHASE_DIR"/*-PLAN.md; do
   echo "=== $plan ==="
   PLAN_STRUCTURE=$(gsd_run query verify.plan-structure "$plan")
@@ -802,6 +828,9 @@ Inspect `tasks` in the JSON; open the PLAN in the editor for prose-level review.
 ## Step 6: Verify Dependency Graph
 
 ```bash
+# #2962: zsh aborts the block on an unmatched for-list glob (nomatch); bash passes it through. nullglob both.
+shopt -s nullglob 2>/dev/null; setopt NULL_GLOB 2>/dev/null
+
 for plan in "$PHASE_DIR"/*-PLAN.md; do
   grep "depends_on:" "$plan"
 done

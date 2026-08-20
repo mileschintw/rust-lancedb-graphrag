@@ -37,8 +37,14 @@ exports.removeCommonJsMarker = removeCommonJsMarker;
  * Ownership is decided by exact content match against the marker GSD itself
  * writes — the same test the uninstall path has always used.
  */
-const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
+// #2874 (ADR-58 cleanup phase): ensureCommonJsMarker is reached from
+// install-engine.cts's _installNativePluginIfDeclared, which is on the
+// installRuntimeArtifacts call tree — route this module's fs calls through
+// the injectable seam too. See install-fs-adapter.cts's module doc.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const installFsAdapter = require("./install-fs-adapter.cjs");
+const { installFs } = installFsAdapter;
 /** The exact marker content GSD writes (and the only content it will remove). */
 exports.COMMONJS_MARKER = '{"type":"commonjs"}';
 /** File bytes written to disk — the marker plus a trailing newline. */
@@ -63,7 +69,7 @@ function classifyMarker(dir) {
         // lstat, not existsSync: existsSync follows symlinks and reports `false`
         // for a DANGLING one, which would classify the path `absent` and let the
         // write below follow the link and land outside the directory GSD owns.
-        stat = node_fs_1.default.lstatSync(markerPath);
+        stat = installFs().lstatSync(markerPath);
     }
     catch (err) {
         if (err.code === 'ENOENT')
@@ -75,7 +81,7 @@ function classifyMarker(dir) {
     if (!stat.isFile())
         return 'foreign';
     try {
-        const content = node_fs_1.default.readFileSync(markerPath, 'utf8');
+        const content = installFs().readFileSync(markerPath, 'utf8');
         return content.trim() === exports.COMMONJS_MARKER ? 'gsd-owned' : 'foreign';
     }
     catch {
@@ -106,11 +112,11 @@ function ensureCommonJsMarker(dir) {
     if (ownership === 'gsd-owned')
         return 'unchanged';
     try {
-        node_fs_1.default.mkdirSync(dir, { recursive: true });
+        installFs().mkdirSync(dir, { recursive: true });
         // Exclusive create closes the gap between classifying and writing: if
         // anything at all appeared at the path in between — including a symlink —
         // this fails with EEXIST instead of following or overwriting it.
-        node_fs_1.default.writeFileSync(markerPathFor(dir), exports.COMMONJS_MARKER_CONTENT, { flag: 'wx' });
+        installFs().writeFileSync(markerPathFor(dir), exports.COMMONJS_MARKER_CONTENT, { flag: 'wx' });
         return 'written';
     }
     catch (err) {
@@ -127,7 +133,7 @@ function removeCommonJsMarker(dir) {
     if (classifyMarker(dir) !== 'gsd-owned')
         return false;
     try {
-        node_fs_1.default.unlinkSync(markerPathFor(dir));
+        installFs().unlinkSync(markerPathFor(dir));
         return true;
     }
     catch {

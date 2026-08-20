@@ -134,8 +134,8 @@ function cmdWorkstreamCreate(cwd, name, options, raw) {
             }
             else {
                 try {
-                    const milestone = getMilestoneInfo(cwd);
-                    existingWsName = generateSlugInternal(milestone.name) || 'default';
+                    const milestone = getMilestoneInfo(cwd).value;
+                    existingWsName = generateSlugInternal(milestone?.name ?? null) || 'default';
                 }
                 catch {
                     existingWsName = 'default';

@@ -43,6 +43,11 @@ const { readActiveProfile, resolveProfile, loadSkillsManifest,
 // below can never drift from what the stage-time writer actually wrote.
 CAPABILITY_SKILL_MARKER, } = installProfiles;
 const clusters_cjs_1 = require("./clusters.cjs");
+// #2870: `isGlobalScope` centralizes the `scope === 'global'` boolean
+// projection `applySurface` needs at `_computePathPrefix`'s `isGlobal:
+// boolean` boundary (see its doc comment in install-scope.cts for why the
+// projection is centralized rather than eliminated).
+const install_scope_cjs_1 = require("./install-scope.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const runtimeArtifactLayout = require("./runtime-artifact-layout.cjs");
 const { findInstallSourceRoot } = runtimeArtifactLayout;
@@ -316,12 +321,23 @@ function applySurface(runtimeConfigDir, layout, manifest, clusterMap, registry, 
     const _homedirFn = opts?.homedir ?? (() => node_os_1.default.homedir());
     const _resolvedTarget = (0, shell_command_projection_cjs_1.posixNormalize)(node_path_1.default.resolve(layout.configDir));
     const _homeDir = (0, shell_command_projection_cjs_1.posixNormalize)(_homedirFn());
-    const _isGlobal = (layout.scope ?? 'global') === 'global';
+    // #2870: same judgment as createRuntimeArtifactInstallPlan's identical
+    // line — `layout.scope` is already the resolved scope value on the
+    // `Layout` this function received. `layout.scope` is optional, so the
+    // pre-existing `?? 'global'` default is kept ahead of the call: it must
+    // run BEFORE `isGlobalScope`, because `isGlobalScope(undefined)` throws
+    // (unlike the old inline `undefined === 'global'`, which silently
+    // evaluated to `false`) — the default is what makes an undefined scope
+    // resolve to `'global'` here, exactly as it did before. `isGlobalScope`
+    // then projects the defaulted value to the boolean `_computePathPrefix`'s
+    // existing `isGlobal: boolean` API requires.
+    const _isGlobal = (0, install_scope_cjs_1.isGlobalScope)(layout.scope ?? 'global');
     const _isOpencode = layout.runtime === 'opencode';
     const _isWindowsHost = (opts?.platform ?? process.platform) === 'win32';
     const _pathPrefix = runtimeArtifactConversion._computePathPrefix({ isGlobal: _isGlobal, isOpencode: _isOpencode, isWindowsHost: _isWindowsHost, resolvedTarget: _resolvedTarget, homeDir: _homeDir });
     const _attribution = opts?.resolveAttribution ? opts.resolveAttribution(layout.runtime) : undefined;
-    const agentCtx = { runtime: layout.runtime, pathPrefix: _pathPrefix, attribution: _attribution };
+    // #2875 Part 2 (row I1): layout.configDir is this call's install root.
+    const agentCtx = { runtime: layout.runtime, pathPrefix: _pathPrefix, attribution: _attribution, targetDir: layout.configDir };
     const tempDirsToClean = [];
     // #1575: When the surface has no state modifications AND the base profile is
     // 'full', pass the '*' sentinel for agents staging so ALL agents are staged —
@@ -557,13 +573,11 @@ function _syncGsdDir(stagedDir, destDir, kind, manifest, runtime) {
         // from install and orphaned the installed gsd-*.md files, and the unscoped
         // prune deleted user-owned command files.
         //
-        // NOTE: the destName rule below intentionally mirrors bin/install.js
-        // `_copyStaged` (the `namespacedByDir` decision). Keep them in sync.
-        const destLast = (typeof kind === 'object' && kind !== null && kind.destSubpath)
-            ? node_path_1.default.basename(kind.destSubpath)
-            : '';
-        const prefixStem = kindPrefix ? kindPrefix.replace(/-$/, '') : '';
-        const namespacedByDir = kindName === 'commands' && destLast === prefixStem;
+        // Single source of truth: runtimeArtifactLayout.isNamespacedByDir (#2871
+        // Phase 2 review finding — this rule previously drifted independently
+        // across install-engine.cts / surface.cts / runtime-artifact-layout.cts).
+        const kindDestSubpath = (typeof kind === 'object' && kind !== null && kind.destSubpath) ? kind.destSubpath : '';
+        const namespacedByDir = runtimeArtifactLayout.isNamespacedByDir(kindName, kindDestSubpath, kindPrefix);
         const stagedFiles = node_fs_1.default.readdirSync(stagedDir).filter(f => f.endsWith('.md'));
         const stagedDestNames = new Set();
         for (const file of stagedFiles) {

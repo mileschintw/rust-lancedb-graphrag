@@ -10,7 +10,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RUNTIME_DIRS = void 0;
+exports.CODEX_CONFIG_MARKER = exports.RUNTIME_DIRS = void 0;
 exports.inferPreferredRuntime = inferPreferredRuntime;
 exports.envRuntimeDirs = envRuntimeDirs;
 exports.resolveUpdateContext = resolveUpdateContext;
@@ -38,6 +38,12 @@ exports.RUNTIME_DIRS = [
     ['codex', '.codex'],
 ];
 const SEMVER_PREFIX = /^\d+\.\d+\.\d+/;
+// Shared Codex config-root marker filename. Single-sourced here (this module
+// is the pre-existing, dependency-free owner) and re-exported by
+// host-runtime-detection.cts, whose detection rung reuses this exact probe
+// filename (though NOT the truthiness rule below — see that module's header
+// comment for the deliberate divergence).
+exports.CODEX_CONFIG_MARKER = 'config.toml';
 function expandHome(p, home) {
     if (!p)
         return '';
@@ -72,7 +78,7 @@ function inferPreferredRuntime({ fs, env, preferredConfigDir }) {
         if (fs.exists(node_path_1.default.join(preferredConfigDir, 'opencode.json')) ||
             fs.exists(node_path_1.default.join(preferredConfigDir, 'opencode.jsonc')))
             return 'opencode';
-        if (fs.exists(node_path_1.default.join(preferredConfigDir, 'config.toml')))
+        if (fs.exists(node_path_1.default.join(preferredConfigDir, exports.CODEX_CONFIG_MARKER)))
             return 'codex';
     }
     if (env['CODEX_HOME'])

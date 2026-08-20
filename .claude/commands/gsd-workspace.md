@@ -29,10 +29,10 @@ Mode routing:
 </routing>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/new-workspace.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/list-workspaces.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/remove-workspace.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/new-workspace.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/list-workspaces.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/remove-workspace.md
+@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

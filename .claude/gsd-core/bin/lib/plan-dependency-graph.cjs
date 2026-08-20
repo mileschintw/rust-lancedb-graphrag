@@ -115,6 +115,68 @@ function buildSummaryFileIndex(summaryFiles, extractCanonicalPlanId) {
     return index;
 }
 /**
+ * #3345: the one place "does this SUMMARY status value mean blocked" is
+ * decided, sibling to `isHaltedStatus` above. A SUMMARY declaring
+ * `status: blocked` records a plan that could NOT finish — it is a failure
+ * record, not a completion record — so it must not count toward
+ * `completed_plans` (scanPhasePlans's summaryCount) nor read as
+ * `has_summary: true` in phase-plan-index's `incomplete` construction.
+ *
+ * `halted` is deliberately NOT matched here: a designed stop still writes a
+ * completion record (#2830's model — its dependents get `blocked_by` halt
+ * propagation), so a `status: halted` SUMMARY keeps counting as summarized.
+ * Case-insensitive, trims whitespace, and strips an unquoted trailing YAML
+ * comment exactly like `isHaltedStatus` (same #2830 review defect-2 rule).
+ */
+function isBlockedStatus(status) {
+    if (typeof status !== 'string')
+        return false;
+    const withoutTrailingComment = status.replace(/\s+#.*$/, '');
+    return withoutTrailingComment.trim().toLowerCase() === 'blocked';
+}
+// #3345: SUMMARY frontmatter sits at byte 0 and closes well before the body,
+// so only a bounded prefix is ever needed to read the `status` marker — the
+// same cap discipline as plan-scan.cts's PLAN_FRONTMATTER_READ_CAP (#2349),
+// kept here because this predicate's primary caller (scanPhasePlans) loops
+// over every phase directory on hot paths (state sync, roadmap progress).
+const SUMMARY_FRONTMATTER_READ_CAP = 64 * 1024;
+/**
+ * #3345: read a SUMMARY file's frontmatter `status` (bounded-prefix read) and
+ * report whether it declares `status: blocked`. Returns false — never throws —
+ * on a missing/unreadable/malformed/non-regular SUMMARY, so an unreadable file
+ * degrades to the pre-#3345 filename-existence behaviour rather than breaking
+ * either caller. Fail-open by design, mirroring `isPlanSuperseded`'s posture.
+ *
+ * Callers: plan-scan.cts's `scanPhasePlans` (the count side) and phase.cts's
+ * `cmdPhasePlanIndex` (the read side) BOTH filter their summary lists through
+ * this one predicate, so the count and the `incomplete` list can never
+ * re-diverge on the blocked rule.
+ */
+function isSummaryFileBlocked(summaryPath) {
+    let content;
+    try {
+        const st = node_fs_1.default.statSync(summaryPath); // follows symlinks → resolves to the target's real type
+        if (!st.isFile())
+            return false;
+        const length = Math.min(st.size, SUMMARY_FRONTMATTER_READ_CAP);
+        if (length === 0)
+            return false;
+        const fd = node_fs_1.default.openSync(summaryPath, 'r');
+        try {
+            const buf = Buffer.allocUnsafe(length);
+            const bytesRead = node_fs_1.default.readSync(fd, buf, 0, length, 0);
+            content = buf.toString('utf8', 0, bytesRead);
+        }
+        finally {
+            node_fs_1.default.closeSync(fd);
+        }
+    }
+    catch {
+        return false;
+    }
+    return isBlockedStatus(extractFrontmatter(content, summaryPath)['status']);
+}
+/**
  * Computes halt-propagation over a plan dependency DAG.
  *
  * `precomputedOrder`: when the caller ALREADY has a valid topological order
@@ -229,4 +291,13 @@ function computeHaltPropagation(nodes, precomputedOrder) {
     }
     return { order, visited, blockedBy };
 }
-module.exports = { computeHaltPropagation, isHaltedStatus, buildSummaryFileIndex, isSummaryFileHalted };
+module.exports = {
+    computeHaltPropagation,
+    isHaltedStatus,
+    buildSummaryFileIndex,
+    isSummaryFileHalted,
+    // #3345: blocked-SUMMARY detection, shared by the count side (scanPhasePlans)
+    // and the read side (phase-plan-index) so the two cannot diverge.
+    isBlockedStatus,
+    isSummaryFileBlocked,
+};

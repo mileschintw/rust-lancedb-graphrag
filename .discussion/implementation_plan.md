@@ -23,7 +23,7 @@ Please review the architectural choices and proposed file structure. The system 
 
 ### 1. Protobuf Definitions (gRPC Contract)
 
-#### [NEW] [lancet.proto](file:///d:/Repos/shrag/proto/lancet.proto)
+#### [NEW] [lancet.proto](../proto/lancet.proto)
 Defines the gRPC interface between the Go API Gateway and the Rust RAG Engine:
 - `IngestDocument(Stream IngestRequest) returns (IngestResponse)`
 - `QueryRAG(QueryRequest) returns (QueryResponse)`
@@ -33,7 +33,7 @@ Defines the gRPC interface between the Go API Gateway and the Rust RAG Engine:
 
 ### 2. Rust RAG Engine (`engine`)
 
-#### [NEW] [Cargo.toml](file:///d:/Repos/shrag/engine/Cargo.toml)
+#### [NEW] [Cargo.toml](../engine/Cargo.toml)
 Configures dependencies for the Rust service:
 - `tonic`/`prost` for gRPC.
 - `lancedb` for vector storage.
@@ -42,45 +42,45 @@ Configures dependencies for the Rust service:
 - `opentelemetry` & `tracing` for instrumentation.
 - `reqwest`/`serde` for LLM client integration (OpenAI/Anthropic/Gemini).
 
-#### [NEW] [main.rs](file:///c:/Users/user3/Shrag/engine/src/main.rs)
+#### [NEW] [main.rs](../engine/src/main.rs)
 Bootstraps the gRPC server, registers handlers, and initializes the OpenTelemetry tracer.
 
-#### [NEW] [chunker.rs](file:///c:/Users/user3/Shrag/engine/src/chunker.rs)
+#### [NEW] [chunker.rs](../engine/src/chunker.rs)
 Implements the custom structure-aware recursive chunker. Supports Markdown, JSON, and plain text.
 
-#### [NEW] [store.rs](file:///c:/Users/user3/Shrag/engine/src/store.rs)
+#### [NEW] [store.rs](../engine/src/store.rs)
 Manages connection to LanceDB and abstract vector search queries.
 
-#### [NEW] [graph.rs](file:///c:/Users/user3/Shrag/engine/src/graph.rs)
+#### [NEW] [graph.rs](../engine/src/graph.rs)
 Extracts entities and relationships using LLM prompts, maps them as a property graph, and queries them using Cypher queries via `lance-graph` stored directly in LanceDB.
 
-#### [NEW] [retriever.rs](file:///c:/Users/user3/Shrag/engine/src/retriever.rs)
+#### [NEW] [retriever.rs](../engine/src/retriever.rs)
 Implements the hybrid retriever: combines LanceDB vector search results with a local lexical BM25 index and applies optional metadata filters.
 
-#### [NEW] [orchestrator.rs](file:///c:/Users/user3/Shrag/engine/src/orchestrator.rs)
+#### [NEW] [orchestrator.rs](../engine/src/orchestrator.rs)
 Implements the RAG state machine: query reformulation, GraphRAG sub-graph extraction, prompt assembly, and streaming generation.
 
 ---
 
 ### 3. Go API Gateway (`gateway`)
 
-#### [NEW] [go.mod](file:///d:/Repos/shrag/gateway/go.mod)
+#### [NEW] [go.mod](../gateway/go.mod)
 Defines Go dependencies: `gin` or standard library for HTTP server, `pgx` for PostgreSQL, `google.golang.org/grpc`, `go.opentelemetry.io`.
 
-#### [NEW] [main.go](file:///d:/Repos/shrag/gateway/main.go)
+#### [NEW] [main.go](../gateway/main.go)
 Initializes Go HTTP server, session/auth middleware, and handles routing. Exposes endpoints for:
 - Document upload (`POST /v1/documents`)
 - RAG Query (`POST /v1/query`)
 - Graph Query (`GET /v1/graph`)
 
-#### [NEW] [db.go](file:///d:/Repos/shrag/gateway/db.go)
+#### [NEW] [db.go](../gateway/db.go)
 Handles PostgreSQL database connection, user sessions, and document metadata persistence.
 
 ---
 
 ### 4. Infrastructure & Deployment
 
-#### [NEW] [docker-compose.yml](file:///d:/Repos/shrag/docker-compose.yml)
+#### [NEW] [docker-compose.yml](../docker-compose.yml)
 Defines services for:
 - PostgreSQL (Go metadata database).
 - Jaeger (OpenTelemetry tracing backend).
@@ -90,7 +90,7 @@ Defines services for:
 
 ### 5. Evaluation Script
 
-#### [NEW] [eval.py](file:///c:/Users/user3/Shrag/eval/eval.py)
+#### [NEW] [eval.py](../eval/eval.py)
 A Python/Rust script to run test queries through the system, compute metrics (Retrieval Recall, Precision, Groundedness, Faithfulness) using an LLM-as-a-judge, and print a final benchmark report.
 
 ---

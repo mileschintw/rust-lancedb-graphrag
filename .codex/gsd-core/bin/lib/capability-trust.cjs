@@ -1,7 +1,8 @@
 "use strict";
 /**
  * Capability trust gate — ADR-1244 Phase 4 (Decision D5 + the compatibility half of D6), extended
- * by ADR-2782 Phase 3 (#2796) with a FOURTH executable-surface class: the reviewer lane.
+ * by ADR-2782 Phase 3 (#2796) with a FOURTH executable-surface class (the reviewer lane), and by
+ * ADR-2363 Phase 1 (#3248) with a FIFTH, NON-executable class: the instruction surface.
  *
  * PURE module. It computes *what* a capability would do and *whether* policy allows it; it
  * never mutates the filesystem and never performs I/O beyond reading staged files to confirm
@@ -21,16 +22,33 @@
  * the signature — the loader has no config resolver and must compute the same signature as the
  * lifecycle (constraint 2, `.gsd/phase/chore-2796-reviewer-trust-disclosure/40-design.md`).
  *
+ * ADR-2363 D5 (#3248): a capability's declared `skills` are INSTRUCTION surfaces — their bodies are
+ * copied verbatim into the user's agent instruction context, so their reach is bounded only by what
+ * the agent will do when told. They are disclosed BY NAME and never content-scanned (D2 —
+ * Kerckhoffs: a shipped rule set is readable by the adversary who installs it). Unlike the four
+ * executable classes they never set `hasExecutable` (D3) and never enter `disclosureSignature` (D4):
+ * folding them in would perturb the stored signature of every already-consented skill-bearing
+ * capability and fire a spurious re-consent on its next upgrade — the harm ADR-2782 D4 rule 5
+ * already forbids. Any future signature binding arrives as a versioned v2, never an in-place
+ * re-encoding of v1. ADR-2363 D3's class table names "skills, agents", but third-party `agents[]`
+ * are deliberately EXCLUDED here: `stageAgentsForRuntimeWithConverter` (`src/install-profiles.cts`)
+ * takes only a source directory, with no registry-aware third-party staging path the way
+ * `readInstalledCapabilitySkill` gives skills — so a declared agent is never actually staged into
+ * the instruction context, and disclosing it would name a surface that does not exist. Agents stay
+ * unimplemented pending a maintainer decision.
+ *
  * Exports:
  *   RESERVED_NAMESPACES               — id prefixes third parties may not claim
- *   discloseExecutableSurfaces(...)   — enumerate hooks / command modules / mcpServers / reviewer lanes
+ *   discloseExecutableSurfaces(...)   — enumerate the four executable classes + instruction surfaces
  *   collectReviewerLaneSurfaces(...)  — the reviewer-lane collector, independently testable
+ *   collectInstructionSurfaces(...)   — the instruction-surface collector, independently testable
  *   checkReservedNamespace(id)        — is this id in a reserved namespace?
  *   evaluateSourceAllowed(parsed,...) — strictKnownRegistries enforcement
  *   checkEngines(manifest, host)      — engines.gsd hard gate + compatVersions downgrade
  *   evaluateInstallTrust(args)        — compose: source + namespace + engines + disclosure
  *   executableSetChanged(old, new)    — did the executable surface set change between versions?
  *   summarizeDisclosure(disclosure)   — human-readable consent-prompt lines
+ *   summarizeInstructionSurfaces(d)   — the instruction-surface section of the consent summary
  *   UNRESOLVED_HOST_MARKER            — the non-blank marker for an unresolved openai-http host
  *   EGRESS_PAYLOAD_CLASSES            — the named data classes every reviewer lane receives
  */
@@ -403,6 +421,48 @@ function collectReviewerLaneSurfaces(manifest, resolveHost) {
         const args = rawArgsDeclared.filter((a) => typeof a === 'string');
         const hostConfigKey = asString(invoke['hostConfigKey']);
         const promptChannel = asString(invoke['promptChannel']);
+        // #2483: the declared env pairs. String-filtered for the human line exactly as `args` is, and
+        // prototype-safe (own enumerable keys only, dangerous keys never copied) exactly as `rawConfig`
+        // is. Disclosure runs BEFORE validation, so a non-object or non-string-valued `env` reaches here
+        // and must degrade to "declares none" rather than throw.
+        const env = {};
+        const envRaw = invoke['env'];
+        if (typeof envRaw === 'object' && envRaw !== null && !Array.isArray(envRaw)) {
+            for (const [k, v] of Object.entries(envRaw)) {
+                if (k === '__proto__' || k === 'constructor' || k === 'prototype')
+                    continue;
+                if (typeof v === 'string')
+                    env[k] = v;
+            }
+        }
+        const defaultHost = asString(invoke['defaultHost']);
+        // The completeness backstop (mirrors rawConfig). Everything the invoke object declares that the
+        // explicit fields above do not already bind. Same prototype-safe copy.
+        const residualInvoke = {};
+        for (const [k, v] of Object.entries(invoke)) {
+            if (k === '__proto__' || k === 'constructor' || k === 'prototype')
+                continue;
+            if (k === 'binary' || k === 'args' || k === 'hostConfigKey' || k === 'promptChannel')
+                continue;
+            residualInvoke[k] = v;
+        }
+        // The outer half of the same backstop. `probe` is the one that matters most — its `binary` is
+        // spawned before dispatch — and the two exclusions below are ADR-2782's deliberate cosmetic
+        // carve-outs, not fields nobody got round to.
+        const residualLane = {};
+        for (const [k, v] of Object.entries(rec)) {
+            if (k === '__proto__' || k === 'constructor' || k === 'prototype')
+                continue;
+            if (k === 'slug' || k === 'transport' || k === 'handler' || k === 'invoke')
+                continue;
+            if (k === 'reviewsSection' || k === 'timeoutFloorMs')
+                continue;
+            residualLane[k] = v;
+        }
+        const probeRaw = rec['probe'];
+        const probeIsObj = typeof probeRaw === 'object' && probeRaw !== null && !Array.isArray(probeRaw);
+        const probeBinary = probeIsObj ? asString(probeRaw['binary']) : '';
+        const probeKind = probeIsObj ? asString(probeRaw['kind']) : '';
         // An EMPTY (or wholly unrecognised) reviewer body declares no lane and must
         // not be treated as one. Without this, `reviewer: {}` alone flips
         // hasExecutable true and perturbs the disclosure signature — producing a
@@ -416,8 +476,12 @@ function collectReviewerLaneSurfaces(manifest, resolveHost) {
         // enough. Requiring specifically a binary, or specifically a slug, would let
         // a lane declaring only the other slip through unconsented, which is the far
         // worse failure.
+        // `env`/`defaultHost` join the test for the reason the comment above gives for keeping it broad:
+        // a lane declaring ONLY an `env` pair would otherwise declare "nothing", disclose nothing, and
+        // still hand those pairs to a spawned child once #2927/#3062 made overlay lanes executable —
+        // the exact slip-through the broad test exists to refuse.
         const declaresSomething = Boolean(slug || transport || handler || binary || hostConfigKey || promptChannel
-            || rawArgsDeclared.length > 0);
+            || rawArgsDeclared.length > 0 || Object.keys(env).length > 0 || defaultHost || probeBinary);
         if (!declaresSomething)
             return [];
         // B2/B3/B4: resolvedHost/isLocalDestination are only meaningful for an openai-http lane — a
@@ -462,12 +526,68 @@ function collectReviewerLaneSurfaces(manifest, resolveHost) {
             isLocalDestination,
             promptChannel,
             handler,
+            env,
+            defaultHost,
+            residualInvoke,
+            residualLane,
+            probeBinary,
+            probeKind,
             // B5: every lane receives the same named egress payload classes — a fresh copy per surface so
             // no caller can mutate the shared constant through a returned surface.
             egressPayloadClasses: [...EGRESS_PAYLOAD_CLASSES],
         };
         return [surface];
     }, []);
+}
+/**
+ * The manifest fields whose declared names become instruction surfaces. Ordered data rather than a
+ * hand-rolled loop per field, so a future second member of the class is one row, not a second copy
+ * of the same filter. Deliberately a ONE-row table today: third-party `agents[]` are never staged
+ * into the instruction context — `stageAgentsForRuntimeWithConverter` (`src/install-profiles.cts`)
+ * takes only a source directory, with no registry-aware staging path the way
+ * `readInstalledCapabilitySkill` gives skills — so disclosing them would name a surface that does
+ * not exist. ADR-2363 D3's class table says "skills, agents"; the agents half is therefore
+ * deliberately unimplemented pending a maintainer decision.
+ */
+const INSTRUCTION_SURFACE_FIELDS = [
+    { field: 'skills', kind: 'skill' },
+];
+/**
+ * Collect the instruction surfaces a manifest declares (ADR-2363 D5, #3248) — peer to the four
+ * executable-surface collectors, and invoked through the same `safeCollect` wrapper so a hostile
+ * value here degrades ONLY this class to empty rather than losing the other four.
+ *
+ * Liberal in what it accepts, exactly like the existing collectors: a non-object manifest, an
+ * absent field, a non-array field, and a non-string/blank member each degrade quietly. A non-array
+ * `skills` is NOT a partial success — it yields nothing, because a scalar declares no set.
+ *
+ * Deliberately does NOT:
+ *   - dedup (a manifest declaring a stem twice discloses it twice — disclosure reports what the
+ *     manifest SAYS; collapsing would misreport it, and dedup is the registry's job);
+ *   - normalize or truncate a name (it is disclosed verbatim so the user sees what was declared);
+ *   - existence-check the stem against `stagedDir`. A stem is a REGISTRY name, not a bundle-relative
+ *     artifact path — checking it would repeat the reviewer-lane `binary` mistake (matrix C6) and
+ *     put registry names into `missingArtifacts`, which is for declared bundle FILES only.
+ */
+function collectInstructionSurfaces(manifest) {
+    const surfaces = [];
+    if (typeof manifest !== 'object' || manifest === null)
+        return surfaces;
+    for (const { field, kind } of INSTRUCTION_SURFACE_FIELDS) {
+        const declared = manifest[field];
+        if (!Array.isArray(declared))
+            continue;
+        for (const entry of declared) {
+            // A non-string or blank member is dropped INDIVIDUALLY — the valid siblings around it still
+            // disclose, mirroring how collectHookSurfaces skips a malformed entry rather than the array.
+            if (typeof entry !== 'string')
+                continue;
+            if (entry.trim() === '')
+                continue;
+            surfaces.push({ kind, name: entry });
+        }
+    }
+    return surfaces;
 }
 /**
  * Enumerate every executable surface a capability manifest declares.
@@ -477,6 +597,13 @@ function collectReviewerLaneSurfaces(manifest, resolveHost) {
  *   - `commands`: [{ family, module, router? }]    — modules require()'d into the CLI process
  *   - `mcpServers`: { <name>: {...} } | [{ name }] — servers spawned by the host runtime
  *   - `reviewer`: { slug, transport, invoke, ... }  — an external reviewer lane (ADR-2782 D5, #2796)
+ *
+ * plus ONE non-executable class (ADR-2363 D5, #3248):
+ *   - `skills`: string[] of owned stems — INSTRUCTION surfaces, whose bodies land in the agent's
+ *     instruction context. Disclosed by name; they never set `hasExecutable` (D3) and never enter
+ *     `disclosureSignature` (D4). Stems are registry names, so they are never existence-checked
+ *     against `stagedDir` and never appear in `missingArtifacts`. `agents` is excluded — see the
+ *     module header.
  *
  * `mcpServers` is not a first-party capability.json field today, but a third-party manifest may
  * declare it, so the trust gate discloses it whenever present (honest disclosure over the
@@ -490,7 +617,7 @@ function collectReviewerLaneSurfaces(manifest, resolveHost) {
  * throwing traps, or a property with a throwing getter (matrix C5, E2). Disclosure runs BEFORE
  * Phase 2's validation, on a manifest validation would reject outright, so it must tolerate what
  * validation does not. Each surface class is collected independently (`safeCollect`) so a hostile
- * value in ONE class degrades only that class to empty rather than losing the other three.
+ * value in ONE class degrades only that class to empty rather than losing the others.
  *
  * `resolveHost` (optional, #2796) is forwarded to `collectReviewerLaneSurfaces` so a caller with
  * config access (the lifecycle, never the loader — see `signatureForManifest`) can disclose the REAL
@@ -502,8 +629,11 @@ function discloseExecutableSurfaces(manifest, stagedDir, resolveHost) {
     const commandModules = safeCollect(() => collectCommandSurfaces(manifest, stagedDir, missingArtifacts), []);
     const mcpServers = safeCollect(() => collectMcpSurfaces(manifest), []);
     const reviewerLanes = safeCollect(() => collectReviewerLaneSurfaces(manifest, resolveHost), []);
+    const instructionSurfaces = safeCollect(() => collectInstructionSurfaces(manifest), []);
+    // ADR-2363 D3: instruction surfaces are deliberately ABSENT from this expression. Adding them
+    // would silently change `executableSetChanged` and the auto-update re-consent trigger.
     const hasExecutable = hooks.length > 0 || commandModules.length > 0 || mcpServers.length > 0 || reviewerLanes.length > 0;
-    return { hooks, commandModules, mcpServers, reviewerLanes, hasExecutable, missingArtifacts };
+    return { hooks, commandModules, mcpServers, reviewerLanes, instructionSurfaces, hasExecutable, missingArtifacts };
 }
 /**
  * Existence-check a manifest-declared artifact path under stagedDir, refusing to follow it
@@ -712,6 +842,15 @@ function evaluateInstallTrust(args) {
     // openai-http reviewer lane to the human at install/upgrade time — it never affects the
     // consent-binding signature (disclosureSignature never reads resolvedHost; design constraint 2).
     const disclosure = discloseExecutableSurfaces(manifest, stagedDir, resolveHost);
+    // #3514 (F21c): prompt-only integrity status. Set AFTER discloseExecutableSurfaces so the
+    // surface builder (and every signature computed from it) is untouched — see the field's
+    // disclosure-interface comment for why this must never reach disclosureSignature.
+    if (args.integrityPin === 'sha512')
+        disclosure.integrityStatus = 'pinned';
+    else if (args.integrityPin === 'git-commit')
+        disclosure.integrityStatus = 'commit-pinned';
+    else if (args.integrityPin === 'none')
+        disclosure.integrityStatus = 'unverified';
     // A manifest that declares a hook script or command module NOT present in the staged bundle
     // (missing, or escaping the bundle via an absolute/`..` path) is rejected: such an artifact
     // would run from outside the integrity-pinned, reversible install root. Only enforced when a
@@ -831,8 +970,41 @@ function disclosureSignature(d) {
     // 2 — the loader has no config resolver and must compute the SAME signature as the lifecycle, or a
     // resolver-bearing caller and a resolver-less caller would permanently disagree on one manifest's
     // signature).
+    // #2483: the eight-field enumeration above was a CLOSED list over an OPEN vocabulary, and it had
+    // already fallen behind by EIGHT fields before `env` made the ninth — `defaultHost` (the manifest's
+    // OWN fallback egress host), `path` (appended to it to build the URL), `outputChannel`, `outputArg`,
+    // `modelArg`, `effortChannel`, `modelDiscovery` and `fallbackModel` all reach `resolveLanePlan` and
+    // none was signed. Counted, because the number is easy to state ambiguously: `resolveLanePlan`
+    // reads THIRTEEN distinct `inv.*` fields once `env` is included (twelve before this PR added it),
+    // of which the pre-#2483 tuple bound four — so eight were unbound before `env`, nine including it.
+    // So the fix is not a ninth name: it is a residual, the same completeness backstop `rawConfig` gives
+    // the MCP line one screen up (#1459 finding 5). `env`/`defaultHost` are ALSO named explicitly,
+    // mirroring that line's deliberate explicit-then-backstop overlap, because they are the two the
+    // human summary renders and a reader should be able to find them in the signature by name.
+    //
+    // APPENDED ONLY WHEN NON-EMPTY, which is D4.5 one level down: a lane declaring nothing beyond the
+    // eight already-bound fields keeps a BYTE-IDENTICAL signature, so this cannot re-prompt every
+    // consented capability for a field it does not use. A lane that DOES declare one re-consents — which
+    // is the correct outcome, not a cost: those fields were executable and undisclosed.
     const lanes = d.reviewerLanes
-        .map((l) => stableJson(['lane', l.slug, l.transport, l.binary, l.rawArgs || [], l.hostConfigKey, l.promptChannel, l.handler]))
+        .map((l) => {
+        const tuple = [
+            'lane', l.slug, l.transport, l.binary, l.rawArgs || [], l.hostConfigKey, l.promptChannel, l.handler,
+        ];
+        const extra = {
+            env: l.env || {},
+            defaultHost: l.defaultHost || '',
+            residual: l.residualInvoke || {},
+            laneResidual: l.residualLane || {},
+        };
+        const declaresExtra = Object.keys(extra.env).length > 0
+            || extra.defaultHost !== ''
+            || Object.keys(extra.residual).length > 0
+            || Object.keys(extra.laneResidual).length > 0;
+        if (declaresExtra)
+            tuple.push(extra);
+        return stableJson(tuple);
+    })
         .sort();
     // D4.5 (the highest-consequence line in this phase): the lane element is appended ONLY when at
     // least one lane is declared. A lane-free manifest's signature stays BYTE-IDENTICAL to before this
@@ -864,6 +1036,21 @@ function signatureForManifest(manifest, stagedDir) {
 // ---------------------------------------------------------------------------
 /** Max characters of an env VALUE shown in the human consent prompt before it is truncated. */
 const ENV_VALUE_MAX = 60;
+/**
+ * Environment names that turn a declared pair into arbitrary code execution in a spawned child
+ * (#2483). This list drives the consent prompt's WARNING line. The capability validator carries its
+ * own denylist that REFUSES these names outright (`DENIED_LANE_ENV_KEYS`); the two are deliberately
+ * separate layers rather than one, because they answer different questions: the validator refuses a
+ * manifest it can reject, and this list makes sure anything that DOES reach a prompt is read loudly.
+ * Neither is the boundary — install-time consent is, since no enumeration of execution-primitive
+ * names can be complete against an arbitrary third-party child.
+ */
+const EXECUTION_PRIMITIVE_ENV = new Set([
+    'NODE_OPTIONS', 'NODE_REPL_EXTERNAL_MODULE', 'LD_PRELOAD', 'LD_AUDIT', 'LD_LIBRARY_PATH',
+    'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH', 'PYTHONSTARTUP', 'PYTHONPATH', 'BASH_ENV', 'ENV',
+    'PERL5OPT', 'RUBYOPT', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'CLASSPATH', 'NODE_PATH',
+    'GIT_SSH_COMMAND', 'GIT_EXTERNAL_DIFF', 'PATH',
+]);
 /** Truncate a long env value for the human prompt (the full value is still in the signature). */
 function truncateEnvValue(v) {
     if (typeof v !== 'string')
@@ -871,58 +1058,205 @@ function truncateEnvValue(v) {
     return v.length > ENV_VALUE_MAX ? `${v.slice(0, ENV_VALUE_MAX)}… (${v.length} chars)` : v;
 }
 /**
+ * Characters that must never reach the consent prompt unescaped. `summarizeDisclosure`'s lines are
+ * joined with `\n` and written RAW to stderr on the needs-consent path, and every value in them is
+ * attacker-controlled manifest data. A raw newline forges a line indistinguishable from genuine
+ * disclosure text; a raw ESC lets a value rewrite or clear lines already printed; a bidi override
+ * visually reorders one. C0, DEL, C1, the bidi/isolate controls, and the line/paragraph separators
+ * are all escaped to a visible `\uXXXX`, so the value stays identifiable and cannot forge output.
+ */
+const UNSAFE_PROMPT_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g;
+/** Max characters of any single manifest-supplied value rendered into the consent prompt. */
+const PROMPT_VALUE_MAX = 200;
+/**
+ * Render one manifest-supplied value safely into a consent-prompt line: escape every character that
+ * could forge or rewrite output, then bound the length so one oversized value cannot flood the
+ * prompt and push the rest off screen. Escaping is IDENTITY for ordinary names, so this changes no
+ * existing rendered output for any well-formed manifest — only the disclosure OBJECT is verbatim;
+ * the rendered LINE is always escaped.
+ */
+function renderValueForPrompt(v) {
+    // `String(v)` on an arbitrary `unknown` risks Object's default `[object Object]` stringification
+    // (@typescript-eslint/no-base-to-string) for a non-primitive; every call site here passes a string
+    // in practice, but the parameter stays `unknown` for the same total-collector discipline as
+    // `renderArgForHuman`, so a non-primitive is JSON-stringified instead of coerced.
+    let s;
+    if (typeof v === 'string') {
+        s = v;
+    }
+    else if (v === null || v === undefined) {
+        s = '';
+    }
+    else if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') {
+        s = String(v);
+    }
+    else {
+        try {
+            s = JSON.stringify(v) ?? '';
+        }
+        catch {
+            s = '';
+        }
+    }
+    const escaped = s.replace(UNSAFE_PROMPT_CHARS, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+    return escaped.length > PROMPT_VALUE_MAX
+        ? `${escaped.slice(0, PROMPT_VALUE_MAX)}… (${escaped.length} chars)`
+        : escaped;
+}
+/**
+ * Render the instruction-surface section of a consent summary (ADR-2363 D3/D5, #3248).
+ *
+ * Extracted as its own exported function for two reasons. It is called from BOTH branches of
+ * `summarizeDisclosure` — a skill-only capability has `hasExecutable === false` and takes the early
+ * return, so a section appended only at the end would never render for exactly the capabilities
+ * that need it. And it gives tests a typed surface to assert on, instead of regex-matching prose out
+ * of `summarizeDisclosure` (CONTRIBUTING — "Prohibited: Raw Text Matching on Test Outputs").
+ *
+ * Returns `[]` when nothing is declared, so either caller can append unconditionally without
+ * emitting an empty header.
+ *
+ * TOTAL for a partial disclosure object: the CLI edge calls `summarizeDisclosure(res.disclosure || {})`
+ * (`capability-command-router.cjs`), so a bare `{}` — carrying no `instructionSurfaces` at all —
+ * reaches this function whenever a lifecycle result has no disclosure.
+ *
+ * #3248: every manifest-supplied value rendered here (`kind`, `name`) goes through
+ * `renderValueForPrompt` first — the CLI edge writes these lines RAW to stderr on the needs-consent
+ * path, and an unescaped name could forge a line or rewrite output already printed (see that
+ * function's comment).
+ */
+function summarizeInstructionSurfaces(disclosure) {
+    const declared = disclosure?.instructionSurfaces;
+    const surfaces = Array.isArray(declared) ? declared : [];
+    if (surfaces.length === 0)
+        return [];
+    const lines = [
+        `  instruction surfaces (${surfaces.length}): installed into your agent's instruction context`,
+    ];
+    for (const s of surfaces) {
+        // #3248: kind/name are manifest-supplied — escape+bound before rendering (see `renderValueForPrompt`).
+        const kind = s?.kind ? renderValueForPrompt(s.kind) : '(kind?)';
+        const name = s?.name ? renderValueForPrompt(s.name) : '(name?)';
+        lines.push(`    - ${kind}: ${name}`);
+    }
+    // ADR-2363 D1/D2, and Kerckhoffs: say plainly that nothing inspected these bodies. A summary that
+    // named the surface while implying review would be worse than silence — a "looks checked" line
+    // displaces the judgement this prompt exists to provoke (Goodhart, D2).
+    lines.push('        these bodies are installed verbatim and are NOT content-scanned');
+    return lines;
+}
+/**
  * Render a disclosure as consent-prompt lines. Returned as an array so the CLI/runtime edge can
  * format it; the lib never writes to stdout.
+ *
+ * #3248: every manifest-supplied value interpolated into a line (hook event/script, command
+ * family/module/router, MCP name/transport/url/command/argv/header-keys/env-keys+values/cwd,
+ * reviewer-lane slug/hostConfigKey/resolvedHost/defaultHost/binary/rawArgs/handler/probe-binary/
+ * env-keys+values, missingArtifacts entries)
+ * goes through `renderValueForPrompt` first, which escapes forging/rewriting control characters and
+ * bounds the length. These lines are joined with `\n` and written RAW to stderr on the
+ * needs-consent path (`capability-command-router.cjs`), so an unescaped value could forge a line or
+ * rewrite/clear output already printed — defeating the informed-consent guarantee this function
+ * exists to provide. GSD-authored literals (fallback placeholders, headings, `<redacted>`) are never
+ * escaped — only manifest-supplied data is.
  */
+/**
+ * #3515: one predicate for "this MCP server is remote (connects to a URL; nothing local is
+ * spawned)" — shared by the section's confinement notice and the per-server rendering so the
+ * consent-prompt claim cannot drift from what is actually disclosed per server. Branches on the
+ * DECLARED SHAPE: an http/sse transport, or a server with no command but a url.
+ */
+function isRemoteMcpServer(s) {
+    return (s.transport === 'http' || s.transport === 'sse') || (!s.command && !!s.url);
+}
 function summarizeDisclosure(disclosure) {
     const lines = [];
+    const instructionLines = summarizeInstructionSurfaces(disclosure);
+    // #3514 (F21c): computed once, appended before every return path so a future path cannot miss it.
+    const integrity = integrityStatusLine(disclosure);
     if (!disclosure.hasExecutable) {
-        lines.push('This capability ships no executable surfaces (declarative only).');
+        // ADR-2363 D3: "declarative only" is true ONLY when there is no instruction surface either.
+        // Claiming it unconditionally told a user their capability contributes nothing to weigh while
+        // it was contributing agent instructions — the exact category error ADR-2363 was written to end.
+        if (instructionLines.length === 0) {
+            lines.push('This capability ships no executable surfaces (declarative only).');
+            if (integrity)
+                lines.push(integrity);
+            return lines;
+        }
+        lines.push('This capability ships no executable surfaces, but contributes agent instructions:');
+        for (const line of instructionLines)
+            lines.push(line);
+        if (integrity)
+            lines.push(integrity);
         return lines;
     }
     lines.push('This capability ships executable surfaces that will run in your agent runtime:');
     if (disclosure.hooks.length > 0) {
         lines.push(`  hooks (${disclosure.hooks.length}): run as runtime hook commands`);
         for (const h of disclosure.hooks) {
-            lines.push(`    - ${h.event || '(event?)'} -> ${h.script}`);
+            const event = h.event ? renderValueForPrompt(h.event) : '(event?)';
+            lines.push(`    - ${event} -> ${renderValueForPrompt(h.script)}`);
         }
     }
     if (disclosure.commandModules.length > 0) {
         lines.push(`  command modules (${disclosure.commandModules.length}): require()'d into the GSD CLI process`);
         for (const m of disclosure.commandModules) {
             // TRUST2-3 (#1459): show the router (which exported fn runs) so the user consents to the exact entry point.
-            const routerSuffix = m.router ? ` [router: ${m.router}]` : '';
-            lines.push(`    - ${m.family || '(family?)'} -> ${m.module}${routerSuffix}`);
+            const routerSuffix = m.router ? ` [router: ${renderValueForPrompt(m.router)}]` : '';
+            const family = m.family ? renderValueForPrompt(m.family) : '(family?)';
+            lines.push(`    - ${family} -> ${renderValueForPrompt(m.module)}${routerSuffix}`);
         }
     }
     if (disclosure.mcpServers.length > 0) {
         lines.push(`  MCP servers (${disclosure.mcpServers.length}): spawned/connected by the host runtime`);
+        // #3515 (epic #1900 F20): the confinement-posture notice. Hook commands are confined to the
+        // capability bundle (D5 rule 5); an MCP server's command/args/env/cwd are written VERBATIM and
+        // may point anywhere on the machine — an intentional asymmetry (confining them would break
+        // global/npx servers), disclosed here so the consent is informed rather than assumed. env is
+        // named explicitly (isolated review finding): an execution-primitive env value changes WHAT
+        // runs without touching command or argv — the classic vector — and omitting it would invite
+        // the inference that env IS confined. Only SPAWNED (stdio) servers earn the line: a remote
+        // (http/sse) server runs nothing locally, and the claim must be exact in a consent prompt.
+        // One shared predicate (below) decides spawn-vs-remote for the notice AND the per-server
+        // rendering, so the two cannot drift into an inexact claim.
+        if (disclosure.mcpServers.some((s) => !isRemoteMcpServer(s))) {
+            lines.push('    intentionally NOT confined to the bundle: a server\'s command, args, env, and cwd are written ' +
+                'verbatim and may point anywhere on this machine — unlike hooks, which are confined to the capability bundle root');
+        }
         for (const s of disclosure.mcpServers) {
             // TRUST2-2 (#1459): a non-stdio (http/sse) server connects to a URL; disclose the endpoint, not
             // a (nonexistent) command. A stdio server discloses command + args as before.
-            const isRemote = (s.transport === 'http' || s.transport === 'sse') || (!s.command && !!s.url);
+            const isRemote = isRemoteMcpServer(s);
+            const name = renderValueForPrompt(s.name);
             if (isRemote) {
-                const t = s.transport || 'http';
-                lines.push(`    - ${s.name} -> [${t}] ${s.url || '(no url declared)'}`);
+                const t = s.transport ? renderValueForPrompt(s.transport) : 'http';
+                const url = s.url ? renderValueForPrompt(s.url) : '(no url declared)';
+                lines.push(`    - ${name} -> [${t}] ${url}`);
                 // Header VALUES are redacted in the human summary (they may carry secrets); only the KEY set
                 // is shown. The full values ARE in the signature, so a value change forces re-consent.
                 const hdrKeys = s.headers ? Object.keys(s.headers) : [];
                 if (hdrKeys.length > 0) {
-                    lines.push(`        headers: ${hdrKeys.map((k) => `${k}=<redacted>`).join(', ')}`);
+                    lines.push(`        headers: ${hdrKeys.map((k) => `${renderValueForPrompt(k)}=<redacted>`).join(', ')}`);
                 }
             }
             else {
-                const cmd = [s.command, ...s.argv].filter(Boolean).join(' ');
-                lines.push(`    - ${s.name} -> ${cmd || '(no command declared)'}`);
+                // Command + args are each escaped individually (not the joined string) so a value that
+                // embeds a newline cannot forge a line even when it lands mid-argv.
+                const cmd = [s.command, ...s.argv].filter(Boolean).map(renderValueForPrompt).join(' ');
+                lines.push(`    - ${name} -> ${cmd || '(no command declared)'}`);
             }
             // TRUST-2 (#1459): env can change WHAT runs without touching the command, so show each env key
-            // and its (truncated) value — the user is consenting to this exact environment.
+            // and its (truncated) value — the user is consenting to this exact environment. Truncate first
+            // (keeps the prompt readable at the existing 60-char bound), then escape the result (#3248) so
+            // the truncated value can still not forge or rewrite output.
             const envKeys = s.env ? Object.keys(s.env) : [];
             if (envKeys.length > 0) {
-                lines.push(`        env: ${envKeys.map((k) => `${k}=${truncateEnvValue(s.env[k])}`).join(', ')}`);
+                lines.push(`        env: ${envKeys
+                    .map((k) => `${renderValueForPrompt(k)}=${renderValueForPrompt(truncateEnvValue(s.env[k]))}`)
+                    .join(', ')}`);
             }
             if (s.cwd)
-                lines.push(`        cwd: ${s.cwd}`);
+                lines.push(`        cwd: ${renderValueForPrompt(s.cwd)}`);
         }
     }
     if (disclosure.reviewerLanes.length > 0) {
@@ -937,31 +1271,107 @@ function summarizeDisclosure(disclosure) {
             // declared)" for a lane that in fact egresses to a live remote host —
             // understating the disclosure precisely when it matters. Disclosure runs
             // BEFORE validation, so a non-canonical transport does reach this code.
+            const slug = l.slug ? renderValueForPrompt(l.slug) : '(slug?)';
             if (l.transport === 'openai-http' || (!l.binary && l.hostConfigKey)) {
                 const localTag = l.isLocalDestination ? ' [local]' : '';
-                lines.push(`    - ${l.slug || '(slug?)'} -> [openai-http] ${l.hostConfigKey || '(hostConfigKey?)'} => ${l.resolvedHost}${localTag}`);
+                const hostConfigKey = l.hostConfigKey ? renderValueForPrompt(l.hostConfigKey) : '(hostConfigKey?)';
+                lines.push(`    - ${slug} -> [openai-http] ${hostConfigKey} => ${renderValueForPrompt(l.resolvedHost)}${localTag}`);
+                // #2483: the MANIFEST's own fallback host, which `resolveLanePlan` uses whenever the config
+                // key resolves to nothing (`configured ?? declaredDefault`). Without this line a lane whose
+                // key is unset renders as "(unresolved)" — which reads as "no destination" — while actually
+                // shipping the egress payload classes below to an address the manifest chose. That is the
+                // understating-the-disclosure failure the branch test one comment up already refuses.
+                // Escaped like every other rendered value (#3248): it is manifest-supplied by the same route.
+                if (l.defaultHost) {
+                    lines.push(`        fallback destination declared by this capability: ${renderValueForPrompt(l.defaultHost)}`);
+                }
             }
             else {
                 // Render the RAW declared args, not the string-filtered view. The raw
                 // array is what the host receives and what the consent signature binds,
                 // so a non-string member that is invisible here is a surface the user
                 // consented to without being shown — the opposite of the disclosure's
-                // whole purpose.
-                const cmd = [l.binary, ...l.rawArgs.map(renderArgForHuman)].filter(Boolean).join(' ');
-                lines.push(`    - ${l.slug || '(slug?)'} -> ${cmd || '(no binary declared)'}`);
+                // whole purpose. `renderArgForHuman` stringifies a non-string member; that
+                // string is equally attacker-controlled, so it is escaped too (#3248).
+                const cmd = [l.binary, ...l.rawArgs.map(renderArgForHuman)]
+                    .filter(Boolean)
+                    .map(renderValueForPrompt)
+                    .join(' ');
+                lines.push(`    - ${slug} -> ${cmd || '(no binary declared)'}`);
             }
             if (l.handler)
-                lines.push(`        handler: ${l.handler}`);
+                lines.push(`        handler: ${renderValueForPrompt(l.handler)}`);
+            // The probe binary belongs in the prompt beside the dispatch binary when it differs — but the
+            // two probe kinds are NOT the same disclosure and must not be rendered as one.
+            // `command-capability` SPAWNS `<binary> --help`; `command-exists` only asks `hasBinary`, which
+            // scans PATH and spawns nothing. An earlier revision of this line asserted the spawn for both,
+            // which is a FALSE statement in a consent prompt — the one place a claim must be exact.
+            if (l.probeBinary && l.probeBinary !== l.binary) {
+                const probeBinary = renderValueForPrompt(l.probeBinary);
+                lines.push(l.probeKind === 'command-capability'
+                    ? `        probes by running: ${probeBinary} --help`
+                    : `        probes for the presence of: ${probeBinary} (no process is started)`);
+            }
+            // #2483: identical treatment to the MCP `env` line above, for the identical reason stated
+            // there — env changes WHAT runs without touching the command, so the user consents to this
+            // exact environment or not at all. The parity is byte-level and deliberate: since #3248 the
+            // MCP line escapes BOTH key and value through `renderValueForPrompt`, and a lane's env is
+            // manifest-supplied by the same route — so rendering it raw here would reintroduce, on the
+            // newer surface, precisely the prompt-forging vector #3248 closed on the older one.
+            const laneEnvKeys = l.env ? Object.keys(l.env) : [];
+            if (laneEnvKeys.length > 0) {
+                lines.push(`        env: ${laneEnvKeys
+                    .map((k) => `${renderValueForPrompt(k)}=${renderValueForPrompt(truncateEnvValue(l.env[k]))}`)
+                    .join(', ')}`);
+                // Names that make an environment pair an EXECUTION primitive rather than configuration.
+                // The validator REFUSES these on a reviewer lane (`DENIED_LANE_ENV_KEYS`), so in practice a
+                // first-party or freshly-validated manifest never reaches this line. It still earns its
+                // place, and the reason is the reason to keep both layers:
+                //   - Disclosure runs BEFORE validation, and on manifests validation would reject outright.
+                //     A user consenting to an already-installed or hand-placed capability sees this line
+                //     whether or not the validator ever ran on it.
+                //   - No enumeration of execution-primitive names is complete against an arbitrary
+                //     third-party child, so consent — not either list — is the boundary. A name missing from
+                //     both costs a quieter line on a value that is still SHOWN, which is the only
+                //     incompleteness budget an enumeration like this can honestly carry.
+                const flagged = laneEnvKeys.filter((k) => EXECUTION_PRIMITIVE_ENV.has(k));
+                if (flagged.length > 0) {
+                    lines.push(`        WARNING — ${flagged.map(renderValueForPrompt).join(', ')} can make this lane run code of the capability's choosing`);
+                }
+            }
             lines.push(`        sends: ${l.egressPayloadClasses.join(', ')}`);
         }
     }
+    for (const line of instructionLines)
+        lines.push(line);
     if (disclosure.missingArtifacts.length > 0) {
         lines.push('  WARNING — declared artifacts not found in the staged bundle:');
         for (const a of disclosure.missingArtifacts) {
-            lines.push(`    - ${a}`);
+            lines.push(`    - ${renderValueForPrompt(a)}`);
         }
     }
+    if (integrity)
+        lines.push(integrity);
     return lines;
+}
+/**
+ * #3514 (F21c): the one-line integrity status for the consent prompt, or null when the caller
+ * supplied no `integrityPin` (legacy — no line, byte-identical output). GSD-authored literals,
+ * never manifest data — no escaping needed. A consent-prompt claim must be EXACT: a git
+ * commit-pinned source renders its own line, never "sha512 pin" — no sha512 was supplied
+ * (isolated review finding).
+ */
+function integrityStatusLine(disclosure) {
+    if (disclosure.integrityStatus === 'pinned') {
+        return '  content: sha512 pin supplied and verified before staging';
+    }
+    if (disclosure.integrityStatus === 'commit-pinned') {
+        return '  content: pinned to a git commit, checked out before staging';
+    }
+    if (disclosure.integrityStatus === 'unverified') {
+        return '  content: NO PINNED HASH — staged unverified (a computed sha512 is recorded in the ledger at install)';
+    }
+    return null;
 }
 module.exports = {
     RESERVED_NAMESPACES,
@@ -969,12 +1379,21 @@ module.exports = {
     // #2796: the reviewer-lane collector, exported for independent testability (ADR-2782's own
     // argument for extracting per-class collectors rather than growing the switch inline).
     collectReviewerLaneSurfaces,
+    // ADR-2363 D5 (#3248): the instruction-surface collector, exported for independent testability —
+    // same rationale as `collectReviewerLaneSurfaces` above.
+    collectInstructionSurfaces,
     checkReservedNamespace,
     evaluateSourceAllowed,
     checkEngines,
     evaluateInstallTrust,
     executableSetChanged,
     summarizeDisclosure,
+    // ADR-2363 D3/D5 (#3248): the instruction-surface section of the consent summary, exported so
+    // callers/tests can assert on it directly — see `summarizeInstructionSurfaces`'s own JSDoc.
+    summarizeInstructionSurfaces,
+    // #3248: the consent-prompt escaping/bounding helper, exported so tests can assert directly that
+    // control characters (newline, ESC, bidi overrides, etc.) never reach a rendered prompt line.
+    renderValueForPrompt,
     // #1459: the consent-binding signature (single source of truth for loader + lifecycle consent).
     disclosureSignature,
     signatureForManifest,

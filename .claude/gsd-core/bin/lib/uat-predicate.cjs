@@ -25,6 +25,9 @@ const { stripFencedCode } = markdownSectionizer;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const verification = require("./verification.cjs");
 const { readVerificationStatus } = verification;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseIdMod = require("./phase-id.cjs");
+const { scopeToPhase } = phaseIdMod;
 // ─── Blocking state sets (documented for maintainability) ─────────────────────
 // UAT file frontmatter `status` values that indicate the file is not fully done
 const BLOCKING_UAT_FM_STATUSES = new Set([
@@ -190,9 +193,12 @@ function evaluateUatPassed(phaseFullDir, opts) {
             verification_stale_check_indeterminate: false,
         };
     }
-    // Filter UAT and VERIFICATION files using the same filter as cmdPhaseComplete
-    const uatFileNames = dirEntries.filter(f => f.includes('-UAT') && f.endsWith('.md'));
-    const verFileNames = dirEntries.filter(f => f.includes('-VERIFICATION') && f.endsWith('.md'));
+    // Filter UAT and VERIFICATION files using the same filter as cmdPhaseComplete,
+    // scoped to THIS phase's own token (#3511) — a stray, cross-phase, or ad-hoc
+    // file can no longer contribute a blocker to a phase it does not belong to.
+    const phaseDirBaseName = node_path_1.default.basename(phaseFullDir);
+    const uatFileNames = scopeToPhase(dirEntries.filter(f => f.includes('-UAT') && f.endsWith('.md')), phaseDirBaseName);
+    const verFileNames = scopeToPhase(dirEntries.filter(f => f.includes('-VERIFICATION') && f.endsWith('.md')), phaseDirBaseName);
     // ── Process UAT files ──────────────────────────────────────────────────────
     for (const file of uatFileNames) {
         uatFiles.push(file);

@@ -16,30 +16,23 @@ exports.pickRollupWinners = pickRollupWinners;
 exports.isCompletedInventory = isCompletedInventory;
 exports.buildWorkstreamInventory = buildWorkstreamInventory;
 const node_path_1 = __importDefault(require("node:path"));
+const phase_lifecycle_cjs_1 = require("./phase-lifecycle.cjs");
 // Internal helpers
 function toPosixPath(p) {
     return p.split('\\').join('/');
 }
-/**
- * #2562: verification verdicts that DISQUALIFY a phase from `complete`, even
- * when its SUMMARY count meets its PLAN count. Deliberately scoped to the two
- * EXPLICIT failing verdicts the verifier emits — `missing`/`unknown` (verifier
- * off / not yet run) and `stale` (mtime-derived, #2348) are intentionally left
- * untouched so verifier-disabled projects do not regress to never-complete.
- *
- * #2645: `'unrecorded'` is NOT a verdict the verifier itself ever emits — it
- * is an internal sentinel `workstream-inventory.cts`'s verification-deletion
- * ledger substitutes for `'missing'` once that workstream has ADOPTED the
- * ledger (a `.verification-ledger.json` file exists for it) but has no
- * remembered entry for this specific phase. Pre-adoption (no ledger file at
- * all) still resolves to plain `'missing'`, which stays OUTSIDE this set —
- * that is what keeps a project untouched by this fix until it actually uses
- * the verifier at least once. Post-adoption, an unrecorded phase fails
- * CLOSED (counted here) rather than open, so a corrupt or evidence-absent
- * ledger entry can no longer be read as "safe to complete" the way a bare
- * `'missing'` sentinel is.
- */
-const FAILING_VERIFICATION_STATUSES = new Set(['gaps_found', 'human_needed', 'unrecorded']);
+// #2562/#2645's FAILING_VERIFICATION_STATUSES set (the verdicts that used to
+// disqualify a phase from `complete` when combined with a local
+// summary-count-meets-plan-count check) was removed by ADR-3180 §7.4
+// (#3186): `complete` is now the single canonical owner's verdict
+// (`PhaseFilesCount.complete`, computed via `isPhaseComplete` by the
+// I/O-capable caller — see the loop below), which already requires
+// `verification.status === 'passed'` unconditionally. Disk-strict (#2957)
+// deliberately DROPS the prior "verifier-disabled projects fall back to
+// summaries-met" tolerance that set existed to preserve — a phase with no
+// `*-VERIFICATION.md` (`missing`) is no longer treated as complete just
+// because its summaries meet its plan count. Disclosed in this phase's
+// changeset.
 /**
  * #2562 / Bug #2445 / #2645 review: pick ONE winning item per key from a
  * PRE-SORTED list — newest `mtimeMs` wins; on an exact tie the incumbent
@@ -127,11 +120,20 @@ function buildWorkstreamInventory(inputs) {
         const counts = countsMap.get(dir);
         const planCount = counts?.planCount ?? 0;
         const summaryCount = counts?.summaryCount ?? 0;
-        // #2562: SUMMARY≥PLAN parity is necessary but not sufficient — a phase whose
-        // verification verdict is an explicit failing one is still in progress.
-        const verificationStatus = counts?.verificationStatus ?? 'missing';
-        const summariesMeetPlans = summaryCount >= planCount && planCount > 0;
-        const status = summariesMeetPlans && !FAILING_VERIFICATION_STATUSES.has(verificationStatus)
+        // ADR-3180 §7.4 (issue #3186): routed through the single canonical owner
+        // (`isPhaseComplete`, src/verification.cts) — via `PhaseFilesCount.complete`,
+        // which the I/O-capable CALLER computes (this module is a PURE, I/O-free
+        // projection — see the module header: "No I/O. No async." — and cannot
+        // call the owner itself). The prior local derivation
+        // (`summaryCount >= planCount && planCount > 0` combined with a
+        // caller-supplied verification status) was this module's OWN completion
+        // verdict computed from raw counts — the exact "post-process a canonical
+        // result locally" bypass §7.4 rules out, and it reproduced the disk-strict
+        // headline case (#3168): a zero-plan phase with a passing verification
+        // read `pending` instead of `complete`. `complete` defaults to `false`
+        // when absent so a caller that has not been updated to pass it never
+        // silently reads as complete.
+        const status = (counts?.complete ?? false)
             ? 'complete'
             : planCount > 0
                 ? 'in_progress'
@@ -243,12 +245,31 @@ function buildWorkstreamInventory(inputs) {
         roadmap_phase_count: effectivePhaseCount,
         total_plans: totalPlans,
         completed_plans: completedPlans,
-        // The `Math.min` cap is unreachable under milestone scoping (the invariant
-        // above throws first) and survives only for the legacy unscoped path, where
-        // the denominator is a roadmap heading count that a caller cannot guarantee
-        // bounds the numerator.
-        progress_percent: effectivePhaseCount > 0
-            ? Math.min(100, Math.round((completedPhases / effectivePhaseCount) * 100))
-            : 0,
+        // `clampPercent`'s 100 ceiling is unreachable under milestone scoping (the
+        // invariant above throws first) and matters only for the legacy unscoped
+        // path, where the denominator is a roadmap heading count that a caller
+        // cannot guarantee bounds the numerator.
+        //
+        // #3217 (ADR-3180 §7.6 rule 4) — WRITTEN REASON this site is NOT migrated
+        // onto the `SCOPE` enum this phase: `buildWorkstreamInventory` is a pure
+        // projection (no I/O — see the module header) fed `BuildWorkstreamInventoryInputs`
+        // by `workstream-inventory.cts`. Its own `milestoneScoped` is a pre-ADR-3180
+        // bespoke boolean, not a `SCOPE` value, and its caller does not currently
+        // thread a real `listMilestonePhaseDirs` scope into these inputs. Doing
+        // this honestly requires ONE of: (a) widening `BuildWorkstreamInventoryInputs`
+        // with a `Scope` field and `WorkstreamInventory.progress_percent`'s type
+        // from `number` to `number | null` — the exact "re-architecting
+        // StateProjection/WorkstreamInventory return types" the design phase
+        // (`.gsd/phase/refactor-3217-completion-ratio-scoping/40-design.md`,
+        // "Known limits") states is OUT of this phase's scope; or (b) silently
+        // reusing `milestoneScoped` as a `Scope` stand-in, which would be exactly
+        // the kind of proxy-for-a-data-flow-property this same phase's guard
+        // section explicitly rejects (a `boolean` cannot distinguish TRUNCATED
+        // from UNSCOPED from UNREADABLE, so a caller could not tell which
+        // non-answer it got). Left un-migrated rather than done dishonestly;
+        // `workstream inventory`'s `progress_percent` can still render a number
+        // derived from an under-scoped set (A8 in the phase's test matrix is
+        // NOT covered here for that reason — see this phase's PR description).
+        progress_percent: (0, phase_lifecycle_cjs_1.clampPercent)(completedPhases, effectivePhaseCount),
     };
 }

@@ -12,7 +12,7 @@ Always use this for `.planning/` files — it handles `commit_docs` and gitignor
 node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query commit "docs({scope}): {description}" --files .planning/STATE.md .planning/ROADMAP.md
 ```
 
-The CLI will return `skipped` (with reason) if `commit_docs` is `false` or `.planning/` is gitignored. No manual conditional checks needed.
+The CLI will return `skipped` (with reason) if `commit_docs` is `false`, `.planning/` is gitignored, or a per-phase `phase_commit_docs.<phase-id>` override resolves `false` for the phase being committed. No manual conditional checks needed.
 
 ## Amend previous commit
 
@@ -37,4 +37,5 @@ node "$HOME/.codex/gsd-core/bin/gsd-tools.cjs" query commit "" --files .planning
 
 - `commit_docs: false` in config
 - `.planning/` is gitignored
+- `phase_commit_docs.<phase-id>` resolves `false` for the phase being committed — overrides the project-wide `commit_docs` for that phase only (reason `skipped_commit_docs_phase_false`)
 - No changes to commit (check with `git status --porcelain .planning/`)

@@ -98,7 +98,6 @@ Continue (non-blocking).
 UI_SPEC_FILE=$(ls "${PHASE_DIR}"/*-UI-SPEC.md 2>/dev/null | head -1)
 ```
 
-
 **Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `AskUserQuestion` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-the agent runtimes (OpenAI Codex, Gemini CLI, etc.) where `AskUserQuestion` is not available.
 **If exists:** Use AskUserQuestion:
 - header: "Existing UI-SPEC"
@@ -157,6 +156,14 @@ padded_phase: {padded_phase}
 ```
 
 Omit null file paths from `<files_to_read>`.
+
+<!-- #2508 runtime-aware-dispatch -->
+
+> **Runtime-aware dispatch (#2508 Phase 4).** GSD workflows dispatch specialized subagents by role. Before dispatching on a built-in-only runtime (kimi-code — three built-ins only), resolve the role to a built-in via `gsd_run query resolve-dispatch-type --requested <role> --raw`. On named-dispatch runtimes (the agent/OpenCode/…) the role is returned unchanged; on kimi-code it maps to `coder`/`explore`/`plan` by role-suffix. The persona rides `${AGENT_SKILLS_<ROLE>}` (Phase 3) regardless. See @gsd-core/references/runtime-aware-dispatch.md.
+
+<!-- #2517 model-omit-on-inherit -->
+
+> **Model omission (#2517).** Omit the `model` parameter entirely when the value it would carry (`UI_RESEARCHER_MODEL`, `UI_CHECKER_MODEL`) is `"inherit"` or empty. An empty value 404s on runtimes without native tier aliases — the default on non-the agent runtimes. Omitting it inherits the orchestrator's model. See @gsd-core/references/model-profile-resolution.md.
 
 ```
 Agent(
@@ -381,8 +388,8 @@ SIGNAL, not proof the element is only that kind — the confirm step, not the he
 coverage sound.
 
 **Resolution loop** (mirror spec-phase 5.5): resolve each applicable consideration via
-AskUserQuestion — **Specify** (→ `covered`, write a concrete truth) / **Dismiss (reason required)** /
-**Backstop** (a held-out/visual UI-state test) / **Defer** (→ `unresolved`). An `unclassified` row is
+AskUserQuestion — **Specify** (→ `resolved`, verification: explicit; write a concrete truth) / **Dismiss (reason required)** /
+**Backstop** (→ `resolved`, verification: backstop; a held-out/visual UI-state test) / **Defer** (→ `unresolved`). An `unclassified` row is
 a manual-review nudge, not a hard block. Text mode (`workflow.text_mode` / `--text`) → numbered lists.
 
 **Kind-confirmation under `--auto`.** The propose-then-confirm step above is an AskUserQuestion, so
@@ -395,17 +402,18 @@ recover a kind that was never surfaced, so recall is fixed HERE, at kind-confirm
 resolution runs.
 
 **`--auto` mode (two layers).** The adapter's `autoResolve` is the CODE floor: every applicable
-consideration auto-`backstop`s (carrying the taxonomy question as its resolution) and an
-`unclassified` candidate stays `unresolved` — it NEVER auto-`dismiss`es and never auto-backstops an
-unclassified item (#1110). On top of that floor the workflow MAY upgrade an item to `covered` when a
+consideration auto-resolves with `verification: backstop` (carrying the taxonomy question as its
+resolution) and an `unclassified` candidate stays `unresolved` — it NEVER auto-`dismiss`es and never
+auto-resolves an unclassified item with backstop (#1110). On top of that floor the workflow MAY
+upgrade an item to `resolved` (verification: explicit) when a
 defensible acceptance criterion can be written (the same judgment spec-phase 5.5 applies in prose).
-An auto `--auto` run therefore leaves un-upgraded backstops as `backstop`: at verify time each one
+An auto `--auto` run therefore leaves un-upgraded items as `resolved` (verification: backstop): at verify time each one
 with no wired evidence routes to `insufficient_spec → human_needed` — never a silent pass (#1154).
 That surfacing is the intended honest-verifier behavior, not over-flagging.
 
 **Write-back.** Populate a `## UI Considerations` section in the UI-SPEC from the resolved
 considerations, in the format the shipped plan-phase `## UI Considerations` lift rule reads:
-`covered` → a truth string; `backstop` → a flat scalar `{ statement, verification: backstop }`;
+`resolved` (explicit) → a truth string; `resolved` (backstop) → a flat scalar `{ statement, verification: backstop }`;
 `unresolved` → an explicit `⚠ unresolved — planner must treat as assumption` row. Empty-state and
 error-state COPY stays in `## Copywriting Contract` — the considerations section covers shape-rooted
 STATE coverage and REFERENCES those rows rather than restating the copy (de-dup). IDEMPOTENT: if a

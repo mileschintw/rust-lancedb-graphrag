@@ -5,15 +5,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-check-update.cmd\"",
-            "commandWindows": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-check-update.cmd\""
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "\"D:/Repos/lancet/.codex/hooks/gsd-check-update.cmd\"",
             "commandWindows": "\"D:/Repos/lancet/.codex/hooks/gsd-check-update.cmd\""
           }
@@ -21,15 +12,6 @@
       }
     ],
     "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
       {
         "hooks": [
           {
@@ -45,15 +27,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "\"D:/Repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
             "timeout": 10
           }
@@ -61,15 +34,6 @@
       }
     ],
     "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
       {
         "hooks": [
           {
@@ -85,15 +49,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "\"D:/Repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
             "timeout": 10
           }
@@ -101,15 +56,6 @@
       }
     ],
     "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
       {
         "hooks": [
           {
@@ -125,15 +71,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "\"D:/Repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
             "timeout": 10
           }
@@ -141,15 +78,6 @@
       }
     ],
     "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
       {
         "hooks": [
           {
@@ -165,15 +93,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "\"D:/Repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
             "timeout": 10
           }
@@ -181,15 +100,6 @@
       }
     ],
     "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"C:/Users/user3/repos/lancet/.codex/hooks/gsd-context-monitor.cmd\"",
-            "timeout": 10
-          }
-        ]
-      },
       {
         "hooks": [
           {

@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > **Project Status: Phases 1-5 Complete — Phase 6 (Observability, Evaluation & Polish) Next**
-> 89 plans have been executed across Phase 1, Phase 2, Phase 3, Phase 4, the inserted Phase 04.1, and Phase 5. A working Go API gateway and a Rust RAG/GraphRAG engine exist in this repository — see [`gateway/`](file:///d:/Repos/lancet/gateway), [`engine/`](file:///d:/Repos/lancet/engine), and [`proto/`](file:///d:/Repos/lancet/proto). Phase 6 (Observability, Evaluation & Polish) is next and has not yet started.
+> 89 plans have been executed across Phase 1, Phase 2, Phase 3, Phase 4, the inserted Phase 04.1, and Phase 5. A working Go API gateway and a Rust RAG/GraphRAG engine exist in this repository — see [`gateway/`](./gateway), [`engine/`](./engine), and [`proto/`](./proto). Phase 6 (Observability, Evaluation & Polish) is next and has not yet started.
 
 **Lancet** is an end-to-end, high-performance, systems-oriented Retrieval-Augmented Generation (RAG) and GraphRAG platform. Built to showcase robust systems engineering and data-plane design, it employs a split-service architecture that separates a user-facing control plane from a high-performance, custom-built data plane.
 
@@ -16,7 +16,7 @@ Most modern RAG applications are built using high-level orchestration frameworks
 
 By focusing on custom-built database operations and explicit microservice boundaries, Lancet demonstrates how to optimize latency-sensitive AI workloads while maintaining production-grade type safety and observability.
 
-Building the data plane from scratch is only half of what this project is meant to show. The implementation itself — 89 executed plans across five completed phases — was planned and executed using an AI-agent-assisted engineering workflow: the GSD planning/execution methodology, run with Claude Code. That trail is visible under [`.planning/`](file:///d:/Repos/lancet/.planning/), where every phase has its own PLAN, SUMMARY, VERIFICATION, and UAT record. This isn't a claim of autonomous or unsupervised AI authorship — it's human-directed collaboration with a reviewed AI workflow: directing the agent, reviewing what it produced, holding it to explicit verification and acceptance criteria before a phase could be marked complete, and making the judgment calls the agent can't make on its own. The clearest examples of that last part are [ADR-02-004](file:///d:/Repos/lancet/.discussion/decisions/phases/02/2026-07-30-ADR-02-004-all-the-way-to-ship-mvp.md) and [ADR-03-003](file:///d:/Repos/lancet/.discussion/decisions/phases/03/2026-08-05-ADR-03-003-all-the-way-to-ship-mvp.md) — decisions to force-close Phase 2 and Phase 3 on schedule and explicitly carry their remaining gaps forward as tracked technical debt (see `.planning/STATE.md`) rather than let them silently drop or block progress indefinitely. Operating that human+AI loop — not just directing an agent to write code, but keeping it honest against verification gates and making the calls it couldn't — is, alongside the RAG/GraphRAG systems work, part of the engineering ability this project is built to demonstrate.
+Building the data plane from scratch is only half of what this project is meant to show. The implementation itself — 89 executed plans across five completed phases — was planned and executed using an AI-agent-assisted engineering workflow: the GSD planning/execution methodology, run with Claude Code. That trail is visible under [`.planning/`](.planning), where every phase has its own PLAN, SUMMARY, VERIFICATION, and UAT record. This isn't a claim of autonomous or unsupervised AI authorship — it's human-directed collaboration with a reviewed AI workflow: directing the agent, reviewing what it produced, holding it to explicit verification and acceptance criteria before a phase could be marked complete, and making the judgment calls the agent can't make on its own. The clearest examples of that last part are [ADR-02-004](.discussion/decisions/phases/02/2026-07-30-ADR-02-004-all-the-way-to-ship-mvp.md) and [ADR-03-003](.discussion/decisions/phases/03/2026-08-05-ADR-03-003-all-the-way-to-ship-mvp.md) — decisions to force-close Phase 2 and Phase 3 on schedule and explicitly carry their remaining gaps forward as tracked technical debt (see `.planning/STATE.md`) rather than let them silently drop or block progress indefinitely. Operating that human+AI loop — not just directing an agent to write code, but keeping it honest against verification gates and making the calls it couldn't — is, alongside the RAG/GraphRAG systems work, part of the engineering ability this project is built to demonstrate.
 
 ---
 
@@ -67,21 +67,21 @@ graph TD
 Alongside the architecture, planning, and design documents below, the repository contains the actual implementation:
 
 ### 💻 Source Code
-* [gateway/](file:///d:/Repos/lancet/gateway): The Go control plane — HTTP API gateway.
-* [engine/](file:///d:/Repos/lancet/engine): The Rust data plane — RAG/GraphRAG engine.
-* [proto/](file:///d:/Repos/lancet/proto): Protobuf service contracts shared between the gateway and engine.
+* [gateway/](./gateway): The Go control plane — HTTP API gateway.
+* [engine/](./engine): The Rust data plane — RAG/GraphRAG engine.
+* [proto/](./proto): Protobuf service contracts shared between the gateway and engine.
 
 ### 🧠 Design & Discussion Documents
-* [.discussion/rag_side_project_brainstorming_document.md](file:///d:/Repos/lancet/.discussion/rag_side_project_brainstorming_document.md): The initial brainstorming log evaluating system trade-offs, technology choices, and resume impact.
-* [.discussion/final_implementation_decision_document.md](file:///d:/Repos/lancet/.discussion/final_implementation_decision_document.md): The finalized architectural, storage, and custom vs. framework engineering choices.
-* [.discussion/implementation_plan.md](file:///d:/Repos/lancet/.discussion/implementation_plan.md): The step-by-step technical plan for bootstrapping the gRPC contracts, directories, and files.
-* [.discussion/lightweight_state_machine_plan.md](file:///d:/Repos/lancet/.discussion/lightweight_state_machine_plan.md): Architectural design for the custom async state machine engine in Rust.
+* [.discussion/rag_side_project_brainstorming_document.md](.discussion/rag_side_project_brainstorming_document.md): The initial brainstorming log evaluating system trade-offs, technology choices, and resume impact.
+* [.discussion/final_implementation_decision_document.md](.discussion/final_implementation_decision_document.md): The finalized architectural, storage, and custom vs. framework engineering choices.
+* [.discussion/implementation_plan.md](.discussion/implementation_plan.md): The step-by-step technical plan for bootstrapping the gRPC contracts, directories, and files.
+* [.discussion/lightweight_state_machine_plan.md](.discussion/lightweight_state_machine_plan.md): Architectural design for the custom async state machine engine in Rust.
 
-### 📋 GSD Planning Blueprint (under [.planning/](file:///d:/Repos/lancet/.planning/))
-* [PROJECT.md](file:///d:/Repos/lancet/.planning/PROJECT.md): Project definition, core value proposition, active goals, constraints, and key decision log.
-* [REQUIREMENTS.md](file:///d:/Repos/lancet/.planning/REQUIREMENTS.md): Detailed tracking of functional and non-functional requirements (Architecture, RAG Core, Graph Processing, State, Observability).
-* [ROADMAP.md](file:///d:/Repos/lancet/.planning/ROADMAP.md): Multi-phase implementation roadmap mapping specific requirements to execution phases and backlog items.
-* [STATE.md](file:///d:/Repos/lancet/.planning/STATE.md): Living snapshot of current project progress, completed milestones, and known debt/issues.
+### 📋 GSD Planning Blueprint (under [.planning/](.planning))
+* [PROJECT.md](.planning/PROJECT.md): Project definition, core value proposition, active goals, constraints, and key decision log.
+* [REQUIREMENTS.md](.planning/REQUIREMENTS.md): Detailed tracking of functional and non-functional requirements (Architecture, RAG Core, Graph Processing, State, Observability).
+* [ROADMAP.md](.planning/ROADMAP.md): Multi-phase implementation roadmap mapping specific requirements to execution phases and backlog items.
+* [STATE.md](.planning/STATE.md): Living snapshot of current project progress, completed milestones, and known debt/issues.
 
 ---
 
@@ -127,7 +127,7 @@ The codebase is built across six numbered phases, plus one inserted phase, as tr
 
 ## 🔑 Key Decisions & Trade-offs
 
-A concise selection of the most discussable engineering trade-offs made along the way (full log in [`.planning/PROJECT.md`](file:///d:/Repos/lancet/.planning/PROJECT.md)):
+A concise selection of the most discussable engineering trade-offs made along the way (full log in [`.planning/PROJECT.md`](.planning/PROJECT.md)):
 
 * **Go gateway + Rust engine split:** Separates user-facing control-plane concerns from performance-sensitive data-plane engineering.
 * **gRPC/Protobuf service contract:** Makes the service boundary explicit, type-safe, and interview-discussable.

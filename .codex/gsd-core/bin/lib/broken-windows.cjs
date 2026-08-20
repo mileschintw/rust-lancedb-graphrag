@@ -580,7 +580,7 @@ function writeLedgerAtomic(cwd, ledger) {
             if (fenceEnd !== -1) {
                 const afterFence = existing.slice(fenceEnd + JSON_FENCE_CLOSE.length);
                 // Drop leading newlines; keep the rest as prose.
-                trailingProse = afterFence.replace(/^\n+/, '');
+                trailingProse = afterFence.replace(/^(?:\r?\n)+/, '');
             }
         }
     }

@@ -34,7 +34,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LEGACY_NON_REGISTRY_RUNTIME_IDS = void 0;
+exports.GSD_LOCATION_ENV_KEYS = exports.NON_REGISTRY_CONFIG_HOME_DESCRIPTORS = exports.KIMI_CODE_HOOKS_TOML_DESCRIPTOR = exports.KIMI_HOOKS_TOML_DESCRIPTOR = exports.LEGACY_NON_REGISTRY_RUNTIME_IDS = void 0;
 exports.isRegisteredRuntimeId = isRegisteredRuntimeId;
 exports.resolveConfigHomeFromDescriptor = resolveConfigHomeFromDescriptor;
 exports.resolveAntigravityGlobalDir = resolveAntigravityGlobalDir;
@@ -339,6 +339,72 @@ function resolveKimiGlobalDir(opts = {}) {
     }, { env, home, existsSync: existsSyncFn });
 }
 /**
+ * Kimi CLI's own native config.toml home. Hoisted out of resolveKimiHooksTomlDir
+ * so it is ENUMERABLE, not merely resolvable.
+ *
+ * #2665 round 3: a config-location var that lives only inside a function body is
+ * invisible to every consumer that needs the SET rather than the path — the test
+ * scrub list and the hermeticity guard both derive from descriptors, and this one
+ * reached neither. `kimi` is the sharp case precisely because it owns TWO config
+ * homes: KIMI_CONFIG_DIR (registry-visible, already covered) and KIMI_SHARE_DIR
+ * (this one), so a derivation keyed only on the registry looks complete and is not.
+ */
+exports.KIMI_HOOKS_TOML_DESCRIPTOR = {
+    kind: 'dot-home',
+    name: '.kimi',
+    env: ['KIMI_SHARE_DIR'],
+};
+/**
+ * Kimi Code's native config.toml home — the `kimi-code` counterpart of the
+ * descriptor above, hoisted for exactly the same reason.
+ *
+ * #2755 landed kimi-code hooks support on `next` while this PR was open, and
+ * declared this descriptor as an inline object literal inside
+ * resolveKimiHooksTomlDir's body — the same resolvable-but-not-enumerable shape
+ * round 3 hoisted KIMI_SHARE_DIR out of. Hoisting it puts `KIMI_CODE_HOME` into
+ * the derived scrub set and the hermeticity guard's watch roots in the SAME
+ * commit, which is the property NON_REGISTRY_CONFIG_HOME_DESCRIPTORS exists to
+ * guarantee. Each product's env var stays scoped to that product (#2755).
+ */
+exports.KIMI_CODE_HOOKS_TOML_DESCRIPTOR = {
+    kind: 'dot-home',
+    name: '.kimi-code',
+    env: ['KIMI_CODE_HOME'],
+};
+/**
+ * Config-home descriptors resolved OUTSIDE the capability registry.
+ *
+ * Anything added here is picked up by every derived consumer in the same commit —
+ * which is the property that makes the derivation structurally incapable of being
+ * narrower than the surface it guards. Adding a hardcoded resolver WITHOUT adding
+ * its descriptor here is the defect this array exists to make hard.
+ */
+exports.NON_REGISTRY_CONFIG_HOME_DESCRIPTORS = [
+    exports.KIMI_HOOKS_TOML_DESCRIPTOR,
+    exports.KIMI_CODE_HOOKS_TOML_DESCRIPTOR,
+];
+/**
+ * GSD's OWN location vars — a second family, not runtime configHomes.
+ *
+ * #2665 round 3: the registry describes where each *third-party runtime* keeps its
+ * config. It says nothing about where GSD keeps its own user-owned state, and that
+ * is a separate env-first surface:
+ *
+ *   GSD_HOME       — `process.env['GSD_HOME'] || os.homedir()`, the root of
+ *                    `$GSD_HOME/.gsd/` (consent.json, defaults.json, capability
+ *                    overlays). Read env-first by capability-loader, capability-consent,
+ *                    capability-state, capability-writer, config-loader, install-profiles
+ *                    and bin/install.js. A WRITE surface.
+ *   GSD_AGENTS_DIR — `if (process.env['GSD_AGENTS_DIR']) return it`, priority 1 in
+ *                    getAgentsDir. Misdirects a READ rather than a write, hence lower
+ *                    severity — but it is env-first and unconditional, so it belongs
+ *                    to the same class.
+ *
+ * Deliberately NOT folded into the descriptor array above: these do not resolve
+ * through resolveConfigHomeFromDescriptor and have no `kind`/`name` shape.
+ */
+exports.GSD_LOCATION_ENV_KEYS = ['GSD_HOME', 'GSD_AGENTS_DIR'];
+/**
  * Resolve the directory holding the Kimi product's OWN native config.toml —
  * the file that product itself reads for providers/models/hooks/etc, and the
  * one GSD writes its `[[hooks]]` block, hooks bundle and CommonJS marker into.
@@ -375,8 +441,8 @@ function resolveKimiHooksTomlDir(opts = {}) {
     // value originates from argv, and an index would resolve inherited keys
     // (`constructor`, `__proto__`) to something that is not a descriptor.
     const descriptor = opts.runtime === 'kimi-code'
-        ? { kind: 'dot-home', name: '.kimi-code', env: ['KIMI_CODE_HOME'] }
-        : { kind: 'dot-home', name: '.kimi', env: ['KIMI_SHARE_DIR'] };
+        ? exports.KIMI_CODE_HOOKS_TOML_DESCRIPTOR
+        : exports.KIMI_HOOKS_TOML_DESCRIPTOR;
     return resolveConfigHomeFromDescriptor(descriptor, { env, home });
 }
 /**

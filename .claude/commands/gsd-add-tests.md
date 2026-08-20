@@ -26,7 +26,7 @@ Output: Test files committed with message `test(phase-{N}): add unit and E2E tes
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/add-tests.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/add-tests.md
 </execution_context>
 
 <context>

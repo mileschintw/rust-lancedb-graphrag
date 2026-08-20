@@ -29,6 +29,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.formatGsdSlash = formatGsdSlash;
+exports.resolveExplicitRuntime = resolveExplicitRuntime;
 exports.resolveRuntime = resolveRuntime;
 exports.formatGsdSlashFor = formatGsdSlashFor;
 const node_fs_1 = __importDefault(require("node:fs"));
@@ -75,19 +76,21 @@ function formatGsdSlash(commandName, runtime) {
     return `/gsd-${token}${tail}`;
 }
 /**
- * Resolve the effective runtime for a project directory.
+ * Resolve the explicit runtime for a project directory, from the two
+ * explicit sources only — no default is applied.
  *
- *   process.env.GSD_RUNTIME  >  config.runtime  >  'claude'
+ *   env.GSD_RUNTIME  >  config.runtime  >  null
  *
- * Mirrors the precedence already used by profile-output.cjs and the rest of
- * the runtime resolution chain. Returns a lowercased string so downstream
- * comparisons can be case-blind.
+ * Returns null when neither explicit source is set, so a caller can
+ * distinguish "config said claude" from "nothing was set" (needed by
+ * #3245's host-detection rung, which must only run when this returns null).
  *
  * @param projectDir - path to the project directory, or null/undefined
- * @returns the resolved runtime name
+ * @param env - environment variables to read GSD_RUNTIME from; defaults to process.env
+ * @returns the resolved runtime name, or null if neither source is set
  */
-function resolveRuntime(projectDir) {
-    const envRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(process.env['GSD_RUNTIME']);
+function resolveExplicitRuntime(projectDir, env = process.env) {
+    const envRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(env['GSD_RUNTIME']);
     if (envRuntime)
         return envRuntime;
     if (projectDir) {
@@ -113,7 +116,22 @@ function resolveRuntime(projectDir) {
             // runtime output formatting.
         }
     }
-    return 'claude';
+    return null;
+}
+/**
+ * Resolve the effective runtime for a project directory.
+ *
+ *   process.env.GSD_RUNTIME  >  config.runtime  >  'claude'
+ *
+ * Mirrors the precedence already used by profile-output.cjs and the rest of
+ * the runtime resolution chain. Returns a lowercased string so downstream
+ * comparisons can be case-blind.
+ *
+ * @param projectDir - path to the project directory, or null/undefined
+ * @returns the resolved runtime name
+ */
+function resolveRuntime(projectDir) {
+    return resolveExplicitRuntime(projectDir) ?? 'claude';
 }
 /**
  * Convenience: format using the runtime resolved from a project directory.

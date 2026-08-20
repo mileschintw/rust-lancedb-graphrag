@@ -29,10 +29,10 @@ const configLoaderMod = require("./config-loader.cjs");
 const { loadConfig } = configLoaderMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- core-utils.cjs is an export= CommonJS module
 const coreUtilsMod = require("./core-utils.cjs");
-const { toPosixPath, generateSlugInternal, readSubdirectories } = coreUtilsMod;
+const { toPosixPath, generateSlugInternal, readSubdirectories, findUnsummarizedPlans } = coreUtilsMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- phase-id.cjs is an export= CommonJS module
 const phaseIdMod = require("./phase-id.cjs");
-const { escapeRegex, normalizePhaseName, phaseMarkdownRegexSource, comparePhaseNum, phaseTokenMatches, OPTIONAL_PROJECT_CODE_PREFIX_SOURCE, OPTIONAL_PHASE_TAG_SOURCE, PHASE_NUMBER_TOKEN_SOURCE, } = phaseIdMod;
+const { escapeRegex, normalizePhaseName, phaseMarkdownRegexSource, comparePhaseNum, phaseTokenMatches, isSentinelPhaseId, OPTIONAL_PROJECT_CODE_PREFIX_SOURCE, OPTIONAL_PHASE_TAG_SOURCE, PHASE_NUMBER_TOKEN_SOURCE, } = phaseIdMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- phase-locator.cjs is an export= CommonJS module
 const phaseLocatorMod = require("./phase-locator.cjs");
 const { findPhaseInternal, getArchivedPhaseDirs } = phaseLocatorMod;
@@ -56,7 +56,15 @@ const uatPredicate = require("./uat-predicate.cjs");
 const { evaluateUatPassed } = uatPredicate;
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- verification.cjs is an export= CommonJS module
 const verificationMod = require("./verification.cjs");
+// #2572: the artifact↔disk core behind the `verify-summary` verb. `verify.cts`
+// has no transitive import path back to `phase.cts`, so this edge introduces no
+// cycle (the reverse edge, `state.cts → verify.cjs`, would).
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- verify.cjs is an export= CommonJS module
+const verifyMod = require("./verify.cjs");
 const { readVerificationStatus } = verificationMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- plan-dependency-graph.cjs is an export= CommonJS module
+const planDependencyGraphMod = require("./plan-dependency-graph.cjs");
+const { computeHaltPropagation, buildSummaryFileIndex, isSummaryFileHalted } = planDependencyGraphMod;
 const { planningDir, withPlanningLock, listAvailableWorkstreams, getActiveWorkstream } = planningWorkspace;
 const { extractFrontmatter } = frontmatterMod;
 const { readModifyWriteStateMd, stateExtractField, stateReplaceField, syncStateFrontmatter, withStateLock, updatePerformanceMetricsSection, } = stateMod;
@@ -416,9 +424,26 @@ function extractObjective(content) {
     const m = content.match(/<objective>\s*\n?\s*(.+)/);
     return m ? m[1].trim() : null;
 }
+/**
+ * Resolve a raw `depends_on` token to the `RawPlan.id` it refers to
+ * (case-folded exact match, falling back to canonical-id matching). Returns
+ * `null` when the token does not resolve to any plan in this phase (a typo
+ * or a cross-phase reference) — every call site treats that as "ignore this
+ * edge", never a throw. Shared by `computeDependencyLevels`'s DAG-edge
+ * resolution, the `depends_on` display mapping, and (#2830) the
+ * halt-propagation node resolution, so the three can never disagree about
+ * which token resolves to which plan.
+ */
+function resolveDependencyId(dep, planMap, canonicalToId) {
+    const lower = dep.toLowerCase();
+    return planMap.has(lower) ? planMap.get(lower).id : (canonicalToId.get(lower) ?? null);
+}
 // O(V + E). Assigns each in-phase plan its longest-path topological level over the
-// in-phase dependsOn DAG (Kahn's algorithm). Returns { level: Map<id,number>, visited: number }.
-// visited < rawPlans.length signals a dependency cycle.
+// in-phase dependsOn DAG (Kahn's algorithm). Returns { level: Map<id,number>, visited: number,
+// order: string[] }. visited < rawPlans.length signals a dependency cycle. `order` (#2830) is
+// the exact dequeue order this pass already produces — a valid topological order — passed to
+// computeHaltPropagation as `precomputedOrder` so halt propagation does not re-run Kahn's
+// algorithm a second time over the same graph.
 function computeDependencyLevels(rawPlans, planMap, canonicalToId) {
     const level = new Map();
     const inDeg = new Map();
@@ -429,10 +454,7 @@ function computeDependencyLevels(rawPlans, planMap, canonicalToId) {
         if (!adj.has(p.id))
             adj.set(p.id, []);
         for (const dep of p.dependsOn) {
-            const depLower = dep.toLowerCase();
-            const resolvedDep = planMap.has(depLower)
-                ? planMap.get(depLower).id
-                : canonicalToId.get(depLower);
+            const resolvedDep = resolveDependencyId(dep, planMap, canonicalToId);
             if (!resolvedDep)
                 continue;
             if (!adj.has(resolvedDep))
@@ -467,7 +489,7 @@ function computeDependencyLevels(rawPlans, planMap, canonicalToId) {
             }
         }
     }
-    return { level, visited };
+    return { level, visited, order: queue };
 }
 function cmdPhasePlanIndex(cwd, phase, raw) {
     if (!phase) {
@@ -493,7 +515,7 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
         // phases dir doesn't exist
     }
     if (!phaseDir) {
-        output({ phase: normalized, error: 'Phase not found', plans: [], waves: {}, incomplete: [], has_checkpoints: false }, raw);
+        output({ phase: normalized, error: 'Phase not found', plans: [], waves: {}, incomplete: [], runnable: [], has_checkpoints: false }, raw);
         return;
     }
     void phaseDirName; // used only to set phaseDir above
@@ -506,13 +528,20 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
         const canonical = extractCanonicalPlanId(s);
         return canonical === exact ? [exact] : [exact, canonical];
     }));
+    // #2830: reverse lookup from a completed plan's id (exact or canonical) to
+    // the actual summary filename, so a plan's own SUMMARY frontmatter can be
+    // read for its `status`. Shared builder (also used by phase-locator.cts's
+    // searchPhaseInDir) so the two can never disagree about which summary
+    // belongs to which plan.
+    const summaryFileByPlanId = buildSummaryFileIndex(summaryFiles, extractCanonicalPlanId);
     // ── Pass 1: parse each plan file ─────────────────────────────────────────
     const rawPlans = [];
     for (const planFile of planFiles) {
         const planId = planFile.replace('-PLAN.md', '').replace('PLAN.md', '');
         const planPath = node_path_1.default.join(phaseDir, planFile);
         const content = node_fs_1.default.readFileSync(planPath, 'utf-8');
-        const fm = extractFrontmatter(content);
+        // Pass planPath so a truncated PLAN.md names the file in the #1882 diagnostic.
+        const fm = extractFrontmatter(content, planPath);
         const xmlTasks = content.match(/<task[\s>]/gi) || [];
         const mdTasks = content.match(/##\s*Task\s*\d+/gi) || [];
         const taskCount = xmlTasks.length || mdTasks.length;
@@ -538,6 +567,14 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
             filesModified = Array.isArray(fmFiles) ? fmFiles.map(String) : [String(fmFiles)];
         }
         const hasSummary = completedPlanIds.has(planId) || completedPlanIds.has(extractCanonicalPlanId(planFile));
+        // #2830: a plan can have a SUMMARY (hasSummary=true) and still be halted —
+        // a designed stop still writes a completion record, just one whose status
+        // says "halted" rather than "complete". Only look up the summary file
+        // when one exists; there is nothing to read otherwise.
+        const summaryFile = summaryFileByPlanId.get(planId) ?? summaryFileByPlanId.get(extractCanonicalPlanId(planFile));
+        const halted = hasSummary && summaryFile !== undefined
+            ? isSummaryFileHalted(node_path_1.default.join(phaseDir, summaryFile))
+            : false;
         rawPlans.push({
             id: planId,
             declaredWave,
@@ -547,6 +584,7 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
             filesModified,
             taskCount,
             hasSummary,
+            halted,
         });
     }
     // ── Pass 2: topological level assignment via depends_on DAG ──────────────
@@ -562,26 +600,47 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
     }
     const planMap = new Map(rawPlans.map((p) => [p.id.toLowerCase(), p]));
     const canonicalToId = new Map(rawPlans.map((p) => [extractCanonicalPlanId(p.id).toLowerCase(), p.id]));
-    const { level, visited } = computeDependencyLevels(rawPlans, planMap, canonicalToId);
+    const { level, visited, order } = computeDependencyLevels(rawPlans, planMap, canonicalToId);
     if (visited < rawPlans.length) {
         const cycleNodes = rawPlans.filter((p) => !level.has(p.id)).map((p) => p.id);
         error(`depends_on cycle detected in phase ${normalized} — cycle involves: ${cycleNodes.join(', ')}`);
         return;
     }
+    // #2830: single shared halt-propagation pass, reusing the SAME id
+    // resolution (planMap/canonicalToId) AND the SAME topological order
+    // (`order`, computeDependencyLevels's own Kahn's-algorithm dequeue
+    // sequence) — passed as `precomputedOrder` so computeHaltPropagation does
+    // NOT run Kahn's algorithm a second time over this graph.
+    const haltNodes = rawPlans.map((p) => ({
+        id: p.id,
+        resolvedDependsOn: p.dependsOn
+            .map((dep) => resolveDependencyId(String(dep), planMap, canonicalToId))
+            .filter((id) => id !== null),
+        halted: p.halted,
+    }));
+    const { blockedBy } = computeHaltPropagation(haltNodes, order);
     // ── Pass 3: determine lowest bucket key and build output ─────────────────
     const anyWaveZero = rawPlans.some((p) => p.declaredWave === 0);
     const levelOffset = anyWaveZero ? 0 : 1;
     const plans = [];
     const waves = {};
     const incomplete = [];
+    const runnable = [];
     let hasCheckpoints = false;
     const warnings = [];
     for (const rawPlan of rawPlans) {
         if (!rawPlan.autonomous) {
             hasCheckpoints = true;
         }
+        const blockedByIds = blockedBy.get(rawPlan.id) ?? [];
         if (!rawPlan.hasSummary) {
             incomplete.push(rawPlan.id);
+            // #2830: the runnable-only view — incomplete AND not transitively
+            // blocked by a halted upstream plan. Additive alongside `incomplete`,
+            // which keeps its existing "no SUMMARY yet" meaning unchanged.
+            if (blockedByIds.length === 0) {
+                runnable.push(rawPlan.id);
+            }
         }
         const computedWave = (level.get(rawPlan.id) ?? 0) + levelOffset;
         const effectiveWave = computedWave;
@@ -591,6 +650,13 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
         const plan = {
             id: rawPlan.id,
             wave: effectiveWave,
+            // DELIBERATELY not `resolveDependencyId`: the emitted field is a DISPLAY
+            // mapping, not the DAG resolution. It rewrites a dep only when it names a
+            // plan directly (planMap) and otherwise passes it through verbatim — a
+            // short canonical prefix like `24-01` stays `24-01` rather than becoming
+            // `24-01-auth-hardening`. #3785 pins that contract. Full resolution via
+            // canonicalToId is used for the wave DAG and #2830 halt propagation only;
+            // routing this line through it too silently changed the output shape.
             depends_on: rawPlan.dependsOn.map((dep) => {
                 const lower = String(dep).toLowerCase();
                 return planMap.has(lower) ? planMap.get(lower).id : dep;
@@ -600,6 +666,11 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
             files_modified: rawPlan.filesModified,
             task_count: rawPlan.taskCount,
             has_summary: rawPlan.hasSummary,
+            // #2830: additive fields — halted is this plan's OWN status; blocked_by
+            // names the halted plan(s) transitively upstream of it (empty when not
+            // blocked). Neither mutates has_summary/incomplete's existing meaning.
+            halted: rawPlan.halted,
+            blocked_by: blockedByIds,
         };
         plans.push(plan);
         const waveKey = String(effectiveWave);
@@ -613,6 +684,7 @@ function cmdPhasePlanIndex(cwd, phase, raw) {
         plans,
         waves,
         incomplete,
+        runnable,
         has_checkpoints: hasCheckpoints,
     };
     if (planNamingWarning)
@@ -1283,19 +1355,50 @@ function cmdPhaseRemove(cwd, targetPhase, options, raw) {
     }
     updateRoadmapAfterPhaseRemoval(roadmapPath, targetPhase, isDecimal, parseInt(normalized, 10), cwd);
     const statePath = node_path_1.default.join(planningDir(cwd), 'STATE.md');
+    let stateUpdated = false;
     if (node_fs_1.default.existsSync(statePath)) {
-        readModifyWriteStateMd(statePath, (stateContent) => {
-            const totalRaw = stateExtractField(stateContent, 'Total Phases');
+        // #2640: report whether STATE.md content actually changed, not just file
+        // existence (fs.existsSync was trivially true). Also ensure the body
+        // transform produces a diff so readModifyWriteStateMd's no-op guard
+        // (#948) doesn't skip the frontmatter resync — without that, the
+        // progress.* frontmatter block stays stale when the body has no
+        // 'Total Phases:' or 'of N' phrase.
+        stateUpdated = readModifyWriteStateMd(statePath, (stateContent) => {
+            let modified = stateContent;
+            const totalRaw = stateExtractField(modified, 'Total Phases');
             if (totalRaw) {
-                stateContent =
-                    stateReplaceField(stateContent, 'Total Phases', String(parseInt(totalRaw, 10) - 1)) ||
-                        stateContent;
+                modified =
+                    stateReplaceField(modified, 'Total Phases', String(parseInt(totalRaw, 10) - 1)) ||
+                        modified;
             }
-            const ofMatch = stateContent.match(/(\bof\s+)(\d+)(\s*(?:\(|phases?))/i);
+            const ofMatch = modified.match(/(\bof\s+)(\d+)(\s*(?:\(|phases?))/i);
             if (ofMatch) {
-                stateContent = stateContent.replace(/(\bof\s+)(\d+)(\s*(?:\(|phases?))/i, `$1${parseInt(ofMatch[2], 10) - 1}$3`);
+                modified = modified.replace(/(\bof\s+)(\d+)(\s*(?:\(|phases?))/i, `$1${parseInt(ofMatch[2], 10) - 1}$3`);
             }
-            return stateContent;
+            // #2640: if neither body field was found, the transform is a no-op.
+            // readModifyWriteStateMd's no-op guard (#948) would then skip the
+            // frontmatter resync, leaving progress.* stale. Force a body diff
+            // ONLY when a phase directory was actually removed (targetDir !== null)
+            // so the guard passes and syncStateFrontmatter rebuilds the frontmatter
+            // from the post-deletion disk/ROADMAP state. Without the targetDir gate,
+            // a no-op removal (ROADMAP-only phase, no directory) would inject a
+            // spurious 'Total Phases:' line into a body that intentionally lacked one.
+            if (targetDir && modified === stateContent) {
+                // subdirs was read before the deletion; excluding the removed target
+                // gives the remaining count. Renumbering changes names but not count.
+                const remainingPhases = subdirs.filter((d) => phaseTokenMatches(d, normalized) === false).length;
+                if (totalRaw) {
+                    modified =
+                        stateReplaceField(modified, 'Total Phases', String(remainingPhases)) || modified;
+                }
+                else {
+                    // No 'Total Phases:' field in the body — append one so the no-op
+                    // guard sees a diff. syncStateFrontmatter will then rebuild the
+                    // frontmatter progress.* block from the real disk/ROADMAP count.
+                    modified = `Total Phases: ${remainingPhases}\n` + modified;
+                }
+            }
+            return modified;
         }, cwd);
     }
     output({
@@ -1304,7 +1407,7 @@ function cmdPhaseRemove(cwd, targetPhase, options, raw) {
         renamed_directories: renamedDirs,
         renamed_files: renamedFiles,
         roadmap_updated: true,
-        state_updated: node_fs_1.default.existsSync(statePath),
+        state_updated: stateUpdated,
     }, raw);
 }
 function writePlanningFileSet(writes) {
@@ -1387,7 +1490,78 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
         : 0;
     let requirementsUpdated = false;
     const warnings = [];
+    // #3057 B3: mirrors `verification_stale_check_indeterminate` on init.cts /
+    // roadmap.cts / uat-predicate.cts's outputs — set on the non-blocking path
+    // below (inside withPlanningLock) alongside the warnings[] entry, so a
+    // caller can assert on the typed field instead of the warning's prose.
+    let staleCheckIndeterminate = false;
     const phaseFullDir = node_path_1.default.join(cwd, phaseInfo['directory']);
+    // #2648: fail-closed plan-coverage gate. phase.complete used to gate ONLY on a
+    // single *-VERIFICATION.md status, so a phase could close "complete" while an
+    // arbitrary number of its plans — including plans a lock/recovery decision
+    // silently dropped — had no completion record (a confirmed production incident
+    // closed a phase with 6/30 plans unexecuted, including its entire final UI
+    // scope, with every tool-reported signal green). Now refuse completion when any
+    // plan lacks a matching *-SUMMARY.md, UNLESS that plan is explicitly retired
+    // via machine-readable `status: superseded` frontmatter (the #2349 marker).
+    //
+    // scanPhasePlans is the superseded-AWARE counter (it drops status: superseded
+    // plans from planFiles before returning), so a deliberately-retired plan never
+    // appears in the unsummarized set and never blocks completion — closing the
+    // Goodhart hole (delete a SUMMARY to raise the %) without regressing the
+    // legitimate lock/recovery pattern (retire a plan instead of executing it).
+    // This is evaluated BEFORE the verification-gate transaction below so a
+    // plan-coverage refusal fails fast without mutating ROADMAP/STATE. The count
+    // path (cmdPhaseComplete's own planCount/summaryCount above) is NOT superseded-
+    // aware (it comes from findPhaseInternal/phase-locator.cts); that is fine for
+    // DISPLAY (the X/Y cell) but must not be the gate — the gate needs the
+    // superseded-adjusted set so retired plans don't re-block the very phases the
+    // marker exists to unblock. Matches roadmap.cts's already-correct-but-unenforced
+    // `summaryCount >= planCount` predicate, now enforced at the completion seam.
+    const coverageScan = scanPhasePlans(phaseFullDir);
+    // #2648 security: fail CLOSED when the phase directory cannot be read.
+    // scanPhasePlans deliberately swallows readdirSync errors and returns an empty
+    // plan set ({planFiles: []}), which is indistinguishable from a readable empty
+    // phase. For a COVERAGE gate that is the wrong posture: "I could not read the
+    // plans" must mean "I cannot prove coverage," not "all plans are summarized" —
+    // otherwise any I/O failure (permissions, ENOTDIR, EBUSY on Windows, a dir
+    // present in ROADMAP.md but missing/unreadable on disk) silently re-opens the
+    // exact hole this gate exists to close. Distinguish the two: a readable
+    // directory with zero plans is a legitimately complete empty phase; an
+    // UNREADABLE directory is a fail-closed refusal. Mirrors cmdPhaseInsert's own
+    // readdirSync-fail-closed posture (a swallow there used to risk writing a
+    // colliding phase number).
+    try {
+        node_fs_1.default.readdirSync(phaseFullDir);
+    }
+    catch (readErr) {
+        error(`Phase ${phaseNum} cannot be completed: its plan directory is unreadable (${phaseInfo['directory']}: ${readErr.code || readErr.message}), so plan coverage cannot be verified. Restore read access and retry — a coverage gate that passes when it cannot read the plans is no gate at all (#2648).`, ERROR_REASON.PHASE_PLAN_COVERAGE_INCOMPLETE);
+    }
+    const unsummarizedPlans = findUnsummarizedPlans(coverageScan.planFiles, coverageScan.summaryFiles);
+    if (unsummarizedPlans.length > 0) {
+        // Sanitize plan filenames before interpolation: they come raw from
+        // readdirSync and could carry C0 control chars / DEL (a committable filename
+        // could spoof the terminal in plain-error mode). Strip them so the message is
+        // safe to print regardless of --json-errors. Path traversal sequences are not
+        // a code-execution vector here (printed only, never reopened from the message).
+        const sanitize = (name) => name.replace(/[\u0000-\u001f\u007f]/g, '?');
+        const listed = unsummarizedPlans.slice(0, 20).map(sanitize).join(', ');
+        const more = unsummarizedPlans.length > 20 ? ` (and ${unsummarizedPlans.length - 20} more)` : '';
+        // Audit surface (#2648 review M1): name how many plans were excluded as
+        // superseded so a reviewer can see WHICH work was declared retired, not just
+        // that some plans are missing summaries. The status: superseded marker is a
+        // committable, review-time-trusted bypass; surfacing its count keeps that
+        // bypass visible rather than silent.
+        const phaseInfoPlanCount = Array.isArray(phaseInfo['plans']) ? phaseInfo['plans'].length : 0;
+        const supersededCount = coverageScan.planFiles.length === 0 ? 0 : Math.max(0, phaseInfoPlanCount - coverageScan.planFiles.length);
+        const supersededNote = supersededCount > 0
+            ? ` ${supersededCount} plan(s) excluded as status: superseded (retired).`
+            : '';
+        error(`Phase ${phaseNum} cannot be completed: ${unsummarizedPlans.length} plan(s) have no completion record (*-SUMMARY.md): ${listed}${more}.` +
+            supersededNote +
+            ` Execute the plans and write their summaries, or retire a plan with machine-readable \`status: superseded\` frontmatter (#2349) if it was deliberately dropped — a retired plan is excluded from this gate. ` +
+            `Completing a phase with unexecuted plans is what lost an entire promised deliverable silently (#2648).`, ERROR_REASON.PHASE_PLAN_COVERAGE_INCOMPLETE);
+    }
     try {
         const phaseFiles = node_fs_1.default.readdirSync(phaseFullDir);
         for (const file of phaseFiles.filter((f) => f.includes('-UAT') && f.endsWith('.md'))) {
@@ -1402,13 +1576,14 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
                 warnings.push(`${file}: has diagnosed gaps`);
         }
         for (const file of phaseFiles.filter((f) => f.includes('-VERIFICATION') && f.endsWith('.md'))) {
-            const content = node_fs_1.default.readFileSync(node_path_1.default.join(phaseFullDir, file), 'utf-8');
+            const verificationFilePath = node_path_1.default.join(phaseFullDir, file);
+            const content = node_fs_1.default.readFileSync(verificationFilePath, 'utf-8');
             // #1159 (Defect A): read ONLY the frontmatter `status` key to avoid false positives
             // from historical metadata in the file body (e.g. `previous_status: gaps_found`).
             // A full-text regex like /status: gaps_found/ matches the substring inside
             // `previous_status: gaps_found`, producing spurious warnings even when the
             // current frontmatter status is `passed`.
-            const verFm = extractFrontmatter(content);
+            const verFm = extractFrontmatter(content, verificationFilePath);
             // Normalise to lower-case so `status: Passed` (title-case) is not missed.
             const verStatus = typeof verFm['status'] === 'string' ? verFm['status'].trim().toLowerCase() : '';
             if (verStatus === 'human_needed')
@@ -1424,11 +1599,64 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
          * mechanism). A readdirSync/readFileSync failure here just means fewer
          * warnings are surfaced this run, not a blocked or corrupted completion. */
     }
+    // #2572: artifact↔disk advisory for the SUMMARYs of the phase being completed.
+    //
+    // A SUMMARY asserts "I created these files". Nothing checked that claim for
+    // phase summaries — the `verify-summary` verb has existed since the beginning
+    // but was only ever pointed at `.planning/research/SUMMARY.md`. An interrupted
+    // or over-reported phase therefore counted toward 100% silently.
+    //
+    // Joins the same ADVISORY channel as the pre-scan above: findings land in
+    // `warnings[]` (rendered by execute-phase.md's "If has_warnings is true"
+    // step), never in the completion GATE (readVerificationStatus below).
+    // Completion is never blocked.
+    //
+    // `checkCommits: false` — only the file-existence half is surfaced here, so
+    // the `git cat-file` probes would be spawned and their result discarded. The
+    // hash pattern is a loose `\b[0-9a-f]{7,40}\b` that matches any hex-shaped
+    // token in prose, too noisy to put in front of a user even as a warning.
+    //
+    // `Infinity` — report every referenced file, not the CLI verb's default first
+    // two, so a phase that lists twelve files and landed three says so. The verb
+    // keeps its 2-file default; only this caller opts out of the cap.
+    try {
+        const phaseDirRel = phaseInfo['directory'];
+        // `summaries` arrives pre-sorted from the phase locator, so warning order is
+        // deterministic across platforms rather than readdir-dependent.
+        const summaryNames = phaseInfo['summaries'] || [];
+        for (const summaryName of summaryNames) {
+            const v = verifyMod.verifySummaryCore(cwd, `${phaseDirRel}/${summaryName}`, Infinity, { checkCommits: false });
+            const missing = v.checks.files_created.missing;
+            if (missing.length > 0) {
+                warnings.push(`${summaryName}: references ${missing.length} file(s) not on disk: ${missing.join(', ')}`);
+            }
+        }
+    }
+    catch {
+        /* best-effort, same posture as the #2245 pre-scan above: an unreadable
+         * SUMMARY means one fewer advisory this run, never a blocked completion. */
+    }
     let nextPhaseNum = null;
     let nextPhaseName = null;
     let isLastPhase = true;
     const verificationBlocked = withPlanningLock(cwd, () => {
-        const verificationStatus = readVerificationStatus(phaseFullDir);
+        // #2617: pass the project's runtime so the blocked-completion error below
+        // suggests the command surface this runtime actually installs
+        // ($gsd-… on Codex) rather than a hard-coded Claude-style string.
+        const verificationStatus = readVerificationStatus(phaseFullDir, { runtime: (0, runtime_slash_cjs_1.resolveRuntime)(cwd) });
+        // #3057 B3: the staleness check inside readVerificationStatus can itself
+        // fail (fs / scanPhasePlans / clock error), in which case `status` above
+        // was routed as if nothing were stale (unchanged fail-open routing) — but
+        // that must not be silently identical to a check that actually ran and
+        // found nothing stale. Join the SAME advisory channel the UAT/VERIFICATION
+        // pre-scan above already uses (`warnings[]`, rendered by execute-phase.md's
+        // "If has_warnings is true" step) rather than inventing a new one. This
+        // only fires on the non-blocking path (status resolves to 'passed' despite
+        // the indeterminate check) — the blocked path below carries its own note.
+        if (verificationStatus.staleCheckIndeterminate) {
+            staleCheckIndeterminate = true;
+            warnings.push(`verification staleness check could not complete for phase ${phaseNum} — routed as not-stale, but this was not actually verified (#3057)`);
+        }
         if (verificationStatus.status !== 'passed') {
             return verificationStatus;
         }
@@ -1635,7 +1863,17 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
                             .filter((r) => REQ_ID_SHAPE_RE.test(r));
                         for (const reqId of citedReqIds) {
                             const reqEscaped = escapeRegex(reqId);
-                            reqContent = reqContent.replace(new RegExp(`(-\\s*\\[)[ ](\\]\\s*\\*\\*${reqEscaped}\\*\\*)`, 'gi'), '$1x$2');
+                            // Surface 1 — the checkbox: - [ ] **REQ-ID** → - [x] **REQ-ID**.
+                            // #2945: the flip is CONDITIONAL (porting #2788 defect-2's rollback from
+                            // cmdRequirementsMarkComplete). Capture the pre-flip content; if a
+                            // traceability row EXISTS for this ID below but its Status write is rejected
+                            // (Out/Deferred/Blocked), the checkbox is rolled back so the two surfaces
+                            // cannot silently diverge. A requirement recorded as deferred must not read
+                            // as shipped.
+                            const checkboxRe = new RegExp(`(-\\s*\\[)[ ](\\]\\s*\\*\\*${reqEscaped}\\*\\*)`, 'gi');
+                            const beforeCheckbox = reqContent;
+                            reqContent = reqContent.replace(checkboxRe, '$1x$2');
+                            const checkboxFlipped = reqContent !== beforeCheckbox;
                             // Traceability row: | <REQ-ID> | Phase N | Pending|In Progress | ->
                             // ... Complete | via the markdown-table seam (ADR-2143 §7). Match the
                             // row by its FIRST cell's value (the requirement-ID column) regardless
@@ -1651,12 +1889,32 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
                             // requirement's write. The "only flip Pending/In Progress ->
                             // Complete" gate is folded into the newValue callback so one
                             // updateTableCell call both probes and writes.
-                            const reqUpdate = updateTraceabilityCell(reqContent, reqRowMatch, 'Status', (current) => /^(?:pending|in progress)$/i.test(current.trim()) ? ' Complete ' : current);
+                            // #2945: track tableHit (did the callback actually CHANGE the value?) so the
+                            // checkbox rollback below can distinguish "row existed and accepted" from
+                            // "row existed and rejected".
+                            let tableHit = false;
+                            const reqUpdate = updateTraceabilityCell(reqContent, reqRowMatch, 'Status', (current) => {
+                                // #2788: accept `Gaps Found` too so a phase stranded by revert-phase (the
+                                // gaps_found response) can complete without hand-editing the table.
+                                if (/^(?:pending|in progress|gaps found)$/i.test(current.trim())) {
+                                    tableHit = true;
+                                    return ' Complete ';
+                                }
+                                return current;
+                            });
                             if (reqUpdate.ok) {
                                 reqContent = reqUpdate.value;
                             }
                             else if (!isPlaceholderReqId(reqId)) {
                                 traceabilityWriteMisses.push(reqId);
+                            }
+                            // #2945 defect-2 (port of milestone.cts:200-210): if a row EXISTS for this
+                            // ID but its Status write was rejected (row reads Out/Deferred/Blocked,
+                            // which the callback returned unchanged), roll the checkbox back so the
+                            // checkbox and the row cannot silently diverge. reqUpdate.ok === a row
+                            // matched (existence probe); !tableHit === the callback did not advance it.
+                            if (checkboxFlipped && reqUpdate.ok && !tableHit) {
+                                reqContent = beforeCheckbox;
                             }
                         }
                     }
@@ -1899,6 +2157,12 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
                     const phasePattern = new RegExp(`(?:#{2,4}|-\\s*\\[[ xX]\\])\\s*(?:\\*\\*|__)?\\s*Phase\\s+(${PHASE_NUMBER_TOKEN_SOURCE})(?:\\s*\\([^)\\n]{0,200}\\))?\\s*:\\s*([^\\n*]+)`, 'gi');
                     let pm;
                     while ((pm = phasePattern.exec(roadmapForPhases)) !== null) {
+                        // #2786: skip sentinel phase ids (999.x backlog, 0.x drafts) — stage 1
+                        // already skips 999 dirs on disk; stage 2's heading scan must not
+                        // advance into backlog headings. Mirrors the /^999(?:\.|$)/ guard
+                        // stage 1 uses at line 2536, but via isSentinelPhaseId for both ranges.
+                        if (isSentinelPhaseId(pm[1]))
+                            continue;
                         if (comparePhaseNum(pm[1], phaseNum) > 0) {
                             nextPhaseNum = pm[1];
                             nextPhaseName = pm[2]
@@ -1940,7 +2204,14 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
                     let lowestOutstanding = null;
                     while ((cbm = cbPattern.exec(milestoneScope)) !== null) {
                         const isChecked = cbm[1].toLowerCase() === 'x';
-                        if (!isChecked && comparePhaseNum(cbm[2], phaseNum) < 0) {
+                        // #2949: exclude sentinel-range phase ids (0.x backlog, 999.x) from candidacy.
+                        // comparePhaseNum("0.1","12") === -12, so without this guard an unchecked 0.x
+                        // backlog row sorts below every real phase and is wrongly selected as next_phase,
+                        // corrupting STATE.md and desyncing current_phase from current_phase_name.
+                        // isSentinelPhaseId covers both sentinel ranges (SENTINEL_RANGES = [0, 999]); a
+                        // real lower-numbered outstanding phase (e.g. Phase 9) is NOT a sentinel and is
+                        // still selected, preserving #2028's out-of-order-completion behavior.
+                        if (!isChecked && !isSentinelPhaseId(cbm[2]) && comparePhaseNum(cbm[2], phaseNum) < 0) {
                             if (lowestOutstanding === null || comparePhaseNum(cbm[2], lowestOutstanding.num) < 0) {
                                 lowestOutstanding = {
                                     num: cbm[2],
@@ -1989,12 +2260,16 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
                     summaryCount,
                 }, {
                     clock: clock_cjs_1.realClock,
-                    progressProvider: () => null, // completePhase derives progress from the roadmap, not disk
                     roadmapProvider: () => roadmapContent,
+                    sourcePath: statePath,
                 });
                 stateContent = completeResult.content;
                 stateContent = updatePerformanceMetricsSection(stateContent, cwd, phaseNum, planCount, summaryCount);
-                stateContent = syncStateFrontmatter(stateContent, cwd);
+                // #2736: the transition holds the next phase's exact display name in
+                // the intent; pass it as authoritative so the sync's prose
+                // re-derivation cannot rewrite current_phase_name to the name's own
+                // parenthetical (`Closer-ruling measurement (D1a)` → `D1a`).
+                stateContent = syncStateFrontmatter(stateContent, cwd, nextPhaseDisplayName ? { current_phase_name: nextPhaseDisplayName } : undefined);
                 writes.push({ filePath: statePath, before: originalStateContent, after: stateContent });
             }
             writePlanningFileSet(writes);
@@ -2011,7 +2286,18 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
         const nextStep = verificationBlocked.next_command
             ? ` Next: ${verificationBlocked.next_command}`
             : '';
-        error(`Phase ${phaseNum} verification is incomplete: ${verificationBlocked.next_action}${nextStep}`, ERROR_REASON.PHASE_VERIFICATION_INCOMPLETE);
+        // #3057 B3: purely additive to the message text — does not change WHETHER
+        // this blocks (verificationBlocked was already truthy) or the
+        // ERROR_REASON, only whether the operator can see the staleness check
+        // itself did not complete. The same fact is also attached as a typed
+        // field (`verification_stale_check_indeterminate`) on the JSON-error-mode
+        // payload so a test can assert on it by value instead of regexing this
+        // human-readable note.
+        const staleCheckIndeterminate = verificationBlocked.staleCheckIndeterminate === true;
+        const indeterminateNote = staleCheckIndeterminate
+            ? ' (staleness check could not complete — see #3057)'
+            : '';
+        error(`Phase ${phaseNum} verification is incomplete: ${verificationBlocked.next_action}${nextStep}${indeterminateNote}`, ERROR_REASON.PHASE_VERIFICATION_INCOMPLETE, { verification_stale_check_indeterminate: staleCheckIndeterminate });
     }
     let autoPruned = false;
     try {
@@ -2045,6 +2331,7 @@ function cmdPhaseComplete(cwd, phaseNum, raw) {
         auto_pruned: autoPruned,
         warnings,
         has_warnings: warnings.length > 0,
+        verification_stale_check_indeterminate: staleCheckIndeterminate,
     };
     output(result, raw);
 }

@@ -26,17 +26,17 @@ Brownfield equivalent of new-project. Project exists, PROJECT.md has history. Ga
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/new-milestone.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/questioning.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/templates/project.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/templates/requirements.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/new-milestone.md
+@D:/Repos/lancet/.claude/gsd-core/references/questioning.md
+@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@D:/Repos/lancet/.claude/gsd-core/templates/project.md
+@D:/Repos/lancet/.claude/gsd-core/templates/requirements.md
 </execution_context>
 
 <context>
 Milestone name: $ARGUMENTS (optional - will prompt if not provided)
 
-Project and milestone context files are resolved inside the workflow (`init new-milestone`) and delegated via `<files_to_read>` blocks where subagents are used.
+Project and milestone context files are resolved inside the workflow (`init new-milestone`) and delegated via `<required_reading>` blocks where subagents are used.
 </context>
 
 <process>

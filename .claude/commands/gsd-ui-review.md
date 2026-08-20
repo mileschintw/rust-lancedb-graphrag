@@ -19,8 +19,8 @@ Output: {phase_num}-UI-REVIEW.md
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/ui-review.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/ui-review.md
+@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

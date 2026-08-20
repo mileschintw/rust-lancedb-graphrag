@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gsd-hook-version: 1.8.0
+// gsd-hook-version: 1.10.0
 // Claude Code Statusline - GSD Edition
 // Shows: model | current task (or GSD state) | directory | context usage
 
@@ -12,6 +12,17 @@ const childProcess = require('child_process');
 const { isSemverNewer } = require('../gsd-core/bin/lib/semver-compare.cjs');
 const { PACKAGE_NAME, updateCacheFileName } = require('../gsd-core/bin/lib/package-identity.cjs');
 const { normalizeStateStatus } = require('../gsd-core/bin/lib/state-document.cjs');
+// #2850: reuse the existing workstream resolution seams rather than
+// re-implementing CLI>env>store precedence or path construction inline.
+// peekActiveWorkstream is the read-only sibling of the store-tier lookup
+// resolveActiveWorkstream defaults to (getActiveWorkstream) — that default
+// self-heals a stale/invalid pointer by deleting it, which is correct for a
+// command but not for a renderer invoked on every prompt. Injecting it via
+// resolveActiveWorkstream's own `getStored` override keeps the CLI>env>store
+// precedence itself fully reused (untouched); only the store tier's *write*
+// side effect is removed.
+const { resolveActiveWorkstream, peekActiveWorkstream } = require('../gsd-core/bin/lib/active-workstream-store.cjs');
+const { listAvailableWorkstreams, planningPaths } = require('../gsd-core/bin/lib/planning-workspace.cjs');
 
 // --- Config + last-command readers ------------------------------------------
 
@@ -102,21 +113,65 @@ function readLastSlashCommand(transcriptPath) {
 // --- GSD state reader -------------------------------------------------------
 
 /**
- * Walk up from dir looking for .planning/STATE.md.
- * Returns parsed state object or null.
+ * Read and parse a STATE.md if it exists. Returns the parsed state object,
+ * `null` when the file is absent, or `null` on any read/parse failure (never
+ * throws) — the single shared shape for both the flat and workstream reads
+ * in readGsdState() below.
+ */
+function readStateFileOrNull(statePath) {
+  if (!fs.existsSync(statePath)) return null;
+  try {
+    return parseStateMd(fs.readFileSync(statePath, 'utf8'));
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Walk up from dir looking for .planning/STATE.md (flat mode). If an ancestor
+ * has no flat STATE.md but IS in workstream mode (.planning/workstreams/
+ * present — the single-source-of-truth check `listAvailableWorkstreams`
+ * shares with the init.progress/phase.complete #1912/#2028 guards, so this
+ * can't drift from how every other GSD command detects the mode), resolve
+ * the active workstream and read that workstream's STATE.md instead (#2850).
+ *
+ * Resolution reuses `resolveActiveWorkstream` (active-workstream-store.cjs)
+ * called with an empty args array, so only its env>store precedence applies
+ * here — the CLI leg is inert for this renderer, which never receives argv.
+ * The store tier is `peekActiveWorkstream`, a READ-ONLY sibling of the
+ * default `getActiveWorkstream`: the default self-heals a stale/invalid
+ * pointer by deleting it, which is correct for a command but not for a
+ * renderer invoked on every prompt — a render must never write or delete.
+ *
+ * Returns:
+ *   - the parsed state object when a flat or workstream STATE.md is found
+ *   - { noActiveWorkstream: true } when workstream mode is active at an
+ *     ancestor but no workstream can be resolved — an observable signal so
+ *     this is distinguishable from "GSD isn't installed here" (#2850)
+ *   - null when no .planning marker is found at all (GSD not present), or
+ *     when a workstream DOES resolve but its STATE.md doesn't exist yet
+ *     (negative space: mirrors flat-mode's own silent pre-STATE.md window)
  */
 function readGsdState(dir) {
   const home = os.homedir();
   let current = dir;
   for (let i = 0; i < 10; i++) {
-    const candidate = path.join(current, '.planning', 'STATE.md');
-    if (fs.existsSync(candidate)) {
+    const flatState = readStateFileOrNull(path.join(current, '.planning', 'STATE.md'));
+    if (flatState !== null) return flatState;
+
+    if (listAvailableWorkstreams(current).length > 0) {
+      let resolvedWs = null;
       try {
-        return parseStateMd(fs.readFileSync(candidate, 'utf8'));
+        resolvedWs = resolveActiveWorkstream(current, [], process.env, { getStored: peekActiveWorkstream }).ws;
       } catch (e) {
-        return null;
+        resolvedWs = null;
       }
+
+      if (!resolvedWs) return { noActiveWorkstream: true };
+
+      return readStateFileOrNull(planningPaths(current, resolvedWs).state);
     }
+
     const parent = path.dirname(current);
     if (parent === current || current === home) break;
     current = parent;
@@ -143,12 +198,15 @@ function readGsdState(dir) {
 function parseStateMd(content) {
   const state = {};
 
-  // YAML frontmatter between --- markers (anchored at file start)
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  // YAML frontmatter between --- markers (anchored at file start).
+  // #2754: \r?\n (not literal \n) so a CRLF STATE.md (Windows-authored) parses
+  // identically to LF — pre-fix the literal-\n fence dropped the ENTIRE block.
+  // Mirrors the CRLF-safe extractFrontmatter in src/frontmatter.cts.
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (fmMatch) {
     const fm = fmMatch[1];
     // Top-level scalar key: value
-    for (const line of fm.split('\n')) {
+    for (const line of fm.split(/\r?\n/)) {
       const m = line.match(/^(\w+):\s*(.+)/);
       if (!m) continue;
       const [, key, val] = m;
@@ -169,10 +227,10 @@ function parseStateMd(content) {
       const items = npFlowMatch[1].split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
       state.nextPhases = items.length > 0 ? items : null;
     } else {
-      const npBlockMatch = fm.match(/^next_phases:\s*\n((?:[ \t]*-[ \t]*[^\n]+\n?)*)/m);
+      const npBlockMatch = fm.match(/^next_phases:\s*\r?\n((?:[ \t]*-[ \t]*[^\r\n]+\r?\n?)*)/m);
       if (npBlockMatch) {
         const items = npBlockMatch[1]
-          .split('\n')
+          .split(/\r?\n/)
           .map(line => line.match(/^[ \t]*-[ \t]*(.+)$/))
           .filter(Boolean)
           .map(m => m[1].trim().replace(/^["']|["']$/g, ''))
@@ -181,7 +239,7 @@ function parseStateMd(content) {
       }
     }
     // progress nested block: completed_phases / total_phases / percent (2-space indent)
-    const progMatch = fm.match(/^progress:\s*\n((?:[ \t]+\w+:.+\n?)+)/m);
+    const progMatch = fm.match(/^progress:\s*\r?\n((?:[ \t]+\w+:.+\r?\n?)+)/m);
     if (progMatch) {
       const cp = progMatch[1].match(/^[ \t]+completed_phases:\s*(\d+)/m);
       const tp = progMatch[1].match(/^[ \t]+total_phases:\s*(\d+)/m);
@@ -213,6 +271,10 @@ function parseStateMd(content) {
 
   return state;
 }
+
+// #2850: shared literal for formatGsdState/formatGsdStateCompact's "nothing
+// resolvable" signal — one source of truth so the two renderers can't drift.
+const NO_ACTIVE_WORKSTREAM_LABEL = 'no active workstream';
 
 /**
  * Render a 10-segment milestone progress bar (matches the context meter style).
@@ -246,6 +308,10 @@ function renderProgressBar(percent) {
  * progress.percent is present in frontmatter; absent → empty string.
  */
 function formatGsdState(s) {
+  // #2850: workstream mode with nothing resolvable — an observable signal,
+  // never silent emptiness (distinguishes from "GSD isn't installed here").
+  if (s.noActiveWorkstream) return NO_ACTIVE_WORKSTREAM_LABEL;
+
   const parts = [];
 
   // Milestone segment: version + name + (opt-in) progress bar
@@ -361,6 +427,9 @@ function shortGsdStatus(status) {
  * The default "full" format is untouched.
  */
 function formatGsdStateCompact(s) {
+  // #2850: mirrors formatGsdState's observable "nothing resolvable" signal.
+  if (s.noActiveWorkstream) return NO_ACTIVE_WORKSTREAM_LABEL;
+
   const parts = [];
 
   if (s.milestone) parts.push(s.milestone);

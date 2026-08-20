@@ -17,7 +17,8 @@
  * matched; "micro-frontend" and "micro frontend" ARE matched).
  *
  * Public API:
- *   checkUiPresence(text: string): { hasUI: boolean, tokens: string[] }
+ *   checkUiPresence(text: string): { hasUI: boolean, tokens: string[],
+ *                                    matchedToken: string|null, matchedLine: string|null }
  *
  * CLI usage — reads phase-section text from STDIN to avoid ARG_MAX limits:
  *   echo "$PHASE_SECTION" | node gsd-core/bin/lib/ui-safety-gate.cjs
@@ -63,7 +64,7 @@ const UI_GATE_PATTERN_GLOBAL = new RegExp(UI_GATE_PATTERN.source, 'gi');
  */
 function checkUiPresence(text) {
     if (typeof text !== 'string') {
-        return { hasUI: false, tokens: [] };
+        return { hasUI: false, tokens: [], matchedToken: null, matchedLine: null };
     }
     // Normalise CRLF so the pattern sees consistent line boundaries.
     const normalised = text.replace(/\r\n/g, '\n');
@@ -84,20 +85,28 @@ function checkUiPresence(text) {
         .filter((line) => !/^\s*\*\*UI hint\*\*\s*:/i.test(line))
         .join('\n');
     const found = new Set();
+    let matchedToken = null;
+    let matchedLine = null;
     for (const line of sniffable.split('\n')) {
         // Reset lastIndex before each line so the global pattern restarts from 0.
         UI_GATE_PATTERN_GLOBAL.lastIndex = 0;
         for (const m of line.matchAll(UI_GATE_PATTERN_GLOBAL)) {
+            if (matchedToken === null) {
+                // #3312: record the FIRST match so gate consumers can surface the
+                // triggering token/line for one-second operator triage.
+                matchedToken = m[2].toLowerCase();
+                matchedLine = line;
+            }
             found.add(m[2].toLowerCase());
         }
     }
     if (hint === 'no') {
-        return { hasUI: false, tokens: [] };
+        return { hasUI: false, tokens: [], matchedToken: null, matchedLine: null };
     }
     if (hint === 'yes') {
-        return { hasUI: true, tokens: [...found] };
+        return { hasUI: true, tokens: [...found], matchedToken, matchedLine };
     }
-    return { hasUI: found.size > 0, tokens: [...found] };
+    return { hasUI: found.size > 0, tokens: [...found], matchedToken, matchedLine };
 }
 // ── CLI entry point ─────────────────────────────────────────────────────────
 // Reads phase-section text from STDIN (not argv) to avoid OS ARG_MAX limits.

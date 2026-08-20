@@ -27,10 +27,10 @@ Auto-synthesizes most conflicts using the precedence rule `ADR > SPEC > PRD > DO
 </objective>
 
 <execution_context>
-@C:/Users/user3/repos/lancet/.claude/gsd-core/workflows/ingest-docs.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/ui-brand.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/gate-prompts.md
-@C:/Users/user3/repos/lancet/.claude/gsd-core/references/doc-conflict-engine.md
+@D:/Repos/lancet/.claude/gsd-core/workflows/ingest-docs.md
+@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@D:/Repos/lancet/.claude/gsd-core/references/gate-prompts.md
+@D:/Repos/lancet/.claude/gsd-core/references/doc-conflict-engine.md
 </execution_context>
 
 <context>

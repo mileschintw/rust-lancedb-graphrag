@@ -26,6 +26,7 @@ exports.stripTaggedBlocks = stripTaggedBlocks;
 exports.replaceSection = replaceSection;
 exports.withSection = withSection;
 exports.deleteSection = deleteSection;
+const pattern_cjs_1 = require("./pattern.cjs");
 // ─── stripFencedCode ──────────────────────────────────────────────────────────
 /**
  * CommonMark-correct fenced-code-block stripper.
@@ -792,7 +793,7 @@ function extractTaggedBlocks(content, tagName, allowAttributes = false) {
  * open>` marks the ACTIVE milestone and must be preserved, not stripped (#557).
  */
 function taggedBlockPattern(tagName, flags, allowAttributes) {
-    const esc = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const esc = (0, pattern_cjs_1.escapeRegex)(tagName);
     const open = allowAttributes ? `<${esc}(?:\\s[^>]{0,1000})?>` : `<${esc}>`;
     const boundary = allowAttributes ? `<${esc}[\\s>]` : `<${esc}>`;
     return new RegExp(`${open}((?:(?!${boundary})[\\s\\S])*?)</${esc}>`, flags);

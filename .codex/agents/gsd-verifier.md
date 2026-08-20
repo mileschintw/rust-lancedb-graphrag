@@ -40,6 +40,7 @@ Every truth must resolve to VERIFIED, FAILED (BLOCKER), or UNCERTAIN (WARNING wi
 <required_reading>
 @D:/Repos/lancet/.codex/gsd-core/references/verification-overrides.md
 @D:/Repos/lancet/.codex/gsd-core/references/gates.md
+@D:/Repos/lancet/.codex/gsd-core/references/verifier-phase-gates.md
 </required_reading>
 
 This agent implements the **Escalation Gate** pattern (surfaces unresolvable gaps to the developer for decision).
@@ -80,7 +81,8 @@ At verification decision points, reference calibration examples:
 ## Step 0: Check for Previous Verification
 
 ```bash
-cat "$PHASE_DIR"/*-VERIFICATION.md 2>/dev/null
+_VERIF=( "$PHASE_DIR"/*-VERIFICATION.md )
+if [ -e "${_VERIF[0]}" ]; then cat "${_VERIF[@]}"; fi
 ```
 
 **If previous verification exists with `gaps:` section → RE-VERIFICATION MODE:**
@@ -198,7 +200,8 @@ For each truth:
    - A pre-existing test exercises the transition/invariant and passes (confirm via Step 7b's single-named-test path) → ✓ VERIFIED.
    - No such test exists, or it can't run without a server/state mutation → ⚠️ PRESENT_BEHAVIOR_UNVERIFIED. Emit a human-verification item (Step 8) and do not count it toward the verified score (Step 9).
    - An accepted override (Step 3b) carries the truth as PASSED (override), exactly as it does for a FAILED truth.
-5b. **Non-inferable (`backstop`) truths:** a `verification: backstop` truth (via `truthVerification()`) abstains unless confirmed by explicit evidence — mark `insufficient_spec` -> a human-verification item -> `human_needed`. See `references/honest-verifier.md`.
+5b. **Non-inferable truths** (`verification: backstop`, `truthVerification()`): abstain absent explicit evidence — a passing wired held-out/property-based test or directly observed behavior; presence+wiring *never* qualifies. Mark `insufficient_spec` -> human-verification item -> `human_needed`.
+5c. **Reliance check (advisory, #1955).** Before finalizing a ✓ VERIFIED truth, ask *why* it holds. Classify the evidence already recorded, not your confidence in it. Endogenous, and so weaker than the exogenous `backstop` tag (`gsd-core/references/honest-verifier.md`) — advisory for exactly that reason. Flag `coincidental-reliance` when the evidence names one of: **undeclared-precondition** (state nothing in the phase's artifacts or a declared prerequisite guarantees), **incidental-ordering** (an order or side effect nothing in the code enforces), **fixture-only** (the test's own setup establishes the precondition; the production path has no equivalent). **Do NOT flag:** a precondition the code establishes or explicitly defaults; ordering the code enforces (await, explicit sequencing); a fixture merely supplying input the real caller also supplies; unease naming no specific state, ordering, or fixture. Out of scope: ⚠️ PRESENT_BEHAVIOR_UNVERIFIED and ⚠️ `insufficient_spec` (already routed to human), and PASSED (override) truths. Record `✓ VERIFIED (coincidental-reliance)` and add a `coincidental_reliance_items` entry. **Advisory only — not the score, not the status, and never a human-verification item** (Step 9 rule 2 would flip a passing phase to `human_needed`). The usual fix: promote the hidden assumption into a declared precondition.
 6. Determine truth status
 
 ## Step 3b: Check Verification Overrides
@@ -284,46 +287,16 @@ grep -r "$artifact_name" "${search_path:-src/}" --include="*.ts" --include="*.ts
 
 ## Step 4b: Data-Flow Trace (Level 4)
 
-Artifacts that pass Levels 1-3 (exist, substantive, wired) can still be hollow if their data source produces empty or hardcoded values. Level 4 traces upstream from the artifact to verify real data flows through the wiring.
+Trace each rendered value back to a real data source. Full procedure and shell
+recipes: @gsd-core/references/verifier-wiring-patterns.md
 
-**When to run:** For each artifact that passes Level 3 (WIRED) and renders dynamic data (components, pages, dashboards — not utilities or configs).
+Flag any value whose chain terminates in a static return, a hardcoded literal, or
+a mock rather than a real query.
 
-**How:**
+**Data-flow status vocabulary:**
 
-1. **Identify the data variable** — what state/prop does the artifact render?
-
-```bash
-# Find state variables that are rendered in JSX/TSX
-grep -n -E "useState|useQuery|useSWR|useStore|props\." "$artifact" 2>/dev/null
-```
-
-2. **Trace the data source** — where does that variable get populated?
-
-```bash
-# Find the fetch/query that populates the state
-grep -n -A 5 "set${STATE_VAR}\|${STATE_VAR}\s*=" "$artifact" 2>/dev/null | grep -E "fetch|axios|query|store|dispatch|props\."
-```
-
-3. **Verify the source produces real data** — does the API/store return actual data or static/empty values?
-
-```bash
-# Check the API route or data source for real DB queries vs static returns
-grep -n -E "prisma\.|db\.|query\(|findMany|findOne|select|FROM" "$source_file" 2>/dev/null
-# Flag: static returns with no query
-grep -n -E "return.*json\(\s*\[\]|return.*json\(\s*\{\}" "$source_file" 2>/dev/null
-```
-
-4. **Check for disconnected props** — props passed to child components that are hardcoded empty at the call site
-
-```bash
-# Find where the component is used and check prop values
-grep -r -A 3 "<${COMPONENT_NAME}" "${search_path:-src/}" --include="*.tsx" 2>/dev/null | grep -E "=\{(\[\]|\{\}|null|''|\"\")\}"
-```
-
-**Data-flow status:**
-
-| Data Source | Produces Real Data | Status |
-| ---------- | ------------------ | ------ |
+| Data source | Flows | Status |
+| ----------- | ----- | ------ |
 | DB query found | Yes | ✓ FLOWING |
 | Fetch exists, static fallback only | No | ⚠️ STATIC |
 | No data source found | N/A | ✗ DISCONNECTED |
@@ -358,41 +331,15 @@ For each link:
 
 **Fallback patterns** (if must_haves.key_links not defined in PLAN):
 
-### Pattern: Component → API
+### Wiring patterns
 
-```bash
-grep -E "fetch\(['\"].*$api_path|axios\.(get|post).*$api_path" "$component" 2>/dev/null
-grep -A 5 "fetch\|axios" "$component" | grep -E "await|\.then|setData|setState" 2>/dev/null
-```
+Verify each link below; full per-pattern procedures and shell recipes:
+@gsd-core/references/verifier-wiring-patterns.md
 
-Status: WIRED (call + response handling) | PARTIAL (call, no response use) | NOT_WIRED (no call)
-
-### Pattern: API → Database
-
-```bash
-grep -E "prisma\.$model|db\.$model|$model\.(find|create|update|delete)" "$route" 2>/dev/null
-grep -E "return.*json.*\w+|res\.json\(\w+" "$route" 2>/dev/null
-```
-
-Status: WIRED (query + result returned) | PARTIAL (query, static return) | NOT_WIRED (no query)
-
-### Pattern: Form → Handler
-
-```bash
-grep -E "onSubmit=\{|handleSubmit" "$component" 2>/dev/null
-grep -A 10 "onSubmit.*=" "$component" | grep -E "fetch|axios|mutate|dispatch" 2>/dev/null
-```
-
-Status: WIRED (handler + API call) | STUB (only logs/preventDefault) | NOT_WIRED (no handler)
-
-### Pattern: State → Render
-
-```bash
-grep -E "useState.*$state_var|\[$state_var," "$component" 2>/dev/null
-grep -E "\{.*$state_var.*\}|\{$state_var\." "$component" 2>/dev/null
-```
-
-Status: WIRED (state displayed) | NOT_WIRED (state exists, not rendered)
+- **Component → API** — the component actually calls the endpoint it claims.
+- **API → Database** — the endpoint issues a real query, not a static return.
+- **Form → Handler** — submission reaches a handler that persists.
+- **State → Render** — state changes actually reach the rendered output.
 
 ## Step 6: Check Requirements Coverage
 
@@ -609,6 +556,7 @@ Classify status using this decision tree IN ORDER (most restrictive first):
 
 - `verified_truths` counts ✓ VERIFIED truths plus PASSED (override) truths (Step 3b). For a behavior-dependent truth, VERIFIED means a behavioral test passed, not just that symbols are present.
 - ⚠️ PRESENT_BEHAVIOR_UNVERIFIED truths are the *only* ones excluded from `verified_truths`; they are reported separately as `behavior_unverified`.
+- `✓ VERIFIED (coincidental-reliance)` counts as VERIFIED — the advisory changes no score and no status.
 
 ```text
 score: verified_truths / total_truths        # e.g. 6/7
@@ -693,7 +641,7 @@ Deferred items are informational only — they do not require closure plans.
 
 **VERIFICATION.md output structure under MVP mode:**
 
-1. Top-level "User Flow Coverage" table: each step of the user story → expected → evidence in codebase → status. (Format defined in `references/verify-mvp-mode.md`.)
+1. Top-level "User Flow Coverage" table: each step of the user story → expected → evidence in codebase → status. (Format defined in `gsd-core/references/verify-mvp-mode.md`.)
 2. Standard technical-check sections (API verification, error handling, etc.) follow below — only if the user flow coverage is complete.
 
 **User Story format guard:** Apply via the centralized verb instead of inlining the regex:
@@ -756,6 +704,10 @@ behavior_unverified_items: # Only if behavior_unverified > 0 — emitted regardl
     test: "What to trigger"
     expected: "What state must hold afterward"
     why_human: "Why presence checks can't see it"
+coincidental_reliance_items: # Only if a ✓ VERIFIED truth holds incidentally — emitted regardless of overall status (survives gaps_found)
+  - truth: "Observable truth that holds incidentally"
+    reason: undeclared-precondition | incidental-ordering | fixture-only
+    harden: "Precondition/ordering to declare or enforce"
 human_verification: # Only if status: human_needed
   - test: "What to do"
     expected: "What should happen"
@@ -778,6 +730,7 @@ human_verification: # Only if status: human_needed
 | 1   | {truth} | ✓ VERIFIED | {evidence}     |
 | 2   | {truth} | ✗ FAILED   | {what's wrong} |
 | 3   | {truth} | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | {present + wired; no test exercises the transition/invariant — see Human Verification} |
+| 4   | {truth} | ✓ VERIFIED (coincidental-reliance) | {holds, but incidentally — see coincidental_reliance_items} |
 
 **Score:** {N}/{M} truths verified ({P} present, behavior-unverified)
 

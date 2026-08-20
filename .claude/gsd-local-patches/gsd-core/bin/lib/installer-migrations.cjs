@@ -61,6 +61,78 @@ function sha256Text(value) {
  * the correct outcome — refusing to proceed beats silently copying referent
  * bytes.
  */
+/**
+ * Evaluate and, if safe, perform a `remove-empty-dir` action against `fullPath`.
+ *
+ * This is deliberately WEAKER than a recursive directory-removal primitive
+ * (which 003's docblock records as an intentional absence in the ADR-0008
+ * design): it only ever calls `fs.rmdirSync` — never `fs.rmSync`, never
+ * `{ recursive: true }`, never `{ force: true }` — so a non-empty directory
+ * fails the underlying syscall rather than being swept. The emptiness check
+ * immediately above the call is what turns that failure mode into a
+ * deliberate, non-error "left in place" outcome instead of surfacing ENOTEMPTY.
+ *
+ * Guards, in order:
+ *   - lstat (not stat): a symlinked directory is refused outright, never
+ *     followed. A missing target is reported distinctly so callers can tell
+ *     "nothing was ever there" from "something was there and is left alone".
+ *   - must actually be a directory (not a file masquerading under the relPath).
+ *   - containment: the REALPATH of the target must resolve strictly inside the
+ *     REALPATH of configDir — never equal to it (removing the config root
+ *     itself is never in scope) and never escaping it (e.g. via an ancestor
+ *     symlink the lstat check alone would not catch).
+ *   - emptiness, re-checked here rather than trusted from planning time: a
+ *     directory that still holds any entry (managed-but-undeleted, unknown,
+ *     or created between plan and apply) is left in place. This is reported
+ *     as 'skipped-not-empty', a successful no-op, not a failure.
+ *
+ * Any unexpected error along the way (EACCES, EBUSY, a race that removes the
+ * target between the lstat and the rmdir, etc.) degrades to 'left-in-place'.
+ * This action must never throw out of the executor, matching every sibling
+ * action type's failure posture.
+ */
+function evaluateRemoveEmptyDir(configDir, fullPath) {
+    let stat;
+    try {
+        stat = node_fs_1.default.lstatSync(fullPath);
+    }
+    catch {
+        return 'missing';
+    }
+    if (stat.isSymbolicLink())
+        return 'left-in-place';
+    if (!stat.isDirectory())
+        return 'left-in-place';
+    let resolvedRoot;
+    let resolvedTarget;
+    try {
+        resolvedRoot = node_fs_1.default.realpathSync(configDir);
+        resolvedTarget = node_fs_1.default.realpathSync(fullPath);
+    }
+    catch {
+        return 'left-in-place';
+    }
+    if (resolvedTarget === resolvedRoot || !resolvedTarget.startsWith(resolvedRoot + node_path_1.default.sep)) {
+        // Refuses both "target IS configDir" and "target escaped configDir".
+        return 'left-in-place';
+    }
+    let entries;
+    try {
+        entries = node_fs_1.default.readdirSync(fullPath);
+    }
+    catch {
+        return 'left-in-place';
+    }
+    if (entries.length > 0)
+        return 'skipped-not-empty';
+    try {
+        node_fs_1.default.rmdirSync(fullPath);
+        return 'removed';
+    }
+    catch {
+        return 'left-in-place';
+    }
+}
 function copyPreservingSymlink(srcPath, destPath) {
     if (node_fs_1.default.lstatSync(srcPath).isSymbolicLink()) {
         // symlinkSync fails with EEXIST on an occupied path, so clear it first.
@@ -643,7 +715,8 @@ function applyInstallerMigrationPlan({ configDir, plan, now = () => new Date().t
                 action.type !== 'backup-and-remove' &&
                 action.type !== 'rewrite-json' &&
                 action.type !== 'record-baseline' &&
-                action.type !== 'baseline-preserve-user') {
+                action.type !== 'baseline-preserve-user' &&
+                action.type !== 'remove-empty-dir') {
                 throw new Error(`unsupported migration action type: ${action.type}`);
             }
             const { normalized, fullPath } = ensureInsideConfig(configDir, action.relPath);
@@ -653,6 +726,18 @@ function applyInstallerMigrationPlan({ configDir, plan, now = () => new Date().t
             }
             if (action.type === 'record-baseline' || action.type === 'baseline-preserve-user') {
                 journal.actions.push(journalAction(action, action.type === 'record-baseline' ? 'recorded' : 'preserved'));
+                continue;
+            }
+            if (action.type === 'remove-empty-dir') {
+                // Directory actions never enter the file-copy/rollback machinery below:
+                // there is nothing to snapshot-and-restore for a directory node itself
+                // (its former CONTENTS were already snapshotted by their own file-level
+                // actions before this one runs), and rollback of a removed empty
+                // directory is simply re-creating it, which the rollback path below
+                // does not model. Non-recursive by construction (evaluateRemoveEmptyDir
+                // only ever calls fs.rmdirSync), so there is nothing destructive to undo
+                // beyond an mkdir the next install/migration run will happily redo.
+                journal.actions.push(journalAction(action, evaluateRemoveEmptyDir(configDir, fullPath)));
                 continue;
             }
             const rollbackPath = node_path_1.default.join(rollbackRoot, normalized);
@@ -853,6 +938,7 @@ module.exports = {
     applyInstallerMigrationPlan,
     classifyArtifact,
     discoverInstallerMigrations,
+    evaluateRemoveEmptyDir,
     migrationChecksum,
     planInstallerMigrations,
     readInstallManifest,

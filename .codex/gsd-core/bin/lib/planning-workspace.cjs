@@ -22,7 +22,7 @@ const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs")
 const clock_cjs_1 = require("./clock.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const activeWorkstreamStore = require("./active-workstream-store.cjs");
-const { createSharedPointerAdapter, createSessionScopedPointerAdapter, createMemoryPointerAdapter, getActiveWorkstream: getStoredActiveWorkstream, setActiveWorkstream: setStoredActiveWorkstream, clearActiveWorkstream: clearStoredActiveWorkstream, } = activeWorkstreamStore;
+const { createSharedPointerAdapter, createSessionScopedPointerAdapter, createMemoryPointerAdapter, getActiveWorkstream: getStoredActiveWorkstream, peekActiveWorkstream: peekStoredActiveWorkstream, setActiveWorkstream: setStoredActiveWorkstream, clearActiveWorkstream: clearStoredActiveWorkstream, diagnoseUnresolvedActiveWorkstream: diagnoseUnresolvedStoredActiveWorkstream, } = activeWorkstreamStore;
 // Track .planning/.lock files held by this process so they can be removed on exit.
 const _heldPlanningLocks = new Set();
 process.on('exit', () => {
@@ -136,6 +136,15 @@ function listAvailableWorkstreams(cwd) {
         return [];
     }
 }
+// #2142: the quick-task directory. Exported as its own function (not only as a
+// `planningPaths` key) because `audit.cts`'s `scanQuickTasks` receives an
+// already-resolved planning base rather than a `cwd`, so it cannot reach
+// `planningPaths`. Without this shared helper, adding the `quick` key would
+// leave TWO composers of `<planning>/quick` — the DEFECT.GENERATIVE-FIX shape
+// the `debug` key (#3149) was introduced to eliminate.
+function quickDirFrom(planningBase) {
+    return node_path_1.default.join(planningBase, 'quick');
+}
 function planningPaths(cwd, ws) {
     const base = planningDir(cwd, ws);
     return {
@@ -150,6 +159,8 @@ function planningPaths(cwd, ws) {
         // `debug_dir` field and `init.debug`'s — previously each composed its own
         // `path.join(planning, 'debug')` (DEFECT.GENERATIVE-FIX).
         debug: node_path_1.default.join(base, 'debug'),
+        // #2142: quick-task directory, composed via the shared quickDirFrom helper.
+        quick: quickDirFrom(base),
     };
 }
 /**
@@ -172,11 +183,15 @@ function withPlanningLock(cwd, fn, clock) {
     // on every call with no self-heal. Mirrors acquireStateLock's deadmanCeilingMs.
     const deadmanCeilingMs = 60000;
     const start = clock.now();
-    // Ensure .planning/ exists
-    try {
-        (0, shell_command_projection_cjs_1.platformEnsureDir)(planningDir(cwd));
-    }
-    catch { /* ok */ }
+    // Ensure .planning/ exists. A genuine failure here (EACCES/ENOSPC/EROFS/EMFILE)
+    // MUST surface immediately: the prior `catch { /* ok */ }` swallowed it, the lock
+    // write below then failed with ENOENT (parent dir missing), and ENOENT is retryable
+    // (PLANNING_LOCK_RETRY_ERRNOS — added for a Docker overlay-fs race), so the loop
+    // spun the full 10s budget and reported a PHANTOM "held by a live process"
+    // contention pointing at a nonexistent holder (epic #1879 / F16, #1884).
+    // `mkdirSync(recursive:true)` does not throw on an existing dir, so the normal
+    // path (dir already present) is unaffected; only real creation failures propagate.
+    (0, shell_command_projection_cjs_1.platformEnsureDir)(planningDir(cwd));
     function acquireLock() {
         // Atomic create — fails if file exists
         node_fs_1.default.writeFileSync(lockPath, JSON.stringify({
@@ -345,8 +360,39 @@ function createPlanningWorkspace(cwd, opts = {}) {
 function getActiveWorkstream(cwd) {
     return getStoredActiveWorkstream(cwd);
 }
+// #3579 root-cause fix: read-only sibling of getActiveWorkstream, thin
+// pass-through to active-workstream-store's non-mutating peek. Callers that
+// only need to KNOW whether a workstream resolves (a guard's initial check,
+// a bootstrap that will re-derive the answer anyway) must use this instead
+// of getActiveWorkstream — the mutating variant self-heals (clears) a
+// present-but-unresolvable chain[0] value, and a later read in the SAME
+// process (another getActiveWorkstream call, or diagnoseUnresolvedActiveWorkstream)
+// would then observe already-cleared state instead of the original evidence,
+// silently changing the answer or losing the diagnostic reason. Self-heal
+// still happens — exactly once, wherever the real consuming call site invokes
+// getActiveWorkstream — this sibling just avoids triggering it prematurely.
+function peekActiveWorkstream(cwd) {
+    return peekStoredActiveWorkstream(cwd);
+}
 function setActiveWorkstream(cwd, name) {
     setStoredActiveWorkstream(cwd, name);
+}
+// #3579 item 1: read-only diagnostic sibling of getActiveWorkstream, thin
+// pass-through to active-workstream-store's chain walk. Lets the #1912/#2028
+// fail-safe guards (init.progress, phase.complete) distinguish "no marker at
+// all" from "a marker exists but didn't resolve" without duplicating the
+// resolution predicate.
+function diagnoseUnresolvedActiveWorkstream(cwd) {
+    return diagnoseUnresolvedStoredActiveWorkstream(cwd);
+}
+// #3579 item 1: human-readable clause for diagnoseUnresolvedActiveWorkstream's
+// `reason`, shared by the init.progress and phase.complete fail-safe guards so
+// the two error messages describe the same failure the same way instead of
+// drifting (CLAUDE.md's Generative Fix Divergence anti-pattern).
+function describeUnresolvedWorkstreamReason(reason) {
+    if (reason === 'invalid_name')
+        return 'the name is not a valid workstream name';
+    return "its workstream directory doesn't exist (it may have been renamed or removed)";
 }
 /**
  * Locate the CONTEXT.md file in a phase directory, handling both the bare
@@ -393,9 +439,13 @@ module.exports = {
     planningRoot,
     listAvailableWorkstreams,
     planningPaths,
+    quickDirFrom,
     withPlanningLock,
     getActiveWorkstream,
+    peekActiveWorkstream,
     setActiveWorkstream,
+    diagnoseUnresolvedActiveWorkstream,
+    describeUnresolvedWorkstreamReason,
     findContextMdIn,
     // Test seam (audit M1): inject a deterministic isPidAlive so the liveness-gated
     // steal decision is exercised without real pids. Mirrors capability-lock.cts.

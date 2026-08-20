@@ -12,8 +12,13 @@
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
-const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
+// #2874 (ADR-58 cleanup phase): pruneRetiredRuntimeArtifacts is the first
+// thing installRuntimeArtifacts calls, so its fs calls are routed through
+// the injectable seam too — see install-fs-adapter.cts's module doc.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const installFsAdapter = require("./install-fs-adapter.cjs");
+const { installFs } = installFsAdapter;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const installerMigrations = require("./installer-migrations.cjs");
 const external_descriptor_trust_cjs_1 = require("./external-descriptor-trust.cjs");
@@ -43,9 +48,9 @@ function pruneRetiredRuntimeArtifacts(runtime, configDir) {
         const destDir = node_path_1.default.resolve(configDir, destSubpath);
         let entries;
         try {
-            if (!node_fs_1.default.existsSync(destDir) || node_fs_1.default.lstatSync(destDir).isSymbolicLink())
+            if (!installFs().existsSync(destDir) || installFs().lstatSync(destDir).isSymbolicLink())
                 continue;
-            entries = node_fs_1.default.readdirSync(destDir, { withFileTypes: true });
+            entries = installFs().readdirSync(destDir, { withFileTypes: true });
         }
         catch {
             continue;
@@ -60,7 +65,7 @@ function pruneRetiredRuntimeArtifacts(runtime, configDir) {
                 continue;
             }
             try {
-                node_fs_1.default.unlinkSync(node_path_1.default.join(destDir, entry.name));
+                installFs().unlinkSync(node_path_1.default.join(destDir, entry.name));
                 result.removed.push(relPath);
             }
             catch {
@@ -68,8 +73,8 @@ function pruneRetiredRuntimeArtifacts(runtime, configDir) {
             }
         }
         try {
-            if (node_fs_1.default.readdirSync(destDir).length === 0)
-                node_fs_1.default.rmdirSync(destDir);
+            if (installFs().readdirSync(destDir).length === 0)
+                installFs().rmdirSync(destDir);
         }
         catch {
             // Non-empty, unreadable, or concurrently changed: preserve the directory.

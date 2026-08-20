@@ -2,4 +2,6 @@
 .agents/** linguist-vendored
 .claude/** linguist-vendored
 .codex/** linguist-vendored
+.cursor/** linguist-vendored
 .planning/** linguist-documentation
+.discussion/** linguist-documentation
