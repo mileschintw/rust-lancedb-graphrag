@@ -152,7 +152,7 @@ use. Sources are this repository's own written acceptance contracts — the debt
 |---|---|---|---|---|
 | **Provenance honesty** | `answer_basis` names what actually grounded the answer; `MODEL_ONLY` carries zero citations; a caller who did not opt in never receives it | A grounded-looking answer built from priors; `MODEL_ONLY` with citations attached; basis taken on the model's word alone | **High** | 06-CONTEXT D-10/D-18; `03/deferred-items.md` DEBT-RAG-01 *"both-path failure returns an explicit model-only basis and notice with no citations"* |
 | **Degradation is machine-readable** | Every degraded path emits a typed notice a client can branch on without parsing prose | Degradation visible only in prose, in a log, or not at all | **High** | DEBT-RAG-01 *"machine-readable warning"*; DEBT-RAG-06 *"machine-readable warning behavior"*; D-08 |
-| **Basis means provenance, not health** | One path failing keeps `RETRIEVAL` plus a `RETRIEVAL_DEGRADED` notice naming the failed path | Downgrading the basis because the *pipeline* was unhealthy, conflating two different facts | Medium | D-13, explicitly *"consistent with how `GRAPH_DEGRADED` already behaves"* |
+| **Basis means provenance, not health** | One path failing keeps `RETRIEVAL` plus a path-specific `RETRIEVAL_DEGRADED_*` notice naming the failed path | Downgrading the basis because the *pipeline* was unhealthy, conflating two different facts | Medium | D-13, explicitly *"consistent with how `GRAPH_DEGRADED` already behaves"* |
 | **Citation integrity under repair** | One bounded local pass, no second provider call; unresolved markers **removed**; basis downgraded transparently; warning emitted | A second provider round-trip; a repaired marker pointing at evidence that does not support the claim; markers left in the text unresolved | **High** | DEBT-RAG-03 acceptance criteria, verbatim; D-14 |
 | **Fail-fast on bad input** | Empty/oversized query, malformed session and document IDs, unsupported content type and every filter bound reject **before** retrieval or provider work, with stable HTTP 400 / gRPC `InvalidArgument` | An invalid request that reaches the embedding provider or LanceDB before failing; a bound violation returning 500; inconsistent status between the HTTP and gRPC surfaces | Medium | DEBT-RAG-05 acceptance criteria, verbatim; D-15; Phase 03 D-10 |
 | **Contract additivity** | New fields are additive, generated once, with Rust and Go regenerated together; old clients keep working | Incremental proto edits across plans; a Go DTO updated without its request-body counterpart; a field renamed after publication | Medium | D-74; Phase 05's 05-17/05-23 repair plans as the recorded counter-example |
@@ -463,11 +463,16 @@ req.DisableGraphContext = body.DisableGraphContext
 4. **Confusing the two new flags.** D-47 is emphatic: *"answer without evidence"* and *"answer
    without graph"* are different concepts and **must not share a field**. Two flags, two names, two
    code paths, and 6.3's Dimension 8 explicitly fails a run that conflates them.
-5. **Emitting a notice from a node that then returns `Err`.** The terminal `WorkflowCompletedEvent`
+5. **Assuming the two notice lists are interchangeable.** The terminal `WorkflowCompletedEvent`
    carries `notices` only when `final_response` is nil (`main.go:864-880`), so a notice added just
-   before a failure may or may not reach the client depending on that branch. Decide the emission
-   point relative to the failure, deliberately. §4 recommends making `notices` unconditional on the
-   terminal payload to remove the ambiguity.
+   before a failure reaches the client through a *different* list than one added on the success
+   path. **Do not "fix" this by populating both** — two populated lists can disagree, and 6.3's
+   client hardcodes a precedence Phase 6 cannot see or enforce
+   (`notices = answer.notices if answer is not None else completion.notices`). Dimension 5 reads
+   `notices[]` first as its abstention signal, so a divergence would make a *scoring verdict* depend
+   on which list the client happened to read. The contract is stated instead — see §4.3
+   *Notice-list precedence*. What the implementer must decide deliberately is the **emission point
+   relative to the failure**, not the serialization.
 6. **Changing `RetrievalSnapshot`.** Phase 05 D-30 excluded it, D-41 puts the metadata on
    `WorkflowCompletedEvent`, and 6.3's harness parses `RetrievalSnapshot` with three required fields.
    Leave it alone. (Its `variant_count`/`variant_identities` → DTO gap is pre-existing; see §4.)
@@ -497,7 +502,7 @@ engine/
 │   │   ├── ports.rs           # port traits + cfg(test) fakes; D-83 adds failure modes
 │   │   └── nodes/
 │   │       ├── graph_context.rs   # D-08: GRAPH_UNAVAILABLE on the two silent paths
-│   │       ├── retrieve.rs        # D-13: RETRIEVAL_DEGRADED naming the failed path
+│   │       ├── retrieve.rs        # D-13: RETRIEVAL_DEGRADED_{DENSE,BM25,GRAPH}
 │   │       └── ...
 │   ├── generation/
 │   │   ├── mod.rs             # D-10: conditional ModelOnly gate; D-18: basis reconciliation
@@ -545,7 +550,7 @@ plan, or a consumer breaks.
 | 2 | `QueryRAGRequest.optional bool disable_graph_context = 5;` (D-47) | `ragQueryRequestBody.DisableGraphContext *bool` `json:"disable_graph_context"` | **6.3 Dimension 8's `graph-off` arm — blocked until this ships** |
 | 3 | `enum NoticeCode { … }` + `Notice.NoticeCode typed_code = 4;` (D-76) | `noticeDTO.TypedCode int32` `json:"typed_code"`; `code` string retained | 6.3 Dim 5 (reads `notices[]` first) and Dim 9; 6.2's degraded-answer counter (D-35); 6.4's published table |
 | 4 | `message WorkflowMetadata { … }` + `WorkflowCompletedEvent.WorkflowMetadata metadata = 7;` (D-41 / Phase 05 D-30) | `wcPayload["metadata"]` object in `writeWorkflowEventSSE` | 6.2 span attributes (D-31) and metrics (D-35); 6.3 Dim 11 run metadata |
-| 5 | *(no proto change)* | `wcPayload["notices"]` emitted **unconditionally**, not only when `final_response` is nil | 6.3 Dim 5 and Dim 9 — removes pitfall #5's ambiguity |
+| 5 | *(no change — deliberately)* | *(no change — deliberately)* | The notice-list ambiguity is closed by **stating the precedence**, not by changing the wire. See §4.3 *Notice-list precedence*. |
 
 **Nothing else changes.** `QueryRAGResponse`, `RetrievalSnapshot`, `StructuredCitation`,
 `AnswerBasis`, `NoticeSeverity`, `NodeErrorKind` and the `WorkflowEvent` `oneof` are untouched. In
@@ -588,7 +593,16 @@ enum NoticeCode {
 
   // ── Phase 6 ───────────────────────────────────────────────────────────────
   NOTICE_CODE_GRAPH_UNAVAILABLE  = 10;  // D-08: empty-result + absent-graph_port paths
-  NOTICE_CODE_RETRIEVAL_DEGRADED = 11;  // D-13: names the failed path in `message`
+  // D-13. SPLIT BY PATH, deliberately — the failed path is a closed set of three, and a
+  // metric built by parsing `message` prose is fragile. Discretion granted by 06-CONTEXT
+  // ("exact enum value names"); settling it HERE is what D-74-lands-first is for. Two extra
+  // values make 6.2's failure counter a label lookup instead of a regex (D-35), and because
+  // ctx.add_notice() de-dupes on (code, message), two simultaneously-failed paths BOTH survive
+  // as distinct notices — which one composed-prose code could only encode in text.
+  NOTICE_CODE_RETRIEVAL_DEGRADED_DENSE = 11;
+  NOTICE_CODE_RETRIEVAL_DEGRADED_BM25  = 16;
+  NOTICE_CODE_RETRIEVAL_DEGRADED_GRAPH = 17;  // graph path failing *within retrieval fusion*;
+                                              // distinct from GRAPH_UNAVAILABLE (D-08, node-level)
   NOTICE_CODE_CITATION_REPAIRED  = 12;  // D-14
   NOTICE_CODE_CITATION_DROPPED   = 13;  // D-14
   NOTICE_CODE_MODEL_ONLY         = 14;  // D-10: accompanies answer_basis = MODEL_ONLY
@@ -639,7 +653,7 @@ message WorkflowCompletedEvent {
 
 **`degraded_mode` derivation — stated so it cannot drift.** `degraded_mode == true` **iff** the
 response carries at least one notice whose `typed_code` is in
-{`GRAPH_UNAVAILABLE`, `GRAPH_DEGRADED`, `GRAPH_TIMEOUT`, `RETRIEVAL_DEGRADED`, `CITATION_DROPPED`,
+{`GRAPH_UNAVAILABLE`, `GRAPH_DEGRADED`, `GRAPH_TIMEOUT`, `RETRIEVAL_DEGRADED_*` (any), `CITATION_DROPPED`,
 `MODEL_ONLY`, `BASIS_RECONCILED`, `INDEX_REBUILD_FAILED`, `INDEX_STALE`,
 `INDEX_GENERATION_MISMATCH`} **or** `answer_basis != RETRIEVAL`. It is computed from the notice set,
 never set by hand at a degrade site — otherwise it becomes a fourth place degradation is recorded and
@@ -667,7 +681,7 @@ trace ID is authoritative and `correlation_id` is retained for continuity — th
 | `node_failed` | `node_name`, `error_kind` (int), `error_message`, `retryable` | — (D-15 rejections are **pre-stream**, not this frame) |
 | `answer_chunk` | `chunk_text`, `is_final` | — (UX only; the scorer reads `final_answer.answer`) |
 | `final_answer` | `answer`, `citations[]`, `session_id`, `answer_basis` (int), `structured_citations[]`, `notices[]`, `snapshot` | **`notices[]` gains `typed_code`; `answer_basis` can now be `3` (MODEL_ONLY) when opted in** |
-| `workflow_completed` | `success`, `total_duration_ms`, `error_kind`, `error_message`, `final_response`\|`notices` | **`metadata` object added; `notices` emitted unconditionally (delta row 5)** |
+| `workflow_completed` | `success`, `total_duration_ms`, `error_kind`, `error_message`, `final_response`\|`notices` | **`metadata` object added.** The `final_response`\|`notices` either/or is **unchanged** — see *Notice-list precedence* below |
 | `stream_error` | `code` (`STREAM_EOF_WITHOUT_TERMINAL` \| `GRPC_RECV_ERROR`), `message` | — (gateway-level, deliberately **not** in `NoticeCode`) |
 | *(no frame)* | pre-stream `http.Error` plain text + `X-Lancet-Error-Kind` | **D-15 rejections land here: stable 400, before retrieval or provider work** |
 
@@ -679,6 +693,27 @@ trace ID is authoritative and `correlation_id` is retained for continuity — th
 **`notices[]` element after D-74:** `code` (string, derived), `message`, `severity` (int),
 **`typed_code`** (int). Both `code` and `typed_code` ship; the enum is authoritative and the string
 is generated from it, so they cannot disagree.
+
+**Notice-list precedence — stated, not engineered around.** Two notice lists exist on the wire:
+`final_answer.notices` and `workflow_completed.notices`. Today they are mutually exclusive by
+construction — the gateway attaches `notices` to the terminal payload **only** when `final_response`
+is nil (`main.go:864-880`) — and Phase 6 **keeps it that way**.
+
+> **Authoritative list:** `final_answer.notices` when a `final_answer` frame was emitted;
+> `workflow_completed.notices` only when it was not. Never both. Never merged.
+
+The tempting "improvement" — emitting `notices` unconditionally on the terminal frame — is
+**rejected**, and the reason is worth recording because it looks like a strict upgrade. It would
+create two simultaneously-populated lists that can diverge (a notice added after
+`to_query_rag_response()` runs would appear in one and not the other), while 6.3's client already
+hardcodes a precedence Phase 6 cannot see or enforce:
+`notices = answer.notices if answer is not None else completion.notices`. Since 06.3 §5's
+**Dimension 5 reads `notices[]` first** as its abstention signal, a divergence would make a *scoring
+verdict* depend on which list the client happened to read — a metric decided by a gateway
+serialization detail. This is the same discipline 06.3 §3 applies to `final_answer` vs
+`workflow_completed.final_response`: *"picking one and never mixing is what keeps EM/F1
+deterministic."* Zero proto cost, zero Go cost, and the contract now matches its known consumer.
+Phase 6.4 publishes this precedence rule with the notice table (D-76).
 
 **`snapshot`:** `index_generation`, `embedding_model`, `vector_weight`, `bm25_weight`, `rrf_k`,
 `candidate_limit`, `final_limit`, `active_filter`, `result_hash`. **Known pre-existing asymmetry,
@@ -721,8 +756,14 @@ D-03's short-circuit is byte-for-byte as shipped. The `generation/mod.rs:172-175
 conditional on the resolved flag; it must remain a hard rejection when the flag is off.
 
 **D-13 — one-path degraded.** A single retrieval path failing keeps `answer_basis = RETRIEVAL` and
-adds `RETRIEVAL_DEGRADED` whose `message` **names the failed path** (`dense` / `bm25` / `graph`) and
-its kind. The basis is not downgraded: it describes provenance, not health.
+adds the **path-specific** notice — `RETRIEVAL_DEGRADED_DENSE`, `_BM25` or `_GRAPH` — whose `message`
+carries the failure kind. The path is in the **code**, not the prose, so 6.2's per-path failure
+counter (D-35) is a label lookup rather than a regex over free text, and two paths failing at once
+produce two distinct notices rather than one composed sentence. The basis is not downgraded: it
+describes provenance, not health. *(ROADMAP.md's success criterion 4 writes this as a single
+`RETRIEVAL_DEGRADED`; exact enum value names are Claude's Discretion per 06-CONTEXT, and the split
+satisfies D-13's requirement — "a machine-readable notice naming the failed path" — more literally
+than one code plus prose does.)*
 
 **D-14 — citation repair, normalize-then-strip.** One *local* pass: whitespace/case/format
 normalization and index-vs-id disambiguation against the packed evidence set. **No second provider
@@ -892,7 +933,7 @@ the behavior observable — which is why §4's delta is a prerequisite for this 
 | **MODEL_ONLY opt-in gate** (D-10/D-11/D-12) | **Dim 5 — abstention on unanswerable questions.** Dim 5 reads `notices[]` **first** and the answer text second, precisely because a degraded Lancet response can legitimately emit **zero** `final_answer` frames. A `MODEL_ONLY` notice on a null-slice question is the observable Dim 5 scores. Also **Dim 9** (the response is still a valid frame sequence). | `answer_basis = 3`, `NOTICE_CODE_MODEL_ONLY`, empty `citations[]` | Deterministic tests both ways: flag off ⇒ D-03 short-circuit byte-identical; flag on ⇒ MODEL_ONLY + notice + **zero** citations | **Critical** |
 | **Citation repair and drop** (D-14) | **Dims 1, 2, 3** — and the coupling must be stated, because it is not obvious. Dropping a citation **changes Dimension 2's denominator**: 06.3 §5 defines context precision over *"citations returned, not `k`, when fewer than `k` came back."* So a Phase 6 drop decision **directly moves a published precision number**, and it moves it *upward* by removing a wrong citation. That is correct behavior producing a metric shift, and 6.3's run-record reviewer must be able to attribute it. | `CITATION_REPAIRED` / `CITATION_DROPPED` notices; the resulting `citations[]` / `structured_citations[]` | D-83 fake-port fixtures with malformed markers; **plus** the citation-repair adjudicator's hand-inspection (§1b) — no automated check can tell "resolves" from "resolves correctly" | **Critical** |
 | **Graph-unavailable notice** (D-08) | **Dim 8 — graph-ablation delta**, whose whole design is one engine, one question set, one `index_generation`, two arms differing **only** in the D-47 flag. `GRAPH_UNAVAILABLE` is how the `graph-off` arm proves it actually ran without graph context rather than silently behaving identically — 06.3 §5 names publishing a spurious ~0 delta from identical behavior as a **fabricated number**. Secondarily **Dim 5**. | `NOTICE_CODE_GRAPH_UNAVAILABLE` on both silent paths | Test that source-chunk queries never require graph data (D-08, DEBT-RAG-06's criterion); notice fires on empty-result *and* absent-`graph_port` | **High** |
-| **One-path degraded** (D-13) | **Dim 11 — run traceability**, as an observable that must survive into the record; and **Dim 9**, since a degraded response is still contract-conformant. **Not** a quality dimension: 06.3 §5 has no rubric for "how gracefully did it degrade." | `NOTICE_CODE_RETRIEVAL_DEGRADED` with the failed path named in `message`; `answer_basis` stays `RETRIEVAL` | D-83 fixtures per failed path; assert basis is **not** downgraded | **High** |
+| **One-path degraded** (D-13) | **Dim 11 — run traceability**, as an observable that must survive into the record; and **Dim 9**, since a degraded response is still contract-conformant. **Not** a quality dimension: 06.3 §5 has no rubric for "how gracefully did it degrade." | `NOTICE_CODE_RETRIEVAL_DEGRADED_{DENSE,BM25,GRAPH}` — the failed path is in the code; `answer_basis` stays `RETRIEVAL` | D-83 fixtures per failed path; assert basis is **not** downgraded | **High** |
 | **Bad-input matrix** (D-15) | **Dim 9 — wire-contract conformance**, specifically its `pre_stream_errors` counter. 06.3's client raises `PreStreamError` on a non-SSE 4xx/5xx (`handlePreStreamError` writes plain text with no SSE headers). A stable 400 is what keeps that a *named, counted* outcome rather than a `0.0` folded into a score — the domain's most common silent corruption. | HTTP 400 / gRPC `InvalidArgument` + `X-Lancet-Error-Kind`; no SSE frames at all | The D-15 table itself, table-driven, per surface. **The table is Phase 6's reference dataset** — see below | **High** |
 | **D-74 wire delta** (D-74/D-76/D-41) | **Dim 9** (frames and fields the harness asserts) and **Dim 11** (`index_generation`, `result_hash` and the new `metadata` are what stamp a run). 6.3 is "a second, independent consumer of the wire contract" (D-65) — Phase 6 is the producer that contract describes. | Every field in §4.3 | The downstream-consumer reviewer (§1b) signs off that the delta unblocks Dim 8's `graph-off` arm | **Critical** |
 | **Module-graph restructure** (D-80/D-82) | **Nothing in 06.3 §5.** A pure refactor produces no observable. Stated explicitly so no one maps it onto Dim 11 for the sake of a full column. | — | The 285-test suite, unchanged, before and after (D-80's own safety net) | Medium |
@@ -1003,7 +1044,7 @@ facts and only a human distinguishes them.
 | **G2 — citation repair and drop** (D-14) | A citation marker in the model's answer does not resolve against the packed evidence | **FLAG then STRIP.** One local normalize pass (whitespace/case/format, index-vs-id); **no second provider call**. Resolved ⇒ keep, flag. Unresolved ⇒ remove from the answer text *and* from `citations[]` / `structured_citations[]`. Never guess: a normalization that cannot decide is a drop, not a match. | `CITATION_REPAIRED` per repair; `CITATION_DROPPED` per drop |
 | **G3 — evidence-precedence prompt contract** (D-17/D-19) | Every generation, unconditionally | **PREVENT, by construction.** The precedence instruction is in the assembled prompt: when evidence contradicts prior knowledge, the evidence is authoritative and the answer says so. Prompt text only — the JSON schema is untouched (D-19). **This guardrail is unverified in v1** (D-45 defers its metric; §5 row 1 of the not-scoreable pair). Its compensating control is a **prompt-text fixture test** asserting the instruction is present and positioned with the system instructions — it proves the contract *shipped*, not that it *worked*. | — (no notice; there is no observable to attach one to) |
 | **G4 — MIXED reconciliation** (D-18) | The model's self-reported `answer_basis` disagrees with observable facts (citations present and resolving, markers stripped by G2, evidence partiality) | **DOWNGRADE, conservatively.** The more conservative basis wins, ordered `RETRIEVAL` > `MIXED` > `MODEL_ONLY`. Reconciliation only ever weakens a provenance claim. `answer_basis` is written to the context **once**, here, after G2 has run. | `BASIS_RECONCILED`, `message` naming the claimed and final basis |
-| **G5 — RAG-03 degraded mode: one path** (D-13) | Exactly one of dense / BM25 / graph fails | **ALLOW, degraded.** Serve the surviving path's answer. `answer_basis` stays `RETRIEVAL` — basis is provenance, not health. | `RETRIEVAL_DEGRADED`, `message` naming the failed path and kind |
+| **G5 — RAG-03 degraded mode: one path** (D-13) | Exactly one of dense / BM25 / graph fails | **ALLOW, degraded.** Serve the surviving path's answer. `answer_basis` stays `RETRIEVAL` — basis is provenance, not health. | `RETRIEVAL_DEGRADED_DENSE` / `_BM25` / `_GRAPH`; `message` carries the failure kind |
 | **G6 — RAG-03 degraded mode: graph unavailable** (D-08) | Graph returns empty (`graph_context.rs:112-115`) **or** `graph_port` is absent (`:145-148`) — the two paths that degrade **silently** today | **ALLOW, unchanged behavior, now announced.** Answer from source chunks. D-08 is explicit: *closes by adding the missing notice, not by changing behavior*; 04.1 D-32 and Phase 05 D-09 stand. | `GRAPH_UNAVAILABLE` |
 | **G7 — bad-input rejection** (D-15) | Any row of the D-15 matrix | **BLOCK, before any work.** Reject at admission with stable HTTP 400 / gRPC `InvalidArgument` and an `X-Lancet-Error-Kind` header. **No SSE stream is opened**, no embedding call, no LanceDB scan — the ordering is the acceptance criterion. | — (pre-stream error, not a notice; 6.3 counts it as `pre_stream_errors`) |
 
@@ -1080,10 +1121,11 @@ feeds**. 6.2 implements the meters; Phase 6 must make each one derivable from so
 1. **Degraded-answer counter by `answer_basis`** — needs `answer_basis` set exactly once, by G4.
 2. **Citation repair / drop counter** — needs `CITATION_REPAIRED` / `CITATION_DROPPED` to be
    per-event, not per-request, so the counter can distinguish one drop from five.
-3. **Retrieval path failure counter by path and kind** — needs `RETRIEVAL_DEGRADED`'s `message` to
-   name the path in a parseable, stable form. **Design note:** a metric built by parsing prose is
-   fragile. Either keep the message format fixed and documented, or accept that 6.2 will need a
-   structured carrier. Flagged now, while the D-74 contract is still open, rather than after it ships.
+3. **Retrieval path failure counter by path and kind** — **settled in §4.2, not left to 6.2.** The
+   path is carried by the enum value (`RETRIEVAL_DEGRADED_DENSE` / `_BM25` / `_GRAPH`), so the
+   counter's `path` label is a lookup, not a regex over `message` prose. The `kind` label still comes
+   from the message and should keep a fixed, documented form. This is exactly the class of decision
+   D-74-lands-first exists to close while the contract is open, rather than handing 6.2 a design note.
 4. **Query latency histogram by outcome** — outcome comes from `success` + `answer_basis` +
    `degraded_mode`, all on the terminal frame after §4's delta.
 5. **Evidence-set size histogram** — `vector_count` / `bm25_count` in the new `WorkflowMetadata`.
@@ -1131,7 +1173,7 @@ marker to the wrong evidence.
 - [x] CI/CD eval integration specified — **none, deliberately**, D-85 + `<domain>` out-of-scope
 - [x] Online guardrails defined — 7 rows (G1–G7), each with trigger, intervention and notice code
 - [x] Production monitoring configured — D-34 stack, 5 Phase-6-fed metrics, no alerts (D-40), signal-based human-review sampling
-- [x] **D-74 wire contract derived in full** — three-column delta, verbatim proto, complete SSE field surface, 14 `NoticeCode` values + 3 reserved for 6.1
+- [x] **D-74 wire contract derived in full** — three-column delta, verbatim proto, complete SSE field surface, 17 `NoticeCode` entries (13 active + 3 reserved for 6.1 + UNSPECIFIED), and the notice-list precedence rule
 - [x] **Unresolved interaction flagged, not silently decided** — G2 × G1 (all-citations-dropped with the opt-in off), with a recommended resolution for the planner to confirm
 
 ---
