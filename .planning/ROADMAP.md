@@ -463,6 +463,48 @@ Plans:
 6. The bad-input matrix (`DEBT-RAG-05`) is an enumerated, table-driven test (gRPC and HTTP) covering malformed query/session/document IDs, content type, and filter bounds, all rejecting before retrieval or provider work with stable HTTP 400 / gRPC `InvalidArgument` (D-15).
 7. The graph-unavailable notice (`DEBT-RAG-06`) fires on the two silent-degrade paths (empty-result and absent-`graph_port`) that don't already emit `GRAPH_TIMEOUT`/`GRAPH_DEGRADED`; source-chunk queries are proven to never require graph data (D-08).
 
+**Plans:** 12 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 06-01-PLAN.md — Rust module graph, step 1: move `chunker` and the whole configuration surface into the library crate; establish the per-target test invariant gate (D-80/D-81).
+- [ ] 06-04-PLAN.md — Go package split, part A: extract `internal/config` and `internal/sse`, create the reserved `internal/telemetry` stub, and establish the per-package Go test gate (D-82).
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06-02-PLAN.md — Rust module graph, step 2: relocate the ingestion pipeline and the whole gRPC service implementation into `engine::ingest` and `engine::service` (D-80).
+- [ ] 06-05-PLAN.md — Go package split, part B: extract `internal/engineclient` and migrate the 67-test suite onto it; the insecure engine dial moves unchanged (D-82, D-03/D-06).
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06-03-PLAN.md — Rust module graph, step 3: rehome the binary test root into the library target and reduce `main.rs` to startup wiring; pin the post-restructure distribution (D-80).
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 06-06-PLAN.md — Wave-0 test surface: `engine::testkit` constructors migrating ~100 exhaustive literals, the D-83 fake-port failure modes, and the Go exact-payload-key assertions.
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 06-07-PLAN.md — The consolidated additive wire contract: one proto edit, one regeneration, the single typed notice constructor, and the gateway plumbing for both request flags (D-74/D-76).
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 06-08-PLAN.md — Behavior tracer: end-to-end graph-context ablation, plus the `GRAPH_UNAVAILABLE` notice on the two silent-degrade paths and the source-chunk proof (D-47, D-08 / DEBT-RAG-06).
+- [ ] 06-12-PLAN.md — The enumerated bad-input matrix, table-driven on both the gRPC and HTTP surfaces, with the unmatched-filter disposition recorded (D-15 / DEBT-RAG-05).
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 06-09-PLAN.md — Convert both retrieval paths from fail-closed to degrade with per-path notices and per-variant tolerance (D-13 / DEBT-RAG-01).
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 06-10-PLAN.md — Model-only opt-in: fail-closed config key, both grounding guards conditional, both zero-evidence gates bypassed (D-10/D-11/D-12/D-84 / DEBT-RAG-01).
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 06-11-PLAN.md — Citation repair (normalize-then-strip), conservative basis reconciliation, and the evidence-over-priors prompt precedence (D-14/D-18/D-17/D-19/D-84 / DEBT-RAG-03).
+
 ### Phase 6.1: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
 
 **Goal:** Wire index rebuild-and-swap with cross-index corpus generation (DEBT-RAG-04), close DEBT-BU-01/DEBT-BU-02 with deterministic proofs, and complete the documented-only DEBT-CR-04/DEBT-CR-05 review
