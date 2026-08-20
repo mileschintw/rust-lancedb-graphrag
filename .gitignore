@@ -125,3 +125,6 @@ dmypy.json
 # ------------------------------------------------------------------------------
 logs/
 *.log
+
+# GSD cross-AI review scratch (transient)
+.gsd-review-tmp/
