@@ -873,3 +873,26 @@ Recorded so the reasoning trail stays legible:
    full engine logs to Loki made its trigger unambiguous. **Re-confirmed** as backlog, local-only.
 5. **Phase shape** — one phase → **five phases (6, 6.1, 6.2, 6.3, 6.4)** under one governing
    CONTEXT.md.
+
+## Corrections Applied After Drafting
+
+Found during a post-write review of the committed CONTEXT.md, not during the discussion itself:
+
+1. **`DEBT-CR-04` is three unrelated issues sharing one label** — network auth/TLS/quotas
+   (`02/deferred-items.md`, verification-disposition section), the insecure Gateway→Engine gRPC
+   dial (`03/deferred-items.md`, "extended with Phase 03 evidence"), and VER-20's evidence helper
+   forging human approval (`02/deferred-items.md`, ADR-02-004 set). The discussion treated the
+   label as one item, which gave it two conflicting dispositions and **dropped VER-20 entirely**
+   from the backlog themes. CONTEXT.md D-03 now carries a disambiguation table, VER-20 is placed
+   in the renamed *Test & evidence hygiene* theme, and the backlog count is corrected from
+   "~18" to an exact 18.
+2. **Sub-phase context inheritance had no mechanism** — D-77 originally asserted that 6.1-6.4
+   would cite `06-CONTEXT.md` without anything making that happen. `init.phase-op` reports
+   `has_context: false` for a new sub-phase, and Phase 04.1's precedent in this repo is a
+   per-phase CONTEXT.md. D-77 now requires an explicit `Canonical refs:` line in each sub-phase's
+   ROADMAP entry, which is the field `analyze_phase` actually reads.
+3. **D-78's roadmap edit was scoped to phase entries only** — it now enumerates the header phase
+   count, the summary-table split, the per-phase `Canonical refs:` lines, and the REQUIREMENTS.md
+   Traceability row split, without which coverage validation reports orphans.
+4. **Success-criteria mapping made concrete** — D-79 now records where each original criterion
+   lands: SC1 → 6.2; SC2 and SC4 → 6.3; SC3 → 6.4; SC5 and SC6 → 6.1; SC7 → 6 and 6.1.

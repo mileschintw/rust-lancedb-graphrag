@@ -33,13 +33,15 @@ shipped reality, not intent.
 
 ### In scope
 - The **nine ROADMAP-named debt items only**: DEBT-RAG-01/03/04/05/06, DEBT-BU-01/02, and the
-  DEBT-CR-04/CR-05 conditional review (D-01).
+  DEBT-CR-04 (network auth/TLS/quotas) / CR-05 conditional review (D-01). Note `DEBT-CR-04-EXT`
+  and `DEBT-CR-04 / VER-20` are **different items** and go to backlog — see the D-03 table.
 - Two deliberate exceptions to that scope, taken knowingly: **DEBT-P3-MODULE-GRAPH** closed in
   Phase 6 (D-80), and **metrics + a metrics backend** added to OBS-01's tracing-only text (D-33).
 - OBS-01, OBS-02, OBS-03, OBS-04 and RAG-03.
 
 ### Out of scope
-- The other ~18 open `DEBT-*` items — promoted to themed `999.x` backlog phases (D-02/D-03/D-04).
+- The other **18** open `DEBT-*` items — promoted to five themed `999.x` backlog phases
+  (D-02/D-03/D-04). Enumerated by ID in D-03; the count is exact, not approximate.
 - Auth, authorization, TLS ingress, per-principal quotas, gateway HTTP server timeouts, upload
   semaphore — DEBT-CR-04/CR-05 acceptance criteria, **documented-only** (D-06).
 - Automatic RAG-vs-model routing, LLM-generated supplementary eval items, threshold-gated eval,
@@ -56,23 +58,35 @@ shipped reality, not intent.
   DEBT-BU-01, -02; plus the DEBT-CR-04/CR-05 conditional review. STATE.md's broader "final
   hardening phase" framing does **not** expand the boundary. Every un-selected item gets an
   explicit recorded disposition so the coverage matrix reads them as opted-out, not missed.
-- **D-02:** The ~18 un-selected items are **promoted to `999.x` backlog phases** in ROADMAP.md
+- **D-02:** The **18** un-selected items are **promoted to `999.x` backlog phases** in ROADMAP.md
   (not merely re-targeted in a ledger).
 - **D-03:** Promotion is grouped **by theme, ~5 backlog phases**, each listing its member IDs:
-  - *Security & transport hardening* — DEBT-CR-04 (extended), DEBT-P3-PROVIDER-ENDPOINT-TRUST,
+  - *Security & transport hardening* (5) — **DEBT-CR-04-EXT** (insecure Gateway→Engine gRPC
+    dial; the Phase 03 extension, `03/deferred-items.md`), DEBT-P3-PROVIDER-ENDPOINT-TRUST,
     DEBT-P3-CONFIG-DB-PLAINTEXT, DEBT-P3-BODY-BOUND, DEBT-D1-SAFE-LOG
-  - *Ingestion & staging robustness* — DEBT-CR-01, DEBT-CR-02, DEBT-CR-03,
+  - *Ingestion & staging robustness* (5) — DEBT-CR-01, DEBT-CR-02, DEBT-CR-03,
     DEBT-P3-STAGING-GEN-RACE, DEBT-P3-STAGING-PHYSICAL-BU
-  - *Config & settings hygiene* — DEBT-P3-WARN-SETTINGS, DEBT-P3-WARN-VALIDATE
-  - *API contract & DX* — DEBT-P3-WARN-API, DEBT-P3-WARN-DX, DEBT-WR-02
-  - *Engine layout & test hygiene* — DEBT-WR-01, DEBT-WR-03
+  - *Config & settings hygiene* (2) — DEBT-P3-WARN-SETTINGS, DEBT-P3-WARN-VALIDATE
+  - *API contract & DX* (3) — DEBT-P3-WARN-API, DEBT-P3-WARN-DX, DEBT-WR-02
+  - *Test & evidence hygiene* (3) — DEBT-WR-01, DEBT-WR-03, **DEBT-CR-04 / VER-20**
+    (evidence helper forges human approval when the approval flag is omitted — an
+    evidence-harness defect from the ADR-02-004 set, unrelated to the other two CR-04 items)
     (DEBT-P3-MODULE-GRAPH is **removed** from this theme — closed in Phase 6 per D-80)
+
+  **18 items total.** ⚠ `DEBT-CR-04` is three unrelated issues sharing one label; each has its
+  own disposition and downstream agents must not collapse them:
+  | Label | What it actually is | Source | Disposition |
+  |---|---|---|---|
+  | `DEBT-CR-04` | Network auth, authz, TLS, quotas | `02/deferred-items.md` (verification-disposition) | Documented-only, D-06 |
+  | `DEBT-CR-04-EXT` | Insecure Gateway→Engine gRPC dial | `03/deferred-items.md` | Backlog — Security & transport |
+  | `DEBT-CR-04 / VER-20` | Evidence helper forges human approval | `02/deferred-items.md` (ADR-02-004 set) | Backlog — Test & evidence hygiene |
 - **D-04:** The promotion is a **dedicated Phase 6.4 plan task** (ROADMAP.md edits +
   deferred-items.md cross-links), ordered last so the ledger reflects what actually closed.
 - **D-05:** **DEBT-RAG-02 is closed as satisfied by Phase 05** — D-11/D-12's bounded generation
   retry plus D-13's honest-failure contract is the whole policy; D-14 descoped multi-provider
   fallback. No Phase 6 work, no backlog entry.
-- **D-06:** The SC6 review of **DEBT-CR-04 and DEBT-CR-05 is documented-only** — this is a
+- **D-06:** The SC6 review of **DEBT-CR-04 (network auth/authz/TLS/quotas) and DEBT-CR-05 is
+  documented-only** — this is a
   local-only project. Verify the loopback guardrail holds and no trigger fired, record the
   re-acceptance, ship **no new code for either**. This explicitly includes shipping *without*
   gateway `ReadTimeout`/`WriteTimeout`/`IdleTimeout` and *without* a bounded upload semaphore.
@@ -137,7 +151,7 @@ shipped reality, not intent.
 - **D-17:** The **evidence-over-priors principle is enforced by prompt contract**: an explicit
   precedence instruction in the assembled prompt ("when evidence contradicts your prior
   knowledge, the evidence is authoritative; say so"). **The eval metric for it is deferred**
-  (see D-44) — v1 ships the behavior unmeasured, recorded as an accepted gap.
+  (see D-45) — v1 ships the behavior unmeasured, recorded as an accepted gap.
 - **D-18:** **`MIXED` is decided by model self-report plus engine validation, with a
   reconciliation rule.** The model declares `answer_basis` in the existing structured output;
   the engine validates against observable facts (citations present and resolving, markers
@@ -398,16 +412,38 @@ shipped reality, not intent.
   (`GRAPH_TIMEOUT` appears as a bare literal three times in `graph_context.rs`).
   — **Reversibility:** one-way — enum values become part of the published contract.
 - **D-77:** **Phase 6 is split into five phases (6, 6.1, 6.2, 6.3, 6.4)** per the table in
-  `<domain>`, and **this CONTEXT.md governs all of them**. Each sub-phase cites it as its primary
-  canonical ref; no per-phase context slices, no re-litigating decisions.
+  `<domain>`, and **this CONTEXT.md governs all of them**. No per-phase context slices, no
+  re-litigating decisions.
+  **The inheritance needs a mechanism, not a note.** `init.phase-op` will report
+  `has_context: false` for 6.1-6.4 and nothing routes their planners here — and this repo's own
+  precedent runs the other way (Phase 04.1 was inserted and got its own 28KB
+  `04.1-CONTEXT.md`). The field that actually gets read is the `Canonical refs:` line in a
+  ROADMAP phase entry (`analyze_phase` step 1b copies it). Therefore **each of 6.1, 6.2, 6.3 and
+  6.4 MUST carry an explicit `Canonical refs:` line naming
+  `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` as the governing decision
+  record**, and Phase 6's own entry gets one too — it currently has none, which is why this
+  document's canonical refs had to be assembled from scratch.
 - **D-78:** **ROADMAP.md gets phases 6.1–6.4 inserted as the immediate next step**, before any
   planning — mirroring how Phase 04.1 was inserted. Requirement mapping: RAG-03 → 6 and 6.1;
   OBS-01 → 6.2; OBS-02 and OBS-04 → 6.3; OBS-03 → 6.4.
+  **The edit is wider than the phase entries alone** — all of the following must change together
+  or coverage validation reports orphans:
+  1. ROADMAP header count — `**6 phases** | **23 requirements mapped**` → 10 phases.
+  2. The summary table row for Phase 6 splits into five rows with per-phase requirement columns.
+  3. Five new/updated `### Phase …` detail entries, each with goal, rewritten success criteria
+     (D-79) and a `Canonical refs:` line per D-77.
+  4. `.planning/REQUIREMENTS.md` Traceability table — the `RAG-03 | Phase 06` row splits: RAG-03's
+     DEBT-RAG-01/03/05/06 clauses → Phase 6, DEBT-RAG-04 → Phase 6.1.
+  5. The ~18 backlog phases from D-03 appended to the Backlog section (or deferred to the D-04
+     plan task, which is where that promotion is scheduled — but the header count must reconcile
+     with whichever is done first).
 - **D-79:** **Success criteria are rewritten per sub-phase from the decisions in this document**,
   not merely redistributed — they will be more specific and more testable than the original seven
   (e.g. "a query concurrent with an index swap returns results from exactly one generation").
   **The mapping back to the original seven ROADMAP criteria MUST be documented so nothing silently
-  drops.**
+  drops.** Every original criterion has a home under the split — SC1 → 6.2; SC2 and SC4 → 6.3;
+  SC3 → 6.4; SC5 and SC6 → 6.1; SC7 → 6 and 6.1 — and that table is the artifact the rewrite must
+  produce.
 
 ### H. Engineering surface & test strategy
 
@@ -611,7 +647,7 @@ shipped reality, not intent.
 ## Deferred Ideas
 
 ### Promoted to `999.x` backlog phases (D-02/D-03)
-All ~18 un-selected debt items, grouped into five themed phases. Their existing constraint and
+All **18** un-selected debt items, enumerated by ID in D-03 and grouped into five themed phases. Their existing constraint and
 trigger lines in the phase `deferred-items.md` files remain the source of record.
 
 ### Deferred within this milestone
