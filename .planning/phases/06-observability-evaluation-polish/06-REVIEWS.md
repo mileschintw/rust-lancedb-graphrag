@@ -106,13 +106,18 @@ reviewer coverage, not about severity.
   collision.
   *Fix:* exclude `engine/src/pb/` from the grep as well as testkit.
 
-- **[HIGH — CONFIRMED, antigravity only] `06-07`'s `Notice {` gate has a floor of 2 and targets 1.**
+- **[HIGH — CONFIRMED, antigravity only] `06-07`'s `Notice {` gate is unreachable — it targets 1, floor is 2, post-change is 3.**
   [06-07-PLAN.md:293](.planning/phases/06-observability-evaluation-polish/06-07-PLAN.md:293)
   asserts the four-file concatenation yields `grep -c 'Notice {'` = `1` after the change.
   But `CheckpointNotice {` at [events.rs:113](engine/src/workflow/events.rs:113) (struct
   definition) and [events.rs:119](engine/src/workflow/events.rs:119) (`impl From<&Notice> for
   CheckpointNotice`) both match the bare pattern, and neither is a notice constructor that
-  06-07 removes. The minimum achievable count is 2, so the gate can never pass.
+  06-07 removes, so the gate can never pass.
+  *Count breakdown:* current 6 = 4 production constructors (`mod.rs` ×2, `graph_context.rs`
+  ×1, `retrieve.rs` ×1) + 2 `CheckpointNotice`. 06-07 collapses the four constructors into
+  one centralized constructor, so the **post-change count is 3**, of which 2 are irreducible.
+  The target of `1` is unreachable either way. **Do not fix this by changing the target
+  number** — neither 1 nor 2 passes. Fix the pattern.
   *Correction to the reviewer:* antigravity predicted the count would be 3; the actual
   current count is **6**. Its arithmetic was wrong, its mechanism was right.
   *Fix:* word-boundary match — `grep -cE '\bNotice \{'` — or explicitly exclude
