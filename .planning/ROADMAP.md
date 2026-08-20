@@ -491,7 +491,6 @@ Plans:
 **Wave 6** *(blocked on Wave 5 completion)*
 
 - [ ] 06-08-PLAN.md — Behavior tracer: end-to-end graph-context ablation, plus the `GRAPH_UNAVAILABLE` notice on the two silent-degrade paths and the source-chunk proof (D-47, D-08 / DEBT-RAG-06).
-- [ ] 06-12-PLAN.md — The enumerated bad-input matrix, table-driven on both the gRPC and HTTP surfaces, with the unmatched-filter disposition recorded (D-15 / DEBT-RAG-05).
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
@@ -504,6 +503,10 @@ Plans:
 **Wave 9** *(blocked on Wave 8 completion)*
 
 - [ ] 06-11-PLAN.md — Citation repair (normalize-then-strip), conservative basis reconciliation, and the evidence-over-priors prompt precedence (D-14/D-18/D-17/D-19/D-84 / DEBT-RAG-03).
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 06-12-PLAN.md — The enumerated bad-input matrix, table-driven on both the gRPC and HTTP surfaces, with the unmatched-filter disposition recorded (D-15 / DEBT-RAG-05). Depends on 06-07 for content; ordered last because it shares the two test-count gate scripts with every behavior plan.
 
 ### Phase 6.1: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
 
