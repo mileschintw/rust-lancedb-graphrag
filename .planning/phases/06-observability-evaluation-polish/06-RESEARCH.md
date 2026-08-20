@@ -169,6 +169,15 @@ opt-in must thread a resolved boolean from gRPC admission through `WorkflowConte
 the zero-evidence short-circuit it must bypass exists in **two** places in `runner.rs`, both keyed on
 a **string** comparison against `"NO_EVIDENCE"`.
 
+**Two corrections to the AI-SPEC that must land before the proto does.** Reading
+`RetrieveHybridNode` end-to-end showed that (i) D-13 is not "attach a notice" but **"convert a
+fail-closed path into a degrade path"** — both retrieval calls currently `return Err(err)`, failing
+the whole workflow — and (ii) **`NOTICE_CODE_RETRIEVAL_DEGRADED_GRAPH` (AI-SPEC §4.2, tag 17) is
+unreachable by construction**: the node holds no graph port and the file contains no reference to
+graph at all. Since D-76 makes enum values one-way published contract, shipping a permanently-dead
+value in the very change that establishes the vocabulary is free to avoid now and impossible to
+remove later. **D-13 is two codes, not three.**
+
 **Primary recommendation:** Plan Phase 6 as five sequential plans — (1) Rust module-graph restructure,
 pure refactor, per-target test-count invariant asserted; (2) Go `main.go` package split, pure refactor;
 (3) struct-literal containment + the single `buf generate` proto change; (4) the two notice-only
@@ -1000,6 +1009,35 @@ and Go emits `NoticeCode_NOTICE_CODE_GRAPH_UNAVAILABLE NoticeCode = 10` plus `No
 | `Notice { … }` | **19** (`tests/workflow_phase5.rs` 13, `workflow/mod.rs` 2, `workflow/events.rs` 2, `nodes/graph_context.rs` 1, `nodes/retrieve.rs` 1) | — |
 | `WorkflowCompletedEvent { … }` | 2 | — |
 
+**And the Go-side churn, which the identifier counts in §2 cannot see.** Adding `TypedCode` to
+`noticeDTO` and a `metadata` object to the `workflow_completed` payload changes the **JSON bytes** of
+every `final_answer` and terminal frame. Go tests that assert payloads do so through `httptest` +
+decoding, not by naming `noticeDTO` or `writeWorkflowEventSSE` — which is why those rows read `0`.
+The real measurement:
+
+| Probe in `gateway/main_test.go` | Count |
+|---|---|
+| `json.Unmarshal` | 9 |
+| `workflow_completed` | 10 |
+| `final_answer` | 5 |
+| `"notices"` | 4 |
+| `"answer_basis"` | 3 |
+| `"severity"` | **0** |
+| `"code"` | **0** |
+| `JSONEq` / `reflect.DeepEqual` (whole-payload equality) | **0** |
+
+[VERIFIED: per-pattern `grep -c` over `gateway/main_test.go` this session.]
+
+**Read this as: the Go-side D-74 churn is low.** There is **no whole-payload equality assertion**
+anywhere — the tests decode and assert *named keys*. An added key is therefore invisible to all 67
+tests. The ~9 `json.Unmarshal` sites are the only ones worth a glance, and only if they decode into a
+struct without `json:"-"`-style strictness (Go's decoder ignores unknown keys by default, so even
+those are safe). **Contrast with the Rust side's ~101 breaking sites** — the asymmetry exists because
+Go's `encoding/json` is tolerant by default while Rust struct literals are exhaustive by default.
+The consequence for plan sizing: the D-74 Go column is a handful of *additive* edits
+(`ragQueryRequestBody` fields, `noticeDTO.TypedCode`, the `metadata` payload object) plus **new**
+tests, not a migration.
+
 [VERIFIED: per-file `grep -c` this session;
 `grep -rn -A6 "QueryRagRequest {" engine/src --include=*.rs | grep -c "Default::default()"` → `0`.]
 
@@ -1116,7 +1154,107 @@ the second one rejecting every model-only answer. **Both guards must become cond
 resolved flag.** This is not stated in the AI-SPEC and is the most likely single cause of a D-10 plan
 appearing complete and failing at runtime.
 
-#### D-13 — the retrieval-path failure site
+#### D-13 — the retrieval-path failure sites, and the one enum value that is unreachable
+
+> **This subsection corrects two things.** It was the last open assumption in this research and it
+> did **not** hold. Both corrections must reach the D-74 plan **before** the proto lands, because one
+> of them concerns a published enum value.
+
+**Finding 1 — D-13 is a fail-closed→degrade behavior change, not a notice addition.**
+
+`RetrieveHybridNode::execute` returns `Err` on *either* retrieval path failing. Verbatim, the two
+sites:
+
+```rust
+// Source: engine/src/workflow/nodes/retrieve.rs — dense path (~:63-77)
+let dense_candidates = if let Some(dense_port) = &self.dense_port {
+    match dense_port
+        .retrieve_dense(&ctx.original_query, embedding, ctx.filter.as_ref(), cancel)
+        .await
+    {
+        Ok(c) => c,
+        Err(err) => return Err(err),
+    }
+} else {
+    Vec::new()
+};
+
+// Source: engine/src/workflow/nodes/retrieve.rs — BM25 path, inside the per-variant loop (~:97-108)
+let bm25_candidates = if let Some(bm25_port) = &self.bm25_port {
+    match bm25_port
+        .retrieve_bm25(variant, ctx.filter.as_ref(), cancel)
+        .await
+    {
+        Ok(c) => c,
+        Err(err) => return Err(err),
+    }
+} else {
+    Vec::new()
+};
+```
+
+[VERIFIED: `engine/src/workflow/nodes/retrieve.rs:1-200` read in full this session.]
+
+Answering the two questions this raises:
+
+- **(a) Are the two failures individually observable?** **Yes** — they are two distinct `match`
+  arms at two distinct call sites, so D-13 can attach `RETRIEVAL_DEGRADED_DENSE` at the first and
+  `RETRIEVAL_DEGRADED_BM25` at the second. The split-by-path design is implementable.
+- **But the change is larger than attaching a notice.** Today `return Err(err)` produces
+  `NodeFailed` + a terminal *failure*. D-13 requires `Ok(())` + notice + an **empty candidate vector
+  for that path**, so fusion proceeds on the surviving path. That is a **conversion of a fail-closed
+  path into a degrade path** — the single most consequential edit in the phase's behavior work, and
+  the one most likely to break existing tests that assert the current failure.
+- **Note the asymmetry the loop creates:** the BM25 call is inside `for (variant_index, variant) in
+  ctx.variants.iter().enumerate()`. A BM25 failure on variant *k* must not discard variants *0..k*.
+  The degrade must be per-variant-tolerant (skip that variant's BM25 contribution), not a
+  whole-node abort.
+- **`None` ports already degrade silently to `Vec::new()`** in both branches — no notice. That is a
+  third silent-degrade path this phase should consider, symmetric with D-08's absent-`graph_port`
+  case. It is not named by any decision; flagging it, not scoping it.
+
+**Finding 2 — `RETRIEVAL_DEGRADED_GRAPH` is unreachable by construction. Do not publish it.**
+
+AI-SPEC §4.2 declares `NOTICE_CODE_RETRIEVAL_DEGRADED_GRAPH = 17` with the comment *"graph path
+failing within retrieval fusion; distinct from GRAPH_UNAVAILABLE (D-08, node-level)."* **There is no
+graph path within retrieval fusion.**
+
+```rust
+// Source: engine/src/workflow/nodes/retrieve.rs:13-20 — the node's complete port set
+pub struct RetrieveHybridNode {
+    dense_port: Option<Arc<dyn DenseRetrievalPort>>,
+    bm25_port: Option<Arc<dyn Bm25RetrievalPort>>,
+    reranker: Option<Arc<dyn Reranker>>,
+    settings: RetrievalSettings,
+    index_generation: String,
+    embedding_model: String,
+}
+```
+
+No `GraphQueryPort`. Its imports are `ports::{Bm25RetrievalPort, DenseRetrievalPort}` only, and
+`grep -n "graph" engine/src/workflow/nodes/retrieve.rs` returns **zero hits** in the entire file.
+Graph facts reach the answer on a different route entirely — `graph_context.rs` sets
+`ctx.graph_facts` (`:114`, `:128`, `:133`, `:149`), `assemble_prompt.rs:80,91` packs and
+score-interleaves them, `generate.rs:96` sends them. The retrieval node never sees them.
+
+[VERIFIED: `engine/src/workflow/nodes/retrieve.rs:1-235` read in full — struct definition and imports
+quoted verbatim; `grep -n "graph" engine/src/workflow/nodes/retrieve.rs` → no output;
+`grep -rn "graph_facts" engine/src/workflow --include=*.rs` → the flow above.]
+
+**Recommendation for the D-74 plan — decide this before the proto edit:**
+
+> **D-13 is two codes, not three.** Publish `RETRIEVAL_DEGRADED_DENSE` and `RETRIEVAL_DEGRADED_BM25`.
+> **Do not publish `RETRIEVAL_DEGRADED_GRAPH`**, or reserve tag 17 with a `reserved 17;` /
+> `// reserved for a future in-fusion graph path` comment rather than defining a value that nothing
+> can ever emit. D-76 makes enum values one-way published contract; shipping a permanently-dead value
+> in the very change that establishes the vocabulary is exactly the kind of thing that is free to
+> avoid now and impossible to remove later. Graph degradation is already fully covered node-level by
+> `GRAPH_TIMEOUT` / `GRAPH_DEGRADED` / D-08's `GRAPH_UNAVAILABLE`.
+
+*(This is squarely within "Exact enum value names are Claude's Discretion" — CONTEXT.md D-13 requires
+"a machine-readable notice naming the failed path," and there are two failable paths.)*
+
+#### D-13 — where the notice attaches relative to `NO_EVIDENCE`
 
 `retrieve.rs` builds the snapshot and then emits the zero-evidence notice, verbatim:
 
@@ -1134,10 +1272,13 @@ if ctx.final_candidates.is_empty() {
 
 [VERIFIED: `engine/src/workflow/nodes/retrieve.rs:170-200` read this session.]
 
-D-13's per-path notices belong **before** this block, at the point where each of the three retrieval
-sub-calls returns. The planner must locate those three call sites within `RetrieveHybridNode::run`
-(dense port, BM25 port, graph contribution) — this research read the snapshot/notice tail of the node
-but did not enumerate the three failure branches, so the exact line numbers are a plan-time discovery.
+D-13's per-path notices attach at the two `Err(err) => return Err(err)` sites quoted above, which run
+**before** this block. Note the interaction: if *both* paths degrade, `final_candidates` ends empty
+and **`NO_EVIDENCE` also fires** — so a both-paths-failed query carries three notices
+(`RETRIEVAL_DEGRADED_DENSE`, `RETRIEVAL_DEGRADED_BM25`, `NO_EVIDENCE`). That is the correct shape,
+and it is **exactly the observable state D-10's opt-in consumes**: after D-13, "both retrieval paths
+fail" and "evidence is absent" converge, which is what lets one opt-in cover both of D-10's stated
+triggers. **Order the plans D-13 → D-10.**
 
 #### D-08 — already covered under Pattern 1 above. Two `ctx.add_notice(...)` calls.
 
@@ -1451,6 +1592,27 @@ and tracer paths diverge silently.
 (`final_candidates.is_empty() && evidence_blocks.is_empty()`) that must also be bypassed.
 **Warning signs:** a test that passes via `run_workflow` and fails via `run_tracer`, or vice versa.
 
+### Pitfall B2: Treating D-13 as "add a notice" when it is "convert fail-closed to degrade"
+**What goes wrong:** the plan budgets a one-line `ctx.add_notice(...)` for D-13, then discovers that
+both retrieval paths currently `return Err(err)` — a terminal workflow failure — and that turning
+either into `Ok(())` changes existing test expectations, changes what the terminal event carries, and
+must be per-variant-tolerant inside the BM25 loop.
+**Why it happens:** D-13's wording ("keeps `answer_basis = RETRIEVAL` with a machine-readable notice")
+describes the *destination*, not the *distance*. The origin is fail-closed.
+**How to avoid:** size D-13 as a behavior change on a fail-closed path. Its tests must assert the
+**absence** of `NodeFailed` and of a failure terminal, not just the presence of a notice.
+**Warning signs:** a D-13 task whose only verification is "notice present."
+
+### Pitfall B3: Publishing a notice-code value nothing can emit
+**What goes wrong:** `NOTICE_CODE_RETRIEVAL_DEGRADED_GRAPH = 17` ships in the D-74 change. It is
+unreachable — `RetrieveHybridNode` holds no graph port and the file contains no reference to graph at
+all. D-76 makes enum values one-way published contract, so a dead value is permanent.
+**Why it happens:** AI-SPEC §4.2 declares it, with a plausible-sounding comment about "the graph path
+failing within retrieval fusion," and the D-74 plan will implement §4.2 literally.
+**How to avoid:** ship two `RETRIEVAL_DEGRADED_*` values, or `reserved 17;`. Graph degradation is
+already covered node-level by `GRAPH_TIMEOUT` / `GRAPH_DEGRADED` / `GRAPH_UNAVAILABLE`.
+**Warning signs:** a `NoticeCode` variant with no emission site in the same phase.
+
 ### Pitfall C: A `pub use` shim that makes the restructure look done
 **What goes wrong:** `EffectiveRagSettings` moves to the library, `main.rs` gains
 `pub use engine::config::EffectiveRagSettings;`, the 128 binary tests keep compiling, the suite is
@@ -1625,7 +1787,7 @@ let request = test_query_request("Preparation ordering", "sess-generation-prepar
 
 | # | Claim | Section | Risk if Wrong |
 |---|---|---|---|
-| A1 | The three retrieval sub-call failure branches inside `RetrieveHybridNode::run` (dense, BM25, graph) are individually distinguishable, so D-13 can attach a path-specific notice at each. This session read the node's snapshot/notice tail (`retrieve.rs:170-200`) but **did not** enumerate the three branches. | §4 "D-13 — the retrieval-path failure site" | If the three paths are fused before their errors are distinguishable, D-13's `RETRIEVAL_DEGRADED_{DENSE,BM25,GRAPH}` split needs a small refactor inside the node — a plan-time discovery, not a blocker. **The plan's first task on D-13 should be to read that function.** |
+| ~~A1~~ | ~~The three retrieval sub-call failure branches inside `RetrieveHybridNode::run` (dense, BM25, graph) are individually distinguishable.~~ **RESOLVED — and partly REFUTED.** `retrieve.rs` was subsequently read in full. Dense and BM25 *are* individually observable (two distinct `Err(err) => return Err(err)` arms), but (i) both currently **fail the node** rather than degrade, and (ii) **there is no graph path in the node at all**, so `RETRIEVAL_DEGRADED_GRAPH` is unreachable. See §4 "D-13 — the retrieval-path failure sites, and the one enum value that is unreachable". | — | No longer an assumption. **The `RETRIEVAL_DEGRADED_GRAPH` correction must reach the D-74 plan before the proto lands** — a published enum value is one-way |
 | A2 | `buf generate` will succeed at plan-execution time. `buf.gen.yaml` uses **remote** plugins, so generation requires network access to `buf.build`. `buf --version` confirms the CLI is installed; a generation run against the *real* proto was not performed (that would dirty the repo). A scratch generation with the same plugin versions **did** succeed this session, which is strong evidence the remote plugins are reachable. | §3 Wire contract | If the network is unavailable at execution time, the D-74 plan stalls. Fallback: local `protoc` (35.1 is installed) + locally-installed `protoc-gen-prost`/`protoc-gen-tonic` at matching versions — but generated-header drift is likely. **Recommend the D-74 plan's first task be a no-op `buf generate` + `git diff --exit-code` to prove reproducibility before editing the proto.** |
 
 *(Every other factual claim in this document was read from a file or produced by a command in this
@@ -1664,7 +1826,23 @@ verbatim.)*
      trigger and 6.2's ingestion spans both attach to it; leaving it behind re-creates the debt one
      phase later.
 
-4. **Should the two `NO_EVIDENCE` string comparisons in `runner.rs` migrate to `typed_code` in
+4. **Who implements `disable_graph_context`'s *behavior*? No success criterion owns it.**
+   - What we know: Phase 6 SC2 lands the **field** ("the graph-ablation request flag … lands with
+     regenerated Rust and Go bindings"). Phase 6.3 SC4 *depends* on the behavior ("the same question
+     set run with graph context on and off **via a per-request flag on one running engine**").
+     Checked against all success criteria in ROADMAP for phases 6, 6.1, 6.2 and 6.3: **none states
+     that the engine skips graph extraction when the flag is set.**
+   - What's unclear: whether the honoring logic is Phase 6's or 6.3's. If neither claims it, 6.3
+     discovers a published-but-inert field mid-phase and has to open the engine.
+   - Recommendation: **Phase 6 owns it, in the D-08 plan.** That plan is already editing
+     `graph_context.rs`, and honoring the flag is one early-return in `ExtractGraphContextNode::run`
+     that lands on the same silent-degrade branch D-08 is instrumenting — cheapest possible place.
+     Note the semantics must be kept distinct from D-08's `GRAPH_UNAVAILABLE`: a *caller-requested*
+     ablation is not an unavailability, so it wants its own notice (or none) rather than reusing
+     `GRAPH_UNAVAILABLE`, otherwise 6.3's graph-off arm is indistinguishable from a real outage.
+     The planner should name this explicitly in the plan's decision-coverage assertion for D-47.
+
+5. **Should the two `NO_EVIDENCE` string comparisons in `runner.rs` migrate to `typed_code` in
    Phase 6 or later?**
    - What we know: both work either way, because `code` is derived from the enum.
    - Recommendation: migrate them **in the D-74 plan**, together, as part of the notice-constructor
@@ -1740,9 +1918,12 @@ through the Bash tool rather than PowerShell.
 | **D-08** (clause 1) | `GRAPH_UNAVAILABLE` fires on the absent-`graph_port` path | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- graph_unavailable_no_port` | ❌ Wave 0 |
 | **D-08** (clause 2) | `GRAPH_TIMEOUT`/`GRAPH_DEGRADED` behavior is byte-for-byte unchanged | regression | existing tests must stay green | ✅ |
 | **D-08** (clause 3, the droppable one) | **Source-chunk queries never require graph data** | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- source_chunk_query_without_graph` | ❌ Wave 0 |
-| **D-13** (DEBT-RAG-01 clause 1) | Dense fails → `answer_basis == RETRIEVAL` + path-specific notice | unit (fake port `failure()`) | `cargo test … --lib -- retrieval_degraded_dense` | ❌ Wave 0 |
-| **D-13** | BM25 fails → same, distinct notice | unit | `cargo test … --lib -- retrieval_degraded_bm25` | ❌ Wave 0 |
-| **D-13** | Both fail simultaneously → **two** distinct notices survive de-dup | unit | `cargo test … --lib -- retrieval_degraded_both` | ❌ Wave 0 |
+| **D-13** (DEBT-RAG-01 clause 1) | Dense fails → **no `NodeFailed`, no failure terminal**; `answer_basis == RETRIEVAL`; surviving BM25 evidence returned; `RETRIEVAL_DEGRADED_DENSE` notice | unit (`FakeDenseRetrievalPort::failure(...)`) | `cargo test … --lib -- retrieval_degraded_dense` | ❌ Wave 0 |
+| **D-13** | BM25 fails → same, distinct notice; **surviving dense evidence returned** | unit (`FakeBm25RetrievalPort::failure(...)`) | `cargo test … --lib -- retrieval_degraded_bm25` | ❌ Wave 0 |
+| **D-13** | BM25 fails on variant *k>0* → variants `0..k` still contribute (per-variant tolerance) | unit (`FakeBm25RetrievalPort::with_map`) | `cargo test … --lib -- retrieval_degraded_bm25_per_variant` | ❌ Wave 0 |
+| **D-13** | Both fail simultaneously → **two** distinct degrade notices **plus** `NO_EVIDENCE`, all three surviving de-dup, still no failure terminal | unit | `cargo test … --lib -- retrieval_degraded_both` | ❌ Wave 0 |
+| **D-13/D-74** | **No emitted notice carries an unreachable code** — every `NoticeCode` variant has ≥1 emission site | static/unit | `cargo test … --lib -- notice_code_all_reachable` | ❌ Wave 0 (**this is the test that would have caught `RETRIEVAL_DEGRADED_GRAPH`**) |
+| **D-47** | Engine **honors** `disable_graph_context`: flag set → no graph facts reach the prompt; flag absent → unchanged (see Open Question 4 — ownership gap) | unit | `cargo test … --lib -- disable_graph_context_honored` | ❌ Wave 0 |
 | **D-10/D-11/D-12** (DEBT-RAG-01 clause 2) | Opt-in **on**, zero evidence → `MODEL_ONLY` + notice + **zero** citations | unit | `cargo test … --lib -- model_only_opt_in` | ❌ Wave 0 |
 | **D-10/D-11** | Opt-in **off**, zero evidence → today's short-circuit, byte-for-byte | regression | existing Phase 05 D-03 tests must stay green | ✅ |
 | **D-11** | The bypass applies in **both** `run_workflow` **and** `run_tracer` | unit | `cargo test … --lib -- model_only_tracer_path` | ❌ Wave 0 |
@@ -1848,7 +2029,7 @@ recorded as accepted trade-offs in CONTEXT.md.
 - `.planning/ROADMAP.md` (read in full), `.planning/REQUIREMENTS.md` (RAG-03 + traceability), `.planning/STATE.md` (§Known Issues & Debt), `.planning/config.json`
 - `CLAUDE.md` (full), `go-guidelines.md` (full), `rust-guidelines.md` (§M-SINGLE-ITEM-PATH `:104-137`, §M-TAUTOLOGICAL-TESTS `:138-162`, full heading outline)
 - `proto/lancet/v1/lancet.proto` (complete), `buf.yaml`, `buf.gen.yaml`
-- `engine/Cargo.toml`, `engine/src/lib.rs` (complete), `engine/src/main.rs` (`:1-120`, `:591-710`, `:1790-1900`, `:3340-3351`, plus targeted greps), `engine/src/workflow/mod.rs` (`:1-140`), `engine/src/workflow/ports.rs` (complete), `engine/src/workflow/runner.rs` (`:400-500`), `engine/src/workflow/nodes/graph_context.rs` (`:95-160`), `engine/src/workflow/nodes/retrieve.rs` (`:170-215`), `engine/src/generation/mod.rs` (`:140-220`), `engine/src/retrieval/mod.rs` (`:42-67`), `engine/src/tests.rs` (`:1-30`), `engine/src/tests/workflow_phase5_production.rs` (`:1-25`), `engine/src/inspect_lancedb_tests.rs` (`:1-20`)
+- `engine/Cargo.toml`, `engine/src/lib.rs` (complete), `engine/src/workflow/nodes/retrieve.rs` (**complete, `:1-235`**), `engine/src/main.rs` (`:1-120`, `:591-710`, `:1790-1900`, `:3340-3351`, plus targeted greps), `engine/src/workflow/mod.rs` (`:1-140`), `engine/src/workflow/ports.rs` (complete), `engine/src/workflow/runner.rs` (`:400-500`), `engine/src/workflow/nodes/graph_context.rs` (`:95-160`), `engine/src/workflow/nodes/retrieve.rs` (`:170-215`), `engine/src/generation/mod.rs` (`:140-220`), `engine/src/retrieval/mod.rs` (`:42-67`), `engine/src/tests.rs` (`:1-30`), `engine/src/tests/workflow_phase5_production.rs` (`:1-25`), `engine/src/inspect_lancedb_tests.rs` (`:1-20`)
 - `gateway/go.mod`, `gateway/main.go` (`:49-99`, `:474-500`, `:662-810`, `:894-940`, `:1059-1138`, plus full structural outline), `gateway/main_test.go` (header + per-identifier counts)
 - `config/config.toml` (complete)
 
@@ -1880,7 +2061,8 @@ recorded as accepted trade-offs in CONTEXT.md.
 | Module-graph restructure | **HIGH** | `lib.rs` read complete; `main.rs` `mod` declarations enumerated exhaustively; the five per-target test counts measured, not estimated; the three blocking test roots and their exact `use` statements quoted verbatim |
 | Go package split | **HIGH** for the seams and the churn numbers (structural outline + per-identifier counts measured); **MEDIUM** for the final layout, which is explicitly Claude's Discretion |
 | Wire contract | **HIGH** | Toolchain read from `buf.gen.yaml`/`buf.yaml`; the `optional bool` and `as_str_name()` shapes **empirically generated** with the pinned plugin versions rather than assumed; the ~101-site churn counted per file |
-| Behavior change sites | **HIGH** for D-08, D-11, D-15, D-10's two guards (all quoted verbatim from source read this session); **MEDIUM** for D-13's three per-path branches (Assumption A1 — the enclosing function's tail was read, the branches were not enumerated) |
+| Behavior change sites | **HIGH** — all of D-08, D-10 (both guards), D-11, D-13 and D-15 quoted verbatim from source read this session. `retrieve.rs` was read in full (`:1-235`), which resolved the last open assumption and produced the two AI-SPEC corrections (D-13 is fail-closed→degrade; `RETRIEVAL_DEGRADED_GRAPH` unreachable) |
+| Wire-contract churn, Go side | **HIGH** — measured directly: **zero** whole-payload equality assertions in `main_test.go`, so added JSON keys are invisible to all 67 tests |
 | `cfg(test)` fake-port seam | **HIGH** | `ports.rs` read in full; constructor vocabulary tabulated from the source; the source-text guard test located and quoted |
 | Config knob handling | **HIGH** | `load_settings()` read in full; the fail-open pattern quoted verbatim in both its numeric and string forms; the gateway's `loadConfig` and its three `BindEnv` strings read |
 | Pitfalls | **HIGH** | Every pitfall traces to a specific quoted code fact, not to general experience |
