@@ -498,7 +498,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 06-10-PLAN.md — Model-only opt-in: fail-closed config key, both grounding guards conditional, both zero-evidence gates bypassed (D-10/D-11/D-12/D-84 / DEBT-RAG-01).
+- [x] 06-10-PLAN.md — Model-only opt-in: fail-closed config key, both grounding guards conditional, both zero-evidence gates bypassed (D-10/D-11/D-12/D-84 / DEBT-RAG-01).
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
