@@ -5,9 +5,9 @@ current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
 current_plan: 2
 status: executing
-stopped_at: Phase 6 Wave 1 complete (Plans 06-01 and 06-04 executed)
-last_updated: "2026-08-21T02:38:00.000Z"
-state_head: c7e107e0c45155f9e984ff35293d09a25b161df2
+stopped_at: Phase 6 Wave 1 complete (Plans 06-01 and 06-04 executed; 06-04 post-execution review + refinement landed in bfec94b, two acceptance criteria awaiting sign-off)
+last_updated: "2026-08-21T04:15:00.000Z"
+state_head: bfec94b77893e8afd16cf02ea745d566bd517e8c
 progress:
   total_phases: 11
   completed_phases: 3
@@ -110,7 +110,7 @@ milestone_name: milestone
 | buf-rust-codegen | 2026-07-14 | Migrate Rust protobuf code generation to Buf v2 with prost and tonic plugins | Complete |
 | update-readme-with-all-the-decision-and- | 2026-08-19 | Update README with all decisions and progress to date, preserving personal-side-project/showcase framing and adding AI-collaboration angle | Complete |
 | review-06-01-summary-accuracy | 2026-08-20 | Review commit 35b5854 (plan 06-01) for behavior regressions and plan sufficiency; update 06-01-SUMMARY.md frontmatter with 5 out-of-scope lint-edited files, record cargo fmt --check as pre-existing failing gate, annotate RAG-03 as structural-only | Complete |
-| review-06-04-refactor-fidelity | 2026-08-20 | Review commit c7e107ec (plan 06-04) as behavior-preserving refactor; confirmed checkpoint dispatch preserved and DTO/event contract byte-identical; found config fail-closed error string truncated (dropped LANCET_GATEWAY__DATABASE_URL hint) and gateway-test-targets.sh gate defects (source-grep count, no package named on failure) | Complete |
+| review-06-04-refactor-fidelity | 2026-08-20 | Review commit c7e107ec (plan 06-04) as behavior-preserving refactor; confirmed checkpoint dispatch preserved and DTO/event contract byte-identical; found and FIXED in bfec94b: truncated config fail-closed error string (REG-06-04-01, root cause = Task 2 criterion contradicting its own action text), source-grep test gate rewritten on `go test -list` with per-package named failures (closes T-06-04-05), 8 package-local sse wire-contract tests added (total 67 -> 75), plus export-decision table added to 06-04-SUMMARY per the plan output block. Two criteria await sign-off: invariant 67->75 and Task 2 "exactly once". | Complete |
 
 ## Performance Metrics
 

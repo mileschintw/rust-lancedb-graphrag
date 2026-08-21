@@ -95,6 +95,32 @@ Extracted `gateway/internal/config`, `gateway/internal/sse`, and the reserved st
 4. **Telemetry Package Stub (`gateway/internal/telemetry`)**:
    - Created `gateway/internal/telemetry/telemetry.go` as a lightweight zero-dependency stub reserving the package for Phase 6.2 OpenTelemetry integration.
 
+## Export Decisions (old unexported name → new exported name)
+
+Required by the plan's `<output>` block so plans 06-05 and 06-07 can reuse these without
+re-deriving them. Everything on the left lived in `package main` before commit `c7e107ec`.
+
+| Pre-commit (`package main`) | Post-commit | Note |
+|---|---|---|
+| `loadConfig()` | `config.Load()` | unexported → exported across the package boundary |
+| `Config` | `config.Config` | name unchanged; nested `Gateway` struct and all three `mapstructure` tags unchanged |
+| `(app).writeWorkflowEventSSE` | `sse.WriteWorkflowEvent` | method → free function; `app` stayed in `package main` |
+| `(app).writeStreamErrorSSE` | `sse.WriteStreamError` | method → free function |
+| `toQueryRAGResponseDTO` | `sse.ToQueryRAGResponseDTO` | |
+| `queryRAGResponseDTO` | `sse.QueryRAGResponseDTO` | 7 JSON keys; 06-07 adds the `metadata` object alongside |
+| `structuredCitationDTO` | `sse.StructuredCitationDTO` | |
+| `noticeDTO` | `sse.NoticeDTO` | **06-07 adds `TypedCode` here** |
+| `documentFilterDTO` | `sse.DocumentFilterDTO` | |
+| `retrievalSnapshotDTO` | `sse.RetrievalSnapshotDTO` | `variant_count` / `variant_identities` remain proto-only by design |
+| — | `(app).writeWorkflowEvent` | **new** thin wrapper in `package main` retaining checkpoint dispatch before delegating to `sse` |
+| — | `sse.ErrCodeStreamEOFWithoutTerminal`, `sse.ErrCodeGRPCRecvError` | **added at close-out**; `main.go` call sites use these instead of raw literals |
+| — | `sse.eventStreamError` (unexported) | **added at close-out**; the `stream_error` event name, previously only inside a format string |
+
+Stayed in `package main` deliberately: `app`, the four HTTP handlers, `ragQueryRequestBody` and
+its `DisallowUnknownFields` decoder (06-07 adds the two request flags there),
+`(app).handlePreStreamError`, the document store and the reconciler. `internal/engineclient`
+is plan 06-05.
+
 ## Verification and Metrics
 
 ### Test Target Distribution
@@ -161,21 +187,37 @@ regression and three gaps were found and closed:
 | GAP-06-04-02 | The gate counted `^func Test` from source text, so it could not detect a package dropping out of the test run — the mitigation threat T-06-04-05 claimed. Its failure message also named no package, failing Task 1's acceptance criterion. | Rewritten on `go test -list` with per-package assertions and named failures; proven against three induced failures above. Now symmetric with `scripts/engine-test-targets.sh`, which already used `cargo test --list`. |
 | GAP-06-04-03 | `internal/sse` owns the `/rag/query` JSON wire contract that plan 06-07 extends, but had no package-local test; all coverage reached across the boundary from `main_test.go`. | `gateway/internal/sse/sse_test.go` added (8 tests). |
 
-### Plan-authoring defects found while re-running the acceptance criteria
+### Closure Ledger: the four acceptance criteria that no longer hold as written
 
-Two of plan 06-04's own acceptance criteria are unsatisfiable by a faithful execution. The first
-is the traceable root cause of REG-06-04-01.
+Every plan 06-04 acceptance criterion was re-run individually. Four do not pass as literally
+written. Two were unsatisfiable by *any* faithful execution; two are mechanically false but
+substantively correct. None indicates missing work.
 
-| Criterion | Why it cannot hold | Resolution |
-|---|---|---|
-| Task 2: "`LANCET_GATEWAY__DATABASE_URL` appears **exactly once** in `gateway/internal/config/config.go`" | The pre-commit source contains it **twice** — `main.go:75` (`BindEnv`) and `main.go:91` (the operator hint inside the fail-closed error string). Task 2's action text simultaneously required "Keep both error message strings byte-for-byte." The two requirements are mutually exclusive: a faithful move yields two occurrences. | Criterion **superseded**. The correct count is 2. The executor satisfied the machine-checkable grep by deleting the hint from the error string — that is exactly how REG-06-04-01 was introduced. Recorded so plan 06-05 does not repeat the pattern when relocating `engineclient`. |
-| Task 3: "the seven event-name literals … each appear in `gateway/internal/sse/sse.go`", gated as `grep -q "\"stream_error\""` | Six names appear as standalone quoted literals (`eventType = "node_started"` …). `stream_error` only ever existed embedded in a format string, `"event: stream_error
+| # | Criterion | Why it does not hold | Disposition |
+|---|---|---|---|
+| 1 | Task 2: "`LANCET_GATEWAY__DATABASE_URL` appears **exactly once** in `gateway/internal/config/config.go`" | The pre-commit source contains it **twice** — `main.go:75` (`BindEnv`) and `main.go:91` (the operator hint inside the fail-closed error string). Task 2's action text simultaneously required "Keep both error message strings byte-for-byte." Mutually exclusive: a faithful move yields two. | **Superseded — needs sign-off.** Correct count is 2. The executor satisfied the machine-checkable grep by deleting the hint; that is precisely how REG-06-04-01 was introduced. |
+| 2 | Task 3: "the seven event-name literals … each appear in `gateway/internal/sse/sse.go`", gated as `grep -q "\"stream_error\""` | Six names appear as standalone quoted literals (`eventType = "node_started"` …). `stream_error` only ever existed embedded in `"event: stream_error
 data: %s
 
-"`, so the quoted-literal grep matched neither the pre-commit code nor the as-committed code. The gate could not have passed as claimed. | **Fixed in code**, minimally: `stream_error` is now `const eventStreamError`, used in the `Fprintf`. The plan's gate now genuinely passes, and the name is pinned in one place ahead of 06-07. |
+"`, so the quoted-literal grep matched neither the pre-commit nor the as-committed code. The gate could not have passed as this summary originally claimed. | **Fixed in code.** `stream_error` is now `const eventStreamError`, used in the `Fprintf`. The plan's gate now genuinely passes. |
+| 3 | Task 1: "`sh scripts/gateway-test-targets.sh` prints a TOTAL of `67`" | Prints 75. The relocation preserved 67 exactly — which is what the invariant existed to prove — and 8 tests were then added deliberately to `internal/sse`. | **Raised 67 → 75 — needs sign-off.** 67 retained in the script as `RELOCATION_BASELINE`. |
+| 4 | `<success_criteria>`: "the per-package gate reports the redistribution" | There was no redistribution to report: a pure production-code move leaves the test distribution untouched (`gateway 60` / `gateway/db 7` before *and* after). | **Unverifiable as stated; satisfied in spirit.** The gate now reports a real distribution across four packages and asserts each by name. |
 
-The second row also corrects this summary's original "All verification commands succeeded" claim:
-Task 3's event-name gate did not pass at commit time.
+**The discriminator, for plan 06-05.** Rows 1 and 2 are both gate-driven code changes, with
+opposite verdicts. The rule separating them: **row 1 altered observable output, row 2 did not.**
+Editing production behavior to satisfy a scan is a regression; renaming an internal literal so a
+scan can see an unchanged value is not. When relocating `engineclient` under the same style of
+literal-presence gates, apply that test — and prefer `grep -qF "<full string>"` over a prefix
+match for any operator- or wire-facing literal, which is what would have caught REG-06-04-01.
+
+### Regression and gaps found by the post-execution review
+
+| Item | Finding | Resolution |
+|---|---|---|
+| REG-06-04-01 | `gateway/internal/config/config.go:57` truncated the fail-closed error to `gateway.database_url must not be empty`, dropping the `(set LANCET_GATEWAY__DATABASE_URL)` hint an operator reads on a failed start. | String restored. `TestLoadConfigValidation` now asserts the **full** string instead of the prefix. Root cause is ledger row 1. |
+| GAP-06-04-01 | Both gates were prefix-shaped (`grep -q` in the plan, `strings.Contains` in the test), so neither could detect suffix truncation. | Assertion tightened to the full literal; carry-forward rule recorded above. |
+| GAP-06-04-02 | The gate counted `^func Test` from source text, so it could not detect a package dropping out of the test run — the mitigation threat T-06-04-05 claimed. Its failure message also named no package, failing Task 1's acceptance criterion. | Rewritten on `go test -list` with per-package assertions and named failures; proven against three induced failures above. Now symmetric with `scripts/engine-test-targets.sh`, which already used `cargo test --list`. Nothing outside phase 06 invokes the script, so the new compiling-tree requirement breaks no CI step or hook. |
+| GAP-06-04-03 | `internal/sse` owns the `/rag/query` JSON wire contract that plan 06-07 extends, but had no package-local test; all coverage reached across the boundary from `main_test.go`. | `gateway/internal/sse/sse_test.go` added (8 tests). |
 
 ### Non-regressions confirmed, no change made
 - **Checkpoint dispatch.** `sse.WriteWorkflowEvent` opens with `if ev == nil || ev.GetCheckpoint() != nil { return }` and never touches the dispatcher. This is not a live defect — `app.writeWorkflowEvent` handles checkpoints before delegating — but the package now silently *discards* checkpoint frames where the pre-commit function persisted them. A caller contract was documented on the function so a 06-05/06-07 handler restructure cannot route checkpoints straight into `sse` and lose them; `TestWriteWorkflowEventDropsNonClientFrames` pins the drop as deliberate.
@@ -192,9 +234,9 @@ Task 3's event-name gate did not pass at commit time.
   - Replaced value copy of `pb.RetrievalSnapshot` with pointers `&roundtrip, &orig` in `t.Fatalf` on line 3699 to satisfy `go vet`.
 
 ### Deviations recorded at close-out
-- **Test total is 75, not 67.** Task 1 asserted 67 as an invariant. That number held exactly across
-  the relocation, which is what the invariant existed to prove. It was raised to 75 only by the
-  8 tests deliberately added afterwards; 67 is retained in the script as `RELOCATION_BASELINE`.
+- **Acceptance criteria.** Four criteria no longer hold as written; see the Closure Ledger above.
+  Two of them (raising the invariant 67 → 75, superseding Task 2's "exactly once") are judgment
+  calls that require sign-off rather than being self-certifiable.
 - **Task 1 said to count from source rather than a test run, for speed and to avoid PostgreSQL.**
   The gate now uses `go test -list`, which compiles test binaries but runs no test — so the
   no-PostgreSQL constraint holds (3.5s cold, cached thereafter) while the compile-coverage
