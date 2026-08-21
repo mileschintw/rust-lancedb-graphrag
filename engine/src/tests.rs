@@ -3584,19 +3584,20 @@ async fn query_rag_citation_identity_and_notices() {
     assert!(sc.excerpt.chars().count() <= 20);
     assert!(sc.is_truncated);
 
-    assert_eq!(response.notices.len(), 2);
-    assert_eq!(response.notices[0].code, "MODEL_NOTICE");
-    assert_eq!(response.notices[0].message, "Notice msg A");
-    assert_eq!(
-        response.notices[0].severity,
-        lancet::v1::NoticeSeverity::Info as i32
-    );
-    assert_eq!(response.notices[1].code, "MODEL_WARNING");
-    assert_eq!(response.notices[1].message, "Warning msg B");
-    assert_eq!(
-        response.notices[1].severity,
-        lancet::v1::NoticeSeverity::Warning as i32
-    );
+    assert!(response
+        .notices
+        .iter()
+        .any(|n| n.code == "GRAPH_UNAVAILABLE"));
+    assert!(response.notices.iter().any(|n| {
+        n.code == "MODEL_NOTICE"
+            && n.message == "Notice msg A"
+            && n.severity == lancet::v1::NoticeSeverity::Info as i32
+    }));
+    assert!(response.notices.iter().any(|n| {
+        n.code == "MODEL_WARNING"
+            && n.message == "Warning msg B"
+            && n.severity == lancet::v1::NoticeSeverity::Warning as i32
+    }));
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -4299,16 +4300,12 @@ async fn query_rag_valid_zero_match() {
         resp.answer_basis,
         lancet::v1::AnswerBasis::Unspecified as i32
     );
-    assert_eq!(resp.notices.len(), 1);
-    assert_eq!(resp.notices[0].code, "NO_EVIDENCE");
-    assert_eq!(
-        resp.notices[0].message,
-        "No completed corpus evidence matched the requested filters."
-    );
-    assert_eq!(
-        resp.notices[0].severity,
-        lancet::v1::NoticeSeverity::Info as i32
-    );
+    assert!(resp.notices.iter().any(|n| n.code == "GRAPH_UNAVAILABLE"));
+    assert!(resp.notices.iter().any(|n| {
+        n.code == "NO_EVIDENCE"
+            && n.message == "No completed corpus evidence matched the requested filters."
+            && n.severity == lancet::v1::NoticeSeverity::Info as i32
+    }));
     assert!(resp.snapshot.is_some());
     assert_eq!(generator.calls(), 0);
 

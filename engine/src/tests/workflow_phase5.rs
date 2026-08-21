@@ -4151,3 +4151,191 @@ async fn graph_ablation_does_not_emit_graph_unavailability_notice() {
         "must NOT emit GRAPH_UNAVAILABLE when ablated"
     );
 }
+
+async fn run_source_chunk_proof_pipeline(
+    session_id: &str,
+    disable_graph_context: Option<bool>,
+    graph_port: Option<Arc<dyn engine::workflow::ports::GraphQueryPort>>,
+) -> (
+    Vec<engine::pb::lancet::v1::WorkflowEvent>,
+    engine::pb::lancet::v1::WorkflowCompletedEvent,
+) {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = format!("trace-{}", session_id);
+
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.to_string(),
+    );
+
+    let mut req = test_query_request("Source chunk query proof", session_id);
+    req.disable_graph_context = disable_graph_context;
+    let ctx = WorkflowContext::new(session_id.to_string(), trace_id, &req);
+
+    let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-sc-1", "chk-sc-1", 0.95,
+    )]));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-sc-1", "chk-sc-2", 0.85,
+    )]));
+    let fake_reranker = Arc::new(FakeReranker::success());
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Grounded answer derived entirely from source chunks [1].".to_string(),
+        cited_evidence_ids: vec!["[1]".to_string()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ExtractGraphContextNode::new(
+        Some(fake_embedder),
+        graph_port,
+    ));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense),
+        Some(fake_bm25),
+        Some(fake_reranker),
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::new());
+    runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(wf_event) = rx.try_recv() {
+        if let Ok(ev) = wf_event {
+            events.push(ev);
+        }
+    }
+
+    let completed = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event must be emitted");
+
+    (events, completed)
+}
+
+#[tokio::test]
+async fn source_chunk_query_succeeds_when_graph_empty() {
+    let fake_graph = Arc::new(FakeGraphQueryPort::success(Vec::<String>::new()));
+    let (events, wc) =
+        run_source_chunk_proof_pipeline("sess-sc-empty", None, Some(fake_graph)).await;
+
+    assert!(wc.success, "Workflow must complete successfully");
+    let resp = wc.final_response.expect("final_response must be present");
+    assert!(!resp.answer.is_empty(), "answer must be non-empty");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32,
+        "answer_basis must report retrieval"
+    );
+    assert!(
+        !resp.structured_citations.is_empty(),
+        "at least one citation must resolve"
+    );
+    assert_eq!(resp.structured_citations[0].chunk_id, "chk-sc-1");
+
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))),
+        "no NodeFailed event must be emitted"
+    );
+}
+
+#[tokio::test]
+async fn source_chunk_query_succeeds_when_graph_absent() {
+    let (events, wc) = run_source_chunk_proof_pipeline("sess-sc-absent", None, None).await;
+
+    assert!(wc.success, "Workflow must complete successfully");
+    let resp = wc.final_response.expect("final_response must be present");
+    assert!(!resp.answer.is_empty(), "answer must be non-empty");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32,
+        "answer_basis must report retrieval"
+    );
+    assert!(
+        !resp.structured_citations.is_empty(),
+        "at least one citation must resolve"
+    );
+    assert_eq!(resp.structured_citations[0].chunk_id, "chk-sc-1");
+
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))),
+        "no NodeFailed event must be emitted"
+    );
+}
+
+#[tokio::test]
+async fn source_chunk_query_succeeds_when_graph_failing() {
+    let fake_graph = Arc::new(FakeGraphQueryPort::failure(NodeError::new(
+        NodeErrorKind::GraphFailed,
+        "connection reset by peer",
+    )));
+    let (events, wc) =
+        run_source_chunk_proof_pipeline("sess-sc-failing", None, Some(fake_graph)).await;
+
+    assert!(wc.success, "Workflow must complete successfully");
+    let resp = wc.final_response.expect("final_response must be present");
+    assert!(!resp.answer.is_empty(), "answer must be non-empty");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32,
+        "answer_basis must report retrieval"
+    );
+    assert!(
+        !resp.structured_citations.is_empty(),
+        "at least one citation must resolve"
+    );
+    assert_eq!(resp.structured_citations[0].chunk_id, "chk-sc-1");
+
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))),
+        "no NodeFailed event must be emitted"
+    );
+}
+
+#[tokio::test]
+async fn source_chunk_query_succeeds_when_graph_ablated() {
+    let fake_graph = Arc::new(FakeGraphQueryPort::success("entity_1 -- rel -- entity_2"));
+    let (events, wc) =
+        run_source_chunk_proof_pipeline("sess-sc-ablated", Some(true), Some(fake_graph)).await;
+
+    assert!(wc.success, "Workflow must complete successfully");
+    let resp = wc.final_response.expect("final_response must be present");
+    assert!(!resp.answer.is_empty(), "answer must be non-empty");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32,
+        "answer_basis must report retrieval"
+    );
+    assert!(
+        !resp.structured_citations.is_empty(),
+        "at least one citation must resolve"
+    );
+    assert_eq!(resp.structured_citations[0].chunk_id, "chk-sc-1");
+
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))),
+        "no NodeFailed event must be emitted"
+    );
+}
