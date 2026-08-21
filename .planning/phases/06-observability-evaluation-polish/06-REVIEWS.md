@@ -1,623 +1,236 @@
 ---
 phase: 6
-reviewers: [antigravity, cursor]
-reviewed_at: 2026-08-20T21:43:42Z
+reviewers: [antigravity, claude]
+reviewed_at: 2026-08-20T23:00:00Z
 plans_reviewed: [06-01-PLAN.md, 06-02-PLAN.md, 06-03-PLAN.md, 06-04-PLAN.md, 06-05-PLAN.md, 06-06-PLAN.md, 06-07-PLAN.md, 06-08-PLAN.md, 06-09-PLAN.md, 06-10-PLAN.md, 06-11-PLAN.md, 06-12-PLAN.md]
 models:
-  antigravity: "unknown"
-  cursor: "unknown"
+  antigravity: "gemini-3.7-flash-high (reasoning=high)"
+  claude: "opus (reasoning=high)"
 model_sources:
-  antigravity: "unknown"
-  cursor: "unknown"
+  antigravity: "pinned"
+  claude: "pinned"
 ---
 
 # Cross-AI Plan Review — Phase 6
 
-Both lanes ran source-grounded against `D:/Repos/lancet` and cited `file:line` evidence.
-Neither output carries a `[reviewed-without-repo-access]` or
-`[reviewed-without-source-citations]` marker, so both verdicts count at full consensus
-weight. The prompt was budget-assembled at 200000 tokens with `planTruncationPct: 0` and
-`omitted: []` — all twelve plans, plus roadmap, requirements, project context, phase
-context and research, reached both reviewers intact. No `trimmed_reviewers` block is
-recorded because nothing was trimmed.
+This file **replaces** the stale 2026-08-20T21:43:42Z review (`antigravity` + `cursor`). The twelve plans were revised from that round; this pass re-reviews the current plan text against the live repo.
+
+Both lanes ran source-grounded against `D:/Repos/lancet` with tool use and permission auto-approve. Neither output carries a `[reviewed-without-repo-access]` or `[reviewed-without-source-citations]` marker, so both verdicts count at full consensus weight. The assembled prompt was untrimmed (`planTruncationPct: 0`, `omitted: []`). No `trimmed_reviewers` block is recorded.
+
+Antigravity: `agy --model gemini-3.7-flash-high --effort high --dangerously-skip-permissions --add-dir`.
+Claude: `claude --model opus --effort high --dangerously-skip-permissions --permission-mode bypassPermissions`.
 
 ## Consensus Summary
 
-The twelve plans are architecturally sound and unusually well grounded in the real module
-graph. Both reviewers independently confirmed that the plans correctly identify subtle
-existing mechanisms — the dual grounding guards in `engine/src/generation/mod.rs:172-201`,
-the asymmetric zero-evidence gates at `engine/src/workflow/runner.rs:427-430` versus
-`:481`, the silent degradation branches at `engine/src/workflow/nodes/graph_context.rs:112-115`
-and `:147-150`, and `add_notice` de-duplication at `engine/src/workflow/mod.rs:79-86`.
-Both endorse the wave ordering (module graph → fixtures → single wire edit → behavior →
-matrix last).
+Prior-round headline defects **did land** and both reviewers independently confirmed them against source: the Go test-count split is now `60` (`gateway/main_test.go`) + `7` (`gateway/db/document_test.go`) = `67` total; the `\bNotice {` word-boundary gate now closes arithmetically; `assemble_prompt.rs:70` is in the model-only bypass set; `retrieval/tests.rs:896` is in the literal-migration scope; `RETRIEVAL_DEGRADED_GRAPH` is reserved rather than published. Wave ordering (module graph → testkit → one proto edit → behavior → matrix last) remains endorsed.
 
-The defects both found are concentrated in **verification scripting, not design** — with
-one exception (06-10) that is a genuine scope gap and is the single most important finding
-in this review.
+The remaining material disagreement is **06-11 Task 3's re-entry into `update_from_model_output`**. Both reviewers saw the same mechanism (`mod.rs:107-108` clones `output.answer`; `generate.rs:145` currently calls the seam *before* citation resolution). Claude rates it **HIGH** (re-entry without a post-strip `ModelOutput.answer` restores stripped markers and would pass every automated gate). Antigravity rates the same seam **LOW** (documentation / implementer temptation) and still **APPROVES** 06-11. Assembly confirmed Claude's site: `update_from_model_output` at `engine/src/workflow/mod.rs:107-108` does overwrite `self.answer`. Treat the HIGH reading as the planning input: revise Task 3 before Wave 9.
 
-Every finding below marked CONFIRMED was independently verified against source during
-review assembly, not taken on the reviewer's word.
+Secondary: Claude found 06-12 Task 2's `grep -q 'X-Lancet-Error-Kind'` gate already true at HEAD (8 matches) — assembly confirmed. Antigravity did not flag it. Both mentioned 06-07's `blocking-human` checkpoint under `mode: yolo` (LOW).
 
 ### Agreed Strengths
 
-- **Wave sequencing is correct.** Both reviewers independently endorsed
-  restructure → testkit/fakes → one proto edit → behavior → bad-input matrix, and both
-  noted the matrix landing last avoids dual-writing the two count-gate scripts.
-- **Claimed source sites are real.** Cursor: "Almost every claimed site matches source."
-  Antigravity reached the same conclusion independently. The plans are not hallucinating
-  line references.
-- **D-74's single-wire-edit discipline** (one additive protobuf edit, both binding trees,
-  gateway body types in the same plan) is the right lesson carried forward from 05-17/05-23.
-- **Fail-closed isolation of new config keys** (`LANCET_ENGINE__WORKFLOW__ALLOW_MODEL_ONLY_ANSWERS`,
-  `..._CITATION_REPAIR_ENABLED`) errors on invalid input while deliberately preserving
-  existing fail-open behavior, so legacy deployments with typos do not break.
+- **Wave sequencing is still correct** and load-bearing (06-06 before 06-07, 06-09 before 06-10, 06-12 last).
+- **Prior 06-05 test-count defect is closed.** File gate 60 / db 7 / TOTAL 67 via `scripts/gateway-test-targets.sh`.
+- **`\bNotice {` arithmetic closes**; unanchored `Notice {` would have been unreachable.
+- **`RETRIEVAL_DEGRADED_GRAPH` reserved 17** is confirmed: `RetrieveHybridNode` has no graph port (`retrieve.rs:13-20`).
+- **06-10 empty-evidence bypass is complete** (`assemble_prompt.rs:70` plus both `generation/mod.rs` grounding guards).
+- **06-02 `CancelOnDropStream` nesting** inside `query_rag` (`main.rs:1874-1895`) is correctly called out.
 
 ### Agreed Concerns
 
-- **[HIGH — CONFIRMED] `06-05` test-count gate is wrong and fails on HEAD.**
-  Both reviewers flagged this independently.
-  [06-05-PLAN.md:173](.planning/phases/06-observability-evaluation-polish/06-05-PLAN.md:173)
-  asserts `grep -c '^func Test' gateway/main_test.go` = `67`; the file contains **60**.
-  67 is the gateway-wide total (60 in `main_test.go` + 7 in `gateway/db/document_test.go`).
-  The plan's own prose at line 159 conflates the package total with the per-file count, and
-  the threat-model row T-06-05-04 at line 210 repeats the same wrong number. The plan adds
-  no Go tests, so the gate is red before any work starts.
-  *Fix:* assert 60 against `main_test.go` and verify the 67 aggregate through
-  `scripts/gateway-test-targets.sh`.
-
-- **[MEDIUM] `buf generate` depends on remote plugins.** `buf.gen.yaml` references
-  `buf.build/grpc/go`, `buf.build/protocolbuffers/go`, `buf.build/community/neoeinstein-prost`
-  and `buf.build/community/neoeinstein-tonic`. Plan 06-07 Task 1 is blocked in an offline or
-  network-restricted environment. Antigravity rated this MEDIUM, cursor LOW; both call it an
-  external blocker rather than a plan defect.
-  *Fix:* dry-run `buf lint && buf generate` before Wave 5 to confirm plugins are cached.
-
-
-### Single-Reviewer Findings That Verified
-
-These were raised by one lane only, but were confirmed against source during assembly and
-should be treated at full weight. That only one reviewer found each is a statement about
-reviewer coverage, not about severity.
-
-- **[HIGH — CONFIRMED, cursor only] `06-10` never edits the empty-evidence hard fail, so SC3 cannot be met.**
-  This is the most consequential finding in the review. Plan 06-10 lifts the model-only
-  restriction in the runner and in `generation/mod.rs`, but
-  [assemble_prompt.rs:70-75](engine/src/workflow/nodes/assemble_prompt.rs:70) still returns
-  `PromptAssemblyFailed` whenever `ctx.evidence_blocks.is_empty()`, and
-  [prompt.rs:333](engine/src/prompt.rs:333) independently returns
-  `PromptAssemblyError::EmptyEvidence`. **Neither `assemble_prompt.rs` nor `prompt.rs`
-  appears anywhere in plan 06-10** — grepping the whole plan for either filename returns
-  nothing. As written, an opted-in zero-evidence request still terminates in
-  `PromptAssemblyFailed`, so the model-only answer path D-11 requires never runs.
-  *Fix:* add both files to Task 3; when `ctx.allow_model_only` and evidence is empty, skip
-  the hard fail and pack a zero-evidence prompt — without relaxing the packer
-  unconditionally, since existing `EmptyEvidence` tests depend on the current behavior.
-
-- **[HIGH — CONFIRMED, cursor only] `06-06`'s `QueryRagRequest {` gate matches generated code and can never pass.**
-  [06-06-PLAN.md:170](.planning/phases/06-observability-evaluation-polish/06-06-PLAN.md:170)
-  and `:179` require
-  `grep -rn --include=*.rs 'QueryRagRequest {' engine/src | grep -v 'engine/src/testkit.rs'`
-  to produce no output. That pattern matches `pub struct QueryRagRequest {` at
-  [lancet.v1.rs:59](engine/src/pb/lancet/v1/lancet.v1.rs:59) — generated prost code that is
-  neither testkit nor migratable. The gate is red on an untouched tree and stays red after a
-  perfect migration. Note the plan carries a `planner-discipline-allow` comment for this
-  literal at line 141, so the planner was aware of the literal but not of the generated-code
-  collision.
-  *Fix:* exclude `engine/src/pb/` from the grep as well as testkit.
-
-- **[HIGH — CONFIRMED, antigravity only] `06-07`'s `Notice {` gate is unreachable — it targets 1, floor is 2, post-change is 3.**
-  [06-07-PLAN.md:293](.planning/phases/06-observability-evaluation-polish/06-07-PLAN.md:293)
-  asserts the four-file concatenation yields `grep -c 'Notice {'` = `1` after the change.
-  But `CheckpointNotice {` at [events.rs:113](engine/src/workflow/events.rs:113) (struct
-  definition) and [events.rs:119](engine/src/workflow/events.rs:119) (`impl From<&Notice> for
-  CheckpointNotice`) both match the bare pattern, and neither is a notice constructor that
-  06-07 removes, so the gate can never pass.
-  *Count breakdown:* current 6 = 4 production constructors (`mod.rs` ×2, `graph_context.rs`
-  ×1, `retrieve.rs` ×1) + 2 `CheckpointNotice`. 06-07 collapses the four constructors into
-  one centralized constructor, so the **post-change count is 3**, of which 2 are irreducible.
-  The target of `1` is unreachable either way. **Do not fix this by changing the target
-  number** — neither 1 nor 2 passes. Fix the pattern.
-  *Correction to the reviewer:* antigravity predicted the count would be 3; the actual
-  current count is **6**. Its arithmetic was wrong, its mechanism was right.
-  *Fix:* word-boundary match — `grep -cE '\bNotice \{'` — or explicitly exclude
-  `CheckpointNotice`.
-  **Note this is a direct reviewer disagreement:** cursor examined the same gate and
-  described it as a strength ("Task 2 verify `Notice {` count = 1 ... prevents a second
-  inline literal"), missing the `CheckpointNotice` collision. Verification sides with
-  antigravity.
-
-- **[MEDIUM — CONFIRMED, cursor only] `06-01`'s env-key gate uses `-ge 18`, not equality.**
-  A rename preserves the count and passes the gate, which is precisely threat T-06-01-01
-  that the plan itself names. *Fix:* assert equality against a pre-move count recorded in
-  the SUMMARY.
-
-### Unverified Reviewer Claims
-
-Recorded for completeness; each is hedged in its own source review and was **not** confirmed
-during assembly.
-
-- **[MEDIUM, antigravity] Windows path separators in `scripts/engine-test-targets.sh`.**
-  Stated conditionally ("if the script uses strict regex matching ... with forward slashes").
-  The script's actual matching was not inspected. Worth a look given this is a Windows
-  development host, but do not treat it as an established defect.
-- **[LOW, antigravity] `FakeGenerator` structural-guard fragility** at
-  `engine/src/tests/workflow_phase5.rs:2435-2446` — a formatting change above
-  `generation/mod.rs:504` trips the assertion. Plans 06 and 10 already warn about this.
+- **[HIGH on Claude / LOW on Antigravity — CONFIRMED mechanism] 06-11 Task 3 re-enters `update_from_model_output`.** `engine/src/workflow/mod.rs:108` assigns `self.answer = output.answer.clone()`. Unless the clone's `answer` is the post-strip text, stripped markers come back. Plan must state (a) mutate the clone's `answer` before re-entry, or (b) add a basis-only helper and relax the `-le 2` gate.
+- **[LOW] 06-07 `blocking-human` Task 0** can stall a yolo/batch Wave 5 run. Recommended option is listed first.
 
 ### Divergent Views
 
-- **Overall risk.** Antigravity: **LOW-to-MEDIUM** ("risks are isolated to test-verification
-  scripting rather than architectural flaws"). Cursor: **MEDIUM**, driven specifically by
-  06-10. The divergence is explained entirely by coverage — antigravity did not find the
-  06-10 prompt-assembly gap, which is a scope defect rather than a scripting defect. Since
-  that finding verified, **cursor's MEDIUM is the better-supported verdict.**
-- **`06-07`'s `Notice {` gate** — flagged as HIGH by antigravity, cited as a strength by
-  cursor. Verification confirms antigravity (see above).
-- **Wire-contract breaks (cursor only, MEDIUM each).** Two deliberate breaks worth an
-  explicit human decision rather than a silent default: ROADMAP SC4 still names a single
-  `RETRIEVAL_DEGRADED` notice while 06-07 publishes `RETRIEVAL_DEGRADED_DENSE` /
-  `RETRIEVAL_DEGRADED_BM25`; and renaming the on-the-wire `NOTICE` / `WARNING` codes at
-  `workflow/mod.rs:117-126` to `MODEL_NOTICE` / `MODEL_WARNING` is invisible in-repo but
-  visible to any out-of-repo client.
-
-### Reviewer Coverage Note
-
-Each lane found HIGH-severity defects the other missed — two for cursor, one for
-antigravity — and they contradicted each other on a third. Neither review alone would have
-surfaced the full set. Cursor reviewed plan-by-plan (27KB, per-plan risk ratings);
-antigravity reviewed cross-cutting (10KB, single consolidated verdict). The two shapes are
-complementary rather than redundant.
+- **Overall risk:** Antigravity **LOW** and approves all twelve plans. Claude **MEDIUM-HIGH**, with 06-11 needing revision before Wave 9 and 06-12 Task 2 needing an anchoring gate. Consensus planning weight: follow Claude on 06-11 (confirmed at source); treat 06-12 tautological grep as a real but non-blocking gate fix.
+- **06-12 Task 2:** Claude only — `X-Lancet-Error-Kind` already occurs 8 times in `gateway/main_test.go`; the task can pass with zero new tests. Antigravity approved the matrix as written.
+- **`buf generate` remote plugins:** Antigravity only (repeat of prior-round external-blocker note). Claude did not re-raise it.
+- **D-01 / D-05 decision-coverage:** Claude only (scoping decisions with no plan `must_haves` row).
 
 ---
 
 ## Antigravity Review
+# Cross-AI Plan Review: Phase 6 (Observability, Evaluation & Polish — Core Hardening)
 
+## 1. Summary
 
-### 1. Summary
-
-Phase 6 addresses architectural debt and degraded-mode resilience across Lancet's Rust RAG engine and Go API gateway. The 12-plan sequence is structured with disciplined wave dependencies: modularizing the dual-compilation Rust crate (`DEBT-P3-MODULE-GRAPH`) and Go gateway monolith (`D-82`), establishing a test harness with constructor fixtures (`engine::testkit`, `D-83`), consolidating wire contract changes into a single additive protobuf edit (`D-74`), and systematically implementing RAG-03 degraded-mode behaviors (`DEBT-RAG-01`, `DEBT-RAG-03`, `DEBT-RAG-05`, `DEBT-RAG-06`). 
-
-Source verification against `D:/Repos/lancet` confirms that the plans correctly identify subtle implementation details—such as the dual grounding guards in `engine/src/generation/mod.rs:172-201`, the asymmetric zero-evidence gates in `engine/src/workflow/runner.rs:427-483`, and the silent degradation paths in `engine/src/workflow/nodes/graph_context.rs:112-150`. However, verification revealed two critical verification command defects in Plans 05 and 07 regarding test counts and grep patterns that will cause automated verification steps to fail unless corrected.
+The revised Phase 6 implementation plans (06-01 through 06-12 across 10 waves) constitute an exceptionally thorough, well-sequenced, and defensible execution plan for closing `DEBT-P3-MODULE-GRAPH` (D-80/D-81), `D-82` (Go package split), `D-74/D-76` (consolidated additive wire contract), and the four target `RAG-03` debt clauses (`DEBT-RAG-01`, `DEBT-RAG-03`, `DEBT-RAG-05`, `DEBT-RAG-06`). The plans adhere strictly to the locked architectural sequence (**module graph → wire contract → behavior tracer → behavior expansions → bad-input matrix**), maintain an invariant per-target test-count gate throughout, and demonstrate rigorous attention to detail. Every finding from previous reviews has been cleanly incorporated (including the Go 60/7/67 test-count split in [06-05-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-05-PLAN.md), the `retrieval/tests.rs:896` literal migration in [06-06-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-06-PLAN.md), the anchored `\bNotice {` regex in [06-07-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-07-PLAN.md), the `assemble_prompt.rs:70` empty-evidence bypass in [06-10-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-10-PLAN.md), and the post-strip basis re-entry in [06-11-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-11-PLAN.md)).
 
 ---
 
-### 2. Strengths
+## 2. Strengths
 
-- **Surgical Module Restructuring Sequence (Plans 01–03, 04–05):**
-  - Moving `chunker` (`engine/src/main.rs:29`, `main.rs:39`) and `config` (`main.rs:50-705`) to `engine::chunker` and `engine::config` before relocating `ingest` and `service` (`main.rs:1040-1880`) prevents circular references and preserves item reachability under `rust-guidelines.md` (`M-SINGLE-ITEM-PATH`).
-  - Rehoming `engine/src/tests.rs` (which currently binds to the binary root via `use super::*;` at line 9 and declares `workflow_phase5_production` at line 11) to `engine/src/lib.rs:15-18` cleanly resolves the test/binary divergence without leaving phantom alias re-exports.
-  - Symmetrically refactoring `gateway/main.go:49-98` and `gateway/main.go:803-1021` into `gateway/internal/config`, `gateway/internal/sse`, and `gateway/internal/engineclient` maintains `handlePreStreamError`'s structural interface assertion (`interface{ Trailer() metadata.MD }` at `gateway/main.go:783`) across package boundaries.
-
-- **Precise Identification of Dual Validation Guards & Runner Gates (Plans 09, 10):**
-  - In `engine/src/generation/mod.rs`, model-only responses are rejected at two distinct points: `AnswerBasis::ModelOnly` check at `generation/mod.rs:172-177` and `cited_evidence_ids.is_empty()` check at `generation/mod.rs:193-201`. Plan 10 correctly conditions both guards on `GroundingLimits.allow_model_only`, ensuring model-only responses validate while retrieval-backed responses are still required to cite evidence.
-  - In `engine/src/workflow/runner.rs`, Plan 10 correctly identifies that `run_workflow` has a compound zero-evidence gate with two disjuncts (`n.code == "NO_EVIDENCE" || (ctx.final_candidates.is_empty() && ctx.evidence_blocks.is_empty())` at `runner.rs:427-430`) whereas `run_tracer` at `runner.rs:481-487` only checks the notice code. Bypassing both disjuncts in `run_workflow` ensures consistency across production and tracer paths.
-
-- **Accurate Remediation of Silent Degradation Branches (Plan 08):**
-  - In `engine/src/workflow/nodes/graph_context.rs`, the success branch with empty facts (`graph_context.rs:112-115`) and the absent-port branch (`graph_context.rs:147-150`) silently zero out context without emitting notices, while errors at `graph_context.rs:134-144` emit `GRAPH_TIMEOUT` or `GRAPH_DEGRADED`. Plan 08 instruments both silent paths with distinct, typed `GRAPH_UNAVAILABLE` notice messages without altering execution flow.
-
-- **Strict Pre-Work Rejection Verification in Bad-Input Matrix (Plan 12):**
-  - In `engine/src/main.rs:1839-1872`, `QueryRequest::from_values` runs during gRPC request admission before creating channels or spawning tokio tasks. Plan 12 validates that invalid inputs fail at admission via `d1_status` (`main.rs:1186-1215`) by verifying call counts remain zero on `FakeDenseRetrievalPort`, `FakeBm25RetrievalPort`, and `FakeGenerator`.
-
-- **Fail-Closed New Key Isolation (D-84 / Plans 09, 10):**
-  - New environment variables (`LANCET_ENGINE__WORKFLOW__ALLOW_MODEL_ONLY_ANSWERS` and `LANCET_ENGINE__WORKFLOW__CITATION_REPAIR_ENABLED`) enforce fail-closed parsing on invalid inputs while strictly preserving existing fail-open behavior in `engine/src/config.rs` to avoid breaking deployments with legacy typos.
-
-- **Local, Network-Free Citation Normalization & Repair (Plan 11):**
-  - Implementing deterministic normalization (syntax stripping, Unicode normalization, case folding) with exact-match resolution and tie-breaking drops in `engine::generation::citations` satisfies `DEBT-RAG-03` without introducing secondary LLM round-trips.
+- **Surgical Literal Containment ([06-06-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-06-PLAN.md)):** Isolating the ~80 exhaustive [`QueryRagRequest`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto#L53-L57) literals and 14 test [`Notice`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto#L73-L77) literals (including the obscure site at [`engine/src/retrieval/tests.rs:896`](file:///D:/Repos/lancet/engine/src/retrieval/tests.rs#L896)) into a dedicated `engine::testkit` module *before* editing [`proto/lancet/v1/lancet.proto`](file:///D:/Repos/lancet/proto/lancet/v1/lancet.proto) prevents a 100+ compile error avalanche inside the wire contract commit.
+- **Strict Go 1.25 Target Discipline:** Across all Go plans ([06-04-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-04-PLAN.md), [06-05-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-05-PLAN.md), [06-07-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-07-PLAN.md), [06-12-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-12-PLAN.md)), the plans enforce the [`gateway/go.mod`](file:///D:/Repos/lancet/gateway/go.mod#L3) `go 1.25.0` constraint, explicitly prohibiting Go 1.26 features like `new(val)` and `errors.AsType[T]` despite newer local toolchains.
+- **Accurate Per-Target Test Accounting:** The plans maintain exact per-target test invariants in both scripts:
+  - [`scripts/engine-test-targets.sh`](file:///D:/Repos/lancet/scripts/engine-test-targets.sh): Tracks `src/lib.rs` (133 → 261 post-restructure), `src/main.rs` (128 → 0), `inspect_lancedb.rs` (18), `seed_rag_fixture.rs` (0), and `tests/config_startup.rs` (9) for a 288 baseline.
+  - [`scripts/gateway-test-targets.sh`](file:///D:/Repos/lancet/scripts/gateway-test-targets.sh): Recognizes that HEAD test count is split across [`gateway/main_test.go`](file:///D:/Repos/lancet/gateway/main_test.go) (60 tests) and [`gateway/db/document_test.go`](file:///D:/Repos/lancet/gateway/db/document_test.go) (7 tests) for a total of 67.
+- **Unreachable Contract Elimination:** [06-07-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-07-PLAN.md) proactively removes `RETRIEVAL_DEGRADED_GRAPH` (AI-SPEC tag 17) and marks it `reserved 17;` because [`RetrieveHybridNode`](file:///D:/Repos/lancet/engine/src/workflow/nodes/retrieve.rs#L13-L20) has no graph port, avoiding shipping a permanent, dead enum value.
+- **End-to-End Degraded Path Completeness:**
+  - [06-08-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-08-PLAN.md) covers both silent degrade branches in [`engine/src/workflow/nodes/graph_context.rs:112-115,147-150`](file:///D:/Repos/lancet/engine/src/workflow/nodes/graph_context.rs#L112-L150) with `GRAPH_UNAVAILABLE` while adding `GRAPH_CONTEXT_DISABLED` for caller ablation.
+  - [06-09-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-09-PLAN.md) converts [`retrieve.rs:76,107`](file:///D:/Repos/lancet/engine/src/workflow/nodes/retrieve.rs#L76-L107) from fail-closed (`return Err`) to degrade while preserving variant loop accumulation.
+  - [06-10-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-10-PLAN.md) unblocks model-only by handling both runner gates ([`runner.rs:426-432,481-487`](file:///D:/Repos/lancet/engine/src/workflow/runner.rs#L426-L487)), the prompt assembly guard ([`assemble_prompt.rs:70`](file:///D:/Repos/lancet/engine/src/workflow/nodes/assemble_prompt.rs#L70)), and both grounding validation guards ([`generation/mod.rs:172,193`](file:///D:/Repos/lancet/engine/src/generation/mod.rs#L172-L193)).
+  - [06-11-PLAN.md](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-11-PLAN.md) replaces fail-closed citation resolution in [`generate.rs:154-165`](file:///D:/Repos/lancet/engine/src/workflow/nodes/generate.rs#L154-L165) with local normalize-then-strip and conservative basis reconciliation.
+- **Fail-Closed Configuration Knobs (D-84):** New keys (`allow_model_only_answers`, `citation_repair_enabled`) reject invalid environment variables at startup, containing `DEBT-P3-WARN-SETTINGS` without disturbing existing fail-open keys.
 
 ---
 
-### 3. Concerns
+## 3. Concerns
 
-- **[HIGH] Flawed Test Count Acceptance Criterion in Plan 05 (06-05):**
-  - **Evidence:** `gateway/main_test.go` defines exactly 60 `func Test` functions. The remaining 7 gateway tests reside in `gateway/db/document_test.go` (`package db`). Total test count across `gateway/` is 67.
-  - **Mechanism:** Plan 05 Task 2 Acceptance Criteria (line 1493) and automated verification script (line 1501) state:
-    `test "$(grep -c '^func Test' gateway/main_test.go)" = "67"`
-  - **Impact:** Running this check will return `60 = 67`, resulting in an immediate failure (exit code 1) during automated task verification.
-  - **Remediation:** Update the criterion to check `main_test.go` for 60 tests (`test "$(grep -c '^func Test' gateway/main_test.go)" = "60"`) and verify the package total via `sh scripts/gateway-test-targets.sh`.
-
-- **[HIGH] False Grep Match on `CheckpointNotice` in Plan 07 (06-07) Verification:**
-  - **Evidence:** `engine/src/workflow/events.rs:113` contains `pub struct CheckpointNotice {` and line 119 contains `impl From<&Notice> for CheckpointNotice {`.
-  - **Mechanism:** Plan 07 Task 2 verification (line 2187) runs:
-    `test "$(cat engine/src/workflow/mod.rs engine/src/workflow/events.rs engine/src/workflow/nodes/graph_context.rs engine/src/workflow/nodes/retrieve.rs | grep -c 'Notice {')" = "1"`
-  - **Impact:** The grep pattern `Notice {` matches `CheckpointNotice {` twice in `events.rs`. Together with the 1 legitimate notice constructor in `mod.rs`, the count will be 3 (`3 != 1`), causing the automated task gate to fail.
-  - **Remediation:** Use word-boundary matching `grep -cE '\bNotice \{'` or explicitly exclude `CheckpointNotice`.
-
-- **[MEDIUM] Remote Plugin Dependency for Protobuf Codegen in Plan 07 (06-07):**
-  - **Evidence:** `buf.gen.yaml` references remote plugins: `buf.build/grpc/go`, `buf.build/protocolbuffers/go`, `buf.build/community/neoeinstein-prost`, and `buf.build/community/neoeinstein-tonic`.
-  - **Mechanism:** Plan 07 Task 1 requires running `buf generate` on execution. If running in an offline or restricted network environment without cached plugins, code generation will fail.
-  - **Impact:** Plan 07 will be blocked at Task 1 if internet access to `buf.build` is unavailable.
-
-- **[MEDIUM] Windows vs. POSIX Path Separator Handling in `scripts/engine-test-targets.sh`:**
-  - **Evidence:** `cargo test -- --list` on Windows produces output containing backslashes (e.g., `Running unittests src\lib.rs (...)` and `Running tests\config_startup.rs (...)`).
-  - **Mechanism:** If `scripts/engine-test-targets.sh` uses strict regex matching `src/lib.rs` and `tests/config_startup.rs` with forward slashes, target detection will fail on native Windows runners.
-  - **Impact:** Test enumeration script may report 0 matched targets on Windows runners.
-
-- **[LOW] Structural Guard Test Fragility in `engine/src/tests/workflow_phase5.rs`:**
-  - **Evidence:** `engine/src/tests/workflow_phase5.rs:2435-2446` locates `pub struct FakeGenerator` in `engine/src/generation/mod.rs` by reading the raw source string and asserting that the immediately preceding non-empty line contains `#[cfg(test)]`.
-  - **Mechanism:** Adding doc comments, helper annotations, or reformatted whitespace immediately above `pub struct FakeGenerator` in `engine/src/generation/mod.rs:504` will trip this assertion.
-  - **Impact:** While Plans 06 and 10 explicitly warn about this pitfall, any accidental formatting adjustment above line 504 will fail the test suite.
+- **[LOW] `06-07-PLAN.md` Human Checkpoint in Semi-Automated Execution:**
+  - *Evidence:* [`06-07-PLAN.md`](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-07-PLAN.md#L4766) sets `autonomous: false` and includes a `blocking-human` checkpoint (`Task 0`) to confirm the notice vocabulary (`research-corrected`).
+  - *Risk:* If an automated pipeline executes Wave 5 in non-interactive batch mode, it could stall at Task 0.
+  - *Mitigation:* The plan lists `research-corrected` as the recommended default option with explicit resume signals, making manual or automated unblocking straightforward.
+- **[LOW] `generate.rs` Re-Entry Seam Documentation:**
+  - *Evidence:* In [`06-11-PLAN.md`](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-11-PLAN.md#L6484-L6486), Task 3 specifies that [`GenerateAnswerNode`](file:///D:/Repos/lancet/engine/src/workflow/nodes/generate.rs#L14-L19) must call [`update_from_model_output`](file:///D:/Repos/lancet/engine/src/workflow/mod.rs#L107) (or the Task 2 basis seam) after citation stripping so that a total drop downgrades through the exact same conservative comparison.
+  - *Risk:* An implementer might be tempted to mutate `ctx.answer_basis` directly in `generate.rs` if `update_from_model_output` overwrites `ctx.answer` again.
+  - *Mitigation:* Task 3 verification strictly checks `test "$(grep -c 'self.answer_basis' engine/src/workflow/mod.rs)" -le "2"` and verifies `generate.rs` contains zero basis assignment sites.
+- **[LOW] Preserved Insecure Dial (`DEBT-CR-04-EXT`):**
+  - *Evidence:* [`gateway/main.go:30`](file:///D:/Repos/lancet/gateway/main.go#L30) uses `grpc.WithTransportCredentials(insecure.NewCredentials())`.
+  - *Risk:* Relocating this to `gateway/internal/engineclient` might tempt an engineer to add TLS.
+  - *Mitigation:* [`06-05-PLAN.md`](file:///D:/Repos/lancet/.planning/phases/06-observability-evaluation-polish/06-05-PLAN.md#L4356) explicitly records `T-06-05-01` and binds the insecure dial to the `999.x` Security & Transport backlog phase per D-03/D-06.
 
 ---
 
-### 4. Suggestions
+## 4. Suggestions
 
-1. **Fix Plan 05 Acceptance Criteria:**
-   Update Plan 05 Task 2 acceptance criteria and verification command to check for 60 tests in `gateway/main_test.go` and 7 tests in `gateway/db/document_test.go`, verifying the aggregate 67 count through `scripts/gateway-test-targets.sh`.
-
-2. **Fix Plan 07 Verification Regex:**
-   Replace `grep -c 'Notice {'` in Plan 06 Task 1 and Plan 07 Task 2 with `grep -cE '\bNotice \{'` to avoid matching `CheckpointNotice {` in `engine/src/workflow/events.rs`.
-
-3. **Make `scripts/engine-test-targets.sh` Path-Agnostic:**
-   In `scripts/engine-test-targets.sh`, normalize backslashes to forward slashes (e.g., via `tr '\\' '/'` or regex `[\\/]`) before pattern matching target names to ensure seamless execution on both Windows native (Git Bash/pwsh) and Linux/WSL.
-
-4. **Verify Protobuf Plugin Availability Ahead of Wave 5:**
-   Execute a dry-run `buf lint && buf generate` before Wave 5 begins to confirm that remote plugins from `buf.build` are accessible and cached locally.
+1. **Verify `buf` Connectivity Prior to Wave 5:** Ensure the environment has network access to `buf.build` (or cached remote plugins in `~/.cache/buf`) before triggering `06-07-PLAN.md`. Task 1's dry-run `buf lint && buf generate` on the untouched tree will catch any issue immediately.
+2. **Keep the Serialized Wave Ordering:** Do not attempt to merge Wave 4 (`06-06`), Wave 5 (`06-07`), or Wave 6 (`06-08`). The separation of literal containment, proto regeneration, and behavior tracing ensures that every intermediate state compiles and passes the test suite cleanly.
 
 ---
 
-### 5. Risk Assessment
+## 5. Risk Assessment
 
-**Overall Risk Level: LOW to MEDIUM**
-
-**Justification:**
-- The architectural design, modular decomposition, and error-handling state machines across Rust and Go are exceptionally thorough, sound, and closely aligned with the existing codebase structure.
-- The sequencing (Restructure → Testkit/Fakes → Wire Contract → Behavior → Matrix) ensures each step builds upon an invariant-verified foundation.
-- Identified risks are isolated to test-verification scripting syntax (grep boundaries and file-level test count expectations) rather than architectural flaws or data-plane regressions. Once the minor script assertions in Plans 05 and 07 are adjusted, the execution path is clear and reliable.
-
-
----
-
-## Cursor Review
-
-
-Verified against `D:/Repos/lancet` at the current tree (`engine/src/lib.rs` 17 lines; `engine/src/main.rs` still owns `mod chunker`, config, ingest, and `LancetServiceImpl`; `gateway/main.go` still flat). Line citations below are that tree, not the plans’ projected post-move paths.
-
-**Overall:** The twelve plans match Phase 6’s seven success criteria and are unusually well grounded in the real module graph, fail-closed sites, and D-74/D-76 sequencing. Three defects will fail execution or the user-facing contract if left as written: 06-10 never edits the empty-evidence hard fails in prompt assembly; 06-06’s `QueryRagRequest {` grep matches generated prost code; 06-05 asserts `67` tests in `main_test.go` which only has `60`. Overall risk **MEDIUM**, driven by 06-10.
+- **Overall Risk Level: LOW**
+- **Justification:**
+  1. The architectural restructuring (Waves 1–3) is 100% pure refactoring with no behavior changes, protected by per-target test-count assertion scripts.
+  2. The wire contract change (Waves 4–5) is strictly additive, eliminates proto drift risks, and isolates struct-literal migrations into Wave 4.
+  3. The behavioral features (Waves 6–10) are decoupled into distinct, wave-separated plans with robust fallback mechanisms and comprehensive test suites covering all edge cases.
+  4. All prior review findings and edge-case concerns have been verified and confirmed resolved against the live codebase at `D:/Repos/lancet`.
 
 ---
 
-### Cross-plan
+## 6. Plan Verification Matrix
 
-**What holds.** Wave order is right: module graph (06-01…06-05) → fixtures (06-06) → one proto edit (06-07) → behavior (06-08…06-11) → matrix last (06-12) so the two count-gate scripts are not dual-written. D-74’s “one edit, both binding trees, gateway body types in the same plan” is the correct lesson from 05-17/05-23. The tracer-first split (06-08) plus horizontal expansion is real, not decorative.
+| Plan | Wave | Requirements / Decisions | Pre-Review Findings Status | Verification Status |
+|---|---|---|---|---|
+| **06-01** | Wave 1 | D-80, D-81 (`engine::chunker`, `engine::config`) | Verified Windows path separator normalization and exact 18-literal `LANCET_` key count. | **APPROVED** |
+| **06-04** | Wave 1 | D-82 (`internal/config`, `internal/sse`, `internal/telemetry`) | Verified target Go 1.25 conformance and comment-stripped test enumeration. | **APPROVED** |
+| **06-02** | Wave 2 | D-80 (`engine::ingest`, `engine::service`) | Verified un-nesting of `CancelOnDropStream` to module scope. | **APPROVED** |
+| **06-05** | Wave 2 | D-82, D-03, D-06 (`internal/engineclient`) | Verified test gate counts: `main_test.go` = 60, `db/document_test.go` = 7, TOTAL = 67. | **APPROVED** |
+| **06-03** | Wave 3 | D-80 (Rehome test roots, `main.rs` to wiring) | Verified `main.rs` single item assertion and 261/0/18/0/9 test distribution. | **APPROVED** |
+| **06-06** | Wave 4 | D-83 (`engine::testkit`, fake failure modes, Go key sets) | Verified inclusion of `retrieval/tests.rs:896` and `pb/` exclusion from grep gate. | **APPROVED** |
+| **06-07** | Wave 5 | D-74, D-76 (Consolidated proto delta & bindings) | Verified `reserved 17;` for graph degrade, anchored `\bNotice {`, and `ragQueryRequestBody` presence. | **APPROVED** |
+| **06-08** | Wave 6 | D-47, D-08, DEBT-RAG-06 (Graph ablation & notices) | Verified 2 silent-degrade paths covered with `GRAPH_UNAVAILABLE` and 4-case source-chunk proof. | **APPROVED** |
+| **06-09** | Wave 7 | D-13, DEBT-RAG-01 (Retrieval fail-closed → degrade) | Verified per-variant loop tolerance and 3-notice both-paths sequence. | **APPROVED** |
+| **06-10** | Wave 8 | D-10, D-11, D-12, D-84 (Model-only opt-in) | Verified conditional bypass of `assemble_prompt.rs:70`, `generation/mod.rs:172,193`, and runner gates. | **APPROVED** |
+| **06-11** | Wave 9 | D-14, D-18, D-17, D-19 (Citation repair & basis) | Verified local normalize-then-strip, conservative reconciliation, and prompt-only precedence text. | **APPROVED** |
+| **06-12** | Wave 10 | D-15, DEBT-RAG-05 (Bad-input matrix & reconciliation) | Verified table-driven gRPC/HTTP tests, fake call counts = 0, and final 8-plan test delta reconciliation. | **APPROVED** |
+---
 
-**Shared strengths.** Almost every claimed site matches source: ModelOnly guard at `engine/src/generation/mod.rs:172-175`; both runner gates at `engine/src/workflow/runner.rs:427-430` and `:481`; retrieve fail-closed at `engine/src/workflow/nodes/retrieve.rs:76` and `:107`; graph silent paths at `engine/src/workflow/nodes/graph_context.rs:112-115` and `:147-150`; `DisallowUnknownFields` at `gateway/main.go:677`; `add_notice` de-dup on `(code, message)` at `engine/src/workflow/mod.rs:79-86`; next proto tags really are free (`QueryRAGRequest` 1–3, `Notice` 1–3, `WorkflowCompletedEvent` 1–6).
+## Claude Review
+# Cross-AI Plan Review — Phase 6 (Revised Plans, Fresh Re-Review)
 
-**Shared test-count facts.** `#[test]`/`#[tokio::test]` attributes sum to **288** (including one `#[ignore]` in `engine/src/generation/tests.rs:674`). Go `^func Test` is **60** in `gateway/main_test.go` + **7** in `gateway/db/document_test.go` = **67**. VALIDATION.md’s 133/128/18/0/9 split is consistent with combined lib+bin = 261.
+**Reviewer note:** Every claim below was checked against the live repo at HEAD. Findings carry `path:line` evidence. I did not read `06-REVIEWS.md`; each plan's own "Review incorporation" table was treated as a claim to verify, not a fact.
 
 ---
 
-### 06-01 — Rust module graph, step 1
+## 1. Summary
 
-#### Summary
-Sound first move: `chunker` then the whole config surface into the library, with a per-target count gate that deliberately does **not** pin the lib/bin split. Matches D-80/D-81 and the actual layout (`lib.rs` has no `chunker`/`config`; `main.rs:29` is `mod chunker`; `load_settings` is `main.rs:591`).
-
-#### Strengths
-- Smallest revertible steps; `LancetServiceImpl` correctly deferred to 06-02.
-- `::config::` disambiguation is required: the module will be named `config` and the crate already is (`engine/Cargo.toml` `config = { version = "~0.15", features = ["toml"] }`).
-- Combined 261 lib+bin invariant survives the chunker move: `engine/src/chunker/tests.rs` has 6 tests that will migrate lib←bin without changing the sum.
-- `chunker/mod.rs` has no `crate::` paths today, so the “rewrite crate paths” instruction is a no-op, not a hidden rewrite.
-
-#### Concerns
-- **MEDIUM** — Task 2’s automated verify uses `LANCET_` distinct-literal count `-ge 18`, not equality with the pre-move count. Current `load_settings` has exactly 18 `LANCET_*` names (`main.rs:592-696`). A rename keeps the count and would silently break deployments (the threat the plan itself names as T-06-01-01).
-- **LOW** — `cargo clippy -- -D warnings` on today’s ~3.3k-line `main.rs` is unproven here; if the tree is not already clippy-clean, Wave 1 dies before any move.
-
-#### Suggestions
-- Make the LANCET gate `test "$after" -eq "$before"` with the before-count recorded in the SUMMARY, not `-ge 18`.
-- Run clippy once on HEAD and record the result in 06-01-SUMMARY before calling it a gate.
-
-#### Risk Assessment
-**LOW.** Mechanical, well scoped, counts match.
+These twelve plans are unusually well-instrumented for a 12-plan phase: the sequencing (module graph → wire contract → behavior) is a locked decision that the plans honor precisely, the per-target test-count gates are a real safety net for a refactor whose only protection is the suite, and nearly every numeric claim I sampled is correct against source. The prior review round's headline defects **did** land: the Go test-count split is now `60` + `7` = `67` (`gateway/main_test.go`, `gateway/db/document_test.go`), the `\bNotice \{` word-boundary gate now closes arithmetically (2+0+1+1 = 4 pre-change, 1 post-change), `CancelOnDropStream`'s nesting inside `query_rag` is called out, the `LANCET_` env-key gate is equality-to-18 rather than `-ge`, and `retrieval/tests.rs`'s missed `QueryRagRequest` literal is now in scope (81 non-generated sites total, generated `pb/` excluded). One material defect survives: **06-11's citation-repair plan forbids the only implementation shape that would work, and the shape it forces silently undoes the answer-text strip it exists to perform.** That is a runtime defect, not a compile-time one, and it is the plan whose own incorporation table claims to have closed it. Secondary concerns are gate quality rather than correctness — two automated gates pass unmodified at HEAD and therefore prove nothing.
 
 ---
 
-### 06-02 — Rust module graph, step 2
+## 2. Strengths
 
-#### Summary
-Correctly isolated as “the large step.” Ingest-before-service ordering matches the real dependency (`LancetServiceImpl` holds embedding/ingest types). Leaving the five per-target counts unmoved so 06-03 owns the redistribution is the right attribution story.
-
-#### Strengths
-- Explicit D1 identity preservation (`d1_status` at `main.rs:1186`, kinds at `:1847-1869`) is load-bearing for 06-12.
-- `use engine::ingest::{…}` in `main.rs` so `engine/src/tests.rs:9` `use super::*` keeps compiling is the actual Rust visibility rule, not a shortcut.
-- Constants `MAX_DOCUMENT_BYTES` / `QUEUE_CAPACITY` (`main.rs:53-54`) are listed to move; they would otherwise fail 06-03’s “one top-level item” grep.
-
-#### Concerns
-- **MEDIUM** — `CancelOnDropStream` is a **local item inside** `query_rag` (`main.rs:1874-1895`, immediately after `_query_request … ?;`). The plan talks about it as a sibling of `LancetServiceImpl`. A naive cut of “the impl block” drops it or splits the function. It must be un-nested into `engine/src/service.rs`.
-- **LOW** — Relocating ~2.3k lines in one task is honest `confidence: low`; the safety net is the suite, which is appropriate, not sufficient to make the diff reviewable in one sitting.
-
-#### Suggestions
-- State explicitly: lift `CancelOnDropStream` out of `query_rag` to module scope in `service.rs`, then continue the function body.
-- Split the service move’s file map in the SUMMARY (admission vs ports vs stream) so review is possible.
-
-#### Risk Assessment
-**MEDIUM.** Right design; the nested type is the execution trap.
+- **The `\bNotice \{` gate arithmetic actually closes.** Measured at HEAD: `workflow/mod.rs` 2, `workflow/events.rs` **0** (word-boundary), `nodes/graph_context.rs` 1, `nodes/retrieve.rs` 1 → 4. The unanchored `Notice {` pattern would return 3 for those files (`events.rs:113` `pub struct CheckpointNotice` and `:119` `impl From<&Notice> for CheckpointNotice` both match), making 06-07's target of 1 unreachable. The `-E '\bNotice \{'` fix in 06-06 (target 4) and 06-07 (target 1) is correct and load-bearing.
+- **06-07's correction that `events.rs` is not a construction site is right.** `engine/src/workflow/events.rs:113-127` defines `CheckpointNotice` and a `From<&Notice>` impl that copies `code`/`message`/`severity` from an already-built notice. It never constructs a `pb::Notice`. Dropping `events.rs` from Task 2's `<files>` and forbidding `CheckpointNotice` migration is the correct call, and it correctly avoids adding `typed_code` to the checkpoint snapshot (which would change the 19-key `CHECKPOINT_SNAPSHOT_KEYS` contract Phase 05 froze).
+- **The `RETRIEVAL_DEGRADED_GRAPH` correction is empirically confirmed.** `grep -ci graph engine/src/workflow/nodes/retrieve.rs` → **0**. `RetrieveHybridNode` (`retrieve.rs:13-20`) holds `dense_port`, `bm25_port`, `reranker`, `settings`, `index_generation`, `embedding_model` — no graph port. `06-AI-SPEC.md:604` declares `NOTICE_CODE_RETRIEVAL_DEGRADED_GRAPH = 17`; reserving that tag instead of publishing a permanently-dead one-way enum value is the right decision, and 06-07 gates it (`grep -c 'RETRIEVAL_DEGRADED_GRAPH'` outside comments = 0).
+- **06-09's fail-closed→degrade framing is correct, and the gate has teeth.** `retrieve.rs` has exactly **2** `return Err(err)` sites (`:76` dense, `:107` BM25); cancellation and fusion/rerank use `NodeError::new(...)` and don't match. The 2→1→0 progression across Tasks 1 and 2 is a real assertion, not a tautology. Notice ordering (dense at `:65-80`, BM25 loop at `:101-111`, `NO_EVIDENCE` at `:192-198`) confirms the specified three-notice sequence is source-order, so asserting it as an ordered sequence is meaningful.
+- **06-02's `CancelOnDropStream` fix is precise.** The type is declared at `engine/src/main.rs:1874-1895`, lexically **inside** `query_rag`'s body (between the `d1_status(...)?;` at `:1871` and the channel setup at `:1897`), despite being at column 0. A naive "cut the impl block" would drop it or split the function. Requiring it be lifted to module scope first is exactly right.
+- **06-01's per-target gate design is correct where it matters.** It asserts `lib + bin = 261` combined rather than the split — necessary, because Task 1 moves `chunker`'s **6** tests (`grep -c` over `engine/src/chunker/`) from bin to lib, which would break a fixed split. `18 / 0 / 9` on the untouched targets and `288` total are internally consistent (133+128+18+0+9). `engine/tests/config_startup.rs` confirmed at 9.
+- **06-10's empty-evidence finding is accurate and complete.** `assemble_prompt.rs:70-75` returns `PromptAssemblyFailed` on `ctx.evidence_blocks.is_empty()` — bypassing the two runner gates alone would still terminate the workflow, so SC3 could not be met. The revised plan edits the node *and* refuses to relax `pack_evidence_and_graph_prompt`'s `EmptyEvidence` return (`prompt.rs:332-334`), preserving `workflow_phase5.rs:2299-2304` and `tests.rs:6262-6279`. It also correctly identifies that **both** grounding guards must become conditional — `generation/mod.rs:172-177` (basis) and `:193-201` (empty `cited_evidence_ids`) — and I confirm the rest of the validator passes cleanly on an empty-evidence/empty-citation output (`seen_cited == inline_set` with both empty at `:338`).
+- **06-05 Task 1 correctly scopes its verify to `go build ./...` only.** `go build` does not compile `_test.go`, so leaving `main_test.go` broken between tasks is legal; `go vet` would compile tests and fail, and the plan omits it. That is deliberate, correct attention to detail.
+- **06-03's double-declaration guard is well-targeted.** `engine/src/tests.rs:11` declares only `pub mod workflow_phase5_production;`; `lib.rs:15-17` declares `workflow_phase5` via `#[path]`. `grep -c 'mod workflow_phase5;' tests.rs = 0` correctly does not match `workflow_phase5_production;`.
+- **06-12's non-rejection dispositions are correct and non-obvious.** `retrieve.rs:192-198` emits `NO_EVIDENCE` with `Ok(())` for zero candidates — Phase 03's shipped valid-zero-match branch. Recording "unmatched filter" as a 200-row rather than a 400-row prevents contradicting shipped behavior and preserves the abstention signal Phase 6.3 scores on. Its requirement that the two HTTP non-rejection rows use a **success-returning** stub (rather than an `InvalidArgument` stub) is a genuine catch.
 
 ---
 
-### 06-03 — Test-root rehoming
+## 3. Concerns
 
-#### Summary
-This is the step that actually closes DEBT-P3-MODULE-GRAPH. `tests.rs` really does open with `use super::*;` (`engine/src/tests.rs:9`), and `workflow_phase5_production.rs` uses `crate::` against the binary. Pinning the measured lib/bin split only after this plan is correct.
+### HIGH
 
-#### Strengths
-- Forbids a second `workflow_phase5` declaration; `lib.rs:15-17` already owns it via `#[path]`.
-- Source-text guard at `engine/src/tests/workflow_phase5.rs:2392-2445` is real; leaving `generation/mod.rs` untouched is mandatory.
-- Gate-script comment (“values are measurements, update in the same commit”) is the protocol every later plan depends on.
+**C1 — 06-11 Task 3's forced re-entry into the basis seam silently undoes the answer-text strip.**
 
-#### Concerns
-- **MEDIUM** — `src/tests.rs` + `src/tests/` is legal, but `workflow_phase5.rs` lives in that directory while being declared from `lib.rs` via `#[path]`, not from `tests.rs`. Easy to double-declare during the import rewrite.
-- **LOW** — “128 cases follow them” is the pre-06-01 binary count. After 06-01’s 6 chunker tests move, the remaining binary mass is ~122. Harmless if the script records measurements.
-
-#### Suggestions
-- Add a negative grep: `engine/src/tests.rs` must not contain `mod workflow_phase5;`.
-- Do not treat 261/0 as forceable; keep the plan’s “record what was measured” rule.
-
-#### Risk Assessment
-**MEDIUM.** Highest mechanical churn in the restructure; design is sound.
-
----
-
-### 06-04 — Go package split, part A
-
-#### Summary
-Low-churn half of D-82 is correctly chosen. `loadConfig` is `gateway/main.go:57-80` with the three `BindEnv` names byte-for-byte as claimed. SSE/DTO types are unused by tests, so this half really is ~five test edits. Go 1.25 pin matches `gateway/go.mod:3`.
-
-#### Strengths
-- Telemetry stub with **no** OTel import matches D-82/D-36 (6.2 owns contents).
-- Fail-closed `database_url` / prod `sslmode=disable` stay in the moved loader.
-- “Do not assert per-package distribution yet” is the right analogue of 06-01.
-
-#### Concerns
-- **MEDIUM** — Task 1 prose says the before-state is a single row `gateway 67` because `main_test.go` is the only test file. It is not: `gateway/db/document_test.go` has 7 `Test` functions. A TOTAL of 67 is correct (60+7); a per-package `gateway == 67` assertion is not.
-- **LOW** — `writeWorkflowEventSSE` → exported `WriteWorkflowEvent` is a rename across the package boundary; production call sites in `queryRAG` must all move or the build fails. Tests don’t name the old identifier, so that’s production-only.
-
-#### Suggestions
-- Script before-state must print `gateway 60` and `gateway/db 7` (or equivalent paths). Never write `gateway 67` as a per-package expected value.
-- Keep Task 1’s “TOTAL only” rule; do not let the prose override it.
-
-#### Risk Assessment
-**LOW.** Prose is wrong; the specified TOTAL gate is right.
-
----
-
-### 06-05 — Go package split, part B
-
-#### Summary
-High-churn half belongs alone. Insecure dial stays in `run()` (`gateway/main.go:1082`, `insecure.NewCredentials()`), matching D-03/D-06. `handlePreStreamError`’s structural `Trailer()` assertion (`:783`) will keep matching if the relocated error keeps that method (`:287`).
-
-#### Strengths
-- Constructor instead of cross-package struct literals is the right Go seam for 06-07 and 6.2 `otelgrpc`.
-- Test doubles stay in `package main`; not exported from the production package.
-- Task 1 expected to break `go test` until Task 2 is explicit and correct.
-
-#### Concerns
-- **HIGH** — Task 2 acceptance/verify: `grep -c '^func Test' gateway/main_test.go` equals **67**. Current file has **60**. This plan adds no tests. The gate fails on HEAD.
-- **LOW** — `grpcEngine` appears as a composite literal in tests; qualifying it as `engineclient.GRPCEngine{…}` is fine only if the constructor is not the only legal construction. If Task 1 unexports fields, Task 2’s 5 sites need the constructor, which the plan does not say.
-
-#### Suggestions
-- Change the 67 assertion to the **suite** total (`scripts/gateway-test-targets.sh` TOTAL) or to `60` in `main_test.go`.
-- If `GRPCEngine` fields are unexported, require tests to use the constructor (or keep a test-local stub, which the plan already prefers via `engineFunc`).
-
-#### Risk Assessment
-**MEDIUM.** Design is right; the 67-in-`main_test.go` gate is a false red.
-
----
-
-### 06-06 — Wave-0 test surface
-
-#### Summary
-Necessary containment: exhaustive `QueryRagRequest {` literals are real (32 / 37 / 11 in the three named files ≈ 80). Fake ports already have error + stall (`ports.rs:278-313`); empty is unnamed; malformed-citation on `FakeGenerator` does not exist (`generation/mod.rs:504-527` is `new` / `with_responses` / `calls` only). Go has no whole-payload key-set assertion today, so 06-07’s new JSON keys would be invisible.
-
-#### Strengths
-- Migrating tests **before** the proto edit is the whole point of D-74’s reviewability.
-- Leaves the six production `Notice {` sites for 06-07. Current production sites are `workflow/mod.rs` (2), `graph_context.rs` (1), `retrieve.rs` (1); confirm events.rs in-plan.
-- `Default::default()` + field assignment (not struct-update) is mechanically grepable.
-- Source-text guard: append-only on `FakeGenerator`’s inherent impl is the only safe edit.
-
-#### Concerns
-- **HIGH** — Acceptance: `grep -rn 'QueryRagRequest {' engine/src | grep -v testkit` must be empty. That pattern matches `pub struct QueryRagRequest {` in `engine/src/pb/lancet/v1/lancet.v1.rs:59`. The gate is red on an untouched tree and stays red after a perfect migration.
-- **MEDIUM** — `engine/src/retrieval/tests.rs:896` is an extra `QueryRagRequest {` outside the three migration files. Research’s “80” missed it. After Task 1 it still fails the (even repaired) grep.
-- **LOW** — Task 3’s Go exact-key tests must land **before** 06-07 adds keys, or they snapshot the post-change set and never prove the addition. Ordering vs 06-07 is correct; the tests must freeze the **current** key set.
-
-#### Suggestions
-- Exclude `engine/src/pb/**` (and maybe `**/lancet.v1.rs`) from the grep, or match construction (`let … QueryRagRequest {`, `&QueryRagRequest {`).
-- Add `engine/src/retrieval/tests.rs` to the migration file list.
-- Record the exact current SSE key set in the SUMMARY so 06-07 has a before/after.
-
-#### Risk Assessment
-**HIGH** until the grep is fixed; **LOW** after. The work itself is right.
-
----
-
-### 06-07 — Consolidated additive wire contract
-
-#### Summary
-This is the one-way contract plan, and it is shaped correctly: blocking-human checkpoint on vocabulary, then proto+regen, then Rust derivation, then Go plumbing in the **same** plan because `DisallowUnknownFields` (`gateway/main.go:677`) turns an unwired field into HTTP 400. `optional bool` is required for request-then-config-then-default. Next tags are free. Regenerating both trees together is the 05-17/05-23 fix.
-
-#### Strengths
-- Checkpoint option `research-corrected` matches the code: `retrieve.rs` has no graph port (struct fields at `:13-19`), so `NOTICE_CODE_RETRIEVAL_DEGRADED_GRAPH` is unemittable.
-- `GRAPH_CONTEXT_DISABLED` vs `GRAPH_UNAVAILABLE` is required for 06-08/6.3.
-- Migrating runner gates from `n.code == "NO_EVIDENCE"` (`runner.rs:427`, `:481`) in the same commit as the constructor prevents dual representations.
-- Task 1 expected Rust compile break (exhaustive `Notice {`) is called out; Go should still build.
-
-#### Concerns
-- **MEDIUM** — ROADMAP Phase 6 SC4 still names a single `RETRIEVAL_DEGRADED` notice. This plan publishes `RETRIEVAL_DEGRADED_DENSE` / `RETRIEVAL_DEGRADED_BM25` and reserves graph. That is the better contract, but SC4’s wording is now false until 6.4. An auto-select of `ai-spec-literal` would ship the dead enum value D-76 forbids removing.
-- **MEDIUM** — `NOTICE` / `WARNING` string codes at `workflow/mod.rs:117-126` are on the wire today. Renaming them to `MODEL_NOTICE` / `MODEL_WARNING` is a deliberate break; the checkpoint says nothing in-repo reads them. Any out-of-repo client would see it. Keep that as an explicit human choice, not a silent default.
-- **LOW** — Task 1 requires `buf generate` against remote plugins and a clean `git diff` on the **untouched** tree. If committed bindings already drifted, this plan must stop; that is correct, but it is an external blocker.
-
-#### Suggestions
-- Do not let `--auto` skip the checkpoint; the gate_rationale is right.
-- Add one sentence to the SUMMARY mapping ROADMAP SC4’s `RETRIEVAL_DEGRADED` onto the two path-specific codes.
-- After regen, assert prost `Option<bool>` and Go `*bool` before starting Task 2 (already in acceptance — keep it).
-
-#### Risk Assessment
-**MEDIUM.** One-way, but the checkpoint and the three-column-in-one-plan rule are the right controls.
-
----
-
-### 06-08 — Graph ablation + GRAPH_UNAVAILABLE
-
-#### Summary
-Correct first behavior plan. D-08’s two silent sites are exactly `graph_context.rs:112-115` (empty facts) and `:147-150` (no port); failure notices at `:134-143` should stay untouched. Distinct ablation vs unavailability codes are required for Phase 6.3. Engine-process “e2e” via `query_rag` is honestly scoped; HTTP was 06-07’s job.
-
-#### Strengths
-- Early return **before** port-presence and timeout, asserted via fake call counters, distinguishes “never called” from “empty result.”
-- Distinct messages on the two `GRAPH_UNAVAILABLE` sites match de-dup on `(code, message)`.
-- No config key for ablation (measurement affordance, default false) avoids conflating it with model-only.
-
-#### Concerns
-- **LOW** — CONTEXT.md D-08 cited absent-port as `:145-148`; the `else` is `:147-150`. Harmless drift.
-- **LOW** — No two-process test. Acceptable given 06-07’s decoder test, but 6.3 is the first real HTTP ablation client.
-
-#### Suggestions
-- Pin the two unavailability **message** strings in the SUMMARY; 06-12/6.4 will need them.
-- One workflow-level test that ablation and unavailability never co-occur (early return) is already in the behavior block — keep it as an ordered assertion, not `any()`.
-
-#### Risk Assessment
-**LOW.** Notice-only on existing branches plus one new early return.
-
----
-
-### 06-09 — Retrieval degrade (D-13)
-
-#### Summary
-This is the real behavior change: both retrieve call sites currently `return Err(err)` (`retrieve.rs:76`, `:107`), which fails the node. Converting them to the graph-node degrade shape is what D-13 actually requires. Per-variant BM25 tolerance is the non-obvious part (loop at `:90-132`). Ordering before 06-10 is correct: both-paths-failed converges on empty candidates + `NO_EVIDENCE`.
-
-#### Strengths
-- Asserting **absence** of `node_failed` / failed terminal, not just notice presence, is the right test (otherwise the old fail-closed path still passes).
-- Three-notice order (dense, lexical, `NO_EVIDENCE`) follows source order and is what 06-10 consumes.
-- Same-kind per-variant failures collapsing via `(code, message)` de-dup is specified, not left to chance.
-- Absent-dense-port branch (`:78-80`) explicitly out of scope — flagged rather than silently “fixed.”
-
-#### Concerns
-- **MEDIUM** — Fusion and rerank still fail the node (`retrieve.rs:123-128`, `:140-145`, `:152-157`). A healthy dense/BM25 pair with a fusion error still produces a failed terminal. D-13 is about **retrieval paths**, so this may be intended residue; it is not named in the plan, and a reviewer of SC4 could think “one path failing” includes fusion.
-- **LOW** — Task 1 verify `return Err(err)` count = 1 assumes the remaining one is BM25. Cancellation uses `return Err(NodeError::cancelled())`, which would not match. Fine, but brittle if someone writes `return Err(err)` in a new arm.
-
-#### Suggestions
-- Record fusion/rerank fail-closed as explicit leftover in the SUMMARY (backlog or accepted).
-- Keep the both-paths test as a sequence, not a set.
-
-#### Risk Assessment
-**MEDIUM.** Highest-consequence production change in the phase; tests as specified would actually catch a no-op.
-
----
-
-### 06-10 — Model-only opt-in
-
-#### Summary
-The two-guard and two-gate findings are confirmed in source and are the difference between a plan that compiles and a feature that works. Fail-closed env parsing for the new key only, request-then-config-then-false, and default off are all right. **The plan still cannot deliver D-10/D-11 as written**, because bypassing the runner does not reach generation: prompt assembly hard-fails on empty evidence.
-
-#### Strengths
-- Second grounding guard at `generation/mod.rs:193-200` (`cited_evidence_ids.is_empty()`) really would reject every model-only answer if only the ModelOnly arm were lifted.
-- Production gate’s second disjunct (`final_candidates.is_empty() && evidence_blocks.is_empty()`, `runner.rs:428`) is real; the tracer gate (`:481`) lacks it. Bypassing only the notice test is the silent bug the plan names.
-- `GroundingLimits` is already the validation policy object (`generation/mod.rs:88-92`); extending it avoids a third parameter. Fields are private — executor will need a setter/`with_allow_model_only`. Populate from **context** at `generate.rs:134-137`, not from the startup `Arc<GroundingLimits>` on `EffectiveRagSettings` (`main.rs:489-498`), or the per-request flag never arrives.
-
-#### Concerns
-- **HIGH** — After the runner bypass, `AssemblePromptNode` still does this:
-
-```70:75:engine/src/workflow/nodes/assemble_prompt.rs
-            if ctx.evidence_blocks.is_empty() {
-                return Err(NodeError::new(
-                    NodeErrorKind::PromptAssemblyFailed,
-                    "No evidence blocks provided for prompt assembly",
-                ));
-            }
+`engine/src/workflow/mod.rs:107-114`:
+```rust
+pub fn update_from_model_output(&mut self, output: &ModelOutput) {
+    self.answer = output.answer.clone();          // :108
+    self.citations = output.cited_evidence_ids.clone();
+    self.answer_basis = match output.answer_basis { … };   // :110
 ```
 
-  `pack_evidence_and_graph_prompt` also returns `PromptAssemblyError::EmptyEvidence` (`prompt.rs:333`, tests at `tests.rs:6278` and `workflow_phase5.rs:2299` **require** that error). Task 3’s `files` list is `runner.rs`, `generate.rs`, `workflow/mod.rs`, `workflow_phase5.rs` — not `assemble_prompt.rs` or `prompt.rs`. D-11 says AssemblePrompt/GenerateAnswer **run**. As written, opted-in zero-evidence still ends in `PromptAssemblyFailed`.
-- **MEDIUM** — Task 3 says “ensure a well-formed prompt with an empty evidence set” in prose but gives no algorithm (skip the empty check when opted in vs change packer vs separate model-only prompt). Existing EmptyEvidence tests will fail if the packer is relaxed unconditionally.
-- **LOW** — Threading a request flag through `GroundingLimits` (a numeric ceiling type) is a bit muddy; documented, but easy to bake the config default into the node at startup and forget the overlay.
+`engine/src/workflow/nodes/generate.rs:145` calls `ctx.update_from_model_output(&output)` **before** citation resolution at `:146-165`. So the Task 2 reconciliation seam runs against the *pre-repair* citation set.
 
-#### Suggestions
-- Add `assemble_prompt.rs` (and likely `prompt.rs`) to Task 3. When `ctx.allow_model_only` and evidence is empty: skip the hard fail, pack a prompt with zero evidence blocks (or a dedicated empty-evidence template), do **not** change the non-opt-in `EmptyEvidence` tests.
-- Construct per-call `GroundingLimits` (Copy) with `allow_model_only` copied from `ctx` at the `validate_grounding_with_limits` site.
-- Keep D-16: no score cutoff.
+06-11 Task 3 requires re-entering that seam after the strip, and Task 2/3 both gate `grep -c 'self.answer_basis' engine/src/workflow/mod.rs` at `-le 2` (currently exactly 2: read at `:100`, assign at `:110`). That gate closes off a dedicated `reconcile_basis(&mut self, observed)` helper, forcing the executor to re-call `update_from_model_output` with a mutated `ModelOutput` clone. But that call re-executes `:108` — **`self.answer` is overwritten with the unstripped text** unless the executor also mutates the clone's `answer` field. The plan never says that.
 
-#### Risk Assessment
-**HIGH.** Without the prompt-assembly change, SC3 is not met. The rest of the plan is the right shape.
+*Failure scenario:* model returns `"… as shown in [7]."` with `cited_evidence_ids: ["[7]"]`, and `[7]` resolves to nothing. Repair strips `[7]` from `ctx.answer` and from both citation lists, emits `CITATION_DROPPED`, then re-enters the seam to downgrade the basis. `:108` restores `"… as shown in [7]."`. The response now carries a `CITATION_DROPPED` notice, an empty `structured_citations`, and an answer that still cites `[7]` — the exact provenance-integrity failure T-06-11-01 exists to prevent, and it would pass every automated gate in the plan (the `-le 2` count holds, `\bNotice \{` holds, the build is green).
 
----
+This is the finding 06-11's own incorporation table records as *"MEDIUM: Task 3 must re-enter the Task 2 basis seam — incorporated."* The re-entry was added; the consequence of re-entry was not.
 
-### 06-11 — Citation repair + reconciliation + precedence text
+**Severity rationale:** runtime-only, on the exact path the phase's transparency prohibition covers, with no gate that catches it.
 
-#### Summary
-Matches D-14/D-17/D-18/D-19. Today’s fail-closed branch is `generate.rs:154-164` (resolved count ≠ cited count → `LlmGenerationFailed`). Unicode crates are already in `engine/Cargo.toml`. Default `citation_repair_enabled = true` is a production behavior change for all clients; off restores today. Reconciliation-before-repair-integration is the right seam (`update_from_model_output` at `workflow/mod.rs:107-114` is the single basis copy).
+### MEDIUM
 
-#### Strengths
-- Tie = drop (never first-match) is the honesty rule the prohibition requires.
-- Repair notices keyed on **marker text** so two drops survive de-dup.
-- “Never strengthen” (model-only stays model-only even if citations resolve) is specified and testable.
-- Prompt append in `base_system_policy()` (`prompt.rs:205-210`) with schema frozen in `openrouter.rs` matches D-19.
-- No new crate; `git diff engine/Cargo.toml` empty is the right anti-scope-creep gate.
-- Task 2 verify `Notice {` count = 1 in `workflow/mod.rs` (the 06-07 constructor) prevents a second inline literal.
+**C2 — 06-12 Task 2's automated verify passes at HEAD without a single new test.**
 
-#### Concerns
-- **MEDIUM** — Task 2’s engine assessment mentions “whether repair stripped markers,” but repair is Task 3. Task 2 can only reconcile on resolve/no-resolve; Task 3 must **call the same seam** after stripping, not invent a second `answer_basis` assignment. The plan says “exactly one site” — Task 3’s files omit `workflow/mod.rs`, which is good only if generate.rs goes through `update_from_model_output` after mutating citations.
-- **MEDIUM** — Default-on repair will fail every existing test that expects the current error string `"failed to resolve all cited evidence identities completely"` (`generate.rs:159`). The plan says update those tests; the SUMMARY must list each by name (same discipline as 06-09).
-- **LOW** — Precedence text increases trust in retrieved evidence, including hostile corpus content. The plan records the trade; 6.4 limitations should too (already D-71).
+The gate is `grep -q 'X-Lancet-Error-Kind' gateway/main_test.go && grep -q 'StatusBadGateway' gateway/main_test.go && <diff-scope check>`. Measured at HEAD: `X-Lancet-Error-Kind` = **8**, `StatusBadGateway` = **19**. Both greps are already satisfied. The only remaining real signal is `scripts/gateway-test-targets.sh`'s total — which the same task instructs the executor to update to whatever it measures. An executor that writes zero matrix rows, bumps the total by zero, and runs `go test` passes the whole task.
 
-#### Suggestions
-- Task 3: after strip, re-enter the Task 2 seam with the post-repair citation set so total-drop downgrades without a second assignment site.
-- Keep repair **off** in any test that is asserting the old fail-closed message.
-- Do not put `reqwest`/`async` in `citations.rs` (already gated).
+Contrast the plans that got this right: 06-08 Task 2 gates `grep -c 'GraphUnavailable' graph_context.rs = 2` (HEAD: 0) and `grep -c 'Notice {' = 0` (HEAD: 1); 06-09 gates `return Err(err) = 0` (HEAD: 2). Those genuinely fail before the work and pass after.
 
-#### Risk Assessment
-**MEDIUM.** Behavior change is well specified; default-on plus the one-basis-site constraint need careful Task 3 wiring.
+**C3 — 06-11 Task 3 has no algorithm for where the drop-notice message and the stripped text meet.**
 
----
+Task 3 requires removing a dropped marker "from the answer text" and emitting one notice per marker with the marker named. But `ModelOutput.answer` markers are extracted by `extract_inline_markers` (`generation/mod.rs:352-373`), which only recognizes `[<digits>]`. A near-miss marker the repair pass normalizes (case/whitespace, per Task 1) may not match that extractor at all — e.g. `[ 7 ]` is not matched by `extract_inline_markers`, so it is invisible to the existing validator and the plan gives no rule for locating it in the answer string for removal. The normalization contract (Task 1) and the text-removal contract (Task 3) are specified independently and never reconciled. LOW-to-MEDIUM depending on how the executor interprets "marker".
 
-### 06-12 — Bad-input matrix
+**C4 — 06-04 Task 1's gate pins one implementation spelling rather than a behavior.**
 
-#### Summary
-Correctly test-only over existing admission. `QueryRequest::from_values` already rejects empty/whitespace (`retrieval/mod.rs:365-370`), oversize, and filter bounds; `query_rag` maps those kinds at `main.rs:1839-1872` **with `?`**, so invalid input **is** rejected. The `_query_request` name means the **Ok** value is unused, not that validation is skipped. Unmatched filter as success+`NO_EVIDENCE` matches shipped Phase 03. Last wave because of the count-gate scripts is the right dependency reason.
+`grep -q "grep -v '\^\[\[:space:\]\]\*//'" scripts/gateway-test-targets.sh` requires the script to contain that exact escaped literal. A behaviorally-identical `sed '/^[[:space:]]*\/\//d'` or `awk` filter fails the gate. The acceptance criterion ("counting pipeline filters comment lines before counting") is the real contract; the grep over-constrains it.
 
-#### Strengths
-- Table as the artifact Phase 6.4 publishes; tests generated from it, not the reverse.
-- Zero fake-port call counts on rejecting rows prove “before retrieval/provider,” which the discarded-Ok value makes slightly subtle.
-- No duplicated Go validator; HTTP 400 comes from `handlePreStreamError` mapping `InvalidArgument` (`main.go:796-798`).
-- Negative bound: filter has no numeric field; mapping onto config `invalid_settings` is honest.
-- Analog table already exists at `gateway/main_test.go:1041-1061`.
+### LOW
 
-#### Concerns
-- **LOW** — “Validation result is discarded” undersells that `?` still rejects. Do not “fix” by using `_query_request` downstream unless a later plan needs the normalized query; changing that here would be production scope.
-- **LOW** — HTTP unmatched-filter rows need a stub engine that returns success, not InvalidArgument. Specify that or the non-rejection rows 400 via a mis-stub.
+**C5 — 06-06 Task 2's `cfg(test)` ratio gate has enormous slack.** HEAD: `cfg(test)` = 26, `struct Fake` = 6 in `ports.rs`. Adding three constructors with zero new gate attributes still passes `26 >= 6`. The real protection is `cargo build --release`, which *does* work here — `ports.rs:9-10` gates the `FusedCandidate`/`RetrievalError` imports and `generation/mod.rs:12-16` gates the `atomic`/`Mutex` imports, so an ungated fake would fail to resolve. Downgraded on that basis, but the ratio assertion contributes nothing.
 
-#### Suggestions
-- Header table: include `invalid_settings` as the negative-bound stand-in, as the action already says.
-- Drive gRPC tests through the real `query_rag` (plan already does) so a future move of validation cannot skip the matrix.
+**C6 — 06-03 Task 2's tamper-check is unautomatable.** "Verify once by temporarily editing the expected total in a scratch copy" is an acceptance criterion with no machine check and no artifact. Same shape in 06-06 Task 3 ("temporarily add an extra key… revert before committing"), though that one at least requires recording the failure message in the SUMMARY.
 
-#### Risk Assessment
-**LOW.** Enumeration over a working surface; unmatched-filter disposition is the important product call.
+**C7 — `main.rs`'s column-0 items make 06-03's item-count grep fragile in principle.** `grep -cE '^(pub )?(async )?fn |^(pub )?struct |…'` returns **109** at HEAD and must reach 1. `CancelOnDropStream` at `:1874` is written at column 0 but is lexically inside `query_rag` — the pattern counts it as top-level. After 06-02 moves it this is moot, but the gate would not distinguish a future function-local item from a real top-level one.
+
+**C8 — Two Phase-6-scoped decisions have no plan reference.** D-01 (ROADMAP-named-only scoping) and D-05 (DEBT-RAG-02 closed as satisfied by Phase 05) appear in no plan's `must_haves`. Both are scoping/no-op decisions, but Phase 6 *does* have a local `06-CONTEXT.md`, so the plan-checker's decision-coverage gate runs and may flag them.
+
+**C9 — 06-09 lands on genuinely zero prior coverage.** `FakeDenseRetrievalPort::failure` and `FakeBm25RetrievalPort::failure` have **zero call sites anywhere** in the tree (verified across all spellings; only `success`, `stall`, and `with_map` are used — cf. `FakeReranker::failure` at `workflow_phase5.rs:1026,1664` and `FakeGraphQueryPort::failure` at `:2499`, which *are* used). So 06-09's conversion breaks no existing test — good — but it also means D-83's "the error mode already exists" claim is structurally true and empirically untested for exactly the two ports this phase converts. 06-09's twelve new tests are the entire safety net for the most consequential behavior change in the phase. Worth stating in the SUMMARY rather than leaving implicit.
+
+**C10 — 06-07's `blocking-human` checkpoint under `mode: yolo`.** `.planning/config.json` sets `mode: yolo`. The plan's `gate_rationale` addresses this explicitly and lists the recommended option first as a hedge, which is the right defensive design. Flagged only so the operator confirms the harness honors `blocking-human` before Wave 5 — the enum values are one-way.
 
 ---
 
-### Phase-goal coverage
+## 4. Suggestions
 
-| SC | Claim | Plans | Verdict |
-|----|--------|-------|---------|
-| 1 Module graph | Binary imports lib; Go split four packages | 06-01…06-05 | Achievable |
-| 2 Wire contract | One additive proto + both bindings + flags on HTTP | 06-07 (after 06-06) | Achievable; checkpoint is load-bearing |
-| 3 Model-only | Opt-in, default off, zero citations | 06-10 | **Not as written** — AssemblePrompt empty-evidence fail |
-| 4 One-path degrade | `answer_basis = RETRIEVAL` + path-named notice | 06-09 (+ 06-07 enum split) | Achievable; ROADMAP still says one `RETRIEVAL_DEGRADED` token |
-| 5 Citation repair | Normalize-then-strip, no second call | 06-11 | Achievable |
-| 6 Bad-input matrix | Table-driven gRPC+HTTP, reject before work | 06-12 | Achievable; validation already exists |
-| 7 Graph unavailable | Empty + absent-port notices; source-chunk proof | 06-08 | Achievable |
-
-D-77…D-86 (no ROADMAP/REQUIREMENTS edits, no CI, no v1 closure) are consistently restated and not violated.
+1. **Revise 06-11 Task 3 before Wave 9.** Either (a) state explicitly that the re-entry passes a `ModelOutput` clone whose `answer` field is the **post-strip** text and whose `cited_evidence_ids` is the post-repair set — making `:108` idempotent — or (b) relax the `-le 2` gate to `-le 3` and permit one dedicated `reconcile_basis` method that touches only `answer_basis`. (a) is cleaner and keeps the single-seam invariant; either way the plan must say which.
+2. **Give 06-12 Task 2 an anchoring gate.** Assert the new test's function name exists, e.g. `grep -q 'func TestBadInputMatrixHTTP' gateway/main_test.go`, and assert `grep -c '^func Test' gateway/main_test.go` equals `62 + N` for the declared N. That converts the task from unverifiable to verifiable at zero cost.
+3. **Loosen 06-04 Task 1's comment-filter gate.** Replace the literal-spelling grep with a behavioral check: create a scratch `_test.go` containing a commented-out `// func TestFake(t *testing.T) {}` and assert the script's total is unchanged.
+4. **Add a marker-extraction rule to 06-11 Task 1's module header.** State whether the repair pass operates on `extract_inline_markers`'s `[<digits>]` grammar, on a widened grammar, or on `cited_evidence_ids` only — and if widened, how the answer-text removal locates the span. Today Task 1 and Task 3 assume different things.
+5. **Record C9 in 06-09's SUMMARY** as "zero pre-existing tests exercised the two retrieval failure constructors; this plan's twelve tests are the first coverage of that path."
+6. **Optional:** have 06-01 or 06-12 assert D-01 and D-05 dispositions in `must_haves.truths` so the decision-coverage gate reads them as opted-out rather than missed.
 
 ---
 
-### Priority fixes before execution
+## 5. Risk Assessment
 
-1. **06-10** — Put `assemble_prompt.rs` / empty-evidence packing in Task 3; gate the new path on the resolved opt-in so existing `EmptyEvidence` tests stay green. (HIGH)
-2. **06-06** — Exclude generated `engine/src/pb/**` from the `QueryRagRequest {` grep; migrate `retrieval/tests.rs:896`. (HIGH)
-3. **06-05** — Assert 60 tests in `main_test.go` or 67 across the gateway module tree, not 67 in `main_test.go`. (HIGH)
-4. **06-04** — Document before-state as `gateway` 60 + `gateway/db` 7. (MEDIUM)
-5. **06-02** — Un-nest `CancelOnDropStream` from `query_rag`. (MEDIUM)
-6. **06-01** — LANCET literal gate by equality to the recorded before-count. (MEDIUM)
-7. **06-09** — Name fusion/rerank fail-closed as leftover. (MEDIUM)
-8. **06-07** — Human checkpoint required; map SC4’s wording onto the two path-specific codes. (MEDIUM)
+**MEDIUM-HIGH overall.**
 
+The structural risk is well-managed and better than the phase's shape would predict. A 12-plan phase in `yolo` mode with a ~2.3k-line single-commit relocation (06-02), eight sequential edits to two gate scripts, and a one-way published contract change is a high-variance setup — and the plans counter it with per-target invariant gates, an explicit no-alias rule enforced by grep, byte-for-byte env-key and error-kind assertions, and a `blocking-human` gate on the only irreversible decision. Wave ordering is correct and load-bearing: 06-09 before 06-10 (degrade converges both model-only triggers onto one observable state), 06-06 before 06-07 (81 literal sites migrated out of the contract diff), 06-12 last (gate-script serialization, correctly explained as the reason rather than a content dependency).
 
----
+The rating is not LOW because of one thing: **06-11 carries a concrete defect that surfaces at runtime on the transparency path the phase exists to harden, and every gate in that plan passes with the defect present.** Citation repair is the clause where "the system asserts provenance it cannot support" is the failure mode; shipping a plan whose forced implementation shape restores stripped markers into the answer text is the wrong place to have a gap.
 
+**Per-plan readiness:** 06-01 through 06-09 are ready to execute as written, with C2/C4/C5's gate weaknesses worth tightening but not blocking. 06-10 is ready — its revision closed the real gap. **06-11 needs a revision to Task 3 before Wave 9.** 06-12 is ready once Task 2's gate is anchored.
