@@ -463,7 +463,7 @@ Plans:
 6. The bad-input matrix (`DEBT-RAG-05`) is an enumerated, table-driven test (gRPC and HTTP) covering malformed query/session/document IDs, content type, and filter bounds, all rejecting before retrieval or provider work with stable HTTP 400 / gRPC `InvalidArgument` (D-15).
 7. The graph-unavailable notice (`DEBT-RAG-06`) fires on the two silent-degrade paths (empty-result and absent-`graph_port`) that don't already emit `GRAPH_TIMEOUT`/`GRAPH_DEGRADED`; source-chunk queries are proven to never require graph data (D-08).
 
-**Plans:** 11/12 plans executed
+**Plans:** 12/12 plans executed
 
 Plans:
 **Wave 1**
@@ -506,7 +506,7 @@ Plans:
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 06-12-PLAN.md — The enumerated bad-input matrix, table-driven on both the gRPC and HTTP surfaces, with the unmatched-filter disposition recorded (D-15 / DEBT-RAG-05). Depends on 06-07 for content; ordered last because it shares the two test-count gate scripts with every behavior plan.
+- [x] 06-12-PLAN.md — The enumerated bad-input matrix, table-driven on both the gRPC and HTTP surfaces, with the unmatched-filter disposition recorded (D-15 / DEBT-RAG-05). Depends on 06-07 for content; ordered last because it shares the two test-count gate scripts with every behavior plan.
 
 ### Phase 6.1: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
 
