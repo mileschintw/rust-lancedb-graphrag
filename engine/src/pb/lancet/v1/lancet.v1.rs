@@ -63,6 +63,16 @@ pub struct QueryRagRequest {
     pub session_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="3")]
     pub filter: ::core::option::Option<DocumentFilter>,
+    /// D-10/D-12. `optional` for FIELD PRESENCE, deliberately: absent means
+    /// "use the engine's configured default"; false means "explicitly off".
+    /// A plain bool cannot express that, and D-12 is config-default + per-request override.
+    #[prost(bool, optional, tag="4")]
+    pub allow_model_only: ::core::option::Option<bool>,
+    /// D-47. STRICTLY DISTINCT from allow_model_only — "without graph" != "without evidence".
+    /// Names what it turns OFF because the graph node has no disable path today, so this
+    /// field is what produces 6.3's `graph-off` arm. `graph-on` is the absent/false state.
+    #[prost(bool, optional, tag="5")]
+    pub disable_graph_context: ::core::option::Option<bool>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Notice {
@@ -72,6 +82,8 @@ pub struct Notice {
     pub message: ::prost::alloc::string::String,
     #[prost(enumeration="NoticeSeverity", tag="3")]
     pub severity: i32,
+    #[prost(enumeration="NoticeCode", tag="4")]
+    pub typed_code: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StructuredCitation {
@@ -222,6 +234,32 @@ pub struct CheckpointEvent {
     #[prost(string, tag="3")]
     pub context_snapshot: ::prost::alloc::string::String,
 }
+/// D-41 + Phase 05 D-30. One nested message = one additive tag, matching Phase 05's
+/// tags 10/11 pattern. The field list is D-30's, verbatim, not re-derived.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkflowMetadata {
+    #[prost(int64, tag="1")]
+    pub started_at_ms: i64,
+    #[prost(int64, tag="2")]
+    pub completed_at_ms: i64,
+    #[prost(bool, tag="3")]
+    pub reformulation_used: bool,
+    #[prost(uint32, tag="4")]
+    pub vector_count: u32,
+    #[prost(uint32, tag="5")]
+    pub bm25_count: u32,
+    #[prost(uint32, tag="6")]
+    pub graph_node_count: u32,
+    #[prost(uint32, tag="7")]
+    pub graph_edge_count: u32,
+    #[prost(uint32, tag="8")]
+    pub prompt_tokens: u32,
+    #[prost(uint32, tag="9")]
+    pub completion_tokens: u32,
+    /// DERIVED, never independently set — see the derivation rule.
+    #[prost(bool, tag="10")]
+    pub degraded_mode: bool,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkflowCompletedEvent {
     #[prost(bool, tag="1")]
@@ -236,6 +274,9 @@ pub struct WorkflowCompletedEvent {
     pub final_response: ::core::option::Option<QueryRagResponse>,
     #[prost(message, repeated, tag="6")]
     pub notices: ::prost::alloc::vec::Vec<Notice>,
+    /// NEW (D-41)
+    #[prost(message, optional, tag="7")]
+    pub metadata: ::core::option::Option<WorkflowMetadata>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkflowEvent {
@@ -268,6 +309,85 @@ pub mod workflow_event {
         Checkpoint(super::CheckpointEvent),
         #[prost(message, tag="11")]
         WorkflowCompleted(super::WorkflowCompletedEvent),
+    }
+}
+/// D-76. The enum is CANONICAL; `Notice.code` (string) is DERIVED from it by one mapping
+/// function and retained for forward compatibility, exactly as D-76 specifies.
+/// Values 1-3 already exist as wire strings today and MUST keep their spellings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum NoticeCode {
+    Unspecified = 0,
+    /// ── already emitted today; string values unchanged ────────────────────────
+    NoEvidence = 1,
+    GraphTimeout = 2,
+    GraphDegraded = 3,
+    /// The two CONTENTLESS codes update_from_model_output() emits today
+    /// (workflow/mod.rs:117,124) — on the published wire, so they are named, not dropped.
+    ModelNotice = 4,
+    ModelWarning = 5,
+    /// ── Phase 6 ───────────────────────────────────────────────────────────────
+    GraphUnavailable = 10,
+    RetrievalDegradedDense = 11,
+    CitationRepaired = 12,
+    CitationDropped = 13,
+    ModelOnly = 14,
+    BasisReconciled = 15,
+    RetrievalDegradedBm25 = 16,
+    GraphAblation = 18,
+    /// ── RESERVED FOR PHASE 6.1 (D-24/D-25), declared HERE on purpose ──────────
+    IndexRebuildFailed = 20,
+    IndexStale = 21,
+    IndexGenerationMismatch = 22,
+}
+impl NoticeCode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "NOTICE_CODE_UNSPECIFIED",
+            Self::NoEvidence => "NOTICE_CODE_NO_EVIDENCE",
+            Self::GraphTimeout => "NOTICE_CODE_GRAPH_TIMEOUT",
+            Self::GraphDegraded => "NOTICE_CODE_GRAPH_DEGRADED",
+            Self::ModelNotice => "NOTICE_CODE_MODEL_NOTICE",
+            Self::ModelWarning => "NOTICE_CODE_MODEL_WARNING",
+            Self::GraphUnavailable => "NOTICE_CODE_GRAPH_UNAVAILABLE",
+            Self::RetrievalDegradedDense => "NOTICE_CODE_RETRIEVAL_DEGRADED_DENSE",
+            Self::CitationRepaired => "NOTICE_CODE_CITATION_REPAIRED",
+            Self::CitationDropped => "NOTICE_CODE_CITATION_DROPPED",
+            Self::ModelOnly => "NOTICE_CODE_MODEL_ONLY",
+            Self::BasisReconciled => "NOTICE_CODE_BASIS_RECONCILED",
+            Self::RetrievalDegradedBm25 => "NOTICE_CODE_RETRIEVAL_DEGRADED_BM25",
+            Self::GraphAblation => "NOTICE_CODE_GRAPH_ABLATION",
+            Self::IndexRebuildFailed => "NOTICE_CODE_INDEX_REBUILD_FAILED",
+            Self::IndexStale => "NOTICE_CODE_INDEX_STALE",
+            Self::IndexGenerationMismatch => "NOTICE_CODE_INDEX_GENERATION_MISMATCH",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "NOTICE_CODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "NOTICE_CODE_NO_EVIDENCE" => Some(Self::NoEvidence),
+            "NOTICE_CODE_GRAPH_TIMEOUT" => Some(Self::GraphTimeout),
+            "NOTICE_CODE_GRAPH_DEGRADED" => Some(Self::GraphDegraded),
+            "NOTICE_CODE_MODEL_NOTICE" => Some(Self::ModelNotice),
+            "NOTICE_CODE_MODEL_WARNING" => Some(Self::ModelWarning),
+            "NOTICE_CODE_GRAPH_UNAVAILABLE" => Some(Self::GraphUnavailable),
+            "NOTICE_CODE_RETRIEVAL_DEGRADED_DENSE" => Some(Self::RetrievalDegradedDense),
+            "NOTICE_CODE_CITATION_REPAIRED" => Some(Self::CitationRepaired),
+            "NOTICE_CODE_CITATION_DROPPED" => Some(Self::CitationDropped),
+            "NOTICE_CODE_MODEL_ONLY" => Some(Self::ModelOnly),
+            "NOTICE_CODE_BASIS_RECONCILED" => Some(Self::BasisReconciled),
+            "NOTICE_CODE_RETRIEVAL_DEGRADED_BM25" => Some(Self::RetrievalDegradedBm25),
+            "NOTICE_CODE_GRAPH_ABLATION" => Some(Self::GraphAblation),
+            "NOTICE_CODE_INDEX_REBUILD_FAILED" => Some(Self::IndexRebuildFailed),
+            "NOTICE_CODE_INDEX_STALE" => Some(Self::IndexStale),
+            "NOTICE_CODE_INDEX_GENERATION_MISMATCH" => Some(Self::IndexGenerationMismatch),
+            _ => None,
+        }
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

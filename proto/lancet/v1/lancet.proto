@@ -54,6 +54,48 @@ message QueryRAGRequest {
   string query = 1;
   string session_id = 2;
   DocumentFilter filter = 3;
+
+  // D-10/D-12. `optional` for FIELD PRESENCE, deliberately: absent means
+  // "use the engine's configured default"; false means "explicitly off".
+  // A plain bool cannot express that, and D-12 is config-default + per-request override.
+  optional bool allow_model_only = 4;
+
+  // D-47. STRICTLY DISTINCT from allow_model_only — "without graph" != "without evidence".
+  // Names what it turns OFF because the graph node has no disable path today, so this
+  // field is what produces 6.3's `graph-off` arm. `graph-on` is the absent/false state.
+  optional bool disable_graph_context = 5;
+}
+
+// D-76. The enum is CANONICAL; `Notice.code` (string) is DERIVED from it by one mapping
+// function and retained for forward compatibility, exactly as D-76 specifies.
+// Values 1-3 already exist as wire strings today and MUST keep their spellings.
+enum NoticeCode {
+  NOTICE_CODE_UNSPECIFIED = 0;
+
+  // ── already emitted today; string values unchanged ────────────────────────
+  NOTICE_CODE_NO_EVIDENCE = 1;
+  NOTICE_CODE_GRAPH_TIMEOUT = 2;
+  NOTICE_CODE_GRAPH_DEGRADED = 3;
+  // The two CONTENTLESS codes update_from_model_output() emits today
+  // (workflow/mod.rs:117,124) — on the published wire, so they are named, not dropped.
+  NOTICE_CODE_MODEL_NOTICE = 4;
+  NOTICE_CODE_MODEL_WARNING = 5;
+
+  // ── Phase 6 ───────────────────────────────────────────────────────────────
+  NOTICE_CODE_GRAPH_UNAVAILABLE = 10;
+  NOTICE_CODE_RETRIEVAL_DEGRADED_DENSE = 11;
+  NOTICE_CODE_CITATION_REPAIRED = 12;
+  NOTICE_CODE_CITATION_DROPPED = 13;
+  NOTICE_CODE_MODEL_ONLY = 14;
+  NOTICE_CODE_BASIS_RECONCILED = 15;
+  NOTICE_CODE_RETRIEVAL_DEGRADED_BM25 = 16;
+  reserved 17; // Tag 17 reserved: in-fusion graph retrieval is unreachable (hybrid retrieval holds no graph port)
+  NOTICE_CODE_GRAPH_ABLATION = 18;
+
+  // ── RESERVED FOR PHASE 6.1 (D-24/D-25), declared HERE on purpose ──────────
+  NOTICE_CODE_INDEX_REBUILD_FAILED = 20;
+  NOTICE_CODE_INDEX_STALE = 21;
+  NOTICE_CODE_INDEX_GENERATION_MISMATCH = 22;
 }
 
 enum AnswerBasis {
@@ -74,6 +116,7 @@ message Notice {
   string code = 1;
   string message = 2;
   NoticeSeverity severity = 3;
+  NoticeCode typed_code = 4;
 }
 
 message StructuredCitation {
@@ -183,6 +226,22 @@ message CheckpointEvent {
   string context_snapshot = 3;
 }
 
+// D-41 + Phase 05 D-30. One nested message = one additive tag, matching Phase 05's
+// tags 10/11 pattern. The field list is D-30's, verbatim, not re-derived.
+message WorkflowMetadata {
+  int64 started_at_ms = 1;
+  int64 completed_at_ms = 2;
+  bool reformulation_used = 3;
+  uint32 vector_count = 4;
+  uint32 bm25_count = 5;
+  uint32 graph_node_count = 6;
+  uint32 graph_edge_count = 7;
+  uint32 prompt_tokens = 8;
+  uint32 completion_tokens = 9;
+  // DERIVED, never independently set — see the derivation rule.
+  bool degraded_mode = 10;
+}
+
 message WorkflowCompletedEvent {
   bool success = 1;
   int64 duration_ms = 2;
@@ -190,6 +249,7 @@ message WorkflowCompletedEvent {
   string error_message = 4;
   QueryRAGResponse final_response = 5;
   repeated Notice notices = 6;
+  WorkflowMetadata metadata = 7; // NEW (D-41)
 }
 
 message WorkflowEvent {
@@ -207,4 +267,3 @@ message WorkflowEvent {
     WorkflowCompletedEvent workflow_completed = 11;
   }
 }
-
