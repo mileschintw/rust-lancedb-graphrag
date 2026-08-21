@@ -110,6 +110,7 @@ milestone_name: milestone
 | buf-rust-codegen | 2026-07-14 | Migrate Rust protobuf code generation to Buf v2 with prost and tonic plugins | Complete |
 | update-readme-with-all-the-decision-and- | 2026-08-19 | Update README with all decisions and progress to date, preserving personal-side-project/showcase framing and adding AI-collaboration angle | Complete |
 | review-06-01-summary-accuracy | 2026-08-20 | Review commit 35b5854 (plan 06-01) for behavior regressions and plan sufficiency; update 06-01-SUMMARY.md frontmatter with 5 out-of-scope lint-edited files, record cargo fmt --check as pre-existing failing gate, annotate RAG-03 as structural-only | Complete |
+| review-06-04-refactor-fidelity | 2026-08-20 | Review commit c7e107ec (plan 06-04) as behavior-preserving refactor; confirmed checkpoint dispatch preserved and DTO/event contract byte-identical; found config fail-closed error string truncated (dropped LANCET_GATEWAY__DATABASE_URL hint) and gateway-test-targets.sh gate defects (source-grep count, no package named on failure) | Complete |
 
 ## Performance Metrics
 
