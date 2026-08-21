@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
-current_plan: 3
+current_plan: 6
 status: executing
-stopped_at: Phase 6 Wave 3 complete (Plan 06-03 executed; binary test root rehomed to engine::tests, main.rs residue swept, 7 test-target invariants pinned in scripts/engine-test-targets.sh)
-last_updated: "2026-08-21T05:50:00.000Z"
-state_head: eafdac189a59b3ee3c9df1cfc4b726cb3dbd5910
+stopped_at: "Phase 6 Wave 4 complete (Plan 06-06 executed; engine::testkit created and literals migrated, cfg(test) fake-port seam extended with D-83 failure modes, Go exact-key-set SSE assertions pinned)"
+last_updated: "2026-08-21T06:21:00.000Z"
+state_head: 3604141
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 101
-  completed_plans: 94
+  completed_plans: 95
 milestone_name: milestone
 ---
 
@@ -36,15 +36,6 @@ milestone_name: milestone
 - Phase 05 Wave 19 Plan 05-20 executed: separated capability preflight from the GenerateAnswer node timer and proved the two-attempt retry path fits the 65s node timer with paused-clock timing proofs.
 - Phase 05 Wave 20 Plan 05-11 executed: proved and hardened real engine-to-gateway SSE stream across 5-node lifecycle and graph fixtures, verified client cancellation propagation, structured stream error framing, and lossless checkpoint persistence under backpressure.
 - Phase 05 post-execution gates RE-RUN (2026-08-19) after gap-closure plans 05-25 and 05-26 landed: all 26 plans complete; ROADMAP plan checkboxes and plan counts reconciled for 05-25/05-26 (commit e6e153f).
-  - Phase NOT marked complete: `phase.complete` is gated on verification returning `passed`; it returns `human_needed`. Next: `/gsd-verify-work 5`.
-- Phase 05 tail gates RE-RUN AGAIN (2026-08-19T07:20) at HEAD `bb58a60`, after the 16 remediation commits (CR-01 + WR-01..WR-15) and gap-closure plan 05-27 landed. All 27 plans complete. The `--gaps` token in the invocation is a `/gsd-plan-phase` flag, not an execute-phase filter; no filter was applied and `incomplete_count` was 0, so this run consisted only of the tail gates.
-  - Code review REFRESHED at HEAD (05-REVIEW.md, standard depth, commit 25d4fda): **0 Critical / 13 Warnings / 24 Info (37 total)**, 33 of 49 declared files reviewed line-by-line. `critical: 0` is a real result — prior CR-01 verified closed at `runner.rs:342-351`/`:383-393`. Scope note recorded on the record: the raw git diff from the phase base surfaced 2,051 changed paths, of which 2,002 are vendored GSD runtime installs (`.codex/` 730, `.claude/` 723, `.agents/` 549) — tooling, not Phase 05 source — excluded by the orchestrator before the reviewer was spawned.
-  - Fix verification of the 16 claimed-closed findings: **9 CLOSED, 4 PARTIAL, 1 NOT CLOSED, 2 REGRESSED.** Not auto-fixed — advisory per the workflow. Notable: prior WR-12 REGRESSED (`5354d1e` removed the `capacity()` TOCTOU but added a new un-cancellable `reserve().await` at `runner.rs:167`); prior WR-01 CLOSED but introduced an exit-code regression (gateway bind failure now exits 0, `main.go:1094-1098`); prior WR-09 NOT CLOSED (`wrap_next_event` untouched, ordinals still burned); prior WR-13 NOT CLOSED (`db/tests.rs:107` byte-identical, still `contains`-only); prior WR-14 NOT CLOSED (guard unreachable in the shipped config).
-  - Regression gate PASSED with MORE evidence than the prior run. `cargo test --manifest-path engine/Cargo.toml --locked` → **285 passed / 0 failed / 1 ignored**, exit 0 (was 281). `cd gateway && go test ./...` run with `TEST_DATABASE_URL` exported → **65 passed / 0 failed / 0 SKIPPED**, exit 0 (was 54 passed / 11 skipped). `lancet-postgres` (postgres:16-alpine) WAS running this time with the `workflow_checkpoints` schema applied, so all 11 previously-unrunnable Postgres tests actually ran and passed — including `TestWorkflowCheckpointPersistence`, `TestWorkflowCheckpointCancellationAtomicity` and `TestWorkflowCheckpointPendingDrainAndPersistence`. The tests create and drop isolated schemas; `public` was not mutated.
-  - Verification REFRESHED (05-VERIFICATION.md, commit e0ea391): **5/5 roadmap success criteria verified**, `behavior_unverified: 0`. SC4 moved 4/5 → 5/5 not by relaxing the bar but because the FIFO-drain/ordering evidence the prior pass lacked now exists: `TestWorkflowCheckpointPendingDrainAndPersistence` (`gateway/main_test.go:3795-3860`) asserts exactly 10 rows, contiguous `sequence_ordinal` 1..10, FIFO-consistent `node_name` order, `json.Valid` on every snapshot, and all 19 snapshot keys — against a real database at this HEAD.
-  - Two 05-REVIEW.md findings did NOT survive the verifier's re-derivation, both routing/severity disagreements rather than factual ones: prior WR-03's unenforced generation retry-budget invariant (the violating value at `config/config.verify.toml:19` is an intentional test fixture that `workflow_phase5_config_verify_generation_timeout` asserts on; the shipped `config.toml` satisfies the invariant), and prior WR-05's residual `?`-masking in `run_inline_prompt_generation_remainder` (no production consumer — all 4 call sites are in `tests/workflow_phase5.rs`; production takes `run_workflow` at `main.rs:1914`). Both retained as debt.
-  - Two regressions recorded, neither breaking a success criterion: REG-01 (`runner.rs:161-170`, from `5354d1e`) and REG-02 (`gateway/main.go:1094-1098`, from `e8982d0`, where the naive `logger.Fatal` fix would reintroduce the defect `e8982d0` closed). Dispositions deferred to UAT Tests 7 and 8.
-  - 05-UAT.md MERGED, not regenerated — verified by diff: only 4 metadata lines changed, all 6 prior tests and their human-recorded resolutions preserved verbatim, `## Gaps` G-05-1 block intact. Tests 7-10 added. Now **10 total / 5 passed / 1 issue / 4 pending**. Test 1 stays `result: issue` but is now UNBLOCKED — `MAX_MODELS_METADATA_BODY_BYTES = 10MB` (`engine/src/client/mod.rs:16`, applied at `openrouter.rs:386-388`) closes G-05-1's root cause in code; the live run still needs a real API key and a human.
   - TRACE-01 RECONCILED: ROADMAP.md said "26/26" and its checkbox list ended at 05-26 while `05-27-PLAN.md` existed with a SUMMARY and landed `e831be3` — the commit closing the gap the roadmap tracks. Corrected to 27/27 with 05-27 added to both the plan list and a new Wave 22.
   - Security gate UNCHANGED: `workflow.security_enforcement` is active and NO 05-SECURITY.md exists — `/gsd-secure-phase 5` still required before advancing.
   - Phase still NOT marked complete: verification returns `human_needed`, not `passed`. Next: `/gsd-verify-work 5`.
@@ -53,7 +44,7 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
-- **Status:** Executing Phase 06 (Wave 3 complete)
+- **Status:** Executing Phase 06
 - **Current Plan:** 3
 - **Total Plans in Phase:** 12
 - **Completed Plans in Phase:** 5 (Plans 06-01, 06-04, 06-02, 06-05, 06-03)
