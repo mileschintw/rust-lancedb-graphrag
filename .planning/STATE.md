@@ -6,8 +6,8 @@ current_phase_name: Observability, Evaluation & Polish
 current_plan: 10
 status: executing
 stopped_at: Phase 6 Wave 8 complete (Plan 06-10 executed; support model-only answers as explicit default-off opt-in across config, grounding guards, and runner bypass)
-last_updated: "2026-08-21T23:10:18.580Z"
-state_head: 7d2781d5d219a083d00036c044bdf235c0d4ce1d
+last_updated: "2026-08-21T23:47:24.596Z"
+state_head: c32118a2a5735db3465546bac28cfa9759252367
 progress:
   total_phases: 11
   completed_phases: 3
