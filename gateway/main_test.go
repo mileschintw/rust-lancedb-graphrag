@@ -779,6 +779,39 @@ func parseTerminalResponseDTO(body string) (sse.QueryRAGResponseDTO, error) {
 	return sse.QueryRAGResponseDTO{}, fmt.Errorf("no terminal response found in SSE body: %s", body)
 }
 
+func assertSSEPayloadKeySet(t *testing.T, payload string, expectedKeys []string) {
+	t.Helper()
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+		t.Fatalf("assertSSEPayloadKeySet: json.Unmarshal error: %v; payload: %s", err, payload)
+	}
+	actualKeys := slices.Sorted(maps.Keys(raw))
+	expectedSorted := slices.Clone(expectedKeys)
+	slices.Sort(expectedSorted)
+	if !slices.Equal(actualKeys, expectedSorted) {
+		t.Fatalf("assertSSEPayloadKeySet mismatch: got keys %v, want %v; payload: %s", actualKeys, expectedSorted, payload)
+	}
+}
+
+func assertSSEArrayElementKeySet(t *testing.T, payload string, expectedElementKeys []string) {
+	t.Helper()
+	var raw []map[string]any
+	if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+		t.Fatalf("assertSSEArrayElementKeySet: json.Unmarshal error: %v; payload: %s", err, payload)
+	}
+	if len(raw) == 0 {
+		t.Fatalf("assertSSEArrayElementKeySet: array is empty; payload: %s", payload)
+	}
+	expectedSorted := slices.Clone(expectedElementKeys)
+	slices.Sort(expectedSorted)
+	for i, elem := range raw {
+		actualKeys := slices.Sorted(maps.Keys(elem))
+		if !slices.Equal(actualKeys, expectedSorted) {
+			t.Fatalf("assertSSEArrayElementKeySet element %d mismatch: got keys %v, want %v; payload: %s", i, actualKeys, expectedSorted, payload)
+		}
+	}
+}
+
 type engineFunc struct {
 	ingest    func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) engineclient.IngestOutcome
 	status    *pb.GetIngestionStatusResponse
@@ -2554,6 +2587,234 @@ func TestRAGQuerySSEFirstFrame(t *testing.T) {
 	if dto.Notices == nil {
 		t.Fatalf("notices must be non-nil slice")
 	}
+
+	var finalAnswerData string
+	for _, ev := range sseEvs {
+		if ev.Event == "final_answer" {
+			finalAnswerData = ev.Data
+			break
+		}
+	}
+	if finalAnswerData == "" {
+		t.Fatalf("missing final_answer event in SSE body")
+	}
+
+	assertSSEPayloadKeySet(t, finalAnswerData, []string{
+		"answer", "answer_basis", "citations", "notices", "session_id", "snapshot", "structured_citations",
+	})
+
+	var rawFinal map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(finalAnswerData), &rawFinal); err != nil {
+		t.Fatalf("unmarshal finalAnswerData: %v", err)
+	}
+
+	assertSSEArrayElementKeySet(t, string(rawFinal["structured_citations"]), []string{
+		"chunk_id", "content_type", "document_id", "excerpt", "is_truncated", "rank", "score", "section_path", "title",
+	})
+
+	assertSSEPayloadKeySet(t, string(rawFinal["snapshot"]), []string{
+		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit", "index_generation", "result_hash", "rrf_k", "vector_weight",
+	})
+}
+
+func TestSSEEventPayloads_ExactKeySets(t *testing.T) {
+	sessionID := "00000000-0000-4000-8000-000000000011"
+	correlationID := "00000000-0000-4000-8000-000000000022"
+
+	// 1. node_started
+	rec := httptest.NewRecorder()
+	rc := http.NewResponseController(rec)
+	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+		SessionId:       sessionID,
+		TraceId:         correlationID,
+		SequenceOrdinal: 1,
+		Event: &pb.WorkflowEvent_NodeStarted{
+			NodeStarted: &pb.NodeStartedEvent{
+				NodeName:      "ReformulateQuery",
+				InputsSummary: "inputs",
+			},
+		},
+	})
+	evs := parseSSEEvents(rec.Body.String())
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(evs))
+	}
+	assertSSEPayloadKeySet(t, evs[0].Data, []string{"inputs_summary", "node_name", "sequence_ordinal"})
+
+	// 2. node_completed
+	rec = httptest.NewRecorder()
+	rc = http.NewResponseController(rec)
+	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+		SessionId:       sessionID,
+		TraceId:         correlationID,
+		SequenceOrdinal: 2,
+		Event: &pb.WorkflowEvent_NodeCompleted{
+			NodeCompleted: &pb.NodeCompletedEvent{
+				NodeName:       "ReformulateQuery",
+				OutputsSummary: "outputs",
+				DurationMs:     42,
+			},
+		},
+	})
+	evs = parseSSEEvents(rec.Body.String())
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(evs))
+	}
+	assertSSEPayloadKeySet(t, evs[0].Data, []string{"duration_ms", "node_name", "outputs_summary"})
+
+	// 3. node_failed
+	rec = httptest.NewRecorder()
+	rc = http.NewResponseController(rec)
+	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+		SessionId:       sessionID,
+		TraceId:         correlationID,
+		SequenceOrdinal: 3,
+		Event: &pb.WorkflowEvent_NodeFailed{
+			NodeFailed: &pb.NodeFailedEvent{
+				NodeName:  "GenerateAnswer",
+				Category:  pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT,
+				Message:   "timed out",
+				Retryable: true,
+			},
+		},
+	})
+	evs = parseSSEEvents(rec.Body.String())
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(evs))
+	}
+	assertSSEPayloadKeySet(t, evs[0].Data, []string{"error_kind", "error_message", "node_name", "retryable"})
+
+	// 4. answer_chunk
+	rec = httptest.NewRecorder()
+	rc = http.NewResponseController(rec)
+	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+		SessionId:       sessionID,
+		TraceId:         correlationID,
+		SequenceOrdinal: 4,
+		Event: &pb.WorkflowEvent_AnswerChunk{
+			AnswerChunk: &pb.AnswerChunkEvent{
+				Chunk:   "Hello world",
+				IsFinal: false,
+			},
+		},
+	})
+	evs = parseSSEEvents(rec.Body.String())
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(evs))
+	}
+	assertSSEPayloadKeySet(t, evs[0].Data, []string{"chunk_text", "is_final"})
+
+	// 5. final_answer
+	rec = httptest.NewRecorder()
+	rc = http.NewResponseController(rec)
+	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+		SessionId:       sessionID,
+		TraceId:         correlationID,
+		SequenceOrdinal: 5,
+		Event: &pb.WorkflowEvent_FinalAnswer{
+			FinalAnswer: &pb.FinalAnswerEvent{
+				Response: &pb.QueryRAGResponse{
+					Answer:      "Test answer [1]",
+					Citations:   []string{"[1]"},
+					SessionId:   sessionID,
+					AnswerBasis: pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL,
+					StructuredCitations: []*pb.StructuredCitation{
+						{
+							ChunkId:     "chunk-1",
+							DocumentId:  "doc-1",
+							Title:       "Title",
+							SectionPath: "/sec",
+							Excerpt:     "Excerpt",
+							IsTruncated: false,
+							Score:       0.99,
+							Rank:        1,
+							ContentType: "text/markdown",
+						},
+					},
+					Notices: []*pb.Notice{
+						{
+							Code:     "INFO",
+							Message:  "Notice msg",
+							Severity: pb.NoticeSeverity_NOTICE_SEVERITY_INFO,
+						},
+					},
+					Snapshot: &pb.RetrievalSnapshot{
+						IndexGeneration: "gen-1",
+						EmbeddingModel:  "model-1",
+						VectorWeight:    0.5,
+						Bm25Weight:      0.5,
+						RrfK:            60,
+						CandidateLimit:  20,
+						FinalLimit:      5,
+						ResultHash:      "hash-1",
+						ActiveFilter: &pb.DocumentFilter{
+							DocumentIds:  []string{"doc-1"},
+							ContentTypes: []string{"text/markdown"},
+						},
+					},
+				},
+			},
+		},
+	})
+	evs = parseSSEEvents(rec.Body.String())
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(evs))
+	}
+	assertSSEPayloadKeySet(t, evs[0].Data, []string{
+		"answer", "answer_basis", "citations", "notices", "session_id", "snapshot", "structured_citations",
+	})
+	var rawFinal map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(evs[0].Data), &rawFinal); err != nil {
+		t.Fatalf("unmarshal final event: %v", err)
+	}
+	assertSSEArrayElementKeySet(t, string(rawFinal["structured_citations"]), []string{
+		"chunk_id", "content_type", "document_id", "excerpt", "is_truncated", "rank", "score", "section_path", "title",
+	})
+	assertSSEArrayElementKeySet(t, string(rawFinal["notices"]), []string{
+		"code", "message", "severity",
+	})
+	assertSSEPayloadKeySet(t, string(rawFinal["snapshot"]), []string{
+		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit", "index_generation", "result_hash", "rrf_k", "vector_weight",
+	})
+
+	// 6. workflow_completed with failure
+	rec = httptest.NewRecorder()
+	rc = http.NewResponseController(rec)
+	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+		SessionId:       sessionID,
+		TraceId:         correlationID,
+		SequenceOrdinal: 6,
+		Event: &pb.WorkflowEvent_WorkflowCompleted{
+			WorkflowCompleted: &pb.WorkflowCompletedEvent{
+				Success:       false,
+				DurationMs:    120,
+				ErrorKind:     pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT,
+				ErrorMessage:  "graph timeout",
+				FinalResponse: nil,
+				Notices: []*pb.Notice{
+					{
+						Code:     "GRAPH_TIMEOUT",
+						Message:  "graph query timed out",
+						Severity: pb.NoticeSeverity_NOTICE_SEVERITY_WARNING,
+					},
+				},
+			},
+		},
+	})
+	evs = parseSSEEvents(rec.Body.String())
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(evs))
+	}
+	assertSSEPayloadKeySet(t, evs[0].Data, []string{
+		"error_kind", "error_message", "notices", "success", "total_duration_ms",
+	})
+	var rawWc map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(evs[0].Data), &rawWc); err != nil {
+		t.Fatalf("unmarshal wc event: %v", err)
+	}
+	assertSSEArrayElementKeySet(t, string(rawWc["notices"]), []string{
+		"code", "message", "severity",
+	})
 }
 
 func TestRAGQueryFailureTerminalNoticesSSE(t *testing.T) {
