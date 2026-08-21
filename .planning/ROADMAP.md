@@ -463,7 +463,7 @@ Plans:
 6. The bad-input matrix (`DEBT-RAG-05`) is an enumerated, table-driven test (gRPC and HTTP) covering malformed query/session/document IDs, content type, and filter bounds, all rejecting before retrieval or provider work with stable HTTP 400 / gRPC `InvalidArgument` (D-15).
 7. The graph-unavailable notice (`DEBT-RAG-06`) fires on the two silent-degrade paths (empty-result and absent-`graph_port`) that don't already emit `GRAPH_TIMEOUT`/`GRAPH_DEGRADED`; source-chunk queries are proven to never require graph data (D-08).
 
-**Plans:** 12/12 plans executed
+**Plans:** 14 plans (12 executed + 2 gap-closure)
 
 Plans:
 **Wave 1**
@@ -507,6 +507,14 @@ Plans:
 **Wave 10** *(blocked on Wave 9 completion)*
 
 - [x] 06-12-PLAN.md — The enumerated bad-input matrix, table-driven on both the gRPC and HTTP surfaces, with the unmatched-filter disposition recorded (D-15 / DEBT-RAG-05). Depends on 06-07 for content; ordered last because it shares the two test-count gate scripts with every behavior plan.
+
+**Wave 11** *(gap closure; blocked on Wave 8 / 06-10)*
+
+- [ ] 06-13-PLAN.md — SC3 production packing: empty-evidence OpenRouter branch, model-only policy, answer_basis schema admits model_only (D-10/D-11 / DEBT-RAG-01).
+
+**Wave 12** *(gap closure; blocked on Wave 9 / 06-11 and Wave 11 / 06-13 because generate.rs, prompt.rs, workflow_phase5.rs, and the test-count gate overlap)*
+
+- [ ] 06-14-PLAN.md — SC5 citation-repair de-dupe: first-occurrence unique ids plus repeated-marker and mixed-spelling tests (D-14 / DEBT-RAG-03).
 
 ### Phase 6.1: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
 
