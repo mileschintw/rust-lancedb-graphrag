@@ -13,14 +13,27 @@
 #        /rag/query JSON wire contract that plan 06-07 extends.
 set -e
 
-EXPECTED_TOTAL=75
+EXPECTED_TOTAL=77
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 60
+EXPECTED_PACKAGES="gateway 62
 gateway/db 7
 gateway/internal/sse 8"
+
+# Ensure go is found in standard user environments
+GO_CMD="go"
+if ! command -v go >/dev/null 2>&1; then
+  for p in "/mnt/c/Program Files/Go/bin" "/c/Program Files/Go/bin" "$HOME/go/bin"; do
+    if [ -d "$p" ]; then
+      export PATH="$p:$PATH"
+    fi
+  done
+  if command -v go.exe >/dev/null 2>&1; then
+    GO_CMD="go.exe"
+  fi
+fi
 
 TMP_COUNTS=$(mktemp)
 TMP_LIST=$(mktemp)
@@ -28,7 +41,7 @@ trap 'rm -f "$TMP_COUNTS" "$TMP_LIST"' EXIT
 
 # `go test -list` emits the test names for a package followed by an `ok <import-path>`
 # summary line; packages without tests emit `?   <import-path> [no test files]`.
-(cd gateway && go test -list '.*' ./...) | tr -d '\r' > "$TMP_LIST"
+(cd gateway && "$GO_CMD" test -list '.*' ./...) | tr -d '\r' > "$TMP_LIST"
 
 awk '
 /^ok[ \t]/  { pkg = $2; sub(/^github\.com\/lancet\//, "", pkg); print pkg, pending; pending = 0; next }

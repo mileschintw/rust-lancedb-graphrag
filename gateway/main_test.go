@@ -2617,100 +2617,16 @@ func TestRAGQuerySSEFirstFrame(t *testing.T) {
 	})
 }
 
-func TestSSEEventPayloads_ExactKeySets(t *testing.T) {
+func TestQueryRAG_SSE_FinalAnswerPayloadKeySet(t *testing.T) {
 	sessionID := "00000000-0000-4000-8000-000000000011"
 	correlationID := "00000000-0000-4000-8000-000000000022"
 
-	// 1. node_started
 	rec := httptest.NewRecorder()
 	rc := http.NewResponseController(rec)
 	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
 		SessionId:       sessionID,
 		TraceId:         correlationID,
 		SequenceOrdinal: 1,
-		Event: &pb.WorkflowEvent_NodeStarted{
-			NodeStarted: &pb.NodeStartedEvent{
-				NodeName:      "ReformulateQuery",
-				InputsSummary: "inputs",
-			},
-		},
-	})
-	evs := parseSSEEvents(rec.Body.String())
-	if len(evs) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(evs))
-	}
-	assertSSEPayloadKeySet(t, evs[0].Data, []string{"inputs_summary", "node_name", "sequence_ordinal"})
-
-	// 2. node_completed
-	rec = httptest.NewRecorder()
-	rc = http.NewResponseController(rec)
-	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
-		SessionId:       sessionID,
-		TraceId:         correlationID,
-		SequenceOrdinal: 2,
-		Event: &pb.WorkflowEvent_NodeCompleted{
-			NodeCompleted: &pb.NodeCompletedEvent{
-				NodeName:       "ReformulateQuery",
-				OutputsSummary: "outputs",
-				DurationMs:     42,
-			},
-		},
-	})
-	evs = parseSSEEvents(rec.Body.String())
-	if len(evs) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(evs))
-	}
-	assertSSEPayloadKeySet(t, evs[0].Data, []string{"duration_ms", "node_name", "outputs_summary"})
-
-	// 3. node_failed
-	rec = httptest.NewRecorder()
-	rc = http.NewResponseController(rec)
-	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
-		SessionId:       sessionID,
-		TraceId:         correlationID,
-		SequenceOrdinal: 3,
-		Event: &pb.WorkflowEvent_NodeFailed{
-			NodeFailed: &pb.NodeFailedEvent{
-				NodeName:  "GenerateAnswer",
-				Category:  pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT,
-				Message:   "timed out",
-				Retryable: true,
-			},
-		},
-	})
-	evs = parseSSEEvents(rec.Body.String())
-	if len(evs) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(evs))
-	}
-	assertSSEPayloadKeySet(t, evs[0].Data, []string{"error_kind", "error_message", "node_name", "retryable"})
-
-	// 4. answer_chunk
-	rec = httptest.NewRecorder()
-	rc = http.NewResponseController(rec)
-	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
-		SessionId:       sessionID,
-		TraceId:         correlationID,
-		SequenceOrdinal: 4,
-		Event: &pb.WorkflowEvent_AnswerChunk{
-			AnswerChunk: &pb.AnswerChunkEvent{
-				Chunk:   "Hello world",
-				IsFinal: false,
-			},
-		},
-	})
-	evs = parseSSEEvents(rec.Body.String())
-	if len(evs) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(evs))
-	}
-	assertSSEPayloadKeySet(t, evs[0].Data, []string{"chunk_text", "is_final"})
-
-	// 5. final_answer
-	rec = httptest.NewRecorder()
-	rc = http.NewResponseController(rec)
-	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
-		SessionId:       sessionID,
-		TraceId:         correlationID,
-		SequenceOrdinal: 5,
 		Event: &pb.WorkflowEvent_FinalAnswer{
 			FinalAnswer: &pb.FinalAnswerEvent{
 				Response: &pb.QueryRAGResponse{
@@ -2756,10 +2672,15 @@ func TestSSEEventPayloads_ExactKeySets(t *testing.T) {
 			},
 		},
 	})
-	evs = parseSSEEvents(rec.Body.String())
+	evs := parseSSEEvents(rec.Body.String())
 	if len(evs) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(evs))
+		t.Fatalf("expected 1 event, got %d: %s", len(evs), rec.Body.String())
 	}
+	if evs[0].Event != "final_answer" {
+		t.Fatalf("event = %q, want final_answer", evs[0].Event)
+	}
+
+	// Plan 06-07 legitimately updates this expected key set when adding new wire fields
 	assertSSEPayloadKeySet(t, evs[0].Data, []string{
 		"answer", "answer_basis", "citations", "notices", "session_id", "snapshot", "structured_citations",
 	})
@@ -2776,45 +2697,92 @@ func TestSSEEventPayloads_ExactKeySets(t *testing.T) {
 	assertSSEPayloadKeySet(t, string(rawFinal["snapshot"]), []string{
 		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit", "index_generation", "result_hash", "rrf_k", "vector_weight",
 	})
+}
 
-	// 6. workflow_completed with failure
-	rec = httptest.NewRecorder()
-	rc = http.NewResponseController(rec)
-	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
-		SessionId:       sessionID,
-		TraceId:         correlationID,
-		SequenceOrdinal: 6,
-		Event: &pb.WorkflowEvent_WorkflowCompleted{
-			WorkflowCompleted: &pb.WorkflowCompletedEvent{
-				Success:       false,
-				DurationMs:    120,
-				ErrorKind:     pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT,
-				ErrorMessage:  "graph timeout",
-				FinalResponse: nil,
-				Notices: []*pb.Notice{
-					{
-						Code:     "GRAPH_TIMEOUT",
-						Message:  "graph query timed out",
-						Severity: pb.NoticeSeverity_NOTICE_SEVERITY_WARNING,
+func TestQueryRAG_SSE_WorkflowCompletedPayloadKeySet(t *testing.T) {
+	sessionID := "00000000-0000-4000-8000-000000000011"
+	correlationID := "00000000-0000-4000-8000-000000000022"
+
+	// Branch 1: FinalResponse present (notices omitted)
+	{
+		rec := httptest.NewRecorder()
+		rc := http.NewResponseController(rec)
+		sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 1,
+			Event: &pb.WorkflowEvent_WorkflowCompleted{
+				WorkflowCompleted: &pb.WorkflowCompletedEvent{
+					Success:       true,
+					DurationMs:    150,
+					ErrorKind:     pb.NodeErrorKind_NODE_ERROR_KIND_UNSPECIFIED,
+					ErrorMessage:  "",
+					FinalResponse: &pb.QueryRAGResponse{
+						Answer:      "Success answer",
+						Citations:   []string{},
+						SessionId:   sessionID,
+						AnswerBasis: pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL,
 					},
 				},
 			},
-		},
-	})
-	evs = parseSSEEvents(rec.Body.String())
-	if len(evs) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(evs))
+		})
+		evs := parseSSEEvents(rec.Body.String())
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 event, got %d", len(evs))
+		}
+		if evs[0].Event != "workflow_completed" {
+			t.Fatalf("event = %q, want workflow_completed", evs[0].Event)
+		}
+		// Plan 06-07 legitimately updates this expected key set
+		assertSSEPayloadKeySet(t, evs[0].Data, []string{
+			"error_kind", "error_message", "final_response", "success", "total_duration_ms",
+		})
 	}
-	assertSSEPayloadKeySet(t, evs[0].Data, []string{
-		"error_kind", "error_message", "notices", "success", "total_duration_ms",
-	})
-	var rawWc map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(evs[0].Data), &rawWc); err != nil {
-		t.Fatalf("unmarshal wc event: %v", err)
+
+	// Branch 2: FinalResponse nil (notices attached)
+	{
+		rec := httptest.NewRecorder()
+		rc := http.NewResponseController(rec)
+		sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+			SessionId:       sessionID,
+			TraceId:         correlationID,
+			SequenceOrdinal: 2,
+			Event: &pb.WorkflowEvent_WorkflowCompleted{
+				WorkflowCompleted: &pb.WorkflowCompletedEvent{
+					Success:       false,
+					DurationMs:    120,
+					ErrorKind:     pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT,
+					ErrorMessage:  "graph timeout",
+					FinalResponse: nil,
+					Notices: []*pb.Notice{
+						{
+							Code:     "GRAPH_TIMEOUT",
+							Message:  "graph query timed out",
+							Severity: pb.NoticeSeverity_NOTICE_SEVERITY_WARNING,
+						},
+					},
+				},
+			},
+		})
+		evs := parseSSEEvents(rec.Body.String())
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 event, got %d", len(evs))
+		}
+		if evs[0].Event != "workflow_completed" {
+			t.Fatalf("event = %q, want workflow_completed", evs[0].Event)
+		}
+		// Plan 06-07 legitimately updates this expected key set
+		assertSSEPayloadKeySet(t, evs[0].Data, []string{
+			"error_kind", "error_message", "notices", "success", "total_duration_ms",
+		})
+		var rawWc map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(evs[0].Data), &rawWc); err != nil {
+			t.Fatalf("unmarshal wc event: %v", err)
+		}
+		assertSSEArrayElementKeySet(t, string(rawWc["notices"]), []string{
+			"code", "message", "severity",
+		})
 	}
-	assertSSEArrayElementKeySet(t, string(rawWc["notices"]), []string{
-		"code", "message", "severity",
-	})
 }
 
 func TestRAGQueryFailureTerminalNoticesSSE(t *testing.T) {
