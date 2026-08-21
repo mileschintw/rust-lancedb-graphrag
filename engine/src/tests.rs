@@ -3655,8 +3655,20 @@ async fn query_rag_rejects_unknown_marker_without_response() {
 
     let req = test_query_request("gamma document", "00000000-0000-4000-8000-000000000088");
 
-    let res = execute_query_rag(&service, req).await;
-    assert!(res.is_err());
+    // D-14 (06-11): with citation repair on by default (`EffectiveRagSettings::default()`),
+    // an unresolvable marker no longer fails the run — it is stripped from the answer and
+    // both citation lists, and the response carries a drop notice. This test's old
+    // expectation was `res.is_err()`; the new contract is a successful, degraded response.
+    let resp = execute_query_rag(&service, req)
+        .await
+        .expect("unresolvable citation degrades the answer instead of failing the run");
+    assert!(!resp.answer.contains("[99]"));
+    assert!(resp.citations.is_empty());
+    assert!(resp.structured_citations.is_empty());
+    assert!(resp
+        .notices
+        .iter()
+        .any(|n| n.code == "CITATION_DROPPED" && n.message.contains("[99]")));
 
     let _ = std::fs::remove_dir_all(path);
 }

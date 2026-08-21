@@ -5,6 +5,7 @@ use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind},
     WorkflowContext,
 };
+use crate::generation::citations::{self, Resolution};
 use crate::generation::{GenerationErrorKind, GenerationRequest, Generator, GroundingLimits};
 use crate::pb::lancet::v1::NodeErrorKind;
 use crate::prompt::{resolve_citations, resolve_citations_with_max_chars};
@@ -14,6 +15,7 @@ pub struct GenerateAnswerNode {
     grounding_limits: Option<GroundingLimits>,
     citation_excerpt_max_chars: Option<usize>,
     graph_weight: f64,
+    citation_repair_enabled: bool,
 }
 
 impl GenerateAnswerNode {
@@ -23,6 +25,7 @@ impl GenerateAnswerNode {
             grounding_limits: None,
             citation_excerpt_max_chars: None,
             graph_weight: 1.0,
+            citation_repair_enabled: true,
         }
     }
 
@@ -35,6 +38,15 @@ impl GenerateAnswerNode {
         self.grounding_limits = Some(grounding_limits);
         self.citation_excerpt_max_chars = Some(citation_excerpt_max_chars);
         self.graph_weight = graph_weight;
+        self
+    }
+
+    /// Sets whether the local citation-repair pass (D-14) runs on unresolved citation
+    /// markers. Defaults to true, matching the `citation_repair_enabled` configuration
+    /// default (D-84); callers that need the pre-D-14 fail-closed behavior opt out
+    /// explicitly.
+    pub fn with_citation_repair_enabled(mut self, citation_repair_enabled: bool) -> Self {
+        self.citation_repair_enabled = citation_repair_enabled;
         self
     }
 }
@@ -131,32 +143,189 @@ impl Node for GenerateAnswerNode {
 
             match final_result {
                 Ok(output) => {
-                    if let Some(limits) = self.grounding_limits {
-                        let limits = limits.with_allow_model_only(ctx.allow_model_only);
-                        output
-                            .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
-                            .map_err(|err| {
-                                NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
+                    if ctx.allow_model_only
+                        && output.should_treat_as_model_only(ctx.evidence_blocks.is_empty())
+                    {
+                        if let Some(limits) = self.grounding_limits {
+                            let limits = limits.with_allow_model_only(ctx.allow_model_only);
+                            output
+                                .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
+                                .map_err(|err| {
+                                    NodeError::new(
+                                        NodeErrorKind::LlmGenerationFailed,
+                                        err.message(),
+                                    )
                                     .with_context(
                                         Some(ctx.session_id.clone()),
                                         Some(ctx.trace_id.clone()),
                                     )
-                            })?;
-                    }
-                    ctx.update_from_model_output(&output);
-                    if ctx.allow_model_only
-                        && (ctx.evidence_blocks.is_empty()
-                            || ctx.answer_basis == crate::pb::lancet::v1::AnswerBasis::ModelOnly)
-                    {
-                        ctx.answer_basis = crate::pb::lancet::v1::AnswerBasis::ModelOnly;
-                        ctx.citations.clear();
+                                })?;
+                        }
+                        ctx.update_from_model_output(&output.into_model_only());
                         ctx.structured_citations.clear();
                         ctx.add_notice(crate::workflow::notice(
                             crate::pb::lancet::v1::NoticeCode::ModelOnly,
                             "Answer generated from parametric model knowledge without corpus evidence.",
                             crate::pb::lancet::v1::NoticeSeverity::Info,
                         ));
+                    } else if self.citation_repair_enabled && self.grounding_limits.is_some() {
+                        // D-14 only replaces the fail-closed branch that existed when
+                        // `grounding_limits` is configured (validation is what made an
+                        // unresolved marker fatal in the first place); without limits
+                        // configured, citation resolution already behaved as a best-effort
+                        // lookup against `ctx.evidence_blocks` with no fail-closed check to
+                        // repair around, so that path is untouched below.
+                        //
+                        // Markers come from the
+                        // widened extractor (option b, C3) on the raw answer text — never
+                        // from `cited_evidence_ids` alone and never from a reconstructed
+                        // `[<digits>]` token. Each outcome either keeps the marker (already
+                        // exact), repairs it to the resolved evidence identifier, or drops
+                        // it; drop and repair both rewrite the original extracted span.
+                        let evidence_ids: Vec<&str> =
+                            ctx.evidence_blocks.iter().map(|b| b.id.as_str()).collect();
+                        let markers = citations::extract_markers(&output.answer);
+                        let outcomes = citations::resolve_markers(&markers, &evidence_ids);
+
+                        let mut repaired_answer = output.answer.clone();
+                        let mut repaired_citations: Vec<String> = Vec::new();
+                        let mut pending_notices = Vec::new();
+                        let mut edits: Vec<(citations::MarkerSpan, Option<String>)> = Vec::new();
+
+                        for outcome in &outcomes {
+                            match &outcome.resolution {
+                                Resolution::Unchanged(id) => {
+                                    repaired_citations.push(id.clone());
+                                }
+                                Resolution::Repaired(id) => {
+                                    repaired_citations.push(id.clone());
+                                    edits.push((outcome.span, Some(id.clone())));
+                                    pending_notices.push(crate::workflow::notice(
+                                        crate::pb::lancet::v1::NoticeCode::CitationRepaired,
+                                        format!(
+                                            "citation marker '{}' repaired to '{}'",
+                                            outcome.original, id
+                                        ),
+                                        crate::pb::lancet::v1::NoticeSeverity::Info,
+                                    ));
+                                }
+                                Resolution::Dropped => {
+                                    edits.push((outcome.span, None));
+                                    pending_notices.push(crate::workflow::notice(
+                                        crate::pb::lancet::v1::NoticeCode::CitationDropped,
+                                        format!(
+                                            "citation marker '{}' could not be resolved and was dropped",
+                                            outcome.original
+                                        ),
+                                        crate::pb::lancet::v1::NoticeSeverity::Info,
+                                    ));
+                                }
+                            }
+                        }
+
+                        // Apply text edits right-to-left so earlier byte offsets stay valid.
+                        edits.sort_by_key(|(span, _)| std::cmp::Reverse(span.start));
+                        for (span, replacement) in edits {
+                            let text = replacement.as_deref().unwrap_or("");
+                            repaired_answer.replace_range(span.start..span.end, text);
+                        }
+
+                        // Total citation loss: markers existed but none survived repair.
+                        // Validated (and later reconciled) as model-only rather than failing
+                        // the run — the answer lost all grounding, it did not become invalid.
+                        let total_drop = !markers.is_empty() && repaired_citations.is_empty();
+
+                        if let Some(limits) = self.grounding_limits {
+                            let for_validation = if total_drop {
+                                output
+                                    .with_answer_and_citations(
+                                        repaired_answer.clone(),
+                                        repaired_citations.clone(),
+                                    )
+                                    .into_model_only()
+                            } else {
+                                output.with_answer_and_citations(
+                                    repaired_answer.clone(),
+                                    repaired_citations.clone(),
+                                )
+                            };
+                            let effective_allow = ctx.allow_model_only || total_drop;
+                            let limits = limits.with_allow_model_only(effective_allow);
+                            for_validation
+                                .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
+                                .map_err(|err| {
+                                    NodeError::new(
+                                        NodeErrorKind::LlmGenerationFailed,
+                                        err.message(),
+                                    )
+                                    .with_context(
+                                        Some(ctx.session_id.clone()),
+                                        Some(ctx.trace_id.clone()),
+                                    )
+                                })?;
+                        }
+
+                        // Re-entry (locked option a): the clone's `answer` is already the
+                        // post-strip text and `cited_evidence_ids` the post-repair set, so
+                        // `update_from_model_output`'s `self.answer = output.answer.clone()`
+                        // cannot restore a marker the strip just removed. The self-reported
+                        // basis is left untouched here — reconciliation decides the final
+                        // basis from the post-repair citation state, at its single seam.
+                        let reentry =
+                            output.with_answer_and_citations(repaired_answer, repaired_citations);
+                        ctx.update_from_model_output(&reentry);
+                        for pending in pending_notices {
+                            ctx.add_notice(pending);
+                        }
+
+                        let resolved_citations = match self.citation_excerpt_max_chars {
+                            Some(max_chars) => resolve_citations_with_max_chars(
+                                &ctx.citations,
+                                &ctx.evidence_blocks,
+                                max_chars,
+                            ),
+                            None => resolve_citations(&ctx.citations, &ctx.evidence_blocks),
+                        };
+                        ctx.structured_citations = resolved_citations
+                            .iter()
+                            .map(|c| crate::pb::lancet::v1::StructuredCitation {
+                                chunk_id: c.chunk_id.clone(),
+                                document_id: c.document_id.clone(),
+                                title: c
+                                    .title
+                                    .as_deref()
+                                    .unwrap_or("Untitled Document")
+                                    .to_string(),
+                                section_path: c
+                                    .section_path
+                                    .as_deref()
+                                    .unwrap_or("Root")
+                                    .to_string(),
+                                excerpt: c.bounded_excerpt.clone(),
+                                is_truncated: c.is_truncated,
+                                score: c.score,
+                                rank: c.rank as i32,
+                                content_type: c.content_type.clone(),
+                            })
+                            .collect();
                     } else {
+                        // Repair disabled: exactly today's fail-closed behavior.
+                        if let Some(limits) = self.grounding_limits {
+                            let limits = limits.with_allow_model_only(ctx.allow_model_only);
+                            output
+                                .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
+                                .map_err(|err| {
+                                    NodeError::new(
+                                        NodeErrorKind::LlmGenerationFailed,
+                                        err.message(),
+                                    )
+                                    .with_context(
+                                        Some(ctx.session_id.clone()),
+                                        Some(ctx.trace_id.clone()),
+                                    )
+                                })?;
+                        }
+                        ctx.update_from_model_output(&output);
                         let resolved_citations = match self.citation_excerpt_max_chars {
                             Some(max_chars) => resolve_citations_with_max_chars(
                                 &ctx.citations,

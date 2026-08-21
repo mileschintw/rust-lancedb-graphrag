@@ -5797,3 +5797,325 @@ fn generation_request_contract_unchanged_by_precedence_change() {
     assert!(request.session_id.is_none());
     assert!(request.correlation_id.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// Plan 06-11, Task 3: replace the fail-closed citation branch with repair,
+// strip and notice. Behavior-block tests.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn citation_repair_enabled_repairs_near_miss_marker_and_emits_notice() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Repair near miss", "sess-repair-near-miss");
+    let mut ctx = WorkflowContext::new(
+        "sess-repair-near-miss".into(),
+        "trace-repair-near-miss".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[7]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "See the near-miss citation [ 7 ] for support.".into(),
+        cited_evidence_ids: vec!["[ 7 ]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "repair-enabled run must succeed: {res:?}");
+    assert_eq!(ctx.answer, "See the near-miss citation [7] for support.");
+    assert_eq!(ctx.citations, vec!["[7]".to_string()]);
+    assert_eq!(ctx.structured_citations.len(), 1);
+    let repaired = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "CITATION_REPAIRED")
+        .expect("repair notice must be emitted");
+    assert!(repaired.message.contains("[ 7 ]"));
+}
+
+#[tokio::test]
+async fn citation_repair_enabled_drops_unresolvable_marker_and_emits_notice() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Drop unresolvable", "sess-repair-drop");
+    let mut ctx = WorkflowContext::new("sess-repair-drop".into(), "trace-repair-drop".into(), &req);
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Answer with unresolvable marker [9999].".into(),
+        cited_evidence_ids: vec!["[9999]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "drop path must still succeed: {res:?}");
+    assert!(!ctx.answer.contains("[9999]"));
+    assert!(ctx.citations.is_empty());
+    assert!(ctx.structured_citations.is_empty());
+    let dropped = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "CITATION_DROPPED")
+        .expect("drop notice must be emitted");
+    assert!(dropped.message.contains("[9999]"));
+}
+
+#[tokio::test]
+async fn citation_repair_enabled_drops_internal_whitespace_marker_when_unresolvable() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Drop [ 7 ]", "sess-repair-drop-spaced");
+    let mut ctx = WorkflowContext::new(
+        "sess-repair-drop-spaced".into(),
+        "trace-repair-drop-spaced".into(),
+        &req,
+    );
+    // Evidence set deliberately excludes "[7]" so the near-miss span cannot resolve.
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Unsupported near-miss span [ 7 ] appears here.".into(),
+        cited_evidence_ids: vec!["[ 7 ]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "drop path must still succeed: {res:?}");
+    assert!(!ctx.answer.contains("[ 7 ]"));
+    assert!(!ctx.answer.contains("[7]"));
+    let dropped = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "CITATION_DROPPED")
+        .expect("drop notice must be emitted");
+    assert!(
+        dropped.message.contains("[ 7 ]"),
+        "drop notice must name the exact original span, not a reconstructed [7]: {}",
+        dropped.message
+    );
+}
+
+#[tokio::test]
+async fn citation_repair_enabled_two_dropped_markers_produce_two_distinct_notices() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Two drops", "sess-repair-two-drops");
+    let mut ctx = WorkflowContext::new(
+        "sess-repair-two-drops".into(),
+        "trace-repair-two-drops".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "First unresolvable [8888] and second unresolvable [9999].".into(),
+        cited_evidence_ids: vec!["[8888]".into(), "[9999]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(
+        res.is_ok(),
+        "run with two unresolvable markers must succeed: {res:?}"
+    );
+    let drop_notices: Vec<_> = ctx
+        .notices
+        .iter()
+        .filter(|n| n.code == "CITATION_DROPPED")
+        .collect();
+    assert_eq!(
+        drop_notices.len(),
+        2,
+        "two distinct dropped spans must produce two distinct drop notices"
+    );
+    assert!(drop_notices.iter().any(|n| n.message.contains("[8888]")));
+    assert!(drop_notices.iter().any(|n| n.message.contains("[9999]")));
+}
+
+#[tokio::test]
+async fn citation_repair_makes_no_additional_provider_call() {
+    let cancel = CancellationToken::new();
+
+    // Unrepaired run: repair disabled, well-formed citation.
+    let req_a = test_query_request("No markers", "sess-calls-a");
+    let mut ctx_a = WorkflowContext::new("sess-calls-a".into(), "trace-calls-a".into(), &req_a);
+    ctx_a.evidence_blocks = vec![evidence_block_with_id("[1]")];
+    let fake_gen_a = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Answer citing [1] cleanly.".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let limits_a = GroundingLimits::new(8192, 2048).unwrap();
+    let node_a = GenerateAnswerNode::new(Some(fake_gen_a.clone() as Arc<dyn Generator>))
+        .with_settings(limits_a, 200, 1.0)
+        .with_citation_repair_enabled(false);
+    let res_a = node_a.run(&mut ctx_a, &cancel).await;
+    assert!(res_a.is_ok());
+    let calls_unrepaired = fake_gen_a.calls();
+
+    // Repaired run: repair enabled, near-miss marker present.
+    let req_b = test_query_request("Repaired run", "sess-calls-b");
+    let mut ctx_b = WorkflowContext::new("sess-calls-b".into(), "trace-calls-b".into(), &req_b);
+    ctx_b.evidence_blocks = vec![evidence_block_with_id("[1]")];
+    let fake_gen_b = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Answer citing [ 1 ] with whitespace.".into(),
+        cited_evidence_ids: vec!["[ 1 ]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let limits_b = GroundingLimits::new(8192, 2048).unwrap();
+    let node_b = GenerateAnswerNode::new(Some(fake_gen_b.clone() as Arc<dyn Generator>))
+        .with_settings(limits_b, 200, 1.0)
+        .with_citation_repair_enabled(true);
+    let res_b = node_b.run(&mut ctx_b, &cancel).await;
+    assert!(res_b.is_ok());
+    let calls_repaired = fake_gen_b.calls();
+
+    assert_eq!(
+        calls_unrepaired, calls_repaired,
+        "the repair pass must not change the generator's invocation count"
+    );
+}
+
+#[tokio::test]
+async fn citation_repair_total_drop_downgrades_basis_and_succeeds() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Total drop", "sess-total-drop");
+    let mut ctx = WorkflowContext::new("sess-total-drop".into(), "trace-total-drop".into(), &req);
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Grounded-sounding answer [9999].".into(),
+        cited_evidence_ids: vec!["[9999]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(
+        res.is_ok(),
+        "total citation loss must still succeed: {res:?}"
+    );
+    assert_eq!(
+        ctx.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::ModelOnly
+    );
+    assert!(
+        !ctx.answer.contains("[9999]"),
+        "dropped marker must stay absent from the answer after re-entry"
+    );
+    assert!(ctx.citations.is_empty());
+    assert!(ctx.structured_citations.is_empty());
+    assert!(ctx.notices.iter().any(|n| n.code == "CITATION_DROPPED"));
+    assert!(ctx.notices.iter().any(|n| n.code == "BASIS_RECONCILED"));
+}
+
+#[tokio::test]
+async fn citation_repair_disabled_fails_exactly_as_before() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Disabled repair", "sess-repair-disabled");
+    let mut ctx = WorkflowContext::new(
+        "sess-repair-disabled".into(),
+        "trace-repair-disabled".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Answer with unresolvable marker [9999].".into(),
+        cited_evidence_ids: vec!["[9999]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(false);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    let err = res.expect_err("repair-disabled unresolvable citation must fail the run");
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+    // With grounding_limits configured, `validate_grounding_with_limits` rejects the
+    // unknown identifier before the resolve-count fail-closed branch is ever reached —
+    // this is today's actual (pre-D-14) error for an unresolvable citation, and repair
+    // disabled must reproduce it exactly, unchanged.
+    assert_eq!(
+        err.message,
+        "cited_evidence_id '[9999]' is not in packed evidence"
+    );
+}
+
+#[tokio::test]
+async fn citation_repair_healthy_path_emits_no_repair_or_drop_notices() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Healthy repair", "sess-repair-healthy");
+    let mut ctx = WorkflowContext::new(
+        "sess-repair-healthy".into(),
+        "trace-repair-healthy".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Clean grounded answer [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok());
+    assert!(!ctx.notices.iter().any(|n| n.code == "CITATION_REPAIRED"));
+    assert!(!ctx.notices.iter().any(|n| n.code == "CITATION_DROPPED"));
+}

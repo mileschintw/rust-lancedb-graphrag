@@ -366,6 +366,44 @@ impl ModelOutput {
 
         Ok(())
     }
+
+    /// Whether this output should be treated as model-only: either it self-reports
+    /// [`AnswerBasis::ModelOnly`], or `no_evidence` records that zero evidence survived
+    /// retrieval (the D-10 opt-in decision point).
+    pub fn should_treat_as_model_only(&self, no_evidence: bool) -> bool {
+        no_evidence || self.answer_basis == AnswerBasis::ModelOnly
+    }
+
+    /// Clones this output with citations cleared and the basis forced to model-only.
+    ///
+    /// Used at the D-10 opt-in site, where the engine — not the model's own claim —
+    /// decides the run is model-only; feeding the result back through
+    /// [`crate::workflow::WorkflowContext::update_from_model_output`] keeps basis
+    /// assignment at that single seam rather than adding a second one.
+    pub fn into_model_only(&self) -> Self {
+        let mut clone = self.clone();
+        clone.cited_evidence_ids.clear();
+        clone.answer_basis = AnswerBasis::ModelOnly;
+        clone
+    }
+
+    /// Clones this output with `answer` and `cited_evidence_ids` replaced, leaving
+    /// every other field — including the self-reported basis — untouched.
+    ///
+    /// Used by the D-14 citation-repair pass to feed the post-strip answer and the
+    /// post-repair citation list back into validation and context re-entry without
+    /// pre-judging the answer basis; reconciliation of the basis happens only at
+    /// [`crate::workflow::WorkflowContext::update_from_model_output`].
+    pub fn with_answer_and_citations(
+        &self,
+        answer: String,
+        cited_evidence_ids: Vec<String>,
+    ) -> Self {
+        let mut clone = self.clone();
+        clone.answer = answer;
+        clone.cited_evidence_ids = cited_evidence_ids;
+        clone
+    }
 }
 
 fn extract_inline_markers(text: &str) -> Vec<String> {
