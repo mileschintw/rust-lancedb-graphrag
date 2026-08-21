@@ -490,11 +490,11 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06-08-PLAN.md — Behavior tracer: end-to-end graph-context ablation, plus the `GRAPH_UNAVAILABLE` notice on the two silent-degrade paths and the source-chunk proof (D-47, D-08 / DEBT-RAG-06).
+- [x] 06-08-PLAN.md — Behavior tracer: end-to-end graph-context ablation, plus the `GRAPH_UNAVAILABLE` notice on the two silent-degrade paths and the source-chunk proof (D-47, D-08 / DEBT-RAG-06).
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 06-09-PLAN.md — Convert both retrieval paths from fail-closed to degrade with per-path notices and per-variant tolerance (D-13 / DEBT-RAG-01).
+- [x] 06-09-PLAN.md — Convert both retrieval paths from fail-closed to degrade with per-path notices and per-variant tolerance (D-13 / DEBT-RAG-01).
 
 **Wave 8** *(blocked on Wave 7 completion)*
 

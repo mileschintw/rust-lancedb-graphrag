@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
-current_plan: 7
+current_plan: 9
 status: executing
-stopped_at: Phase 6 Wave 5 complete (Plan 06-07 executed; consolidated additive protobuf contract, NoticeCode enum & constructor, zero-evidence typed gates, gateway edge flags & workflow metadata SSE frame)
-last_updated: "2026-08-21T07:31:11.608Z"
-state_head: 585de821170c102c1b3f429d0cc42dacb7af8a62
+stopped_at: Phase 6 Wave 7 complete (Plan 06-09 executed; converted dense & lexical retrieval paths to degrade with per-path notices and per-variant tolerance)
+last_updated: "2026-08-21T08:06:00.000Z"
+state_head: 8aaa540
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 101
-  completed_plans: 96
+  completed_plans: 98
 milestone_name: milestone
 ---
 
@@ -40,15 +40,17 @@ milestone_name: milestone
   - Security gate UNCHANGED: `workflow.security_enforcement` is active and NO 05-SECURITY.md exists — `/gsd-secure-phase 5` still required before advancing.
   - Phase still NOT marked complete: verification returns `human_needed`, not `passed`. Next: `/gsd-verify-work 5`.
 - Phase 05 UAT completed (2026-08-19) via `/gsd-verify-work 5`, resuming the in-flight session. G-05-1 reconciled `resolved` (root causes closed in code by 05-25/05-26/05-27). Test 1 re-run live against real OpenRouter: full 5-node frame sequence, no `stream_error`, citations grounded in the local dev LanceDB store's fixture data (fixture content, not a real corpus — pipeline mechanics fully proven). Tests 7-10 (judgment-tier dispositions) resolved: buffer-depth invariant re-accepted at the post-`5354d1e` code site (Test 7); gateway bind-failure exit-code regression found ALREADY fixed by `fe83e71` and verified empirically (`exit=1`) (Test 8); terminal-event suppression on FinalAnswer failure found ALREADY fixed by `0c96720a` (Test 9); checkpoint sequence-ordinal burning on failed delivery accepted as debt, `wrap_next_event` found already lazy via the same `0c96720a` refactor (Test 10). Final: **10/10 passed, 0 issues**. `05-SECURITY.md` confirmed present with `threats_open: 0` (security gate clear). Verification canonicalized `human_needed` → `passed`. Phase 05 marked complete via `phase.complete`; PROJECT.md evolved (4 requirements moved to Validated, 4 new Key Decisions logged); next phase = Phase 6.
+- Phase 06 Wave 6 Plan 06-08 executed: implemented graph ablation flag and distinct `GRAPH_UNAVAILABLE` notices; proved source-chunk query survival.
+- Phase 06 Wave 7 Plan 06-09 executed: converted dense and lexical retrieval paths from fail-closed to degrade (D-13 / DEBT-RAG-01); pinned 3-notice sequence on both-paths degradation.
 
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
 - **Status:** Executing Phase 06
-- **Current Plan:** 7
+- **Current Plan:** 9
 - **Total Plans in Phase:** 12
-- **Completed Plans in Phase:** 7 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07)
-- **Progress:** [███████░░░] 58.3%
+- **Completed Plans in Phase:** 9 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09)
+- **Progress:** [█████████░] 75.0%
 
 ## Completed Phases
 
