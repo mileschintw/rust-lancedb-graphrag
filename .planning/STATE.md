@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 6
-current_phase_name: observability-evaluation-polish
-current_plan: Not started
+current_phase_name: Observability, Evaluation & Polish
+current_plan: 2
 status: executing
-stopped_at: Phase 6 context gathered (governs 6, 6.1, 6.2, 6.3, 6.4)
-last_updated: "2026-08-21T01:13:56.025Z"
-state_head: faf5d30ec35ca845bc5264f6265e2df05783b7e3
+stopped_at: Phase 6 Wave 1 complete (Plans 06-01 and 06-04 executed)
+last_updated: "2026-08-21T02:38:00.000Z"
+state_head: c7e107e0c45155f9e984ff35293d09a25b161df2
 progress:
   total_phases: 11
-  completed_phases: 6
+  completed_phases: 3
   total_plans: 101
-  completed_plans: 89
+  completed_plans: 91
 milestone_name: milestone
 ---
 
@@ -36,13 +36,6 @@ milestone_name: milestone
 - Phase 05 Wave 19 Plan 05-20 executed: separated capability preflight from the GenerateAnswer node timer and proved the two-attempt retry path fits the 65s node timer with paused-clock timing proofs.
 - Phase 05 Wave 20 Plan 05-11 executed: proved and hardened real engine-to-gateway SSE stream across 5-node lifecycle and graph fixtures, verified client cancellation propagation, structured stream error framing, and lossless checkpoint persistence under backpressure.
 - Phase 05 post-execution gates RE-RUN (2026-08-19) after gap-closure plans 05-25 and 05-26 landed: all 26 plans complete; ROADMAP plan checkboxes and plan counts reconciled for 05-25/05-26 (commit e6e153f).
-  - Code review REFRESHED at HEAD (05-REVIEW.md, standard depth, 37 of 48 scoped files, commit 721485c): 1 Critical, 15 Warnings, 18 Info (34 total), superseding the stale 2026-08-18T09:43 report of 27. Every finding re-derived at HEAD, not carried forward. Prior WR-05 (`x-lancet-*` trailer regression) confirmed RESOLVED by edaf907. `engine/src/db/mod.rs` + `db/tests.rs` newly in scope (05-25). 10 new findings, incl. WR-12 (runner.rs capacity() TOCTOU, coupled to CR-01) and WR-13/IN-15 (05-25's remediation hint is appended after multi-KB schema dumps; its test asserts only `contains`, so it does not protect the property the plan meant to deliver). 11 files excluded (generated code + large test files), recorded verbatim in the report.
-  - Regression gate PASSED: `cargo test --manifest-path engine/Cargo.toml --locked` 281 passed / 0 failed / 1 ignored, exit 0; `cd gateway && go test ./...` 54 passed / 0 failed / 11 SKIPPED, exit 0. The 11 skips are ALL `TEST_DATABASE_URL`-gated and could NOT be run here (Docker Desktop not running; nothing listening on 127.0.0.1:5432) — recorded explicitly, NOT counted as passes. 05-26's actual risk surface is not env-gated and DID run: TestRAGQueryCrossRuntime (3.09s) and TestRAGQueryClientDisconnectCancelsRustWorkflow (2.22s) both pass.
-  - Verification REFRESHED (05-VERIFICATION.md, commit e604f5f): 4/5 roadmap success criteria verified, 1 present-but-behavior-unverified. Score moved 5/5 -> 4/5 NOT from a regression but from honest re-grading — the prior pass counted three Postgres-backed checkpoint tests as PASS against a container that is no longer up. SC4 splits: capture half provable from source (CHECKPOINT_SNAPSHOT_KEYS, 19 keys); persistence half (FIFO drain, cancellation atomicity) has no fresh evidence. SC3 stands — CR-01/WR-12's precondition re-derived as unreachable at the current 100-slot buffer depth. Requirements traceability clean: ORCH-01..05 all [x], GATE-01/02 formalized, GATE-03 removed as unbacked, no orphans. `regressions: []`, `gaps_remaining: []`.
-  - G-05-1 CLOSED IN CODE by 05-25 + 05-26 (Blocker A verified empirically — inspect_lancedb.exe passes open_and_validate against ./data/lancedb; Blocker B closed at main.rs:661-668). Closing the blockers UNBLOCKS UAT Test 1; it does not constitute it. The live OpenRouter run still requires a real API key and a human.
-  - New warning the plans did not flag (WARN-NEW-01): 05-26's decoupling pins the real-engine tests to `openai/gpt-4o-mini` while production ships `dots-studio/dots-3-note-preview:free`, so the structured-output capability preflight (openrouter.rs:425-434) is now exercised by NO automated test.
-  - 05-UAT.md MERGED, not regenerated: Tests 2/3/4 and their three recorded human resolutions preserved verbatim; Test 1 reopened as `pending` (blockers closed) with its prior failure kept on the record; Tests 5 (Postgres-gated suite) and 6 (CR-01/WR-12 disposition) added. Now 6 total / 3 passed / 3 pending.
-  - Security gate: `workflow.security_enforcement` is active and NO 05-SECURITY.md exists — run `/gsd-secure-phase 5` before advancing.
   - Phase NOT marked complete: `phase.complete` is gated on verification returning `passed`; it returns `human_needed`. Next: `/gsd-verify-work 5`.
 - Phase 05 tail gates RE-RUN AGAIN (2026-08-19T07:20) at HEAD `bb58a60`, after the 16 remediation commits (CR-01 + WR-01..WR-15) and gap-closure plan 05-27 landed. All 27 plans complete. The `--gaps` token in the invocation is a `/gsd-plan-phase` flag, not an execute-phase filter; no filter was applied and `incomplete_count` was 0, so this run consisted only of the tail gates.
   - Code review REFRESHED at HEAD (05-REVIEW.md, standard depth, commit 25d4fda): **0 Critical / 13 Warnings / 24 Info (37 total)**, 33 of 49 declared files reviewed line-by-line. `critical: 0` is a real result — prior CR-01 verified closed at `runner.rs:342-351`/`:383-393`. Scope note recorded on the record: the raw git diff from the phase base surfaced 2,051 changed paths, of which 2,002 are vendored GSD runtime installs (`.codex/` 730, `.claude/` 723, `.agents/` 549) — tooling, not Phase 05 source — excluded by the orchestrator before the reviewer was spawned.
@@ -60,11 +53,11 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
-- **Status:** Ready to execute
-- **Current Plan:** Not started
+- **Status:** Executing Phase 06 (Wave 1 complete)
+- **Current Plan:** 2
 - **Total Plans in Phase:** 12
-- **Completed Plans in Phase:** 0
-- **Progress:** [░░░░░░░░░░] 0.0%
+- **Completed Plans in Phase:** 2 (Plans 06-01, 06-04)
+- **Progress:** [██░░░░░░░░] 16.7%
 
 ## Completed Phases
 

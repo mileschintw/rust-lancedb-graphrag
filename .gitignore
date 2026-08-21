@@ -128,3 +128,4 @@ logs/
 
 # GSD cross-AI review scratch (transient)
 .gsd-review-tmp/
+.planning/*.lock
