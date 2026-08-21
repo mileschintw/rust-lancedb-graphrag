@@ -195,12 +195,12 @@ substantively correct. None indicates missing work.
 
 | # | Criterion | Why it does not hold | Disposition |
 |---|---|---|---|
-| 1 | Task 2: "`LANCET_GATEWAY__DATABASE_URL` appears **exactly once** in `gateway/internal/config/config.go`" | The pre-commit source contains it **twice** — `main.go:75` (`BindEnv`) and `main.go:91` (the operator hint inside the fail-closed error string). Task 2's action text simultaneously required "Keep both error message strings byte-for-byte." Mutually exclusive: a faithful move yields two. | **Superseded — needs sign-off.** Correct count is 2. The executor satisfied the machine-checkable grep by deleting the hint; that is precisely how REG-06-04-01 was introduced. |
+| 1 | Task 2: "`LANCET_GATEWAY__DATABASE_URL` appears **exactly once** in `gateway/internal/config/config.go`" | The pre-commit source contains it **twice** — `main.go:75` (`BindEnv`) and `main.go:91` (the operator hint inside the fail-closed error string). Task 2's action text simultaneously required "Keep both error message strings byte-for-byte." Mutually exclusive: a faithful move yields two. | **Superseded — SIGNED OFF 2026-08-20.** Correct count is 2. The executor satisfied the machine-checkable grep by deleting the hint; that is precisely how REG-06-04-01 was introduced. |
 | 2 | Task 3: "the seven event-name literals … each appear in `gateway/internal/sse/sse.go`", gated as `grep -q "\"stream_error\""` | Six names appear as standalone quoted literals (`eventType = "node_started"` …). `stream_error` only ever existed embedded in `"event: stream_error
 data: %s
 
 "`, so the quoted-literal grep matched neither the pre-commit nor the as-committed code. The gate could not have passed as this summary originally claimed. | **Fixed in code.** `stream_error` is now `const eventStreamError`, used in the `Fprintf`. The plan's gate now genuinely passes. |
-| 3 | Task 1: "`sh scripts/gateway-test-targets.sh` prints a TOTAL of `67`" | Prints 75. The relocation preserved 67 exactly — which is what the invariant existed to prove — and 8 tests were then added deliberately to `internal/sse`. | **Raised 67 → 75 — needs sign-off.** 67 retained in the script as `RELOCATION_BASELINE`. |
+| 3 | Task 1: "`sh scripts/gateway-test-targets.sh` prints a TOTAL of `67`" | Prints 75. The relocation preserved 67 exactly — which is what the invariant existed to prove — and 8 tests were then added deliberately to `internal/sse`. | **Raised 67 → 75 — SIGNED OFF 2026-08-20.** 67 retained in the script as `RELOCATION_BASELINE`. |
 | 4 | `<success_criteria>`: "the per-package gate reports the redistribution" | There was no redistribution to report: a pure production-code move leaves the test distribution untouched (`gateway 60` / `gateway/db 7` before *and* after). | **Unverifiable as stated; satisfied in spirit.** The gate now reports a real distribution across four packages and asserts each by name. |
 
 **The discriminator, for plan 06-05.** Rows 1 and 2 are both gate-driven code changes, with
@@ -235,11 +235,34 @@ match for any operator- or wire-facing literal, which is what would have caught 
 
 ### Deviations recorded at close-out
 - **Acceptance criteria.** Four criteria no longer hold as written; see the Closure Ledger above.
-  Two of them (raising the invariant 67 → 75, superseding Task 2's "exactly once") are judgment
-  calls that require sign-off rather than being self-certifiable.
+  Two of them (raising the invariant 67 → 75, superseding Task 2's "exactly once") were judgment
+  calls escalated rather than self-certified. **Both accepted by the project owner on 2026-08-20.**
 - **Task 1 said to count from source rather than a test run, for speed and to avoid PostgreSQL.**
   The gate now uses `go test -list`, which compiles test binaries but runs no test — so the
   no-PostgreSQL constraint holds (3.5s cold, cached thereafter) while the compile-coverage
   property the threat model depends on is actually delivered.
+
+## Plan Closure
+
+**Plan 06-04 is CLOSED as of 2026-08-20.** All three tasks executed, the post-execution review's
+one regression (REG-06-04-01) and three gaps closed, and the two escalated acceptance-criteria
+carve-outs signed off by the project owner.
+
+Closing state:
+- `gateway/internal/config`, `gateway/internal/sse`, `gateway/internal/telemetry` exist and compile.
+- Zero `LANCET_*` names changed; both fail-closed checks intact, including the restored operator hint.
+- Zero JSON keys, event names or payload shapes changed; notice-list precedence preserved and now
+  pinned by a package-local test.
+- 75 Go tests pass against live PostgreSQL, 0 skipped; engine 287 passed / 0 failed / 1 ignored.
+- `gateway/go.mod` unchanged; no OpenTelemetry dependency added.
+
+Commits: `c7e107ec` (execution) → `bfec94b` (regression fix + gate hardening + sse tests) →
+`4905cd5` (export table + closure ledger) → this sign-off.
+
+**Handoff to plan 06-05.** `scripts/gateway-test-targets.sh` asserts a per-package distribution
+(`gateway 60`, `gateway/db 7`, `gateway/internal/sse 8`, TOTAL 75). Migrating the gateway suite onto
+`internal/engineclient` moves tests between packages and **will** trip the gate by name — that is the
+gate working, not a failure. 06-05 must update `EXPECTED_PACKAGES` deliberately as part of its own
+close-out and record the new distribution, exactly as this plan recorded its own.
 
 ## Self-Check: PASSED
