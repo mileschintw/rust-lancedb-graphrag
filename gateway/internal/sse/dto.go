@@ -31,9 +31,10 @@ type StructuredCitationDTO struct {
 
 // NoticeDTO represents a human- or machine-readable execution notice.
 type NoticeDTO struct {
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Severity int32  `json:"severity"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Severity  int32  `json:"severity"`
+	TypedCode int32  `json:"typed_code"`
 }
 
 // DocumentFilterDTO represents document ID and content type filters.
@@ -93,9 +94,10 @@ func ToQueryRAGResponseDTO(resp *pb.QueryRAGResponse) QueryRAGResponseDTO {
 			continue
 		}
 		notices = append(notices, NoticeDTO{
-			Code:     n.Code,
-			Message:  n.Message,
-			Severity: int32(n.Severity),
+			Code:      n.Code,
+			Message:   n.Message,
+			Severity:  int32(n.Severity),
+			TypedCode: int32(n.TypedCode),
 		})
 	}
 

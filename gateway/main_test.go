@@ -2692,7 +2692,7 @@ func TestQueryRAG_SSE_FinalAnswerPayloadKeySet(t *testing.T) {
 		"chunk_id", "content_type", "document_id", "excerpt", "is_truncated", "rank", "score", "section_path", "title",
 	})
 	assertSSEArrayElementKeySet(t, string(rawFinal["notices"]), []string{
-		"code", "message", "severity",
+		"code", "message", "severity", "typed_code",
 	})
 	assertSSEPayloadKeySet(t, string(rawFinal["snapshot"]), []string{
 		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit", "index_generation", "result_hash", "rrf_k", "vector_weight",
@@ -2735,7 +2735,7 @@ func TestQueryRAG_SSE_WorkflowCompletedPayloadKeySet(t *testing.T) {
 		}
 		// Plan 06-07 legitimately updates this expected key set
 		assertSSEPayloadKeySet(t, evs[0].Data, []string{
-			"error_kind", "error_message", "final_response", "success", "total_duration_ms",
+			"error_kind", "error_message", "final_response", "metadata", "success", "total_duration_ms",
 		})
 	}
 
@@ -2756,9 +2756,10 @@ func TestQueryRAG_SSE_WorkflowCompletedPayloadKeySet(t *testing.T) {
 					FinalResponse: nil,
 					Notices: []*pb.Notice{
 						{
-							Code:     "GRAPH_TIMEOUT",
-							Message:  "graph query timed out",
-							Severity: pb.NoticeSeverity_NOTICE_SEVERITY_WARNING,
+							Code:      "GRAPH_TIMEOUT",
+							Message:   "graph query timed out",
+							Severity:  pb.NoticeSeverity_NOTICE_SEVERITY_WARNING,
+							TypedCode: pb.NoticeCode_NOTICE_CODE_GRAPH_TIMEOUT,
 						},
 					},
 				},
@@ -2773,14 +2774,17 @@ func TestQueryRAG_SSE_WorkflowCompletedPayloadKeySet(t *testing.T) {
 		}
 		// Plan 06-07 legitimately updates this expected key set
 		assertSSEPayloadKeySet(t, evs[0].Data, []string{
-			"error_kind", "error_message", "notices", "success", "total_duration_ms",
+			"error_kind", "error_message", "metadata", "notices", "success", "total_duration_ms",
 		})
 		var rawWc map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(evs[0].Data), &rawWc); err != nil {
 			t.Fatalf("unmarshal wc event: %v", err)
 		}
 		assertSSEArrayElementKeySet(t, string(rawWc["notices"]), []string{
-			"code", "message", "severity",
+			"code", "message", "severity", "typed_code",
+		})
+		assertSSEPayloadKeySet(t, string(rawWc["metadata"]), []string{
+			"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_edge_count", "graph_node_count", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
 		})
 	}
 }
@@ -4146,6 +4150,156 @@ func TestCheckpointDispatcherCloseWithTimeout(t *testing.T) {
 	err := d.CloseWithTimeout(5 * time.Second)
 	if err != nil {
 		t.Fatalf("expected clean close, got %v", err)
+	}
+}
+
+func TestQueryRAG_EdgeFlagsAndDisallowUnknownFields(t *testing.T) {
+	t.Run("valid edge flags parse and forward to grpc request", func(t *testing.T) {
+		store := &fakeStore{}
+		var receivedReq *pb.QueryRAGRequest
+
+		engine := engineFunc{
+			queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+				receivedReq = req
+				resp := &pb.QueryRAGResponse{
+					Answer:    "Flags answer",
+					SessionId: req.GetSessionId(),
+				}
+				return newSingleResponseStream(resp, nil), nil
+			},
+		}
+
+		body := `{"query":"test flags","session_id":"sess-flags","allow_model_only":true,"disable_graph_context":false}`
+		req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(body)).WithContext(t.Context())
+		req.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+
+		app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+		}
+		if receivedReq == nil {
+			t.Fatal("engine QueryRAG was not called")
+		}
+		if receivedReq.AllowModelOnly == nil || !receivedReq.GetAllowModelOnly() {
+			t.Errorf("allow_model_only = %v, want &true", receivedReq.AllowModelOnly)
+		}
+		if receivedReq.DisableGraphContext == nil || receivedReq.GetDisableGraphContext() {
+			t.Errorf("disable_graph_context = %v, want &false", receivedReq.DisableGraphContext)
+		}
+	})
+
+	t.Run("unknown top-level field rejected with 400", func(t *testing.T) {
+		store := &fakeStore{}
+		engine := engineFunc{
+			queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+				t.Fatal("queryRAG should not be called on invalid request")
+				return nil, nil
+			},
+		}
+
+		body := `{"query":"test","session_id":"sess-1","bogus_field":true}`
+		req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(body)).WithContext(t.Context())
+		req.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+
+		app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 Bad Request", recorder.Code)
+		}
+	})
+}
+
+func TestQueryRAG_SSE_WorkflowCompletedWithExplicitMetadata(t *testing.T) {
+	sessionID := "00000000-0000-4000-8000-000000000033"
+	correlationID := "00000000-0000-4000-8000-000000000044"
+
+	rec := httptest.NewRecorder()
+	rc := http.NewResponseController(rec)
+	sse.WriteWorkflowEvent(rec, rc, &pb.WorkflowEvent{
+		SessionId:       sessionID,
+		TraceId:         correlationID,
+		SequenceOrdinal: 1,
+		Event: &pb.WorkflowEvent_WorkflowCompleted{
+			WorkflowCompleted: &pb.WorkflowCompletedEvent{
+				Success:       true,
+				DurationMs:    250,
+				ErrorKind:     pb.NodeErrorKind_NODE_ERROR_KIND_UNSPECIFIED,
+				ErrorMessage:  "",
+				Metadata: &pb.WorkflowMetadata{
+					StartedAtMs:        1000,
+					CompletedAtMs:      1250,
+					ReformulationUsed:  true,
+					VectorCount:        15,
+					Bm25Count:          20,
+					GraphNodeCount:     8,
+					GraphEdgeCount:     12,
+					PromptTokens:       512,
+					CompletionTokens:   128,
+					DegradedMode:       false,
+				},
+				FinalResponse: &pb.QueryRAGResponse{
+					Answer:      "Metadata answer",
+					Citations:   []string{},
+					SessionId:   sessionID,
+					AnswerBasis: pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL,
+				},
+			},
+		},
+	})
+
+	evs := parseSSEEvents(rec.Body.String())
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(evs))
+	}
+	if evs[0].Event != "workflow_completed" {
+		t.Fatalf("event = %q, want workflow_completed", evs[0].Event)
+	}
+
+	var rawWc map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(evs[0].Data), &rawWc); err != nil {
+		t.Fatalf("unmarshal wc event: %v", err)
+	}
+
+	assertSSEPayloadKeySet(t, string(rawWc["metadata"]), []string{
+		"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_edge_count", "graph_node_count", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
+	})
+
+	var metaMap map[string]any
+	if err := json.Unmarshal(rawWc["metadata"], &metaMap); err != nil {
+		t.Fatalf("unmarshal metadata map: %v", err)
+	}
+	if metaMap["started_at_ms"] != float64(1000) {
+		t.Errorf("started_at_ms = %v, want 1000", metaMap["started_at_ms"])
+	}
+	if metaMap["completed_at_ms"] != float64(1250) {
+		t.Errorf("completed_at_ms = %v, want 1250", metaMap["completed_at_ms"])
+	}
+	if metaMap["reformulation_used"] != true {
+		t.Errorf("reformulation_used = %v, want true", metaMap["reformulation_used"])
+	}
+	if metaMap["vector_count"] != float64(15) {
+		t.Errorf("vector_count = %v, want 15", metaMap["vector_count"])
+	}
+	if metaMap["bm25_count"] != float64(20) {
+		t.Errorf("bm25_count = %v, want 20", metaMap["bm25_count"])
+	}
+	if metaMap["graph_node_count"] != float64(8) {
+		t.Errorf("graph_node_count = %v, want 8", metaMap["graph_node_count"])
+	}
+	if metaMap["graph_edge_count"] != float64(12) {
+		t.Errorf("graph_edge_count = %v, want 12", metaMap["graph_edge_count"])
+	}
+	if metaMap["prompt_tokens"] != float64(512) {
+		t.Errorf("prompt_tokens = %v, want 512", metaMap["prompt_tokens"])
+	}
+	if metaMap["completion_tokens"] != float64(128) {
+		t.Errorf("completion_tokens = %v, want 128", metaMap["completion_tokens"])
+	}
+	if metaMap["degraded_mode"] != false {
+		t.Errorf("degraded_mode = %v, want false", metaMap["degraded_mode"])
 	}
 }
 

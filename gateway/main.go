@@ -526,6 +526,8 @@ type ragQueryRequestBody struct {
 		DocumentIDs  []string `json:"document_ids"`
 		ContentTypes []string `json:"content_types"`
 	} `json:"filter"`
+	AllowModelOnly      *bool `json:"allow_model_only"`
+	DisableGraphContext *bool `json:"disable_graph_context"`
 }
 
 func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
@@ -555,8 +557,10 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := &pb.QueryRAGRequest{
-		Query:     body.Query,
-		SessionId: body.SessionID,
+		Query:               body.Query,
+		SessionId:           body.SessionID,
+		AllowModelOnly:      body.AllowModelOnly,
+		DisableGraphContext: body.DisableGraphContext,
 	}
 	if body.Filter != nil {
 		req.Filter = &pb.DocumentFilter{

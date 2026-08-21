@@ -13,12 +13,12 @@
 #        /rag/query JSON wire contract that plan 06-07 extends.
 set -e
 
-EXPECTED_TOTAL=77
+EXPECTED_TOTAL=79
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 62
+EXPECTED_PACKAGES="gateway 64
 gateway/db 7
 gateway/internal/sse 8"
 

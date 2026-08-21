@@ -97,13 +97,43 @@ func WriteWorkflowEvent(w http.ResponseWriter, rc *http.ResponseController, ev *
 					continue
 				}
 				notices = append(notices, NoticeDTO{
-					Code:     n.Code,
-					Message:  n.Message,
-					Severity: int32(n.Severity),
+					Code:      n.Code,
+					Message:   n.Message,
+					Severity:  int32(n.Severity),
+					TypedCode: int32(n.TypedCode),
 				})
 			}
 			wcPayload["notices"] = notices
 		}
+		var metaMap map[string]any
+		if meta := e.WorkflowCompleted.GetMetadata(); meta != nil {
+			metaMap = map[string]any{
+				"started_at_ms":      meta.GetStartedAtMs(),
+				"completed_at_ms":    meta.GetCompletedAtMs(),
+				"reformulation_used": meta.GetReformulationUsed(),
+				"vector_count":       meta.GetVectorCount(),
+				"bm25_count":         meta.GetBm25Count(),
+				"graph_node_count":   meta.GetGraphNodeCount(),
+				"graph_edge_count":   meta.GetGraphEdgeCount(),
+				"prompt_tokens":      meta.GetPromptTokens(),
+				"completion_tokens":  meta.GetCompletionTokens(),
+				"degraded_mode":      meta.GetDegradedMode(),
+			}
+		} else {
+			metaMap = map[string]any{
+				"started_at_ms":      int64(0),
+				"completed_at_ms":    int64(0),
+				"reformulation_used": false,
+				"vector_count":       uint32(0),
+				"bm25_count":         uint32(0),
+				"graph_node_count":   uint32(0),
+				"graph_edge_count":   uint32(0),
+				"prompt_tokens":      uint32(0),
+				"completion_tokens":  uint32(0),
+				"degraded_mode":      false,
+			}
+		}
+		wcPayload["metadata"] = metaMap
 		payload = wcPayload
 	default:
 		return
