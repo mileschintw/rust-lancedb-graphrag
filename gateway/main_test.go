@@ -32,6 +32,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lancet/gateway/internal/config"
+	"github.com/lancet/gateway/internal/sse"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -756,24 +758,24 @@ func parseSSEEvents(body string) []sseEvent {
 	return events
 }
 
-func parseTerminalResponseDTO(body string) (queryRAGResponseDTO, error) {
+func parseTerminalResponseDTO(body string) (sse.QueryRAGResponseDTO, error) {
 	events := parseSSEEvents(body)
 	for _, ev := range events {
 		if ev.Event == "final_answer" {
-			var dto queryRAGResponseDTO
+			var dto sse.QueryRAGResponseDTO
 			err := json.Unmarshal([]byte(ev.Data), &dto)
 			return dto, err
 		}
 		if ev.Event == "workflow_completed" {
 			var wc struct {
-				FinalResponse *queryRAGResponseDTO `json:"final_response"`
+				FinalResponse *sse.QueryRAGResponseDTO `json:"final_response"`
 			}
 			if err := json.Unmarshal([]byte(ev.Data), &wc); err == nil && wc.FinalResponse != nil {
 				return *wc.FinalResponse, nil
 			}
 		}
 	}
-	return queryRAGResponseDTO{}, fmt.Errorf("no terminal response found in SSE body: %s", body)
+	return sse.QueryRAGResponseDTO{}, fmt.Errorf("no terminal response found in SSE body: %s", body)
 }
 
 type engineFunc struct {
@@ -2699,11 +2701,11 @@ func TestRAGQueryFailureTerminalNoticesSSE(t *testing.T) {
 	}
 
 	var wcPayload struct {
-		Success         bool        `json:"success"`
-		TotalDurationMs int64       `json:"total_duration_ms"`
-		ErrorKind       int32       `json:"error_kind"`
-		ErrorMessage    string      `json:"error_message"`
-		Notices         []noticeDTO `json:"notices"`
+		Success         bool            `json:"success"`
+		TotalDurationMs int64           `json:"total_duration_ms"`
+		ErrorKind       int32           `json:"error_kind"`
+		ErrorMessage    string          `json:"error_message"`
+		Notices         []sse.NoticeDTO `json:"notices"`
 	}
 	if err := json.Unmarshal([]byte(wcData), &wcPayload); err != nil {
 		t.Fatalf("unmarshal typed workflow_completed payload error: %v", err)
@@ -3060,7 +3062,7 @@ func TestWorkflowCheckpointTracer(t *testing.T) {
 		}
 	}
 
-	dto := toQueryRAGResponseDTO(&pb.QueryRAGResponse{
+	dto := sse.ToQueryRAGResponseDTO(&pb.QueryRAGResponse{
 		Answer:    "hello",
 		Citations: []string{"doc1"},
 	})
@@ -3695,7 +3697,7 @@ func TestRetrievalSnapshotWireContract(t *testing.T) {
 		roundtrip.CandidateLimit != orig.CandidateLimit ||
 		roundtrip.FinalLimit != orig.FinalLimit ||
 		roundtrip.ResultHash != orig.ResultHash {
-		t.Fatalf("scalar fields mismatch after roundtrip: got %#v, want %#v", roundtrip, orig)
+		t.Fatalf("scalar fields mismatch after roundtrip: got %#v, want %#v", &roundtrip, &orig)
 	}
 
 	if roundtrip.VariantCount != 3 {
@@ -3878,7 +3880,7 @@ func TestLoadConfigValidation(t *testing.T) {
 
 	t.Run("rejects empty database url", func(t *testing.T) {
 		t.Setenv("LANCET_GATEWAY__DATABASE_URL", "   ")
-		_, err := loadConfig()
+		_, err := config.Load()
 		if err == nil {
 			t.Fatal("expected error on blank database_url, got nil")
 		}
@@ -3894,7 +3896,7 @@ func TestLoadConfigValidation(t *testing.T) {
 			t.Fatalf("write temp config.prod.toml: %v", err)
 		}
 		t.Setenv("LANCET_GATEWAY__DATABASE_URL", "postgres://user:pass@localhost:5432/db?sslmode=disable")
-		_, err := loadConfig()
+		_, err := config.Load()
 		if err == nil {
 			t.Fatal("expected error on sslmode=disable in prod, got nil")
 		}

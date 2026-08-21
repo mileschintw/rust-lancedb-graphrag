@@ -23,7 +23,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -32,6 +31,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/lancet/gateway/db"
+	"github.com/lancet/gateway/internal/config"
+	"github.com/lancet/gateway/internal/sse"
+	_ "github.com/lancet/gateway/internal/telemetry"
 	pb "github.com/lancet/gateway/proto/lancet/v1"
 )
 
@@ -45,56 +47,6 @@ const defaultChunkOverlap = 50
 const maxChunkSize = 1048576
 
 const ingestCompensationTimeout = 5 * time.Second
-
-type Config struct {
-	Gateway struct {
-		Port        string `mapstructure:"port"`
-		DatabaseURL string `mapstructure:"database_url"`
-		EngineAddr  string `mapstructure:"engine_addr"`
-	} `mapstructure:"gateway"`
-}
-
-func loadConfig() (Config, error) {
-	v := viper.New()
-	dir := os.Getenv("LANCET_CONFIG_DIR")
-	if dir == "" {
-		for _, candidate := range []string{"../config", "./config"} {
-			if _, err := os.Stat(filepath.Join(candidate, "config.toml")); err == nil {
-				dir = candidate
-				break
-			}
-		}
-	}
-	v.SetConfigName("config")
-	v.SetConfigType("toml")
-	v.AddConfigPath(dir)
-	v.SetEnvPrefix("LANCET")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "__"))
-	v.AutomaticEnv()
-	_ = v.BindEnv("gateway.port", "LANCET_GATEWAY__PORT")
-	_ = v.BindEnv("gateway.database_url", "LANCET_GATEWAY__DATABASE_URL")
-	_ = v.BindEnv("gateway.engine_addr", "LANCET_GATEWAY__ENGINE_ADDR")
-	if err := v.ReadInConfig(); err != nil {
-		return Config{}, err
-	}
-	if environment := os.Getenv("LANCET_ENV"); environment != "" {
-		v.SetConfigName("config." + environment)
-		if err := v.MergeInConfig(); err != nil {
-			return Config{}, err
-		}
-	}
-	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
-		return Config{}, err
-	}
-	if strings.TrimSpace(cfg.Gateway.DatabaseURL) == "" {
-		return Config{}, errors.New("gateway.database_url must not be empty (set LANCET_GATEWAY__DATABASE_URL)")
-	}
-	if os.Getenv("LANCET_ENV") == "prod" && strings.Contains(cfg.Gateway.DatabaseURL, "sslmode=disable") {
-		return Config{}, errors.New("gateway.database_url must not disable TLS in prod")
-	}
-	return cfg, nil
-}
 
 type documentStore interface {
 	Insert(context.Context, db.InsertDocumentParams) (db.Document, error)
@@ -736,7 +688,7 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		sawWorkflowCompleted = true
 	}
 	if r.Context().Err() == nil {
-		a.writeWorkflowEventSSE(w, rc, firstFrame)
+		a.writeWorkflowEvent(w, rc, firstFrame)
 	}
 
 	for {
@@ -746,13 +698,13 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		ev, recvErr := stream.Recv()
 		if errors.Is(recvErr, io.EOF) {
 			if !sawWorkflowCompleted && r.Context().Err() == nil {
-				a.writeStreamErrorSSE(w, rc, "STREAM_EOF_WITHOUT_TERMINAL", "stream ended before workflow_completed")
+				sse.WriteStreamError(w, rc, "STREAM_EOF_WITHOUT_TERMINAL", "stream ended before workflow_completed")
 			}
 			return
 		}
 		if recvErr != nil {
 			if r.Context().Err() == nil {
-				a.writeStreamErrorSSE(w, rc, "GRPC_RECV_ERROR", recvErr.Error())
+				sse.WriteStreamError(w, rc, "GRPC_RECV_ERROR", recvErr.Error())
 			}
 			return
 		}
@@ -762,21 +714,29 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		if ev.GetWorkflowCompleted() != nil {
 			sawWorkflowCompleted = true
 		}
-		a.writeWorkflowEventSSE(w, rc, ev)
+		a.writeWorkflowEvent(w, rc, ev)
 	}
 }
 
-func (a app) writeStreamErrorSSE(w http.ResponseWriter, rc *http.ResponseController, code, message string) {
-	payload := map[string]any{
-		"code":    code,
-		"message": message,
-	}
-	dataBytes, err := json.Marshal(payload)
-	if err != nil {
+func (a app) writeWorkflowEvent(w http.ResponseWriter, rc *http.ResponseController, ev *pb.WorkflowEvent) {
+	if ev == nil {
 		return
 	}
-	fmt.Fprintf(w, "event: stream_error\ndata: %s\n\n", dataBytes)
-	_ = rc.Flush()
+
+	if cp := ev.GetCheckpoint(); cp != nil {
+		if a.dispatcher != nil {
+			env := NewCheckpointEnvelopeFromEvent(ev)
+			res := a.dispatcher.Submit(env)
+			if res.Kind == DispatchPending && res.Envelope != nil {
+				if err := a.dispatcher.RetainPending(res.Envelope); err != nil && a.logger != nil {
+					a.logger.Error("retain pending checkpoint failed", zap.Error(err), zap.String("trace_id", env.TraceID))
+				}
+			}
+		}
+		return
+	}
+
+	sse.WriteWorkflowEvent(w, rc, ev)
 }
 
 func (a app) handlePreStreamError(w http.ResponseWriter, err error) {
@@ -798,226 +758,6 @@ func (a app) handlePreStreamError(w http.ResponseWriter, err error) {
 		return
 	}
 	http.Error(w, "engine query failed", http.StatusBadGateway)
-}
-
-func (a app) writeWorkflowEventSSE(w http.ResponseWriter, rc *http.ResponseController, ev *pb.WorkflowEvent) {
-	if ev == nil {
-		return
-	}
-
-	if cp := ev.GetCheckpoint(); cp != nil {
-		if a.dispatcher != nil {
-			env := NewCheckpointEnvelopeFromEvent(ev)
-			res := a.dispatcher.Submit(env)
-			if res.Kind == DispatchPending && res.Envelope != nil {
-				if err := a.dispatcher.RetainPending(res.Envelope); err != nil && a.logger != nil {
-					a.logger.Error("retain pending checkpoint failed", zap.Error(err), zap.String("trace_id", env.TraceID))
-				}
-			}
-		}
-		return
-	}
-
-	var eventType string
-	var payload any
-
-	switch e := ev.Event.(type) {
-	case *pb.WorkflowEvent_NodeStarted:
-		eventType = "node_started"
-		payload = map[string]any{
-			"node_name":        e.NodeStarted.GetNodeName(),
-			"inputs_summary":   e.NodeStarted.GetInputsSummary(),
-			"sequence_ordinal": ev.GetSequenceOrdinal(),
-		}
-	case *pb.WorkflowEvent_NodeCompleted:
-		eventType = "node_completed"
-		payload = map[string]any{
-			"node_name":       e.NodeCompleted.GetNodeName(),
-			"outputs_summary": e.NodeCompleted.GetOutputsSummary(),
-			"duration_ms":     e.NodeCompleted.GetDurationMs(),
-		}
-	case *pb.WorkflowEvent_NodeFailed:
-		eventType = "node_failed"
-		payload = map[string]any{
-			"node_name":     e.NodeFailed.GetNodeName(),
-			"error_kind":    int32(e.NodeFailed.GetCategory()),
-			"error_message": e.NodeFailed.GetMessage(),
-			"retryable":     e.NodeFailed.GetRetryable(),
-		}
-	case *pb.WorkflowEvent_AnswerChunk:
-		eventType = "answer_chunk"
-		payload = map[string]any{
-			"chunk_text": e.AnswerChunk.GetChunk(),
-			"is_final":   e.AnswerChunk.GetIsFinal(),
-		}
-	case *pb.WorkflowEvent_FinalAnswer:
-		eventType = "final_answer"
-		payload = toQueryRAGResponseDTO(e.FinalAnswer.GetResponse())
-	case *pb.WorkflowEvent_WorkflowCompleted:
-		eventType = "workflow_completed"
-		wcPayload := map[string]any{
-			"success":           e.WorkflowCompleted.GetSuccess(),
-			"total_duration_ms": e.WorkflowCompleted.GetDurationMs(),
-			"error_kind":        int32(e.WorkflowCompleted.GetErrorKind()),
-			"error_message":     e.WorkflowCompleted.GetErrorMessage(),
-		}
-		if e.WorkflowCompleted.GetFinalResponse() != nil {
-			wcPayload["final_response"] = toQueryRAGResponseDTO(e.WorkflowCompleted.GetFinalResponse())
-		} else {
-			notices := make([]noticeDTO, 0, len(e.WorkflowCompleted.GetNotices()))
-			for _, n := range e.WorkflowCompleted.GetNotices() {
-				if n == nil {
-					continue
-				}
-				notices = append(notices, noticeDTO{
-					Code:     n.Code,
-					Message:  n.Message,
-					Severity: int32(n.Severity),
-				})
-			}
-			wcPayload["notices"] = notices
-		}
-		payload = wcPayload
-	default:
-		return
-	}
-
-	dataBytes, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-
-	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, dataBytes)
-	_ = rc.Flush()
-}
-
-type queryRAGResponseDTO struct {
-	Answer              string                   `json:"answer"`
-	Citations           []string                 `json:"citations"`
-	SessionID           string                   `json:"session_id"`
-	AnswerBasis         int32                    `json:"answer_basis"`
-	StructuredCitations []structuredCitationDTO  `json:"structured_citations"`
-	Notices             []noticeDTO              `json:"notices"`
-	Snapshot            *retrievalSnapshotDTO    `json:"snapshot"`
-}
-
-type structuredCitationDTO struct {
-	ChunkID      string  `json:"chunk_id"`
-	DocumentID   string  `json:"document_id"`
-	Title        string  `json:"title"`
-	SectionPath  string  `json:"section_path"`
-	Excerpt      string  `json:"excerpt"`
-	IsTruncated  bool    `json:"is_truncated"`
-	Score        float64 `json:"score"`
-	Rank         int32   `json:"rank"`
-	ContentType  string  `json:"content_type"`
-}
-
-type noticeDTO struct {
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Severity int32  `json:"severity"`
-}
-
-type documentFilterDTO struct {
-	DocumentIDs  []string `json:"document_ids"`
-	ContentTypes []string `json:"content_types"`
-}
-
-type retrievalSnapshotDTO struct {
-	IndexGeneration string             `json:"index_generation"`
-	EmbeddingModel  string             `json:"embedding_model"`
-	VectorWeight    float64            `json:"vector_weight"`
-	Bm25Weight      float64            `json:"bm25_weight"`
-	RrfK            int32              `json:"rrf_k"`
-	CandidateLimit  int32              `json:"candidate_limit"`
-	FinalLimit      int32              `json:"final_limit"`
-	ActiveFilter    *documentFilterDTO `json:"active_filter"`
-	ResultHash      string             `json:"result_hash"`
-}
-
-func toQueryRAGResponseDTO(resp *pb.QueryRAGResponse) queryRAGResponseDTO {
-	if resp == nil {
-		return queryRAGResponseDTO{
-			Citations:           make([]string, 0),
-			StructuredCitations: make([]structuredCitationDTO, 0),
-			Notices:             make([]noticeDTO, 0),
-		}
-	}
-	citations := make([]string, 0)
-	if len(resp.Citations) > 0 {
-		citations = resp.Citations
-	}
-
-	structuredCitations := make([]structuredCitationDTO, 0)
-	for _, sc := range resp.StructuredCitations {
-		if sc == nil {
-			continue
-		}
-		structuredCitations = append(structuredCitations, structuredCitationDTO{
-			ChunkID:     sc.ChunkId,
-			DocumentID:  sc.DocumentId,
-			Title:       sc.Title,
-			SectionPath: sc.SectionPath,
-			Excerpt:     sc.Excerpt,
-			IsTruncated: sc.IsTruncated,
-			Score:       sc.Score,
-			Rank:        sc.Rank,
-			ContentType: sc.ContentType,
-		})
-	}
-
-	notices := make([]noticeDTO, 0)
-	for _, n := range resp.Notices {
-		if n == nil {
-			continue
-		}
-		notices = append(notices, noticeDTO{
-			Code:     n.Code,
-			Message:  n.Message,
-			Severity: int32(n.Severity),
-		})
-	}
-
-	var snapshot *retrievalSnapshotDTO
-	if resp.Snapshot != nil {
-		var activeFilter *documentFilterDTO
-		if resp.Snapshot.ActiveFilter != nil {
-			docIDs := make([]string, 0)
-			if len(resp.Snapshot.ActiveFilter.DocumentIds) > 0 {
-				docIDs = resp.Snapshot.ActiveFilter.DocumentIds
-			}
-			contentTypes := make([]string, 0)
-			if len(resp.Snapshot.ActiveFilter.ContentTypes) > 0 {
-				contentTypes = resp.Snapshot.ActiveFilter.ContentTypes
-			}
-			activeFilter = &documentFilterDTO{
-				DocumentIDs:  docIDs,
-				ContentTypes: contentTypes,
-			}
-		}
-		snapshot = &retrievalSnapshotDTO{
-			IndexGeneration: resp.Snapshot.IndexGeneration,
-			EmbeddingModel:  resp.Snapshot.EmbeddingModel,
-			VectorWeight:    resp.Snapshot.VectorWeight,
-			Bm25Weight:      resp.Snapshot.Bm25Weight,
-			RrfK:            resp.Snapshot.RrfK,
-			CandidateLimit:  resp.Snapshot.CandidateLimit,
-			FinalLimit:      resp.Snapshot.FinalLimit,
-			ActiveFilter:    activeFilter,
-			ResultHash:      resp.Snapshot.ResultHash,
-		}
-	}
-
-	return queryRAGResponseDTO{
-		Answer:              resp.Answer,
-		Citations:           citations,
-		SessionID:           resp.SessionId,
-		AnswerBasis:         int32(resp.AnswerBasis),
-		StructuredCitations: structuredCitations,
-		Notices:             notices,
-		Snapshot:            snapshot,
-	}
 }
 
 func newDocumentID() (string, error) {
@@ -1068,7 +808,7 @@ func run() error {
 		return err
 	}
 	defer logger.Sync()
-	cfg, err := loadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		logger.Error("load configuration", zap.Error(err))
 		return err
