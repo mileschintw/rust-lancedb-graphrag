@@ -27,8 +27,10 @@ D-05 (no work — DEBT-RAG-02 closed by Phase 05), D-85 (no CI), D-86 (closure i
 
 **Downstream phases this document is a hard input to:** 6.1 (index-staleness notice codes must be
 reserved in the D-74 enum — see §4), 6.2 (span attributes read `answer_basis`, notice codes and the
-D-41 metadata this phase lands), 6.3 (the harness is blocked on the D-47 request flag and cannot
-run its `graph-off` arm until D-74 ships), 6.4 (the notice table is documented API contract, D-76).
+D-41 metadata this phase lands), 6.3 (the harness was blocked on the D-47 request flag and could not
+run its `graph-off` arm until D-74 shipped — **D-74 landed in plan 06-07**, so `disable_graph_context`
+and the `NoticeCode` enum are now on the wire and that arm is unblocked at the contract level),
+6.4 (the notice table is documented API contract, D-76).
 
 ---
 
@@ -405,6 +407,10 @@ fn notice(code: NoticeCode, message: impl Into<String>, severity: NoticeSeverity
 }
 ```
 
+D-08's two sites already return `Ok(())` today, so that plan is notice-only. **D-13 is not:** its two
+sites in `retrieve.rs` currently `return Err(err)` and must be *converted* into the shape above — the
+one place in Phase 6 where a fail-closed path becomes a degrade path. See §6's D-13 entry.
+
 `ctx.add_notice` already de-duplicates on `(code, message)` (`workflow/mod.rs:79-87`) — so a notice
 emitted twice on retry appears once, and two *different* messages under the same code both survive.
 Phase 6 must not change that; D-14's `CITATION_DROPPED` deliberately relies on per-marker messages.
@@ -502,7 +508,7 @@ engine/
 │   │   ├── ports.rs           # port traits + cfg(test) fakes; D-83 adds failure modes
 │   │   └── nodes/
 │   │       ├── graph_context.rs   # D-08: GRAPH_UNAVAILABLE on the two silent paths
-│   │       ├── retrieve.rs        # D-13: RETRIEVAL_DEGRADED_{DENSE,BM25,GRAPH}
+│   │       ├── retrieve.rs        # D-13: RETRIEVAL_DEGRADED_{DENSE,BM25} — two paths, no graph port
 │   │       └── ...
 │   ├── generation/
 │   │   ├── mod.rs             # D-10: conditional ModelOnly gate; D-18: basis reconciliation
@@ -547,7 +553,7 @@ plan, or a consumer breaks.
 | # | proto (`lancet/v1/lancet.proto`) | Go gateway (`main.go` → `internal/`) | Who reads it |
 |---|---|---|---|
 | 1 | `QueryRAGRequest.optional bool allow_model_only = 4;` (D-10/D-12) | `ragQueryRequestBody.AllowModelOnly *bool` `json:"allow_model_only"` | Callers opting in; §6 guardrail G1 |
-| 2 | `QueryRAGRequest.optional bool disable_graph_context = 5;` (D-47) | `ragQueryRequestBody.DisableGraphContext *bool` `json:"disable_graph_context"` | **6.3 Dimension 8's `graph-off` arm — blocked until this ships** |
+| 2 | `QueryRAGRequest.optional bool disable_graph_context = 5;` (D-47) | `ragQueryRequestBody.DisableGraphContext *bool` `json:"disable_graph_context"` | **6.3 Dimension 8's `graph-off` arm** — was blocked on this; shipped in plan 06-07 |
 | 3 | `enum NoticeCode { … }` + `Notice.NoticeCode typed_code = 4;` (D-76) | `noticeDTO.TypedCode int32` `json:"typed_code"`; `code` string retained | 6.3 Dim 5 (reads `notices[]` first) and Dim 9; 6.2's degraded-answer counter (D-35); 6.4's published table |
 | 4 | `message WorkflowMetadata { … }` + `WorkflowCompletedEvent.WorkflowMetadata metadata = 7;` (D-41 / Phase 05 D-30) | `wcPayload["metadata"]` object in `writeWorkflowEventSSE` | 6.2 span attributes (D-31) and metrics (D-35); 6.3 Dim 11 run metadata |
 | 5 | *(no change — deliberately)* | *(no change — deliberately)* | The notice-list ambiguity is closed by **stating the precedence**, not by changing the wire. See §4.3 *Notice-list precedence*. |
@@ -579,6 +585,11 @@ message QueryRAGRequest {
 // D-76. The enum is CANONICAL; `Notice.code` (string) is DERIVED from it by one mapping
 // function and retained for forward compatibility, exactly as D-76 specifies.
 // Values 1-3 already exist as wire strings today and MUST keep their spellings.
+//
+// SHIPPED AS OF PLAN 06-07 (commit 464d568). This block is a transcription of the
+// enum now published in `proto/lancet/v1/lancet.proto` — tag order included. Tag 17 is
+// `reserved`, and tag 18 is `NOTICE_CODE_GRAPH_ABLATION`; see the D-13 and D-47 comments
+// below for why. Plans 06-08 … 06-11 emit these values; the proto itself is closed.
 enum NoticeCode {
   NOTICE_CODE_UNSPECIFIED = 0;
 
@@ -593,20 +604,33 @@ enum NoticeCode {
 
   // ── Phase 6 ───────────────────────────────────────────────────────────────
   NOTICE_CODE_GRAPH_UNAVAILABLE  = 10;  // D-08: empty-result + absent-graph_port paths
-  // D-13. SPLIT BY PATH, deliberately — the failed path is a closed set of three, and a
-  // metric built by parsing `message` prose is fragile. Discretion granted by 06-CONTEXT
-  // ("exact enum value names"); settling it HERE is what D-74-lands-first is for. Two extra
+  // D-13. SPLIT BY PATH, deliberately — the failed path is a closed set of TWO (tags 11
+  // and 16; `RetrieveHybridNode` holds a dense port and a BM25 port and nothing else), and
+  // a metric built by parsing `message` prose is fragile. Discretion granted by 06-CONTEXT
+  // ("exact enum value names"); settling it HERE is what D-74-lands-first is for. Two
   // values make 6.2's failure counter a label lookup instead of a regex (D-35), and because
   // ctx.add_notice() de-dupes on (code, message), two simultaneously-failed paths BOTH survive
   // as distinct notices — which one composed-prose code could only encode in text.
   NOTICE_CODE_RETRIEVAL_DEGRADED_DENSE = 11;
-  NOTICE_CODE_RETRIEVAL_DEGRADED_BM25  = 16;
-  NOTICE_CODE_RETRIEVAL_DEGRADED_GRAPH = 17;  // graph path failing *within retrieval fusion*;
-                                              // distinct from GRAPH_UNAVAILABLE (D-08, node-level)
   NOTICE_CODE_CITATION_REPAIRED  = 12;  // D-14
   NOTICE_CODE_CITATION_DROPPED   = 13;  // D-14
   NOTICE_CODE_MODEL_ONLY         = 14;  // D-10: accompanies answer_basis = MODEL_ONLY
   NOTICE_CODE_BASIS_RECONCILED   = 15;  // D-18: engine overrode the model's self-report
+  NOTICE_CODE_RETRIEVAL_DEGRADED_BM25  = 16;  // D-13, second of the two retrieval paths
+  // Tag 17 is BURNED, on purpose. An earlier draft of this document declared a third D-13
+  // value for a graph path failing *within retrieval fusion*. There is no such path:
+  // `RetrieveHybridNode` has no `GraphQueryPort` and never sees `ctx.graph_facts` — graph
+  // facts reach the answer through `graph_context.rs` → `assemble_prompt.rs` → `generate.rs`.
+  // D-76 makes enum values one-way published contract, so the tag is reserved rather than
+  // filled with a value nothing can ever emit. Graph degradation is covered node-level by
+  // GRAPH_TIMEOUT / GRAPH_DEGRADED / GRAPH_UNAVAILABLE, and ablation by tag 18 below.
+  reserved 17;
+  // D-47, NOT D-08. The operator asked for graph context to be off (`disable_graph_context`);
+  // nothing failed and nothing is missing. STRICTLY DISTINCT from GRAPH_UNAVAILABLE (tag 10),
+  // which means the graph node found nothing or was never configured. Conflating them would
+  // let 6.3's `graph-off` arm be satisfied by an engine that simply has no graph configured —
+  // exactly the identical-behavior spurious-delta failure 06.3 §5 calls a fabricated number.
+  NOTICE_CODE_GRAPH_ABLATION     = 18;
 
   // ── RESERVED FOR PHASE 6.1 (D-24/D-25), declared HERE on purpose ──────────
   // D-76 names "index-staleness codes" but the behavior that emits them is D-25,
@@ -660,6 +684,13 @@ never set by hand at a degrade site — otherwise it becomes a fourth place degr
 the three drift apart. `NO_EVIDENCE`, `MODEL_NOTICE`, `MODEL_WARNING` and `CITATION_REPAIRED` are
 deliberately **not** in the set: a successfully repaired citation is not a degradation, and a
 zero-match query over a healthy index is a correct answer, not a degraded one.
+
+**`GRAPH_ABLATION` is also NOT in the set — stated because a new enum value silently absent from an
+enumerated rule reads as an oversight.** A D-47 ablation run is an *operator-requested mode*, not an
+unplanned degradation: nothing failed, so `degraded_mode` stays `false` on a healthy `graph-off`
+query. This is the one place the distinction from `GRAPH_UNAVAILABLE` (which **is** in the set)
+changes a wire value. It is safe for 6.3: its `graph-off` arm is keyed by the request flag and its
+own `graph_arm` journal label, and 06.3-AI-SPEC.md does not read `degraded_mode` anywhere.
 
 ### 4.3 HTTP/SSE observable surface after D-74
 
@@ -755,15 +786,41 @@ and the run produces `MODEL_ONLY` + a `MODEL_ONLY` notice + **zero** citations. 
 D-03's short-circuit is byte-for-byte as shipped. The `generation/mod.rs:172-175` guard becomes
 conditional on the resolved flag; it must remain a hard rejection when the flag is off.
 
-**D-13 — one-path degraded.** A single retrieval path failing keeps `answer_basis = RETRIEVAL` and
-adds the **path-specific** notice — `RETRIEVAL_DEGRADED_DENSE`, `_BM25` or `_GRAPH` — whose `message`
-carries the failure kind. The path is in the **code**, not the prose, so 6.2's per-path failure
-counter (D-35) is a label lookup rather than a regex over free text, and two paths failing at once
-produce two distinct notices rather than one composed sentence. The basis is not downgraded: it
-describes provenance, not health. *(ROADMAP.md's success criterion 4 writes this as a single
-`RETRIEVAL_DEGRADED`; exact enum value names are Claude's Discretion per 06-CONTEXT, and the split
-satisfies D-13's requirement — "a machine-readable notice naming the failed path" — more literally
-than one code plus prose does.)*
+**D-13 — one-path degraded. TWO paths, and the change is a behavior conversion, not a notice
+addition.** `RetrieveHybridNode` holds exactly two retrieval ports — dense and BM25 — so the failed
+path is a closed set of two, and D-13 attaches `RETRIEVAL_DEGRADED_DENSE` or `RETRIEVAL_DEGRADED_BM25`
+accordingly, `message` carrying the failure kind. There is no third code: the node has no
+`GraphQueryPort` and never reads `ctx.graph_facts`, so a "graph path failing within retrieval fusion"
+is unreachable by construction — tag 17 is `reserved` in §4.2 for exactly that reason, and graph
+degradation stays node-level (`GRAPH_TIMEOUT` / `GRAPH_DEGRADED` / `GRAPH_UNAVAILABLE`) with D-47
+ablation separate again (`GRAPH_ABLATION`).
+
+**The edit D-13 requires is larger than emitting a notice.** Today *both* sites fail closed —
+`Ok(c) => c, Err(err) => return Err(err)` at the dense call and again at the BM25 call inside the
+per-variant loop — which produces `NodeFailed` plus a terminal *failure*. D-13 converts each into a
+degrade: `Ok(())`, the notice, and an **empty candidate vector for that path**, so fusion proceeds on
+the surviving one. This is the phase's single most consequential behavior change and the one most
+likely to break tests asserting today's failure. Note the loop asymmetry: the BM25 call sits inside
+`for (variant_index, variant) in ctx.variants.iter().enumerate()`, so a failure on variant *k* must
+skip that variant's BM25 contribution rather than abort the node and discard variants *0..k*.
+
+**Status for downstream planners: the two codes are on the published wire as of plan 06-07, but
+nothing emits them yet.** 06-07 shipped the vocabulary only; the fail-closed→degrade conversion above
+is plan 06-09's work and is not implemented at the time of writing. 6.2 may bind its counter labels to
+these enum values now; it must not assume a non-zero count before 06-09 lands.
+
+The path is in the **code**, not the prose, so 6.2's per-path failure counter (D-35) is a label lookup
+rather than a regex over free text, and two paths failing at once produce two distinct notices rather
+than one composed sentence. The basis is not downgraded: it describes provenance, not health.
+*(ROADMAP.md's success criterion 4 writes this as a single `RETRIEVAL_DEGRADED`; exact enum value
+names are Claude's Discretion per 06-CONTEXT, and the split satisfies D-13's requirement — "a
+machine-readable notice naming the failed path" — more literally than one code plus prose does.)*
+
+> **Interaction with `NO_EVIDENCE`.** Both degrade sites run *before* the zero-evidence check at the
+> end of the node, so a query whose two paths both degrade ends with empty `final_candidates` and
+> carries **three** notices: `RETRIEVAL_DEGRADED_DENSE`, `RETRIEVAL_DEGRADED_BM25` and `NO_EVIDENCE`.
+> That is the correct shape — it is what makes D-10's single opt-in cover both of its stated triggers,
+> and it is why D-13 is planned **before** D-10.
 
 **D-14 — citation repair, normalize-then-strip.** One *local* pass: whitespace/case/format
 normalization and index-vs-id disambiguation against the packed evidence set. **No second provider
@@ -932,8 +989,9 @@ the behavior observable — which is why §4's delta is a prerequisite for this 
 |---|---|---|---|---|
 | **MODEL_ONLY opt-in gate** (D-10/D-11/D-12) | **Dim 5 — abstention on unanswerable questions.** Dim 5 reads `notices[]` **first** and the answer text second, precisely because a degraded Lancet response can legitimately emit **zero** `final_answer` frames. A `MODEL_ONLY` notice on a null-slice question is the observable Dim 5 scores. Also **Dim 9** (the response is still a valid frame sequence). | `answer_basis = 3`, `NOTICE_CODE_MODEL_ONLY`, empty `citations[]` | Deterministic tests both ways: flag off ⇒ D-03 short-circuit byte-identical; flag on ⇒ MODEL_ONLY + notice + **zero** citations | **Critical** |
 | **Citation repair and drop** (D-14) | **Dims 1, 2, 3** — and the coupling must be stated, because it is not obvious. Dropping a citation **changes Dimension 2's denominator**: 06.3 §5 defines context precision over *"citations returned, not `k`, when fewer than `k` came back."* So a Phase 6 drop decision **directly moves a published precision number**, and it moves it *upward* by removing a wrong citation. That is correct behavior producing a metric shift, and 6.3's run-record reviewer must be able to attribute it. | `CITATION_REPAIRED` / `CITATION_DROPPED` notices; the resulting `citations[]` / `structured_citations[]` | D-83 fake-port fixtures with malformed markers; **plus** the citation-repair adjudicator's hand-inspection (§1b) — no automated check can tell "resolves" from "resolves correctly" | **Critical** |
-| **Graph-unavailable notice** (D-08) | **Dim 8 — graph-ablation delta**, whose whole design is one engine, one question set, one `index_generation`, two arms differing **only** in the D-47 flag. `GRAPH_UNAVAILABLE` is how the `graph-off` arm proves it actually ran without graph context rather than silently behaving identically — 06.3 §5 names publishing a spurious ~0 delta from identical behavior as a **fabricated number**. Secondarily **Dim 5**. | `NOTICE_CODE_GRAPH_UNAVAILABLE` on both silent paths | Test that source-chunk queries never require graph data (D-08, DEBT-RAG-06's criterion); notice fires on empty-result *and* absent-`graph_port` | **High** |
-| **One-path degraded** (D-13) | **Dim 11 — run traceability**, as an observable that must survive into the record; and **Dim 9**, since a degraded response is still contract-conformant. **Not** a quality dimension: 06.3 §5 has no rubric for "how gracefully did it degrade." | `NOTICE_CODE_RETRIEVAL_DEGRADED_{DENSE,BM25,GRAPH}` — the failed path is in the code; `answer_basis` stays `RETRIEVAL` | D-83 fixtures per failed path; assert basis is **not** downgraded | **High** |
+| **Graph-unavailable notice** (D-08) | **Dim 5**, and a **precondition** for Dim 8 rather than its evidence: an absent-`graph_port` engine cannot host a valid ablation, so this notice is what exposes that condition. It announces "graph found nothing / was never configured" — it does **not** announce that an ablation was applied. | `NOTICE_CODE_GRAPH_UNAVAILABLE` (tag 10) on both silent paths | Test that source-chunk queries never require graph data (D-08, DEBT-RAG-06's criterion); notice fires on empty-result *and* absent-`graph_port` | **High** |
+| **Graph-ablation notice** (D-47) | **Dim 8 — graph-ablation delta**, whose whole design is one engine, one question set, one `index_generation`, two arms differing **only** in the D-47 flag. `GRAPH_ABLATION` is how the `graph-off` arm proves the *flag* suppressed graph use, rather than the arm silently behaving identically to `graph-on` — 06.3 §5 names publishing a spurious ~0 delta from identical behavior as a **fabricated number**. `GRAPH_UNAVAILABLE` cannot carry this: it would also fire on an engine with no graph configured at all, which is the exact confound. | `NOTICE_CODE_GRAPH_ABLATION` (tag 18) when `disable_graph_context` resolves true — the enum value is on the wire as of 06-07; the emission belongs to the graph-context plan (06-08) | Assert the notice fires **iff** the flag is set, and that a `graph-off` run is distinguishable from an unconfigured-graph run | **High** |
+| **One-path degraded** (D-13) | **Dim 11 — run traceability**, as an observable that must survive into the record; and **Dim 9**, since a degraded response is still contract-conformant. **Not** a quality dimension: 06.3 §5 has no rubric for "how gracefully did it degrade." | `NOTICE_CODE_RETRIEVAL_DEGRADED_{DENSE,BM25}` — two paths, the failed one carried in the code; `answer_basis` stays `RETRIEVAL` | D-83 fixtures per failed path; assert basis is **not** downgraded | **High** |
 | **Bad-input matrix** (D-15) | **Dim 9 — wire-contract conformance**, specifically its `pre_stream_errors` counter. 06.3's client raises `PreStreamError` on a non-SSE 4xx/5xx (`handlePreStreamError` writes plain text with no SSE headers). A stable 400 is what keeps that a *named, counted* outcome rather than a `0.0` folded into a score — the domain's most common silent corruption. | HTTP 400 / gRPC `InvalidArgument` + `X-Lancet-Error-Kind`; no SSE frames at all | The D-15 table itself, table-driven, per surface. **The table is Phase 6's reference dataset** — see below | **High** |
 | **D-74 wire delta** (D-74/D-76/D-41) | **Dim 9** (frames and fields the harness asserts) and **Dim 11** (`index_generation`, `result_hash` and the new `metadata` are what stamp a run). 6.3 is "a second, independent consumer of the wire contract" (D-65) — Phase 6 is the producer that contract describes. | Every field in §4.3 | The downstream-consumer reviewer (§1b) signs off that the delta unblocks Dim 8's `graph-off` arm | **Critical** |
 | **Module-graph restructure** (D-80/D-82) | **Nothing in 06.3 §5.** A pure refactor produces no observable. Stated explicitly so no one maps it onto Dim 11 for the sake of a full column. | — | The 285-test suite, unchanged, before and after (D-80's own safety net) | Medium |
@@ -1044,8 +1102,8 @@ facts and only a human distinguishes them.
 | **G2 — citation repair and drop** (D-14) | A citation marker in the model's answer does not resolve against the packed evidence | **FLAG then STRIP.** One local normalize pass (whitespace/case/format, index-vs-id); **no second provider call**. Resolved ⇒ keep, flag. Unresolved ⇒ remove from the answer text *and* from `citations[]` / `structured_citations[]`. Never guess: a normalization that cannot decide is a drop, not a match. | `CITATION_REPAIRED` per repair; `CITATION_DROPPED` per drop |
 | **G3 — evidence-precedence prompt contract** (D-17/D-19) | Every generation, unconditionally | **PREVENT, by construction.** The precedence instruction is in the assembled prompt: when evidence contradicts prior knowledge, the evidence is authoritative and the answer says so. Prompt text only — the JSON schema is untouched (D-19). **This guardrail is unverified in v1** (D-45 defers its metric; §5 row 1 of the not-scoreable pair). Its compensating control is a **prompt-text fixture test** asserting the instruction is present and positioned with the system instructions — it proves the contract *shipped*, not that it *worked*. | — (no notice; there is no observable to attach one to) |
 | **G4 — MIXED reconciliation** (D-18) | The model's self-reported `answer_basis` disagrees with observable facts (citations present and resolving, markers stripped by G2, evidence partiality) | **DOWNGRADE, conservatively.** The more conservative basis wins, ordered `RETRIEVAL` > `MIXED` > `MODEL_ONLY`. Reconciliation only ever weakens a provenance claim. `answer_basis` is written to the context **once**, here, after G2 has run. | `BASIS_RECONCILED`, `message` naming the claimed and final basis |
-| **G5 — RAG-03 degraded mode: one path** (D-13) | Exactly one of dense / BM25 / graph fails | **ALLOW, degraded.** Serve the surviving path's answer. `answer_basis` stays `RETRIEVAL` — basis is provenance, not health. | `RETRIEVAL_DEGRADED_DENSE` / `_BM25` / `_GRAPH`; `message` carries the failure kind |
-| **G6 — RAG-03 degraded mode: graph unavailable** (D-08) | Graph returns empty (`graph_context.rs:112-115`) **or** `graph_port` is absent (`:145-148`) — the two paths that degrade **silently** today | **ALLOW, unchanged behavior, now announced.** Answer from source chunks. D-08 is explicit: *closes by adding the missing notice, not by changing behavior*; 04.1 D-32 and Phase 05 D-09 stand. | `GRAPH_UNAVAILABLE` |
+| **G5 — RAG-03 degraded mode: one path** (D-13) | Exactly one of the node's **two** retrieval paths — dense or BM25 — fails. (Requires converting that site from `return Err(err)` to `Ok(())` + notice + empty candidates for the path; see §6. Not yet implemented — 06-09's work.) | **ALLOW, degraded.** Serve the surviving path's answer. `answer_basis` stays `RETRIEVAL` — basis is provenance, not health. | `RETRIEVAL_DEGRADED_DENSE` / `_BM25`; `message` carries the failure kind |
+| **G6 — RAG-03 degraded mode: graph unavailable** (D-08) | Graph returns empty (`graph_context.rs:112-115`) **or** `graph_port` is absent (`:145-148`) — the two paths that degrade **silently** today | **ALLOW, unchanged behavior, now announced.** Answer from source chunks. D-08 is explicit: *closes by adding the missing notice, not by changing behavior*; 04.1 D-32 and Phase 05 D-09 stand. **Not the ablation path:** an operator-requested `disable_graph_context` run (D-47) emits `GRAPH_ABLATION` (tag 18) instead, and is a mode rather than a guardrail intervention — which is why it has no G-row of its own. | `GRAPH_UNAVAILABLE` (tag 10) |
 | **G7 — bad-input rejection** (D-15) | Any row of the D-15 matrix | **BLOCK, before any work.** Reject at admission with stable HTTP 400 / gRPC `InvalidArgument` and an `X-Lancet-Error-Kind` header. **No SSE stream is opened**, no embedding call, no LanceDB scan — the ordering is the acceptance criterion. | — (pre-stream error, not a notice; 6.3 counts it as `pre_stream_errors`) |
 
 **Deliberately absent, and why.** No "weak evidence" score band — D-16 **dropped the concept**: RRF
@@ -1085,8 +1143,8 @@ threshold gates anything** (D-54).
 |---|---|---|
 | **Degraded-answer counter by `answer_basis`** (D-35) | Every query, Phase 6.2's meter | A rising `MODEL_ONLY` share means callers are opting in and retrieval is coming back empty — investigate the corpus, not the gate. A **non-zero `MODEL_ONLY` count with the flag off anywhere is a Critical Failure Mode #1 incident**, not a trend. |
 | **Citation repair / drop counter** (D-35) | Every query, Phase 6.2's meter | A rising drop rate means the generation model's marker format is drifting from what repair normalizes. Drops move 6.3's Dimension 2 precision *upward*; the run-record reviewer must attribute the shift rather than read it as a retrieval improvement. |
-| **Retrieval path failure counter** (dense / BM25 / graph, by kind) (D-35) | Every query | Distinguishes G5 (one path) from G1's both-path trigger. A path failing consistently is infrastructure, not degradation policy. |
-| **`GRAPH_UNAVAILABLE` rate** (D-08 observable, D-35's degraded counter) | Every query | Separates "graph configured but returning nothing" from "graph not configured." Before Dim 8's ablation is published, a high absent-`graph_port` rate on the `graph-on` arm would invalidate the delta — 6.3's *arms differ only in the flag* requirement. |
+| **Retrieval path failure counter** (dense / BM25, by kind) (D-35) | Every query | Two paths, matching the node's two ports. Distinguishes G5 (one path) from G1's both-path trigger. A path failing consistently is infrastructure, not degradation policy. |
+| **`GRAPH_UNAVAILABLE` rate** (D-08 observable, D-35's degraded counter) | Every query | Separates "graph configured but returning nothing" from "graph not configured." Before Dim 8's ablation is published, a high absent-`graph_port` rate on the `graph-on` arm would invalidate the delta — 6.3's *arms differ only in the flag* requirement. Read it **against** the `GRAPH_ABLATION` rate, never merged with it: this counter is a health signal, that one is a mode census. |
 | **`BASIS_RECONCILED` rate** (D-18) | Every query | The direct measure of how often the model over-claims provenance. High and rising means the prompt and the schema have drifted apart — a prompt-review trigger, not a code fix. |
 | **Pre-stream 400 rate by matrix row** (D-15) | Every rejected request | Which bad-input class real callers actually hit. Feeds 6.4's API-contract documentation (the D-15 table is the published artifact) rather than a code change. |
 | **Notice-code cardinality** (D-76) | Every release, by inspection | **Any notice code on the wire that is not a `NoticeCode` enum value is a defect** — it means ad-hoc invention resumed, the exact regression D-76 closes. A unit test enumerating every emission site against the enum is the mechanism; `"NOTICE"` / `"WARNING"` (§4.2 values 4–5) are the known pre-existing cases and are named in the enum rather than grandfathered. |
@@ -1122,7 +1180,7 @@ feeds**. 6.2 implements the meters; Phase 6 must make each one derivable from so
 2. **Citation repair / drop counter** — needs `CITATION_REPAIRED` / `CITATION_DROPPED` to be
    per-event, not per-request, so the counter can distinguish one drop from five.
 3. **Retrieval path failure counter by path and kind** — **settled in §4.2, not left to 6.2.** The
-   path is carried by the enum value (`RETRIEVAL_DEGRADED_DENSE` / `_BM25` / `_GRAPH`), so the
+   path is carried by the enum value (`RETRIEVAL_DEGRADED_DENSE` / `_BM25` — two, not three), so the
    counter's `path` label is a lookup, not a regex over `message` prose. The `kind` label still comes
    from the message and should keep a fixed, documented form. This is exactly the class of decision
    D-74-lands-first exists to close while the contract is open, rather than handing 6.2 a design note.
@@ -1173,7 +1231,7 @@ marker to the wrong evidence.
 - [x] CI/CD eval integration specified — **none, deliberately**, D-85 + `<domain>` out-of-scope
 - [x] Online guardrails defined — 7 rows (G1–G7), each with trigger, intervention and notice code
 - [x] Production monitoring configured — D-34 stack, 5 Phase-6-fed metrics, no alerts (D-40), signal-based human-review sampling
-- [x] **D-74 wire contract derived in full** — three-column delta, verbatim proto, complete SSE field surface, 17 `NoticeCode` entries (13 active + 3 reserved for 6.1 + UNSPECIFIED), and the notice-list precedence rule
+- [x] **D-74 wire contract derived in full** — three-column delta, verbatim proto, complete SSE field surface, 17 `NoticeCode` entries (13 active + 3 reserved for 6.1 + UNSPECIFIED) plus `reserved 17`, and the notice-list precedence rule. §4.2 transcribes the enum **as shipped** by plan 06-07 (commit `464d568`); no value in it is speculative
 - [x] **Unresolved interaction flagged, not silently decided** — G2 × G1 (all-citations-dropped with the opt-in off), with a recommended resolution for the planner to confirm
 
 ---
