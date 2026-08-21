@@ -478,15 +478,15 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06-03-PLAN.md — Rust module graph, step 3: rehome the binary test root into the library target and reduce `main.rs` to startup wiring; pin the post-restructure distribution (D-80).
+- [x] 06-03-PLAN.md — Rust module graph, step 3: rehome the binary test root into the library target and reduce `main.rs` to startup wiring; pin the post-restructure distribution (D-80).
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 06-06-PLAN.md — Wave-0 test surface: `engine::testkit` constructors migrating ~100 exhaustive literals, the D-83 fake-port failure modes, and the Go exact-payload-key assertions.
+- [x] 06-06-PLAN.md — Wave-0 test surface: `engine::testkit` constructors migrating ~100 exhaustive literals, the D-83 fake-port failure modes, and the Go exact-payload-key assertions.
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 06-07-PLAN.md — The consolidated additive wire contract: one proto edit, one regeneration, the single typed notice constructor, and the gateway plumbing for both request flags (D-74/D-76).
+- [x] 06-07-PLAN.md — The consolidated additive wire contract: one proto edit, one regeneration, the single typed notice constructor, and the gateway plumbing for both request flags (D-74/D-76).
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
