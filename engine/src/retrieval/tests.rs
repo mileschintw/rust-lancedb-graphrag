@@ -920,11 +920,7 @@ async fn cross_variant_rrf_two_variant_exact_scores() {
     let settings = RetrievalSettings::default();
     let node = RetrieveHybridNode::new(Some(fake_dense), Some(fake_bm25), None, settings);
 
-    let req = crate::pb::lancet::v1::QueryRagRequest {
-        query: "variant 0".into(),
-        session_id: "sess-1".into(),
-        filter: None,
-    };
+    let req = crate::testkit::test_query_request("variant 0", "sess-1");
     let mut ctx = WorkflowContext::new("sess-1".into(), "trace-1".into(), &req);
     ctx.variants = vec!["variant 0".into(), "variant 1".into()];
 

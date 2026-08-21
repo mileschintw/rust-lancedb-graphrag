@@ -6,10 +6,11 @@ use crate::{
     db::DatabaseManager,
     generation::{self, AnswerBasis, ModelOutput},
     rerank,
+    testkit::test_query_request,
     tests::{configured_service, database_path, FakeEmbedder, FakeGenerator},
     workflow::{self, events::EventSequence, node::Node, WorkflowContext, WorkflowEventSink},
 };
-use engine::pb::lancet::v1::{self, QueryRagRequest};
+use engine::pb::lancet::v1;
 
 #[tokio::test]
 async fn workflow_phase5_production_five_node() {
@@ -44,11 +45,10 @@ async fn workflow_phase5_production_five_node() {
     assert_eq!(runner.timeout_for_node("AssemblePrompt").as_millis(), 2000);
     assert_eq!(runner.timeout_for_node("GenerateAnswer").as_millis(), 65000);
 
-    let req = QueryRagRequest {
-        query: "What is Lancet production workflow?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "What is Lancet production workflow?",
+        "00000000-0000-4000-8000-000000000001",
+    );
     let (tx, mut rx) = mpsc::channel(100);
     let cancel = CancellationToken::new();
     let sink = WorkflowEventSink::new(
@@ -191,11 +191,10 @@ async fn workflow_phase5_production_context_population() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "Populate context test".into(),
-        session_id: "00000000-0000-4000-8000-000000000002".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "Populate context test",
+        "00000000-0000-4000-8000-000000000002",
+    );
     let mut ctx = WorkflowContext::new(
         "00000000-0000-4000-8000-000000000002".into(),
         "trace-ctx".into(),
@@ -328,11 +327,10 @@ async fn workflow_phase5_production_reachability() {
 
     // 1. Happy path: full five-node execution with evidence
     let (runner, _deps) = service.build_production_workflow();
-    let req = QueryRagRequest {
-        query: "What is reachability document content?".into(),
-        session_id: "00000000-0000-4000-8000-000000000010".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "What is reachability document content?",
+        "00000000-0000-4000-8000-000000000010",
+    );
     let (tx, mut rx) = mpsc::channel(100);
     let cancel = CancellationToken::new();
     let sink = WorkflowEventSink::new(
@@ -422,14 +420,14 @@ async fn workflow_phase5_production_reachability() {
     assert!(terminal.success);
 
     // 2. D-03 zero evidence short-circuiting: AssemblePrompt and GenerateAnswer skipped
-    let zero_req = QueryRagRequest {
-        query: "Nonexistent document query".into(),
-        session_id: "00000000-0000-4000-8000-000000000011".into(),
-        filter: Some(v1::DocumentFilter {
-            document_ids: vec!["00000000-0000-4000-8000-000000000099".to_string()],
-            content_types: vec![],
-        }),
-    };
+    let mut zero_req = test_query_request(
+        "Nonexistent document query",
+        "00000000-0000-4000-8000-000000000011",
+    );
+    zero_req.filter = Some(v1::DocumentFilter {
+        document_ids: vec!["00000000-0000-4000-8000-000000000099".to_string()],
+        content_types: vec![],
+    });
     let (tx_zero, mut rx_zero) = mpsc::channel(100);
     let cancel_zero = CancellationToken::new();
     let sink_zero = WorkflowEventSink::new(
@@ -681,11 +679,10 @@ async fn workflow_phase5_config_verify_generation_timeout() {
         "00000000-0000-4000-8000-000000000099".into(),
     );
 
-    let req = QueryRagRequest {
-        query: "Verify live generation node timeout".into(),
-        session_id: "00000000-0000-4000-8000-000000000099".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "Verify live generation node timeout",
+        "00000000-0000-4000-8000-000000000099",
+    );
     let mut ctx = WorkflowContext::new(
         "00000000-0000-4000-8000-000000000099".into(),
         "trace-verify-timeout".into(),
@@ -880,11 +877,10 @@ async fn workflow_phase5_generation_retry_tracer() {
     );
 
     // 2. Run GenerateAnswer node
-    let req = QueryRagRequest {
-        query: "What is retry tracer query?".into(),
-        session_id: "00000000-0000-4000-8000-000000000077".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "What is retry tracer query?",
+        "00000000-0000-4000-8000-000000000077",
+    );
     let mut ctx = WorkflowContext::new(
         "00000000-0000-4000-8000-000000000077".into(),
         "trace-retry-test".into(),
@@ -1030,11 +1026,10 @@ async fn workflow_phase5_generation_retry_exhausted() {
     });
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator));
-    let req = QueryRagRequest {
-        query: "Exhausted query?".into(),
-        session_id: "00000000-0000-4000-8000-000000000088".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "Exhausted query?",
+        "00000000-0000-4000-8000-000000000088",
+    );
     let mut ctx = WorkflowContext::new(
         "00000000-0000-4000-8000-000000000088".into(),
         "trace-exhausted".into(),
@@ -1143,11 +1138,10 @@ async fn workflow_phase5_nodekind_tracer() {
     runner.add_node(prompt_node);
     runner.add_node(generate_node);
 
-    let req = QueryRagRequest {
-        query: "Nine variant admission rejection test".into(),
-        session_id: "00000000-0000-4000-8000-000000000091".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "Nine variant admission rejection test",
+        "00000000-0000-4000-8000-000000000091",
+    );
     let (tx, mut rx) = mpsc::channel(100);
     let cancel = CancellationToken::new();
     let sink = WorkflowEventSink::new(
@@ -1348,11 +1342,10 @@ async fn workflow_phase5_nodekind_dispatch() {
     let mut ctx = WorkflowContext::new(
         "00000000-0000-4000-8000-000000000092".into(),
         "trace-dispatch".into(),
-        &QueryRagRequest {
-            query: "Multi variant query".into(),
-            session_id: "00000000-0000-4000-8000-000000000092".into(),
-            filter: None,
-        },
+        &test_query_request(
+            "Multi variant query",
+            "00000000-0000-4000-8000-000000000092",
+        ),
     );
     ctx.variants = vec!["variant_0".into(), "variant_1".into(), "variant_2".into()];
 
@@ -1534,11 +1527,10 @@ async fn workflow_phase5_nodekind_exhaustive() {
     zero_ev_runner.add_node(workflow::nodes::AssemblePromptNode::new());
     zero_ev_runner.add_node(workflow::nodes::GenerateAnswerNode::new(None));
 
-    let req = QueryRagRequest {
-        query: "Zero evidence exhaustive query".into(),
-        session_id: "00000000-0000-4000-8000-000000000093".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "Zero evidence exhaustive query",
+        "00000000-0000-4000-8000-000000000093",
+    );
     let (tx, mut rx) = mpsc::channel(100);
     let cancel = CancellationToken::new();
     let sink = WorkflowEventSink::new(
@@ -1607,11 +1599,10 @@ async fn workflow_phase5_retrieval_snapshot_variants() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "multi-variant snapshot test".into(),
-        session_id: "00000000-0000-4000-8000-000000000095".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "multi-variant snapshot test",
+        "00000000-0000-4000-8000-000000000095",
+    );
     let cancel = CancellationToken::new();
     let mut ctx = WorkflowContext::new(
         "00000000-0000-4000-8000-000000000095".into(),

@@ -1,6 +1,19 @@
 #!/bin/sh
 set -e
 
+# Ensure cargo is found in standard user environments
+CARGO_CMD="cargo"
+if ! command -v cargo >/dev/null 2>&1; then
+  for p in "$HOME/.cargo/bin" "/mnt/c/Users/user3/.cargo/bin" "/c/Users/user3/.cargo/bin"; do
+    if [ -d "$p" ]; then
+      export PATH="$p:$PATH"
+    fi
+  done
+  if command -v cargo.exe >/dev/null 2>&1; then
+    CARGO_CMD="cargo.exe"
+  fi
+fi
+
 # Note on test distribution invariants:
 # The library/binary split became assertable at plan 06-03 because 06-01 and 06-02
 # deliberately left it free while modules were still in flight.
@@ -13,7 +26,7 @@ TMP_FILE=$(mktemp)
 trap 'rm -f "$TMP_FILE"' EXIT
 
 # Run cargo test --list and normalize path separators
-cargo test --manifest-path engine/Cargo.toml -- --list 2>&1 | tr '\\' '/' > "$TMP_FILE"
+"$CARGO_CMD" test --manifest-path engine/Cargo.toml -- --list 2>&1 | tr '\\' '/' | tr -d '\r' > "$TMP_FILE"
 
 # Extract counts using awk
 LIB_COUNT=$(awk '/Running unittests src\/lib\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")

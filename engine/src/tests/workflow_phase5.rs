@@ -15,8 +15,9 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use engine::generation::{AnswerBasis, FakeGenerator, Generator, ModelOutput};
-use engine::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, QueryRagRequest};
+use engine::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, NoticeSeverity};
 use engine::retrieval::{Candidate, RetrievalSettings};
+use engine::testkit::{test_notice, test_query_request};
 use engine::workflow::{
     events::{self, EventSequence},
     node::{Node, NodeError},
@@ -235,11 +236,7 @@ async fn workflow_phase5_generation_preflight_bootstrap_tracer() {
         "trace-generation-prepare".into(),
         "sess-generation-prepare".into(),
     );
-    let request = QueryRagRequest {
-        query: "Preparation ordering".into(),
-        session_id: "sess-generation-prepare".into(),
-        filter: None,
-    };
+    let request = test_query_request("Preparation ordering", "sess-generation-prepare");
     let mut ctx = WorkflowContext::new(
         "sess-generation-prepare".into(),
         "trace-generation-prepare".into(),
@@ -314,11 +311,7 @@ async fn run_happy_path_test() {
         session_id.clone(),
     );
 
-    let req = QueryRagRequest {
-        query: "What is Lancet graph RAG?".to_string(),
-        session_id: session_id.clone(),
-        filter: None,
-    };
+    let req = test_query_request("What is Lancet graph RAG?", &session_id);
     let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
 
     let fake_reformulator = Arc::new(FakeQueryReformulator::new(vec![
@@ -577,11 +570,7 @@ async fn workflow_phase5_generation_preflight_worst_case_budget() {
         "trace-worst-case-preflight".into(),
         "sess-worst-case-preflight".into(),
     );
-    let request = QueryRagRequest {
-        query: "Worst-case preparation budget".into(),
-        session_id: "sess-worst-case-preflight".into(),
-        filter: None,
-    };
+    let request = test_query_request("Worst-case preparation budget", "sess-worst-case-preflight");
     let mut ctx = WorkflowContext::new(
         "sess-worst-case-preflight".into(),
         "trace-worst-case-preflight".into(),
@@ -688,11 +677,7 @@ async fn workflow_phase5_reformulate_predeadline_4999ms_no_timeout() {
         "trace-reformulate-predeadline".into(),
         "sess-reformulate-predeadline".into(),
     );
-    let request = QueryRagRequest {
-        query: "Reformulate predeadline".into(),
-        session_id: "sess-reformulate-predeadline".into(),
-        filter: None,
-    };
+    let request = test_query_request("Reformulate predeadline", "sess-reformulate-predeadline");
     let ctx = WorkflowContext::new(
         "sess-reformulate-predeadline".into(),
         "trace-reformulate-predeadline".into(),
@@ -746,11 +731,7 @@ async fn workflow_phase5_retrieve_predeadline_9999ms_no_timeout() {
         "trace-retrieve-predeadline".into(),
         "sess-retrieve-predeadline".into(),
     );
-    let request = QueryRagRequest {
-        query: "Retrieve predeadline".into(),
-        session_id: "sess-retrieve-predeadline".into(),
-        filter: None,
-    };
+    let request = test_query_request("Retrieve predeadline", "sess-retrieve-predeadline");
     let ctx = WorkflowContext::new(
         "sess-retrieve-predeadline".into(),
         "trace-retrieve-predeadline".into(),
@@ -807,11 +788,7 @@ async fn workflow_phase5_event_delivery_bounded_cancellation() {
         "trace-bounded".to_string(),
         "sess-bounded".to_string(),
     );
-    let req = QueryRagRequest {
-        query: "bounded delivery".to_string(),
-        session_id: "sess-bounded".to_string(),
-        filter: None,
-    };
+    let req = test_query_request("bounded delivery", "sess-bounded");
     let ctx = WorkflowContext::new(
         "sess-bounded".to_string(),
         "trace-bounded".to_string(),
@@ -854,11 +831,7 @@ async fn workflow_phase5_graph_timeout() {
         "sess-graph-timeout".to_string(),
     );
 
-    let req = QueryRagRequest {
-        query: "Graph timeout test".to_string(),
-        session_id: "sess-graph-timeout".to_string(),
-        filter: None,
-    };
+    let req = test_query_request("Graph timeout test", "sess-graph-timeout");
     let mut ctx = WorkflowContext::new(
         "sess-graph-timeout".to_string(),
         "trace-graph-timeout".to_string(),
@@ -914,11 +887,7 @@ async fn workflow_phase5_reformulate_timeout_five_seconds() {
         "sess-ref-timeout".to_string(),
     );
 
-    let req = QueryRagRequest {
-        query: "Reformulate timeout test".to_string(),
-        session_id: "sess-ref-timeout".to_string(),
-        filter: None,
-    };
+    let req = test_query_request("Reformulate timeout test", "sess-ref-timeout");
     let ctx = WorkflowContext::new(
         "sess-ref-timeout".to_string(),
         "trace-ref-timeout".to_string(),
@@ -995,11 +964,7 @@ async fn workflow_phase5_retrieve_timeout_ten_seconds() {
         "sess-ret-timeout".to_string(),
     );
 
-    let req = QueryRagRequest {
-        query: "Retrieve timeout test".to_string(),
-        session_id: "sess-ret-timeout".to_string(),
-        filter: None,
-    };
+    let req = test_query_request("Retrieve timeout test", "sess-ret-timeout");
     let ctx = WorkflowContext::new(
         "sess-ret-timeout".to_string(),
         "trace-ret-timeout".to_string(),
@@ -1069,11 +1034,7 @@ async fn workflow_phase5_reranker_failure() {
         "sess-rerank-fail".to_string(),
     );
 
-    let req = QueryRagRequest {
-        query: "Reranker failure test".to_string(),
-        session_id: "sess-rerank-fail".to_string(),
-        filter: None,
-    };
+    let req = test_query_request("Reranker failure test", "sess-rerank-fail");
     let ctx = WorkflowContext::new(
         "sess-rerank-fail".to_string(),
         "trace-rerank-fail".to_string(),
@@ -1143,11 +1104,7 @@ async fn workflow_phase5_prompt_cancel() {
         "sess-cancel".to_string(),
     );
 
-    let req = QueryRagRequest {
-        query: "Pre-cancelled test".to_string(),
-        session_id: "sess-cancel".to_string(),
-        filter: None,
-    };
+    let req = test_query_request("Pre-cancelled test", "sess-cancel");
     let ctx = WorkflowContext::new("sess-cancel".to_string(), "trace-cancel".to_string(), &req);
 
     let mut runner = WorkflowRunner::new();
@@ -1187,11 +1144,7 @@ async fn workflow_phase5_full_snapshot() {
         "sess-snapshot-01".to_string(),
     );
 
-    let req = QueryRagRequest {
-        query: "Snapshot test query".to_string(),
-        session_id: "sess-snapshot-01".to_string(),
-        filter: None,
-    };
+    let req = test_query_request("Snapshot test query", "sess-snapshot-01");
     let ctx = WorkflowContext::new(
         "sess-snapshot-01".to_string(),
         "trace-snapshot-01".to_string(),
@@ -1269,11 +1222,7 @@ async fn workflow_phase5_nine_variants_rejection() {
         "sess-nine-var".to_string(),
     );
 
-    let req = QueryRagRequest {
-        query: "Nine variants test".to_string(),
-        session_id: "sess-nine-var".to_string(),
-        filter: None,
-    };
+    let req = test_query_request("Nine variants test", "sess-nine-var");
     let ctx = WorkflowContext::new(
         "sess-nine-var".to_string(),
         "trace-nine-var".to_string(),
@@ -1366,16 +1315,8 @@ async fn workflow_phase5_concurrency_isolation() {
         "sess-conc-2".to_string(),
     );
 
-    let req1 = QueryRagRequest {
-        query: "Concurrent query".to_string(),
-        session_id: "sess-conc-1".to_string(),
-        filter: None,
-    };
-    let req2 = QueryRagRequest {
-        query: "Concurrent query".to_string(),
-        session_id: "sess-conc-2".to_string(),
-        filter: None,
-    };
+    let req1 = test_query_request("Concurrent query", "sess-conc-1");
+    let req2 = test_query_request("Concurrent query", "sess-conc-2");
 
     let ctx1 = WorkflowContext::new("sess-conc-1".to_string(), "trace-conc-1".to_string(), &req1);
     let ctx2 = WorkflowContext::new("sess-conc-2".to_string(), "trace-conc-2".to_string(), &req2);
@@ -1501,11 +1442,7 @@ async fn workflow_phase5_timeout_cancels_stalled_provider() {
         session_id.clone(),
     );
 
-    let req = QueryRagRequest {
-        query: "Timeout cancellation test".to_string(),
-        session_id: session_id.clone(),
-        filter: None,
-    };
+    let req = test_query_request("Timeout cancellation test", &session_id);
     let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
     ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
         id: "[1]".to_string(),
@@ -1605,11 +1542,7 @@ async fn workflow_retrieve_graph() {
         "test-session".into(),
     );
 
-    let req = QueryRagRequest {
-        query: "rust test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("rust test", "00000000-0000-4000-8000-000000000001");
     let ctx =
         crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
@@ -1694,11 +1627,7 @@ async fn graph_timeout_degrades_to_empty_context() {
         "test-session".into(),
     );
 
-    let req = QueryRagRequest {
-        query: "graph timeout test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("graph timeout test", "00000000-0000-4000-8000-000000000001");
     let mut ctx =
         crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
@@ -1737,11 +1666,7 @@ async fn zero_evidence_short_circuits_generation() {
         "test-session".into(),
     );
 
-    let req = QueryRagRequest {
-        query: "zero evidence test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("zero evidence test", "00000000-0000-4000-8000-000000000001");
     let ctx =
         crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
@@ -1813,11 +1738,7 @@ async fn reranker_failure_maps_to_retrieval_failed() {
         "test-session".into(),
     );
 
-    let req = QueryRagRequest {
-        query: "reranker failure test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("reranker failure test", "00000000-0000-4000-8000-000000000001");
     let mut ctx =
         crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
@@ -1864,11 +1785,7 @@ async fn nine_variants_are_rejected_before_retrieval() {
         "test-session".into(),
     );
 
-    let req = QueryRagRequest {
-        query: "9 variants test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("9 variants test", "00000000-0000-4000-8000-000000000001");
     let ctx =
         crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
@@ -1969,11 +1886,7 @@ async fn zero_variants_are_rejected_before_retrieval() {
         "test-session".into(),
     );
 
-    let req = QueryRagRequest {
-        query: "0 variants test".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("0 variants test", "00000000-0000-4000-8000-000000000001");
     let ctx =
         crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
@@ -2037,11 +1950,7 @@ async fn workflow_generation_tracer() {
     let sequence = Arc::new(EventSequence::new());
     let sink = WorkflowEventSink::new(tx, sequence, "trace-gen".into(), "sess-gen".into());
 
-    let req = QueryRagRequest {
-        session_id: "sess-gen".into(),
-        query: "What is Lancet engine architecture?".into(),
-        filter: None,
-    };
+    let req = test_query_request("What is Lancet engine architecture?", "sess-gen");
     let ctx = WorkflowContext::new("sess-gen".into(), "trace-gen".into(), &req);
 
     let fake_reformulator = Arc::new(FakeQueryReformulator::new(vec!["query variant".into()]));
@@ -2181,11 +2090,7 @@ async fn generation_retry_request_is_byte_identical() {
     let sequence = Arc::new(EventSequence::new());
     let sink = WorkflowEventSink::new(tx, sequence, "trace-retry".into(), "sess-retry".into());
 
-    let req = QueryRagRequest {
-        session_id: "sess-retry".into(),
-        query: "Byte identical query?".into(),
-        filter: None,
-    };
+    let req = test_query_request("Byte identical query?", "sess-retry");
     let mut ctx = WorkflowContext::new("sess-retry".into(), "trace-retry".into(), &req);
     ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
         id: "[1]".into(),
@@ -2285,11 +2190,7 @@ async fn generation_outer_timeout_allows_retry() {
     let sequence = Arc::new(EventSequence::new());
     let sink = WorkflowEventSink::new(tx, sequence, "trace-timeout".into(), "sess-timeout".into());
 
-    let req = QueryRagRequest {
-        session_id: "sess-timeout".into(),
-        query: "Timeout query?".into(),
-        filter: None,
-    };
+    let req = test_query_request("Timeout query?", "sess-timeout");
     let mut ctx = WorkflowContext::new("sess-timeout".into(), "trace-timeout".into(), &req);
     ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
         id: "[1]".into(),
@@ -2366,11 +2267,7 @@ async fn generation_cancellation_between_attempts() {
     let sequence = Arc::new(EventSequence::new());
     let sink = WorkflowEventSink::new(tx, sequence, "trace-cancel".into(), "sess-cancel".into());
 
-    let req = QueryRagRequest {
-        session_id: "sess-cancel".into(),
-        query: "Cancel query?".into(),
-        filter: None,
-    };
+    let req = test_query_request("Cancel query?", "sess-cancel");
     let mut ctx = WorkflowContext::new("sess-cancel".into(), "trace-cancel".into(), &req);
     ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
         id: "[1]".into(),
@@ -2434,11 +2331,7 @@ async fn answer_events_have_exact_cardinality() {
         let sink =
             WorkflowEventSink::new(tx, sequence, "trace-card-a".into(), "sess-card-a".into());
 
-        let req = QueryRagRequest {
-            session_id: "sess-card-a".into(),
-            query: "Card A".into(),
-            filter: None,
-        };
+        let req = test_query_request("Card A", "sess-card-a");
         let ctx = WorkflowContext::new("sess-card-a".into(), "trace-card-a".into(), &req);
 
         let candidate = candidate_with_score("1", "Content 1", 0.9).candidate;
@@ -2505,11 +2398,7 @@ async fn answer_events_have_exact_cardinality() {
         let sink =
             WorkflowEventSink::new(tx, sequence, "trace-card-b".into(), "sess-card-b".into());
 
-        let req = QueryRagRequest {
-            session_id: "sess-card-b".into(),
-            query: "Card B".into(),
-            filter: None,
-        };
+        let req = test_query_request("Card B", "sess-card-b");
         let ctx = WorkflowContext::new("sess-card-b".into(), "trace-card-b".into(), &req);
 
         let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![]));
@@ -2570,11 +2459,7 @@ async fn answer_events_have_exact_cardinality() {
         let sink =
             WorkflowEventSink::new(tx, sequence, "trace-card-c".into(), "sess-card-c".into());
 
-        let req = QueryRagRequest {
-            session_id: "sess-card-c".into(),
-            query: "Card C".into(),
-            filter: None,
-        };
+        let req = test_query_request("Card C", "sess-card-c");
         let ctx = WorkflowContext::new("sess-card-c".into(), "trace-card-c".into(), &req);
 
         let candidate = candidate_with_score("1", "Content 1", 0.9).candidate;
@@ -2639,11 +2524,7 @@ async fn workflow_answer_contract_preserves_all_fields() {
     let sequence = Arc::new(EventSequence::new());
     let sink = WorkflowEventSink::new(tx, sequence, "trace-fields".into(), "sess-fields".into());
 
-    let req = QueryRagRequest {
-        session_id: "sess-fields".into(),
-        query: "Preserve fields query".into(),
-        filter: None,
-    };
+    let req = test_query_request("Preserve fields query", "sess-fields");
     let ctx = WorkflowContext::new("sess-fields".into(), "trace-fields".into(), &req);
 
     let candidate =
@@ -2994,11 +2875,7 @@ fn workflow_phase5_fake_ports_test_only() {
 #[tokio::test]
 async fn workflow_phase5_graph_notice_merge() {
     let cancel = CancellationToken::new();
-    let req = QueryRagRequest {
-        query: "graph notice merge test".into(),
-        session_id: "sess-notice-merge".into(),
-        filter: None,
-    };
+    let req = test_query_request("graph notice merge test", "sess-notice-merge");
     let mut ctx = WorkflowContext::new(
         "sess-notice-merge".into(),
         "trace-notice-merge".into(),
@@ -3006,22 +2883,22 @@ async fn workflow_phase5_graph_notice_merge() {
     );
 
     // 1. Pre-existing notice (e.g. from retrieval or pre-step)
-    let initial_notice = engine::pb::lancet::v1::Notice {
-        code: "RETRIEVAL_INFO".into(),
-        message: "dense retrieval returned 5 candidates".into(),
-        severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-    };
+    let initial_notice = test_notice(
+        "RETRIEVAL_INFO",
+        "dense retrieval returned 5 candidates",
+        NoticeSeverity::Info,
+    );
     ctx.add_notice(initial_notice.clone());
     assert_eq!(ctx.notices.len(), 1);
 
     // 2. Test notice merge and deduplication
     ctx.merge_notices(vec![
         initial_notice.clone(), // duplicate: should not be added again
-        engine::pb::lancet::v1::Notice {
-            code: "EARLY_WARNING".into(),
-            message: "low confidence variant".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Warning as i32,
-        },
+        test_notice(
+            "EARLY_WARNING",
+            "low confidence variant",
+            NoticeSeverity::Warning,
+        ),
     ]);
     assert_eq!(ctx.notices.len(), 2);
     assert_eq!(ctx.notices[0].code, "RETRIEVAL_INFO");
@@ -3077,14 +2954,11 @@ async fn workflow_phase5_graph_notice_merge() {
 
 #[tokio::test]
 async fn workflow_phase5_checkpoint_full_snapshot() {
-    let request = QueryRagRequest {
-        query: "full snapshot query".into(),
-        session_id: "sess-checkpoint-full".into(),
-        filter: Some(engine::pb::lancet::v1::DocumentFilter {
-            document_ids: vec!["doc-filter".into()],
-            content_types: vec!["text/plain".into()],
-        }),
-    };
+    let mut request = test_query_request("full snapshot query", "sess-checkpoint-full");
+    request.filter = Some(engine::pb::lancet::v1::DocumentFilter {
+        document_ids: vec!["doc-filter".into()],
+        content_types: vec!["text/plain".into()],
+    });
     let mut ctx = WorkflowContext::new(
         "sess-checkpoint-full".into(),
         "trace-checkpoint-full".into(),
@@ -3139,21 +3013,21 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
         content_type: "text/plain".into(),
     }];
     ctx.merge_notices(vec![
-        engine::pb::lancet::v1::Notice {
-            code: "RETRIEVAL_INFO".into(),
-            message: "retrieval completed".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-        },
-        engine::pb::lancet::v1::Notice {
-            code: "GRAPH_DEGRADED".into(),
-            message: "graph degraded after retrieval".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-        },
-        engine::pb::lancet::v1::Notice {
-            code: "GRAPH_TIMEOUT".into(),
-            message: "graph timeout was observed".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-        },
+        test_notice(
+            "RETRIEVAL_INFO",
+            "retrieval completed",
+            NoticeSeverity::Info,
+        ),
+        test_notice(
+            "GRAPH_DEGRADED",
+            "graph degraded after retrieval",
+            NoticeSeverity::Info,
+        ),
+        test_notice(
+            "GRAPH_TIMEOUT",
+            "graph timeout was observed",
+            NoticeSeverity::Info,
+        ),
     ]);
     ctx.snapshot = Some(engine::pb::lancet::v1::RetrievalSnapshot {
         index_generation: "generation-7".into(),
@@ -3278,11 +3152,7 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
     let empty_context = WorkflowContext::new(
         "sess-empty".into(),
         "trace-empty".into(),
-        &QueryRagRequest {
-            query: "empty".into(),
-            session_id: "sess-empty".into(),
-            filter: None,
-        },
+        &test_query_request("empty", "sess-empty"),
     );
     let empty_payload: serde_json::Value =
         serde_json::from_str(&events::CheckpointSnapshot::from_context(&empty_context).to_json())
@@ -3311,32 +3181,28 @@ async fn workflow_phase5_terminal_idempotence() {
         "sess-terminal-idempotence".into(),
     );
     let cancel = CancellationToken::new();
-    let request = QueryRagRequest {
-        query: "terminal failure query".into(),
-        session_id: "sess-terminal-idempotence".into(),
-        filter: None,
-    };
+    let request = test_query_request("terminal failure query", "sess-terminal-idempotence");
     let mut ctx = WorkflowContext::new(
         "sess-terminal-idempotence".into(),
         "trace-terminal-idempotence".into(),
         &request,
     );
     ctx.merge_notices(vec![
-        engine::pb::lancet::v1::Notice {
-            code: "RETRIEVAL_INFO".into(),
-            message: "retrieval notice before graph degradation".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-        },
-        engine::pb::lancet::v1::Notice {
-            code: "GRAPH_DEGRADED".into(),
-            message: "graph degraded before terminal failure".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-        },
-        engine::pb::lancet::v1::Notice {
-            code: "GRAPH_TIMEOUT".into(),
-            message: "graph timeout before terminal failure".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-        },
+        test_notice(
+            "RETRIEVAL_INFO",
+            "retrieval notice before graph degradation",
+            NoticeSeverity::Info,
+        ),
+        test_notice(
+            "GRAPH_DEGRADED",
+            "graph degraded before terminal failure",
+            NoticeSeverity::Info,
+        ),
+        test_notice(
+            "GRAPH_TIMEOUT",
+            "graph timeout before terminal failure",
+            NoticeSeverity::Info,
+        ),
     ]);
 
     let first_context = ctx.clone();
@@ -3423,23 +3289,19 @@ async fn workflow_phase5_failure_terminal_notices_tracer() {
         session_id.clone(),
     );
 
-    let req = QueryRagRequest {
-        query: "failure tracer query".to_string(),
-        session_id: session_id.clone(),
-        filter: None,
-    };
+    let req = test_query_request("failure tracer query", &session_id);
     let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
     ctx.merge_notices(vec![
-        engine::pb::lancet::v1::Notice {
-            code: "GRAPH_TIMEOUT".into(),
-            message: "Graph query timed out".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Warning as i32,
-        },
-        engine::pb::lancet::v1::Notice {
-            code: "GRAPH_DEGRADED".into(),
-            message: "Graph context degraded".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-        },
+        test_notice(
+            "GRAPH_TIMEOUT",
+            "Graph query timed out",
+            NoticeSeverity::Warning,
+        ),
+        test_notice(
+            "GRAPH_DEGRADED",
+            "Graph context degraded",
+            NoticeSeverity::Info,
+        ),
     ]);
     ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
         id: "[1]".into(),
@@ -3552,23 +3414,19 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
             session_id.clone(),
         );
 
-        let req = QueryRagRequest {
-            query: "failure preserves notices query".to_string(),
-            session_id: session_id.clone(),
-            filter: None,
-        };
+        let req = test_query_request("failure preserves notices query", &session_id);
         let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
         ctx.merge_notices(vec![
-            engine::pb::lancet::v1::Notice {
-                code: "GRAPH_DEGRADED".into(),
-                message: "graph degraded early".into(),
-                severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-            },
-            engine::pb::lancet::v1::Notice {
-                code: "GRAPH_TIMEOUT".into(),
-                message: "graph query timed out later".into(),
-                severity: engine::pb::lancet::v1::NoticeSeverity::Warning as i32,
-            },
+            test_notice(
+                "GRAPH_DEGRADED",
+                "graph degraded early",
+                NoticeSeverity::Info,
+            ),
+            test_notice(
+                "GRAPH_TIMEOUT",
+                "graph query timed out later",
+                NoticeSeverity::Warning,
+            ),
         ]);
         ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
             id: "[1]".into(),
@@ -3697,17 +3555,13 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
             session_id.clone(),
         );
 
-        let req = QueryRagRequest {
-            query: "success preserves notices query".to_string(),
-            session_id: session_id.clone(),
-            filter: None,
-        };
+        let req = test_query_request("success preserves notices query", &session_id);
         let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
-        ctx.merge_notices(vec![engine::pb::lancet::v1::Notice {
-            code: "GRAPH_DEGRADED".into(),
-            message: "graph degraded during success".into(),
-            severity: engine::pb::lancet::v1::NoticeSeverity::Info as i32,
-        }]);
+        ctx.merge_notices(vec![test_notice(
+            "GRAPH_DEGRADED",
+            "graph degraded during success",
+            NoticeSeverity::Info,
+        )]);
         ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
             id: "[1]".into(),
             chunk_id: "chunk-1".into(),

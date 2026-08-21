@@ -50,6 +50,7 @@ use engine::retrieval::{self, Bm25Config, Bm25Index, DenseRetriever, QueryReques
 use engine::service::{
     attempt_graph_augmentation, validate_document_id, GraphAugmentationOutcome, LancetServiceImpl,
 };
+use engine::testkit::test_query_request;
 
 pub mod workflow_phase5_production;
 
@@ -544,11 +545,10 @@ async fn query_rag_stream() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "Stream contract test".into(),
-        session_id: "00000000-0000-4000-8000-000000000004".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "Stream contract test",
+        "00000000-0000-4000-8000-000000000004",
+    );
 
     let response_res = service.query_rag(tonic::Request::new(req)).await;
     assert!(response_res.is_ok());
@@ -2727,11 +2727,10 @@ async fn query_rag_tracer() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "What is tracer document content?".into(),
-        session_id: "00000000-0000-4000-8000-000000000002".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "What is tracer document content?",
+        "00000000-0000-4000-8000-000000000002",
+    );
 
     let response_res = service.query_rag(tonic::Request::new(req)).await;
     assert!(response_res.is_ok());
@@ -2844,11 +2843,10 @@ async fn query_rag_generation_failure() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "Generation failure query".into(),
-        session_id: "00000000-0000-4000-8000-000000000099".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "Generation failure query",
+        "00000000-0000-4000-8000-000000000099",
+    );
 
     let response_res = service.query_rag(tonic::Request::new(req)).await;
     assert!(response_res.is_ok());
@@ -2944,11 +2942,10 @@ async fn query_rag_happy_path_service() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "What language does Lancet use for retrieval?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "What language does Lancet use for retrieval?",
+        "00000000-0000-4000-8000-000000000001",
+    );
 
     let response = execute_query_rag(&service, req).await.unwrap();
 
@@ -3009,11 +3006,10 @@ async fn configured_provider_settings_reach_query_requests() {
     .await;
     let response = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "configured provider query".into(),
-            session_id: "00000000-0000-4000-8000-000000000111".into(),
-            filter: None,
-        },
+        test_query_request(
+            "configured provider query",
+            "00000000-0000-4000-8000-000000000111",
+        ),
     )
     .await
     .unwrap();
@@ -3105,11 +3101,10 @@ async fn configured_embedding_identity_persists_and_reports() {
     .await;
     let response = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "configured identity content".into(),
-            session_id: "00000000-0000-4000-8000-000000000112".into(),
-            filter: None,
-        },
+        test_query_request(
+            "configured identity content",
+            "00000000-0000-4000-8000-000000000112",
+        ),
     )
     .await
     .unwrap();
@@ -3167,11 +3162,10 @@ async fn configured_bm25_and_evidence_settings_reach_query() {
     .await;
     let response = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "needle configured lexical evidence".into(),
-            session_id: "00000000-0000-4000-8000-000000000113".into(),
-            filter: None,
-        },
+        test_query_request(
+            "needle configured lexical evidence",
+            "00000000-0000-4000-8000-000000000113",
+        ),
     )
     .await
     .unwrap();
@@ -3288,11 +3282,10 @@ async fn configured_rag_settings_drive_service() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "What is testing custom configuration?".into(),
-        session_id: "00000000-0000-4000-8000-000000000002".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "What is testing custom configuration?",
+        "00000000-0000-4000-8000-000000000002",
+    );
 
     let response = execute_query_rag(&service, req).await.unwrap();
 
@@ -3362,11 +3355,10 @@ async fn configured_evidence_token_budget_is_exact() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "Excerpt test query?".into(),
-        session_id: "00000000-0000-4000-8000-000000000003".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "Excerpt test query?",
+        "00000000-0000-4000-8000-000000000003",
+    );
 
     let response = execute_query_rag(&service, req).await.unwrap();
 
@@ -3424,16 +3416,8 @@ async fn service_index_generation_is_opaque_and_stable() {
         database: database1.clone(),
     };
 
-    let req1 = QueryRagRequest {
-        query: "Query 1".into(),
-        session_id: "00000000-0000-4000-8000-000000000004".into(),
-        filter: None,
-    };
-    let req2 = QueryRagRequest {
-        query: "Query 2".into(),
-        session_id: "00000000-0000-4000-8000-000000000005".into(),
-        filter: None,
-    };
+    let req1 = test_query_request("Query 1", "00000000-0000-4000-8000-000000000004");
+    let req2 = test_query_request("Query 2", "00000000-0000-4000-8000-000000000005");
 
     let res1 = execute_query_rag(&service1, req1).await.unwrap();
     let res2 = execute_query_rag(&service1, req2).await.unwrap();
@@ -3487,11 +3471,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         database: database2.clone(),
     };
 
-    let req3 = QueryRagRequest {
-        query: "Query 3".into(),
-        session_id: "00000000-0000-4000-8000-000000000006".into(),
-        filter: None,
-    };
+    let req3 = test_query_request("Query 3", "00000000-0000-4000-8000-000000000006");
     let res3 = execute_query_rag(&service2, req3).await.unwrap();
     let gen3 = res3.snapshot.as_ref().unwrap().index_generation.clone();
 
@@ -3587,11 +3567,10 @@ async fn query_rag_citation_identity_and_notices() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "document content".into(),
-        session_id: "00000000-0000-4000-8000-000000000099".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "document content",
+        "00000000-0000-4000-8000-000000000099",
+    );
 
     let response = execute_query_rag(&service, req).await.unwrap();
 
@@ -3676,11 +3655,10 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "gamma document".into(),
-        session_id: "00000000-0000-4000-8000-000000000088".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "gamma document",
+        "00000000-0000-4000-8000-000000000088",
+    );
 
     let res = execute_query_rag(&service, req).await;
     assert!(res.is_err());
@@ -3739,11 +3717,10 @@ async fn query_rag_rejects_invalid_provider_grounding() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "grounding test document".into(),
-        session_id: "00000000-0000-4000-8000-000000000099".into(),
-        filter: None,
-    };
+    let req = test_query_request(
+        "grounding test document",
+        "00000000-0000-4000-8000-000000000099",
+    );
 
     let res = execute_query_rag(&service, req).await;
     assert!(res.is_err());
@@ -3807,11 +3784,7 @@ async fn query_rag_generation_error_preserves_identity() {
     };
 
     let session_id = "00000000-0000-4000-8000-000000000077";
-    let req = QueryRagRequest {
-        query: "identity preservation test".into(),
-        session_id: session_id.into(),
-        filter: None,
-    };
+    let req = test_query_request("identity preservation test", session_id);
 
     let stream_res = service.query_rag(tonic::Request::new(req)).await.unwrap();
     let mut stream = stream_res.into_inner();
@@ -3881,11 +3854,10 @@ async fn query_rag_invokes_recording_reranker_once() {
 
     execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "reranker evidence".into(),
-            session_id: "00000000-0000-4000-8000-000000000201".into(),
-            filter: None,
-        },
+        test_query_request(
+            "reranker evidence",
+            "00000000-0000-4000-8000-000000000201",
+        ),
     )
     .await
     .unwrap();
@@ -3914,11 +3886,10 @@ async fn query_rag_grounding_uses_reranked_identity() {
 
     let response = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "reranker evidence".into(),
-            session_id: "00000000-0000-4000-8000-000000000202".into(),
-            filter: None,
-        },
+        test_query_request(
+            "reranker evidence",
+            "00000000-0000-4000-8000-000000000202",
+        ),
     )
     .await
     .unwrap();
@@ -3983,11 +3954,10 @@ async fn query_rag_noop_reranker_preserves_fused_order() {
 
     execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "reranker evidence".into(),
-            session_id: "00000000-0000-4000-8000-000000000203".into(),
-            filter: None,
-        },
+        test_query_request(
+            "reranker evidence",
+            "00000000-0000-4000-8000-000000000203",
+        ),
     )
     .await
     .unwrap();
@@ -4022,11 +3992,10 @@ async fn query_rag_reranker_failure_skips_generation() {
 
     let result = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "reranker evidence".into(),
-            session_id: "00000000-0000-4000-8000-000000000204".into(),
-            filter: None,
-        },
+        test_query_request(
+            "reranker evidence",
+            "00000000-0000-4000-8000-000000000204",
+        ),
     )
     .await;
 
@@ -4086,11 +4055,7 @@ async fn query_rag_fail_closed_embedding_transport() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "What is Lancet?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
 
     let status = execute_query_rag(&service, req)
         .await
@@ -4137,11 +4102,7 @@ async fn query_rag_fail_closed_embedding_empty_payload() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "What is Lancet?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
 
     let status = execute_query_rag(&service, req)
         .await
@@ -4178,11 +4139,7 @@ async fn query_rag_fail_closed_embedding_multi_vector() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "What is Lancet?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
 
     let status = execute_query_rag(&service, req)
         .await
@@ -4219,11 +4176,7 @@ async fn query_rag_fail_closed_embedding_wrong_dimension() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "What is Lancet?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
 
     let status = execute_query_rag(&service, req)
         .await
@@ -4262,11 +4215,7 @@ async fn query_rag_fail_closed_embedding_non_finite() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "What is Lancet?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
 
     let status = execute_query_rag(&service, req)
         .await
@@ -4316,11 +4265,7 @@ async fn query_rag_fail_closed_dense_snapshot() {
         database: database.clone(),
     };
 
-    let req = QueryRagRequest {
-        query: "What is Lancet?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: None,
-    };
+    let req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
 
     let status = execute_query_rag(&service, req)
         .await
@@ -4357,14 +4302,11 @@ async fn query_rag_valid_zero_match() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "What is Lancet?".into(),
-        session_id: "00000000-0000-4000-8000-000000000001".into(),
-        filter: Some(DocumentFilter {
-            document_ids: vec!["00000000-0000-4000-8000-000000000999".into()],
-            content_types: vec![],
-        }),
-    };
+    let mut req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
+    req.filter = Some(DocumentFilter {
+        document_ids: vec!["00000000-0000-4000-8000-000000000999".into()],
+        content_types: vec![],
+    });
 
     let resp = execute_query_rag(&service, req).await.unwrap();
     assert_eq!(resp.answer, "");
@@ -4912,11 +4854,7 @@ async fn query_rag_span_and_request_threading() {
     )
     .await;
 
-    let req = QueryRagRequest {
-        query: "RAG query".into(),
-        session_id: Uuid::new_v4().to_string(),
-        filter: None,
-    };
+    let req = test_query_request("RAG query", &Uuid::new_v4().to_string());
 
     let res = execute_query_rag(&service, req).await;
     assert!(res.is_ok());
@@ -6865,11 +6803,10 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
 
     let response = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "keystone retrieval architecture explanation".into(),
-            session_id: Uuid::new_v4().to_string(),
-            filter: None,
-        },
+        test_query_request(
+            "keystone retrieval architecture explanation",
+            &Uuid::new_v4().to_string(),
+        ),
     )
     .await
     .expect("query_rag succeeds through the real generator and mock provider");
@@ -7058,11 +6995,10 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
 
     let response = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "Alice knows Bob".into(),
-            session_id: Uuid::new_v4().to_string(),
-            filter: None,
-        },
+        test_query_request(
+            "Alice knows Bob",
+            &Uuid::new_v4().to_string(),
+        ),
     )
     .await
     .expect("query_rag returns Ok even with graph-only context and no chunk evidence");
@@ -7097,11 +7033,10 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
 
     let response = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "no entities exist in this corpus".into(),
-            session_id: Uuid::new_v4().to_string(),
-            filter: None,
-        },
+        test_query_request(
+            "no entities exist in this corpus",
+            &Uuid::new_v4().to_string(),
+        ),
     )
     .await
     .expect("query_rag returns Ok even when no entity matches and no chunk evidence exists");
@@ -7142,11 +7077,10 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
 
     let response = execute_query_rag(
         &service,
-        QueryRagRequest {
-            query: "entities table is corrupted".into(),
-            session_id: Uuid::new_v4().to_string(),
-            filter: None,
-        },
+        test_query_request(
+            "entities table is corrupted",
+            &Uuid::new_v4().to_string(),
+        ),
     )
     .await
     .expect(
