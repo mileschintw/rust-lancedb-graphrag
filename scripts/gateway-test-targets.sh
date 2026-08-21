@@ -11,14 +11,15 @@
 #        split moved production code only; no test was lost or gained by relocation.
 #   75 — 67 plus the 8 package-local tests added to gateway/internal/sse, which owns the
 #        /rag/query JSON wire contract that plan 06-07 extends.
+#   80 — 75 plus TestBadInputMatrixHTTP (plan 06-12), the D-15 bad-input matrix's HTTP half.
 set -e
 
-EXPECTED_TOTAL=79
+EXPECTED_TOTAL=80
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 64
+EXPECTED_PACKAGES="gateway 65
 gateway/db 7
 gateway/internal/sse 8"
 

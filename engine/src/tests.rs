@@ -52,6 +52,7 @@ use engine::service::{
 };
 use engine::testkit::test_query_request;
 
+pub mod bad_input_matrix;
 pub mod workflow_phase5_production;
 
 const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
