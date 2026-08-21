@@ -4000,3 +4000,154 @@ async fn graph_ablation_graph_port_never_called_when_flag_true() {
         "fake graph port must never be called when ablation flag is true"
     );
 }
+
+#[tokio::test]
+async fn graph_unavailable_notice_on_empty_result() {
+    let req = test_query_request("Empty graph result query", "sess-empty-graph");
+    let mut ctx = WorkflowContext::new("sess-empty-graph".into(), "trace-empty-graph".into(), &req);
+    let fake_graph = Arc::new(FakeGraphQueryPort::success(Vec::<String>::new()));
+    let node = ExtractGraphContextNode::new(None, Some(fake_graph));
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel).await.expect("node succeeds");
+
+    assert!(ctx.graph_context.is_empty());
+    assert!(ctx.graph_facts.is_empty());
+    let notice = ctx
+        .notices
+        .iter()
+        .find(|n| {
+            n.code == "GRAPH_UNAVAILABLE" && n.typed_code == NoticeCode::GraphUnavailable as i32
+        })
+        .expect("GRAPH_UNAVAILABLE notice must be emitted on empty result");
+    assert_eq!(
+        notice.message,
+        "Graph query returned no facts for this query"
+    );
+    assert_eq!(notice.severity, NoticeSeverity::Info as i32);
+}
+
+#[tokio::test]
+async fn graph_unavailable_notice_on_absent_graph_port() {
+    let req = test_query_request("Absent graph port query", "sess-no-port");
+    let mut ctx = WorkflowContext::new("sess-no-port".into(), "trace-no-port".into(), &req);
+    let node = ExtractGraphContextNode::new(None, None);
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel).await.expect("node succeeds");
+
+    assert!(ctx.graph_context.is_empty());
+    assert!(ctx.graph_facts.is_empty());
+    let notice = ctx
+        .notices
+        .iter()
+        .find(|n| {
+            n.code == "GRAPH_UNAVAILABLE" && n.typed_code == NoticeCode::GraphUnavailable as i32
+        })
+        .expect("GRAPH_UNAVAILABLE notice must be emitted on absent port");
+    assert_eq!(
+        notice.message,
+        "Graph context is not configured; answer produced from source chunks only"
+    );
+    assert_eq!(notice.severity, NoticeSeverity::Info as i32);
+}
+
+#[tokio::test]
+async fn graph_unavailable_distinct_messages_survive_deduplication() {
+    let req = test_query_request("Dedup query", "sess-dedup");
+    let mut ctx = WorkflowContext::new("sess-dedup".into(), "trace-dedup".into(), &req);
+
+    ctx.add_notice(engine::workflow::notice(
+        NoticeCode::GraphUnavailable,
+        "Graph query returned no facts for this query",
+        NoticeSeverity::Info,
+    ));
+    ctx.add_notice(engine::workflow::notice(
+        NoticeCode::GraphUnavailable,
+        "Graph context is not configured; answer produced from source chunks only",
+        NoticeSeverity::Info,
+    ));
+
+    assert_eq!(
+        ctx.notices.len(),
+        2,
+        "both distinct graph unavailability messages must survive deduplication"
+    );
+    assert_eq!(ctx.notices[0].code, "GRAPH_UNAVAILABLE");
+    assert_eq!(ctx.notices[1].code, "GRAPH_UNAVAILABLE");
+    assert_ne!(ctx.notices[0].message, ctx.notices[1].message);
+}
+
+#[tokio::test]
+async fn graph_timeout_notice_regression_unchanged() {
+    let req = test_query_request("Timeout query", "sess-timeout");
+    let mut ctx = WorkflowContext::new("sess-timeout".into(), "trace-timeout".into(), &req);
+    let fake_graph = Arc::new(FakeGraphQueryPort::failure(NodeError::new(
+        NodeErrorKind::Timeout,
+        "GRAPH_TIMEOUT",
+    )));
+    let node = ExtractGraphContextNode::new(None, Some(fake_graph));
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel)
+        .await
+        .expect("node succeeds with degrade");
+
+    assert_eq!(ctx.notices.len(), 1, "exactly one notice on timeout");
+    let n = &ctx.notices[0];
+    assert_eq!(n.code, "GRAPH_TIMEOUT");
+    assert_eq!(n.typed_code, NoticeCode::GraphTimeout as i32);
+    assert_eq!(n.message, "GRAPH_TIMEOUT");
+    assert_eq!(n.severity, NoticeSeverity::Info as i32);
+}
+
+#[tokio::test]
+async fn graph_degraded_notice_regression_unchanged() {
+    let req = test_query_request("Degraded query", "sess-degraded");
+    let mut ctx = WorkflowContext::new("sess-degraded".into(), "trace-degraded".into(), &req);
+    let fake_graph = Arc::new(FakeGraphQueryPort::failure(NodeError::new(
+        NodeErrorKind::GraphFailed,
+        "lancedb connection dropped",
+    )));
+    let node = ExtractGraphContextNode::new(None, Some(fake_graph));
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel)
+        .await
+        .expect("node succeeds with degrade");
+
+    assert_eq!(ctx.notices.len(), 1, "exactly one notice on degraded");
+    let n = &ctx.notices[0];
+    assert_eq!(n.code, "GRAPH_DEGRADED");
+    assert_eq!(n.typed_code, NoticeCode::GraphDegraded as i32);
+    assert_eq!(n.message, "graph_degrade: lancedb connection dropped");
+    assert_eq!(n.severity, NoticeSeverity::Info as i32);
+}
+
+#[tokio::test]
+async fn graph_ablation_does_not_emit_graph_unavailability_notice() {
+    let mut req = test_query_request("Ablation no unavail query", "sess-ablation-no-unavail");
+    req.disable_graph_context = Some(true);
+    let mut ctx = WorkflowContext::new(
+        "sess-ablation-no-unavail".into(),
+        "trace-ablation-no-unavail".into(),
+        &req,
+    );
+    // Node with absent graph port
+    let node = ExtractGraphContextNode::new(None, None);
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel).await.expect("node succeeds");
+
+    assert!(
+        ctx.notices
+            .iter()
+            .any(|n| n.code == "GRAPH_ABLATION" && n.typed_code == NoticeCode::GraphAblation as i32),
+        "must emit GRAPH_ABLATION"
+    );
+    assert!(
+        !ctx.notices.iter().any(|n| n.code == "GRAPH_UNAVAILABLE"
+            || n.typed_code == NoticeCode::GraphUnavailable as i32),
+        "must NOT emit GRAPH_UNAVAILABLE when ablated"
+    );
+}

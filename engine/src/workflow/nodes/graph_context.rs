@@ -125,6 +125,11 @@ impl Node for ExtractGraphContextNode {
                         if facts.is_empty() {
                             ctx.graph_context = String::new();
                             ctx.graph_facts = Vec::new();
+                            ctx.add_notice(notice(
+                                NoticeCode::GraphUnavailable,
+                                "Graph query returned no facts for this query",
+                                NoticeSeverity::Info,
+                            ));
                         } else {
                             ctx.graph_context = facts
                                 .iter()
@@ -166,6 +171,11 @@ impl Node for ExtractGraphContextNode {
             } else {
                 ctx.graph_context = String::new();
                 ctx.graph_facts = Vec::new();
+                ctx.add_notice(notice(
+                    NoticeCode::GraphUnavailable,
+                    "Graph context is not configured; answer produced from source chunks only",
+                    NoticeSeverity::Info,
+                ));
             }
 
             Ok(())
