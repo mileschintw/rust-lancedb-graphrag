@@ -60,6 +60,7 @@ pub struct OpenRouterGenerationConfig {
 }
 
 impl OpenRouterGenerationConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         model: impl Into<String>,
         chat_endpoint: impl Into<String>,

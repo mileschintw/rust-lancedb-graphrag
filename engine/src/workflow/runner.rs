@@ -348,7 +348,7 @@ impl WorkflowRunner {
         if let Err(err) = preparation {
             let _ = sink
                 .send_event_or_cancel(
-                    events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
+                    events::node_failed(name, err.kind, &err.message, err.retryable),
                     cancel,
                 )
                 .await;
@@ -387,7 +387,7 @@ impl WorkflowRunner {
                 if let Err(err) = sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel) {
                     let _ = sink
                         .send_event_or_cancel(
-                            events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
+                            events::node_failed(name, err.kind, &err.message, err.retryable),
                             cancel,
                         )
                         .await;
@@ -397,7 +397,7 @@ impl WorkflowRunner {
             Err(err) => {
                 let _ = sink
                     .send_event_or_cancel(
-                        events::node_failed(name, err.kind.clone(), &err.message, err.retryable),
+                        events::node_failed(name, err.kind, &err.message, err.retryable),
                         cancel,
                     )
                     .await;

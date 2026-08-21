@@ -3,16 +3,11 @@
 use serde::Serialize;
 
 /// Strategy governing how extracted knowledge graph facts are assembled into prompt text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub enum ContextAssemblyStrategy {
     PrecomputedSemantics,
+    #[default]
     SourceChunks,
-}
-
-impl Default for ContextAssemblyStrategy {
-    fn default() -> Self {
-        Self::SourceChunks
-    }
 }
 
 /// A structured graph fact representing a directed relationship triple between two entities.

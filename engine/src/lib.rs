@@ -1,6 +1,8 @@
 extern crate self as engine;
 
+pub mod chunker;
 pub mod client;
+pub mod config;
 pub mod db;
 pub mod generation;
 pub mod graph;

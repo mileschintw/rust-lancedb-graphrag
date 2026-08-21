@@ -1,3 +1,8 @@
+//! Document chunking and token estimation routines.
+//!
+//! Provides deterministic fixed-size and markdown-aware hierarchical chunking,
+//! along with token count estimation using `tiktoken-rs`.
+
 use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 use std::sync::OnceLock;
 use tiktoken_rs::{o200k_base, CoreBPE};

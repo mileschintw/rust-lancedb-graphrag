@@ -62,7 +62,7 @@ const CHUNKS: [FixtureChunk; 3] = [
 
 fn lancedb_path() -> Result<String, String> {
     let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
+    if let Some(arg) = args.next() {
         if arg == "--lancedb-path" {
             return args
                 .next()
@@ -297,7 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Read back entity and edge rows and assert linkage and dense score
     let mock_vector: Vec<f32> = std::iter::once(1.0f32)
-        .chain(std::iter::repeat(0.0f32).take(2047))
+        .chain(std::iter::repeat_n(0.0f32, 2047))
         .collect();
 
     let entity_results = entities

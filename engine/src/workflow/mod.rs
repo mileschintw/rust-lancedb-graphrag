@@ -235,7 +235,7 @@ pub fn run_inline_prompt_generation_remainder<'a>(
                         .send_event_or_cancel(
                             events::node_failed(
                                 name_gen,
-                                node_err.kind.clone(),
+                                node_err.kind,
                                 &node_err.message,
                                 false,
                             ),
@@ -255,7 +255,7 @@ pub fn run_inline_prompt_generation_remainder<'a>(
                 .send_event_or_cancel(
                     events::node_failed(
                         name_gen,
-                        node_err.kind.clone(),
+                        node_err.kind,
                         &node_err.message,
                         false,
                     ),
