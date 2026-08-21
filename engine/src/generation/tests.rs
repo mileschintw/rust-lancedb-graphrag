@@ -1725,3 +1725,39 @@ async fn openrouter_cancellation_before_request_aborts() {
     let err = adapter.generate(req).await.unwrap_err();
     assert_eq!(err.kind, GenerationErrorKind::Cancelled);
 }
+
+#[tokio::test]
+async fn fake_generator_malformed_citation_near_miss() {
+    let generator = FakeGenerator::malformed_citation_near_miss("What is Lancet?");
+    let req = GenerationRequest::new("What is Lancet?", vec![]);
+    let output = generator.generate(req).await.unwrap();
+    assert!(output.answer.contains("(1)"));
+    assert_eq!(output.cited_evidence_ids, vec!["(1)"]);
+    assert_eq!(output.answer_basis, AnswerBasis::Retrieval);
+    assert_eq!(generator.calls(), 1);
+}
+
+#[tokio::test]
+async fn fake_generator_malformed_citation_unresolvable() {
+    let generator = FakeGenerator::malformed_citation_unresolvable();
+    let req = GenerationRequest::new("What is Lancet?", vec![]);
+    let output = generator.generate(req).await.unwrap();
+    assert!(output.answer.contains("[9999]"));
+    assert_eq!(output.cited_evidence_ids, vec!["[9999]"]);
+    assert_eq!(output.answer_basis, AnswerBasis::Retrieval);
+    assert_eq!(generator.calls(), 1);
+}
+
+#[tokio::test]
+async fn fake_generator_stall_can_be_cancelled() {
+    let generator = FakeGenerator::stall();
+    let req = GenerationRequest::new("What is Lancet?", vec![]);
+    let res = tokio::time::timeout(
+        Duration::from_millis(50),
+        generator.generate(req),
+    )
+    .await;
+    assert!(res.is_err(), "FakeGenerator::stall must not complete before timeout");
+    assert_eq!(generator.calls(), 1);
+}
+

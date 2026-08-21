@@ -237,6 +237,18 @@ impl FakeGraphQueryPort {
         }
     }
 
+    pub fn failure_with_retryable(retryable: bool) -> Self {
+        Self {
+            graph_facts: Err(NodeError::new(
+                crate::pb::lancet::v1::NodeErrorKind::GraphFailed,
+                "synthetic graph query failure",
+            )
+            .with_retryable(retryable)),
+            stall: false,
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
     pub fn stall() -> Self {
         Self {
             graph_facts: Ok(vec![]),
@@ -407,6 +419,7 @@ impl Bm25RetrievalPort for FakeBm25RetrievalPort {
 pub struct FakeReranker {
     call_count: std::sync::atomic::AtomicUsize,
     should_fail: bool,
+    stall: bool,
 }
 
 #[cfg(test)]
@@ -415,6 +428,7 @@ impl FakeReranker {
         Self {
             call_count: std::sync::atomic::AtomicUsize::new(0),
             should_fail: false,
+            stall: false,
         }
     }
 
@@ -422,6 +436,15 @@ impl FakeReranker {
         Self {
             call_count: std::sync::atomic::AtomicUsize::new(0),
             should_fail: true,
+            stall: false,
+        }
+    }
+
+    pub fn stall() -> Self {
+        Self {
+            call_count: std::sync::atomic::AtomicUsize::new(0),
+            should_fail: false,
+            stall: true,
         }
     }
 
@@ -439,6 +462,9 @@ impl crate::rerank::Reranker for FakeReranker {
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Box::pin(async move {
+            if self.stall {
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            }
             if self.should_fail {
                 Err(RetrievalError::new(
                     RetrievalErrorKind::Snapshot,
@@ -448,5 +474,49 @@ impl crate::rerank::Reranker for FakeReranker {
                 Ok(candidates)
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rerank::Reranker;
+
+    #[tokio::test]
+    async fn fake_graph_query_port_failure_with_retryable_flag() {
+        let cancel = CancellationToken::new();
+        let port_non_retryable = FakeGraphQueryPort::failure_with_retryable(false);
+        let err_non_retryable = port_non_retryable
+            .query_graph(&[0.1; 128], &cancel)
+            .await
+            .unwrap_err();
+        assert!(!err_non_retryable.retryable);
+        assert_eq!(
+            err_non_retryable.kind,
+            crate::pb::lancet::v1::NodeErrorKind::GraphFailed
+        );
+
+        let port_retryable = FakeGraphQueryPort::failure_with_retryable(true);
+        let err_retryable = port_retryable
+            .query_graph(&[0.1; 128], &cancel)
+            .await
+            .unwrap_err();
+        assert!(err_retryable.retryable);
+        assert_eq!(
+            err_retryable.kind,
+            crate::pb::lancet::v1::NodeErrorKind::GraphFailed
+        );
+    }
+
+    #[tokio::test]
+    async fn fake_reranker_stall_can_be_cancelled() {
+        let reranker = FakeReranker::stall();
+        let res = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            reranker.rerank(vec![]),
+        )
+        .await;
+        assert!(res.is_err(), "FakeReranker::stall must not complete before timeout");
+        assert_eq!(reranker.calls(), 1);
     }
 }

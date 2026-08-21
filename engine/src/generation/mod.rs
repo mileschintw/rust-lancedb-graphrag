@@ -504,6 +504,7 @@ pub trait Generator: Send + Sync {
 pub struct FakeGenerator {
     pub call_count: AtomicUsize,
     pub responses: Mutex<Vec<Result<ModelOutput, GenerationError>>>,
+    pub stall: bool,
 }
 
 #[cfg(test)]
@@ -512,6 +513,7 @@ impl FakeGenerator {
         Self {
             call_count: AtomicUsize::new(0),
             responses: Mutex::new(vec![response]),
+            stall: false,
         }
     }
 
@@ -519,7 +521,38 @@ impl FakeGenerator {
         Self {
             call_count: AtomicUsize::new(0),
             responses: Mutex::new(responses),
+            stall: false,
         }
+    }
+
+    pub fn stall() -> Self {
+        Self {
+            call_count: AtomicUsize::new(0),
+            responses: Mutex::new(vec![]),
+            stall: true,
+        }
+    }
+
+    pub fn malformed_citation_near_miss(query: &str) -> Self {
+        Self::new(Ok(ModelOutput {
+            answer: format!("{query} answer with near miss citation (1)."),
+            cited_evidence_ids: vec!["(1)".into()],
+            answer_basis: AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))
+    }
+
+    pub fn malformed_citation_unresolvable() -> Self {
+        Self::new(Ok(ModelOutput {
+            answer: "Answer with unresolvable marker [9999].".into(),
+            cited_evidence_ids: vec!["[9999]".into()],
+            answer_basis: AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))
     }
 
     pub fn calls(&self) -> usize {
@@ -535,6 +568,9 @@ impl Generator for FakeGenerator {
     ) -> BoxFuture<'a, Result<ModelOutput, GenerationError>> {
         Box::pin(async move {
             self.call_count.fetch_add(1, Ordering::Relaxed);
+            if self.stall {
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            }
             let mut guard = self.responses.lock().unwrap();
             if guard.is_empty() {
                 Err(GenerationError::new(
@@ -552,3 +588,4 @@ impl Generator for FakeGenerator {
 
 #[cfg(test)]
 pub mod tests;
+
