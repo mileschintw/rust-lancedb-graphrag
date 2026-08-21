@@ -145,11 +145,15 @@ impl LancetServiceImpl {
             self.effective_settings.retrieval.graph_weight,
         ));
         runner.add_node(
-            workflow::nodes::GenerateAnswerNode::new(deps.generator.clone()).with_settings(
-                *self.effective_settings.grounding_limits(),
-                self.effective_settings.citation_excerpt_max_chars,
-                self.effective_settings.retrieval.graph_weight,
-            ),
+            workflow::nodes::GenerateAnswerNode::new(deps.generator.clone())
+                .with_settings(
+                    *self.effective_settings.grounding_limits(),
+                    self.effective_settings.citation_excerpt_max_chars,
+                    self.effective_settings.retrieval.graph_weight,
+                )
+                .with_citation_repair_enabled(
+                    self.effective_settings.workflow.citation_repair_enabled,
+                ),
         );
 
         (runner, deps)

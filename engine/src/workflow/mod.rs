@@ -45,6 +45,34 @@ pub fn notice(code: NoticeCode, message: impl Into<String>, severity: NoticeSeve
     }
 }
 
+/// Returns the more conservative (weaker) of two answer bases, using the D-18 ordering
+/// retrieval (strongest) > mixed > model_only (weakest). Reconciliation only ever moves
+/// toward the weaker end of this order, never the stronger one.
+fn weaker_basis(a: AnswerBasis, b: AnswerBasis) -> AnswerBasis {
+    fn rank(basis: AnswerBasis) -> u8 {
+        match basis {
+            AnswerBasis::Retrieval => 2,
+            AnswerBasis::Mixed => 1,
+            AnswerBasis::ModelOnly | AnswerBasis::Unspecified => 0,
+        }
+    }
+    if rank(a) <= rank(b) {
+        a
+    } else {
+        b
+    }
+}
+
+/// Lowercase label for an [`AnswerBasis`] used in reconciliation notice messages.
+fn basis_label(basis: AnswerBasis) -> &'static str {
+    match basis {
+        AnswerBasis::Unspecified => "unspecified",
+        AnswerBasis::Retrieval => "retrieval",
+        AnswerBasis::Mixed => "mixed",
+        AnswerBasis::ModelOnly => "model_only",
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WorkflowContext {
     pub session_id: String,
@@ -134,11 +162,39 @@ impl WorkflowContext {
     pub fn update_from_model_output(&mut self, output: &ModelOutput) {
         self.answer = output.answer.clone();
         self.citations = output.cited_evidence_ids.clone();
-        self.answer_basis = match output.answer_basis {
+
+        // D-18: conservative-wins reconciliation. The model self-reports a basis; the
+        // engine's own observation is deliberately coarse — citations present means "at
+        // least as strong as retrieval" (the engine has no independent way to tell
+        // Retrieval from Mixed; that is the model's own admission), and citations absent
+        // means the answer has no observable grounding left at all. Reconciliation takes
+        // the weaker of the two and only ever weakens a claim: a model that self-reports
+        // model-only while its citations resolve stays model-only.
+        let self_reported = match output.answer_basis {
             crate::generation::AnswerBasis::Retrieval => AnswerBasis::Retrieval,
             crate::generation::AnswerBasis::Mixed => AnswerBasis::Mixed,
             crate::generation::AnswerBasis::ModelOnly => AnswerBasis::ModelOnly,
         };
+        let engine_observed = if output.cited_evidence_ids.is_empty() {
+            AnswerBasis::ModelOnly
+        } else {
+            AnswerBasis::Retrieval
+        };
+        let reconciled = weaker_basis(self_reported, engine_observed);
+        if reconciled != self_reported {
+            self.add_notice(notice(
+                NoticeCode::BasisReconciled,
+                format!(
+                    "model self-reported basis '{}' but the engine observed '{}'; reconciled to the more conservative basis '{}'",
+                    basis_label(self_reported),
+                    basis_label(engine_observed),
+                    basis_label(reconciled)
+                ),
+                NoticeSeverity::Info,
+            ));
+        }
+        self.answer_basis = reconciled;
+
         for n in &output.notices {
             self.add_notice(notice(
                 NoticeCode::ModelNotice,

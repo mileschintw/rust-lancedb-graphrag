@@ -3655,8 +3655,20 @@ async fn query_rag_rejects_unknown_marker_without_response() {
 
     let req = test_query_request("gamma document", "00000000-0000-4000-8000-000000000088");
 
-    let res = execute_query_rag(&service, req).await;
-    assert!(res.is_err());
+    // D-14 (06-11): with citation repair on by default (`EffectiveRagSettings::default()`),
+    // an unresolvable marker no longer fails the run — it is stripped from the answer and
+    // both citation lists, and the response carries a drop notice. This test's old
+    // expectation was `res.is_err()`; the new contract is a successful, degraded response.
+    let resp = execute_query_rag(&service, req)
+        .await
+        .expect("unresolvable citation degrades the answer instead of failing the run");
+    assert!(!resp.answer.contains("[99]"));
+    assert!(resp.citations.is_empty());
+    assert!(resp.structured_citations.is_empty());
+    assert!(resp
+        .notices
+        .iter()
+        .any(|n| n.code == "CITATION_DROPPED" && n.message.contains("[99]")));
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -6398,7 +6410,12 @@ fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.5),
     }];
 
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 350, 16)
+    // D-17 (06-11) appended a precedence sentence to the system policy, which raised the
+    // fixed token overhead every packed prompt now reserves; the budget below is widened
+    // by that same delta so this tie-breaking test still exercises the boundary it was
+    // designed to (2 evidence blocks admitted, the graph fact excluded), not just observing
+    // a coincidentally tighter budget.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 380, 16)
         .expect("pack succeeds");
 
     assert_eq!(packed.evidence.len(), 2);
