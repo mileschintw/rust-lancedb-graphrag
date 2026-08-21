@@ -92,6 +92,18 @@ impl Node for ExtractGraphContextNode {
                 }
             }
 
+            // Early return for caller-requested graph ablation
+            if ctx.disable_graph_context {
+                ctx.graph_context = String::new();
+                ctx.graph_facts = Vec::new();
+                ctx.add_notice(notice(
+                    NoticeCode::GraphAblation,
+                    "Graph context disabled by caller request",
+                    NoticeSeverity::Info,
+                ));
+                return Ok(());
+            }
+
             // 2. Graph augmentation operation
             let query_embedding = match &ctx.query_embedding {
                 Some(emb) => emb.clone(),

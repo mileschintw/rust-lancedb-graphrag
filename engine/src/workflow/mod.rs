@@ -51,6 +51,10 @@ pub struct WorkflowContext {
     pub trace_id: String,
     pub original_query: String,
     pub filter: Option<DocumentFilter>,
+    /// Whether graph context is disabled for this query run.
+    ///
+    /// Resolved once at admission from the request flag and never re-read from configuration downstream.
+    pub disable_graph_context: bool,
     pub variants: Vec<String>,
     pub query_embedding: Option<Vec<f32>>,
     pub graph_context: String,
@@ -75,6 +79,7 @@ impl WorkflowContext {
             trace_id,
             original_query: request.query.clone(),
             filter: request.filter.clone(),
+            disable_graph_context: request.disable_graph_context.unwrap_or(false),
             variants: Vec::new(),
             query_embedding: None,
             graph_context: String::new(),

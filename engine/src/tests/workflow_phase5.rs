@@ -3822,3 +3822,181 @@ async fn test_workflow_runner_zero_evidence_gate_typed_code() {
         "AssemblePrompt and GenerateAnswer must not start on zero evidence"
     );
 }
+
+#[tokio::test]
+async fn graph_ablation_flag_true_e2e_service() {
+    use crate::db::DatabaseManager;
+    use crate::pb::lancet::v1::lancet_service_server::LancetService;
+    use crate::tests::{configured_service, database_path, FakeEmbedder, FakeGenerator};
+    use tokio_stream::StreamExt;
+
+    let path = database_path("test-graph-ablation-e2e");
+    let db = DatabaseManager::initialize(&path).await.unwrap();
+    let generator: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Answer produced from source chunks [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let service = configured_service(
+        &db,
+        crate::config::EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        generator,
+        Arc::new(crate::rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let session_id = "00000000-0000-4000-8000-000000000088";
+    let mut req = test_query_request("Test ablation query", session_id);
+    req.disable_graph_context = Some(true);
+
+    let stream_res = service.query_rag(tonic::Request::new(req)).await.unwrap();
+    let mut stream = stream_res.into_inner();
+    let mut completed = None;
+    while let Some(res) = stream.next().await {
+        let ev = res.unwrap();
+        if let Some(Event::WorkflowCompleted(ref wc)) = ev.event {
+            completed = Some(wc.clone());
+        }
+    }
+    let wc = completed.expect("WorkflowCompleted event must be received");
+    assert!(
+        wc.success,
+        "Workflow execution should succeed: error_kind={:?}, error_msg={}",
+        wc.error_kind, wc.error_message
+    );
+    let resp = wc.final_response.expect("final_response must be present");
+    assert!(
+        resp.notices
+            .iter()
+            .any(|n| n.code == "GRAPH_ABLATION" && n.typed_code == NoticeCode::GraphAblation as i32),
+        "response notices must contain GRAPH_ABLATION notice"
+    );
+    assert!(
+        !resp.notices.iter().any(|n| n.code == "GRAPH_UNAVAILABLE"
+            || n.typed_code == NoticeCode::GraphUnavailable as i32),
+        "response notices must NOT contain GRAPH_UNAVAILABLE notice"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn graph_ablation_empty_facts_and_context_with_grounded_answer() {
+    let mut req = test_query_request("Ablation context test", "sess-ablation-ctx");
+    req.disable_graph_context = Some(true);
+    let mut ctx = WorkflowContext::new(
+        "sess-ablation-ctx".into(),
+        "trace-ablation-ctx".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![engine::prompt::EvidenceBlock {
+        id: "[1]".into(),
+        chunk_id: "chunk-1".into(),
+        document_id: "doc-1".into(),
+        chunk_index: 0,
+        title: Some("Doc 1".into()),
+        section_path: Some("Sec 1".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "test".into(),
+        text: "Direct source chunk content.".into(),
+        score: 0.95,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let fake_graph = Arc::new(FakeGraphQueryPort::success("entity_a -- rel -- entity_b"));
+    let node = ExtractGraphContextNode::new(None, Some(fake_graph));
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel).await.expect("node succeeds");
+
+    assert!(ctx.graph_context.is_empty(), "graph_context must be empty");
+    assert!(ctx.graph_facts.is_empty(), "graph_facts must be empty");
+    assert!(
+        ctx.notices
+            .iter()
+            .any(|n| n.code == "GRAPH_ABLATION" && n.typed_code == NoticeCode::GraphAblation as i32),
+        "notices must contain GRAPH_ABLATION"
+    );
+    assert!(
+        !ctx.notices.iter().any(|n| n.code == "GRAPH_UNAVAILABLE"),
+        "notices must NOT contain GRAPH_UNAVAILABLE"
+    );
+}
+
+#[tokio::test]
+async fn graph_ablation_absent_flag_defaults_to_graph_enabled() {
+    let req = test_query_request("Absent flag test", "sess-absent-flag");
+    assert_eq!(req.disable_graph_context, None);
+    let mut ctx = WorkflowContext::new("sess-absent-flag".into(), "trace-absent-flag".into(), &req);
+    assert!(!ctx.disable_graph_context);
+
+    let fake_graph = Arc::new(FakeGraphQueryPort::success("entity_a -- rel -- entity_b"));
+    let node = ExtractGraphContextNode::new(None, Some(fake_graph));
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel).await.expect("node succeeds");
+
+    assert!(
+        !ctx.graph_context.is_empty(),
+        "graph_context must be populated"
+    );
+    assert_eq!(ctx.graph_facts.len(), 1, "graph_facts must have 1 fact");
+    assert!(
+        !ctx.notices
+            .iter()
+            .any(|n| n.code == "GRAPH_ABLATION" || n.typed_code == NoticeCode::GraphAblation as i32),
+        "notices must NOT contain GRAPH_ABLATION"
+    );
+}
+
+#[tokio::test]
+async fn graph_ablation_explicit_false_defaults_to_graph_enabled() {
+    let mut req = test_query_request("Explicit false flag test", "sess-false-flag");
+    req.disable_graph_context = Some(false);
+    let mut ctx = WorkflowContext::new("sess-false-flag".into(), "trace-false-flag".into(), &req);
+    assert!(!ctx.disable_graph_context);
+
+    let fake_graph = Arc::new(FakeGraphQueryPort::success("entity_a -- rel -- entity_b"));
+    let node = ExtractGraphContextNode::new(None, Some(fake_graph));
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel).await.expect("node succeeds");
+
+    assert!(
+        !ctx.graph_context.is_empty(),
+        "graph_context must be populated"
+    );
+    assert_eq!(ctx.graph_facts.len(), 1, "graph_facts must have 1 fact");
+    assert!(
+        !ctx.notices
+            .iter()
+            .any(|n| n.code == "GRAPH_ABLATION" || n.typed_code == NoticeCode::GraphAblation as i32),
+        "notices must NOT contain GRAPH_ABLATION"
+    );
+}
+
+#[tokio::test]
+async fn graph_ablation_graph_port_never_called_when_flag_true() {
+    let mut req = test_query_request("Port call count test", "sess-call-count");
+    req.disable_graph_context = Some(true);
+    let mut ctx = WorkflowContext::new("sess-call-count".into(), "trace-call-count".into(), &req);
+
+    let fake_graph = Arc::new(FakeGraphQueryPort::success("entity_a -- rel -- entity_b"));
+    let fake_embedding = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let node = ExtractGraphContextNode::new(Some(fake_embedding.clone()), Some(fake_graph.clone()));
+    let cancel = CancellationToken::new();
+
+    node.run(&mut ctx, &cancel).await.expect("node succeeds");
+
+    assert_eq!(
+        fake_graph.calls(),
+        0,
+        "fake graph port must never be called when ablation flag is true"
+    );
+}

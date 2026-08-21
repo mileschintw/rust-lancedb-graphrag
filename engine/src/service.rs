@@ -756,6 +756,9 @@ impl LancetService for LancetServiceImpl {
             (vec![], vec![])
         };
 
+        // Resolved once at admission; Phase 6 adds no configuration key for this flag.
+        let _disable_graph_context = req.disable_graph_context.unwrap_or(false);
+
         let _query_request = QueryRequest::from_values(
             &req.query,
             doc_ids,
