@@ -543,12 +543,16 @@ async fn workflow_phase5_production_reachability() {
             Some(v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
             _ => None,
         })
-        .expect("Failed workflow must emit WorkflowCompleted");
-    assert!(!fail_terminal.success);
-    assert_eq!(
-        fail_terminal.error_kind,
-        v1::NodeErrorKind::RetrievalFailed as i32
-    );
+        .expect("Degraded workflow must emit WorkflowCompleted");
+    assert!(fail_terminal.success);
+    let resp = fail_terminal
+        .final_response
+        .as_ref()
+        .expect("final response present");
+    assert!(resp
+        .notices
+        .iter()
+        .any(|n| n.code == "RETRIEVAL_DEGRADED_DENSE"));
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -1393,18 +1397,13 @@ async fn workflow_phase5_nodekind_dispatch() {
     );
 
     // Check typed retryability forwarding without extra retrying event (D-15)
-    struct FailingDensePort;
-    impl workflow::ports::DenseRetrievalPort for FailingDensePort {
-        fn retrieve_dense<'a>(
+    struct FailingEmbedder;
+    impl workflow::node::QueryEmbeddingPort for FailingEmbedder {
+        fn embed_variant_zero<'a>(
             &'a self,
-            _query: &'a str,
-            _embedding: &'a [f32],
-            _filter: Option<&'a v1::DocumentFilter>,
+            _variant: &'a str,
             _cancel: &'a CancellationToken,
-        ) -> workflow::node::BoxFuture<
-            'a,
-            Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>,
-        > {
+        ) -> workflow::node::BoxFuture<'a, Result<Vec<f32>, workflow::node::NodeError>> {
             Box::pin(async move {
                 Err(workflow::node::NodeError::new(
                     v1::NodeErrorKind::RetrievalFailed,
@@ -1415,14 +1414,11 @@ async fn workflow_phase5_nodekind_dispatch() {
         }
     }
 
-    let failing_retrieve_node = workflow::nodes::RetrieveHybridNode::new(
-        Some(Arc::new(FailingDensePort)),
-        None,
-        None,
-        Default::default(),
-    );
+    let failing_graph_node =
+        workflow::nodes::ExtractGraphContextNode::new(Some(Arc::new(FailingEmbedder)), None);
+    ctx.query_embedding = None;
     let fail_res = runner
-        .run_node(&failing_retrieve_node, &mut ctx, &cancel, &sink)
+        .run_node(&failing_graph_node, &mut ctx, &cancel, &sink)
         .await;
     assert!(fail_res.is_err());
     let err = fail_res.unwrap_err();
@@ -1435,17 +1431,19 @@ async fn workflow_phase5_nodekind_dispatch() {
         }
     }
 
-    let failed_retrieve = events
+    let failed_extract = events
         .iter()
         .find_map(|e| match &e.event {
-            Some(v1::workflow_event::Event::NodeFailed(nf)) if nf.node_name == "RetrieveHybrid" => {
+            Some(v1::workflow_event::Event::NodeFailed(nf))
+                if nf.node_name == "ExtractGraphContext" =>
+            {
                 Some(nf)
             }
             _ => None,
         })
-        .expect("NodeFailed event for RetrieveHybrid must exist");
+        .expect("NodeFailed event for ExtractGraphContext must exist");
     assert!(
-        failed_retrieve.retryable,
+        failed_extract.retryable,
         "NodeFailed.retryable must be true when forwarded from NodeError"
     );
 }

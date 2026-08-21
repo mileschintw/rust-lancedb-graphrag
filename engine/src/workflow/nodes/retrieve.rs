@@ -69,7 +69,28 @@ impl RetrieveHybridNode {
                 .await
             {
                 Ok(c) => c,
-                Err(err) => return Err(err),
+                Err(err) => {
+                    let msg = if err.message.is_empty() {
+                        err.kind
+                            .as_str_name()
+                            .trim_start_matches("NODE_ERROR_KIND_")
+                            .to_string()
+                    } else {
+                        format!(
+                            "{}: {}",
+                            err.kind
+                                .as_str_name()
+                                .trim_start_matches("NODE_ERROR_KIND_"),
+                            err.message
+                        )
+                    };
+                    ctx.add_notice(notice(
+                        NoticeCode::RetrievalDegradedDense,
+                        msg,
+                        NoticeSeverity::Info,
+                    ));
+                    Vec::new()
+                }
             }
         } else {
             Vec::new()
@@ -82,8 +103,9 @@ impl RetrieveHybridNode {
         ctx.bm25_results.clear();
 
         // 2. Per-variant BM25 and single-variant fusion pass
-        let mut per_variant_fused = Vec::with_capacity(ctx.variants.len());
-        for (variant_index, variant) in ctx.variants.iter().enumerate() {
+        let variants = ctx.variants.clone();
+        let mut per_variant_fused = Vec::with_capacity(variants.len());
+        for (variant_index, variant) in variants.iter().enumerate() {
             if cancel.is_cancelled() {
                 return Err(NodeError::cancelled());
             }
@@ -100,7 +122,28 @@ impl RetrieveHybridNode {
                     .await
                 {
                     Ok(c) => c,
-                    Err(err) => return Err(err),
+                    Err(err) => {
+                        let msg = if err.message.is_empty() {
+                            err.kind
+                                .as_str_name()
+                                .trim_start_matches("NODE_ERROR_KIND_")
+                                .to_string()
+                        } else {
+                            format!(
+                                "{}: {}",
+                                err.kind
+                                    .as_str_name()
+                                    .trim_start_matches("NODE_ERROR_KIND_"),
+                                err.message
+                            )
+                        };
+                        ctx.add_notice(notice(
+                            NoticeCode::RetrievalDegradedBm25,
+                            msg,
+                            NoticeSeverity::Info,
+                        ));
+                        Vec::new()
+                    }
                 }
             } else {
                 Vec::new()

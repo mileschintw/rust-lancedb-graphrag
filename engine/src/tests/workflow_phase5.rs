@@ -4339,3 +4339,648 @@ async fn source_chunk_query_succeeds_when_graph_ablated() {
         "no NodeFailed event must be emitted"
     );
 }
+
+async fn run_retrieval_degraded_proof_pipeline(
+    session_id: &str,
+    dense_port: Option<Arc<dyn engine::workflow::ports::DenseRetrievalPort>>,
+    bm25_port: Option<Arc<dyn engine::workflow::ports::Bm25RetrievalPort>>,
+) -> (
+    Vec<engine::pb::lancet::v1::WorkflowEvent>,
+    engine::pb::lancet::v1::WorkflowCompletedEvent,
+) {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = format!("trace-{}", session_id);
+
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.to_string(),
+    );
+
+    let req = test_query_request("Hybrid retrieval degrade proof", session_id);
+    let ctx = WorkflowContext::new(session_id.to_string(), trace_id, &req);
+
+    let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_graph = Arc::new(FakeGraphQueryPort::success("entity_1 -- rel -- entity_2"));
+    let fake_reranker = Arc::new(FakeReranker::success());
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Grounded answer derived from surviving retrieval evidence [1].".to_string(),
+        cited_evidence_ids: vec!["[1]".to_string()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ExtractGraphContextNode::new(
+        Some(fake_embedder),
+        Some(fake_graph),
+    ));
+    runner.add_node(RetrieveHybridNode::new(
+        dense_port,
+        bm25_port,
+        Some(fake_reranker),
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::new());
+    runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(wf_event) = rx.try_recv() {
+        if let Ok(ev) = wf_event {
+            events.push(ev);
+        }
+    }
+
+    let completed = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event must be emitted");
+
+    (events, completed)
+}
+
+#[tokio::test]
+async fn retrieval_degraded_dense_returns_grounded_answer_from_surviving_lexical() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::failure(NodeError::new(
+        NodeErrorKind::RetrievalFailed,
+        "vector store connection refused",
+    )));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-lex-1",
+        "chk-lex-1",
+        0.9,
+    )]));
+    let (events, wc) = run_retrieval_degraded_proof_pipeline(
+        "sess-dense-fail-1",
+        Some(fake_dense),
+        Some(fake_bm25),
+    )
+    .await;
+
+    assert!(wc.success, "terminal event reports success");
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))),
+        "no node-failure event is emitted"
+    );
+    let resp = wc.final_response.expect("final response must be present");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    assert!(
+        !resp.structured_citations.is_empty(),
+        "structured citations present from surviving lexical path"
+    );
+    assert_eq!(resp.structured_citations[0].chunk_id, "chk-lex-1");
+
+    let dense_notices: Vec<_> = resp
+        .notices
+        .iter()
+        .filter(|n| {
+            n.code == "RETRIEVAL_DEGRADED_DENSE"
+                || n.typed_code == NoticeCode::RetrievalDegradedDense as i32
+        })
+        .collect();
+    assert_eq!(
+        dense_notices.len(),
+        1,
+        "exactly one dense degrade notice emitted"
+    );
+    assert_eq!(
+        dense_notices[0].message,
+        "RETRIEVAL_FAILED: vector store connection refused"
+    );
+}
+
+#[tokio::test]
+async fn retrieval_degraded_dense_timeout_reports_timeout_in_notice() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::failure(NodeError::new(
+        NodeErrorKind::Timeout,
+        "dense query timed out after 2500ms",
+    )));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-lex-1",
+        "chk-lex-1",
+        0.9,
+    )]));
+    let (events, wc) = run_retrieval_degraded_proof_pipeline(
+        "sess-dense-timeout-1",
+        Some(fake_dense),
+        Some(fake_bm25),
+    )
+    .await;
+
+    assert!(wc.success, "terminal event reports success on timeout");
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))),
+        "no node-failure event on timeout degrade"
+    );
+    let resp = wc.final_response.expect("final response must be present");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    let dense_notices: Vec<_> = resp
+        .notices
+        .iter()
+        .filter(|n| {
+            n.code == "RETRIEVAL_DEGRADED_DENSE"
+                || n.typed_code == NoticeCode::RetrievalDegradedDense as i32
+        })
+        .collect();
+    assert_eq!(dense_notices.len(), 1);
+    assert_eq!(
+        dense_notices[0].message,
+        "TIMEOUT: dense query timed out after 2500ms"
+    );
+}
+
+#[tokio::test]
+async fn retrieval_degraded_dense_success_emits_no_degrade_notice() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-d-1", "chk-d-1", 0.95,
+    )]));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-lex-1",
+        "chk-lex-1",
+        0.85,
+    )]));
+    let (events, wc) = run_retrieval_degraded_proof_pipeline(
+        "sess-dense-success-1",
+        Some(fake_dense),
+        Some(fake_bm25),
+    )
+    .await;
+
+    assert!(wc.success);
+    assert!(events
+        .iter()
+        .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))));
+    let resp = wc.final_response.expect("final response must be present");
+    assert!(resp.notices.iter().all(|n| {
+        n.code != "RETRIEVAL_DEGRADED_DENSE"
+            && n.typed_code != NoticeCode::RetrievalDegradedDense as i32
+    }));
+}
+
+#[tokio::test]
+async fn retrieval_degraded_dense_unconfigured_port_behavior_unchanged() {
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-lex-1",
+        "chk-lex-1",
+        0.85,
+    )]));
+    let (events, wc) =
+        run_retrieval_degraded_proof_pipeline("sess-dense-none-1", None, Some(fake_bm25)).await;
+
+    assert!(wc.success);
+    assert!(events
+        .iter()
+        .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))));
+    let resp = wc.final_response.expect("final response must be present");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    assert!(resp.notices.iter().all(|n| {
+        n.code != "RETRIEVAL_DEGRADED_DENSE"
+            && n.typed_code != NoticeCode::RetrievalDegradedDense as i32
+    }));
+}
+
+#[tokio::test]
+async fn retrieval_degraded_dense_node_execution_direct() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Dense degrade node test", "sess-dense-direct");
+    let mut ctx = WorkflowContext::new(
+        "sess-dense-direct".to_string(),
+        "trace-dense-direct".to_string(),
+        &req,
+    );
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::failure(NodeError::new(
+        NodeErrorKind::RetrievalFailed,
+        "vector index corrupted",
+    )));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-1", "chk-1", 0.88,
+    )]));
+    let node = RetrieveHybridNode::new(
+        Some(fake_dense),
+        Some(fake_bm25),
+        None,
+        RetrievalSettings::default(),
+    );
+    let res = node.execute(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "node execute returns Ok(()) on dense degrade");
+    assert!(
+        ctx.vector_results.is_empty(),
+        "vector results empty on dense failure"
+    );
+    assert_eq!(ctx.bm25_results, vec!["chk-1"]);
+    assert_eq!(ctx.final_candidates, vec!["chk-1"]);
+    assert_eq!(ctx.notices.len(), 1);
+    assert_eq!(ctx.notices[0].code, "RETRIEVAL_DEGRADED_DENSE");
+    assert_eq!(
+        ctx.notices[0].message,
+        "RETRIEVAL_FAILED: vector index corrupted"
+    );
+}
+
+#[tokio::test]
+async fn retrieval_degraded_dense_empty_message_formats_failure_kind() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Dense degrade empty message", "sess-dense-empty-msg");
+    let mut ctx = WorkflowContext::new(
+        "sess-dense-empty-msg".to_string(),
+        "trace-dense-empty-msg".to_string(),
+        &req,
+    );
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::failure(NodeError::new(
+        NodeErrorKind::RetrievalFailed,
+        "",
+    )));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-1", "chk-1", 0.88,
+    )]));
+    let node = RetrieveHybridNode::new(
+        Some(fake_dense),
+        Some(fake_bm25),
+        None,
+        RetrievalSettings::default(),
+    );
+    let res = node.execute(&mut ctx, &cancel).await;
+    assert!(res.is_ok());
+    assert_eq!(ctx.notices.len(), 1);
+    assert_eq!(ctx.notices[0].message, "RETRIEVAL_FAILED");
+}
+
+async fn run_retrieval_degraded_multivariant_pipeline(
+    session_id: &str,
+    variants: Vec<String>,
+    dense_port: Option<Arc<dyn engine::workflow::ports::DenseRetrievalPort>>,
+    bm25_port: Option<Arc<dyn engine::workflow::ports::Bm25RetrievalPort>>,
+) -> (
+    Vec<engine::pb::lancet::v1::WorkflowEvent>,
+    engine::pb::lancet::v1::WorkflowCompletedEvent,
+) {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = format!("trace-{}", session_id);
+
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.to_string(),
+    );
+
+    let query = variants
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or("multi-variant query");
+    let req = test_query_request(query, session_id);
+    let mut ctx = WorkflowContext::new(session_id.to_string(), trace_id, &req);
+    ctx.variants = variants;
+
+    let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_graph = Arc::new(FakeGraphQueryPort::success("entity_1 -- rel -- entity_2"));
+    let fake_reranker = Arc::new(FakeReranker::success());
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Grounded answer derived from surviving retrieval evidence [1].".to_string(),
+        cited_evidence_ids: vec!["[1]".to_string()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ExtractGraphContextNode::new(
+        Some(fake_embedder),
+        Some(fake_graph),
+    ));
+    runner.add_node(RetrieveHybridNode::new(
+        dense_port,
+        bm25_port,
+        Some(fake_reranker),
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::new());
+    runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(wf_event) = rx.try_recv() {
+        if let Ok(ev) = wf_event {
+            events.push(ev);
+        }
+    }
+
+    let completed = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event must be emitted");
+
+    (events, completed)
+}
+
+#[tokio::test]
+async fn retrieval_degraded_bm25_all_variants_fail_returns_grounded_answer_from_dense() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-dense-1",
+        "chk-dense-1",
+        0.95,
+    )]));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::failure(NodeError::new(
+        NodeErrorKind::RetrievalFailed,
+        "bm25 index unavailable",
+    )));
+    let (events, wc) = run_retrieval_degraded_proof_pipeline(
+        "sess-bm25-fail-all",
+        Some(fake_dense),
+        Some(fake_bm25),
+    )
+    .await;
+
+    assert!(wc.success, "terminal event reports success");
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))),
+        "no node-failure event is emitted"
+    );
+    let resp = wc.final_response.expect("final response present");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    assert!(
+        !resp.structured_citations.is_empty(),
+        "structured citations present from surviving dense path"
+    );
+    assert_eq!(resp.structured_citations[0].chunk_id, "chk-dense-1");
+
+    let bm25_notices: Vec<_> = resp
+        .notices
+        .iter()
+        .filter(|n| {
+            n.code == "RETRIEVAL_DEGRADED_BM25"
+                || n.typed_code == NoticeCode::RetrievalDegradedBm25 as i32
+        })
+        .collect();
+    assert_eq!(
+        bm25_notices.len(),
+        1,
+        "exactly one BM25 degrade notice emitted"
+    );
+    assert_eq!(
+        bm25_notices[0].message,
+        "RETRIEVAL_FAILED: bm25 index unavailable"
+    );
+}
+
+#[tokio::test]
+async fn retrieval_degraded_bm25_per_variant_preserves_earlier_succeeded_variants() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![]));
+    let map = vec![
+        (
+            "var-0".to_string(),
+            Ok(vec![make_candidate("doc-v0", "chk-v0", 0.9)]),
+        ),
+        (
+            "var-1".to_string(),
+            Err(NodeError::new(
+                NodeErrorKind::RetrievalFailed,
+                "var-1 failed",
+            )),
+        ),
+    ];
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::with_map(map));
+    let (events, wc) = run_retrieval_degraded_multivariant_pipeline(
+        "sess-bm25-per-var",
+        vec!["var-0".to_string(), "var-1".to_string()],
+        Some(fake_dense),
+        Some(fake_bm25),
+    )
+    .await;
+
+    assert!(wc.success);
+    assert!(events
+        .iter()
+        .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))));
+    let resp = wc.final_response.expect("final response present");
+    assert_eq!(
+        resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    assert!(
+        !resp.structured_citations.is_empty(),
+        "earlier variant candidate chk-v0 preserved in final answer evidence"
+    );
+    assert_eq!(resp.structured_citations[0].chunk_id, "chk-v0");
+
+    let bm25_notices: Vec<_> = resp
+        .notices
+        .iter()
+        .filter(|n| {
+            n.code == "RETRIEVAL_DEGRADED_BM25"
+                || n.typed_code == NoticeCode::RetrievalDegradedBm25 as i32
+        })
+        .collect();
+    assert_eq!(bm25_notices.len(), 1);
+    assert_eq!(bm25_notices[0].message, "RETRIEVAL_FAILED: var-1 failed");
+}
+
+#[tokio::test]
+async fn retrieval_degraded_bm25_repeated_same_kind_collapses_to_single_notice() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-d", "chk-d", 0.9,
+    )]));
+    let map = vec![
+        (
+            "var-0".to_string(),
+            Err(NodeError::new(NodeErrorKind::RetrievalFailed, "same error")),
+        ),
+        (
+            "var-1".to_string(),
+            Err(NodeError::new(NodeErrorKind::RetrievalFailed, "same error")),
+        ),
+        (
+            "var-2".to_string(),
+            Err(NodeError::new(NodeErrorKind::RetrievalFailed, "same error")),
+        ),
+    ];
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::with_map(map));
+    let (events, wc) = run_retrieval_degraded_multivariant_pipeline(
+        "sess-bm25-same-err",
+        vec![
+            "var-0".to_string(),
+            "var-1".to_string(),
+            "var-2".to_string(),
+        ],
+        Some(fake_dense),
+        Some(fake_bm25),
+    )
+    .await;
+
+    assert!(wc.success);
+    assert!(events
+        .iter()
+        .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))));
+    let resp = wc.final_response.expect("final response present");
+    let bm25_notices: Vec<_> = resp
+        .notices
+        .iter()
+        .filter(|n| {
+            n.code == "RETRIEVAL_DEGRADED_BM25"
+                || n.typed_code == NoticeCode::RetrievalDegradedBm25 as i32
+        })
+        .collect();
+    assert_eq!(
+        bm25_notices.len(),
+        1,
+        "repeated same-kind failures collapse to exactly one notice"
+    );
+    assert_eq!(bm25_notices[0].message, "RETRIEVAL_FAILED: same error");
+}
+
+#[tokio::test]
+async fn retrieval_degraded_bm25_different_failure_kinds_both_survive() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-d", "chk-d", 0.9,
+    )]));
+    let map = vec![
+        (
+            "var-0".to_string(),
+            Err(NodeError::new(
+                NodeErrorKind::RetrievalFailed,
+                "disk failure",
+            )),
+        ),
+        (
+            "var-1".to_string(),
+            Err(NodeError::new(
+                NodeErrorKind::Timeout,
+                "timeout after 1000ms",
+            )),
+        ),
+    ];
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::with_map(map));
+    let (events, wc) = run_retrieval_degraded_multivariant_pipeline(
+        "sess-bm25-diff-err",
+        vec!["var-0".to_string(), "var-1".to_string()],
+        Some(fake_dense),
+        Some(fake_bm25),
+    )
+    .await;
+
+    assert!(wc.success);
+    assert!(events
+        .iter()
+        .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))));
+    let resp = wc.final_response.expect("final response present");
+    let bm25_notices: Vec<_> = resp
+        .notices
+        .iter()
+        .filter(|n| {
+            n.code == "RETRIEVAL_DEGRADED_BM25"
+                || n.typed_code == NoticeCode::RetrievalDegradedBm25 as i32
+        })
+        .collect();
+    assert_eq!(
+        bm25_notices.len(),
+        2,
+        "different error kinds/messages both survive deduplication"
+    );
+    assert_eq!(bm25_notices[0].message, "RETRIEVAL_FAILED: disk failure");
+    assert_eq!(bm25_notices[1].message, "TIMEOUT: timeout after 1000ms");
+}
+
+#[tokio::test]
+async fn retrieval_degraded_both_paths_fail_produces_three_notices_in_ordered_sequence() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::failure(NodeError::new(
+        NodeErrorKind::RetrievalFailed,
+        "dense connection reset",
+    )));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::failure(NodeError::new(
+        NodeErrorKind::RetrievalFailed,
+        "bm25 segment missing",
+    )));
+    let (events, wc) =
+        run_retrieval_degraded_proof_pipeline("sess-both-fail", Some(fake_dense), Some(fake_bm25))
+            .await;
+
+    assert!(
+        wc.success,
+        "workflow completes successfully even when both retrieval paths fail"
+    );
+    assert!(events
+        .iter()
+        .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))));
+    let resp = wc.final_response.expect("final response present");
+    let notice_codes: Vec<String> = resp.notices.iter().map(|n| n.code.clone()).collect();
+    assert_eq!(
+        notice_codes,
+        vec![
+            "RETRIEVAL_DEGRADED_DENSE",
+            "RETRIEVAL_DEGRADED_BM25",
+            "NO_EVIDENCE"
+        ],
+        "exact ordered 3-notice sequence for both paths failed"
+    );
+    let typed_codes: Vec<i32> = resp.notices.iter().map(|n| n.typed_code).collect();
+    assert_eq!(
+        typed_codes,
+        vec![
+            NoticeCode::RetrievalDegradedDense as i32,
+            NoticeCode::RetrievalDegradedBm25 as i32,
+            NoticeCode::NoEvidence as i32
+        ]
+    );
+}
+
+#[tokio::test]
+async fn retrieval_degraded_both_paths_succeed_emits_no_degrade_notice() {
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-1", "chk-1", 0.95,
+    )]));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-1", "chk-2", 0.85,
+    )]));
+    let (events, wc) = run_retrieval_degraded_proof_pipeline(
+        "sess-both-success",
+        Some(fake_dense),
+        Some(fake_bm25),
+    )
+    .await;
+
+    assert!(wc.success);
+    assert!(events
+        .iter()
+        .all(|e| !matches!(&e.event, Some(Event::NodeFailed(_)))));
+    let resp = wc.final_response.expect("final response present");
+    assert!(resp.notices.iter().all(|n| {
+        n.code != "RETRIEVAL_DEGRADED_DENSE"
+            && n.code != "RETRIEVAL_DEGRADED_BM25"
+            && n.code != "NO_EVIDENCE"
+    }));
+}

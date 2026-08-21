@@ -4250,12 +4250,15 @@ async fn query_rag_fail_closed_dense_snapshot() {
 
     let req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
 
-    let status = execute_query_rag(&service, req)
+    let resp = execute_query_rag(&service, req)
         .await
-        .expect_err("dense snapshot error fails closed");
-    assert_eq!(status.code(), tonic::Code::Unavailable);
-    assert!(status.metadata().get("x-lancet-error-kind").is_some());
+        .expect("dense snapshot error degrades to notice rather than failing closed");
     assert_eq!(generator.calls(), 0);
+    assert!(resp
+        .notices
+        .iter()
+        .any(|n| n.code == "RETRIEVAL_DEGRADED_DENSE"));
+    assert!(resp.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
 
     let _ = std::fs::remove_dir_all(path);
 }
