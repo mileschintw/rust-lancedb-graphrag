@@ -95,7 +95,11 @@
   "review": {
     "default_reviewers": [
       "agy",
-      "codex"
-    ]
+      "claude"
+    ],
+    "models": {
+      "agy": "gemini-3.7-flash-high",
+      "claude": "opus"
+    }
   }
 }
