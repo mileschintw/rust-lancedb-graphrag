@@ -588,4 +588,3 @@ impl Generator for FakeGenerator {
 
 #[cfg(test)]
 pub mod tests;
-

@@ -12,7 +12,7 @@ use super::{
     node::{Node, NodeError, NodeKind},
     WorkflowContext, WorkflowDependencies,
 };
-use crate::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, WorkflowEvent};
+use crate::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, NoticeCode, WorkflowEvent};
 
 const MAX_PENDING_CHECKPOINTS: usize = 32;
 
@@ -417,7 +417,10 @@ impl WorkflowRunner {
 
             match kind {
                 NodeKind::AssemblePrompt | NodeKind::GenerateAnswer => {
-                    if ctx.notices.iter().any(|n| n.code == "NO_EVIDENCE")
+                    if ctx
+                        .notices
+                        .iter()
+                        .any(|n| n.typed_code == NoticeCode::NoEvidence as i32)
                         || (ctx.final_candidates.is_empty() && ctx.evidence_blocks.is_empty())
                     {
                         break;
@@ -473,7 +476,10 @@ impl WorkflowRunner {
             }
 
             if overall_err.is_none() {
-                let is_zero_evidence = ctx.notices.iter().any(|n| n.code == "NO_EVIDENCE");
+                let is_zero_evidence = ctx
+                    .notices
+                    .iter()
+                    .any(|n| n.typed_code == NoticeCode::NoEvidence as i32);
 
                 if !is_zero_evidence {
                     if let Err(err) = remainder_bridge(&mut ctx, deps, &sink, &cancel).await {

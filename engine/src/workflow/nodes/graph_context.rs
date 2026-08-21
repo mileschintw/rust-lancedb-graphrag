@@ -5,10 +5,11 @@ use tokio_util::sync::CancellationToken;
 
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort},
+    notice,
     ports::GraphQueryPort,
     WorkflowContext,
 };
-use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
+use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
 
 pub struct ExtractGraphContextNode {
     embedding_port: Option<Arc<dyn QueryEmbeddingPort>>,
@@ -133,7 +134,7 @@ impl Node for ExtractGraphContextNode {
                         ctx.graph_facts = Vec::new();
                         let (code, msg) = if err.kind == NodeErrorKind::Timeout {
                             (
-                                "GRAPH_TIMEOUT",
+                                NoticeCode::GraphTimeout,
                                 if err.message.is_empty() {
                                     "GRAPH_TIMEOUT".to_string()
                                 } else {
@@ -141,13 +142,12 @@ impl Node for ExtractGraphContextNode {
                                 },
                             )
                         } else {
-                            ("GRAPH_DEGRADED", format!("graph_degrade: {}", err.message))
+                            (
+                                NoticeCode::GraphDegraded,
+                                format!("graph_degrade: {}", err.message),
+                            )
                         };
-                        ctx.add_notice(Notice {
-                            code: code.into(),
-                            message: msg,
-                            severity: NoticeSeverity::Info as i32,
-                        });
+                        ctx.add_notice(notice(code, msg, NoticeSeverity::Info));
                         return Ok(());
                     }
                 }

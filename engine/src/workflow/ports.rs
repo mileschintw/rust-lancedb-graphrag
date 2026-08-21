@@ -516,7 +516,10 @@ mod tests {
             reranker.rerank(vec![]),
         )
         .await;
-        assert!(res.is_err(), "FakeReranker::stall must not complete before timeout");
+        assert!(
+            res.is_err(),
+            "FakeReranker::stall must not complete before timeout"
+        );
         assert_eq!(reranker.calls(), 1);
     }
 }

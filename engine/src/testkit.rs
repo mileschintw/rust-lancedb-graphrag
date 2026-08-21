@@ -4,7 +4,8 @@
 //! sets are expected to grow additively. Its purpose is to keep an additive
 //! contract change from producing mechanical churn in the test tree.
 
-use crate::pb::lancet::v1::{Notice, NoticeSeverity, QueryRagRequest};
+use crate::pb::lancet::v1::{Notice, NoticeCode, NoticeSeverity, QueryRagRequest};
+use crate::workflow::notice;
 
 pub fn test_query_request(query: &str, session_id: &str) -> QueryRagRequest {
     QueryRagRequest {
@@ -14,11 +15,6 @@ pub fn test_query_request(query: &str, session_id: &str) -> QueryRagRequest {
     }
 }
 
-pub fn test_notice(code: &str, message: &str, severity: NoticeSeverity) -> Notice {
-    Notice {
-        code: code.to_string(),
-        message: message.to_string(),
-        severity: severity as i32,
-        ..Default::default()
-    }
+pub fn test_notice(code: NoticeCode, message: &str, severity: NoticeSeverity) -> Notice {
+    notice(code, message, severity)
 }

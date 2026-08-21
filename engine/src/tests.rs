@@ -3567,10 +3567,7 @@ async fn query_rag_citation_identity_and_notices() {
         database: database.clone(),
     };
 
-    let req = test_query_request(
-        "document content",
-        "00000000-0000-4000-8000-000000000099",
-    );
+    let req = test_query_request("document content", "00000000-0000-4000-8000-000000000099");
 
     let response = execute_query_rag(&service, req).await.unwrap();
 
@@ -3588,13 +3585,13 @@ async fn query_rag_citation_identity_and_notices() {
     assert!(sc.is_truncated);
 
     assert_eq!(response.notices.len(), 2);
-    assert_eq!(response.notices[0].code, "NOTICE");
+    assert_eq!(response.notices[0].code, "MODEL_NOTICE");
     assert_eq!(response.notices[0].message, "Notice msg A");
     assert_eq!(
         response.notices[0].severity,
         lancet::v1::NoticeSeverity::Info as i32
     );
-    assert_eq!(response.notices[1].code, "WARNING");
+    assert_eq!(response.notices[1].code, "MODEL_WARNING");
     assert_eq!(response.notices[1].message, "Warning msg B");
     assert_eq!(
         response.notices[1].severity,
@@ -3655,10 +3652,7 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         database: database.clone(),
     };
 
-    let req = test_query_request(
-        "gamma document",
-        "00000000-0000-4000-8000-000000000088",
-    );
+    let req = test_query_request("gamma document", "00000000-0000-4000-8000-000000000088");
 
     let res = execute_query_rag(&service, req).await;
     assert!(res.is_err());
@@ -3854,10 +3848,7 @@ async fn query_rag_invokes_recording_reranker_once() {
 
     execute_query_rag(
         &service,
-        test_query_request(
-            "reranker evidence",
-            "00000000-0000-4000-8000-000000000201",
-        ),
+        test_query_request("reranker evidence", "00000000-0000-4000-8000-000000000201"),
     )
     .await
     .unwrap();
@@ -3886,10 +3877,7 @@ async fn query_rag_grounding_uses_reranked_identity() {
 
     let response = execute_query_rag(
         &service,
-        test_query_request(
-            "reranker evidence",
-            "00000000-0000-4000-8000-000000000202",
-        ),
+        test_query_request("reranker evidence", "00000000-0000-4000-8000-000000000202"),
     )
     .await
     .unwrap();
@@ -3954,10 +3942,7 @@ async fn query_rag_noop_reranker_preserves_fused_order() {
 
     execute_query_rag(
         &service,
-        test_query_request(
-            "reranker evidence",
-            "00000000-0000-4000-8000-000000000203",
-        ),
+        test_query_request("reranker evidence", "00000000-0000-4000-8000-000000000203"),
     )
     .await
     .unwrap();
@@ -3992,10 +3977,7 @@ async fn query_rag_reranker_failure_skips_generation() {
 
     let result = execute_query_rag(
         &service,
-        test_query_request(
-            "reranker evidence",
-            "00000000-0000-4000-8000-000000000204",
-        ),
+        test_query_request("reranker evidence", "00000000-0000-4000-8000-000000000204"),
     )
     .await;
 
@@ -6995,10 +6977,7 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
 
     let response = execute_query_rag(
         &service,
-        test_query_request(
-            "Alice knows Bob",
-            &Uuid::new_v4().to_string(),
-        ),
+        test_query_request("Alice knows Bob", &Uuid::new_v4().to_string()),
     )
     .await
     .expect("query_rag returns Ok even with graph-only context and no chunk evidence");
@@ -7077,10 +7056,7 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
 
     let response = execute_query_rag(
         &service,
-        test_query_request(
-            "entities table is corrupted",
-            &Uuid::new_v4().to_string(),
-        ),
+        test_query_request("entities table is corrupted", &Uuid::new_v4().to_string()),
     )
     .await
     .expect(

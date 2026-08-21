@@ -369,5 +369,6 @@ pub fn workflow_completed(
         error_message: error_message.into(),
         final_response,
         notices,
+        metadata: None,
     })
 }

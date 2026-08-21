@@ -1752,12 +1752,10 @@ async fn fake_generator_malformed_citation_unresolvable() {
 async fn fake_generator_stall_can_be_cancelled() {
     let generator = FakeGenerator::stall();
     let req = GenerationRequest::new("What is Lancet?", vec![]);
-    let res = tokio::time::timeout(
-        Duration::from_millis(50),
-        generator.generate(req),
-    )
-    .await;
-    assert!(res.is_err(), "FakeGenerator::stall must not complete before timeout");
+    let res = tokio::time::timeout(Duration::from_millis(50), generator.generate(req)).await;
+    assert!(
+        res.is_err(),
+        "FakeGenerator::stall must not complete before timeout"
+    );
     assert_eq!(generator.calls(), 1);
 }
-

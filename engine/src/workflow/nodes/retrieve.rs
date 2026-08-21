@@ -3,10 +3,11 @@ use tokio_util::sync::CancellationToken;
 
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind},
+    notice,
     ports::{Bm25RetrievalPort, DenseRetrievalPort},
     WorkflowContext,
 };
-use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
+use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
 use crate::rerank::Reranker;
 use crate::retrieval::{fuse_candidates, fuse_cross_variant_candidates, RetrievalSettings};
 
@@ -184,11 +185,11 @@ impl RetrieveHybridNode {
 
         // 5. Zero evidence check
         if ctx.final_candidates.is_empty() {
-            ctx.add_notice(Notice {
-                code: "NO_EVIDENCE".into(),
-                message: "No completed corpus evidence matched the requested filters.".into(),
-                severity: NoticeSeverity::Info as i32,
-            });
+            ctx.add_notice(notice(
+                NoticeCode::NoEvidence,
+                "No completed corpus evidence matched the requested filters.",
+                NoticeSeverity::Info,
+            ));
         }
 
         Ok(())

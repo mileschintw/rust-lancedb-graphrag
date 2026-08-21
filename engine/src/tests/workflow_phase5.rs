@@ -15,7 +15,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use engine::generation::{AnswerBasis, FakeGenerator, Generator, ModelOutput};
-use engine::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, NoticeSeverity};
+use engine::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, NoticeCode, NoticeSeverity};
 use engine::retrieval::{Candidate, RetrievalSettings};
 use engine::testkit::{test_notice, test_query_request};
 use engine::workflow::{
@@ -1738,7 +1738,10 @@ async fn reranker_failure_maps_to_retrieval_failed() {
         "test-session".into(),
     );
 
-    let req = test_query_request("reranker failure test", "00000000-0000-4000-8000-000000000001");
+    let req = test_query_request(
+        "reranker failure test",
+        "00000000-0000-4000-8000-000000000001",
+    );
     let mut ctx =
         crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
@@ -2884,7 +2887,7 @@ async fn workflow_phase5_graph_notice_merge() {
 
     // 1. Pre-existing notice (e.g. from retrieval or pre-step)
     let initial_notice = test_notice(
-        "RETRIEVAL_INFO",
+        NoticeCode::RetrievalDegradedDense,
         "dense retrieval returned 5 candidates",
         NoticeSeverity::Info,
     );
@@ -2895,14 +2898,14 @@ async fn workflow_phase5_graph_notice_merge() {
     ctx.merge_notices(vec![
         initial_notice.clone(), // duplicate: should not be added again
         test_notice(
-            "EARLY_WARNING",
+            NoticeCode::ModelWarning,
             "low confidence variant",
             NoticeSeverity::Warning,
         ),
     ]);
     assert_eq!(ctx.notices.len(), 2);
-    assert_eq!(ctx.notices[0].code, "RETRIEVAL_INFO");
-    assert_eq!(ctx.notices[1].code, "EARLY_WARNING");
+    assert_eq!(ctx.notices[0].code, "RETRIEVAL_DEGRADED_DENSE");
+    assert_eq!(ctx.notices[1].code, "MODEL_WARNING");
 
     // 3. Graph node with error outcome -> GRAPH_DEGRADED notice appended
     let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
@@ -2938,16 +2941,16 @@ async fn workflow_phase5_graph_notice_merge() {
     assert_eq!(ctx.notices[3].code, "GRAPH_TIMEOUT");
 
     // 5. Subsequent terminal failure preserves all accumulated notices in order
-    assert_eq!(ctx.notices[0].code, "RETRIEVAL_INFO");
-    assert_eq!(ctx.notices[1].code, "EARLY_WARNING");
+    assert_eq!(ctx.notices[0].code, "RETRIEVAL_DEGRADED_DENSE");
+    assert_eq!(ctx.notices[1].code, "MODEL_WARNING");
     assert_eq!(ctx.notices[2].code, "GRAPH_DEGRADED");
     assert_eq!(ctx.notices[3].code, "GRAPH_TIMEOUT");
 
     // Response conversion also preserves notice history
     let resp = ctx.to_query_rag_response();
     assert_eq!(resp.notices.len(), 4);
-    assert_eq!(resp.notices[0].code, "RETRIEVAL_INFO");
-    assert_eq!(resp.notices[1].code, "EARLY_WARNING");
+    assert_eq!(resp.notices[0].code, "RETRIEVAL_DEGRADED_DENSE");
+    assert_eq!(resp.notices[1].code, "MODEL_WARNING");
     assert_eq!(resp.notices[2].code, "GRAPH_DEGRADED");
     assert_eq!(resp.notices[3].code, "GRAPH_TIMEOUT");
 }
@@ -3014,17 +3017,17 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
     }];
     ctx.merge_notices(vec![
         test_notice(
-            "RETRIEVAL_INFO",
+            NoticeCode::RetrievalDegradedDense,
             "retrieval completed",
             NoticeSeverity::Info,
         ),
         test_notice(
-            "GRAPH_DEGRADED",
+            NoticeCode::GraphDegraded,
             "graph degraded after retrieval",
             NoticeSeverity::Info,
         ),
         test_notice(
-            "GRAPH_TIMEOUT",
+            NoticeCode::GraphTimeout,
             "graph timeout was observed",
             NoticeSeverity::Info,
         ),
@@ -3140,7 +3143,11 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
             .iter()
             .map(|notice| notice["code"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        vec!["RETRIEVAL_INFO", "GRAPH_DEGRADED", "GRAPH_TIMEOUT"]
+        vec![
+            "RETRIEVAL_DEGRADED_DENSE",
+            "GRAPH_DEGRADED",
+            "GRAPH_TIMEOUT"
+        ]
     );
     assert_eq!(payload["snapshot"]["index_generation"], "generation-7");
     assert_eq!(payload["snapshot"]["variant_count"], 2);
@@ -3189,17 +3196,17 @@ async fn workflow_phase5_terminal_idempotence() {
     );
     ctx.merge_notices(vec![
         test_notice(
-            "RETRIEVAL_INFO",
+            NoticeCode::RetrievalDegradedDense,
             "retrieval notice before graph degradation",
             NoticeSeverity::Info,
         ),
         test_notice(
-            "GRAPH_DEGRADED",
+            NoticeCode::GraphDegraded,
             "graph degraded before terminal failure",
             NoticeSeverity::Info,
         ),
         test_notice(
-            "GRAPH_TIMEOUT",
+            NoticeCode::GraphTimeout,
             "graph timeout before terminal failure",
             NoticeSeverity::Info,
         ),
@@ -3264,7 +3271,11 @@ async fn workflow_phase5_terminal_idempotence() {
             .iter()
             .map(|notice| notice.code.as_str())
             .collect::<Vec<_>>(),
-        vec!["RETRIEVAL_INFO", "GRAPH_DEGRADED", "GRAPH_TIMEOUT"]
+        vec![
+            "RETRIEVAL_DEGRADED_DENSE",
+            "GRAPH_DEGRADED",
+            "GRAPH_TIMEOUT"
+        ]
     );
     assert!(
         events.iter().all(|event| !matches!(
@@ -3293,12 +3304,12 @@ async fn workflow_phase5_failure_terminal_notices_tracer() {
     let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
     ctx.merge_notices(vec![
         test_notice(
-            "GRAPH_TIMEOUT",
+            NoticeCode::GraphTimeout,
             "Graph query timed out",
             NoticeSeverity::Warning,
         ),
         test_notice(
-            "GRAPH_DEGRADED",
+            NoticeCode::GraphDegraded,
             "Graph context degraded",
             NoticeSeverity::Info,
         ),
@@ -3418,12 +3429,12 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
         let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
         ctx.merge_notices(vec![
             test_notice(
-                "GRAPH_DEGRADED",
+                NoticeCode::GraphDegraded,
                 "graph degraded early",
                 NoticeSeverity::Info,
             ),
             test_notice(
-                "GRAPH_TIMEOUT",
+                NoticeCode::GraphTimeout,
                 "graph query timed out later",
                 NoticeSeverity::Warning,
             ),
@@ -3558,7 +3569,7 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
         let req = test_query_request("success preserves notices query", &session_id);
         let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
         ctx.merge_notices(vec![test_notice(
-            "GRAPH_DEGRADED",
+            NoticeCode::GraphDegraded,
             "graph degraded during success",
             NoticeSeverity::Info,
         )]);
@@ -3625,4 +3636,189 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
         assert_eq!(completed.notices.len(), 1);
         assert_eq!(completed.notices[0].code, "GRAPH_DEGRADED");
     }
+}
+
+#[test]
+fn test_notice_constructor_all_published_values_yield_non_empty_code_and_match_derivation() {
+    let all_codes = [
+        NoticeCode::Unspecified,
+        NoticeCode::NoEvidence,
+        NoticeCode::GraphTimeout,
+        NoticeCode::GraphDegraded,
+        NoticeCode::ModelNotice,
+        NoticeCode::ModelWarning,
+        NoticeCode::GraphUnavailable,
+        NoticeCode::RetrievalDegradedDense,
+        NoticeCode::CitationRepaired,
+        NoticeCode::CitationDropped,
+        NoticeCode::ModelOnly,
+        NoticeCode::BasisReconciled,
+        NoticeCode::RetrievalDegradedBm25,
+        NoticeCode::GraphAblation,
+        NoticeCode::IndexRebuildFailed,
+        NoticeCode::IndexStale,
+        NoticeCode::IndexGenerationMismatch,
+    ];
+
+    for code in all_codes {
+        let n = engine::workflow::notice(code, "test message", NoticeSeverity::Info);
+        assert!(
+            !n.code.is_empty(),
+            "derived string code must not be empty for {code:?}"
+        );
+        assert_eq!(n.typed_code, code as i32);
+        let expected_str = code.as_str_name().trim_start_matches("NOTICE_CODE_");
+        assert_eq!(n.code, expected_str);
+    }
+}
+
+#[test]
+fn test_notice_constructor_shipped_codes_roundtrip_spellings() {
+    let n_no_evidence =
+        engine::workflow::notice(NoticeCode::NoEvidence, "msg", NoticeSeverity::Info);
+    assert_eq!(n_no_evidence.code, "NO_EVIDENCE");
+
+    let n_timeout = engine::workflow::notice(NoticeCode::GraphTimeout, "msg", NoticeSeverity::Info);
+    assert_eq!(n_timeout.code, "GRAPH_TIMEOUT");
+
+    let n_degraded =
+        engine::workflow::notice(NoticeCode::GraphDegraded, "msg", NoticeSeverity::Info);
+    assert_eq!(n_degraded.code, "GRAPH_DEGRADED");
+}
+
+#[test]
+fn test_notice_deduplication_preserves_distinct_messages_and_collapses_identical() {
+    let req = test_query_request("q", "s");
+    let mut ctx = WorkflowContext::new("s".into(), "t".into(), &req);
+
+    // Two notices with same code but different messages both survive
+    let n1 = engine::workflow::notice(NoticeCode::GraphDegraded, "message 1", NoticeSeverity::Info);
+    let n2 = engine::workflow::notice(NoticeCode::GraphDegraded, "message 2", NoticeSeverity::Info);
+    ctx.add_notice(n1.clone());
+    ctx.add_notice(n2.clone());
+    assert_eq!(ctx.notices.len(), 2);
+
+    // Identical notice (same code and same message) collapses to one
+    let n1_dup =
+        engine::workflow::notice(NoticeCode::GraphDegraded, "message 1", NoticeSeverity::Info);
+    ctx.add_notice(n1_dup);
+    assert_eq!(ctx.notices.len(), 2);
+}
+
+#[test]
+fn test_notice_published_enum_reachability_or_reservation() {
+    // Explicit ground truth map of emission sites or Phase 6 / Phase 6.1 reservations
+    let published_manifest = [
+        (NoticeCode::Unspecified, "proto default / fallback"),
+        (
+            NoticeCode::NoEvidence,
+            "engine/src/workflow/nodes/retrieve.rs",
+        ),
+        (
+            NoticeCode::GraphTimeout,
+            "engine/src/workflow/nodes/graph_context.rs",
+        ),
+        (
+            NoticeCode::GraphDegraded,
+            "engine/src/workflow/nodes/graph_context.rs",
+        ),
+        (NoticeCode::ModelNotice, "engine/src/workflow/mod.rs"),
+        (NoticeCode::ModelWarning, "engine/src/workflow/mod.rs"),
+        (
+            NoticeCode::GraphUnavailable,
+            "Phase 6 plan 06-08 emission site",
+        ),
+        (
+            NoticeCode::RetrievalDegradedDense,
+            "Phase 6 plan 06-09 emission site",
+        ),
+        (
+            NoticeCode::CitationRepaired,
+            "Phase 6 plan 06-11 emission site",
+        ),
+        (
+            NoticeCode::CitationDropped,
+            "Phase 6 plan 06-11 emission site",
+        ),
+        (NoticeCode::ModelOnly, "Phase 6 plan 06-10 emission site"),
+        (
+            NoticeCode::BasisReconciled,
+            "Phase 6 plan 06-10 emission site",
+        ),
+        (
+            NoticeCode::RetrievalDegradedBm25,
+            "Phase 6 plan 06-09 emission site",
+        ),
+        (
+            NoticeCode::GraphAblation,
+            "Phase 6 plan 06-08 emission site",
+        ),
+        (NoticeCode::IndexRebuildFailed, "reserved for Phase 6.1"),
+        (NoticeCode::IndexStale, "reserved for Phase 6.1"),
+        (
+            NoticeCode::IndexGenerationMismatch,
+            "reserved for Phase 6.1",
+        ),
+    ];
+
+    for (code, rationale) in published_manifest {
+        assert!(
+            !rationale.is_empty(),
+            "{code:?} must have an emission site or reservation"
+        );
+        let n = engine::workflow::notice(code, "manifest validation", NoticeSeverity::Info);
+        assert!(!n.code.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn test_workflow_runner_zero_evidence_gate_typed_code() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-zero-ev-typed".to_string();
+    let session_id = "sess-zero-ev-typed".to_string();
+
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let req = test_query_request("zero ev query", &session_id);
+    let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+    ctx.add_notice(engine::workflow::notice(
+        NoticeCode::NoEvidence,
+        "No completed corpus evidence matched the requested filters.",
+        NoticeSeverity::Info,
+    ));
+
+    // When runner runs AssemblePrompt with zero evidence notice, it breaks before executing
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(AssemblePromptNode::default());
+    runner.add_node(GenerateAnswerNode::default());
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(wf_event) = rx.try_recv() {
+        if let Ok(ev) = wf_event {
+            events.push(ev);
+        }
+    }
+
+    // WorkflowCompleted is emitted, but no NodeStarted / AnswerChunk for AssemblePrompt / GenerateAnswer
+    let completed_event = events
+        .iter()
+        .find(|e| matches!(&e.event, Some(Event::WorkflowCompleted(_))));
+    assert!(
+        completed_event.is_some(),
+        "WorkflowCompleted must be emitted"
+    );
+    assert!(
+        events
+            .iter()
+            .all(|e| !matches!(&e.event, Some(Event::NodeStarted(_)))),
+        "AssemblePrompt and GenerateAnswer must not start on zero evidence"
+    );
 }

@@ -1026,10 +1026,7 @@ async fn workflow_phase5_generation_retry_exhausted() {
     });
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator));
-    let req = test_query_request(
-        "Exhausted query?",
-        "00000000-0000-4000-8000-000000000088",
-    );
+    let req = test_query_request("Exhausted query?", "00000000-0000-4000-8000-000000000088");
     let mut ctx = WorkflowContext::new(
         "00000000-0000-4000-8000-000000000088".into(),
         "trace-exhausted".into(),

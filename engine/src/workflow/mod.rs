@@ -9,8 +9,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::generation::ModelOutput;
 use crate::pb::lancet::v1::{
-    AnswerBasis, DocumentFilter, NodeErrorKind, Notice, NoticeSeverity, QueryRagRequest,
-    QueryRagResponse, RetrievalSnapshot, StructuredCitation,
+    AnswerBasis, DocumentFilter, NodeErrorKind, Notice, NoticeCode, NoticeSeverity,
+    QueryRagRequest, QueryRagResponse, RetrievalSnapshot, StructuredCitation,
 };
 
 pub use events::EventSequence;
@@ -26,6 +26,24 @@ pub use runner::{WorkflowEventSink, WorkflowRunner};
 
 pub const GRAPH_TIMEOUT: &str = "GRAPH_TIMEOUT";
 pub const GRAPH_DEGRADED: &str = "GRAPH_DEGRADED";
+
+/// Builds a [`Notice`] from a typed [`NoticeCode`].
+///
+/// This is the only permitted constructor for building notices.
+/// The string `code` is derived from the enum value's generated string name by trimming
+/// the `"NOTICE_CODE_"` prefix, ensuring string-based de-duplication and typed code consistency.
+pub fn notice(code: NoticeCode, message: impl Into<String>, severity: NoticeSeverity) -> Notice /* */
+{
+    Notice {
+        code: code
+            .as_str_name()
+            .trim_start_matches("NOTICE_CODE_")
+            .to_string(),
+        message: message.into(),
+        severity: severity as i32,
+        typed_code: code as i32,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct WorkflowContext {
@@ -112,18 +130,18 @@ impl WorkflowContext {
             crate::generation::AnswerBasis::ModelOnly => AnswerBasis::ModelOnly,
         };
         for n in &output.notices {
-            self.add_notice(Notice {
-                code: "NOTICE".into(),
-                message: n.clone(),
-                severity: NoticeSeverity::Info as i32,
-            });
+            self.add_notice(notice(
+                NoticeCode::ModelNotice,
+                n.clone(),
+                NoticeSeverity::Info,
+            ));
         }
         for w in &output.warnings {
-            self.add_notice(Notice {
-                code: "WARNING".into(),
-                message: w.clone(),
-                severity: NoticeSeverity::Warning as i32,
-            });
+            self.add_notice(notice(
+                NoticeCode::ModelWarning,
+                w.clone(),
+                NoticeSeverity::Warning,
+            ));
         }
     }
 }
