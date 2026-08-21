@@ -5,14 +5,14 @@ current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
 current_plan: 3
 status: executing
-stopped_at: Phase 6 Wave 2 complete (Plans 06-02 and 06-05 executed; library ingest/service and gateway engineclient packages extracted)
-last_updated: "2026-08-21T05:25:00.000Z"
-state_head: bfec94b77893e8afd16cf02ea745d566bd517e8c
+stopped_at: Phase 6 Wave 3 complete (Plan 06-03 executed; binary test root rehomed to engine::tests, main.rs residue swept, 7 test-target invariants pinned in scripts/engine-test-targets.sh)
+last_updated: "2026-08-21T05:50:00.000Z"
+state_head: eafdac189a59b3ee3c9df1cfc4b726cb3dbd5910
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 101
-  completed_plans: 93
+  completed_plans: 94
 milestone_name: milestone
 ---
 
@@ -53,11 +53,11 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
-- **Status:** Executing Phase 06 (Wave 2 complete)
+- **Status:** Executing Phase 06 (Wave 3 complete)
 - **Current Plan:** 3
 - **Total Plans in Phase:** 12
-- **Completed Plans in Phase:** 4 (Plans 06-01, 06-04, 06-02, 06-05)
-- **Progress:** [████░░░░░░] 33.3%
+- **Completed Plans in Phase:** 5 (Plans 06-01, 06-04, 06-02, 06-05, 06-03)
+- **Progress:** [█████░░░░░] 41.7%
 
 ## Completed Phases
 
