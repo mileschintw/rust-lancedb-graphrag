@@ -1,6 +1,14 @@
 #!/bin/sh
 set -e
 
+# Note on test distribution invariants:
+# The library/binary split became assertable at plan 06-03 because 06-01 and 06-02
+# deliberately left it free while modules were still in flight.
+# The expected values in this script are measured values from the test topology.
+# When a later plan adds tests, it updates them to the newly measured values in the same commit
+# as the tests that moved them. Lowering a value to make the gate pass or deleting
+# an assertion is never the correct response to a red gate.
+
 TMP_FILE=$(mktemp)
 trap 'rm -f "$TMP_FILE"' EXIT
 
@@ -31,7 +39,7 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + INTEG_CONFIG_COUNT 
 
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
-# Assert invariants
+# Assert invariants (7 named assertions)
 if [ "$TOTAL" -ne 288 ]; then
   echo "FAIL: TOTAL test count mismatch: expected 288, got $TOTAL" >&2
   exit 1
@@ -39,6 +47,16 @@ fi
 
 if [ "$LIB_BIN_SUM" -ne 261 ]; then
   echo "FAIL: lib + bin test count mismatch: expected 261, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+  exit 1
+fi
+
+if [ "$LIB_COUNT" -ne 261 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 261, got $LIB_COUNT" >&2
+  exit 1
+fi
+
+if [ "$BIN_MAIN_COUNT" -ne 0 ]; then
+  echo "FAIL: engine (bin) test count mismatch: expected 0, got $BIN_MAIN_COUNT" >&2
   exit 1
 fi
 
@@ -57,5 +75,5 @@ if [ "$INTEG_CONFIG_COUNT" -ne 9 ]; then
   exit 1
 fi
 
-echo "All 5 Rust test target invariants verified successfully."
+echo "All 7 Rust test target invariants verified successfully."
 exit 0

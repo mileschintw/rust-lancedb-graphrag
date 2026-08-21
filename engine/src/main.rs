@@ -15,45 +15,6 @@ use engine::rerank;
 use engine::retrieval::Bm25Index;
 use engine::service::LancetServiceImpl;
 
-#[cfg(test)]
-use arrow_array::{Int32Array, RecordBatch};
-#[cfg(test)]
-use engine::client;
-#[cfg(test)]
-use engine::config::{
-    Bm25ConfigSettings, EngineSettings, GraphConfigSettings, GraphSettings, OpenRouterSettings,
-    RetrievalConfigSettings, Settings, WorkflowConfigSettings, WorkflowSettings,
-};
-#[cfg(test)]
-use engine::db;
-#[cfg(test)]
-use engine::graph::escape_sql_literal;
-#[cfg(test)]
-use engine::ingest::{
-    chunk_ingestion_job, extract_and_persist_entities, parse_chunk_settings,
-    persist_raw_with_boundary, process_job, replace_document, replace_document_with_faults,
-    select_latest_staged_rows, spawn_worker_with_boundary, ChunkSettings, EmbeddingProvider,
-    IngestionJob, LanceDbReplacementMutationBoundary, ReplacementMutation,
-    ReplacementMutationBoundary, StagedJobRow,
-};
-#[cfg(test)]
-use engine::pb::lancet::v1::lancet_service_server::LancetService;
-#[cfg(test)]
-use engine::prompt;
-#[cfg(test)]
-use engine::retrieval::{self, Bm25Config, DenseRetriever, QueryRequest, Retriever};
-#[cfg(test)]
-use engine::service::{attempt_graph_augmentation, validate_document_id, GraphAugmentationOutcome};
-#[cfg(test)]
-use engine::workflow;
-#[cfg(test)]
-use futures::{future::BoxFuture, StreamExt};
-#[cfg(test)]
-use lancedb::Table;
-#[cfg(test)]
-use std::collections::HashMap;
-#[cfg(test)]
-use uuid::Uuid;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
@@ -160,6 +121,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     worker.await?;
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

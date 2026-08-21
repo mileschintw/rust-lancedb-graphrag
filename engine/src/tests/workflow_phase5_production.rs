@@ -17,7 +17,7 @@ async fn workflow_phase5_production_five_node() {
     let db = DatabaseManager::initialize(&path).await.unwrap();
     let service = configured_service(
         &db,
-        crate::EffectiveRagSettings::default(),
+        crate::config::EffectiveRagSettings::default(),
         Arc::new(FakeEmbedder),
         Arc::new(FakeGenerator::new(Ok(ModelOutput {
             answer: "Production answer".into(),
@@ -98,7 +98,7 @@ async fn workflow_phase5_production_five_node() {
 async fn workflow_phase5_production_dependencies_are_real() {
     let path = database_path("prod-deps-real");
     let db = DatabaseManager::initialize(&path).await.unwrap();
-    let embedder: Arc<dyn crate::EmbeddingProvider> = Arc::new(FakeEmbedder);
+    let embedder: Arc<dyn crate::ingest::EmbeddingProvider> = Arc::new(FakeEmbedder);
     let generator: Arc<dyn generation::Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
         answer: "Answer".into(),
         cited_evidence_ids: vec![],
@@ -111,7 +111,7 @@ async fn workflow_phase5_production_dependencies_are_real() {
 
     let service = configured_service(
         &db,
-        crate::EffectiveRagSettings::default(),
+        crate::config::EffectiveRagSettings::default(),
         Arc::clone(&embedder),
         Arc::clone(&generator),
         Arc::clone(&reranker),
@@ -184,7 +184,7 @@ async fn workflow_phase5_production_context_population() {
 
     let service = configured_service(
         &db,
-        crate::EffectiveRagSettings::default(),
+        crate::config::EffectiveRagSettings::default(),
         Arc::new(FakeEmbedder),
         generator,
         Arc::new(rerank::NoOpReranker::new()),
@@ -284,14 +284,14 @@ async fn workflow_phase5_production_reachability() {
     )
     .await;
 
-    let job = crate::tests::read_staged_jobs(&database)
+    let job = crate::ingest::read_staged_jobs(&database)
         .await
         .unwrap()
         .into_iter()
         .next()
         .unwrap();
 
-    crate::tests::process_job(&job, &database, &FakeEmbedder)
+    crate::ingest::process_job(&job, &database, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -302,7 +302,7 @@ async fn workflow_phase5_production_reachability() {
             .unwrap();
     let table = database.staged_documents_table().await.unwrap();
     let statuses = Arc::new(dashmap::DashMap::new());
-    let (sender, _receiver) = mpsc::channel(crate::QUEUE_CAPACITY);
+    let (sender, _receiver) = mpsc::channel(crate::ingest::QUEUE_CAPACITY);
 
     let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
         answer: "Reachability answer [1].".into(),
@@ -313,14 +313,14 @@ async fn workflow_phase5_production_reachability() {
         usage: None,
     })));
 
-    let service = crate::LancetServiceImpl {
+    let service = crate::service::LancetServiceImpl {
         table,
         statuses,
         queue: sender,
         nodes,
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
-        effective_settings: crate::EffectiveRagSettings::default(),
+        effective_settings: crate::config::EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
@@ -560,8 +560,8 @@ async fn workflow_phase5_settings_applied_to_production() {
     let path = database_path("prod-settings-applied");
     let db = DatabaseManager::initialize(&path).await.unwrap();
 
-    let mut custom_settings = crate::EffectiveRagSettings::default();
-    custom_settings.workflow = crate::WorkflowSettings {
+    let mut custom_settings = crate::config::EffectiveRagSettings::default();
+    custom_settings.workflow = crate::config::WorkflowSettings {
         reformulate_timeout_ms: 1234,
         query_embedding_timeout_ms: 2345,
         retrieve_timeout_ms: 3456,
@@ -634,7 +634,7 @@ async fn workflow_phase5_config_verify_generation_timeout() {
     let base_raw = std::fs::read_to_string(&base_config_path).expect("read config.toml");
     let verify_config_path = repo_root.join("config/config.verify.toml");
     let verify_raw = std::fs::read_to_string(&verify_config_path).expect("read config.verify.toml");
-    let settings: crate::Settings = config::Config::builder()
+    let settings: crate::config::Settings = config::Config::builder()
         .add_source(config::File::from_str(&base_raw, config::FileFormat::Toml))
         .add_source(config::File::from_str(
             &verify_raw,
@@ -645,7 +645,7 @@ async fn workflow_phase5_config_verify_generation_timeout() {
         .try_deserialize()
         .expect("deserialize config with verify overlay");
 
-    let effective_settings = crate::EffectiveRagSettings::try_from_settings(&settings)
+    let effective_settings = crate::config::EffectiveRagSettings::try_from_settings(&settings)
         .expect("effective settings from config.verify.toml");
     assert_eq!(effective_settings.workflow.generation_node_timeout_ms, 7000);
     assert_eq!(effective_settings.generation_timeout_secs, 30);
@@ -1593,7 +1593,7 @@ async fn workflow_phase5_retrieval_snapshot_variants() {
     let db = DatabaseManager::initialize(&path).await.unwrap();
     let service = configured_service(
         &db,
-        crate::EffectiveRagSettings::default(),
+        crate::config::EffectiveRagSettings::default(),
         Arc::new(FakeEmbedder),
         Arc::new(FakeGenerator::new(Ok(ModelOutput {
             answer: "Answer".into(),
@@ -1648,7 +1648,7 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
     let db = DatabaseManager::initialize(&path).await.unwrap();
     let service = configured_service(
         &db,
-        crate::EffectiveRagSettings::default(),
+        crate::config::EffectiveRagSettings::default(),
         Arc::new(FakeEmbedder),
         Arc::new(FakeGenerator::new(Ok(ModelOutput {
             answer: "Answer".into(),

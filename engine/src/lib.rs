@@ -19,3 +19,6 @@ pub use pb::lancet::v1::lancet_service_server::LancetService;
 #[cfg(test)]
 #[path = "tests/workflow_phase5.rs"]
 pub mod workflow_phase5;
+
+#[cfg(test)]
+pub mod tests;

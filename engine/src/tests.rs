@@ -1,19 +1,57 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs,
     path::Path,
+    sync::Arc,
+    time::Duration,
 };
 
-use super::*;
+use arrow_array::{Array, BinaryArray, Int32Array, Int64Array, RecordBatch, StringArray};
+use dashmap::DashMap;
+use futures::{future::BoxFuture, StreamExt, TryStreamExt};
+use lancedb::{
+    query::{ExecutableQuery, QueryBase},
+    Table,
+};
+use tokio::sync::{mpsc, watch, Notify};
+use tonic::transport::Server;
+use uuid::Uuid;
+
+use engine::client;
+use engine::config::{
+    load_settings, Bm25ConfigSettings, EffectiveRagSettings, EngineSettings, GraphConfigSettings,
+    GraphSettings, OpenRouterSettings, RetrievalConfigSettings, Settings, WorkflowConfigSettings,
+    WorkflowSettings,
+};
+use engine::db::DatabaseManager;
+use engine::generation;
+use engine::graph::{
+    self, escape_sql_literal,
+    extraction::{
+        ExtractedEntity, ExtractedRelation, ExtractionGenerator, ExtractionOutput,
+        ExtractionRequest, FakeExtractionGenerator,
+    },
+};
+use engine::ingest::{
+    chunk_ingestion_job, extract_and_persist_entities, parse_chunk_settings,
+    persist_raw_with_boundary, process_job, read_staged_jobs, replace_document,
+    replace_document_with_faults, select_latest_staged_rows, spawn_worker,
+    spawn_worker_with_boundary, ChunkSettings, EmbeddingProvider, IngestionJob, IngestionStatus,
+    LanceDbReplacementMutationBoundary, ReplacementMutation, ReplacementMutationBoundary,
+    StagedJobRow, QUEUE_CAPACITY,
+};
 use engine::pb::lancet;
-use engine::pb::lancet::v1::*;
+use engine::pb::lancet::v1::{
+    lancet_service_server::{LancetService, LancetServiceServer},
+    *,
+};
+use engine::rerank;
+use engine::retrieval::{self, Bm25Config, Bm25Index, DenseRetriever, QueryRequest, Retriever};
+use engine::service::{
+    attempt_graph_augmentation, validate_document_id, GraphAugmentationOutcome, LancetServiceImpl,
+};
 
 pub mod workflow_phase5_production;
-
-use arrow_array::{Array, BinaryArray, Int64Array, StringArray};
-use futures::TryStreamExt;
-use lancedb::query::{ExecutableQuery, QueryBase};
-use tokio::sync::Notify;
 
 const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.retrieval.candidate_limit",
@@ -180,8 +218,8 @@ fn config_example_matches_effective_rag_contract() {
         .expect("engine manifest must have a repository parent");
     let config_path = repo_root.join("config/config.example.toml");
     let raw = fs::read_to_string(&config_path).expect("read operator configuration example");
-    let settings: Settings = config::Config::builder()
-        .add_source(config::File::from_str(&raw, config::FileFormat::Toml))
+    let settings: Settings = ::config::Config::builder()
+        .add_source(::config::File::from_str(&raw, ::config::FileFormat::Toml))
         .build()
         .expect("parse operator configuration example")
         .try_deserialize()
@@ -385,7 +423,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
 
 #[test]
 fn graph_node_timeout_below_component_sum_is_rejected() {
-    let mut s = crate::WorkflowSettings::default();
+    let mut s = WorkflowSettings::default();
     s.query_embedding_timeout_ms = 10_000;
     s.graph_operation_timeout_ms = 4_000;
     s.graph_node_timeout_ms = 13_999;
@@ -395,7 +433,7 @@ fn graph_node_timeout_below_component_sum_is_rejected() {
 
 #[test]
 fn generation_node_timeout_below_retry_budget_is_rejected() {
-    let mut s = crate::WorkflowSettings::default();
+    let mut s = WorkflowSettings::default();
     s.generation_node_timeout_ms = 59_999;
     let err = s
         .validate_against_provider(30)
@@ -882,7 +920,7 @@ impl ReplacementMutationBoundary for FaultingReplacementMutationBoundary {
     }
 }
 
-fn database_path(test_name: &str) -> String {
+pub(crate) fn database_path(test_name: &str) -> String {
     std::env::temp_dir()
         .join(format!("lancet-worker-{test_name}-{}", Uuid::new_v4()))
         .to_string_lossy()
@@ -1012,7 +1050,7 @@ async fn canonical_state(database: &DatabaseManager, document_id: &str) -> Canon
     }
 }
 
-async fn stage_document(database: &DatabaseManager, document_id: &str, raw_data: &[u8]) {
+pub(crate) async fn stage_document(database: &DatabaseManager, document_id: &str, raw_data: &[u8]) {
     stage_document_with_settings(
         database,
         document_id,
@@ -1025,7 +1063,7 @@ async fn stage_document(database: &DatabaseManager, document_id: &str, raw_data:
     .await;
 }
 
-async fn stage_document_with_settings(
+pub(crate) async fn stage_document_with_settings(
     database: &DatabaseManager,
     document_id: &str,
     filename: &str,
@@ -1102,7 +1140,7 @@ fn configured_settings(lancedb_path: &str) -> Settings {
     }
 }
 
-async fn configured_service(
+pub(crate) async fn configured_service(
     database: &DatabaseManager,
     effective_settings: EffectiveRagSettings,
     embedder: Arc<dyn EmbeddingProvider>,
@@ -4378,7 +4416,7 @@ async fn read_staged_jobs_latest_generation_wins() {
             ("chunk_size".to_string(), "500".to_string()),
             ("chunk_overlap".to_string(), "50".to_string()),
         ]),
-        chunk_settings: crate::parse_chunk_settings(&HashMap::from([
+        chunk_settings: parse_chunk_settings(&HashMap::from([
             ("chunk_strategy".to_string(), "fixed-size".to_string()),
             ("chunk_size".to_string(), "500".to_string()),
             ("chunk_overlap".to_string(), "50".to_string()),
@@ -4395,7 +4433,7 @@ async fn read_staged_jobs_latest_generation_wins() {
             ("chunk_size".to_string(), "500".to_string()),
             ("chunk_overlap".to_string(), "50".to_string()),
         ]),
-        chunk_settings: crate::parse_chunk_settings(&HashMap::from([
+        chunk_settings: parse_chunk_settings(&HashMap::from([
             ("chunk_strategy".to_string(), "fixed-size".to_string()),
             ("chunk_size".to_string(), "500".to_string()),
             ("chunk_overlap".to_string(), "50".to_string()),
@@ -4618,22 +4656,17 @@ async fn extraction_chunk_field_propagation() {
     let captured_requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let capturer = captured_requests.clone();
 
-    struct CapturingGenerator(
-        Arc<tokio::sync::Mutex<Vec<super::graph::extraction::ExtractionRequest>>>,
-    );
+    struct CapturingGenerator(Arc<tokio::sync::Mutex<Vec<ExtractionRequest>>>);
 
-    impl super::graph::extraction::ExtractionGenerator for CapturingGenerator {
+    impl ExtractionGenerator for CapturingGenerator {
         fn extract<'a>(
             &'a self,
-            request: super::graph::extraction::ExtractionRequest,
-        ) -> BoxFuture<
-            'a,
-            Result<super::graph::extraction::ExtractionOutput, generation::GenerationError>,
-        > {
+            request: ExtractionRequest,
+        ) -> BoxFuture<'a, Result<ExtractionOutput, generation::GenerationError>> {
             let cap = self.0.clone();
             Box::pin(async move {
                 cap.lock().await.push(request);
-                Ok(super::graph::extraction::ExtractionOutput {
+                Ok(ExtractionOutput {
                     entities: vec![],
                     relations: vec![],
                 })
@@ -4641,7 +4674,7 @@ async fn extraction_chunk_field_propagation() {
         }
     }
 
-    super::extract_and_persist_entities(
+    extract_and_persist_entities(
         &database,
         &job,
         &CapturingGenerator(capturer),
@@ -4676,17 +4709,15 @@ async fn exact_match_entity_deduplication() {
         HashMap::new(),
     );
 
-    let fake_gen = super::graph::extraction::FakeExtractionGenerator::new(Ok(
-        super::graph::extraction::ExtractionOutput {
-            entities: vec![super::graph::extraction::ExtractedEntity {
-                name: "Acme Corp".into(),
-                entity_type: "organization".into(),
-            }],
-            relations: vec![],
-        },
-    ));
+    let fake_gen = FakeExtractionGenerator::new(Ok(ExtractionOutput {
+        entities: vec![ExtractedEntity {
+            name: "Acme Corp".into(),
+            entity_type: "organization".into(),
+        }],
+        relations: vec![],
+    }));
 
-    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -4713,17 +4744,15 @@ async fn cross_document_entity_resolution() {
         HashMap::new(),
     );
 
-    let fake_gen = super::graph::extraction::FakeExtractionGenerator::new(Ok(
-        super::graph::extraction::ExtractionOutput {
-            entities: vec![super::graph::extraction::ExtractedEntity {
-                name: "Acme Corp".into(),
-                entity_type: "organization".into(),
-            }],
-            relations: vec![],
-        },
-    ));
+    let fake_gen = FakeExtractionGenerator::new(Ok(ExtractionOutput {
+        entities: vec![ExtractedEntity {
+            name: "Acme Corp".into(),
+            entity_type: "organization".into(),
+        }],
+        relations: vec![],
+    }));
 
-    super::extract_and_persist_entities(&database, &job1, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job1, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -4735,7 +4764,7 @@ async fn cross_document_entity_resolution() {
         HashMap::new(),
     );
 
-    super::extract_and_persist_entities(&database, &job2, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job2, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -4759,22 +4788,20 @@ async fn unmapped_relation_endpoint_dropped() {
         HashMap::new(),
     );
 
-    let fake_gen = super::graph::extraction::FakeExtractionGenerator::new(Ok(
-        super::graph::extraction::ExtractionOutput {
-            entities: vec![super::graph::extraction::ExtractedEntity {
-                name: "Alice".into(),
-                entity_type: "person".into(),
-            }],
-            relations: vec![super::graph::extraction::ExtractedRelation {
-                source: "Alice".into(),
-                target: "Bob".into(), // Bob is not in entities!
-                relation_type: "works_with".into(),
-                confidence: 0.9,
-            }],
-        },
-    ));
+    let fake_gen = FakeExtractionGenerator::new(Ok(ExtractionOutput {
+        entities: vec![ExtractedEntity {
+            name: "Alice".into(),
+            entity_type: "person".into(),
+        }],
+        relations: vec![ExtractedRelation {
+            source: "Alice".into(),
+            target: "Bob".into(), // Bob is not in entities!
+            relation_type: "works_with".into(),
+            confidence: 0.9,
+        }],
+    }));
 
-    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -4798,11 +4825,8 @@ async fn attempt_graph_augmentation_scoring_and_neighborhood() {
         max_hop_cap: 3,
     };
 
-    let outcome = super::attempt_graph_augmentation(&database, &[0.0; 2048], &settings).await;
-    assert!(matches!(
-        outcome,
-        super::GraphAugmentationOutcome::NoMatchFound
-    ));
+    let outcome = attempt_graph_augmentation(&database, &[0.0; 2048], &settings).await;
+    assert!(matches!(outcome, GraphAugmentationOutcome::NoMatchFound));
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -4944,7 +4968,7 @@ async fn extraction_runs_concurrently_and_skips_short_chunks() {
     let fake_gen =
         graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_responses);
 
-    let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
+    let res = extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
     assert!(
         res.is_ok(),
         "D-06: per-chunk extraction failure must not fail function"
@@ -5024,7 +5048,7 @@ async fn extraction_reingestion_is_idempotent_by_construction() {
     let fake_gen = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_1);
 
     // First ingestion call
-    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5072,7 +5096,7 @@ async fn extraction_reingestion_is_idempotent_by_construction() {
 
     let fake_gen_2 = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_2);
 
-    super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5112,7 +5136,7 @@ async fn cross_document_entity_merge_still_works_under_concurrency() {
             relations: vec![],
         }));
 
-    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5134,7 +5158,7 @@ async fn cross_document_entity_merge_still_works_under_concurrency() {
             relations: vec![],
         }));
 
-    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5173,7 +5197,7 @@ async fn stale_entity_survives_document_replacement() {
         }));
 
     process_job(&job1, &database, &FakeEmbedder).await.unwrap();
-    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5201,7 +5225,7 @@ async fn stale_entity_survives_document_replacement() {
         }));
 
     process_job(&job2, &database, &FakeEmbedder).await.unwrap();
-    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5241,7 +5265,7 @@ async fn stale_source_chunk_ids_can_reference_unrelated_replacement_content() {
         }));
 
     process_job(&job1, &database, &FakeEmbedder).await.unwrap();
-    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5262,7 +5286,7 @@ async fn stale_source_chunk_ids_can_reference_unrelated_replacement_content() {
         }));
 
     process_job(&job2, &database, &FakeEmbedder).await.unwrap();
-    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5332,7 +5356,7 @@ async fn extraction_concurrency_bound_is_observed_not_assumed() {
         graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_responses)
             .with_delay(Duration::from_millis(20));
 
-    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5377,7 +5401,7 @@ async fn extraction_retries_then_succeeds_within_attempt_budget() {
         }),
     ]);
 
-    let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
+    let res = extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
     assert!(res.is_ok());
 
     assert_eq!(
@@ -5421,7 +5445,7 @@ async fn extraction_retry_exhaustion_yields_zero_entities_not_function_failure()
         )),
     ]);
 
-    let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
+    let res = extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
     assert!(
         res.is_ok(),
         "D-06: retry exhaustion yields zero entities, not function failure"
@@ -5506,7 +5530,7 @@ async fn extraction_output_with_out_of_range_confidence_is_rejected_before_persi
         }),
     ]);
 
-    let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
+    let res = extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
     assert!(res.is_ok());
     assert_eq!(fake_gen.calls(), 3);
 
@@ -5554,8 +5578,7 @@ async fn extract_and_persist_entities_preserves_prior_graph_on_forced_persistenc
             }],
         }));
 
-    let res1 =
-        super::extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder).await;
+    let res1 = extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder).await;
     assert!(res1.is_ok());
 
     let edges_table = database.entity_edges_table().await.unwrap();
@@ -5597,7 +5620,7 @@ async fn extract_and_persist_entities_preserves_prior_graph_on_forced_persistenc
             relations: vec![],
         }));
 
-    let res2 = super::extract_and_persist_entities(
+    let res2 = extract_and_persist_entities(
         &database,
         &job,
         &fake_gen_2,
@@ -5717,7 +5740,7 @@ async fn extraction_persist_summary_reports_coverage_regression() {
     );
 
     let fake_gen_1 = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_1);
-    let summary1 = super::extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder)
+    let summary1 = extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder)
         .await
         .unwrap();
     assert_eq!(summary1.written_entity_edges_count, 2);
@@ -5746,7 +5769,7 @@ async fn extraction_persist_summary_reports_coverage_regression() {
     );
 
     let fake_gen_2 = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_2);
-    let summary2 = super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder)
+    let summary2 = extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5845,7 +5868,7 @@ async fn seed_two_hop_graph(path: &str) -> DatabaseManager {
             ],
         }));
 
-    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -5892,7 +5915,7 @@ async fn seed_single_edge_graph(
             }],
         }));
 
-    super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -6940,7 +6963,7 @@ async fn graph_weight_reaches_actual_provider_request_body() {
                 confidence: 0.9,
             }],
         }));
-    super::extract_and_persist_entities(&database, &graph_job, &fake_extraction_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &graph_job, &fake_extraction_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -7183,10 +7206,10 @@ async fn fetch_neighborhood_returns_both_edges_when_two_documents_share_identica
             }],
         }));
 
-    super::extract_and_persist_entities(&database, &job_a, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job_a, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
-    super::extract_and_persist_entities(&database, &job_b, &fake_gen, &FakeEmbedder)
+    extract_and_persist_entities(&database, &job_b, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
@@ -7674,7 +7697,7 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
             }],
         }));
 
-    super::extract_and_persist_entities(&database, &job, &fake_gen, &embedder)
+    extract_and_persist_entities(&database, &job, &fake_gen, &embedder)
         .await
         .unwrap();
 
