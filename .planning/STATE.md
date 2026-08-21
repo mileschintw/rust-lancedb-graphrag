@@ -109,6 +109,7 @@ milestone_name: milestone
 | check-dep-updates | 2026-07-14 | Check if dependencies of this project is able to update and keep working, like rust cargo and jaeger image | Complete |
 | buf-rust-codegen | 2026-07-14 | Migrate Rust protobuf code generation to Buf v2 with prost and tonic plugins | Complete |
 | update-readme-with-all-the-decision-and- | 2026-08-19 | Update README with all decisions and progress to date, preserving personal-side-project/showcase framing and adding AI-collaboration angle | Complete |
+| review-06-01-summary-accuracy | 2026-08-20 | Review commit 35b5854 (plan 06-01) for behavior regressions and plan sufficiency; update 06-01-SUMMARY.md frontmatter with 5 out-of-scope lint-edited files, record cargo fmt --check as pre-existing failing gate, annotate RAG-03 as structural-only | Complete |
 
 ## Performance Metrics
 
