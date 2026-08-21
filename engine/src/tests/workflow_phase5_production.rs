@@ -572,6 +572,7 @@ async fn workflow_phase5_settings_applied_to_production() {
         prompt_timeout_ms: 6789,
         generation_node_timeout_ms: 7890,
         allow_model_only_answers: false,
+        citation_repair_enabled: true,
     };
 
     let service = configured_service(

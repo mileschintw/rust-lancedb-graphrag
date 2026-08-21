@@ -83,8 +83,8 @@ if [ "$BIN_SEED_COUNT" -ne 0 ]; then
   exit 1
 fi
 
-if [ "$INTEG_CONFIG_COUNT" -ne 13 ]; then
-  echo "FAIL: config_startup test count mismatch: expected 13, got $INTEG_CONFIG_COUNT" >&2
+if [ "$INTEG_CONFIG_COUNT" -ne 17 ]; then
+  echo "FAIL: config_startup test count mismatch: expected 17, got $INTEG_CONFIG_COUNT" >&2
   exit 1
 fi
 

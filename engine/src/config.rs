@@ -140,6 +140,9 @@ pub fn default_generation_node_timeout_ms() -> u64 {
 pub fn default_allow_model_only_answers() -> bool {
     false
 }
+pub fn default_citation_repair_enabled() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -164,6 +167,13 @@ pub struct WorkflowConfigSettings {
     /// the resolution order is request, then configuration, then false (D-10/D-12).
     #[serde(default = "default_allow_model_only_answers")]
     pub allow_model_only_answers: bool,
+    /// Whether the local citation-repair pass (D-14) runs on unresolved citation markers.
+    ///
+    /// Defaults to true. When true, a near-miss marker is normalized and retained and an
+    /// unresolvable one is stripped from the answer and both citation lists; when false,
+    /// an unresolvable marker fails the run exactly as it did before D-14 (DEBT-RAG-03).
+    #[serde(default = "default_citation_repair_enabled")]
+    pub citation_repair_enabled: bool,
 }
 
 impl Default for WorkflowConfigSettings {
@@ -177,6 +187,7 @@ impl Default for WorkflowConfigSettings {
             prompt_timeout_ms: default_prompt_timeout_ms(),
             generation_node_timeout_ms: default_generation_node_timeout_ms(),
             allow_model_only_answers: default_allow_model_only_answers(),
+            citation_repair_enabled: default_citation_repair_enabled(),
         }
     }
 }
@@ -192,6 +203,7 @@ impl WorkflowConfigSettings {
             prompt_timeout_ms: self.prompt_timeout_ms,
             generation_node_timeout_ms: self.generation_node_timeout_ms,
             allow_model_only_answers: self.allow_model_only_answers,
+            citation_repair_enabled: self.citation_repair_enabled,
         }
     }
 }
@@ -210,6 +222,12 @@ pub struct WorkflowSettings {
     /// Defaults to false. A request's `allow_model_only` field overrides this default when present;
     /// the resolution order is request, then configuration, then false (D-10/D-12).
     pub allow_model_only_answers: bool,
+    /// Whether the local citation-repair pass (D-14) runs on unresolved citation markers.
+    ///
+    /// Defaults to true. When true, a near-miss marker is normalized and retained and an
+    /// unresolvable one is stripped from the answer and both citation lists; when false,
+    /// an unresolvable marker fails the run exactly as it did before D-14 (DEBT-RAG-03).
+    pub citation_repair_enabled: bool,
 }
 
 impl Default for WorkflowSettings {
@@ -640,6 +658,20 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
                 other => {
                     return Err(::config::ConfigError::Message(format!(
                         "LANCET_ENGINE__WORKFLOW__ALLOW_MODEL_ONLY_ANSWERS must be true/false, got {other:?}"
+                    )))
+                }
+            };
+        }
+    }
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__WORKFLOW__CITATION_REPAIR_ENABLED") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            settings.engine.workflow.citation_repair_enabled = match trimmed {
+                "true" | "1" => true,
+                "false" | "0" => false,
+                other => {
+                    return Err(::config::ConfigError::Message(format!(
+                        "LANCET_ENGINE__WORKFLOW__CITATION_REPAIR_ENABLED must be true/false, got {other:?}"
                     )))
                 }
             };

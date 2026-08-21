@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::prompt::EvidenceBlock;
 
+pub mod citations;
 pub mod openrouter;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
