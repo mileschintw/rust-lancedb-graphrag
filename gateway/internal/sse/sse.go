@@ -15,6 +15,11 @@ const (
 	ErrCodeGRPCRecvError            = "GRPC_RECV_ERROR"
 )
 
+// eventStreamError is the SSE event name for a stream-level failure frame. The other six
+// event names are assigned inline in WriteWorkflowEvent; this one is named so it is not
+// buried inside a format string, where a rename would be invisible to a literal scan.
+const eventStreamError = "stream_error"
+
 // WriteStreamError formats and writes a stream_error event frame to the SSE stream.
 func WriteStreamError(w http.ResponseWriter, rc *http.ResponseController, code, message string) {
 	payload := map[string]any{
@@ -25,11 +30,16 @@ func WriteStreamError(w http.ResponseWriter, rc *http.ResponseController, code, 
 	if err != nil {
 		return
 	}
-	fmt.Fprintf(w, "event: stream_error\ndata: %s\n\n", dataBytes)
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventStreamError, dataBytes)
 	_ = rc.Flush()
 }
 
 // WriteWorkflowEvent formats and writes a workflow event frame to the SSE stream.
+//
+// Caller contract: checkpoint events are NOT client-facing and are dropped here without
+// being written. Persisting them is the caller's responsibility — the gateway handler
+// submits them to the checkpoint dispatcher before delegating to this function. A caller
+// that routes checkpoint events straight here silently loses them.
 func WriteWorkflowEvent(w http.ResponseWriter, rc *http.ResponseController, ev *pb.WorkflowEvent) {
 	if ev == nil || ev.GetCheckpoint() != nil {
 		return

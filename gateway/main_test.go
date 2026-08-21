@@ -3884,7 +3884,7 @@ func TestLoadConfigValidation(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error on blank database_url, got nil")
 		}
-		if !strings.Contains(err.Error(), "gateway.database_url must not be empty") {
+		if !strings.Contains(err.Error(), "gateway.database_url must not be empty (set LANCET_GATEWAY__DATABASE_URL)") {
 			t.Fatalf("unexpected error message: %v", err)
 		}
 	})

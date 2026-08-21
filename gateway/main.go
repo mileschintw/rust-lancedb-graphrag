@@ -698,13 +698,13 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		ev, recvErr := stream.Recv()
 		if errors.Is(recvErr, io.EOF) {
 			if !sawWorkflowCompleted && r.Context().Err() == nil {
-				sse.WriteStreamError(w, rc, "STREAM_EOF_WITHOUT_TERMINAL", "stream ended before workflow_completed")
+				sse.WriteStreamError(w, rc, sse.ErrCodeStreamEOFWithoutTerminal, "stream ended before workflow_completed")
 			}
 			return
 		}
 		if recvErr != nil {
 			if r.Context().Err() == nil {
-				sse.WriteStreamError(w, rc, "GRPC_RECV_ERROR", recvErr.Error())
+				sse.WriteStreamError(w, rc, sse.ErrCodeGRPCRecvError, recvErr.Error())
 			}
 			return
 		}

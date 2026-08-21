@@ -54,7 +54,7 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if strings.TrimSpace(cfg.Gateway.DatabaseURL) == "" {
-		return Config{}, errors.New("gateway.database_url must not be empty")
+		return Config{}, errors.New("gateway.database_url must not be empty (set LANCET_GATEWAY__DATABASE_URL)")
 	}
 	if os.Getenv("LANCET_ENV") == "prod" && strings.Contains(cfg.Gateway.DatabaseURL, "sslmode=disable") {
 		return Config{}, errors.New("gateway.database_url must not disable TLS in prod")

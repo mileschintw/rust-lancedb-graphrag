@@ -7,13 +7,13 @@ import (
 
 // QueryRAGResponseDTO represents the JSON payload for a final RAG query response.
 type QueryRAGResponseDTO struct {
-	Answer              string                 `json:"answer"`
-	Citations           []string               `json:"citations"`
-	SessionID           string                 `json:"session_id"`
-	AnswerBasis         int32                  `json:"answer_basis"`
+	Answer              string                  `json:"answer"`
+	Citations           []string                `json:"citations"`
+	SessionID           string                  `json:"session_id"`
+	AnswerBasis         int32                   `json:"answer_basis"`
 	StructuredCitations []StructuredCitationDTO `json:"structured_citations"`
-	Notices             []NoticeDTO            `json:"notices"`
-	Snapshot            *RetrievalSnapshotDTO  `json:"snapshot"`
+	Notices             []NoticeDTO             `json:"notices"`
+	Snapshot            *RetrievalSnapshotDTO   `json:"snapshot"`
 }
 
 // StructuredCitationDTO represents a structured citation with chunk and document metadata.
