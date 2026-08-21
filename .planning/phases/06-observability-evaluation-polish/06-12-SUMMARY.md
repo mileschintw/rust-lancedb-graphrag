@@ -199,3 +199,14 @@ None — no external service configuration required.
 *Phase: 06-observability-evaluation-polish*
 *Plan: 12*
 *Completed: 2026-08-21*
+
+## Self-Check: PASSED
+
+- `engine/src/tests/bad_input_matrix.rs` — FOUND
+- `.planning/phases/06-observability-evaluation-polish/06-12-SUMMARY.md` — FOUND
+- Commit `83c37f9` (Task 1) — FOUND
+- Commit `c45b4fc` (Task 2) — FOUND
+- Commit `0b2cad4` (docs: summary) — FOUND
+- `cargo test --manifest-path engine/Cargo.toml --locked`, `cargo clippy -- -D warnings`, `cargo fmt --check`, `sh scripts/engine-test-targets.sh`, `(cd gateway && go build ./... && go vet ./... && go test ./...)`, `sh scripts/gateway-test-targets.sh` — all exit 0.
+- `git diff --stat` against the plan's base commit (`0d3205f`) touches only test files and the two gate scripts — no production source file changed.
+- `.planning/REQUIREMENTS.md` RAG-03 checkbox intentionally left `[ ]` (see Deviations) — verified `git diff .planning/REQUIREMENTS.md` is empty.
