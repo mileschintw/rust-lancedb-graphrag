@@ -6398,7 +6398,12 @@ fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.5),
     }];
 
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 350, 16)
+    // D-17 (06-11) appended a precedence sentence to the system policy, which raised the
+    // fixed token overhead every packed prompt now reserves; the budget below is widened
+    // by that same delta so this tie-breaking test still exercises the boundary it was
+    // designed to (2 evidence blocks admitted, the graph fact excluded), not just observing
+    // a coincidentally tighter budget.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 380, 16)
         .expect("pack succeeds");
 
     assert_eq!(packed.evidence.len(), 2);

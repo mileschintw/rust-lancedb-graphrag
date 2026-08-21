@@ -14,7 +14,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use engine::generation::{AnswerBasis, FakeGenerator, Generator, ModelOutput};
+use engine::generation::{
+    AnswerBasis, FakeGenerator, GenerationRequest, Generator, GroundingLimits, ModelOutput,
+};
 use engine::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, NoticeCode, NoticeSeverity};
 use engine::retrieval::{Candidate, RetrievalSettings};
 use engine::testkit::{test_notice, test_query_request};
@@ -5623,4 +5625,175 @@ async fn model_only_prompt_assembly_rejects_when_opt_in_false() {
         err.message,
         "No evidence blocks provided for prompt assembly"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 06-11, Task 2: D-18 conservative-wins basis reconciliation and D-17
+// evidence-over-priors precedence instruction. Behavior-block tests.
+// ---------------------------------------------------------------------------
+
+fn evidence_block_with_id(id: &str) -> engine::prompt::EvidenceBlock {
+    engine::prompt::EvidenceBlock {
+        id: id.into(),
+        chunk_id: format!("chunk-{id}"),
+        document_id: "doc-06-11".into(),
+        chunk_index: 0,
+        title: Some("06-11 fixture".into()),
+        section_path: Some("Root".into()),
+        content_type: Some("text/plain".into()),
+        provenance: "test".into(),
+        text: "Evidence text.".into(),
+        score: 0.9,
+        rank: 1,
+        suspicious: false,
+    }
+}
+
+fn reconciliation_ctx(session_id: &str) -> WorkflowContext {
+    let req = test_query_request("Reconciliation test", session_id);
+    WorkflowContext::new(session_id.into(), format!("trace-{session_id}"), &req)
+}
+
+/// Behavior: when the model self-reports retrieval and its citations resolve, the basis
+/// stays retrieval and no reconciliation notice is emitted.
+#[test]
+fn basis_reconciliation_retrieval_self_report_with_resolving_citations_stays_retrieval() {
+    let mut ctx = reconciliation_ctx("sess-reconcile-retrieval-resolves");
+    ctx.update_from_model_output(&ModelOutput {
+        answer: "Grounded answer [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    });
+    assert_eq!(
+        ctx.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval
+    );
+    assert!(!ctx.notices.iter().any(|n| n.code == "BASIS_RECONCILED"));
+}
+
+/// Behavior: when the model self-reports retrieval and no citation resolves, the basis is
+/// weakened and a reconciliation notice records the change and its reason.
+#[test]
+fn basis_reconciliation_retrieval_self_report_with_no_citations_weakens_and_notes() {
+    let mut ctx = reconciliation_ctx("sess-reconcile-retrieval-empty");
+    ctx.update_from_model_output(&ModelOutput {
+        answer: "Unsupported answer.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    });
+    assert_eq!(
+        ctx.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::ModelOnly
+    );
+    let reconciled = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "BASIS_RECONCILED")
+        .expect("reconciliation notice must be emitted");
+    assert!(reconciled.message.contains("retrieval"));
+    assert!(reconciled.message.contains("model_only"));
+}
+
+/// Behavior: when the model self-reports mixed and no citation resolves, the basis is
+/// weakened and a reconciliation notice is emitted.
+#[test]
+fn basis_reconciliation_mixed_self_report_with_no_citations_weakens_and_notes() {
+    let mut ctx = reconciliation_ctx("sess-reconcile-mixed-empty");
+    ctx.update_from_model_output(&ModelOutput {
+        answer: "Unsupported mixed answer.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Mixed,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    });
+    assert_eq!(
+        ctx.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::ModelOnly
+    );
+    assert!(ctx.notices.iter().any(|n| n.code == "BASIS_RECONCILED"));
+}
+
+/// Behavior: when the model self-reports model-only and its citations happen to resolve,
+/// the basis stays model-only and no notice is emitted — reconciliation never strengthens
+/// a provenance claim.
+#[test]
+fn basis_reconciliation_model_only_self_report_with_resolving_citations_stays_model_only() {
+    let mut ctx = reconciliation_ctx("sess-reconcile-model-only-resolves");
+    ctx.update_from_model_output(&ModelOutput {
+        answer: "Model-only answer that happens to cite [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    });
+    assert_eq!(
+        ctx.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::ModelOnly
+    );
+    assert!(!ctx.notices.iter().any(|n| n.code == "BASIS_RECONCILED"));
+}
+
+/// Behavior: when the engine's observable facts agree with the model's self-report, the
+/// basis is the self-report unchanged and no notice is emitted.
+#[test]
+fn basis_reconciliation_agreement_stays_silent() {
+    let mut ctx = reconciliation_ctx("sess-reconcile-agree");
+    ctx.update_from_model_output(&ModelOutput {
+        answer: "Mixed answer citing [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Mixed,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    });
+    assert_eq!(ctx.answer_basis, engine::pb::lancet::v1::AnswerBasis::Mixed);
+    assert!(!ctx.notices.iter().any(|n| n.code == "BASIS_RECONCILED"));
+}
+
+/// Behavior: the system policy string contains the precedence instruction, and the
+/// assembled prompt for an ordinary grounded query contains it exactly once.
+#[test]
+fn system_policy_states_evidence_precedence_exactly_once() {
+    let evidence = vec![evidence_block_with_id("[1]")];
+    let packed = engine::prompt::pack_evidence_prompt_sync(
+        "What is Lancet?",
+        &evidence,
+        engine::prompt::DEFAULT_MAX_PROMPT_TOKENS,
+        engine::prompt::DEFAULT_ANSWER_TOKEN_BUDGET,
+    )
+    .expect("evidence prompt assembles");
+    let sentence =
+        "When evidence contradicts your prior knowledge, the evidence is authoritative; say so.";
+    assert_eq!(
+        packed.prompt.matches(sentence).count(),
+        1,
+        "precedence sentence must appear exactly once in the assembled prompt"
+    );
+}
+
+/// Behavior: the structured-output request is byte-for-byte unchanged by the precedence
+/// change. `GenerationRequest` is the structured input request passed to a `Generator`
+/// (its `system_policy` and evidence-carrying fields feed the outbound provider payload
+/// unmodified) — this asserts its pre-change default shape and values still hold.
+#[test]
+fn generation_request_contract_unchanged_by_precedence_change() {
+    let request = GenerationRequest::new("What is Lancet?", vec![]);
+    assert_eq!(
+        request.system_policy,
+        "You are a precise technical RAG engine."
+    );
+    assert_eq!(request.question, "What is Lancet?");
+    assert!(request.evidence.is_empty());
+    assert!(request.graph_facts.is_empty());
+    assert_eq!(request.graph_weight, 1.0);
+    assert!(request.session_id.is_none());
+    assert!(request.correlation_id.is_none());
 }
