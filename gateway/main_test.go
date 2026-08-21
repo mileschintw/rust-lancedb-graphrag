@@ -1405,6 +1405,214 @@ func TestRAGQueryRejectsHugeFilterBody(t *testing.T) {
 	}
 }
 
+// TestBadInputMatrixHTTP drives the D-15 bad-input matrix over the HTTP surface (see
+// engine/src/tests/bad_input_matrix.rs for the gRPC half and the matrix's canonical header
+// table). The gateway performs no field-level validation of its own — it bounds the body,
+// rejects unknown/trailing JSON, and forwards everything else to the engine — so every
+// rejecting row here is driven through a stubbed engine status rather than a Go-side rule,
+// and the handler's derivation from the gRPC status code to the HTTP status is what each row
+// actually proves.
+func TestBadInputMatrixHTTP(t *testing.T) {
+	trailerErr := func(code codes.Code, kind string) error {
+		tr := metadata.Pairs("x-lancet-error-kind", kind)
+		return engineclient.NewTrailerError(status.Error(code, kind), tr)
+	}
+
+	mustJSON := func(t *testing.T, v any) []byte {
+		t.Helper()
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("marshal row body: %v", err)
+		}
+		return b
+	}
+
+	oversizedQuery := strings.Repeat("a", 9000) // exceeds the engine's 8192-byte query bound,
+	// but stays under the gateway's own 32KiB body ceiling so the row is genuinely forwarded.
+
+	type badInputMatrixRow struct {
+		name        string
+		body        []byte
+		stubErr     error
+		wantStatus  int
+		wantErrKind string
+	}
+
+	rows := []badInputMatrixRow{
+		{
+			name:        "empty_query",
+			body:        mustJSON(t, map[string]any{"query": ""}),
+			stubErr:     trailerErr(codes.InvalidArgument, "empty_query"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "empty_query",
+		},
+		{
+			name:        "whitespace_only_query",
+			body:        mustJSON(t, map[string]any{"query": "   "}),
+			stubErr:     trailerErr(codes.InvalidArgument, "empty_query"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "empty_query",
+		},
+		{
+			name:        "query_too_long",
+			body:        mustJSON(t, map[string]any{"query": oversizedQuery}),
+			stubErr:     trailerErr(codes.InvalidArgument, "query_too_long"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "query_too_long",
+		},
+		{
+			name:        "malformed_session_id",
+			body:        mustJSON(t, map[string]any{"query": "valid query", "session_id": "not-a-uuid"}),
+			stubErr:     trailerErr(codes.InvalidArgument, "invalid_session_id"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "invalid_session_id",
+		},
+		{
+			name: "wrong_version_session_id",
+			body: mustJSON(t, map[string]any{
+				"query":      "valid query",
+				"session_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+			}),
+			stubErr:     trailerErr(codes.InvalidArgument, "invalid_session_id"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "invalid_session_id",
+		},
+		{
+			name: "invalid_document_id",
+			body: mustJSON(t, map[string]any{
+				"query":  "valid query",
+				"filter": map[string]any{"document_ids": []string{"not-a-document-id"}},
+			}),
+			stubErr:     trailerErr(codes.InvalidArgument, "invalid_document_id"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "invalid_document_id",
+		},
+		{
+			name: "unsupported_content_type",
+			body: mustJSON(t, map[string]any{
+				"query":  "valid query",
+				"filter": map[string]any{"content_types": []string{"text/html"}},
+			}),
+			stubErr:     trailerErr(codes.InvalidArgument, "unsupported_content_type"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "unsupported_content_type",
+		},
+		{
+			name: "empty_filter_value",
+			body: mustJSON(t, map[string]any{
+				"query":  "valid query",
+				"filter": map[string]any{"document_ids": []string{"   "}},
+			}),
+			stubErr:     trailerErr(codes.InvalidArgument, "empty_filter_value"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "empty_filter_value",
+		},
+		{
+			// The gateway sends this filter through unchanged; the row's illustrative value
+			// (three content types) documents what the request looked like when the engine's
+			// real validator rejected it, but it is the stubbed engine status alone that
+			// drives this row's assertions — the gateway performs no count check of its own.
+			name: "filter_limit_exceeded",
+			body: mustJSON(t, map[string]any{
+				"query": "valid query",
+				"filter": map[string]any{
+					"content_types": []string{"application/json", "text/markdown", "text/plain"},
+				},
+			}),
+			stubErr:     trailerErr(codes.InvalidArgument, "filter_limit_exceeded"),
+			wantStatus:  http.StatusBadRequest,
+			wantErrKind: "filter_limit_exceeded",
+		},
+		{
+			// Non-invalid-argument engine statuses derive to 502, not 400 — the derivation is
+			// by status code, not by guesswork about which errors "sound like" bad input.
+			name:        "non_invalid_argument_status_is_502_not_400",
+			body:        mustJSON(t, map[string]any{"query": "valid query"}),
+			stubErr:     trailerErr(codes.Unavailable, "dense_retrieval"),
+			wantStatus:  http.StatusBadGateway,
+			wantErrKind: "dense_retrieval",
+		},
+	}
+
+	for _, tt := range rows {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeStore{}
+			reached := false
+			engine := engineFunc{
+				queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+					reached = true
+					return nil, tt.stubErr
+				},
+			}
+			router := app{store: store, engine: engine, logger: zap.NewNop()}.routes()
+
+			req := httptest.NewRequest(http.MethodPost, "/rag/query", bytes.NewReader(tt.body)).WithContext(t.Context())
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+
+			if recorder.Code != tt.wantStatus {
+				t.Fatalf("[%s] status = %d, want %d", tt.name, recorder.Code, tt.wantStatus)
+			}
+			if got := recorder.Header().Get("X-Lancet-Error-Kind"); got != tt.wantErrKind {
+				t.Fatalf("[%s] X-Lancet-Error-Kind = %q, want %q", tt.name, got, tt.wantErrKind)
+			}
+			// A body the engine would reject must reach the stub rather than being rejected
+			// locally — the gateway has no field-validation rule of its own to intercept it.
+			if !reached {
+				t.Fatalf("[%s] engine was not reached; gateway must forward, not locally reject", tt.name)
+			}
+		})
+	}
+
+	// The two non-rejection rows: well-formed filters that the engine legitimately finds no
+	// evidence for. Neither is a gateway-side concept — both are proven by a success-returning
+	// stub, and the only assertion here is that the gateway does not turn either into a 400.
+	successRows := []struct {
+		name string
+		body []byte
+	}{
+		{
+			name: "unmatched_filter",
+			body: mustJSON(t, map[string]any{
+				"query":  "valid query",
+				"filter": map[string]any{"document_ids": []string{uuid.NewString()}},
+			}),
+		},
+		{
+			name: "contradictory_filter",
+			body: mustJSON(t, map[string]any{
+				"query": "valid query",
+				"filter": map[string]any{
+					"document_ids":  []string{uuid.NewString()},
+					"content_types": []string{"application/json"},
+				},
+			}),
+		},
+	}
+
+	for _, sb := range successRows {
+		t.Run(sb.name, func(t *testing.T) {
+			store := &fakeStore{}
+			engine := engineFunc{
+				queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+					return newSingleResponseStream(&pb.QueryRAGResponse{Answer: "zero evidence"}, nil), nil
+				},
+			}
+			router := app{store: store, engine: engine, logger: zap.NewNop()}.routes()
+
+			req := httptest.NewRequest(http.MethodPost, "/rag/query", bytes.NewReader(sb.body)).WithContext(t.Context())
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+
+			if recorder.Code == http.StatusBadRequest {
+				t.Fatalf("[%s] status = %d, must not be 400", sb.name, recorder.Code)
+			}
+		})
+	}
+}
+
 func TestHTTPServerReadTimeouts(t *testing.T) {
 	server := newHTTPServer("127.0.0.1:8080", nil)
 	if server.ReadTimeout != 60*time.Second {
