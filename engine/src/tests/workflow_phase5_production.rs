@@ -7,12 +7,7 @@ use crate::{
     generation::{self, AnswerBasis, ModelOutput},
     rerank,
     tests::{configured_service, database_path, FakeEmbedder, FakeGenerator},
-    workflow::{
-        self,
-        events::EventSequence,
-        node::Node,
-        WorkflowContext, WorkflowEventSink,
-    },
+    workflow::{self, events::EventSequence, node::Node, WorkflowContext, WorkflowEventSink},
 };
 use engine::pb::lancet::v1::{self, QueryRagRequest};
 
@@ -37,8 +32,14 @@ async fn workflow_phase5_production_five_node() {
     .await;
 
     let (runner, _deps) = service.build_production_workflow();
-    assert_eq!(runner.timeout_for_node("ReformulateQuery").as_millis(), 5000);
-    assert_eq!(runner.timeout_for_node("ExtractGraphContext").as_millis(), 15000);
+    assert_eq!(
+        runner.timeout_for_node("ReformulateQuery").as_millis(),
+        5000
+    );
+    assert_eq!(
+        runner.timeout_for_node("ExtractGraphContext").as_millis(),
+        15000
+    );
     assert_eq!(runner.timeout_for_node("RetrieveHybrid").as_millis(), 10000);
     assert_eq!(runner.timeout_for_node("AssemblePrompt").as_millis(), 2000);
     assert_eq!(runner.timeout_for_node("GenerateAnswer").as_millis(), 65000);
@@ -56,7 +57,11 @@ async fn workflow_phase5_production_five_node() {
         "test-trace".into(),
         "00000000-0000-4000-8000-000000000001".into(),
     );
-    let ctx = WorkflowContext::new("00000000-0000-4000-8000-000000000001".into(), "test-trace".into(), &req);
+    let ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000001".into(),
+        "test-trace".into(),
+        &req,
+    );
 
     runner.run_workflow(ctx, cancel, sink).await;
 
@@ -118,12 +123,27 @@ async fn workflow_phase5_production_dependencies_are_real() {
     let (_runner2, deps2) = service.build_production_workflow();
 
     // Verify that Arc::clone is used and Arc::ptr_eq / strong_count proves handle reuse across constructions
-    assert!(Arc::ptr_eq(&service.reranker, deps1.reranker_port.as_ref().unwrap()));
-    assert!(Arc::ptr_eq(&service.reranker, deps2.reranker_port.as_ref().unwrap()));
-    assert!(Arc::ptr_eq(&service.generator, deps1.generator.as_ref().unwrap()));
-    assert!(Arc::ptr_eq(&service.generator, deps2.generator.as_ref().unwrap()));
+    assert!(Arc::ptr_eq(
+        &service.reranker,
+        deps1.reranker_port.as_ref().unwrap()
+    ));
+    assert!(Arc::ptr_eq(
+        &service.reranker,
+        deps2.reranker_port.as_ref().unwrap()
+    ));
+    assert!(Arc::ptr_eq(
+        &service.generator,
+        deps1.generator.as_ref().unwrap()
+    ));
+    assert!(Arc::ptr_eq(
+        &service.generator,
+        deps2.generator.as_ref().unwrap()
+    ));
     let strong_count = Arc::strong_count(&service.reranker);
-    assert!(strong_count >= 3, "Arc::strong_count must reflect shared handles across construction calls");
+    assert!(
+        strong_count >= 3,
+        "Arc::strong_count must reflect shared handles across construction calls"
+    );
 }
 
 #[tokio::test]
@@ -176,15 +196,23 @@ async fn workflow_phase5_production_context_population() {
         session_id: "00000000-0000-4000-8000-000000000002".into(),
         filter: None,
     };
-    let mut ctx = WorkflowContext::new("00000000-0000-4000-8000-000000000002".into(), "trace-ctx".into(), &req);
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000002".into(),
+        "trace-ctx".into(),
+        &req,
+    );
     let cancel = CancellationToken::new();
 
     let (_runner, deps) = service.build_production_workflow();
-    let reformulate_node = workflow::nodes::ReformulateQueryNode::with_reformulator(deps.reformulator.clone());
+    let reformulate_node =
+        workflow::nodes::ReformulateQueryNode::with_reformulator(deps.reformulator.clone());
     reformulate_node.run(&mut ctx, &cancel).await.unwrap();
     assert_eq!(ctx.variants, vec!["Populate context test"]);
 
-    let graph_node = workflow::nodes::ExtractGraphContextNode::new(deps.embedding_port.clone(), deps.graph_port.clone());
+    let graph_node = workflow::nodes::ExtractGraphContextNode::new(
+        deps.embedding_port.clone(),
+        deps.graph_port.clone(),
+    );
     graph_node.run(&mut ctx, &cancel).await.unwrap();
     assert!(ctx.query_embedding.is_some());
     assert_eq!(ctx.query_embedding.as_ref().unwrap().len(), 2048);
@@ -231,9 +259,14 @@ async fn workflow_phase5_production_context_population() {
     generate_node.run(&mut ctx, &cancel).await.unwrap();
 
     let captured = captured_req.lock().unwrap();
-    let gen_req: &generation::GenerationRequest = captured.as_ref().expect("GenerationRequest must be captured at provider boundary");
+    let gen_req: &generation::GenerationRequest = captured
+        .as_ref()
+        .expect("GenerationRequest must be captured at provider boundary");
     assert_eq!(gen_req.graph_facts.len(), 1);
-    assert_eq!(gen_req.graph_facts[0].fact.entity_a_name(), "SeededGraphFactMarker");
+    assert_eq!(
+        gen_req.graph_facts[0].fact.entity_a_name(),
+        "SeededGraphFactMarker"
+    );
     assert_eq!(gen_req.evidence.len(), 1);
     assert_eq!(gen_req.evidence[0].id, "[1]");
 }
@@ -258,26 +291,27 @@ async fn workflow_phase5_production_reachability() {
         .next()
         .unwrap();
 
-    crate::tests::process_job(&job, &database, &FakeEmbedder).await.unwrap();
-
-    let nodes = database.nodes_table().await.unwrap();
-    let bm25_index = crate::retrieval::Bm25Index::from_table(&nodes, crate::retrieval::Bm25Config::default())
+    crate::tests::process_job(&job, &database, &FakeEmbedder)
         .await
         .unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index =
+        crate::retrieval::Bm25Index::from_table(&nodes, crate::retrieval::Bm25Config::default())
+            .await
+            .unwrap();
     let table = database.staged_documents_table().await.unwrap();
     let statuses = Arc::new(dashmap::DashMap::new());
     let (sender, _receiver) = mpsc::channel(crate::QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Reachability answer [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Reachability answer [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
 
     let service = crate::LancetServiceImpl {
         table,
@@ -349,7 +383,11 @@ async fn workflow_phase5_production_reachability() {
             _ => None,
         })
         .collect();
-    assert_eq!(answer_chunks.len(), 1, "exactly one full AnswerChunk must be emitted");
+    assert_eq!(
+        answer_chunks.len(),
+        1,
+        "exactly one full AnswerChunk must be emitted"
+    );
     assert_eq!(answer_chunks[0].chunk, "Reachability answer [1].");
 
     let final_answers: Vec<_> = events
@@ -359,7 +397,11 @@ async fn workflow_phase5_production_reachability() {
             _ => None,
         })
         .collect();
-    assert_eq!(final_answers.len(), 1, "exactly one distinct FinalAnswer must be emitted");
+    assert_eq!(
+        final_answers.len(),
+        1,
+        "exactly one distinct FinalAnswer must be emitted"
+    );
     assert_eq!(
         final_answers[0]
             .response
@@ -443,7 +485,10 @@ async fn workflow_phase5_production_reachability() {
             _embedding: &'a [f32],
             _filter: Option<&'a v1::DocumentFilter>,
             _cancel: &'a CancellationToken,
-        ) -> workflow::node::BoxFuture<'a, Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>> {
+        ) -> workflow::node::BoxFuture<
+            'a,
+            Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>,
+        > {
             Box::pin(async move {
                 Err(workflow::node::NodeError::new(
                     v1::NodeErrorKind::RetrievalFailed,
@@ -456,7 +501,10 @@ async fn workflow_phase5_production_reachability() {
     let (_, fail_deps) = service.build_production_workflow();
     let mut failing_runner = workflow::WorkflowRunner::new();
     failing_runner.add_node(workflow::nodes::ReformulateQueryNode::new());
-    failing_runner.add_node(workflow::nodes::ExtractGraphContextNode::new(fail_deps.embedding_port.clone(), None));
+    failing_runner.add_node(workflow::nodes::ExtractGraphContextNode::new(
+        fail_deps.embedding_port.clone(),
+        None,
+    ));
     failing_runner.add_node(workflow::nodes::RetrieveHybridNode::new(
         Some(Arc::new(FailingDensePort)),
         None,
@@ -480,7 +528,9 @@ async fn workflow_phase5_production_reachability() {
         &req,
     );
 
-    failing_runner.run_workflow(ctx_fail, cancel_fail, sink_fail).await;
+    failing_runner
+        .run_workflow(ctx_fail, cancel_fail, sink_fail)
+        .await;
 
     let mut fail_events = Vec::new();
     while let Ok(item) = rx_fail.try_recv() {
@@ -497,7 +547,10 @@ async fn workflow_phase5_production_reachability() {
         })
         .expect("Failed workflow must emit WorkflowCompleted");
     assert!(!fail_terminal.success);
-    assert_eq!(fail_terminal.error_kind, v1::NodeErrorKind::RetrievalFailed as i32);
+    assert_eq!(
+        fail_terminal.error_kind,
+        v1::NodeErrorKind::RetrievalFailed as i32
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -535,8 +588,14 @@ async fn workflow_phase5_settings_applied_to_production() {
     .await;
 
     let (runner, _deps) = service.build_production_workflow();
-    assert_eq!(runner.timeout_for_node("ReformulateQuery").as_millis(), 1234);
-    assert_eq!(runner.timeout_for_node("ExtractGraphContext").as_millis(), 5678);
+    assert_eq!(
+        runner.timeout_for_node("ReformulateQuery").as_millis(),
+        1234
+    );
+    assert_eq!(
+        runner.timeout_for_node("ExtractGraphContext").as_millis(),
+        5678
+    );
     assert_eq!(runner.timeout_for_node("RetrieveHybrid").as_millis(), 3456);
     assert_eq!(runner.timeout_for_node("AssemblePrompt").as_millis(), 6789);
     assert_eq!(runner.timeout_for_node("GenerateAnswer").as_millis(), 7890);
@@ -553,7 +612,8 @@ impl generation::Generator for SlowLiveProvider {
         _request: generation::GenerationRequest,
     ) -> generation::BoxFuture<'a, Result<ModelOutput, generation::GenerationError>> {
         Box::pin(async move {
-            self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             self.started.notify_one();
             // Stalls for 30s (the openrouter attempt budget)
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
@@ -576,7 +636,10 @@ async fn workflow_phase5_config_verify_generation_timeout() {
     let verify_raw = std::fs::read_to_string(&verify_config_path).expect("read config.verify.toml");
     let settings: crate::Settings = config::Config::builder()
         .add_source(config::File::from_str(&base_raw, config::FileFormat::Toml))
-        .add_source(config::File::from_str(&verify_raw, config::FileFormat::Toml))
+        .add_source(config::File::from_str(
+            &verify_raw,
+            config::FileFormat::Toml,
+        ))
         .build()
         .expect("parse config with verify overlay")
         .try_deserialize()
@@ -648,13 +711,18 @@ async fn workflow_phase5_config_verify_generation_timeout() {
     let generate_node = workflow::nodes::GenerateAnswerNode::new(deps.generator.clone());
     let start_instant = std::time::Instant::now();
 
-    let res = runner.run_node(&generate_node, &mut ctx, &cancel, &sink).await;
+    let res = runner
+        .run_node(&generate_node, &mut ctx, &cancel, &sink)
+        .await;
     let elapsed = start_instant.elapsed();
 
     assert!(res.is_err(), "GenerateAnswer must time out");
     let err = res.unwrap_err();
     assert_eq!(err.kind, v1::NodeErrorKind::Timeout);
-    assert!(cancel.is_cancelled(), "stream cancellation token must be cancelled on timeout");
+    assert!(
+        cancel.is_cancelled(),
+        "stream cancellation token must be cancelled on timeout"
+    );
 
     // Wall-clock time should be near 7000ms, and materially below 30000ms (provider budget)
     assert!(
@@ -671,10 +739,15 @@ async fn workflow_phase5_config_verify_generation_timeout() {
         }
     }
     let started_ev = events.iter().find(|e| matches!(&e.event, Some(v1::workflow_event::Event::NodeStarted(ns)) if ns.node_name == "GenerateAnswer"));
-    assert!(started_ev.is_some(), "NodeStarted for GenerateAnswer must be observed");
+    assert!(
+        started_ev.is_some(),
+        "NodeStarted for GenerateAnswer must be observed"
+    );
 
     let failed_ev = events.iter().find_map(|e| match &e.event {
-        Some(v1::workflow_event::Event::NodeFailed(nf)) if nf.node_name == "GenerateAnswer" => Some(nf),
+        Some(v1::workflow_event::Event::NodeFailed(nf)) if nf.node_name == "GenerateAnswer" => {
+            Some(nf)
+        }
         _ => None,
     });
     let failed = failed_ev.expect("NodeFailed for GenerateAnswer must be observed");
@@ -684,11 +757,11 @@ async fn workflow_phase5_config_verify_generation_timeout() {
 
 #[tokio::test]
 async fn workflow_phase5_generation_retry_tracer() {
+    use serde_json::json;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
-    use serde_json::json;
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
     let addr = listener.local_addr().unwrap();
@@ -710,7 +783,9 @@ async fn workflow_phase5_generation_retry_tracer() {
                 Ok((mut stream, _)) => {
                     conn_count += 1;
                     stream.set_nonblocking(false).unwrap();
-                    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
                     let mut buf = [0u8; 8192];
                     let n = stream.read(&mut buf).unwrap_or(0);
                     let req_str = String::from_utf8_lossy(&buf[..n]).to_string();
@@ -722,7 +797,8 @@ async fn workflow_phase5_generation_retry_tracer() {
                                 "id": "mock/retry-model",
                                 "supported_parameters": ["response_format", "json_schema"]
                             }]
-                        }).to_string();
+                        })
+                        .to_string();
                         let resp = format!(
                             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                             body.len(), body
@@ -743,7 +819,8 @@ async fn workflow_phase5_generation_retry_tracer() {
                                 "answer_basis": "retrieval",
                                 "notices": [],
                                 "warnings": []
-                            }).to_string();
+                            })
+                            .to_string();
                             let chat_resp = json!({
                                 "choices": [{
                                     "message": {
@@ -752,7 +829,8 @@ async fn workflow_phase5_generation_retry_tracer() {
                                     },
                                     "finish_reason": "stop"
                                 }]
-                            }).to_string();
+                            })
+                            .to_string();
                             let resp = format!(
                                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                                 chat_resp.len(), chat_resp
@@ -782,12 +860,24 @@ async fn workflow_phase5_generation_retry_tracer() {
     .unwrap()
     .with_preflight_timeout(Duration::from_millis(2000));
 
-    let generator = Arc::new(generation::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap());
+    let generator = Arc::new(
+        generation::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap(),
+    );
 
     // 1. Explicitly prepare capabilities and verify cache
-    generator.check_supported_parameters().await.expect("prepare succeeds");
-    generator.check_supported_parameters().await.expect("cached prepare succeeds");
-    assert_eq!(models_calls.load(Ordering::SeqCst), 1, "capabilities must be cached after 1 call");
+    generator
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
+    generator
+        .check_supported_parameters()
+        .await
+        .expect("cached prepare succeeds");
+    assert_eq!(
+        models_calls.load(Ordering::SeqCst),
+        1,
+        "capabilities must be cached after 1 call"
+    );
 
     // 2. Run GenerateAnswer node
     let req = QueryRagRequest {
@@ -818,9 +908,16 @@ async fn workflow_phase5_generation_retry_tracer() {
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator));
     let cancel = CancellationToken::new();
 
-    generate_node.run(&mut ctx, &cancel).await.expect("retry succeeds on 2nd attempt");
+    generate_node
+        .run(&mut ctx, &cancel)
+        .await
+        .expect("retry succeeds on 2nd attempt");
 
-    assert_eq!(chat_calls.load(Ordering::SeqCst), 2, "exactly two chat attempts");
+    assert_eq!(
+        chat_calls.load(Ordering::SeqCst),
+        2,
+        "exactly two chat attempts"
+    );
     assert_eq!(ctx.answer.as_str(), "Retried answer [1].");
 
     server_handle.join().expect("server join");
@@ -829,15 +926,18 @@ async fn workflow_phase5_generation_retry_tracer() {
     assert_eq!(requests.len(), 2);
     let body1 = requests[0].split_once("\r\n\r\n").unwrap().1;
     let body2 = requests[1].split_once("\r\n\r\n").unwrap().1;
-    assert_eq!(body1, body2, "GenerationRequest payloads must be byte-identical on retry");
+    assert_eq!(
+        body1, body2,
+        "GenerationRequest payloads must be byte-identical on retry"
+    );
 }
 
 #[tokio::test]
 async fn workflow_phase5_openrouter_cancellation_propagates() {
+    use crate::generation::Generator;
     use std::io::Read;
     use std::net::TcpListener;
     use std::time::Duration;
-    use crate::generation::Generator;
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
     let addr = listener.local_addr().unwrap();
@@ -863,7 +963,9 @@ async fn workflow_phase5_openrouter_cancellation_propagates() {
     )
     .unwrap();
 
-    let generator = Arc::new(generation::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap());
+    let generator = Arc::new(
+        generation::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap(),
+    );
 
     let cancel = CancellationToken::new();
     let evidence = vec![crate::prompt::EvidenceBlock {
@@ -945,8 +1047,15 @@ async fn workflow_phase5_generation_retry_exhausted() {
     let err = res.unwrap_err();
     assert_eq!(err.kind, v1::NodeErrorKind::LlmGenerationFailed);
     assert!(!err.retryable, "exhausted error must be non-retryable");
-    assert_eq!(call_count.load(Ordering::SeqCst), 2, "must attempt exactly 2 times");
-    assert!(ctx.answer.is_empty(), "no answer may be fabricated on failure");
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        2,
+        "must attempt exactly 2 times"
+    );
+    assert!(
+        ctx.answer.is_empty(),
+        "no answer may be fabricated on failure"
+    );
 }
 
 #[tokio::test]
@@ -961,9 +1070,7 @@ async fn workflow_phase5_nodekind_tracer() {
             _query: &'a str,
             _cancel: &'a CancellationToken,
         ) -> workflow::node::BoxFuture<'a, Result<Vec<String>, workflow::node::NodeError>> {
-            Box::pin(async move {
-                Ok((1..=9).map(|i| format!("variant {i}")).collect())
-            })
+            Box::pin(async move { Ok((1..=9).map(|i| format!("variant {i}")).collect()) })
         }
     }
 
@@ -991,7 +1098,10 @@ async fn workflow_phase5_nodekind_tracer() {
             &'a self,
             _embedding: &'a [f32],
             _cancel: &'a CancellationToken,
-        ) -> workflow::node::BoxFuture<'a, Result<Vec<crate::prompt::GraphFactBlock>, workflow::node::NodeError>> {
+        ) -> workflow::node::BoxFuture<
+            'a,
+            Result<Vec<crate::prompt::GraphFactBlock>, workflow::node::NodeError>,
+        > {
             Box::pin(async move {
                 self.calls.fetch_add(1, Ordering::SeqCst);
                 Ok(vec![])
@@ -1002,20 +1112,31 @@ async fn workflow_phase5_nodekind_tracer() {
     let embed_calls = Arc::new(AtomicUsize::new(0));
     let graph_calls = Arc::new(AtomicUsize::new(0));
 
-    let reformulate_node = workflow::nodes::ReformulateQueryNode::with_reformulator(Some(Arc::new(NineVariantReformulator)));
+    let reformulate_node = workflow::nodes::ReformulateQueryNode::with_reformulator(Some(
+        Arc::new(NineVariantReformulator),
+    ));
     assert_eq!(reformulate_node.kind(), NodeKind::ReformulateQuery);
     assert_eq!(reformulate_node.name(), "ReformulateQuery");
 
     let extract_node = workflow::nodes::ExtractGraphContextNode::new(
-        Some(Arc::new(SpyEmbedder { calls: Arc::clone(&embed_calls) })),
-        Some(Arc::new(SpyGraphPort { calls: Arc::clone(&graph_calls) })),
+        Some(Arc::new(SpyEmbedder {
+            calls: Arc::clone(&embed_calls),
+        })),
+        Some(Arc::new(SpyGraphPort {
+            calls: Arc::clone(&graph_calls),
+        })),
     );
     let retrieve_node = workflow::nodes::RetrieveHybridNode::default();
     let prompt_node = workflow::nodes::AssemblePromptNode::default();
     let generate_node = workflow::nodes::GenerateAnswerNode::default();
 
     let mut runner = workflow::WorkflowRunner::new();
-    assert_eq!(runner.timeout_for_kind(NodeKind::ReformulateQuery).as_millis(), 5000);
+    assert_eq!(
+        runner
+            .timeout_for_kind(NodeKind::ReformulateQuery)
+            .as_millis(),
+        5000
+    );
     runner.add_node(reformulate_node);
     runner.add_node(extract_node);
     runner.add_node(retrieve_node);
@@ -1035,7 +1156,11 @@ async fn workflow_phase5_nodekind_tracer() {
         "trace-tracer-test".into(),
         "00000000-0000-4000-8000-000000000091".into(),
     );
-    let ctx = WorkflowContext::new("00000000-0000-4000-8000-000000000091".into(), "trace-tracer-test".into(), &req);
+    let ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000091".into(),
+        "trace-tracer-test".into(),
+        &req,
+    );
 
     runner.run_workflow(ctx, cancel, sink).await;
 
@@ -1060,9 +1185,12 @@ async fn workflow_phase5_nodekind_tracer() {
     let failed_nodes: Vec<(String, i32, String, bool)> = events
         .iter()
         .filter_map(|e| match &e.event {
-            Some(v1::workflow_event::Event::NodeFailed(nf)) => {
-                Some((nf.node_name.clone(), nf.category, nf.message.clone(), nf.retryable))
-            }
+            Some(v1::workflow_event::Event::NodeFailed(nf)) => Some((
+                nf.node_name.clone(),
+                nf.category,
+                nf.message.clone(),
+                nf.retryable,
+            )),
             _ => None,
         })
         .collect();
@@ -1081,7 +1209,10 @@ async fn workflow_phase5_nodekind_tracer() {
             _ => None,
         })
         .collect();
-    assert!(completed_nodes.is_empty(), "No NodeCompleted should be emitted for rejected node");
+    assert!(
+        completed_nodes.is_empty(),
+        "No NodeCompleted should be emitted for rejected node"
+    );
 
     // 4. No checkpoint for post_reformulatequery
     let checkpoints: Vec<String> = events
@@ -1091,11 +1222,22 @@ async fn workflow_phase5_nodekind_tracer() {
             _ => None,
         })
         .collect();
-    assert!(checkpoints.is_empty(), "No checkpoint should be emitted on early admission failure");
+    assert!(
+        checkpoints.is_empty(),
+        "No checkpoint should be emitted on early admission failure"
+    );
 
     // 5. Zero downstream port calls
-    assert_eq!(embed_calls.load(Ordering::SeqCst), 0, "No embedding calls on reformulate rejection");
-    assert_eq!(graph_calls.load(Ordering::SeqCst), 0, "No graph calls on reformulate rejection");
+    assert_eq!(
+        embed_calls.load(Ordering::SeqCst),
+        0,
+        "No embedding calls on reformulate rejection"
+    );
+    assert_eq!(
+        graph_calls.load(Ordering::SeqCst),
+        0,
+        "No graph calls on reformulate rejection"
+    );
 
     // 6. Terminal WorkflowCompleted with success = false
     let terminal = events
@@ -1106,7 +1248,10 @@ async fn workflow_phase5_nodekind_tracer() {
         })
         .expect("Terminal WorkflowCompleted must be emitted");
     assert!(!terminal.success);
-    assert_eq!(terminal.error_kind, v1::NodeErrorKind::InputValidation as i32);
+    assert_eq!(
+        terminal.error_kind,
+        v1::NodeErrorKind::InputValidation as i32
+    );
 }
 
 #[tokio::test]
@@ -1126,13 +1271,37 @@ async fn workflow_phase5_nodekind_dispatch() {
     assert_eq!(retrieve.name(), "RetrieveHybrid");
 
     let runner = workflow::WorkflowRunner::new();
-    assert_eq!(runner.timeout_for_kind(NodeKind::ReformulateQuery).as_millis(), 5000);
-    assert_eq!(runner.timeout_for_kind(NodeKind::ExtractGraphContext).as_millis(), 15000);
-    assert_eq!(runner.timeout_for_kind(NodeKind::RetrieveHybrid).as_millis(), 10000);
+    assert_eq!(
+        runner
+            .timeout_for_kind(NodeKind::ReformulateQuery)
+            .as_millis(),
+        5000
+    );
+    assert_eq!(
+        runner
+            .timeout_for_kind(NodeKind::ExtractGraphContext)
+            .as_millis(),
+        15000
+    );
+    assert_eq!(
+        runner
+            .timeout_for_kind(NodeKind::RetrieveHybrid)
+            .as_millis(),
+        10000
+    );
 
-    assert_eq!(NodeKind::ReformulateQuery.checkpoint_label(), "post_reformulatequery");
-    assert_eq!(NodeKind::ExtractGraphContext.checkpoint_label(), "post_extractgraphcontext");
-    assert_eq!(NodeKind::RetrieveHybrid.checkpoint_label(), "post_retrievehybrid");
+    assert_eq!(
+        NodeKind::ReformulateQuery.checkpoint_label(),
+        "post_reformulatequery"
+    );
+    assert_eq!(
+        NodeKind::ExtractGraphContext.checkpoint_label(),
+        "post_extractgraphcontext"
+    );
+    assert_eq!(
+        NodeKind::RetrieveHybrid.checkpoint_label(),
+        "post_retrievehybrid"
+    );
 
     // Verify D-08 variant-zero embedding and D-07 all-variant retrieval
     struct MockEmbedder {
@@ -1161,7 +1330,10 @@ async fn workflow_phase5_nodekind_dispatch() {
             query: &'a str,
             _filter: Option<&'a v1::DocumentFilter>,
             _cancel: &'a CancellationToken,
-        ) -> workflow::node::BoxFuture<'a, Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>> {
+        ) -> workflow::node::BoxFuture<
+            'a,
+            Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>,
+        > {
             let q = query.to_string();
             Box::pin(async move {
                 self.retrieved_variants.lock().unwrap().push(q);
@@ -1194,24 +1366,41 @@ async fn workflow_phase5_nodekind_dispatch() {
     );
 
     let graph_node = workflow::nodes::ExtractGraphContextNode::new(
-        Some(Arc::new(MockEmbedder { embedded_variants: Arc::clone(&embedded) })),
+        Some(Arc::new(MockEmbedder {
+            embedded_variants: Arc::clone(&embedded),
+        })),
         None,
     );
-    runner.run_node(&graph_node, &mut ctx, &cancel, &sink).await.unwrap();
+    runner
+        .run_node(&graph_node, &mut ctx, &cancel, &sink)
+        .await
+        .unwrap();
 
     // D-08: Only variant zero embedded
     assert_eq!(*embedded.lock().unwrap(), vec!["variant_0".to_string()]);
 
     let retrieve_node = workflow::nodes::RetrieveHybridNode::new(
         None,
-        Some(Arc::new(MockBm25Port { retrieved_variants: Arc::clone(&retrieved) })),
+        Some(Arc::new(MockBm25Port {
+            retrieved_variants: Arc::clone(&retrieved),
+        })),
         None,
         Default::default(),
     );
-    runner.run_node(&retrieve_node, &mut ctx, &cancel, &sink).await.unwrap();
+    runner
+        .run_node(&retrieve_node, &mut ctx, &cancel, &sink)
+        .await
+        .unwrap();
 
     // D-07: All variants retrieved
-    assert_eq!(*retrieved.lock().unwrap(), vec!["variant_0".to_string(), "variant_1".to_string(), "variant_2".to_string()]);
+    assert_eq!(
+        *retrieved.lock().unwrap(),
+        vec![
+            "variant_0".to_string(),
+            "variant_1".to_string(),
+            "variant_2".to_string()
+        ]
+    );
 
     // Check typed retryability forwarding without extra retrying event (D-15)
     struct FailingDensePort;
@@ -1222,10 +1411,16 @@ async fn workflow_phase5_nodekind_dispatch() {
             _embedding: &'a [f32],
             _filter: Option<&'a v1::DocumentFilter>,
             _cancel: &'a CancellationToken,
-        ) -> workflow::node::BoxFuture<'a, Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>> {
+        ) -> workflow::node::BoxFuture<
+            'a,
+            Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>,
+        > {
             Box::pin(async move {
-                Err(workflow::node::NodeError::new(v1::NodeErrorKind::RetrievalFailed, "Transient DB connection drop")
-                    .with_retryable(true))
+                Err(workflow::node::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    "Transient DB connection drop",
+                )
+                .with_retryable(true))
             })
         }
     }
@@ -1236,7 +1431,9 @@ async fn workflow_phase5_nodekind_dispatch() {
         None,
         Default::default(),
     );
-    let fail_res = runner.run_node(&failing_retrieve_node, &mut ctx, &cancel, &sink).await;
+    let fail_res = runner
+        .run_node(&failing_retrieve_node, &mut ctx, &cancel, &sink)
+        .await;
     assert!(fail_res.is_err());
     let err = fail_res.unwrap_err();
     assert!(err.retryable);
@@ -1248,11 +1445,19 @@ async fn workflow_phase5_nodekind_dispatch() {
         }
     }
 
-    let failed_retrieve = events.iter().find_map(|e| match &e.event {
-        Some(v1::workflow_event::Event::NodeFailed(nf)) if nf.node_name == "RetrieveHybrid" => Some(nf),
-        _ => None,
-    }).expect("NodeFailed event for RetrieveHybrid must exist");
-    assert!(failed_retrieve.retryable, "NodeFailed.retryable must be true when forwarded from NodeError");
+    let failed_retrieve = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(v1::workflow_event::Event::NodeFailed(nf)) if nf.node_name == "RetrieveHybrid" => {
+                Some(nf)
+            }
+            _ => None,
+        })
+        .expect("NodeFailed event for RetrieveHybrid must exist");
+    assert!(
+        failed_retrieve.retryable,
+        "NodeFailed.retryable must be true when forwarded from NodeError"
+    );
 }
 
 #[tokio::test]
@@ -1342,7 +1547,11 @@ async fn workflow_phase5_nodekind_exhaustive() {
         "trace-exhaustive".into(),
         "00000000-0000-4000-8000-000000000093".into(),
     );
-    let ctx = WorkflowContext::new("00000000-0000-4000-8000-000000000093".into(), "trace-exhaustive".into(), &req);
+    let ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000093".into(),
+        "trace-exhaustive".into(),
+        &req,
+    );
 
     zero_ev_runner.run_workflow(ctx, cancel, sink).await;
 
@@ -1422,7 +1631,10 @@ async fn workflow_phase5_retrieval_snapshot_variants() {
 
     let res = retrieve_node.run(&mut ctx, &cancel).await;
     assert!(res.is_ok(), "RetrieveHybridNode must run successfully");
-    let snapshot = ctx.snapshot.as_ref().expect("RetrievalSnapshot must be populated");
+    let snapshot = ctx
+        .snapshot
+        .as_ref()
+        .expect("RetrievalSnapshot must be populated");
     assert_eq!(snapshot.variant_count, 2);
     assert_eq!(
         snapshot.variant_identities,
@@ -1451,7 +1663,9 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
     .await;
 
     let (_runner, deps) = service.build_production_workflow();
-    let bm25_port = deps.bm25_port.expect("bm25 port must exist in production deps");
+    let bm25_port = deps
+        .bm25_port
+        .expect("bm25 port must exist in production deps");
 
     let cancel = CancellationToken::new();
     let retrieval_fut = bm25_port.retrieve_bm25("query terms", None, &cancel);
@@ -1469,5 +1683,8 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
     drop(write_guard);
 
     let res = retrieval_fut.await;
-    assert!(res.is_ok(), "BM25 retrieval must succeed using its immutable Arc snapshot");
+    assert!(
+        res.is_ok(),
+        "BM25 retrieval must succeed using its immutable Arc snapshot"
+    );
 }

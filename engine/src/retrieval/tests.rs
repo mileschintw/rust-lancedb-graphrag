@@ -10,9 +10,9 @@ use uuid::Uuid;
 use super::bm25::analyze;
 use super::fusion::VariantProvenanceSource;
 use super::{
-    fuse_candidates, fuse_cross_variant_candidates, Bm25Config, Bm25Index, Candidate, DenseRetriever,
-    QueryFilters, QueryRequest, RetrievalErrorKind, RetrievalSettings, MAX_SERVICE_CANDIDATE_LIMIT,
-    MAX_SERVICE_FINAL_LIMIT,
+    fuse_candidates, fuse_cross_variant_candidates, Bm25Config, Bm25Index, Candidate,
+    DenseRetriever, QueryFilters, QueryRequest, RetrievalErrorKind, RetrievalSettings,
+    MAX_SERVICE_CANDIDATE_LIMIT, MAX_SERVICE_FINAL_LIMIT,
 };
 
 fn candidate(document_id: &str, chunk_id: &str, content: &str) -> Candidate {
@@ -172,8 +172,6 @@ async fn retrieval_filter_fusion_and_determinism() {
             Arc::new(StringArray::from(content_types.to_vec())),
         ],
     )
-
-
     .unwrap();
     nodes.add(batch).execute().await.unwrap();
 
@@ -658,9 +656,21 @@ fn fusion_rejects_non_finite_accumulator() {
 #[test]
 fn fusion_cross_variant_tracer() {
     let settings = RetrievalSettings::default();
-    let cand_vec = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "vector content");
-    let cand_bm25_v0 = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "bm25 content v0");
-    let cand_bm25_v1 = candidate("00000000-0000-4000-8000-000000000002", "chunk-2", "bm25 content v1");
+    let cand_vec = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-1",
+        "vector content",
+    );
+    let cand_bm25_v0 = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-1",
+        "bm25 content v0",
+    );
+    let cand_bm25_v1 = candidate(
+        "00000000-0000-4000-8000-000000000002",
+        "chunk-2",
+        "bm25 content v1",
+    );
 
     let fused_v0 = fuse_candidates(vec![cand_vec], vec![cand_bm25_v0], &settings).unwrap();
     let fused_v1 = fuse_candidates(vec![], vec![cand_bm25_v1], &settings).unwrap();
@@ -693,12 +703,7 @@ fn fusion_variant_provenance_source_tracer() {
     );
     bm25_candidate.score = 0.25;
 
-    let fused = fuse_candidates(
-        vec![vector_candidate],
-        vec![bm25_candidate],
-        &settings,
-    )
-    .unwrap();
+    let fused = fuse_candidates(vec![vector_candidate], vec![bm25_candidate], &settings).unwrap();
 
     assert_eq!(fused.len(), 1);
     let shared = &fused[0];
@@ -729,8 +734,14 @@ fn fusion_variant_provenance_source_tracer() {
 
 #[test]
 fn fusion_variant_provenance_source_is_typed() {
-    assert_eq!(VariantProvenanceSource::Vector, VariantProvenanceSource::Vector);
-    assert_ne!(VariantProvenanceSource::Vector, VariantProvenanceSource::Bm25);
+    assert_eq!(
+        VariantProvenanceSource::Vector,
+        VariantProvenanceSource::Vector
+    );
+    assert_ne!(
+        VariantProvenanceSource::Vector,
+        VariantProvenanceSource::Bm25
+    );
     assert_eq!(
         serde_json::to_string(&VariantProvenanceSource::Vector).unwrap(),
         "\"vector\""
@@ -760,7 +771,8 @@ fn fusion_variant_provenance_source_is_typed() {
     );
     bm25_variant_one.score = 0.8;
 
-    let fused_v0 = fuse_candidates(vec![vector_candidate], vec![bm25_variant_zero], &settings).unwrap();
+    let fused_v0 =
+        fuse_candidates(vec![vector_candidate], vec![bm25_variant_zero], &settings).unwrap();
     let fused_v1 = fuse_candidates(vec![], vec![bm25_variant_one], &settings).unwrap();
 
     let fused = fuse_cross_variant_candidates(vec![fused_v0, fused_v1], &settings).unwrap();
@@ -803,19 +815,22 @@ fn fusion_variant_provenance_source_is_typed() {
 #[test]
 fn variant_zero_one_variant_matches_existing_scores() {
     let settings = RetrievalSettings::default();
-    let cand_vec = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "vector content");
-    let cand_bm25 = candidate("00000000-0000-4000-8000-000000000002", "chunk-2", "bm25 content");
+    let cand_vec = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-1",
+        "vector content",
+    );
+    let cand_bm25 = candidate(
+        "00000000-0000-4000-8000-000000000002",
+        "chunk-2",
+        "bm25 content",
+    );
 
-    let fused_single = fuse_candidates(
-        vec![cand_vec.clone()],
-        vec![cand_bm25.clone()],
-        &settings,
-    ).unwrap();
+    let fused_single =
+        fuse_candidates(vec![cand_vec.clone()], vec![cand_bm25.clone()], &settings).unwrap();
 
-    let fused_variant = fuse_cross_variant_candidates(
-        vec![fused_single.clone()],
-        &settings,
-    ).unwrap();
+    let fused_variant =
+        fuse_cross_variant_candidates(vec![fused_single.clone()], &settings).unwrap();
 
     assert_eq!(fused_single.len(), fused_variant.len());
     for (s, v) in fused_single.iter().zip(fused_variant.iter()) {
@@ -837,9 +852,21 @@ fn cross_variant_provenance_is_bounded() {
         ..RetrievalSettings::default()
     };
 
-    let c1 = candidate("00000000-0000-4000-8000-000000000001", "chunk-1", "content 1");
-    let c2 = candidate("00000000-0000-4000-8000-000000000002", "chunk-2", "content 2");
-    let c3 = candidate("00000000-0000-4000-8000-000000000003", "chunk-3", "content 3");
+    let c1 = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-1",
+        "content 1",
+    );
+    let c2 = candidate(
+        "00000000-0000-4000-8000-000000000002",
+        "chunk-2",
+        "content 2",
+    );
+    let c3 = candidate(
+        "00000000-0000-4000-8000-000000000003",
+        "chunk-3",
+        "content 3",
+    );
 
     let mut per_variant_fused = Vec::new();
     per_variant_fused.push(
@@ -852,18 +879,16 @@ fn cross_variant_provenance_is_bounded() {
     );
     for _ in 1..8 {
         per_variant_fused.push(
-            fuse_candidates(
-                vec![],
-                vec![c1.clone(), c2.clone(), c3.clone()],
-                &settings,
-            )
-            .unwrap(),
+            fuse_candidates(vec![], vec![c1.clone(), c2.clone(), c3.clone()], &settings).unwrap(),
         );
     }
 
     let fused = fuse_cross_variant_candidates(per_variant_fused, &settings).unwrap();
 
-    let chunk1_fused = fused.iter().find(|c| c.candidate.chunk_id == "chunk-1").unwrap();
+    let chunk1_fused = fused
+        .iter()
+        .find(|c| c.candidate.chunk_id == "chunk-1")
+        .unwrap();
     assert_eq!(chunk1_fused.variant_provenance.len(), 9);
     assert!(fused.iter().all(|c| c.candidate.chunk_id != "chunk-3"));
 }
@@ -875,19 +900,21 @@ async fn cross_variant_rrf_two_variant_exact_scores() {
     use crate::workflow::{Node, WorkflowContext};
     use tokio_util::sync::CancellationToken;
 
-    let c_a = candidate("00000000-0000-4000-8000-000000000001", "chunk-a", "content A");
-    let c_b = candidate("00000000-0000-4000-8000-000000000002", "chunk-b", "content B");
+    let c_a = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-a",
+        "content A",
+    );
+    let c_b = candidate(
+        "00000000-0000-4000-8000-000000000002",
+        "chunk-b",
+        "content B",
+    );
 
     let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![c_a.clone()]));
     let fake_bm25 = Arc::new(FakeBm25RetrievalPort::with_map(vec![
-        (
-            "variant 0".to_string(),
-            Ok(vec![c_a.clone(), c_b.clone()]),
-        ),
-        (
-            "variant 1".to_string(),
-            Ok(vec![c_b.clone(), c_a.clone()]),
-        ),
+        ("variant 0".to_string(), Ok(vec![c_a.clone(), c_b.clone()])),
+        ("variant 1".to_string(), Ok(vec![c_b.clone(), c_a.clone()])),
     ]));
 
     let settings = RetrievalSettings::default();
@@ -926,7 +953,9 @@ fn cross_variant_rrf_tie_order_is_deterministic() {
     let fused_v1 = fuse_candidates(vec![], vec![c_y2.clone(), c_y1.clone()], &settings).unwrap();
 
     for _ in 0..5 {
-        let fused = fuse_cross_variant_candidates(vec![fused_v0.clone(), fused_v1.clone()], &settings).unwrap();
+        let fused =
+            fuse_cross_variant_candidates(vec![fused_v0.clone(), fused_v1.clone()], &settings)
+                .unwrap();
         assert_eq!(fused.len(), 2);
         assert_eq!(fused[0].candidate.chunk_id, "chunk-1");
         assert_eq!(fused[1].candidate.chunk_id, "chunk-2");
@@ -963,15 +992,17 @@ fn retrieval_snapshot_variant_provenance_wire_contract() {
     };
 
     let mut buf = Vec::new();
-    original.encode(&mut buf).expect("RetrievalSnapshot encoding must succeed");
+    original
+        .encode(&mut buf)
+        .expect("RetrievalSnapshot encoding must succeed");
     assert!(!buf.is_empty(), "encoded wire buffer must not be empty");
 
     // Decode tags present on the wire to prove field numbers 1..=11
     let mut tags = std::collections::BTreeSet::new();
     let mut slice = &buf[..];
     while !slice.is_empty() {
-        let (tag, wire_type) = prost::encoding::decode_key(&mut slice)
-            .expect("protobuf wire key must decode cleanly");
+        let (tag, wire_type) =
+            prost::encoding::decode_key(&mut slice).expect("protobuf wire key must decode cleanly");
         tags.insert(tag);
         prost::encoding::skip_field(
             wire_type,

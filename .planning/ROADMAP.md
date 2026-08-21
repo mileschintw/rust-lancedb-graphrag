@@ -468,13 +468,13 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 06-01-PLAN.md — Rust module graph, step 1: move `chunker` and the whole configuration surface into the library crate; establish the per-target test invariant gate (D-80/D-81).
-- [ ] 06-04-PLAN.md — Go package split, part A: extract `internal/config` and `internal/sse`, create the reserved `internal/telemetry` stub, and establish the per-package Go test gate (D-82).
+- [x] 06-01-PLAN.md — Rust module graph, step 1: move `chunker` and the whole configuration surface into the library crate; establish the per-target test invariant gate (D-80/D-81).
+- [x] 06-04-PLAN.md — Go package split, part A: extract `internal/config` and `internal/sse`, create the reserved `internal/telemetry` stub, and establish the per-package Go test gate (D-82).
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-02-PLAN.md — Rust module graph, step 2: relocate the ingestion pipeline and the whole gRPC service implementation into `engine::ingest` and `engine::service` (D-80).
-- [ ] 06-05-PLAN.md — Go package split, part B: extract `internal/engineclient` and migrate the 67-test suite onto it; the insecure engine dial moves unchanged (D-82, D-03/D-06).
+- [x] 06-02-PLAN.md — Rust module graph, step 2: relocate the ingestion pipeline and the whole gRPC service implementation into `engine::ingest` and `engine::service` (D-80).
+- [x] 06-05-PLAN.md — Go package split, part B: extract `internal/engineclient` and migrate the 67-test suite onto it; the insecure engine dial moves unchanged (D-82, D-03/D-06).
 
 **Wave 3** *(blocked on Wave 2 completion)*
 

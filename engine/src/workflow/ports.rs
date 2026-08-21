@@ -2,13 +2,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
+use super::node::{BoxFuture, NodeError};
 use crate::pb::lancet::v1::DocumentFilter;
 use crate::prompt::GraphFactBlock;
 use crate::retrieval::bm25::Bm25Index;
 use crate::retrieval::Candidate;
 #[cfg(test)]
 use crate::retrieval::{FusedCandidate, RetrievalError, RetrievalErrorKind};
-use super::node::{BoxFuture, NodeError};
 
 pub type Bm25IndexStore = Arc<RwLock<Arc<Bm25Index>>>;
 
@@ -144,7 +144,8 @@ impl super::node::QueryEmbeddingPort for FakeQueryEmbeddingPort {
         _variant: &'a str,
         _cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<Vec<f32>, NodeError>> {
-        self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Box::pin(async move {
             if self.stall {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
@@ -178,21 +179,9 @@ impl IntoGraphFacts for &str {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
         let parts: Vec<&str> = self.split("--").map(|s| s.trim()).collect();
         let fact = if parts.len() >= 3 {
-            crate::graph::context_strategy::GraphFact::new(
-                parts[0],
-                parts[1],
-                parts[2],
-                None,
-                1.0,
-            )
+            crate::graph::context_strategy::GraphFact::new(parts[0], parts[1], parts[2], None, 1.0)
         } else {
-            crate::graph::context_strategy::GraphFact::new(
-                self,
-                "related_to",
-                self,
-                None,
-                1.0,
-            )
+            crate::graph::context_strategy::GraphFact::new(self, "related_to", self, None, 1.0)
         };
         vec![crate::prompt::GraphFactBlock { fact }]
     }
@@ -208,14 +197,18 @@ impl IntoGraphFacts for String {
 #[cfg(test)]
 impl IntoGraphFacts for Vec<String> {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
-        self.iter().flat_map(|s| s.as_str().into_graph_facts()).collect()
+        self.iter()
+            .flat_map(|s| s.as_str().into_graph_facts())
+            .collect()
     }
 }
 
 #[cfg(test)]
 impl IntoGraphFacts for Vec<&str> {
     fn into_graph_facts(self) -> Vec<crate::prompt::GraphFactBlock> {
-        self.into_iter().flat_map(|s| s.into_graph_facts()).collect()
+        self.into_iter()
+            .flat_map(|s| s.into_graph_facts())
+            .collect()
     }
 }
 
@@ -264,7 +257,8 @@ impl GraphQueryPort for FakeGraphQueryPort {
         _query_embedding: &'a [f32],
         _cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<Vec<crate::prompt::GraphFactBlock>, NodeError>> {
-        self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Box::pin(async move {
             if self.stall {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
@@ -321,7 +315,8 @@ impl DenseRetrievalPort for FakeDenseRetrievalPort {
         _filter: Option<&'a DocumentFilter>,
         _cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<Vec<Candidate>, NodeError>> {
-        self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Box::pin(async move {
             if self.stall {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
@@ -390,7 +385,8 @@ impl Bm25RetrievalPort for FakeBm25RetrievalPort {
         _filter: Option<&'a DocumentFilter>,
         _cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<Vec<Candidate>, NodeError>> {
-        self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let query_str = query.to_string();
         Box::pin(async move {
             if self.stall {
@@ -440,7 +436,8 @@ impl crate::rerank::Reranker for FakeReranker {
         &'a self,
         candidates: Vec<FusedCandidate>,
     ) -> BoxFuture<'a, Result<Vec<FusedCandidate>, RetrievalError>> {
-        self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.call_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Box::pin(async move {
             if self.should_fail {
                 Err(RetrievalError::new(

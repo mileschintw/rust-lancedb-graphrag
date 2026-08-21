@@ -1,8 +1,8 @@
 //! Entity and relationship extraction traits, openrouter adapter, and test fakes.
 
 use std::{
-    sync::Arc,
     sync::atomic::{AtomicUsize, Ordering},
+    sync::Arc,
     sync::Mutex,
 };
 
@@ -167,7 +167,10 @@ impl OpenRouterExtractionGenerator {
     }
     pub(crate) fn build_request_payload(&self, chunk_text: &str) -> serde_json::Value {
         let system_msg = "You are an entity and relationship extraction engine. Extract key entities and relationships from the provided text block into the requested JSON schema. Do not extract trivial or stopword entities.";
-        let user_msg = format!("Extract entities and relationships:\n\nText:\n{}", chunk_text);
+        let user_msg = format!(
+            "Extract entities and relationships:\n\nText:\n{}",
+            chunk_text
+        );
 
         let schema_json = serde_json::json!({
             "type": "object",
@@ -275,12 +278,13 @@ impl ExtractionGenerator for OpenRouterExtractionGenerator {
                     ),
                 })?;
 
-            let chat_resp: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(|err| {
-                GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!("failed to parse OpenRouter response wrapper JSON: {err}"),
-                )
-            })?;
+            let chat_resp: serde_json::Value =
+                serde_json::from_slice(&body_bytes).map_err(|err| {
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!("failed to parse OpenRouter response wrapper JSON: {err}"),
+                    )
+                })?;
 
             let content_str = chat_resp["choices"][0]["message"]["content"]
                 .as_str()

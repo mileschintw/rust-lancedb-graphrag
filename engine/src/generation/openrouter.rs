@@ -232,7 +232,9 @@ pub struct OpenRouterGenerator {
     http: Client,
     api_key: String,
     config: OpenRouterGenerationConfig,
-    capabilities_cache: Arc<tokio::sync::Mutex<HashMap<CapabilityKey, Arc<tokio::sync::OnceCell<ModelCapabilities>>>>>,
+    capabilities_cache: Arc<
+        tokio::sync::Mutex<HashMap<CapabilityKey, Arc<tokio::sync::OnceCell<ModelCapabilities>>>>,
+    >,
 }
 
 impl OpenRouterGenerator {
@@ -348,9 +350,7 @@ impl OpenRouterGenerator {
         };
 
         let _caps = cell
-            .get_or_try_init(|| async {
-                self.fetch_and_validate_capabilities().await
-            })
+            .get_or_try_init(|| async { self.fetch_and_validate_capabilities().await })
             .await?;
 
         Ok(())
@@ -403,8 +403,8 @@ impl OpenRouterGenerator {
                 ),
             })?;
 
-            let models_resp =
-                serde_json::from_slice::<OpenRouterModelsResponse>(&body_bytes).map_err(|err| {
+            let models_resp = serde_json::from_slice::<OpenRouterModelsResponse>(&body_bytes)
+                .map_err(|err| {
                     GenerationError::new(
                         GenerationErrorKind::SupportedParameters,
                         format!("invalid models metadata JSON: {err}"),
@@ -485,10 +485,9 @@ impl OpenRouterGenerator {
         )
         .await
         .map_err(|err| match err {
-            crate::prompt::PromptAssemblyError::Cancelled => GenerationError::new(
-                GenerationErrorKind::Cancelled,
-                "prompt assembly cancelled",
-            ),
+            crate::prompt::PromptAssemblyError::Cancelled => {
+                GenerationError::new(GenerationErrorKind::Cancelled, "prompt assembly cancelled")
+            }
             _ => GenerationError::new(
                 GenerationErrorKind::InvalidRequest,
                 format!("prompt assembly failed: {err}"),
@@ -601,13 +600,12 @@ impl OpenRouterGenerator {
 
         let status = response.status();
         if !status.is_success() {
-            let kind = if status.is_server_error()
-                || status == reqwest::StatusCode::TOO_MANY_REQUESTS
-            {
-                GenerationErrorKind::ProviderError
-            } else {
-                GenerationErrorKind::InvalidRequest
-            };
+            let kind =
+                if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    GenerationErrorKind::ProviderError
+                } else {
+                    GenerationErrorKind::InvalidRequest
+                };
             return Err(GenerationError::new(
                 kind,
                 format!("OpenRouter chat completion returned HTTP {status}"),

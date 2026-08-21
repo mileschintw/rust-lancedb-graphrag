@@ -9,4 +9,3 @@ pub use generate::GenerateAnswerNode;
 pub use graph_context::ExtractGraphContextNode;
 pub use reformulate::ReformulateQueryNode;
 pub use retrieve::RetrieveHybridNode;
-

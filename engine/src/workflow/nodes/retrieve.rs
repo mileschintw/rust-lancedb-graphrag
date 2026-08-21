@@ -1,14 +1,14 @@
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
-use crate::rerank::Reranker;
-use crate::retrieval::{fuse_candidates, fuse_cross_variant_candidates, RetrievalSettings};
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind},
     ports::{Bm25RetrievalPort, DenseRetrievalPort},
     WorkflowContext,
 };
+use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
+use crate::rerank::Reranker;
+use crate::retrieval::{fuse_candidates, fuse_cross_variant_candidates, RetrievalSettings};
 
 pub struct RetrieveHybridNode {
     dense_port: Option<Arc<dyn DenseRetrievalPort>>,
@@ -64,12 +64,7 @@ impl RetrieveHybridNode {
         // 1. Dense retrieval for variant-zero embedding
         let dense_candidates = if let Some(dense_port) = &self.dense_port {
             match dense_port
-                .retrieve_dense(
-                    &ctx.original_query,
-                    embedding,
-                    ctx.filter.as_ref(),
-                    cancel,
-                )
+                .retrieve_dense(&ctx.original_query, embedding, ctx.filter.as_ref(), cancel)
                 .await
             {
                 Ok(c) => c,
@@ -114,11 +109,8 @@ impl RetrieveHybridNode {
                 ctx.bm25_results.push(candidate.chunk_id.clone());
             }
 
-            let fused_i = match fuse_candidates(
-                vector_candidates,
-                bm25_candidates,
-                &self.settings,
-            ) {
+            let fused_i = match fuse_candidates(vector_candidates, bm25_candidates, &self.settings)
+            {
                 Ok(fused) => fused,
                 Err(err) => {
                     return Err(NodeError::new(
@@ -132,18 +124,16 @@ impl RetrieveHybridNode {
         }
 
         // 3. Second pass: cross-variant RRF fusion
-        let fused_candidates = match fuse_cross_variant_candidates(
-            per_variant_fused,
-            &self.settings,
-        ) {
-            Ok(fused) => fused,
-            Err(err) => {
-                return Err(NodeError::new(
-                    NodeErrorKind::RetrievalFailed,
-                    format!("Cross-variant fusion failed: {}", err),
-                ));
-            }
-        };
+        let fused_candidates =
+            match fuse_cross_variant_candidates(per_variant_fused, &self.settings) {
+                Ok(fused) => fused,
+                Err(err) => {
+                    return Err(NodeError::new(
+                        NodeErrorKind::RetrievalFailed,
+                        format!("Cross-variant fusion failed: {}", err),
+                    ));
+                }
+            };
 
         // 4. Reranking
         let final_fused = if let Some(reranker) = &self.reranker {
@@ -172,7 +162,11 @@ impl RetrieveHybridNode {
         }
 
         ctx.evidence_blocks = crate::prompt::assemble_evidence_blocks(&taken_candidates);
-        ctx.final_candidates = ctx.evidence_blocks.iter().map(|b| b.chunk_id.clone()).collect();
+        ctx.final_candidates = ctx
+            .evidence_blocks
+            .iter()
+            .map(|b| b.chunk_id.clone())
+            .collect();
 
         ctx.snapshot = Some(crate::pb::lancet::v1::RetrievalSnapshot {
             index_generation: self.index_generation.clone(),
@@ -217,8 +211,6 @@ impl Node for RetrieveHybridNode {
         ctx: &'a mut WorkflowContext,
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<(), NodeError>> {
-        Box::pin(async move {
-            self.execute(ctx, cancel).await
-        })
+        Box::pin(async move { self.execute(ctx, cancel).await })
     }
 }

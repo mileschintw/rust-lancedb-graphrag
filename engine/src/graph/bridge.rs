@@ -12,11 +12,9 @@ impl<R: std::io::Read> DecodeAllBatches for arrow_ipc_lg::reader::StreamReader<R
     fn decode_all(mut self) -> Result<Self::RecordBatch, GraphSpikeError> {
         let schema = self.schema();
         let mut batches = Vec::new();
-        while let Some(batch) = self
-            .next()
-            .transpose()
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc decode: {e}")))?
-        {
+        while let Some(batch) = self.next().transpose().map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc decode: {e}"))
+        })? {
             batches.push(batch);
         }
 
@@ -31,8 +29,9 @@ impl<R: std::io::Read> DecodeAllBatches for arrow_ipc_lg::reader::StreamReader<R
             return Ok(batches.remove(0));
         }
 
-        arrow_lg::compute::concat_batches(&schema, batches.iter())
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc concat: {e}")))
+        arrow_lg::compute::concat_batches(&schema, batches.iter()).map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc concat: {e}"))
+        })
     }
 }
 
@@ -41,11 +40,9 @@ impl<R: std::io::Read> DecodeAllBatches for arrow_ipc::reader::StreamReader<R> {
     fn decode_all(mut self) -> Result<Self::RecordBatch, GraphSpikeError> {
         let schema = self.schema();
         let mut batches = Vec::new();
-        while let Some(batch) = self
-            .next()
-            .transpose()
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc decode: {e}")))?
-        {
+        while let Some(batch) = self.next().transpose().map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc decode: {e}"))
+        })? {
             batches.push(batch);
         }
 
@@ -60,8 +57,9 @@ impl<R: std::io::Read> DecodeAllBatches for arrow_ipc::reader::StreamReader<R> {
             return Ok(batches.remove(0));
         }
 
-        arrow_select::concat::concat_batches(&schema, batches.iter())
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc concat: {e}")))
+        arrow_select::concat::concat_batches(&schema, batches.iter()).map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc concat: {e}"))
+        })
     }
 }
 
@@ -86,16 +84,20 @@ pub(crate) fn bridge_batch(
     let mut buf = Vec::new();
     {
         let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buf, &batch.schema())
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}")))?;
-        writer
-            .write(batch)
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}")))?;
-        writer
-            .finish()
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}")))?;
+            .map_err(|e| {
+                GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}"))
+            })?;
+        writer.write(batch).map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}"))
+        })?;
+        writer.finish().map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}"))
+        })?;
     }
-    let reader = arrow_ipc_lg::reader::StreamReader::try_new(buf.as_slice(), None)
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc decode: {e}")))?;
+    let reader =
+        arrow_ipc_lg::reader::StreamReader::try_new(buf.as_slice(), None).map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc decode: {e}"))
+        })?;
     decode_all_batches(reader)
 }
 
@@ -113,15 +115,18 @@ pub(crate) fn bridge_batch_back(
     let mut buf = Vec::new();
     {
         let mut writer = arrow_ipc_lg::writer::StreamWriter::try_new(&mut buf, &batch.schema())
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}")))?;
-        writer
-            .write(batch)
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}")))?;
-        writer
-            .finish()
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}")))?;
+            .map_err(|e| {
+                GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}"))
+            })?;
+        writer.write(batch).map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}"))
+        })?;
+        writer.finish().map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc encode: {e}"))
+        })?;
     }
-    let reader = arrow_ipc::reader::StreamReader::try_new(buf.as_slice(), None)
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc decode: {e}")))?;
+    let reader = arrow_ipc::reader::StreamReader::try_new(buf.as_slice(), None).map_err(|e| {
+        GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("ipc decode: {e}"))
+    })?;
     decode_all_batches(reader)
 }

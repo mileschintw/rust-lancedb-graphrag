@@ -163,7 +163,12 @@ pub async fn traverse_fixed_hop(
             filter_conditions: None,
         })
         .build()
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::GraphConfig, format!("graph config: {e}")))?;
+        .map_err(|e| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::GraphConfig,
+                format!("graph config: {e}"),
+            )
+        })?;
 
     let mut datasets = HashMap::new();
     datasets.insert("Entity".to_string(), entities_lg);
@@ -172,7 +177,12 @@ pub async fn traverse_fixed_hop(
     let cypher = "MATCH (seed:Entity {entity_id: $seed_id})-[r:RELATED]-(neighbor:Entity) \
          RETURN seed.entity_id, r.relation_type, neighbor.entity_id, neighbor.name";
     let query = CypherQuery::new(cypher)
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::CypherParse, format!("cypher parse: {e}")))?
+        .map_err(|e| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::CypherParse,
+                format!("cypher parse: {e}"),
+            )
+        })?
         .with_config(config)
         .with_parameter("seed_id", seed_id);
 
@@ -180,7 +190,10 @@ pub async fn traverse_fixed_hop(
         .execute(datasets, None::<ExecutionStrategy>)
         .await
         .map_err(|e| {
-            GraphSpikeError::new(GraphSpikeErrorKind::CypherExecute, format!("cypher execute: {e}"))
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::CypherExecute,
+                format!("cypher execute: {e}"),
+            )
         })?;
 
     bridge::bridge_batch_back(&result_lg)
@@ -213,7 +226,12 @@ pub async fn traverse_multi_hop(
         .with_default_relationship_type_field("relation_type")
         .with_relationship("RELATED", "source_node_id", "target_node_id")
         .build()
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::GraphConfig, format!("graph config: {e}")))?;
+        .map_err(|e| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::GraphConfig,
+                format!("graph config: {e}"),
+            )
+        })?;
 
     let mut datasets = HashMap::new();
     datasets.insert("Entity".to_string(), entities_lg);
@@ -224,7 +242,12 @@ pub async fn traverse_multi_hop(
          RETURN seed.entity_id, neighbor.entity_id, neighbor.name"
     );
     let query = CypherQuery::new(&cypher)
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::CypherParse, format!("cypher parse: {e}")))?
+        .map_err(|e| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::CypherParse,
+                format!("cypher parse: {e}"),
+            )
+        })?
         .with_config(config)
         .with_parameter("seed_id", seed_id);
 
@@ -232,7 +255,10 @@ pub async fn traverse_multi_hop(
         .execute(datasets, None::<ExecutionStrategy>)
         .await
         .map_err(|e| {
-            GraphSpikeError::new(GraphSpikeErrorKind::CypherExecute, format!("cypher execute: {e}"))
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::CypherExecute,
+                format!("cypher execute: {e}"),
+            )
         })?;
 
     bridge::bridge_batch_back(&result_lg)
@@ -261,7 +287,12 @@ pub async fn traverse_filtered_by_relation_type(
         .with_default_relationship_type_field("relation_type")
         .with_relationship("RELATED", "source_node_id", "target_node_id")
         .build()
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::GraphConfig, format!("graph config: {e}")))?;
+        .map_err(|e| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::GraphConfig,
+                format!("graph config: {e}"),
+            )
+        })?;
 
     let mut datasets = HashMap::new();
     datasets.insert("Entity".to_string(), entities_lg);
@@ -271,7 +302,12 @@ pub async fn traverse_filtered_by_relation_type(
          WHERE r.relation_type = $relation_type \
          RETURN neighbor.entity_id, neighbor.name";
     let query = CypherQuery::new(cypher)
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::CypherParse, format!("cypher parse: {e}")))?
+        .map_err(|e| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::CypherParse,
+                format!("cypher parse: {e}"),
+            )
+        })?
         .with_config(config)
         .with_parameter("seed_id", seed_id)
         .with_parameter("relation_type", relation_type);
@@ -280,7 +316,10 @@ pub async fn traverse_filtered_by_relation_type(
         .execute(datasets, None::<ExecutionStrategy>)
         .await
         .map_err(|e| {
-            GraphSpikeError::new(GraphSpikeErrorKind::CypherExecute, format!("cypher execute: {e}"))
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::CypherExecute,
+                format!("cypher execute: {e}"),
+            )
         })?;
 
     bridge::bridge_batch_back(&result_lg)
@@ -361,7 +400,9 @@ pub async fn fetch_neighborhood(
             let edge_id_col = batch
                 .column_by_name("edge_id")
                 .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-                .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing edge_id column"))?;
+                .ok_or_else(|| {
+                    GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing edge_id column")
+                })?;
             for i in 0..batch.num_rows() {
                 seen_edge_ids.insert(edge_id_col.value(i).to_string());
             }
@@ -468,15 +509,18 @@ pub async fn fetch_neighborhood(
     let entities_batch = if entities_batches.is_empty() {
         arrow_array::RecordBatch::new_empty(entities_schema)
     } else {
-        concat_batches(&entities_schema, &entities_batches)
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("concat entities: {e}")))?
+        concat_batches(&entities_schema, &entities_batches).map_err(|e| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("concat entities: {e}"))
+        })?
     };
 
     let edges_batch = if accumulated_edge_batches.is_empty() {
         arrow_array::RecordBatch::new_empty(edges_schema)
     } else {
-        let concatenated = concat_batches(&edges_schema, &accumulated_edge_batches)
-            .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("concat edges: {e}")))?;
+        let concatenated =
+            concat_batches(&edges_schema, &accumulated_edge_batches).map_err(|e| {
+                GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("concat edges: {e}"))
+            })?;
         // Bidirectional per-hop querying re-matches an edge already accumulated in a
         // prior hop once its OTHER endpoint enters a later frontier (e.g. seed--A-->B
         // fetched at hop 1 via seed's frontier, then re-fetched at hop 2 once B enters
@@ -501,7 +545,9 @@ fn dedup_edges_by_identity(
     let edge_id_col = edges
         .column_by_name("edge_id")
         .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing edge_id column"))?;
+        .ok_or_else(|| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing edge_id column")
+        })?;
 
     let mut seen: HashSet<String> = HashSet::new();
     let mask: arrow_array::BooleanArray = (0..edges.num_rows())
@@ -512,7 +558,10 @@ fn dedup_edges_by_identity(
         .collect();
 
     filter_record_batch(edges, &mask).map_err(|e| {
-        GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("filter deduped edges failed: {e}"))
+        GraphSpikeError::new(
+            GraphSpikeErrorKind::Bridge,
+            format!("filter deduped edges failed: {e}"),
+        )
     })
 }
 
@@ -553,20 +602,28 @@ fn extract_neighbor_ids(
 fn reverse_edge_endpoints(
     edges: &arrow_array::RecordBatch,
 ) -> Result<arrow_array::RecordBatch, GraphSpikeError> {
-    let source_idx = edges
-        .schema()
-        .index_of("source_node_id")
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("missing source_node_id: {e}")))?;
-    let target_idx = edges
-        .schema()
-        .index_of("target_node_id")
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("missing target_node_id: {e}")))?;
+    let source_idx = edges.schema().index_of("source_node_id").map_err(|e| {
+        GraphSpikeError::new(
+            GraphSpikeErrorKind::Bridge,
+            format!("missing source_node_id: {e}"),
+        )
+    })?;
+    let target_idx = edges.schema().index_of("target_node_id").map_err(|e| {
+        GraphSpikeError::new(
+            GraphSpikeErrorKind::Bridge,
+            format!("missing target_node_id: {e}"),
+        )
+    })?;
 
     let mut columns = edges.columns().to_vec();
     columns.swap(source_idx, target_idx);
 
-    arrow_array::RecordBatch::try_new(edges.schema(), columns)
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("swap edge columns failed: {e}")))
+    arrow_array::RecordBatch::try_new(edges.schema(), columns).map_err(|e| {
+        GraphSpikeError::new(
+            GraphSpikeErrorKind::Bridge,
+            format!("swap edge columns failed: {e}"),
+        )
+    })
 }
 
 /// Executes Cypher traversal in both forward and reversed directions to confirm reachable neighbors.
@@ -600,37 +657,65 @@ pub(crate) fn constrain_to_cypher_matched(
 
     let source_col = edges
         .column_by_name("source_node_id")
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing source_node_id column"))?
+        .ok_or_else(|| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing source_node_id column")
+        })?
         .as_any()
         .downcast_ref::<arrow_array::StringArray>()
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "source_node_id is not a StringArray"))?;
+        .ok_or_else(|| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::Bridge,
+                "source_node_id is not a StringArray",
+            )
+        })?;
 
     let target_col = edges
         .column_by_name("target_node_id")
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing target_node_id column"))?
+        .ok_or_else(|| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing target_node_id column")
+        })?
         .as_any()
         .downcast_ref::<arrow_array::StringArray>()
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "target_node_id is not a StringArray"))?;
+        .ok_or_else(|| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::Bridge,
+                "target_node_id is not a StringArray",
+            )
+        })?;
 
     let edge_mask: arrow_array::BooleanArray = (0..edges.num_rows())
         .map(|i| {
             if source_col.is_null(i) || target_col.is_null(i) {
                 Some(false)
             } else {
-                Some(allowed_ids.contains(source_col.value(i)) && allowed_ids.contains(target_col.value(i)))
+                Some(
+                    allowed_ids.contains(source_col.value(i))
+                        && allowed_ids.contains(target_col.value(i)),
+                )
             }
         })
         .collect();
 
-    let constrained_edges = filter_record_batch(edges, &edge_mask)
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("filter edges failed: {e}")))?;
+    let constrained_edges = filter_record_batch(edges, &edge_mask).map_err(|e| {
+        GraphSpikeError::new(
+            GraphSpikeErrorKind::Bridge,
+            format!("filter edges failed: {e}"),
+        )
+    })?;
 
     let entity_id_col = entities
         .column_by_name("entity_id")
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing entity_id column"))?
+        .ok_or_else(|| {
+            GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "missing entity_id column")
+        })?
         .as_any()
         .downcast_ref::<arrow_array::StringArray>()
-        .ok_or_else(|| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, "entity_id is not a StringArray"))?;
+        .ok_or_else(|| {
+            GraphSpikeError::new(
+                GraphSpikeErrorKind::Bridge,
+                "entity_id is not a StringArray",
+            )
+        })?;
 
     let entity_mask: arrow_array::BooleanArray = (0..entities.num_rows())
         .map(|i| {
@@ -642,8 +727,12 @@ pub(crate) fn constrain_to_cypher_matched(
         })
         .collect();
 
-    let constrained_entities = filter_record_batch(entities, &entity_mask)
-        .map_err(|e| GraphSpikeError::new(GraphSpikeErrorKind::Bridge, format!("filter entities failed: {e}")))?;
+    let constrained_entities = filter_record_batch(entities, &entity_mask).map_err(|e| {
+        GraphSpikeError::new(
+            GraphSpikeErrorKind::Bridge,
+            format!("filter entities failed: {e}"),
+        )
+    })?;
 
     Ok((constrained_entities, constrained_edges))
 }
@@ -670,4 +759,3 @@ pub async fn narrow_via_cypher(
         }
     }
 }
-

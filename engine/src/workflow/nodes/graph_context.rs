@@ -3,12 +3,12 @@ use std::time::Duration;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort},
     ports::GraphQueryPort,
     WorkflowContext,
 };
+use crate::pb::lancet::v1::{NodeErrorKind, Notice, NoticeSeverity};
 
 pub struct ExtractGraphContextNode {
     embedding_port: Option<Arc<dyn QueryEmbeddingPort>>,
@@ -132,7 +132,14 @@ impl Node for ExtractGraphContextNode {
                         ctx.graph_context = String::new();
                         ctx.graph_facts = Vec::new();
                         let (code, msg) = if err.kind == NodeErrorKind::Timeout {
-                            ("GRAPH_TIMEOUT", if err.message.is_empty() { "GRAPH_TIMEOUT".to_string() } else { err.message })
+                            (
+                                "GRAPH_TIMEOUT",
+                                if err.message.is_empty() {
+                                    "GRAPH_TIMEOUT".to_string()
+                                } else {
+                                    err.message
+                                },
+                            )
                         } else {
                             ("GRAPH_DEGRADED", format!("graph_degrade: {}", err.message))
                         };

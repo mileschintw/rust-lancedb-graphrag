@@ -353,12 +353,9 @@ async fn read_body_limited_with_limit_accepts_payload_within_custom_limit() {
 
     let client = reqwest::Client::new();
     let resp = client.get(format!("http://{addr}")).send().await.unwrap();
-    let bytes = super::read_body_limited_with_limit(
-        resp,
-        super::MAX_MODELS_METADATA_BODY_BYTES,
-    )
-    .await
-    .unwrap();
+    let bytes = super::read_body_limited_with_limit(resp, super::MAX_MODELS_METADATA_BODY_BYTES)
+        .await
+        .unwrap();
     assert_eq!(bytes.len(), payload_size);
 }
 

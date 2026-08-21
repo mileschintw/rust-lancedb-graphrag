@@ -336,7 +336,11 @@ pub async fn pack_evidence_and_graph_prompt(
     // graph_weight == 0.0 hard-excludes every graph fact, unconditionally, BEFORE
     // any normalization or packing runs — an explicit opt-out, not a
     // deprioritization that a sufficiently large token budget could still admit.
-    let graph_facts: &[GraphFactBlock] = if graph_weight == 0.0 { &[] } else { graph_facts };
+    let graph_facts: &[GraphFactBlock] = if graph_weight == 0.0 {
+        &[]
+    } else {
+        graph_facts
+    };
 
     let bpe = tiktoken_rs::cl100k_base().ok();
 
@@ -468,8 +472,9 @@ pub async fn pack_evidence_and_graph_prompt(
             }
             PackCandidate::Graph(fact_block) => {
                 let fact = &fact_block.fact;
-                let rendered_fact = crate::graph::context_strategy::ContextAssemblyStrategy::SourceChunks
-                    .assemble(fact);
+                let rendered_fact =
+                    crate::graph::context_strategy::ContextAssemblyStrategy::SourceChunks
+                        .assemble(fact);
                 let fact_str = format!(
                     "<GRAPH_FACT entity_a=\"{}\" relation=\"{}\" entity_b=\"{}\" score=\"{:.4}\">\n{}\n</GRAPH_FACT>\n\n",
                     fact.entity_a_name(),

@@ -1,20 +1,18 @@
+use futures::future::BoxFuture;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use futures::future::BoxFuture;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-use crate::pb::lancet::v1::{
-    workflow_event::Event, NodeErrorKind, WorkflowEvent,
-};
 use super::{
     events::{self, EventSequence},
     node::{Node, NodeError, NodeKind},
     WorkflowContext, WorkflowDependencies,
 };
+use crate::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, WorkflowEvent};
 
 const MAX_PENDING_CHECKPOINTS: usize = 32;
 
@@ -70,19 +68,10 @@ impl WorkflowEventSink {
 
     fn wrap_next_event(&self, event: Event) -> WorkflowEvent {
         let seq = self.sequence.next();
-        events::wrap_event(
-            event,
-            seq,
-            self.trace_id.clone(),
-            self.session_id.clone(),
-        )
+        events::wrap_event(event, seq, self.trace_id.clone(), self.session_id.clone())
     }
 
-
-    async fn flush_pending_checkpoints(
-        &self,
-        cancel: &CancellationToken,
-    ) -> ClientEventDelivery {
+    async fn flush_pending_checkpoints(&self, cancel: &CancellationToken) -> ClientEventDelivery {
         loop {
             let Some(event) = self.lock_pending_checkpoints().pop_front() else {
                 return ClientEventDelivery::Sent;
@@ -262,7 +251,6 @@ impl WorkflowEventSink {
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
-
 }
 
 pub struct WorkflowRunner {
@@ -376,15 +364,20 @@ impl WorkflowRunner {
                     .await?;
                 match kind {
                     NodeKind::GenerateAnswer => {
-                        sink.send_event_or_cancel(events::answer_chunk(ctx.answer.clone(), true), cancel)
-                            .await?;
+                        sink.send_event_or_cancel(
+                            events::answer_chunk(ctx.answer.clone(), true),
+                            cancel,
+                        )
+                        .await?;
                     }
                     NodeKind::ReformulateQuery
                     | NodeKind::ExtractGraphContext
                     | NodeKind::RetrieveHybrid
                     | NodeKind::AssemblePrompt => {}
                 }
-                if let Err(err) = sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel) {
+                if let Err(err) =
+                    sink.send_checkpoint_or_error(kind.checkpoint_label(), ctx, cancel)
+                {
                     let _ = sink
                         .send_event_or_cancel(
                             events::node_failed(name, err.kind, &err.message, err.retryable),
@@ -460,10 +453,12 @@ impl WorkflowRunner {
             &'a CancellationToken,
         ) -> BoxFuture<'a, Result<(), NodeError>>,
     {
-        let has_prompt_or_gen = self
-            .nodes
-            .iter()
-            .any(|n| matches!(n.kind(), NodeKind::AssemblePrompt | NodeKind::GenerateAnswer));
+        let has_prompt_or_gen = self.nodes.iter().any(|n| {
+            matches!(
+                n.kind(),
+                NodeKind::AssemblePrompt | NodeKind::GenerateAnswer
+            )
+        });
         if has_prompt_or_gen {
             self.run_workflow(ctx, cancel, sink).await;
         } else {

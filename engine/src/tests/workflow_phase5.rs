@@ -6,18 +6,16 @@
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use engine::generation::{AnswerBasis, FakeGenerator, Generator, ModelOutput};
-use engine::pb::lancet::v1::{
-    workflow_event::Event, NodeErrorKind, QueryRagRequest,
-};
+use engine::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, QueryRagRequest};
 use engine::retrieval::{Candidate, RetrievalSettings};
 use engine::workflow::{
     events::{self, EventSequence},
@@ -122,7 +120,8 @@ impl Generator for WorstCaseGeneration {
     fn generate<'a>(
         &'a self,
         _request: engine::generation::GenerationRequest,
-    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>> {
+    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>>
+    {
         let preparation_complete = Arc::clone(&self.preparation_complete);
         let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
         let attempt_two_started = Arc::clone(&self.attempt_two_started);
@@ -209,7 +208,8 @@ impl Generator for PreparationOrderGenerator {
     fn generate<'a>(
         &'a self,
         _request: engine::generation::GenerationRequest,
-    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>> {
+    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>>
+    {
         let steps = Arc::clone(&self.steps);
         Box::pin(async move {
             steps.lock().unwrap().push("generate");
@@ -350,7 +350,9 @@ async fn run_happy_path_test() {
     })));
 
     let mut runner = WorkflowRunner::new();
-    runner.add_node(ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
+    runner.add_node(ReformulateQueryNode::with_reformulator(Some(
+        fake_reformulator,
+    )));
     runner.add_node(ExtractGraphContextNode::new(
         Some(fake_embedder),
         Some(fake_graph),
@@ -434,7 +436,11 @@ async fn run_happy_path_test() {
         .iter()
         .filter(|e| matches!(&e.event, Some(Event::AnswerChunk(_))))
         .collect();
-    assert_eq!(answer_chunk_events.len(), 1, "Must have exactly 1 AnswerChunk event");
+    assert_eq!(
+        answer_chunk_events.len(),
+        1,
+        "Must have exactly 1 AnswerChunk event"
+    );
 
     let final_answer_events: Vec<_> = events
         .iter()
@@ -443,7 +449,11 @@ async fn run_happy_path_test() {
             _ => None,
         })
         .collect();
-    assert_eq!(final_answer_events.len(), 1, "Must have exactly 1 FinalAnswer event");
+    assert_eq!(
+        final_answer_events.len(),
+        1,
+        "Must have exactly 1 FinalAnswer event"
+    );
 
     let completed_events: Vec<_> = events
         .iter()
@@ -452,8 +462,15 @@ async fn run_happy_path_test() {
             _ => None,
         })
         .collect();
-    assert_eq!(completed_events.len(), 1, "Must have exactly 1 WorkflowCompleted event");
-    assert!(completed_events[0].success, "WorkflowCompleted must be successful");
+    assert_eq!(
+        completed_events.len(),
+        1,
+        "Must have exactly 1 WorkflowCompleted event"
+    );
+    assert!(
+        completed_events[0].success,
+        "WorkflowCompleted must be successful"
+    );
 
     // 4. Assert 5 or fewer ordered checkpoints
     let checkpoints: Vec<_> = events
@@ -523,7 +540,10 @@ async fn run_happy_path_test() {
         .filter(|event| matches!(event.event, Some(Event::NodeCompleted(_))))
         .count();
     assert_eq!(started_count, 5, "tracer must start exactly five nodes");
-    assert_eq!(completed_count, 5, "tracer must complete exactly five nodes");
+    assert_eq!(
+        completed_count, 5,
+        "tracer must complete exactly five nodes"
+    );
 }
 
 /// Task 2: paused-clock proof that the separate 5000ms preparation does not
@@ -647,7 +667,11 @@ async fn workflow_phase5_generation_preflight_worst_case_budget() {
         })
         .expect("worst-case workflow must emit WorkflowCompleted");
     assert!(completed.success, "second generation attempt must succeed");
-    assert_eq!(attempts.load(Ordering::SeqCst), 2, "no third attempt is allowed");
+    assert_eq!(
+        attempts.load(Ordering::SeqCst),
+        2,
+        "no third attempt is allowed"
+    );
 }
 
 /// Task 2: semantic paused-clock check for the 4999ms reformulation boundary;
@@ -676,11 +700,9 @@ async fn workflow_phase5_reformulate_predeadline_4999ms_no_timeout() {
     );
     let started = Arc::new(tokio::sync::Notify::new());
     let started_waiter = started.notified();
-    let node = ReformulateQueryNode::with_reformulator(Some(Arc::new(
-        PredeadlineReformulator {
-            started: Arc::clone(&started),
-        },
-    )));
+    let node = ReformulateQueryNode::with_reformulator(Some(Arc::new(PredeadlineReformulator {
+        started: Arc::clone(&started),
+    })));
     let runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
 
     let handle = tokio::spawn(async move {
@@ -797,7 +819,8 @@ async fn workflow_phase5_event_delivery_bounded_cancellation() {
     );
 
     assert_eq!(
-        sink.send_event(events::node_started("first", ""), &cancel).await,
+        sink.send_event(events::node_started("first", ""), &cancel)
+            .await,
         engine::workflow::runner::ClientEventDelivery::Sent
     );
     assert_eq!(sink.pending_checkpoint_count(), 0);
@@ -836,19 +859,27 @@ async fn workflow_phase5_graph_timeout() {
         session_id: "sess-graph-timeout".to_string(),
         filter: None,
     };
-    let mut ctx = WorkflowContext::new("sess-graph-timeout".to_string(), "trace-graph-timeout".to_string(), &req);
+    let mut ctx = WorkflowContext::new(
+        "sess-graph-timeout".to_string(),
+        "trace-graph-timeout".to_string(),
+        &req,
+    );
 
     let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
     let fake_graph_stalled = Arc::new(FakeGraphQueryPort::stall());
 
-    let graph_node = ExtractGraphContextNode::new(
-        Some(fake_embedder),
-        Some(fake_graph_stalled),
-    ).with_timeouts(5000, 50);
+    let graph_node = ExtractGraphContextNode::new(Some(fake_embedder), Some(fake_graph_stalled))
+        .with_timeouts(5000, 50);
 
     let res = graph_node.run(&mut ctx, &cancel).await;
-    assert!(res.is_ok(), "Graph timeout must degrade gracefully with Ok(()) per D-09");
-    assert!(ctx.graph_context.is_empty(), "Graph context must be empty on timeout");
+    assert!(
+        res.is_ok(),
+        "Graph timeout must degrade gracefully with Ok(()) per D-09"
+    );
+    assert!(
+        ctx.graph_context.is_empty(),
+        "Graph context must be empty on timeout"
+    );
     assert_eq!(ctx.notices.len(), 1, "Must emit exactly 1 degrade notice");
     assert_eq!(ctx.notices[0].message, "GRAPH_TIMEOUT");
 }
@@ -888,11 +919,17 @@ async fn workflow_phase5_reformulate_timeout_five_seconds() {
         session_id: "sess-ref-timeout".to_string(),
         filter: None,
     };
-    let ctx = WorkflowContext::new("sess-ref-timeout".to_string(), "trace-ref-timeout".to_string(), &req);
+    let ctx = WorkflowContext::new(
+        "sess-ref-timeout".to_string(),
+        "trace-ref-timeout".to_string(),
+        &req,
+    );
 
     let stalled_reformulator = Arc::new(StalledReformulator);
     let mut runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
-    runner.add_node(ReformulateQueryNode::with_reformulator(Some(stalled_reformulator)));
+    runner.add_node(ReformulateQueryNode::with_reformulator(Some(
+        stalled_reformulator,
+    )));
     runner.add_node(ExtractGraphContextNode::new(None, None));
 
     let handle = tokio::spawn(async move {
@@ -923,13 +960,22 @@ async fn workflow_phase5_reformulate_timeout_five_seconds() {
         Some(Event::NodeFailed(nf)) => Some(nf.clone()),
         _ => None,
     });
-    assert!(failed_event.is_some(), "Must emit NodeFailed for ReformulateQuery");
-    assert_eq!(failed_event.unwrap().category, NodeErrorKind::Timeout as i32);
+    assert!(
+        failed_event.is_some(),
+        "Must emit NodeFailed for ReformulateQuery"
+    );
+    assert_eq!(
+        failed_event.unwrap().category,
+        NodeErrorKind::Timeout as i32
+    );
 
-    let completed_event = events.iter().find_map(|e| match &e.event {
-        Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
-        _ => None,
-    }).expect("WorkflowCompleted event");
+    let completed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event");
 
     assert!(!completed_event.success);
     assert_eq!(completed_event.error_kind, NodeErrorKind::Timeout as i32);
@@ -954,7 +1000,11 @@ async fn workflow_phase5_retrieve_timeout_ten_seconds() {
         session_id: "sess-ret-timeout".to_string(),
         filter: None,
     };
-    let ctx = WorkflowContext::new("sess-ret-timeout".to_string(), "trace-ret-timeout".to_string(), &req);
+    let ctx = WorkflowContext::new(
+        "sess-ret-timeout".to_string(),
+        "trace-ret-timeout".to_string(),
+        &req,
+    );
 
     let fake_dense_stalled = Arc::new(FakeDenseRetrievalPort::stall());
     let mut runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
@@ -989,13 +1039,19 @@ async fn workflow_phase5_retrieve_timeout_ten_seconds() {
         })
         .collect();
 
-    assert_eq!(node_started_names, vec!["ReformulateQuery", "RetrieveHybrid"]);
+    assert_eq!(
+        node_started_names,
+        vec!["ReformulateQuery", "RetrieveHybrid"]
+    );
     assert!(!node_started_names.contains(&"AssemblePrompt".to_string()));
 
-    let completed_event = events.iter().find_map(|e| match &e.event {
-        Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
-        _ => None,
-    }).expect("WorkflowCompleted event");
+    let completed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event");
 
     assert!(!completed_event.success);
     assert_eq!(completed_event.error_kind, NodeErrorKind::Timeout as i32);
@@ -1018,7 +1074,11 @@ async fn workflow_phase5_reranker_failure() {
         session_id: "sess-rerank-fail".to_string(),
         filter: None,
     };
-    let ctx = WorkflowContext::new("sess-rerank-fail".to_string(), "trace-rerank-fail".to_string(), &req);
+    let ctx = WorkflowContext::new(
+        "sess-rerank-fail".to_string(),
+        "trace-rerank-fail".to_string(),
+        &req,
+    );
 
     let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
         "doc-1", "chk-1", 0.9,
@@ -1054,10 +1114,13 @@ async fn workflow_phase5_reranker_failure() {
     assert_eq!(node_started_names, vec!["RetrieveHybrid"]);
     assert!(!node_started_names.contains(&"AssemblePrompt".to_string()));
 
-    let completed_event = events.iter().find_map(|e| match &e.event {
-        Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
-        _ => None,
-    }).expect("WorkflowCompleted event");
+    let completed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event");
 
     assert!(!completed_event.success);
     assert_eq!(
@@ -1100,10 +1163,13 @@ async fn workflow_phase5_prompt_cancel() {
         }
     }
 
-    let completed_event = events.iter().find_map(|e| match &e.event {
-        Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
-        _ => None,
-    }).expect("WorkflowCompleted event");
+    let completed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event");
 
     assert!(!completed_event.success);
     assert_eq!(completed_event.error_kind, NodeErrorKind::Cancelled as i32);
@@ -1126,7 +1192,11 @@ async fn workflow_phase5_full_snapshot() {
         session_id: "sess-snapshot-01".to_string(),
         filter: None,
     };
-    let ctx = WorkflowContext::new("sess-snapshot-01".to_string(), "trace-snapshot-01".to_string(), &req);
+    let ctx = WorkflowContext::new(
+        "sess-snapshot-01".to_string(),
+        "trace-snapshot-01".to_string(),
+        &req,
+    );
 
     let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
         "doc-snap", "chk-snap", 0.9,
@@ -1175,10 +1245,13 @@ async fn workflow_phase5_full_snapshot() {
 
     let mut prev_seq = 0;
     for cp in &checkpoints {
-        assert!(cp.sequence_ordinal > prev_seq, "Sequence ordinals must strictly increase");
+        assert!(
+            cp.sequence_ordinal > prev_seq,
+            "Sequence ordinals must strictly increase"
+        );
         prev_seq = cp.sequence_ordinal;
-        let snap_json: serde_json::Value = serde_json::from_str(&cp.context_snapshot)
-            .expect("valid JSON context snapshot");
+        let snap_json: serde_json::Value =
+            serde_json::from_str(&cp.context_snapshot).expect("valid JSON context snapshot");
         assert_eq!(snap_json["session_id"], "sess-snapshot-01");
         assert_eq!(snap_json["trace_id"], "trace-snapshot-01");
     }
@@ -1201,11 +1274,22 @@ async fn workflow_phase5_nine_variants_rejection() {
         session_id: "sess-nine-var".to_string(),
         filter: None,
     };
-    let ctx = WorkflowContext::new("sess-nine-var".to_string(), "trace-nine-var".to_string(), &req);
+    let ctx = WorkflowContext::new(
+        "sess-nine-var".to_string(),
+        "trace-nine-var".to_string(),
+        &req,
+    );
 
     let nine_variants = vec![
-        "v1".into(), "v2".into(), "v3".into(), "v4".into(),
-        "v5".into(), "v6".into(), "v7".into(), "v8".into(), "v9".into(),
+        "v1".into(),
+        "v2".into(),
+        "v3".into(),
+        "v4".into(),
+        "v5".into(),
+        "v6".into(),
+        "v7".into(),
+        "v8".into(),
+        "v9".into(),
     ];
     let fake_reformulator = Arc::new(FakeQueryReformulator::new(nine_variants));
     let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
@@ -1215,7 +1299,9 @@ async fn workflow_phase5_nine_variants_rejection() {
     let fake_reranker = Arc::new(FakeReranker::success());
 
     let mut runner = WorkflowRunner::new();
-    runner.add_node(ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
+    runner.add_node(ReformulateQueryNode::with_reformulator(Some(
+        fake_reformulator,
+    )));
     runner.add_node(ExtractGraphContextNode::new(
         Some(fake_embedder.clone()),
         Some(fake_graph.clone()),
@@ -1243,13 +1329,19 @@ async fn workflow_phase5_nine_variants_rejection() {
     assert_eq!(fake_bm25.calls(), 0);
     assert_eq!(fake_reranker.calls(), 0);
 
-    let completed_event = events.iter().find_map(|e| match &e.event {
-        Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
-        _ => None,
-    }).expect("WorkflowCompleted event");
+    let completed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event");
 
     assert!(!completed_event.success);
-    assert_eq!(completed_event.error_kind, NodeErrorKind::InputValidation as i32);
+    assert_eq!(
+        completed_event.error_kind,
+        NodeErrorKind::InputValidation as i32
+    );
 }
 
 /// Task 2 & Matrix: Two parallel same-input workflows proving trace, store, and sequence isolation.
@@ -1288,8 +1380,12 @@ async fn workflow_phase5_concurrency_isolation() {
     let ctx1 = WorkflowContext::new("sess-conc-1".to_string(), "trace-conc-1".to_string(), &req1);
     let ctx2 = WorkflowContext::new("sess-conc-2".to_string(), "trace-conc-2".to_string(), &req2);
 
-    let fake_dense1 = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate("doc-1", "chk-1", 0.9)]));
-    let fake_dense2 = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate("doc-2", "chk-2", 0.8)]));
+    let fake_dense1 = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-1", "chk-1", 0.9,
+    )]));
+    let fake_dense2 = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-2", "chk-2", 0.8,
+    )]));
 
     let fake_gen1: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
         answer: "Ans 1 [chk-1]".to_string(),
@@ -1310,13 +1406,23 @@ async fn workflow_phase5_concurrency_isolation() {
 
     let mut runner1 = WorkflowRunner::new();
     runner1.add_node(ReformulateQueryNode::new());
-    runner1.add_node(RetrieveHybridNode::new(Some(fake_dense1), None, None, RetrievalSettings::default()));
+    runner1.add_node(RetrieveHybridNode::new(
+        Some(fake_dense1),
+        None,
+        None,
+        RetrievalSettings::default(),
+    ));
     runner1.add_node(AssemblePromptNode::new());
     runner1.add_node(GenerateAnswerNode::new(Some(fake_gen1)));
 
     let mut runner2 = WorkflowRunner::new();
     runner2.add_node(ReformulateQueryNode::new());
-    runner2.add_node(RetrieveHybridNode::new(Some(fake_dense2), None, None, RetrievalSettings::default()));
+    runner2.add_node(RetrieveHybridNode::new(
+        Some(fake_dense2),
+        None,
+        None,
+        RetrievalSettings::default(),
+    ));
     runner2.add_node(AssemblePromptNode::new());
     runner2.add_node(GenerateAnswerNode::new(Some(fake_gen2)));
 
@@ -1326,10 +1432,18 @@ async fn workflow_phase5_concurrency_isolation() {
     tokio::try_join!(h1, h2).unwrap();
 
     let mut events1 = Vec::new();
-    while let Ok(e) = rx1.try_recv() { if let Ok(ev) = e { events1.push(ev); } }
+    while let Ok(e) = rx1.try_recv() {
+        if let Ok(ev) = e {
+            events1.push(ev);
+        }
+    }
 
     let mut events2 = Vec::new();
-    while let Ok(e) = rx2.try_recv() { if let Ok(ev) = e { events2.push(ev); } }
+    while let Ok(e) = rx2.try_recv() {
+        if let Ok(ev) = e {
+            events2.push(ev);
+        }
+    }
 
     for ev in &events1 {
         assert_eq!(ev.trace_id, "trace-conc-1");
@@ -1351,9 +1465,11 @@ impl Generator for StalledTimeoutGenerator {
     fn generate<'a>(
         &'a self,
         _request: engine::generation::GenerationRequest,
-    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>> {
+    ) -> engine::generation::BoxFuture<'a, Result<ModelOutput, engine::generation::GenerationError>>
+    {
         Box::pin(async move {
-            self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             self.started.notify_one();
             tokio::time::sleep(Duration::from_millis(5000)).await;
             Err(engine::generation::GenerationError::new(
@@ -1424,8 +1540,13 @@ async fn workflow_phase5_timeout_cancels_stalled_provider() {
         }
     }
 
-    let started_ev = events.iter().find(|e| matches!(&e.event, Some(Event::NodeStarted(ns)) if ns.node_name == "GenerateAnswer"));
-    assert!(started_ev.is_some(), "NodeStarted(GenerateAnswer) must be emitted");
+    let started_ev = events.iter().find(
+        |e| matches!(&e.event, Some(Event::NodeStarted(ns)) if ns.node_name == "GenerateAnswer"),
+    );
+    assert!(
+        started_ev.is_some(),
+        "NodeStarted(GenerateAnswer) must be emitted"
+    );
 
     let failed_ev = events.iter().find_map(|e| match &e.event {
         Some(Event::NodeFailed(nf)) if nf.node_name == "GenerateAnswer" => Some(nf),
@@ -1437,9 +1558,14 @@ async fn workflow_phase5_timeout_cancels_stalled_provider() {
     // Drain with bounded timeout to prove no retry / extra provider progress occurs
     let drain_res = tokio::time::timeout(Duration::from_millis(150), async {
         tokio::time::sleep(Duration::from_millis(100)).await;
-    }).await;
+    })
+    .await;
     assert!(drain_res.is_ok());
-    assert_eq!(call_count.load(std::sync::atomic::Ordering::SeqCst), 1, "no retry attempt must start after timeout cancellation");
+    assert_eq!(
+        call_count.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "no retry attempt must start after timeout cancellation"
+    );
 }
 
 /// Helper to construct a `FusedCandidate` with a controllable `score` for testing.
@@ -1484,12 +1610,17 @@ async fn workflow_retrieve_graph() {
         session_id: "00000000-0000-4000-8000-000000000001".into(),
         filter: None,
     };
-    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+    let ctx =
+        crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-    let fake_graph = Arc::new(crate::workflow::ports::FakeGraphQueryPort::success("fact1 -- rel -- fact2"));
-    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![
-        crate::retrieval::Candidate {
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(
+        vec![0.1; 2048],
+    ));
+    let fake_graph = Arc::new(crate::workflow::ports::FakeGraphQueryPort::success(
+        "fact1 -- rel -- fact2",
+    ));
+    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(
+        vec![crate::retrieval::Candidate {
             document_id: "doc-1".into(),
             chunk_id: "chunk-1".into(),
             chunk_index: 0,
@@ -1502,13 +1633,18 @@ async fn workflow_retrieve_graph() {
             embedding_model: None,
             ingested_at: None,
             score: 0.9,
-        }
-    ]));
-    let fake_bm25 = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
+        }],
+    ));
+    let fake_bm25 = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(
+        vec![],
+    ));
 
     let mut runner = crate::workflow::WorkflowRunner::new();
     runner.add_node(crate::workflow::nodes::ReformulateQueryNode::new());
-    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph.clone())));
+    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(
+        Some(fake_embedder.clone()),
+        Some(fake_graph.clone()),
+    ));
     runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
         Some(fake_dense.clone()),
         Some(fake_bm25.clone()),
@@ -1517,7 +1653,14 @@ async fn workflow_retrieve_graph() {
     ));
 
     let deps = crate::workflow::WorkflowDependencies::new();
-    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
+    runner
+        .run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| {
+            Box::pin(async move {
+                crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel)
+                    .await
+            })
+        })
+        .await;
 
     assert_eq!(fake_embedder.calls(), 1);
     assert_eq!(fake_graph.calls(), 1);
@@ -1530,10 +1673,13 @@ async fn workflow_retrieve_graph() {
             events.push(wf_event);
         }
     }
-    let failed = events.iter().find_map(|e| match &e.event {
-        Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(nf)) => Some(nf),
-        _ => None,
-    }).expect("NodeFailed event must exist for no-generator remainder");
+    let failed = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(nf)) => Some(nf),
+            _ => None,
+        })
+        .expect("NodeFailed event must exist for no-generator remainder");
     assert_eq!(failed.category, NodeErrorKind::LlmGenerationFailed as i32);
 }
 
@@ -1553,19 +1699,29 @@ async fn graph_timeout_degrades_to_empty_context() {
         session_id: "00000000-0000-4000-8000-000000000001".into(),
         filter: None,
     };
-    let mut ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+    let mut ctx =
+        crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(
+        vec![0.1; 2048],
+    ));
     let fake_graph_stalled = Arc::new(crate::workflow::ports::FakeGraphQueryPort::stall());
 
     let graph_node = crate::workflow::nodes::ExtractGraphContextNode::new(
         Some(fake_embedder),
         Some(fake_graph_stalled),
-    ).with_timeouts(5000, 50);
+    )
+    .with_timeouts(5000, 50);
 
     let res = graph_node.run(&mut ctx, &cancel).await;
-    assert!(res.is_ok(), "Graph timeout must degrade gracefully with Ok(()) per D-09");
-    assert!(ctx.graph_context.is_empty(), "Graph context must be empty on timeout");
+    assert!(
+        res.is_ok(),
+        "Graph timeout must degrade gracefully with Ok(()) per D-09"
+    );
+    assert!(
+        ctx.graph_context.is_empty(),
+        "Graph context must be empty on timeout"
+    );
     assert_eq!(ctx.notices.len(), 1, "Must emit exactly 1 degrade notice");
     assert_eq!(ctx.notices[0].message, "GRAPH_TIMEOUT");
 }
@@ -1586,15 +1742,25 @@ async fn zero_evidence_short_circuits_generation() {
         session_id: "00000000-0000-4000-8000-000000000001".into(),
         filter: None,
     };
-    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+    let ctx =
+        crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-    let fake_dense_empty = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![]));
-    let fake_bm25_empty = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(
+        vec![0.1; 2048],
+    ));
+    let fake_dense_empty = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(
+        vec![],
+    ));
+    let fake_bm25_empty = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(
+        vec![],
+    ));
 
     let mut runner = crate::workflow::WorkflowRunner::new();
     runner.add_node(crate::workflow::nodes::ReformulateQueryNode::new());
-    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder), None));
+    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(
+        Some(fake_embedder),
+        None,
+    ));
     runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
         Some(fake_dense_empty),
         Some(fake_bm25_empty),
@@ -1603,7 +1769,14 @@ async fn zero_evidence_short_circuits_generation() {
     ));
 
     let deps = crate::workflow::WorkflowDependencies::new();
-    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
+    runner
+        .run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| {
+            Box::pin(async move {
+                crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel)
+                    .await
+            })
+        })
+        .await;
 
     let mut events = Vec::new();
     while let Ok(item) = rx.try_recv() {
@@ -1615,7 +1788,9 @@ async fn zero_evidence_short_circuits_generation() {
     let node_started_names: Vec<String> = events
         .iter()
         .filter_map(|e| match &e.event {
-            Some(engine::pb::lancet::v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            Some(engine::pb::lancet::v1::workflow_event::Event::NodeStarted(ns)) => {
+                Some(ns.node_name.clone())
+            }
             _ => None,
         })
         .collect();
@@ -1643,10 +1818,11 @@ async fn reranker_failure_maps_to_retrieval_failed() {
         session_id: "00000000-0000-4000-8000-000000000001".into(),
         filter: None,
     };
-    let mut ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+    let mut ctx =
+        crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
-    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![
-        crate::retrieval::Candidate {
+    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(
+        vec![crate::retrieval::Candidate {
             document_id: "doc-1".into(),
             chunk_id: "chunk-1".into(),
             chunk_index: 0,
@@ -1659,8 +1835,8 @@ async fn reranker_failure_maps_to_retrieval_failed() {
             embedding_model: None,
             ingested_at: None,
             score: 0.9,
-        }
-    ]));
+        }],
+    ));
     let fake_failing_reranker = Arc::new(crate::workflow::ports::FakeReranker::failure());
 
     let retrieve_node = crate::workflow::nodes::RetrieveHybridNode::new(
@@ -1693,18 +1869,34 @@ async fn nine_variants_are_rejected_before_retrieval() {
         session_id: "00000000-0000-4000-8000-000000000001".into(),
         filter: None,
     };
-    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+    let ctx =
+        crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
     let nine_variants: Vec<String> = (0..9).map(|i| format!("variant-{i}")).collect();
-    let fake_reformulator = Arc::new(crate::workflow::ports::FakeQueryReformulator::new(nine_variants));
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-    let fake_graph = Arc::new(crate::workflow::ports::FakeGraphQueryPort::success("graph facts"));
-    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(vec![]));
-    let fake_bm25 = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(vec![]));
+    let fake_reformulator = Arc::new(crate::workflow::ports::FakeQueryReformulator::new(
+        nine_variants,
+    ));
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(
+        vec![0.1; 2048],
+    ));
+    let fake_graph = Arc::new(crate::workflow::ports::FakeGraphQueryPort::success(
+        "graph facts",
+    ));
+    let fake_dense = Arc::new(crate::workflow::ports::FakeDenseRetrievalPort::success(
+        vec![],
+    ));
+    let fake_bm25 = Arc::new(crate::workflow::ports::FakeBm25RetrievalPort::success(
+        vec![],
+    ));
 
     let mut runner = crate::workflow::WorkflowRunner::new();
-    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
-    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph.clone())));
+    runner.add_node(
+        crate::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)),
+    );
+    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(
+        Some(fake_embedder.clone()),
+        Some(fake_graph.clone()),
+    ));
     runner.add_node(crate::workflow::nodes::RetrieveHybridNode::new(
         Some(fake_dense.clone()),
         Some(fake_bm25.clone()),
@@ -1714,12 +1906,35 @@ async fn nine_variants_are_rejected_before_retrieval() {
 
     let deps = crate::workflow::WorkflowDependencies::new();
 
-    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
+    runner
+        .run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| {
+            Box::pin(async move {
+                crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel)
+                    .await
+            })
+        })
+        .await;
 
-    assert_eq!(fake_embedder.calls(), 0, "No embedding call must be made when >8 variants are produced");
-    assert_eq!(fake_graph.calls(), 0, "No graph call must be made when >8 variants are produced");
-    assert_eq!(fake_dense.calls(), 0, "No dense retrieval call must be made when >8 variants are produced");
-    assert_eq!(fake_bm25.calls(), 0, "No BM25 retrieval call must be made when >8 variants are produced");
+    assert_eq!(
+        fake_embedder.calls(),
+        0,
+        "No embedding call must be made when >8 variants are produced"
+    );
+    assert_eq!(
+        fake_graph.calls(),
+        0,
+        "No graph call must be made when >8 variants are produced"
+    );
+    assert_eq!(
+        fake_dense.calls(),
+        0,
+        "No dense retrieval call must be made when >8 variants are produced"
+    );
+    assert_eq!(
+        fake_bm25.calls(),
+        0,
+        "No BM25 retrieval call must be made when >8 variants are produced"
+    );
 
     let mut events = Vec::new();
     while let Ok(item) = rx.try_recv() {
@@ -1728,13 +1943,19 @@ async fn nine_variants_are_rejected_before_retrieval() {
         }
     }
 
-    let failed_event = events.iter().find_map(|e| match &e.event {
-        Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
-        _ => None,
-    }).expect("WorkflowCompleted event must be emitted");
+    let failed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event must be emitted");
 
     assert!(!failed_event.success);
-    assert_eq!(failed_event.error_kind, NodeErrorKind::InputValidation as i32);
+    assert_eq!(
+        failed_event.error_kind,
+        NodeErrorKind::InputValidation as i32
+    );
 }
 
 #[tokio::test]
@@ -1753,20 +1974,39 @@ async fn zero_variants_are_rejected_before_retrieval() {
         session_id: "00000000-0000-4000-8000-000000000001".into(),
         filter: None,
     };
-    let ctx = crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
+    let ctx =
+        crate::workflow::WorkflowContext::new("test-session".into(), "test-trace".into(), &req);
 
     let fake_reformulator = Arc::new(crate::workflow::ports::FakeQueryReformulator::new(vec![]));
-    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+    let fake_embedder = Arc::new(crate::workflow::ports::FakeQueryEmbeddingPort::success(
+        vec![0.1; 2048],
+    ));
 
     let mut runner = crate::workflow::WorkflowRunner::new();
-    runner.add_node(crate::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
-    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(Some(fake_embedder.clone()), None));
+    runner.add_node(
+        crate::workflow::nodes::ReformulateQueryNode::with_reformulator(Some(fake_reformulator)),
+    );
+    runner.add_node(crate::workflow::nodes::ExtractGraphContextNode::new(
+        Some(fake_embedder.clone()),
+        None,
+    ));
 
     let deps = crate::workflow::WorkflowDependencies::new();
 
-    runner.run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| Box::pin(async move { crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel).await })).await;
+    runner
+        .run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| {
+            Box::pin(async move {
+                crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel)
+                    .await
+            })
+        })
+        .await;
 
-    assert_eq!(fake_embedder.calls(), 0, "No embedding call must be made when 0 variants are produced");
+    assert_eq!(
+        fake_embedder.calls(),
+        0,
+        "No embedding call must be made when 0 variants are produced"
+    );
 
     let mut events = Vec::new();
     while let Ok(item) = rx.try_recv() {
@@ -1775,13 +2015,19 @@ async fn zero_variants_are_rejected_before_retrieval() {
         }
     }
 
-    let failed_event = events.iter().find_map(|e| match &e.event {
-        Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
-        _ => None,
-    }).expect("WorkflowCompleted event must be emitted");
+    let failed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event must be emitted");
 
     assert!(!failed_event.success);
-    assert_eq!(failed_event.error_kind, NodeErrorKind::InputValidation as i32);
+    assert_eq!(
+        failed_event.error_kind,
+        NodeErrorKind::InputValidation as i32
+    );
 }
 
 #[tokio::test]
@@ -1802,7 +2048,12 @@ async fn workflow_generation_tracer() {
     let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
     let fake_graph = Arc::new(FakeGraphQueryPort::success("graph context fact"));
 
-    let candidate = candidate_with_score("1", "Lancet uses Rust state machine for RAG orchestration.", 0.95).candidate;
+    let candidate = candidate_with_score(
+        "1",
+        "Lancet uses Rust state machine for RAG orchestration.",
+        0.95,
+    )
+    .candidate;
     let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![candidate.clone()]));
     let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![candidate]));
 
@@ -1817,8 +2068,13 @@ async fn workflow_generation_tracer() {
     let fake_generator: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(model_out)));
 
     let mut runner = WorkflowRunner::new();
-    runner.add_node(ReformulateQueryNode::with_reformulator(Some(fake_reformulator)));
-    runner.add_node(ExtractGraphContextNode::new(Some(fake_embedder), Some(fake_graph)));
+    runner.add_node(ReformulateQueryNode::with_reformulator(Some(
+        fake_reformulator,
+    )));
+    runner.add_node(ExtractGraphContextNode::new(
+        Some(fake_embedder),
+        Some(fake_graph),
+    ));
     runner.add_node(RetrieveHybridNode::new(
         Some(fake_dense),
         Some(fake_bm25),
@@ -1837,15 +2093,44 @@ async fn workflow_generation_tracer() {
         }
     }
 
-    let chunk_count = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_)))).count();
-    let final_count = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(_)))).count();
-    assert_eq!(chunk_count, 1, "Exactly one AnswerChunk event must be emitted");
-    assert_eq!(final_count, 1, "Exactly one FinalAnswer event must be emitted");
+    let chunk_count = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                &e.event,
+                Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(
+                    _
+                ))
+            )
+        })
+        .count();
+    let final_count = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                &e.event,
+                Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(
+                    _
+                ))
+            )
+        })
+        .count();
+    assert_eq!(
+        chunk_count, 1,
+        "Exactly one AnswerChunk event must be emitted"
+    );
+    assert_eq!(
+        final_count, 1,
+        "Exactly one FinalAnswer event must be emitted"
+    );
 
-    let completed = events.iter().find_map(|e| match &e.event {
-        Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
-        _ => None,
-    }).expect("WorkflowCompleted event must be emitted");
+    let completed = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event must be emitted");
 
     assert!(completed.success);
     assert!(completed.final_response.is_some());
@@ -1921,11 +2206,17 @@ async fn generation_retry_request_is_byte_identical() {
 
     let runner = WorkflowRunner::new();
     let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
-    assert!(res.is_ok(), "GenerateAnswer must succeed on retry attempt 2");
+    assert!(
+        res.is_ok(),
+        "GenerateAnswer must succeed on retry attempt 2"
+    );
 
     let reqs = capturing_gen.requests.lock().unwrap().clone();
     assert_eq!(reqs.len(), 2, "Must make exactly 2 generation attempts");
-    assert_eq!(reqs[0], reqs[1], "Captured GenerationRequest across attempt 1 and attempt 2 must be byte/field-identical");
+    assert_eq!(
+        reqs[0], reqs[1],
+        "Captured GenerationRequest across attempt 1 and attempt 2 must be byte/field-identical"
+    );
 
     let mut events = Vec::new();
     while let Ok(item) = rx.try_recv() {
@@ -1934,8 +2225,19 @@ async fn generation_retry_request_is_byte_identical() {
         }
     }
 
-    let failed_events = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(_)))).count();
-    assert_eq!(failed_events, 0, "No retrying/failed event emitted during internal node retry");
+    let failed_events = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                &e.event,
+                Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(_))
+            )
+        })
+        .count();
+    assert_eq!(
+        failed_events, 0,
+        "No retrying/failed event emitted during internal node retry"
+    );
 }
 
 #[tokio::test]
@@ -2009,7 +2311,10 @@ async fn generation_outer_timeout_allows_retry() {
     let runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
     let res = runner.run_node(&node, &mut ctx, &cancel, &sink).await;
 
-    assert!(res.is_ok(), "Outer node timeout budget of 65000ms must allow attempt 2 retry to succeed");
+    assert!(
+        res.is_ok(),
+        "Outer node timeout budget of 65000ms must allow attempt 2 retry to succeed"
+    );
     assert_eq!(*slow_gen.calls.lock().unwrap(), 2);
 }
 
@@ -2090,7 +2395,11 @@ async fn generation_cancellation_between_attempts() {
     assert!(res.is_err());
     let err = res.unwrap_err();
     assert_eq!(err.kind, NodeErrorKind::Cancelled);
-    assert_eq!(*cancelling_gen.calls.lock().unwrap(), 1, "Attempt 2 must not be triggered when cancellation token is cancelled between attempts");
+    assert_eq!(
+        *cancelling_gen.calls.lock().unwrap(),
+        1,
+        "Attempt 2 must not be triggered when cancellation token is cancelled between attempts"
+    );
 
     let mut events = Vec::new();
     while let Ok(item) = rx.try_recv() {
@@ -2098,8 +2407,21 @@ async fn generation_cancellation_between_attempts() {
             events.push(wf_event);
         }
     }
-    let chunk_count = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_)))).count();
-    assert_eq!(chunk_count, 0, "No AnswerChunk event must be emitted on cancelled generation");
+    let chunk_count = events
+        .iter()
+        .filter(|e| {
+            matches!(
+                &e.event,
+                Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(
+                    _
+                ))
+            )
+        })
+        .count();
+    assert_eq!(
+        chunk_count, 0,
+        "No AnswerChunk event must be emitted on cancelled generation"
+    );
 }
 
 #[tokio::test]
@@ -2109,9 +2431,14 @@ async fn answer_events_have_exact_cardinality() {
         let (tx, mut rx) = mpsc::channel(100);
         let cancel = CancellationToken::new();
         let sequence = Arc::new(EventSequence::new());
-        let sink = WorkflowEventSink::new(tx, sequence, "trace-card-a".into(), "sess-card-a".into());
+        let sink =
+            WorkflowEventSink::new(tx, sequence, "trace-card-a".into(), "sess-card-a".into());
 
-        let req = QueryRagRequest { session_id: "sess-card-a".into(), query: "Card A".into(), filter: None };
+        let req = QueryRagRequest {
+            session_id: "sess-card-a".into(),
+            query: "Card A".into(),
+            filter: None,
+        };
         let ctx = WorkflowContext::new("sess-card-a".into(), "trace-card-a".into(), &req);
 
         let candidate = candidate_with_score("1", "Content 1", 0.9).candidate;
@@ -2120,11 +2447,18 @@ async fn answer_events_have_exact_cardinality() {
             answer: "Answer A".into(),
             cited_evidence_ids: vec!["[1]".into()],
             answer_basis: AnswerBasis::Retrieval,
-            notices: vec![], warnings: vec![], usage: None,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
         })));
 
         let mut runner = WorkflowRunner::new();
-        runner.add_node(RetrieveHybridNode::new(Some(fake_dense), None, None, RetrievalSettings::default()));
+        runner.add_node(RetrieveHybridNode::new(
+            Some(fake_dense),
+            None,
+            None,
+            RetrievalSettings::default(),
+        ));
         runner.add_node(AssemblePromptNode::new());
         runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
 
@@ -2132,11 +2466,33 @@ async fn answer_events_have_exact_cardinality() {
 
         let mut events = Vec::new();
         while let Ok(item) = rx.try_recv() {
-            if let Ok(wf_event) = item { events.push(wf_event); }
+            if let Ok(wf_event) = item {
+                events.push(wf_event);
+            }
         }
 
-        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_)))).count();
-        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(_)))).count();
+        let answer_chunks = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    &e.event,
+                    Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(
+                        _
+                    ))
+                )
+            })
+            .count();
+        let final_answers = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    &e.event,
+                    Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(
+                        _
+                    ))
+                )
+            })
+            .count();
         assert_eq!(answer_chunks, 1, "Happy path emits exactly 1 AnswerChunk");
         assert_eq!(final_answers, 1, "Happy path emits exactly 1 FinalAnswer");
     }
@@ -2146,15 +2502,25 @@ async fn answer_events_have_exact_cardinality() {
         let (tx, mut rx) = mpsc::channel(100);
         let cancel = CancellationToken::new();
         let sequence = Arc::new(EventSequence::new());
-        let sink = WorkflowEventSink::new(tx, sequence, "trace-card-b".into(), "sess-card-b".into());
+        let sink =
+            WorkflowEventSink::new(tx, sequence, "trace-card-b".into(), "sess-card-b".into());
 
-        let req = QueryRagRequest { session_id: "sess-card-b".into(), query: "Card B".into(), filter: None };
+        let req = QueryRagRequest {
+            session_id: "sess-card-b".into(),
+            query: "Card B".into(),
+            filter: None,
+        };
         let ctx = WorkflowContext::new("sess-card-b".into(), "trace-card-b".into(), &req);
 
         let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![]));
 
         let mut runner = WorkflowRunner::new();
-        runner.add_node(RetrieveHybridNode::new(Some(fake_dense), None, None, RetrievalSettings::default()));
+        runner.add_node(RetrieveHybridNode::new(
+            Some(fake_dense),
+            None,
+            None,
+            RetrievalSettings::default(),
+        ));
         runner.add_node(AssemblePromptNode::new());
         runner.add_node(GenerateAnswerNode::new(None));
 
@@ -2162,13 +2528,38 @@ async fn answer_events_have_exact_cardinality() {
 
         let mut events = Vec::new();
         while let Ok(item) = rx.try_recv() {
-            if let Ok(wf_event) = item { events.push(wf_event); }
+            if let Ok(wf_event) = item {
+                events.push(wf_event);
+            }
         }
 
-        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_)))).count();
-        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(_)))).count();
+        let answer_chunks = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    &e.event,
+                    Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(
+                        _
+                    ))
+                )
+            })
+            .count();
+        let final_answers = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    &e.event,
+                    Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(
+                        _
+                    ))
+                )
+            })
+            .count();
         assert_eq!(answer_chunks, 0, "Zero evidence path emits 0 AnswerChunk");
-        assert_eq!(final_answers, 1, "Zero evidence path emits exactly 1 FinalAnswer");
+        assert_eq!(
+            final_answers, 1,
+            "Zero evidence path emits exactly 1 FinalAnswer"
+        );
     }
 
     // Scenario C: Exhausted generation failure
@@ -2176,20 +2567,32 @@ async fn answer_events_have_exact_cardinality() {
         let (tx, mut rx) = mpsc::channel(100);
         let cancel = CancellationToken::new();
         let sequence = Arc::new(EventSequence::new());
-        let sink = WorkflowEventSink::new(tx, sequence, "trace-card-c".into(), "sess-card-c".into());
+        let sink =
+            WorkflowEventSink::new(tx, sequence, "trace-card-c".into(), "sess-card-c".into());
 
-        let req = QueryRagRequest { session_id: "sess-card-c".into(), query: "Card C".into(), filter: None };
+        let req = QueryRagRequest {
+            session_id: "sess-card-c".into(),
+            query: "Card C".into(),
+            filter: None,
+        };
         let ctx = WorkflowContext::new("sess-card-c".into(), "trace-card-c".into(), &req);
 
         let candidate = candidate_with_score("1", "Content 1", 0.9).candidate;
         let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![candidate]));
-        let failing_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Err(engine::generation::GenerationError::new(
-            engine::generation::GenerationErrorKind::ProviderError,
-            "Permanent failure",
-        ))));
+        let failing_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Err(
+            engine::generation::GenerationError::new(
+                engine::generation::GenerationErrorKind::ProviderError,
+                "Permanent failure",
+            ),
+        )));
 
         let mut runner = WorkflowRunner::new();
-        runner.add_node(RetrieveHybridNode::new(Some(fake_dense), None, None, RetrievalSettings::default()));
+        runner.add_node(RetrieveHybridNode::new(
+            Some(fake_dense),
+            None,
+            None,
+            RetrievalSettings::default(),
+        ));
         runner.add_node(AssemblePromptNode::new());
         runner.add_node(GenerateAnswerNode::new(Some(failing_gen)));
 
@@ -2197,11 +2600,33 @@ async fn answer_events_have_exact_cardinality() {
 
         let mut events = Vec::new();
         while let Ok(item) = rx.try_recv() {
-            if let Ok(wf_event) = item { events.push(wf_event); }
+            if let Ok(wf_event) = item {
+                events.push(wf_event);
+            }
         }
 
-        let answer_chunks = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_)))).count();
-        let final_answers = events.iter().filter(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(_)))).count();
+        let answer_chunks = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    &e.event,
+                    Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(
+                        _
+                    ))
+                )
+            })
+            .count();
+        let final_answers = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    &e.event,
+                    Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(
+                        _
+                    ))
+                )
+            })
+            .count();
         assert_eq!(answer_chunks, 0, "Failing generation emits 0 AnswerChunk");
         assert_eq!(final_answers, 0, "Failing generation emits 0 FinalAnswer");
     }
@@ -2214,10 +2639,15 @@ async fn workflow_answer_contract_preserves_all_fields() {
     let sequence = Arc::new(EventSequence::new());
     let sink = WorkflowEventSink::new(tx, sequence, "trace-fields".into(), "sess-fields".into());
 
-    let req = QueryRagRequest { session_id: "sess-fields".into(), query: "Preserve fields query".into(), filter: None };
+    let req = QueryRagRequest {
+        session_id: "sess-fields".into(),
+        query: "Preserve fields query".into(),
+        filter: None,
+    };
     let ctx = WorkflowContext::new("sess-fields".into(), "trace-fields".into(), &req);
 
-    let candidate = candidate_with_score("100", "Evidence text for fields preservation test.", 0.88).candidate;
+    let candidate =
+        candidate_with_score("100", "Evidence text for fields preservation test.", 0.88).candidate;
     let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![candidate]));
 
     let model_out = ModelOutput {
@@ -2231,7 +2661,12 @@ async fn workflow_answer_contract_preserves_all_fields() {
     let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(model_out)));
 
     let mut runner = WorkflowRunner::new();
-    runner.add_node(RetrieveHybridNode::new(Some(fake_dense), None, None, RetrievalSettings::default()));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense),
+        None,
+        None,
+        RetrievalSettings::default(),
+    ));
     runner.add_node(AssemblePromptNode::new());
     runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
 
@@ -2239,21 +2674,40 @@ async fn workflow_answer_contract_preserves_all_fields() {
 
     let mut events = Vec::new();
     while let Ok(item) = rx.try_recv() {
-        if let Ok(wf_event) = item { events.push(wf_event); }
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
     }
 
-    let final_answer_event = events.iter().find_map(|e| match &e.event {
-        Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(fa)) => fa.response.clone(),
-        _ => None,
-    }).expect("FinalAnswer must contain QueryRagResponse");
+    let final_answer_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(fa)) => {
+                fa.response.clone()
+            }
+            _ => None,
+        })
+        .expect("FinalAnswer must contain QueryRagResponse");
 
-    assert_eq!(final_answer_event.answer, "Detailed answer string preserving fields.");
+    assert_eq!(
+        final_answer_event.answer,
+        "Detailed answer string preserving fields."
+    );
     assert_eq!(final_answer_event.citations, vec!["[1]"]);
     assert_eq!(final_answer_event.session_id, "sess-fields");
-    assert_eq!(final_answer_event.answer_basis, engine::pb::lancet::v1::AnswerBasis::Retrieval as i32);
+    assert_eq!(
+        final_answer_event.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
     assert!(!final_answer_event.structured_citations.is_empty());
-    assert_eq!(final_answer_event.structured_citations[0].chunk_id, "chk-100");
-    assert_eq!(final_answer_event.structured_citations[0].document_id, "doc-100");
+    assert_eq!(
+        final_answer_event.structured_citations[0].chunk_id,
+        "chk-100"
+    );
+    assert_eq!(
+        final_answer_event.structured_citations[0].document_id,
+        "doc-100"
+    );
     assert_eq!(final_answer_event.notices.len(), 2);
     assert!(final_answer_event.snapshot.is_some());
     let snapshot = final_answer_event.snapshot.as_ref().unwrap();
@@ -2263,28 +2717,47 @@ async fn workflow_answer_contract_preserves_all_fields() {
 
 #[tokio::test]
 async fn prompt_packing_cancellation_is_cooperative() {
-    use engine::prompt::{assemble_evidence_blocks, pack_evidence_and_graph_prompt, PromptAssemblyError};
+    use engine::prompt::{
+        assemble_evidence_blocks, pack_evidence_and_graph_prompt, PromptAssemblyError,
+    };
 
     let mut fused = Vec::new();
     for i in 0..100 {
-        fused.push(candidate_with_score(&format!("{i}"), &format!("Large content block {i} for cancellation testing. ").repeat(20), 0.9 - (i as f64 * 0.001)));
+        fused.push(candidate_with_score(
+            &format!("{i}"),
+            &format!("Large content block {i} for cancellation testing. ").repeat(20),
+            0.9 - (i as f64 * 0.001),
+        ));
     }
 
     let evidence = assemble_evidence_blocks(&fused);
     let cancel = CancellationToken::new();
     cancel.cancel();
 
-    let res = pack_evidence_and_graph_prompt("Cancellation test?", &evidence, &[], 1.0, 65536, 2048, &cancel).await;
-    assert_eq!(res, Err(PromptAssemblyError::Cancelled), "Cooperative prompt packing must return Cancelled when cancellation token is pre-cancelled");
+    let res = pack_evidence_and_graph_prompt(
+        "Cancellation test?",
+        &evidence,
+        &[],
+        1.0,
+        65536,
+        2048,
+        &cancel,
+    )
+    .await;
+    assert_eq!(
+        res,
+        Err(PromptAssemblyError::Cancelled),
+        "Cooperative prompt packing must return Cancelled when cancellation token is pre-cancelled"
+    );
 }
 
 #[tokio::test]
 async fn workflow_phase5_prompt_api_surface() {
+    use engine::graph::context_strategy::GraphFact;
     use engine::prompt::{
         assemble_evidence_blocks, pack_evidence_and_graph_prompt, pack_evidence_prompt,
         GraphFactBlock, PromptAssemblyError,
     };
-    use engine::graph::context_strategy::GraphFact;
 
     let candidate1 = candidate_with_score("1", "Lancet prompt assembly surface test text 1.", 0.95);
     let candidate2 = candidate_with_score("2", "Lancet prompt assembly surface test text 2.", 0.85);
@@ -2297,28 +2770,52 @@ async fn workflow_phase5_prompt_api_surface() {
     let cancel = CancellationToken::new();
 
     // 1. Empty evidence returns PromptAssemblyError::EmptyEvidence for both helpers
-    let empty_res1 = pack_evidence_prompt("Test question?", &empty_evidence, 8192, 2048, &cancel).await;
+    let empty_res1 =
+        pack_evidence_prompt("Test question?", &empty_evidence, 8192, 2048, &cancel).await;
     assert_eq!(empty_res1, Err(PromptAssemblyError::EmptyEvidence));
 
-    let empty_res2 = pack_evidence_and_graph_prompt("Test question?", &empty_evidence, &facts, 1.0, 8192, 2048, &cancel).await;
+    let empty_res2 = pack_evidence_and_graph_prompt(
+        "Test question?",
+        &empty_evidence,
+        &facts,
+        1.0,
+        8192,
+        2048,
+        &cancel,
+    )
+    .await;
     assert_eq!(empty_res2, Err(PromptAssemblyError::EmptyEvidence));
 
     // 2. Pre-cancelled token returns PromptAssemblyError::Cancelled
     let pre_cancel = CancellationToken::new();
     pre_cancel.cancel();
 
-    let cancel_res1 = pack_evidence_prompt("Test question?", &evidence, 8192, 2048, &pre_cancel).await;
+    let cancel_res1 =
+        pack_evidence_prompt("Test question?", &evidence, 8192, 2048, &pre_cancel).await;
     assert_eq!(cancel_res1, Err(PromptAssemblyError::Cancelled));
 
-    let cancel_res2 = pack_evidence_and_graph_prompt("Test question?", &evidence, &facts, 1.0, 8192, 2048, &pre_cancel).await;
+    let cancel_res2 = pack_evidence_and_graph_prompt(
+        "Test question?",
+        &evidence,
+        &facts,
+        1.0,
+        8192,
+        2048,
+        &pre_cancel,
+    )
+    .await;
     assert_eq!(cancel_res2, Err(PromptAssemblyError::Cancelled));
 
     // 3. NoEvidenceFits error when token budget is insufficient for even the first block
     let tight_budget_res = pack_evidence_prompt("Test question?", &evidence, 50, 40, &cancel).await;
-    assert!(matches!(tight_budget_res, Err(PromptAssemblyError::NoEvidenceFits { .. })));
+    assert!(matches!(
+        tight_budget_res,
+        Err(PromptAssemblyError::NoEvidenceFits { .. })
+    ));
 
     // 4. Successful async packing returns structured PackedEvidence
-    let packed = pack_evidence_prompt("Test question?", &evidence, 8192, 2048, &cancel).await
+    let packed = pack_evidence_prompt("Test question?", &evidence, 8192, 2048, &cancel)
+        .await
         .expect("pack_evidence_prompt succeeds");
     assert!(!packed.prompt.is_empty());
     assert_eq!(packed.evidence.len(), 2);
@@ -2328,10 +2825,10 @@ async fn workflow_phase5_prompt_api_surface() {
 
 #[tokio::test]
 async fn workflow_phase5_prompt_graph_weight_semantics() {
+    use engine::graph::context_strategy::GraphFact;
     use engine::prompt::{
         assemble_evidence_blocks, pack_evidence_and_graph_prompt, GraphFactBlock,
     };
-    use engine::graph::context_strategy::GraphFact;
 
     let candidate1 = candidate_with_score("1", "First citable chunk content.", 0.95);
     let candidate2 = candidate_with_score("2", "Second citable chunk content.", 0.85);
@@ -2360,12 +2857,21 @@ async fn workflow_phase5_prompt_graph_weight_semantics() {
     .await
     .expect("packing with graph_weight 0.0 succeeds");
 
-    assert!(packed_zero.graph_facts.is_empty(), "graph_weight 0.0 must exclude all graph facts");
     assert!(
-        !packed_zero.prompt.contains("Related Entities & Relationships"),
+        packed_zero.graph_facts.is_empty(),
+        "graph_weight 0.0 must exclude all graph facts"
+    );
+    assert!(
+        !packed_zero
+            .prompt
+            .contains("Related Entities & Relationships"),
         "graph_weight 0.0 prompt must not contain graph section header"
     );
-    assert_eq!(packed_zero.evidence.len(), 2, "evidence chunks must remain included");
+    assert_eq!(
+        packed_zero.evidence.len(),
+        2,
+        "evidence chunks must remain included"
+    );
     assert_eq!(packed_zero.evidence[0].id, "[1]");
 
     // 2. graph_weight > 0.0 includes graph facts without altering evidence-selection authority
@@ -2381,12 +2887,20 @@ async fn workflow_phase5_prompt_graph_weight_semantics() {
     .await
     .expect("packing with graph_weight 1.0 succeeds");
 
-    assert!(!packed_positive.graph_facts.is_empty(), "positive graph_weight includes graph facts");
     assert!(
-        packed_positive.prompt.contains("Related Entities & Relationships"),
+        !packed_positive.graph_facts.is_empty(),
+        "positive graph_weight includes graph facts"
+    );
+    assert!(
+        packed_positive
+            .prompt
+            .contains("Related Entities & Relationships"),
         "positive graph_weight prompt contains graph section header"
     );
-    assert_eq!(packed_positive.evidence[0].id, "[1]", "evidence selection authority is preserved");
+    assert_eq!(
+        packed_positive.evidence[0].id, "[1]",
+        "evidence selection authority is preserved"
+    );
 }
 
 #[test]
@@ -2410,12 +2924,17 @@ fn workflow_phase5_fake_ports_test_only() {
 
     for type_name in fake_port_types {
         let decl_pattern = format!("pub struct {type_name}");
-        let decl_pos = ports_src.find(&decl_pattern)
+        let decl_pos = ports_src
+            .find(&decl_pattern)
             .unwrap_or_else(|| panic!("declaration of {type_name} not found in ports.rs"));
 
         // Preceding non-empty line must be #[cfg(test)]
         let prefix = &ports_src[..decl_pos];
-        let last_attr = prefix.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+        let last_attr = prefix
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("");
         assert!(
             last_attr.contains("#[cfg(test)]"),
             "{type_name} in ports.rs must be directly preceded by #[cfg(test)], found: {last_attr}"
@@ -2423,10 +2942,15 @@ fn workflow_phase5_fake_ports_test_only() {
     }
 
     // Ensure NoOpQueryReformulator is NOT gated by #[cfg(test)] (it is a production pass-through)
-    let noop_pos = ports_src.find("pub struct NoOpQueryReformulator")
+    let noop_pos = ports_src
+        .find("pub struct NoOpQueryReformulator")
         .expect("NoOpQueryReformulator in ports.rs");
     let noop_prefix = &ports_src[..noop_pos];
-    let noop_last_line = noop_prefix.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+    let noop_last_line = noop_prefix
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("");
     assert!(
         !noop_last_line.contains("#[cfg(test)]"),
         "NoOpQueryReformulator must remain available in production"
@@ -2436,10 +2960,15 @@ fn workflow_phase5_fake_ports_test_only() {
     let gen_path = repo_root.join("engine/src/generation/mod.rs");
     let gen_src = std::fs::read_to_string(&gen_path).expect("read generation/mod.rs");
 
-    let fake_gen_pos = gen_src.find("pub struct FakeGenerator")
+    let fake_gen_pos = gen_src
+        .find("pub struct FakeGenerator")
         .expect("FakeGenerator in generation/mod.rs");
     let fake_gen_prefix = &gen_src[..fake_gen_pos];
-    let fake_gen_last_attr = fake_gen_prefix.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+    let fake_gen_last_attr = fake_gen_prefix
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("");
     assert!(
         fake_gen_last_attr.contains("#[cfg(test)]"),
         "FakeGenerator in generation/mod.rs must be preceded by #[cfg(test)], found: {fake_gen_last_attr}"
@@ -2470,7 +2999,11 @@ async fn workflow_phase5_graph_notice_merge() {
         session_id: "sess-notice-merge".into(),
         filter: None,
     };
-    let mut ctx = WorkflowContext::new("sess-notice-merge".into(), "trace-notice-merge".into(), &req);
+    let mut ctx = WorkflowContext::new(
+        "sess-notice-merge".into(),
+        "trace-notice-merge".into(),
+        &req,
+    );
 
     // 1. Pre-existing notice (e.g. from retrieval or pre-step)
     let initial_notice = engine::pb::lancet::v1::Notice {
@@ -2500,19 +3033,30 @@ async fn workflow_phase5_graph_notice_merge() {
         NodeErrorKind::GraphFailed,
         "cypher engine unavailable",
     )));
-    let graph_node = ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph_fail));
+    let graph_node =
+        ExtractGraphContextNode::new(Some(fake_embedder.clone()), Some(fake_graph_fail));
     let res = graph_node.run(&mut ctx, &cancel).await;
-    assert!(res.is_ok(), "Graph degradation must not fail workflow per D-09");
-    assert!(ctx.graph_context.is_empty(), "Graph context must be empty on degradation");
+    assert!(
+        res.is_ok(),
+        "Graph degradation must not fail workflow per D-09"
+    );
+    assert!(
+        ctx.graph_context.is_empty(),
+        "Graph context must be empty on degradation"
+    );
     assert_eq!(ctx.notices.len(), 3);
     assert_eq!(ctx.notices[2].code, "GRAPH_DEGRADED");
     assert!(ctx.notices[2].message.contains("cypher engine unavailable"));
 
     // 4. Graph node with timeout outcome -> GRAPH_TIMEOUT notice appended
     let fake_graph_stall = Arc::new(FakeGraphQueryPort::stall());
-    let timeout_node = ExtractGraphContextNode::new(Some(fake_embedder), Some(fake_graph_stall)).with_timeouts(5000, 50);
+    let timeout_node = ExtractGraphContextNode::new(Some(fake_embedder), Some(fake_graph_stall))
+        .with_timeouts(5000, 50);
     let res2 = timeout_node.run(&mut ctx, &cancel).await;
-    assert!(res2.is_ok(), "Graph timeout must degrade gracefully with Ok(()) per D-09");
+    assert!(
+        res2.is_ok(),
+        "Graph timeout must degrade gracefully with Ok(()) per D-09"
+    );
     assert_eq!(ctx.notices.len(), 4);
     assert_eq!(ctx.notices[3].code, "GRAPH_TIMEOUT");
 
@@ -2547,7 +3091,10 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
         &request,
     );
 
-    ctx.variants = vec!["full snapshot query".into(), "expanded snapshot query".into()];
+    ctx.variants = vec![
+        "full snapshot query".into(),
+        "expanded snapshot query".into(),
+    ];
     ctx.query_embedding = Some((0..2048).map(|index| index as f32 / 10.0).collect());
     ctx.graph_context = "Lancet -- uses -- LanceDB".into();
     ctx.graph_facts = vec![engine::prompt::GraphFactBlock {
@@ -2629,8 +3176,14 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
     };
     let serialized_bytes = checkpoint.context_snapshot.len();
     println!("checkpoint serialized bytes: {serialized_bytes}");
-    assert!(serialized_bytes > 0, "checkpoint JSON must have serialized bytes");
-    assert!(serialized_bytes < 20_000, "embedding must remain fixed-size");
+    assert!(
+        serialized_bytes > 0,
+        "checkpoint JSON must have serialized bytes"
+    );
+    assert!(
+        serialized_bytes < 20_000,
+        "embedding must remain fixed-size"
+    );
 
     let payload: serde_json::Value = serde_json::from_str(&checkpoint.context_snapshot)
         .expect("checkpoint snapshot must round-trip as valid JSON");
@@ -2647,8 +3200,14 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
     assert_eq!(payload["session_id"], "sess-checkpoint-full");
     assert_eq!(payload["trace_id"], "trace-checkpoint-full");
     assert_eq!(payload["original_query"], "full snapshot query");
-    assert_eq!(payload["filter"]["document_ids"], serde_json::json!(["doc-filter"]));
-    assert_eq!(payload["filter"]["content_types"], serde_json::json!(["text/plain"]));
+    assert_eq!(
+        payload["filter"]["document_ids"],
+        serde_json::json!(["doc-filter"])
+    );
+    assert_eq!(
+        payload["filter"]["content_types"],
+        serde_json::json!(["text/plain"])
+    );
     assert_eq!(
         payload["variants"],
         serde_json::json!(["full snapshot query", "expanded snapshot query"])
@@ -2662,24 +3221,34 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
         .as_str()
         .expect("query embedding digest hash must be a string");
     assert_eq!(digest_hash.len(), 16, "digest hash must have fixed length");
-    assert!(digest_hash.chars().all(|character| character.is_ascii_hexdigit()));
+    assert!(digest_hash
+        .chars()
+        .all(|character| character.is_ascii_hexdigit()));
     assert!(!payload["query_embedding"].is_array());
-    let repeated_payload: serde_json::Value = serde_json::from_str(
-        &events::CheckpointSnapshot::from_context(&ctx).to_json(),
-    )
-    .expect("repeated checkpoint serialization must be valid JSON");
+    let repeated_payload: serde_json::Value =
+        serde_json::from_str(&events::CheckpointSnapshot::from_context(&ctx).to_json())
+            .expect("repeated checkpoint serialization must be valid JSON");
     assert_eq!(repeated_payload["query_embedding"]["hash"], digest["hash"]);
 
     assert_eq!(payload["graph_context"], "Lancet -- uses -- LanceDB");
+    assert_eq!(payload["graph_facts"][0]["fact"]["entity_a_name"], "Lancet");
     assert_eq!(
-        payload["graph_facts"][0]["fact"]["entity_a_name"],
-        "Lancet"
+        payload["vector_results"],
+        serde_json::json!(["vector-chunk-1"])
     );
-    assert_eq!(payload["vector_results"], serde_json::json!(["vector-chunk-1"]));
     assert_eq!(payload["bm25_results"], serde_json::json!(["bm25-chunk-1"]));
-    assert_eq!(payload["final_candidates"], serde_json::json!(["final-chunk-1"]));
-    assert_eq!(payload["evidence_blocks"][0]["text"], "lossless evidence text");
-    assert_eq!(payload["assembled_prompt"], "assembled prompt remains lossless");
+    assert_eq!(
+        payload["final_candidates"],
+        serde_json::json!(["final-chunk-1"])
+    );
+    assert_eq!(
+        payload["evidence_blocks"][0]["text"],
+        "lossless evidence text"
+    );
+    assert_eq!(
+        payload["assembled_prompt"],
+        "assembled prompt remains lossless"
+    );
     assert_eq!(payload["answer"], "lossless answer");
     assert_eq!(payload["citations"], serde_json::json!(["[1]"]));
     assert_eq!(
@@ -2715,10 +3284,9 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
             filter: None,
         },
     );
-    let empty_payload: serde_json::Value = serde_json::from_str(
-        &events::CheckpointSnapshot::from_context(&empty_context).to_json(),
-    )
-    .expect("empty checkpoint snapshot must be valid JSON");
+    let empty_payload: serde_json::Value =
+        serde_json::from_str(&events::CheckpointSnapshot::from_context(&empty_context).to_json())
+            .expect("empty checkpoint snapshot must be valid JSON");
     assert!(empty_payload["filter"].is_null());
     assert!(empty_payload["query_embedding"].is_null());
     assert!(empty_payload["snapshot"].is_null());
@@ -2814,7 +3382,11 @@ async fn workflow_phase5_terminal_idempotence() {
             _ => None,
         })
         .collect();
-    assert_eq!(terminal_events.len(), 1, "terminal emission must be idempotent");
+    assert_eq!(
+        terminal_events.len(),
+        1,
+        "terminal emission must be idempotent"
+    );
     assert!(!terminal_events[0].success);
     assert_eq!(
         terminal_events[0].error_kind,
@@ -2829,9 +3401,10 @@ async fn workflow_phase5_terminal_idempotence() {
         vec!["RETRIEVAL_INFO", "GRAPH_DEGRADED", "GRAPH_TIMEOUT"]
     );
     assert!(
-        events
-            .iter()
-            .all(|event| !matches!(event.event, Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_)))),
+        events.iter().all(|event| !matches!(
+            event.event,
+            Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_))
+        )),
         "failed workflows must not emit answer-shaped events"
     );
 }
@@ -2935,9 +3508,10 @@ async fn workflow_phase5_failure_terminal_notices_tracer() {
     );
 
     assert!(
-        events
-            .iter()
-            .all(|e| !matches!(&e.event, Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_)))),
+        events.iter().all(|e| !matches!(
+            &e.event,
+            Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_))
+        )),
         "failed workflow must omit AnswerChunk and FinalAnswer"
     );
 
@@ -3101,9 +3675,10 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
         );
 
         assert!(
-            events
-                .iter()
-                .all(|e| !matches!(&e.event, Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_)))),
+            events.iter().all(|e| !matches!(
+                &e.event,
+                Some(Event::AnswerChunk(_)) | Some(Event::FinalAnswer(_))
+            )),
             "failed stream must contain no AnswerChunk or FinalAnswer"
         );
     }

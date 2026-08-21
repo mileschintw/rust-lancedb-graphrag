@@ -35,9 +35,7 @@ impl std::fmt::Display for BoundedBodyError {
 
 impl std::error::Error for BoundedBodyError {}
 
-pub async fn read_body_limited(
-    response: reqwest::Response,
-) -> Result<Vec<u8>, BoundedBodyError> {
+pub async fn read_body_limited(response: reqwest::Response) -> Result<Vec<u8>, BoundedBodyError> {
     read_body_limited_with_limit(response, MAX_PROVIDER_RESPONSE_BODY_BYTES).await
 }
 

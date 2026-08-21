@@ -7,11 +7,11 @@ pub mod runner;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
+use crate::generation::ModelOutput;
 use crate::pb::lancet::v1::{
     AnswerBasis, DocumentFilter, NodeErrorKind, Notice, NoticeSeverity, QueryRagRequest,
     QueryRagResponse, RetrievalSnapshot, StructuredCitation,
 };
-use crate::generation::ModelOutput;
 
 pub use events::EventSequence;
 pub use node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort};
@@ -20,8 +20,7 @@ pub use nodes::{
     RetrieveHybridNode,
 };
 pub use ports::{
-    Bm25RetrievalPort, DenseRetrievalPort, GraphQueryPort, NoOpQueryReformulator,
-    QueryReformulator,
+    Bm25RetrievalPort, DenseRetrievalPort, GraphQueryPort, NoOpQueryReformulator, QueryReformulator,
 };
 pub use runner::{WorkflowEventSink, WorkflowRunner};
 
@@ -181,7 +180,10 @@ pub fn run_inline_prompt_generation_remainder<'a>(
 
         let evidence_summary = ctx.final_candidates.join("\n");
         ctx.assembled_prompt = if ctx.graph_context.is_empty() {
-            format!("Query: {}\nEvidence:\n{}", ctx.original_query, evidence_summary)
+            format!(
+                "Query: {}\nEvidence:\n{}",
+                ctx.original_query, evidence_summary
+            )
         } else {
             format!(
                 "Query: {}\nGraph Context:\n{}\nEvidence:\n{}",
@@ -222,23 +224,22 @@ pub fn run_inline_prompt_generation_remainder<'a>(
             match result {
                 Ok(output) => {
                     ctx.update_from_model_output(&output);
-                    sink.send_event_or_cancel(events::answer_chunk(ctx.answer.clone(), true), cancel)
-                        .await?;
+                    sink.send_event_or_cancel(
+                        events::answer_chunk(ctx.answer.clone(), true),
+                        cancel,
+                    )
+                    .await?;
                     sink.send_event_or_cancel(events::node_completed(name_gen, "", 10), cancel)
                         .await?;
                     sink.send_checkpoint_or_error("post_generateanswer", ctx, cancel)?;
                 }
                 Err(err) => {
-                    let node_err = NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
-                        .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
+                    let node_err =
+                        NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
+                            .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
                     let _ = sink
                         .send_event_or_cancel(
-                            events::node_failed(
-                                name_gen,
-                                node_err.kind,
-                                &node_err.message,
-                                false,
-                            ),
+                            events::node_failed(name_gen, node_err.kind, &node_err.message, false),
                             cancel,
                         )
                         .await;
@@ -253,12 +254,7 @@ pub fn run_inline_prompt_generation_remainder<'a>(
             .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone()));
             let _ = sink
                 .send_event_or_cancel(
-                    events::node_failed(
-                        name_gen,
-                        node_err.kind,
-                        &node_err.message,
-                        false,
-                    ),
+                    events::node_failed(name_gen, node_err.kind, &node_err.message, false),
                     cancel,
                 )
                 .await;

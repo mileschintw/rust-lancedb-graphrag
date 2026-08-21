@@ -1,11 +1,11 @@
-use std::sync::Arc;
-use tokio_util::sync::CancellationToken;
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind},
     ports::QueryReformulator,
     WorkflowContext,
 };
 use crate::pb::lancet::v1::NodeErrorKind;
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 pub struct ReformulateQueryNode {
     reformulator: Option<Arc<dyn QueryReformulator>>,
@@ -43,7 +43,9 @@ impl Node for ReformulateQueryNode {
             }
 
             if let Some(ref reformulator) = self.reformulator {
-                let variants = reformulator.reformulate(&ctx.original_query, cancel).await?;
+                let variants = reformulator
+                    .reformulate(&ctx.original_query, cancel)
+                    .await?;
                 if variants.is_empty() {
                     return Err(NodeError::new(
                         NodeErrorKind::InputValidation,

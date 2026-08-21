@@ -5,8 +5,8 @@ use arrow_schema::{DataType, Field, Schema};
 
 use super::bridge;
 use super::{
-    clamp_hop_cap, clamp_hop_cap_with_ceiling, traverse_fixed_hop,
-    traverse_filtered_by_relation_type, traverse_multi_hop, GraphSpikeErrorKind, MAX_HOP_CAP,
+    clamp_hop_cap, clamp_hop_cap_with_ceiling, traverse_filtered_by_relation_type,
+    traverse_fixed_hop, traverse_multi_hop, GraphSpikeErrorKind, MAX_HOP_CAP,
     MAX_RELATION_TYPE_FILTER_BYTES, MAX_SEED_ENTITY_NAME_BYTES,
 };
 
@@ -88,7 +88,10 @@ fn bridge_round_trip_preserves_schema_and_values() {
     let bridged = bridge::bridge_batch(&entities).expect("forward bridge must succeed");
     let round_tripped = bridge::bridge_batch_back(&bridged).expect("inverse bridge must succeed");
 
-    assert_eq!(round_tripped.schema().fields().len(), entities.schema().fields().len());
+    assert_eq!(
+        round_tripped.schema().fields().len(),
+        entities.schema().fields().len()
+    );
     for (original_field, round_tripped_field) in entities
         .schema()
         .fields()
@@ -209,7 +212,10 @@ fn graph_fact_block_escaping_contract() {
 
 #[tokio::test]
 async fn extraction_generator_trait_and_fake() {
-    use super::extraction::{ExtractionGenerator, ExtractionOutput, ExtractionRequest, FakeExtractionGenerator, ExtractedEntity, ExtractedRelation};
+    use super::extraction::{
+        ExtractedEntity, ExtractedRelation, ExtractionGenerator, ExtractionOutput,
+        ExtractionRequest, FakeExtractionGenerator,
+    };
 
     let fake_output = ExtractionOutput {
         entities: vec![ExtractedEntity {
@@ -231,7 +237,10 @@ async fn extraction_generator_trait_and_fake() {
         chunk_text: "Alice knows Bob.".into(),
     };
 
-    let res = generator.extract(req).await.expect("Fake extraction must succeed");
+    let res = generator
+        .extract(req)
+        .await
+        .expect("Fake extraction must succeed");
     assert_eq!(res, fake_output);
 }
 
@@ -315,7 +324,8 @@ fn openrouter_generation_config_accessors() {
 async fn narrow_via_cypher_narrows_to_empty_when_seed_absent_from_graph() {
     let (entities, edges) = three_entity_two_edge_fixture();
     // A nonexistent seed narrows to zero entities and zero edges under Cypher confirmation
-    let (out_entities, out_edges) = super::narrow_via_cypher(&entities, &edges, "nonexistent-seed", 1).await;
+    let (out_entities, out_edges) =
+        super::narrow_via_cypher(&entities, &edges, "nonexistent-seed", 1).await;
     assert_eq!(out_entities.num_rows(), 0);
     assert_eq!(out_edges.num_rows(), 0);
 }
@@ -398,7 +408,9 @@ async fn cypher_confirmed_neighbor_ids_reflects_real_traverse_multi_hop_executio
         .expect("cypher_confirmed_neighbor_ids must succeed");
 
     let expected: std::collections::HashSet<String> =
-        ["def-456".to_string(), "ghi-789".to_string()].into_iter().collect();
+        ["def-456".to_string(), "ghi-789".to_string()]
+            .into_iter()
+            .collect();
     assert_eq!(confirmed, expected);
 }
 
@@ -540,8 +552,13 @@ fn bridge_preserves_all_rows_across_multiple_ipc_batches() {
     }
 
     let reader = arrow_ipc_lg::reader::StreamReader::try_new(buf.as_slice(), None).unwrap();
-    let bridged_lg = bridge::decode_all_batches(reader).expect("decode_all_batches must succeed on 2-batch stream");
-    assert_eq!(bridged_lg.num_rows(), 5, "bridged_lg must contain all 5 rows across both batches");
+    let bridged_lg = bridge::decode_all_batches(reader)
+        .expect("decode_all_batches must succeed on 2-batch stream");
+    assert_eq!(
+        bridged_lg.num_rows(),
+        5,
+        "bridged_lg must contain all 5 rows across both batches"
+    );
 
     // Also test bridge_batch_back direction decoding multiple batches
     let schema_lg = Arc::new(arrow_lg::datatypes::Schema::new(vec![
@@ -569,15 +586,21 @@ fn bridge_preserves_all_rows_across_multiple_ipc_batches() {
 
     let mut buf_lg = Vec::new();
     {
-        let mut writer = arrow_ipc_lg::writer::StreamWriter::try_new(&mut buf_lg, &schema_lg).unwrap();
+        let mut writer =
+            arrow_ipc_lg::writer::StreamWriter::try_new(&mut buf_lg, &schema_lg).unwrap();
         writer.write(&batch1_lg).unwrap();
         writer.write(&batch2_lg).unwrap();
         writer.finish().unwrap();
     }
 
     let reader_back = arrow_ipc::reader::StreamReader::try_new(buf_lg.as_slice(), None).unwrap();
-    let bridged_back = bridge::decode_all_batches(reader_back).expect("decode_all_batches must succeed on 2-batch back stream");
-    assert_eq!(bridged_back.num_rows(), 3, "bridged_back must contain all 3 rows across both batches");
+    let bridged_back = bridge::decode_all_batches(reader_back)
+        .expect("decode_all_batches must succeed on 2-batch back stream");
+    assert_eq!(
+        bridged_back.num_rows(),
+        3,
+        "bridged_back must contain all 3 rows across both batches"
+    );
 }
 #[test]
 fn clamp_hop_cap_with_ceiling_applies_min_of_configured_and_compile_time() {
@@ -585,7 +608,10 @@ fn clamp_hop_cap_with_ceiling_applies_min_of_configured_and_compile_time() {
     assert_eq!(clamp_hop_cap_with_ceiling(1, 1), Ok(1));
     assert_eq!(clamp_hop_cap_with_ceiling(2, 2), Ok(2));
     // configured_max equal to MAX_HOP_CAP: both agree
-    assert_eq!(clamp_hop_cap_with_ceiling(MAX_HOP_CAP, MAX_HOP_CAP), Ok(MAX_HOP_CAP));
+    assert_eq!(
+        clamp_hop_cap_with_ceiling(MAX_HOP_CAP, MAX_HOP_CAP),
+        Ok(MAX_HOP_CAP)
+    );
     // configured_max above MAX_HOP_CAP: capped to compile-time bound
     assert_eq!(
         clamp_hop_cap_with_ceiling(MAX_HOP_CAP, MAX_HOP_CAP + 5),
@@ -635,7 +661,11 @@ impl<S> tracing_subscriber::layer::Layer<S> for ExtractionValidationDebugCapture
 where
     S: tracing::Subscriber,
 {
-    fn on_event(&self, event: &tracing::Event<'_>, _ctx: tracing_subscriber::layer::Context<'_, S>) {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
         let mut visitor = ExtractionValidationDebugVisitor {
             captured: &self.captured,
         };

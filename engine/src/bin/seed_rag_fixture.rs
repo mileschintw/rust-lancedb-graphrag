@@ -224,9 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     };
     let entity_embeddings = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-        (0..2).map(|_| {
-            Some((0..2048).map(|index| Some(if index == 0 { 1.0 } else { 0.0 })))
-        }),
+        (0..2).map(|_| Some((0..2048).map(|index| Some(if index == 0 { 1.0 } else { 0.0 })))),
         2048,
     );
 
@@ -346,7 +344,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .try_collect::<Vec<_>>()
         .await?;
-    assert!(!edge_results.is_empty(), "entity_edges table read back empty");
+    assert!(
+        !edge_results.is_empty(),
+        "entity_edges table read back empty"
+    );
     let total_edges: usize = edge_results.iter().map(|b| b.num_rows()).sum();
     assert_eq!(total_edges, 1, "must find 1 entity edge");
 

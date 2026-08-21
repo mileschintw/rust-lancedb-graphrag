@@ -104,7 +104,10 @@ fn accept_with_deadline(
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if start.elapsed() > timeout {
-                    panic!("accept_with_deadline timed out waiting for connection after {:?}", timeout);
+                    panic!(
+                        "accept_with_deadline timed out waiting for connection after {:?}",
+                        timeout
+                    );
                 }
                 thread::sleep(Duration::from_millis(10));
             }
@@ -331,7 +334,8 @@ async fn openrouter_json_schema_and_finish_reason_contract() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let mut buf = [0u8; 4096];
         let _ = stream.read(&mut buf);
 
@@ -351,7 +355,8 @@ async fn openrouter_json_schema_and_finish_reason_contract() {
         );
         let _ = stream.write_all(response.as_bytes());
 
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let mut buf = [0u8; 8192];
         let n = stream.read(&mut buf).unwrap_or(0);
         let req_str = String::from_utf8_lossy(&buf[..n]);
@@ -393,7 +398,10 @@ async fn openrouter_json_schema_and_finish_reason_contract() {
         .expect("adapter created")
         .with_endpoints(mock_chat_url, mock_models_url);
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let candidate = sample_candidate("1", "Test content.");
     let evidence = assemble_evidence_blocks(&[candidate]);
@@ -440,7 +448,8 @@ async fn openrouter_supported_parameters_one_call() {
 
     let server_handle = thread::spawn(move || {
         // First connection: /api/v1/models
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let mut buf = [0u8; 4096];
         let _ = stream.read(&mut buf);
 
@@ -461,7 +470,8 @@ async fn openrouter_supported_parameters_one_call() {
         let _ = stream.write_all(response.as_bytes());
 
         // Second connection: /api/v1/chat/completions
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let mut buf = [0u8; 8192];
         let n = stream.read(&mut buf).unwrap_or(0);
         let req_str = String::from_utf8_lossy(&buf[..n]);
@@ -509,7 +519,10 @@ async fn openrouter_supported_parameters_one_call() {
         .expect("adapter created")
         .with_endpoints(mock_chat_url, mock_models_url);
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let candidate = sample_candidate("1", "Test chunk content.");
     let evidence = assemble_evidence_blocks(&[candidate]);
@@ -534,7 +547,8 @@ async fn generation_request_uses_effective_settings() {
     let captured_chat_for_server = captured_chat.clone();
 
     let server_handle = thread::spawn(move || {
-        let (mut models_stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut models_stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let models_request = read_http_request(&mut models_stream);
         assert!(models_request.starts_with("GET /configured/models "));
         write_json_response(
@@ -547,7 +561,8 @@ async fn generation_request_uses_effective_settings() {
             }),
         );
 
-        let (mut chat_stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (mut chat_stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let chat_request = read_http_request(&mut chat_stream);
         assert!(chat_request.starts_with("POST /configured/chat "));
         *captured_chat_for_server.lock().unwrap() = Some(chat_request);
@@ -585,7 +600,10 @@ async fn generation_request_uses_effective_settings() {
     let adapter = OpenRouterGenerator::new_with_config("test-key", config)
         .expect("configured adapter created");
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Configured content.")]);
     let response = adapter
@@ -617,7 +635,8 @@ async fn generation_timeout_uses_one_effective_value() {
     let addr = listener.local_addr().unwrap();
     let timeout = Duration::from_millis(120);
     let server_handle = thread::spawn(move || {
-        let (mut models_stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut models_stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let _ = read_http_request(&mut models_stream);
         write_json_response(
             &mut models_stream,
@@ -629,7 +648,8 @@ async fn generation_timeout_uses_one_effective_value() {
             }),
         );
 
-        let (_chat_stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (_chat_stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         thread::sleep(Duration::from_millis(600));
     });
 
@@ -647,7 +667,10 @@ async fn generation_timeout_uses_one_effective_value() {
     let adapter = OpenRouterGenerator::new_with_config("test-key", config)
         .expect("configured timeout adapter created");
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Timeout content.")]);
 
@@ -782,7 +805,8 @@ async fn openrouter_schema_declares_output_bounds() {
     let captured_request_server = captured_request.clone();
 
     let server_handle = thread::spawn(move || {
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let _ = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -794,7 +818,8 @@ async fn openrouter_schema_declares_output_bounds() {
             }),
         );
 
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let req_str = read_http_request(&mut stream);
         *captured_request_server.lock().unwrap() = Some(req_str);
         write_json_response(
@@ -824,7 +849,10 @@ async fn openrouter_schema_declares_output_bounds() {
             format!("http://{addr}/models"),
         );
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -856,7 +884,8 @@ async fn openrouter_rejects_oversized_response_body() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let _ = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -868,7 +897,8 @@ async fn openrouter_rejects_oversized_response_body() {
             }),
         );
 
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let _ = read_http_request(&mut stream);
         let huge_padding = "x".repeat(300 * 1024);
         let body = json!({
@@ -903,7 +933,10 @@ async fn openrouter_rejects_oversized_response_body() {
             format!("http://{addr}/models"),
         );
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -923,7 +956,8 @@ async fn openrouter_rejects_oversized_model_output_fields() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let _ = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -935,7 +969,8 @@ async fn openrouter_rejects_oversized_model_output_fields() {
             }),
         );
 
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let _ = read_http_request(&mut stream);
         let long_answer = "a".repeat(17000) + " [1]";
         write_json_response(
@@ -965,7 +1000,10 @@ async fn openrouter_rejects_oversized_model_output_fields() {
             format!("http://{addr}/models"),
         );
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -985,7 +1023,8 @@ async fn openrouter_rejects_invalid_usage() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let _ = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -997,7 +1036,8 @@ async fn openrouter_rejects_invalid_usage() {
             }),
         );
 
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let _ = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -1031,7 +1071,10 @@ async fn openrouter_rejects_invalid_usage() {
             format!("http://{addr}/models"),
         );
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -1051,7 +1094,8 @@ async fn openrouter_valid_bounded_response() {
     let addr = listener.local_addr().unwrap();
 
     let server_handle = thread::spawn(move || {
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models request");
         let _ = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -1063,7 +1107,8 @@ async fn openrouter_valid_bounded_response() {
             }),
         );
 
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat request");
         let _ = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -1097,7 +1142,10 @@ async fn openrouter_valid_bounded_response() {
             format!("http://{addr}/models"),
         );
 
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Text.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -1119,7 +1167,8 @@ async fn openrouter_effective_usage_limits() {
 
     let server_handle = thread::spawn(move || {
         // 1. Models endpoint for adapter 1
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models 1");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models 1");
         let _req = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -1132,7 +1181,8 @@ async fn openrouter_effective_usage_limits() {
         );
 
         // 2. Chat completion 1 (valid non-default usage: 9000 prompt + 2500 completion = 11500 total)
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat 1");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat 1");
         let _req = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -1159,7 +1209,8 @@ async fn openrouter_effective_usage_limits() {
         );
 
         // 3. Models endpoint for adapter 2
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models 2");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models 2");
         let _req = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -1172,7 +1223,8 @@ async fn openrouter_effective_usage_limits() {
         );
 
         // 4. Chat completion 2 (over-limit usage: 10001 prompt tokens > 10000 budget)
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat 2");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat 2");
         let _req = read_http_request(&mut stream);
         write_json_response(
             &mut stream,
@@ -1212,7 +1264,10 @@ async fn openrouter_effective_usage_limits() {
     .expect("config created with 10k evidence and 3k output limits");
 
     let adapter1 = OpenRouterGenerator::new_with_config("test-key", config1).unwrap();
-    adapter1.check_supported_parameters().await.expect("prepare 1 succeeds");
+    adapter1
+        .check_supported_parameters()
+        .await
+        .expect("prepare 1 succeeds");
 
     let cand = sample_candidate("1", "Content for G1 limits test.");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -1238,7 +1293,10 @@ async fn openrouter_effective_usage_limits() {
     .expect("config created with 10k evidence and 3k output limits");
 
     let adapter2 = OpenRouterGenerator::new_with_config("test-key", config2).unwrap();
-    adapter2.check_supported_parameters().await.expect("prepare 2 succeeds");
+    adapter2
+        .check_supported_parameters()
+        .await
+        .expect("prepare 2 succeeds");
 
     // Second call: 10001 prompt tokens exceeds 10000 limit -> fails schema validation
     let err = adapter2
@@ -1300,7 +1358,8 @@ async fn openrouter_chat_rejects_oversized_streaming_body() {
 
     let server_handle = thread::spawn(move || {
         // First connection: /models preflight
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept models");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept models");
         let mut buf = [0u8; 8192];
         let _ = stream.read(&mut buf);
         let models_body =
@@ -1310,7 +1369,8 @@ async fn openrouter_chat_rejects_oversized_streaming_body() {
         let _ = stream.write_all(models_body.as_bytes());
 
         // Second connection: /chat response (oversized)
-        let (mut stream, _) = accept_with_deadline(&listener /* listener.accept() */).expect("accept chat");
+        let (mut stream, _) =
+            accept_with_deadline(&listener /* listener.accept() */).expect("accept chat");
         let mut buf = [0u8; 8192];
         let _ = stream.read(&mut buf);
         let header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
@@ -1337,7 +1397,10 @@ async fn openrouter_chat_rejects_oversized_streaming_body() {
 
     let adapter =
         super::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap();
-    adapter.check_supported_parameters().await.expect("prepare succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
 
     let cand = sample_candidate("1", "Content");
     let evidence = assemble_evidence_blocks(&[cand]);
@@ -1456,11 +1519,17 @@ async fn openrouter_preflight_transport_is_retryable() {
     let adapter = OpenRouterGenerator::new_with_config("test-key", config).unwrap();
 
     // Call 1 fails with ProviderError (retryable) because connection was reset
-    let err1 = adapter.check_supported_parameters().await.expect_err("preflight reset must fail");
+    let err1 = adapter
+        .check_supported_parameters()
+        .await
+        .expect_err("preflight reset must fail");
     assert_eq!(err1.kind, GenerationErrorKind::ProviderError);
 
     // Call 2 retries and succeeds because failed preflight was not cached!
-    adapter.check_supported_parameters().await.expect("preflight retry must succeed");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("preflight retry must succeed");
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
 
     server_handle.join().expect("server handle join");
@@ -1517,11 +1586,17 @@ async fn openrouter_capabilities_cache_success_only() {
     let adapter = OpenRouterGenerator::new_with_config("test-key", config_a).unwrap();
 
     // Call 1 on model-a: makes request
-    adapter.check_supported_parameters().await.expect("first call succeeds");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("first call succeeds");
     assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
     // Call 2 on same adapter with model-a: cached, no new request
-    adapter.check_supported_parameters().await.expect("second call cached");
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("second call cached");
     assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
     // Call on different model/endpoint: fresh request
@@ -1537,7 +1612,10 @@ async fn openrouter_capabilities_cache_success_only() {
     )
     .unwrap();
     let adapter_b = OpenRouterGenerator::new_with_config("test-key", config_b).unwrap();
-    adapter_b.check_supported_parameters().await.expect("model-b call succeeds");
+    adapter_b
+        .check_supported_parameters()
+        .await
+        .expect("model-b call succeeds");
     assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 2);
 
     server_handle.join().expect("server handle join");
@@ -1603,7 +1681,11 @@ async fn openrouter_capabilities_cache_single_flight() {
         assert!(res.is_ok(), "all concurrent calls must succeed");
     }
 
-    assert_eq!(request_count.load(std::sync::atomic::Ordering::SeqCst), 1, "exactly one /models request was issued");
+    assert_eq!(
+        request_count.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "exactly one /models request was issued"
+    );
 
     server_handle.join().expect("server handle join");
 }
@@ -1611,7 +1693,10 @@ async fn openrouter_capabilities_cache_single_flight() {
 #[test]
 fn openrouter_prompt_packing_does_not_create_fresh_cancellation_token() {
     let source = include_str!("openrouter.rs");
-    assert!(!source.contains("CancellationToken::new()"), "OpenRouter adapter must not construct a fresh CancellationToken");
+    assert!(
+        !source.contains("CancellationToken::new()"),
+        "OpenRouter adapter must not construct a fresh CancellationToken"
+    );
 }
 
 #[tokio::test]

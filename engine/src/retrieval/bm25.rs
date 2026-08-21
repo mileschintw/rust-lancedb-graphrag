@@ -168,10 +168,7 @@ impl Bm25Index {
     }
 
     /// Builds a snapshot by reading the canonical completed-node columns.
-    pub async fn from_table(
-        table: &Table,
-        config: Bm25Config,
-    ) -> Result<Self, Bm25BuildError> {
+    pub async fn from_table(table: &Table, config: Bm25Config) -> Result<Self, Bm25BuildError> {
         let batches: Vec<RecordBatch> = table
             .query()
             .select(Select::columns(&[

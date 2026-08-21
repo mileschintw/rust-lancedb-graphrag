@@ -3,13 +3,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+use super::WorkflowContext;
 use crate::pb::lancet::v1::{
     workflow_event::Event, AnswerChunkEvent, CheckpointEvent, DocumentFilter, FinalAnswerEvent,
-    NodeCompletedEvent, NodeErrorKind, NodeFailedEvent, NodeStartedEvent, Notice,
-    QueryRagResponse, RetrievalSnapshot, StructuredCitation, WorkflowCompletedEvent, WorkflowEvent,
+    NodeCompletedEvent, NodeErrorKind, NodeFailedEvent, NodeStartedEvent, Notice, QueryRagResponse,
+    RetrievalSnapshot, StructuredCitation, WorkflowCompletedEvent, WorkflowEvent,
 };
 use crate::prompt::{EvidenceBlock, GraphFactBlock};
-use super::WorkflowContext;
 
 /// The stable top-level keys written into every checkpoint context snapshot.
 pub const CHECKPOINT_SNAPSHOT_KEYS: [&str; 19] = [
@@ -236,7 +236,10 @@ impl CheckpointSnapshot {
                 .map(CheckpointStructuredCitation::from)
                 .collect(),
             notices: context.notices.iter().map(CheckpointNotice::from).collect(),
-            snapshot: context.snapshot.as_ref().map(CheckpointRetrievalSnapshot::from),
+            snapshot: context
+                .snapshot
+                .as_ref()
+                .map(CheckpointRetrievalSnapshot::from),
         }
     }
 

@@ -3,8 +3,8 @@
 //! Owns the deserialized settings tree, the effective RAG settings derived from it,
 //! and the TOML-plus-environment loading contract.
 
-use std::sync::Arc;
 use serde::Deserialize;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::generation;
@@ -239,7 +239,8 @@ impl WorkflowSettings {
 
     pub fn validate_against_provider(&self, generation_timeout_secs: u64) -> Result<(), String> {
         const GENERATION_ATTEMPTS: u64 = 2; // GenerateAnswerNode performs up to 2 attempts
-        let required = GENERATION_ATTEMPTS.saturating_mul(generation_timeout_secs.saturating_mul(1000));
+        let required =
+            GENERATION_ATTEMPTS.saturating_mul(generation_timeout_secs.saturating_mul(1000));
         if self.generation_node_timeout_ms < required {
             return Err(format!(
                 "invalid generation_node_timeout_ms ({}): must be >= {} ({} attempts x {}s provider timeout)",
@@ -489,7 +490,9 @@ impl EffectiveRagSettings {
             || self.graph.seed_match_min_score < 0.0
             || self.graph.seed_match_min_score > 1.0
         {
-            return Err("invalid graph.seed_match_min_score: must be finite and between 0.0 and 1.0".into());
+            return Err(
+                "invalid graph.seed_match_min_score: must be finite and between 0.0 and 1.0".into(),
+            );
         }
         if self.graph.max_hop_cap == 0 || self.graph.max_hop_cap > graph::MAX_HOP_CAP {
             return Err(format!(

@@ -4,9 +4,9 @@ use std::{
     path::Path,
 };
 
+use super::*;
 use engine::pb::lancet;
 use engine::pb::lancet::v1::*;
-use super::*;
 
 pub mod workflow_phase5_production;
 
@@ -216,7 +216,11 @@ fn config_example_matches_effective_rag_contract() {
         );
         if !matches!(
             section,
-            "engine.retrieval" | "engine.retrieval.bm25" | "engine.graph" | "engine.workflow" | "openrouter"
+            "engine.retrieval"
+                | "engine.retrieval.bm25"
+                | "engine.graph"
+                | "engine.workflow"
+                | "openrouter"
         ) {
             continue;
         }
@@ -302,10 +306,19 @@ fn config_workflow_timeout_overlays_match_contract() {
     assert!(verify_content.contains("generation_node_timeout_ms = 7000"));
 
     // Nested graph deadline inequality: 10000 + 4000 < 15000
-    assert!(10000 + 4000 < 15000, "query embedding and graph operation must fit within graph node timeout");
+    assert!(
+        10000 + 4000 < 15000,
+        "query embedding and graph operation must fit within graph node timeout"
+    );
     // Production generation node budget: 65000 >= 2 * 30000 + 5000
-    assert!(65000 >= 2 * 30000 + 5000, "production 65000 generation node deadline accommodates 2x 30s attempts + slack");
-    assert!(30 * 1000 > 7000, "generation_timeout_secs (30s) > generation_node_timeout_ms (7000ms)");
+    assert!(
+        65000 >= 2 * 30000 + 5000,
+        "production 65000 generation node deadline accommodates 2x 30s attempts + slack"
+    );
+    assert!(
+        30 * 1000 > 7000,
+        "generation_timeout_secs (30s) > generation_node_timeout_ms (7000ms)"
+    );
 }
 
 #[test]
@@ -314,12 +327,21 @@ fn config_workflow_nested_env_overrides_match_contract() {
 
     let env_vars = [
         ("LANCET_ENGINE__WORKFLOW__REFORMULATE_TIMEOUT_MS", "1111"),
-        ("LANCET_ENGINE__WORKFLOW__QUERY_EMBEDDING_TIMEOUT_MS", "2222"),
+        (
+            "LANCET_ENGINE__WORKFLOW__QUERY_EMBEDDING_TIMEOUT_MS",
+            "2222",
+        ),
         ("LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS", "4444"),
-        ("LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS", "3333"),
+        (
+            "LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS",
+            "3333",
+        ),
         ("LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS", "6666"),
         ("LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS", "7777"),
-        ("LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS", "8888"),
+        (
+            "LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS",
+            "8888",
+        ),
     ];
 
     let original: Vec<(&str, Option<String>)> = env_vars
@@ -375,7 +397,9 @@ fn graph_node_timeout_below_component_sum_is_rejected() {
 fn generation_node_timeout_below_retry_budget_is_rejected() {
     let mut s = crate::WorkflowSettings::default();
     s.generation_node_timeout_ms = 59_999;
-    let err = s.validate_against_provider(30).expect_err("must reject generation node timeout below 2x provider budget");
+    let err = s
+        .validate_against_provider(30)
+        .expect_err("must reject generation node timeout below 2x provider budget");
     assert!(err.contains("generation_node_timeout_ms"));
     assert!(err.contains("60000"));
 }
@@ -460,16 +484,14 @@ async fn query_rag_stream() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Stream contract answer [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Stream contract answer [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
 
     let service = LancetServiceImpl {
         table,
@@ -504,7 +526,9 @@ async fn query_rag_stream() {
     let started_nodes: Vec<String> = events
         .iter()
         .filter_map(|e| match &e.event {
-            Some(engine::pb::lancet::v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            Some(engine::pb::lancet::v1::workflow_event::Event::NodeStarted(ns)) => {
+                Some(ns.node_name.clone())
+            }
             _ => None,
         })
         .collect();
@@ -514,14 +538,25 @@ async fn query_rag_stream() {
     assert!(started_nodes.contains(&"AssemblePrompt".to_string()));
     assert!(started_nodes.contains(&"GenerateAnswer".to_string()));
 
-    let has_chunk = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_))));
-    let has_completed = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(_))));
+    let has_chunk = events.iter().any(|e| {
+        matches!(
+            &e.event,
+            Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(
+                _
+            ))
+        )
+    });
+    let has_completed = events.iter().any(|e| {
+        matches!(
+            &e.event,
+            Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(_))
+        )
+    });
     assert!(has_chunk, "Must contain AnswerChunk");
     assert!(has_completed, "Must contain WorkflowCompleted");
 
     let _ = std::fs::remove_dir_all(path);
 }
-
 
 pub(crate) struct FakeEmbedder;
 
@@ -536,7 +571,8 @@ impl EmbeddingProvider for FakeEmbedder {
 
 pub(crate) struct FakeGenerator {
     pub call_count: std::sync::atomic::AtomicUsize,
-    pub responses: std::sync::Mutex<Vec<Result<generation::ModelOutput, generation::GenerationError>>>,
+    pub responses:
+        std::sync::Mutex<Vec<Result<generation::ModelOutput, generation::GenerationError>>>,
 }
 
 impl FakeGenerator {
@@ -547,7 +583,9 @@ impl FakeGenerator {
         }
     }
 
-    pub fn with_responses(responses: Vec<Result<generation::ModelOutput, generation::GenerationError>>) -> Self {
+    pub fn with_responses(
+        responses: Vec<Result<generation::ModelOutput, generation::GenerationError>>,
+    ) -> Self {
         Self {
             call_count: std::sync::atomic::AtomicUsize::new(0),
             responses: std::sync::Mutex::new(responses),
@@ -563,9 +601,11 @@ impl generation::Generator for FakeGenerator {
     fn generate<'a>(
         &'a self,
         request: generation::GenerationRequest,
-    ) -> generation::BoxFuture<'a, Result<generation::ModelOutput, generation::GenerationError>> {
+    ) -> generation::BoxFuture<'a, Result<generation::ModelOutput, generation::GenerationError>>
+    {
         Box::pin(async move {
-            self.call_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.call_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let mut guard = self.responses.lock().unwrap();
             if guard.is_empty() {
                 Err(generation::GenerationError::new(
@@ -970,7 +1010,6 @@ async fn canonical_state(database: &DatabaseManager, document_id: &str) -> Canon
         generations: int64_values(&nodes, "ingested_at"),
         summary_null_count: null_count(&edges, "summary"),
     }
-
 }
 
 async fn stage_document(database: &DatabaseManager, document_id: &str, raw_data: &[u8]) {
@@ -1214,7 +1253,6 @@ async fn replacement_failure_boundaries_preserve_prior_generation_and_retry_conv
         assert_eq!(old_state.edge_ids.len(), 3);
         assert_eq!(old_state.summary_null_count, old_state.edge_ids.len());
 
-
         let replacement_job = IngestionJob::new(
             document_id.clone(),
             "replacement.md".into(),
@@ -1336,7 +1374,10 @@ async fn persisted_node_summary_is_arrow_null() {
     )
     .await
     .unwrap();
-    let empty_predicate = format!("document_id = '{}'", escape_sql_literal(&empty_job.document_id));
+    let empty_predicate = format!(
+        "document_id = '{}'",
+        escape_sql_literal(&empty_job.document_id)
+    );
     assert_eq!(
         database
             .documents_table()
@@ -2069,16 +2110,14 @@ async fn staging_read_error_is_unavailable() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(FakeGenerator::new(Ok(
-            generation::ModelOutput {
-                answer: "Fake answer".into(),
-                cited_evidence_ids: vec![],
-                answer_basis: generation::AnswerBasis::Retrieval,
-                notices: vec![],
-                warnings: vec![],
-                usage: None,
-            },
-        ))),
+        generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Fake answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
     };
@@ -2152,16 +2191,14 @@ async fn staging_delete_failure_remains_replayable() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(FakeGenerator::new(Ok(
-            generation::ModelOutput {
-                answer: "Fake answer".into(),
-                cited_evidence_ids: vec![],
-                answer_basis: generation::AnswerBasis::Retrieval,
-                notices: vec![],
-                warnings: vec![],
-                usage: None,
-            },
-        ))),
+        generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Fake answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
     };
@@ -2399,16 +2436,14 @@ async fn d04_cross_runtime_grpc_fixture() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(FakeGenerator::new(Ok(
-            generation::ModelOutput {
-                answer: "Fake answer".into(),
-                cited_evidence_ids: vec![],
-                answer_basis: generation::AnswerBasis::Retrieval,
-                notices: vec![],
-                warnings: vec![],
-                usage: None,
-            },
-        ))),
+        generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Fake answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
     };
@@ -2464,16 +2499,14 @@ async fn status_falls_back_to_staged_document() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
-        generator: Arc::new(FakeGenerator::new(Ok(
-            generation::ModelOutput {
-                answer: "Fake answer".into(),
-                cited_evidence_ids: vec![],
-                answer_basis: generation::AnswerBasis::Retrieval,
-                notices: vec![],
-                warnings: vec![],
-                usage: None,
-            },
-        ))),
+        generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Fake answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
     };
@@ -2532,7 +2565,8 @@ fn chunk_size_boundaries_are_engine_authoritative() {
 
 async fn collect_query_rag_stream<S>(mut stream: S) -> Result<QueryRagResponse, tonic::Status>
 where
-    S: tokio_stream::Stream<Item = Result<engine::pb::lancet::v1::WorkflowEvent, tonic::Status>> + Unpin,
+    S: tokio_stream::Stream<Item = Result<engine::pb::lancet::v1::WorkflowEvent, tonic::Status>>
+        + Unpin,
 {
     let mut last_response = None;
     while let Some(res) = stream.next().await {
@@ -2550,19 +2584,36 @@ where
                             last_response = Some(resp.clone());
                         }
                     } else {
-                        let code = match engine::pb::lancet::v1::NodeErrorKind::try_from(wc.error_kind) {
-                            Ok(engine::pb::lancet::v1::NodeErrorKind::Timeout) => tonic::Code::DeadlineExceeded,
-                            Ok(engine::pb::lancet::v1::NodeErrorKind::Cancelled) => tonic::Code::Cancelled,
-                            Ok(engine::pb::lancet::v1::NodeErrorKind::RetrievalFailed) => tonic::Code::Unavailable,
-                            Ok(engine::pb::lancet::v1::NodeErrorKind::PromptAssemblyFailed) => tonic::Code::InvalidArgument,
-                            _ => tonic::Code::Internal,
-                        };
+                        let code =
+                            match engine::pb::lancet::v1::NodeErrorKind::try_from(wc.error_kind) {
+                                Ok(engine::pb::lancet::v1::NodeErrorKind::Timeout) => {
+                                    tonic::Code::DeadlineExceeded
+                                }
+                                Ok(engine::pb::lancet::v1::NodeErrorKind::Cancelled) => {
+                                    tonic::Code::Cancelled
+                                }
+                                Ok(engine::pb::lancet::v1::NodeErrorKind::RetrievalFailed) => {
+                                    tonic::Code::Unavailable
+                                }
+                                Ok(engine::pb::lancet::v1::NodeErrorKind::PromptAssemblyFailed) => {
+                                    tonic::Code::InvalidArgument
+                                }
+                                _ => tonic::Code::Internal,
+                            };
                         let mut status = tonic::Status::new(code, wc.error_message.clone());
-                        if let Ok(sess_val) = tonic::metadata::MetadataValue::try_from(&event.session_id) {
-                            status.metadata_mut().insert("x-lancet-session-id", sess_val);
+                        if let Ok(sess_val) =
+                            tonic::metadata::MetadataValue::try_from(&event.session_id)
+                        {
+                            status
+                                .metadata_mut()
+                                .insert("x-lancet-session-id", sess_val);
                         }
-                        if let Ok(corr_val) = tonic::metadata::MetadataValue::try_from(&event.trace_id) {
-                            status.metadata_mut().insert("x-lancet-correlation-id", corr_val);
+                        if let Ok(corr_val) =
+                            tonic::metadata::MetadataValue::try_from(&event.trace_id)
+                        {
+                            status
+                                .metadata_mut()
+                                .insert("x-lancet-correlation-id", corr_val);
                         }
                         status.metadata_mut().insert(
                             "x-lancet-error-kind",
@@ -2616,16 +2667,14 @@ async fn query_rag_tracer() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Tracer answer [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Tracer answer [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
 
     let service = LancetServiceImpl {
         table,
@@ -2661,7 +2710,9 @@ async fn query_rag_tracer() {
     let started_nodes: Vec<String> = events
         .iter()
         .filter_map(|e| match &e.event {
-            Some(engine::pb::lancet::v1::workflow_event::Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            Some(engine::pb::lancet::v1::workflow_event::Event::NodeStarted(ns)) => {
+                Some(ns.node_name.clone())
+            }
             _ => None,
         })
         .collect();
@@ -2677,9 +2728,28 @@ async fn query_rag_tracer() {
         ]
     );
 
-    let has_chunk = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(_))));
-    let has_final = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(_))));
-    let has_completed = events.iter().any(|e| matches!(&e.event, Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(_))));
+    let has_chunk = events.iter().any(|e| {
+        matches!(
+            &e.event,
+            Some(engine::pb::lancet::v1::workflow_event::Event::AnswerChunk(
+                _
+            ))
+        )
+    });
+    let has_final = events.iter().any(|e| {
+        matches!(
+            &e.event,
+            Some(engine::pb::lancet::v1::workflow_event::Event::FinalAnswer(
+                _
+            ))
+        )
+    });
+    let has_completed = events.iter().any(|e| {
+        matches!(
+            &e.event,
+            Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(_))
+        )
+    });
 
     assert!(has_chunk, "Must contain AnswerChunk");
     assert!(has_final, "Must contain FinalAnswer");
@@ -2718,12 +2788,10 @@ async fn query_rag_generation_failure() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let failing_gen = Arc::new(FakeGenerator::new(Err(
-        generation::GenerationError::new(
-            generation::GenerationErrorKind::ProviderError,
-            "Permanent provider failure",
-        ),
-    )));
+    let failing_gen = Arc::new(FakeGenerator::new(Err(generation::GenerationError::new(
+        generation::GenerationErrorKind::ProviderError,
+        "Permanent provider failure",
+    ))));
 
     let service = LancetServiceImpl {
         table,
@@ -2754,18 +2822,34 @@ async fn query_rag_generation_failure() {
         events.push(event);
     }
 
-    let node_failed = events.iter().find_map(|e| match &e.event {
-        Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(nf)) if nf.node_name == "GenerateAnswer" => Some(nf),
-        _ => None,
-    }).expect("NodeFailed event for GenerateAnswer must be emitted");
-    assert_eq!(node_failed.category, engine::pb::lancet::v1::NodeErrorKind::LlmGenerationFailed as i32);
+    let node_failed = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::NodeFailed(nf))
+                if nf.node_name == "GenerateAnswer" =>
+            {
+                Some(nf)
+            }
+            _ => None,
+        })
+        .expect("NodeFailed event for GenerateAnswer must be emitted");
+    assert_eq!(
+        node_failed.category,
+        engine::pb::lancet::v1::NodeErrorKind::LlmGenerationFailed as i32
+    );
 
-    let terminal = events.iter().find_map(|e| match &e.event {
-        Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
-        _ => None,
-    }).expect("WorkflowCompleted event must be emitted");
+    let terminal = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event must be emitted");
     assert!(!terminal.success);
-    assert_eq!(terminal.error_kind, engine::pb::lancet::v1::NodeErrorKind::LlmGenerationFailed as i32);
+    assert_eq!(
+        terminal.error_kind,
+        engine::pb::lancet::v1::NodeErrorKind::LlmGenerationFailed as i32
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -2800,16 +2884,14 @@ async fn query_rag_happy_path_service() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Lancet uses Rust for retrieval [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Lancet uses Rust for retrieval [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
 
     let service = LancetServiceImpl {
         table,
@@ -3146,16 +3228,14 @@ async fn configured_rag_settings_drive_service() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Custom answer [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Custom answer [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
 
     let service = LancetServiceImpl {
         table,
@@ -3222,16 +3302,14 @@ async fn configured_evidence_token_budget_is_exact() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Answer with excerpt test [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Answer with excerpt test [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
 
     let service = LancetServiceImpl {
         table,
@@ -3359,16 +3437,14 @@ async fn service_index_generation_is_opaque_and_stable() {
         bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index2))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings2,
-        generator: Arc::new(FakeGenerator::new(Ok(
-            generation::ModelOutput {
-                answer: "Answer 2 [1].".into(),
-                cited_evidence_ids: vec!["[1]".into()],
-                answer_basis: generation::AnswerBasis::Retrieval,
-                notices: vec![],
-                warnings: vec![],
-                usage: None,
-            },
-        ))),
+        generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer 2 [1].".into(),
+            cited_evidence_ids: vec!["[1]".into()],
+            answer_basis: generation::AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
         embedder: Arc::new(FakeEmbedder),
         database: database2.clone(),
     };
@@ -3447,16 +3523,14 @@ async fn query_rag_citation_identity_and_notices() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Answer citing second block only [2].".into(),
-            cited_evidence_ids: vec!["[2]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec!["Notice msg A".into()],
-            warnings: vec!["Warning msg B".into()],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Answer citing second block only [2].".into(),
+        cited_evidence_ids: vec!["[2]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec!["Notice msg A".into()],
+        warnings: vec!["Warning msg B".into()],
+        usage: None,
+    })));
 
     let mut settings = Settings::default();
     settings.engine.retrieval.excerpt_max_chars = 20;
@@ -3542,16 +3616,14 @@ async fn query_rag_rejects_unknown_marker_without_response() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Answer citing nonexistent marker [99].".into(),
-            cited_evidence_ids: vec!["[99]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Answer citing nonexistent marker [99].".into(),
+        cited_evidence_ids: vec!["[99]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
 
     let service = LancetServiceImpl {
         table,
@@ -3607,16 +3679,14 @@ async fn query_rag_rejects_invalid_provider_grounding() {
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
 
-    let fake_gen = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Model-only response without grounding.".into(),
-            cited_evidence_ids: vec![],
-            answer_basis: generation::AnswerBasis::ModelOnly,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Model-only response without grounding.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: generation::AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
 
     let service = LancetServiceImpl {
         table,
@@ -3710,7 +3780,9 @@ async fn query_rag_generation_error_preserves_identity() {
     let mut completed = None;
     while let Some(res) = stream.next().await {
         let ev = res.unwrap();
-        if let Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(ref wc)) = ev.event {
+        if let Some(engine::pb::lancet::v1::workflow_event::Event::WorkflowCompleted(ref wc)) =
+            ev.event
+        {
             completed = Some((ev.clone(), wc.clone()));
         }
     }
@@ -3894,16 +3966,14 @@ async fn query_rag_noop_reranker_preserves_fused_order() {
 #[tokio::test]
 async fn query_rag_reranker_failure_skips_generation() {
     let reranker = FailingReranker::new();
-    let generator = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "This answer must never be generated".into(),
-            cited_evidence_ids: vec![],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let generator = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "This answer must never be generated".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
     let (path, service) = reranker_query_fixture(
         "query-rag-failing-reranker",
         1,
@@ -3959,16 +4029,14 @@ async fn query_rag_fail_closed_embedding_transport() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FailingEmbedder("network unreachable".into()));
-    let generator = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Should not be called [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let generator = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
     let service = configured_service(
@@ -4012,16 +4080,14 @@ async fn query_rag_fail_closed_embedding_empty_payload() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![]));
-    let generator = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Should not be called [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let generator = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
     let service = configured_service(
@@ -4055,16 +4121,14 @@ async fn query_rag_fail_closed_embedding_multi_vector() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![vec![0.25; 2048], vec![0.25; 2048]]));
-    let generator = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Should not be called [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let generator = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
     let service = configured_service(
@@ -4098,16 +4162,14 @@ async fn query_rag_fail_closed_embedding_wrong_dimension() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(PayloadEmbedder(vec![vec![0.25; 512]]));
-    let generator = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Should not be called [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let generator = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
     let service = configured_service(
@@ -4143,16 +4205,14 @@ async fn query_rag_fail_closed_embedding_non_finite() {
     let mut vec_nan = vec![0.25; 2048];
     vec_nan[10] = f32::NAN;
     let embedder = Arc::new(PayloadEmbedder(vec![vec_nan]));
-    let generator = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Should not be called [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let generator = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
     let service = configured_service(
@@ -4186,16 +4246,14 @@ async fn query_rag_fail_closed_dense_snapshot() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FakeEmbedder);
-    let generator = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Should not be called [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let generator = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
     let malformed_nodes = database.edges_table().await.unwrap();
@@ -4242,16 +4300,14 @@ async fn query_rag_valid_zero_match() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let effective_settings = EffectiveRagSettings::default();
     let embedder = Arc::new(FakeEmbedder);
-    let generator = Arc::new(FakeGenerator::new(Ok(
-        generation::ModelOutput {
-            answer: "Should not be called [1].".into(),
-            cited_evidence_ids: vec!["[1]".into()],
-            answer_basis: generation::AnswerBasis::Retrieval,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        },
-    )));
+    let generator = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+        answer: "Should not be called [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: generation::AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
 
     let service = configured_service(
@@ -4562,14 +4618,18 @@ async fn extraction_chunk_field_propagation() {
     let captured_requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
     let capturer = captured_requests.clone();
 
-    struct CapturingGenerator(Arc<tokio::sync::Mutex<Vec<super::graph::extraction::ExtractionRequest>>>);
+    struct CapturingGenerator(
+        Arc<tokio::sync::Mutex<Vec<super::graph::extraction::ExtractionRequest>>>,
+    );
 
     impl super::graph::extraction::ExtractionGenerator for CapturingGenerator {
         fn extract<'a>(
             &'a self,
             request: super::graph::extraction::ExtractionRequest,
-        ) -> BoxFuture<'a, Result<super::graph::extraction::ExtractionOutput, generation::GenerationError>>
-        {
+        ) -> BoxFuture<
+            'a,
+            Result<super::graph::extraction::ExtractionOutput, generation::GenerationError>,
+        > {
             let cap = self.0.clone();
             Box::pin(async move {
                 cap.lock().await.push(request);
@@ -4581,9 +4641,14 @@ async fn extraction_chunk_field_propagation() {
         }
     }
 
-    super::extract_and_persist_entities(&database, &job, &CapturingGenerator(capturer), &FakeEmbedder)
-        .await
-        .unwrap();
+    super::extract_and_persist_entities(
+        &database,
+        &job,
+        &CapturingGenerator(capturer),
+        &FakeEmbedder,
+    )
+    .await
+    .unwrap();
 
     let reqs = captured_requests.lock().await;
     assert!(!reqs.is_empty());
@@ -4627,7 +4692,10 @@ async fn exact_match_entity_deduplication() {
 
     let entities_table = database.entities_table().await.unwrap();
     let count = entities_table.count_rows(None).await.unwrap();
-    assert_eq!(count, 1, "Acme Corp and ACME CORP must deduplicate to single entity");
+    assert_eq!(
+        count, 1,
+        "Acme Corp and ACME CORP must deduplicate to single entity"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -4711,7 +4779,11 @@ async fn unmapped_relation_endpoint_dropped() {
         .unwrap();
 
     let edges_table = database.entity_edges_table().await.unwrap();
-    assert_eq!(edges_table.count_rows(None).await.unwrap(), 0, "Unmapped relation endpoint must be dropped");
+    assert_eq!(
+        edges_table.count_rows(None).await.unwrap(),
+        0,
+        "Unmapped relation endpoint must be dropped"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -4727,17 +4799,18 @@ async fn attempt_graph_augmentation_scoring_and_neighborhood() {
     };
 
     let outcome = super::attempt_graph_augmentation(&database, &[0.0; 2048], &settings).await;
-    assert!(matches!(outcome, super::GraphAugmentationOutcome::NoMatchFound));
+    assert!(matches!(
+        outcome,
+        super::GraphAugmentationOutcome::NoMatchFound
+    ));
 
     let _ = std::fs::remove_dir_all(path);
 }
 
 #[test]
 fn prompt_evidence_packing_graph_fact_rendering() {
-    use crate::prompt::{
-        assemble_evidence_blocks, GraphFactBlock,
-    };
     use crate::graph::context_strategy::GraphFact;
+    use crate::prompt::{assemble_evidence_blocks, GraphFactBlock};
 
     let candidate = crate::retrieval::FusedCandidate {
         candidate: crate::retrieval::Candidate {
@@ -4768,8 +4841,11 @@ fn prompt_evidence_packing_graph_fact_rendering() {
     }];
 
     let packed =
-        pack_evidence_and_graph_prompt_sync("Who knows Bob?", &blocks, &facts, 1.0, 4096, 512).unwrap();
-    assert!(packed.prompt.contains("## Related Entities & Relationships"));
+        pack_evidence_and_graph_prompt_sync("Who knows Bob?", &blocks, &facts, 1.0, 4096, 512)
+            .unwrap();
+    assert!(packed
+        .prompt
+        .contains("## Related Entities & Relationships"));
     assert!(packed.prompt.contains("Alice —knows→ Bob"));
     assert_eq!(packed.graph_facts.len(), 1);
 }
@@ -4780,9 +4856,19 @@ async fn query_rag_span_and_request_threading() {
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let doc_id = Uuid::new_v4().to_string();
 
-    stage_document(&database, &doc_id, b"# Test\n\nContent for RAG query threading.").await;
+    stage_document(
+        &database,
+        &doc_id,
+        b"# Test\n\nContent for RAG query threading.",
+    )
+    .await;
 
-    let job = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+    let job = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
     process_job(&job, &database, &FakeEmbedder).await.unwrap();
 
     let settings = EffectiveRagSettings::default();
@@ -4855,13 +4941,21 @@ async fn extraction_runs_concurrently_and_skips_short_chunks() {
         );
     }
 
-    let fake_gen = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_responses);
+    let fake_gen =
+        graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_responses);
 
     let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
-    assert!(res.is_ok(), "D-06: per-chunk extraction failure must not fail function");
+    assert!(
+        res.is_ok(),
+        "D-06: per-chunk extraction failure must not fail function"
+    );
 
     // Short chunk (index 0) skipped (0 calls); 5 long chunks succeed (5 calls); chunk 3 fails and retries 3 times under extract_with_retry (3 calls); total 8 calls
-    assert_eq!(fake_gen.calls(), 8, "Short chunk skipped, 5 chunks called once, 1 chunk called 3 times on retries");
+    assert_eq!(
+        fake_gen.calls(),
+        8,
+        "Short chunk skipped, 5 chunks called once, 1 chunk called 3 times on retries"
+    );
 
     let entities_table = database.entities_table().await.unwrap();
     let count = entities_table.count_rows(None).await.unwrap();
@@ -5002,15 +5096,21 @@ async fn cross_document_entity_merge_still_works_under_concurrency() {
 
     let doc1_id = Uuid::new_v4().to_string();
     let text1 = format!("# Doc 1\n\nAcme Corp is a company building widgets.\n\n{long_para}");
-    let job1 = IngestionJob::new(doc1_id.clone(), "doc1.md".into(), text1.as_bytes().to_vec(), HashMap::new());
+    let job1 = IngestionJob::new(
+        doc1_id.clone(),
+        "doc1.md".into(),
+        text1.as_bytes().to_vec(),
+        HashMap::new(),
+    );
 
-    let fake_gen1 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
-        entities: vec![graph::extraction::ExtractedEntity {
-            name: "Acme Corp".into(),
-            entity_type: "organization".into(),
-        }],
-        relations: vec![],
-    }));
+    let fake_gen1 =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Acme Corp".into(),
+                entity_type: "organization".into(),
+            }],
+            relations: vec![],
+        }));
 
     super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
         .await
@@ -5018,22 +5118,32 @@ async fn cross_document_entity_merge_still_works_under_concurrency() {
 
     let doc2_id = Uuid::new_v4().to_string();
     let text2 = format!("# Doc 2\n\nacme corp provides widget solutions.\n\n{long_para}");
-    let job2 = IngestionJob::new(doc2_id.clone(), "doc2.md".into(), text2.as_bytes().to_vec(), HashMap::new());
+    let job2 = IngestionJob::new(
+        doc2_id.clone(),
+        "doc2.md".into(),
+        text2.as_bytes().to_vec(),
+        HashMap::new(),
+    );
 
-    let fake_gen2 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
-        entities: vec![graph::extraction::ExtractedEntity {
-            name: "Acme Corp".into(),
-            entity_type: "organization".into(),
-        }],
-        relations: vec![],
-    }));
+    let fake_gen2 =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Acme Corp".into(),
+                entity_type: "organization".into(),
+            }],
+            relations: vec![],
+        }));
 
     super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
         .await
         .unwrap();
 
     let entities_table = database.entities_table().await.unwrap();
-    assert_eq!(entities_table.count_rows(None).await.unwrap(), 1, "Exactly one Acme Corp entity row");
+    assert_eq!(
+        entities_table.count_rows(None).await.unwrap(),
+        1,
+        "Exactly one Acme Corp entity row"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -5046,41 +5156,62 @@ async fn stale_entity_survives_document_replacement() {
 
     let text1 = "Acme Corp is an organization building software widgets in the global marketplace.";
     stage_document(&database, &doc_id, text1.as_bytes()).await;
-    let job1 = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+    let job1 = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
 
-    let fake_gen1 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
-        entities: vec![graph::extraction::ExtractedEntity {
-            name: "Acme Corp".into(),
-            entity_type: "organization".into(),
-        }],
-        relations: vec![],
-    }));
+    let fake_gen1 =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Acme Corp".into(),
+                entity_type: "organization".into(),
+            }],
+            relations: vec![],
+        }));
 
     process_job(&job1, &database, &FakeEmbedder).await.unwrap();
-    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder).await.unwrap();
+    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
+        .await
+        .unwrap();
 
     let entities_table = database.entities_table().await.unwrap();
     assert_eq!(entities_table.count_rows(None).await.unwrap(), 1);
 
     // Replace document with Acme-free content
-    let text2 = "Widgets are manufactured with high quality materials in automated factories daily.";
+    let text2 =
+        "Widgets are manufactured with high quality materials in automated factories daily.";
     stage_document(&database, &doc_id, text2.as_bytes()).await;
-    let job2 = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+    let job2 = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
 
-    let fake_gen2 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
-        entities: vec![graph::extraction::ExtractedEntity {
-            name: "Widget".into(),
-            entity_type: "product".into(),
-        }],
-        relations: vec![],
-    }));
+    let fake_gen2 =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Widget".into(),
+                entity_type: "product".into(),
+            }],
+            relations: vec![],
+        }));
 
     process_job(&job2, &database, &FakeEmbedder).await.unwrap();
-    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder).await.unwrap();
+    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
+        .await
+        .unwrap();
 
     let fresh_entities_table = database.entities_table().await.unwrap();
     // Acme Corp entity row remains present (v1 documented behavior)
-    assert_eq!(fresh_entities_table.count_rows(None).await.unwrap(), 2, "Stale entity Acme Corp survives document replacement");
+    assert_eq!(
+        fresh_entities_table.count_rows(None).await.unwrap(),
+        2,
+        "Stale entity Acme Corp survives document replacement"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -5093,31 +5224,47 @@ async fn stale_source_chunk_ids_can_reference_unrelated_replacement_content() {
 
     let text1 = "Acme Corp is an organization building software widgets in the global marketplace.";
     stage_document(&database, &doc_id, text1.as_bytes()).await;
-    let job1 = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+    let job1 = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
 
-    let fake_gen1 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
-        entities: vec![graph::extraction::ExtractedEntity {
-            name: "Acme Corp".into(),
-            entity_type: "organization".into(),
-        }],
-        relations: vec![],
-    }));
+    let fake_gen1 =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Acme Corp".into(),
+                entity_type: "organization".into(),
+            }],
+            relations: vec![],
+        }));
 
     process_job(&job1, &database, &FakeEmbedder).await.unwrap();
-    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder).await.unwrap();
+    super::extract_and_persist_entities(&database, &job1, &fake_gen1, &FakeEmbedder)
+        .await
+        .unwrap();
 
     // Replace document with Acme-free content at chunk index 0 holding unrelated text
     let text2 = "Unrelated replacement paragraph about widgets and high quality manufacturing.";
     stage_document(&database, &doc_id, text2.as_bytes()).await;
-    let job2 = read_staged_jobs(&database).await.unwrap().into_iter().next().unwrap();
+    let job2 = read_staged_jobs(&database)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
 
-    let fake_gen2 = graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
-        entities: vec![],
-        relations: vec![],
-    }));
+    let fake_gen2 =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+            entities: vec![],
+            relations: vec![],
+        }));
 
     process_job(&job2, &database, &FakeEmbedder).await.unwrap();
-    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder).await.unwrap();
+    super::extract_and_persist_entities(&database, &job2, &fake_gen2, &FakeEmbedder)
+        .await
+        .unwrap();
 
     let chunk_0_id = format!("{doc_id}:0");
     let nodes_table = database.nodes_table().await.unwrap();
@@ -5132,7 +5279,12 @@ async fn stale_source_chunk_ids_can_reference_unrelated_replacement_content() {
         .unwrap();
 
     assert_eq!(batches.len(), 1);
-    let content_col = batches[0].column_by_name("content").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
+    let content_col = batches[0]
+        .column_by_name("content")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
     let new_content = content_col.value(0);
 
     assert!(new_content.contains("Unrelated replacement paragraph"));
@@ -5176,16 +5328,23 @@ async fn extraction_concurrency_bound_is_observed_not_assumed() {
         );
     }
 
-    let fake_gen = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_responses)
-        .with_delay(Duration::from_millis(20));
+    let fake_gen =
+        graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_responses)
+            .with_delay(Duration::from_millis(20));
 
     super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
         .unwrap();
 
     let max_conc = fake_gen.max_observed_concurrency();
-    assert!(max_conc <= 5, "Max observed concurrency must be <= 5 (bound held), got {max_conc}");
-    assert!(max_conc >= 2, "Max observed concurrency must be >= 2 (real overlap occurred), got {max_conc}");
+    assert!(
+        max_conc <= 5,
+        "Max observed concurrency must be <= 5 (bound held), got {max_conc}"
+    );
+    assert!(
+        max_conc >= 2,
+        "Max observed concurrency must be >= 2 (real overlap occurred), got {max_conc}"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -5221,7 +5380,11 @@ async fn extraction_retries_then_succeeds_within_attempt_budget() {
     let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
     assert!(res.is_ok());
 
-    assert_eq!(fake_gen.calls(), 2, "Must retry once and succeed on 2nd attempt");
+    assert_eq!(
+        fake_gen.calls(),
+        2,
+        "Must retry once and succeed on 2nd attempt"
+    );
 
     let entities_table = database.entities_table().await.unwrap();
     assert_eq!(entities_table.count_rows(None).await.unwrap(), 1);
@@ -5259,7 +5422,10 @@ async fn extraction_retry_exhaustion_yields_zero_entities_not_function_failure()
     ]);
 
     let res = super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder).await;
-    assert!(res.is_ok(), "D-06: retry exhaustion yields zero entities, not function failure");
+    assert!(
+        res.is_ok(),
+        "D-06: retry exhaustion yields zero entities, not function failure"
+    );
 
     assert_eq!(fake_gen.calls(), 3, "Must attempt 3 times total");
 
@@ -5286,8 +5452,14 @@ async fn extraction_output_with_out_of_range_confidence_is_rejected_before_persi
     let fake_gen = graph::extraction::FakeExtractionGenerator::with_responses(vec![
         Ok(graph::extraction::ExtractionOutput {
             entities: vec![
-                graph::extraction::ExtractedEntity { name: "Alice".into(), entity_type: "person".into() },
-                graph::extraction::ExtractedEntity { name: "Bob".into(), entity_type: "person".into() },
+                graph::extraction::ExtractedEntity {
+                    name: "Alice".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Bob".into(),
+                    entity_type: "person".into(),
+                },
             ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "Alice".into(),
@@ -5298,8 +5470,14 @@ async fn extraction_output_with_out_of_range_confidence_is_rejected_before_persi
         }),
         Ok(graph::extraction::ExtractionOutput {
             entities: vec![
-                graph::extraction::ExtractedEntity { name: "Alice".into(), entity_type: "person".into() },
-                graph::extraction::ExtractedEntity { name: "Bob".into(), entity_type: "person".into() },
+                graph::extraction::ExtractedEntity {
+                    name: "Alice".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Bob".into(),
+                    entity_type: "person".into(),
+                },
             ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "Alice".into(),
@@ -5310,8 +5488,14 @@ async fn extraction_output_with_out_of_range_confidence_is_rejected_before_persi
         }),
         Ok(graph::extraction::ExtractionOutput {
             entities: vec![
-                graph::extraction::ExtractedEntity { name: "Alice".into(), entity_type: "person".into() },
-                graph::extraction::ExtractedEntity { name: "Bob".into(), entity_type: "person".into() },
+                graph::extraction::ExtractedEntity {
+                    name: "Alice".into(),
+                    entity_type: "person".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Bob".into(),
+                    entity_type: "person".into(),
+                },
             ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "Alice".into(),
@@ -5327,7 +5511,11 @@ async fn extraction_output_with_out_of_range_confidence_is_rejected_before_persi
     assert_eq!(fake_gen.calls(), 3);
 
     let edges_table = database.entity_edges_table().await.unwrap();
-    assert_eq!(edges_table.count_rows(None).await.unwrap(), 1, "3rd attempt valid output persisted");
+    assert_eq!(
+        edges_table.count_rows(None).await.unwrap(),
+        1,
+        "3rd attempt valid output persisted"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -5346,11 +5534,17 @@ async fn extract_and_persist_entities_preserves_prior_graph_on_forced_persistenc
         HashMap::new(),
     );
 
-    let fake_gen_1 = graph::extraction::FakeExtractionGenerator::new(Ok(
-        graph::extraction::ExtractionOutput {
+    let fake_gen_1 =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
             entities: vec![
-                graph::extraction::ExtractedEntity { name: "Node1".into(), entity_type: "concept".into() },
-                graph::extraction::ExtractedEntity { name: "Node2".into(), entity_type: "concept".into() },
+                graph::extraction::ExtractedEntity {
+                    name: "Node1".into(),
+                    entity_type: "concept".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "Node2".into(),
+                    entity_type: "concept".into(),
+                },
             ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "Node1".into(),
@@ -5358,10 +5552,10 @@ async fn extract_and_persist_entities_preserves_prior_graph_on_forced_persistenc
                 relation_type: "links_to".into(),
                 confidence: 0.9,
             }],
-        },
-    ));
+        }));
 
-    let res1 = super::extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder).await;
+    let res1 =
+        super::extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder).await;
     assert!(res1.is_ok());
 
     let edges_table = database.entity_edges_table().await.unwrap();
@@ -5382,22 +5576,38 @@ async fn extract_and_persist_entities_preserves_prior_graph_on_forced_persistenc
     let prior_edge_ids: Vec<String> = prior_batches
         .iter()
         .flat_map(|b| {
-            let col = b.column_by_name("edge_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
-            (0..b.num_rows()).map(|i| col.value(i).to_string()).collect::<Vec<_>>()
+            let col = b
+                .column_by_name("edge_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            (0..b.num_rows())
+                .map(|i| col.value(i).to_string())
+                .collect::<Vec<_>>()
         })
         .collect();
 
-    let fake_gen_2 = graph::extraction::FakeExtractionGenerator::new(Ok(
-        graph::extraction::ExtractionOutput {
-            entities: vec![
-                graph::extraction::ExtractedEntity { name: "Node3New".into(), entity_type: "concept".into() },
-            ],
+    let fake_gen_2 =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
+            entities: vec![graph::extraction::ExtractedEntity {
+                name: "Node3New".into(),
+                entity_type: "concept".into(),
+            }],
             relations: vec![],
-        },
-    ));
+        }));
 
-    let res2 = super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FailingEmbedder("injected embedding failure".into())).await;
-    assert!(res2.is_err(), "Must return Err on forced infrastructure failure during Phase B");
+    let res2 = super::extract_and_persist_entities(
+        &database,
+        &job,
+        &fake_gen_2,
+        &FailingEmbedder("injected embedding failure".into()),
+    )
+    .await;
+    assert!(
+        res2.is_err(),
+        "Must return Err on forced infrastructure failure during Phase B"
+    );
 
     let post_batches: Vec<RecordBatch> = edges_table
         .query()
@@ -5410,17 +5620,30 @@ async fn extract_and_persist_entities_preserves_prior_graph_on_forced_persistenc
         .unwrap();
 
     let post_row_count = post_batches.iter().map(|b| b.num_rows()).sum::<usize>();
-    assert_eq!(post_row_count, prior_row_count, "Row count must be preserved after Phase B rollback");
+    assert_eq!(
+        post_row_count, prior_row_count,
+        "Row count must be preserved after Phase B rollback"
+    );
 
     let post_edge_ids: Vec<String> = post_batches
         .iter()
         .flat_map(|b| {
-            let col = b.column_by_name("edge_id").unwrap().as_any().downcast_ref::<StringArray>().unwrap();
-            (0..b.num_rows()).map(|i| col.value(i).to_string()).collect::<Vec<_>>()
+            let col = b
+                .column_by_name("edge_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            (0..b.num_rows())
+                .map(|i| col.value(i).to_string())
+                .collect::<Vec<_>>()
         })
         .collect();
 
-    assert_eq!(post_edge_ids, prior_edge_ids, "Edge IDs must be byte-identical after rollback");
+    assert_eq!(
+        post_edge_ids, prior_edge_ids,
+        "Edge IDs must be byte-identical after rollback"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -5454,8 +5677,14 @@ async fn extraction_persist_summary_reports_coverage_regression() {
         cid_0.clone(),
         Ok(graph::extraction::ExtractionOutput {
             entities: vec![
-                graph::extraction::ExtractedEntity { name: "E1".into(), entity_type: "concept".into() },
-                graph::extraction::ExtractedEntity { name: "E2".into(), entity_type: "concept".into() },
+                graph::extraction::ExtractedEntity {
+                    name: "E1".into(),
+                    entity_type: "concept".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "E2".into(),
+                    entity_type: "concept".into(),
+                },
             ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "E1".into(),
@@ -5469,8 +5698,14 @@ async fn extraction_persist_summary_reports_coverage_regression() {
         cid_1,
         Ok(graph::extraction::ExtractionOutput {
             entities: vec![
-                graph::extraction::ExtractedEntity { name: "E3".into(), entity_type: "concept".into() },
-                graph::extraction::ExtractedEntity { name: "E4".into(), entity_type: "concept".into() },
+                graph::extraction::ExtractedEntity {
+                    name: "E3".into(),
+                    entity_type: "concept".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "E4".into(),
+                    entity_type: "concept".into(),
+                },
             ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "E3".into(),
@@ -5482,7 +5717,9 @@ async fn extraction_persist_summary_reports_coverage_regression() {
     );
 
     let fake_gen_1 = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_1);
-    let summary1 = super::extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder).await.unwrap();
+    let summary1 = super::extract_and_persist_entities(&database, &job, &fake_gen_1, &FakeEmbedder)
+        .await
+        .unwrap();
     assert_eq!(summary1.written_entity_edges_count, 2);
 
     let mut keyed_2 = HashMap::new();
@@ -5490,8 +5727,14 @@ async fn extraction_persist_summary_reports_coverage_regression() {
         cid_0,
         Ok(graph::extraction::ExtractionOutput {
             entities: vec![
-                graph::extraction::ExtractedEntity { name: "E1".into(), entity_type: "concept".into() },
-                graph::extraction::ExtractedEntity { name: "E2".into(), entity_type: "concept".into() },
+                graph::extraction::ExtractedEntity {
+                    name: "E1".into(),
+                    entity_type: "concept".into(),
+                },
+                graph::extraction::ExtractedEntity {
+                    name: "E2".into(),
+                    entity_type: "concept".into(),
+                },
             ],
             relations: vec![graph::extraction::ExtractedRelation {
                 source: "E1".into(),
@@ -5503,11 +5746,16 @@ async fn extraction_persist_summary_reports_coverage_regression() {
     );
 
     let fake_gen_2 = graph::extraction::FakeExtractionGenerator::with_keyed_responses(keyed_2);
-    let summary2 = super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder).await.unwrap();
+    let summary2 = super::extract_and_persist_entities(&database, &job, &fake_gen_2, &FakeEmbedder)
+        .await
+        .unwrap();
 
     assert_eq!(summary2.prior_entity_edges_count, 2);
     assert_eq!(summary2.written_entity_edges_count, 1);
-    assert!(summary2.written_entity_edges_count < summary2.prior_entity_edges_count, "Coverage regression reported in summary");
+    assert!(
+        summary2.written_entity_edges_count < summary2.prior_entity_edges_count,
+        "Coverage regression reported in summary"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -5565,8 +5813,8 @@ async fn seed_two_hop_graph(path: &str) -> DatabaseManager {
         HashMap::new(),
     );
 
-    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
-        graph::extraction::ExtractionOutput {
+    let fake_gen =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
             entities: vec![
                 graph::extraction::ExtractedEntity {
                     name: "Alice".into(),
@@ -5595,8 +5843,7 @@ async fn seed_two_hop_graph(path: &str) -> DatabaseManager {
                     confidence: 0.8,
                 },
             ],
-        },
-    ));
+        }));
 
     super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
@@ -5625,8 +5872,8 @@ async fn seed_single_edge_graph(
         HashMap::new(),
     );
 
-    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
-        graph::extraction::ExtractionOutput {
+    let fake_gen =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
             entities: vec![
                 graph::extraction::ExtractedEntity {
                     name: source_name.into(),
@@ -5643,8 +5890,7 @@ async fn seed_single_edge_graph(
                 relation_type: relation_type.into(),
                 confidence: 0.75,
             }],
-        },
-    ));
+        }));
 
     super::extract_and_persist_entities(&database, &job, &fake_gen, &FakeEmbedder)
         .await
@@ -5865,7 +6111,9 @@ async fn query_graph_recovers_multi_hop_edge_relation_properties() {
         .map(|e| (e.relation_type.as_str(), e))
         .collect();
 
-    let knows_edge = by_relation.get("knows").expect("knows edge must be present");
+    let knows_edge = by_relation
+        .get("knows")
+        .expect("knows edge must be present");
     assert!(
         (knows_edge.weight - 0.9).abs() < 1e-4,
         "knows edge weight must be ~0.9, got {}",
@@ -5962,8 +6210,14 @@ async fn query_graph_relation_filter_returns_empty_on_no_match() {
         .expect("a filter matching zero edges must be Ok, not an error")
         .into_inner();
 
-    assert!(resp.nodes.is_empty(), "zero matching edges must yield empty nodes");
-    assert!(resp.edges.is_empty(), "zero matching edges must yield empty edges");
+    assert!(
+        resp.nodes.is_empty(),
+        "zero matching edges must yield empty nodes"
+    );
+    assert!(
+        resp.edges.is_empty(),
+        "zero matching edges must yield empty edges"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -6117,8 +6371,9 @@ fn graph_facts_interleave_by_normalized_score() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.1),
     }];
 
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 8192, 512)
-        .expect("pack succeeds");
+    let packed =
+        pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 8192, 512)
+            .expect("pack succeeds");
 
     let evidence_pos = packed
         .prompt
@@ -6224,8 +6479,9 @@ fn graph_weight_zero_excludes_graph_facts() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.99),
     }];
 
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 0.0, 8192, 512)
-        .expect("pack succeeds");
+    let packed =
+        pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 0.0, 8192, 512)
+            .expect("pack succeeds");
 
     assert!(!packed.prompt.contains("<GRAPH_FACT"));
     assert!(packed.graph_facts.is_empty());
@@ -6251,8 +6507,9 @@ fn graph_weight_zero_excludes_graph_facts_even_with_abundant_budget() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.99),
     }];
 
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 0.0, 65536, 512)
-        .expect("pack succeeds");
+    let packed =
+        pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 0.0, 65536, 512)
+            .expect("pack succeeds");
 
     assert!(!packed.prompt.contains("<GRAPH_FACT"));
     assert!(packed.graph_facts.is_empty());
@@ -6265,17 +6522,16 @@ fn graph_weight_zero_excludes_graph_facts_even_with_abundant_budget() {
 #[test]
 fn pack_evidence_and_graph_prompt_empty_evidence_still_errors_regardless_of_graph_facts() {
     use crate::graph::context_strategy::GraphFact;
-    use crate::prompt::{
-        EvidenceBlock, GraphFactBlock, PromptAssemblyError,
-    };
+    use crate::prompt::{EvidenceBlock, GraphFactBlock, PromptAssemblyError};
 
     let facts = vec![GraphFactBlock {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.9),
     }];
     let empty_evidence: Vec<EvidenceBlock> = Vec::new();
 
-    let err = pack_evidence_and_graph_prompt_sync("Question?", &empty_evidence, &facts, 1.0, 8192, 512)
-        .expect_err("empty evidence must error even with non-empty graph facts");
+    let err =
+        pack_evidence_and_graph_prompt_sync("Question?", &empty_evidence, &facts, 1.0, 8192, 512)
+            .expect_err("empty evidence must error even with non-empty graph facts");
     assert_eq!(err, PromptAssemblyError::EmptyEvidence);
 }
 
@@ -6294,8 +6550,9 @@ fn pack_evidence_and_graph_prompt_empty_graph_facts_does_not_panic() {
     let evidence = assemble_evidence_blocks(&[candidate]);
     let empty_facts: Vec<GraphFactBlock> = Vec::new();
 
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &empty_facts, 1.0, 8192, 512)
-        .expect("pack succeeds without panicking on an empty graph_facts slice");
+    let packed =
+        pack_evidence_and_graph_prompt_sync("Question?", &evidence, &empty_facts, 1.0, 8192, 512)
+            .expect("pack succeeds without panicking on an empty graph_facts slice");
     assert!(!packed.prompt.contains("<GRAPH_FACT"));
     assert!(packed.graph_facts.is_empty());
 }
@@ -6344,8 +6601,11 @@ fn packed_chunk_markers_stay_stable_under_interleaving() {
     assert_eq!(packed.evidence[1].id, "[3]");
     assert_eq!(packed.evidence[2].id, "[2]");
 
-    let ids: std::collections::HashSet<&str> =
-        packed.evidence.iter().map(|block| block.id.as_str()).collect();
+    let ids: std::collections::HashSet<&str> = packed
+        .evidence
+        .iter()
+        .map(|block| block.id.as_str())
+        .collect();
     assert_eq!(ids.len(), 3, "no two packed blocks share a marker");
 }
 
@@ -6471,7 +6731,8 @@ fn write_mock_json_response(stream: &mut std::net::TcpStream, payload: serde_jso
 async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64) -> String {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
     let addr = listener.local_addr().unwrap();
-    let captured_chat: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
+    let captured_chat: Arc<std::sync::Mutex<Option<String>>> =
+        Arc::new(std::sync::Mutex::new(None));
     let captured_chat_for_server = captured_chat.clone();
 
     let server_handle = std::thread::spawn(move || {
@@ -6550,19 +6811,24 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
     let effective_settings = EffectiveRagSettings::try_from_settings(&settings)
         .expect("fixture settings must construct EffectiveRagSettings");
 
-    let generation_config = generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
-        effective_settings.generation_model.clone(),
-        effective_settings.chat_endpoint.clone(),
-        effective_settings.model_metadata_endpoint.clone(),
-        std::time::Duration::from_secs(effective_settings.generation_timeout_secs),
-        effective_settings.temperature,
-        effective_settings.top_p,
-        effective_settings.grounding_limits_arc(),
-    )
-    .expect("generation config must be valid");
-    let openrouter_gen = generation::openrouter::OpenRouterGenerator::new_with_config("test-key", generation_config)
-        .expect("generator must construct");
-    openrouter_gen.check_supported_parameters().await.expect("prepare succeeds");
+    let generation_config =
+        generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
+            effective_settings.generation_model.clone(),
+            effective_settings.chat_endpoint.clone(),
+            effective_settings.model_metadata_endpoint.clone(),
+            std::time::Duration::from_secs(effective_settings.generation_timeout_secs),
+            effective_settings.temperature,
+            effective_settings.top_p,
+            effective_settings.grounding_limits_arc(),
+        )
+        .expect("generation config must be valid");
+    let openrouter_gen =
+        generation::openrouter::OpenRouterGenerator::new_with_config("test-key", generation_config)
+            .expect("generator must construct");
+    openrouter_gen
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
     let generator: Arc<dyn generation::Generator> = Arc::new(openrouter_gen);
 
     let service = configured_service(
@@ -6655,8 +6921,8 @@ async fn graph_weight_reaches_actual_provider_request_body() {
         b"# Graph Fixture\n\nAlice knows Bob in this fixture scenario every single day.".to_vec(),
         HashMap::new(),
     );
-    let fake_extraction_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
-        graph::extraction::ExtractionOutput {
+    let fake_extraction_gen =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
             entities: vec![
                 graph::extraction::ExtractedEntity {
                     name: "Alice".into(),
@@ -6673,8 +6939,7 @@ async fn graph_weight_reaches_actual_provider_request_body() {
                 relation_type: "knows".into(),
                 confidence: 0.9,
             }],
-        },
-    ));
+        }));
     super::extract_and_persist_entities(&database, &graph_job, &fake_extraction_gen, &FakeEmbedder)
         .await
         .unwrap();
@@ -6898,8 +7163,8 @@ async fn fetch_neighborhood_returns_both_edges_when_two_documents_share_identica
         HashMap::new(),
     );
 
-    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
-        graph::extraction::ExtractionOutput {
+    let fake_gen =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
             entities: vec![
                 graph::extraction::ExtractedEntity {
                     name: "Alice".into(),
@@ -6916,8 +7181,7 @@ async fn fetch_neighborhood_returns_both_edges_when_two_documents_share_identica
                 relation_type: "knows".into(),
                 confidence: 0.9,
             }],
-        },
-    ));
+        }));
 
     super::extract_and_persist_entities(&database, &job_a, &fake_gen, &FakeEmbedder)
         .await
@@ -6975,7 +7239,11 @@ async fn fetch_neighborhood_returns_both_edges_when_two_documents_share_identica
         .await
         .expect("fetch_neighborhood must succeed");
 
-    assert_eq!(edges_batch.num_rows(), 2, "both documents' edges must survive dedup");
+    assert_eq!(
+        edges_batch.num_rows(),
+        2,
+        "both documents' edges must survive dedup"
+    );
 
     let edge_id_col = edges_batch
         .column_by_name("edge_id")
@@ -6984,9 +7252,14 @@ async fn fetch_neighborhood_returns_both_edges_when_two_documents_share_identica
         .downcast_ref::<arrow_array::StringArray>()
         .unwrap();
 
-    let unique_edge_ids: std::collections::HashSet<&str> =
-        (0..edges_batch.num_rows()).map(|i| edge_id_col.value(i)).collect();
-    assert_eq!(unique_edge_ids.len(), 2, "two distinct edge_id values must exist");
+    let unique_edge_ids: std::collections::HashSet<&str> = (0..edges_batch.num_rows())
+        .map(|i| edge_id_col.value(i))
+        .collect();
+    assert_eq!(
+        unique_edge_ids.len(),
+        2,
+        "two distinct edge_id values must exist"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -7129,7 +7402,9 @@ async fn fetch_neighborhood_rejects_oversized_final_hop_frontier() {
 
     let err = graph::fetch_neighborhood(&database, &seed_id, 2, true)
         .await
-        .expect_err("fetch_neighborhood must reject when final hop frontier exceeds MAX_FRONTIER_SIZE");
+        .expect_err(
+            "fetch_neighborhood must reject when final hop frontier exceeds MAX_FRONTIER_SIZE",
+        );
 
     assert_eq!(err.kind, graph::GraphSpikeErrorKind::Bridge);
     assert!(
@@ -7142,10 +7417,12 @@ async fn fetch_neighborhood_rejects_oversized_final_hop_frontier() {
 }
 
 #[tokio::test]
-async fn fetch_neighborhood_accepts_in_bounds_neighborhood_despite_raw_recount_exceeding_max_total_edges() {
+async fn fetch_neighborhood_accepts_in_bounds_neighborhood_despite_raw_recount_exceeding_max_total_edges(
+) {
     use arrow_schema::{DataType, Field, Schema};
 
-    let path = database_path("fetch-neighborhood-accepts-in-bounds-neighborhood-despite-raw-recount");
+    let path =
+        database_path("fetch-neighborhood-accepts-in-bounds-neighborhood-despite-raw-recount");
     let database = DatabaseManager::initialize(&path).await.unwrap();
 
     let seed_id = Uuid::new_v4().to_string();
@@ -7223,8 +7500,9 @@ async fn fetch_neighborhood_accepts_in_bounds_neighborhood_despite_raw_recount_e
         .and_then(|c| c.as_any().downcast_ref::<StringArray>())
         .expect("edges_batch must carry edge_id column");
 
-    let distinct_edge_ids: std::collections::HashSet<&str> =
-        (0..edges_batch.num_rows()).map(|i| edge_id_col.value(i)).collect();
+    let distinct_edge_ids: std::collections::HashSet<&str> = (0..edges_batch.num_rows())
+        .map(|i| edge_id_col.value(i))
+        .collect();
 
     assert_eq!(distinct_edge_ids.len(), 499);
 
@@ -7281,8 +7559,8 @@ async fn worker_queue_extracted_graph_facts_reach_provider_request_body() {
 
     let statuses = Arc::new(dashmap::DashMap::new());
     let (tx, rx) = tokio::sync::mpsc::channel(QUEUE_CAPACITY);
-    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
-        graph::extraction::ExtractionOutput {
+    let fake_gen =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
             entities: vec![
                 graph::extraction::ExtractedEntity {
                     name: "Alice".into(),
@@ -7299,8 +7577,7 @@ async fn worker_queue_extracted_graph_facts_reach_provider_request_body() {
                 relation_type: "knows".into(),
                 confidence: 0.9,
             }],
-        },
-    ));
+        }));
 
     let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let worker_db = database.clone();
@@ -7329,8 +7606,20 @@ async fn worker_queue_extracted_graph_facts_reach_provider_request_body() {
     let status_entry = statuses.get(&graph_doc_id).expect("status must exist");
     assert_eq!(status_entry.status, "completed");
 
-    let entity_count = database.entities_table().await.unwrap().count_rows(None).await.unwrap();
-    let edge_count = database.entity_edges_table().await.unwrap().count_rows(None).await.unwrap();
+    let entity_count = database
+        .entities_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
+    let edge_count = database
+        .entity_edges_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
     assert_eq!(entity_count, 2);
     assert_eq!(edge_count, 1);
 
@@ -7365,8 +7654,8 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
         HashMap::new(),
     );
 
-    let fake_gen = graph::extraction::FakeExtractionGenerator::new(Ok(
-        graph::extraction::ExtractionOutput {
+    let fake_gen =
+        graph::extraction::FakeExtractionGenerator::new(Ok(graph::extraction::ExtractionOutput {
             entities: vec![
                 graph::extraction::ExtractedEntity {
                     name: "Carol".into(),
@@ -7383,8 +7672,7 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
                 relation_type: "mentors".into(),
                 confidence: 0.75,
             }],
-        },
-    ));
+        }));
 
     super::extract_and_persist_entities(&database, &job, &fake_gen, &embedder)
         .await
@@ -7407,9 +7695,3 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
 
     let _ = std::fs::remove_dir_all(path);
 }
-
-
-
-
-
-

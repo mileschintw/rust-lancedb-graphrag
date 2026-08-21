@@ -305,7 +305,6 @@ fn table_schemas() -> [(&'static str, SchemaRef); 7] {
     ]
 }
 
-
 #[tonic::async_trait]
 pub trait EntityResolver: Send + Sync {
     async fn resolve(

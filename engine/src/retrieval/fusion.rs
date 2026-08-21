@@ -278,20 +278,22 @@ pub fn fuse_cross_variant_candidates(
                 prov.variant_index = variant_index;
             }
 
-            let entry = merged.entry(chunk_id).or_insert_with(|| CrossVariantAccumulator {
-                candidate: candidate_data.clone(),
-                cross_variant_score: 0.0,
-                best_inner_fused_score: f64::NEG_INFINITY,
-                best_variant_rank: usize::MAX,
-                first_variant_index: variant_index,
-                selected_variant_index: usize::MAX,
-                selected_per_variant_rank: usize::MAX,
-                vector_rank: None,
-                bm25_rank: None,
-                vector_score: None,
-                bm25_score: None,
-                variant_provenance: Vec::new(),
-            });
+            let entry = merged
+                .entry(chunk_id)
+                .or_insert_with(|| CrossVariantAccumulator {
+                    candidate: candidate_data.clone(),
+                    cross_variant_score: 0.0,
+                    best_inner_fused_score: f64::NEG_INFINITY,
+                    best_variant_rank: usize::MAX,
+                    first_variant_index: variant_index,
+                    selected_variant_index: usize::MAX,
+                    selected_per_variant_rank: usize::MAX,
+                    vector_rank: None,
+                    bm25_rank: None,
+                    vector_score: None,
+                    bm25_score: None,
+                    variant_provenance: Vec::new(),
+                });
 
             entry.cross_variant_score += contribution;
             if !entry.cross_variant_score.is_finite() {
@@ -308,25 +310,26 @@ pub fn fuse_cross_variant_candidates(
                 entry.best_variant_rank = rank;
             }
 
-            let is_better_metadata = match inner_fused_score.total_cmp(&entry.best_inner_fused_score) {
-                std::cmp::Ordering::Greater => true,
-                std::cmp::Ordering::Equal => {
-                    match variant_index.cmp(&entry.selected_variant_index) {
-                        std::cmp::Ordering::Less => true,
-                        std::cmp::Ordering::Equal => {
-                            match rank.cmp(&entry.selected_per_variant_rank) {
-                                std::cmp::Ordering::Less => true,
-                                std::cmp::Ordering::Equal => {
-                                    candidate_data.sort_key() < entry.candidate.sort_key()
+            let is_better_metadata =
+                match inner_fused_score.total_cmp(&entry.best_inner_fused_score) {
+                    std::cmp::Ordering::Greater => true,
+                    std::cmp::Ordering::Equal => {
+                        match variant_index.cmp(&entry.selected_variant_index) {
+                            std::cmp::Ordering::Less => true,
+                            std::cmp::Ordering::Equal => {
+                                match rank.cmp(&entry.selected_per_variant_rank) {
+                                    std::cmp::Ordering::Less => true,
+                                    std::cmp::Ordering::Equal => {
+                                        candidate_data.sort_key() < entry.candidate.sort_key()
+                                    }
+                                    std::cmp::Ordering::Greater => false,
                                 }
-                                std::cmp::Ordering::Greater => false,
                             }
+                            std::cmp::Ordering::Greater => false,
                         }
-                        std::cmp::Ordering::Greater => false,
                     }
-                }
-                std::cmp::Ordering::Less => false,
-            };
+                    std::cmp::Ordering::Less => false,
+                };
 
             if is_better_metadata {
                 entry.candidate = candidate_data;
@@ -352,14 +355,16 @@ pub fn fuse_cross_variant_candidates(
         })
         .collect();
 
-    results.sort_by(|(left, left_best_rank, left_first_var), (right, right_best_rank, right_first_var)| {
-        right
-            .cross_variant_score
-            .total_cmp(&left.cross_variant_score)
-            .then_with(|| left_best_rank.cmp(right_best_rank))
-            .then_with(|| left_first_var.cmp(right_first_var))
-            .then_with(|| left.candidate.sort_key().cmp(&right.candidate.sort_key()))
-    });
+    results.sort_by(
+        |(left, left_best_rank, left_first_var), (right, right_best_rank, right_first_var)| {
+            right
+                .cross_variant_score
+                .total_cmp(&left.cross_variant_score)
+                .then_with(|| left_best_rank.cmp(right_best_rank))
+                .then_with(|| left_first_var.cmp(right_first_var))
+                .then_with(|| left.candidate.sort_key().cmp(&right.candidate.sort_key()))
+        },
+    );
 
     let final_candidates = results
         .into_iter()

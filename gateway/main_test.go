@@ -33,6 +33,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lancet/gateway/internal/config"
+	"github.com/lancet/gateway/internal/engineclient"
 	"github.com/lancet/gateway/internal/sse"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -259,8 +260,8 @@ func multipartRequest(t *testing.T, filename string, contents []byte) *http.Requ
 
 func TestCreateDocumentMapsFullQueueTo429(t *testing.T) {
 	store := &fakeStore{}
-	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) IngestOutcome {
-		return IngestOutcome{Err: status.Error(codes.ResourceExhausted, "full")}
+	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) engineclient.IngestOutcome {
+		return engineclient.IngestOutcome{Err: status.Error(codes.ResourceExhausted, "full")}
 	}}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "../notes.txt", []byte("hello")))
@@ -283,8 +284,8 @@ func TestCreateDocumentMapsFullQueueTo429(t *testing.T) {
 
 func TestCreateDocumentCompensatesGeneralEnqueueFailure(t *testing.T) {
 	store := &fakeStore{}
-	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) IngestOutcome {
-		return IngestOutcome{Err: errors.New("engine down")}
+	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) engineclient.IngestOutcome {
+		return engineclient.IngestOutcome{Err: errors.New("engine down")}
 	}}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
@@ -301,9 +302,9 @@ func TestCreateDocumentCompensatesWithDetachedContextAfterRequestCancellation(t 
 	req := multipartRequest(t, "notes.txt", []byte("hello"))
 	requestCtx, cancelRequest := context.WithCancel(req.Context())
 	req = req.WithContext(requestCtx)
-	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) IngestOutcome {
+	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) engineclient.IngestOutcome {
 		cancelRequest()
-		return IngestOutcome{Err: errors.New("engine canceled before enqueue")}
+		return engineclient.IngestOutcome{Err: errors.New("engine canceled before enqueue")}
 	}}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
@@ -342,8 +343,8 @@ func TestCreateDocumentReturnsPollingLocation(t *testing.T) {
 func TestCreateDocumentConvergesLostAcknowledgement(t *testing.T) {
 	store := &fakeStore{}
 	engine := engineFunc{
-		ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
-			return IngestOutcome{Ambiguous: true, Err: errors.New("stream closed abruptly")}
+		ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) engineclient.IngestOutcome {
+			return engineclient.IngestOutcome{Ambiguous: true, Err: errors.New("stream closed abruptly")}
 		},
 		status: &pb.GetIngestionStatusResponse{Status: "queued"},
 	}
@@ -360,8 +361,8 @@ func TestCreateDocumentConvergesLostAcknowledgement(t *testing.T) {
 func TestCreateDocumentRejectsMismatchedAdmissionIdentity(t *testing.T) {
 	store := &fakeStore{}
 	engine := engineFunc{
-		ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
-			return IngestOutcome{Err: errors.New("mismatched id")}
+		ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) engineclient.IngestOutcome {
+			return engineclient.IngestOutcome{Err: errors.New("mismatched id")}
 		},
 	}
 	recorder := httptest.NewRecorder()
@@ -516,10 +517,10 @@ func TestCreateDocumentChunkSizeBoundaries(t *testing.T) {
 
 		engineCalled := false
 		var passedChunkSize int
-		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
+		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) engineclient.IngestOutcome {
 			engineCalled = true
 			passedChunkSize = chunkSize
-			return IngestOutcome{}
+			return engineclient.IngestOutcome{}
 		}}
 
 		recorder := httptest.NewRecorder()
@@ -541,9 +542,9 @@ func TestCreateDocumentChunkSizeBoundaries(t *testing.T) {
 	t.Run("1048577 rejected with 400", func(t *testing.T) {
 		store := &fakeStore{}
 		engineCalled := false
-		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
+		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) engineclient.IngestOutcome {
 			engineCalled = true
-			return IngestOutcome{}
+			return engineclient.IngestOutcome{}
 		}}
 		var body bytes.Buffer
 		w := multipart.NewWriter(&body)
@@ -571,9 +572,9 @@ func TestCreateDocumentChunkSizeBoundaries(t *testing.T) {
 	t.Run("2147483648 rejected with 400", func(t *testing.T) {
 		store := &fakeStore{}
 		engineCalled := false
-		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome {
+		engine := engineFunc{ingest: func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) engineclient.IngestOutcome {
 			engineCalled = true
-			return IngestOutcome{}
+			return engineclient.IngestOutcome{}
 		}}
 		var body bytes.Buffer
 		w := multipart.NewWriter(&body)
@@ -779,19 +780,19 @@ func parseTerminalResponseDTO(body string) (sse.QueryRAGResponseDTO, error) {
 }
 
 type engineFunc struct {
-	ingest    func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) IngestOutcome
+	ingest    func(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, b []byte) engineclient.IngestOutcome
 	status    *pb.GetIngestionStatusResponse
 	statusErr error
 	queryRAG  func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error)
 }
 
-func (e engineFunc) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome {
+func (e engineFunc) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) engineclient.IngestOutcome {
 	data, err := io.ReadAll(src)
 	if err != nil {
-		return IngestOutcome{Err: err}
+		return engineclient.IngestOutcome{Err: err}
 	}
 	if e.ingest == nil {
-		return IngestOutcome{}
+		return engineclient.IngestOutcome{}
 	}
 	return e.ingest(ctx, id, filename, strategy, chunkSize, chunkOverlap, data)
 }
@@ -1092,10 +1093,10 @@ func TestRAGQueryProviderErrorPreservesIdentity(t *testing.T) {
 		"x-lancet-correlation-id", correlationID,
 		"x-lancet-error-kind", errKind,
 	)
-	failingErr := trailerError{
-		err:     status.Error(codes.Internal, "OpenRouter API rate limit"),
-		trailer: tr,
-	}
+	failingErr := engineclient.NewTrailerError(
+		status.Error(codes.Internal, "OpenRouter API rate limit"),
+		tr,
+	)
 
 	engine := engineFunc{
 		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
@@ -1142,10 +1143,10 @@ func TestRAGQueryEmbeddingTransportIdentity(t *testing.T) {
 		"x-lancet-correlation-id", correlationID,
 		"x-lancet-error-kind", errKind,
 	)
-	failingErr := trailerError{
-		err:     status.Error(codes.Unavailable, "embedding provider unreachable"),
-		trailer: tr,
-	}
+	failingErr := engineclient.NewTrailerError(
+		status.Error(codes.Unavailable, "embedding provider unreachable"),
+		tr,
+	)
 
 	engine := engineFunc{
 		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
@@ -1192,10 +1193,10 @@ func TestRAGQueryEmbeddingInvalidPayloadIdentity(t *testing.T) {
 		"x-lancet-correlation-id", correlationID,
 		"x-lancet-error-kind", errKind,
 	)
-	failingErr := trailerError{
-		err:     status.Error(codes.Internal, "embedding payload invalid"),
-		trailer: tr,
-	}
+	failingErr := engineclient.NewTrailerError(
+		status.Error(codes.Internal, "embedding payload invalid"),
+		tr,
+	)
 
 	engine := engineFunc{
 		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
@@ -1242,10 +1243,10 @@ func TestRAGQueryDenseRetrievalIdentity(t *testing.T) {
 		"x-lancet-correlation-id", correlationID,
 		"x-lancet-error-kind", errKind,
 	)
-	failingErr := trailerError{
-		err:     status.Error(codes.Unavailable, "dense query failed"),
-		trailer: tr,
-	}
+	failingErr := engineclient.NewTrailerError(
+		status.Error(codes.Unavailable, "dense query failed"),
+		tr,
+	)
 
 	engine := engineFunc{
 		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
@@ -1520,7 +1521,7 @@ func (f *fakeGrpcClient) IngestDocument(ctx context.Context, opts ...grpc.CallOp
 
 func TestGrpcEngineStreamsChunkSettings(t *testing.T) {
 	stream := &fakeStream{}
-	engine := grpcEngine{client: &fakeGrpcClient{stream: stream}}
+	engine := engineclient.New(&fakeGrpcClient{stream: stream})
 	ctx := t.Context()
 	outcome := engine.Ingest(ctx, "doc-123", "guide.md", "structure-aware", 500, 50, bytes.NewReader([]byte("chunk data payload")))
 	if outcome.Err != nil {
@@ -1555,8 +1556,8 @@ func TestGatewayAddressIsLoopback(t *testing.T) {
 func TestDurableReconcilerMoreThanFiveFailures(t *testing.T) {
 	store := &fakeStore{updateErr: errors.New("db busy")}
 	noSleep := func(int) {}
-	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) IngestOutcome {
-		return IngestOutcome{Err: status.Error(codes.ResourceExhausted, "full")}
+	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) engineclient.IngestOutcome {
+		return engineclient.IngestOutcome{Err: status.Error(codes.ResourceExhausted, "full")}
 	}}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop(), retrySleep: noSleep}.routes().ServeHTTP(recorder, multipartRequest(t, "notes.txt", []byte("hello")))
@@ -1611,9 +1612,9 @@ func TestDurableReconcilerIgnoresRequestCancellation(t *testing.T) {
 	reqCtx, cancelReq := context.WithCancel(req.Context())
 	req = req.WithContext(reqCtx)
 
-	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) IngestOutcome {
+	engine := engineFunc{ingest: func(context.Context, string, string, string, int, int, []byte) engineclient.IngestOutcome {
 		cancelReq()
-		return IngestOutcome{Err: errors.New("engine unreachable")}
+		return engineclient.IngestOutcome{Err: errors.New("engine unreachable")}
 	}}
 	recorder := httptest.NewRecorder()
 	app{store: store, engine: engine, logger: zap.NewNop(), retrySleep: noSleep}.routes().ServeHTTP(recorder, req)
@@ -1885,7 +1886,7 @@ func TestEmbeddingFailureRestartConvergesAcrossRuntime(t *testing.T) {
 		t.Fatalf("dial engine1: %v", err)
 	}
 	defer conn1.Close()
-	engine1 := grpcEngine{client: pb.NewLancetServiceClient(conn1)}
+	engine1 := engineclient.New(pb.NewLancetServiceClient(conn1))
 
 	pingSuccess := false
 	for range 300 {
@@ -1938,7 +1939,7 @@ func TestEmbeddingFailureRestartConvergesAcrossRuntime(t *testing.T) {
 		t.Fatalf("dial engine2: %v", err)
 	}
 	defer conn2.Close()
-	engine2 := grpcEngine{client: pb.NewLancetServiceClient(conn2)}
+	engine2 := engineclient.New(pb.NewLancetServiceClient(conn2))
 
 	pingSuccess2 := false
 	for range 300 {
@@ -2300,7 +2301,7 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 		t.Fatalf("generated gRPC Ping did not succeed within 30 seconds: %v; engine output: %s", lastPingErr, strings.Join(engineLines, " | "))
 	}
 
-	server := httptest.NewServer(app{store: &fakeStore{}, engine: grpcEngine{client: client}, logger: zap.NewNop()}.routes())
+	server := httptest.NewServer(app{store: &fakeStore{}, engine: engineclient.New(client), logger: zap.NewNop()}.routes())
 	defer server.Close()
 
 	httpClient := &http.Client{}
@@ -3605,7 +3606,7 @@ func TestRAGQueryClientDisconnectCancelsRustWorkflow(t *testing.T) {
 		t.Fatalf("generated gRPC Ping did not succeed within 30 seconds: %v", lastPingErr)
 	}
 
-	gwServer := httptest.NewServer(app{store: &fakeStore{}, engine: grpcEngine{client: client}, logger: zap.NewNop()}.routes())
+	gwServer := httptest.NewServer(app{store: &fakeStore{}, engine: engineclient.New(client), logger: zap.NewNop()}.routes())
 	defer gwServer.Close()
 
 	httpClient := &http.Client{}

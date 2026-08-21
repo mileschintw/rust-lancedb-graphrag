@@ -3,8 +3,8 @@ use std::future::Future;
 use std::pin::Pin;
 use tokio_util::sync::CancellationToken;
 
-use crate::pb::lancet::v1::NodeErrorKind;
 use super::WorkflowContext;
+use crate::pb::lancet::v1::NodeErrorKind;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -52,7 +52,11 @@ impl NodeError {
         self
     }
 
-    pub fn with_context(mut self, session_id: Option<String>, correlation_id: Option<String>) -> Self {
+    pub fn with_context(
+        mut self,
+        session_id: Option<String>,
+        correlation_id: Option<String>,
+    ) -> Self {
         self.session_id = session_id;
         self.correlation_id = correlation_id;
         self
@@ -131,4 +135,3 @@ pub trait Node: Send + Sync {
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<(), NodeError>>;
 }
-

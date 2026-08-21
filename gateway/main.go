@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -32,6 +31,7 @@ import (
 
 	"github.com/lancet/gateway/db"
 	"github.com/lancet/gateway/internal/config"
+	"github.com/lancet/gateway/internal/engineclient"
 	"github.com/lancet/gateway/internal/sse"
 	_ "github.com/lancet/gateway/internal/telemetry"
 	pb "github.com/lancet/gateway/proto/lancet/v1"
@@ -39,7 +39,6 @@ import (
 
 const maxUploadBytes int64 = 10 << 20
 const maxRAGQueryBodyBytes int64 = 32 << 10
-const streamBufferSize = 64 << 10
 const defaultChunkSize = 500
 const defaultChunkOverlap = 50
 
@@ -158,100 +157,9 @@ func (s postgresStore) GetReconciliationIntent(ctx context.Context, id string) (
 	return db.New(s.pool).GetReconciliationIntent(ctx, id)
 }
 
-type IngestOutcome struct {
-	Ambiguous bool
-	Err       error
-}
-
-type engine interface {
-	Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome
-	IngestionStatus(context.Context, string) (*pb.GetIngestionStatusResponse, error)
-	Ping(context.Context) (time.Duration, error)
-	QueryRAG(context.Context, *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error)
-}
-
-type grpcEngine struct{ client pb.LancetServiceClient }
-
-func (e grpcEngine) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome {
-	stream, err := e.client.IngestDocument(ctx)
-	if err != nil {
-		return IngestOutcome{Err: err}
-	}
-	buf := make([]byte, streamBufferSize)
-	firstFrame := true
-	for {
-		n, readErr := src.Read(buf)
-		if n > 0 {
-			req := &pb.IngestDocumentRequest{
-				DocumentId: id,
-				ChunkData:  append([]byte(nil), buf[:n]...),
-			}
-			if firstFrame {
-				firstFrame = false
-				req.Filename = filename
-				req.Metadata = map[string]string{
-					"chunk_strategy": strategy,
-					"chunk_size":     strconv.Itoa(chunkSize),
-					"chunk_overlap":  strconv.Itoa(chunkOverlap),
-				}
-			}
-			if err := stream.Send(req); err != nil {
-				return IngestOutcome{Err: err}
-			}
-		}
-		if errors.Is(readErr, io.EOF) {
-			break
-		}
-		if readErr != nil {
-			return IngestOutcome{Err: readErr}
-		}
-	}
-	resp, err := stream.CloseAndRecv()
-	if err != nil {
-		return IngestOutcome{Ambiguous: true, Err: err}
-	}
-	if !resp.GetSuccess() || resp.GetDocumentId() != id {
-		return IngestOutcome{Err: fmt.Errorf("ingest rejected: success=%v, document_id=%q", resp.GetSuccess(), resp.GetDocumentId())}
-	}
-	return IngestOutcome{}
-}
-func (e grpcEngine) IngestionStatus(ctx context.Context, id string) (*pb.GetIngestionStatusResponse, error) {
-	return e.client.GetIngestionStatus(ctx, &pb.GetIngestionStatusRequest{DocumentId: id})
-}
-func (e grpcEngine) Ping(ctx context.Context) (time.Duration, error) {
-	start := time.Now()
-	_, err := e.client.Ping(ctx, &pb.PingRequest{Value: "ping"})
-	return time.Since(start), err
-}
-type trailerError struct {
-	err     error
-	trailer metadata.MD
-}
-
-func (e trailerError) Error() string {
-	return e.err.Error()
-}
-
-func (e trailerError) GRPCStatus() *status.Status {
-	return status.Convert(e.err)
-}
-
-func (e trailerError) Trailer() metadata.MD {
-	return e.trailer
-}
-
-func (e grpcEngine) QueryRAG(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
-	var trailer metadata.MD
-	stream, err := e.client.QueryRAG(ctx, req, grpc.Trailer(&trailer))
-	if err != nil {
-		return nil, trailerError{err: err, trailer: trailer}
-	}
-	return stream, nil
-}
-
 type app struct {
 	store      documentStore
-	engine     engine
+	engine     engineclient.Engine
 	logger     *zap.Logger
 	retrySleep func(int)
 	dispatcher *CheckpointDispatcher
@@ -839,7 +747,7 @@ func run() error {
 		formatListenAddr(cfg.Gateway.Port),
 		app{
 			store:      postgresStore{pool},
-			engine:     grpcEngine{pb.NewLancetServiceClient(conn)},
+			engine:     engineclient.New(pb.NewLancetServiceClient(conn)),
 			logger:     logger,
 			dispatcher: dispatcher,
 		}.routes(),
