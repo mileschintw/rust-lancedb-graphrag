@@ -4984,3 +4984,643 @@ async fn retrieval_degraded_both_paths_succeed_emits_no_degrade_notice() {
             && n.code != "NO_EVIDENCE"
     }));
 }
+
+#[test]
+fn grounding_validation_rejects_model_only_when_opt_in_false() {
+    let output = ModelOutput {
+        answer: "Model parametric answer".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(false);
+    let err = output
+        .validate_grounding_with_limits(&[], limits)
+        .expect_err("must reject model-only when opt-in is false");
+    assert_eq!(
+        err.kind,
+        engine::generation::GenerationErrorKind::SchemaValidation
+    );
+    assert_eq!(
+        err.message(),
+        "ModelOnly answer basis is not supported on Phase 03 QueryRAG path"
+    );
+}
+
+#[test]
+fn grounding_validation_accepts_model_only_when_opt_in_true() {
+    let output = ModelOutput {
+        answer: "Model parametric answer".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(true);
+    let result = output.validate_grounding_with_limits(&[], limits);
+    assert!(result.is_ok(), "must accept model-only when opt-in is true");
+}
+
+#[test]
+fn grounding_validation_rejects_empty_citations_when_opt_in_false() {
+    let output = ModelOutput {
+        answer: "Retrieved answer".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(false);
+    let err = output
+        .validate_grounding_with_limits(&[], limits)
+        .expect_err("must reject empty citations when opt-in is false");
+    assert_eq!(
+        err.kind,
+        engine::generation::GenerationErrorKind::SchemaValidation
+    );
+    assert_eq!(
+        err.message(),
+        "answer basis 'retrieval' requires at least one cited evidence ID"
+    );
+}
+
+#[test]
+fn grounding_validation_accepts_empty_citations_when_opt_in_true_and_model_only() {
+    let output = ModelOutput {
+        answer: "Model parametric answer with empty citations".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(true);
+    let result = output.validate_grounding_with_limits(&[], limits);
+    assert!(
+        result.is_ok(),
+        "must accept empty citations for model-only answer when opt-in is true"
+    );
+}
+
+#[test]
+fn grounding_validation_rejects_empty_citations_when_opt_in_true_and_retrieval_or_mixed() {
+    let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(true);
+
+    let output_retrieval = ModelOutput {
+        answer: "Grounded retrieval answer".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let err_retrieval = output_retrieval
+        .validate_grounding_with_limits(&[], limits)
+        .expect_err("must reject empty citations for retrieval basis even when opt-in is true");
+    assert_eq!(
+        err_retrieval.kind,
+        engine::generation::GenerationErrorKind::SchemaValidation
+    );
+    assert_eq!(
+        err_retrieval.message(),
+        "answer basis 'retrieval' requires at least one cited evidence ID"
+    );
+
+    let output_mixed = ModelOutput {
+        answer: "Grounded mixed answer".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Mixed,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let err_mixed = output_mixed
+        .validate_grounding_with_limits(&[], limits)
+        .expect_err("must reject empty citations for mixed basis even when opt-in is true");
+    assert_eq!(
+        err_mixed.kind,
+        engine::generation::GenerationErrorKind::SchemaValidation
+    );
+    assert_eq!(
+        err_mixed.message(),
+        "answer basis 'mixed' requires at least one cited evidence ID"
+    );
+}
+
+#[test]
+fn grounding_validation_convenience_wrapper_preserves_default_limits_policy() {
+    let output_mo = ModelOutput {
+        answer: "Model parametric answer".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let err_mo = output_mo
+        .validate_grounding(&[])
+        .expect_err("convenience wrapper must reject model-only by default");
+    assert_eq!(
+        err_mo.kind,
+        engine::generation::GenerationErrorKind::SchemaValidation
+    );
+    assert_eq!(
+        err_mo.message(),
+        "ModelOnly answer basis is not supported on Phase 03 QueryRAG path"
+    );
+
+    let output_no_cite = ModelOutput {
+        answer: "Retrieval answer".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    };
+    let err_cite = output_no_cite
+        .validate_grounding(&[])
+        .expect_err("convenience wrapper must reject empty citations by default");
+    assert_eq!(
+        err_cite.kind,
+        engine::generation::GenerationErrorKind::SchemaValidation
+    );
+    assert_eq!(
+        err_cite.message(),
+        "answer basis 'retrieval' requires at least one cited evidence ID"
+    );
+}
+
+#[tokio::test]
+async fn model_only_opt_in_true_zero_evidence_runs_generation_and_emits_notice() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-mo-opt-in-prod".to_string();
+    let session_id = "sess-mo-opt-in-prod".to_string();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let mut req = test_query_request(
+        "what is the airspeed velocity?",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(true);
+    let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+
+    let fake_dense_empty = Arc::new(FakeDenseRetrievalPort::success(vec![]));
+    let fake_bm25_empty = Arc::new(FakeBm25RetrievalPort::success(vec![]));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Approximately 24 miles per hour.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(ExtractGraphContextNode::new(None, None));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense_empty),
+        Some(fake_bm25_empty),
+        None,
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::new());
+    runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+    let _guard = AbortOnDrop(Some(handle));
+
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
+        }
+        events
+    })
+    .await
+    .expect("events within 5s");
+
+    let node_started_names: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(node_started_names.contains(&"AssemblePrompt".to_string()));
+    assert!(node_started_names.contains(&"GenerateAnswer".to_string()));
+
+    let final_resp = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => wc.final_response.clone(),
+            _ => None,
+        })
+        .expect("final response present");
+
+    assert_eq!(final_resp.answer, "Approximately 24 miles per hour.");
+    assert_eq!(
+        final_resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::ModelOnly as i32
+    );
+    assert!(final_resp.citations.is_empty());
+    assert!(final_resp.structured_citations.is_empty());
+
+    let mo_notice = final_resp
+        .notices
+        .iter()
+        .find(|n| n.typed_code == NoticeCode::ModelOnly as i32)
+        .expect("ModelOnly notice must be present");
+    assert_eq!(
+        mo_notice.message,
+        "Answer generated from parametric model knowledge without corpus evidence."
+    );
+}
+
+#[tokio::test]
+async fn model_only_opt_in_true_zero_evidence_tracer_path() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-mo-tracer".to_string();
+    let session_id = "sess-mo-tracer".to_string();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let mut req = test_query_request(
+        "tracer model only query",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(true);
+    let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+
+    let fake_dense_empty = Arc::new(FakeDenseRetrievalPort::success(vec![]));
+    let fake_bm25_empty = Arc::new(FakeBm25RetrievalPort::success(vec![]));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Tracer model-only answer.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(ExtractGraphContextNode::new(None, None));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense_empty),
+        Some(fake_bm25_empty),
+        None,
+        RetrievalSettings::default(),
+    ));
+
+    let mut deps = crate::workflow::WorkflowDependencies::new();
+    deps.generator = Some(fake_gen);
+
+    runner
+        .run_tracer(ctx, cancel, sink, &deps, |ctx, deps, sink, cancel| {
+            Box::pin(async move {
+                crate::workflow::run_inline_prompt_generation_remainder(ctx, deps, sink, cancel)
+                    .await
+            })
+        })
+        .await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let node_started_names: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(node_started_names.contains(&"AssemblePrompt".to_string()));
+    assert!(node_started_names.contains(&"GenerateAnswer".to_string()));
+
+    let final_resp = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => wc.final_response.clone(),
+            _ => None,
+        })
+        .expect("final response present");
+
+    assert_eq!(final_resp.answer, "Tracer model-only answer.");
+    assert_eq!(
+        final_resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::ModelOnly as i32
+    );
+    assert!(final_resp.citations.is_empty());
+    assert!(final_resp.structured_citations.is_empty());
+    assert!(final_resp
+        .notices
+        .iter()
+        .any(|n| n.typed_code == NoticeCode::ModelOnly as i32));
+}
+
+#[tokio::test]
+async fn model_only_opt_in_true_zero_candidates_no_notice_proceeds() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-mo-zero-cand".to_string();
+    let session_id = "sess-mo-zero-cand".to_string();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let mut req = test_query_request(
+        "zero candidates test",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(true);
+    let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Model-only answer without candidates.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(AssemblePromptNode::new());
+    runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+    let _guard = AbortOnDrop(Some(handle));
+
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
+        }
+        events
+    })
+    .await
+    .expect("events within 5s");
+
+    let node_started_names: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(node_started_names.contains(&"AssemblePrompt".to_string()));
+    assert!(node_started_names.contains(&"GenerateAnswer".to_string()));
+}
+
+#[tokio::test]
+async fn model_only_opt_in_false_zero_evidence_short_circuits_unchanged() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-mo-opt-in-false".to_string();
+    let session_id = "sess-mo-opt-in-false".to_string();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let mut req = test_query_request(
+        "zero evidence default off",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(false);
+    let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+
+    let fake_dense_empty = Arc::new(FakeDenseRetrievalPort::success(vec![]));
+    let fake_bm25_empty = Arc::new(FakeBm25RetrievalPort::success(vec![]));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Should not be called.".into(),
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::ModelOnly,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(ExtractGraphContextNode::new(None, None));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense_empty),
+        Some(fake_bm25_empty),
+        None,
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::new());
+    runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+    let _guard = AbortOnDrop(Some(handle));
+
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
+        }
+        events
+    })
+    .await
+    .expect("events within 5s");
+
+    let node_started_names: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(Event::NodeStarted(ns)) => Some(ns.node_name.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(!node_started_names.contains(&"AssemblePrompt".to_string()));
+    assert!(!node_started_names.contains(&"GenerateAnswer".to_string()));
+
+    let final_resp = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => wc.final_response.clone(),
+            _ => None,
+        })
+        .expect("final response present");
+
+    assert!(final_resp
+        .notices
+        .iter()
+        .any(|n| n.typed_code == NoticeCode::NoEvidence as i32));
+    assert!(!final_resp
+        .notices
+        .iter()
+        .any(|n| n.typed_code == NoticeCode::ModelOnly as i32));
+}
+
+#[tokio::test]
+async fn model_only_opt_in_true_with_evidence_produces_grounded_answer() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-mo-with-ev".to_string();
+    let session_id = "sess-mo-with-ev".to_string();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let mut req = test_query_request("what is rust?", "00000000-0000-4000-8000-000000000001");
+    req.allow_model_only = Some(true);
+    let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+        "doc-rust", "chk-1", 0.95,
+    )]));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+        "doc-rust", "chk-2", 0.85,
+    )]));
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Rust is a systems language [1].".into(),
+        cited_evidence_ids: vec!["1".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(ExtractGraphContextNode::new(None, None));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense),
+        Some(fake_bm25),
+        None,
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::new());
+    runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+    let _guard = AbortOnDrop(Some(handle));
+
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
+        }
+        events
+    })
+    .await
+    .expect("events within 5s");
+
+    let final_resp = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => wc.final_response.clone(),
+            _ => None,
+        })
+        .expect("final response present");
+
+    assert_eq!(
+        final_resp.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    assert!(!final_resp.citations.is_empty());
+    assert!(!final_resp.structured_citations.is_empty());
+    assert!(!final_resp
+        .notices
+        .iter()
+        .any(|n| n.typed_code == NoticeCode::ModelOnly as i32));
+}
+
+#[tokio::test]
+async fn model_only_prompt_assembly_empty_evidence() {
+    let cancel = CancellationToken::new();
+    let mut req = test_query_request(
+        "what is the meaning of life?",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(true);
+    let mut ctx = WorkflowContext::new("sess-prompt-mo".into(), "trace-prompt-mo".into(), &req);
+    ctx.evidence_blocks = vec![];
+
+    let node = AssemblePromptNode::new();
+    let result = node.run(&mut ctx, &cancel).await;
+    assert!(
+        result.is_ok(),
+        "prompt assembly must succeed when allow_model_only is true on empty evidence"
+    );
+    assert!(!ctx.assembled_prompt.is_empty());
+    assert!(ctx
+        .assembled_prompt
+        .contains("Question: what is the meaning of life?"));
+    assert!(!ctx.assembled_prompt.contains("<EVIDENCE"));
+}
+
+#[tokio::test]
+async fn model_only_prompt_assembly_rejects_when_opt_in_false() {
+    let cancel = CancellationToken::new();
+    let mut req = test_query_request(
+        "what is the meaning of life?",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new("sess-prompt-fail".into(), "trace-prompt-fail".into(), &req);
+    ctx.evidence_blocks = vec![];
+
+    let node = AssemblePromptNode::new();
+    let result = node.run(&mut ctx, &cancel).await;
+    assert!(
+        result.is_err(),
+        "prompt assembly must fail when allow_model_only is false on empty evidence"
+    );
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, NodeErrorKind::PromptAssemblyFailed);
+    assert_eq!(
+        err.message,
+        "No evidence blocks provided for prompt assembly"
+    );
+}

@@ -55,6 +55,10 @@ pub struct WorkflowContext {
     ///
     /// Resolved once at admission from the request flag and never re-read from configuration downstream.
     pub disable_graph_context: bool,
+    /// Whether model-only answers are permitted when no evidence survives retrieval.
+    ///
+    /// Resolved once at admission in the order request, then configuration, then false (D-10/D-12), and never re-read downstream.
+    pub allow_model_only: bool,
     pub variants: Vec<String>,
     pub query_embedding: Option<Vec<f32>>,
     pub graph_context: String,
@@ -80,6 +84,7 @@ impl WorkflowContext {
             original_query: request.query.clone(),
             filter: request.filter.clone(),
             disable_graph_context: request.disable_graph_context.unwrap_or(false),
+            allow_model_only: request.allow_model_only.unwrap_or(false),
             variants: Vec::new(),
             query_embedding: None,
             graph_context: String::new(),
@@ -247,6 +252,19 @@ pub fn run_inline_prompt_generation_remainder<'a>(
             match result {
                 Ok(output) => {
                     ctx.update_from_model_output(&output);
+                    if ctx.allow_model_only
+                        && (ctx.evidence_blocks.is_empty()
+                            || ctx.answer_basis == crate::pb::lancet::v1::AnswerBasis::ModelOnly)
+                    {
+                        ctx.answer_basis = crate::pb::lancet::v1::AnswerBasis::ModelOnly;
+                        ctx.citations.clear();
+                        ctx.structured_citations.clear();
+                        ctx.add_notice(crate::workflow::notice(
+                            crate::pb::lancet::v1::NoticeCode::ModelOnly,
+                            "Answer generated from parametric model knowledge without corpus evidence.",
+                            crate::pb::lancet::v1::NoticeSeverity::Info,
+                        ));
+                    }
                     sink.send_event_or_cancel(
                         events::answer_chunk(ctx.answer.clone(), true),
                         cancel,

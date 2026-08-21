@@ -83,12 +83,18 @@ pub const MAX_SERVICE_OUTPUT_TOKENS: u32 = 4_096;
 pub const MAX_SERVICE_TOTAL_TOKENS: u32 =
     MAX_SERVICE_EVIDENCE_TOKEN_BUDGET + MAX_SERVICE_OUTPUT_TOKENS;
 
-/// Shared carrier governing evidence token budget, max output tokens, and total usage ceiling.
+/// Shared carrier governing evidence token budget, max output tokens, total usage ceiling,
+/// and whether model-only answers are permitted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GroundingLimits {
     evidence_token_budget: u32,
     max_output_tokens: u32,
     total_tokens_ceiling: u32,
+    /// Whether model-only answers are permitted when no evidence survives retrieval.
+    ///
+    /// When true, grounding validation accepts `AnswerBasis::ModelOnly` and permits an empty
+    /// `cited_evidence_ids` list *only* for model-only answers. When false, both conditions are rejected.
+    allow_model_only: bool,
 }
 
 impl GroundingLimits {
@@ -135,6 +141,7 @@ impl GroundingLimits {
             evidence_token_budget,
             max_output_tokens,
             total_tokens_ceiling,
+            allow_model_only: false,
         })
     }
 
@@ -154,6 +161,15 @@ impl GroundingLimits {
     pub fn total_tokens_ceiling(&self) -> u32 {
         self.total_tokens_ceiling
     }
+
+    pub fn allow_model_only(&self) -> bool {
+        self.allow_model_only
+    }
+
+    pub fn with_allow_model_only(mut self, allow_model_only: bool) -> Self {
+        self.allow_model_only = allow_model_only;
+        self
+    }
 }
 
 impl ModelOutput {
@@ -169,7 +185,7 @@ impl ModelOutput {
         packed_evidence: &[EvidenceBlock],
         limits: GroundingLimits,
     ) -> Result<(), GenerationError> {
-        if self.answer_basis == AnswerBasis::ModelOnly {
+        if !limits.allow_model_only && self.answer_basis == AnswerBasis::ModelOnly {
             return Err(GenerationError::new(
                 GenerationErrorKind::SchemaValidation,
                 "ModelOnly answer basis is not supported on Phase 03 QueryRAG path",
@@ -190,7 +206,9 @@ impl ModelOutput {
             ));
         }
 
-        if self.cited_evidence_ids.is_empty() {
+        if self.cited_evidence_ids.is_empty()
+            && (!limits.allow_model_only || self.answer_basis != AnswerBasis::ModelOnly)
+        {
             return Err(GenerationError::new(
                 GenerationErrorKind::SchemaValidation,
                 format!(

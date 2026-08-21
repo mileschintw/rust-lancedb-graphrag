@@ -571,6 +571,7 @@ async fn workflow_phase5_settings_applied_to_production() {
         graph_node_timeout_ms: 5678,
         prompt_timeout_ms: 6789,
         generation_node_timeout_ms: 7890,
+        allow_model_only_answers: false,
     };
 
     let service = configured_service(

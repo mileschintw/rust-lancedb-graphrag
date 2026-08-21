@@ -16,6 +16,7 @@ graph_operation_timeout_ms = 4000
 graph_node_timeout_ms = 15000
 prompt_timeout_ms = 2000
 generation_node_timeout_ms = 65000
+allow_model_only_answers = false # D-10/D-12
 
 [engine.retrieval]
 candidate_limit = 32

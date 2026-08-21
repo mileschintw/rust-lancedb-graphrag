@@ -417,11 +417,12 @@ impl WorkflowRunner {
 
             match kind {
                 NodeKind::AssemblePrompt | NodeKind::GenerateAnswer => {
-                    if ctx
-                        .notices
-                        .iter()
-                        .any(|n| n.typed_code == NoticeCode::NoEvidence as i32)
-                        || (ctx.final_candidates.is_empty() && ctx.evidence_blocks.is_empty())
+                    if !ctx.allow_model_only
+                        && (ctx
+                            .notices
+                            .iter()
+                            .any(|n| n.typed_code == NoticeCode::NoEvidence as i32)
+                            || (ctx.final_candidates.is_empty() && ctx.evidence_blocks.is_empty()))
                     {
                         break;
                     }
@@ -481,7 +482,7 @@ impl WorkflowRunner {
                     .iter()
                     .any(|n| n.typed_code == NoticeCode::NoEvidence as i32);
 
-                if !is_zero_evidence {
+                if ctx.allow_model_only || !is_zero_evidence {
                     if let Err(err) = remainder_bridge(&mut ctx, deps, &sink, &cancel).await {
                         overall_err = Some(err);
                     }

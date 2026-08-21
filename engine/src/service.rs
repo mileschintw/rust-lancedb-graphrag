@@ -814,7 +814,10 @@ impl LancetService for LancetServiceImpl {
             session_id.clone(),
         );
 
-        let ctx = workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
+        let wf = &self.effective_settings.workflow;
+        let mut ctx =
+            workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
+        ctx.allow_model_only = req.allow_model_only.unwrap_or(wf.allow_model_only_answers);
         let (runner, deps) = self.build_production_workflow();
 
         let parent_span = tracing::info_span!(

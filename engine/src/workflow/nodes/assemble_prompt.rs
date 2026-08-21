@@ -68,10 +68,14 @@ impl Node for AssemblePromptNode {
             }
 
             if ctx.evidence_blocks.is_empty() {
-                return Err(NodeError::new(
-                    NodeErrorKind::PromptAssemblyFailed,
-                    "No evidence blocks provided for prompt assembly",
-                ));
+                if !ctx.allow_model_only {
+                    return Err(NodeError::new(
+                        NodeErrorKind::PromptAssemblyFailed,
+                        "No evidence blocks provided for prompt assembly",
+                    ));
+                }
+                ctx.assembled_prompt = crate::prompt::pack_model_only_prompt(&ctx.original_query);
+                return Ok(());
             }
 
             match pack_evidence_and_graph_prompt(

@@ -137,6 +137,9 @@ pub fn default_prompt_timeout_ms() -> u64 {
 pub fn default_generation_node_timeout_ms() -> u64 {
     65000
 }
+pub fn default_allow_model_only_answers() -> bool {
+    false
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,6 +158,12 @@ pub struct WorkflowConfigSettings {
     pub prompt_timeout_ms: u64,
     #[serde(default = "default_generation_node_timeout_ms")]
     pub generation_node_timeout_ms: u64,
+    /// Whether model-only answers are allowed when no evidence survives retrieval.
+    ///
+    /// Defaults to false. A request's `allow_model_only` field overrides this default when present;
+    /// the resolution order is request, then configuration, then false (D-10/D-12).
+    #[serde(default = "default_allow_model_only_answers")]
+    pub allow_model_only_answers: bool,
 }
 
 impl Default for WorkflowConfigSettings {
@@ -167,6 +176,7 @@ impl Default for WorkflowConfigSettings {
             graph_node_timeout_ms: default_graph_node_timeout_ms(),
             prompt_timeout_ms: default_prompt_timeout_ms(),
             generation_node_timeout_ms: default_generation_node_timeout_ms(),
+            allow_model_only_answers: default_allow_model_only_answers(),
         }
     }
 }
@@ -181,6 +191,7 @@ impl WorkflowConfigSettings {
             graph_node_timeout_ms: self.graph_node_timeout_ms,
             prompt_timeout_ms: self.prompt_timeout_ms,
             generation_node_timeout_ms: self.generation_node_timeout_ms,
+            allow_model_only_answers: self.allow_model_only_answers,
         }
     }
 }
@@ -194,6 +205,11 @@ pub struct WorkflowSettings {
     pub graph_node_timeout_ms: u64,
     pub prompt_timeout_ms: u64,
     pub generation_node_timeout_ms: u64,
+    /// Whether model-only answers are allowed when no evidence survives retrieval.
+    ///
+    /// Defaults to false. A request's `allow_model_only` field overrides this default when present;
+    /// the resolution order is request, then configuration, then false (D-10/D-12).
+    pub allow_model_only_answers: bool,
 }
 
 impl Default for WorkflowSettings {
@@ -613,6 +629,20 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
     if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS") {
         if let Ok(val) = value.trim().parse::<u64>() {
             settings.engine.workflow.generation_node_timeout_ms = val;
+        }
+    }
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__WORKFLOW__ALLOW_MODEL_ONLY_ANSWERS") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            settings.engine.workflow.allow_model_only_answers = match trimmed {
+                "true" | "1" => true,
+                "false" | "0" => false,
+                other => {
+                    return Err(::config::ConfigError::Message(format!(
+                        "LANCET_ENGINE__WORKFLOW__ALLOW_MODEL_ONLY_ANSWERS must be true/false, got {other:?}"
+                    )))
+                }
+            };
         }
     }
     if let Ok(value) = std::env::var("LANCET_OPENROUTER__EMBEDDING_ENDPOINT") {

@@ -132,6 +132,7 @@ impl Node for GenerateAnswerNode {
             match final_result {
                 Ok(output) => {
                     if let Some(limits) = self.grounding_limits {
+                        let limits = limits.with_allow_model_only(ctx.allow_model_only);
                         output
                             .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
                             .map_err(|err| {
@@ -143,41 +144,62 @@ impl Node for GenerateAnswerNode {
                             })?;
                     }
                     ctx.update_from_model_output(&output);
-                    let resolved_citations = match self.citation_excerpt_max_chars {
-                        Some(max_chars) => resolve_citations_with_max_chars(
-                            &ctx.citations,
-                            &ctx.evidence_blocks,
-                            max_chars,
-                        ),
-                        None => resolve_citations(&ctx.citations, &ctx.evidence_blocks),
-                    };
-                    if self.grounding_limits.is_some()
-                        && resolved_citations.len() != ctx.citations.len()
+                    if ctx.allow_model_only
+                        && (ctx.evidence_blocks.is_empty()
+                            || ctx.answer_basis == crate::pb::lancet::v1::AnswerBasis::ModelOnly)
                     {
-                        return Err(NodeError::new(
-                            NodeErrorKind::LlmGenerationFailed,
-                            "failed to resolve all cited evidence identities completely",
-                        )
-                        .with_context(Some(ctx.session_id.clone()), Some(ctx.trace_id.clone())));
+                        ctx.answer_basis = crate::pb::lancet::v1::AnswerBasis::ModelOnly;
+                        ctx.citations.clear();
+                        ctx.structured_citations.clear();
+                        ctx.add_notice(crate::workflow::notice(
+                            crate::pb::lancet::v1::NoticeCode::ModelOnly,
+                            "Answer generated from parametric model knowledge without corpus evidence.",
+                            crate::pb::lancet::v1::NoticeSeverity::Info,
+                        ));
+                    } else {
+                        let resolved_citations = match self.citation_excerpt_max_chars {
+                            Some(max_chars) => resolve_citations_with_max_chars(
+                                &ctx.citations,
+                                &ctx.evidence_blocks,
+                                max_chars,
+                            ),
+                            None => resolve_citations(&ctx.citations, &ctx.evidence_blocks),
+                        };
+                        if self.grounding_limits.is_some()
+                            && resolved_citations.len() != ctx.citations.len()
+                        {
+                            return Err(NodeError::new(
+                                NodeErrorKind::LlmGenerationFailed,
+                                "failed to resolve all cited evidence identities completely",
+                            )
+                            .with_context(
+                                Some(ctx.session_id.clone()),
+                                Some(ctx.trace_id.clone()),
+                            ));
+                        }
+                        ctx.structured_citations = resolved_citations
+                            .iter()
+                            .map(|c| crate::pb::lancet::v1::StructuredCitation {
+                                chunk_id: c.chunk_id.clone(),
+                                document_id: c.document_id.clone(),
+                                title: c
+                                    .title
+                                    .as_deref()
+                                    .unwrap_or("Untitled Document")
+                                    .to_string(),
+                                section_path: c
+                                    .section_path
+                                    .as_deref()
+                                    .unwrap_or("Root")
+                                    .to_string(),
+                                excerpt: c.bounded_excerpt.clone(),
+                                is_truncated: c.is_truncated,
+                                score: c.score,
+                                rank: c.rank as i32,
+                                content_type: c.content_type.clone(),
+                            })
+                            .collect();
                     }
-                    ctx.structured_citations = resolved_citations
-                        .iter()
-                        .map(|c| crate::pb::lancet::v1::StructuredCitation {
-                            chunk_id: c.chunk_id.clone(),
-                            document_id: c.document_id.clone(),
-                            title: c
-                                .title
-                                .as_deref()
-                                .unwrap_or("Untitled Document")
-                                .to_string(),
-                            section_path: c.section_path.as_deref().unwrap_or("Root").to_string(),
-                            excerpt: c.bounded_excerpt.clone(),
-                            is_truncated: c.is_truncated,
-                            score: c.score,
-                            rank: c.rank as i32,
-                            content_type: c.content_type.clone(),
-                        })
-                        .collect();
                     Ok(())
                 }
                 Err(err) => {
