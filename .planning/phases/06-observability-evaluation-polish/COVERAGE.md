@@ -18,7 +18,7 @@ Re-read of the phase scope confirms the same for every other candidate signal:
 |---|---|---|
 | `lancet.v1.LancetService` (gRPC) | no | Defined and implemented in this repo; the contract change is D-74's own additive edit |
 | `/rag/query` (HTTP/SSE) | no | This project's own endpoint, served by `gateway/main.go` |
-| OpenRouter chat + embeddings | no change | Pre-existing integration. Phase 6 adds no call, changes no endpoint, no model pin and no request shape. D-14 forbids a second provider call; D-19 freezes the structured-output schema |
+| OpenRouter chat + embeddings | no change | Pre-existing integration. Phase 6 adds no call, changes no endpoint, and no model pin. D-14 forbids a second provider call. D-19 still freezes the structured-output *object shape* (properties and required keys). Plan 06-13 admits the already-published proto value `model_only` as one extra `answer_basis` enum member on that same chat schema (D-10); that is not a new external API. |
 | `buf.build` remote plugins | no | A build-time code generator, not a runtime API integration. Pinned by exact version in `buf.gen.yaml`. Phase 6.07 treats network-or-`~/.cache/buf` as an execution prerequisite, not a product API surface. |
 | OpenTelemetry / OTLP collectors | out of scope | Phase 6.2 (D-36/D-38/D-43). `gateway/internal/telemetry` ships as an OTel-free stub in plan 06-04 |
 
