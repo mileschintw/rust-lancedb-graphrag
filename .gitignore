@@ -126,6 +126,7 @@ dmypy.json
 logs/
 *.log
 
-# GSD cross-AI review scratch (transient)
+# GSD runtime & transient state
+.gsd/
 .gsd-review-tmp/
 .planning/*.lock
