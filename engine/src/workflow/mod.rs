@@ -291,6 +291,7 @@ pub fn run_inline_prompt_generation_remainder<'a>(
             );
             gen_req.graph_facts = ctx.graph_facts.clone();
             gen_req.graph_weight = deps.graph_weight;
+            gen_req.allow_model_only = ctx.allow_model_only;
             gen_req.session_id = Some(ctx.session_id.clone());
             gen_req.correlation_id = Some(ctx.trace_id.clone());
             gen_req.cancel = Some(cancel.clone());

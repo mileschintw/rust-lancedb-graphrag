@@ -103,6 +103,7 @@ impl Node for GenerateAnswerNode {
                 GenerationRequest::new(ctx.original_query.clone(), ctx.evidence_blocks.clone());
             req.graph_facts = ctx.graph_facts.clone();
             req.graph_weight = self.graph_weight;
+            req.allow_model_only = ctx.allow_model_only;
             req.session_id = Some(ctx.session_id.clone());
             req.correlation_id = Some(ctx.trace_id.clone());
             req.cancel = Some(cancel.clone());
@@ -195,10 +196,14 @@ impl Node for GenerateAnswerNode {
                         for outcome in &outcomes {
                             match &outcome.resolution {
                                 Resolution::Unchanged(id) => {
-                                    repaired_citations.push(id.clone());
+                                    if !repaired_citations.contains(id) {
+                                        repaired_citations.push(id.clone());
+                                    }
                                 }
                                 Resolution::Repaired(id) => {
-                                    repaired_citations.push(id.clone());
+                                    if !repaired_citations.contains(id) {
+                                        repaired_citations.push(id.clone());
+                                    }
                                     edits.push((outcome.span, Some(id.clone())));
                                     pending_notices.push(crate::workflow::notice(
                                         crate::pb::lancet::v1::NoticeCode::CitationRepaired,

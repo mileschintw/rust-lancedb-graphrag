@@ -442,6 +442,8 @@ pub struct GenerationRequest {
     /// `main.rs`'s pre-check and the provider adapter's actual outbound call
     /// read from — never independently derived in two places.
     pub graph_weight: f64,
+    /// Whether model-only answers are permitted when no evidence survives retrieval.
+    pub allow_model_only: bool,
     pub session_id: Option<String>,
     pub correlation_id: Option<String>,
     #[serde(skip)]
@@ -456,6 +458,7 @@ impl PartialEq for GenerationRequest {
             evidence,
             graph_facts,
             graph_weight,
+            allow_model_only,
             session_id,
             correlation_id,
             cancel: _,
@@ -465,6 +468,7 @@ impl PartialEq for GenerationRequest {
             && *evidence == other.evidence
             && *graph_facts == other.graph_facts
             && graph_weight.to_bits() == other.graph_weight.to_bits()
+            && *allow_model_only == other.allow_model_only
             && *session_id == other.session_id
             && *correlation_id == other.correlation_id
     }
@@ -478,6 +482,7 @@ impl GenerationRequest {
             evidence,
             graph_facts: Vec::new(),
             graph_weight: 1.0,
+            allow_model_only: false,
             session_id: None,
             correlation_id: None,
             cancel: None,

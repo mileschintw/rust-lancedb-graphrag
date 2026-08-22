@@ -510,11 +510,11 @@ Plans:
 
 **Wave 11** *(gap closure; blocked on Wave 8 / 06-10)*
 
-- [ ] 06-13-PLAN.md — SC3 production packing: empty-evidence OpenRouter branch, model-only policy, answer_basis schema admits model_only, production-shaped runner, fail-closed test gates (D-10/D-11 / DEBT-RAG-01).
+- [x] 06-13-PLAN.md — SC3 production packing: empty-evidence OpenRouter branch, model-only policy, answer_basis schema admits model_only, production-shaped runner, fail-closed test gates (D-10/D-11 / DEBT-RAG-01).
 
 **Wave 12** *(gap closure; blocked on Wave 9 / 06-11 and Wave 11 / 06-13 because generate.rs, prompt.rs, workflow_phase5.rs, and the test-count gate overlap)*
 
-- [ ] 06-14-PLAN.md — SC5 citation-repair de-dupe: first-occurrence unique ids plus repeated-marker and mixed-spelling tests, fail-closed test gates (D-14 / DEBT-RAG-03).
+- [x] 06-14-PLAN.md — SC5 citation-repair de-dupe: first-occurrence unique ids plus repeated-marker and mixed-spelling tests, fail-closed test gates (D-14 / DEBT-RAG-03).
 
 ### Phase 6.1: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
 

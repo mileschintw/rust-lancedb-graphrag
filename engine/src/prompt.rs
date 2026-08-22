@@ -211,9 +211,19 @@ If corpus evidence conflicts, state the conflict clearly and disclose mixed answ
 When evidence contradicts your prior knowledge, the evidence is authoritative; say so."
 }
 
+/// Returns the system policy string for model-only answer generation.
+///
+/// Unlike the grounded base system policy, this policy does not require evidence citations
+/// or numbered markers, since no corpus evidence is provided to the model.
+pub fn model_only_system_policy() -> &'static str {
+    "System Policy: You are a precise technical assistant. \
+Answer the user's question accurately using your general knowledge. \
+No corpus evidence is provided for this request; do not cite evidence markers."
+}
+
 /// Packs a well-formed prompt for model-only execution containing no numbered evidence blocks.
 pub fn pack_model_only_prompt(question: &str) -> String {
-    format!("{}\n\nQuestion: {}\n", base_system_policy(), question)
+    format!("{}\n\nQuestion: {}\n", model_only_system_policy(), question)
 }
 
 /// Packs evidence chunks into prompt context after reserving the answer token budget.
@@ -590,24 +600,29 @@ pub fn resolve_citations_with_max_chars(
             .iter()
             .find(|e| e.id == normalized_id || e.chunk_id == *raw_id)
         {
-            let (bounded_excerpt, is_truncated) = bounded_unicode_excerpt(&block.text, max_chars);
+            if !citations.iter().any(|c: &StructuredCitation| {
+                c.marker_id == block.id || c.chunk_id == block.chunk_id
+            }) {
+                let (bounded_excerpt, is_truncated) =
+                    bounded_unicode_excerpt(&block.text, max_chars);
 
-            citations.push(StructuredCitation {
-                marker_id: block.id.clone(),
-                chunk_id: block.chunk_id.clone(),
-                document_id: block.document_id.clone(),
-                title: block.title.clone(),
-                section_path: block.section_path.clone(),
-                provenance: block.provenance.clone(),
-                bounded_excerpt,
-                is_truncated,
-                score: block.score,
-                rank: block.rank,
-                content_type: block
-                    .content_type
-                    .clone()
-                    .unwrap_or_else(|| "text/plain".into()),
-            });
+                citations.push(StructuredCitation {
+                    marker_id: block.id.clone(),
+                    chunk_id: block.chunk_id.clone(),
+                    document_id: block.document_id.clone(),
+                    title: block.title.clone(),
+                    section_path: block.section_path.clone(),
+                    provenance: block.provenance.clone(),
+                    bounded_excerpt,
+                    is_truncated,
+                    score: block.score,
+                    rank: block.rank,
+                    content_type: block
+                        .content_type
+                        .clone()
+                        .unwrap_or_else(|| "text/plain".into()),
+                });
+            }
         }
     }
     citations

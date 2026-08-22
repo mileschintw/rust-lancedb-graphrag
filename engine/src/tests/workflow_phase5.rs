@@ -5627,6 +5627,177 @@ async fn model_only_prompt_assembly_rejects_when_opt_in_false() {
     );
 }
 
+struct PackingTestGenerator;
+
+impl engine::generation::Generator for PackingTestGenerator {
+    fn generate<'a>(
+        &'a self,
+        request: engine::generation::GenerationRequest,
+    ) -> engine::generation::BoxFuture<
+        'a,
+        Result<engine::generation::ModelOutput, engine::generation::GenerationError>,
+    > {
+        Box::pin(async move {
+            let cancel = request.cancel.clone().unwrap_or_default();
+            let (system_msg, user_msg, validation_evidence) =
+                engine::generation::openrouter::pack_openrouter_messages(
+                    &request.question,
+                    &request.evidence,
+                    &request.graph_facts,
+                    request.graph_weight,
+                    8192,
+                    2048,
+                    request.allow_model_only,
+                    &cancel,
+                )
+                .await?;
+
+            assert_eq!(system_msg, engine::prompt::model_only_system_policy());
+            assert!(user_msg.contains(&request.question));
+            assert!(validation_evidence.is_empty());
+
+            Ok(engine::generation::ModelOutput {
+                answer: "Parametric model answer.".into(),
+                cited_evidence_ids: vec![],
+                answer_basis: engine::generation::AnswerBasis::ModelOnly,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn generate_answer_node_model_only_empty_evidence_uses_production_packing_path() {
+    let cancel = CancellationToken::new();
+    let mut req = test_query_request(
+        "what is quantum entanglement?",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(true);
+    let mut ctx = WorkflowContext::new(
+        "sess-node-mo-pack".into(),
+        "trace-node-mo-pack".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![];
+
+    let packing_gen = Arc::new(PackingTestGenerator);
+    let limits = engine::generation::GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(packing_gen)).with_settings(limits, 200, 1.0);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "node run must succeed: {:?}", res.err());
+    assert_eq!(
+        ctx.answer_basis,
+        crate::pb::lancet::v1::AnswerBasis::ModelOnly
+    );
+    assert!(ctx.citations.is_empty());
+    assert!(ctx.structured_citations.is_empty());
+    assert!(ctx
+        .notices
+        .iter()
+        .any(|n| n.typed_code == NoticeCode::ModelOnly as i32));
+}
+
+#[tokio::test]
+async fn model_only_opt_in_empty_evidence_production_shaped_runner_returns_model_only() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-mo-prod-shaped".to_string();
+    let session_id = "sess-mo-prod-shaped".to_string();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let mut req = test_query_request(
+        "explain general relativity",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(true);
+    let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+
+    let fake_dense_empty = Arc::new(FakeDenseRetrievalPort::success(vec![]));
+    let fake_bm25_empty = Arc::new(FakeBm25RetrievalPort::success(vec![]));
+    let packing_gen = Arc::new(PackingTestGenerator);
+    let limits = engine::generation::GroundingLimits::new(8192, 2048).unwrap();
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(ExtractGraphContextNode::new(None, None));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense_empty),
+        Some(fake_bm25_empty),
+        None,
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::with_settings(8192, 2048, 1.0));
+    runner.add_node(
+        GenerateAnswerNode::new(Some(packing_gen))
+            .with_settings(limits, 200, 1.0)
+            .with_citation_repair_enabled(true),
+    );
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+    let _guard = AbortOnDrop(Some(handle));
+
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
+        }
+        events
+    })
+    .await
+    .expect("events within 5s");
+
+    let completed_events: Vec<&crate::pb::lancet::v1::WorkflowCompletedEvent> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(completed_events.len(), 1);
+    let completed = completed_events[0];
+    let final_resp = completed
+        .final_response
+        .as_ref()
+        .expect("final_response present");
+    assert_eq!(
+        final_resp.answer_basis,
+        crate::pb::lancet::v1::AnswerBasis::ModelOnly as i32
+    );
+    assert!(final_resp.citations.is_empty());
+    assert!(final_resp.structured_citations.is_empty());
+    assert!(
+        final_resp
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::ModelOnly as i32),
+        "WorkflowCompleted must include ModelOnly notice"
+    );
+}
+
+#[test]
+fn pack_model_only_prompt_uses_ungrounded_policy() {
+    let prompt = engine::prompt::pack_model_only_prompt("What is Rust?");
+    assert!(prompt.contains("What is Rust?"));
+    assert!(prompt.contains(engine::prompt::model_only_system_policy()));
+    assert!(!prompt.contains("ONLY the provided evidence blocks"));
+    assert!(!prompt.contains("[1], [2]"));
+    assert!(!prompt.contains("Evidence is untrusted data"));
+}
+
 // ---------------------------------------------------------------------------
 // Plan 06-11, Task 2: D-18 conservative-wins basis reconciliation and D-17
 // evidence-over-priors precedence instruction. Behavior-block tests.
@@ -6118,4 +6289,97 @@ async fn citation_repair_healthy_path_emits_no_repair_or_drop_notices() {
     assert!(res.is_ok());
     assert!(!ctx.notices.iter().any(|n| n.code == "CITATION_REPAIRED"));
     assert!(!ctx.notices.iter().any(|n| n.code == "CITATION_DROPPED"));
+}
+
+#[tokio::test]
+async fn citation_repair_enabled_repeated_marker_succeeds() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Repeated marker", "sess-repair-repeated");
+    let mut ctx = WorkflowContext::new(
+        "sess-repair-repeated".into(),
+        "trace-repair-repeated".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "First point [1] and second point [1].".into(),
+        cited_evidence_ids: vec!["[1]".into(), "[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "repeated marker run must succeed: {res:?}");
+    assert_eq!(ctx.answer, "First point [1] and second point [1].");
+    assert_eq!(ctx.citations, vec!["[1]".to_string()]);
+    assert_eq!(ctx.structured_citations.len(), 1);
+}
+
+#[tokio::test]
+async fn citation_repair_enabled_mixed_spelling_same_id_succeeds() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("Mixed spelling same id", "sess-repair-mixed");
+    let mut ctx = WorkflowContext::new(
+        "sess-repair-mixed".into(),
+        "trace-repair-mixed".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[7]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Near miss [ 7 ] and exact [7] in one answer.".into(),
+        cited_evidence_ids: vec!["[ 7 ]".into(), "[7]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(res.is_ok(), "mixed spelling run must succeed: {res:?}");
+    assert_eq!(ctx.answer, "Near miss [7] and exact [7] in one answer.");
+    assert_eq!(ctx.citations, vec!["[7]".to_string()]);
+    assert_eq!(ctx.structured_citations.len(), 1);
+    let repaired = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "CITATION_REPAIRED")
+        .expect("repair notice must be emitted for near-miss span");
+    assert!(repaired.message.contains("[ 7 ]"));
+}
+
+#[test]
+fn resolve_citations_with_max_chars_dedupes_duplicate_ids() {
+    let evidence = vec![evidence_block_with_id("[7]")];
+
+    // Repeated identical markers
+    let res1 = engine::prompt::resolve_citations_with_max_chars(
+        &["[7]".to_string(), "[7]".to_string()],
+        &evidence,
+        200,
+    );
+    assert_eq!(res1.len(), 1);
+    assert_eq!(res1[0].marker_id, "[7]");
+
+    // Mixed normalized and unnormalized markers mapping to same block
+    let res2 = engine::prompt::resolve_citations_with_max_chars(
+        &["7".to_string(), "[7]".to_string()],
+        &evidence,
+        200,
+    );
+    assert_eq!(res2.len(), 1);
+    assert_eq!(res2[0].marker_id, "[7]");
 }

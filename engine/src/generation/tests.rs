@@ -874,8 +874,105 @@ async fn openrouter_schema_declares_output_bounds() {
     );
     assert_eq!(
         schema["properties"]["answer_basis"]["enum"],
-        json!(["retrieval", "mixed"])
+        json!(["retrieval", "mixed", "model_only"])
     );
+}
+
+#[tokio::test]
+async fn openrouter_empty_evidence_opt_in_reaches_chat_with_model_only_schema() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let captured_request = Arc::new(Mutex::new(None));
+    let captured_request_clone = captured_request.clone();
+
+    let server_handle = thread::spawn(move || {
+        let (mut models_stream, _) =
+            accept_with_deadline(&listener).expect("accept models request");
+        let _ = read_http_request(&mut models_stream);
+        write_json_response(
+            &mut models_stream,
+            json!({
+                "data": [{
+                    "id": "mock/strict-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
+
+        let (mut chat_stream, _) = accept_with_deadline(&listener).expect("accept chat request");
+        let req = read_http_request(&mut chat_stream);
+        *captured_request_clone.lock().unwrap() = Some(req);
+
+        let model_output_json = json!({
+            "answer": "Parametric model knowledge answer.",
+            "cited_evidence_ids": [],
+            "answer_basis": "model_only",
+            "notices": [],
+            "warnings": []
+        })
+        .to_string();
+
+        let chat_resp_payload = json!({
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": model_output_json
+                    },
+                    "finish_reason": "stop"
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 50,
+                "completion_tokens": 20,
+                "total_tokens": 70
+            }
+        });
+        write_json_response(&mut chat_stream, chat_resp_payload);
+    });
+
+    let mock_chat_url = format!("http://{addr}/chat/completions");
+    let mock_models_url = format!("http://{addr}/models");
+
+    let adapter = OpenRouterGenerator::new("test-key", "mock/strict-model")
+        .expect("adapter created")
+        .with_endpoints(mock_chat_url, mock_models_url);
+
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
+
+    let mut req = GenerationRequest::new("Explain general relativity.", vec![]);
+    req.allow_model_only = true;
+
+    let res = adapter.generate(req).await;
+    assert!(
+        res.is_ok(),
+        "generate on opted-in empty evidence must succeed: {:?}",
+        res.err()
+    );
+    let output = res.unwrap();
+    assert_eq!(output.answer_basis, AnswerBasis::ModelOnly);
+    assert!(output.cited_evidence_ids.is_empty());
+
+    server_handle.join().expect("server completed");
+    let req_str = captured_request.lock().unwrap().take().unwrap();
+    let body_str = req_str.split_once("\r\n\r\n").unwrap().1;
+    let body: serde_json::Value = serde_json::from_str(body_str).unwrap();
+    let schema = &body["response_format"]["json_schema"]["schema"];
+    assert_eq!(
+        schema["properties"]["answer_basis"]["enum"],
+        json!(["retrieval", "mixed", "model_only"])
+    );
+    assert_eq!(
+        body["messages"][0]["content"],
+        crate::prompt::model_only_system_policy()
+    );
+    assert!(body["messages"][1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("Explain general relativity."));
 }
 
 #[tokio::test]

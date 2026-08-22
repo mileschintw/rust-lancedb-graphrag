@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
-current_plan: 10
+current_plan: 14
 status: executing
-stopped_at: Phase 6 Wave 8 complete (Plan 06-10 executed; support model-only answers as explicit default-off opt-in across config, grounding guards, and runner bypass)
-last_updated: "2026-08-21T23:47:24.596Z"
+stopped_at: Phase 6 gap-closure plans complete (Plans 06-13 and 06-14 executed)
+last_updated: "2026-08-22T00:05:00.000Z"
 state_head: c32118a2a5735db3465546bac28cfa9759252367
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 103
-  completed_plans: 99
+  completed_plans: 103
 milestone_name: milestone
 ---
 
@@ -43,15 +43,17 @@ milestone_name: milestone
 - Phase 06 Wave 6 Plan 06-08 executed: implemented graph ablation flag and distinct `GRAPH_UNAVAILABLE` notices; proved source-chunk query survival.
 - Phase 06 Wave 7 Plan 06-09 executed: converted dense and lexical retrieval paths from fail-closed to degrade (D-13 / DEBT-RAG-01); pinned 3-notice sequence on both-paths degradation.
 - Phase 06 Wave 8 Plan 06-10 executed: supported model-only answers as an explicit, per-request, default-off opt-in (D-10/D-11/D-12/D-84 / DEBT-RAG-01).
+- Phase 06 Wave 11 Plan 06-13 executed: closed SC3 gap with OpenRouter empty-evidence packing branch, dedicated model-only system policy, GenerationRequest allow_model_only plumbing, and answer_basis schema enum admission.
+- Phase 06 Wave 12 Plan 06-14 executed: closed SC5 gap with first-occurrence de-duplication of repaired citation IDs in GenerateAnswerNode and resolve_citations_with_max_chars.
 
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
 - **Status:** Ready to execute
-- **Current Plan:** 10
+- **Current Plan:** 14
 - **Total Plans in Phase:** 14
-- **Completed Plans in Phase:** 10 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10)
-- **Progress:** [██████████] 83.3%
+- **Completed Plans in Phase:** 14 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14)
+- **Progress:** [██████████] 100%
 
 ## Completed Phases
 

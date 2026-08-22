@@ -237,6 +237,68 @@ pub struct OpenRouterGenerator {
     >,
 }
 
+/// Packs system policy, user prompt, and validation evidence blocks for OpenRouter structured generation.
+///
+/// Returns `(system_message, user_message, validation_evidence_blocks)`.
+/// When `evidence` is empty and `allow_model_only` is true, the ungrounded model-only prompt is packed
+/// and the returned validation evidence slice is empty.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn pack_openrouter_messages(
+    question: &str,
+    evidence: &[crate::prompt::EvidenceBlock],
+    graph_facts: &[crate::prompt::GraphFactBlock],
+    graph_weight: f64,
+    evidence_budget: usize,
+    max_output_tokens: usize,
+    allow_model_only: bool,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Result<(String, String, Vec<crate::prompt::EvidenceBlock>), GenerationError> {
+    if cancel.is_cancelled() {
+        return Err(GenerationError::new(
+            GenerationErrorKind::Cancelled,
+            "prompt assembly cancelled",
+        ));
+    }
+
+    if evidence.is_empty() && allow_model_only {
+        let system_msg = crate::prompt::model_only_system_policy().to_string();
+        let user_msg = format!("Question: {}\n", question);
+        return Ok((system_msg, user_msg, Vec::new()));
+    }
+
+    let packed_evidence = pack_evidence_and_graph_prompt(
+        question,
+        evidence,
+        graph_facts,
+        graph_weight,
+        evidence_budget,
+        max_output_tokens,
+        cancel,
+    )
+    .await
+    .map_err(|err| match err {
+        crate::prompt::PromptAssemblyError::Cancelled => {
+            GenerationError::new(GenerationErrorKind::Cancelled, "prompt assembly cancelled")
+        }
+        _ => GenerationError::new(
+            GenerationErrorKind::InvalidRequest,
+            format!("prompt assembly failed: {err}"),
+        ),
+    })?;
+
+    if cancel.is_cancelled() {
+        return Err(GenerationError::new(
+            GenerationErrorKind::Cancelled,
+            "prompt assembly cancelled",
+        ));
+    }
+
+    let system_msg = "You are a precise technical RAG engine.".to_string();
+    let user_msg = packed_evidence.prompt;
+
+    Ok((system_msg, user_msg, packed_evidence.evidence))
+}
+
 impl OpenRouterGenerator {
     pub fn new_with_config(
         api_key: impl Into<String>,
@@ -469,30 +531,17 @@ impl OpenRouterGenerator {
             ));
         }
 
-        // This is the call site whose packed prompt becomes the real outbound
-        // `messages[1].content` — it reads `request.graph_facts` and
-        // `request.graph_weight` from the request it was actually handed, not a
-        // separately-derived value, so a configured graph_weight provably
-        // reaches the wire (REVIEWS.md HIGH).
-        let packed_evidence = pack_evidence_and_graph_prompt(
+        let (system_msg, user_msg, validation_evidence) = pack_openrouter_messages(
             &request.question,
             &request.evidence,
             &request.graph_facts,
             request.graph_weight,
             self.config.evidence_token_budget(),
             self.config.max_completion_tokens(),
+            request.allow_model_only,
             &cancel,
         )
-        .await
-        .map_err(|err| match err {
-            crate::prompt::PromptAssemblyError::Cancelled => {
-                GenerationError::new(GenerationErrorKind::Cancelled, "prompt assembly cancelled")
-            }
-            _ => GenerationError::new(
-                GenerationErrorKind::InvalidRequest,
-                format!("prompt assembly failed: {err}"),
-            ),
-        })?;
+        .await?;
 
         if cancel.is_cancelled() {
             return Err(GenerationError::new(
@@ -500,9 +549,6 @@ impl OpenRouterGenerator {
                 "OpenRouter request cancelled after prompt assembly",
             ));
         }
-
-        let system_msg = request.system_policy.clone();
-        let user_msg = packed_evidence.prompt;
 
         let schema_json = serde_json::json!({
             "type": "object",
@@ -521,7 +567,7 @@ impl OpenRouterGenerator {
                 },
                 "answer_basis": {
                     "type": "string",
-                    "enum": ["retrieval", "mixed"]
+                    "enum": ["retrieval", "mixed", "model_only"]
                 },
                 "notices": {
                     "type": "array",
@@ -739,10 +785,11 @@ impl OpenRouterGenerator {
         }
 
         // Validate semantic grounding against packed evidence IDs per D-17, D-22, D-28
-        model_output.validate_grounding_with_limits(
-            &packed_evidence.evidence,
-            *self.config.grounding_limits,
-        )?;
+        let limits = self
+            .config
+            .grounding_limits
+            .with_allow_model_only(request.allow_model_only);
+        model_output.validate_grounding_with_limits(&validation_evidence, limits)?;
 
         Ok(model_output)
     }
