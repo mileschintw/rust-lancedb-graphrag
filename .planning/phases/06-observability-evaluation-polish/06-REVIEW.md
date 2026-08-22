@@ -33,6 +33,11 @@ This is a targeted re-review of the SC3/SC5 gap-closure delta (`953b22c`, plans 
 06-14). Scope was pinned to the eight source files the commit touched; nothing outside them
 was re-derived or re-reviewed.
 
+> **`files_reviewed: 8` is a delta scope, not a coverage regression.** The phase's full
+> 57-file scope was reviewed at commit `195edb2`; that report is preserved in git and its
+> 18 findings are dispositioned in the carry-forward table below. Anything reading this
+> frontmatter should not read `8` as the phase's total reviewed surface.
+
 **What genuinely closed.**
 
 *SC5's duplicate-ID failure is fixed and provably so.* Both concrete repro inputs from the
@@ -94,8 +99,9 @@ exercised. Production wires `OpenRouterGenerator` as the sole generator
 
 **Prior findings still open:** five in-scope items from the pre-gap-closure review remain open
 (CR-02 — partially, CR-03, WR-01, WR-04, WR-11), plus CR-04 and
-CR-05 deferred to Phase 6.1, plus eight marked not re-checked because their files sit outside
-the pinned eight-file scope. See the carry-forward section; those are not counted in the
+CR-05 deferred to Phase 6.1, plus **ten** marked not re-checked because their files sit outside
+the pinned eight-file scope (WR-02, WR-03, WR-05, WR-06, WR-07, WR-08, WR-09, WR-10, WR-12,
+WR-13 — 1 resolved + 1 partial + 4 still open + 2 deferred + 10 not re-checked = 18). See the carry-forward section; those are not counted in the
 frontmatter totals.
 
 ---
@@ -429,7 +435,7 @@ items are **not** counted in the frontmatter totals.
 | CR-03 (total-drop yields MODEL_ONLY basis with no MODEL_ONLY notice, against an explicit opt-out) | **still open** — `generate.rs:240-266` is byte-identical in `953b22c`; `citation_repair_enabled_drops_unresolvable_marker_and_emits_notice` still passes with `ctx.allow_model_only == false` and no `NoticeCode::ModelOnly` emitted on that route |
 | CR-04 (env-override prefix separator) | **deferred** — Phase 6.1 per `.planning/ROADMAP.md` |
 | CR-05 (`degraded_mode` always false) | **deferred** — Phase 6.1 per `.planning/ROADMAP.md` |
-| WR-01 (`run_inline_prompt_generation_remainder` is a `pub` generation path with no grounding validation) | **still open** — `workflow/mod.rs:294` adds only the `allow_model_only` field; the function is still `pub`, still never calls `validate_grounding_with_limits`, still never runs the D-14 repair pass, still never populates `ctx.structured_citations`, and still carries its own divergent model-only rule at `mod.rs:311-323` |
+| WR-01 (`run_inline_prompt_generation_remainder` is a `pub` generation path with no grounding validation) | **still open, severity corrected to dead-surface** — `workflow/mod.rs:294` adds only the `allow_model_only` field; the function is still `pub`, still never calls `validate_grounding_with_limits`, still never runs the D-14 repair pass, still never populates `ctx.structured_citations`, and still carries its own divergent model-only rule at `mod.rs:311-323`. **Correction (orchestrator, verified after this review):** it is NOT a live fail-open path. All five call sites are in `engine/src/tests/workflow_phase5.rs`, which `engine/src/lib.rs:19-21` declares as `#[cfg(test)] #[path = "tests/workflow_phase5.rs"] pub mod workflow_phase5;` — so every caller compiles only under `cfg(test)` and there is no production caller. It is a dead public library surface. It still matters as a **dependency of the CR-01 fix**: gate it before moving `validate_grounding_with_limits` out of the adapter, or that move makes it genuinely fail-open. |
 | WR-02 (`ANSWER_BASIS_UNSPECIFIED` on successful zero-evidence responses) | not re-checked (outside pinned scope — `runner.rs`, `proto/`) |
 | WR-03 (dead `_disable_graph_context` binding) | not re-checked (outside pinned scope — `service.rs`) |
 | WR-04 (dead `GRAPH_TIMEOUT`/`GRAPH_DEGRADED` constants) | **still open** — `workflow/mod.rs:27-28` unchanged; grep across `engine/` finds no identifier reference, only unrelated string literals in tests |
