@@ -222,6 +222,7 @@ pub struct WorkflowDependencies {
     pub generator: Option<Arc<dyn crate::generation::Generator>>,
     pub retrieval_settings: crate::retrieval::RetrievalSettings,
     pub graph_weight: f64,
+    pub grounding_limits: crate::generation::GroundingLimits,
 }
 
 impl WorkflowDependencies {
@@ -236,6 +237,7 @@ impl WorkflowDependencies {
             generator: None,
             retrieval_settings: crate::retrieval::RetrievalSettings::default(),
             graph_weight: 0.0,
+            grounding_limits: crate::generation::GroundingLimits::default_limits(),
         }
     }
 }
@@ -308,7 +310,47 @@ pub fn run_inline_prompt_generation_remainder<'a>(
 
             match result {
                 Ok(output) => {
-                    ctx.update_from_model_output(&output);
+                    let limits = deps
+                        .grounding_limits
+                        .with_allow_model_only(ctx.allow_model_only);
+                    let validation_res = if ctx.allow_model_only
+                        && output.should_treat_as_model_only(ctx.evidence_blocks.is_empty())
+                    {
+                        let for_validation = output.into_model_only();
+                        for_validation
+                            .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
+                            .map(|_| for_validation)
+                    } else {
+                        output
+                            .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
+                            .map(|_| output)
+                    };
+
+                    let validated_output = match validation_res {
+                        Ok(out) => out,
+                        Err(err) => {
+                            let node_err =
+                                NodeError::new(NodeErrorKind::LlmGenerationFailed, err.message())
+                                    .with_context(
+                                        Some(ctx.session_id.clone()),
+                                        Some(ctx.trace_id.clone()),
+                                    );
+                            let _ = sink
+                                .send_event_or_cancel(
+                                    events::node_failed(
+                                        name_gen,
+                                        node_err.kind,
+                                        &node_err.message,
+                                        false,
+                                    ),
+                                    cancel,
+                                )
+                                .await;
+                            return Err(node_err);
+                        }
+                    };
+
+                    ctx.update_from_model_output(&validated_output);
                     if ctx.allow_model_only
                         && (ctx.evidence_blocks.is_empty()
                             || ctx.answer_basis == crate::pb::lancet::v1::AnswerBasis::ModelOnly)

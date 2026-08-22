@@ -6383,3 +6383,65 @@ fn resolve_citations_with_max_chars_dedupes_duplicate_ids() {
     assert_eq!(res2.len(), 1);
     assert_eq!(res2[0].marker_id, "[7]");
 }
+
+#[tokio::test]
+async fn inline_remainder_rejects_ungrounded_model_output() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-inline-remainder-reject".to_string();
+    let session_id = "sess-inline-remainder-reject".to_string();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let req = test_query_request(
+        "inline remainder reject query",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    let mut ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Answer citing ungrounded id [9999].".into(),
+        cited_evidence_ids: vec!["[9999]".to_string()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut deps = crate::workflow::WorkflowDependencies::new();
+    deps.generator = Some(fake_gen);
+
+    let res = crate::workflow::run_inline_prompt_generation_remainder(
+        &mut ctx,
+        &deps,
+        &sink,
+        &cancel,
+    )
+    .await;
+
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let node_failed_event = events.iter().find(|e| match &e.event {
+        Some(Event::NodeFailed(nf)) => nf.node_name == "GenerateAnswer",
+        _ => false,
+    });
+    assert!(
+        node_failed_event.is_some(),
+        "NodeFailed event for GenerateAnswer must be emitted"
+    );
+}
+

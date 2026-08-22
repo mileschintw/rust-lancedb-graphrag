@@ -103,6 +103,7 @@ impl LancetServiceImpl {
             generator: Some(generator_adapter),
             retrieval_settings: self.effective_settings.retrieval.clone(),
             graph_weight: self.effective_settings.retrieval.graph_weight,
+            grounding_limits: *self.effective_settings.grounding_limits(),
         };
 
         let wf = &self.effective_settings.workflow;
