@@ -1,257 +1,435 @@
 ---
 phase: 06-observability-evaluation-polish
-verified: 2026-08-21T11:40:00Z
+verified: 2026-08-22T18:40:00Z
 status: gaps_found
 score: 5/7 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
+re_verification:
+  previous_status: gaps_found
+  previous_score: 5/7
+  gap_closure_plans:
+    - plan: 06-13-PLAN.md
+      targets: SC3
+      resolution: partial
+    - plan: 06-14-PLAN.md
+      targets: SC5
+      resolution: partial
+  gaps_closed: []
+  gaps_partially_closed:
+    - "SC3 — production packing path repaired (empty-evidence branch + schema enum + policy exist and are reachable); the answer_basis contract is still unpinned, so the run succeeds only if the model volunteers `model_only` unprompted"
+    - "SC5 — the duplicate-ID self-inflicted failure is genuinely fixed and both prior repro inputs now survive end to end; but the provider adapter rejects every repairable input that does not carry a healthy cited marker alongside it, so SC5's core clauses remain unreachable in production"
+  gaps_remaining:
+    - "SC3 (was: failed) — now partial"
+    - "SC5 (was: partial) — still partial, different root cause than the prior report identified"
+  regressions: []
 gaps:
-  - truth: "SC3 — When both retrieval paths fail or evidence is absent and the caller has opted in (default off), the workflow returns answer_basis = MODEL_ONLY with an explicit notice and zero citations; with the flag off, today's fail-closed behavior is unchanged (D-10, D-11, D-12)."
-    status: failed
-    reason: >-
-      The opt-in half cannot produce an answer on the production path. AssemblePromptNode
-      writes pack_model_only_prompt(..) into ctx.assembled_prompt, but nothing on the
-      generation path reads that field; GenerateAnswerNode builds a fresh GenerationRequest
-      from (original_query, evidence_blocks) and OpenRouterGenerator::execute_one_call then
-      unconditionally calls pack_evidence_and_graph_prompt, which returns EmptyEvidence on an
-      empty evidence slice. The error maps to GenerationErrorKind::InvalidRequest, which is not
-      in the retryable set, so the run terminates as NODE_ERROR_KIND_LLM_GENERATION_FAILED
-      before the model is contacted. The flag-OFF half of SC3 is verified and unchanged.
-    artifacts:
-      - path: "engine/src/workflow/nodes/generate.rs"
-        issue: "Lines 102-103 build GenerationRequest::new(ctx.original_query, ctx.evidence_blocks); ctx.assembled_prompt is never passed to the generator."
-      - path: "engine/src/generation/openrouter.rs"
-        issue: "execute_one_call (l.477-495) calls pack_evidence_and_graph_prompt with no empty-evidence branch; the outbound JSON schema (l.521-524) pins answer_basis to [\"retrieval\", \"mixed\"], so a structured-output provider cannot return model_only."
-      - path: "engine/src/prompt.rs"
-        issue: "pack_evidence_and_graph_prompt returns PromptAssemblyError::EmptyEvidence at l.338-340 (pinned by a passing shipped test). pack_model_only_prompt (l.215-217) reuses base_system_policy(), which instructs the model to answer using ONLY the provided evidence blocks and to cite numbered markers — contradicting the mode."
-      - path: "engine/src/workflow/nodes/assemble_prompt.rs"
-        issue: "Line 77 writes ctx.assembled_prompt on the model-only branch; the only non-test consumers of that field are workflow/mod.rs:266 (test-only inline remainder) and workflow/events.rs:229 (checkpoint serializer)."
-      - path: "engine/src/tests/workflow_phase5.rs"
-        issue: "The covering test model_only_opt_in_true_zero_evidence_runs_generation_and_emits_notice (l.5160-5200) constructs GenerateAnswerNode::new(Some(fake_gen)) with no .with_settings(..), leaving grounding_limits: None, and uses FakeGenerator, which never touches pack_evidence_and_graph_prompt or the JSON schema. Production always sets both (service.rs:148-157, main.rs:96)."
-    missing:
-      - "An empty-evidence branch in OpenRouterGenerator::execute_one_call that uses pack_model_only_prompt instead of pack_evidence_and_graph_prompt (or threading ctx.assembled_prompt through GenerationRequest so AssemblePromptNode's output is load-bearing)."
-      - "\"model_only\" admitted to the outbound answer_basis JSON schema enum at openrouter.rs:521-524."
-      - "A model-only system policy that does not instruct the model to cite evidence blocks that do not exist."
-      - "A test driving GenerateAnswerNode WITH .with_settings(limits, ..) against a generator that actually calls pack_evidence_and_graph_prompt on empty evidence."
-  - truth: "SC5 — Citation repair (DEBT-RAG-03) normalizes near-miss markers locally, strips anything still unresolved, emits CITATION_REPAIRED/CITATION_DROPPED, and downgrades the basis if all grounding is lost — no second provider call (D-14)."
+  - truth: "When both retrieval paths fail or evidence is absent and the caller has opted in (default off), the workflow returns answer_basis = MODEL_ONLY with an explicit notice and zero citations; with the flag off, today's fail-closed behavior is unchanged (D-10, D-11, D-12)"
     status: partial
     reason: >-
-      The mechanism exists and the no-second-provider-call clause is pinned by a test, but the
-      repair pass converts its own target case into a hard run failure. repaired_citations is
-      built one entry per extracted marker OCCURRENCE (citations::extract_markers pushes per
-      occurrence with no dedup; citations::resolve_markers is a 1:1 .map), and that list is
-      handed to validate_grounding_with_limits, which rejects duplicate IDs
-      (generation/mod.rs:320-329). Two reproductions: (1) repeated marker — answer "…[1]…[1]…"
-      with evidence ["[1]"] yields two Unchanged("[1]") → duplicate → LlmGenerationFailed;
-      (2) mixed spellings — "[ 7 ]" and "[7]" with evidence ["[7]"] yields Repaired("[7]") +
-      Unchanged("[7]") → same failure. Case (2) is exactly what the widened extractor
-      (citations.rs:82-118) was added to normalize. This is a regression against the
-      repair-disabled path, which compares inline markers as a HashSet (mod.rs:344-357) and
-      tolerates a repeated marker.
+      Plan 06-13 closed the packing half of the prior gap: the empty-evidence branch, the
+      ungrounded system policy, the schema enum and the request-flag plumbing all exist and are
+      reachable from production. What is still missing is the outbound contract that makes the
+      opted-in run deterministic. `model_only_system_policy()` never tells the model to set
+      `answer_basis: "model_only"`, the outbound JSON schema lists `retrieval` first with no
+      description, and BOTH validation sites reject the natural alternative output
+      (`answer_basis: "retrieval"` + empty `cited_evidence_ids`) as a non-retryable
+      SchemaValidation error. The engine's own doc comment says "the engine — not the model's own
+      claim — decides the run is model-only", but the ordering makes the model's claim decisive.
+      SC3's opted-in half therefore succeeds only when the model guesses an instruction it was
+      never given; the failure mode is terminal (no retry) and 100% reachable in production
+      because `OpenRouterGenerator` is the sole wired generator (`engine/src/main.rs:96`).
+      The flag-OFF half of SC3 remains VERIFIED and unregressed.
     artifacts:
-      - path: "engine/src/workflow/nodes/generate.rs"
-        issue: "Lines 185-231 push one repaired_citations entry per marker occurrence with no de-duplication before validation."
-      - path: "engine/src/generation/citations.rs"
-        issue: "extract_markers (l.82-118) emits one ExtractedMarker per occurrence; resolve_markers (l.171-198) maps 1:1. Neither de-duplicates by resolved evidence id."
       - path: "engine/src/prompt.rs"
-        issue: "resolve_citations_with_max_chars (l.576-614) also does not de-duplicate, so a downstream-only fix would produce duplicate StructuredCitation entries on the wire instead of a failure."
+        issue: "`model_only_system_policy()` (lines 218-223) omits any `answer_basis` instruction. It says only \"do not cite evidence markers\"."
+      - path: "engine/src/generation/mod.rs"
+        issue: "Lines 210-220 hard-reject empty `cited_evidence_ids` unless `answer_basis == ModelOnly`, even when `allow_model_only` is true."
+      - path: "engine/src/workflow/nodes/generate.rs"
+        issue: "Line 153 validates the UNMODIFIED `output`; `into_model_only()` is applied only afterwards at line 165, so the node repeats the adapter's rejection instead of correcting it."
+      - path: "engine/src/generation/tests.rs"
+        issue: "`openrouter_empty_evidence_opt_in_reaches_chat_with_model_only_schema` (lines 881-980) hardcodes `\"answer_basis\": \"model_only\"` in the mock response body — the only reason the test is green."
       - path: "engine/src/tests/workflow_phase5.rs"
-        issue: "All eight repair tests (l.5807-6130) use a single distinct marker per answer. No test exercises a repeated marker or a mixed-spelling pair, so the regression is invisible to the green suite."
+        issue: "`PackingTestGenerator` (lines 5630-5668) hardcodes `AnswerBasis::ModelOnly` in its return value. No test anywhere exercises a `retrieval`-basis response on an opted-in empty-evidence request."
     missing:
-      - "De-duplication at construction in generate.rs, preserving first-occurrence order, while keeping the per-occurrence span-edit and notice logic unchanged."
-      - "A repair test whose answer repeats the same marker, and one that mixes [ 7 ] with [7] against evidence [\"[7]\"]."
-deferred:
-  - truth: "WorkflowMetadata / degraded_mode is populated by the engine on the terminal WorkflowCompletedEvent."
-    addressed_in: "Phase 6.2"
-    evidence: "Phase 6.2 success criterion 8: 'Phase 05 D-30's workflow metadata lands both as span attributes and as additive WorkflowCompletedEvent protobuf fields (D-41).'"
-  - truth: "gateway/internal/telemetry performs real telemetry setup (Init() called from main.go)."
-    addressed_in: "Phase 6.2"
-    evidence: "Phase 6.2 goal: 'Ship production-grade OTel traces, metrics and logs across Go and Rust…'; the package doc string and 06-04-PLAN both name it a reserved compiling stub for Phase 6.2 (D-36/D-38/D-43)."
-human_verification:
-  - test: "Adjudicate plan 06-12's flagged prohibition: 'MUST NOT treat the unclassified RAG-03 probe edge as covered or auto-resolved. No 06-SPEC.md exists; the edge remains unresolved pending manual review at phase verification.'"
-    expected: "An explicit owner decision recorded — either the probe edge is accepted as out of scope for Phase 06, or a follow-up item is filed. It must not be silently absorbed into a pass."
-    why_human: "The prohibition carries status: flagged-unverified with verification: manual and names phase verification as its resolution point. There is no 06-SPEC.md to check it against, so no programmatic evidence can resolve it."
-  - test: "Decide whether the citation total-drop relaxation (generate.rs:233-266, `let effective_allow = ctx.allow_model_only || total_drop`) is the intended contract."
-    expected: "Either (a) the total-drop route also emits NoticeCode::ModelOnly so a client filtering on typed_code == NOTICE_CODE_MODEL_ONLY cannot miss an ungrounded answer, or (b) the relaxation is documented as a separate, explicitly named configuration key rather than an implicit override of allow_model_only_answers, or (c) the current behavior is accepted in writing."
-    why_human: "The disjunction is deliberate and commented as such, but it means an operator with allow_model_only_answers = false and a caller sending allow_model_only: false still receive a MODEL_ONLY answer whenever every marker is unresolvable — while plan 06-10's own prohibition states a model-only answer 'must never be returned without its notice'. Whether that is a defect or an accepted trade-off is a design judgment, not a code fact."
+      - "An explicit `answer_basis` instruction in `model_only_system_policy()` — e.g. `Set answer_basis to \"model_only\" and leave cited_evidence_ids empty.` (this sentence was in the pre-gap-closure review's proposed text and was dropped in implementation)"
+      - "Validate what will actually be emitted: at `generate.rs:147-165`, build `let for_validation = output.into_model_only();` and validate/re-enter THAT, so an engine-decided model-only run does not depend on the model's self-label"
+      - "Apply the same correction at the adapter seam (`openrouter.rs:788-792`), or the node fix is unreachable because the adapter rejects first"
+      - "A mock-server test whose response body carries `\"answer_basis\": \"retrieval\"` with empty `cited_evidence_ids` on an opted-in empty-evidence request, asserting the run still terminates with ANSWER_BASIS_MODEL_ONLY and a NOTICE_CODE_MODEL_ONLY notice. A FakeGenerator/PackingTestGenerator test cannot detect this defect class."
+  - truth: "Citation repair (DEBT-RAG-03) normalizes near-miss markers locally, strips anything still unresolved, emits CITATION_REPAIRED/CITATION_DROPPED, and downgrades the basis if all grounding is lost — no second provider call (D-14)"
+    status: partial
+    reason: >-
+      Plan 06-14's dedup fix is real and correct — both of the prior report's repro inputs now
+      survive end to end, and the guard is placed so that per-occurrence span rewrites,
+      per-occurrence notices and `total_drop` are all preserved. But the prior report identified
+      the wrong root cause. `OpenRouterGenerator::execute_one_call` runs the FULL grounding
+      validator on the RAW model output inside the adapter (`openrouter.rs:792`), before
+      `GenerateAnswerNode`'s repair pass can normalize anything. That validator uses the strict
+      digit-only `extract_inline_markers` (`mod.rs:409-430`) and enforces exact set equality
+      (`mod.rs:355-364`) plus known-ID membership (`mod.rs:333-341`, `344-353`). Case-split against
+      those four checks, the operative rule is: repair executes ONLY when a correctly-cited,
+      strict-visible marker rides along in the same answer to satisfy set equality. A standalone
+      near-miss, a standalone padded marker, any strict-visible unresolvable marker, and the whole
+      total-drop basis-downgrade clause are unreachable. See the Gaps Summary for the exact split.
+      This is pre-existing behavior, not a regression from 953b22c — SC5's repair pass has never
+      been reachable for its stated purpose. `citation_repair_enabled` defaults to TRUE
+      (`config.rs:143-145`), so this is the default configuration, and `OpenRouterGenerator` is
+      the sole wired production generator (`main.rs:96`).
+    artifacts:
+      - path: "engine/src/generation/openrouter.rs"
+        issue: "Line 792 calls `model_output.validate_grounding_with_limits(&validation_evidence, limits)` on the raw output inside the adapter — the fail-closed gate sits upstream of the repair seam that exists to fix exactly these inputs."
+      - path: "engine/src/generation/mod.rs"
+        issue: "`extract_inline_markers` (409-430) is digit-only and does not match `[ 7 ]`; the set-equality check at 355-364 and the known-ID checks at 333-341 / 344-353 therefore reject any answer whose repairable markers stand alone."
+      - path: "engine/src/tests/workflow_phase5.rs"
+        issue: "All 10 `citation_repair_*` tests (lines 5978-6360) drive `GenerateAnswerNode` with `FakeGenerator`, which never validates. `grep -c OpenRouterGenerator engine/src/tests/workflow_phase5.rs` = 0. `citation_repair_enabled_drops_internal_whitespace_marker_when_unresolvable` (:6050) uses a standalone padded marker cited as `[ 7 ]` against evidence `[1]` — an input the adapter rejects outright."
+    missing:
+      - "Split `validate_grounding_with_limits` (`generation/mod.rs:184-368`) so the adapter keeps only the non-repairable shape checks (answer non-empty, length, notice/warning and usage bounds) and the four marker checks (`mod.rs:331-365`) move to the seam that owns repair"
+      - "Run `citations::extract_markers` / `resolve_markers` in `GenerateAnswerNode` FIRST, then call the full grounding validator on the post-repair output (the node already does this at `generate.rs:243-266`)"
+      - "Keep the repair-DISABLED branch fail-closed — it already runs its own validation at `generate.rs:317-331` plus a completeness check at `generate.rs:341-352`, so no hole opens there (verified)"
+      - "A regression test that drives the repair path through `OpenRouterGenerator` against the mock-server harness (`generation/tests.rs:881-985` is the template) with a response body containing a STANDALONE near-miss `[ 7 ]` (no valid cited companion) and, separately, a strict-visible unresolvable `[9]`, asserting the run succeeds with CITATION_REPAIRED / CITATION_DROPPED notices. Do NOT use a companion-marker input — those already pass today and would mask the defect."
+human_verification: []
 ---
 
 # Phase 6: Observability, Evaluation & Polish — Verification Report
 
 **Phase Goal:** Rust + Go module-graph restructure, consolidated additive wire-contract change, and RAG-03 degraded-mode hardening (model-only answers, citation repair, bad-input matrix, graph-unavailable notice)
-**Verified:** 2026-08-21
+**Verified:** 2026-08-22T18:40:00Z
 **Status:** gaps_found
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — after gap closure (`953b22c`, plans 06-13 and 06-14)
+
+---
+
+## Re-verification Trail (gap → plan → resolution)
+
+This report OVERWRITES the prior verification. The full trail is preserved here.
+
+| Prior gap | Prior status | Closing plan | Commit | Resolution now |
+|---|---|---|---|---|
+| **SC3** — model-only opt-in cannot produce an answer on the production path | `failed` | **06-13-PLAN.md** (Wave 11, `gap_closure: true`) | `953b22c` | **partial** — packing path fixed and reachable; the `answer_basis` contract is still unpinned |
+| **SC5** — citation repair converts its own target case into a hard run failure (duplicate IDs) | `partial` | **06-14-PLAN.md** (Wave 12, `gap_closure: true`) | `953b22c` | **partial** — the stated duplicate-ID defect is genuinely fixed; a deeper, pre-existing adapter-ordering defect keeps SC5's core clauses unreachable |
+
+**Prior `missing` list disposition — SC3 (GAP 1), 4 items:**
+
+| Prior missing item | Now | Evidence |
+|---|---|---|
+| Empty-evidence branch in `execute_one_call` using `pack_model_only_prompt` rather than `pack_evidence_and_graph_prompt` | ✓ **DONE** | `openrouter.rs:263-267` — `if evidence.is_empty() && allow_model_only` returns `(model_only_system_policy(), "Question: {q}\n", vec![])` before `pack_evidence_and_graph_prompt` is reached |
+| `"model_only"` admitted to the outbound `answer_basis` JSON schema enum | ✓ **DONE** | `openrouter.rs:570` — `"enum": ["retrieval", "mixed", "model_only"]` |
+| A model-only system policy that does not instruct citing non-existent evidence blocks | ⚠️ **DONE, BUT INCOMPLETE** | `prompt.rs:218-223` exists and does not ask for markers — but also never instructs `answer_basis: "model_only"`, which is what the validator then requires |
+| A test driving `GenerateAnswerNode` WITH `.with_settings(limits, ..)` against a generator that actually calls `pack_evidence_and_graph_prompt` on empty evidence | ✓ **DONE** | `PackingTestGenerator` (`workflow_phase5.rs:5630-5668`) calls the real `pack_openrouter_messages`; used at `workflow_phase5.rs:5686` and `:5726` |
+
+**Prior `missing` list disposition — SC5 (GAP 2), both repro cases:**
+
+| Prior repro | At the node | Through the production adapter |
+|---|---|---|
+| (1) repeated marker — `"…[1]…[1]…"` vs evidence `["[1]"]` | ✓ **FIXED** — `generate.rs:199,204` dedup guards yield `["[1]"]` | ✓ **reachable** — `inline_set = {"[1]"}` equals `seen_cited`, so the adapter passes it |
+| (2) mixed spellings — `"[ 7 ]"` + `"[7]"` vs evidence `["[7]"]` | ✓ **FIXED** — dedup yields `["[7]"]`, `CITATION_REPAIRED` emitted | ✓ **reachable** — the strict extractor sees only the exact `[7]`, so `inline_set = {"[7]"} = seen_cited` and the adapter passes it |
+
+Both prior repros are genuinely closed end-to-end. The gap that remains is a **different, wider one**
+the prior report did not identify: both repros happened to carry a healthy cited marker, which is
+precisely the condition under which the adapter lets repair run at all (see Gaps Summary).
+
+---
 
 ## Goal Achievement
 
-### Observable Truths
+### Observable Truths (ROADMAP Success Criteria SC1–SC7)
 
-| # | Truth (ROADMAP Success Criterion) | Status | Evidence |
+| # | Truth | Status | Evidence |
 |---|---|---|---|
-| 1 | Rust binary imports all production modules from the library crate; dual `lib.rs`/`main.rs` declaration ends; Go `main.go` symmetrically split into packages | ✓ VERIFIED | `engine/src/lib.rs` declares all 12 production modules (`chunker`, `client`, `config`, `db`, `generation`, `graph`, `ingest`, `pb`, `prompt`, `rerank`, `retrieval`, `service`, `workflow`). `engine/src/main.rs` contains **zero** `mod` declarations and reaches every relocated item by `use engine::…` (l.7-16). Gateway has `internal/config`, `internal/sse`, `internal/engineclient`, `internal/telemetry`; `main.go` calls `config.Load()` (l.723), `engineclient.New`/`engineclient.Engine` (l.162, 754), `sse.WriteStreamError`/`sse.WriteWorkflowEvent` (l.613, 619, 651), and contains **zero** inline SSE frame writes. Landed as plans 06-01/06-02/06-03 (waves 1-3) and 06-04/06-05 (waves 1-2), i.e. first. |
-| 2 | One consolidated additive protobuf change (model-only flag, graph-ablation flag, `WorkflowCompletedEvent` metadata fields, typed notice-code enum) with regenerated Rust and Go bindings, before any behavior plan | ✓ VERIFIED | `proto/lancet/v1/lancet.proto`: `optional bool allow_model_only = 4` (l.61), `optional bool disable_graph_context = 5` (l.66), `NoticeCode typed_code = 4` (l.119), `message WorkflowMetadata` (l.231), `WorkflowMetadata metadata = 7` (l.252), `enum NoticeCode` values 0-5 and 10-22 with tag 17 reserved. Additive only — no tag renumbered or reused. Bindings agree: `engine/src/pb/lancet/v1/lancet.v1.rs:330-390` and `gateway/proto/lancet/v1/lancet.pb.go:40-44, 693-762, 1745`. Landed in plan 06-07 (wave 5); every behavior plan is wave 6-10. See WARNINGS — the contract landed, population did not (deferred to Phase 6.2 SC8). |
-| 3 | Both paths fail / evidence absent + caller opted in (default off) → `answer_basis = MODEL_ONLY`, explicit notice, zero citations; flag off → fail-closed unchanged | ✗ FAILED | **Flag-off half verified.** `git show 0c96720:engine/src/workflow/runner.rs` shows the zero-evidence `break` already existed pre-phase; Phase 6 only added the `!ctx.allow_model_only &&` guard, so flag-off behavior is genuinely unchanged. **Opt-in half fails on the production path** — see gaps. Chain: `runner.rs:417-425` correctly does NOT break when `allow_model_only` is true, so generation IS reached; `generate.rs:102-103` discards `ctx.assembled_prompt`; `openrouter.rs:477-495` unconditionally packs evidence; `prompt.rs:338-340` returns `EmptyEvidence`. Production wires the real adapter with limits (`service.rs:148-157`, `main.rs:96`); the covering test uses neither. |
-| 4 | One retrieval path failing keeps `answer_basis = RETRIEVAL` with a machine-readable notice naming the failed path | ✓ VERIFIED | `retrieve.rs:88` emits `NoticeCode::RetrievalDegradedDense`, `retrieve.rs:141` emits `RetrievalDegradedBm25` — the failed path is named by the typed code, message carries the failure kind. Behavioral evidence: `retrieval_degraded_dense_returns_grounded_answer_from_surviving_lexical` asserts `answer_basis == Retrieval`, non-empty structured citations from the surviving lexical path, exactly one dense degrade notice, and no `NodeFailed` event — **run, passed**. 16 further `retrieval_degraded_*` tests cover per-variant tolerance, de-duplication and ordering. |
-| 5 | Citation repair normalizes near-miss markers locally, strips unresolved, emits `CITATION_REPAIRED`/`CITATION_DROPPED`, downgrades basis if all grounding lost — no second provider call | ✗ FAILED (gap status: `partial`) | Mechanism present and the "no second provider call" clause is pinned (`citation_repair_makes_no_additional_provider_call`, l.5965). But the repair pass hard-fails any answer whose markers resolve to the same evidence id twice — including the mixed-spelling `[ 7 ]` + `[7]` case the widened extractor exists to normalize. See gaps for the traced reproduction. |
-| 6 | Bad-input matrix is an enumerated, table-driven test (gRPC and HTTP) covering malformed query/session/document IDs, content type and filter bounds, all rejecting before retrieval or provider work with stable HTTP 400 / gRPC `InvalidArgument` | ✓ VERIFIED | gRPC: `engine/src/tests/bad_input_matrix.rs` — `struct Row` + `rows: Vec<Row>` driven by one loop; rows cover `empty_query`, `whitespace_only_query`, `query_too_long`, `malformed_session_id`, `wrong_version_session_id`, `invalid_document_id`, `unsupported_content_type`, `empty_filter_value`, `filter_limit_exceeded` (×2), plus two recorded non-rejection dispositions. Asserts `tonic::Code::InvalidArgument` + the `x-lancet-error-kind` trailer per row, and `fake_gen.calls() == 0` across the whole table — that is the "before provider work" proof. HTTP: `gateway/main_test.go:1415 TestBadInputMatrixHTTP` — `rows []badInputMatrixRow` with matching names, each asserting `http.StatusBadRequest` and the error-kind header. Scope note: the HTTP rows drive **stubbed engine statuses** — by design the gateway performs no field-level validation of its own, documented at `main_test.go:1408-1414` — so what each HTTP row proves is the gRPC-status → HTTP-status derivation, and the "rejects before retrieval or provider work" property is proven on the gRPC side by `fake_gen.calls() == 0`, not independently on the HTTP surface. SC6 stays VERIFIED on the plain reading of its text. Behavioral evidence: `bad_input_matrix_rejects_and_dispositions_are_stable` **run, passed**. |
-| 7 | `GRAPH_UNAVAILABLE` fires on the two silent-degrade paths (empty-result, absent `graph_port`) that don't already emit `GRAPH_TIMEOUT`/`GRAPH_DEGRADED`; source-chunk queries proven never to require graph data | ✓ VERIFIED | `graph_context.rs:126-132` (empty-result) and `graph_context.rs:172-178` (absent port) emit distinct `NoticeCode::GraphUnavailable` notices. The timeout/degraded branch (l.150-168) is untouched and still emits `GraphTimeout`/`GraphDegraded`. Proof clause: `run_source_chunk_proof_pipeline` (l.4157) plus four tests — `source_chunk_query_succeeds_when_graph_{empty,absent,failing,ablated}`. Behavioral evidence: `source_chunk_query_succeeds_when_graph_absent` and `graph_unavailable_notice_on_empty_result` **run, passed**. |
+| SC1 | Rust binary imports all production modules from the library crate; dual `lib.rs`/`main.rs` declaration ends. Go `main.go` symmetrically split into packages | ✓ VERIFIED (carried forward from prior run; regression-checked only — outside the `953b22c` delta) | `grep "^mod \|^pub mod " engine/src/main.rs` → **0 matches**; `engine/src/lib.rs` declares 16 `pub mod`. `gateway/internal/{config,engineclient,sse,telemetry}` all exist; `gateway/main.go:33-36` imports all four |
+| SC2 | One consolidated additive protobuf change — model-only flag, graph-ablation flag, `WorkflowCompletedEvent` fields, typed notice-code enum — with regenerated Rust and Go bindings | ✓ VERIFIED (carried forward; regression-checked) | `proto/lancet/v1/lancet.proto:61` `optional bool allow_model_only = 4`, `:66` `optional bool disable_graph_context = 5`, `:72-98` `enum NoticeCode` (codes 10-22 appended, 0-5 untouched → additive), `:119` `NoticeCode typed_code = 4`, `:245` `message WorkflowCompletedEvent`. Rust bindings regenerated (`engine/src/pb/lancet/v1/lancet.v1.rs:330-384`) |
+| SC3 | Opted-in zero-evidence run returns `answer_basis = MODEL_ONLY` + notice + zero citations; flag off keeps fail-closed | ✗ **FAILED (partial)** | Flag-OFF half VERIFIED (`openrouter.rs:263` falls through to `pack_evidence_and_graph_prompt` → `EmptyEvidence`; `runner.rs:420` short-circuits). Opted-in half is contingent on undirected model behavior — see CR-02 adjudication |
+| SC4 | One retrieval path failing keeps `answer_basis = RETRIEVAL` with a machine-readable `RETRIEVAL_DEGRADED` notice naming the failed path | ✓ VERIFIED (carried forward; regression-checked) | `engine/src/workflow/nodes/retrieve.rs:88` `NoticeCode::RetrievalDegradedDense`, `:141` `NoticeCode::RetrievalDegradedBm25` — per-path, non-test code |
+| SC5 | Citation repair normalizes near-miss markers, strips unresolved, emits `CITATION_REPAIRED`/`CITATION_DROPPED`, downgrades basis on total loss — no second provider call | ✗ **FAILED (partial)** | Repair runs only when a healthy cited marker rides along in the same answer; standalone repairable markers and the total-drop clause are rejected at `openrouter.rs:792` — see CR-01 adjudication |
+| SC6 | Bad-input matrix is an enumerated, table-driven test (gRPC and HTTP) rejecting before retrieval/provider work with stable HTTP 400 / gRPC `InvalidArgument` | ✓ VERIFIED (carried forward from prior run; **not re-checked** — outside the `953b22c` delta) | `engine/src/tests/bad_input_matrix.rs` present. The HTTP half was verified in the prior run and is carried forward unre-examined |
+| SC7 | `GRAPH_UNAVAILABLE` notice fires on the two silent-degrade paths (empty-result, absent `graph_port`); source-chunk queries proven never to require graph data | ✓ VERIFIED (carried forward; regression-checked) | `engine/src/workflow/nodes/graph_context.rs:129` and `:175` — exactly two `NoticeCode::GraphUnavailable` emission sites in non-test code, matching the two named paths |
 
-**Score:** 5/7 truths verified (0 present, behavior-unverified)
+**Score:** 5/7 truths verified (0 present-but-behavior-unverified)
+
+### A note on `Mode: mvp` and the phase goal format
+
+ROADMAP marks Phase 6 `**Mode:** mvp`, but the phase goal is a deliverables statement, not a
+`As a … I want to … so that …` User Story. Under a strict MVP-mode reading the verifier would
+refuse and route to `/gsd mvp-phase`. That is not done here: this is a scoped re-verification with
+an explicit seven-criterion contract, there is no `[outcome]` clause to narrow to, and the seven
+numbered Success Criteria are the actual contract. Recorded as a documentation discrepancy, not a
+gap.
+
+### The D-79 redistribution note is NOT a Step-9b deferral — do not read it as one
+
+ROADMAP's Phase 6 block carries this line immediately above the criteria:
+
+> Phase 6's original seven success criteria were rewritten and redistributed across the five-phase
+> split per 06-CONTEXT.md D-79. Mapping: SC1 → 6.2; SC2 and SC4 → 6.3; **SC3 → 6.4**; **SC5** and
+> SC6 → 6.1; SC7 → 6 and 6.1.
+
+Read naively, that mapping would defer both of this report's gaps to later phases and flip the
+phase to `passed`. **It does not apply.** The mapping describes the *original, pre-split*
+observability criteria, not the seven currently listed. Proof: current SC1 is the Rust/Go module
+graph, not observability; the note claims "SC1 → 6.2" and Phase 6.2 is OpenTelemetry — the two
+cannot be the same SC1. Cross-checked positively as well: Phase 6.1's criteria are index
+rebuild-and-swap, `DEBT-BU-01`/`DEBT-BU-02` and the documented-only `DEBT-CR-04`/`DEBT-CR-05`
+review; Phase 6.4's are the docs suite. **Neither mentions model-only answers or citation repair.**
+So SC3 and SC5 as currently written are Phase 6's own contract and have no downstream owner. They
+are real gaps, not deferred items.
 
 ### Deferred Items
 
-| # | Item | Addressed In | Evidence |
-|---|---|---|---|
-| 1 | `WorkflowMetadata` / `degraded_mode` populated by the engine | Phase 6.2 | SC8: "Phase 05 D-30's workflow metadata lands both as span attributes and as additive `WorkflowCompletedEvent` protobuf fields (D-41)." |
-| 2 | `internal/telemetry` performs real setup | Phase 6.2 | Phase 6.2 goal (OTel across Go and Rust). Package doc and 06-04-PLAN both name it a reserved compiling stub. |
+None. (See the D-79 analysis above — the apparent deferral does not hold.)
+
+---
+
+## Adjudication of the 06-REVIEW.md criticals
+
+Both criticals are **UPHELD** — with CR-01 restated more precisely. I confirmed every load-bearing
+code fact by reading the files rather than trusting the review.
+
+### CR-01 (SC5) — UPHELD, but the review's "never" is too broad
+
+The review asserts "`CITATION_REPAIRED` and `CITATION_DROPPED` can therefore never be emitted by a
+production run." **That is falsifiable, and the review's own quoted passing test is a
+counterexample.** The real rule is narrower and sharper:
+
+> **Repair executes only when a correctly-cited, strict-visible marker rides along in the same
+> answer to satisfy the adapter's set-equality check.** Any answer whose repairable markers stand
+> alone is rejected upstream at `openrouter.rs:792`.
+
+Worked example of the reachable case. Input: answer `"Near miss [ 7 ] and exact [7] in one
+answer."`, `cited_evidence_ids: ["[7]"]`, packed evidence `["[7]"]`. `extract_inline_markers`
+(`mod.rs:409-430`) skips `[ 7 ]` (the byte after `[` is a space, so `is_num` stays false) and yields
+`["[7]"]` → `inline_set = {"[7]"}` equals `seen_cited = {"[7]"}` at `mod.rs:355-364`, and
+`[7] ∈ known_ids` at `mod.rs:333-341`, `344-353`. **The adapter passes it.** It then reaches
+`GenerateAnswerNode`, whose widened `citations::extract_markers` finds *both* spellings →
+`Repaired("[7]")` + `Unchanged("[7]")` → deduped at `generate.rs:199,204` → `CITATION_REPAIRED`
+fires.
+
+Full clause-by-clause reachability:
+
+| SC5 clause | Production reachability | Where it dies / why it survives |
+|---|---|---|
+| "normalizes near-miss markers locally" — *standalone* near-miss (`[ 7 ]`, no valid companion) | ✗ **UNREACHABLE** | cited `["[7]"]` → `inline_set = {}` ≠ `{"[7]"}` at `mod.rs:355-364`; cited `["[ 7 ]"]` → not in `known_ids` at `mod.rs:333-341` |
+| "normalizes near-miss markers" — near-miss *alongside* an exact cited copy of the same ID | ✓ **reachable (narrow)** | worked example above; adapter passes, repaired at `generate.rs:199-217` |
+| "strips anything still unresolved" — strict-visible unresolvable marker (`[9]` vs evidence `["[1]"]`) | ✗ **UNREACHABLE** | fails `mod.rs:344-353` if inline-only, or `mod.rs:333-341` if also cited |
+| "strips anything still unresolved" — *padded* unresolvable marker **with** a valid cited companion | ✓ **reachable (narrow)** | `"Fact [1] and bogus [ 99 ]."`, cited `["[1]"]`, evidence `["[1]"]`: the strict extractor skips `[ 99 ]`, so `inline_set = {"[1]"} = seen_cited` → adapter passes → the node's widened extractor normalizes `[ 99 ]` → not in `evidence_ids` → `Resolution::Dropped` |
+| "emits `CITATION_REPAIRED` / `CITATION_DROPPED`" | ✓ **reachable only in the two companion cases above** | never for a standalone repairable marker |
+| "downgrades the basis if all grounding is lost" | ✗ **UNREACHABLE** | `total_drop` (`generate.rs:241`) needs EVERY marker dropped. All-padded forces strict `inline_set = {}`, so either cited is non-empty (mismatch → adapter rejects) or cited is empty, which requires `answer_basis = ModelOnly` at `mod.rs:210-220` — and that routes to the model-only branch at `generate.rs:148`, skipping the repair pass entirely |
+| "no second provider call" | ✓ **VERIFIED** | the `Ok(output)` arm of `generate.rs:145-300` contains no `generator.generate(..)`; `generation/citations.rs` is synchronous and network-free |
+
+**Read `citation_repair_enabled_drops_internal_whitespace_marker_when_unresolvable`
+(`workflow_phase5.rs:6050-6088`) before citing it either way.** Its answer is `"Unsupported
+near-miss span [ 7 ] appears here."` with `cited_evidence_ids: ["[ 7 ]"]` and evidence `["[1]"]` —
+the padded marker stands alone and the cited ID is not in `known_ids`, so **that exact input is
+adapter-rejected** and the test proves nothing about production. The companion variant in the table
+above is the reachable one.
+
+Supporting datum independently reproduced: `grep -c "OpenRouterGenerator"
+engine/src/tests/workflow_phase5.rs` → **0**. All 10 `citation_repair_*` tests use `FakeGenerator`.
+The only two `OpenRouterGenerator` constructions in the workflow test surface
+(`workflow_phase5_production.rs:867`, `:969`) are retry and cancellation tests, not repair. So no
+test anywhere drives repair through the layer that rejects it.
+
+This defect is **pre-existing**, not introduced by `953b22c` — the adapter has always validated raw
+output. `953b22c` only added `.with_allow_model_only(request.allow_model_only)` to the limits. The
+prior verification identified a real but *shallower* defect; 06-14 fixed exactly that one.
+
+### CR-02 (SC3) — UPHELD in full
+
+Confirmed line by line:
+
+- `prompt.rs:218-223` — `model_only_system_policy()` says only *"No corpus evidence is provided for
+  this request; do not cite evidence markers."* No `answer_basis` instruction.
+- `openrouter.rs:566-571` — the outbound schema offers `["retrieval", "mixed", "model_only"]` with
+  `retrieval` first and no per-value description.
+- `mod.rs:210-220` — with `allow_model_only = true` and the model returning
+  `answer_basis: "retrieval"` + empty `cited_evidence_ids`, the predicate is
+  `is_empty() && (!true || Retrieval != ModelOnly)` = `true && (false || true)` = **true** → hard
+  `SchemaValidation` error.
+- `generate.rs:126-127` — `SchemaValidation` is not in the retryable set (`Timeout` /
+  `ProviderError` only), so there is no second attempt: the run terminates as
+  `NodeErrorKind::LlmGenerationFailed`.
+- `generate.rs:153` validates the **unmodified** `output`; `into_model_only()` is applied only at
+  `:165`. So the node repeats the adapter's rejection instead of correcting it — lifting the
+  adapter check alone would not fix SC3.
+- Directly contradicts the engine's own documented design at `generation/mod.rs:379`: *"the engine —
+  not the model's own claim — decides the run is model-only."* Ordering makes the model's claim
+  decisive.
+- Test blindness confirmed by reading bodies, not names:
+  `openrouter_empty_evidence_opt_in_reaches_chat_with_model_only_schema`
+  (`generation/tests.rs:881-980`) hardcodes `"answer_basis": "model_only"` in the mock response
+  body; `PackingTestGenerator` (`workflow_phase5.rs:5630-5668`) hardcodes `AnswerBasis::ModelOnly`
+  in its return value.
+
+### Three review-adjacent claims I checked and found NOT to be gaps
+
+- **No D-17/D-19 prompt regression.** `pack_openrouter_messages`'s grounded branch hardcodes
+  `system_msg = "You are a precise technical RAG engine."` (`openrouter.rs:296`), which looks like
+  it dropped the D-17/D-19 clauses. It did not: `base_system_policy()` is still embedded into the
+  packed prompt at `prompt.rs:363-372`, and that prompt becomes `messages[1]`. "Cite evidence using
+  numbered markers like [1], [2]" and "When evidence contradicts your prior knowledge, the evidence
+  is authoritative" both still reach the wire, just as the user message. WR-01 is therefore a dead
+  public field (`GenerationRequest::system_policy`), a cleanliness warning — not a behavior gap.
+- **`run_inline_prompt_generation_remainder` is test-only.** Grepping `engine/` and `gateway/`, its
+  only callers are `workflow_phase5.rs:1594, 1702, 1834, 1917, 5304`. It is `pub` and ungated
+  (carried-forward WR-01 from the pre-gap-closure review), which matters as a *dependency* of the
+  CR-01 fix — do not remove the adapter gate without closing it — but it is not a live production
+  fail-open path today.
+- **The blank telemetry import is intentional, not dead wiring.** `gateway/main.go:36` imports
+  `internal/telemetry` as `_`. That is the reserved stub 06-04 planned; SC1 requires the package
+  *split*, not telemetry behavior (which is Phase 6.2's SC1-SC8). Consistent with the contract.
+
+---
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `engine/src/lib.rs` | Single production module declaration root | ✓ VERIFIED | 12 `pub mod` declarations + `extern crate self as engine`. No re-export aliases beyond the `LancetService` trait. |
-| `engine/src/main.rs` | Startup wiring only, imports by path | ✓ VERIFIED | Zero `mod` declarations; imports `engine::{client, config, db, generation, graph, ingest, pb, rerank, retrieval, service}`. M-SINGLE-ITEM-PATH holds. |
-| `engine/src/service.rs`, `engine/src/ingest.rs` | Library-owned gRPC service and ingestion pipeline | ✓ VERIFIED | Declared from `lib.rs`; `main.rs` reaches both by import. |
-| `gateway/internal/config/config.go` | Config loading extracted | ✓ VERIFIED | `config.Load()` called from `main.go:723`. Viper prefix `LANCET` with `"." -> "__"` replacer. |
-| `gateway/internal/sse/sse.go` | SSE handling extracted | ✓ VERIFIED | `WriteStreamError`/`WriteWorkflowEvent` are the only frame writers; `main.go` has zero inline SSE writes. |
-| `gateway/internal/engineclient/engineclient.go` | Engine client extracted | ✓ VERIFIED | `engineclient.Engine` is the app's engine field type; `engineclient.New(...)` at `main.go:754`. |
-| `gateway/internal/telemetry/telemetry.go` | Telemetry package seam | ⚠️ ORPHANED (intentional) | 8-line stub. `Init()` is never called; `main.go:36` blank-imports the package. Explicitly a reserved Phase 6.2 stub per its own doc comment, 06-04-PLAN and the ROADMAP plan line. Deferred, not a gap. |
-| `proto/lancet/v1/lancet.proto` | Consolidated additive change | ✓ VERIFIED | All four items present, additive, tag 17 reserved. |
-| `engine/src/pb/lancet/v1/lancet.v1.rs` | Regenerated Rust bindings | ✓ VERIFIED | Enum values, `WorkflowMetadata`, `metadata: Option<WorkflowMetadata>` all match the source. |
-| `gateway/proto/lancet/v1/lancet.pb.go` | Regenerated Go bindings | ✓ VERIFIED | Presence-preserving `*bool` for both request flags; `WorkflowMetadata` struct present. |
-| `engine/src/workflow/nodes/graph_context.rs` | Notices on the two silent paths + ablation early return | ✓ VERIFIED | Three notice sites: `GraphAblation`, and `GraphUnavailable` ×2. |
-| `engine/src/workflow/nodes/retrieve.rs` | Per-path degrade notices | ✓ VERIFIED | `RetrievalDegradedDense` and `RetrievalDegradedBm25` with failure-kind-derived messages. |
-| `engine/src/generation/citations.rs` | Local normalize/resolve, no invention | ✓ VERIFIED (substantive) | NFKC + case-fold + whitespace collapse + marker-syntax strip; a marker matching zero or >1 evidence id is `Dropped`, never assigned. Network-free. |
-| `engine/src/tests/bad_input_matrix.rs` | Table-driven gRPC matrix | ✓ VERIFIED | 345 lines, one `struct Row` table, one loop, generator-call assertion. |
-| `gateway/main_test.go` (`TestBadInputMatrixHTTP`) | Table-driven HTTP matrix | ✓ VERIFIED | Row struct + slice, status 400 + error-kind header per row. |
-| `engine/src/prompt.rs` (`pack_model_only_prompt`) | Model-only prompt helper | ⚠️ ORPHANED | Exists and is called from `assemble_prompt.rs:77`, but its output never reaches a provider — see gap SC3. |
-| `engine/src/workflow/events.rs` (`WorkflowMetadata`) | Terminal metadata | ⚠️ HOLLOW | `metadata: None` hardcoded at l.372; `WorkflowMetadata` appears nowhere in the engine outside generated code. Deferred to Phase 6.2. |
+| `engine/src/generation/openrouter.rs` | Empty-evidence model-only packing branch; `model_only` in outbound schema | ✓ VERIFIED | `:263-267` branch; `:570` enum. Wired — sole production generator (`main.rs:96`) |
+| `engine/src/prompt.rs` | `model_only_system_policy()`, `pack_model_only_prompt()` | ⚠️ HOLLOW | Both exist (`:218-227`). `model_only_system_policy()` IS wired (`openrouter.rs:264`) but under-specifies the contract. `pack_model_only_prompt()` is ORPHANED relative to the wire — its only non-test consumers are `workflow/mod.rs:266` (test-only path) and `workflow/events.rs:229` (checkpoint serializer); the adapter builds a differently-shaped prompt and never calls it |
+| `engine/src/workflow/nodes/generate.rs` | Citation-repair pass with dedup; model-only conversion | ⚠️ ORPHANED for its target inputs | Dedup guards at `:199, :204` are correct and correctly placed (notice/edit pushes at `:206-234` sit outside the guard, preserving per-occurrence spans and notices; `total_drop` at `:241` unaffected). But the pass receives its target inputs only when a healthy cited marker happens to accompany them |
+| `engine/src/generation/mod.rs` | Grounding validator, `allow_model_only` limits | ✓ VERIFIED (present + wired) | `:184-368`. Its *placement* is the defect, not its existence |
+| `engine/src/generation/citations.rs` | Marker extraction / resolution, network-free | ✓ VERIFIED | Synchronous, no provider call — pins the D-14 "no second call" clause |
+| `proto/lancet/v1/lancet.proto` + generated bindings | Additive-only wire change | ✓ VERIFIED | Fields 4/5 appended as `optional`; enum values 10-22 appended, 0-5 unchanged |
+| `gateway/internal/{config,sse,engineclient,telemetry}` | Go package split | ✓ VERIFIED (carried forward) | All four exist; imported at `gateway/main.go:33-36` |
+| `engine/src/tests/bad_input_matrix.rs` | Table-driven bad-input matrix | ✓ VERIFIED (carried forward, not re-checked) | Present; prior run verified content |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| `engine/src/main.rs` | `engine/src/service.rs` | `use engine::service` | ✓ WIRED | `main.rs:16` |
-| `engine/src/main.rs` | `engine/src/config.rs` | `use engine::config::{load_settings, EffectiveRagSettings}` | ✓ WIRED | `main.rs:8` |
-| `gateway/main.go` | `internal/sse` | `sse.WriteWorkflowEvent` | ✓ WIRED | `main.go:651`, plus 613/619 |
-| `gateway/main.go` | `internal/engineclient` | `engineclient.New(...)` | ✓ WIRED | `main.go:754` |
-| `gateway/main.go` | `internal/config` | `config.Load()` | ✓ WIRED | `main.go:723` |
-| `gateway/main.go` | `internal/telemetry` | blank import | ✗ NOT_WIRED | `Init()` never called. Intentional stub — deferred to Phase 6.2. |
-| `QueryRAGRequest.allow_model_only` | `WorkflowContext.allow_model_only` | `service.rs:824` request → config → false | ✓ WIRED | Presence-preserving `Option<bool>`; default `false` in `config.rs:140-142` and `config/config.toml`. |
-| `QueryRAGRequest.disable_graph_context` | `WorkflowContext.disable_graph_context` | `workflow/mod.rs:114` | ✓ WIRED | Note: `service.rs:764` binds a dead `let _disable_graph_context`; the live path is `WorkflowContext::new`. See WR-03 below. |
-| `AssemblePromptNode` (`ctx.assembled_prompt`) | `GenerateAnswerNode` / provider adapter | intended prompt handoff | ✗ NOT_WIRED | **Root cause of gap SC3.** Only non-test consumers of `ctx.assembled_prompt` are `workflow/mod.rs:266` (test-only remainder) and `workflow/events.rs:229` (checkpoint serializer). |
-| `WorkflowRunner::emit_terminal_once` | `WorkflowCompletedEvent.metadata` | derivation from notice set | ✗ NOT_WIRED | `events.rs:372` hardcodes `metadata: None`. Deferred to Phase 6.2 SC8. |
+| `WorkflowContext.allow_model_only` | `GenerationRequest.allow_model_only` | field assignment | ✓ WIRED | `generate.rs:106`; the only other non-test `GenerationRequest::new` site (`workflow/mod.rs:288`) also sets it at `:294` |
+| `GenerationRequest.allow_model_only` | `pack_openrouter_messages` | positional arg | ✓ WIRED | `openrouter.rs:534-543` → `:263` |
+| `GenerateAnswerNode` repair pass | `OpenRouterGenerator` output | `Ok(output)` arm | ✗ **NOT WIRED for standalone repairable inputs** | The adapter's `validate_grounding_with_limits` (`openrouter.rs:792`) rejects any answer whose repairable markers are not accompanied by a healthy cited marker |
+| `model_only_system_policy()` | outbound `messages[0]` | adapter | ✓ WIRED | `openrouter.rs:264` |
+| `pack_model_only_prompt()` | outbound payload | — | ✗ **NOT WIRED** | Two divergent model-only prompt constructions exist; the adapter's is the one that ships |
+| `AnswerBasis::ModelOnly` decision | model self-report | validator ordering | ✗ **INVERTED** | Engine-decides is documented (`mod.rs:379`) but model-decides is implemented |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |---|---|---|---|---|
-| `sse.WriteWorkflowEvent` | `metaMap["degraded_mode"]` | `e.WorkflowCompleted.GetMetadata()`, else a zero-filled literal | ✗ (engine always sends `nil`) | ⚠️ STATIC — the `else` branch at `sse.go:123-135` always fires, so every run publishes `"degraded_mode": false`, including runs carrying `RETRIEVAL_DEGRADED_*`, `GRAPH_UNAVAILABLE` or `NO_EVIDENCE`. |
-| `resp.notices` | `ctx.notices` | typed notice constructor at each degrade site | ✓ | ✓ FLOWING — asserted end-to-end by the degrade and graph tests. |
-| `resp.structured_citations` | `ctx.structured_citations` | resolved against `ctx.evidence_blocks` | ✓ | ✓ FLOWING — `resp.structured_citations[0].chunk_id == "chk-lex-1"` asserted from a real surviving retrieval path. |
-| `resp.answer_basis` | `ctx.answer_basis` | model output + reconciliation | ✓ (retrieval/mixed paths) | ✓ FLOWING for SC4; ✗ unreachable for `MODEL_ONLY` via the opt-in (gap SC3). |
+| `GenerateAnswerNode` | `repaired_citations` | `citations::resolve_markers` over the real answer text | Yes at the node — but only for inputs the adapter already accepted | ⚠️ PARTIAL: for standalone repairable markers, control never arrives |
+| `GenerateAnswerNode` | `ctx.notices` (`CITATION_REPAIRED`) | `pending_notices` from `Resolution::Repaired` | Only when a near-miss rides alongside an exact cited copy | ⚠️ PARTIAL |
+| `GenerateAnswerNode` | `ctx.notices` (`CITATION_DROPPED`) | `pending_notices` from `Resolution::Dropped` | Only when a *padded* unresolvable marker rides alongside a valid cited companion | ⚠️ PARTIAL |
+| `GenerateAnswerNode` | `ctx.answer_basis = ModelOnly` (total-drop downgrade) | `into_model_only()` at `:250` | **No** — `total_drop` is unproducible in production | ✗ DISCONNECTED |
+| `GenerateAnswerNode` | `ctx.answer_basis = ModelOnly` (opted-in path) | `output.into_model_only()` at `:165` | Only when the model volunteered `model_only` | ⚠️ STATIC — contingent on undirected model output |
 
 ### Behavioral Spot-Checks
 
-| Behavior | Command | Result | Status |
-|---|---|---|---|
-| Source-chunk query succeeds with no graph port (SC7) | `cargo test --lib source_chunk_query_succeeds_when_graph_absent` | 1 passed | ✓ PASS |
-| `GRAPH_UNAVAILABLE` on empty graph result (SC7) | `cargo test --lib graph_unavailable_notice_on_empty_result` | 1 passed | ✓ PASS |
-| Dense-path failure keeps `answer_basis = RETRIEVAL` + names the failed path (SC4) | `cargo test --lib retrieval_degraded_dense_returns_grounded_answer_from_surviving_lexical` | 1 passed | ✓ PASS |
-| Bad-input matrix rejects before provider work (SC6) | `cargo test --lib bad_input_matrix_rejects_and_dispositions_are_stable` | 1 passed | ✓ PASS |
-| Empty evidence rejects prompt assembly — the crux of gap SC3 | `cargo test --lib pack_evidence_and_graph_prompt_empty_evidence_still_errors_regardless_of_graph_facts` | 1 passed (asserts `Err(EmptyEvidence)`) | ✓ PASS — corroborates the SC3 failure chain behaviorally, not just statically |
-| Model-only opt-in against the real adapter with grounding limits | — | No such test exists | ? SKIP — that absence **is** the finding (gap SC3) |
+Full regression suite was run by the orchestrator (Rust 380 tests: 344 passed / 1 ignored / 0
+failed; full Go gateway suite; both exit 0) and is not re-run here. The relevant finding is that a
+green suite is **not** evidence for SC3 or SC5, and the checks below establish why by reading test
+bodies rather than names.
 
-Full regression gate (established input, not re-run): `cargo test --manifest-path engine/Cargo.toml --locked && (cd gateway && go test ./...)` exits 0 — 372 Rust passed / 0 failed / 1 ignored; all Go packages ok.
+| Behavior | Command / check | Result | Status |
+|---|---|---|---|
+| Any SC5 test exercises the production adapter | `grep -c "OpenRouterGenerator" engine/src/tests/workflow_phase5.rs` | `0` | ✗ FAIL — all 10 repair tests use `FakeGenerator`, which never validates |
+| The one SC5 drop test uses a production-reachable input | read `workflow_phase5.rs:6050-6088` | standalone `[ 7 ]`, cited `["[ 7 ]"]`, evidence `["[1]"]` | ✗ FAIL — adapter-rejected input; proves nothing about production |
+| SC3 adapter test asserts model-decided basis | read `generation/tests.rs:881-980` | mock body hardcodes `"answer_basis": "model_only"` | ✗ FAIL — the assertion is on the mock, not the contract |
+| SC3 node test asserts model-decided basis | read `workflow_phase5.rs:5630-5668` | `PackingTestGenerator` hardcodes `AnswerBasis::ModelOnly` | ✗ FAIL — same defect class |
+| SC3 packing path is genuinely production-shaped | read `PackingTestGenerator` body | calls the real `pack_openrouter_messages` with `request.allow_model_only` | ✓ PASS — prior missing item #4 genuinely closed |
+| Repair defaults on | `grep citation_repair_enabled engine/src/config.rs` | `default_citation_repair_enabled() -> true` (`:143-145`) | ✓ PASS — SC5's gap is in the DEFAULT configuration |
+| Model-only defaults off (SC3 flag-off half) | `grep allow_model_only engine/src/config.rs` | `default_allow_model_only_answers() -> false` (`:140-142`) | ✓ PASS |
+| Rust binary has no duplicate module declarations | `grep "^mod \|^pub mod " engine/src/main.rs` | no matches | ✓ PASS (SC1) |
 
 ### Probe Execution
 
-| Probe | Command | Result | Status |
-|---|---|---|---|
-| — | `find scripts -path '*/tests/probe-*.sh'` | no matches; no PLAN or SUMMARY declares a probe path | N/A — no probes declared for this phase |
-
-Note: plan 06-12 carries a `specless-probe` prohibition (`status: flagged-unverified`, `verification: manual`) that names phase verification as its resolution point. It is routed to human verification below, not silently absorbed.
+Not applicable — no `scripts/*/tests/probe-*.sh` exist in this repository and no plan or success
+criterion in Phase 6 declares a probe. Step 7c: SKIPPED (no probes declared or discoverable).
 
 ### Requirements Coverage
 
-RAG-03 is deliberately split across phases. REQUIREMENTS.md traceability records: DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-05, DEBT-RAG-06 → Phase 06; DEBT-RAG-04 → Phase 06.1. Phase 06.1 has not executed.
+All 14 plans declare exactly `requirements: [RAG-03]`. `REQUIREMENTS.md:52` scopes it: *"DEBT-RAG-01,
+DEBT-RAG-03, DEBT-RAG-05 and DEBT-RAG-06 clauses → Phase 06; DEBT-RAG-04 (index rebuild-and-swap)
+→ Phase 06.1."* Every ID in the phase requirement line is accounted for below; no orphans.
 
-| Requirement / clause | Source Plan(s) | Description | Status | Evidence |
-|---|---|---|---|---|
-| RAG-03 · DEBT-RAG-01 (degraded mode) | 06-09, 06-10 | Per-path retrieval degrade + model-only opt-in | ⚠️ PARTIAL | Retrieval degrade SATISFIED (SC4 verified). Model-only opt-in **BLOCKED** — cannot produce an answer on the production path (gap SC3). |
-| RAG-03 · DEBT-RAG-03 (citation repair) | 06-11 | Normalize-then-strip, notices, basis downgrade | ✗ BLOCKED | Mechanism present but regresses on repeated / mixed-spelling markers (gap SC5). |
-| RAG-03 · DEBT-RAG-05 (bad-input matrix) | 06-12 | Enumerated table-driven matrix, gRPC + HTTP | ✓ SATISFIED | SC6 verified with a passing behavioral run. |
-| RAG-03 · DEBT-RAG-06 (graph-unavailable) | 06-08 | Notices on the two silent-degrade paths + source-chunk proof | ✓ SATISFIED | SC7 verified with two passing behavioral runs. |
-| RAG-03 · DEBT-RAG-04 (index rebuild-and-swap) | — | Not claimed by any Phase 06 plan | ⏭ OUT OF SCOPE | Assigned to Phase 06.1 (ROADMAP Phase 6.1 SC1-4). |
-| DEBT-P3-MODULE-GRAPH (D-80) | 06-01, 06-02, 06-03, 06-04, 06-05 | Module-graph restructure exception | ✓ SATISFIED | SC1 verified. |
+| Requirement | Clause | Source Plans | Description | Status | Evidence |
+|---|---|---|---|---|---|
+| RAG-03 | DEBT-RAG-01 (degraded mode — retrieval path failure) | 06-09 | One path failing keeps `RETRIEVAL` basis with a per-path notice | ✓ SATISFIED | `retrieve.rs:88, 141` (SC4) |
+| RAG-03 | DEBT-RAG-01 (degraded mode — model-only answers) | 06-10, 06-13 | Opted-in zero-evidence run returns MODEL_ONLY | ✗ **BLOCKED** | SC3 gap — outbound `answer_basis` contract unpinned |
+| RAG-03 | DEBT-RAG-03 (citation repair) | 06-11, 06-14 | Normalize, strip, notice, downgrade — no second call | ✗ **BLOCKED** | SC5 gap — repair reachable only with a healthy companion marker; total-drop downgrade unreachable |
+| RAG-03 | DEBT-RAG-05 (bad-input matrix) | 06-12 | Enumerated table-driven gRPC + HTTP rejection matrix | ✓ SATISFIED (carried forward, not re-checked) | `engine/src/tests/bad_input_matrix.rs` |
+| RAG-03 | DEBT-RAG-06 (graph-unavailable notice) | 06-08 | Notice on the two silent-degrade paths | ✓ SATISFIED | `graph_context.rs:129, 175` (SC7) |
+| RAG-03 | DEBT-RAG-04 (index rebuild-and-swap) | — | — | ↪ **OUT OF SCOPE** — explicitly assigned to Phase 6.1 by `REQUIREMENTS.md:52` and Phase 6.1 SC1-SC4 | Correctly not claimed by any Phase 6 plan |
 
-**RAG-03 checkbox:** correctly remains `- [ ]` in `.planning/REQUIREMENTS.md:52`. Independently confirmed by reading the file. Plan 06-12's executor reverted a premature `requirements.mark-complete RAG-03` after `requirements.ready-ids` mis-reported it ready (a same-phase-only signal with no visibility into the cross-phase split). That revert was correct and is verified in the file. **This verification does not mark RAG-03 complete** — two of its four Phase-06 clauses are blocked, and DEBT-RAG-04 remains Phase 06.1's work.
-
-**Orphaned requirements:** none. REQUIREMENTS.md maps only RAG-03 to Phase 06, and all 12 plans declare it.
-
-### Prohibitions Disposition
-
-Four plans declare `must_haves.prohibitions`. Each is dispositioned here; none is silently absorbed.
-
-| Plan | Prohibition (abridged) | Declared | Verification tier | Disposition |
-|---|---|---|---|---|
-| 06-08 | MUST NOT return a degraded answer a client cannot distinguish from a healthy one — every path that silently empties the graph context must carry a machine-readable notice naming which happened | `resolved` | test | ✓ **UPHELD.** All three empty-graph paths emit a distinct typed notice: `GraphAblation` (`graph_context.rs:100`), `GraphUnavailable` on empty result (l.126-132) and on absent port (l.172-178); timeout/degraded branch unchanged. Enforcement evidence wired and passing (`graph_unavailable_notice_on_empty_result` run, passed; `graph_unavailable_distinct_messages_survive_deduplication`, `graph_ablation_does_not_emit_graph_unavailability_notice`). |
-| 06-10 | MUST NOT allow a model-only answer to be presentable as a grounded one — never a retrieval/mixed basis, never citations, **never returned without its notice** | `resolved` | test | ⚠️ **CONTESTED — routed to human item #2.** The opt-in route upholds it (`generate.rs:166-170` emits `NoticeCode::ModelOnly`, clears `structured_citations`, calls `into_model_only()`) — though that route is unreachable in production for a separate reason (gap SC3). The **total-drop route** reaches the same client-visible `answer_basis = MODEL_ONLY` and emits `CITATION_DROPPED` + `BASIS_RECONCILED` but **not** `MODEL_ONLY`. Whether those notices satisfy "its notice" in spirit is genuinely arguable; the current behavior is pinned by `citation_repair_enabled_drops_unresolvable_marker_and_emits_notice` (l.5845), so changing it means changing a shipped test. Not marked green. |
-| 06-11 | MUST NOT invent, substitute or guess a citation target — a marker matching nothing, or more than one, is dropped and disclosed, never assigned to a plausible candidate | `resolved` | test | ✓ **UPHELD.** `citations::resolve_markers` (l.171-198) resolves only by symmetric `normalize()` equality on both sides; `None` candidate → `Dropped`, and a second candidate → `Dropped`. No fuzzy/nearest match exists. Repair never introduces a citation the model did not write. (Note: the *converse* failure — rejecting citations the model legitimately did write twice — is gap SC5.) |
-| 06-12 | MUST NOT treat the unclassified RAG-03 probe edge as covered or auto-resolved; no 06-SPEC.md exists, edge unresolved pending manual review at phase verification | `flagged-unverified` | manual | ⚠️ **UNRESOLVED — routed to human item #1.** Declared unverified by the plan itself and names phase verification as its resolution point. Recorded as a human-verification item, never absorbed into a pass. |
+**Net:** RAG-03 is **partially satisfied**. Two of its four in-scope clauses (DEBT-RAG-01's
+model-only half, DEBT-RAG-03) are blocked. RAG-03 must remain unchecked in `REQUIREMENTS.md`.
 
 ### Anti-Patterns Found
 
-Debt-marker gate: `TBD|FIXME|XXX` scanned across `engine/src/`, `gateway/`, `proto/`, `scripts/`, `config/`, `README.md` (excluding generated `pb`/`.pb.go`) — **zero matches**. Gate passes.
-
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `engine/src/generation/openrouter.rs` | 521-524 | Outbound JSON schema pins `answer_basis` to `["retrieval","mixed"]` while a third basis is a shipped contract value | 🛑 Blocker | A structured-output provider cannot return `model_only`; blocks SC3 even if the `EmptyEvidence` guard is lifted. |
-| `engine/src/workflow/nodes/generate.rs` | 185-231 | Per-occurrence list handed to a duplicate-rejecting validator | 🛑 Blocker | Blocks SC5. |
-| `engine/src/workflow/events.rs` | 372 | `metadata: None` hardcoded; `WorkflowMetadata` never constructed anywhere in the engine | ⚠️ Warning | Contract field is inert. Population deferred to Phase 6.2 SC8, so not an SC2 failure — but see the gateway half. |
-| `gateway/internal/sse/sse.go` | 123-135 | Zero-filling `else` branch converts *absent* metadata into an asserted `"degraded_mode": false` | ⚠️ Warning | Actively wrong on exactly the degraded runs this channel was built for. A consumer cannot distinguish "not degraded" from "engine never told me". Omitting the key when metadata is nil would be honest; `gateway/internal/sse/sse_test.go` asserts nothing on `metadata`. |
-| `engine/src/config.rs` | 600 | `Environment::with_prefix("LANCET").separator("__")` without `.prefix_separator("_")` | ⚠️ Warning | **CR-04 conflict resolved: both statements are true simultaneously.** In `config` 0.15.x, `prefix_separator` falls back to `separator`, so the required prefix is `lancet__` and every documented `LANCET_ENGINE__*` variable is skipped by the declarative source. The two passing tests (`model_only_answers_recognizes_true_and_false_env_overrides`, `citation_repair_enabled_recognizes_true_and_false_env_overrides`) pass because those exact keys have **hand-written** override paths at `config.rs:652-674`, separate from the declarative source. The tests pin the allowlist, not the mechanism. Keys outside the allowlist (all of `engine.retrieval.*`, `engine.graph.seed_match_min_score`, `openrouter.temperature`, …) are silently unoverridable. No SC covers env overrides, so this is a warning, not an SC failure. |
-| `engine/src/workflow/nodes/generate.rs` | 233-266 | `effective_allow = ctx.allow_model_only \|\| total_drop` | ⚠️ Warning | Both routes to `answer_basis = MODEL_ONLY` reach the same client-visible value, but only the `should_treat_as_model_only` branch emits `NoticeCode::ModelOnly`. Routed to human verification. |
-| `engine/src/service.rs` | 763-764 | `let _disable_graph_context = req.disable_graph_context.unwrap_or(false);` with a comment implying it is load-bearing | ℹ️ Info | Dead binding only. The flag genuinely reaches the workflow via `WorkflowContext::new` (`workflow/mod.rs:114`), and SC7's ablation tests pass. Cosmetic. |
-| `engine/src/workflow/mod.rs` | 249-363 | `run_inline_prompt_generation_remainder` is `pub` (not `#[cfg(test)]`), skips grounding validation and carries a divergent copy of the model-only rule | ⚠️ Warning | A published fail-open generation seam that has already drifted from `GenerateAnswerNode`. Only tests call it today. |
-| `engine/src/workflow/runner.rs` | 417-425 + `workflow/mod.rs:150-160` | Successful zero-evidence responses serialize `ANSWER_BASIS_UNSPECIFIED` (enum `0`) inside `success: true` | ℹ️ Info | **Pre-existing, not introduced by Phase 6.** `git show 0c96720:engine/src/workflow/runner.rs:426-432` shows the same `break` before the phase; Phase 6 only added the `!ctx.allow_model_only &&` guard. SC3's "flag off, unchanged" clause therefore holds. |
+| `engine/src/generation/openrouter.rs` | 792 | Fail-closed validation gate placed upstream of the repair seam that exists to fix those inputs | 🛑 Blocker | Root cause of the SC5 gap |
+| `engine/src/workflow/nodes/generate.rs` | 153, 165 | Validate-then-convert ordering — the unmodified output is validated, `into_model_only()` applied afterwards | 🛑 Blocker | Root cause of the SC3 gap; inverts the documented engine-decides design |
+| `engine/src/generation/tests.rs` | ~910 | Mock hardcodes the exact field under test (`"answer_basis": "model_only"`) | ⚠️ Warning | Green test that cannot fail on the production contract |
+| `engine/src/tests/workflow_phase5.rs` | ~5661 | `PackingTestGenerator` hardcodes `AnswerBasis::ModelOnly` | ⚠️ Warning | Same class |
+| `engine/src/tests/workflow_phase5.rs` | 6050-6088 | Drop-path test built on an input the production adapter rejects outright | ⚠️ Warning | Reads as SC5 coverage of the drop clause; is not |
+| `engine/src/tests/workflow_phase5.rs` | 5790-5798 | `pack_model_only_prompt_uses_ungrounded_policy` pins a function production never invokes | ⚠️ Warning | Reads as SC3 coverage; is not |
+| `engine/src/generation/openrouter.rs` | 245 | `#[allow(clippy::too_many_arguments)]` instead of `#[expect(..)]` | ⚠️ Warning | `rust-guidelines.md` M-LINT-OVERRIDE-EXPECT |
+| `engine/src/generation/openrouter.rs` | 245-254 | Positional `allow_model_only: bool` wedged between two `usize` params at a security-relevant call site (`:534-543`) | ⚠️ Warning | A transposition is silent at compile time and flips the fail-closed default |
+| `scripts/engine-test-targets.sh` | 7, 29 | Hardcoded developer home path (`/mnt/c/Users/user3/.cargo/bin`); unguarded pipeline under `set -e` with no `pipefail` | ⚠️ Warning | A build failure reports as `TOTAL test count mismatch: expected 380, got 0`. Carried forward (WR-11); `953b22c` touched this file but changed only the counts |
+| `engine/src/generation/mod.rs` | 435 | `GenerationRequest::system_policy` is `pub`, serialized, compared in `PartialEq` — and read by no production code | ⚠️ Warning | Carried forward (WR-01). Behavior is intact (`base_system_policy()` still reaches the wire via `prompt.rs:363-372`), but a caller setting it gets a silent no-op |
+
+No unreferenced `TBD` / `FIXME` / `XXX` debt markers were found in the files `953b22c` touched.
 
 ### Human Verification Required
 
-#### 1. Adjudicate plan 06-12's flagged prohibition (specless probe edge)
-
-**Test:** Read plan 06-12's prohibition — *"MUST NOT treat the unclassified RAG-03 probe edge as covered or auto-resolved. No 06-SPEC.md exists; the edge remains unresolved pending manual review at phase verification."* (`status: flagged-unverified`, `verification: manual`).
-**Expected:** An explicit owner decision recorded — the edge is either accepted as out of scope for Phase 06, or a follow-up item is filed. It must not be absorbed silently into a pass.
-**Why human:** The prohibition names phase verification as its resolution point and there is no 06-SPEC.md to check against. No programmatic evidence can resolve it.
-
-#### 2. Decide whether the citation total-drop relaxation is the intended contract
-
-**Test:** Review `engine/src/workflow/nodes/generate.rs:233-266`, specifically `let effective_allow = ctx.allow_model_only || total_drop;`, against plan 06-10's prohibition ("a model-only answer … must never be returned without its notice") and `config.rs:164-169` ("Whether model-only answers are allowed … Defaults to false").
-**Expected:** One of — (a) the total-drop route also emits `NoticeCode::ModelOnly`; (b) the relaxation becomes a separate, explicitly named configuration key; or (c) the current behavior is accepted in writing.
-**Why human:** The disjunction is deliberate and commented as such. Whether an operator's `allow_model_only_answers = false` (and a caller's explicit `allow_model_only: false`) should still yield a `MODEL_ONLY` answer when every marker is unresolvable is a design judgment, not a code fact. Note that `citation_repair_enabled_drops_unresolvable_marker_and_emits_notice` (l.5845) pins the current behavior with `ctx.allow_model_only == false`, so changing it means changing a shipped test.
-
-### Recorded Provenance (noted, taken at face value)
-
-`06-04-SUMMARY.md` carries a **Closure Ledger** recording four plan-06-04 acceptance criteria that no longer hold as written. Two were mechanically false but substantively correct (the `stream_error` literal gate, and the "redistribution" wording). Two were judgment calls **escalated rather than self-certified and recorded as accepted by the project owner on 2026-08-20**: raising the Go test invariant 67 → 75 (67 retained as `RELOCATION_BASELINE`), and superseding Task 2's "exactly once" grep with the correct count of 2. The same summary records one regression found and fixed post-execution (REG-06-04-01, a truncated fail-closed operator hint) and three closed gaps. This verification takes that provenance at face value and notes it; none of it bears on the seven success criteria.
-
-### Gaps Summary
-
-The phase's structural and observability work is real and holds up under adversarial reading. The module-graph restructure (SC1) is complete on both sides with only the deliberately-reserved telemetry stub unwired. The consolidated protobuf change (SC2) is genuinely additive, correctly ordered before every behavior plan, and both binding trees agree with the source on every tag and enum value. Three of the four degraded-mode behaviors — per-path retrieval degrade (SC4), the bad-input matrix (SC6), and the graph-unavailable notice with its source-chunk proof (SC7) — are wired, data-flowing, and each backed by a named test that I ran and watched pass.
-
-Two of the seven criteria do not hold, and both failures are invisible to the 372-test green suite because the tests that cover them do not exercise the production path.
-
-**SC3 is the load-bearing failure.** The model-only opt-in — the phase's headline user-facing outcome — cannot produce an answer in production. `AssemblePromptNode` builds a model-only prompt that nothing on the generation path reads; `GenerateAnswerNode` constructs a fresh request from raw query + empty evidence; and `OpenRouterGenerator` then unconditionally calls `pack_evidence_and_graph_prompt`, which rejects an empty evidence slice — a rejection pinned by a shipped, passing test I ran. The error is non-retryable, so every model-only run terminates as `LLM_GENERATION_FAILED` before the provider is contacted. Two further defects sit behind it: the outbound JSON schema does not admit `model_only` as an `answer_basis`, and the model-only prompt reuses a policy that instructs the model to cite evidence blocks that do not exist. The covering test passes only because it omits `.with_settings(..)` (leaving `grounding_limits: None`) and uses a fake generator; production sets both. The flag-OFF half of SC3 is verified and genuinely unchanged from pre-phase behavior — I checked the pre-phase runner source directly rather than assuming.
-
-**SC5 fails on its own target case.** Citation repair builds its citation list one entry per marker *occurrence* and hands it to a validator that rejects duplicate IDs. An answer citing `[1]` twice, or mixing `[ 7 ]` with `[7]` against evidence `["[7]"]`, now hard-fails the run — and the second case is precisely what the widened extractor was added to normalize. With repair disabled the same answer passes, because that path compares inline markers as a set. All eight shipped repair tests use a single distinct marker, so the regression cannot be seen from the suite.
-
-Both gaps are defects on the production path rather than alternative implementations achieving the same intent, so no override is suggested for either.
-
-**Carry-forward.** The two human-verification items are recorded in this report's frontmatter under `human_verification:` even though the overall status is `gaps_found` (the gaps-found rule takes precedence in the decision tree, but the items are not conditional on it). Both persist past gap closure and must be resolved before the phase closes: re-verification must carry them forward, and a later run that closes SC3 and SC5 resolves to `human_needed`, not `passed`, until plan 06-12's flagged prohibition and the total-drop notice question each have an explicit owner decision.
-
-Outside the criteria, two warnings deserve a look before the next phase: the gateway converts absent workflow metadata into an asserted `"degraded_mode": false` on exactly the degraded runs the channel exists for (the engine half is legitimately deferred to Phase 6.2 SC8, but the gateway half should omit the key rather than claim a value), and the engine's declarative environment-override source silently matches no documented variable — which the two passing env tests do not contradict, because those two keys have hand-written override paths of their own.
+None. Both gaps are deterministic code paths verified by reading the implementation; neither
+requires human judgment or a running service.
 
 ---
 
-_Verified: 2026-08-21_
+## Gaps Summary
+
+**The phase goal is not achieved.** Five of seven Success Criteria hold. The two that do not are
+exactly the two the gap-closure round targeted, and both moved from "broken" to "partially
+reachable" without arriving.
+
+**One root cause spans both gaps: the provider adapter is the fail-closed decision point for
+concerns the workflow layer is supposed to own.** `OpenRouterGenerator::execute_one_call` runs the
+complete grounding validator on the raw model output at `openrouter.rs:792` — before
+`GenerateAnswerNode` can repair a marker (SC5) or before the engine can assert the model-only basis
+it already decided on (SC3). Every SC3 and SC5 behavior the phase was supposed to ship is
+downstream of a gate that rejects its inputs.
+
+**SC3.** Plan 06-13 fixed the packing half — genuinely and verifiably. The opted-in empty-evidence
+request now reaches the provider with the ungrounded policy and a schema that admits `model_only`.
+What is missing is the contract: the prompt never asks the model for
+`answer_basis: "model_only"`, and both validation layers hard-reject the natural alternative
+(`retrieval` basis with zero citations) as a non-retryable error. The engine's own doc comment
+promises engine-decided model-only; the implementation delivers model-decided. SC3 currently
+succeeds when the model guesses.
+
+**SC5.** Plan 06-14's dedup fix is correct and both prior repro inputs now pass end to end — this is
+real progress, not paperwork. But the prior report diagnosed a shallower defect than the one that
+actually blocks SC5, and both of its repros happened to satisfy the deeper constraint. Case-split
+against `mod.rs:331-365`, the operative rule is: **repair executes only when a correctly-cited,
+strict-visible marker rides along in the same answer to satisfy the adapter's set-equality check.**
+A near-miss with an exact cited companion is repaired; a padded unresolvable marker with a valid
+cited companion is dropped. But a standalone near-miss, a standalone padded marker, any
+strict-visible unresolvable marker (`[9]`), and the entire total-drop basis-downgrade clause are all
+rejected one layer earlier. That is not "normalizes near-miss markers locally" — it is "normalizes
+them if a healthy citation happens to be present in the same answer," on the default configuration
+(`citation_repair_enabled = true`).
+
+**Why the suite is green anyway — the same defect class as the prior round.** Every SC5 test uses
+`FakeGenerator`, which never validates (`grep -c OpenRouterGenerator
+engine/src/tests/workflow_phase5.rs` = 0), and the one drop-path test is built on an input the
+adapter rejects. Every SC3 test hardcodes `"answer_basis": "model_only"` in the double. The doubles
+never touch the layer that fails. A closure plan for either gap must land a test that drives the
+path through `OpenRouterGenerator` against the mock-server harness (`generation/tests.rs:881-985` is
+the working template), using a **standalone** repairable marker — a companion-marker input passes
+today and would mask the defect. A `FakeGenerator`-based test cannot detect this class and should
+not be accepted as proof a third time.
+
+**Ordering note for the fixer.** The two gaps share the adapter seam, so they should be closed in
+one plan or in a fixed order. Splitting `validate_grounding_with_limits` to move the four marker
+checks (`mod.rs:331-365`) out of the adapter fixes SC5 but does nothing for SC3 on its own, because
+`generate.rs:153` independently rejects the same output. And removing the adapter gate without
+first gating `run_inline_prompt_generation_remainder` (`workflow/mod.rs:249-363`, currently `pub`
+and validation-free — test-only today, but published) would turn that path fully fail-open.
+
+---
+
+_Verified: 2026-08-22T18:40:00Z_
 _Verifier: Claude (gsd-verifier)_
+_Supersedes the initial Phase 6 verification; the gap → plan → resolution trail is preserved in the Re-verification Trail section above._
