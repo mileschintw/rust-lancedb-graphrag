@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
 current_plan: 14
-status: executing
-stopped_at: Phase 6 gap-closure plans complete (Plans 06-13 and 06-14 executed)
-last_updated: "2026-08-22T00:05:00.000Z"
-state_head: c32118a2a5735db3465546bac28cfa9759252367
+status: verifying
+stopped_at: Phase 6 post-execution gates run — code review + regression gate + re-verification complete; gaps remain (5/7)
+last_updated: "2026-08-22T18:56:51.854Z"
+state_head: e92a544dc3c6c6967750b7e872c79f6884611162
 progress:
   total_phases: 11
   completed_phases: 3
@@ -45,11 +45,18 @@ milestone_name: milestone
 - Phase 06 Wave 8 Plan 06-10 executed: supported model-only answers as an explicit, per-request, default-off opt-in (D-10/D-11/D-12/D-84 / DEBT-RAG-01).
 - Phase 06 Wave 11 Plan 06-13 executed: closed SC3 gap with OpenRouter empty-evidence packing branch, dedicated model-only system policy, GenerationRequest allow_model_only plumbing, and answer_basis schema enum admission.
 - Phase 06 Wave 12 Plan 06-14 executed: closed SC5 gap with first-occurrence de-duplication of repaired citation IDs in GenerateAnswerNode and resolve_citations_with_max_chars.
+- Phase 06 post-execution gates RUN (2026-08-22) after gap-closure plans 06-13/06-14 landed at `953b22c`:
+  - **Code review** (`192cf35`, scope pinned to the 8-file `953b22c` delta per the repo's harness-scope hazard): `status: issues_found` — 2 critical, 5 warning new findings. CR-01: SC5 citation repair is unreachable in production because `execute_one_call` validates raw model output at `openrouter.rs:788-792` before `GenerateAnswerNode`'s repair pass runs. CR-02: `model_only_system_policy` never instructs `answer_basis: "model_only"`, so the natural `retrieval`+empty-citations reply hard-fails at `generation/mod.rs:210-220`. Of the 18 pre-gap-closure findings: prior CR-01 resolved; CR-03, WR-01, WR-04, WR-11 still open; CR-04/CR-05 deferred to Phase 6.1; 8 not re-checked (outside pinned scope).
+  - **Regression gate PASSED**: Rust 380 tests (344 passed / 1 ignored / 0 failed across lib+bin+integration targets, matching the pinned count in `scripts/engine-test-targets.sh`) and the full Go gateway suite, both exit 0. No cross-phase regressions.
+  - **Re-verification** (`e92a544`): `status: gaps_found`, still 5/7 must-haves. SC3 upgraded `failed` → `partial` (all four prior `missing` items implemented, but the model-only contract is model-decided rather than engine-decided). SC5 stays `partial` with a NEW, deeper root cause — the 06-14 dedup fix is correct and both prior repros now pass, but repair only executes when a correctly-cited strict-visible marker rides along in the same answer to satisfy the adapter's set-equality check; standalone near-miss markers and the whole total-drop basis-downgrade clause remain unreachable under the default `citation_repair_enabled: true`.
+  - Both gaps share one seam: `validate_grounding_with_limits` running inside the provider adapter. Fixer ordering matters — removing the adapter gate without first gating `run_inline_prompt_generation_remainder` would turn that published path fully fail-open.
+  - ROADMAP's "SC3 → 6.4; SC5 and SC6 → 6.1" note maps the ORIGINAL pre-split criteria and does NOT license deferring these two gaps (proof: it sends "SC1 → 6.2", but current SC1 is the module graph, not OpenTelemetry). Phase 6.1 and 6.4 criteria mention neither model-only answers nor citation repair.
+  - Phase 6 NOT complete. Security gate still open: `workflow.security_enforcement` active and no `06-SECURITY.md` exists. `06-VALIDATION.md` is dated 2026-08-20 and predates plans 06-08..06-14.
 
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
-- **Status:** Ready to execute
+- **Status:** Verification gaps found (5/7 must-haves) — SC3 and SC5 both partial
 - **Current Plan:** 14
 - **Total Plans in Phase:** 14
 - **Completed Plans in Phase:** 14 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14)
