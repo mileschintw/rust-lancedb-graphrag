@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
-current_plan: 14
-status: verifying
-stopped_at: Phase 6 post-execution gates run — code review + regression gate + re-verification complete; gaps remain (5/7)
-last_updated: "2026-08-22T18:56:51.854Z"
-state_head: e92a544dc3c6c6967750b7e872c79f6884611162
+current_plan: 15
+status: ready_to_execute
+stopped_at: Phase 6 gap-closure plan 06-15 planned and verified (plan-checker PASSED, 0 blockers/0 warnings after 3 iterations); awaiting /gsd-execute-phase 06 --gaps-only
+last_updated: "2026-08-22T23:15:39.923Z"
+state_head: 1b6bf55eadee98429491a46f451b561a33040052
 progress:
   total_phases: 11
   completed_phases: 3
-  total_plans: 103
+  total_plans: 104
   completed_plans: 103
 milestone_name: milestone
 ---
@@ -54,14 +54,22 @@ milestone_name: milestone
   - ROADMAP's "SC3 → 6.4; SC5 and SC6 → 6.1" note maps the ORIGINAL pre-split criteria and does NOT license deferring these two gaps (proof: it sends "SC1 → 6.2", but current SC1 is the module graph, not OpenTelemetry). Phase 6.1 and 6.4 criteria mention neither model-only answers nor citation repair.
   - Phase 6 NOT complete. Security gate still open: `workflow.security_enforcement` active and no `06-SECURITY.md` exists. `06-VALIDATION.md` is dated 2026-08-20 and predates plans 06-08..06-14.
 
+- Phase 06 gap-closure PLANNED (2026-08-22) via `/gsd-plan-phase 06 --gaps` — `06-15-PLAN.md` (wave 13, `gap_closure: true`, `depends_on: [06-13, 06-14]`, 3 tasks, 78k est). Third attempt at SC3 + SC5; both prior attempts (06-13, 06-14) executed green and re-verified `partial`.
+  - **One root cause, one plan.** `OpenRouterGenerator::execute_one_call` runs the full grounding validator on RAW model output at `openrouter.rs:792`, inside the provider adapter — upstream of the workflow layer that owns repair (SC5) and the model-only basis decision (SC3). Both gaps sit downstream of a gate that rejects their own inputs. All three fix steps touch the same five Rust files, so they are one plan, not two.
+  - **Ordering is a hard safety sequence,** enforced by sequential task order plus two executable `<precondition>` greps: (1) gate `run_inline_prompt_generation_remainder` (`workflow/mod.rs:249-363`, `pub` and validation-free — test-only today, per the orchestrator-corrected WR-01 severity) → (2) split `validate_grounding_with_limits` into `validate_output_shape_with_limits` + `validate_marker_grounding`, moving the four marker checks (`mod.rs:331-365`) out of the adapter → (3) pin the `answer_basis` contract at both `generate.rs:147-165` and `openrouter.rs:788-792`. Doing (2) before (1) would turn a published surface fully fail-open.
+  - **Test shape is the discriminating criterion.** Both prior rounds went green on doubles that never reach the failing layer (`grep -c OpenRouterGenerator engine/src/tests/workflow_phase5.rs` = 0; every SC3 test hardcoded `"answer_basis": "model_only"` in its mock body). 06-15 requires every SC3/SC5 proof to drive a real `OpenRouterGenerator` against a mock HTTP server through `GenerateAnswerNode::run` and assert on `WorkflowContext`, with a STANDALONE near-miss `[ 7 ]` (no healthy companion), a strict-visible unresolvable `[9]`, and the total-drop basis downgrade. `FakeGenerator`/`PackingTestGenerator` are prohibited as proof in `must_haves.prohibitions`.
+  - **Accepted residual `T-06-15-03` (medium/mitigate):** post-split the marker checks bind to `ctx.evidence_blocks` (full retrieved set) rather than the packed subset, so a marker naming a retrieved-but-truncated block now resolves. The alternative mitigation is unavailable — retaining the cited-ID membership check in the adapter would re-break the total-drop clause. Disposition must be recorded in `06-15-SUMMARY.md`.
+  - Gates: plan-checker **PASSED** (0 blockers / 0 warnings) after 3 iterations, 6 findings all closed (`cc258ab`, `1b6bf55`); requirements coverage 1/1; decision coverage 9/9; `verify.plan-structure` valid. Bounce skipped (`--gaps`).
+  - Security gate STILL OPEN: `workflow.security_enforcement` active and no `06-SECURITY.md` exists. `06-VALIDATION.md` still dates to 2026-08-20 and predates plans 06-08..06-15 — the §7.5 gate checks existence only, so Nyquist coverage for the new work is NOT established.
+
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
-- **Status:** Verification gaps found (5/7 must-haves) — SC3 and SC5 both partial
-- **Current Plan:** 14
-- **Total Plans in Phase:** 14
+- **Status:** Gap-closure plan 06-15 planned and verified — ready to execute (verification still 5/7 must-haves; SC3 and SC5 both partial)
+- **Current Plan:** 15
+- **Total Plans in Phase:** 15
 - **Completed Plans in Phase:** 14 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14)
-- **Progress:** [██████████] 100%
+- **Progress:** [█████████░] 93%
 
 ## Completed Phases
 
