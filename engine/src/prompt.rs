@@ -218,7 +218,8 @@ When evidence contradicts your prior knowledge, the evidence is authoritative; s
 pub fn model_only_system_policy() -> &'static str {
     "System Policy: You are a precise technical assistant. \
 Answer the user's question accurately using your general knowledge. \
-No corpus evidence is provided for this request; do not cite evidence markers."
+No corpus evidence is provided for this request; do not cite evidence markers. \
+Set answer_basis to model_only with an empty cited_evidence_ids list."
 }
 
 /// Packs a well-formed prompt for model-only execution containing no numbered evidence blocks.

@@ -531,7 +531,7 @@ impl OpenRouterGenerator {
             ));
         }
 
-        let (system_msg, user_msg, validation_evidence) = pack_openrouter_messages(
+        let (system_msg, user_msg, _validation_evidence) = pack_openrouter_messages(
             &request.question,
             &request.evidence,
             &request.graph_facts,
@@ -784,12 +784,17 @@ impl OpenRouterGenerator {
             });
         }
 
-        // Validate semantic grounding against packed evidence IDs per D-17, D-22, D-28
+        // Validate semantic grounding shape against limits per D-17, D-22, D-28
         let limits = self
             .config
             .grounding_limits
             .with_allow_model_only(request.allow_model_only);
-        model_output.validate_grounding_with_limits(&validation_evidence, limits)?;
+        let validation_view = if request.evidence.is_empty() && request.allow_model_only {
+            model_output.into_model_only()
+        } else {
+            model_output.clone()
+        };
+        validation_view.validate_output_shape_with_limits(limits)?;
 
         Ok(model_output)
     }

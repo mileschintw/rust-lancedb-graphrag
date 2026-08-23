@@ -147,9 +147,10 @@ impl Node for GenerateAnswerNode {
                     if ctx.allow_model_only
                         && output.should_treat_as_model_only(ctx.evidence_blocks.is_empty())
                     {
+                        let for_validation = output.into_model_only();
                         if let Some(limits) = self.grounding_limits {
                             let limits = limits.with_allow_model_only(ctx.allow_model_only);
-                            output
+                            for_validation
                                 .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
                                 .map_err(|err| {
                                     NodeError::new(
@@ -162,7 +163,7 @@ impl Node for GenerateAnswerNode {
                                     )
                                 })?;
                         }
-                        ctx.update_from_model_output(&output.into_model_only());
+                        ctx.update_from_model_output(&for_validation);
                         ctx.structured_citations.clear();
                         ctx.add_notice(crate::workflow::notice(
                             crate::pb::lancet::v1::NoticeCode::ModelOnly,

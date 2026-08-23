@@ -181,9 +181,8 @@ impl ModelOutput {
         self.validate_grounding_with_limits(packed_evidence, GroundingLimits::default_limits())
     }
 
-    pub fn validate_grounding_with_limits(
+    pub fn validate_output_shape_with_limits(
         &self,
-        packed_evidence: &[EvidenceBlock],
         limits: GroundingLimits,
     ) -> Result<(), GenerationError> {
         if !limits.allow_model_only && self.answer_basis == AnswerBasis::ModelOnly {
@@ -317,6 +316,13 @@ impl ModelOutput {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn validate_marker_grounding(
+        &self,
+        packed_evidence: &[EvidenceBlock],
+    ) -> Result<(), GenerationError> {
         // Check for duplicate cited evidence IDs
         let mut seen_cited = HashSet::new();
         for id in &self.cited_evidence_ids {
@@ -365,6 +371,15 @@ impl ModelOutput {
         }
 
         Ok(())
+    }
+
+    pub fn validate_grounding_with_limits(
+        &self,
+        packed_evidence: &[EvidenceBlock],
+        limits: GroundingLimits,
+    ) -> Result<(), GenerationError> {
+        self.validate_output_shape_with_limits(limits)?;
+        self.validate_marker_grounding(packed_evidence)
     }
 
     /// Whether this output should be treated as model-only: either it self-reports

@@ -1676,3 +1676,143 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
         "BM25 retrieval must succeed using its immutable Arc snapshot"
     );
 }
+
+#[tokio::test]
+async fn openrouter_node_optin_empty_evidence_retrieval_basis_still_yields_model_only() {
+    use serde_json::json;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let models_calls = Arc::new(AtomicUsize::new(0));
+    let chat_calls = Arc::new(AtomicUsize::new(0));
+
+    let models_calls_server = Arc::clone(&models_calls);
+    let chat_calls_server = Arc::clone(&chat_calls);
+
+    let server_handle = std::thread::spawn(move || {
+        listener.set_nonblocking(true).unwrap();
+        let start = std::time::Instant::now();
+        let mut conn_count = 0;
+        while conn_count < 2 && start.elapsed() < Duration::from_secs(5) {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    conn_count += 1;
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut buf = [0u8; 8192];
+                    let n = stream.read(&mut buf).unwrap_or(0);
+                    let req_str = String::from_utf8_lossy(&buf[..n]).to_string();
+
+                    if req_str.contains("GET /models") {
+                        models_calls_server.fetch_add(1, Ordering::SeqCst);
+                        let body = json!({
+                            "data": [{
+                                "id": "mock/sc3-model",
+                                "supported_parameters": ["response_format", "json_schema"]
+                            }]
+                        })
+                        .to_string();
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(), body
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                    } else if req_str.contains("POST /chat") {
+                        chat_calls_server.fetch_add(1, Ordering::SeqCst);
+                        let model_output = json!({
+                            "answer": "This is a model-only answer.",
+                            "cited_evidence_ids": [],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        })
+                        .to_string();
+                        let chat_resp = json!({
+                            "choices": [{
+                                "message": {
+                                    "role": "assistant",
+                                    "content": model_output
+                                },
+                                "finish_reason": "stop"
+                            }]
+                        })
+                        .to_string();
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            chat_resp.len(), chat_resp
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                    }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let config = generation::openrouter::OpenRouterGenerationConfig::new(
+        "mock/sc3-model",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap()
+    .with_preflight_timeout(Duration::from_millis(2000));
+
+    let generator = Arc::new(
+        generation::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap(),
+    );
+
+    generator
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
+
+    let mut req = test_query_request(
+        "What is the model only answer?",
+        "00000000-0000-4000-8000-000000000088",
+    );
+    req.allow_model_only = Some(true);
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000088".into(),
+        "trace-sc3-tracer".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![];
+
+    let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))
+        .with_settings(generation::GroundingLimits::new(8192, 2048).unwrap(), 200, 1.0);
+    let cancel = CancellationToken::new();
+
+    generate_node
+        .run(&mut ctx, &cancel)
+        .await
+        .expect("run succeeds");
+
+    assert_eq!(
+        ctx.answer_basis,
+        v1::AnswerBasis::ModelOnly
+    );
+    assert!(ctx.citations.is_empty());
+    assert!(ctx.structured_citations.is_empty());
+    assert!(ctx
+        .notices
+        .iter()
+        .any(|n| n.typed_code == v1::NoticeCode::ModelOnly as i32));
+
+    server_handle.join().expect("server join");
+}
+
