@@ -1,18 +1,18 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 06.1
-current_phase_name: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
-current_plan: 3
-status: gaps_found
-stopped_at: "Phase 06.1 code review + verification complete. gaps_found (4/7 must-haves) — SC2/SC3 dense-retrieval snapshot-pinning race, SC4 discarded checkout_latest() error. Next: /gsd-plan-phase 6.1 --gaps."
-last_updated: "2026-08-23T21:14:00.659Z"
-state_head: ac6e01f2a03a4f1c0b76d2ac97b42904cdcce64c
+current_phase: 06.2
+current_phase_name: OpenTelemetry Traces, Metrics and Logs (OBS-01)
+current_plan: Not started
+status: planning
+stopped_at: Phase 06.1 complete, ready to plan Phase 06.2
+last_updated: "2026-08-23T23:09:53.235Z"
+state_head: 723c1a75c5b76537a8adf53f55c57cca8ed1d848
 progress:
   total_phases: 11
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 109
-  completed_plans: 108
+  completed_plans: 109
 milestone_name: milestone
 ---
 
@@ -102,9 +102,9 @@ milestone_name: milestone
 
 ## Active Phase
 
-- **Phase:** 06.1 — Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
-- **Status:** gaps_found (4/7 must-haves) — code review + verification complete, dense-retrieval snapshot-pinning race (SC2/SC3) and discarded checkout_latest() error (SC4) block completion
-- **Current Plan:** 3
+- **Phase:** 06.2 — OpenTelemetry Traces, Metrics and Logs (OBS-01)
+- **Status:** Ready to plan
+- **Current Plan:** Not started
 - **Total Plans in Phase:** 4
 - **Completed Plans in Phase:** 3 (executed; phase-level gates not yet passed)
 - **Progress:** [██████████] 100% execution / gates: gaps_found
@@ -252,7 +252,7 @@ milestone_name: milestone
 ## Session
 
 **Last session:** 2026-08-23T21:30:00.000Z
-**Stopped at:** Phase 06.1 code review + verification complete — gaps_found (4/7). Dense-retrieval snapshot pinning (SC2/SC3) and discarded checkout_latest() error (SC4) need a code fix, not just docs. Next: `/gsd-plan-phase 6.1 --gaps`.
+**Stopped at:** Phase 06.1 complete, ready to plan Phase 06.2
 **Resume file:** None
 
 ## Accumulated Context

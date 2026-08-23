@@ -541,7 +541,7 @@ Plans:
 6. `DEBT-BU-02` closes via a deterministic test: caller-fixture SHA-256 and bytes preserved across success plus representative early and post-upload failures, using script-created temporary inputs only, no live run (D-07).
 7. `DEBT-CR-04` (network auth/authz/TLS/quotas) and `DEBT-CR-05` (pre-admission bounds) are reviewed as documented-only conditional gates: the loopback guardrail is verified to hold, no trigger fired, re-acceptance is recorded, and no new code ships for either (D-06).
 
-**Plans:** 4/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1** *(parallel — no shared files)*
