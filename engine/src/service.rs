@@ -81,7 +81,7 @@ impl LancetServiceImpl {
             });
         let dense_adapter: Arc<dyn workflow::ports::DenseRetrievalPort> =
             Arc::new(ProductionDenseRetrievalPort {
-                nodes: self.nodes.clone(),
+                database: self.database.clone(),
                 nodes_version: snapshot.nodes_version,
                 retrieval_settings: self.effective_settings.retrieval.clone(),
             });
@@ -497,9 +497,8 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
 }
 
 /// Production adapter implementing `DenseRetrievalPort` backed by LanceDB nodes table.
-/// Production adapter implementing `DenseRetrievalPort` backed by LanceDB nodes table.
 pub struct ProductionDenseRetrievalPort {
-    pub nodes: Table,
+    pub database: DatabaseManager,
     pub nodes_version: u64,
     pub retrieval_settings: retrieval::RetrievalSettings,
 }
@@ -530,7 +529,12 @@ impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
                             err.message(),
                         )
                     })?;
-            let nodes = self.nodes.clone();
+            let nodes = self.database.nodes_table().await.map_err(|err| {
+                workflow::node::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    format!("failed to open nodes table: {err}"),
+                )
+            })?;
             nodes.checkout(self.nodes_version).await.map_err(|err| {
                 workflow::node::NodeError::new(
                     v1::NodeErrorKind::RetrievalFailed,

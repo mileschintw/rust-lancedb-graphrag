@@ -4288,22 +4288,27 @@ async fn query_rag_fail_closed_dense_snapshot() {
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
-
-    let malformed_nodes = database.edges_table().await.unwrap();
-    let bm25_nodes = database.nodes_table().await.unwrap();
-    let bm25_index = Bm25Index::from_table(&bm25_nodes, effective_settings.retrieval.bm25.clone())
+    let nodes = database.nodes_table().await.unwrap();
+    let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
         .await
         .unwrap();
     let table = database.staged_documents_table().await.unwrap();
     let statuses = Arc::new(dashmap::DashMap::new());
     let (sender, _receiver) = tokio::sync::mpsc::channel(QUEUE_CAPACITY);
 
+    let snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
+        Arc::new(bm25_index),
+        999_999,
+        false,
+    ));
+    let corpus_store = Arc::new(tokio::sync::RwLock::new(snapshot));
+
     let service = LancetServiceImpl {
         table,
         statuses,
         queue: sender,
-        corpus_store: test_corpus_store(&bm25_nodes, bm25_index).await,
-        nodes: malformed_nodes,
+        corpus_store,
+        nodes,
         effective_settings,
         generator: generator.clone(),
         embedder,
@@ -7699,8 +7704,111 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
 }
 
 // =========================================================================
-// Phase 6.1: Plan 06.1-01 Tests
+// Phase 6.1: Plan 06.1-01 & 06.1-04 Tests
 // =========================================================================
+
+#[tokio::test]
+async fn shared_table_clone_checkout_mutates_sibling_pin() {
+    let path = database_path("shared-table-clone-coupling");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let doc_id_1 = Uuid::new_v4().to_string();
+    let job_1 = IngestionJob::new(
+        doc_id_1.clone(),
+        "doc1.md".into(),
+        b"# Doc1\n\nContent for version 1.".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job_1, &database, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let doc_id_2 = Uuid::new_v4().to_string();
+    let job_2 = IngestionJob::new(
+        doc_id_2.clone(),
+        "doc2.md".into(),
+        b"# Doc2\n\nContent for version 2.".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job_2, &database, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let table = database.nodes_table().await.unwrap();
+    let v_latest = table.version().await.unwrap();
+    assert!(v_latest >= 2);
+
+    let handle_a = table.clone();
+    let handle_b = table.clone();
+
+    // Pin handle_a to version 1
+    handle_a.checkout(1).await.unwrap();
+    assert_eq!(handle_a.version().await.unwrap(), 1);
+    assert_eq!(handle_b.version().await.unwrap(), 1, "handle_b shares pinned_version cell");
+
+    // Checkout handle_b to latest version
+    handle_b.checkout(v_latest).await.unwrap();
+    assert_eq!(handle_b.version().await.unwrap(), v_latest);
+
+    // Crucial WR-01 assertion: mutating handle_b's checkout also mutated handle_a's observed version
+    assert_eq!(
+        handle_a.version().await.unwrap(),
+        v_latest,
+        "Table::clone shares Arc<Mutex<DatasetState>> pinned_version so handle_a pin was clobbered by handle_b checkout"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn independent_nodes_table_checkout_stays_isolated() {
+    let path = database_path("independent-nodes-table-isolation");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let doc_id_1 = Uuid::new_v4().to_string();
+    let job_1 = IngestionJob::new(
+        doc_id_1.clone(),
+        "doc1.md".into(),
+        b"# Doc1\n\nContent for version 1.".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job_1, &database, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let doc_id_2 = Uuid::new_v4().to_string();
+    let job_2 = IngestionJob::new(
+        doc_id_2.clone(),
+        "doc2.md".into(),
+        b"# Doc2\n\nContent for version 2.".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job_2, &database, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let table_a = database.nodes_table().await.unwrap();
+    let table_b = database.nodes_table().await.unwrap();
+    let v_latest = table_b.version().await.unwrap();
+    assert!(v_latest >= 2);
+
+    // Pin table_a to version 1
+    table_a.checkout(1).await.unwrap();
+    assert_eq!(table_a.version().await.unwrap(), 1);
+
+    // Checkout table_b to latest
+    table_b.checkout(v_latest).await.unwrap();
+    assert_eq!(table_b.version().await.unwrap(), v_latest);
+
+    // table_a MUST retain its pinned version 1 because it was opened independently
+    assert_eq!(
+        table_a.version().await.unwrap(),
+        1,
+        "independent DatabaseManager::nodes_table() handles stay isolated under concurrent checkouts"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
 
 #[tokio::test]
 async fn test_checkout_clone_isolated_from_live_writes() {
@@ -7808,7 +7916,7 @@ async fn test_rebuild_swap_updates_generation_label() {
 
     // Trigger rebuild_and_swap
     let new_snapshot = engine::ingest::rebuild_and_swap(
-        &service.nodes,
+        &service.database,
         &service.corpus_store,
         service.effective_settings.retrieval.bm25.clone(),
     )
@@ -7853,11 +7961,8 @@ async fn retrieve_dense_on_freshly_initialized_table_does_not_panic() {
     let version = nodes.version().await.unwrap();
     assert_eq!(version, 1, "real LanceDB observed version on fresh table is 1");
 
-    let nodes_pinned = nodes.clone();
-    nodes_pinned.checkout(version).await.unwrap();
-
     let dense_port = engine::service::ProductionDenseRetrievalPort {
-        nodes: nodes_pinned,
+        database: database.clone(),
         nodes_version: version,
         retrieval_settings: retrieval::RetrievalSettings::default(),
     };
@@ -7900,7 +8005,7 @@ async fn rebuild_failure_degrades_not_fails() {
     engine::ingest::arm_rebuild_fail_next();
 
     let res = engine::ingest::rebuild_and_swap(
-        &service.nodes,
+        &service.database,
         &service.corpus_store,
         service.effective_settings.retrieval.bm25.clone(),
     )
@@ -7937,7 +8042,7 @@ async fn rebuild_failure_degrades_not_fails() {
 
     // Subsequent successful rebuild clears degraded flag
     let res_ok = engine::ingest::rebuild_and_swap(
-        &service.nodes,
+        &service.database,
         &service.corpus_store,
         service.effective_settings.retrieval.bm25.clone(),
     )
@@ -7945,6 +8050,93 @@ async fn rebuild_failure_degrades_not_fails() {
     assert!(res_ok.is_ok(), "unarmed rebuild must succeed");
     assert!(!service.corpus_store.read().await.rebuild_degraded, "degraded flag must be cleared");
 
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn rebuild_checkout_latest_failure_degrades_not_fails() {
+    let path = database_path("rebuild-checkout-fail-degrades");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    assert!(!service.corpus_store.read().await.rebuild_degraded);
+    let prior_gen = service.corpus_store.read().await.generation.clone();
+    let prior_version = service.corpus_store.read().await.nodes_version;
+    let prior_bm25 = Arc::clone(&service.corpus_store.read().await.bm25);
+
+    // Arm checkout_latest failure hook
+    engine::ingest::arm_rebuild_checkout_fail_next();
+
+    let res = engine::ingest::rebuild_and_swap(
+        &service.database,
+        &service.corpus_store,
+        service.effective_settings.retrieval.bm25.clone(),
+    )
+    .await;
+    assert!(res.is_err(), "armed rebuild checkout failure must return Err");
+    assert!(
+        service.corpus_store.read().await.rebuild_degraded,
+        "rebuild_degraded flag must be set on checkout_latest failure"
+    );
+    assert_eq!(service.corpus_store.read().await.generation, prior_gen);
+    assert_eq!(service.corpus_store.read().await.nodes_version, prior_version);
+    assert!(Arc::ptr_eq(
+        &service.corpus_store.read().await.bm25,
+        &prior_bm25
+    ));
+
+    // Execute query with degraded snapshot
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(snapshot.clone());
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000052".into(),
+        "trace-checkout-degrade".into(),
+        &test_query_request("query", "00000000-0000-4000-8000-000000000052"),
+    );
+    let retrieve_node = workflow::nodes::RetrieveHybridNode::new(
+        deps.dense_port.clone(),
+        deps.bm25_port.clone(),
+        deps.reranker_port.clone(),
+        deps.retrieval_settings.clone(),
+    )
+    .with_snapshot_metadata(snapshot.generation.clone(), "test-model")
+    .with_rebuild_degraded(snapshot.rebuild_degraded);
+
+    let cancel = CancellationToken::new();
+    retrieve_node.run(&mut ctx, &cancel).await.unwrap();
+
+    let degrade_notice = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "INDEX_REBUILD_FAILED")
+        .expect("IndexRebuildFailed notice must be emitted on checkout_latest degrade");
+    assert_eq!(degrade_notice.severity, lancet::v1::NoticeSeverity::Warning as i32);
+
+    // Subsequent successful rebuild clears degraded flag
+    let res_ok = engine::ingest::rebuild_and_swap(
+        &service.database,
+        &service.corpus_store,
+        service.effective_settings.retrieval.bm25.clone(),
+    )
+    .await;
+    assert!(res_ok.is_ok(), "unarmed rebuild must succeed");
+    assert!(!service.corpus_store.read().await.rebuild_degraded, "degraded flag must be cleared");
+
+    engine::ingest::clear_rebuild_checkout_fail_next();
     let _ = std::fs::remove_dir_all(path);
 }
 
@@ -7975,7 +8167,7 @@ async fn debounce_coalesces_burst() {
     let debounce_task = engine::ingest::spawn_rebuild_debounce_task(
         rebuild_rx,
         shutdown_rx,
-        service.nodes.clone(),
+        service.database.clone(),
         service.corpus_store.clone(),
         service.effective_settings.retrieval.bm25.clone(),
         std::time::Duration::from_millis(200),
@@ -8027,7 +8219,7 @@ async fn debounce_task_terminates_on_shutdown_signal() {
     let debounce_task = engine::ingest::spawn_rebuild_debounce_task(
         rebuild_rx,
         shutdown_rx,
-        service.nodes.clone(),
+        service.database.clone(),
         service.corpus_store.clone(),
         service.effective_settings.retrieval.bm25.clone(),
         std::time::Duration::from_millis(5000),
@@ -8090,7 +8282,7 @@ async fn rebuild_swap_generation_atomicity() {
 
     // Trigger rebuild_and_swap concurrently
     let swap_res = engine::ingest::rebuild_and_swap(
-        &service.nodes,
+        &service.database,
         &service.corpus_store,
         service.effective_settings.retrieval.bm25.clone(),
     )

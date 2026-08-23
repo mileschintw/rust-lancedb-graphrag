@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let debounce_worker = spawn_rebuild_debounce_task(
         rebuild_rx,
         shutdown_rx.clone(),
-        nodes.clone(),
+        database.clone(),
         corpus_store.clone(),
         effective_settings.retrieval.bm25.clone(),
         Duration::from_millis(debounce_ms),

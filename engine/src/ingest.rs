@@ -1416,6 +1416,20 @@ pub fn clear_rebuild_fail_next() {
     REBUILD_FAIL_NEXT.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
+#[cfg(test)]
+static REBUILD_CHECKOUT_FAIL_NEXT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(test)]
+pub fn arm_rebuild_checkout_fail_next() {
+    REBUILD_CHECKOUT_FAIL_NEXT.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(test)]
+pub fn clear_rebuild_checkout_fail_next() {
+    REBUILD_CHECKOUT_FAIL_NEXT.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
 pub fn inert_rebuild_channel() -> (watch::Sender<u64>, watch::Receiver<u64>) {
     watch::channel(0)
 }
@@ -1425,7 +1439,7 @@ pub fn inert_rebuild_tx() -> watch::Sender<u64> {
 }
 
 pub async fn rebuild_and_swap(
-    nodes: &Table,
+    database: &DatabaseManager,
     corpus_store: &crate::workflow::ports::CorpusStore,
     bm25_settings: crate::retrieval::Bm25Config,
 ) -> Result<Arc<crate::workflow::ports::CorpusSnapshot>, String> {
@@ -1451,8 +1465,39 @@ pub async fn rebuild_and_swap(
         }
     }
 
-    let nodes_latest = nodes.clone();
-    let _ = nodes_latest.checkout_latest().await;
+    let nodes_latest = database
+        .nodes_table()
+        .await
+        .map_err(|err| format!("failed to open nodes table: {err}"))?;
+
+    #[cfg(test)]
+    let checkout_res = if REBUILD_CHECKOUT_FAIL_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        Err(lancedb::Error::Runtime {
+            message: "injected checkout_latest failure".into(),
+        })
+    } else {
+        nodes_latest.checkout_latest().await
+    };
+    #[cfg(not(test))]
+    let checkout_res = nodes_latest.checkout_latest().await;
+
+    if let Err(err) = checkout_res {
+        tracing::error!("nodes table checkout_latest failed: {err}");
+        let prior = {
+            let guard = corpus_store.read().await;
+            Arc::clone(&*guard)
+        };
+        let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
+            bm25: Arc::clone(&prior.bm25),
+            generation: prior.generation.clone(),
+            nodes_version: prior.nodes_version,
+            rebuild_degraded: true,
+        });
+        let mut write_guard = corpus_store.write().await;
+        *write_guard = degraded_snapshot;
+        return Err(format!("nodes table checkout_latest failed: {err}"));
+    }
+
     let nodes_version = nodes_latest
         .version()
         .await
@@ -1503,7 +1548,7 @@ pub async fn rebuild_and_swap(
 pub fn spawn_rebuild_debounce_task(
     mut rebuild_rx: watch::Receiver<u64>,
     mut shutdown_rx: watch::Receiver<bool>,
-    nodes: Table,
+    database: DatabaseManager,
     corpus_store: crate::workflow::ports::CorpusStore,
     bm25_settings: crate::retrieval::Bm25Config,
     debounce_duration: std::time::Duration,
@@ -1553,7 +1598,7 @@ pub fn spawn_rebuild_debounce_task(
             }
 
             // 3. Execute rebuild and swap
-            let _ = rebuild_and_swap(&nodes, &corpus_store, bm25_settings.clone()).await;
+            let _ = rebuild_and_swap(&database, &corpus_store, bm25_settings.clone()).await;
         }
     })
 }
