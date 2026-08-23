@@ -1,5 +1,4 @@
 {
-  "model_profile": "inherit",
   "commit_docs": true,
   "parallelization": true,
   "search_gitignored": false,
@@ -15,7 +14,8 @@
     "create_tag": true,
     "phase_branch_template": "gsd/phase-{phase}-{slug}",
     "milestone_branch_template": "gsd/{milestone}-{slug}",
-    "quick_branch_template": null
+    "quick_branch_template": null,
+    "base_branch": "main"
   },
   "workflow": {
     "research": true,
@@ -49,7 +49,10 @@
     "security_asvs_level": 1,
     "security_block_on": "high",
     "_auto_chain_active": false,
-    "plan_review_convergence": true
+    "plan_review_convergence": true,
+    "subagent_timeout": 1800000,
+    "inline_plan_threshold": 5,
+    "cross_ai_timeout": 1800
   },
   "ship": {
     "pr_body_sections": [
@@ -100,6 +103,31 @@
     "models": {
       "agy": "gemini-3.7-flash-high",
       "claude": "sonnet"
+    }
+  },
+  "context_window": 375000,
+  "runtime": "claude",
+  "model_policy": {
+    "provider": "anthropic",
+    "budget": "medium",
+    "high": "claude-opus-4-8",
+    "medium": "claude-sonnet-5",
+    "low": "claude-haiku-4-5"
+  },
+  "model_profile": "balanced",
+  "models": {
+    "research": "haiku",
+    "planning": "opus",
+    "verification": "sonnet"
+  },
+  "dynamic_routing": {
+    "enabled": true,
+    "escalate_on_failure": true,
+    "max_escalations": 1,
+    "tier_models": {
+      "light": "haiku",
+      "standard": "sonnet",
+      "heavy": "opus"
     }
   }
 }
