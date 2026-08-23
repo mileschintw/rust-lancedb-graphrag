@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.1
-current_phase_name: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
+current_phase_name: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
 current_plan: 3
 status: gaps_found
-stopped_at: Phase 06.1 code review + verification complete. gaps_found (4/7 must-haves) — SC2/SC3 dense-retrieval snapshot-pinning race, SC4 discarded checkout_latest() error. Next: /gsd-plan-phase 6.1 --gaps.
-last_updated: "2026-08-23T21:30:00.000Z"
-state_head: 9533ef077ac72a566517fbf01972fafd30bea93f
+stopped_at: "Phase 06.1 code review + verification complete. gaps_found (4/7 must-haves) — SC2/SC3 dense-retrieval snapshot-pinning race, SC4 discarded checkout_latest() error. Next: /gsd-plan-phase 6.1 --gaps."
+last_updated: "2026-08-23T21:14:00.659Z"
+state_head: ac6e01f2a03a4f1c0b76d2ac97b42904cdcce64c
 progress:
   total_phases: 11
   completed_phases: 4
-  total_plans: 108
+  total_plans: 109
   completed_plans: 108
 milestone_name: milestone
 ---
@@ -105,7 +105,7 @@ milestone_name: milestone
 - **Phase:** 06.1 — Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
 - **Status:** gaps_found (4/7 must-haves) — code review + verification complete, dense-retrieval snapshot-pinning race (SC2/SC3) and discarded checkout_latest() error (SC4) block completion
 - **Current Plan:** 3
-- **Total Plans in Phase:** 3
+- **Total Plans in Phase:** 4
 - **Completed Plans in Phase:** 3 (executed; phase-level gates not yet passed)
 - **Progress:** [██████████] 100% execution / gates: gaps_found
 - **Next:** `/gsd-plan-phase 6.1 --gaps`
