@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 06-observability-evaluation-polish
 source: [06-VERIFICATION.md]
 started: 2026-08-22T21:30:00.000Z
-updated: 2026-08-22T20:25:00.000Z
+updated: 2026-08-22T20:26:00.000Z
 ---
 
 ## Current Test
@@ -86,8 +86,15 @@ blocked: 0
   reason: "User reported: (b) reject. D-18 total-drop must honor allow_model_only. When the flag is on, a total-drop may succeed as MODEL_ONLY (downgrade + notices). When the flag is off, the same exchange must return LlmGenerationFailed — do not OR total_drop into effective_allow."
   severity: blocker
   test: 1
-  artifacts: []
-  missing: []
+  root_cause: "In engine/src/workflow/nodes/generate.rs:258, effective_allow is computed as ctx.allow_model_only || total_drop. When allow_model_only is false and all citations are dropped, total_drop forces effective_allow to true, converting the result to AnswerBasis::ModelOnly and passing validation instead of failing closed with NodeErrorKind::LlmGenerationFailed."
+  artifacts:
+    - path: "engine/src/workflow/nodes/generate.rs"
+      issue: "effective_allow = ctx.allow_model_only || total_drop unconditionally permits model-only fallback on total citation drop even when allow_model_only is false."
+  missing:
+    - "Honor ctx.allow_model_only on the D-18 total-drop path: do not OR total_drop into effective_allow when allow_model_only is false."
+    - "Ensure validation or grounding check returns LlmGenerationFailed when allow_model_only is false and all citations drop."
+    - "Add test pinning allow_model_only = false failure on total-drop."
+  debug_session: .planning/debug/d18-total-drop-flag-off.md
 
 - gap_id: G-06-2
   truth: "A citation naming a retrieved-but-truncated block must not resolve or ship an excerpt; known-ID universe is the packed subset, treating truncated citations as unresolvable/dropped."
@@ -95,5 +102,15 @@ blocked: 0
   reason: "User reported: reject resolve. A citation naming a retrieved-but-truncated block must not resolve or ship an excerpt. Known-ID universe is the packed/prompt subset, not ctx.evidence_blocks. Treat [N] as unresolvable: drop it (CITATION_DROPPED), do not fail the whole run unless every citation drops — then apply the Test 1 flag rule. Do not restore the pre-split adapter packed check; that re-breaks D-18 total-drop."
   severity: blocker
   test: 2
-  artifacts: []
-  missing: []
+  root_cause: "Citation marker resolution and structured citation extraction operate against the full evidence blocks rather than the packed prompt subset, causing markers for truncated blocks to resolve and ship excerpts instead of being marked as unresolvable (Resolution::Dropped)."
+  artifacts:
+    - path: "engine/src/workflow/nodes/generate.rs"
+      issue: "evidence_ids in citation repair and resolve_citations use the full evidence blocks list rather than the prompt-packed subset, allowing citations to truncated blocks to resolve."
+    - path: "engine/src/generation/openrouter.rs"
+      issue: "pack_openrouter_messages returns _validation_evidence which is discarded instead of exposing the packed prompt subset."
+  missing:
+    - "Ensure the known-ID universe for marker resolution and citation resolution is restricted to the packed prompt subset."
+    - "Treat citation markers referencing retrieved-but-truncated blocks as unresolvable (CITATION_DROPPED) rather than resolving them."
+    - "If all citations drop as a result, apply the Test 1 flag rule (succeed as MODEL_ONLY if allow_model_only is true, fail with LlmGenerationFailed if false)."
+    - "Add regression test verifying that citations to truncated blocks are dropped and do not ship excerpts."
+  debug_session: .planning/debug/truncated-citation-resolution.md
