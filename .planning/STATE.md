@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 06.1
 current_phase_name: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
 current_plan: 3
-status: executing
-stopped_at: All plans in Phase 06.1 executed (06.1-01, 06.1-02, 06.1-03 completed). Ready for phase verification.
-last_updated: "2026-08-23T19:00:00.000Z"
-state_head: 29d96889e9c24f2c1e54b3f2ff706e0f09f83ec0
+status: gaps_found
+stopped_at: Phase 06.1 code review + verification complete. gaps_found (4/7 must-haves) — SC2/SC3 dense-retrieval snapshot-pinning race, SC4 discarded checkout_latest() error. Next: /gsd-plan-phase 6.1 --gaps.
+last_updated: "2026-08-23T21:30:00.000Z"
+state_head: 9533ef077ac72a566517fbf01972fafd30bea93f
 progress:
   total_phases: 11
   completed_phases: 4
@@ -23,6 +23,12 @@ milestone_name: milestone
 - Phase 06.1 Plan 06.1-01 executed: implemented index rebuild-and-swap, CorpusStore snapshot isolation, same-snapshot dense/BM25 pinning, worker burst debouncing, fail-closed rebuild_debounce_ms configuration, and degraded notice emission (NoticeCode::IndexRebuildFailed).
 - Phase 06.1 Plan 06.1-02 executed: deterministic proofs for DEBT-BU-01 (run_window evaluation before challenge validation) and DEBT-BU-02 (sample_owned cleanup isolation harness and 26/26 passing unit tests).
 - Phase 06.1 Plan 06.1-03 executed: documented code review and factual re-acceptance of DEBT-CR-04 and DEBT-CR-05 (0 production diffs; 06.1-CR-REVIEW.md produced).
+- Phase 06.1 post-execution gates RUN (2026-08-23) — **code review + verification found a real structural gap; phase NOT complete.**
+  - **Code review** (`06.1-REVIEW.md`, `d3267c6`; scope pinned via `--files` to the 14-file `541bade^..e794613` product delta — cross-checked against all three plans' SUMMARY key-files/artifacts lists, exact match, no drift): `status: issues_found` — 2 critical, 2 warning, 2 info. CR-01/CR-02: `rebuild_and_swap` (`engine/src/ingest.rs:1454-1459`) and `ProductionDenseRetrievalPort::retrieve_dense` (`engine/src/service.rs:502-538`) both `.clone()` and `.checkout()`/`.checkout_latest()` the *same* long-lived `lancedb::Table` handle (one `database.nodes_table()` call in `main.rs:30`, shared into `LancetServiceImpl.nodes` and the debounce task). Both the reviewer and the orchestrator independently verified against the vendored `lancedb` 0.31.0 source (`src/table.rs:727-732`, `src/table/dataset.rs:18-33,111-117`) that `Table::clone()` shares one `Arc<Mutex<DatasetState>>` `pinned_version` cell — concurrent `checkout()` calls race on it, so a query can be served from a different LanceDB version than the one it recorded in its own `RetrievalSnapshot.index_generation`. WR-02: `ingest.rs:1455` discards `checkout_latest()`'s error (`let _ = ...`) and reports the rebuild as successful instead of degrading.
+  - **Regression gate PASSED but is not evidence for the gap above** (orchestrator-run, not executor self-report): `cargo test --manifest-path engine/Cargo.toml --locked` = 404/404 (366 lib + 1 ignored + 18 `inspect_lancedb` + 19 `config_startup`, matching `scripts/engine-test-targets.sh`'s updated pins, script + full execution both independently run); `cd gateway && go test ./...` = all packages ok; `python -O -m unittest discover -s scripts -p "test_*.py"` = 26/26 (includes the six named BU-01/BU-02 proofs). WR-01 (code review) explains why: none of the existing "isolation" tests exercise the shared-checkout race — `rebuild_swap_generation_atomicity` only asserts a string prefix set at construction time, and `test_checkout_clone_isolated_from_live_writes` proves isolation between two *independently-opened* tables, not the shared-clone path production code actually uses.
+  - **Verification** (`06.1-VERIFICATION.md`, `9533ef0`): `status: gaps_found`, **4/7 must-haves**. SC1 VERIFIED (rebuild/debounce/config machinery, named tests). SC2 FAILED (single-generation query isolation — the checkout race above). SC3 FAILED (dense/BM25 never-mixed — same root cause; BM25 half via `Arc<CorpusSnapshot>` is genuinely isolated, dense half is not). SC4 FAILED (narrower, independent: discarded `checkout_latest()` error means a real failure reports `rebuild_degraded: false` instead of taking the correctly-implemented degraded/`IndexRebuildFailed`-notice branch). SC5/SC6/SC7 VERIFIED (DEBT-BU-01/BU-02 deterministic proofs; DEBT-CR-04/CR-05 documented review — content cross-checked against `gateway/main.go` directly). Two of Plan 06.1-01's own frontmatter prohibitions are violated *in effect*: the checkout-isolation prohibition was followed literally (clone-then-checkout) but its assumption about what `.clone()` isolates was wrong.
+  - **`requirements.revert-phase` deliberately NOT run** (orchestrator deviation from the documented gap-report step): RAG-03 is a split requirement — its Traceability row correctly reads "Phase 06, Phase 06.1" but its `- [x]` checkbox in REQUIREMENTS.md is a single, non-phase-namespaced surface that Phase 6 already legitimately earned (11/11 must-haves, human-verified UAT, `phase.complete` ran 2026-08-22). `cmdRequirementsRevertPhase`'s checkbox-surface regex matches on requirement ID alone with no phase attribution — running it now would have incorrectly un-completed Phase 6's own work because Phase 6.1's narrower DEBT-RAG-04 slice has gaps. (Its traceability-row surface is a confirmed no-op here — this table's column is named "Scope status", not "Status", so `updateTableCell` returns `unknown column` and never writes.) REQUIREMENTS.md left untouched; RAG-03 checkbox correctly still reflects Phase 6's completion, not Phase 6.1's.
+  - **Phase 6.1 NOT complete.** `phase.complete` correctly NOT run. Next: `/gsd-plan-phase 6.1 --gaps` to plan the fix (give `ProductionDenseRetrievalPort` and `rebuild_and_swap` a `DatabaseManager` handle and open an independent `Table` per call instead of cloning the shared one; propagate the `checkout_latest()` error into the existing degraded-snapshot branch), then `/gsd-execute-phase 6.1 --gaps-only`.
 
 - Phase 1 completed successfully.
 - Phase 2 completed (force-closed per ADR-02-004; all open gaps marked as technical debt deferred to Phase 6 final hardening).
@@ -97,11 +103,12 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 06.1 — Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
-- **Status:** All plans executed (ready for phase verification)
+- **Status:** gaps_found (4/7 must-haves) — code review + verification complete, dense-retrieval snapshot-pinning race (SC2/SC3) and discarded checkout_latest() error (SC4) block completion
 - **Current Plan:** 3
 - **Total Plans in Phase:** 3
-- **Completed Plans in Phase:** 3
-- **Progress:** [██████████] 100%
+- **Completed Plans in Phase:** 3 (executed; phase-level gates not yet passed)
+- **Progress:** [██████████] 100% execution / gates: gaps_found
+- **Next:** `/gsd-plan-phase 6.1 --gaps`
 
 ## Completed Phases
 
@@ -144,6 +151,11 @@ milestone_name: milestone
   - `DEBT-P6-WR-02`: the only service-boundary (`execute_query_rag`) test for total-citation-drop was flipped from flag-off/reject to flag-on/succeed rather than gaining a flag-off sibling (`engine/src/tests.rs`), so G-06-1's fail-closed contract — a UAT blocker — is untested at the client-facing boundary; the test's name (`..._rejects_unknown_marker_without_response`) also contradicts its body.
   - `DEBT-P6-WR-01`: stale comment in `generate.rs:239-241` still claims total-drop "never fails the run," inaccurate since `allow_model_only = false` now fails closed.
   - `DEBT-P6-WR-03`: the G-06-2 end-to-end test only asserts the downstream consequence (citation dropped), not that packing (vs. retrieval) caused it — a future retrieval-side change could silently turn it into a non-discriminating no-op test while staying green.
+- Phase 06.1's code review + verification (2026-08-23, `06.1-REVIEW.md`/`06.1-VERIFICATION.md`) found real gaps, not yet closed — tracked as open blockers, not debt, since `phase.complete` did not run:
+  - `GAP-06.1-SC2-SC3`: `ProductionDenseRetrievalPort::retrieve_dense` (`engine/src/service.rs:502-538`) and `rebuild_and_swap` (`engine/src/ingest.rs:1454-1459`) both checkout on `.clone()`s of the one shared `lancedb::Table` built in `main.rs:30`; `Table::clone()` shares a single `Arc<Mutex<DatasetState>>` `pinned_version` cell, so concurrent checkouts race and a query's dense candidates can silently come from a different LanceDB generation than its own recorded `index_generation` and than the BM25 candidates fused alongside them. Fix direction: give both call sites a `DatabaseManager` handle and open an independent `Table` per call via `database.nodes_table()` instead of cloning the shared one.
+  - `GAP-06.1-SC4`: `engine/src/ingest.rs:1455` — `let _ = nodes_latest.checkout_latest().await;` discards the error, so a genuine checkout failure reports `rebuild_degraded: false` instead of taking the already-correctly-implemented degraded-snapshot / `IndexRebuildFailed`-notice branch two lines below.
+  - Neither gap is caught by the existing test suite (404 Rust + gateway + 26 Python all pass green regardless) — `rebuild_swap_generation_atomicity` and `test_checkout_clone_isolated_from_live_writes` don't exercise the shared-clone race; a new regression test is part of the required fix (06.1-REVIEW.md WR-01).
+- **Doc/implementation mismatch found while scoping 06.1's code review:** `.claude/commands/gsd-code-review.md` and `.claude/gsd-local-patches/commands/gsd-code-review.md` document `--files file1,file2,...` (space-separated), but `code-review-flags.cjs`'s parser only recognizes `--files=file1,file2,...` (`=`-joined) — a space-separated invocation is silently treated as an unrecognized flag and falls through to SUMMARY/git-diff scoping with no warning. Worth a doc fix; did not block this session since the `=` form was used after checking the parser source directly.
 
 ## Deployment & Environments
 
@@ -239,8 +251,8 @@ milestone_name: milestone
 
 ## Session
 
-**Last session:** 2026-08-23T05:09:58.232Z
-**Stopped at:** Phase 06 complete, ready to plan Phase 06.1
+**Last session:** 2026-08-23T21:30:00.000Z
+**Stopped at:** Phase 06.1 code review + verification complete — gaps_found (4/7). Dense-retrieval snapshot pinning (SC2/SC3) and discarded checkout_latest() error (SC4) need a code fix, not just docs. Next: `/gsd-plan-phase 6.1 --gaps`.
 **Resume file:** None
 
 ## Accumulated Context
