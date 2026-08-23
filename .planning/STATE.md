@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
 current_plan: 15
-status: awaiting_uat
+status: human_needed
 stopped_at: Phase 6 post-execution gates all RUN and PASSED - code review (issues_found, 0 critical after orchestrator ruling), regression gate (Rust 386 / Go, both exit 0), and re-verification (7/7 must-haves, SC3 and SC5 both CLOSED). Verification returned human_needed: 6 items persisted to 06-UAT.md. Phase NOT complete - run /gsd-verify-work 6.
 last_updated: "2026-08-22T21:35:00.000Z"
-state_head: bbbb07d
+state_head: 75a9ec2616384ae7fa5ff9f4ccfbcebc11473919
 progress:
   total_phases: 11
   completed_phases: 3
