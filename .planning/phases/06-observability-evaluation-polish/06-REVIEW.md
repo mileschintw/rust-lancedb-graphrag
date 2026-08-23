@@ -14,11 +14,46 @@ files_reviewed_list:
   - engine/src/workflow/nodes/generate.rs
   - scripts/engine-test-targets.sh
 findings:
-  critical: 2
+  critical: 0
   warning: 6
-  info: 5
+  info: 7
   total: 13
 status: issues_found
+orchestrator_ruling:
+  applied: true
+  ruled_at: 2026-08-22T00:00:00Z
+  downgraded:
+    - id: CR-01
+      from: critical
+      to: info
+      reason: >-
+        Applies the branch-1 (SC3) notice contract to the branch-2 (D-18) total-drop path.
+        06-15-PLAN.md Task 1 explicitly instructs "Leave the existing model-only notice block
+        (NoticeCode::ModelOnly) and its condition unchanged", and must_haves specifies a
+        BASIS_RECONCILED notice — not MODEL_ONLY — for the total-drop path. Spec-conformant.
+    - id: CR-02
+      from: critical
+      to: info
+      reason: >-
+        No plan contradiction exists. must_haves requires the total-drop downgrade "even with
+        allow_model_only false"; Task 3 requires "the downgrade must not depend on the SC3
+        opt-in"; the P1b design table documents
+        `effective_allow = ctx.allow_model_only || total_drop` as the intended construction.
+        The must_have the reviewer cited as conflicting ("with the flag off, today's fail-closed
+        behavior is unchanged") is scoped to the empty-evidence branch-1 path (D-10/D-11/D-12),
+        not the branch-2 post-repair total-drop path (D-18/DEBT-RAG-03). Spec-conformant.
+  confirmed:
+    - id: WR-03
+      severity: warning
+      note: >-
+        Orchestrator-verified real. `chat_calls` is never cloned into the server thread and never
+        incremented in this test, so `assert_eq!(chat_calls, 0)` is vacuous. Severity held at
+        warning, NOT escalated: the test's other assertions are substantive — it asserts
+        `Err(LlmGenerationFailed)` whose message contains "prompt assembly failed", which pins the
+        fail-closed point upstream of chat dispatch, and the mock server accepts exactly one
+        connection (consumed by check_supported_parameters) so an attempted POST /chat would have
+        surfaced as a connection error instead. SC3's flag-off half remains proven; the dead
+        counter and its assertion should be wired or removed.
 ---
 
 # Phase 6 Gap-Closure Delta (plan 06-15): Code Review Report
@@ -117,6 +152,43 @@ test that asserts this as correct behavior.
 ## Narrative Findings (AI reviewer)
 
 ## Critical Issues
+
+> **⚠ ORCHESTRATOR RULING (execute-phase code_review_gate) — both criticals below were
+> DOWNGRADED TO INFO after verification against `06-15-PLAN.md`.** They are retained verbatim
+> for the audit trail; they are NOT open critical findings and do not gate the phase. This
+> follows the same precedent as the prior round's WR-01 severity correction recorded in STATE.md.
+>
+> **CR-01 — downgraded (spec-conformant).** The finding applies branch 1's (SC3) notice contract
+> to branch 2's (D-18) total-drop path. `06-15-PLAN.md` Task 1 instructs verbatim: *"Leave the
+> existing model-only notice block (`NoticeCode::ModelOnly`) and its condition unchanged"*, and
+> `must_haves` specifies the total-drop path emits a **BASIS_RECONCILED** notice, not a
+> MODEL_ONLY notice. The absent `NOTICE_CODE_MODEL_ONLY` is the specified behavior. The
+> observation that a basis-to-notice asymmetry now exists across branches is a legitimate design
+> observation and is preserved as Info.
+>
+> **CR-02 — downgraded (no contradiction; spec-conformant).** The claimed plan self-contradiction
+> does not exist. The two clauses govern different code paths:
+> - `must_haves` *"with the flag off, today's fail-closed behavior is unchanged"* is scoped by its
+>   own opening clause — *"When both retrieval paths fail or **evidence is absent**"* — to the
+>   **branch-1 empty-evidence path** (D-10/D-11/D-12). That path is unchanged and is covered by
+>   `openrouter_node_model_only_flag_off_stays_fail_closed`.
+> - `must_haves` separately and explicitly requires the **branch-2 post-repair total-drop path**
+>   (D-18 / DEBT-RAG-03) to downgrade *"even with `allow_model_only` false"*, Task 3 requires
+>   *"the downgrade must not depend on the SC3 opt-in"* (giving the reason: with the flag true,
+>   branch 1 swallows the case before repair runs, so the test would never exercise `total_drop`),
+>   and the P1b design table documents `effective_allow = ctx.allow_model_only || total_drop` as
+>   the intended construction.
+>
+> `effective_allow = ctx.allow_model_only || total_drop` at `generate.rs:258` is therefore the
+> specified design, not a regression. The residual semantic surface it creates — a caller who
+> passed `allow_model_only: false` can receive an `Ok` with a zero-citation MODEL_ONLY basis — is
+> real, specified by D-18, and signalled to the caller via the `CitationDropped` +
+> `BasisReconciled` notice pair. Preserved as Info.
+>
+> **WR-03 — CONFIRMED real** by orchestrator inspection (`chat_calls` has no `chat_calls_server`
+> clone and no `fetch_add` in this test, unlike all four sibling tests), and held at **warning**
+> rather than escalated. See `orchestrator_ruling.confirmed` in the frontmatter for why SC3's
+> flag-off half is still proven despite the dead assertion.
 
 ### CR-01: A run now terminates with `ANSWER_BASIS_MODEL_ONLY` and zero citations while emitting no `NOTICE_CODE_MODEL_ONLY` — and this is newly production-reachable
 
