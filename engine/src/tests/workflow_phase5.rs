@@ -6416,13 +6416,9 @@ async fn inline_remainder_rejects_ungrounded_model_output() {
     let mut deps = crate::workflow::WorkflowDependencies::new();
     deps.generator = Some(fake_gen);
 
-    let res = crate::workflow::run_inline_prompt_generation_remainder(
-        &mut ctx,
-        &deps,
-        &sink,
-        &cancel,
-    )
-    .await;
+    let res =
+        crate::workflow::run_inline_prompt_generation_remainder(&mut ctx, &deps, &sink, &cancel)
+            .await;
 
     assert!(res.is_err());
     let err = res.unwrap_err();
@@ -6444,4 +6440,3 @@ async fn inline_remainder_rejects_ungrounded_model_output() {
         "NodeFailed event for GenerateAnswer must be emitted"
     );
 }
-
