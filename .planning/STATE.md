@@ -136,6 +136,10 @@ milestone_name: milestone
 - Pre-existing RAG and graph query stubs remain recorded in the phase deferred-items ledger for Phase 03 and Phase 04.
 - Phase 03 does not claim RAG-03 delivery: DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-04, DEBT-RAG-05, and DEBT-RAG-06 remain the source-of-record future hardening contracts; the initial BM25 build/readiness guard is the only lifecycle safeguard retained in the MVP path.
 - Phase 04 only closed the `lance-graph`/`lancedb` compatibility unknown via a feature-gated PoC (`engine/src/graph/`, not wired into the default build). DATA-04 (entity/relationship extraction), DATA-05 (full graph query traversal wired into RAG), and RAG-05 (ContextAssemblyStrategy) remain unimplemented against real data — deferred to Phase 04.1.
+- Phase 06's final code review (`06-REVIEW.md`, post-06-16) closed with 0 critical / 3 warning findings, ruled advisory for phase-goal purposes (verification `passed`) but left open as residual debt now that the phase is closed and the review artifact goes cold:
+  - `DEBT-P6-WR-02`: the only service-boundary (`execute_query_rag`) test for total-citation-drop was flipped from flag-off/reject to flag-on/succeed rather than gaining a flag-off sibling (`engine/src/tests.rs`), so G-06-1's fail-closed contract — a UAT blocker — is untested at the client-facing boundary; the test's name (`..._rejects_unknown_marker_without_response`) also contradicts its body.
+  - `DEBT-P6-WR-01`: stale comment in `generate.rs:239-241` still claims total-drop "never fails the run," inaccurate since `allow_model_only = false` now fails closed.
+  - `DEBT-P6-WR-03`: the G-06-2 end-to-end test only asserts the downstream consequence (citation dropped), not that packing (vs. retrieval) caused it — a future retrieval-side change could silently turn it into a non-discriminating no-op test while staying green.
 
 ## Deployment & Environments
 
