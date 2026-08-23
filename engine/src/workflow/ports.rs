@@ -12,6 +12,31 @@ use crate::retrieval::{FusedCandidate, RetrievalError, RetrievalErrorKind};
 
 pub type Bm25IndexStore = Arc<RwLock<Arc<Bm25Index>>>;
 
+pub fn corpus_generation_from_nodes_version(nodes_version: u64) -> String {
+    format!("lance-{nodes_version}")
+}
+
+#[derive(Clone, Debug)]
+pub struct CorpusSnapshot {
+    pub bm25: Arc<Bm25Index>,
+    pub generation: String,
+    pub nodes_version: u64,
+    pub rebuild_degraded: bool,
+}
+
+impl CorpusSnapshot {
+    pub fn new(bm25: Arc<Bm25Index>, nodes_version: u64, rebuild_degraded: bool) -> Self {
+        Self {
+            bm25,
+            generation: corpus_generation_from_nodes_version(nodes_version),
+            nodes_version,
+            rebuild_degraded,
+        }
+    }
+}
+
+pub type CorpusStore = Arc<RwLock<Arc<CorpusSnapshot>>>;
+
 pub trait QueryReformulator: Send + Sync {
     fn reformulate<'a>(
         &'a self,

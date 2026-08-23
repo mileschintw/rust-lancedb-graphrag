@@ -18,6 +18,7 @@ pub struct RetrieveHybridNode {
     settings: RetrievalSettings,
     index_generation: String,
     embedding_model: String,
+    rebuild_degraded: bool,
 }
 
 impl RetrieveHybridNode {
@@ -34,6 +35,7 @@ impl RetrieveHybridNode {
             settings,
             index_generation: String::new(),
             embedding_model: String::new(),
+            rebuild_degraded: false,
         }
     }
 
@@ -47,6 +49,11 @@ impl RetrieveHybridNode {
         self
     }
 
+    pub fn with_rebuild_degraded(mut self, rebuild_degraded: bool) -> Self {
+        self.rebuild_degraded = rebuild_degraded;
+        self
+    }
+
     pub async fn execute(
         &self,
         ctx: &mut WorkflowContext,
@@ -54,6 +61,14 @@ impl RetrieveHybridNode {
     ) -> Result<(), NodeError> {
         if cancel.is_cancelled() {
             return Err(NodeError::cancelled());
+        }
+
+        if self.rebuild_degraded {
+            ctx.add_notice(notice(
+                NoticeCode::IndexRebuildFailed,
+                "Corpus index rebuild failed; serving prior generation.",
+                NoticeSeverity::Warning,
+            ));
         }
 
         if ctx.variants.is_empty() {

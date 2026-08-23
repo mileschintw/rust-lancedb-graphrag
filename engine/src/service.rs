@@ -49,7 +49,7 @@ pub struct LancetServiceImpl {
     pub statuses: Arc<DashMap<String, IngestionStatus>>,
     pub queue: mpsc::Sender<IngestionJob>,
     pub nodes: Table,
-    pub bm25_index: workflow::ports::Bm25IndexStore,
+    pub corpus_store: workflow::ports::CorpusStore,
     pub effective_settings: EffectiveRagSettings,
     pub generator: Arc<dyn generation::Generator>,
     pub embedder: Arc<dyn EmbeddingProvider>,
@@ -68,6 +68,7 @@ impl LancetServiceImpl {
     /// Assembles the production workflow runner and dependencies for RAG execution.
     pub fn build_production_workflow(
         &self,
+        snapshot: Arc<workflow::ports::CorpusSnapshot>,
     ) -> (workflow::WorkflowRunner, workflow::WorkflowDependencies) {
         let embedder_adapter: Arc<dyn workflow::node::QueryEmbeddingPort> =
             Arc::new(ProductionEmbeddingPort {
@@ -81,11 +82,12 @@ impl LancetServiceImpl {
         let dense_adapter: Arc<dyn workflow::ports::DenseRetrievalPort> =
             Arc::new(ProductionDenseRetrievalPort {
                 nodes: self.nodes.clone(),
+                nodes_version: snapshot.nodes_version,
                 retrieval_settings: self.effective_settings.retrieval.clone(),
             });
         let bm25_adapter: Arc<dyn workflow::ports::Bm25RetrievalPort> =
             Arc::new(ProductionBm25RetrievalPort {
-                bm25_index: Arc::clone(&self.bm25_index),
+                bm25: Arc::clone(&snapshot.bm25),
                 retrieval_settings: self.effective_settings.retrieval.clone(),
             });
         let reranker_adapter: Arc<dyn rerank::Reranker> = Arc::clone(&self.reranker);
@@ -132,9 +134,10 @@ impl LancetServiceImpl {
                 deps.retrieval_settings.clone(),
             )
             .with_snapshot_metadata(
-                self.effective_settings.index_generation.clone(),
+                snapshot.generation.clone(),
                 self.effective_settings.embedding_model.clone(),
-            ),
+            )
+            .with_rebuild_degraded(snapshot.rebuild_degraded),
         );
         runner.add_node(workflow::nodes::AssemblePromptNode::with_settings(
             self.effective_settings
@@ -494,8 +497,10 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
 }
 
 /// Production adapter implementing `DenseRetrievalPort` backed by LanceDB nodes table.
+/// Production adapter implementing `DenseRetrievalPort` backed by LanceDB nodes table.
 pub struct ProductionDenseRetrievalPort {
     pub nodes: Table,
+    pub nodes_version: u64,
     pub retrieval_settings: retrieval::RetrievalSettings,
 }
 
@@ -525,7 +530,14 @@ impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
                             err.message(),
                         )
                     })?;
-            let dense_retriever = DenseRetriever::new(self.nodes.clone());
+            let nodes = self.nodes.clone();
+            nodes.checkout(self.nodes_version).await.map_err(|err| {
+                workflow::node::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    format!("dense checkout failure at version {}: {err}", self.nodes_version),
+                )
+            })?;
+            let dense_retriever = DenseRetriever::new(nodes);
             dense_retriever
                 .query(query_embedding, &query_req, &self.retrieval_settings)
                 .await
@@ -541,7 +553,7 @@ impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
 
 /// Production adapter implementing `Bm25RetrievalPort` backed by the in-memory BM25 index snapshot.
 pub struct ProductionBm25RetrievalPort {
-    pub bm25_index: workflow::ports::Bm25IndexStore,
+    pub bm25: Arc<crate::retrieval::bm25::Bm25Index>,
     pub retrieval_settings: retrieval::RetrievalSettings,
 }
 
@@ -570,11 +582,7 @@ impl Bm25RetrievalPort for ProductionBm25RetrievalPort {
                             err.message(),
                         )
                     })?;
-            let index_snapshot = {
-                let guard = self.bm25_index.read().await;
-                Arc::clone(&*guard)
-            };
-            index_snapshot
+            self.bm25
                 .retrieve(&query_req, &self.retrieval_settings)
                 .await
                 .map_err(|err| {
@@ -823,7 +831,11 @@ impl LancetService for LancetServiceImpl {
         let mut ctx =
             workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
         ctx.allow_model_only = req.allow_model_only.unwrap_or(wf.allow_model_only_answers);
-        let (runner, deps) = self.build_production_workflow();
+        let snapshot = {
+            let guard = self.corpus_store.read().await;
+            Arc::clone(&*guard)
+        };
+        let (runner, deps) = self.build_production_workflow(snapshot);
 
         let parent_span = tracing::info_span!(
             "query_rag",

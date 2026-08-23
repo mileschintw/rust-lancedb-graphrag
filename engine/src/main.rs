@@ -9,11 +9,14 @@ use engine::config::{load_settings, EffectiveRagSettings};
 use engine::db::DatabaseManager;
 use engine::generation;
 use engine::graph;
-use engine::ingest::{read_staged_jobs, spawn_worker, IngestionStatus, QUEUE_CAPACITY};
+use engine::ingest::{
+    read_staged_jobs, spawn_rebuild_debounce_task, spawn_worker, IngestionStatus, QUEUE_CAPACITY,
+};
 use engine::pb::lancet::v1::lancet_service_server::LancetServiceServer;
 use engine::rerank;
 use engine::retrieval::Bm25Index;
 use engine::service::LancetServiceImpl;
+use engine::workflow::ports::CorpusSnapshot;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -25,10 +28,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|err| format!("invalid RAG configuration: {err}"))?;
     let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
     let nodes = database.nodes_table().await?;
+    let nodes_version = nodes
+        .version()
+        .await
+        .map_err(|err| format!("initial nodes version read failed: {err}"))?;
     let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
         .await
         .map_err(|error| format!("initial BM25 snapshot build failed: {error}"))?;
-    tracing::info!(document_count = bm25_index.len(), "BM25 snapshot built");
+    let initial_snapshot = Arc::new(CorpusSnapshot::new(
+        Arc::new(bm25_index),
+        nodes_version,
+        false,
+    ));
+    tracing::info!(
+        document_count = initial_snapshot.bm25.len(),
+        generation = %initial_snapshot.generation,
+        nodes_version = initial_snapshot.nodes_version,
+        "BM25 snapshot built"
+    );
+    let corpus_store = Arc::new(tokio::sync::RwLock::new(initial_snapshot));
+
     let table = database.staged_documents_table().await?;
     let api_key = std::env::var("OPENROUTER_API_KEY")
         .map_err(|_| "OPENROUTER_API_KEY environment variable is not set")?;
@@ -64,13 +83,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let (rebuild_tx, rebuild_rx) = watch::channel(0u64);
+
     let worker = spawn_worker(
         receiver,
         statuses.clone(),
         database.clone(),
         embedder.clone(),
         extraction_generator.clone(),
-        shutdown_rx,
+        shutdown_rx.clone(),
+        rebuild_tx,
+    );
+
+    let debounce_ms = effective_settings.workflow.rebuild_debounce_ms;
+    let debounce_worker = spawn_rebuild_debounce_task(
+        rebuild_rx,
+        shutdown_rx.clone(),
+        nodes.clone(),
+        corpus_store.clone(),
+        effective_settings.retrieval.bm25.clone(),
+        Duration::from_millis(debounce_ms),
     );
 
     let staged_jobs = read_staged_jobs(&database).await?;
@@ -101,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
+        corpus_store,
         effective_settings,
         generator,
         embedder: embedder.clone(),
@@ -119,5 +151,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
     worker.await?;
+    debounce_worker.await?;
     Ok(())
 }

@@ -143,6 +143,9 @@ pub fn default_allow_model_only_answers() -> bool {
 pub fn default_citation_repair_enabled() -> bool {
     true
 }
+pub fn default_rebuild_debounce_ms() -> u64 {
+    2000
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -174,6 +177,9 @@ pub struct WorkflowConfigSettings {
     /// an unresolvable marker fails the run exactly as it did before D-14 (DEBT-RAG-03).
     #[serde(default = "default_citation_repair_enabled")]
     pub citation_repair_enabled: bool,
+    /// Ingestion index rebuild debounce interval in milliseconds (D-23, D-84).
+    #[serde(default = "default_rebuild_debounce_ms")]
+    pub rebuild_debounce_ms: u64,
 }
 
 impl Default for WorkflowConfigSettings {
@@ -188,6 +194,7 @@ impl Default for WorkflowConfigSettings {
             generation_node_timeout_ms: default_generation_node_timeout_ms(),
             allow_model_only_answers: default_allow_model_only_answers(),
             citation_repair_enabled: default_citation_repair_enabled(),
+            rebuild_debounce_ms: default_rebuild_debounce_ms(),
         }
     }
 }
@@ -204,6 +211,7 @@ impl WorkflowConfigSettings {
             generation_node_timeout_ms: self.generation_node_timeout_ms,
             allow_model_only_answers: self.allow_model_only_answers,
             citation_repair_enabled: self.citation_repair_enabled,
+            rebuild_debounce_ms: self.rebuild_debounce_ms,
         }
     }
 }
@@ -228,6 +236,8 @@ pub struct WorkflowSettings {
     /// unresolvable one is stripped from the answer and both citation lists; when false,
     /// an unresolvable marker fails the run exactly as it did before D-14 (DEBT-RAG-03).
     pub citation_repair_enabled: bool,
+    /// Ingestion index rebuild debounce interval in milliseconds (D-23, D-84).
+    pub rebuild_debounce_ms: u64,
 }
 
 impl Default for WorkflowSettings {
@@ -238,6 +248,9 @@ impl Default for WorkflowSettings {
 
 impl WorkflowSettings {
     pub fn validate(&self) -> Result<(), String> {
+        if self.rebuild_debounce_ms == 0 {
+            return Err("invalid rebuild_debounce_ms: must be greater than 0".into());
+        }
         if self.reformulate_timeout_ms == 0 {
             return Err("invalid reformulate_timeout_ms: must be greater than 0".into());
         }
@@ -675,6 +688,21 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
                     )))
                 }
             };
+        }
+    }
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__WORKFLOW__REBUILD_DEBOUNCE_MS") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            match trimmed.parse::<u64>() {
+                Ok(val) if val > 0 => {
+                    settings.engine.workflow.rebuild_debounce_ms = val;
+                }
+                _ => {
+                    return Err(::config::ConfigError::Message(format!(
+                        "LANCET_ENGINE__WORKFLOW__REBUILD_DEBOUNCE_MS must be a positive integer > 0, got {trimmed:?}"
+                    )));
+                }
+            }
         }
     }
     if let Ok(value) = std::env::var("LANCET_OPENROUTER__EMBEDDING_ENDPOINT") {

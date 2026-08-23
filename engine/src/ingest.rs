@@ -1391,6 +1391,173 @@ impl EmbeddingProvider for OpenRouterClient {
     }
 }
 
+static REBUILD_COUNTER: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+pub fn rebuild_invocation_count() -> usize {
+    REBUILD_COUNTER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn reset_rebuild_invocation_count() {
+    REBUILD_COUNTER.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(test)]
+static REBUILD_FAIL_NEXT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(test)]
+pub fn arm_rebuild_fail_next() {
+    REBUILD_FAIL_NEXT.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(test)]
+pub fn clear_rebuild_fail_next() {
+    REBUILD_FAIL_NEXT.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn inert_rebuild_channel() -> (watch::Sender<u64>, watch::Receiver<u64>) {
+    watch::channel(0)
+}
+
+pub fn inert_rebuild_tx() -> watch::Sender<u64> {
+    watch::channel(0).0
+}
+
+pub async fn rebuild_and_swap(
+    nodes: &Table,
+    corpus_store: &crate::workflow::ports::CorpusStore,
+    bm25_settings: crate::retrieval::Bm25Config,
+) -> Result<Arc<crate::workflow::ports::CorpusSnapshot>, String> {
+    REBUILD_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    #[cfg(test)]
+    {
+        if REBUILD_FAIL_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            tracing::error!("rebuild_and_swap injected fault triggered");
+            let prior = {
+                let guard = corpus_store.read().await;
+                Arc::clone(&*guard)
+            };
+            let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
+                bm25: Arc::clone(&prior.bm25),
+                generation: prior.generation.clone(),
+                nodes_version: prior.nodes_version,
+                rebuild_degraded: true,
+            });
+            let mut write_guard = corpus_store.write().await;
+            *write_guard = degraded_snapshot;
+            return Err("injected rebuild failure".into());
+        }
+    }
+
+    let nodes_latest = nodes.clone();
+    let _ = nodes_latest.checkout_latest().await;
+    let nodes_version = nodes_latest
+        .version()
+        .await
+        .map_err(|err| format!("failed to read nodes table version: {err}"))?;
+
+    // Build BM25 index off the write lock
+    let new_bm25 = match crate::retrieval::Bm25Index::from_table(&nodes_latest, bm25_settings).await {
+        Ok(idx) => idx,
+        Err(err) => {
+            tracing::error!("BM25 rebuild from nodes table failed: {err}");
+            let prior = {
+                let guard = corpus_store.read().await;
+                Arc::clone(&*guard)
+            };
+            let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
+                bm25: Arc::clone(&prior.bm25),
+                generation: prior.generation.clone(),
+                nodes_version: prior.nodes_version,
+                rebuild_degraded: true,
+            });
+            let mut write_guard = corpus_store.write().await;
+            *write_guard = degraded_snapshot;
+            return Err(format!("BM25 rebuild failed: {err}"));
+        }
+    };
+
+    let new_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
+        bm25: Arc::new(new_bm25),
+        generation: crate::workflow::ports::corpus_generation_from_nodes_version(nodes_version),
+        nodes_version,
+        rebuild_degraded: false,
+    });
+
+    // Swap under a short write lock
+    {
+        let mut write_guard = corpus_store.write().await;
+        *write_guard = Arc::clone(&new_snapshot);
+    }
+    tracing::info!(
+        generation = %new_snapshot.generation,
+        nodes_version = new_snapshot.nodes_version,
+        "BM25 index rebuilt and swapped successfully"
+    );
+
+    Ok(new_snapshot)
+}
+
+pub fn spawn_rebuild_debounce_task(
+    mut rebuild_rx: watch::Receiver<u64>,
+    mut shutdown_rx: watch::Receiver<bool>,
+    nodes: Table,
+    corpus_store: crate::workflow::ports::CorpusStore,
+    bm25_settings: crate::retrieval::Bm25Config,
+    debounce_duration: std::time::Duration,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            // 1. Wait for notification or shutdown
+            tokio::select! {
+                biased;
+                changed = shutdown_rx.changed() => {
+                    if changed.is_ok() && *shutdown_rx.borrow() {
+                        tracing::debug!("rebuild debounce task shutting down");
+                        break;
+                    }
+                }
+                changed = rebuild_rx.changed() => {
+                    if changed.is_err() {
+                        tracing::debug!("rebuild watch channel closed, debounce task exiting");
+                        break;
+                    }
+                }
+            }
+
+            // 2. Debounce quiet period: reset sleep timer whenever a new change arrives
+            loop {
+                let sleep_fut = tokio::time::sleep(debounce_duration);
+                tokio::pin!(sleep_fut);
+
+                tokio::select! {
+                    biased;
+                    changed = shutdown_rx.changed() => {
+                        if changed.is_ok() && *shutdown_rx.borrow() {
+                            tracing::debug!("rebuild debounce task shutting down during quiet period");
+                            return;
+                        }
+                    }
+                    _ = &mut sleep_fut => {
+                        break;
+                    }
+                    changed = rebuild_rx.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            // 3. Execute rebuild and swap
+            let _ = rebuild_and_swap(&nodes, &corpus_store, bm25_settings.clone()).await;
+        }
+    })
+}
+
 pub fn spawn_worker(
     receiver: mpsc::Receiver<IngestionJob>,
     statuses: Arc<DashMap<String, IngestionStatus>>,
@@ -1398,6 +1565,7 @@ pub fn spawn_worker(
     embedder: Arc<dyn EmbeddingProvider>,
     extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator>,
     shutdown: watch::Receiver<bool>,
+    rebuild_tx: watch::Sender<u64>,
 ) -> JoinHandle<()> {
     spawn_worker_with_boundary(
         receiver,
@@ -1407,6 +1575,7 @@ pub fn spawn_worker(
         extraction_generator,
         Arc::new(LanceDbReplacementMutationBoundary),
         shutdown,
+        rebuild_tx,
     )
 }
 
@@ -1418,6 +1587,7 @@ pub fn spawn_worker_with_boundary(
     extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator>,
     boundary: Arc<dyn ReplacementMutationBoundary>,
     mut shutdown: watch::Receiver<bool>,
+    rebuild_tx: watch::Sender<u64>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut receiver = receiver;
@@ -1504,8 +1674,9 @@ pub fn spawn_worker_with_boundary(
                             status: "completed".into(),
                             chunk_count,
                             error_message: String::new(),
-                        },
+                            },
                     );
+                    let _ = rebuild_tx.send_modify(|v| *v = v.wrapping_add(1));
                     tracing::info!(%job.document_id, chunk_count, "indexing completed");
                 }
                 Err(error) => {

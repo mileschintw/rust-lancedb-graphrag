@@ -33,7 +33,7 @@ use engine::graph::{
     },
 };
 use engine::ingest::{
-    chunk_ingestion_job, extract_and_persist_entities, parse_chunk_settings,
+    chunk_ingestion_job, extract_and_persist_entities, inert_rebuild_tx, parse_chunk_settings,
     persist_raw_with_boundary, process_job, read_staged_jobs, replace_document,
     replace_document_with_faults, select_latest_staged_rows, spawn_worker,
     spawn_worker_with_boundary, ChunkSettings, EmbeddingProvider, IngestionJob, IngestionStatus,
@@ -51,6 +51,10 @@ use engine::service::{
     attempt_graph_augmentation, validate_document_id, GraphAugmentationOutcome, LancetServiceImpl,
 };
 use engine::testkit::test_query_request;
+use engine::workflow::node::Node;
+use engine::workflow::ports::{CorpusStore, DenseRetrievalPort};
+use engine::workflow::{self, WorkflowContext};
+use tokio_util::sync::CancellationToken;
 
 pub mod bad_input_matrix;
 pub mod workflow_phase5_production;
@@ -537,8 +541,8 @@ async fn query_rag_stream() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -1141,6 +1145,16 @@ fn configured_settings(lancedb_path: &str) -> Settings {
     }
 }
 
+pub(crate) async fn test_corpus_store(nodes: &lancedb::Table, bm25_index: Bm25Index) -> CorpusStore {
+    let nodes_version = nodes.version().await.unwrap_or(1);
+    let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
+        Arc::new(bm25_index),
+        nodes_version,
+        false,
+    ));
+    Arc::new(tokio::sync::RwLock::new(initial_snapshot))
+}
+
 pub(crate) async fn configured_service(
     database: &DatabaseManager,
     effective_settings: EffectiveRagSettings,
@@ -1149,9 +1163,16 @@ pub(crate) async fn configured_service(
     reranker: Arc<dyn rerank::Reranker>,
 ) -> LancetServiceImpl {
     let nodes = database.nodes_table().await.unwrap();
+    let nodes_version = nodes.version().await.unwrap();
     let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
         .await
         .unwrap();
+    let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
+        Arc::new(bm25_index),
+        nodes_version,
+        false,
+    ));
+    let corpus_store = Arc::new(tokio::sync::RwLock::new(initial_snapshot));
     let table = database.staged_documents_table().await.unwrap();
     let statuses = Arc::new(DashMap::new());
     let (sender, _receiver) = mpsc::channel(QUEUE_CAPACITY);
@@ -1160,7 +1181,7 @@ pub(crate) async fn configured_service(
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
+        corpus_store,
         effective_settings,
         generator,
         embedder,
@@ -1506,6 +1527,7 @@ async fn worker_indexes_jobs_and_records_real_chunk_count() {
         Arc::new(FakeEmbedder),
         test_extraction_generator(),
         shutdown_rx,
+        inert_rebuild_tx(),
     );
     let document_id = Uuid::new_v4().to_string();
     sender
@@ -1542,6 +1564,7 @@ async fn worker_replaces_existing_document_rows() {
         Arc::new(FakeEmbedder),
         test_extraction_generator(),
         shutdown_rx,
+        inert_rebuild_tx(),
     );
     let document_id = Uuid::new_v4().to_string();
     for raw_data in [
@@ -1658,6 +1681,7 @@ async fn schema_field_lookup_failure_rolls_back_and_worker_survives() {
         test_extraction_generator(),
         Arc::new(boundary),
         shutdown_rx,
+        inert_rebuild_tx(),
     );
 
     let document_id_1 = Uuid::new_v4().to_string();
@@ -1765,6 +1789,7 @@ async fn shutdown_waits_for_active_document_to_finish() {
         }),
         test_extraction_generator(),
         shutdown_rx,
+        inert_rebuild_tx(),
     );
     let document_id = Uuid::new_v4().to_string();
     sender
@@ -1923,6 +1948,7 @@ async fn shutdown_drains_acknowledged_queue() {
         }),
         test_extraction_generator(),
         shutdown_rx,
+        inert_rebuild_tx(),
     );
 
     let doc_id_1 = Uuid::new_v4().to_string();
@@ -2017,6 +2043,7 @@ async fn startup_recovery_processes_staged_document() {
         Arc::new(FakeEmbedder),
         test_extraction_generator(),
         shutdown_rx,
+        inert_rebuild_tx(),
     );
 
     statuses.insert(job.document_id.clone(), IngestionStatus::queued());
@@ -2071,6 +2098,7 @@ async fn startup_recovery_exceeds_queue_capacity_without_deadlock() {
             Arc::new(FakeEmbedder),
             test_extraction_generator(),
             shutdown_rx,
+            inert_rebuild_tx(),
         );
 
         let staged_jobs = read_staged_jobs(&database).await.unwrap();
@@ -2145,8 +2173,8 @@ async fn staging_read_error_is_unavailable() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
@@ -2193,6 +2221,7 @@ async fn staging_delete_failure_remains_replayable() {
         test_extraction_generator(),
         Arc::new(boundary),
         shutdown_rx,
+        inert_rebuild_tx(),
     );
 
     let job = read_staged_jobs(&database)
@@ -2219,15 +2248,22 @@ async fn staging_delete_failure_remains_replayable() {
     let table = database.staged_documents_table().await.unwrap();
     let (dummy_tx, _dummy_rx) = mpsc::channel(QUEUE_CAPACITY);
     let nodes = database.nodes_table().await.unwrap();
+    let nodes_version = nodes.version().await.unwrap();
     let bm25_index = Bm25Index::from_table(&nodes, Bm25Config::default())
         .await
         .unwrap();
+    let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
+        Arc::new(bm25_index),
+        nodes_version,
+        false,
+    ));
+    let corpus_store = Arc::new(tokio::sync::RwLock::new(initial_snapshot));
     let service = LancetServiceImpl {
         table,
         statuses: statuses.clone(),
         queue: dummy_tx,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
+        corpus_store,
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
@@ -2276,6 +2312,7 @@ async fn embedding_failure_restart_converges_cross_store() {
             test_extraction_generator(),
             Arc::new(boundary),
             shutdown_rx,
+            inert_rebuild_tx(),
         );
 
         let job = read_staged_jobs(&db1)
@@ -2320,6 +2357,7 @@ async fn embedding_failure_restart_converges_cross_store() {
             Arc::new(FakeEmbedder),
             test_extraction_generator(),
             shutdown_rx,
+            inert_rebuild_tx(),
         );
 
         let staged_jobs = read_staged_jobs(&db2).await.unwrap();
@@ -2396,6 +2434,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             test_extraction_generator(),
             Arc::new(boundary),
             shutdown_rx,
+            inert_rebuild_tx(),
         );
 
         let staged_jobs = read_staged_jobs(&database).await.unwrap();
@@ -2433,6 +2472,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             Arc::new(FakeEmbedder),
             test_extraction_generator(),
             shutdown_rx,
+            inert_rebuild_tx(),
         );
 
         let staged_jobs = read_staged_jobs(&database).await.unwrap();
@@ -2471,8 +2511,8 @@ async fn d04_cross_runtime_grpc_fixture() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
@@ -2534,8 +2574,8 @@ async fn status_falls_back_to_staged_document() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
@@ -2719,8 +2759,8 @@ async fn query_rag_tracer() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -2835,8 +2875,8 @@ async fn query_rag_generation_failure() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: failing_gen,
@@ -2934,8 +2974,8 @@ async fn query_rag_happy_path_service() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -3274,8 +3314,8 @@ async fn configured_rag_settings_drive_service() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings.clone(),
         generator: fake_gen,
@@ -3298,7 +3338,7 @@ async fn configured_rag_settings_drive_service() {
     assert_eq!(snap.bm25_weight, 0.2);
     assert_eq!(snap.rrf_k, 30);
     assert_eq!(snap.embedding_model, "custom/embed-v1");
-    assert_eq!(snap.index_generation, effective_settings.index_generation);
+    assert_eq!(snap.index_generation, service.corpus_store.read().await.generation);
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -3347,8 +3387,8 @@ async fn configured_evidence_token_budget_is_exact() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings,
         generator: fake_gen,
@@ -3408,8 +3448,8 @@ async fn service_index_generation_is_opaque_and_stable() {
         table: table1,
         statuses: Arc::new(DashMap::new()),
         queue: sender1,
+        corpus_store: test_corpus_store(&nodes1, bm25_index1).await,
         nodes: nodes1,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index1))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings1,
         generator: fake_gen1,
@@ -3446,6 +3486,15 @@ async fn service_index_generation_is_opaque_and_stable() {
         .unwrap();
     process_job(&job2, &database2, &FakeEmbedder).await.unwrap();
 
+    let doc_id2_b = Uuid::new_v4().to_string();
+    let job2_b = IngestionJob::new(
+        doc_id2_b.clone(),
+        "doc2_b.md".into(),
+        b"# Second Document in DB2\n\nContent 2b".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job2_b, &database2, &FakeEmbedder).await.unwrap();
+
     let nodes2 = database2.nodes_table().await.unwrap();
     let bm25_index2 = Bm25Index::from_table(&nodes2, effective_settings2.retrieval.bm25.clone())
         .await
@@ -3456,8 +3505,8 @@ async fn service_index_generation_is_opaque_and_stable() {
         table: table2,
         statuses: Arc::new(DashMap::new()),
         queue: sender2,
+        corpus_store: test_corpus_store(&nodes2, bm25_index2).await,
         nodes: nodes2,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index2))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: effective_settings2,
         generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
@@ -3478,7 +3527,7 @@ async fn service_index_generation_is_opaque_and_stable() {
 
     assert_ne!(
         gen1, gen3,
-        "separately constructed service must report a different generation"
+        "differing dataset versions must report different generations"
     );
 
     let _ = std::fs::remove_dir_all(path1);
@@ -3559,8 +3608,8 @@ async fn query_rag_citation_identity_and_notices() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings,
         generator: fake_gen.clone(),
@@ -3645,8 +3694,8 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -3716,8 +3765,8 @@ async fn query_rag_rejects_invalid_provider_grounding() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -3782,8 +3831,8 @@ async fn query_rag_generation_error_preserves_identity() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: failing_gen,
@@ -3936,9 +3985,10 @@ async fn query_rag_noop_reranker_preserves_fused_order() {
         .await
         .unwrap();
     let bm25_candidates = service
-        .bm25_index
+        .corpus_store
         .read()
         .await
+        .bm25
         .retrieve(&query_request, &service.effective_settings.retrieval)
         .await
         .unwrap();
@@ -4252,8 +4302,8 @@ async fn query_rag_fail_closed_dense_snapshot() {
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&bm25_nodes, bm25_index).await,
         nodes: malformed_nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         effective_settings,
         generator: generator.clone(),
         embedder,
@@ -5731,8 +5781,8 @@ async fn query_graph_service_with_db(database: DatabaseManager) -> LancetService
         table,
         statuses,
         queue: sender,
+        corpus_store: test_corpus_store(&nodes, bm25_index).await,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: EffectiveRagSettings::default(),
         generator: Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
@@ -7540,6 +7590,7 @@ async fn worker_queue_extracted_graph_facts_reach_provider_request_body() {
         Arc::new(FakeEmbedder),
         Arc::new(fake_gen),
         shutdown_rx,
+        inert_rebuild_tx(),
     );
 
     let graph_doc_id = Uuid::new_v4().to_string();
@@ -7643,6 +7694,513 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
     } else {
         panic!("expected GraphAugmentationOutcome::Succeeded");
     }
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+// =========================================================================
+// Phase 6.1: Plan 06.1-01 Tests
+// =========================================================================
+
+#[tokio::test]
+async fn test_checkout_clone_isolated_from_live_writes() {
+    let path = database_path("checkout-clone-isolation");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let doc_id_1 = Uuid::new_v4().to_string();
+    let job_1 = IngestionJob::new(
+        doc_id_1.clone(),
+        "doc1.md".into(),
+        b"# Doc1\n\nContent for first snapshot version.".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job_1, &database, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let nodes = database.nodes_table().await.unwrap();
+    let v1 = nodes.version().await.unwrap();
+    let nodes_pinned = nodes.clone();
+    nodes_pinned.checkout(v1).await.unwrap();
+
+    // Query pinned table at v1
+    let query_req = QueryRequest::from_values("Content", vec![], vec![], &retrieval::RetrievalSettings::default()).unwrap();
+    let retriever_pinned = DenseRetriever::new(nodes_pinned.clone());
+    let candidates_pinned_v1 = retriever_pinned.query(&[0.25; 2048], &query_req, &retrieval::RetrievalSettings::default()).await.unwrap();
+    assert_eq!(candidates_pinned_v1.len(), 2);
+
+    // Now insert a second document to the live table, moving version to v2
+    let doc_id_2 = Uuid::new_v4().to_string();
+    let job_2 = IngestionJob::new(
+        doc_id_2.clone(),
+        "doc2.md".into(),
+        b"# Doc2\n\nAdditional content written later.".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job_2, &database, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let nodes_live = database.nodes_table().await.unwrap();
+    let v2 = nodes_live.version().await.unwrap();
+    assert!(v2 > v1, "live table version must advance after second ingest");
+
+    // Re-query the pinned table instance at v1
+    let candidates_pinned_after = retriever_pinned.query(&[0.25; 2048], &query_req, &retrieval::RetrievalSettings::default()).await.unwrap();
+    assert_eq!(candidates_pinned_after.len(), 2, "pinned table must retain v1 row snapshot");
+
+    // Query live table
+    let live_retriever = DenseRetriever::new(nodes_live);
+    let candidates_live = live_retriever.query(&[0.25; 2048], &query_req, &retrieval::RetrievalSettings::default()).await.unwrap();
+    assert_eq!(candidates_live.len(), 4, "live table must reflect v2 rows");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn test_rebuild_swap_updates_generation_label() {
+    let path = database_path("rebuild-swap-gen-label");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let _nodes = database.nodes_table().await.unwrap();
+
+    let doc_id_1 = Uuid::new_v4().to_string();
+    let job_1 = IngestionJob::new(
+        doc_id_1.clone(),
+        "doc1.md".into(),
+        b"# Alpha\n\nAlpha document content.".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job_1, &database, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let initial_gen = service.corpus_store.read().await.generation.clone();
+    let initial_version = service.corpus_store.read().await.nodes_version;
+    assert_eq!(initial_gen, format!("lance-{initial_version}"));
+
+    // Add another document
+    let doc_id_2 = Uuid::new_v4().to_string();
+    let job_2 = IngestionJob::new(
+        doc_id_2.clone(),
+        "doc2.md".into(),
+        b"# Beta\n\nBeta document content.".to_vec(),
+        HashMap::new(),
+    );
+    process_job(&job_2, &database, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    // Trigger rebuild_and_swap
+    let new_snapshot = engine::ingest::rebuild_and_swap(
+        &service.nodes,
+        &service.corpus_store,
+        service.effective_settings.retrieval.bm25.clone(),
+    )
+    .await
+    .unwrap();
+
+    assert!(new_snapshot.nodes_version > initial_version);
+    assert_eq!(new_snapshot.generation, format!("lance-{}", new_snapshot.nodes_version));
+    assert_eq!(service.corpus_store.read().await.generation, new_snapshot.generation);
+
+    // Execute query and check snapshot metadata
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(snapshot);
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000050".into(),
+        "trace-gen-swap".into(),
+        &test_query_request("Alpha query", "00000000-0000-4000-8000-000000000050"),
+    );
+    let retrieve_node = workflow::nodes::RetrieveHybridNode::new(
+        deps.dense_port.clone(),
+        deps.bm25_port.clone(),
+        deps.reranker_port.clone(),
+        deps.retrieval_settings.clone(),
+    )
+    .with_snapshot_metadata(new_snapshot.generation.clone(), "test-model");
+
+    let cancel = CancellationToken::new();
+    retrieve_node.run(&mut ctx, &cancel).await.unwrap();
+    let ret_snapshot = ctx.snapshot.expect("retrieval snapshot populated");
+    assert_eq!(ret_snapshot.index_generation, new_snapshot.generation);
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn retrieve_dense_on_freshly_initialized_table_does_not_panic() {
+    let path = database_path("fresh-table-retrieve-dense");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let nodes = database.nodes_table().await.unwrap();
+
+    // Observed LanceDB table version on a fresh, empty table
+    let version = nodes.version().await.unwrap();
+    assert_eq!(version, 1, "real LanceDB observed version on fresh table is 1");
+
+    let nodes_pinned = nodes.clone();
+    nodes_pinned.checkout(version).await.unwrap();
+
+    let dense_port = engine::service::ProductionDenseRetrievalPort {
+        nodes: nodes_pinned,
+        nodes_version: version,
+        retrieval_settings: retrieval::RetrievalSettings::default(),
+    };
+
+    let cancel = CancellationToken::new();
+    let result = dense_port
+        .retrieve_dense("fresh query", &[0.1; 2048], None, &cancel)
+        .await;
+
+    assert!(result.is_ok(), "dense retrieval on freshly initialized table must succeed without panic");
+    let candidates = result.unwrap();
+    assert_eq!(candidates.len(), 0, "empty table yields 0 candidates");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn rebuild_failure_degrades_not_fails() {
+    let path = database_path("rebuild-fail-degrades");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    assert!(!service.corpus_store.read().await.rebuild_degraded);
+
+    // Arm failure hook
+    engine::ingest::arm_rebuild_fail_next();
+
+    let res = engine::ingest::rebuild_and_swap(
+        &service.nodes,
+        &service.corpus_store,
+        service.effective_settings.retrieval.bm25.clone(),
+    )
+    .await;
+    assert!(res.is_err(), "armed rebuild must return Err");
+    assert!(service.corpus_store.read().await.rebuild_degraded, "rebuild_degraded flag must be set");
+
+    // Execute query with degraded snapshot
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(snapshot.clone());
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000051".into(),
+        "trace-degrade".into(),
+        &test_query_request("query", "00000000-0000-4000-8000-000000000051"),
+    );
+    let retrieve_node = workflow::nodes::RetrieveHybridNode::new(
+        deps.dense_port.clone(),
+        deps.bm25_port.clone(),
+        deps.reranker_port.clone(),
+        deps.retrieval_settings.clone(),
+    )
+    .with_snapshot_metadata(snapshot.generation.clone(), "test-model")
+    .with_rebuild_degraded(snapshot.rebuild_degraded);
+
+    let cancel = CancellationToken::new();
+    retrieve_node.run(&mut ctx, &cancel).await.unwrap();
+
+    let degrade_notice = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "INDEX_REBUILD_FAILED")
+        .expect("IndexRebuildFailed notice must be emitted");
+    assert_eq!(degrade_notice.severity, lancet::v1::NoticeSeverity::Warning as i32);
+
+    // Subsequent successful rebuild clears degraded flag
+    let res_ok = engine::ingest::rebuild_and_swap(
+        &service.nodes,
+        &service.corpus_store,
+        service.effective_settings.retrieval.bm25.clone(),
+    )
+    .await;
+    assert!(res_ok.is_ok(), "unarmed rebuild must succeed");
+    assert!(!service.corpus_store.read().await.rebuild_degraded, "degraded flag must be cleared");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn debounce_coalesces_burst() {
+    let path = database_path("debounce-burst");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    engine::ingest::reset_rebuild_invocation_count();
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let (rebuild_tx, rebuild_rx) = watch::channel(0u64);
+
+    let debounce_task = engine::ingest::spawn_rebuild_debounce_task(
+        rebuild_rx,
+        shutdown_rx,
+        service.nodes.clone(),
+        service.corpus_store.clone(),
+        service.effective_settings.retrieval.bm25.clone(),
+        std::time::Duration::from_millis(200),
+    );
+
+    // Send 5 rapid notifications within 50ms (well within the 200ms debounce window)
+    for _ in 0..5 {
+        rebuild_tx.send_modify(|v| *v = v.wrapping_add(1));
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    // Wait for the quiet period to elapse (200ms + margin)
+    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+
+    assert_eq!(
+        engine::ingest::rebuild_invocation_count(),
+        1,
+        "burst of 5 notifications must coalesce into exactly 1 rebuild"
+    );
+
+    shutdown_tx.send(true).unwrap();
+    let _ = debounce_task.await;
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn debounce_task_terminates_on_shutdown_signal() {
+    let path = database_path("debounce-shutdown");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let (_rebuild_tx, rebuild_rx) = watch::channel(0u64);
+
+    let debounce_task = engine::ingest::spawn_rebuild_debounce_task(
+        rebuild_rx,
+        shutdown_rx,
+        service.nodes.clone(),
+        service.corpus_store.clone(),
+        service.effective_settings.retrieval.bm25.clone(),
+        std::time::Duration::from_millis(5000),
+    );
+
+    shutdown_tx.send(true).unwrap();
+
+    let timeout_res = tokio::time::timeout(std::time::Duration::from_millis(500), debounce_task).await;
+    assert!(timeout_res.is_ok(), "debounce task must exit promptly on shutdown signal");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn rebuild_swap_generation_atomicity() {
+    let path = database_path("rebuild-atomicity");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = Arc::new(configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await);
+
+    let mut handles = Vec::new();
+    for i in 0..10 {
+        let s = Arc::clone(&service);
+        handles.push(tokio::spawn(async move {
+            let req = test_query_request("atomicity test", &format!("00000000-0000-4000-8000-0000000000{:02}", i));
+            let snapshot = s.corpus_store.read().await.clone();
+            let (_runner, deps) = s.build_production_workflow(snapshot.clone());
+            let mut ctx = WorkflowContext::new(
+                format!("00000000-0000-4000-8000-0000000000{:02}", i),
+                format!("trace-atom-{i}"),
+                &req,
+            );
+            let retrieve_node = workflow::nodes::RetrieveHybridNode::new(
+                deps.dense_port.clone(),
+                deps.bm25_port.clone(),
+                deps.reranker_port.clone(),
+                deps.retrieval_settings.clone(),
+            )
+            .with_snapshot_metadata(snapshot.generation.clone(), "test-model");
+            let cancel = CancellationToken::new();
+            retrieve_node.run(&mut ctx, &cancel).await.unwrap();
+            let ret_snap = ctx.snapshot.expect("snapshot populated");
+            assert!(ret_snap.index_generation.starts_with("lance-"));
+            ret_snap.index_generation
+        }));
+    }
+
+    // Trigger rebuild_and_swap concurrently
+    let swap_res = engine::ingest::rebuild_and_swap(
+        &service.nodes,
+        &service.corpus_store,
+        service.effective_settings.retrieval.bm25.clone(),
+    )
+    .await;
+    assert!(swap_res.is_ok());
+
+    for h in handles {
+        let gen = h.await.unwrap();
+        assert!(gen.starts_with("lance-"), "every query must see a valid lance generation label");
+    }
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn query_never_blocks_on_rebuild() {
+    let path = database_path("no-block-rebuild");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    // Acquire read snapshot
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(snapshot);
+    let bm25_port = deps.bm25_port.unwrap();
+
+    let cancel = CancellationToken::new();
+    let fut = bm25_port.retrieve_bm25("test query", None, &cancel);
+
+    // Query completes in milliseconds without waiting on any lock
+    let timeout_res = tokio::time::timeout(std::time::Duration::from_millis(500), fut).await;
+    assert!(timeout_res.is_ok(), "BM25 query must complete immediately off immutable snapshot");
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn generation_agreement_dense_bm25() {
+    let path = database_path("gen-agreement");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(snapshot.clone());
+
+    // Both dense_port and bm25_port were constructed from the exact same snapshot
+    assert_eq!(deps.dense_port.is_some(), true);
+    assert_eq!(deps.bm25_port.is_some(), true);
+    assert_eq!(snapshot.generation, format!("lance-{}", snapshot.nodes_version));
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn startup_generation_derived_from_lancedb() {
+    let path = database_path("startup-gen-derived");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let nodes = database.nodes_table().await.unwrap();
+    let nodes_version = nodes.version().await.unwrap();
+
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    let snapshot = service.corpus_store.read().await.clone();
+    assert_eq!(
+        snapshot.generation,
+        format!("lance-{nodes_version}"),
+        "startup generation must be lance-{{nodes_version}} even with empty staged documents"
+    );
+    assert_eq!(snapshot.nodes_version, nodes_version);
 
     let _ = std::fs::remove_dir_all(path);
 }

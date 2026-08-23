@@ -3728,38 +3728,47 @@ fn test_notice_published_enum_reachability_or_reservation() {
         (NoticeCode::ModelWarning, "engine/src/workflow/mod.rs"),
         (
             NoticeCode::GraphUnavailable,
-            "Phase 6 plan 06-08 emission site",
+            "engine/src/workflow/nodes/graph_context.rs",
         ),
         (
             NoticeCode::RetrievalDegradedDense,
-            "Phase 6 plan 06-09 emission site",
+            "engine/src/workflow/nodes/retrieve.rs",
         ),
         (
             NoticeCode::CitationRepaired,
-            "Phase 6 plan 06-11 emission site",
+            "engine/src/workflow/nodes/generate.rs",
         ),
         (
             NoticeCode::CitationDropped,
-            "Phase 6 plan 06-11 emission site",
+            "engine/src/workflow/nodes/generate.rs",
         ),
-        (NoticeCode::ModelOnly, "Phase 6 plan 06-10 emission site"),
+        (
+            NoticeCode::ModelOnly,
+            "engine/src/workflow/nodes/generate.rs",
+        ),
         (
             NoticeCode::BasisReconciled,
-            "Phase 6 plan 06-10 emission site",
+            "engine/src/workflow/nodes/generate.rs",
         ),
         (
             NoticeCode::RetrievalDegradedBm25,
-            "Phase 6 plan 06-09 emission site",
+            "engine/src/workflow/nodes/retrieve.rs",
         ),
         (
             NoticeCode::GraphAblation,
-            "Phase 6 plan 06-08 emission site",
+            "engine/src/workflow/nodes/graph_context.rs",
         ),
-        (NoticeCode::IndexRebuildFailed, "reserved for Phase 6.1"),
-        (NoticeCode::IndexStale, "reserved for Phase 6.1"),
+        (
+            NoticeCode::IndexRebuildFailed,
+            "engine/src/workflow/nodes/retrieve.rs",
+        ),
+        (
+            NoticeCode::IndexStale,
+            "reserved: D-22 guarantees queries serve prior generation concurrently without blocking; stale notice not emitted",
+        ),
         (
             NoticeCode::IndexGenerationMismatch,
-            "reserved for Phase 6.1",
+            "reserved: D-24 unified CorpusSnapshot makes cross-generation mixing unreachable",
         ),
     ];
 
@@ -3770,6 +3779,13 @@ fn test_notice_published_enum_reachability_or_reservation() {
         );
         let n = engine::workflow::notice(code, "manifest validation", NoticeSeverity::Info);
         assert!(!n.code.is_empty());
+        if rationale.starts_with("reserved") || rationale.starts_with("proto default") {
+            continue;
+        }
+        assert!(
+            rationale.starts_with("engine/src/") && rationale.ends_with(".rs"),
+            "{code:?} rationale {rationale:?} must match engine/src/*.rs"
+        );
     }
 }
 

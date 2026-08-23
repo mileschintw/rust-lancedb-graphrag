@@ -32,7 +32,8 @@ async fn workflow_phase5_production_five_node() {
     )
     .await;
 
-    let (runner, _deps) = service.build_production_workflow();
+    let snapshot = service.corpus_store.read().await.clone();
+    let (runner, _deps) = service.build_production_workflow(snapshot);
     assert_eq!(
         runner.timeout_for_node("ReformulateQuery").as_millis(),
         5000
@@ -119,8 +120,10 @@ async fn workflow_phase5_production_dependencies_are_real() {
     .await;
 
     // Construction 1 and construction 2 verify cheap handle reuse without reinitialization
-    let (_runner1, deps1) = service.build_production_workflow();
-    let (_runner2, deps2) = service.build_production_workflow();
+    let snapshot1 = service.corpus_store.read().await.clone();
+    let snapshot2 = service.corpus_store.read().await.clone();
+    let (_runner1, deps1) = service.build_production_workflow(snapshot1);
+    let (_runner2, deps2) = service.build_production_workflow(snapshot2);
 
     // Verify that Arc::clone is used and Arc::ptr_eq / strong_count proves handle reuse across constructions
     assert!(Arc::ptr_eq(
@@ -202,7 +205,8 @@ async fn workflow_phase5_production_context_population() {
     );
     let cancel = CancellationToken::new();
 
-    let (_runner, deps) = service.build_production_workflow();
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(snapshot);
     let reformulate_node =
         workflow::nodes::ReformulateQueryNode::with_reformulator(deps.reformulator.clone());
     reformulate_node.run(&mut ctx, &cancel).await.unwrap();
@@ -312,12 +316,20 @@ async fn workflow_phase5_production_reachability() {
         usage: None,
     })));
 
+    let nodes_version = nodes.version().await.unwrap();
+    let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
+        Arc::new(bm25_index),
+        nodes_version,
+        false,
+    ));
+    let corpus_store = Arc::new(tokio::sync::RwLock::new(initial_snapshot));
+
     let service = crate::service::LancetServiceImpl {
         table,
         statuses,
         queue: sender,
         nodes,
-        bm25_index: Arc::new(tokio::sync::RwLock::new(Arc::new(bm25_index))),
+        corpus_store,
         reranker: Arc::new(rerank::NoOpReranker::new()),
         effective_settings: crate::config::EffectiveRagSettings::default(),
         generator: fake_gen.clone(),
@@ -326,7 +338,8 @@ async fn workflow_phase5_production_reachability() {
     };
 
     // 1. Happy path: full five-node execution with evidence
-    let (runner, _deps) = service.build_production_workflow();
+    let snapshot = service.corpus_store.read().await.clone();
+    let (runner, _deps) = service.build_production_workflow(snapshot);
     let req = test_query_request(
         "What is reachability document content?",
         "00000000-0000-4000-8000-000000000010",
@@ -496,7 +509,8 @@ async fn workflow_phase5_production_reachability() {
         }
     }
 
-    let (_, fail_deps) = service.build_production_workflow();
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_, fail_deps) = service.build_production_workflow(snapshot);
     let mut failing_runner = workflow::WorkflowRunner::new();
     failing_runner.add_node(workflow::nodes::ReformulateQueryNode::new());
     failing_runner.add_node(workflow::nodes::ExtractGraphContextNode::new(
@@ -573,6 +587,7 @@ async fn workflow_phase5_settings_applied_to_production() {
         generation_node_timeout_ms: 7890,
         allow_model_only_answers: false,
         citation_repair_enabled: true,
+        rebuild_debounce_ms: 2000,
     };
 
     let service = configured_service(
@@ -591,7 +606,8 @@ async fn workflow_phase5_settings_applied_to_production() {
     )
     .await;
 
-    let (runner, _deps) = service.build_production_workflow();
+    let snapshot = service.corpus_store.read().await.clone();
+    let (runner, _deps) = service.build_production_workflow(snapshot);
     assert_eq!(
         runner.timeout_for_node("ReformulateQuery").as_millis(),
         1234
@@ -673,7 +689,8 @@ async fn workflow_phase5_config_verify_generation_timeout() {
     )
     .await;
 
-    let (runner, deps) = service.build_production_workflow();
+    let snapshot = service.corpus_store.read().await.clone();
+    let (runner, deps) = service.build_production_workflow(snapshot);
     assert_eq!(runner.timeout_for_node("GenerateAnswer").as_millis(), 7000);
 
     let (tx, mut rx) = mpsc::channel(100);
@@ -1609,7 +1626,8 @@ async fn workflow_phase5_retrieval_snapshot_variants() {
     ctx.variants = vec!["variant alpha".to_string(), "variant beta".to_string()];
     ctx.query_embedding = Some(vec![0.1; 2048]);
 
-    let (_runner, deps) = service.build_production_workflow();
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(snapshot);
     let retrieve_node = workflow::nodes::RetrieveHybridNode::new(
         deps.dense_port.clone(),
         deps.bm25_port.clone(),
@@ -1650,7 +1668,8 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
     )
     .await;
 
-    let (_runner, deps) = service.build_production_workflow();
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(snapshot);
     let bm25_port = deps
         .bm25_port
         .expect("bm25 port must exist in production deps");
@@ -1658,8 +1677,8 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
     let cancel = CancellationToken::new();
     let retrieval_fut = bm25_port.retrieve_bm25("query terms", None, &cancel);
 
-    // Concurrently acquire write lock on the shared Bm25IndexStore and replace the index
-    let mut write_guard = service.bm25_index.write().await;
+    // Concurrently acquire write lock on the shared CorpusStore and replace the snapshot
+    let mut write_guard = service.corpus_store.write().await;
     let new_index = Arc::new(
         crate::retrieval::Bm25Index::from_candidates(
             vec![],
@@ -1667,7 +1686,11 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
         )
         .expect("empty Bm25Index must construct"),
     );
-    *write_guard = new_index;
+    *write_guard = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
+        new_index,
+        write_guard.nodes_version,
+        false,
+    ));
     drop(write_guard);
 
     let res = retrieval_fut.await;
