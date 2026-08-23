@@ -5,14 +5,16 @@ status: validated
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-08-20
-updated: 2026-08-22
+updated: 2026-08-23
 ---
 
 # Phase 6 — Validation Strategy
 
 > Per-phase validation contract for feedback sampling during execution.
 > Seeded by `/gsd-plan-phase 6` from `06-RESEARCH.md` § Validation Architecture.
-> Fully populated and verified by `/gsd-validate-phase 6`.
+> Re-audited 2026-08-23: Gemini commit `0bb1257` stamped compliance but swapped the
+> RESEARCH behavior→test map for truncated plan-task greps and left Go counts stale.
+> This revision restores the behavior map to live filter names and re-verified counts.
 
 ---
 
@@ -32,15 +34,19 @@ updated: 2026-08-22
 
 **Measured baseline and verified post-restructure distribution** (per-target counts):
 
-| Target | Baseline Cases | Post-Restructure Cases | Status |
-|--------|----------------|------------------------|--------|
-| `unittests src/lib.rs` (library) | 133 | 351 (350 passed, 1 ignored) | ✅ Verified |
-| `unittests src/main.rs` (bin `engine`) | 128 | 0 (all modules library-homed) | ✅ Verified |
-| `unittests src/bin/inspect_lancedb.rs` | 18 | 18 | ✅ Verified |
-| `unittests src/bin/seed_rag_fixture.rs` | 0 | 0 | ✅ Verified |
-| `tests/config_startup.rs` (integration) | 9 | 17 | ✅ Verified |
-| **Rust total** | **288** | **386** | ✅ Verified |
-| Go `func Test…` in `gateway` | 67 | 67 | ✅ Verified |
+| Target | Baseline Cases | Post-Phase Cases | Status |
+|--------|----------------|------------------|--------|
+| `unittests src/lib.rs` (library) | 133 | 351 (350 passed, 1 ignored) | ✅ Verified 2026-08-23 |
+| `unittests src/main.rs` (bin `engine`) | 128 | 0 (all modules library-homed) | ✅ Verified 2026-08-23 |
+| `unittests src/bin/inspect_lancedb.rs` | 18 | 18 | ✅ Verified 2026-08-23 |
+| `unittests src/bin/seed_rag_fixture.rs` | 0 | 0 | ✅ Verified 2026-08-23 |
+| `tests/config_startup.rs` (integration) | 9 | 17 | ✅ Verified 2026-08-23 |
+| **Rust total** | **288** | **386** | ✅ Verified 2026-08-23 |
+| Go `go test ./... -list .` (`^Test`) | 67 | **80** | ✅ Verified 2026-08-23 |
+
+> D-80/D-82 redistribute cases; totals grow when Wave 0+ behavior tests land. Re-enumerate via
+> `scripts/engine-test-targets.sh` / `scripts/gateway-test-targets.sh` after restructure steps.
+> Do **not** treat the pre-phase 67 Go figure as an invariant after plans 06-06..06-12.
 
 ---
 
@@ -48,58 +54,72 @@ updated: 2026-08-22
 
 - **After every task commit:** the single most relevant target — `cargo test --manifest-path engine/Cargo.toml --lib` for engine work, `cd gateway && go test ./...` for gateway work.
 - **After every plan wave:** the full configured gate — `cargo test --manifest-path engine/Cargo.toml --locked && (cd gateway && go test ./...)`
-- **After every D-80/D-82 restructure step:** additionally re-run per-target enumeration via `scripts/engine-test-targets.sh` and verify test redistribution invariants.
+- **After every D-80/D-82 restructure step:** additionally re-run per-target enumeration via `scripts/engine-test-targets.sh` / `scripts/gateway-test-targets.sh`.
 - **After every D-74 wire-contract commit:** additionally `buf lint`, `buf format --diff --exit-code`, and `git status --porcelain` showing exactly the five expected regenerated paths.
 - **Before `/gsd-verify-work`:** full suite green + `cargo clippy -- -D warnings` + `cargo fmt --check` + `go vet ./...`
 - **Max feedback latency:** 30 seconds (quick run), full gate at wave boundaries.
 
+> **D-85: there is no CI.** These commands *are* the verification path.
+
 ---
 
-## Per-Task Verification Map
+## Per-Requirement Verification Map
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior / Description | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-------------------------------|-----------|-------------------|-------------|--------|
-| T-06-01-01 | 01 | 1 | RAG-03 / D-80 | — | Task 1: Establish the per-target test invariant gate and move `chunker` into the library crate | invariant / unit | `cargo build --manifest-path engine/Cargo.toml && grep -q '^pub mod chunk...` | ✅ | ✅ green |
-| T-06-01-02 | 01 | 1 | RAG-03 / D-80 | — | Task 2: Move the whole configuration surface into `engine::config` | invariant / unit | `cargo build --manifest-path engine/Cargo.toml && grep -q '^pub mod confi...` | ✅ | ✅ green |
-| T-06-02-01 | 02 | 2 | RAG-03 / D-80 | — | Task 1: Move the ingestion pipeline into `engine::ingest` | unit / integration | `cargo build --manifest-path engine/Cargo.toml && grep -q '^pub mod inges...` | ✅ | ✅ green |
-| T-06-02-02 | 02 | 2 | RAG-03 / D-80 | — | Task 2: Move `LancetServiceImpl` and the gRPC surface into `engine::service` | unit / integration | `cargo build --manifest-path engine/Cargo.toml && grep -q '^pub mod servi...` | ✅ | ✅ green |
-| T-06-03-01 | 03 | 3 | RAG-03 / D-80 | — | Task 1: Rehome `engine/src/tests.rs` from the binary target to the library target | invariant / static | `cargo build --manifest-path engine/Cargo.toml && grep -q '^pub mod tests...` | ✅ | ✅ green |
-| T-06-03-02 | 03 | 3 | RAG-03 / D-80 | — | Task 2: Sweep the `main.rs` residue and pin the post-restructure distribution in the gate script | invariant / static | `test "$(grep -c '^\(pub \)\?\(async \)\?fn \\|^\(pub \)\?struct \\|^\(pub ...` | ✅ | ✅ green |
-| T-06-04-01 | 04 | 1 | RAG-03 / D-82 | — | Task 1: Establish the per-package Go test invariant gate | package / unit | `sh scripts/gateway-test-targets.sh && sh scripts/gateway-test-targets.sh...` | ✅ | ✅ green |
-| T-06-04-02 | 04 | 1 | RAG-03 / D-82 | — | Task 2: Extract `gateway/internal/config` | package / unit | `test -f gateway/internal/config/config.go && grep -q '^package config' g...` | ✅ | ✅ green |
-| T-06-04-03 | 04 | 1 | RAG-03 / D-82 | — | Task 3: Extract `gateway/internal/sse` and create the reserved `gateway/internal/telemetry` | package / unit | `grep -q '^package sse' gateway/internal/sse/sse.go && grep -q '^package ...` | ✅ | ✅ green |
-| T-06-05-01 | 05 | 2 | RAG-03 / D-82 | — | Task 1: Create `gateway/internal/engineclient` and rewire production code | package / unit | `grep -q '^package engineclient' gateway/internal/engineclient/engineclie...` | ✅ | ✅ green |
-| T-06-05-02 | 05 | 2 | RAG-03 / D-82 | — | Task 2: Migrate `gateway/main_test.go` onto the new package and restore the green suite | package / unit | `grep -q 'github.com/lancet/gateway/internal/engineclient' gateway/main_t...` | ✅ | ✅ green |
-| T-06-06-01 | 06 | 4 | RAG-03 / D-83 | — | Task 1: Create `engine::testkit` and migrate every exhaustive request and notice literal in the test tree | unit / regression | `grep -q 'pub fn test_query_request' engine/src/testkit.rs && grep -q 'pu...` | ✅ | ✅ green |
-| T-06-06-02 | 06 | 4 | RAG-03 / D-83 | — | Task 2: Extend the `cfg(test)` fake-port seam with D-83's four failure modes | unit / regression | `cargo build --manifest-path engine/Cargo.toml --release && test "$(grep ...` | ✅ | ✅ green |
-| T-06-06-03 | 06 | 4 | RAG-03 / D-83 | — | Task 3: Assert the exact SSE payload key set on the Go side | unit / regression | `test "$(grep -c '^func Test' gateway/main_test.go)" = "62" && test "$(gr...` | ✅ | ✅ green |
-| T-06-07-01 | 07 | 5 | RAG-03 / D-74 | — | Publish the research-corrected vocabulary (recommended) | contract / integration | `cargo test` | ✅ | ✅ green |
-| T-06-07-02 | 07 | 5 | RAG-03 / D-74 | — | Task 1: Prove regeneration reproducibility, then land the additive protobuf edit and regenerate both binding trees | contract / integration | `buf lint && buf format --diff --exit-code && buf generate && grep -q 'en...` | ✅ | ✅ green |
-| T-06-07-03 | 07 | 5 | RAG-03 / D-74 | — | Task 2: Introduce the single typed notice constructor and derive the string code at every emission site | contract / integration | `cargo build --manifest-path engine/Cargo.toml && test "$(cat engine/src/...` | ✅ | ✅ green |
-| T-06-07-04 | 07 | 5 | RAG-03 / D-74 | T-06-INPUT | Task 3: Carry both request flags and the typed notice code across the gateway's HTTP edge | contract / integration | `grep -q 'allow_model_only' gateway/main.go && grep -q 'disable_graph_con...` | ✅ | ✅ green |
-| T-06-08-01 | 08 | 6 | DEBT-RAG-06 / D-08 | — | Task 1: End-to-end "answer this query without graph context" — one path only | unit / integration | `cargo build --manifest-path engine/Cargo.toml && grep -q 'disable_graph_...` | ✅ | ✅ green |
-| T-06-08-02 | 08 | 6 | DEBT-RAG-06 / D-08 | — | Task 2: Give the two silently-degrading graph paths a machine-readable notice | unit / integration | `cargo build --manifest-path engine/Cargo.toml && test "$(grep -c 'Notice...` | ✅ | ✅ green |
-| T-06-08-03 | 08 | 6 | DEBT-RAG-06 / D-08 | — | Task 3: Prove a source-chunk query never requires graph data | unit / integration | `cargo test --manifest-path engine/Cargo.toml --lib && cargo clippy --man...` | ✅ | ✅ green |
-| T-06-09-01 | 09 | 7 | DEBT-RAG-01 / D-13 | — | Task 1: Convert the dense retrieval path from fail-closed to degrade | unit / regression | `cargo build --manifest-path engine/Cargo.toml && test "$(grep -c 'return...` | ✅ | ✅ green |
-| T-06-09-02 | 09 | 7 | DEBT-RAG-01 / D-13 | — | Task 2: Convert the lexical retrieval path with per-variant tolerance, and pin the both-paths-failed notice shape | unit / regression | `cargo build --manifest-path engine/Cargo.toml && test "$(grep -c 'return...` | ✅ | ✅ green |
-| T-06-10-01 | 10 | 8 | DEBT-RAG-01 / D-10, D-11, D-12 | T-06-CONFIG | Task 1: Add the model-only configuration key with fail-closed parsing and resolve it once at admission | unit / integration | `cargo build --manifest-path engine/Cargo.toml && grep -q 'allow_model_on...` | ✅ | ✅ green |
-| T-06-10-02 | 10 | 8 | DEBT-RAG-01 / D-10, D-11, D-12 | — | Task 2: Make BOTH grounding guards conditional on the resolved opt-in | unit / integration | `cargo build --manifest-path engine/Cargo.toml && grep -q 'allow_model_on...` | ✅ | ✅ green |
-| T-06-10-03 | 10 | 8 | DEBT-RAG-01 / D-10, D-11, D-12 | — | Task 3: Bypass both zero-evidence gates when opted in, and emit the model-only contract | unit / integration | `cargo build --manifest-path engine/Cargo.toml && test "$(grep -c 'allow_...` | ✅ | ✅ green |
-| T-06-11-01 | 11 | 9 | DEBT-RAG-03 / D-14, D-18 | — | Task 1: Build the deterministic citation normalization module and its configuration toggle | unit / regression | `cargo build --manifest-path engine/Cargo.toml && head -1 engine/src/gene...` | ✅ | ✅ green |
-| T-06-11-02 | 11 | 9 | DEBT-RAG-03 / D-14, D-18 | — | Task 2: Reconcile the answer basis conservatively and state the evidence-over-priors precedence in the prompt | unit / regression | `cargo build --manifest-path engine/Cargo.toml && test "$(grep -cE '\bNot...` | ✅ | ✅ green |
-| T-06-11-03 | 11 | 9 | DEBT-RAG-03 / D-14, D-18 | — | Task 3: Replace the fail-closed citation branch with repair, strip and notice | unit / regression | `cargo build --manifest-path engine/Cargo.toml && grep -q 'citations::' e...` | ✅ | ✅ green |
-| T-06-12-01 | 12 | 10 | DEBT-RAG-05 / D-15 | T-06-INPUT | Task 1: Enumerate the matrix and drive it as a table-driven gRPC test | table-driven | `head -1 engine/src/tests/bad_input_matrix.rs \| grep -q '^//!' && grep -q...` | ✅ | ✅ green |
-| T-06-12-02 | 12 | 10 | DEBT-RAG-05 / D-15 | T-06-INPUT | Task 2: Drive the same matrix over the HTTP surface | table-driven | `grep -q 'func TestBadInputMatrixHTTP' gateway/main_test.go && test "$(gr...` | ✅ | ✅ green |
-| T-06-13-01 | 13 | 11 | RAG-03 / DEBT-RAG-01 | — | Task 1: End-to-end opted-in empty evidence through production packing | unit / e2e | `cargo test --lib --manifest-path engine/Cargo.toml --locked -- --list \| ...` | ✅ | ✅ green |
-| T-06-13-02 | 13 | 11 | RAG-03 / DEBT-RAG-01 | — | Task 2: Dedicated model-only system policy | unit / e2e | `cargo test --lib --manifest-path engine/Cargo.toml --locked -- --list \| ...` | ✅ | ✅ green |
-| T-06-13-03 | 13 | 11 | RAG-03 / DEBT-RAG-01 | — | Task 3: Admit model_only on the outbound answer_basis schema | unit / e2e | `cargo test --lib --manifest-path engine/Cargo.toml --locked -- --list \| ...` | ✅ | ✅ green |
-| T-06-14-01 | 14 | 12 | RAG-03 / DEBT-RAG-03 | — | Task 1: De-dupe repaired citation ids and pin both SC5 reproductions | unit / regression | `cargo test --lib --manifest-path engine/Cargo.toml --locked -- --list \| ...` | ✅ | ✅ green |
-| T-06-14-02 | 14 | 12 | RAG-03 / DEBT-RAG-03 | — | Task 2: First-occurrence unique structured citations | unit / regression | `cargo test --lib --manifest-path engine/Cargo.toml --locked -- --list \| ...` | ✅ | ✅ green |
-| T-06-15-01 | 15 | 13 | RAG-03 / DEBT-RAG-01, DEBT-RAG-03 | — | Task 1: Gate the published inline generation remainder before anything is moved | node-level mock e2e | `cargo test --lib --manifest-path engine/Cargo.toml --locked -- --list \| ...` | ✅ | ✅ green |
-| T-06-15-02 | 15 | 13 | RAG-03 / DEBT-RAG-01, DEBT-RAG-03 | — | Task 2: Split the validator, pin answer_basis at both sites, and prove one SC3 path end to end | node-level mock e2e | `cargo test --lib --manifest-path engine/Cargo.toml --locked -- model_only` | ✅ | ✅ green |
-| T-06-15-03 | 15 | 13 | RAG-03 / DEBT-RAG-01, DEBT-RAG-03 | — | Task 3: Prove SC5's three unreachable clauses and the SC3 flag-off regression through the real adapter | node-level mock e2e | `cargo test --lib --manifest-path engine/Cargo.toml --locked -- --list \| ...` | ✅ | ✅ green |
+Behavior rows from `06-RESEARCH.md` § Validation Architecture, mapped to **live** test filters
+(RESEARCH placeholder names → actual names). Plan task IDs note ownership; plan `<automated>`
+blocks remain in each `06-XX-PLAN.md` and are not duplicated here when they are presence greps.
+
+| Req | Plan | Behavior | Test Type | Automated Command | File | Status |
+|-----|------|----------|-----------|-------------------|------|--------|
+| D-80 | 01–03 | Per-target redistribution; lib absorbs former bin cases | invariant | `cargo test --manifest-path engine/Cargo.toml --lib -- --list` → 351; `--bin engine -- --list` → 0 | `scripts/engine-test-targets.sh` | ✅ green |
+| D-80 | 01–03 | No `pub use` re-exports a second path from `main.rs` | static | `rg -c "^pub use" engine/src/main.rs` → 0 (or empty) | `engine/src/main.rs` | ✅ green |
+| D-82 | 04–05 | Gateway builds; full Go suite green after package split | regression | `cd gateway && go build ./... && go test ./...` | `gateway/` | ✅ green |
+| D-74 | 07 | Proto regen is reproducible (five binding paths) | contract | `buf lint && buf format --diff --exit-code && buf generate && git status --porcelain` | `proto/` + generated trees | ✅ green |
+| D-74 | 07 | Request edge flags parse under `DisallowUnknownFields` (absent ≠ unknown) | integration | `cd gateway && go test ./... -run TestQueryRAG_EdgeFlagsAndDisallowUnknownFields` | `gateway/main_test.go` | ✅ green |
+| D-74/D-76 | 07 | Every published notice yields non-empty `code` via `as_str_name()` | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- test_notice_constructor_all_published_values_yield_non_empty_code_and_match_derivation -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-13/D-74 | 07 | Every `NoticeCode` has an emission site or Phase 6.1 reservation | static/unit | `cargo test --manifest-path engine/Cargo.toml --lib -- test_notice_published_enum_reachability_or_reservation -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-08 | 08 | `GRAPH_UNAVAILABLE` on empty graph result | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- graph_unavailable_notice_on_empty_result -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-08 | 08 | `GRAPH_UNAVAILABLE` on absent `graph_port` | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- graph_unavailable_notice_on_absent_graph_port -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-08 | 08 | `GRAPH_TIMEOUT` / `GRAPH_DEGRADED` unchanged | regression | `cargo test --manifest-path engine/Cargo.toml --lib -- graph_timeout_notice_regression_unchanged graph_degraded_notice_regression_unchanged` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-08 | 08 | Source-chunk queries never require graph data | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- source_chunk_query_succeeds_when_` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-47 | 08 | `disable_graph_context` honored (ablation; no graph facts / port idle) | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- graph_ablation_` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-13 | 09 | Dense fails → degrade, surviving BM25, `RETRIEVAL_DEGRADED_DENSE` | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- retrieval_degraded_dense_` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-13 | 09 | BM25 fails → degrade, surviving dense | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- retrieval_degraded_bm25_` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-13 | 09 | BM25 per-variant tolerance | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- retrieval_degraded_bm25_per_variant_preserves_earlier_succeeded_variants -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-13 | 09 | Both paths fail → two degrade notices + `NO_EVIDENCE` | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- retrieval_degraded_both_paths_fail_produces_three_notices_in_ordered_sequence -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-10/D-11/D-12 | 10 | Opt-in on, zero evidence → `MODEL_ONLY` + notice + zero citations | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- model_only_opt_in_true_zero_evidence_runs_generation_and_emits_notice -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-10/D-11 | 10 | Opt-in off, zero evidence → short-circuit unchanged | regression | `cargo test --manifest-path engine/Cargo.toml --lib -- model_only_opt_in_false_zero_evidence_short_circuits_unchanged -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-11 | 10 | Bypass applies on tracer path | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- model_only_opt_in_true_zero_evidence_tracer_path -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-12/D-84 | 10 | Config default / env override / invalid env fail-closed | unit | `cargo test --manifest-path engine/Cargo.toml --test config_startup -- model_only_answers` | `engine/tests/config_startup.rs` | ✅ green |
+| D-14 | 11 | Near-miss marker → `CITATION_REPAIRED` | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- citation_repair_enabled_repairs_near_miss_marker_and_emits_notice -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-14 | 11 | Unresolvable marker → `CITATION_DROPPED` | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- citation_repair_enabled_drops_unresolvable_marker_and_emits_notice -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-14 | 11 | Repair makes no second provider call | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- citation_repair_makes_no_additional_provider_call -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-14/D-18 | 11 | Total drop → basis downgrade (`BASIS_RECONCILED`) | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- citation_repair_total_drop_downgrades_basis_and_succeeds -- --exact` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-18 | 11 | Conservative basis reconciliation when self-report disagrees with evidence | unit | `cargo test --manifest-path engine/Cargo.toml --lib -- basis_reconciliation_` | `engine/src/tests/workflow_phase5.rs` | ✅ green |
+| D-15 | 12 | Table-driven gRPC bad-input matrix + no generator work | table-driven | `cargo test --manifest-path engine/Cargo.toml --lib -- bad_input_matrix_rejects_and_dispositions_are_stable -- --exact` | `engine/src/tests/bad_input_matrix.rs` | ✅ green |
+| D-15 | 12 | Table-driven HTTP bad-input matrix | table-driven | `cd gateway && go test ./... -run TestBadInputMatrixHTTP` | `gateway/main_test.go` | ✅ green |
+| D-83 | 06 | Fault modes stay `cfg(test)`; SSE payload key set pinned | unit / regression | `cargo test --manifest-path engine/Cargo.toml --lib --locked`; `cd gateway && go test ./internal/sse -run TestQueryRAGResponseDTOJSONKeys` | `engine/src/testkit.rs`, `gateway/internal/sse/sse_test.go` | ✅ green |
+| SC3/SC5 | 13–15 | Production-shaped model-only + citation repair through real adapter | node-level mock e2e | `cargo test --manifest-path engine/Cargo.toml --lib --locked -- openrouter_node_` | `engine/src/tests/workflow_phase5_production.rs` | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+**RESEARCH name → live filter aliases** (for anyone still holding Wave 0 placeholder names):
+
+| RESEARCH placeholder | Live filter / test |
+|----------------------|--------------------|
+| `notice_code_derivation` | `test_notice_constructor_all_published_values_yield_non_empty_code_and_match_derivation` |
+| `notice_code_all_reachable` | `test_notice_published_enum_reachability_or_reservation` |
+| `TestRAGQueryNewRequestFields` | `TestQueryRAG_EdgeFlagsAndDisallowUnknownFields` |
+| `graph_unavailable_empty_result` | `graph_unavailable_notice_on_empty_result` |
+| `graph_unavailable_no_port` | `graph_unavailable_notice_on_absent_graph_port` |
+| `source_chunk_query_without_graph` | `source_chunk_query_succeeds_when_*` |
+| `disable_graph_context_honored` | `graph_ablation_*` |
+| `model_only_opt_in` / `model_only_tracer_path` | `model_only_opt_in_true_zero_evidence_*` |
+| `citation_repair_normalizes` / `_drops` / `_no_second_call` | `citation_repair_enabled_repairs_*` / `_drops_*` / `citation_repair_makes_no_additional_provider_call` |
+| `basis_downgrade_on_total_drop` | `citation_repair_total_drop_downgrades_basis_and_succeeds` |
+| `basis_reconciliation_conservative` | `basis_reconciliation_*` |
+| `bad_input_matrix_grpc` / `bad_input_rejects_before_work` | `bad_input_matrix_rejects_and_dispositions_are_stable` (includes `fake_gen.calls() == 0`) |
+| `request_flag_presence` | Covered by `TestQueryRAG_EdgeFlagsAndDisallowUnknownFields` + `graph_ablation_absent_flag_defaults_to_graph_enabled` |
 
 ---
 
@@ -109,7 +129,7 @@ updated: 2026-08-22
 - [x] **Test-fixture constructor for `Notice`** covering exhaustive literals (Plans 06-06, 06-07).
 - [x] **Failure-mode extensions to the Phase 05 `cfg(test)` fake-port seam** (D-83): error, timeout, empty, malformed-citation variants on the dense, BM25, graph, and generator fakes (Plan 06-06).
 - [x] **`buf generate` reproducibility check** — `buf generate` + `git diff --exit-code` verified (Plan 06-07).
-- [x] **Go whole-payload assertion for `/rag/query`** — SSE payload assertions implemented in `gateway/main_test.go` (Plans 06-06, 06-07).
+- [x] **Go whole-payload assertion for `/rag/query`** — SSE payload assertions in `gateway/internal/sse/sse_test.go` (`TestQueryRAGResponseDTOJSONKeys`) (Plans 06-06, 06-07).
 
 ---
 
@@ -118,26 +138,45 @@ updated: 2026-08-22
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
 | D-16 weak-evidence threshold is deliberately **absent** | RAG-03 | A deliberate scope narrowing, not a behavior — nothing to assert | Recorded in the plan; reviewer confirms no threshold logic was added |
+| D-18 total-drop flag-off contract choice | DEBT-RAG-03 / CR-02 | Spec choice recorded in `06-VERIFICATION.md` human_verification — not an SC failure | Confirm intended flag-off semantics, then pin if product wants a regression |
+| Truncated packed-evidence citation backstop | T-06-15-03 | `insufficient_spec` / undeclared precondition in verification report | Decide resolve-vs-fail for retrieved-but-truncated blocks, then add a multi-block budget test |
+| MODEL_ONLY notice on D-18 total-drop path | DEBT-RAG-03 / CR-01 | Spec-conformant either way; cross-path invariant question | Decide notice vs `BASIS_RECONCILED`-only disclosure |
 
 ---
 
 ## Validation Sign-Off
 
-- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] All RESEARCH behaviors have automated verify (or deliberate manual-only)
 - [x] Sampling continuity: no 3 consecutive tasks without automated verify
-- [x] Wave 0 covers all MISSING references
+- [x] Wave 0 covers all former MISSING references
 - [x] No watch-mode flags
 - [x] Feedback latency < 30s
-- [x] Per-target baseline (386 Rust cases across targets, 67 Go cases) verified
+- [x] Per-target counts re-verified (386 Rust; 80 Go)
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** approved 2026-08-22
+**Approval:** approved 2026-08-23 (re-audit of `0bb1257`)
 
 ---
 
 ## Validation Audit 2026-08-22
+
 | Metric | Count |
 |--------|-------|
 | Gaps found | 0 |
 | Resolved | 0 |
 | Escalated | 0 |
+
+> Prior Gemini pass (`0bb1257`): marked compliant via plan-task greps; did not remap RESEARCH behaviors or refresh Go counts.
+
+---
+
+## Validation Audit 2026-08-23
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 4 (docs: wrong map unit, stale Go=67, truncated commands, filter-name drift) |
+| Resolved | 4 (VALIDATION.md rewritten; spot-suite green) |
+| Escalated | 0 |
+| New test files | 0 (behaviors already covered under live names) |
+
+**Spot-check (all green):** notice derivation/reachability; `graph_unavailable_*` + `graph_ablation_*`; `retrieval_degraded_*`; `model_only_opt_in_*` + `citation_repair_*` + `basis_reconciliation_*`; `bad_input_matrix_rejects_and_dispositions_are_stable`; `config_startup` model-only/citation-repair; `TestQueryRAG_EdgeFlagsAndDisallowUnknownFields` + `TestBadInputMatrixHTTP` + `TestQueryRAGResponseDTOJSONKeys`.
