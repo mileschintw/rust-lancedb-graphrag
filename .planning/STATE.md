@@ -2,23 +2,27 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.1
-current_phase_name: index-rebuild-and-swap-bu-deterministic-proofs-cr-04-cr-05-d
-current_plan: Not started
+current_phase_name: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
+current_plan: 3
 status: executing
-stopped_at: Phase 06 complete, ready to plan Phase 06.1
-last_updated: "2026-08-23T18:26:41.849Z"
-state_head: 58e11c265fc2ee496770197d659b6aefef936011
+stopped_at: All plans in Phase 06.1 executed (06.1-01, 06.1-02, 06.1-03 completed). Ready for phase verification.
+last_updated: "2026-08-23T19:00:00.000Z"
+state_head: 29d96889e9c24f2c1e54b3f2ff706e0f09f83ec0
 progress:
   total_phases: 11
   completed_phases: 4
   total_plans: 108
-  completed_plans: 105
+  completed_plans: 108
 milestone_name: milestone
 ---
 
 # Project State
 
 ## Current Status
+
+- Phase 06.1 Plan 06.1-01 executed: implemented index rebuild-and-swap, CorpusStore snapshot isolation, same-snapshot dense/BM25 pinning, worker burst debouncing, fail-closed rebuild_debounce_ms configuration, and degraded notice emission (NoticeCode::IndexRebuildFailed).
+- Phase 06.1 Plan 06.1-02 executed: deterministic proofs for DEBT-BU-01 (run_window evaluation before challenge validation) and DEBT-BU-02 (sample_owned cleanup isolation harness and 26/26 passing unit tests).
+- Phase 06.1 Plan 06.1-03 executed: documented code review and factual re-acceptance of DEBT-CR-04 and DEBT-CR-05 (0 production diffs; 06.1-CR-REVIEW.md produced).
 
 - Phase 1 completed successfully.
 - Phase 2 completed (force-closed per ADR-02-004; all open gaps marked as technical debt deferred to Phase 6 final hardening).
@@ -93,11 +97,11 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 06.1 — Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
-- **Status:** Ready to execute
-- **Current Plan:** Not started
+- **Status:** All plans executed (ready for phase verification)
+- **Current Plan:** 3
 - **Total Plans in Phase:** 3
-- **Completed Plans in Phase:** 0
-- **Progress:** [░░░░░░░░░░] 0%
+- **Completed Plans in Phase:** 3
+- **Progress:** [██████████] 100%
 
 ## Completed Phases
 
