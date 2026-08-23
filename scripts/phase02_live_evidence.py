@@ -333,6 +333,10 @@ def validate_evidence(
     value: Any, challenge: Mapping[str, Any], now: dt.datetime | None = None
 ) -> Mapping[str, Any]:
     evidence = validate_object_keys(value, EVIDENCE_KEYS, "evidence")
+    issued_at = parse_timestamp(challenge.get("issued_at"), "challenge.issued_at")
+    run_started_at = parse_timestamp(evidence.get("run_started_at"), "evidence.run_started_at")
+    generated_at = parse_timestamp(evidence.get("generated_at"), "evidence.generated_at")
+    require(generated_at - issued_at <= MAX_RUN_WINDOW, "complete run window exceeded")
     validate_challenge(challenge, now=now)
     evidence_schema_version = evidence.get("schema_version")
     require(
@@ -366,14 +370,10 @@ def validate_evidence(
     require(not evidence["duplicate_generation"], "evidence.duplicate_generation must be false")
     require(not evidence["stale_generation"], "evidence.stale_generation must be false")
     require(evidence["chunk_indexes_contiguous"], "evidence.chunk_indexes_contiguous must be true")
-    issued_at = parse_timestamp(challenge.get("issued_at"), "challenge.issued_at")
-    run_started_at = parse_timestamp(evidence.get("run_started_at"), "evidence.run_started_at")
-    generated_at = parse_timestamp(evidence.get("generated_at"), "evidence.generated_at")
     current = now or dt.datetime.now(UTC)
     require(issued_at <= run_started_at <= generated_at, "evidence timestamps are not ordered")
     require(generated_at <= current + MAX_FUTURE_SKEW, "evidence.generated_at is in the future")
     require(current - generated_at <= MAX_EVIDENCE_AGE, "evidence.generated_at is stale")
-    require(generated_at - issued_at <= MAX_RUN_WINDOW, "complete run window exceeded")
     require(run_started_at - issued_at <= MAX_RUN_WINDOW, "run start delay exceeded")
     return evidence
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -24,7 +25,11 @@ EVIDENCE_RUNTIME_PATH = ".planning/phases/02-ingestion-chunking-vector-storage/0
 if str(HELPER.parent) not in sys.path:
     sys.path.insert(0, str(HELPER.parent))
 
-from phase02_live_evidence import classify_sensitive_field
+from phase02_live_evidence import (
+    classify_sensitive_field,
+    validate_evidence,
+    ValidationError,
+)
 
 REAL_CANONICAL_PATHS = (
     (ROOT / CHALLENGE_RUNTIME_PATH).resolve(),
@@ -633,7 +638,9 @@ exit /b 0
                     expected_store = (ROOT / "data" / "lancedb-verify-02-06").resolve()
                     self.assertIn("--lancedb-path", captured_text)
                     self.assertTrue(
-                        str(expected_store) in captured_text or to_bash_path(expected_store) in captured_text,
+                        str(expected_store) in captured_text
+                        or expected_store.as_posix() in captured_text
+                        or to_bash_path(expected_store) in captured_text,
                         f"{expected_store} or {to_bash_path(expected_store)} not in captured text: {captured_text}",
                     )
 
@@ -782,6 +789,139 @@ exit 0
         att_path.write_text(json.dumps(drifted), encoding="utf-8")
         drift_res = run_helper("validate-attestation", "--attestation", str(att_path))
         self.assertNotEqual(drift_res.returncode, 0)
+
+    def test_bu01_deterministic_controlled_clock_run_window_exceeded(self) -> None:
+        challenge, evidence = fixture_pair()
+        challenge["issued_at"] = "2026-01-01T00:00:00Z"
+        evidence["issued_at"] = "2026-01-01T00:00:00Z"
+        evidence["run_started_at"] = "2026-01-01T00:05:00Z"
+        evidence["generated_at"] = "2026-01-01T00:36:00Z"
+        now = dt.datetime(2026, 1, 1, 0, 40, 0, tzinfo=dt.timezone.utc)
+        with self.assertRaisesRegex(ValidationError, r"^complete run window exceeded$"):
+            validate_evidence(evidence, challenge, now=now)
+
+    def test_bu01_deterministic_controlled_clock_within_window_succeeds(self) -> None:
+        challenge, evidence = fixture_pair()
+        challenge["issued_at"] = "2026-01-01T00:00:00Z"
+        evidence["issued_at"] = "2026-01-01T00:00:00Z"
+        evidence["run_started_at"] = "2026-01-01T00:05:00Z"
+        evidence["generated_at"] = "2026-01-01T00:20:00Z"
+        now = dt.datetime(2026, 1, 1, 0, 25, 0, tzinfo=dt.timezone.utc)
+        res = validate_evidence(evidence, challenge, now=now)
+        self.assertEqual(res["generated_at"], "2026-01-01T00:20:00Z")
+
+    def test_bu02_caller_fixture_preservation_early_failure(self) -> None:
+        sample_path = ROOT / ".test-caller-sample-early.tmp"
+        sample_content = b"caller fixture content early fail 12345"
+        sample_path.write_bytes(sample_content)
+        expected_sha = hashlib.sha256(sample_content).hexdigest()
+        expected_len = len(sample_content)
+        harness_path = ROOT / "scripts" / "fixtures" / "sample_owned_cleanup_harness.sh"
+        env = os.environ.copy()
+        env["SAMPLE_OWNED"] = "false"
+        try:
+            completed = subprocess.run(
+                ["bash", to_bash_path(harness_path, base=ROOT), "--mode", "early_fail", to_bash_path(sample_path, base=ROOT)],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertTrue(sample_path.exists(), "caller sample must exist after early failure")
+            self.assertEqual(sample_path.read_bytes(), sample_content)
+            self.assertEqual(hashlib.sha256(sample_path.read_bytes()).hexdigest(), expected_sha)
+            self.assertEqual(len(sample_path.read_bytes()), expected_len)
+        finally:
+            sample_path.unlink(missing_ok=True)
+
+    def test_bu02_caller_fixture_preservation_post_upload_failure(self) -> None:
+        sample_path = ROOT / ".test-caller-sample-post.tmp"
+        sample_content = b"caller fixture content post upload fail 12345"
+        sample_path.write_bytes(sample_content)
+        expected_sha = hashlib.sha256(sample_content).hexdigest()
+        expected_len = len(sample_content)
+        harness_path = ROOT / "scripts" / "fixtures" / "sample_owned_cleanup_harness.sh"
+        env = os.environ.copy()
+        env["SAMPLE_OWNED"] = "false"
+        try:
+            completed = subprocess.run(
+                ["bash", to_bash_path(harness_path, base=ROOT), "--mode", "post_upload_fail", to_bash_path(sample_path, base=ROOT)],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertTrue(sample_path.exists(), "caller sample must exist after post-upload failure")
+            self.assertEqual(sample_path.read_bytes(), sample_content)
+            self.assertEqual(hashlib.sha256(sample_path.read_bytes()).hexdigest(), expected_sha)
+            self.assertEqual(len(sample_path.read_bytes()), expected_len)
+        finally:
+            sample_path.unlink(missing_ok=True)
+
+    def test_bu02_caller_fixture_preservation_success(self) -> None:
+        sample_path = ROOT / ".test-caller-sample-success.tmp"
+        sample_content = b"caller fixture content success 12345"
+        sample_path.write_bytes(sample_content)
+        expected_sha = hashlib.sha256(sample_content).hexdigest()
+        expected_len = len(sample_content)
+        harness_path = ROOT / "scripts" / "fixtures" / "sample_owned_cleanup_harness.sh"
+        env = os.environ.copy()
+        env["SAMPLE_OWNED"] = "false"
+        try:
+            completed = subprocess.run(
+                ["bash", to_bash_path(harness_path, base=ROOT), "--mode", "success", to_bash_path(sample_path, base=ROOT)],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            self.assertTrue(sample_path.exists(), "caller sample must exist after success")
+            self.assertEqual(sample_path.read_bytes(), sample_content)
+            self.assertEqual(hashlib.sha256(sample_path.read_bytes()).hexdigest(), expected_sha)
+            self.assertEqual(len(sample_path.read_bytes()), expected_len)
+        finally:
+            sample_path.unlink(missing_ok=True)
+
+    def test_bu02_sample_owned_true_deletes_temp(self) -> None:
+        export_file = ROOT / ".test-temp-export.tmp"
+        harness_path = ROOT / "scripts" / "fixtures" / "sample_owned_cleanup_harness.sh"
+        bash_export = to_bash_path(export_file, base=ROOT)
+        bash_harness = to_bash_path(harness_path, base=ROOT)
+        try:
+            completed = subprocess.run(
+                ["bash", bash_harness, "--mode", "success", "--sample-owned", "true", "--export-temp-path", bash_export],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr + completed.stdout)
+            created_temp_str = ""
+            if export_file.exists():
+                created_temp_str = export_file.read_text(encoding="utf-8").strip()
+            if not created_temp_str:
+                for line in completed.stdout.splitlines():
+                    if line.startswith("CREATED_TEMP_SAMPLE:"):
+                        created_temp_str = line.split(":", 1)[1].strip()
+                        break
+            self.assertTrue(bool(created_temp_str), "created temporary sample path must be captured")
+            probe = subprocess.run(
+                ["bash", "-c", f"test -e '{created_temp_str}'"],
+                cwd=ROOT,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(probe.returncode, 0, "harness-created temporary sample must be deleted on exit when sample_owned=true")
+            if Path(created_temp_str).is_absolute():
+                self.assertFalse(Path(created_temp_str).exists())
+        finally:
+            export_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
