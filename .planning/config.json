@@ -101,11 +101,5 @@
       "agy": "gemini-3.7-flash-high",
       "claude": "sonnet"
     }
-  },
-  "effort": {
-    "default": "high",
-    "agent_overrides": {
-      "gsd-plan-checker": "high"
-    }
   }
 }
