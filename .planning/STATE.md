@@ -95,9 +95,9 @@ milestone_name: milestone
 - **Phase:** 06.1 — Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
 - **Status:** Ready to plan
 - **Current Plan:** Not started
-- **Total Plans in Phase:** 16
-- **Completed Plans in Phase:** 16 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14, 06-15, 06-16)
-- **Progress:** [██████████] 100%
+- **Total Plans in Phase:** Not yet planned
+- **Completed Plans in Phase:** 0
+- **Progress:** [░░░░░░░░░░] 0%
 
 ## Completed Phases
 
@@ -105,6 +105,8 @@ milestone_name: milestone
 - **Phase 2: Ingestion, Chunking & Vector Storage** (Completed: 2026-07-30 via ADR-02-004 debt deferral to Phase 6)
 - **Phase 3: Hybrid Retrieval & Basic RAG Path** (Completed: 2026-08-05 via ADR-03-003 debt deferral to Phase 6)
 - **Phase 4: Knowledge Graph Extraction & Query** (Completed: 2026-08-06 — lance-graph compatibility spike only; full implementation deferred to Phase 04.1)
+- **Phase 5: State Machine & Workflow Events** (Completed: 2026-08-19 — UAT 10/10 passed, 0 issues; `05-SECURITY.md` confirmed `threats_open: 0`)
+- **Phase 6: Observability, Evaluation & Polish** (Completed: 2026-08-22 — 16/16 plans; re-verification `passed` 11/11 must-haves after gap-closure plan 06-16 closed UAT gaps G-06-1/G-06-2; RAG-03 satisfied)
 
 ## Known Issues & Debt
 
@@ -229,9 +231,9 @@ milestone_name: milestone
 
 ## Session
 
-**Last session:** 2026-08-20T01:01:23.373Z
+**Last session:** 2026-08-23T05:09:58.232Z
 **Stopped at:** Phase 06 complete, ready to plan Phase 06.1
-**Resume file:** .planning/phases/06-observability-evaluation-polish/06-CONTEXT.md
+**Resume file:** None
 
 ## Accumulated Context
 

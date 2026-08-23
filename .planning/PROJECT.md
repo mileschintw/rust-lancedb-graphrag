@@ -21,6 +21,7 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - ✓ Emit client-facing workflow events such as node started/completed/failed, answer chunks, final answer, and workflow completed. — Phase 05 (confirmed live: node_started/node_completed pairs, one answer_chunk, one final_answer, one workflow_completed)
 - ✓ Add cancellation, timeouts, and retry/fallback behavior for node execution. — Phase 05
 - ✓ Add lightweight checkpoints or snapshots for workflow state during development and debugging. — Phase 05 (PostgreSQL-backed `workflow_checkpoints`; FIFO drain and cancellation atomicity proven against live Postgres)
+- ✓ Support degraded mode when graph extraction or one retrieval path fails, while still returning a useful vector/BM25-backed answer when possible. — Phase 06 (RAG-03: model-only opt-in with explicit notice, per-path `RETRIEVAL_DEGRADED`, citation repair with `CITATION_REPAIRED`/`CITATION_DROPPED` and basis downgrade, table-driven bad-input matrix, `GRAPH_UNAVAILABLE` on both silent-degrade paths — 11/11 must-haves verified, 06-VERIFICATION.md)
 
 ### Active
 - [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
@@ -30,7 +31,6 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - [ ] Persist chunks and metadata in LanceDB as the local-first vector/graph store.
   - *Port:* Define separate `nodes` and `edges` tables with nullable `summary`, `summary_vector`, and `unsummarized_refs` columns.
 - [ ] Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
-- [ ] Support degraded mode when graph extraction or one retrieval path fails, while still returning a useful vector/BM25-backed answer when possible.
 - [ ] Add OpenTelemetry-compatible tracing across Go, gRPC, Rust nodes, retrieval, graph queries, and LLM calls.
 - [ ] Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval recall, context precision, groundedness, and faithfulness.
 - [ ] Provide a local development path with `go run`, `cargo run`, and Docker Compose for PostgreSQL/Jaeger and optional local LLM fallback.
@@ -88,6 +88,8 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | Event-sink buffer depth (100-slot `mpsc::channel`) accepted as a load-bearing invariant instead of adding a timeout arm to `send_terminal_event`'s permit acquisition | A workflow emits ~19-30 events max, so the channel cannot fill today; a timeout risks dropping the terminal frame it exists to guarantee. Revisit if per-token `AnswerChunk` streaming (999.x), a smaller buffer, or a shared/cloned sink ships | ✓ Accepted, Phase 05 UAT (re-confirmed against `runner.rs:161-170` at HEAD after `5354d1e` moved the risk site) |
 | Gateway restores non-zero exit on bind failure via exit-code-after-defers, not `logger.Fatal` | `logger.Fatal`/`os.Exit` would skip `dispatcher.Close()` and lose buffered checkpoints — the exact defect the graceful-shutdown work (WR-01) was written to close | ✓ Shipped, Phase 05 (`fe83e71`; verified empirically — occupied port, `go run .` exits 1) |
 | Checkpoint sequence-ordinal burning on failed delivery accepted as debt; client-event ordinal allocation made lazy | `send_checkpoint`'s ordinal is embedded in the event struct at construction, so deferring it changes branch ordering, not a one-line fix; the gap is confined to the failed-delivery edge (queue exhaustion/closed channel), and happy-path contiguity is proven live against Postgres | ✓ Accepted, Phase 05 UAT (`wrap_next_event` already lazy since `0c96720a`; `send_checkpoint:185` left eager) |
+| D-18 total-drop honors `allow_model_only` unconditionally: flag off always fails closed with `LlmGenerationFailed`, flag on may downgrade to `MODEL_ONLY` with `CITATION_DROPPED`+`BASIS_RECONCILED` | Human UAT ruling (G-06-1): `effective_allow = ctx.allow_model_only \|\| total_drop` silently widened the opt-in flag's scope beyond what the user asked for — a total citation drop must not become a backdoor around an explicit flag-off choice | ✓ Shipped, Phase 06 (`generate.rs:258`, `949673e`; 4 discriminating tests re-run and passing under `06-VERIFICATION.md`) |
+| Citation resolution's known-ID universe is the prompt-packed subset, not the full retrieved set | Human UAT ruling (G-06-2): a citation naming a retrieved-but-truncated block must never resolve or ship a client-visible excerpt the model never saw. Verification found `AssemblePromptNode` already enforced this in production (`assemble_prompt.rs:92-94`) — the gap was untested coverage, not defective code; the diagnosis in `06-UAT.md` was corrected accordingly | ✓ Confirmed, Phase 06 (4 new tests including a genuine 2-in/1-out packing-truncation case, `949673e`) |
 
 ## Evolution
 
@@ -107,4 +109,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-19 after Phase 05*
+*Last updated: 2026-08-22 after Phase 06*
