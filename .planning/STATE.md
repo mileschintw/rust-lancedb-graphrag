@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.1
-current_phase_name: index-rebuild-and-swap-bu-deterministic-proofs-cr-04-cr-05-d
+current_phase_name: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
 current_plan: Not started
 status: executing
 stopped_at: Phase 06 complete, ready to plan Phase 06.1
-last_updated: "2026-08-23T08:38:41.937Z"
-state_head: 9a509eb3fc732008421c98fa3ee64e9f133d4a8e
+last_updated: "2026-08-23T10:13:59.526Z"
+state_head: e3c4686dbcfec72142c2943fe94656f83f02c4f7
 progress:
   total_phases: 11
   completed_phases: 4
