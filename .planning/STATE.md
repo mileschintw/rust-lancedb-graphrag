@@ -4,15 +4,15 @@ milestone: v1.0
 current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
 current_plan: 15
-status: ready_to_execute
-stopped_at: Phase 6 gap-closure plan 06-15 planned and verified (plan-checker PASSED, 0 blockers/0 warnings after 3 iterations); awaiting /gsd-execute-phase 06 --gaps-only
-last_updated: "2026-08-22T23:15:39.923Z"
-state_head: 1b6bf55eadee98429491a46f451b561a33040052
+status: ready_to_verify
+stopped_at: Phase 6 gap-closure plan 06-15 executed and verified (6/6 tests passing, all 7 test invariants hold, SUMMARY.md created). Ready for phase verification.
+last_updated: "2026-08-23T00:06:30.000Z"
+state_head: 84baf5eeadee98429491a46f451b561a33040052
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 104
-  completed_plans: 103
+  completed_plans: 104
 milestone_name: milestone
 ---
 
@@ -45,6 +45,7 @@ milestone_name: milestone
 - Phase 06 Wave 8 Plan 06-10 executed: supported model-only answers as an explicit, per-request, default-off opt-in (D-10/D-11/D-12/D-84 / DEBT-RAG-01).
 - Phase 06 Wave 11 Plan 06-13 executed: closed SC3 gap with OpenRouter empty-evidence packing branch, dedicated model-only system policy, GenerationRequest allow_model_only plumbing, and answer_basis schema enum admission.
 - Phase 06 Wave 12 Plan 06-14 executed: closed SC5 gap with first-occurrence de-duplication of repaired citation IDs in GenerateAnswerNode and resolve_citations_with_max_chars.
+- Phase 06 Wave 13 Plan 06-15 executed: split grounding validator into shape and marker validation, relocated marker checks from OpenRouter provider adapter to GenerateAnswerNode and gated run_inline_prompt_generation_remainder; proved SC3 and SC5 reachability through real OpenRouterGenerator across five mock-server tests; updated test target invariants to 386/351.
 - Phase 06 post-execution gates RUN (2026-08-22) after gap-closure plans 06-13/06-14 landed at `953b22c`:
   - **Code review** (`192cf35`, scope pinned to the 8-file `953b22c` delta per the repo's harness-scope hazard): `status: issues_found` — 2 critical, 5 warning new findings. CR-01: SC5 citation repair is unreachable in production because `execute_one_call` validates raw model output at `openrouter.rs:788-792` before `GenerateAnswerNode`'s repair pass runs. CR-02: `model_only_system_policy` never instructs `answer_basis: "model_only"`, so the natural `retrieval`+empty-citations reply hard-fails at `generation/mod.rs:210-220`. Of the 18 pre-gap-closure findings: prior CR-01 resolved; prior CR-02 partial; CR-03, WR-01, WR-04, WR-11 still open; CR-04/CR-05 deferred to Phase 6.1; 10 not re-checked because their files sit outside the pinned delta scope (WR-02/03/05/06/07/08/09/10/12/13).
   - **WR-01 severity corrected** (orchestrator-verified, the two agents disagreed): `run_inline_prompt_generation_remainder` (`engine/src/workflow/mod.rs:249`) is a dead **test-only** public surface, NOT a live fail-open path. All five call sites are in `engine/src/tests/workflow_phase5.rs`, which `engine/src/lib.rs:19-21` declares under `#[cfg(test)]`. It still matters as a dependency of the CR-01 fix — gate it before moving `validate_grounding_with_limits` out of the provider adapter, or that move makes it genuinely fail-open.
@@ -65,11 +66,11 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
-- **Status:** Gap-closure plan 06-15 planned and verified — ready to execute (verification still 5/7 must-haves; SC3 and SC5 both partial)
+- **Status:** Gap-closure plan 06-15 executed and verified — all 15 plans complete
 - **Current Plan:** 15
 - **Total Plans in Phase:** 15
-- **Completed Plans in Phase:** 14 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14)
-- **Progress:** [█████████░] 93%
+- **Completed Plans in Phase:** 15 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14, 06-15)
+- **Progress:** [██████████] 100%
 
 ## Completed Phases
 

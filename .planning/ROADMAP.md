@@ -518,7 +518,7 @@ Plans:
 
 **Wave 13** *(gap closure; blocked on Wave 11 / 06-13 and Wave 12 / 06-14 — same five Rust files plus the test-count gate)*
 
-- [ ] 06-15-PLAN.md — SC3 + SC5 root cause: gate the published inline remainder, split the grounding validator so the adapter keeps only shape checks, pin the engine-decided `answer_basis` at both validation sites, and prove both gaps end to end through the real `OpenRouterGenerator` (D-10/D-11/D-12/D-14/D-18/D-19 / DEBT-RAG-01, DEBT-RAG-03).
+- [x] 06-15-PLAN.md — SC3 + SC5 root cause: gate the published inline remainder, split the grounding validator so the adapter keeps only shape checks, pin the engine-decided `answer_basis` at both validation sites, and prove both gaps end to end through the real `OpenRouterGenerator` (D-10/D-11/D-12/D-14/D-18/D-19 / DEBT-RAG-01, DEBT-RAG-03).
 
 ### Phase 6.1: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
 
