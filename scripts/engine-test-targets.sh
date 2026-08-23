@@ -53,18 +53,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + INTEG_CONFIG_COUNT 
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (7 named assertions)
-if [ "$TOTAL" -ne 386 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 386, got $TOTAL" >&2
+if [ "$TOTAL" -ne 392 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 392, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 351 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 351, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 357 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 357, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 351 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 351, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 357 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 357, got $LIB_COUNT" >&2
   exit 1
 fi
 

@@ -255,7 +255,7 @@ impl Node for GenerateAnswerNode {
                                     repaired_citations.clone(),
                                 )
                             };
-                            let effective_allow = ctx.allow_model_only || total_drop;
+                            let effective_allow = ctx.allow_model_only;
                             let limits = limits.with_allow_model_only(effective_allow);
                             for_validation
                                 .validate_grounding_with_limits(&ctx.evidence_blocks, limits)

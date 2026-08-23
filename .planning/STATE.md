@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 6
 current_phase_name: Observability, Evaluation & Polish
-current_plan: 15
-status: human_needed
-stopped_at: Phase 6 post-execution gates all RUN and PASSED - code review (issues_found, 0 critical after orchestrator ruling), regression gate (Rust 386 / Go, both exit 0), and re-verification (7/7 must-haves, SC3 and SC5 both CLOSED). Verification returned human_needed: 6 items persisted to 06-UAT.md. Phase NOT complete - run /gsd-verify-work 6.
-last_updated: "2026-08-22T21:35:00.000Z"
+current_plan: 16
+status: ready
+stopped_at: Gap closure plan 06-16 executed and verified (G-06-1 and G-06-2 closed). Rust test suite (392 tests, all 7 invariants verified) and Go tests pass.
+last_updated: "2026-08-22T21:40:00.000Z"
 state_head: 75a9ec2616384ae7fa5ff9f4ccfbcebc11473919
 progress:
   total_phases: 11
   completed_phases: 3
-  total_plans: 104
-  completed_plans: 104
+  total_plans: 105
+  completed_plans: 105
 milestone_name: milestone
 ---
 
@@ -77,15 +77,15 @@ milestone_name: milestone
   - **Test shape is the discriminating criterion.** Both prior rounds went green on doubles that never reach the failing layer (`grep -c OpenRouterGenerator engine/src/tests/workflow_phase5.rs` = 0; every SC3 test hardcoded `"answer_basis": "model_only"` in its mock body). 06-15 requires every SC3/SC5 proof to drive a real `OpenRouterGenerator` against a mock HTTP server through `GenerateAnswerNode::run` and assert on `WorkflowContext`, with a STANDALONE near-miss `[ 7 ]` (no healthy companion), a strict-visible unresolvable `[9]`, and the total-drop basis downgrade. `FakeGenerator`/`PackingTestGenerator` are prohibited as proof in `must_haves.prohibitions`.
   - **Accepted residual `T-06-15-03` (medium/mitigate):** post-split the marker checks bind to `ctx.evidence_blocks` (full retrieved set) rather than the packed subset, so a marker naming a retrieved-but-truncated block now resolves. The alternative mitigation is unavailable — retaining the cited-ID membership check in the adapter would re-break the total-drop clause. Disposition must be recorded in `06-15-SUMMARY.md`.
   - Gates: plan-checker **PASSED** (0 blockers / 0 warnings) after 3 iterations, 6 findings all closed (`cc258ab`, `1b6bf55`); requirements coverage 1/1; decision coverage 9/9; `verify.plan-structure` valid. Bounce skipped (`--gaps`).
-  - Security gate STILL OPEN: `workflow.security_enforcement` active and no `06-SECURITY.md` exists. `06-VALIDATION.md` still dates to 2026-08-20 and predates plans 06-08..06-15 — the §7.5 gate checks existence only, so Nyquist coverage for the new work is NOT established.
+- Phase 06 Wave 14 Plan 06-16 executed: closed UAT gaps G-06-1 (D-18 total-drop flag-off fail-closed) and G-06-2 (citations to retrieved-but-truncated blocks dropped with CITATION_DROPPED notices, not resolved; excerpt suppression). Updated engine test target distribution to 392 total / 357 lib.
 
 ## Active Phase
 
 - **Phase:** 6 — Observability, Evaluation & Polish
-- **Status:** All 15 plans complete; post-execution gates run and passed — verification 7/7, `human_needed`, awaiting UAT
-- **Current Plan:** 15
-- **Total Plans in Phase:** 15
-- **Completed Plans in Phase:** 15 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14, 06-15)
+- **Status:** All 16 plans complete; gap-closure plan 06-16 executed and verified
+- **Current Plan:** 16
+- **Total Plans in Phase:** 16
+- **Completed Plans in Phase:** 16 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14, 06-15, 06-16)
 - **Progress:** [██████████] 100%
 
 ## Completed Phases

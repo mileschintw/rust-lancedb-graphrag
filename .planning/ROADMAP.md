@@ -463,7 +463,7 @@ Plans:
 6. The bad-input matrix (`DEBT-RAG-05`) is an enumerated, table-driven test (gRPC and HTTP) covering malformed query/session/document IDs, content type, and filter bounds, all rejecting before retrieval or provider work with stable HTTP 400 / gRPC `InvalidArgument` (D-15).
 7. The graph-unavailable notice (`DEBT-RAG-06`) fires on the two silent-degrade paths (empty-result and absent-`graph_port`) that don't already emit `GRAPH_TIMEOUT`/`GRAPH_DEGRADED`; source-chunk queries are proven to never require graph data (D-08).
 
-**Plans:** 15 plans (12 executed + 3 gap-closure)
+**Plans:** 16 plans (12 executed + 4 gap-closure)
 
 Plans:
 **Wave 1**
@@ -519,6 +519,10 @@ Plans:
 **Wave 13** *(gap closure; blocked on Wave 11 / 06-13 and Wave 12 / 06-14 — same five Rust files plus the test-count gate)*
 
 - [x] 06-15-PLAN.md — SC3 + SC5 root cause: gate the published inline remainder, split the grounding validator so the adapter keeps only shape checks, pin the engine-decided `answer_basis` at both validation sites, and prove both gaps end to end through the real `OpenRouterGenerator` (D-10/D-11/D-12/D-14/D-18/D-19 / DEBT-RAG-01, DEBT-RAG-03).
+
+**Wave 14** *(gap closure; blocked on Wave 13 / 06-15)*
+
+- [x] 06-16-PLAN.md — G-06-1 + G-06-2 UAT gap closure: flag-dependent allow_model_only on D-18 total-drop and dropped citations to truncated blocks (RAG-03).
 
 ### Phase 6.1: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review (INSERTED)
 

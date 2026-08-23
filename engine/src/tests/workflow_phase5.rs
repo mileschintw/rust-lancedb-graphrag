@@ -6015,7 +6015,8 @@ async fn citation_repair_enabled_repairs_near_miss_marker_and_emits_notice() {
 #[tokio::test]
 async fn citation_repair_enabled_drops_unresolvable_marker_and_emits_notice() {
     let cancel = CancellationToken::new();
-    let req = test_query_request("Drop unresolvable", "sess-repair-drop");
+    let mut req = test_query_request("Drop unresolvable", "sess-repair-drop");
+    req.allow_model_only = Some(true);
     let mut ctx = WorkflowContext::new("sess-repair-drop".into(), "trace-repair-drop".into(), &req);
     ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
 
@@ -6049,7 +6050,8 @@ async fn citation_repair_enabled_drops_unresolvable_marker_and_emits_notice() {
 #[tokio::test]
 async fn citation_repair_enabled_drops_internal_whitespace_marker_when_unresolvable() {
     let cancel = CancellationToken::new();
-    let req = test_query_request("Drop [ 7 ]", "sess-repair-drop-spaced");
+    let mut req = test_query_request("Drop [ 7 ]", "sess-repair-drop-spaced");
+    req.allow_model_only = Some(true);
     let mut ctx = WorkflowContext::new(
         "sess-repair-drop-spaced".into(),
         "trace-repair-drop-spaced".into(),
@@ -6091,7 +6093,8 @@ async fn citation_repair_enabled_drops_internal_whitespace_marker_when_unresolva
 #[tokio::test]
 async fn citation_repair_enabled_two_dropped_markers_produce_two_distinct_notices() {
     let cancel = CancellationToken::new();
-    let req = test_query_request("Two drops", "sess-repair-two-drops");
+    let mut req = test_query_request("Two drops", "sess-repair-two-drops");
+    req.allow_model_only = Some(true);
     let mut ctx = WorkflowContext::new(
         "sess-repair-two-drops".into(),
         "trace-repair-two-drops".into(),
@@ -6185,7 +6188,8 @@ async fn citation_repair_makes_no_additional_provider_call() {
 #[tokio::test]
 async fn citation_repair_total_drop_downgrades_basis_and_succeeds() {
     let cancel = CancellationToken::new();
-    let req = test_query_request("Total drop", "sess-total-drop");
+    let mut req = test_query_request("Total drop", "sess-total-drop");
+    req.allow_model_only = Some(true);
     let mut ctx = WorkflowContext::new("sess-total-drop".into(), "trace-total-drop".into(), &req);
     ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
 
@@ -6439,4 +6443,262 @@ async fn inline_remainder_rejects_ungrounded_model_output() {
         node_failed_event.is_some(),
         "NodeFailed event for GenerateAnswer must be emitted"
     );
+}
+
+#[tokio::test]
+async fn citation_repair_total_drop_flag_off_fails_closed() {
+    let cancel = CancellationToken::new();
+    let mut req = test_query_request("Total drop flag off", "sess-total-drop-off");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new(
+        "sess-total-drop-off".into(),
+        "trace-total-drop-off".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Grounded-sounding answer [9999].".into(),
+        cited_evidence_ids: vec!["[9999]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    let err = res.expect_err("total citation loss when allow_model_only is false must fail closed");
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+}
+
+#[tokio::test]
+async fn citation_to_truncated_block_is_dropped_and_ships_no_excerpt_flag_off_fails_closed() {
+    let cancel = CancellationToken::new();
+    let mut req = test_query_request("Truncated citation flag off", "sess-trunc-off");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new("sess-trunc-off".into(), "trace-trunc-off".into(), &req);
+    // Block [1] is packed into prompt; Block [2] was truncated out during prompt packing
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    // Model cites block [2] which was truncated out
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Answer citing truncated block [2].".into(),
+        cited_evidence_ids: vec!["[2]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    let err = res.expect_err(
+        "all citations dropped due to truncation with allow_model_only=false must fail closed",
+    );
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+}
+
+#[tokio::test]
+async fn citation_to_truncated_block_is_dropped_and_ships_no_excerpt_flag_on_succeeds_model_only() {
+    let cancel = CancellationToken::new();
+    let mut req = test_query_request("Truncated citation flag on", "sess-trunc-on");
+    req.allow_model_only = Some(true);
+    let mut ctx = WorkflowContext::new("sess-trunc-on".into(), "trace-trunc-on".into(), &req);
+    // Block [1] is packed into prompt; Block [2] was truncated out during prompt packing
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Answer citing truncated block [2].".into(),
+        cited_evidence_ids: vec!["[2]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(
+        res.is_ok(),
+        "must succeed as model-only when allow_model_only=true: {res:?}"
+    );
+    assert_eq!(
+        ctx.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::ModelOnly
+    );
+    assert!(
+        !ctx.answer.contains("[2]"),
+        "truncated marker must be stripped"
+    );
+    assert!(ctx.citations.is_empty(), "citations must be empty");
+    assert!(
+        ctx.structured_citations.is_empty(),
+        "no structured citation or excerpt may be shipped for truncated block"
+    );
+    assert!(ctx.notices.iter().any(|n| n.code == "CITATION_DROPPED"));
+    assert!(ctx.notices.iter().any(|n| n.code == "BASIS_RECONCILED"));
+}
+
+#[tokio::test]
+async fn citation_to_surviving_and_truncated_blocks_resolves_surviving_and_drops_truncated() {
+    let cancel = CancellationToken::new();
+    let mut req = test_query_request("Mixed surviving and truncated", "sess-mixed-trunc");
+    req.allow_model_only = Some(false);
+    let mut ctx =
+        WorkflowContext::new("sess-mixed-trunc".into(), "trace-mixed-trunc".into(), &req);
+    // Block [1] is in prompt; Block [2] was truncated out
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Point from surviving [1] and point from truncated [2].".into(),
+        cited_evidence_ids: vec!["[1]".into(), "[2]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(
+        res.is_ok(),
+        "run must succeed with surviving citation: {res:?}"
+    );
+    assert_eq!(
+        ctx.answer_basis,
+        engine::pb::lancet::v1::AnswerBasis::Retrieval
+    );
+    assert_eq!(
+        ctx.answer,
+        "Point from surviving [1] and point from truncated ."
+    );
+    assert_eq!(ctx.citations, vec!["[1]".to_string()]);
+    assert_eq!(ctx.structured_citations.len(), 1);
+    assert_eq!(ctx.structured_citations[0].chunk_id, "chunk-[1]");
+    let dropped_notice = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "CITATION_DROPPED")
+        .expect("CITATION_DROPPED notice for [2]");
+    assert!(dropped_notice.message.contains("[2]"));
+}
+
+#[tokio::test]
+async fn workflow_prompt_packing_truncation_drops_citation_to_truncated_block() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-workflow-trunc".to_string();
+    let session_id = "sess-workflow-trunc".to_string();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+
+    let mut req = test_query_request(
+        "truncation test query",
+        "00000000-0000-4000-8000-000000000001",
+    );
+    req.allow_model_only = Some(false);
+    let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+
+    let mut c1 = make_candidate("doc-1", "chk-1", 0.95);
+    c1.content = "Evidence content for block 1 in full detail with sufficient tokens.".to_string();
+    let mut c2 = make_candidate("doc-2", "chk-2", 0.85);
+    c2.content = "Evidence content for block 2 in full detail with sufficient tokens.".to_string();
+
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![c1, c2]));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![]));
+
+    // Generator returns answer citing both [1] and [2]
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Grounded in surviving [1] and truncated [2].".into(),
+        cited_evidence_ids: vec!["[1]".into(), "[2]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(ExtractGraphContextNode::new(None, None));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense),
+        Some(fake_bm25),
+        None,
+        RetrievalSettings::default(),
+    ));
+    // Budget tight enough to fit block 1 only (budget: 250 max_prompt_tokens, 20 answer_token_budget)
+    runner.add_node(AssemblePromptNode::with_settings(250, 20, 1.0));
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    runner.add_node(
+        GenerateAnswerNode::new(Some(fake_gen))
+            .with_settings(limits, 200, 1.0)
+            .with_citation_repair_enabled(true),
+    );
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+    let _guard = AbortOnDrop(Some(handle));
+
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
+        }
+        events
+    })
+    .await
+    .expect("events within 5s");
+
+    let final_answer = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::FinalAnswer(fa)) => fa.response.as_ref(),
+            _ => None,
+        })
+        .expect("final answer response");
+
+    assert_eq!(
+        final_answer.answer_basis,
+        crate::pb::lancet::v1::AnswerBasis::Retrieval as i32
+    );
+    assert_eq!(final_answer.citations, vec!["[1]".to_string()]);
+    assert_eq!(final_answer.structured_citations.len(), 1);
+    assert_eq!(final_answer.structured_citations[0].chunk_id, "chk-1");
+
+    let completed = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc),
+            _ => None,
+        })
+        .expect("workflow completed");
+
+    assert!(completed
+        .notices
+        .iter()
+        .any(|n| n.typed_code == NoticeCode::CitationDropped as i32));
 }

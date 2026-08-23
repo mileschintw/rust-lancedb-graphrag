@@ -2226,7 +2226,7 @@ async fn openrouter_node_total_citation_loss_downgrades_basis_to_model_only() {
         .expect("prepare succeeds");
 
     let mut req = test_query_request("Total drop query", "00000000-0000-4000-8000-000000000091");
-    req.allow_model_only = Some(false);
+    req.allow_model_only = Some(true);
     let mut ctx = WorkflowContext::new(
         "00000000-0000-4000-8000-000000000091".into(),
         "trace-sc5-total-drop".into(),
@@ -2271,6 +2271,153 @@ async fn openrouter_node_total_citation_loss_downgrades_basis_to_model_only() {
         .notices
         .iter()
         .any(|n| n.typed_code == v1::NoticeCode::BasisReconciled as i32));
+    assert_eq!(chat_calls.load(Ordering::SeqCst), 1);
+
+    server_handle.join().expect("server join");
+}
+
+#[tokio::test]
+async fn openrouter_node_total_citation_loss_flag_off_fails_closed() {
+    use serde_json::json;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let models_calls = Arc::new(AtomicUsize::new(0));
+    let chat_calls = Arc::new(AtomicUsize::new(0));
+
+    let models_calls_server = Arc::clone(&models_calls);
+    let chat_calls_server = Arc::clone(&chat_calls);
+
+    let server_handle = std::thread::spawn(move || {
+        listener.set_nonblocking(true).unwrap();
+        let start = std::time::Instant::now();
+        let mut conn_count = 0;
+        while conn_count < 2 && start.elapsed() < Duration::from_secs(5) {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    conn_count += 1;
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut buf = [0u8; 8192];
+                    let n = stream.read(&mut buf).unwrap_or(0);
+                    let req_str = String::from_utf8_lossy(&buf[..n]).to_string();
+
+                    if req_str.contains("GET /models") {
+                        models_calls_server.fetch_add(1, Ordering::SeqCst);
+                        let body = json!({
+                            "data": [{
+                                "id": "mock/sc5-total-drop-flag-off-model",
+                                "supported_parameters": ["response_format", "json_schema"]
+                            }]
+                        })
+                        .to_string();
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body.len(), body
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                    } else if req_str.contains("POST /chat") {
+                        chat_calls_server.fetch_add(1, Ordering::SeqCst);
+                        let model_output = json!({
+                            "answer": "Answer citing only unresolvable [9].",
+                            "cited_evidence_ids": ["[9]"],
+                            "answer_basis": "retrieval",
+                            "notices": [],
+                            "warnings": []
+                        })
+                        .to_string();
+                        let chat_resp = json!({
+                            "choices": [{
+                                "message": {
+                                    "role": "assistant",
+                                    "content": model_output
+                                },
+                                "finish_reason": "stop"
+                            }]
+                        })
+                        .to_string();
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            chat_resp.len(), chat_resp
+                        );
+                        let _ = stream.write_all(resp.as_bytes());
+                    }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let config = generation::openrouter::OpenRouterGenerationConfig::new(
+        "mock/sc5-total-drop-flag-off-model",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        2048,
+        8192,
+    )
+    .unwrap()
+    .with_preflight_timeout(Duration::from_millis(2000));
+
+    let generator = Arc::new(
+        generation::openrouter::OpenRouterGenerator::new_with_config("test-key", config).unwrap(),
+    );
+
+    generator
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
+
+    let mut req = test_query_request(
+        "Total drop query flag off",
+        "00000000-0000-4000-8000-000000000093",
+    );
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new(
+        "00000000-0000-4000-8000-000000000093".into(),
+        "trace-sc5-total-drop-off".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![crate::prompt::EvidenceBlock {
+        id: "[1]".to_string(),
+        chunk_id: "chk-1".to_string(),
+        document_id: "doc-1".to_string(),
+        chunk_index: 0,
+        title: Some("Title 1".to_string()),
+        section_path: Some("Section 1".to_string()),
+        content_type: Some("text/plain".to_string()),
+        provenance: "provenance".to_string(),
+        text: "Evidence for chunk 1".to_string(),
+        score: 0.95,
+        rank: 1,
+        suspicious: false,
+    }];
+
+    let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))
+        .with_settings(
+            generation::GroundingLimits::new(8192, 2048).unwrap(),
+            200,
+            1.0,
+        )
+        .with_citation_repair_enabled(true);
+    let cancel = CancellationToken::new();
+
+    let res = generate_node.run(&mut ctx, &cancel).await;
+    assert!(res.is_err());
+    let err = res.unwrap_err();
+    assert_eq!(err.kind, v1::NodeErrorKind::LlmGenerationFailed);
     assert_eq!(chat_calls.load(Ordering::SeqCst), 1);
 
     server_handle.join().expect("server join");
