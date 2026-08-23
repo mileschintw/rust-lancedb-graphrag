@@ -541,16 +541,14 @@ Plans:
 6. `DEBT-BU-02` closes via a deterministic test: caller-fixture SHA-256 and bytes preserved across success plus representative early and post-upload failures, using script-created temporary inputs only, no live run (D-07).
 7. `DEBT-CR-04` (network auth/authz/TLS/quotas) and `DEBT-CR-05` (pre-admission bounds) are reviewed as documented-only conditional gates: the loopback guardrail is verified to hold, no trigger fired, re-acceptance is recorded, and no new code ships for either (D-06).
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans executed
 
 Plans:
 **Wave 1** *(parallel — no shared files)*
 
-- [ ] 06.1-01-PLAN.md — Index rebuild-and-swap (D-20..D-26): durable lance-{nodes.version()} generation, same-snapshot dense+BM25 pin, worker debounce, IndexRebuildFailed, fail-closed config (RAG-03).
-- [ ] 06.1-02-PLAN.md — Controlled-clock evidence window proof (DEBT-BU-01) and three-scenario caller-fixture preservation harness (DEBT-BU-02) (D-07 / RAG-03).
-- [ ] 06.1-03-PLAN.md — Documented security and guardrail review of DEBT-CR-04 (network auth/TLS) and DEBT-CR-05 (pre-admission bounds/timeouts/semaphore) (D-06 / RAG-03).
-
-
+- [x] 06.1-01-PLAN.md — Index rebuild-and-swap (D-20..D-26): durable lance-{nodes.version()} generation, same-snapshot dense+BM25 pin, worker debounce, IndexRebuildFailed, fail-closed config (RAG-03).
+- [x] 06.1-02-PLAN.md — Controlled-clock evidence window proof (DEBT-BU-01) and three-scenario caller-fixture preservation harness (DEBT-BU-02) (D-07 / RAG-03).
+- [x] 06.1-03-PLAN.md — Documented security and guardrail review of DEBT-CR-04 (network auth/TLS) and DEBT-CR-05 (pre-admission bounds/timeouts/semaphore) (D-06 / RAG-03).
 
 ### Phase 6.2: OpenTelemetry Traces, Metrics and Logs (OBS-01) (INSERTED)
 
