@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 6
-current_phase_name: Observability, Evaluation & Polish
-current_plan: 16
-status: ready
-stopped_at: Gap closure plan 06-16 executed and verified (G-06-1 and G-06-2 closed). Rust test suite (392 tests, all 7 invariants verified) and Go tests pass.
-last_updated: "2026-08-22T21:40:00.000Z"
-state_head: 75a9ec2616384ae7fa5ff9f4ccfbcebc11473919
+current_phase: 06.1
+current_phase_name: Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
+current_plan: Not started
+status: planning
+stopped_at: Phase 06 complete, ready to plan Phase 06.1
+last_updated: "2026-08-23T05:09:58.232Z"
+state_head: 1d7ce9eda10a6ba51578e1f87032135fce13e12d
 progress:
   total_phases: 11
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 105
   completed_plans: 105
 milestone_name: milestone
@@ -78,12 +78,23 @@ milestone_name: milestone
   - **Accepted residual `T-06-15-03` (medium/mitigate):** post-split the marker checks bind to `ctx.evidence_blocks` (full retrieved set) rather than the packed subset, so a marker naming a retrieved-but-truncated block now resolves. The alternative mitigation is unavailable — retaining the cited-ID membership check in the adapter would re-break the total-drop clause. Disposition must be recorded in `06-15-SUMMARY.md`.
   - Gates: plan-checker **PASSED** (0 blockers / 0 warnings) after 3 iterations, 6 findings all closed (`cc258ab`, `1b6bf55`); requirements coverage 1/1; decision coverage 9/9; `verify.plan-structure` valid. Bounce skipped (`--gaps`).
 - Phase 06 Wave 14 Plan 06-16 executed: closed UAT gaps G-06-1 (D-18 total-drop flag-off fail-closed) and G-06-2 (citations to retrieved-but-truncated blocks dropped with CITATION_DROPPED notices, not resolved; excerpt suppression). Updated engine test target distribution to 392 total / 357 lib.
+- Phase 06 post-execution gates RE-RUN (2026-08-22) after gap-closure plan 06-16 landed at `949673e` — **all gates cleared, phase marked COMPLETE via `phase.complete`.**
+  - **Correction to the two prior entries above:** both claimed "Security gate STILL OPEN... no `06-SECURITY.md` exists" — that was stale even at the time UAT ran. `06-SECURITY.md` (`7d96331`, `status: verified`, `threats_open: 0`) and a refreshed `06-VALIDATION.md` (`0bb1257`/`9d6e62c`) both landed BEFORE the UAT session (`8e84b20`), which is why UAT tests 5 and 6 read `pass`. Both gates were already closed; the STATE.md prose just never caught up.
+  - **Code review** (`1d7ce9e`, scope pinned via `--files` to the 5-file `d171e4d..949673e` delta): `status: issues_found` — 0 critical, 3 warning. Both gaps independently verified at the code level (not test-presence): G-06-1's `effective_allow = ctx.allow_model_only` confirmed as the sole production diff; G-06-2 confirmed via a standalone harness calling `pack_evidence_and_graph_prompt` directly that the truncation test is genuine (2-in/1-out), not a pre-truncated fixture. New warnings: WR-01 (stale comment in `generate.rs:239-241`), WR-02 (a `tests.rs` service-boundary test flipped flag-on instead of gaining a flag-off sibling, leaving the fail-closed path untested at that boundary), WR-03 (G-06-2's e2e test asserts the consequence, not that packing caused it).
+  - **Regression gate PASSED** (run directly by the orchestrator, not the executor's self-report): `cargo test --manifest-path engine/Cargo.toml --locked` exit 0 — 392 total (357 lib + 18 `inspect_lancedb` + 17 `config_startup`), 0 failed. `cd gateway && go test ./...` exit 0, all packages ok. `sh scripts/engine-test-targets.sh` — all 7 invariants verified.
+  - **Re-verification** (`06-VERIFICATION.md`, 2026-08-22T22:15:00Z): `status: passed`, **11/11 must-haves** (7/7 ROADMAP SC + 4/4 gap-closure truths from 06-UAT.md's Gaps section). `human_verification: []`. 06-16 added to `re_verification.gap_closure_plans` with `resolution: resolved`.
+    - **G-06-1 CLOSED** exactly as diagnosed — `generate.rs:258` no longer ORs `total_drop` into `effective_allow`; all four discriminating tests (flag-off/flag-on × unit/production-harness) re-run and pass under verification.
+    - **G-06-2 CLOSED, but the 06-UAT.md diagnosis was WRONG about the mechanism** — `git diff d171e4d 949673e` shows zero production-code lines changed for G-06-2. The verifier traced that `AssemblePromptNode` (`assemble_prompt.rs:92-94`) already overwrote `ctx.evidence_blocks` with the packed/truncated subset before `GenerateAnswerNode` ran; the human's demanded behavior already held in production. The real gap was missing test coverage of the truncation path, not defective code in `generate.rs`/`openrouter.rs` as originally diagnosed. Closure came from four new tests proving it, plus the independent trace — `06-UAT.md`'s Gaps section now carries a `resolution:` block on G-06-2 recording this correction so a future reader doesn't assume the `missing` items were implemented as originally stated.
+    - Also independently re-checked `run_inline_prompt_generation_remainder` (`workflow/mod.rs:251`, the "published inline remainder path" named in the 06-15 round): zero non-test callers repo-wide — dead code, cannot undermine either fix.
+  - **`06-UAT.md` reconciled**: both Gaps entries (G-06-1, G-06-2) set to `status: resolved` with `resolution:` evidence blocks. Top-level frontmatter `status:` left as `diagnosed` (no template vocabulary word means "gaps closed by code, not re-observed by a human") and Test 1/Test 2 `result:`/Summary counts left untouched as the historical record of what UAT actually observed in that session — only the Gaps section (the field downstream tooling reads for resolution) was updated.
+  - **`phase.complete` ran clean**: REQUIREMENTS.md RAG-03 checkbox flipped `[ ]` → `[x]` (confirmed via diff — this is the first round verification reached `passed`, so the first round this write was live). One residual advisory: the Traceability table's RAG-03 row spans "Phase 06, Phase 06.1" and the auto-annotator skipped it (no single-phase match) — the row's prose is already accurate, just not auto-stamped; not a correctness gap, matches [[gap-analysis-gate-false-zero-lancet]]'s class of tooling quirk in this repo.
+  - Phase 6 COMPLETE. `current_phase` advances to 06.1 (Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review).
 
 ## Active Phase
 
-- **Phase:** 6 — Observability, Evaluation & Polish
-- **Status:** All 16 plans complete; gap-closure plan 06-16 executed and verified
-- **Current Plan:** 16
+- **Phase:** 06.1 — Index Rebuild-and-Swap, BU Deterministic Proofs, CR-04/CR-05 Documented Review
+- **Status:** Ready to plan
+- **Current Plan:** Not started
 - **Total Plans in Phase:** 16
 - **Completed Plans in Phase:** 16 (Plans 06-01, 06-04, 06-02, 06-05, 06-03, 06-06, 06-07, 06-08, 06-09, 06-10, 06-11, 06-12, 06-13, 06-14, 06-15, 06-16)
 - **Progress:** [██████████] 100%
@@ -219,7 +230,7 @@ milestone_name: milestone
 ## Session
 
 **Last session:** 2026-08-20T01:01:23.373Z
-**Stopped at:** Phase 6 context gathered (governs 6, 6.1, 6.2, 6.3, 6.4)
+**Stopped at:** Phase 06 complete, ready to plan Phase 06.1
 **Resume file:** .planning/phases/06-observability-evaluation-polish/06-CONTEXT.md
 
 ## Accumulated Context

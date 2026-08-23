@@ -3,7 +3,7 @@ status: diagnosed
 phase: 06-observability-evaluation-polish
 source: [06-VERIFICATION.md]
 started: 2026-08-22T21:30:00.000Z
-updated: 2026-08-22T20:26:00.000Z
+updated: 2026-08-22T22:15:00.000Z
 ---
 
 ## Current Test
@@ -82,7 +82,7 @@ blocked: 0
 
 - gap_id: G-06-1
   truth: "When allow_model_only is false, D-18 total-drop must return LlmGenerationFailed instead of succeeding as MODEL_ONLY."
-  status: failed
+  status: resolved
   reason: "User reported: (b) reject. D-18 total-drop must honor allow_model_only. When the flag is on, a total-drop may succeed as MODEL_ONLY (downgrade + notices). When the flag is off, the same exchange must return LlmGenerationFailed — do not OR total_drop into effective_allow."
   severity: blocker
   test: 1
@@ -95,10 +95,22 @@ blocked: 0
     - "Ensure validation or grounding check returns LlmGenerationFailed when allow_model_only is false and all citations drop."
     - "Add test pinning allow_model_only = false failure on total-drop."
   debug_session: .planning/debug/d18-total-drop-flag-off.md
+  resolution:
+    resolved_by: "06-16-PLAN.md (commit 949673e)"
+    verified_by: "06-VERIFICATION.md, 2026-08-22T22:15:00Z — status passed, 11/11 must-haves"
+    note: >-
+      Diagnosis confirmed accurate and all three `missing` items implemented as stated.
+      generate.rs:258 changed from `ctx.allow_model_only || total_drop` to
+      `let effective_allow = ctx.allow_model_only;` (the sole production-code line in the
+      gap-closure commit). Independently re-run and passing under verification:
+      citation_repair_total_drop_flag_off_fails_closed,
+      citation_repair_total_drop_downgrades_basis_and_succeeds,
+      openrouter_node_total_citation_loss_flag_off_fails_closed,
+      openrouter_node_total_citation_loss_downgrades_basis_to_model_only.
 
 - gap_id: G-06-2
   truth: "A citation naming a retrieved-but-truncated block must not resolve or ship an excerpt; known-ID universe is the packed subset, treating truncated citations as unresolvable/dropped."
-  status: failed
+  status: resolved
   reason: "User reported: reject resolve. A citation naming a retrieved-but-truncated block must not resolve or ship an excerpt. Known-ID universe is the packed/prompt subset, not ctx.evidence_blocks. Treat [N] as unresolvable: drop it (CITATION_DROPPED), do not fail the whole run unless every citation drops — then apply the Test 1 flag rule. Do not restore the pre-split adapter packed check; that re-breaks D-18 total-drop."
   severity: blocker
   test: 2
@@ -114,3 +126,25 @@ blocked: 0
     - "If all citations drop as a result, apply the Test 1 flag rule (succeed as MODEL_ONLY if allow_model_only is true, fail with LlmGenerationFailed if false)."
     - "Add regression test verifying that citations to truncated blocks are dropped and do not ship excerpts."
   debug_session: .planning/debug/truncated-citation-resolution.md
+  resolution:
+    resolved_by: "06-16-PLAN.md (commit 949673e) — test coverage only, zero production-code changes"
+    verified_by: "06-VERIFICATION.md, 2026-08-22T22:15:00Z — status passed, 11/11 must-haves"
+    note: >-
+      CORRECTION to the diagnosis above: this root_cause and the generate.rs/openrouter.rs
+      `artifacts` were wrong about WHERE the defect was. `git diff d171e4d 949673e` shows the
+      only production-code line changed anywhere in the gap-closure commit is G-06-1's
+      generate.rs:258 — nothing in generate.rs or openrouter.rs changed for G-06-2.
+      Verification independently traced the actual mechanism: AssemblePromptNode
+      (assemble_prompt.rs:92-94) already overwrites ctx.evidence_blocks with the
+      token-budget-truncated packed subset before GenerateAnswerNode reads it, and this is
+      the real production node order (service.rs:139,148-149,838). The human's demanded
+      behavior (truncated-block citations drop, no excerpt ships) already held in production;
+      the actual gap was that no test exercised a genuinely truncated multi-block scenario, so
+      the `missing` items above (restrict the known-ID universe, treat truncated citations as
+      unresolvable) were already true and were NOT implemented as new code — closure came from
+      four new tests proving it, run and passing under verification:
+      citation_to_truncated_block_is_dropped_and_ships_no_excerpt_flag_off_fails_closed,
+      ..._flag_on_succeeds_model_only,
+      citation_to_surviving_and_truncated_blocks_resolves_surviving_and_drops_truncated,
+      workflow_prompt_packing_truncation_drops_citation_to_truncated_block (genuine 2-in/1-out
+      packing truncation, not a pre-truncated fixture).
