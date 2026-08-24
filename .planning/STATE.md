@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.2
-current_phase_name: OpenTelemetry Traces, Metrics and Logs (OBS-01)
+current_phase_name: opentelemetry-traces-metrics-and-logs-across-go-and-rust-wit
 current_plan: Not started
-status: planning
+status: executing
 stopped_at: Phase 06.1 complete, ready to plan Phase 06.2
-last_updated: "2026-08-23T23:09:53.235Z"
-state_head: 723c1a75c5b76537a8adf53f55c57cca8ed1d848
+last_updated: "2026-08-24T01:05:16.911Z"
+state_head: a0ecb69ffd4625d1febbd14b7fedcf6025511c27
 progress:
   total_phases: 11
   completed_phases: 5
-  total_plans: 109
+  total_plans: 115
   completed_plans: 109
 milestone_name: milestone
 ---
@@ -103,9 +103,9 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 06.2 — OpenTelemetry Traces, Metrics and Logs (OBS-01)
-- **Status:** Ready to plan
+- **Status:** Ready to execute
 - **Current Plan:** Not started
-- **Total Plans in Phase:** 4
+- **Total Plans in Phase:** 6
 - **Completed Plans in Phase:** 3 (executed; phase-level gates not yet passed)
 - **Progress:** [██████████] 100% execution / gates: gaps_found
 - **Next:** `/gsd-plan-phase 6.1 --gaps`
