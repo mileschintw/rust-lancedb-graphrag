@@ -509,6 +509,13 @@ impl WorkflowRunner {
             return;
         }
 
+        let outcome = if error.is_none() {
+            crate::telemetry::metrics::OUTCOME_COMPLETED
+        } else {
+            crate::telemetry::metrics::OUTCOME_FAILED
+        };
+        crate::telemetry::metrics::record_query_duration_ms(outcome, duration_ms.max(0) as u64);
+
         match error {
             None => {
                 let response = ctx.to_query_rag_response();

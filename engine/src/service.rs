@@ -739,6 +739,7 @@ impl LancetService for LancetServiceImpl {
         &self,
         request: Request<QueryRagRequest>,
     ) -> Result<Response<Self::QueryRAGStream>, Status> {
+        let parent_context = crate::telemetry::propagation::extract_parent_context(request.metadata());
         let req = request.into_inner();
         let correlation_id = Uuid::new_v4().to_string();
 
@@ -847,6 +848,7 @@ impl LancetService for LancetServiceImpl {
             session_id = %session_id,
             correlation_id = %correlation_id,
         );
+        let _ = tracing_opentelemetry::OpenTelemetrySpanExt::set_parent(&parent_span, parent_context);
 
         tokio::spawn(
             async move {

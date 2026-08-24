@@ -15,17 +15,44 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - lancet-net
 
   jaeger:
     image: cr.jaegertracing.io/jaegertracing/jaeger:2.19.0
     container_name: lancet-jaeger
     ports:
       - "127.0.0.1:16686:16686" # Jaeger Web UI
-      - "127.0.0.1:4317:4317"   # OTLP gRPC receiver
-      - "127.0.0.1:4318:4318"   # OTLP HTTP receiver
     volumes:
       - ./jaeger-config.yaml:/etc/jaeger/jaeger-config.yaml
     command: ["--config", "/etc/jaeger/jaeger-config.yaml"]
+    profiles:
+      - observability
+    networks:
+      - lancet-net
+
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    container_name: lancet-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deploy/collector/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"     # OTLP gRPC receiver
+      - "127.0.0.1:4318:4318"     # OTLP HTTP receiver
+      - "127.0.0.1:8889:8889"     # Prometheus metrics exporter
+      - "127.0.0.1:13133:13133"   # Health check
+      - "127.0.0.1:55679:55679"   # zPages
+    depends_on:
+      - jaeger
+    profiles:
+      - observability
+    networks:
+      - lancet-net
 
 volumes:
   postgres_data:
+
+networks:
+  lancet-net:
+    name: lancet-net

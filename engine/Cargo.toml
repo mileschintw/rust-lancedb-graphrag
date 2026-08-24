@@ -33,3 +33,9 @@ arrow-ipc = { version = "~58.3" }
 arrow-lg = { package = "arrow", version = "^56.2" }
 arrow-ipc-lg = { package = "arrow-ipc", version = "^56.2" }
 blake3 = "1"
+opentelemetry = { version = "~0.32", features = ["trace", "metrics", "logs"] }
+opentelemetry_sdk = { version = "~0.32.1", features = ["trace", "metrics", "logs", "testing"] }
+opentelemetry-otlp = { version = "~0.32", default-features = false, features = ["grpc-tonic", "trace", "metrics", "logs"] }
+tracing-opentelemetry = "~0.33"
+opentelemetry-appender-tracing = "~0.32"
+opentelemetry-semantic-conventions = "~0.32.1"

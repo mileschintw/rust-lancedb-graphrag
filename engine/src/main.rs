@@ -20,10 +20,9 @@ use engine::workflow::ports::CorpusSnapshot;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
+    // Deliberate trade: configuration loading happens before telemetry init so configuration errors surface on stderr before any subscriber exists.
     let settings = load_settings()?;
+    let telemetry_handle = engine::telemetry::init(&settings.engine.telemetry);
     let effective_settings = EffectiveRagSettings::try_from_settings(&settings)
         .map_err(|err| format!("invalid RAG configuration: {err}"))?;
     let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
@@ -152,5 +151,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     worker.await?;
     debounce_worker.await?;
+    telemetry_handle.shutdown();
     Ok(())
 }

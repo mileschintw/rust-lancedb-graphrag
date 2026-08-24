@@ -956,3 +956,110 @@ fn rebuild_debounce_ms_empty_or_whitespace_env_treated_as_absent() {
         let _ = fs::remove_dir_all(temp_dir);
     }
 }
+
+#[test]
+fn telemetry_defaults_start_engine() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let config_dir = repo_root.join("config");
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-telem-def-{}", uuid::Uuid::new_v4()));
+    let lancedb_dir = temp_dir.join("lancedb");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    fs::create_dir_all(&cwd_dir).unwrap();
+    fs::create_dir_all(&lancedb_dir).unwrap();
+    let lancedb_path = lancedb_dir.to_str().unwrap().replace('\\', "/");
+
+    let env_vars = [
+        ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+        ("LANCET_ENGINE__GRPC_ADDR", "127.0.0.1:0"),
+        ("LANCET_ENGINE__LANCEDB_PATH", lancedb_path.as_str()),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+    let (child, line) = spawn_engine(&cwd_dir, &env_vars, &["LANCET_ENV"]);
+    assert!(line.contains("Rust RAG Engine serving"));
+    cleanup_child(child);
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn telemetry_invalid_endpoint_fails_closed() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let config_dir = repo_root.join("config");
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-telem-ep-{}", uuid::Uuid::new_v4()));
+    let lancedb_dir = temp_dir.join("lancedb");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    fs::create_dir_all(&cwd_dir).unwrap();
+    fs::create_dir_all(&lancedb_dir).unwrap();
+    let lancedb_path = lancedb_dir.to_str().unwrap().replace('\\', "/");
+
+    let invalid_ep = "not_a_valid_url";
+    let env_vars = [
+        ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+        ("LANCET_ENGINE__GRPC_ADDR", "127.0.0.1:0"),
+        ("LANCET_ENGINE__LANCEDB_PATH", lancedb_path.as_str()),
+        ("LANCET_ENGINE__TELEMETRY__OTLP_ENDPOINT", invalid_ep),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+    let result = spawn_engine_full(&cwd_dir, &env_vars, &["LANCET_ENV"]);
+    let err_msg = match result {
+        Ok((child, _, _)) => {
+            cleanup_child(child);
+            panic!("engine must reject invalid otlp_endpoint")
+        }
+        Err(error) => error,
+    };
+    assert!(
+        err_msg.contains("process exited nonzero"),
+        "engine must terminate nonzero: {err_msg}"
+    );
+    assert!(
+        err_msg.contains("OTLP_ENDPOINT") || err_msg.contains("otlp_endpoint"),
+        "diagnostic must mention otlp_endpoint: {err_msg}"
+    );
+    assert!(
+        err_msg.contains(invalid_ep),
+        "diagnostic must mention invalid endpoint value: {err_msg}"
+    );
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn telemetry_invalid_sampler_ratio_fails_closed() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let config_dir = repo_root.join("config");
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-telem-sr-{}", uuid::Uuid::new_v4()));
+    let lancedb_dir = temp_dir.join("lancedb");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    fs::create_dir_all(&cwd_dir).unwrap();
+    fs::create_dir_all(&lancedb_dir).unwrap();
+    let lancedb_path = lancedb_dir.to_str().unwrap().replace('\\', "/");
+
+    for invalid_ratio in ["abc", "-0.1", "1.5"] {
+        let env_vars = [
+            ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+            ("LANCET_ENGINE__GRPC_ADDR", "127.0.0.1:0"),
+            ("LANCET_ENGINE__LANCEDB_PATH", lancedb_path.as_str()),
+            ("LANCET_ENGINE__TELEMETRY__SAMPLER_RATIO", invalid_ratio),
+            ("OPENROUTER_API_KEY", "test-key"),
+        ];
+        let result = spawn_engine_full(&cwd_dir, &env_vars, &["LANCET_ENV"]);
+        let err_msg = match result {
+            Ok((child, _, _)) => {
+                cleanup_child(child);
+                panic!("engine must reject invalid sampler_ratio {invalid_ratio:?}")
+            }
+            Err(error) => error,
+        };
+        assert!(
+            err_msg.contains("process exited nonzero"),
+            "engine must terminate nonzero: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("SAMPLER_RATIO") || err_msg.contains("sampler_ratio"),
+            "diagnostic must mention sampler_ratio: {err_msg}"
+        );
+    }
+    let _ = fs::remove_dir_all(temp_dir);
+}

@@ -12,9 +12,22 @@ pub mod prompt;
 pub mod rerank;
 pub mod retrieval;
 pub mod service;
+pub mod telemetry;
 pub mod workflow;
 
 pub use pb::lancet::v1::lancet_service_server::LancetService;
+
+#[cfg(test)]
+#[path = "tests/telemetry_query.rs"]
+pub mod telemetry_query;
+
+#[cfg(test)]
+#[path = "tests/telemetry_ingest.rs"]
+pub mod telemetry_ingest;
+
+#[cfg(test)]
+#[path = "tests/telemetry_metrics.rs"]
+pub mod telemetry_metrics;
 
 #[cfg(test)]
 #[path = "tests/workflow_phase5.rs"]

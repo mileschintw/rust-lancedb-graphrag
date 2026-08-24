@@ -146,6 +146,46 @@ pub fn default_citation_repair_enabled() -> bool {
 pub fn default_rebuild_debounce_ms() -> u64 {
     2000
 }
+pub fn default_otlp_endpoint() -> String {
+    "http://127.0.0.1:4317".to_string()
+}
+pub fn default_sampler_ratio() -> f64 {
+    1.0
+}
+pub fn default_service_name() -> String {
+    "lancet-engine".to_string()
+}
+pub fn default_deployment_environment() -> String {
+    "dev".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TelemetryConfigSettings {
+    /// OTLP gRPC endpoint URL (e.g. `http://127.0.0.1:4317`).
+    #[serde(default = "default_otlp_endpoint")]
+    pub otlp_endpoint: String,
+    /// Sampling ratio in range 0.0..=1.0. Defaults to 1.0 (always on, D-32).
+    #[serde(default = "default_sampler_ratio")]
+    pub sampler_ratio: f64,
+    /// Service name for OTel resource attribution (D-43).
+    #[serde(default = "default_service_name")]
+    pub service_name: String,
+    /// Deployment environment name (D-43).
+    #[serde(default = "default_deployment_environment")]
+    pub deployment_environment: String,
+}
+
+impl Default for TelemetryConfigSettings {
+    fn default() -> Self {
+        Self {
+            otlp_endpoint: default_otlp_endpoint(),
+            sampler_ratio: default_sampler_ratio(),
+            service_name: default_service_name(),
+            deployment_environment: default_deployment_environment(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -308,6 +348,8 @@ pub struct EngineSettings {
     pub retrieval: RetrievalConfigSettings,
     #[serde(default)]
     pub graph: GraphConfigSettings,
+    #[serde(default)]
+    pub telemetry: TelemetryConfigSettings,
 }
 
 impl Default for EngineSettings {
@@ -318,6 +360,7 @@ impl Default for EngineSettings {
             workflow: WorkflowConfigSettings::default(),
             retrieval: RetrievalConfigSettings::default(),
             graph: GraphConfigSettings::default(),
+            telemetry: TelemetryConfigSettings::default(),
         }
     }
 }
@@ -703,6 +746,56 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
                     )));
                 }
             }
+        }
+    }
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__TELEMETRY__OTLP_ENDPOINT") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            match reqwest::Url::parse(trimmed) {
+                Ok(url) if (url.scheme() == "http" || url.scheme() == "https") && url.has_host() => {
+                    settings.engine.telemetry.otlp_endpoint = trimmed.to_string();
+                }
+                _ => {
+                    return Err(::config::ConfigError::Message(format!(
+                        "LANCET_ENGINE__TELEMETRY__OTLP_ENDPOINT must be an absolute http or https URL, got {trimmed:?}"
+                    )));
+                }
+            }
+        }
+    }
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__TELEMETRY__SAMPLER_RATIO") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            match trimmed.parse::<f64>() {
+                Ok(val) if (0.0..=1.0).contains(&val) && !val.is_nan() => {
+                    settings.engine.telemetry.sampler_ratio = val;
+                }
+                _ => {
+                    return Err(::config::ConfigError::Message(format!(
+                        "LANCET_ENGINE__TELEMETRY__SAMPLER_RATIO must be a float in range 0.0..=1.0, got {trimmed:?}"
+                    )));
+                }
+            }
+        }
+    }
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__TELEMETRY__SERVICE_NAME") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            settings.engine.telemetry.service_name = trimmed.to_string();
+        } else if !raw.is_empty() {
+            return Err(::config::ConfigError::Message(
+                "LANCET_ENGINE__TELEMETRY__SERVICE_NAME must not be empty when set".to_string(),
+            ));
+        }
+    }
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__TELEMETRY__DEPLOYMENT_ENVIRONMENT") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            settings.engine.telemetry.deployment_environment = trimmed.to_string();
+        } else if !raw.is_empty() {
+            return Err(::config::ConfigError::Message(
+                "LANCET_ENGINE__TELEMETRY__DEPLOYMENT_ENVIRONMENT must not be empty when set".to_string(),
+            ));
         }
     }
     if let Ok(value) = std::env::var("LANCET_OPENROUTER__EMBEDDING_ENDPOINT") {

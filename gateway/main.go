@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -22,7 +23,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -33,7 +37,7 @@ import (
 	"github.com/lancet/gateway/internal/config"
 	"github.com/lancet/gateway/internal/engineclient"
 	"github.com/lancet/gateway/internal/sse"
-	_ "github.com/lancet/gateway/internal/telemetry"
+	"github.com/lancet/gateway/internal/telemetry"
 	pb "github.com/lancet/gateway/proto/lancet/v1"
 )
 
@@ -594,6 +598,12 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 
+	a.logger.Info("rag query stream opened",
+		telemetry.Ctx(r.Context()),
+		zap.String("correlation_id", firstFrame.GetTraceId()),
+		zap.String("session_id", firstFrame.GetSessionId()),
+	)
+
 	rc := http.NewResponseController(w)
 	var sawWorkflowCompleted bool
 	if firstFrame.GetWorkflowCompleted() != nil {
@@ -725,13 +735,35 @@ func run() error {
 		logger.Error("load configuration", zap.Error(err))
 		return err
 	}
+
+	telemetry.SetupPropagator()
+	providers, telemetryShutdown := telemetry.Init(context.Background(), telemetry.Config{
+		OTLPEndpoint:          cfg.Gateway.Telemetry.OTLPEndpoint,
+		SamplerRatio:          cfg.Gateway.Telemetry.SamplerRatio,
+		ServiceName:           cfg.Gateway.Telemetry.ServiceName,
+		DeploymentEnvironment: cfg.Gateway.Telemetry.DeploymentEnvironment,
+	})
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = telemetryShutdown(shutCtx)
+	}()
+
+	logger = logger.WithOptions(zap.WrapCore(func(c zapcore.Core) zapcore.Core {
+		return telemetry.WrapCore(c, providers.Logger)
+	}))
+
 	pool, err := pgxpool.New(context.Background(), cfg.Gateway.DatabaseURL)
 	if err != nil {
 		logger.Error("connect postgres", zap.Error(err))
 		return err
 	}
 	defer pool.Close()
-	conn, err := grpc.NewClient(cfg.Gateway.EngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(
+		cfg.Gateway.EngineAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
 	if err != nil {
 		logger.Error("dial engine", zap.Error(err))
 		return err
@@ -747,14 +779,24 @@ func run() error {
 	dispatcher := NewCheckpointDispatcherWithLogger(sink, logger)
 	defer dispatcher.Close()
 
+	routesHandler := app{
+		store:      postgresStore{pool},
+		engine:     engineclient.New(pb.NewLancetServiceClient(conn)),
+		logger:     logger,
+		dispatcher: dispatcher,
+	}.routes()
+
+	otelHandler := otelhttp.NewHandler(
+		routesHandler,
+		"lancet-gateway",
+		otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
+			return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		}),
+	)
+
 	server := newHTTPServer(
 		formatListenAddr(cfg.Gateway.Port),
-		app{
-			store:      postgresStore{pool},
-			engine:     engineclient.New(pb.NewLancetServiceClient(conn)),
-			logger:     logger,
-			dispatcher: dispatcher,
-		}.routes(),
+		otelHandler,
 	)
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

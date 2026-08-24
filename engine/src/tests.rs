@@ -1108,6 +1108,7 @@ fn configured_settings(lancedb_path: &str) -> Settings {
         engine: EngineSettings {
             grpc_addr: "127.0.0.1:0".into(),
             lancedb_path: lancedb_path.into(),
+            telemetry: Default::default(),
             retrieval: RetrievalConfigSettings {
                 candidate_limit: 4,
                 final_limit: 2,
@@ -3254,6 +3255,7 @@ async fn configured_rag_settings_drive_service() {
         engine: EngineSettings {
             grpc_addr: "[::1]:50051".into(),
             lancedb_path: path.clone(),
+            telemetry: Default::default(),
             retrieval: RetrievalConfigSettings {
                 candidate_limit: 16,
                 final_limit: 4,
@@ -6791,6 +6793,7 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
         engine: EngineSettings {
             grpc_addr: "127.0.0.1:0".into(),
             lancedb_path: "unused-lancedb-path".into(),
+            telemetry: Default::default(),
             retrieval: RetrievalConfigSettings {
                 candidate_limit: 4,
                 final_limit: 2,

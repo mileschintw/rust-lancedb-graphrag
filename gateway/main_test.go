@@ -35,7 +35,14 @@ import (
 	"github.com/lancet/gateway/internal/config"
 	"github.com/lancet/gateway/internal/engineclient"
 	"github.com/lancet/gateway/internal/sse"
+	"github.com/lancet/gateway/internal/telemetry"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -4508,6 +4515,99 @@ func TestQueryRAG_SSE_WorkflowCompletedWithExplicitMetadata(t *testing.T) {
 	}
 	if metaMap["degraded_mode"] != false {
 		t.Errorf("degraded_mode = %v, want false", metaMap["degraded_mode"])
+	}
+}
+
+type testInMemoryLogExporter struct {
+	mu      sync.Mutex
+	records []sdklog.Record
+}
+
+func (e *testInMemoryLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, r := range records {
+		e.records = append(e.records, r.Clone())
+	}
+	return nil
+}
+
+func (e *testInMemoryLogExporter) Shutdown(ctx context.Context) error   { return nil }
+func (e *testInMemoryLogExporter) ForceFlush(ctx context.Context) error { return nil }
+func (e *testInMemoryLogExporter) GetRecords() []sdklog.Record {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]sdklog.Record(nil), e.records...)
+}
+
+func TestRAGQueryLogCarriesRequestTrace(t *testing.T) {
+	telemetry.SetupPropagator()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	otel.SetTracerProvider(tp)
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	exporter := &testInMemoryLogExporter{}
+	processor := sdklog.NewSimpleProcessor(exporter)
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(processor))
+	defer func() { _ = lp.Shutdown(t.Context()) }()
+
+	baseLogger := zap.NewNop()
+	logger := baseLogger.WithOptions(zap.WrapCore(func(c zapcore.Core) zapcore.Core {
+		return telemetry.WrapCore(c, lp)
+	}))
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			resp := &pb.QueryRAGResponse{
+				Answer: "Test answer",
+			}
+			return newSingleResponseStream(resp, nil), nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     logger,
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	routesHandler := appInstance.routes()
+	otelHandler := otelhttp.NewHandler(
+		routesHandler,
+		"lancet-gateway",
+		otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
+			return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test question","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	records := exporter.GetRecords()
+	var foundStreamOpenedLog bool
+	pinnedTrace, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+
+	for _, r := range records {
+		if r.Body().AsString() == "rag query stream opened" {
+			foundStreamOpenedLog = true
+			if r.TraceID() != pinnedTrace {
+				t.Errorf("expected trace ID %s on 'rag query stream opened' log, got %s", pinnedTrace, r.TraceID())
+			}
+		}
+	}
+
+	if !foundStreamOpenedLog {
+		t.Fatalf("expected to find log record with message 'rag query stream opened', got %d records", len(records))
 	}
 }
 

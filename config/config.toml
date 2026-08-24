@@ -4,9 +4,29 @@ port = "8080"
 database_url = ""
 engine_addr = "localhost:50051"
 
+[gateway.telemetry]
+# OTLP gRPC endpoint for traces, metrics and logs (D-34, D-38).
+otlp_endpoint = "http://127.0.0.1:4317"
+# Sampling ratio: 1.0 = always on (D-32).
+sampler_ratio = 1.0
+# Service name for OTel resource attribution (D-43).
+service_name = "lancet-gateway"
+# Deployment environment for OTel resource attribution (D-43).
+deployment_environment = "dev"
+
 [engine]
 grpc_addr = "[::1]:50051"
 lancedb_path = "./data/lancedb"
+
+[engine.telemetry]
+# OTLP gRPC endpoint for traces, metrics and logs (D-34, D-38).
+otlp_endpoint = "http://127.0.0.1:4317"
+# Sampling ratio: 1.0 = always on (D-32).
+sampler_ratio = 1.0
+# Service name for OTel resource attribution (D-43).
+service_name = "lancet-engine"
+# Deployment environment for OTel resource attribution (D-43).
+deployment_environment = "dev"
 
 [engine.workflow]
 reformulate_timeout_ms = 5000
