@@ -435,7 +435,7 @@ shipped reality, not intent.
   **Known consequence, accepted:** with no local CONTEXT.md, `plan-phase` will prompt "No
   CONTEXT.md found for Phase X" — answer **"Continue without context"**; the decisions arrive via
   the dependency load, not a local file. The cost is that the plan-checker's decision-coverage
-  gate (`plan-phase.md:1211-1251`, "every trackable decision in `<decisions>` is referenced by at
+  gate (`plan-phase.md:1211-1251`, "every trackable decision in the decisions block is referenced by at
   least one plan") **skips itself when the phase has no local CONTEXT.md**. Each sub-phase's
   planning must therefore assert its decision coverage manually — name which of the 86 decisions
   it implements — since the automated check will not run.
