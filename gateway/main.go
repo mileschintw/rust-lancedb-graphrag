@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,6 +26,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
@@ -534,7 +538,111 @@ type ragQueryRequestBody struct {
 	DisableGraphContext *bool `json:"disable_graph_context"`
 }
 
+const streamErrorCodeClientDisconnected = "client_disconnected"
+
+func extractNoticeCodes(notices []*pb.Notice) []string {
+	if len(notices) == 0 {
+		return []string{}
+	}
+	set := make(map[string]struct{})
+	for _, n := range notices {
+		if n == nil {
+			continue
+		}
+		var codeName string
+		if n.TypedCode != 0 {
+			codeName = strings.TrimPrefix(pb.NoticeCode(n.TypedCode).String(), "NOTICE_CODE_")
+		} else if n.Code != "" {
+			codeName = strings.TrimPrefix(n.Code, "NOTICE_CODE_")
+		}
+		if codeName != "" && codeName != "UNSPECIFIED" {
+			set[codeName] = struct{}{}
+		}
+	}
+	res := make([]string, 0, len(set))
+	for k := range set {
+		res = append(res, k)
+	}
+	sort.Strings(res)
+	return res
+}
+
+func answerBasisString(basis pb.AnswerBasis) string {
+	return strings.ToLower(strings.TrimPrefix(basis.String(), "ANSWER_BASIS_"))
+}
+
 func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
+	span := oteltrace.SpanFromContext(r.Context())
+	var (
+		sawWorkflowCompleted bool
+		completedEvent       *pb.WorkflowCompletedEvent
+		streamErrorCode      string
+		correlationID        string
+		streamEndedNormally  bool
+	)
+
+	defer func() {
+		if correlationID != "" {
+			span.SetAttributes(attribute.String("lancet.correlation_id", correlationID))
+		}
+		if completedEvent != nil {
+			span.SetAttributes(
+				attribute.Bool("lancet.workflow.success", completedEvent.Success),
+				attribute.Bool("lancet.stream_terminal_seen", true),
+			)
+			var notices []*pb.Notice
+			if len(completedEvent.GetNotices()) > 0 {
+				notices = append(notices, completedEvent.GetNotices()...)
+			}
+			if resp := completedEvent.GetFinalResponse(); resp != nil {
+				span.SetAttributes(
+					attribute.String("lancet.answer_basis", answerBasisString(resp.GetAnswerBasis())),
+				)
+				if len(resp.GetNotices()) > 0 {
+					notices = append(notices, resp.GetNotices()...)
+				}
+			}
+			span.SetAttributes(
+				attribute.StringSlice("lancet.notice_codes", extractNoticeCodes(notices)),
+			)
+			if completedEvent.Success {
+				span.SetStatus(otelcodes.Ok, "")
+			} else {
+				errMsg := completedEvent.ErrorMessage
+				if errMsg == "" {
+					errMsg = "workflow failed"
+				}
+				span.SetStatus(otelcodes.Error, errMsg)
+			}
+			return
+		}
+
+		if r.Context().Err() != nil {
+			span.SetStatus(otelcodes.Error, "client disconnected")
+			span.SetAttributes(
+				attribute.String("lancet.stream_error_code", streamErrorCodeClientDisconnected),
+				attribute.Bool("lancet.stream_terminal_seen", sawWorkflowCompleted),
+			)
+			return
+		}
+
+		if streamErrorCode != "" {
+			span.SetStatus(otelcodes.Error, streamErrorCode)
+			span.SetAttributes(
+				attribute.String("lancet.stream_error_code", streamErrorCode),
+				attribute.Bool("lancet.stream_terminal_seen", sawWorkflowCompleted),
+			)
+			return
+		}
+
+		if !streamEndedNormally {
+			span.SetStatus(otelcodes.Error, "stream ended unexpectedly")
+			span.SetAttributes(
+				attribute.Bool("lancet.stream_terminal_seen", sawWorkflowCompleted),
+			)
+		}
+	}()
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxRAGQueryBodyBytes)
 	defer r.Body.Close()
 
@@ -542,6 +650,7 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil {
+		streamErrorCode = "invalid_request_body"
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
@@ -551,6 +660,7 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		streamErrorCode = "invalid_request_body"
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
@@ -575,12 +685,14 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 
 	stream, err := a.engine.QueryRAG(r.Context(), req)
 	if err != nil {
+		streamErrorCode = "engine_query_failed"
 		a.handlePreStreamError(w, err)
 		return
 	}
 
 	firstFrame, err := stream.Recv()
 	if err != nil {
+		streamErrorCode = "engine_first_frame_failed"
 		a.handlePreStreamError(w, err)
 		return
 	}
@@ -593,6 +705,7 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Lancet-Session-ID", sid)
 	}
 	if cid := firstFrame.GetTraceId(); cid != "" {
+		correlationID = cid
 		w.Header().Set("X-Lancet-Correlation-ID", cid)
 	}
 
@@ -605,9 +718,9 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 	)
 
 	rc := http.NewResponseController(w)
-	var sawWorkflowCompleted bool
-	if firstFrame.GetWorkflowCompleted() != nil {
+	if cp := firstFrame.GetWorkflowCompleted(); cp != nil {
 		sawWorkflowCompleted = true
+		completedEvent = cp
 	}
 	if r.Context().Err() == nil {
 		a.writeWorkflowEvent(w, rc, firstFrame)
@@ -620,12 +733,16 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		ev, recvErr := stream.Recv()
 		if errors.Is(recvErr, io.EOF) {
 			if !sawWorkflowCompleted && r.Context().Err() == nil {
+				streamErrorCode = sse.ErrCodeStreamEOFWithoutTerminal
 				sse.WriteStreamError(w, rc, sse.ErrCodeStreamEOFWithoutTerminal, "stream ended before workflow_completed")
+			} else {
+				streamEndedNormally = true
 			}
 			return
 		}
 		if recvErr != nil {
 			if r.Context().Err() == nil {
+				streamErrorCode = sse.ErrCodeGRPCRecvError
 				sse.WriteStreamError(w, rc, sse.ErrCodeGRPCRecvError, recvErr.Error())
 			}
 			return
@@ -633,8 +750,9 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		if r.Context().Err() != nil {
 			return
 		}
-		if ev.GetWorkflowCompleted() != nil {
+		if cp := ev.GetWorkflowCompleted(); cp != nil {
 			sawWorkflowCompleted = true
+			completedEvent = cp
 		}
 		a.writeWorkflowEvent(w, rc, ev)
 	}

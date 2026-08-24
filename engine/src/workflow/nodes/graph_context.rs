@@ -125,12 +125,21 @@ impl Node for ExtractGraphContextNode {
                         if facts.is_empty() {
                             ctx.graph_context = String::new();
                             ctx.graph_facts = Vec::new();
+                            ctx.graph_node_count = 0;
+                            ctx.graph_edge_count = 0;
                             ctx.add_notice(notice(
                                 NoticeCode::GraphUnavailable,
                                 "Graph query returned no facts for this query",
                                 NoticeSeverity::Info,
                             ));
                         } else {
+                            let mut unique_nodes = std::collections::HashSet::new();
+                            for f in &facts {
+                                unique_nodes.insert(f.fact.entity_a_name());
+                                unique_nodes.insert(f.fact.entity_b_name());
+                            }
+                            ctx.graph_node_count = unique_nodes.len() as u32;
+                            ctx.graph_edge_count = facts.len() as u32;
                             ctx.graph_context = facts
                                 .iter()
                                 .map(|f| {

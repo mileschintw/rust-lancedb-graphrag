@@ -1624,6 +1624,7 @@ pub fn spawn_worker(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_worker_with_boundary(
     receiver: mpsc::Receiver<IngestionJob>,
     statuses: Arc<DashMap<String, IngestionStatus>>,
@@ -1721,7 +1722,7 @@ pub fn spawn_worker_with_boundary(
                             error_message: String::new(),
                             },
                     );
-                    let _ = rebuild_tx.send_modify(|v| *v = v.wrapping_add(1));
+                    rebuild_tx.send_modify(|v| *v = v.wrapping_add(1));
                     tracing::info!(%job.document_id, chunk_count, "indexing completed");
                 }
                 Err(error) => {

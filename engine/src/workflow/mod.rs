@@ -102,6 +102,9 @@ pub struct WorkflowContext {
     pub structured_citations: Vec<StructuredCitation>,
     pub notices: Vec<Notice>,
     pub snapshot: Option<RetrievalSnapshot>,
+    pub graph_node_count: u32,
+    pub graph_edge_count: u32,
+    pub generation_attempts: u32,
 }
 
 impl WorkflowContext {
@@ -128,6 +131,9 @@ impl WorkflowContext {
             structured_citations: Vec::new(),
             notices: Vec::new(),
             snapshot: None,
+            graph_node_count: 0,
+            graph_edge_count: 0,
+            generation_attempts: 0,
         }
     }
 

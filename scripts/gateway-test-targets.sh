@@ -14,12 +14,12 @@
 #   80 — 75 plus TestBadInputMatrixHTTP (plan 06-12), the D-15 bad-input matrix's HTTP half.
 set -e
 
-EXPECTED_TOTAL=90
+EXPECTED_TOTAL=98
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 66
+EXPECTED_PACKAGES="gateway 74
 gateway/db 7
 gateway/internal/config 4
 gateway/internal/sse 8

@@ -425,28 +425,35 @@ impl workflow::node::QueryEmbeddingPort for ProductionEmbeddingPort {
         variant: &'a str,
         cancel: &'a tokio_util::sync::CancellationToken,
     ) -> workflow::node::BoxFuture<'a, Result<Vec<f32>, workflow::node::NodeError>> {
-        Box::pin(async move {
-            if cancel.is_cancelled() {
-                return Err(workflow::node::NodeError::cancelled());
-            }
-            let vecs = self
-                .embedder
-                .get_embeddings(&[variant.to_string()])
-                .await
-                .map_err(|err| {
-                    workflow::node::NodeError::new(
+        let span = tracing::info_span!(
+            "embedding_request",
+            gen_ai.request.model = "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+        );
+        Box::pin(
+            async move {
+                if cancel.is_cancelled() {
+                    return Err(workflow::node::NodeError::cancelled());
+                }
+                let vecs = self
+                    .embedder
+                    .get_embeddings(&[variant.to_string()])
+                    .await
+                    .map_err(|err| {
+                        workflow::node::NodeError::new(
+                            v1::NodeErrorKind::RetrievalFailed,
+                            format!("embedding provider transport error: {err}"),
+                        )
+                    })?;
+                if vecs.len() != 1 || vecs[0].len() != 2048 || vecs[0].iter().any(|f| !f.is_finite()) {
+                    return Err(workflow::node::NodeError::new(
                         v1::NodeErrorKind::RetrievalFailed,
-                        format!("embedding provider transport error: {err}"),
-                    )
-                })?;
-            if vecs.len() != 1 || vecs[0].len() != 2048 || vecs[0].iter().any(|f| !f.is_finite()) {
-                return Err(workflow::node::NodeError::new(
-                    v1::NodeErrorKind::RetrievalFailed,
-                    "embedding provider returned invalid payload",
-                ));
+                        "embedding provider returned invalid payload",
+                    ));
+                }
+                Ok(vecs.into_iter().next().unwrap())
             }
-            Ok(vecs.into_iter().next().unwrap())
-        })
+            .instrument(span),
+        )
     }
 }
 
@@ -463,36 +470,58 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
         cancel: &'a tokio_util::sync::CancellationToken,
     ) -> workflow::node::BoxFuture<'a, Result<Vec<prompt::GraphFactBlock>, workflow::node::NodeError>>
     {
-        Box::pin(async move {
-            if cancel.is_cancelled() {
-                return Err(workflow::node::NodeError::cancelled());
-            }
-            let graph_outcome =
-                attempt_graph_augmentation(&self.database, query_embedding, &self.graph_settings)
-                    .await;
-
-            let tag = match &graph_outcome {
-                GraphAugmentationOutcome::Succeeded { .. } => "succeeded",
-                GraphAugmentationOutcome::NoMatchFound => "no_match_found",
-                GraphAugmentationOutcome::AttemptedAndFailed { .. } => "attempted_and_failed",
-            };
-            tracing::Span::current().record("graph_augmentation", tag);
-
-            let facts: Vec<prompt::GraphFactBlock> = match graph_outcome {
-                GraphAugmentationOutcome::Succeeded { facts } => facts
-                    .into_iter()
-                    .map(|fact| prompt::GraphFactBlock { fact })
-                    .collect(),
-                GraphAugmentationOutcome::NoMatchFound => vec![],
-                GraphAugmentationOutcome::AttemptedAndFailed { reason } => {
-                    return Err(workflow::node::NodeError::new(
-                        v1::NodeErrorKind::GraphFailed,
-                        format!("graph augmentation failed: {reason}"),
-                    ));
+        let span = tracing::info_span!(
+            "graph_traversal",
+            graph_augmentation = tracing::field::Empty,
+            lancet.graph.node_count = tracing::field::Empty,
+            lancet.graph.edge_count = tracing::field::Empty,
+        );
+        Box::pin(
+            async move {
+                if cancel.is_cancelled() {
+                    return Err(workflow::node::NodeError::cancelled());
                 }
-            };
-            Ok(facts)
-        })
+                let graph_outcome =
+                    attempt_graph_augmentation(&self.database, query_embedding, &self.graph_settings)
+                        .await;
+
+                let tag = match &graph_outcome {
+                    GraphAugmentationOutcome::Succeeded { .. } => "succeeded",
+                    GraphAugmentationOutcome::NoMatchFound => "no_match_found",
+                    GraphAugmentationOutcome::AttemptedAndFailed { .. } => "attempted_and_failed",
+                };
+                tracing::Span::current().record("graph_augmentation", tag);
+
+                let facts: Vec<prompt::GraphFactBlock> = match graph_outcome {
+                    GraphAugmentationOutcome::Succeeded { facts } => {
+                        let mut unique_nodes = std::collections::HashSet::new();
+                        for f in &facts {
+                            unique_nodes.insert(f.entity_a_name());
+                            unique_nodes.insert(f.entity_b_name());
+                        }
+                        tracing::Span::current().record("lancet.graph.node_count", unique_nodes.len() as u64);
+                        tracing::Span::current().record("lancet.graph.edge_count", facts.len() as u64);
+                        facts
+                            .into_iter()
+                            .map(|fact| prompt::GraphFactBlock { fact })
+                            .collect()
+                    }
+                    GraphAugmentationOutcome::NoMatchFound => {
+                        tracing::Span::current().record("lancet.graph.node_count", 0u64);
+                        tracing::Span::current().record("lancet.graph.edge_count", 0u64);
+                        vec![]
+                    }
+                    GraphAugmentationOutcome::AttemptedAndFailed { reason } => {
+                        return Err(workflow::node::NodeError::new(
+                            v1::NodeErrorKind::GraphFailed,
+                            format!("graph augmentation failed: {reason}"),
+                        ));
+                    }
+                };
+                Ok(facts)
+            }
+            .instrument(span),
+        )
     }
 }
 
@@ -512,46 +541,56 @@ impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
         cancel: &'a tokio_util::sync::CancellationToken,
     ) -> workflow::node::BoxFuture<'a, Result<Vec<retrieval::Candidate>, workflow::node::NodeError>>
     {
-        Box::pin(async move {
-            if cancel.is_cancelled() {
-                return Err(workflow::node::NodeError::cancelled());
-            }
-            let (doc_ids, content_types) = if let Some(f) = filter {
-                (f.document_ids.clone(), f.content_types.clone())
-            } else {
-                (vec![], vec![])
-            };
-            let query_req =
-                QueryRequest::from_values(query, doc_ids, content_types, &self.retrieval_settings)
+        let generation = workflow::ports::corpus_generation_from_nodes_version(self.nodes_version);
+        let span = tracing::info_span!(
+            "dense_search",
+            db.system = "lancedb",
+            db.operation = "vector_search",
+            lancet.index.generation = %generation,
+        );
+        Box::pin(
+            async move {
+                if cancel.is_cancelled() {
+                    return Err(workflow::node::NodeError::cancelled());
+                }
+                let (doc_ids, content_types) = if let Some(f) = filter {
+                    (f.document_ids.clone(), f.content_types.clone())
+                } else {
+                    (vec![], vec![])
+                };
+                let query_req =
+                    QueryRequest::from_values(query, doc_ids, content_types, &self.retrieval_settings)
+                        .map_err(|err| {
+                            workflow::node::NodeError::new(
+                                v1::NodeErrorKind::RetrievalFailed,
+                                err.message(),
+                            )
+                        })?;
+                let nodes = self.database.nodes_table().await.map_err(|err| {
+                    workflow::node::NodeError::new(
+                        v1::NodeErrorKind::RetrievalFailed,
+                        format!("failed to open nodes table: {err}"),
+                    )
+                })?;
+                nodes.checkout(self.nodes_version).await.map_err(|err| {
+                    workflow::node::NodeError::new(
+                        v1::NodeErrorKind::RetrievalFailed,
+                        format!("dense checkout failure at version {}: {err}", self.nodes_version),
+                    )
+                })?;
+                let dense_retriever = DenseRetriever::new(nodes);
+                dense_retriever
+                    .query(query_embedding, &query_req, &self.retrieval_settings)
+                    .await
                     .map_err(|err| {
                         workflow::node::NodeError::new(
                             v1::NodeErrorKind::RetrievalFailed,
-                            err.message(),
+                            format!("dense retrieval failure: {}", err.message()),
                         )
-                    })?;
-            let nodes = self.database.nodes_table().await.map_err(|err| {
-                workflow::node::NodeError::new(
-                    v1::NodeErrorKind::RetrievalFailed,
-                    format!("failed to open nodes table: {err}"),
-                )
-            })?;
-            nodes.checkout(self.nodes_version).await.map_err(|err| {
-                workflow::node::NodeError::new(
-                    v1::NodeErrorKind::RetrievalFailed,
-                    format!("dense checkout failure at version {}: {err}", self.nodes_version),
-                )
-            })?;
-            let dense_retriever = DenseRetriever::new(nodes);
-            dense_retriever
-                .query(query_embedding, &query_req, &self.retrieval_settings)
-                .await
-                .map_err(|err| {
-                    workflow::node::NodeError::new(
-                        v1::NodeErrorKind::RetrievalFailed,
-                        format!("dense retrieval failure: {}", err.message()),
-                    )
-                })
-        })
+                    })
+            }
+            .instrument(span),
+        )
     }
 }
 
@@ -569,33 +608,41 @@ impl Bm25RetrievalPort for ProductionBm25RetrievalPort {
         cancel: &'a tokio_util::sync::CancellationToken,
     ) -> workflow::node::BoxFuture<'a, Result<Vec<retrieval::Candidate>, workflow::node::NodeError>>
     {
-        Box::pin(async move {
-            if cancel.is_cancelled() {
-                return Err(workflow::node::NodeError::cancelled());
-            }
-            let (doc_ids, content_types) = if let Some(f) = filter {
-                (f.document_ids.clone(), f.content_types.clone())
-            } else {
-                (vec![], vec![])
-            };
-            let query_req =
-                QueryRequest::from_values(query, doc_ids, content_types, &self.retrieval_settings)
+        let span = tracing::info_span!(
+            "bm25_search",
+            lancet.retrieval.path = "bm25",
+            lancet.index.generation = "bm25-memory",
+        );
+        Box::pin(
+            async move {
+                if cancel.is_cancelled() {
+                    return Err(workflow::node::NodeError::cancelled());
+                }
+                let (doc_ids, content_types) = if let Some(f) = filter {
+                    (f.document_ids.clone(), f.content_types.clone())
+                } else {
+                    (vec![], vec![])
+                };
+                let query_req =
+                    QueryRequest::from_values(query, doc_ids, content_types, &self.retrieval_settings)
+                        .map_err(|err| {
+                            workflow::node::NodeError::new(
+                                v1::NodeErrorKind::RetrievalFailed,
+                                err.message(),
+                            )
+                        })?;
+                self.bm25
+                    .retrieve(&query_req, &self.retrieval_settings)
+                    .await
                     .map_err(|err| {
                         workflow::node::NodeError::new(
                             v1::NodeErrorKind::RetrievalFailed,
-                            err.message(),
+                            err.to_string(),
                         )
-                    })?;
-            self.bm25
-                .retrieve(&query_req, &self.retrieval_settings)
-                .await
-                .map_err(|err| {
-                    workflow::node::NodeError::new(
-                        v1::NodeErrorKind::RetrievalFailed,
-                        err.to_string(),
-                    )
-                })
-        })
+                    })
+            }
+            .instrument(span),
+        )
     }
 }
 

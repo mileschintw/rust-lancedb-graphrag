@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind},
@@ -86,7 +87,21 @@ impl Node for GenerateAnswerNode {
     ) -> BoxFuture<'a, Result<(), NodeError>> {
         Box::pin(async move {
             if cancel.is_cancelled() {
-                return Err(NodeError::cancelled());
+                return Err(NodeError::cancelled().with_context(
+                    Some(ctx.session_id.clone()),
+                    Some(ctx.trace_id.clone()),
+                ));
+            }
+
+            if ctx.assembled_prompt.is_empty() {
+                return Err(NodeError::new(
+                    NodeErrorKind::PromptAssemblyFailed,
+                    "Cannot generate answer without assembled prompt",
+                )
+                .with_context(
+                    Some(ctx.session_id.clone()),
+                    Some(ctx.trace_id.clone()),
+                ));
             }
 
             let generator = match &self.generator {
@@ -111,7 +126,37 @@ impl Node for GenerateAnswerNode {
             let request_snapshot = req;
 
             // Attempt 1
-            let result1 = generator.generate(request_snapshot.clone()).await;
+            ctx.generation_attempts = 1;
+            let attempt1_span = tracing::info_span!(
+                "llm_attempt",
+                attempt = 1u64,
+                gen_ai.request.model = "google/gemini-2.5-flash",
+                lancet.attempt.outcome = tracing::field::Empty,
+                gen_ai.usage.input_tokens = tracing::field::Empty,
+                gen_ai.usage.output_tokens = tracing::field::Empty,
+            );
+
+            let result1 = generator
+                .generate(request_snapshot.clone())
+                .instrument(attempt1_span.clone())
+                .await;
+
+            match &result1 {
+                Ok(output) => {
+                    attempt1_span.record("lancet.attempt.outcome", "ok");
+                    if let Some(usage) = &output.usage {
+                        attempt1_span.record("gen_ai.usage.input_tokens", usage.prompt_tokens as u64);
+                        attempt1_span.record("gen_ai.usage.output_tokens", usage.completion_tokens as u64);
+                    }
+                }
+                Err(err) => {
+                    attempt1_span.record("lancet.attempt.outcome", "error");
+                    tracing_opentelemetry::OpenTelemetrySpanExt::set_status(
+                        &attempt1_span,
+                        opentelemetry::trace::Status::error(format!("attempt 1 failed: {:?}", err.kind)),
+                    );
+                }
+            }
 
             let final_result = match result1 {
                 Ok(output) => Ok(output),
@@ -137,7 +182,38 @@ impl Node for GenerateAnswerNode {
                                 Some(ctx.trace_id.clone()),
                             ));
                         }
-                        generator.generate(request_snapshot.clone()).await
+                        ctx.generation_attempts = 2;
+                        let attempt2_span = tracing::info_span!(
+                            "llm_attempt",
+                            attempt = 2u64,
+                            gen_ai.request.model = "google/gemini-2.5-flash",
+                            lancet.attempt.outcome = tracing::field::Empty,
+                            gen_ai.usage.input_tokens = tracing::field::Empty,
+                            gen_ai.usage.output_tokens = tracing::field::Empty,
+                        );
+
+                        let result2 = generator
+                            .generate(request_snapshot.clone())
+                            .instrument(attempt2_span.clone())
+                            .await;
+
+                        match &result2 {
+                            Ok(output) => {
+                                attempt2_span.record("lancet.attempt.outcome", "ok");
+                                if let Some(usage) = &output.usage {
+                                    attempt2_span.record("gen_ai.usage.input_tokens", usage.prompt_tokens as u64);
+                                    attempt2_span.record("gen_ai.usage.output_tokens", usage.completion_tokens as u64);
+                                }
+                            }
+                            Err(err) => {
+                                attempt2_span.record("lancet.attempt.outcome", "error");
+                                tracing_opentelemetry::OpenTelemetrySpanExt::set_status(
+                                    &attempt2_span,
+                                    opentelemetry::trace::Status::error(format!("attempt 2 failed: {:?}", err.kind)),
+                                );
+                            }
+                        }
+                        result2
                     }
                 }
             };

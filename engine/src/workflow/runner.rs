@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use super::{
     events::{self, EventSequence},
@@ -344,19 +345,95 @@ impl WorkflowRunner {
             return Err(err);
         }
 
+        let node_span = match kind {
+            NodeKind::ReformulateQuery => tracing::info_span!(
+                "query_reformulation",
+                lancet.node.outcome = tracing::field::Empty,
+                lancet.reformulation.variant_count = tracing::field::Empty,
+            ),
+            NodeKind::RetrieveHybrid => tracing::info_span!(
+                "hybrid_retrieval",
+                lancet.node.outcome = tracing::field::Empty,
+                lancet.retrieval.dense_count = tracing::field::Empty,
+                lancet.retrieval.bm25_count = tracing::field::Empty,
+            ),
+            NodeKind::ExtractGraphContext => tracing::info_span!(
+                "graph_context_extraction",
+                graph_augmentation = tracing::field::Empty,
+                lancet.node.outcome = tracing::field::Empty,
+                lancet.graph.node_count = tracing::field::Empty,
+                lancet.graph.edge_count = tracing::field::Empty,
+            ),
+            NodeKind::AssemblePrompt => tracing::info_span!(
+                "prompt_assembly",
+                lancet.node.outcome = tracing::field::Empty,
+                lancet.prompt.evidence_block_count = tracing::field::Empty,
+            ),
+            NodeKind::GenerateAnswer => tracing::info_span!(
+                "llm_generation",
+                lancet.node.outcome = tracing::field::Empty,
+                lancet.generation.attempts = tracing::field::Empty,
+            ),
+        };
+
         let start_time = Instant::now();
         let node_timeout = self.timeout_for_kind(kind);
 
-        let result = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => Err(NodeError::cancelled()),
-            res = timeout(node_timeout, node.run(ctx, cancel)) => match res {
-                Ok(inner) => inner,
-                Err(_) => Err(NodeError::timeout(name)),
-            },
-        };
+        let result = async {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Err(NodeError::cancelled()),
+                res = timeout(node_timeout, node.run(ctx, cancel)) => match res {
+                    Ok(inner) => inner,
+                    Err(_) => Err(NodeError::timeout(name)),
+                },
+            }
+        }
+        .instrument(node_span.clone())
+        .await;
 
         let duration_ms = start_time.elapsed().as_millis() as i64;
+
+        let outcome = match &result {
+            Ok(()) => "ok",
+            Err(err) => {
+                if cancel.is_cancelled() || err.kind == NodeErrorKind::Cancelled {
+                    "cancelled"
+                } else if err.kind == NodeErrorKind::Timeout {
+                    "timeout"
+                } else {
+                    "error"
+                }
+            }
+        };
+        node_span.record("lancet.node.outcome", outcome);
+
+        if outcome != "ok" {
+            tracing_opentelemetry::OpenTelemetrySpanExt::set_status(
+                &node_span,
+                opentelemetry::trace::Status::error(format!("node {name} failed: {outcome}")),
+            );
+        }
+
+        match kind {
+            NodeKind::ReformulateQuery => {
+                node_span.record("lancet.reformulation.variant_count", ctx.variants.len() as u64);
+            }
+            NodeKind::RetrieveHybrid => {
+                node_span.record("lancet.retrieval.dense_count", ctx.vector_results.len() as u64);
+                node_span.record("lancet.retrieval.bm25_count", ctx.bm25_results.len() as u64);
+            }
+            NodeKind::ExtractGraphContext => {
+                node_span.record("lancet.graph.node_count", ctx.graph_node_count as u64);
+                node_span.record("lancet.graph.edge_count", ctx.graph_edge_count as u64);
+            }
+            NodeKind::AssemblePrompt => {
+                node_span.record("lancet.prompt.evidence_block_count", ctx.evidence_blocks.len() as u64);
+            }
+            NodeKind::GenerateAnswer => {
+                node_span.record("lancet.generation.attempts", ctx.generation_attempts as u64);
+            }
+        }
 
         match &result {
             Ok(()) => {

@@ -38,8 +38,11 @@ import (
 	"github.com/lancet/gateway/internal/telemetry"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -4608,6 +4611,606 @@ func TestRAGQueryLogCarriesRequestTrace(t *testing.T) {
 
 	if !foundStreamOpenedLog {
 		t.Fatalf("expected to find log record with message 'rag query stream opened', got %d records", len(records))
+	}
+}
+
+func findSpanAttr(attrs []attribute.KeyValue, key string) (attribute.Value, bool) {
+	for _, kv := range attrs {
+		if string(kv.Key) == key {
+			return kv.Value, true
+		}
+	}
+	return attribute.Value{}, false
+}
+
+func TestSSERootSpanLifecycle(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					SessionId:       "00000000-0000-4000-8000-000000000001",
+					TraceId:         "00000000-0000-4000-8000-000000000001",
+					SequenceOrdinal: 1,
+					TimestampMs:     time.Now().UnixMilli(),
+					Event: &pb.WorkflowEvent_NodeStarted{
+						NodeStarted: &pb.NodeStartedEvent{
+							NodeName:      "ReformulateQuery",
+							InputsSummary: "inputs",
+						},
+					},
+				},
+				{
+					SessionId:       "00000000-0000-4000-8000-000000000001",
+					TraceId:         "00000000-0000-4000-8000-000000000001",
+					SequenceOrdinal: 2,
+					TimestampMs:     time.Now().UnixMilli(),
+					Event: &pb.WorkflowEvent_WorkflowCompleted{
+						WorkflowCompleted: &pb.WorkflowCompletedEvent{
+							Success: true,
+						},
+					},
+				},
+			}
+			return &delayedFakeStream{events: events, delay: 50 * time.Millisecond}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     zap.NewNop(),
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	otelHandler := otelhttp.NewHandler(
+		appInstance.routes(),
+		"lancet-gateway",
+		otelhttp.WithTracerProvider(tp),
+		otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
+			return fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		}),
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test question","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected exactly 1 root server span, got %d", len(spans))
+	}
+	span := spans[0]
+	if span.Name() != "POST /rag/query" {
+		t.Errorf("span name = %q, want 'POST /rag/query'", span.Name())
+	}
+	if span.EndTime().Sub(span.StartTime()) < 40*time.Millisecond {
+		t.Errorf("span duration = %v, expected >= 40ms", span.EndTime().Sub(span.StartTime()))
+	}
+}
+
+type delayedFakeStream struct {
+	events []*pb.WorkflowEvent
+	index  int
+	delay  time.Duration
+}
+
+func (s *delayedFakeStream) Recv() (*pb.WorkflowEvent, error) {
+	if s.index >= len(s.events) {
+		return nil, io.EOF
+	}
+	if s.index > 0 && s.delay > 0 {
+		time.Sleep(s.delay)
+	}
+	ev := s.events[s.index]
+	s.index++
+	return ev, nil
+}
+
+func (s *delayedFakeStream) Header() (metadata.MD, error) { return nil, nil }
+func (s *delayedFakeStream) Trailer() metadata.MD         { return nil }
+func (s *delayedFakeStream) CloseSend() error             { return nil }
+func (s *delayedFakeStream) Context() context.Context     { return context.Background() }
+func (s *delayedFakeStream) SendMsg(m any) error          { return nil }
+func (s *delayedFakeStream) RecvMsg(m any) error          { return nil }
+
+func TestRootSpanTerminalAttributesOnSuccess(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					SessionId:       "00000000-0000-4000-8000-000000000001",
+					TraceId:         "00000000-0000-4000-8000-000000000001",
+					SequenceOrdinal: 1,
+					TimestampMs:     time.Now().UnixMilli(),
+					Event: &pb.WorkflowEvent_WorkflowCompleted{
+						WorkflowCompleted: &pb.WorkflowCompletedEvent{
+							Success: true,
+							FinalResponse: &pb.QueryRAGResponse{
+								AnswerBasis: pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL,
+								Notices: []*pb.Notice{
+									{TypedCode: pb.NoticeCode_NOTICE_CODE_RETRIEVAL_DEGRADED_DENSE},
+								},
+							},
+						},
+					},
+				},
+			}
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     zap.NewNop(),
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	otelHandler := otelhttp.NewHandler(
+		appInstance.routes(),
+		"lancet-gateway",
+		otelhttp.WithTracerProvider(tp),
+	)
+
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	span := spans[0]
+	if span.Status().Code != otelcodes.Ok {
+		t.Errorf("span status = %v, want Ok", span.Status().Code)
+	}
+
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.workflow.success"); !ok || !val.AsBool() {
+		t.Errorf("lancet.workflow.success = %v, want true", val)
+	}
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.answer_basis"); !ok || val.AsString() != "retrieval" {
+		t.Errorf("lancet.answer_basis = %v, want 'retrieval'", val)
+	}
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.notice_codes"); !ok || len(val.AsStringSlice()) != 1 || val.AsStringSlice()[0] != "RETRIEVAL_DEGRADED_DENSE" {
+		t.Errorf("lancet.notice_codes = %v, want ['RETRIEVAL_DEGRADED_DENSE']", val)
+	}
+}
+
+func TestRootSpanTerminalAttributesOnFailure(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					SessionId:       "00000000-0000-4000-8000-000000000001",
+					TraceId:         "00000000-0000-4000-8000-000000000001",
+					SequenceOrdinal: 1,
+					TimestampMs:     time.Now().UnixMilli(),
+					Event: &pb.WorkflowEvent_WorkflowCompleted{
+						WorkflowCompleted: &pb.WorkflowCompletedEvent{
+							Success:      false,
+							ErrorMessage: "model call timed out",
+						},
+					},
+				},
+			}
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     zap.NewNop(),
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	span := spans[0]
+	if span.Status().Code != otelcodes.Error {
+		t.Errorf("span status = %v, want Error", span.Status().Code)
+	}
+	if span.Status().Description != "model call timed out" {
+		t.Errorf("span status desc = %q, want 'model call timed out'", span.Status().Description)
+	}
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.workflow.success"); !ok || val.AsBool() {
+		t.Errorf("lancet.workflow.success = %v, want false", val)
+	}
+}
+
+func TestRootSpanTerminalAttributesOnEOFWithoutTerminal(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					SessionId:       "00000000-0000-4000-8000-000000000001",
+					TraceId:         "00000000-0000-4000-8000-000000000001",
+					SequenceOrdinal: 1,
+					TimestampMs:     time.Now().UnixMilli(),
+					Event: &pb.WorkflowEvent_NodeStarted{
+						NodeStarted: &pb.NodeStartedEvent{
+							NodeName: "ReformulateQuery",
+						},
+					},
+				},
+			}
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     zap.NewNop(),
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	span := spans[0]
+	if span.Status().Code != otelcodes.Error {
+		t.Errorf("span status = %v, want Error", span.Status().Code)
+	}
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.stream_error_code"); !ok || val.AsString() != sse.ErrCodeStreamEOFWithoutTerminal {
+		t.Errorf("lancet.stream_error_code = %v, want %q", val, sse.ErrCodeStreamEOFWithoutTerminal)
+	}
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.stream_terminal_seen"); !ok || val.AsBool() {
+		t.Errorf("lancet.stream_terminal_seen = %v, want false", val)
+	}
+}
+
+func TestRootSpanNoticeCodesAreBounded(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					SessionId:       "00000000-0000-4000-8000-000000000001",
+					TraceId:         "00000000-0000-4000-8000-000000000001",
+					SequenceOrdinal: 1,
+					TimestampMs:     time.Now().UnixMilli(),
+					Event: &pb.WorkflowEvent_WorkflowCompleted{
+						WorkflowCompleted: &pb.WorkflowCompletedEvent{
+							Success: true,
+							FinalResponse: &pb.QueryRAGResponse{
+								AnswerBasis: pb.AnswerBasis_ANSWER_BASIS_RETRIEVAL,
+								Notices: []*pb.Notice{
+									{TypedCode: pb.NoticeCode_NOTICE_CODE_RETRIEVAL_DEGRADED_BM25},
+									{TypedCode: pb.NoticeCode_NOTICE_CODE_RETRIEVAL_DEGRADED_DENSE},
+									{TypedCode: pb.NoticeCode_NOTICE_CODE_RETRIEVAL_DEGRADED_BM25},
+								},
+							},
+						},
+					},
+				},
+			}
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     zap.NewNop(),
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	span := spans[0]
+	val, ok := findSpanAttr(span.Attributes(), "lancet.notice_codes")
+	if !ok {
+		t.Fatalf("missing lancet.notice_codes attribute")
+	}
+	codes := val.AsStringSlice()
+	if len(codes) != 2 {
+		t.Fatalf("expected 2 unique notice codes, got %v", codes)
+	}
+	if codes[0] != "RETRIEVAL_DEGRADED_BM25" || codes[1] != "RETRIEVAL_DEGRADED_DENSE" {
+		t.Errorf("codes = %v, want sorted de-duplicated ['RETRIEVAL_DEGRADED_BM25', 'RETRIEVAL_DEGRADED_DENSE']", codes)
+	}
+}
+
+func TestRootSpanOnClientDisconnectMidStream(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	unblockEngine := make(chan struct{})
+	defer close(unblockEngine)
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					SessionId:       "00000000-0000-4000-8000-000000000001",
+					TraceId:         "00000000-0000-4000-8000-000000000001",
+					SequenceOrdinal: 1,
+					TimestampMs:     time.Now().UnixMilli(),
+					Event: &pb.WorkflowEvent_NodeStarted{
+						NodeStarted: &pb.NodeStartedEvent{
+							NodeName: "ReformulateQuery",
+						},
+					},
+				},
+			}
+			return &blockingFakeStream{ctx: ctx, events: events, unblock: unblockEngine}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     zap.NewNop(),
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+	reqCtx, reqCancel := context.WithCancel(context.Background())
+
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`)).WithContext(reqCtx)
+	req.Header.Set("Content-Type", "application/json")
+
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		reqCancel()
+	}()
+
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	span := spans[0]
+	if span.Status().Code != otelcodes.Error {
+		t.Errorf("span status = %v, want Error", span.Status().Code)
+	}
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.stream_error_code"); !ok || val.AsString() != streamErrorCodeClientDisconnected {
+		t.Errorf("stream_error_code = %v, want %q", val, streamErrorCodeClientDisconnected)
+	}
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.stream_terminal_seen"); !ok || val.AsBool() {
+		t.Errorf("stream_terminal_seen = %v, want false", val)
+	}
+}
+
+type blockingFakeStream struct {
+	ctx     context.Context
+	events  []*pb.WorkflowEvent
+	index   int
+	unblock chan struct{}
+}
+
+func (s *blockingFakeStream) Recv() (*pb.WorkflowEvent, error) {
+	if s.index < len(s.events) {
+		ev := s.events[s.index]
+		s.index++
+		return ev, nil
+	}
+	if s.ctx != nil {
+		select {
+		case <-s.unblock:
+			return nil, io.EOF
+		case <-s.ctx.Done():
+			return nil, s.ctx.Err()
+		}
+	}
+	<-s.unblock
+	return nil, io.EOF
+}
+
+func (s *blockingFakeStream) Header() (metadata.MD, error) { return nil, nil }
+func (s *blockingFakeStream) Trailer() metadata.MD         { return nil }
+func (s *blockingFakeStream) CloseSend() error             { return nil }
+func (s *blockingFakeStream) Context() context.Context {
+	if s.ctx != nil {
+		return s.ctx
+	}
+	return context.Background()
+}
+func (s *blockingFakeStream) SendMsg(m any) error { return nil }
+func (s *blockingFakeStream) RecvMsg(m any) error { return nil }
+
+func TestRootSpanOnClientDisconnectAfterTerminal(t *testing.T) {
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					SessionId:       "00000000-0000-4000-8000-000000000001",
+					TraceId:         "00000000-0000-4000-8000-000000000001",
+					SequenceOrdinal: 1,
+					TimestampMs:     time.Now().UnixMilli(),
+					Event: &pb.WorkflowEvent_WorkflowCompleted{
+						WorkflowCompleted: &pb.WorkflowCompletedEvent{
+							Success: true,
+						},
+					},
+				},
+			}
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     zap.NewNop(),
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	span := spans[0]
+	if val, ok := findSpanAttr(span.Attributes(), "lancet.stream_terminal_seen"); !ok || !val.AsBool() {
+		t.Errorf("stream_terminal_seen = %v, want true", val)
+	}
+}
+
+func TestRootSpanStatusSetOnEveryExitPath(t *testing.T) {
+	testCases := []struct {
+		name       string
+		body       string
+		engineFn   func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error)
+		wantStatus otelcodes.Code
+	}{
+		{
+			name: "success terminal",
+			body: `{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`,
+			engineFn: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+				events := []*pb.WorkflowEvent{
+					{
+						Event: &pb.WorkflowEvent_WorkflowCompleted{
+							WorkflowCompleted: &pb.WorkflowCompletedEvent{Success: true},
+						},
+					},
+				}
+				return &fakeQueryRAGStream{events: events}, nil
+			},
+			wantStatus: otelcodes.Ok,
+		},
+		{
+			name: "failed terminal",
+			body: `{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`,
+			engineFn: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+				events := []*pb.WorkflowEvent{
+					{
+						Event: &pb.WorkflowEvent_WorkflowCompleted{
+							WorkflowCompleted: &pb.WorkflowCompletedEvent{Success: false, ErrorMessage: "err"},
+						},
+					},
+				}
+				return &fakeQueryRAGStream{events: events}, nil
+			},
+			wantStatus: otelcodes.Error,
+		},
+		{
+			name: "early eof",
+			body: `{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`,
+			engineFn: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+				events := []*pb.WorkflowEvent{
+					{
+						Event: &pb.WorkflowEvent_NodeStarted{
+							NodeStarted: &pb.NodeStartedEvent{NodeName: "Node1"},
+						},
+					},
+				}
+				return &fakeQueryRAGStream{events: events}, nil
+			},
+			wantStatus: otelcodes.Error,
+		},
+		{
+			name: "recv error",
+			body: `{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`,
+			engineFn: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+				return &fakeQueryRAGStream{err: errors.New("gRPC network fail")}, nil
+			},
+			wantStatus: otelcodes.Error,
+		},
+		{
+			name: "invalid json body",
+			body: `{"query":}`,
+			engineFn: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+				return &fakeQueryRAGStream{}, nil
+			},
+			wantStatus: otelcodes.Error,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sr := tracetest.NewSpanRecorder()
+			tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+			defer func() { _ = tp.Shutdown(t.Context()) }()
+
+			appInstance := app{
+				store:      &fakeStore{},
+				engine:     engineFunc{queryRAG: tc.engineFn},
+				logger:     zap.NewNop(),
+				dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+			}
+
+			otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+			req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			otelHandler.ServeHTTP(rec, req)
+
+			spans := sr.Ended()
+			if len(spans) != 1 {
+				t.Fatalf("expected 1 span, got %d", len(spans))
+			}
+			span := spans[0]
+			if span.Status().Code == otelcodes.Unset {
+				t.Errorf("span status code is Unset; every exit path must set Ok or Error")
+			}
+			if span.Status().Code != tc.wantStatus {
+				t.Errorf("span status = %v, want %v", span.Status().Code, tc.wantStatus)
+			}
+		})
 	}
 }
 
