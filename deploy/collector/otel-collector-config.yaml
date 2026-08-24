@@ -20,6 +20,10 @@ exporters:
     endpoint: jaeger:4317
     tls:
       insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
   prometheus:
     endpoint: 0.0.0.0:8889
     namespace: lancet
@@ -46,7 +50,7 @@ service:
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [debug]
+      exporters: [otlphttp/loki]
   telemetry:
     logs:
       level: info

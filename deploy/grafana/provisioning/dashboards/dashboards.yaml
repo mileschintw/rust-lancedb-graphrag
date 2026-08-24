@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: "Lancet Dashboards"
+    orgId: 1
+    folder: "Lancet"
+    type: file
+    disableDeletion: true
+    editable: true
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

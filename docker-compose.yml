@@ -31,6 +31,36 @@ services:
     networks:
       - lancet-net
 
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: lancet-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    profiles:
+      - observability
+    networks:
+      - lancet-net
+
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: lancet-loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./deploy/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "127.0.0.1:3100:3100"
+    profiles:
+      - observability
+    networks:
+      - lancet-net
+
   collector:
     image: otel/opentelemetry-collector-contrib:0.120.0
     container_name: lancet-collector
@@ -45,6 +75,30 @@ services:
       - "127.0.0.1:55679:55679"   # zPages
     depends_on:
       - jaeger
+      - loki
+      - prometheus
+    profiles:
+      - observability
+    networks:
+      - lancet-net
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: lancet-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
     profiles:
       - observability
     networks:
@@ -52,6 +106,9 @@ services:
 
 volumes:
   postgres_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
 
 networks:
   lancet-net:

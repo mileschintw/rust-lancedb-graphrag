@@ -1,0 +1,429 @@
+{
+  "uid": "lancet-rag-operations",
+  "title": "Lancet RAG Operations",
+  "description": "Operational metrics for Lancet RAG query, retrieval, generation and ingestion pipelines",
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 0,
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "fiscalYearStartMonth": 0,
+  "refresh": "5s",
+  "schemaVersion": 42,
+  "panels": [
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(lancet_rag_query_duration_ms_count[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "title": "RAG Query Duration",
+      "description": "Duration of end-to-end RAG queries by outcome",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (path, kind) (rate(lancet_rag_retrieval_path_failures_total[5m]))",
+          "legendFormat": "{{path}} - {{kind}}"
+        }
+      ],
+      "title": "Retrieval Path Failures",
+      "description": "Failures in dense/bm25/graph retrieval paths",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (answer_basis) (rate(lancet_rag_answer_degraded_total[5m]))",
+          "legendFormat": "{{answer_basis}}"
+        }
+      ],
+      "title": "Answer Degraded Rate",
+      "description": "Degraded mode answers by basis",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (action) (rate(lancet_rag_citation_repairs_total[5m]))",
+          "legendFormat": "{{action}}"
+        }
+      ],
+      "title": "Citation Repairs",
+      "description": "Repaired or dropped citations by action",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(lancet_rag_generation_retries_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "title": "Generation Retries",
+      "description": "LLM generation retry attempts by outcome",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(lancet_rag_evidence_set_size_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "title": "Evidence Set Size",
+      "description": "Number of evidence items assembled into prompts",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(lancet_ingest_documents_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "title": "Ingested Documents",
+      "description": "Ingestion throughput and outcomes for documents",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(lancet_ingest_chunks_total[5m])",
+          "legendFormat": "chunks/sec"
+        }
+      ],
+      "title": "Ingested Chunks",
+      "description": "Ingestion throughput for text chunks",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(lancet_index_rebuild_duration_ms_bucket[5m])) by (le, outcome))",
+          "legendFormat": "p95 - {{outcome}}"
+        }
+      ],
+      "title": "Index Rebuild Duration",
+      "description": "Duration of background index rebuilds by outcome",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "lancet_index_corpus_generation",
+          "legendFormat": "generation"
+        }
+      ],
+      "title": "Corpus Generation",
+      "description": "Current corpus generation counter",
+      "transparent": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "repeatDirection": "h",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "",
+          "sort": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "templating": {},
+  "annotations": {}
+}
