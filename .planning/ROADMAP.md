@@ -586,7 +586,7 @@ Plans:
 
 **Wave 3**
 
-- [ ] 06.2-04-PLAN.md — Ingestion trace end to end: one trace per document carried across the ingestion queue through graph extraction, plus an `index_rebuild` span linked to every coalesced triggering document (D-30 / OBS-01).
+- [ ] 06.2-04-PLAN.md — Ingestion trace end to end: one trace per document carried across the ingestion queue through graph extraction, leaf spans at every external call that extraction makes (one per LLM attempt, the graph read, the entity-name embedding, the graph write), plus an `index_rebuild` span linked to every coalesced triggering document (D-30 / OBS-01).
 
 **Wave 4**
 
