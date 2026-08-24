@@ -88,14 +88,33 @@ pub async fn extract_with_retry(
     generator: &dyn ExtractionGenerator,
     request: ExtractionRequest,
 ) -> Result<ExtractionOutput, GenerationError> {
+    use tracing::Instrument;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
     let mut attempt = 1;
     let max_attempts = 3;
 
     loop {
-        match generator.extract(request.clone()).await {
+        let attempt_span = tracing::info_span!(
+            "extraction_attempt",
+            attempt = attempt,
+            lancet.chunk.id = %request.chunk_id,
+            lancet.document.id = %request.document_id,
+            outcome = tracing::field::Empty,
+        );
+        match generator
+            .extract(request.clone())
+            .instrument(attempt_span.clone())
+            .await
+        {
             Ok(output) => match validate_extraction_output(&output) {
-                Ok(()) => return Ok(output),
+                Ok(()) => {
+                    attempt_span.record("outcome", "ok");
+                    return Ok(output);
+                }
                 Err(val_err) => {
+                    attempt_span.record("outcome", "validation_rejected");
+                    attempt_span.set_status(opentelemetry::trace::Status::error(val_err.to_string()));
                     tracing::warn!(
                         chunk_id = %request.chunk_id,
                         document_id = %request.document_id,
@@ -112,6 +131,8 @@ pub async fn extract_with_retry(
                 }
             },
             Err(err) => {
+                attempt_span.record("outcome", "call_failed");
+                attempt_span.set_status(opentelemetry::trace::Status::error(err.to_string()));
                 tracing::warn!(
                     chunk_id = %request.chunk_id,
                     document_id = %request.document_id,

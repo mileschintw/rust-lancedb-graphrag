@@ -21,6 +21,7 @@ use lancedb::{
 use tokio::sync::mpsc;
 use tonic::{Request, Response, Status};
 use tracing::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
 use crate::config::{EffectiveRagSettings, GraphSettings};
@@ -687,62 +688,78 @@ impl LancetService for LancetServiceImpl {
         &self,
         request: Request<tonic::Streaming<IngestDocumentRequest>>,
     ) -> Result<Response<IngestDocumentResponse>, Status> {
+        let parent_cx = crate::telemetry::propagation::extract_parent_context(request.metadata());
         let mut stream = request.into_inner();
-        let mut document_id = String::new();
-        let mut filename = String::new();
-        let mut metadata = HashMap::new();
-        let mut raw = Vec::new();
-        let mut first_frame = true;
-        let mut parsed_settings = None;
-        while let Some(message) = stream.message().await? {
-            if first_frame {
-                first_frame = false;
-                document_id = message.document_id.clone();
-                filename = message.filename.clone();
-                metadata = message.metadata.clone();
-                parsed_settings = Some(parse_chunk_settings(&metadata)?);
-            } else {
-                if !message.metadata.is_empty() {
+        let admission_span = tracing::info_span!(
+            "ingest_admission",
+            lancet.document.id = tracing::field::Empty,
+            lancet.document.bytes = tracing::field::Empty,
+        );
+        let _ = admission_span.set_parent(parent_cx);
+
+        async {
+            let mut document_id = String::new();
+            let mut filename = String::new();
+            let mut metadata = HashMap::new();
+            let mut raw = Vec::new();
+            let mut first_frame = true;
+            let mut parsed_settings = None;
+            while let Some(message) = stream.message().await? {
+                if first_frame {
+                    first_frame = false;
+                    document_id = message.document_id.clone();
+                    filename = message.filename.clone();
+                    metadata = message.metadata.clone();
+                    parsed_settings = Some(parse_chunk_settings(&metadata)?);
+                    tracing::Span::current().record("lancet.document.id", &document_id);
+                } else {
+                    if !message.metadata.is_empty() {
+                        return Err(Status::invalid_argument(
+                            "stream metadata must not be provided on subsequent frames",
+                        ));
+                    }
+                }
+                if message.document_id != document_id {
                     return Err(Status::invalid_argument(
-                        "stream metadata must not be provided on subsequent frames",
+                        "stream contains multiple document ids",
                     ));
                 }
+                if raw.len() + message.chunk_data.len() > MAX_DOCUMENT_BYTES {
+                    return Err(Status::resource_exhausted("document exceeds 10MB"));
+                }
+                raw.extend_from_slice(&message.chunk_data);
             }
-            if message.document_id != document_id {
-                return Err(Status::invalid_argument(
-                    "stream contains multiple document ids",
-                ));
+            tracing::Span::current().record("lancet.document.bytes", raw.len());
+            if document_id.is_empty() {
+                return Err(Status::invalid_argument("empty ingestion stream"));
             }
-            if raw.len() + message.chunk_data.len() > MAX_DOCUMENT_BYTES {
-                return Err(Status::resource_exhausted("document exceeds 10MB"));
-            }
-            raw.extend_from_slice(&message.chunk_data);
+            validate_document_id(&document_id)?;
+            let permit = self
+                .queue
+                .clone()
+                .try_reserve_owned()
+                .map_err(|_| Status::resource_exhausted("ingestion queue is full"))?;
+            let trace_parent = crate::telemetry::propagation::inject_trace_parent(&tracing::Span::current().context());
+            let job = IngestionJob {
+                document_id: document_id.clone(),
+                filename,
+                raw_data: raw,
+                metadata,
+                chunk_settings: parsed_settings.expect("parsed settings present for non-empty stream"),
+                trace_parent,
+            };
+            self.persist_raw(&job).await?;
+            self.statuses
+                .insert(document_id.clone(), IngestionStatus::queued());
+            permit.send(job);
+            Ok(Response::new(IngestDocumentResponse {
+                document_id,
+                success: true,
+                message: "queued".into(),
+            }))
         }
-        if document_id.is_empty() {
-            return Err(Status::invalid_argument("empty ingestion stream"));
-        }
-        validate_document_id(&document_id)?;
-        let permit = self
-            .queue
-            .clone()
-            .try_reserve_owned()
-            .map_err(|_| Status::resource_exhausted("ingestion queue is full"))?;
-        let job = IngestionJob {
-            document_id: document_id.clone(),
-            filename,
-            raw_data: raw,
-            metadata,
-            chunk_settings: parsed_settings.expect("parsed settings present for non-empty stream"),
-        };
-        self.persist_raw(&job).await?;
-        self.statuses
-            .insert(document_id.clone(), IngestionStatus::queued());
-        permit.send(job);
-        Ok(Response::new(IngestDocumentResponse {
-            document_id,
-            success: true,
-            message: "queued".into(),
-        }))
+        .instrument(admission_span)
+        .await
     }
 
     async fn get_ingestion_status(

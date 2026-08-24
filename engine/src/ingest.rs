@@ -21,12 +21,14 @@ use lancedb::{
     query::{ExecutableQuery, QueryBase},
     Table,
 };
+use opentelemetry::trace::TraceContextExt;
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,
 };
 use tonic::Status;
 use tracing::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
 use crate::chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
@@ -125,6 +127,7 @@ pub struct IngestionJob {
     pub raw_data: Vec<u8>,
     pub metadata: HashMap<String, String>,
     pub chunk_settings: ChunkSettings,
+    pub trace_parent: Option<String>,
 }
 
 impl IngestionJob {
@@ -141,7 +144,13 @@ impl IngestionJob {
             raw_data,
             metadata,
             chunk_settings,
+            trace_parent: None,
         }
+    }
+
+    pub fn with_trace_parent(mut self, trace_parent: impl Into<String>) -> Self {
+        self.trace_parent = Some(trace_parent.into());
+        self
     }
 }
 
@@ -380,6 +389,7 @@ pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<Ingestio
                     raw_data,
                     metadata,
                     chunk_settings,
+                    trace_parent: None,
                 },
             });
         }
@@ -967,21 +977,33 @@ pub async fn extract_and_persist_entities(
         .map_err(|e| e.to_string())?;
 
     // Read known entities for exact-match resolver
-    let known_batches: Vec<arrow_array::RecordBatch> = entities_table
-        .query()
-        .select(lancedb::query::Select::columns(&[
-            "entity_id",
-            "name",
-            "entity_type",
-            "name_vector",
-            "source_chunk_ids",
-        ]))
-        .execute()
-        .await
-        .map_err(|e| e.to_string())?
-        .try_collect()
-        .await
-        .map_err(|e| e.to_string())?;
+    let lookup_span = tracing::info_span!(
+        "graph_entity_lookup",
+        db.system = "lancedb",
+        db.operation = "select",
+        lancet.graph.known_entity_count = tracing::field::Empty
+    );
+    let known_batches: Vec<arrow_array::RecordBatch> = async {
+        entities_table
+            .query()
+            .select(lancedb::query::Select::columns(&[
+                "entity_id",
+                "name",
+                "entity_type",
+                "name_vector",
+                "source_chunk_ids",
+            ]))
+            .execute()
+            .await
+            .map_err(|e| e.to_string())?
+            .try_collect()
+            .await
+            .map_err(|e| e.to_string())
+    }
+    .instrument(lookup_span.clone())
+    .await?;
+    let known_entity_count: usize = known_batches.iter().map(|b| b.num_rows()).sum();
+    lookup_span.record("lancet.graph.known_entity_count", known_entity_count);
 
     struct ExistingEntity {
         entity_id: String,
@@ -1116,10 +1138,20 @@ pub async fn extract_and_persist_entities(
         .collect();
 
     let new_embeddings = if !new_names.is_empty() {
+        let span = tracing::info_span!(
+            "entity_name_embedding",
+            gen_ai.request.model = %embedder.model_id(),
+            lancet.graph.new_entity_count = new_names.len()
+        );
         embedder
             .get_embeddings(&new_names)
+            .instrument(span.clone())
             .await
-            .map_err(|e| e.to_string())?
+            .map_err(|e| {
+                use tracing_opentelemetry::OpenTelemetrySpanExt;
+                span.set_status(opentelemetry::trace::Status::error(e.to_string()));
+                e.to_string()
+            })?
     } else {
         vec![]
     };
@@ -1346,15 +1378,28 @@ pub async fn extract_and_persist_entities(
             .map_err(|e| format!("count written entity_edges collect failed: {e}"))?;
         let written_entity_edges_count: usize = written_batches.iter().map(|b| b.num_rows()).sum();
 
-        Ok(ExtractionPersistSummary {
+        Ok::<ExtractionPersistSummary, String>(ExtractionPersistSummary {
             prior_entity_edges_count,
             written_entity_edges_count,
         })
     };
 
-    match run_mutations.await {
-        Ok(summary) => Ok(summary),
+    let persist_span = tracing::info_span!(
+        "graph_entity_persist",
+        db.system = "lancedb",
+        db.operation = "mutate",
+        lancet.graph.prior_entity_edges = prior_entity_edges_count,
+        lancet.graph.written_entity_edges = tracing::field::Empty
+    );
+
+    match run_mutations.instrument(persist_span.clone()).await {
+        Ok(summary) => {
+            persist_span.record("lancet.graph.written_entity_edges", summary.written_entity_edges_count);
+            Ok(summary)
+        }
         Err(mut_err) => {
+            use tracing_opentelemetry::OpenTelemetrySpanExt;
+            persist_span.set_status(opentelemetry::trace::Status::error(mut_err.clone()));
             tracing::error!(
                 %job.document_id,
                 error = %mut_err,
@@ -1403,6 +1448,9 @@ pub fn reset_rebuild_invocation_count() {
 }
 
 #[cfg(test)]
+pub static REBUILD_TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[cfg(test)]
 static REBUILD_FAIL_NEXT: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -1438,6 +1486,49 @@ pub fn inert_rebuild_tx() -> watch::Sender<u64> {
     watch::channel(0).0
 }
 
+#[derive(Debug, Default)]
+struct RebuildTriggerLinksState {
+    contexts: Vec<opentelemetry::trace::SpanContext>,
+    dropped_links: u64,
+}
+
+const MAX_TRIGGER_LINKS: usize = 1024;
+
+/// Bounded buffer carrying trigger span contexts to debounced index rebuilds.
+#[derive(Clone, Debug, Default)]
+pub struct RebuildTriggerLinks {
+    state: Arc<std::sync::Mutex<RebuildTriggerLinksState>>,
+}
+
+impl RebuildTriggerLinks {
+    /// Appends the currently active span's OTel context if valid, up to 1024 entries.
+    pub fn push_current(&self) {
+        use tracing_opentelemetry::OpenTelemetrySpanExt;
+        let cx = tracing::Span::current().context();
+        let sc = cx.span().span_context().clone();
+        if sc.is_valid() {
+            if let Ok(mut state) = self.state.lock() {
+                if state.contexts.len() < MAX_TRIGGER_LINKS {
+                    state.contexts.push(sc);
+                } else {
+                    state.dropped_links += 1;
+                }
+            }
+        }
+    }
+
+    /// Drains all accumulated span contexts and returns the contexts plus dropped count.
+    pub fn drain(&self) -> (Vec<opentelemetry::trace::SpanContext>, u64) {
+        if let Ok(mut state) = self.state.lock() {
+            let contexts = std::mem::take(&mut state.contexts);
+            let dropped = std::mem::take(&mut state.dropped_links);
+            (contexts, dropped)
+        } else {
+            (Vec::new(), 0)
+        }
+    }
+}
+
 pub async fn rebuild_and_swap(
     database: &DatabaseManager,
     corpus_store: &crate::workflow::ports::CorpusStore,
@@ -1445,14 +1536,18 @@ pub async fn rebuild_and_swap(
 ) -> Result<Arc<crate::workflow::ports::CorpusSnapshot>, String> {
     REBUILD_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
+    let prior = {
+        let guard = corpus_store.read().await;
+        Arc::clone(&*guard)
+    };
+    let current_span = tracing::Span::current();
+    current_span.record("lancet.index.generation_before", &prior.generation);
+    current_span.record("lancet.index.nodes_version_before", prior.nodes_version);
+
     #[cfg(test)]
     {
         if REBUILD_FAIL_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst) {
             tracing::error!("rebuild_and_swap injected fault triggered");
-            let prior = {
-                let guard = corpus_store.read().await;
-                Arc::clone(&*guard)
-            };
             let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
                 bm25: Arc::clone(&prior.bm25),
                 generation: prior.generation.clone(),
@@ -1461,6 +1556,8 @@ pub async fn rebuild_and_swap(
             });
             let mut write_guard = corpus_store.write().await;
             *write_guard = degraded_snapshot;
+            current_span.record("lancet.index.generation_after", &prior.generation);
+            current_span.record("lancet.index.nodes_version_after", prior.nodes_version);
             return Err("injected rebuild failure".into());
         }
     }
@@ -1483,10 +1580,6 @@ pub async fn rebuild_and_swap(
 
     if let Err(err) = checkout_res {
         tracing::error!("nodes table checkout_latest failed: {err}");
-        let prior = {
-            let guard = corpus_store.read().await;
-            Arc::clone(&*guard)
-        };
         let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
             bm25: Arc::clone(&prior.bm25),
             generation: prior.generation.clone(),
@@ -1495,6 +1588,8 @@ pub async fn rebuild_and_swap(
         });
         let mut write_guard = corpus_store.write().await;
         *write_guard = degraded_snapshot;
+        current_span.record("lancet.index.generation_after", &prior.generation);
+        current_span.record("lancet.index.nodes_version_after", prior.nodes_version);
         return Err(format!("nodes table checkout_latest failed: {err}"));
     }
 
@@ -1508,10 +1603,6 @@ pub async fn rebuild_and_swap(
         Ok(idx) => idx,
         Err(err) => {
             tracing::error!("BM25 rebuild from nodes table failed: {err}");
-            let prior = {
-                let guard = corpus_store.read().await;
-                Arc::clone(&*guard)
-            };
             let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
                 bm25: Arc::clone(&prior.bm25),
                 generation: prior.generation.clone(),
@@ -1520,6 +1611,8 @@ pub async fn rebuild_and_swap(
             });
             let mut write_guard = corpus_store.write().await;
             *write_guard = degraded_snapshot;
+            current_span.record("lancet.index.generation_after", &prior.generation);
+            current_span.record("lancet.index.nodes_version_after", prior.nodes_version);
             return Err(format!("BM25 rebuild failed: {err}"));
         }
     };
@@ -1542,6 +1635,9 @@ pub async fn rebuild_and_swap(
         "BM25 index rebuilt and swapped successfully"
     );
 
+    current_span.record("lancet.index.generation_after", &new_snapshot.generation);
+    current_span.record("lancet.index.nodes_version_after", new_snapshot.nodes_version);
+
     Ok(new_snapshot)
 }
 
@@ -1552,6 +1648,7 @@ pub fn spawn_rebuild_debounce_task(
     corpus_store: crate::workflow::ports::CorpusStore,
     bm25_settings: crate::retrieval::Bm25Config,
     debounce_duration: std::time::Duration,
+    trigger_links: RebuildTriggerLinks,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -1597,8 +1694,37 @@ pub fn spawn_rebuild_debounce_task(
                 }
             }
 
-            // 3. Execute rebuild and swap
-            let _ = rebuild_and_swap(&database, &corpus_store, bm25_settings.clone()).await;
+            // 3. Execute rebuild and swap with links to triggering documents
+            let (trigger_contexts, dropped_links) = trigger_links.drain();
+            let trigger_count = trigger_contexts.len();
+            let index_rebuild_span = tracing::info_span!(
+                "index_rebuild",
+                lancet.index.rebuild.trigger_count = trigger_count,
+                lancet.index.rebuild.dropped_links = dropped_links,
+                lancet.index.generation_before = tracing::field::Empty,
+                lancet.index.nodes_version_before = tracing::field::Empty,
+                lancet.index.generation_after = tracing::field::Empty,
+                lancet.index.nodes_version_after = tracing::field::Empty,
+                lancet.index.rebuild.degraded = tracing::field::Empty,
+            );
+            for cx in trigger_contexts {
+                index_rebuild_span.add_link(cx);
+            }
+
+            async {
+                match rebuild_and_swap(&database, &corpus_store, bm25_settings.clone()).await {
+                    Ok(_) => {
+                        tracing::Span::current().record("lancet.index.rebuild.degraded", false);
+                        tracing::Span::current().set_status(opentelemetry::trace::Status::Ok);
+                    }
+                    Err(err) => {
+                        tracing::Span::current().record("lancet.index.rebuild.degraded", true);
+                        tracing::Span::current().set_status(opentelemetry::trace::Status::error(err));
+                    }
+                }
+            }
+            .instrument(index_rebuild_span)
+            .await;
         }
     })
 }
@@ -1611,6 +1737,7 @@ pub fn spawn_worker(
     extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator>,
     shutdown: watch::Receiver<bool>,
     rebuild_tx: watch::Sender<u64>,
+    trigger_links: RebuildTriggerLinks,
 ) -> JoinHandle<()> {
     spawn_worker_with_boundary(
         receiver,
@@ -1621,6 +1748,7 @@ pub fn spawn_worker(
         Arc::new(LanceDbReplacementMutationBoundary),
         shutdown,
         rebuild_tx,
+        trigger_links,
     )
 }
 
@@ -1634,6 +1762,7 @@ pub fn spawn_worker_with_boundary(
     boundary: Arc<dyn ReplacementMutationBoundary>,
     mut shutdown: watch::Receiver<bool>,
     rebuild_tx: watch::Sender<u64>,
+    trigger_links: RebuildTriggerLinks,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut receiver = receiver;
@@ -1674,94 +1803,122 @@ pub fn spawn_worker_with_boundary(
                 },
             );
             let document_id = job.document_id.clone();
-            let span = tracing::info_span!(
-                "index_document",
-                document_id = %document_id,
-                bytes = job.raw_data.len()
+            let raw_len = job.raw_data.len();
+            let ingest_span = tracing::info_span!(
+                "ingest_document",
+                lancet.document.id = %document_id,
+                lancet.document.bytes = raw_len
             );
-            match async {
-                process_job_with_boundary(&job, &database, embedder.as_ref(), boundary.as_ref())
-                    .await
+            if let Some(ref tp) = job.trace_parent {
+                let parent_cx = crate::telemetry::propagation::extract_context_from_trace_parent(tp);
+                let _ = ingest_span.set_parent(parent_cx);
             }
-            .instrument(span)
-            .await
-            {
-                Ok(chunk_count) => {
-                    match extract_and_persist_entities(
-                        &database,
-                        &job,
-                        extraction_generator.as_ref(),
-                        embedder.as_ref(),
-                    )
-                    .await
-                    {
-                        Ok(summary) => {
-                            if summary.written_entity_edges_count < summary.prior_entity_edges_count
-                            {
-                                tracing::warn!(
+
+            async {
+                let span = tracing::info_span!(
+                    "index_document",
+                    document_id = %document_id,
+                    bytes = job.raw_data.len()
+                );
+                match async {
+                    process_job_with_boundary(&job, &database, embedder.as_ref(), boundary.as_ref())
+                        .await
+                }
+                .instrument(span)
+                .await
+                {
+                    Ok(chunk_count) => {
+                        let graph_extraction_span = tracing::info_span!(
+                            "graph_extraction",
+                            lancet.document.id = %job.document_id,
+                            lancet.graph.written_entity_edges = tracing::field::Empty,
+                            lancet.graph.prior_entity_edges = tracing::field::Empty,
+                        );
+                        let extraction_res = extract_and_persist_entities(
+                            &database,
+                            &job,
+                            extraction_generator.as_ref(),
+                            embedder.as_ref(),
+                        )
+                        .instrument(graph_extraction_span.clone())
+                        .await;
+
+                        match extraction_res {
+                            Ok(summary) => {
+                                graph_extraction_span.record("lancet.graph.written_entity_edges", summary.written_entity_edges_count);
+                                graph_extraction_span.record("lancet.graph.prior_entity_edges", summary.prior_entity_edges_count);
+                                if summary.written_entity_edges_count < summary.prior_entity_edges_count
+                                {
+                                    tracing::warn!(
+                                        %job.document_id,
+                                        prior = summary.prior_entity_edges_count,
+                                        written = summary.written_entity_edges_count,
+                                        "graph completeness reduced on re-ingestion"
+                                    );
+                                }
+                            }
+                            Err(err) => {
+                                graph_extraction_span.set_status(opentelemetry::trace::Status::error(err.to_string()));
+                                tracing::error!(
                                     %job.document_id,
-                                    prior = summary.prior_entity_edges_count,
-                                    written = summary.written_entity_edges_count,
-                                    "graph completeness reduced on re-ingestion"
+                                    error = %err,
+                                    "extract_and_persist_entities failed, prior graph preserved"
                                 );
                             }
                         }
-                        Err(err) => {
-                            tracing::error!(
-                                %job.document_id,
-                                error = %err,
-                                "extract_and_persist_entities failed, prior graph preserved"
-                            );
-                        }
-                    }
-                    statuses.insert(
-                        document_id,
-                        IngestionStatus {
-                            status: "completed".into(),
-                            chunk_count,
-                            error_message: String::new(),
+                        statuses.insert(
+                            document_id,
+                            IngestionStatus {
+                                status: "completed".into(),
+                                chunk_count,
+                                error_message: String::new(),
                             },
-                    );
-                    rebuild_tx.send_modify(|v| *v = v.wrapping_add(1));
-                    tracing::info!(%job.document_id, chunk_count, "indexing completed");
-                }
-                Err(error) => {
-                    let predicate = format!("document_id = '{}'", escape_sql_literal(&document_id));
-                    let delete_res = async {
-                        let staged = database
-                            .staged_documents_table()
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        boundary
-                            .delete(ReplacementMutation::StagingDelete, &staged, &predicate)
-                            .await
+                        );
+                        trigger_links.push_current();
+                        rebuild_tx.send_modify(|v| *v = v.wrapping_add(1));
+                        tracing::info!(%job.document_id, chunk_count, "indexing completed");
                     }
-                    .await;
-
-                    match delete_res {
-                        Ok(()) => {
-                            tracing::error!(%job.document_id, %error, "indexing failed");
-                            statuses.insert(
-                                document_id,
-                                IngestionStatus {
-                                    status: "failed".into(),
-                                    chunk_count: 0,
-                                    error_message: error,
-                                },
-                            );
+                    Err(error) => {
+                        tracing::Span::current().set_status(opentelemetry::trace::Status::error(error.clone()));
+                        let predicate = format!("document_id = '{}'", escape_sql_literal(&document_id));
+                        let delete_res = async {
+                            let staged = database
+                                .staged_documents_table()
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            boundary
+                                .delete(ReplacementMutation::StagingDelete, &staged, &predicate)
+                                .await
                         }
-                        Err(delete_err) => {
-                            tracing::error!(
-                                %job.document_id,
-                                %error,
-                                %delete_err,
-                                "indexing failed and staging delete failed; retaining row queued for replay"
-                            );
-                            statuses.remove(&document_id);
+                        .await;
+
+                        match delete_res {
+                            Ok(()) => {
+                                tracing::error!(%job.document_id, %error, "indexing failed");
+                                statuses.insert(
+                                    document_id,
+                                    IngestionStatus {
+                                        status: "failed".into(),
+                                        chunk_count: 0,
+                                        error_message: error,
+                                    },
+                                );
+                            }
+                            Err(delete_err) => {
+                                tracing::error!(
+                                    %job.document_id,
+                                    %error,
+                                    %delete_err,
+                                    "indexing failed and staging delete failed; retaining row queued for replay"
+                                );
+                                statuses.remove(&document_id);
+                            }
                         }
                     }
                 }
             }
+            .instrument(ingest_span)
+            .await;
         }
     })
 }

@@ -33,3 +33,19 @@ pub fn extract_parent_context(metadata: &MetadataMap) -> opentelemetry::Context 
     let extractor = MetadataExtractor(metadata);
     opentelemetry::global::get_text_map_propagator(|propagator| propagator.extract(&extractor))
 }
+
+/// Injects the given OpenTelemetry context into a W3C `traceparent` string.
+pub fn inject_trace_parent(cx: &opentelemetry::Context) -> Option<String> {
+    let mut carrier = std::collections::HashMap::new();
+    opentelemetry::global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(cx, &mut carrier);
+    });
+    carrier.remove("traceparent")
+}
+
+/// Extracts an OpenTelemetry context from a W3C `traceparent` string.
+pub fn extract_context_from_trace_parent(trace_parent: &str) -> opentelemetry::Context {
+    let mut carrier = std::collections::HashMap::new();
+    carrier.insert("traceparent".to_string(), trace_parent.to_string());
+    opentelemetry::global::get_text_map_propagator(|propagator| propagator.extract(&carrier))
+}

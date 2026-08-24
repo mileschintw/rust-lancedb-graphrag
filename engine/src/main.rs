@@ -10,7 +10,8 @@ use engine::db::DatabaseManager;
 use engine::generation;
 use engine::graph;
 use engine::ingest::{
-    read_staged_jobs, spawn_rebuild_debounce_task, spawn_worker, IngestionStatus, QUEUE_CAPACITY,
+    read_staged_jobs, spawn_rebuild_debounce_task, spawn_worker, IngestionStatus,
+    RebuildTriggerLinks, QUEUE_CAPACITY,
 };
 use engine::pb::lancet::v1::lancet_service_server::LancetServiceServer;
 use engine::rerank;
@@ -83,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let (rebuild_tx, rebuild_rx) = watch::channel(0u64);
+    let trigger_links = RebuildTriggerLinks::default();
 
     let worker = spawn_worker(
         receiver,
@@ -92,6 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         extraction_generator.clone(),
         shutdown_rx.clone(),
         rebuild_tx,
+        trigger_links.clone(),
     );
 
     let debounce_ms = effective_settings.workflow.rebuild_debounce_ms;
@@ -102,6 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         corpus_store.clone(),
         effective_settings.retrieval.bm25.clone(),
         Duration::from_millis(debounce_ms),
+        trigger_links,
     );
 
     let staged_jobs = read_staged_jobs(&database).await?;

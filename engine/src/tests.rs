@@ -37,8 +37,8 @@ use engine::ingest::{
     persist_raw_with_boundary, process_job, read_staged_jobs, replace_document,
     replace_document_with_faults, select_latest_staged_rows, spawn_worker,
     spawn_worker_with_boundary, ChunkSettings, EmbeddingProvider, IngestionJob, IngestionStatus,
-    LanceDbReplacementMutationBoundary, ReplacementMutation, ReplacementMutationBoundary,
-    StagedJobRow, QUEUE_CAPACITY,
+    LanceDbReplacementMutationBoundary, RebuildTriggerLinks, ReplacementMutation,
+    ReplacementMutationBoundary, StagedJobRow, QUEUE_CAPACITY,
 };
 use engine::pb::lancet;
 use engine::pb::lancet::v1::{
@@ -885,12 +885,12 @@ impl EmbeddingProvider for SingleBlockEmbedder {
     }
 }
 
-struct FaultingReplacementMutationBoundary {
+pub struct FaultingReplacementMutationBoundary {
     fail_at: ReplacementMutation,
 }
 
 impl FaultingReplacementMutationBoundary {
-    fn new(fail_at: ReplacementMutation) -> Self {
+    pub fn new(fail_at: ReplacementMutation) -> Self {
         Self { fail_at }
     }
 }
@@ -1529,6 +1529,7 @@ async fn worker_indexes_jobs_and_records_real_chunk_count() {
         test_extraction_generator(),
         shutdown_rx,
         inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
     );
     let document_id = Uuid::new_v4().to_string();
     sender
@@ -1566,6 +1567,7 @@ async fn worker_replaces_existing_document_rows() {
         test_extraction_generator(),
         shutdown_rx,
         inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
     );
     let document_id = Uuid::new_v4().to_string();
     for raw_data in [
@@ -1683,6 +1685,7 @@ async fn schema_field_lookup_failure_rolls_back_and_worker_survives() {
         Arc::new(boundary),
         shutdown_rx,
         inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
     );
 
     let document_id_1 = Uuid::new_v4().to_string();
@@ -1791,6 +1794,7 @@ async fn shutdown_waits_for_active_document_to_finish() {
         test_extraction_generator(),
         shutdown_rx,
         inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
     );
     let document_id = Uuid::new_v4().to_string();
     sender
@@ -1950,6 +1954,7 @@ async fn shutdown_drains_acknowledged_queue() {
         test_extraction_generator(),
         shutdown_rx,
         inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
     );
 
     let doc_id_1 = Uuid::new_v4().to_string();
@@ -2045,6 +2050,7 @@ async fn startup_recovery_processes_staged_document() {
         test_extraction_generator(),
         shutdown_rx,
         inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
     );
 
     statuses.insert(job.document_id.clone(), IngestionStatus::queued());
@@ -2100,6 +2106,7 @@ async fn startup_recovery_exceeds_queue_capacity_without_deadlock() {
             test_extraction_generator(),
             shutdown_rx,
             inert_rebuild_tx(),
+            RebuildTriggerLinks::default(),
         );
 
         let staged_jobs = read_staged_jobs(&database).await.unwrap();
@@ -2223,6 +2230,7 @@ async fn staging_delete_failure_remains_replayable() {
         Arc::new(boundary),
         shutdown_rx,
         inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
     );
 
     let job = read_staged_jobs(&database)
@@ -2314,6 +2322,7 @@ async fn embedding_failure_restart_converges_cross_store() {
             Arc::new(boundary),
             shutdown_rx,
             inert_rebuild_tx(),
+            RebuildTriggerLinks::default(),
         );
 
         let job = read_staged_jobs(&db1)
@@ -2359,6 +2368,7 @@ async fn embedding_failure_restart_converges_cross_store() {
             test_extraction_generator(),
             shutdown_rx,
             inert_rebuild_tx(),
+            RebuildTriggerLinks::default(),
         );
 
         let staged_jobs = read_staged_jobs(&db2).await.unwrap();
@@ -2436,6 +2446,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             Arc::new(boundary),
             shutdown_rx,
             inert_rebuild_tx(),
+            RebuildTriggerLinks::default(),
         );
 
         let staged_jobs = read_staged_jobs(&database).await.unwrap();
@@ -2474,6 +2485,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             test_extraction_generator(),
             shutdown_rx,
             inert_rebuild_tx(),
+            RebuildTriggerLinks::default(),
         );
 
         let staged_jobs = read_staged_jobs(&database).await.unwrap();
@@ -4416,6 +4428,7 @@ async fn read_staged_jobs_latest_generation_wins() {
             ("chunk_overlap".to_string(), "50".to_string()),
         ]))
         .unwrap(),
+        trace_parent: None,
     };
 
     let job_v2 = IngestionJob {
@@ -4433,6 +4446,7 @@ async fn read_staged_jobs_latest_generation_wins() {
             ("chunk_overlap".to_string(), "50".to_string()),
         ]))
         .unwrap(),
+        trace_parent: None,
     };
 
     let rows = vec![
@@ -7599,6 +7613,7 @@ async fn worker_queue_extracted_graph_facts_reach_provider_request_body() {
         Arc::new(fake_gen),
         shutdown_rx,
         inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
     );
 
     let graph_doc_id = Uuid::new_v4().to_string();
@@ -8145,6 +8160,7 @@ async fn rebuild_checkout_latest_failure_degrades_not_fails() {
 
 #[tokio::test]
 async fn debounce_coalesces_burst() {
+    let _lock = engine::ingest::REBUILD_TEST_MUTEX.lock().await;
     let path = database_path("debounce-burst");
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let service = configured_service(
@@ -8174,6 +8190,7 @@ async fn debounce_coalesces_burst() {
         service.corpus_store.clone(),
         service.effective_settings.retrieval.bm25.clone(),
         std::time::Duration::from_millis(200),
+        RebuildTriggerLinks::default(),
     );
 
     // Send 5 rapid notifications within 50ms (well within the 200ms debounce window)
@@ -8198,6 +8215,7 @@ async fn debounce_coalesces_burst() {
 
 #[tokio::test]
 async fn debounce_task_terminates_on_shutdown_signal() {
+    let _lock = engine::ingest::REBUILD_TEST_MUTEX.lock().await;
     let path = database_path("debounce-shutdown");
     let database = DatabaseManager::initialize(&path).await.unwrap();
     let service = configured_service(
@@ -8226,6 +8244,7 @@ async fn debounce_task_terminates_on_shutdown_signal() {
         service.corpus_store.clone(),
         service.effective_settings.retrieval.bm25.clone(),
         std::time::Duration::from_millis(5000),
+        RebuildTriggerLinks::default(),
     );
 
     shutdown_tx.send(true).unwrap();

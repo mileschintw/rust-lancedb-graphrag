@@ -93,17 +93,6 @@ impl Node for GenerateAnswerNode {
                 ));
             }
 
-            if ctx.assembled_prompt.is_empty() {
-                return Err(NodeError::new(
-                    NodeErrorKind::PromptAssemblyFailed,
-                    "Cannot generate answer without assembled prompt",
-                )
-                .with_context(
-                    Some(ctx.session_id.clone()),
-                    Some(ctx.trace_id.clone()),
-                ));
-            }
-
             let generator = match &self.generator {
                 Some(g) => g,
                 None => {
