@@ -40,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         nodes_version,
         false,
     ));
+    engine::telemetry::metrics::record_corpus_generation(initial_snapshot.nodes_version);
     tracing::info!(
         document_count = initial_snapshot.bm25.len(),
         generation = %initial_snapshot.generation,

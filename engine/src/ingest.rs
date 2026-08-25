@@ -1534,6 +1534,7 @@ pub async fn rebuild_and_swap(
     corpus_store: &crate::workflow::ports::CorpusStore,
     bm25_settings: crate::retrieval::Bm25Config,
 ) -> Result<Arc<crate::workflow::ports::CorpusSnapshot>, String> {
+    let rebuild_start = std::time::Instant::now();
     REBUILD_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let prior = {
@@ -1558,14 +1559,26 @@ pub async fn rebuild_and_swap(
             *write_guard = degraded_snapshot;
             current_span.record("lancet.index.generation_after", &prior.generation);
             current_span.record("lancet.index.nodes_version_after", prior.nodes_version);
+            let elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+            crate::telemetry::metrics::record_index_rebuild_duration_ms(
+                crate::telemetry::metrics::REBUILD_FAILED,
+                elapsed_ms,
+            );
             return Err("injected rebuild failure".into());
         }
     }
 
-    let nodes_latest = database
-        .nodes_table()
-        .await
-        .map_err(|err| format!("failed to open nodes table: {err}"))?;
+    let nodes_latest = match database.nodes_table().await {
+        Ok(t) => t,
+        Err(err) => {
+            let elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+            crate::telemetry::metrics::record_index_rebuild_duration_ms(
+                crate::telemetry::metrics::REBUILD_FAILED,
+                elapsed_ms,
+            );
+            return Err(format!("failed to open nodes table: {err}"));
+        }
+    };
 
     #[cfg(test)]
     let checkout_res = if REBUILD_CHECKOUT_FAIL_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst) {
@@ -1590,13 +1603,25 @@ pub async fn rebuild_and_swap(
         *write_guard = degraded_snapshot;
         current_span.record("lancet.index.generation_after", &prior.generation);
         current_span.record("lancet.index.nodes_version_after", prior.nodes_version);
+        let elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+        crate::telemetry::metrics::record_index_rebuild_duration_ms(
+            crate::telemetry::metrics::REBUILD_FAILED,
+            elapsed_ms,
+        );
         return Err(format!("nodes table checkout_latest failed: {err}"));
     }
 
-    let nodes_version = nodes_latest
-        .version()
-        .await
-        .map_err(|err| format!("failed to read nodes table version: {err}"))?;
+    let nodes_version = match nodes_latest.version().await {
+        Ok(v) => v,
+        Err(err) => {
+            let elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+            crate::telemetry::metrics::record_index_rebuild_duration_ms(
+                crate::telemetry::metrics::REBUILD_FAILED,
+                elapsed_ms,
+            );
+            return Err(format!("failed to read nodes table version: {err}"));
+        }
+    };
 
     // Build BM25 index off the write lock
     let new_bm25 = match crate::retrieval::Bm25Index::from_table(&nodes_latest, bm25_settings).await {
@@ -1613,6 +1638,11 @@ pub async fn rebuild_and_swap(
             *write_guard = degraded_snapshot;
             current_span.record("lancet.index.generation_after", &prior.generation);
             current_span.record("lancet.index.nodes_version_after", prior.nodes_version);
+            let elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+            crate::telemetry::metrics::record_index_rebuild_duration_ms(
+                crate::telemetry::metrics::REBUILD_FAILED,
+                elapsed_ms,
+            );
             return Err(format!("BM25 rebuild failed: {err}"));
         }
     };
@@ -1637,6 +1667,13 @@ pub async fn rebuild_and_swap(
 
     current_span.record("lancet.index.generation_after", &new_snapshot.generation);
     current_span.record("lancet.index.nodes_version_after", new_snapshot.nodes_version);
+
+    let elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+    crate::telemetry::metrics::record_index_rebuild_duration_ms(
+        crate::telemetry::metrics::REBUILD_COMPLETED,
+        elapsed_ms,
+    );
+    crate::telemetry::metrics::record_corpus_generation(new_snapshot.nodes_version);
 
     Ok(new_snapshot)
 }
@@ -1874,12 +1911,19 @@ pub fn spawn_worker_with_boundary(
                                 error_message: String::new(),
                             },
                         );
+                        crate::telemetry::metrics::record_ingest_document(
+                            crate::telemetry::metrics::INGEST_COMPLETED,
+                        );
+                        crate::telemetry::metrics::record_ingest_chunks(chunk_count as u64);
                         trigger_links.push_current();
                         rebuild_tx.send_modify(|v| *v = v.wrapping_add(1));
                         tracing::info!(%job.document_id, chunk_count, "indexing completed");
                     }
                     Err(error) => {
                         tracing::Span::current().set_status(opentelemetry::trace::Status::error(error.clone()));
+                        crate::telemetry::metrics::record_ingest_document(
+                            crate::telemetry::metrics::INGEST_FAILED,
+                        );
                         let predicate = format!("document_id = '{}'", escape_sql_literal(&document_id));
                         let delete_res = async {
                             let staged = database

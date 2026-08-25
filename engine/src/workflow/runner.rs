@@ -593,6 +593,22 @@ impl WorkflowRunner {
         };
         crate::telemetry::metrics::record_query_duration_ms(outcome, duration_ms.max(0) as u64);
 
+        if error.is_none() {
+            match ctx.answer_basis {
+                crate::pb::lancet::v1::AnswerBasis::Mixed => {
+                    crate::telemetry::metrics::record_answer_degraded(
+                        crate::telemetry::metrics::BASIS_MIXED,
+                    );
+                }
+                crate::pb::lancet::v1::AnswerBasis::ModelOnly => {
+                    crate::telemetry::metrics::record_answer_degraded(
+                        crate::telemetry::metrics::BASIS_MODEL_ONLY,
+                    );
+                }
+                _ => {}
+            }
+        }
+
         match error {
             None => {
                 let response = ctx.to_query_rag_response();

@@ -193,12 +193,18 @@ impl Node for GenerateAnswerNode {
                                     attempt2_span.record("gen_ai.usage.input_tokens", usage.prompt_tokens as u64);
                                     attempt2_span.record("gen_ai.usage.output_tokens", usage.completion_tokens as u64);
                                 }
+                                crate::telemetry::metrics::record_generation_retry(
+                                    crate::telemetry::metrics::RETRY_RECOVERED,
+                                );
                             }
                             Err(err) => {
                                 attempt2_span.record("lancet.attempt.outcome", "error");
                                 tracing_opentelemetry::OpenTelemetrySpanExt::set_status(
                                     &attempt2_span,
                                     opentelemetry::trace::Status::error(format!("attempt 2 failed: {:?}", err.kind)),
+                                );
+                                crate::telemetry::metrics::record_generation_retry(
+                                    crate::telemetry::metrics::RETRY_EXHAUSTED,
                                 );
                             }
                         }
@@ -279,6 +285,9 @@ impl Node for GenerateAnswerNode {
                                         ),
                                         crate::pb::lancet::v1::NoticeSeverity::Info,
                                     ));
+                                    crate::telemetry::metrics::record_citation_repair(
+                                        crate::telemetry::metrics::ACTION_REPAIRED,
+                                    );
                                 }
                                 Resolution::Dropped => {
                                     edits.push((outcome.span, None));
@@ -290,6 +299,9 @@ impl Node for GenerateAnswerNode {
                                         ),
                                         crate::pb::lancet::v1::NoticeSeverity::Info,
                                     ));
+                                    crate::telemetry::metrics::record_citation_repair(
+                                        crate::telemetry::metrics::ACTION_DROPPED,
+                                    );
                                 }
                             }
                         }

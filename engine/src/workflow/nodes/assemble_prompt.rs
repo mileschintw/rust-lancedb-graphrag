@@ -75,6 +75,7 @@ impl Node for AssemblePromptNode {
                     ));
                 }
                 ctx.assembled_prompt = crate::prompt::pack_model_only_prompt(&ctx.original_query);
+                crate::telemetry::metrics::record_evidence_set_size(0);
                 return Ok(());
             }
 
@@ -93,6 +94,9 @@ impl Node for AssemblePromptNode {
                     ctx.assembled_prompt = packed.prompt;
                     ctx.evidence_blocks = packed.evidence;
                     ctx.graph_facts = packed.graph_facts;
+                    crate::telemetry::metrics::record_evidence_set_size(
+                        ctx.evidence_blocks.len() as u64,
+                    );
                     Ok(())
                 }
                 Err(PromptAssemblyError::Cancelled) => Err(NodeError::cancelled()),

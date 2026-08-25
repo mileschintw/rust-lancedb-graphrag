@@ -132,6 +132,10 @@ impl Node for ExtractGraphContextNode {
                                 "Graph query returned no facts for this query",
                                 NoticeSeverity::Info,
                             ));
+                            crate::telemetry::metrics::record_retrieval_path_failure(
+                                crate::telemetry::metrics::PATH_GRAPH,
+                                crate::telemetry::metrics::KIND_UNAVAILABLE,
+                            );
                         } else {
                             let mut unique_nodes = std::collections::HashSet::new();
                             for f in &facts {
@@ -158,7 +162,7 @@ impl Node for ExtractGraphContextNode {
                     Err(err) => {
                         ctx.graph_context = String::new();
                         ctx.graph_facts = Vec::new();
-                        let (code, msg) = if err.kind == NodeErrorKind::Timeout {
+                        let (code, msg, kind) = if err.kind == NodeErrorKind::Timeout {
                             (
                                 NoticeCode::GraphTimeout,
                                 if err.message.is_empty() {
@@ -166,14 +170,20 @@ impl Node for ExtractGraphContextNode {
                                 } else {
                                     err.message
                                 },
+                                crate::telemetry::metrics::KIND_TIMEOUT,
                             )
                         } else {
                             (
                                 NoticeCode::GraphDegraded,
                                 format!("graph_degrade: {}", err.message),
+                                crate::telemetry::metrics::KIND_ERROR,
                             )
                         };
                         ctx.add_notice(notice(code, msg, NoticeSeverity::Info));
+                        crate::telemetry::metrics::record_retrieval_path_failure(
+                            crate::telemetry::metrics::PATH_GRAPH,
+                            kind,
+                        );
                         return Ok(());
                     }
                 }
@@ -185,6 +195,10 @@ impl Node for ExtractGraphContextNode {
                     "Graph context is not configured; answer produced from source chunks only",
                     NoticeSeverity::Info,
                 ));
+                crate::telemetry::metrics::record_retrieval_path_failure(
+                    crate::telemetry::metrics::PATH_GRAPH,
+                    crate::telemetry::metrics::KIND_UNAVAILABLE,
+                );
             }
 
             Ok(())

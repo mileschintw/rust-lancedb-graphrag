@@ -104,6 +104,17 @@ impl RetrieveHybridNode {
                         msg,
                         NoticeSeverity::Info,
                     ));
+                    let kind = match err.kind {
+                        NodeErrorKind::Timeout => crate::telemetry::metrics::KIND_TIMEOUT,
+                        _ if err.message.to_lowercase().contains("unavailable") => {
+                            crate::telemetry::metrics::KIND_UNAVAILABLE
+                        }
+                        _ => crate::telemetry::metrics::KIND_ERROR,
+                    };
+                    crate::telemetry::metrics::record_retrieval_path_failure(
+                        crate::telemetry::metrics::PATH_DENSE,
+                        kind,
+                    );
                     Vec::new()
                 }
             }
@@ -157,6 +168,17 @@ impl RetrieveHybridNode {
                             msg,
                             NoticeSeverity::Info,
                         ));
+                        let kind = match err.kind {
+                            NodeErrorKind::Timeout => crate::telemetry::metrics::KIND_TIMEOUT,
+                            _ if err.message.to_lowercase().contains("unavailable") => {
+                                crate::telemetry::metrics::KIND_UNAVAILABLE
+                            }
+                            _ => crate::telemetry::metrics::KIND_ERROR,
+                        };
+                        crate::telemetry::metrics::record_retrieval_path_failure(
+                            crate::telemetry::metrics::PATH_BM25,
+                            kind,
+                        );
                         Vec::new()
                     }
                 }
