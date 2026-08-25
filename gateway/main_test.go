@@ -5214,3 +5214,290 @@ func TestRootSpanStatusSetOnEveryExitPath(t *testing.T) {
 	}
 }
 
+type inMemLogExporterMain struct {
+	mu      sync.Mutex
+	records []sdklog.Record
+}
+
+func (e *inMemLogExporterMain) Export(ctx context.Context, records []sdklog.Record) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, r := range records {
+		e.records = append(e.records, r.Clone())
+	}
+	return nil
+}
+
+func (e *inMemLogExporterMain) Shutdown(ctx context.Context) error   { return nil }
+func (e *inMemLogExporterMain) ForceFlush(ctx context.Context) error { return nil }
+func (e *inMemLogExporterMain) GetRecords() []sdklog.Record {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]sdklog.Record(nil), e.records...)
+}
+
+func TestMigratedLogsCarryNoUserContent(t *testing.T) {
+	exporter := &inMemLogExporterMain{}
+	processor := sdklog.NewSimpleProcessor(exporter)
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(processor))
+	defer func() { _ = lp.Shutdown(t.Context()) }()
+
+	logger := zap.New(telemetry.WrapCore(zapcore.NewNopCore(), lp))
+
+	sensitiveQuery := "SECRET_QUERY_TEXT_TOP_SECRET"
+	sensitiveAnswer := "SECRET_ANSWER_TEXT_TOP_SECRET"
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					Event: &pb.WorkflowEvent_WorkflowCompleted{
+						WorkflowCompleted: &pb.WorkflowCompletedEvent{
+							FinalResponse: &pb.QueryRAGResponse{
+								Answer: sensitiveAnswer,
+							},
+						},
+					},
+				},
+			}
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     logger,
+		dispatcher: NewCheckpointDispatcherWithLogger(nil, logger),
+	}
+
+	reqBody := fmt.Sprintf(`{"query":"%s","session_id":"00000000-0000-4000-8000-000000000001"}`, sensitiveQuery)
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	appInstance.routes().ServeHTTP(rec, req)
+
+	records := exporter.GetRecords()
+	for _, r := range records {
+		msg := r.Body().AsString()
+		if strings.Contains(msg, sensitiveQuery) || strings.Contains(msg, sensitiveAnswer) {
+			t.Errorf("found user content in log body: %s", msg)
+		}
+		r.WalkAttributes(func(kv attribute.KeyValue) bool {
+			val := kv.Value.AsString()
+			if strings.Contains(val, sensitiveQuery) || strings.Contains(val, sensitiveAnswer) {
+				t.Errorf("found user content in log attribute %s: %s", kv.Key, val)
+			}
+			return true
+		})
+	}
+}
+
+func TestCheckpointRetentionLogCarriesRequestTrace(t *testing.T) {
+	telemetry.SetupPropagator()
+	exporter := &inMemLogExporterMain{}
+	processor := sdklog.NewSimpleProcessor(exporter)
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(processor))
+	defer func() { _ = lp.Shutdown(t.Context()) }()
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	logger := zap.New(telemetry.WrapCore(zapcore.NewNopCore(), lp))
+
+	// Closed dispatcher triggers error in RetainPending
+	disp := NewCheckpointDispatcherWithLogger(nil, logger)
+	disp.Close()
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					Event: &pb.WorkflowEvent_Checkpoint{
+						Checkpoint: &pb.CheckpointEvent{
+							CheckpointType:  "NodeCompleted",
+							SequenceOrdinal: 1,
+							ContextSnapshot: `{"node":"TestNode"}`,
+						},
+					},
+				},
+				{
+					Event: &pb.WorkflowEvent_WorkflowCompleted{
+						WorkflowCompleted: &pb.WorkflowCompletedEvent{
+							FinalResponse: &pb.QueryRAGResponse{
+								Answer: "Answer",
+							},
+						},
+					},
+				},
+			}
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     logger,
+		dispatcher: disp,
+	}
+
+	otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+
+	traceIDHex := "4bf92f3577b34da6a3ce929d0e0e4736"
+	traceID, _ := trace.TraceIDFromHex(traceIDHex)
+	spanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	req = req.WithContext(trace.ContextWithRemoteSpanContext(req.Context(), sc))
+	rec := httptest.NewRecorder()
+
+	otelHandler.ServeHTTP(rec, req)
+
+	records := exporter.GetRecords()
+	var retentionRecord *sdklog.Record
+	for _, r := range records {
+		if r.Body().AsString() == "retain pending checkpoint failed" {
+			recCopy := r
+			retentionRecord = &recCopy
+			break
+		}
+	}
+
+	if retentionRecord == nil {
+		t.Fatalf("expected 'retain pending checkpoint failed' log record to be emitted, got %d total records", len(records))
+	}
+	if retentionRecord.TraceID() != traceID {
+		t.Errorf("expected retention log trace ID %s, got %s", traceID, retentionRecord.TraceID())
+	}
+}
+
+func TestCompensationLogStaysBackground(t *testing.T) {
+	exporter := &inMemLogExporterMain{}
+	processor := sdklog.NewSimpleProcessor(exporter)
+	lp := sdklog.NewLoggerProvider(sdklog.WithProcessor(processor))
+	defer func() { _ = lp.Shutdown(t.Context()) }()
+
+	logger := zap.New(telemetry.WrapCore(zapcore.NewNopCore(), lp))
+
+	store := &fakeStore{
+		updateErr: errors.New("db down"),
+	}
+
+	appInstance := app{
+		store:      store,
+		logger:     logger,
+		retrySleep: func(attempt int) {}, // no sleep
+	}
+
+	appInstance.compensateFailedIngest("doc-comp-test-id", errors.New("ingest worker failed"))
+
+	records := exporter.GetRecords()
+	var compRecord *sdklog.Record
+	for _, r := range records {
+		if r.Body().AsString() == "compensate failed ingestion" {
+			recCopy := r
+			compRecord = &recCopy
+			break
+		}
+	}
+
+	if compRecord == nil {
+		t.Fatalf("expected 'compensate failed ingestion' log record, got %d total records", len(records))
+	}
+	if compRecord.TraceID().IsValid() {
+		t.Errorf("expected compensation log to have no trace ID, got %s", compRecord.TraceID())
+	}
+
+	foundDocID := false
+	compRecord.WalkAttributes(func(kv attribute.KeyValue) bool {
+		if kv.Key == "document_id" && kv.Value.AsString() == "doc-comp-test-id" {
+			foundDocID = true
+		}
+		return true
+	})
+	if !foundDocID {
+		t.Errorf("expected document_id attribute on compensation log record")
+	}
+}
+
+func TestGatewaySpanRecordsDegradedModeFromTerminalEvent(t *testing.T) {
+	cases := []struct {
+		name         string
+		degradedMode bool
+	}{
+		{name: "degraded_true", degradedMode: true},
+		{name: "degraded_false", degradedMode: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sr := tracetest.NewSpanRecorder()
+			tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+			defer func() { _ = tp.Shutdown(t.Context()) }()
+
+			engine := engineFunc{
+				queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+					events := []*pb.WorkflowEvent{
+						{
+							Event: &pb.WorkflowEvent_WorkflowCompleted{
+								WorkflowCompleted: &pb.WorkflowCompletedEvent{
+									Success: true,
+									Metadata: &pb.WorkflowMetadata{
+										DegradedMode: tc.degradedMode,
+									},
+								},
+							},
+						},
+					}
+					return &fakeQueryRAGStream{events: events}, nil
+				},
+			}
+
+			appInstance := app{
+				store:      &fakeStore{},
+				engine:     engine,
+				logger:     zap.NewNop(),
+				dispatcher: NewCheckpointDispatcher(nil),
+			}
+
+			otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+
+			req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			otelHandler.ServeHTTP(rec, req)
+
+			spans := sr.Ended()
+			if len(spans) == 0 {
+				t.Fatalf("expected recorded span")
+			}
+
+			var foundDegraded *bool
+			for _, attr := range spans[0].Attributes() {
+				if string(attr.Key) == "lancet.degraded_mode" {
+					b := attr.Value.AsBool()
+					foundDegraded = &b
+				}
+			}
+
+			if foundDegraded == nil {
+				t.Fatalf("expected 'lancet.degraded_mode' attribute on request span")
+			}
+			if *foundDegraded != tc.degradedMode {
+				t.Errorf("expected degraded_mode %v, got %v", tc.degradedMode, *foundDegraded)
+			}
+		})
+	}
+}
+

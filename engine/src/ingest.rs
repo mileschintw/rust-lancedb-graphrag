@@ -1766,6 +1766,7 @@ pub fn spawn_rebuild_debounce_task(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_worker(
     receiver: mpsc::Receiver<IngestionJob>,
     statuses: Arc<DashMap<String, IngestionStatus>>,

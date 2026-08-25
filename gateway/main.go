@@ -433,7 +433,7 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 		ChunkOverlap:  int32(chunkOverlap),
 	})
 	if err != nil {
-		a.logger.Error("insert document", zap.Error(err))
+		a.logger.Error("insert document", zap.Error(err), telemetry.Ctx(r.Context()))
 		http.Error(w, "could not queue document", http.StatusInternalServerError)
 		return
 	}
@@ -605,6 +605,11 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 			span.SetAttributes(
 				attribute.StringSlice("lancet.notice_codes", extractNoticeCodes(notices)),
 			)
+			if meta := completedEvent.GetMetadata(); meta != nil {
+				span.SetAttributes(
+					attribute.Bool("lancet.degraded_mode", meta.GetDegradedMode()),
+				)
+			}
 			if completedEvent.Success {
 				span.SetStatus(otelcodes.Ok, "")
 			} else {
@@ -723,7 +728,7 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		completedEvent = cp
 	}
 	if r.Context().Err() == nil {
-		a.writeWorkflowEvent(w, rc, firstFrame)
+		a.writeWorkflowEvent(r.Context(), w, rc, firstFrame)
 	}
 
 	for {
@@ -754,11 +759,11 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 			sawWorkflowCompleted = true
 			completedEvent = cp
 		}
-		a.writeWorkflowEvent(w, rc, ev)
+		a.writeWorkflowEvent(r.Context(), w, rc, ev)
 	}
 }
 
-func (a app) writeWorkflowEvent(w http.ResponseWriter, rc *http.ResponseController, ev *pb.WorkflowEvent) {
+func (a app) writeWorkflowEvent(ctx context.Context, w http.ResponseWriter, rc *http.ResponseController, ev *pb.WorkflowEvent) {
 	if ev == nil {
 		return
 	}
@@ -769,7 +774,7 @@ func (a app) writeWorkflowEvent(w http.ResponseWriter, rc *http.ResponseControll
 			res := a.dispatcher.Submit(env)
 			if res.Kind == DispatchPending && res.Envelope != nil {
 				if err := a.dispatcher.RetainPending(res.Envelope); err != nil && a.logger != nil {
-					a.logger.Error("retain pending checkpoint failed", zap.Error(err), zap.String("trace_id", env.TraceID))
+					a.logger.Error("retain pending checkpoint failed", zap.Error(err), zap.String("trace_id", env.TraceID), telemetry.Ctx(ctx))
 				}
 			}
 		}

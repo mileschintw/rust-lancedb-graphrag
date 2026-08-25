@@ -609,6 +609,39 @@ impl WorkflowRunner {
             }
         }
 
+        let completed_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let reformulation_used =
+            !ctx.variants.is_empty() && ctx.variants.as_slice() != [ctx.original_query.clone()];
+        let degraded_mode = crate::workflow::derive_degraded_mode(&ctx.notices, ctx.answer_basis);
+
+        let metadata = crate::pb::lancet::v1::WorkflowMetadata {
+            started_at_ms: ctx.started_at_ms,
+            completed_at_ms,
+            reformulation_used,
+            vector_count: ctx.vector_results.len() as u32,
+            bm25_count: ctx.bm25_results.len() as u32,
+            graph_node_count: ctx.graph_node_count,
+            graph_edge_count: ctx.graph_edge_count,
+            prompt_tokens: ctx.prompt_tokens,
+            completion_tokens: ctx.completion_tokens,
+            degraded_mode,
+        };
+
+        let current_span = tracing::Span::current();
+        current_span.record("lancet.workflow.started_at_ms", metadata.started_at_ms);
+        current_span.record("lancet.workflow.completed_at_ms", metadata.completed_at_ms);
+        current_span.record("lancet.workflow.reformulation_used", metadata.reformulation_used);
+        current_span.record("lancet.workflow.vector_count", metadata.vector_count);
+        current_span.record("lancet.workflow.bm25_count", metadata.bm25_count);
+        current_span.record("lancet.workflow.graph_node_count", metadata.graph_node_count);
+        current_span.record("lancet.workflow.graph_edge_count", metadata.graph_edge_count);
+        current_span.record("lancet.workflow.prompt_tokens", metadata.prompt_tokens);
+        current_span.record("lancet.workflow.completion_tokens", metadata.completion_tokens);
+        current_span.record("lancet.degraded_mode", metadata.degraded_mode);
+
         match error {
             None => {
                 let response = ctx.to_query_rag_response();
@@ -625,6 +658,7 @@ impl WorkflowRunner {
                     "",
                     Some(response),
                     ctx.notices.clone(),
+                    Some(metadata),
                 );
                 sink.send_terminal_event(event).await;
             }
@@ -636,6 +670,7 @@ impl WorkflowRunner {
                     err.message,
                     None,
                     ctx.notices.clone(),
+                    Some(metadata),
                 );
                 sink.send_terminal_event(event).await;
             }

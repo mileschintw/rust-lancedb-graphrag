@@ -376,3 +376,78 @@ func TestQueryRAGResponseDTOJSONKeys(t *testing.T) {
 		t.Fatalf("response DTO key count: got %d (%s), want %d — update this test and the wire contract deliberately", len(payload), data, len(want))
 	}
 }
+
+func TestSSEWorkflowCompletedMetadataForwarding(t *testing.T) {
+	meta := &pb.WorkflowMetadata{
+		StartedAtMs:       1700000000000,
+		CompletedAtMs:     1700000001500,
+		ReformulationUsed: true,
+		VectorCount:       5,
+		Bm25Count:         3,
+		GraphNodeCount:    4,
+		GraphEdgeCount:    6,
+		PromptTokens:      120,
+		CompletionTokens:  45,
+		DegradedMode:      true,
+	}
+
+	ev := &pb.WorkflowEvent{
+		Event: &pb.WorkflowEvent_WorkflowCompleted{
+			WorkflowCompleted: &pb.WorkflowCompletedEvent{
+				Success:    true,
+				DurationMs: 1500,
+				Metadata:   meta,
+			},
+		},
+	}
+
+	raw := writeEvent(t, ev)
+	name, data := splitFrame(t, raw)
+	if name != "workflow_completed" {
+		t.Fatalf("expected event name 'workflow_completed', got %q", name)
+	}
+
+	var payload struct {
+		Success    bool           `json:"success"`
+		DurationMs int64          `json:"duration_ms"`
+		Metadata   map[string]any `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+
+	if payload.Metadata == nil {
+		t.Fatal("expected metadata map in workflow_completed payload")
+	}
+
+	if payload.Metadata["started_at_ms"] != float64(1700000000000) {
+		t.Errorf("started_at_ms: got %v, want 1700000000000", payload.Metadata["started_at_ms"])
+	}
+	if payload.Metadata["completed_at_ms"] != float64(1700000001500) {
+		t.Errorf("completed_at_ms: got %v, want 1700000001500", payload.Metadata["completed_at_ms"])
+	}
+	if payload.Metadata["reformulation_used"] != true {
+		t.Errorf("reformulation_used: got %v, want true", payload.Metadata["reformulation_used"])
+	}
+	if payload.Metadata["vector_count"] != float64(5) {
+		t.Errorf("vector_count: got %v, want 5", payload.Metadata["vector_count"])
+	}
+	if payload.Metadata["bm25_count"] != float64(3) {
+		t.Errorf("bm25_count: got %v, want 3", payload.Metadata["bm25_count"])
+	}
+	if payload.Metadata["graph_node_count"] != float64(4) {
+		t.Errorf("graph_node_count: got %v, want 4", payload.Metadata["graph_node_count"])
+	}
+	if payload.Metadata["graph_edge_count"] != float64(6) {
+		t.Errorf("graph_edge_count: got %v, want 6", payload.Metadata["graph_edge_count"])
+	}
+	if payload.Metadata["prompt_tokens"] != float64(120) {
+		t.Errorf("prompt_tokens: got %v, want 120", payload.Metadata["prompt_tokens"])
+	}
+	if payload.Metadata["completion_tokens"] != float64(45) {
+		t.Errorf("completion_tokens: got %v, want 45", payload.Metadata["completion_tokens"])
+	}
+	if payload.Metadata["degraded_mode"] != true {
+		t.Errorf("degraded_mode: got %v, want true", payload.Metadata["degraded_mode"])
+	}
+}

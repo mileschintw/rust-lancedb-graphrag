@@ -911,6 +911,16 @@ impl LancetService for LancetServiceImpl {
             graph_augmentation = tracing::field::Empty,
             session_id = %session_id,
             correlation_id = %correlation_id,
+            "lancet.workflow.started_at_ms" = tracing::field::Empty,
+            "lancet.workflow.completed_at_ms" = tracing::field::Empty,
+            "lancet.workflow.reformulation_used" = tracing::field::Empty,
+            "lancet.workflow.vector_count" = tracing::field::Empty,
+            "lancet.workflow.bm25_count" = tracing::field::Empty,
+            "lancet.workflow.graph_node_count" = tracing::field::Empty,
+            "lancet.workflow.graph_edge_count" = tracing::field::Empty,
+            "lancet.workflow.prompt_tokens" = tracing::field::Empty,
+            "lancet.workflow.completion_tokens" = tracing::field::Empty,
+            "lancet.degraded_mode" = tracing::field::Empty,
         );
         let _ = tracing_opentelemetry::OpenTelemetrySpanExt::set_parent(&parent_span, parent_context);
 

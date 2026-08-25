@@ -361,6 +361,7 @@ pub fn workflow_completed(
     error_message: impl Into<String>,
     final_response: Option<QueryRagResponse>,
     notices: Vec<Notice>,
+    metadata: Option<crate::pb::lancet::v1::WorkflowMetadata>,
 ) -> Event {
     Event::WorkflowCompleted(WorkflowCompletedEvent {
         success,
@@ -369,6 +370,6 @@ pub fn workflow_completed(
         error_message: error_message.into(),
         final_response,
         notices,
-        metadata: None,
+        metadata,
     })
 }

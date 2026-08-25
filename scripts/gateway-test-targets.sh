@@ -14,16 +14,16 @@
 #   80 — 75 plus TestBadInputMatrixHTTP (plan 06-12), the D-15 bad-input matrix's HTTP half.
 set -e
 
-EXPECTED_TOTAL=98
+EXPECTED_TOTAL=107
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 74
+EXPECTED_PACKAGES="gateway 78
 gateway/db 7
 gateway/internal/config 4
-gateway/internal/sse 8
-gateway/internal/telemetry 5"
+gateway/internal/sse 9
+gateway/internal/telemetry 9"
 
 # Ensure go is found in standard user environments
 GO_CMD="go"

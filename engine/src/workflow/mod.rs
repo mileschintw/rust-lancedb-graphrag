@@ -105,6 +105,9 @@ pub struct WorkflowContext {
     pub graph_node_count: u32,
     pub graph_edge_count: u32,
     pub generation_attempts: u32,
+    pub started_at_ms: i64,
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
 }
 
 impl WorkflowContext {
@@ -134,6 +137,12 @@ impl WorkflowContext {
             graph_node_count: 0,
             graph_edge_count: 0,
             generation_attempts: 0,
+            started_at_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0),
+            prompt_tokens: 0,
+            completion_tokens: 0,
         }
     }
 
@@ -168,6 +177,11 @@ impl WorkflowContext {
     pub fn update_from_model_output(&mut self, output: &ModelOutput) {
         self.answer = output.answer.clone();
         self.citations = output.cited_evidence_ids.clone();
+
+        if let Some(usage) = &output.usage {
+            self.prompt_tokens = usage.prompt_tokens;
+            self.completion_tokens = usage.completion_tokens;
+        }
 
         // D-18: conservative-wins reconciliation. The model self-reports a basis; the
         // engine's own observation is deliberately coarse — citations present means "at
@@ -216,6 +230,44 @@ impl WorkflowContext {
             ));
         }
     }
+}
+
+/// Derives whether a query run operated in degraded mode (D-31, D-41, §4.2).
+///
+/// True when any notice in the terminal notice set is in the included code set or when
+/// the answer basis is anything other than Retrieval. Excluded codes (NoEvidence, ModelNotice,
+/// ModelWarning, CitationRepaired, GraphAblation, and Unspecified) evaluate to false.
+pub fn derive_degraded_mode(
+    notices: &[Notice],
+    answer_basis: AnswerBasis,
+) -> bool {
+    if answer_basis != AnswerBasis::Retrieval {
+        return true;
+    }
+    for notice in notices {
+        if let Ok(code) = NoticeCode::try_from(notice.typed_code) {
+            match code {
+                NoticeCode::GraphUnavailable
+                | NoticeCode::GraphDegraded
+                | NoticeCode::GraphTimeout
+                | NoticeCode::RetrievalDegradedDense
+                | NoticeCode::RetrievalDegradedBm25
+                | NoticeCode::CitationDropped
+                | NoticeCode::ModelOnly
+                | NoticeCode::BasisReconciled
+                | NoticeCode::IndexRebuildFailed
+                | NoticeCode::IndexStale
+                | NoticeCode::IndexGenerationMismatch => return true,
+                NoticeCode::Unspecified
+                | NoticeCode::NoEvidence
+                | NoticeCode::ModelNotice
+                | NoticeCode::ModelWarning
+                | NoticeCode::CitationRepaired
+                | NoticeCode::GraphAblation => {}
+            }
+        }
+    }
+    false
 }
 
 pub struct WorkflowDependencies {
