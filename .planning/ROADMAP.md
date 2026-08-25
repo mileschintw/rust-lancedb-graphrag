@@ -742,3 +742,14 @@ Plans:
 Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.11: Add compatibility of using a local sglang endpoint as inference api instead of just openrouter (BACKLOG)
+
+**Goal:** Add compatibility for using a local SGLang endpoint as an inference API alongside or instead of OpenRouter.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
