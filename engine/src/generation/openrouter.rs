@@ -801,6 +801,10 @@ impl OpenRouterGenerator {
 }
 
 impl Generator for OpenRouterGenerator {
+    fn model_id(&self) -> &str {
+        &self.config.model
+    }
+
     fn prepare<'a>(&'a self) -> BoxFuture<'a, Result<(), GenerationError>> {
         Box::pin(async move { self.check_supported_parameters().await })
     }

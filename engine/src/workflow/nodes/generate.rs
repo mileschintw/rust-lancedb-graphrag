@@ -119,7 +119,7 @@ impl Node for GenerateAnswerNode {
             let attempt1_span = tracing::info_span!(
                 "llm_attempt",
                 attempt = 1u64,
-                gen_ai.request.model = "google/gemini-2.5-flash",
+                gen_ai.request.model = %generator.model_id(),
                 lancet.attempt.outcome = tracing::field::Empty,
                 gen_ai.usage.input_tokens = tracing::field::Empty,
                 gen_ai.usage.output_tokens = tracing::field::Empty,
@@ -175,7 +175,7 @@ impl Node for GenerateAnswerNode {
                         let attempt2_span = tracing::info_span!(
                             "llm_attempt",
                             attempt = 2u64,
-                            gen_ai.request.model = "google/gemini-2.5-flash",
+                            gen_ai.request.model = %generator.model_id(),
                             lancet.attempt.outcome = tracing::field::Empty,
                             gen_ai.usage.input_tokens = tracing::field::Empty,
                             gen_ai.usage.output_tokens = tracing::field::Empty,

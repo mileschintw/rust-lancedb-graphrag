@@ -65,6 +65,10 @@ fn make_candidate(doc_id: &str, chunk_id: &str, score: f64) -> Candidate {
 struct TestEmbeddingProvider;
 
 impl EmbeddingProvider for TestEmbeddingProvider {
+    fn model_id(&self) -> &str {
+        "test-embed-model-override"
+    }
+
     fn get_embeddings<'a>(
         &'a self,
         texts: &'a [String],
@@ -80,6 +84,10 @@ struct RetryableGenerator {
 }
 
 impl Generator for RetryableGenerator {
+    fn model_id(&self) -> &str {
+        "test-gen-model-override"
+    }
+
     fn generate<'a>(
         &'a self,
         _req: GenerationRequest,
@@ -112,6 +120,10 @@ impl Generator for RetryableGenerator {
 struct SingleSuccessGenerator;
 
 impl Generator for SingleSuccessGenerator {
+    fn model_id(&self) -> &str {
+        "test-gen-model-override"
+    }
+
     fn generate<'a>(
         &'a self,
         _req: GenerationRequest,
@@ -607,6 +619,7 @@ async fn leaf_span_embedding_request_wraps_real_http_call() {
             found_embed = true;
             let model_attr = span.attributes.iter().find(|kv| kv.key.as_str() == "gen_ai.request.model");
             assert!(model_attr.is_some());
+            assert_eq!(model_attr.unwrap().value.as_str(), "test-embed-model-override");
         }
     }
     assert!(found_embed, "embedding_request leaf span must be exported");
@@ -691,6 +704,11 @@ async fn llm_attempt_spans_are_two_siblings_on_retry() {
     attempt_spans.sort_by_key(|(_, attempt)| *attempt);
     assert_eq!(attempt_spans[0].1, Some(1));
     assert_eq!(attempt_spans[1].1, Some(2));
+    for (span, _) in &attempt_spans {
+        let model_attr = span.attributes.iter().find(|kv| kv.key.as_str() == "gen_ai.request.model");
+        assert!(model_attr.is_some(), "gen_ai.request.model attribute must be present");
+        assert_eq!(model_attr.unwrap().value.as_str(), "test-gen-model-override");
+    }
 }
 
 #[tokio::test]
@@ -721,6 +739,9 @@ async fn llm_attempt_span_is_single_without_retry() {
     }
 
     assert_eq!(attempt_spans.len(), 1, "non-retry must export exactly one llm_attempt span");
+    let model_attr = attempt_spans[0].attributes.iter().find(|kv| kv.key.as_str() == "gen_ai.request.model");
+    assert!(model_attr.is_some(), "gen_ai.request.model attribute must be present");
+    assert_eq!(model_attr.unwrap().value.as_str(), "test-gen-model-override");
 }
 
 #[tokio::test]

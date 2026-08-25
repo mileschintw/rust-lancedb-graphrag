@@ -428,7 +428,7 @@ impl workflow::node::QueryEmbeddingPort for ProductionEmbeddingPort {
     ) -> workflow::node::BoxFuture<'a, Result<Vec<f32>, workflow::node::NodeError>> {
         let span = tracing::info_span!(
             "embedding_request",
-            gen_ai.request.model = "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+            gen_ai.request.model = %self.embedder.model_id(),
         );
         Box::pin(
             async move {

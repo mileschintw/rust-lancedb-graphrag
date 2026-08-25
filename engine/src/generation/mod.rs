@@ -561,6 +561,13 @@ impl std::error::Error for GenerationError {}
 
 /// Provider-neutral object-safe async trait for structured generation.
 pub trait Generator: Send + Sync {
+    /// Returns the provider model identifier used by this generator.
+    ///
+    /// The default returns `"unspecified"` so existing test doubles remain source-compatible.
+    fn model_id(&self) -> &str {
+        "unspecified"
+    }
+
     /// Prepare provider capabilities before the timed generation node body.
     ///
     /// The default is intentionally a successful no-op so existing generators
