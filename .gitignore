@@ -75,6 +75,8 @@ data/.phase02-lancedb-preclean-*/
 # Compiled binaries
 gateway/gateway
 gateway/gateway.exe
+deploy/grafana/dashboard_gen/*.exe
+deploy/grafana/dashboard_gen/dashboard_gen
 /bin/
 .tmp-go-cache/
 # Test/coverage/profile outputs

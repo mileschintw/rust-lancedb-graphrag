@@ -759,7 +759,7 @@ fn dashboard_panels_resolve_to_defined_instruments() {
     assert_eq!(panels.len(), 10, "dashboard must contain exactly 10 panels");
 
     let defined_prom_metric_stems = [
-        "lancet_rag_query_duration_ms",
+        "lancet_rag_query_duration_milliseconds",
         "lancet_rag_retrieval_path_failures_total",
         "lancet_rag_answer_degraded_total",
         "lancet_rag_citation_repairs_total",
@@ -767,7 +767,7 @@ fn dashboard_panels_resolve_to_defined_instruments() {
         "lancet_rag_evidence_set_size",
         "lancet_ingest_documents_total",
         "lancet_ingest_chunks_total",
-        "lancet_index_rebuild_duration_ms",
+        "lancet_index_rebuild_duration_milliseconds",
         "lancet_index_corpus_generation",
     ];
 
@@ -784,5 +784,54 @@ fn dashboard_panels_resolve_to_defined_instruments() {
             );
         }
     }
+}
+
+#[test]
+fn collector_prometheus_exporter_has_no_namespace() {
+    let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("deploy")
+        .join("collector")
+        .join("otel-collector-config.yaml");
+
+    assert!(config_path.exists(), "collector config must exist at {:?}", config_path);
+    let content = std::fs::read_to_string(&config_path).unwrap();
+
+    let mut in_exporters = false;
+    let mut in_prometheus = false;
+    let mut prometheus_block = String::new();
+
+    for line in content.lines() {
+        if line.starts_with("exporters:") {
+            in_exporters = true;
+            continue;
+        }
+        if in_exporters {
+            if !line.starts_with(' ') && !line.is_empty() {
+                in_exporters = false;
+                in_prometheus = false;
+                continue;
+            }
+            if line.starts_with("  prometheus:") {
+                in_prometheus = true;
+                prometheus_block.push_str(line);
+                prometheus_block.push('\n');
+                continue;
+            }
+            if in_prometheus {
+                if line.starts_with("  ") && !line.starts_with("    ") && !line.trim().is_empty() {
+                    in_prometheus = false;
+                    continue;
+                }
+                prometheus_block.push_str(line);
+                prometheus_block.push('\n');
+            }
+        }
+    }
+
+    assert!(!prometheus_block.is_empty(), "prometheus exporter block must be found in otel-collector-config.yaml");
+    assert!(prometheus_block.contains("endpoint:"), "prometheus exporter must configure an endpoint");
+    assert!(!prometheus_block.contains("namespace:"), "prometheus exporter must not configure a namespace (extra prefix causes double prefixing)");
 }
 

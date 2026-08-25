@@ -172,6 +172,14 @@ current_plan: 1
   - `GAP-06.2-CR-03`: `gen_ai.request.model` span attributes hardcoded to literals matching no configured default at `engine/src/service.rs:431` and `engine/src/workflow/nodes/generate.rs:122,178`, unlike the correct sibling `ingest.rs:1143` (`embedder.model_id()`).
   - `GAP-06.2-CR-04`: gateway `telemetry.go:123,153,173` forces `WithInsecure()` unconditionally even for validated `https://` OTLP endpoints, silently defeating configured TLS.
   - 4 human-verification items pending per `06.2-VALIDATION.md`'s Manual-Only table (Grafana trace↔log↔metric click-through, dashboard-renders-with-real-data, Windows Docker Desktop bind-mount smoke, Collector degrade-to-stdout) — expected by design under `human_verify_mode: end-of-phase`, not gaps in execution, but the first two are expected to fail until `GAP-06.2-SC5-SC6` is fixed.
+- Phase 06.2's final code review warnings and technical debt items from `06.2-REVIEW.md` are tracked as residual debt:
+  - `DEBT-P6.2-WR-01`: `streamEndedNormally` unreachable in `gateway/main.go` `queryRAG`.
+  - `DEBT-P6.2-WR-02`: retrieval `path_failures` kind classified via error-message substring in `retrieve.rs`.
+  - `DEBT-P6.2-WR-03`: `REBUILD_TEST_MUTEX` not held by `rebuild_failure_degrades_not_fails` and `rebuild_checkout_latest_failure_degrades_not_fails`.
+  - `DEBT-P6.2-WR-04`: Grafana `GF_SECURITY_ADMIN_USER`/`PASSWORD` committed `admin`/`admin`.
+  - `DEBT-P6.2-WR-05`: `otelhttp` span names use raw URL path.
+  - `DEBT-P6.2-WR-06`: engine `telemetry_handle.shutdown` skipped on startup `?` paths.
+  - `DEBT-P6.2-IN-01`: per-call meter instrument construction in `engine/src/telemetry/metrics.rs`.
 - **Doc/implementation mismatch found while scoping 06.1's code review:** `.claude/commands/gsd-code-review.md` and `.claude/gsd-local-patches/commands/gsd-code-review.md` document `--files file1,file2,...` (space-separated), but `code-review-flags.cjs`'s parser only recognizes `--files=file1,file2,...` (`=`-joined) — a space-separated invocation is silently treated as an unrecognized flag and falls through to SUMMARY/git-diff scoping with no warning. Worth a doc fix; did not block this session since the `=` form was used after checking the parser source directly.
 
 ## Deployment & Environments
