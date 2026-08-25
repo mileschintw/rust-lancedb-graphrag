@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 06.2
 current_phase_name: OpenTelemetry Traces, Metrics and Logs (OBS-01)
 status: executing
-stopped_at: Phase 06.1 complete, ready to plan Phase 06.2
-last_updated: "2026-08-25T04:14:00.302Z"
-last_activity: 2026-08-24
-state_head: a94e428c77385a8bf11436ac8eb6be28925d562b
+stopped_at: Phase 06.2 gap-closure gates re-run — code review clean of criticals, regression suite green, re-verification 6/8 SC, human_needed on 4 VALIDATION.md manual items
+last_updated: "2026-08-25T05:51:28.000Z"
+last_activity: 2026-08-25
+state_head: 69c9880
 progress:
   total_phases: 11
   completed_phases: 5
@@ -20,6 +20,16 @@ current_plan: 1
 # Project State
 
 ## Current Status
+
+- Phase 06.2 gap-closure gates re-run (2026-08-25), resuming `/gsd-execute-phase 6.2 --gaps-only` after plans 06.2-07/08/09 landed — **phase still NOT complete, human verification now the only remaining blocker.**
+  - **Gap-closure plans confirmed landed:** 06.2-07 (`2d5219a`, closes CR-01 committed `dashboard_gen.exe` + CR-02 Collector Prometheus double-prefix), 06.2-08 (`ada1314`, closes CR-03 hardcoded `gen_ai.request.model`), 06.2-09 (`c0fcc16`, closes CR-04 gateway forced-insecure TLS). All 9 plans summarized, ROADMAP checkboxes already marked by a prior session.
+  - **Code review re-run** (`06.2-REVIEW.md`, `198af13`; scope explicitly `--files`-pinned to the 3 gap plans' combined 15-file product delta plus 2 unchanged anchor files — `engine/src/telemetry/metrics.rs` and `deploy/prometheus/prometheus.yml` — that the fix's metric-naming contract depends on but neither plan touched): `status: issues_found` — 0 critical (all 4 prior CRs independently re-confirmed closed), 10 warning, 3 info. Warnings mostly flag that new regression tests added to guard CR-02/CR-04 are weaker than the fixes they guard (e.g. gateway TLS test checks option-slice non-emptiness, not which credential type was selected) — not blocking, tracked as residual debt. One real non-blocking bug found: the "RAG Query Duration" dashboard panel plots `rate(..._count[5m])` (throughput), not duration (WR-02).
+  - **Regression gate PASSED** (orchestrator-run): `cargo test --manifest-path engine/Cargo.toml --locked` = 434 lib + 1 ignored + 18 `inspect_lancedb` + 22 `config_startup`, all green; `cd gateway && go test ./...` = all packages ok. No cross-phase regressions.
+  - **Re-verification** (`06.2-VERIFICATION.md`, `69c9880`): `status: human_needed`, **6/8 roadmap success criteria verified** (up from 4/8 — SC5, SC6 now VERIFIED; SC2/SC3/SC4/SC8 still verified), plus both standalone CR-03/CR-04 carryover truths now verified. Verifier did not trust the gap-closure SUMMARY claims — independently re-read source for all four CRs, re-ran the dedicated regression tests, brought up the already-running `docker compose --profile observability` stack and re-ran `scripts/verify-collector-prom-export.sh` live rather than accepting 06.2-07-SUMMARY.md's scrape transcript at face value, and re-measured both test-count-pin scripts (engine 475, gateway 109) directly. Remaining gap is entirely non-code: the phase's `human_verify_mode: end-of-phase` design has 4 explicitly-BLOCKING VALIDATION.md Manual-Only items still unperformed by any human (SC1 trace continuity, SC7 stdout-degrade, Grafana click-through, dashboard-with-real-data, Windows bind-mount smoke). Two of the four (Grafana click-through, dashboard-with-real-data) were blocked on CR-02 and are now newly *runnable*, not newly *passed* — do not conflate the root-cause fix with the manual check actually having been run. The dashboard-with-real-data check's instructions now explicitly flag WR-02 (panel 1 will render non-empty and pass a naive check while showing throughput, not duration) so the human check doesn't certify past it the way the textual instrument test did for CR-02.
+  - **`06.2-UAT.md` created** (`407534c`) persisting the 4 human-verification items. **Do NOT advance the phase from this branch** — waiting on `/gsd-verify-work 06.2`.
+  - **Parent-phase gap-closure artifact step (`close_parent_artifacts`) deliberately skipped again**, same reasoning as the prior session: phase 06's own `06-UAT.md` gaps were already resolved weeks ago by an unrelated Phase 6 plan (06-16); flipping its frontmatter now would misattribute that closure to 06.2's commit history. Re-confirmed the file's current state matches the prior session's account exactly (frontmatter still `diagnosed`, both gap entries already `resolved`) before choosing to skip again.
+  - **Security gate still open**: `workflow.security_enforcement` active, no `06.2-SECURITY.md` exists — `/gsd-secure-phase 6.2` still required before advancing, independent of the human-verification blocker above.
+  - Next: `/gsd-verify-work 6.2` to run the 4 manual checks (requires the `observability` compose profile up); phase completes automatically once all pass and `06.2-VERIFICATION.md` status flips to `passed` via verify-work's canonicalization.
 
 - Phase 06.1 Plan 06.1-01 executed: implemented index rebuild-and-swap, CorpusStore snapshot isolation, same-snapshot dense/BM25 pinning, worker burst debouncing, fail-closed rebuild_debounce_ms configuration, and degraded notice emission (NoticeCode::IndexRebuildFailed).
 - Phase 06.1 Plan 06.1-02 executed: deterministic proofs for DEBT-BU-01 (run_window evaluation before challenge validation) and DEBT-BU-02 (sample_owned cleanup isolation harness and 26/26 passing unit tests).
