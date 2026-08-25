@@ -572,29 +572,35 @@ Plans:
 7. A missing collector degrades silently to stdout in both services — telemetry initialization never fails the service (D-38). Service identity (`service.name`, `service.version`, `deployment.environment`) is set via the standard resource detector (D-43).
 8. Phase 05 D-30's workflow metadata lands both as span attributes and as additive `WorkflowCompletedEvent` protobuf fields (D-41).
 
-**Plans:** 0/6 plans complete
+**Plans:** 6/9 plans complete (6 executed; 3 gap-closure planned)
 
 Plans:
 **Wave 1** *(tracer — the foundation every later plan expands)*
 
-- [ ] 06.2-01-PLAN.md — Tracer slice: W3C propagation across HTTP → gRPC → the Rust workflow, all three signal providers in both services, one real metric and one correlated log site, fail-closed telemetry config (D-84), and a Collector/Jaeger compose profile (D-27, D-28, D-32, D-36, D-37, D-38, D-43, D-84 / OBS-01).
+- [x] 06.2-01-PLAN.md — Tracer slice: W3C propagation across HTTP → gRPC → the Rust workflow, all three signal providers in both services, one real metric and one correlated log site, fail-closed telemetry config (D-84), and a Collector/Jaeger compose profile (D-27, D-28, D-32, D-36, D-37, D-38, D-43, D-84 / OBS-01).
 
 **Wave 2** *(parallel — engine source vs. deployment files, no shared files)*
 
-- [ ] 06.2-02-PLAN.md — Query-path span surface: five runner-owned node spans, leaf spans at every real external call including one per LLM attempt, and the SSE root span's terminal outcome and status (D-29, D-31, D-42 / OBS-01).
-- [ ] 06.2-03-PLAN.md — Observability stack as code: Prometheus, Loki and Grafana on the `observability` profile, file-provisioned datasources with trace-to-log correlation, and a typed Foundation SDK dashboard generator with its committed output (D-34, D-39, D-40 / OBS-01).
+- [x] 06.2-02-PLAN.md — Query-path span surface: five runner-owned node spans, leaf spans at every real external call including one per LLM attempt, and the SSE root span's terminal outcome and status (D-29, D-31, D-42 / OBS-01).
+- [x] 06.2-03-PLAN.md — Observability stack as code: Prometheus, Loki and Grafana on the `observability` profile, file-provisioned datasources with trace-to-log correlation, and a typed Foundation SDK dashboard generator with its committed output (D-34, D-39, D-40 / OBS-01).
 
 **Wave 3**
 
-- [ ] 06.2-04-PLAN.md — Ingestion trace end to end: one trace per document carried across the ingestion queue through graph extraction, leaf spans at every external call that extraction makes (one per LLM attempt, the graph read, the entity-name embedding, the graph write), plus an `index_rebuild` span linked to every coalesced triggering document (D-30 / OBS-01).
+- [x] 06.2-04-PLAN.md — Ingestion trace end to end: one trace per document carried across the ingestion queue through graph extraction, leaf spans at every external call that extraction makes (one per LLM attempt, the graph read, the entity-name embedding, the graph write), plus an `index_rebuild` span linked to every coalesced triggering document (D-30 / OBS-01).
 
 **Wave 4**
 
-- [ ] 06.2-05-PLAN.md — The ten D-35 RAG-operational instruments with structurally bounded dimensions, a numeric corpus-generation gauge, and a test proving every committed dashboard panel resolves (D-33, D-35, D-42 / OBS-01).
+- [x] 06.2-05-PLAN.md — The ten D-35 RAG-operational instruments with structurally bounded dimensions, a numeric corpus-generation gauge, and a test proving every committed dashboard panel resolves (D-33, D-35, D-42 / OBS-01).
 
 **Wave 5**
 
-- [ ] 06.2-06-PLAN.md — Log correlation expanded across every request-owned site in both services, and D-41's workflow metadata populated in both places from one enumerated `degraded_mode` derivation (D-36, D-41, D-31 / OBS-01).
+- [x] 06.2-06-PLAN.md — Log correlation expanded across every request-owned site in both services, and D-41's workflow metadata populated in both places from one enumerated `degraded_mode` derivation (D-36, D-41, D-31 / OBS-01).
+
+**Wave 6** *(gap closure — parallel; no shared files)*
+
+- [ ] 06.2-07-PLAN.md — Close CR-02/CR-01: Collector prometheus exporter without extra namespace, live :8889 round-trip, gitignore dashboard_gen binaries, correct 06.2-03-SUMMARY transformation rule (D-34, D-40 / OBS-01).
+- [ ] 06.2-08-PLAN.md — Close CR-03: gen_ai.request.model from embedder.model_id() and Generator::model_id() (D-42 / OBS-01).
+- [ ] 06.2-09-PLAN.md — Close CR-04: gateway OTLP exporters honor https TLS vs http insecure (D-84 / OBS-01).
 
 ### Phase 6.3: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04) (INSERTED)
 
