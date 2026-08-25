@@ -572,7 +572,7 @@ Plans:
 7. A missing collector degrades silently to stdout in both services — telemetry initialization never fails the service (D-38). Service identity (`service.name`, `service.version`, `deployment.environment`) is set via the standard resource detector (D-43).
 8. Phase 05 D-30's workflow metadata lands both as span attributes and as additive `WorkflowCompletedEvent` protobuf fields (D-41).
 
-**Plans:** 6/9 plans complete (6 executed; 3 gap-closure planned)
+**Plans:** 9/9 plans complete
 
 Plans:
 **Wave 1** *(tracer — the foundation every later plan expands)*
@@ -598,12 +598,12 @@ Plans:
 
 **Wave 6** *(gap closure — 08 engine vs 09 gateway; no shared files)*
 
-- [ ] 06.2-08-PLAN.md — Close CR-03: gen_ai.request.model from embedder.model_id() and Generator::model_id() (D-42 / OBS-01).
-- [ ] 06.2-09-PLAN.md — Close CR-04: gateway OTLP exporters honor https TLS vs http insecure; named WithInsecure grep gate; COVERAGE.md TLS row (D-84 / OBS-01).
+- [x] 06.2-08-PLAN.md — Close CR-03: gen_ai.request.model from embedder.model_id() and Generator::model_id() (D-42 / OBS-01).
+- [x] 06.2-09-PLAN.md — Close CR-04: gateway OTLP exporters honor https TLS vs http insecure; named WithInsecure grep gate; COVERAGE.md TLS row (D-84 / OBS-01).
 
 **Wave 7** *(gap closure — after 08 so engine-test-targets.sh does not compile a half-edited crate)*
 
-- [ ] 06.2-07-PLAN.md — Close CR-02/CR-01: Collector prometheus exporter without extra prefix, live :8889 all-dashboard-stem round-trip (including ms histograms) on the compose-pinned Collector image, gitignore dashboard_gen binaries, scrape-derived 06.2-03-SUMMARY rule, re-own BLOCKING manual checks (D-34, D-40 / OBS-01).
+- [x] 06.2-07-PLAN.md — Close CR-02/CR-01: Collector prometheus exporter without extra prefix, live :8889 all-dashboard-stem round-trip (including ms histograms) on the compose-pinned Collector image, gitignore dashboard_gen binaries, scrape-derived 06.2-03-SUMMARY rule, re-own BLOCKING manual checks (D-34, D-40 / OBS-01).
 
 ### Phase 6.3: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04) (INSERTED)
 
