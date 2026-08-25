@@ -596,11 +596,14 @@ Plans:
 
 - [x] 06.2-06-PLAN.md — Log correlation expanded across every request-owned site in both services, and D-41's workflow metadata populated in both places from one enumerated `degraded_mode` derivation (D-36, D-41, D-31 / OBS-01).
 
-**Wave 6** *(gap closure — parallel; no shared files)*
+**Wave 6** *(gap closure — 08 engine vs 09 gateway; no shared files)*
 
-- [ ] 06.2-07-PLAN.md — Close CR-02/CR-01: Collector prometheus exporter without extra namespace, live :8889 round-trip, gitignore dashboard_gen binaries, correct 06.2-03-SUMMARY transformation rule (D-34, D-40 / OBS-01).
 - [ ] 06.2-08-PLAN.md — Close CR-03: gen_ai.request.model from embedder.model_id() and Generator::model_id() (D-42 / OBS-01).
-- [ ] 06.2-09-PLAN.md — Close CR-04: gateway OTLP exporters honor https TLS vs http insecure (D-84 / OBS-01).
+- [ ] 06.2-09-PLAN.md — Close CR-04: gateway OTLP exporters honor https TLS vs http insecure; named WithInsecure grep gate; COVERAGE.md TLS row (D-84 / OBS-01).
+
+**Wave 7** *(gap closure — after 08 so engine-test-targets.sh does not compile a half-edited crate)*
+
+- [ ] 06.2-07-PLAN.md — Close CR-02/CR-01: Collector prometheus exporter without extra prefix, live :8889 all-dashboard-stem round-trip (including ms histograms) on the compose-pinned Collector image, gitignore dashboard_gen binaries, scrape-derived 06.2-03-SUMMARY rule, re-own BLOCKING manual checks (D-34, D-40 / OBS-01).
 
 ### Phase 6.3: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04) (INSERTED)
 
