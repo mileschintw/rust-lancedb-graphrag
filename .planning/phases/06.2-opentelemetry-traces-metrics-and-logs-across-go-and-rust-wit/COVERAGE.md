@@ -44,7 +44,7 @@ phase writes against a real interface.
 | resource — environment/OS/process/container auto-detectors | OPT-OUT | not needed — explicit resource attributes are the D-43 contract; auto-detected host and process attributes add cardinality with no local-demo consumer |
 | OTLP exporter — gRPC transport | INTEGRATE | Both runtimes export over gRPC to `127.0.0.1:4317` |
 | OTLP exporter — HTTP/protobuf transport | OPT-OUT | not needed for the services — the Collector still RECEIVES on `4318` so an external producer can use it, but neither Lancet service is built against the HTTP exporter |
-| OTLP exporter — TLS / client authentication | OPT-OUT | explicitly out of scope — loopback-only local topology under D-06, which defers auth and TLS for the whole milestone |
+| OTLP exporter — TLS / client authentication | INTEGRATE | client OTLP gRPC export honors https vs http on the already-validated otlp_endpoint (CR-04, D-84); D-06 documented-only ingress TLS is unchanged |
 | OTLP exporter — retry / queue tuning | OPT-OUT | not needed — SDK batch-processor defaults suffice; D-38 requires export failure to be non-fatal and rate-bounded, which is handled by the SDK error handler rather than by retry configuration |
 | Collector — OTLP receiver, batch processor, three signal pipelines | INTEGRATE | |
 | Collector — sampling / filtering / transform processors | OPT-OUT | not needed — always-on sampling (D-32) and a bounded attribute set mean there is nothing to filter or scrub at the Collector |

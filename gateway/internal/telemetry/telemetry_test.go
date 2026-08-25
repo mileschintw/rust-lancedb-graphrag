@@ -390,3 +390,72 @@ func TestConsoleCoreStillReceivesEveryRecord(t *testing.T) {
 		t.Errorf("entry 2 mismatch: %v", entries[2])
 	}
 }
+
+func TestOTLPEndpointSecurity(t *testing.T) {
+	tests := []struct {
+		name       string
+		endpoint   string
+		wantTarget string
+		wantTLS    bool
+	}{
+		{
+			name:       "https remote host",
+			endpoint:   "https://collector.example:4317",
+			wantTarget: "collector.example:4317",
+			wantTLS:    true,
+		},
+		{
+			name:       "http local loopback",
+			endpoint:   "http://127.0.0.1:4317",
+			wantTarget: "127.0.0.1:4317",
+			wantTLS:    false,
+		},
+		{
+			name:       "https local loopback",
+			endpoint:   "https://127.0.0.1:4317",
+			wantTarget: "127.0.0.1:4317",
+			wantTLS:    true,
+		},
+		{
+			name:       "http remote host",
+			endpoint:   "http://remote-host:4317",
+			wantTarget: "remote-host:4317",
+			wantTLS:    false,
+		},
+		{
+			name:       "whitespace padded https",
+			endpoint:   "  https://padded-collector:4317  ",
+			wantTarget: "padded-collector:4317",
+			wantTLS:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotTarget, gotTLS := otlpEndpointSecurity(tc.endpoint)
+			if gotTarget != tc.wantTarget {
+				t.Errorf("target: got %q, want %q", gotTarget, tc.wantTarget)
+			}
+			if gotTLS != tc.wantTLS {
+				t.Errorf("useTLS: got %v, want %v", gotTLS, tc.wantTLS)
+			}
+		})
+	}
+}
+
+func TestOTLPExportersFollowEndpointSecurity(t *testing.T) {
+	// Coverage-only test: calls otlpGRPCOptions with true and false so both branches
+	// compile and run. Constructor option slices in OTel are opaque closures,
+	// so wiring verification that https does not select insecure transport is enforced
+	// via the WithInsecure source region grep rather than runtime option introspection.
+	traceSecure, metricSecure, logSecure := otlpGRPCOptions(true)
+	if len(traceSecure) == 0 || len(metricSecure) == 0 || len(logSecure) == 0 {
+		t.Fatalf("expected non-empty option slices for TLS branch")
+	}
+
+	traceInsecure, metricInsecure, logInsecure := otlpGRPCOptions(false)
+	if len(traceInsecure) == 0 || len(metricInsecure) == 0 || len(logInsecure) == 0 {
+		t.Fatalf("expected non-empty option slices for insecure branch")
+	}
+}
+

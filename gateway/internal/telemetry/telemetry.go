@@ -26,9 +26,37 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/credentials"
 )
 
 var setupPropagatorOnce sync.Once
+
+// otlpEndpointSecurity parses the configured endpoint URL and extracts the gRPC target host:port
+// along with a boolean indicating whether TLS transport credentials should be used (CR-04, D-84).
+func otlpEndpointSecurity(endpoint string) (target string, useTLS bool) {
+	trimmed := strings.TrimSpace(endpoint)
+	if strings.HasPrefix(trimmed, "https://") {
+		return strings.TrimPrefix(trimmed, "https://"), true
+	}
+	return strings.TrimPrefix(trimmed, "http://"), false
+}
+
+// otlpGRPCOptions constructs the gRPC exporter options for traces, metrics, and logs based on TLS requirement.
+func otlpGRPCOptions(useTLS bool) (
+	traceOpts []otlptracegrpc.Option,
+	metricOpts []otlpmetricgrpc.Option,
+	logOpts []otlploggrpc.Option,
+) {
+	if useTLS {
+		tlsCreds := credentials.NewClientTLSFromCert(nil, "")
+		return []otlptracegrpc.Option{otlptracegrpc.WithTLSCredentials(tlsCreds)},
+			[]otlpmetricgrpc.Option{otlpmetricgrpc.WithTLSCredentials(tlsCreds)},
+			[]otlploggrpc.Option{otlploggrpc.WithTLSCredentials(tlsCreds)}
+	}
+	return []otlptracegrpc.Option{otlptracegrpc.WithInsecure()},
+		[]otlpmetricgrpc.Option{otlpmetricgrpc.WithInsecure()},
+		[]otlploggrpc.Option{otlploggrpc.WithInsecure()}
+}
 
 // Config carries telemetry configuration parameters for the gateway.
 type Config struct {
@@ -112,16 +140,13 @@ func Init(ctx context.Context, cfg Config) (*Providers, func(context.Context) er
 		return providers, shutdown
 	}
 
-	cleanEndpoint := endpoint
-	cleanEndpoint = strings.TrimPrefix(cleanEndpoint, "http://")
-	cleanEndpoint = strings.TrimPrefix(cleanEndpoint, "https://")
+	cleanEndpoint, useTLS := otlpEndpointSecurity(endpoint)
+	traceOpts, metricOpts, logOpts := otlpGRPCOptions(useTLS)
 
 	// Build trace exporter
 	var spanExporter sdktrace.SpanExporter
-	traceExp, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithEndpoint(cleanEndpoint),
-		otlptracegrpc.WithInsecure(),
-	)
+	allTraceOpts := append([]otlptracegrpc.Option{otlptracegrpc.WithEndpoint(cleanEndpoint)}, traceOpts...)
+	traceExp, err := otlptracegrpc.New(ctx, allTraceOpts...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WARNING: Failed to initialize OTLP trace exporter for %s: %v\n", endpoint, err)
 	} else {
@@ -148,10 +173,8 @@ func Init(ctx context.Context, cfg Config) (*Providers, func(context.Context) er
 
 	// Build metric exporter
 	var metricReader sdkmetric.Reader
-	metricExp, err := otlpmetricgrpc.New(ctx,
-		otlpmetricgrpc.WithEndpoint(cleanEndpoint),
-		otlpmetricgrpc.WithInsecure(),
-	)
+	allMetricOpts := append([]otlpmetricgrpc.Option{otlpmetricgrpc.WithEndpoint(cleanEndpoint)}, metricOpts...)
+	metricExp, err := otlpmetricgrpc.New(ctx, allMetricOpts...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WARNING: Failed to initialize OTLP metric exporter for %s: %v\n", endpoint, err)
 	} else {
@@ -168,10 +191,8 @@ func Init(ctx context.Context, cfg Config) (*Providers, func(context.Context) er
 
 	// Build log exporter
 	var logProcessor sdklog.Processor
-	logExp, err := otlploggrpc.New(ctx,
-		otlploggrpc.WithEndpoint(cleanEndpoint),
-		otlploggrpc.WithInsecure(),
-	)
+	allLogOpts := append([]otlploggrpc.Option{otlploggrpc.WithEndpoint(cleanEndpoint)}, logOpts...)
+	logExp, err := otlploggrpc.New(ctx, allLogOpts...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WARNING: Failed to initialize OTLP log exporter for %s: %v\n", endpoint, err)
 	} else {
