@@ -572,7 +572,7 @@ Plans:
 7. A missing collector degrades silently to stdout in both services — telemetry initialization never fails the service (D-38). Service identity (`service.name`, `service.version`, `deployment.environment`) is set via the standard resource detector (D-43).
 8. Phase 05 D-30's workflow metadata lands both as span attributes and as additive `WorkflowCompletedEvent` protobuf fields (D-41).
 
-**Plans:** 9/9 plans complete
+**Plans:** 9/12 plans complete
 
 Plans:
 **Wave 1** *(tracer — the foundation every later plan expands)*
@@ -604,6 +604,18 @@ Plans:
 **Wave 7** *(gap closure — after 08 so engine-test-targets.sh does not compile a half-edited crate)*
 
 - [x] 06.2-07-PLAN.md — Close CR-02/CR-01: Collector prometheus exporter without extra prefix, live :8889 all-dashboard-stem round-trip (including ms histograms) on the compose-pinned Collector image, gitignore dashboard_gen binaries, scrape-derived 06.2-03-SUMMARY rule, re-own BLOCKING manual checks (D-34, D-40 / OBS-01).
+
+**Wave 8** *(gap closure — UAT round 2, G-06.2-1; serialized after Wave 9/10's shared-file plans, see below)*
+
+- [ ] 06.2-10-PLAN.md — Close G-06.2-1: Grafana trace-to-logs correlation — remove the unresolvable `trace_id` tag mapping from `tracesToLogsV2`, retain `filterByTraceID` (D-34, D-40 / OBS-01).
+
+**Wave 9** *(gap closure — G-06.2-2; depends on 06.2-10, shares `telemetry_metrics.rs`/`engine-test-targets.sh`/VALIDATION.md with Waves 8 and 10, so serialized rather than parallel)*
+
+- [ ] 06.2-11-PLAN.md — Close G-06.2-2: Operations dashboard Panel 1 latency fix — `histogram_quantile` p95 duration instead of a throughput rate, regenerated committed dashboard JSON (D-35, D-40 / OBS-01).
+
+**Wave 10** *(gap closure — G-06.2-4; depends on 06.2-01, 06.2-09, 06.2-11, same shared-file serialization reason as Wave 9)*
+
+- [ ] 06.2-12-PLAN.md — Close G-06.2-4: bounded OTel diagnostics suppression in Go (`otel.SetErrorHandler`) and Rust (`tracing-subscriber` layer filter) telemetry init — degrade silently to stdout on Collector outage without unbounded stderr spam (D-38 / OBS-01).
 
 ### Phase 6.3: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04) (INSERTED)
 
