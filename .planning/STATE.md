@@ -210,6 +210,7 @@ current_plan: 1
 | review-06-04-refactor-fidelity | 2026-08-20 | Review commit c7e107ec (plan 06-04) as behavior-preserving refactor; confirmed checkpoint dispatch preserved and DTO/event contract byte-identical; found and FIXED in bfec94b: truncated config fail-closed error string (REG-06-04-01, root cause = Task 2 criterion contradicting its own action text), source-grep test gate rewritten on `go test -list` with per-package named failures (closes T-06-04-05), 8 package-local sse wire-contract tests added (total 67 -> 75), plus export-decision table added to 06-04-SUMMARY per the plan output block. Two criteria await sign-off: invariant 67->75 and Task 2 "exactly once". | Complete |
 | ignore-gsd-runtime-dir | 2026-08-21 | Ignore .gsd runtime directory in .gitignore | Complete |
 | 260824-ipd | 2026-08-24 | Fix the shared Phase 6 CONTEXT tag-extractor landmine. Do not add any per-phase CONTEXT.md. | Verified |
+| commit-cross-ai-review | 2026-08-27 | Commit cross-AI review for plans 10-12 in 06.2-REVIEWS.md | Complete |
 
 ## Performance Metrics
 
