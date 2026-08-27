@@ -944,4 +944,89 @@ fn grafana_traces_to_logs_maps_no_span_tag() {
     );
 }
 
+#[test]
+fn duration_panels_query_histogram_buckets() {
+    let dashboard_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("deploy")
+        .join("grafana")
+        .join("dashboards")
+        .join("lancet-rag-operations.json");
+
+    assert!(dashboard_path.exists(), "dashboard json must exist at {:?}", dashboard_path);
+    let content = std::fs::read_to_string(&dashboard_path).unwrap();
+    let val: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    let panels = val["panels"].as_array().expect("dashboard panels array");
+    assert!(!panels.is_empty(), "dashboard must contain panels");
+
+    let histogram_stems = [
+        "lancet_rag_query_duration_milliseconds",
+        "lancet_rag_evidence_set_size",
+        "lancet_index_rebuild_duration_milliseconds",
+    ];
+
+    let mut matched_histogram_stem_targets = 0;
+    let mut matched_duration_panels = 0;
+
+    for panel in panels {
+        let title = panel["title"].as_str().unwrap_or("");
+        let targets = panel["targets"].as_array().expect("panel targets array");
+
+        let is_duration_panel = title.contains("Duration");
+        if is_duration_panel {
+            matched_duration_panels += 1;
+            assert!(!targets.is_empty(), "duration panel '{title}' must have targets");
+        }
+
+        for target in targets {
+            let expr = target["expr"].as_str().expect("target expr string");
+
+            // Predicate 1: histogram stems must be queried as histograms
+            for stem in &histogram_stems {
+                if expr.contains(stem) {
+                    matched_histogram_stem_targets += 1;
+                    assert!(
+                        expr.contains("histogram_quantile("),
+                        "panel query '{expr}' reads histogram instrument '{stem}' but does not use histogram_quantile — G-06.2-2"
+                    );
+                    let bucket_suffix = format!("{stem}_bucket");
+                    assert!(
+                        expr.contains(&bucket_suffix),
+                        "panel query '{expr}' reads histogram instrument '{stem}' but does not query _bucket — G-06.2-2"
+                    );
+                    let count_suffix = format!("{stem}_count");
+                    assert!(
+                        !expr.contains(&count_suffix),
+                        "panel query '{expr}' reads histogram instrument '{stem}' via _count/rate (throughput) instead of _bucket via histogram_quantile (distribution) — G-06.2-2"
+                    );
+                }
+            }
+
+            // Predicate 2: a panel titled Duration must plot a duration
+            if is_duration_panel {
+                assert!(
+                    expr.contains("histogram_quantile("),
+                    "duration panel '{title}' query '{expr}' does not contain histogram_quantile( — G-06.2-2"
+                );
+                assert!(
+                    expr.contains("_bucket"),
+                    "duration panel '{title}' query '{expr}' does not contain _bucket — G-06.2-2"
+                );
+            }
+        }
+    }
+
+    assert!(
+        matched_histogram_stem_targets > 0,
+        "at least one target must match a histogram instrument stem"
+    );
+    assert!(
+        matched_duration_panels > 0,
+        "at least one panel must have Duration in its title"
+    );
+}
+
+
 

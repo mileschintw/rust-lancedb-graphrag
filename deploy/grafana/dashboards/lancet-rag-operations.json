@@ -17,8 +17,8 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (outcome) (rate(lancet_rag_query_duration_milliseconds_count[5m]))",
-          "legendFormat": "{{outcome}}"
+          "expr": "histogram_quantile(0.95, sum(rate(lancet_rag_query_duration_milliseconds_bucket[5m])) by (le, outcome))",
+          "legendFormat": "p95 - {{outcome}}"
         }
       ],
       "title": "RAG Query Duration",
@@ -49,6 +49,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "ms",
           "custom": {}
         },
         "overrides": []
@@ -377,6 +378,7 @@
       },
       "fieldConfig": {
         "defaults": {
+          "unit": "ms",
           "custom": {}
         },
         "overrides": []

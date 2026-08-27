@@ -36,9 +36,10 @@ func main() {
 		Datasource(dsRef).
 		WithTarget(
 			prometheus.NewDataqueryBuilder().
-				Expr("sum by (outcome) (rate(lancet_rag_query_duration_milliseconds_count[5m]))").
-				LegendFormat("{{outcome}}"),
+				Expr("histogram_quantile(0.95, sum(rate(lancet_rag_query_duration_milliseconds_bucket[5m])) by (le, outcome))").
+				LegendFormat("p95 - {{outcome}}"),
 		).
+		Unit("ms").
 		Span(12).
 		Height(8)
 
@@ -135,6 +136,7 @@ func main() {
 				Expr("histogram_quantile(0.95, sum(rate(lancet_index_rebuild_duration_milliseconds_bucket[5m])) by (le, outcome))").
 				LegendFormat("p95 - {{outcome}}"),
 		).
+		Unit("ms").
 		Span(12).
 		Height(8)
 
