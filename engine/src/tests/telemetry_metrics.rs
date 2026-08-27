@@ -1028,5 +1028,85 @@ fn duration_panels_query_histogram_buckets() {
     );
 }
 
+#[test]
+fn otel_internal_diagnostics_are_bounded() {
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+    use tracing::Level;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::Layer as _;
+    use crate::telemetry::{BoundedOtelDiagnostics, OtelDiagnosticsFilter, DropOtelDiagnosticsFilter};
+
+    let t0 = Instant::now();
+    let bounded = BoundedOtelDiagnostics::new(1, Duration::from_secs(300));
+
+    // Property 1: Application targets always pass and do not consume cap
+    assert!(bounded.should_emit_at("lancet_engine::retrieval", &Level::INFO, t0));
+    assert!(bounded.should_emit_at("lancet_engine::retrieval", &Level::ERROR, t0));
+    assert!(bounded.should_emit_at("tower_http::trace", &Level::DEBUG, t0));
+
+    // Property 2a: OTel debug/trace/info noise is dropped and does not consume cap
+    assert!(!bounded.should_emit_at("opentelemetry", &Level::INFO, t0));
+    assert!(!bounded.should_emit_at("opentelemetry_sdk::export", &Level::DEBUG, t0));
+    assert!(!bounded.should_emit_at("opentelemetry_otlp::exporter", &Level::TRACE, t0));
+
+    // Property 2b: OTel warn/error competes for the cap (1 emitted in 5m window)
+    assert!(bounded.should_emit_at("opentelemetry_otlp::exporter", &Level::WARN, t0));
+    for _ in 0..999 {
+        assert!(!bounded.should_emit_at("opentelemetry_otlp::exporter", &Level::ERROR, t0));
+    }
+
+    // Property 3: Window re-arms after 5 minutes
+    let t1 = t0 + Duration::from_secs(301);
+    assert!(bounded.should_emit_at("opentelemetry_otlp::exporter", &Level::ERROR, t1));
+    for _ in 0..999 {
+        assert!(!bounded.should_emit_at("opentelemetry_otlp::exporter", &Level::ERROR, t1));
+    }
+
+    // Property 4 & 5: Composed layers and DropOtelDiagnosticsFilter
+    #[derive(Default, Clone)]
+    struct CountLayer {
+        count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for CountLayer {
+        fn on_event(
+            &self,
+            _event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            self.count.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let fmt_counter = CountLayer::default();
+    let fmt_count = fmt_counter.count.clone();
+    let filter_state = std::sync::Arc::new(BoundedOtelDiagnostics::new(1, Duration::from_secs(300)));
+    let fmt_layer = fmt_counter.with_filter(OtelDiagnosticsFilter::new(filter_state));
+
+    let bridge_counter = CountLayer::default();
+    let bridge_count = bridge_counter.count.clone();
+    let bridge_layer = bridge_counter.with_filter(DropOtelDiagnosticsFilter);
+
+    let subscriber = tracing_subscriber::Registry::default()
+        .with(fmt_layer)
+        .with(bridge_layer);
+
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    // Emit application event
+    tracing::info!(target: "lancet_engine::test", "app event");
+    assert_eq!(fmt_count.load(Ordering::SeqCst), 1);
+    assert_eq!(bridge_count.load(Ordering::SeqCst), 1);
+
+    // Emit 10 OTel error events
+    for _ in 0..10 {
+        tracing::error!(target: "opentelemetry::sdk", "sdk export error");
+    }
+    // Fmt layer saw exactly 1 additional event (cap=1); bridge saw 0 additional events (all dropped)
+    assert_eq!(fmt_count.load(Ordering::SeqCst), 2);
+    assert_eq!(bridge_count.load(Ordering::SeqCst), 1);
+}
+
+
 
 

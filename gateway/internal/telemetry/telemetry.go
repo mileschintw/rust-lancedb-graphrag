@@ -5,6 +5,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -29,7 +30,59 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-var setupPropagatorOnce sync.Once
+var (
+	setupPropagatorOnce   sync.Once
+	setupErrorHandlerOnce sync.Once
+)
+
+type boundedErrorHandler struct {
+	sink        io.Writer
+	limit       uint64
+	window      time.Duration
+	now         func() time.Time
+	mu          sync.Mutex
+	windowStart time.Time
+	seen        uint64
+}
+
+var _ otel.ErrorHandler = (*boundedErrorHandler)(nil)
+
+func newBoundedErrorHandler(w io.Writer, limit uint64, window time.Duration, now func() time.Time) *boundedErrorHandler {
+	if now == nil {
+		now = time.Now
+	}
+	return &boundedErrorHandler{
+		sink:   w,
+		limit:  limit,
+		window: window,
+		now:    now,
+	}
+}
+
+func (h *boundedErrorHandler) Handle(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	now := h.now()
+	if h.windowStart.IsZero() || now.Sub(h.windowStart) >= h.window {
+		h.seen = 0
+		h.windowStart = now
+	}
+
+	h.seen++
+	if h.seen <= h.limit {
+		fmt.Fprintf(h.sink, "WARNING: OpenTelemetry export error: %v\n", err)
+	} else if h.seen == h.limit+1 {
+		fmt.Fprintf(h.sink, "WARNING: further OpenTelemetry export errors suppressed for 5m (D-38)\n")
+	}
+}
+
+// SetupErrorHandler registers the bounded error handler for OpenTelemetry background exporters.
+func SetupErrorHandler() {
+	setupErrorHandlerOnce.Do(func() {
+		otel.SetErrorHandler(newBoundedErrorHandler(os.Stderr, 1, 5*time.Minute, nil))
+	})
+}
 
 // otlpEndpointSecurity parses the configured endpoint URL and extracts the gRPC target host:port
 // along with a boolean indicating whether TLS transport credentials should be used (CR-04, D-84).
@@ -91,6 +144,7 @@ func SetupPropagator() {
 // It never returns an error: if exporter construction fails, it emits a bounded warning
 // and returns providers that do not export (D-38).
 func Init(ctx context.Context, cfg Config) (*Providers, func(context.Context) error) {
+	SetupErrorHandler()
 	SetupPropagator()
 
 	serviceName := cfg.ServiceName

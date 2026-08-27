@@ -1,7 +1,9 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -458,4 +460,67 @@ func TestOTLPExportersFollowEndpointSecurity(t *testing.T) {
 		t.Fatalf("expected non-empty option slices for insecure branch")
 	}
 }
+
+func TestOTelErrorHandlerBoundsRepeatedExportErrors(t *testing.T) {
+	var buf bytes.Buffer
+	currTime := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	fakeNow := func() time.Time {
+		return currTime
+	}
+
+	handler := newBoundedErrorHandler(&buf, 1, 5*time.Minute, fakeNow)
+
+	// 1. Call Handle 1000 times at frozen instant
+	for range 1000 {
+		handler.Handle(errors.New("exporter export timeout"))
+	}
+
+	out := buf.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected exactly 2 lines (error + suppression), got %d: %q", len(lines), out)
+	}
+
+	if !strings.Contains(lines[0], "WARNING: OpenTelemetry export error: exporter export timeout") {
+		t.Errorf("line 0 mismatch: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "WARNING: further OpenTelemetry export errors suppressed for 5m (D-38)") {
+		t.Errorf("line 1 mismatch: %q", lines[1])
+	}
+
+	// Assert no line contains endpoint or credential-shaped string
+	for _, l := range lines {
+		if strings.Contains(l, "http://") || strings.Contains(l, "https://") || strings.Contains(l, "Bearer ") {
+			t.Errorf("line should not contain endpoint or credential: %q", l)
+		}
+	}
+
+	// 2. Advance clock past 5 minutes window and re-arm
+	currTime = currTime.Add(5*time.Minute + time.Nanosecond)
+	handler.Handle(errors.New("second export error after window"))
+
+	outAfter := buf.String()
+	linesAfter := strings.Split(strings.TrimRight(outAfter, "\n"), "\n")
+	if len(linesAfter) != 3 {
+		t.Fatalf("expected 3 lines after re-arm, got %d: %q", len(linesAfter), outAfter)
+	}
+	if !strings.Contains(linesAfter[2], "WARNING: OpenTelemetry export error: second export error after window") {
+		t.Errorf("line 2 mismatch: %q", linesAfter[2])
+	}
+
+	// 3. 1000 more calls without advancing time -> at most one suppression line and no further error lines
+	for range 1000 {
+		handler.Handle(errors.New("subsequent errors in second window"))
+	}
+
+	outFinal := buf.String()
+	linesFinal := strings.Split(strings.TrimRight(outFinal, "\n"), "\n")
+	if len(linesFinal) != 4 {
+		t.Fatalf("expected 4 lines total (error + suppression in 2 windows), got %d: %q", len(linesFinal), outFinal)
+	}
+	if !strings.Contains(linesFinal[3], "WARNING: further OpenTelemetry export errors suppressed for 5m (D-38)") {
+		t.Errorf("line 3 mismatch: %q", linesFinal[3])
+	}
+}
+
 

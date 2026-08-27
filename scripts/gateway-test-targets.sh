@@ -12,9 +12,10 @@
 #   75 — 67 plus the 8 package-local tests added to gateway/internal/sse, which owns the
 #        /rag/query JSON wire contract that plan 06-07 extends.
 #   80 — 75 plus TestBadInputMatrixHTTP (plan 06-12), the D-15 bad-input matrix's HTTP half.
+#   110 — 109 plus TestOTelErrorHandlerBoundsRepeatedExportErrors (plan 06.2-12), bounding export errors (D-38).
 set -e
 
-EXPECTED_TOTAL=109
+EXPECTED_TOTAL=110
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
@@ -23,7 +24,7 @@ EXPECTED_PACKAGES="gateway 78
 gateway/db 7
 gateway/internal/config 4
 gateway/internal/sse 9
-gateway/internal/telemetry 11"
+gateway/internal/telemetry 12"
 
 # Ensure go is found in standard user environments
 GO_CMD="go"

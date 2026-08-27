@@ -20,6 +20,7 @@ use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
 use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
 use opentelemetry_sdk::Resource;
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::Layer as _;
 use tracing_subscriber::Registry;
 
 use crate::config::TelemetryConfigSettings;
@@ -46,6 +47,102 @@ pub fn build_resource(settings: &TelemetryConfigSettings) -> Resource {
             KeyValue::new("deployment.environment", settings.deployment_environment.clone()),
         ])
         .build()
+}
+
+/// Shared running cap for OpenTelemetry SDK internal diagnostics.
+///
+/// At `opentelemetry` 0.32 the SDK emits its own diagnostics as `tracing` events on
+/// crate-named targets (`opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp`);
+/// `global::set_error_handler` no longer exists. Bounding therefore happens in the
+/// subscriber, not in the SDK (D-38, G-06.2-4).
+pub struct BoundedOtelDiagnostics {
+    seen: std::sync::atomic::AtomicU64,
+    limit: u64,
+    window: std::time::Duration,
+    window_start: std::sync::Mutex<Option<std::time::Instant>>,
+}
+
+impl BoundedOtelDiagnostics {
+    pub fn new(limit: u64, window: std::time::Duration) -> Self {
+        Self {
+            seen: std::sync::atomic::AtomicU64::new(0),
+            limit,
+            window,
+            window_start: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Returns true when this event should reach the wrapped layer.
+    ///
+    /// Application targets always pass. OpenTelemetry construction/lifecycle chatter
+    /// (TRACE/DEBUG/INFO) is dropped without consuming the cap. Only WARN/ERROR
+    /// competes for the bounded slot. The slot re-arms after `window` (5 minutes).
+    pub fn should_emit_at(&self, target: &str, level: &tracing::Level, now: std::time::Instant) -> bool {
+        if !target.starts_with("opentelemetry") {
+            return true;
+        }
+        if *level != tracing::Level::WARN && *level != tracing::Level::ERROR {
+            return false;
+        }
+
+        let mut start_guard = self.window_start.lock().unwrap();
+        match *start_guard {
+            None => {
+                *start_guard = Some(now);
+                self.seen.store(0, std::sync::atomic::Ordering::Relaxed);
+            }
+            Some(start) => {
+                if now.duration_since(start) >= self.window {
+                    *start_guard = Some(now);
+                    self.seen.store(0, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        }
+
+        let seen = self.seen.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if seen == self.limit + 1 {
+            eprintln!("WARNING: further OpenTelemetry export diagnostics suppressed for 5m (D-38)");
+        }
+        seen <= self.limit
+    }
+}
+
+// Deliberately NOT Clone: nothing needs to clone this filter, `Filter<S>` does not
+// require it, and deriving Clone would be the one remaining affordance for handing
+// the counter to a second layer. Do not add a Clone derive.
+pub struct OtelDiagnosticsFilter {
+    state: std::sync::Arc<BoundedOtelDiagnostics>,
+}
+
+impl OtelDiagnosticsFilter {
+    /// The ONLY way to build this filter. `engine/src/tests/telemetry_metrics.rs` is a
+    /// sibling module, so it cannot name the private `state` field — a struct literal
+    /// would not compile there. Keep the field private so no caller can smuggle a
+    /// second reference to the counter into another layer.
+    pub fn new(state: std::sync::Arc<BoundedOtelDiagnostics>) -> Self {
+        Self { state }
+    }
+}
+
+impl<S> tracing_subscriber::layer::Filter<S> for OtelDiagnosticsFilter {
+    fn enabled(&self, meta: &tracing::Metadata<'_>, _cx: &tracing_subscriber::layer::Context<'_, S>) -> bool {
+        self.state.should_emit_at(meta.target(), meta.level(), std::time::Instant::now())
+    }
+}
+
+/// Stateless drop of all OpenTelemetry SDK internal diagnostics.
+///
+/// Applied to the appender bridge layer so SDK internal diagnostics never become
+/// OTel log records. It holds NO counter: `Layered` evaluates the last-`.with()`'d
+/// layer first, so a counting filter here would consume the fmt layer's cap before
+/// the console ever saw the first export error.
+#[derive(Clone, Copy)]
+pub struct DropOtelDiagnosticsFilter;
+
+impl<S> tracing_subscriber::layer::Filter<S> for DropOtelDiagnosticsFilter {
+    fn enabled(&self, meta: &tracing::Metadata<'_>, _cx: &tracing_subscriber::layer::Context<'_, S>) -> bool {
+        !meta.target().starts_with("opentelemetry")
+    }
 }
 
 /// Holds active SDK signal providers for clean shutdown.
@@ -163,7 +260,9 @@ pub fn build_providers_and_layers(
         }
     };
 
-    let fmt_layer = tracing_subscriber::fmt::layer();
+    let fmt_layer = tracing_subscriber::fmt::layer().with_filter(OtelDiagnosticsFilter::new(
+        std::sync::Arc::new(BoundedOtelDiagnostics::new(1, std::time::Duration::from_secs(300))),
+    ));
 
     let otel_trace_layer = tracer_provider.as_ref().map(|tp| {
         let tracer = tp.tracer(settings.service_name.clone());
@@ -172,6 +271,7 @@ pub fn build_providers_and_layers(
 
     let otel_log_layer = logger_provider.as_ref().map(|lp| {
         opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(lp)
+            .with_filter(DropOtelDiagnosticsFilter)
     });
 
     let subscriber = Registry::default()
