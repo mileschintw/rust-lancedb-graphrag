@@ -835,3 +835,113 @@ fn collector_prometheus_exporter_has_no_namespace() {
     assert!(!prometheus_block.contains("namespace:"), "prometheus exporter must not configure a namespace (extra prefix causes double prefixing)");
 }
 
+#[test]
+fn grafana_traces_to_logs_maps_no_span_tag() {
+    let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("deploy")
+        .join("grafana")
+        .join("provisioning")
+        .join("datasources")
+        .join("datasources.yaml");
+
+    assert!(config_path.exists(), "datasources config must exist at {:?}", config_path);
+    let content = std::fs::read_to_string(&config_path).unwrap();
+
+    let mut in_traces_to_logs = false;
+    let mut traces_indent = 0;
+    let mut traces_block = String::new();
+
+    let mut in_derived_fields = false;
+    let mut derived_indent = 0;
+    let mut derived_block = String::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        let leading_spaces = line.len() - line.trim_start().len();
+
+        if trimmed.starts_with("tracesToLogsV2:") {
+            in_traces_to_logs = true;
+            traces_indent = leading_spaces;
+            traces_block.push_str(line);
+            traces_block.push('\n');
+            continue;
+        }
+
+        if in_traces_to_logs {
+            if !trimmed.is_empty() && leading_spaces <= traces_indent {
+                in_traces_to_logs = false;
+            } else {
+                traces_block.push_str(line);
+                traces_block.push('\n');
+            }
+        }
+
+        if trimmed.starts_with("derivedFields:") {
+            in_derived_fields = true;
+            derived_indent = leading_spaces;
+            derived_block.push_str(line);
+            derived_block.push('\n');
+            continue;
+        }
+
+        if in_derived_fields {
+            if !trimmed.is_empty() && leading_spaces <= derived_indent {
+                in_derived_fields = false;
+            } else {
+                derived_block.push_str(line);
+                derived_block.push('\n');
+            }
+        }
+    }
+
+    assert!(
+        !traces_block.is_empty(),
+        "tracesToLogsV2 block must be found in datasources.yaml"
+    );
+    assert!(
+        traces_block.contains("filterByTraceID: true"),
+        "tracesToLogsV2 must have filterByTraceID: true (G-06.2-1)"
+    );
+    assert!(
+        traces_block.contains("filterBySpanID: false"),
+        "tracesToLogsV2 must have filterBySpanID: false (G-06.2-1)"
+    );
+    for line in traces_block.lines() {
+        assert!(
+            !line.trim().starts_with("tags:"),
+            "tracesToLogsV2 must not have tags: mapping because trace_id is intrinsic span context (G-06.2-1): found line '{}'",
+            line
+        );
+    }
+
+    assert!(
+        !derived_block.is_empty(),
+        "derivedFields block must be found in datasources.yaml"
+    );
+    let has_matcher_type_label = derived_block
+        .lines()
+        .any(|l| l.trim() == "matcherType: label");
+    assert!(
+        has_matcher_type_label,
+        "derivedFields must contain 'matcherType: label' because OTLP logs carry trace identity as Loki structured metadata (G-06.2-1)"
+    );
+    let has_matcher_regex_trace_id = derived_block
+        .lines()
+        .any(|l| l.trim() == "matcherRegex: trace_id" || l.trim() == "matcherRegex: \"trace_id\"");
+    assert!(
+        has_matcher_regex_trace_id,
+        "derivedFields must contain 'matcherRegex: trace_id' or 'matcherRegex: \"trace_id\"' (G-06.2-1)"
+    );
+    assert!(
+        !derived_block.contains("trace_id="),
+        "derivedFields must not contain 'trace_id=' body regex pattern (G-06.2-1)"
+    );
+    assert!(
+        !derived_block.contains("([0-9a-fA-F]+)"),
+        "derivedFields must not contain capture group pattern '([0-9a-fA-F]+)' (G-06.2-1)"
+    );
+}
+
+

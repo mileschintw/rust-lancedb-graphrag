@@ -18,9 +18,6 @@ datasources:
     jsonData:
       tracesToLogsV2:
         datasourceUid: loki-datasource
-        tags:
-          - key: trace_id
-            value: trace_id
         filterByTraceID: true
         filterBySpanID: false
 
@@ -32,6 +29,7 @@ datasources:
     jsonData:
       derivedFields:
         - datasourceUid: jaeger-datasource
-          matcherRegex: "trace_id=([0-9a-fA-F]+)"
+          matcherType: label
+          matcherRegex: trace_id
           name: TraceID
           url: "$${__value.raw}"
