@@ -1038,7 +1038,13 @@ fn otel_internal_diagnostics_are_bounded() {
     use crate::telemetry::{BoundedOtelDiagnostics, OtelDiagnosticsFilter, DropOtelDiagnosticsFilter};
 
     let t0 = Instant::now();
-    let bounded = BoundedOtelDiagnostics::new(1, Duration::from_secs(300));
+    let window = Duration::from_secs(300);
+    let bounded = BoundedOtelDiagnostics::new(1, window);
+    let want_suppressed = format!(
+        "WARNING: further OpenTelemetry export diagnostics suppressed for {:?} (D-38)",
+        window
+    );
+    assert_eq!(bounded.suppressed_export_warning(), want_suppressed);
 
     // Property 1: Application targets always pass and do not consume cap
     assert!(bounded.should_emit_at("lancet_engine::retrieval", &Level::INFO, t0));
@@ -1080,7 +1086,7 @@ fn otel_internal_diagnostics_are_bounded() {
 
     let fmt_counter = CountLayer::default();
     let fmt_count = fmt_counter.count.clone();
-    let filter_state = std::sync::Arc::new(BoundedOtelDiagnostics::new(1, Duration::from_secs(300)));
+    let filter_state = std::sync::Arc::new(BoundedOtelDiagnostics::new(1, window));
     let fmt_layer = fmt_counter.with_filter(OtelDiagnosticsFilter::new(filter_state));
 
     let bridge_counter = CountLayer::default();

@@ -73,7 +73,7 @@ func (h *boundedErrorHandler) Handle(err error) {
 	if h.seen <= h.limit {
 		fmt.Fprintf(h.sink, "WARNING: OpenTelemetry export error: %v\n", err)
 	} else if h.seen == h.limit+1 {
-		fmt.Fprintf(h.sink, "WARNING: further OpenTelemetry export errors suppressed for 5m (D-38)\n")
+		fmt.Fprintf(h.sink, "WARNING: further OpenTelemetry export errors suppressed for %s (D-38)\n", h.window)
 	}
 }
 

@@ -101,9 +101,16 @@ impl BoundedOtelDiagnostics {
 
         let seen = self.seen.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         if seen == self.limit + 1 {
-            eprintln!("WARNING: further OpenTelemetry export diagnostics suppressed for 5m (D-38)");
+            eprintln!("{}", self.suppressed_export_warning());
         }
         seen <= self.limit
+    }
+
+    pub(crate) fn suppressed_export_warning(&self) -> String {
+        format!(
+            "WARNING: further OpenTelemetry export diagnostics suppressed for {:?} (D-38)",
+            self.window
+        )
     }
 }
 

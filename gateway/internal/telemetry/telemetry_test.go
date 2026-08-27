@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -468,7 +469,9 @@ func TestOTelErrorHandlerBoundsRepeatedExportErrors(t *testing.T) {
 		return currTime
 	}
 
-	handler := newBoundedErrorHandler(&buf, 1, 5*time.Minute, fakeNow)
+	window := 5 * time.Minute
+	handler := newBoundedErrorHandler(&buf, 1, window, fakeNow)
+	wantSuppressed := fmt.Sprintf("WARNING: further OpenTelemetry export errors suppressed for %s (D-38)", window)
 
 	// 1. Call Handle 1000 times at frozen instant
 	for range 1000 {
@@ -484,7 +487,7 @@ func TestOTelErrorHandlerBoundsRepeatedExportErrors(t *testing.T) {
 	if !strings.Contains(lines[0], "WARNING: OpenTelemetry export error: exporter export timeout") {
 		t.Errorf("line 0 mismatch: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "WARNING: further OpenTelemetry export errors suppressed for 5m (D-38)") {
+	if !strings.Contains(lines[1], wantSuppressed) {
 		t.Errorf("line 1 mismatch: %q", lines[1])
 	}
 
@@ -518,7 +521,7 @@ func TestOTelErrorHandlerBoundsRepeatedExportErrors(t *testing.T) {
 	if len(linesFinal) != 4 {
 		t.Fatalf("expected 4 lines total (error + suppression in 2 windows), got %d: %q", len(linesFinal), outFinal)
 	}
-	if !strings.Contains(linesFinal[3], "WARNING: further OpenTelemetry export errors suppressed for 5m (D-38)") {
+	if !strings.Contains(linesFinal[3], wantSuppressed) {
 		t.Errorf("line 3 mismatch: %q", linesFinal[3])
 	}
 }
