@@ -607,15 +607,15 @@ Plans:
 
 **Wave 8** *(gap closure — UAT round 2, G-06.2-1; serialized after Wave 9/10's shared-file plans, see below)*
 
-- [ ] 06.2-10-PLAN.md — Close G-06.2-1: Grafana trace-to-logs correlation — remove the unresolvable `trace_id` tag mapping from `tracesToLogsV2`, retain `filterByTraceID` (D-34, D-40 / OBS-01).
+- [ ] 06.2-10-PLAN.md — Close G-06.2-1: Grafana correlation — remove unresolvable `tracesToLogsV2` tags, Loki `matcherType: label` / `matcherRegex: trace_id`, SC1 continuity in the human check (D-34, D-40, D-27, D-28 / OBS-01).
 
 **Wave 9** *(gap closure — G-06.2-2; depends on 06.2-10, shares `telemetry_metrics.rs`/`engine-test-targets.sh`/VALIDATION.md with Waves 8 and 10, so serialized rather than parallel)*
 
-- [ ] 06.2-11-PLAN.md — Close G-06.2-2: Operations dashboard Panel 1 latency fix — `histogram_quantile` p95 duration instead of a throughput rate, regenerated committed dashboard JSON (D-35, D-40 / OBS-01).
+- [ ] 06.2-11-PLAN.md — Close G-06.2-2: Operations dashboard Panel 1 p95 `histogram_quantile` over `_bucket`, `Unit("ms")` on both duration panels, regenerated JSON (D-35, D-40 / OBS-01).
 
 **Wave 10** *(gap closure — G-06.2-4; depends on 06.2-01, 06.2-09, 06.2-11, same shared-file serialization reason as Wave 9)*
 
-- [ ] 06.2-12-PLAN.md — Close G-06.2-4: bounded OTel diagnostics suppression in Go (`otel.SetErrorHandler`) and Rust (`tracing-subscriber` layer filter) telemetry init — degrade silently to stdout on Collector outage without unbounded stderr spam (D-38 / OBS-01).
+- [ ] 06.2-12-PLAN.md — Close G-06.2-4: windowed OTel diagnostics bound (at most one diagnostic per 5 minutes, re-arm) in Go (`otel.SetErrorHandler`) and Rust (`tracing-subscriber` layer filter) (D-38 / OBS-01).
 
 ### Phase 6.3: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04) (INSERTED)
 
