@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-import httpx
-from httpx_sse import SSEError, connect_sse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+if TYPE_CHECKING:
+    import httpx
 
 
 class StructuredCitation(BaseModel):
@@ -145,9 +146,6 @@ class QueryOutcome(BaseModel):
     duration_ms: int = 0
 
 
-EVAL_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
-
-
 def run_query(
     client: httpx.Client,
     *,
@@ -157,10 +155,15 @@ def run_query(
     deadline_s: float = 600.0,
 ) -> QueryOutcome:
     """Drive gateway /rag/query endpoint with SSE streaming and contract assertions."""
+    import httpx
+    from httpx_sse import SSEError, connect_sse
+
     started = time.monotonic()
     body: dict[str, object] = {"query": query, "session_id": session_id}
     if disable_graph_context:
         body["disable_graph_context"] = True
+
+    eval_timeout = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
 
     try:
         with connect_sse(
@@ -168,7 +171,7 @@ def run_query(
             "POST",
             "/rag/query",
             json=body,
-            timeout=EVAL_TIMEOUT,
+            timeout=eval_timeout,
         ) as event_source:
             resp = event_source.response
             if resp.status_code != httpx.codes.OK:

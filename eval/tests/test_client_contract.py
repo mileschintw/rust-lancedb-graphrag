@@ -64,9 +64,7 @@ def test_happy_path_sse_and_citation_separation(
     assert all(isinstance(c, StructuredCitation) for c in retrieved)
 
 
-def test_degraded_terminal_only(
-    httpx_mock: HTTPXMock, load_sse_fixture
-) -> None:
+def test_degraded_terminal_only(httpx_mock: HTTPXMock, load_sse_fixture) -> None:
     raw_sse = load_sse_fixture("degraded_terminal_only.txt")
     httpx_mock.add_response(
         url="http://testserver/rag/query",
@@ -85,9 +83,7 @@ def test_degraded_terminal_only(
     assert outcome.notices[0].typed_code == 1
 
 
-def test_node_failure_then_success(
-    httpx_mock: HTTPXMock, load_sse_fixture
-) -> None:
+def test_node_failure_then_success(httpx_mock: HTTPXMock, load_sse_fixture) -> None:
     raw_sse = load_sse_fixture("node_failed_then_success.txt")
     httpx_mock.add_response(
         url="http://testserver/rag/query",

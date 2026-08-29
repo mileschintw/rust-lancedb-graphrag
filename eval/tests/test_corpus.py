@@ -76,9 +76,7 @@ def test_committed_multihop_rag_sample_integrity() -> None:
 def test_committed_subset_selection_metadata() -> None:
     root = repo_root()
     subset_json = root / "eval" / "corpora" / "multihop_rag" / "subset_selection.json"
-    subset_jsonl = (
-        root / "eval" / "corpora" / "multihop_rag" / "documents.subset.jsonl"
-    )
+    subset_jsonl = root / "eval" / "corpora" / "multihop_rag" / "documents.subset.jsonl"
 
     assert subset_json.is_file(), f"Missing {subset_json}"
     assert subset_jsonl.is_file(), f"Missing {subset_jsonl}"

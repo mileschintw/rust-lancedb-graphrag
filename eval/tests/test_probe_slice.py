@@ -303,9 +303,7 @@ def test_probe_rank_le_k_rule_discriminator(
     assert data3["dimensions"][0]["score"] == 1.0
 
 
-def test_probe_arm_flag_and_validation(
-    httpx_mock: HTTPXMock, tmp_path: Path
-) -> None:
+def test_probe_arm_flag_and_validation(httpx_mock: HTTPXMock, tmp_path: Path) -> None:
     resp_sse = (
         "event: final_answer\n"
         'data: {"answer":"ok","snapshot":{"index_generation":"gen-1",'

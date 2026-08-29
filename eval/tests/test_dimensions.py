@@ -24,9 +24,7 @@ def test_dimension_result_ok_without_score_raises() -> None:
 
 
 def test_dimension_result_skipped_with_score_raises() -> None:
-    with pytest.raises(
-        ValidationError, match="status 'skipped' cannot carry a score"
-    ):
+    with pytest.raises(ValidationError, match="status 'skipped' cannot carry a score"):
         DimensionResult(
             name="test_dim",
             status="skipped",

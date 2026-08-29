@@ -7,12 +7,14 @@ import json
 import random
 import tomllib
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.config import repo_root
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
 
 
 class CorpusError(Exception):
@@ -97,7 +99,7 @@ class CorpusConfig:
     """Loaded configuration and question loader for a benchmark corpus."""
 
     def __init__(self, corpus_name: str) -> None:
-        root = repo_root()
+        root = _repo_root()
         toml_path = root / "eval" / "corpora" / f"{corpus_name}.toml"
         if not toml_path.is_file():
             raise CorpusError(f"Corpus config not found at {toml_path}")
@@ -182,7 +184,7 @@ def sample_questions(
 
 def fetch_corpus(corpus_name: str, print_urls_only: bool = False) -> None:
     """Download source dataset files for a corpus into its .cache directory."""
-    root = repo_root()
+    root = _repo_root()
     cache_dir = root / "eval" / "corpora" / corpus_name / ".cache"
 
     urls = {
@@ -208,6 +210,8 @@ def fetch_corpus(corpus_name: str, print_urls_only: bool = False) -> None:
         return
 
     cache_dir.mkdir(parents=True, exist_ok=True)
+    import httpx
+
     with httpx.Client(follow_redirects=True, timeout=120.0) as client:
         for filename, url in file_list:
             dest_file = cache_dir / filename
@@ -233,7 +237,7 @@ def fetch_corpus(corpus_name: str, print_urls_only: bool = False) -> None:
 
 def sample_corpus(corpus_name: str) -> None:
     """Run deterministic sampling and document subset extraction from cached files."""
-    root = repo_root()
+    root = _repo_root()
     corpus_cfg = load_corpus(corpus_name)
     cache_dir = root / "eval" / "corpora" / corpus_name / ".cache"
 
@@ -287,13 +291,9 @@ def sample_corpus(corpus_name: str) -> None:
             else:
                 unreferenced_docs.append(doc)
 
-        distractor_count = int(
-            corpus_cfg.document_subset.get("distractor_count", 25)
-        )
+        distractor_count = int(corpus_cfg.document_subset.get("distractor_count", 25))
         rng = random.Random(corpus_cfg.sample_seed)
-        unref_sorted = sorted(
-            unreferenced_docs, key=lambda d: str(d.get("title", ""))
-        )
+        unref_sorted = sorted(unreferenced_docs, key=lambda d: str(d.get("title", "")))
         selected_distractors = (
             rng.sample(unref_sorted, min(distractor_count, len(unref_sorted)))
             if unref_sorted
@@ -301,9 +301,7 @@ def sample_corpus(corpus_name: str) -> None:
         )
 
         subset_docs = referenced_docs + selected_distractors
-        subset_docs_sorted = sorted(
-            subset_docs, key=lambda d: str(d.get("title", ""))
-        )
+        subset_docs_sorted = sorted(subset_docs, key=lambda d: str(d.get("title", "")))
 
         # Write documents.subset.jsonl
         subset_file = out_dir / "documents.subset.jsonl"
@@ -320,9 +318,7 @@ def sample_corpus(corpus_name: str) -> None:
             "referenced_count": len(referenced_docs),
             "distractor_count": len(selected_distractors),
             "total_count": len(subset_docs_sorted),
-            "articles": [
-                str(d.get("title", "")) for d in subset_docs_sorted
-            ],
+            "articles": [str(d.get("title", "")) for d in subset_docs_sorted],
         }
         with open(
             out_dir / "subset_selection.json", "w", encoding="utf-8", newline="\n"

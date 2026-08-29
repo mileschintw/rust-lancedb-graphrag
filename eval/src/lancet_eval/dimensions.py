@@ -37,9 +37,7 @@ class DimensionResult(BaseModel):
                     f"status {self.status!r} cannot carry detail, got {self.detail}"
                 )
             if not self.reason or not self.reason.strip():
-                raise ValueError(
-                    f"status {self.status!r} requires a non-blank reason"
-                )
+                raise ValueError(f"status {self.status!r} requires a non-blank reason")
         return self
 
 
@@ -57,8 +55,7 @@ OBS_04_PLACEHOLDER = DimensionResult(
     name="community_summary_quality",
     status="skipped",
     reason=(
-        "Deferred to Phase 999.1 (community summaries not yet implemented "
-        "in engine)"
+        "Deferred to Phase 999.1 (community summaries not yet implemented in engine)"
     ),
 )
 
