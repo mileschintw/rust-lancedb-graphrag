@@ -451,3 +451,146 @@ func TestSSEWorkflowCompletedMetadataForwarding(t *testing.T) {
 		t.Errorf("degraded_mode: got %v, want true", payload.Metadata["degraded_mode"])
 	}
 }
+
+func TestRetrievalSnapshotDTOCarriesRetrievedChunks(t *testing.T) {
+	resp := &pb.QueryRAGResponse{
+		Answer:    "answer",
+		SessionId: "session-1",
+		StructuredCitations: []*pb.StructuredCitation{
+			{
+				ChunkId:     "chunk-cited-1",
+				DocumentId:  "doc-1",
+				Title:       "Doc 1",
+				SectionPath: "Sec 1",
+				Excerpt:     "cited excerpt",
+				IsTruncated: false,
+				Score:       0.99,
+				Rank:        1,
+				ContentType: "text/plain",
+			},
+		},
+		Snapshot: &pb.RetrievalSnapshot{
+			IndexGeneration: "gen-1",
+			EmbeddingModel:  "model-1",
+			VectorWeight:    1.0,
+			Bm25Weight:      0.8,
+			RrfK:            60,
+			CandidateLimit:  32,
+			FinalLimit:      8,
+			ResultHash:      "hash-1",
+			RetrievedChunks: []*pb.StructuredCitation{
+				{
+					ChunkId:     "chunk-retrieved-1",
+					DocumentId:  "doc-1",
+					Title:       "Doc 1",
+					SectionPath: "Sec 1",
+					Excerpt:     "retrieved excerpt 1",
+					IsTruncated: false,
+					Score:       0.95,
+					Rank:        1,
+					ContentType: "text/plain",
+				},
+				{
+					ChunkId:     "chunk-retrieved-2",
+					DocumentId:  "doc-2",
+					Title:       "Doc 2",
+					SectionPath: "Sec 2",
+					Excerpt:     "retrieved excerpt 2",
+					IsTruncated: true,
+					Score:       0.85,
+					Rank:        2,
+					ContentType: "text/markdown",
+				},
+				{
+					ChunkId:     "chunk-retrieved-3",
+					DocumentId:  "doc-3",
+					Title:       "Doc 3",
+					SectionPath: "Sec 3",
+					Excerpt:     "retrieved excerpt 3",
+					IsTruncated: false,
+					Score:       0.75,
+					Rank:        3,
+					ContentType: "text/html",
+				},
+			},
+		},
+	}
+
+	dto := ToQueryRAGResponseDTO(resp)
+	if dto.Snapshot == nil {
+		t.Fatal("expected non-nil Snapshot")
+	}
+	if len(dto.Snapshot.RetrievedChunks) != 3 {
+		t.Fatalf("retrieved_chunks length: got %d, want 3", len(dto.Snapshot.RetrievedChunks))
+	}
+	if len(dto.StructuredCitations) != 1 {
+		t.Fatalf("structured_citations length: got %d, want 1", len(dto.StructuredCitations))
+	}
+	if dto.Snapshot.RetrievedChunks[0].ChunkID == dto.StructuredCitations[0].ChunkID {
+		t.Fatal("retrieved_chunks and structured_citations must be independent")
+	}
+
+	for i, chunk := range dto.Snapshot.RetrievedChunks {
+		src := resp.Snapshot.RetrievedChunks[i]
+		if chunk.ChunkID != src.ChunkId ||
+			chunk.DocumentID != src.DocumentId ||
+			chunk.Title != src.Title ||
+			chunk.SectionPath != src.SectionPath ||
+			chunk.Excerpt != src.Excerpt ||
+			chunk.IsTruncated != src.IsTruncated ||
+			chunk.Score != src.Score ||
+			chunk.Rank != src.Rank ||
+			chunk.ContentType != src.ContentType {
+			t.Fatalf("retrieved chunk %d mismatch: got %#v, want %#v", i, chunk, src)
+		}
+	}
+}
+
+func TestRetrievedChunksSerialisesAsEmptyArray(t *testing.T) {
+	// Case 1: Empty retrieved chunks serialises as [] not null
+	resp := &pb.QueryRAGResponse{
+		Snapshot: &pb.RetrievalSnapshot{
+			IndexGeneration: "gen-1",
+			RetrievedChunks: []*pb.StructuredCitation{},
+		},
+	}
+	dto := ToQueryRAGResponseDTO(resp)
+	data, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatalf("marshal DTO: %v", err)
+	}
+	str := string(data)
+	if !strings.Contains(str, `"retrieved_chunks":[]`) {
+		t.Fatalf("expected \"retrieved_chunks\":[] in JSON, got %s", str)
+	}
+	if strings.Contains(str, `"retrieved_chunks":null`) {
+		t.Fatalf("unexpected \"retrieved_chunks\":null in JSON: %s", str)
+	}
+
+	// Case 2: Nil entry inside slice is skipped without panic
+	respWithNil := &pb.QueryRAGResponse{
+		Snapshot: &pb.RetrievalSnapshot{
+			RetrievedChunks: []*pb.StructuredCitation{
+				nil,
+				{
+					ChunkId: "chunk-valid",
+					Rank:    1,
+				},
+				nil,
+			},
+		},
+	}
+	dtoWithNil := ToQueryRAGResponseDTO(respWithNil)
+	if len(dtoWithNil.Snapshot.RetrievedChunks) != 1 || dtoWithNil.Snapshot.RetrievedChunks[0].ChunkID != "chunk-valid" {
+		t.Fatalf("expected 1 valid chunk after skipping nil entries, got %#v", dtoWithNil.Snapshot.RetrievedChunks)
+	}
+
+	// Case 3: Nil snapshot produces nil Snapshot pointer
+	respNilSnapshot := &pb.QueryRAGResponse{
+		Snapshot: nil,
+	}
+	dtoNilSnapshot := ToQueryRAGResponseDTO(respNilSnapshot)
+	if dtoNilSnapshot.Snapshot != nil {
+		t.Fatalf("expected nil Snapshot pointer, got %#v", dtoNilSnapshot.Snapshot)
+	}
+}

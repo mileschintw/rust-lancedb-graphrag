@@ -15,7 +15,7 @@
 #   110 — 109 plus TestOTelErrorHandlerBoundsRepeatedExportErrors (plan 06.2-12), bounding export errors (D-38).
 set -e
 
-EXPECTED_TOTAL=110
+EXPECTED_TOTAL=112
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
@@ -23,7 +23,7 @@ RELOCATION_BASELINE=67
 EXPECTED_PACKAGES="gateway 78
 gateway/db 7
 gateway/internal/config 4
-gateway/internal/sse 9
+gateway/internal/sse 11
 gateway/internal/telemetry 12"
 
 # Ensure go is found in standard user environments

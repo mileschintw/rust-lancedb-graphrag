@@ -45,15 +45,37 @@ type DocumentFilterDTO struct {
 
 // RetrievalSnapshotDTO represents the retrieval parameters and state snapshot.
 type RetrievalSnapshotDTO struct {
-	IndexGeneration string             `json:"index_generation"`
-	EmbeddingModel  string             `json:"embedding_model"`
-	VectorWeight    float64            `json:"vector_weight"`
-	Bm25Weight      float64            `json:"bm25_weight"`
-	RrfK            int32              `json:"rrf_k"`
-	CandidateLimit  int32              `json:"candidate_limit"`
-	FinalLimit      int32              `json:"final_limit"`
-	ActiveFilter    *DocumentFilterDTO `json:"active_filter"`
-	ResultHash      string             `json:"result_hash"`
+	IndexGeneration string                  `json:"index_generation"`
+	EmbeddingModel  string                  `json:"embedding_model"`
+	VectorWeight    float64                 `json:"vector_weight"`
+	Bm25Weight      float64                 `json:"bm25_weight"`
+	RrfK            int32                   `json:"rrf_k"`
+	CandidateLimit  int32                   `json:"candidate_limit"`
+	FinalLimit      int32                   `json:"final_limit"`
+	ActiveFilter    *DocumentFilterDTO      `json:"active_filter"`
+	ResultHash      string                  `json:"result_hash"`
+	RetrievedChunks []StructuredCitationDTO `json:"retrieved_chunks"`
+}
+
+func toStructuredCitationDTOs(in []*pb.StructuredCitation) []StructuredCitationDTO {
+	out := make([]StructuredCitationDTO, 0)
+	for _, sc := range in {
+		if sc == nil {
+			continue
+		}
+		out = append(out, StructuredCitationDTO{
+			ChunkID:     sc.ChunkId,
+			DocumentID:  sc.DocumentId,
+			Title:       sc.Title,
+			SectionPath: sc.SectionPath,
+			Excerpt:     sc.Excerpt,
+			IsTruncated: sc.IsTruncated,
+			Score:       sc.Score,
+			Rank:        sc.Rank,
+			ContentType: sc.ContentType,
+		})
+	}
+	return out
 }
 
 // ToQueryRAGResponseDTO maps a protobuf QueryRAGResponse into its JSON DTO representation.
@@ -70,23 +92,7 @@ func ToQueryRAGResponseDTO(resp *pb.QueryRAGResponse) QueryRAGResponseDTO {
 		citations = resp.Citations
 	}
 
-	structuredCitations := make([]StructuredCitationDTO, 0)
-	for _, sc := range resp.StructuredCitations {
-		if sc == nil {
-			continue
-		}
-		structuredCitations = append(structuredCitations, StructuredCitationDTO{
-			ChunkID:     sc.ChunkId,
-			DocumentID:  sc.DocumentId,
-			Title:       sc.Title,
-			SectionPath: sc.SectionPath,
-			Excerpt:     sc.Excerpt,
-			IsTruncated: sc.IsTruncated,
-			Score:       sc.Score,
-			Rank:        sc.Rank,
-			ContentType: sc.ContentType,
-		})
-	}
+	structuredCitations := toStructuredCitationDTOs(resp.StructuredCitations)
 
 	notices := make([]NoticeDTO, 0)
 	for _, n := range resp.Notices {
@@ -128,6 +134,7 @@ func ToQueryRAGResponseDTO(resp *pb.QueryRAGResponse) QueryRAGResponseDTO {
 			FinalLimit:      resp.Snapshot.FinalLimit,
 			ActiveFilter:    activeFilter,
 			ResultHash:      resp.Snapshot.ResultHash,
+			RetrievedChunks: toStructuredCitationDTOs(resp.Snapshot.RetrievedChunks),
 		}
 	}
 
