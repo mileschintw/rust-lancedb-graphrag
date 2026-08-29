@@ -636,12 +636,12 @@ Plans:
 8. Output is a committed Markdown report plus machine-readable JSON, advisory only (no pass/fail gate), reported per corpus with run metadata (judge model, sample size, date, index generation, commit SHA) and no cross-corpus aggregate (D-54, D-60, D-61).
 9. At least one automated test exercises the shipped generation model's (`dots-studio/dots-3-note-preview:free`) structured-output preflight, closing Phase 05's WARN-NEW-01 (D-63).
 
-**Plans:** 8 plans
+**Plans:** 1/8 plans executed
 
 Plans:
 **Wave 1** *(the retrieval-visibility wire extension; everything downstream consumes it)*
 
-- [ ] 06.3-08-PLAN.md — Additive `retrieved_chunks` on `RetrievalSnapshot` (proto field 12), populated at the retrieval node from the true post-fusion result set and exposed on the gateway's SSE DTO, so the deterministic retrieval metrics measure retrieval rather than the generator's citation behaviour. Numbered 08 but executes first. Closes cross-AI review finding HIGH-1 (ROADMAP SC3, D-50).
+- [x] 06.3-08-PLAN.md — Additive `retrieved_chunks` on `RetrievalSnapshot` (proto field 12), populated at the retrieval node from the true post-fusion result set and exposed on the gateway's SSE DTO, so the deterministic retrieval metrics measure retrieval rather than the generator's citation behaviour. Numbered 08 but executes first. Closes cross-AI review finding HIGH-1 (ROADMAP SC3, D-50).
 
 **Wave 2** *(tracer plus the engine-side D-63 test; both consume wave 1)*
 
