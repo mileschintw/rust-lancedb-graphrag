@@ -160,7 +160,7 @@ fn append_region(
 
     for paragraph in region.split_inclusive("\n\n") {
         let count = paragraph.chars().count();
-        if count > 0 {
+        if count > 0 && !paragraph.trim().is_empty() {
             chunks.extend(split_window(
                 paragraph,
                 leading_chars + paragraph_start,
@@ -203,13 +203,16 @@ fn split_window(
     let mut start = 0;
     while start < chars.len() {
         let end = (start + target_size).min(chars.len());
-        chunks.push(Chunk {
-            content: chars[start..end].iter().collect(),
-            char_start: base_char_start + start,
-            char_end: base_char_start + end,
-            section_path: section_path.clone(),
-            estimated_tokens: 0,
-        });
+        let chunk_content: String = chars[start..end].iter().collect();
+        if !chunk_content.trim().is_empty() {
+            chunks.push(Chunk {
+                content: chunk_content,
+                char_start: base_char_start + start,
+                char_end: base_char_start + end,
+                section_path: section_path.clone(),
+                estimated_tokens: 0,
+            });
+        }
         if end == chars.len() {
             break;
         }

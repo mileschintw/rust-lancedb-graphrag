@@ -1,0 +1,5 @@
+# Evaluation configuration overlay (LANCET_ENV=eval)
+# Provides isolated LanceDB directory for evaluation benchmarks.
+
+[engine]
+lancedb_path = "./data/lancedb-eval"

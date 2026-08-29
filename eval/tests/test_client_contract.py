@@ -339,3 +339,41 @@ def test_eval_settings_validation_and_field_inventory() -> None:
         "sample_seed",
     }
     assert set(EvalSettings.model_fields.keys()) == expected_fields
+
+
+def test_pg_schema_of() -> None:
+    from lancet_eval.config import pg_schema_of
+
+    assert (
+        pg_schema_of(
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=lancet_eval"
+        )
+        == "lancet_eval"
+    )
+    assert (
+        pg_schema_of(
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable"
+        )
+        == "public"
+    )
+    assert pg_schema_of("") == ""
+
+
+def test_store_isolation_validation() -> None:
+    # LanceDB path collision raises EvalConfigError
+    with pytest.raises(EvalConfigError, match="LanceDB path"):
+        EvalSettings(
+            lancedb_path="./data/lancedb",
+            dev_lancedb_path="./data/lancedb",
+            database_url="postgres://localhost/lancet?search_path=lancet_eval",
+            dev_database_url="postgres://localhost/lancet?search_path=public",
+        )
+
+    # PostgreSQL schema collision raises EvalConfigError
+    with pytest.raises(EvalConfigError, match="PostgreSQL schema"):
+        EvalSettings(
+            lancedb_path="./data/lancedb-eval",
+            dev_lancedb_path="./data/lancedb",
+            database_url="postgres://localhost/lancet?search_path=public",
+            dev_database_url="postgres://localhost/lancet",
+        )

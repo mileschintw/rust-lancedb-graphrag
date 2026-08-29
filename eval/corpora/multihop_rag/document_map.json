@@ -1,0 +1,19 @@
+{
+  "corpus": "multihop_rag",
+  "seeded_at": "2026-08-29T23:49:04.986703+00:00",
+  "index_generation": "",
+  "entries": {
+    "0abbe020-d26d-41e6-8d5f-f7867a3608db": {
+      "corpus_id": "&#039;Massive intel failure by Mossad&#039;: Hamas&#039; surprise attack on Israel shocks internet",
+      "document_id": "0abbe020-d26d-41e6-8d5f-f7867a3608db",
+      "title": "&#039;Massive intel failure by Mossad&#039;: Hamas&#039; surprise attack on Israel shocks internet",
+      "url": "https://www.businesstoday.in/latest/world/story/massive-intel-failure-by-mossad-hamas-surprise-attack-on-israel-shocks-internet-401106-2023-10-07?utm_source=rssfeed"
+    },
+    "8c3b3fb6-b512-45ec-879b-27f88ba9b328": {
+      "corpus_id": "'They seemed primed to take over': How the Great Dying doomed the 'beast tooth' and set the stage for the dawn of the dinosaurs",
+      "document_id": "8c3b3fb6-b512-45ec-879b-27f88ba9b328",
+      "title": "'They seemed primed to take over': How the Great Dying doomed the 'beast tooth' and set the stage for the dawn of the dinosaurs",
+      "url": "https://www.livescience.com/animals/extinct-species/they-seemed-primed-to-take-over-how-the-great-dying-doomed-the-beast-tooth-and-set-the-stage-for-the-dawn-of-the-dinosaurs"
+    }
+  }
+}

@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 const OPENROUTER_EMBEDDINGS_URL: &str = "https://openrouter.ai/api/v1/embeddings";
 pub const EMBEDDING_MODEL: &str = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
 const EMBEDDING_DIMENSION: usize = 2048;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_CONCURRENCY: usize = 5;
-const MAX_RETRIES: u32 = 3;
-const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_CONCURRENCY: usize = 2;
+const MAX_RETRIES: u32 = 6;
+const INITIAL_BACKOFF: Duration = Duration::from_secs(2);
 
 pub const MAX_PROVIDER_RESPONSE_BODY_BYTES: usize = 256 * 1024;
 pub const MAX_MODELS_METADATA_BODY_BYTES: usize = 10 * 1024 * 1024;
@@ -232,6 +232,10 @@ impl OpenRouterClient {
     }
 
     async fn embed_with_retry(&self, text: &str) -> Result<Vec<f32>, String> {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Ok(vec![0.0; self.config.expected_dimension]);
+        }
         let mut delay = self.initial_backoff;
         for attempt in 0..=self.config.max_retries {
             match self.send_embedding(text).await {
@@ -245,7 +249,7 @@ impl OpenRouterClient {
                 }
                 Err(RequestFailure::Retryable(_)) => {
                     tokio::time::sleep(delay).await;
-                    delay = delay.saturating_mul(2);
+                    delay = delay.saturating_mul(2).min(Duration::from_secs(30));
                 }
             }
         }

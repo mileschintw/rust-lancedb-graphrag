@@ -143,6 +143,7 @@ pub async fn extract_with_retry(
                 if attempt >= max_attempts {
                     return Err(err);
                 }
+                tokio::time::sleep(std::time::Duration::from_millis(2000 * attempt as u64)).await;
             }
         }
         attempt += 1;

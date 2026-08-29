@@ -105,21 +105,109 @@ def corpus_sample(
 
 
 @app.command("preflight")
-def preflight() -> None:
-    """Run preflight health and isolation checks."""
-    _unimplemented("preflight will be implemented in plan 06.3-04")
+def preflight_command(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus to preflight check (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+    judged: Annotated[
+        bool,
+        typer.Option(
+            "--judged",
+            help="Include judge checks and OpenRouter API key validation",
+        ),
+    ] = False,
+) -> None:
+    """Run preflight health, isolation, and model checks."""
+    from rich.table import Table
+
+    from lancet_eval.preflight import run_preflight_checks
+
+    results = run_preflight_checks(corpus_name=corpus, judged=judged)
+
+    table = Table(title=f"Preflight Health Checks — {corpus}")
+    table.add_column("Check", style="bold")
+    table.add_column("Status", justify="center")
+    table.add_column("Details")
+
+    all_passed = True
+    for r in results:
+        status_str = "[green]PASS[/green]" if r.passed else "[bold red]FAIL[/bold red]"
+        if not r.passed:
+            all_passed = False
+        table.add_row(r.name, status_str, r.message)
+
+    console.print(table)
+
+    if not all_passed:
+        console.print(
+            "[bold red]Preflight failed. "
+            "Address the issues above before running benchmark.[/bold red]"
+        )
+        raise typer.Exit(code=1)
+
+    console.print("[green]All preflight checks passed successfully.[/green]")
 
 
 @app.command("seed")
-def seed() -> None:
+def seed_command(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus to seed (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+) -> None:
     """Seed benchmark documents into evaluation store."""
-    _unimplemented("seed will be implemented in plan 06.3-04")
+    try:
+        from lancet_eval.seed import seed_corpus
+
+        doc_map = seed_corpus(corpus)
+        console.print(
+            f"[green]Corpus '{corpus}' seeded successfully "
+            f"({len(doc_map.entries)} documents mapped).[/green]"
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Seeding error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("reseed")
-def reseed() -> None:
+def reseed_command(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus to reseed (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+    confirm: Annotated[
+        bool,
+        typer.Option(
+            "--confirm",
+            help="Confirm destructive drop and recreation of evaluation store",
+        ),
+    ] = False,
+) -> None:
     """Reseed evaluation store with clean schema."""
-    _unimplemented("reseed will be implemented in plan 06.3-04")
+    try:
+        from lancet_eval.seed import reseed_corpus
+
+        doc_map = reseed_corpus(corpus, confirmation=confirm)
+        console.print(
+            f"[green]Corpus '{corpus}' reseeded successfully "
+            f"({len(doc_map.entries)} documents mapped).[/green]"
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Reseeding error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("run")
