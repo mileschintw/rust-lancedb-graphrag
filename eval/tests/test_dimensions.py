@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from lancet_eval.dimensions import (
     DIMENSION_REGISTRY,
     OBS_04_PLACEHOLDER,
+    REGISTERED_DIMENSIONS,
     DimensionResult,
 )
 
@@ -55,6 +56,25 @@ def test_dimension_result_forbids_extra_fields() -> None:
             score=1.0,
             bogus_field=123,  # type: ignore[call-arg]
         )
+
+
+def test_registered_dimensions_inventory() -> None:
+    expected = [
+        "retrieval_evidence_coverage",
+        "context_precision_at_k",
+        "ranking_quality",
+        "answer_exact_match",
+        "answer_f1",
+        "answer_faithfulness",
+        "answer_groundedness",
+        "graph_ablation_delta",
+        "abstention_on_unanswerable",
+        "wire_contract_conformance",
+        "community_summary_quality",
+        "run_traceability",
+    ]
+    for dim in expected:
+        assert dim in REGISTERED_DIMENSIONS
 
 
 def test_obs_04_placeholder_registered() -> None:

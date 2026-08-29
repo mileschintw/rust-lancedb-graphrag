@@ -163,13 +163,25 @@ def _normalize_ws(text: str) -> str:
 @app.command("probe")
 def probe(
     question: Annotated[
-        str,
+        str | None,
         typer.Option("--question", "-q", help="Probe question to evaluate"),
-    ],
+    ] = None,
     gold_facts: Annotated[
-        list[str],
+        list[str] | None,
         typer.Option("--gold-fact", "-f", help="Gold evidence fact(s)"),
-    ],
+    ] = None,
+    gold_answer: Annotated[
+        str | None,
+        typer.Option("--gold-answer", "-a", help="Gold answer for EM/F1 evaluation"),
+    ] = None,
+    corpus: Annotated[
+        str | None,
+        typer.Option("--corpus", "-c", help="Corpus to draw probe question from"),
+    ] = None,
+    question_id: Annotated[
+        str | None,
+        typer.Option("--question-id", "-i", help="Question ID in corpus"),
+    ] = None,
     arm: Annotated[
         str,
         typer.Option(
@@ -187,12 +199,66 @@ def probe(
     ] = None,
 ) -> None:
     """Probe a single question end-to-end through the evaluation harness."""
+    from lancet_eval.corpus import GoldQuestion, load_corpus
+    from lancet_eval.metrics import (
+        context_precision_at_k,
+        em_f1,
+        mrr_at_k,
+        recall_at_k,
+    )
+
     if arm not in ("graph-on", "graph-off"):
         console.print(
             f"[bold red]Error:[/bold red] invalid arm {arm!r}. "
             "Must be 'graph-on' or 'graph-off'."
         )
         raise typer.Exit(code=1)
+
+    target_q = question
+    target_facts = list(gold_facts or [])
+    target_answer = gold_answer or ""
+    q_id = question_id or "probe-001"
+
+    if corpus:
+        corpus_cfg = load_corpus(corpus)
+        questions = corpus_cfg.questions
+        if question_id:
+            matched = [q for q in questions if q.question_id == question_id]
+            if not matched:
+                console.print(
+                    f"[bold red]Error:[/bold red] question ID '{question_id}' "
+                    f"not found in corpus '{corpus}'."
+                )
+                raise typer.Exit(code=1)
+            selected_q = matched[0]
+        else:
+            if not questions:
+                console.print(
+                    f"[bold red]Error:[/bold red] corpus '{corpus}' is empty."
+                )
+                raise typer.Exit(code=1)
+            selected_q = questions[0]
+
+        target_q = target_q or selected_q.question
+        if not target_facts:
+            target_facts = selected_q.gold_facts
+        if not target_answer:
+            target_answer = selected_q.gold_answer
+        q_id = selected_q.question_id
+
+    if not target_q:
+        console.print(
+            "[bold red]Error:[/bold red] must provide either --question or --corpus."
+        )
+        raise typer.Exit(code=1)
+
+    q_obj = GoldQuestion(
+        question_id=q_id,
+        question=target_q,
+        gold_facts=target_facts,
+        gold_answer=target_answer,
+        evidence_list=[{"fact": f} for f in target_facts],
+    )
 
     disable_graph = arm == "graph-off"
     settings = load_settings()
@@ -215,7 +281,7 @@ def probe(
         ) as client:
             outcome = run_query(
                 client,
-                query=question,
+                query=target_q,
                 disable_graph_context=disable_graph,
                 deadline_s=settings.question_deadline_secs,
             )
@@ -223,47 +289,101 @@ def probe(
         stream_error = f"{type(exc).__name__}: {exc}"
 
     dim_name = f"probe_evidence_recall_at_{k}"
+    retrieved_chunks = (
+        outcome.answer.snapshot.retrieved_chunks
+        if outcome and outcome.answer and outcome.answer.snapshot
+        else None
+    )
+
+    dimensions: list[DimensionResult] = []
+
     if stream_error is not None:
-        retrieval_dim = DimensionResult(
-            name=dim_name,
-            status="error",
-            reason=stream_error,
-            n=len(gold_facts),
+        dimensions.append(
+            DimensionResult(
+                name=dim_name,
+                status="error",
+                reason=stream_error,
+                n=len(target_facts),
+            )
         )
-    elif outcome is None or outcome.answer is None or outcome.answer.snapshot is None:
-        retrieval_dim = DimensionResult(
-            name=dim_name,
-            status="skipped",
-            reason="no retrieval snapshot on the response",
-            n=len(gold_facts),
+    elif q_obj.is_null:
+        dimensions.append(
+            DimensionResult(
+                name=dim_name,
+                status="skipped",
+                reason="null-query items excluded from retrieval evaluation",
+                n=len(target_facts),
+            )
         )
     else:
-        snapshot = outcome.answer.snapshot
-        # Primary k-selection rule: rank <= k in wire order
-        top_k_chunks = [c for c in snapshot.retrieved_chunks if c.rank <= k]
+        rec_out = recall_at_k(q_obj, retrieved_chunks, k=k)
+        if rec_out.status == "ok":
+            dimensions.append(
+                DimensionResult(
+                    name=dim_name,
+                    status="ok",
+                    score=rec_out.score,
+                    detail=rec_out.detail,
+                    n=rec_out.n,
+                )
+            )
+        else:
+            dimensions.append(
+                DimensionResult(
+                    name=dim_name,
+                    status=rec_out.status,  # type: ignore[arg-type]
+                    reason=rec_out.reason,
+                    n=rec_out.n,
+                )
+            )
 
-        matched_count = 0
-        for fact in gold_facts:
-            norm_fact = _normalize_ws(fact)
-            if any(norm_fact in _normalize_ws(c.excerpt) for c in top_k_chunks):
-                matched_count += 1
+        prec_out = context_precision_at_k(q_obj, retrieved_chunks, k=k)
+        if prec_out.status == "ok":
+            dimensions.append(
+                DimensionResult(
+                    name=f"probe_context_precision_at_{k}",
+                    status="ok",
+                    score=prec_out.score,
+                    detail=prec_out.detail,
+                    n=prec_out.n,
+                )
+            )
 
-        score = (matched_count / len(gold_facts)) if gold_facts else 0.0
-        retrieval_dim = DimensionResult(
-            name=dim_name,
-            status="ok",
-            score=score,
-            detail={
-                "hits": float(matched_count),
-                "gold_facts": float(len(gold_facts)),
-            },
-            n=len(gold_facts),
-        )
+        mrr_out = mrr_at_k(q_obj, retrieved_chunks, k=10)
+        if mrr_out.status == "ok":
+            dimensions.append(
+                DimensionResult(
+                    name="probe_mrr_at_10",
+                    status="ok",
+                    score=mrr_out.score,
+                    detail=mrr_out.detail,
+                    n=mrr_out.n,
+                )
+            )
 
-    dimensions = [retrieval_dim, OBS_04_PLACEHOLDER]
+        if target_answer and outcome and outcome.answer:
+            em, f1 = em_f1(target_answer, outcome.answer.answer)
+            dimensions.append(
+                DimensionResult(
+                    name="probe_answer_exact_match",
+                    status="ok",
+                    score=em,
+                    n=1,
+                )
+            )
+            dimensions.append(
+                DimensionResult(
+                    name="probe_answer_f1",
+                    status="ok",
+                    score=f1,
+                    n=1,
+                )
+            )
+
+    dimensions.append(OBS_04_PLACEHOLDER)
     corr_id = outcome.correlation_id if outcome else ""
     metadata = RunMetadata(
-        corpus="probe",
+        corpus=corpus or "probe",
         generated_at=datetime.now(UTC).isoformat(),
         commit_sha=get_commit_sha(),
         sample_size_deterministic=1,
@@ -271,7 +391,7 @@ def probe(
         notes=f"Single question probe (arm={arm}, correlation_id={corr_id})",
     )
     report = CorpusReport(
-        corpus="probe",
+        corpus=corpus or "probe",
         metadata=metadata,
         dimensions=dimensions,
     )

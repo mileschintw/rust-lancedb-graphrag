@@ -45,6 +45,21 @@ DimensionBuilder = Callable[..., DimensionResult]
 
 DIMENSION_REGISTRY: dict[str, DimensionBuilder] = {}
 
+REGISTERED_DIMENSIONS: list[str] = [
+    "retrieval_evidence_coverage",
+    "context_precision_at_k",
+    "ranking_quality",
+    "answer_exact_match",
+    "answer_f1",
+    "answer_faithfulness",
+    "answer_groundedness",
+    "graph_ablation_delta",
+    "abstention_on_unanswerable",
+    "wire_contract_conformance",
+    "community_summary_quality",
+    "run_traceability",
+]
+
 
 def register_dimension(name: str, builder: DimensionBuilder) -> None:
     """Register a dimension builder in the global registry."""
@@ -58,5 +73,4 @@ OBS_04_PLACEHOLDER = DimensionResult(
         "Deferred to Phase 999.1 (community summaries not yet implemented in engine)"
     ),
 )
-
-register_dimension("community_summary_quality", lambda **_: OBS_04_PLACEHOLDER)
+register_dimension("community_summary_quality", lambda: OBS_04_PLACEHOLDER)

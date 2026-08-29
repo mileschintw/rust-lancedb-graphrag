@@ -347,3 +347,51 @@ def test_probe_arm_flag_and_validation(httpx_mock: HTTPXMock, tmp_path: Path) ->
         ["probe", "-q", "q", "-f", "f", "--arm", "invalid-arm"],
     )
     assert res_bad.exit_code != 0
+
+
+def test_probe_with_corpus_and_question_id(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    resp_sse = (
+        "event: final_answer\n"
+        'data: {"answer":"Dr. Jane Doe",'
+        '"snapshot":{"index_generation":"gen-1",'
+        '"retrieved_chunks":[{"chunk_id":"c1","document_id":"d1","rank":1,'
+        '"excerpt":"Project Delta is directed by Dr. Jane Doe."}]}}\n\n'
+        "event: workflow_completed\n"
+        'data: {"success":true,"final_response":{"answer":"Dr. Jane Doe",'
+        '"snapshot":{"index_generation":"gen-1",'
+        '"retrieved_chunks":[{"chunk_id":"c1","document_id":"d1","rank":1,'
+        '"excerpt":"Project Delta is directed by Dr. Jane Doe."}]}}}\n\n'
+    )
+    httpx_mock.add_response(
+        url="http://localhost:8080/rag/query",
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        text=resp_sse,
+    )
+
+    out_dir = tmp_path / "probe_corpus"
+    res = runner.invoke(
+        app,
+        [
+            "probe",
+            "--corpus",
+            "graphrag_bench",
+            "--question-id",
+            "grb-003",
+            "-o",
+            str(out_dir),
+        ],
+    )
+    assert res.exit_code == 0
+
+    with open(out_dir / "report.json", encoding="utf-8") as f:
+        data = json.load(f)
+
+    dims = {d["name"]: d for d in data["dimensions"]}
+    assert dims["probe_evidence_recall_at_4"]["score"] == 1.0
+    assert dims["probe_context_precision_at_4"]["score"] == 1.0
+    assert dims["probe_mrr_at_10"]["score"] == 1.0
+    assert dims["probe_answer_exact_match"]["score"] == 1.0
+    assert dims["probe_answer_f1"]["score"] == 1.0
