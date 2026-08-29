@@ -1,0 +1,9 @@
+event: final_answer
+data: {"answer":"Answer 1","citations":[],"session_id":"sess-1","answer_basis":1,"structured_citations":[],"notices":[],"snapshot":null}
+
+event: final_answer
+data: {"answer":"Answer 2","citations":[],"session_id":"sess-1","answer_basis":1,"structured_citations":[],"notices":[],"snapshot":null}
+
+event: workflow_completed
+data: {"success":true,"total_duration_ms":100,"final_response":{"answer":"Answer 2","citations":[],"session_id":"sess-1","answer_basis":1,"structured_citations":[],"notices":[],"snapshot":null}}
+

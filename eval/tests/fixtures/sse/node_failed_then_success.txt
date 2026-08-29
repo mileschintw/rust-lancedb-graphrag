@@ -1,0 +1,12 @@
+event: node_started
+data: {"node_name":"ExtractGraphContext","inputs_summary":"inputs","sequence_ordinal":1}
+
+event: node_failed
+data: {"node_name":"ExtractGraphContext","error_kind":3,"error_message":"graph query timed out","retryable":false}
+
+event: final_answer
+data: {"answer":"Degraded answer","citations":[],"session_id":"sess-2","answer_basis":2,"structured_citations":[],"notices":[{"code":"GRAPH_TIMEOUT","message":"Graph context timed out","severity":1,"typed_code":10}],"snapshot":{"index_generation":"gen-1","embedding_model":"bge-small","vector_weight":1.0,"bm25_weight":0.8,"rrf_k":60,"candidate_limit":32,"final_limit":8,"result_hash":"hash-456","retrieved_chunks":[]}}
+
+event: workflow_completed
+data: {"success":true,"total_duration_ms":150,"final_response":{"answer":"Degraded answer","citations":[],"session_id":"sess-2","answer_basis":2,"structured_citations":[],"notices":[{"code":"GRAPH_TIMEOUT","message":"Graph context timed out","severity":1,"typed_code":10}],"snapshot":{"index_generation":"gen-1","embedding_model":"bge-small","vector_weight":1.0,"bm25_weight":0.8,"rrf_k":60,"candidate_limit":32,"final_limit":8,"result_hash":"hash-456","retrieved_chunks":[]}}}
+

@@ -122,6 +122,7 @@ coverage.xml
 .mypy_cache/
 .dmypy.json
 dmypy.json
+eval/runs/**/journal.jsonl.tmp
 
 # Tracing & Logging
 # ------------------------------------------------------------------------------

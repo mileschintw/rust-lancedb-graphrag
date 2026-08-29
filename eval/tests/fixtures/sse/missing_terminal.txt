@@ -1,0 +1,6 @@
+event: node_started
+data: {"node_name":"Retrieve","inputs_summary":"inputs","sequence_ordinal":1}
+
+event: answer_chunk
+data: {"chunk_text":"Partial...","is_final":false}
+

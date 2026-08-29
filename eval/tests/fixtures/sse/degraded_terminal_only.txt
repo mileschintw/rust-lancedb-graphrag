@@ -1,0 +1,9 @@
+event: node_started
+data: {"node_name":"Retrieve","inputs_summary":"inputs","sequence_ordinal":1}
+
+event: node_completed
+data: {"node_name":"Retrieve","outputs_summary":"outputs","duration_ms":15}
+
+event: workflow_completed
+data: {"success":true,"total_duration_ms":30,"notices":[{"code":"NO_EVIDENCE","message":"No relevant evidence found","severity":1,"typed_code":1}]}
+
