@@ -636,31 +636,35 @@ Plans:
 8. Output is a committed Markdown report plus machine-readable JSON, advisory only (no pass/fail gate), reported per corpus with run metadata (judge model, sample size, date, index generation, commit SHA) and no cross-corpus aggregate (D-54, D-60, D-61).
 9. At least one automated test exercises the shipped generation model's (`dots-studio/dots-3-note-preview:free`) structured-output preflight, closing Phase 05's WARN-NEW-01 (D-63).
 
-**Plans:** 7 plans
+**Plans:** 8 plans
 
 Plans:
-**Wave 1** *(tracer plus the engine-side D-63 test; no shared files)*
+**Wave 1** *(the retrieval-visibility wire extension; everything downstream consumes it)*
+
+- [ ] 06.3-08-PLAN.md — Additive `retrieved_chunks` on `RetrievalSnapshot` (proto field 12), populated at the retrieval node from the true post-fusion result set and exposed on the gateway's SSE DTO, so the deterministic retrieval metrics measure retrieval rather than the generator's citation behaviour. Numbered 08 but executes first. Closes cross-AI review finding HIGH-1 (ROADMAP SC3, D-50).
+
+**Wave 2** *(tracer plus the engine-side D-63 test; both consume wave 1)*
 
 - [ ] 06.3-01-PLAN.md — Tracer: `eval/` uv project with committed lockfile, contract-asserting SSE client with typed failures, `DimensionResult` making a fabricated number unconstructable, the OBS-04 skipped placeholder, the report renderer with its committed schema, and one question scored end to end (D-48, D-49, D-51, D-65, D-84).
 - [ ] 06.3-02-PLAN.md — Drift-anchored Rust tests for the shipped generation model's structured-output preflight, plus the raised engine test-count invariants (D-63).
 
-**Wave 2** *(blocked on 06.3-01)*
+**Wave 3** *(blocked on 06.3-08, 06.3-01)*
 
-- [ ] 06.3-03-PLAN.md — Corpus as a config entry (both corpora through one loader), the committed seeded 500-question sample and attributed document subset, and the full deterministic metric set on one declared matching rule (D-44, D-50, D-53, D-55, D-59).
+- [ ] 06.3-03-PLAN.md — Corpus as a config entry (both corpora through one loader), the committed seeded 500-question sample and attributed document subset, and the full deterministic metric set on one declared matching rule computed over the retrieved-chunk list (D-44, D-50, D-53, D-55, D-59).
 
-**Wave 3** *(blocked on 06.3-01, 06.3-03)*
+**Wave 4** *(blocked on 06.3-01, 06.3-03)*
 
 - [ ] 06.3-04-PLAN.md — Eval store isolation via the existing Atlas migrations on a separate schema plus an isolated LanceDB path, seeding through the real ingestion path with the seed-time document map, and the fail-fast preflight (D-55, D-56, D-57, D-58, D-64, D-84).
 
-**Wave 4** *(blocked on 06.3-01, 06.3-03, 06.3-04)*
+**Wave 5** *(blocked on 06.3-01, 06.3-03, 06.3-04)*
 
 - [ ] 06.3-05-PLAN.md — Resumable append-only journal, both graph-ablation arms against one running engine, the ablation dimension with its notice-provenance check, and the offline deterministic scorer (D-46, D-47, D-50, D-53).
 
-**Wave 5** *(blocked on 06.3-01, 06.3-03, 06.3-05)*
+**Wave 6** *(blocked on 06.3-01, 06.3-03, 06.3-04, 06.3-05)*
 
 - [ ] 06.3-06-PLAN.md — Pinned, temperature-zero, distinct-family LLM judge with an auditable plain-text cache, groundedness and faithfulness behind a seeded judged slice, and the human calibration slice (D-50, D-52, D-53, D-62).
 
-**Wave 6** *(blocked on all preceding plans)*
+**Wave 7** *(blocked on all preceding plans)*
 
 - [ ] 06.3-07-PLAN.md — Full run metadata with publication preconditions, per-corpus Markdown and JSON reporting with no aggregate, the regenerated schema, and the committed recorded run (D-54, D-60, D-61).
 
