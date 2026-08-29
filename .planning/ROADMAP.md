@@ -636,7 +636,7 @@ Plans:
 8. Output is a committed Markdown report plus machine-readable JSON, advisory only (no pass/fail gate), reported per corpus with run metadata (judge model, sample size, date, index generation, commit SHA) and no cross-corpus aggregate (D-54, D-60, D-61).
 9. At least one automated test exercises the shipped generation model's (`dots-studio/dots-3-note-preview:free`) structured-output preflight, closing Phase 05's WARN-NEW-01 (D-63).
 
-**Plans:** 2/8 plans executed
+**Plans:** 3/8 plans executed
 
 Plans:
 **Wave 1** *(the retrieval-visibility wire extension; everything downstream consumes it)*
@@ -646,7 +646,7 @@ Plans:
 **Wave 2** *(tracer plus the engine-side D-63 test; both consume wave 1)*
 
 - [x] 06.3-01-PLAN.md — Tracer: `eval/` uv project with committed lockfile, contract-asserting SSE client with typed failures, `DimensionResult` making a fabricated number unconstructable, the OBS-04 skipped placeholder, the report renderer with its committed schema, and one question scored end to end (D-48, D-49, D-51, D-65, D-84).
-- [ ] 06.3-02-PLAN.md — Drift-anchored Rust tests for the shipped generation model's structured-output preflight, plus the raised engine test-count invariants (D-63).
+- [x] 06.3-02-PLAN.md — Drift-anchored Rust tests for the shipped generation model's structured-output preflight, plus the raised engine test-count invariants (D-63).
 
 **Wave 3** *(blocked on 06.3-08, 06.3-01)*
 
