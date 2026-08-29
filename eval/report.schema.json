@@ -1,0 +1,129 @@
+{
+  "$defs": {
+    "DimensionResult": {
+      "additionalProperties": false,
+      "description": "Result of an evaluation dimension with cross-field consistency validation.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "skipped",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Score"
+        },
+        "detail": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Detail",
+          "type": "object"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "n": {
+          "default": 0,
+          "title": "N",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "status"
+      ],
+      "title": "DimensionResult",
+      "type": "object"
+    },
+    "RunMetadata": {
+      "additionalProperties": false,
+      "description": "Execution metadata stamped on every evaluation report.",
+      "properties": {
+        "corpus": {
+          "title": "Corpus",
+          "type": "string"
+        },
+        "generated_at": {
+          "title": "Generated At",
+          "type": "string"
+        },
+        "commit_sha": {
+          "default": "unknown",
+          "title": "Commit Sha",
+          "type": "string"
+        },
+        "sample_size_deterministic": {
+          "default": 0,
+          "title": "Sample Size Deterministic",
+          "type": "integer"
+        },
+        "sample_size_judged": {
+          "default": 0,
+          "title": "Sample Size Judged",
+          "type": "integer"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "corpus",
+        "generated_at"
+      ],
+      "title": "RunMetadata",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Scored evaluation report for a single corpus.",
+  "properties": {
+    "corpus": {
+      "title": "Corpus",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/RunMetadata"
+    },
+    "dimensions": {
+      "items": {
+        "$ref": "#/$defs/DimensionResult"
+      },
+      "title": "Dimensions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "corpus",
+    "metadata"
+  ],
+  "title": "CorpusReport",
+  "type": "object"
+}

@@ -1,0 +1,25 @@
+# Evaluation Report: {{ report.corpus }}
+
+## Run Metadata
+- **Corpus:** {{ report.metadata.corpus }}
+- **Generated At:** {{ report.metadata.generated_at }}
+- **Commit SHA:** `{{ report.metadata.commit_sha }}`
+- **Deterministic Sample Size:** {{ report.metadata.sample_size_deterministic }}
+- **Judged Sample Size:** {{ report.metadata.sample_size_judged }}
+{% if report.metadata.notes %}- **Notes:** {{ report.metadata.notes }}
+{% endif %}
+
+## Dimensions
+
+| Dimension | Status | Score | Reason / Details |
+|---|---|---|---|
+{% for d in report.dimensions %}
+{% if d.status == "ok" %}
+| `{{ d.name }}` | ok | {{ format_score(d.name, d.score) }} | {{ format_details(d.detail) }} |
+{% else %}
+| `{{ d.name }}` | {{ d.status }} | — | {{ d.reason }} |
+{% endif %}
+{% endfor %}
+
+---
+*Note: This report is advisory only with no automated pass/fail gate. Scores are rounded using Python's built-in banker's rounding (round-half-to-even: 3 decimals for ratios, 2 decimals for judged scales). Full float precision is recorded in report.json.*
