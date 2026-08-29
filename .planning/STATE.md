@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3
-current_phase_name: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04)
-status: planning
+current_phase_name: python-evaluation-harness-benchmark-corpora-and-recorded-run
+status: executing
 stopped_at: Phase 06.2 complete, ready to plan Phase 06.3
-last_updated: "2026-08-29T01:09:17.675Z"
+last_updated: "2026-08-29T02:22:07.383Z"
 last_activity: 2026-08-28
-state_head: 39071050336c761560a5ac78c26b5c9f87a9e6d9
+state_head: 0ec3a42f864b80ccad45cf6e1fd03b636a9a8a7f
 progress:
   total_phases: 11
   completed_phases: 6
-  total_plans: 121
+  total_plans: 128
   completed_plans: 121
 milestone_name: milestone
 current_plan: 1
@@ -27,7 +27,6 @@ current_plan: 1
   - **Verification passed:** `06.2-VERIFICATION.md` status canonicalized to `passed`.
   - **UAT complete:** 7/7 tests passed with user acceptance and deferred operational note recorded.
   - **Phase 06.2 complete.** Ready to plan Phase 06.3 (Evaluation Harness, Corpora and Recorded Run).
-
 
 - Phase 06.1 Plan 06.1-01 executed: implemented index rebuild-and-swap, CorpusStore snapshot isolation, same-snapshot dense/BM25 pinning, worker burst debouncing, fail-closed rebuild_debounce_ms configuration, and degraded notice emission (NoticeCode::IndexRebuildFailed).
 - Phase 06.1 Plan 06.1-02 executed: deterministic proofs for DEBT-BU-01 (run_window evaluation before challenge validation) and DEBT-BU-02 (sample_owned cleanup isolation harness and 26/26 passing unit tests).
@@ -123,8 +122,8 @@ current_plan: 1
 ## Active Phase
 
 - **Phase:** 06.3 — Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04)
-- **Status:** Ready to plan
-- **Total Plans in Phase:** 12
+- **Status:** Ready to execute
+- **Total Plans in Phase:** 7
 - **Completed Plans in Phase:** 6/6 (executed; phase-level gates run 2026-08-24, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (4/8 must-haves)
 - **Next:** `/gsd-plan-phase 6.2 --gaps`
