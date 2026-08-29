@@ -1,0 +1,24 @@
+[documents]
+source = "https://github.com/GraphRAG-Bench/GraphRAG-Bench"
+license = "unspecified"
+count = 0
+commit_documents = false
+chunk_size = 500
+
+[questions]
+file = "graphrag_bench/questions.sample.jsonl"
+label_format = "graphrag_bench"
+sample_seed = 42
+sample_size = 5
+fixture_only = true
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 0
+
+[models]
+judge_model = "openai/gpt-4o-mini"
+judge_prompt_version = "v1"
+
+[arms]
+arms = ["graph-on", "graph-off"]

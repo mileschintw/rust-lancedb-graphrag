@@ -1,0 +1,5 @@
+{"id":"grb-001","question":"Which entity connects Node Alpha to Node Gamma?","type":"multi-hop","evidence":[{"fact":"Node Alpha connects to Node Beta."},{"fact":"Node Beta connects to Node Gamma."}],"answer":"Node Beta"}
+{"id":"grb-002","question":"What is the relationship between Entity X and Entity Z?","type":"relational","evidence":[{"fact":"Entity X is the parent company of Entity Y."},{"fact":"Entity Y acquired Entity Z in 2024."}],"answer":"Parent organization via subsidiary"}
+{"id":"grb-003","question":"Who leads Project Delta?","type":"single-hop","evidence":[{"fact":"Project Delta is directed by Dr. Jane Doe."}],"answer":"Dr. Jane Doe"}
+{"id":"grb-004","question":"What is the status of unrecorded Project Omega?","type":"null-query","evidence":[],"answer":"Insufficient information."}
+{"id":"grb-005","question":"Where was Corporation Theta founded?","type":"single-hop","evidence":[{"fact":"Corporation Theta was established in Seattle in 2010."}],"answer":"Seattle"}

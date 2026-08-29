@@ -53,15 +53,59 @@ def _unimplemented(plan_msg: str) -> None:
 
 
 @corpus_app.command("fetch")
-def corpus_fetch() -> None:
+def corpus_fetch(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus to fetch (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+    print_urls: Annotated[
+        bool,
+        typer.Option(
+            "--print-urls",
+            help="Print source URLs and exit without downloading",
+        ),
+    ] = False,
+) -> None:
     """Fetch benchmark corpus datasets."""
-    _unimplemented("corpus fetch will be implemented in plan 06.3-03")
+    try:
+        from lancet_eval.corpus import fetch_corpus
+
+        fetch_corpus(corpus, print_urls_only=print_urls)
+        if not print_urls:
+            console.print(
+                f"[green]Corpus '{corpus}' fetched successfully.[/green]"
+            )
+    except Exception as exc:
+        console.print(f"[bold red]Fetch error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 @corpus_app.command("sample")
-def corpus_sample() -> None:
+def corpus_sample(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus to sample (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+) -> None:
     """Sample questions from benchmark corpus."""
-    _unimplemented("corpus sample will be implemented in plan 06.3-03")
+    try:
+        from lancet_eval.corpus import sample_corpus
+
+        sample_corpus(corpus)
+        console.print(
+            f"[green]Corpus '{corpus}' sampled successfully.[/green]"
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Sampling error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("preflight")

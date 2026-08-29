@@ -36,8 +36,6 @@ def test_cli_help_lists_all_subcommands() -> None:
 @pytest.mark.parametrize(
     "args,expected_plan",
     [
-        (["corpus", "fetch"], "06.3-03"),
-        (["corpus", "sample"], "06.3-03"),
         (["preflight"], "06.3-04"),
         (["seed"], "06.3-04"),
         (["reseed"], "06.3-04"),
@@ -52,6 +50,15 @@ def test_unimplemented_subcommands_exit_nonzero_naming_plan(
     result = runner.invoke(app, args)
     assert result.exit_code != 0
     assert expected_plan in result.output
+
+
+def test_corpus_fetch_print_urls() -> None:
+    result = runner.invoke(
+        app, ["corpus", "fetch", "--corpus", "multihop_rag", "--print-urls"]
+    )
+    assert result.exit_code == 0
+    assert "MultiHopRAG.json" in result.output
+    assert "corpus.json" in result.output
 
 
 def test_probe_matching_hit(httpx_mock: HTTPXMock, tmp_path: Path) -> None:
