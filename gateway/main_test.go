@@ -2831,7 +2831,7 @@ func TestRAGQuerySSEFirstFrame(t *testing.T) {
 	})
 
 	assertSSEPayloadKeySet(t, string(rawFinal["snapshot"]), []string{
-		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit", "index_generation", "result_hash", "rrf_k", "vector_weight",
+		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit", "index_generation", "result_hash", "retrieved_chunks", "rrf_k", "vector_weight",
 	})
 }
 
@@ -2913,7 +2913,7 @@ func TestQueryRAG_SSE_FinalAnswerPayloadKeySet(t *testing.T) {
 		"code", "message", "severity", "typed_code",
 	})
 	assertSSEPayloadKeySet(t, string(rawFinal["snapshot"]), []string{
-		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit", "index_generation", "result_hash", "rrf_k", "vector_weight",
+		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit", "index_generation", "result_hash", "retrieved_chunks", "rrf_k", "vector_weight",
 	})
 }
 

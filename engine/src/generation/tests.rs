@@ -1856,3 +1856,160 @@ async fn fake_generator_stall_can_be_cancelled() {
     );
     assert_eq!(generator.calls(), 1);
 }
+
+const SHIPPED_GENERATION_MODEL: &str = "dots-studio/dots-3-note-preview:free";
+
+fn load_shipped_generation_model() -> String {
+    #[derive(serde::Deserialize)]
+    struct PartialConfig {
+        openrouter: PartialOpenRouter,
+    }
+    #[derive(serde::Deserialize)]
+    struct PartialOpenRouter {
+        generation_model: String,
+    }
+
+    let cfg = ::config::Config::builder()
+        .add_source(::config::File::with_name("../config/config"))
+        .build()
+        .expect("build config from ../config/config");
+    let partial: PartialConfig = cfg
+        .try_deserialize()
+        .expect("deserialize openrouter.generation_model");
+    partial.openrouter.generation_model
+}
+
+#[test]
+fn shipped_generation_model_pin_matches_preflight_test_model() {
+    let loaded = load_shipped_generation_model();
+    assert_eq!(
+        loaded, SHIPPED_GENERATION_MODEL,
+        "shipped generation_model in config/config.toml must match test constant"
+    );
+    assert!(!loaded.trim().is_empty(), "shipped model pin cannot be empty");
+    assert_ne!(
+        loaded, "openai/gpt-4o-mini",
+        "shipped model pin cannot be openai/gpt-4o-mini"
+    );
+}
+
+#[tokio::test]
+async fn shipped_generation_model_structured_output_preflight_succeeds() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = thread::spawn(move || {
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+
+        let models_payload = json!({
+            "data": [
+                {
+                    "id": SHIPPED_GENERATION_MODEL,
+                    "supported_parameters": ["response_format", "json_schema"]
+                }
+            ]
+        });
+        write_json_response(&mut stream, models_payload);
+    });
+
+    let mock_chat_url = format!("http://{addr}/chat/completions");
+    let mock_models_url = format!("http://{addr}/models");
+
+    let adapter = OpenRouterGenerator::new("test-key", SHIPPED_GENERATION_MODEL)
+        .expect("adapter created")
+        .with_endpoints(mock_chat_url, mock_models_url);
+
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("structured output preflight for shipped model must succeed");
+
+    server_handle.join().expect("mock server completed");
+}
+
+#[tokio::test]
+async fn shipped_generation_model_without_structured_output_params_fails_preflight() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = thread::spawn(move || {
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+
+        let models_payload = json!({
+            "data": [
+                {
+                    "id": SHIPPED_GENERATION_MODEL,
+                    "supported_parameters": ["temperature", "max_tokens"]
+                }
+            ]
+        });
+        write_json_response(&mut stream, models_payload);
+    });
+
+    let mock_chat_url = format!("http://{addr}/chat/completions");
+    let mock_models_url = format!("http://{addr}/models");
+
+    let adapter = OpenRouterGenerator::new("test-key", SHIPPED_GENERATION_MODEL)
+        .expect("adapter created")
+        .with_endpoints(mock_chat_url, mock_models_url);
+
+    let err = adapter
+        .check_supported_parameters()
+        .await
+        .expect_err("missing structured output params must fail preflight");
+
+    assert_eq!(err.kind, GenerationErrorKind::SupportedParameters);
+    assert!(
+        err.message().contains("structured outputs")
+            || err.message().contains("response_format")
+            || err.message().contains("json_schema"),
+        "error message should indicate missing structured output capability: {}",
+        err.message()
+    );
+
+    server_handle.join().expect("mock server completed");
+}
+
+#[tokio::test]
+async fn shipped_generation_model_absent_from_models_list_fails_preflight() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let server_handle = thread::spawn(move || {
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+
+        let models_payload = json!({
+            "data": [
+                {
+                    "id": "unrelated/other-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }
+            ]
+        });
+        write_json_response(&mut stream, models_payload);
+    });
+
+    let mock_chat_url = format!("http://{addr}/chat/completions");
+    let mock_models_url = format!("http://{addr}/models");
+
+    let adapter = OpenRouterGenerator::new("test-key", SHIPPED_GENERATION_MODEL)
+        .expect("adapter created")
+        .with_endpoints(mock_chat_url, mock_models_url);
+
+    let err = adapter
+        .check_supported_parameters()
+        .await
+        .expect_err("absent model must fail preflight");
+
+    assert_eq!(err.kind, GenerationErrorKind::SupportedParameters);
+    assert!(
+        err.message().contains(SHIPPED_GENERATION_MODEL),
+        "error message must name the missing model ID: {}",
+        err.message()
+    );
+
+    server_handle.join().expect("mock server completed");
+}
