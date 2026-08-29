@@ -572,7 +572,7 @@ Plans:
 7. A missing collector degrades silently to stdout in both services — telemetry initialization never fails the service (D-38). Service identity (`service.name`, `service.version`, `deployment.environment`) is set via the standard resource detector (D-43).
 8. Phase 05 D-30's workflow metadata lands both as span attributes and as additive `WorkflowCompletedEvent` protobuf fields (D-41).
 
-**Plans:** 12/12 plans executed
+**Plans:** 12/12 plans complete
 
 Plans:
 **Wave 1** *(tracer — the foundation every later plan expands)*

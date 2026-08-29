@@ -49,5 +49,5 @@ phase writes against a real interface.
 | Collector — OTLP receiver, batch processor, three signal pipelines | INTEGRATE | |
 | Collector — sampling / filtering / transform processors | OPT-OUT | not needed — always-on sampling (D-32) and a bounded attribute set mean there is nothing to filter or scrub at the Collector |
 | Grafana — file-provisioned datasources, dashboards, trace-to-log correlation | INTEGRATE | |
-| Grafana — Loki derivedFields `matcherType: label` for OTLP structured metadata `trace_id` | INTEGRATE | Plan 10 (reviews): engine OTLP logs do not embed `trace_id=` in the body; Grafana ≥10.1 label matcher is the return path to Jaeger |
+| Grafana — Loki derivedFields for OTLP structured metadata trace_id | INTEGRATE | Plan 10 (reviews): engine OTLP logs do not embed `trace_id=` in the body; Grafana ≥10.1 label matcher is the return path to Jaeger |
 | Grafana / Prometheus — alert rules, recording rules, notification policies | OPT-OUT | explicitly out of scope — D-40 forbids them: there is no on-call and nowhere to route them |
