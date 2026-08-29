@@ -138,7 +138,8 @@ impl LancetServiceImpl {
                 snapshot.generation.clone(),
                 self.effective_settings.embedding_model.clone(),
             )
-            .with_rebuild_degraded(snapshot.rebuild_degraded),
+            .with_rebuild_degraded(snapshot.rebuild_degraded)
+            .with_excerpt_max_chars(self.effective_settings.citation_excerpt_max_chars),
         );
         runner.add_node(workflow::nodes::AssemblePromptNode::with_settings(
             self.effective_settings

@@ -985,6 +985,7 @@ fn retrieval_snapshot_variant_provenance_wire_contract() {
             "v1:rephrased-query".to_string(),
             "v2:expanded-query".to_string(),
         ],
+        retrieved_chunks: vec![],
     };
 
     let mut buf = Vec::new();
@@ -1051,4 +1052,251 @@ fn retrieval_snapshot_variant_provenance_wire_contract() {
         ]
     );
     assert_eq!(decoded, original);
+}
+
+#[test]
+fn retrieval_snapshot_retrieved_chunks_wire_contract() {
+    use prost::Message;
+
+    let chunk1 = crate::pb::lancet::v1::StructuredCitation {
+        chunk_id: "chunk-001".to_string(),
+        document_id: "00000000-0000-4000-8000-000000000001".to_string(),
+        title: "Test Doc 1".to_string(),
+        section_path: "Intro".to_string(),
+        excerpt: "This is a test excerpt 1".to_string(),
+        is_truncated: false,
+        score: 0.95,
+        rank: 1,
+        content_type: "text/plain".to_string(),
+    };
+    let chunk2 = crate::pb::lancet::v1::StructuredCitation {
+        chunk_id: "chunk-002".to_string(),
+        document_id: "00000000-0000-4000-8000-000000000002".to_string(),
+        title: "Test Doc 2".to_string(),
+        section_path: "Methods".to_string(),
+        excerpt: "This is a truncated excerpt...".to_string(),
+        is_truncated: true,
+        score: 0.85,
+        rank: 2,
+        content_type: "text/markdown".to_string(),
+    };
+
+    let populated = crate::pb::lancet::v1::RetrievalSnapshot {
+        index_generation: "gen-2026-test".to_string(),
+        embedding_model: "test-embedding-model-v1".to_string(),
+        vector_weight: 1.0,
+        bm25_weight: 0.8,
+        rrf_k: 60,
+        candidate_limit: 32,
+        final_limit: 8,
+        active_filter: Some(crate::pb::lancet::v1::DocumentFilter {
+            document_ids: vec!["doc-001".to_string()],
+            content_types: vec!["text/plain".to_string()],
+        }),
+        result_hash: "deadbeef01234567".to_string(),
+        variant_count: 1,
+        variant_identities: vec!["v0:test".to_string()],
+        retrieved_chunks: vec![chunk1.clone(), chunk2.clone()],
+    };
+
+    let mut buf = Vec::new();
+    populated
+        .encode(&mut buf)
+        .expect("RetrievalSnapshot encoding must succeed");
+
+    // Decode tags present on wire
+    let mut tags = std::collections::BTreeSet::new();
+    let mut slice = &buf[..];
+    while !slice.is_empty() {
+        let (tag, wire_type) =
+            prost::encoding::decode_key(&mut slice).expect("protobuf wire key must decode cleanly");
+        tags.insert(tag);
+        prost::encoding::skip_field(
+            wire_type,
+            tag,
+            &mut slice,
+            prost::encoding::DecodeContext::default(),
+        )
+        .expect("protobuf field must skip cleanly");
+    }
+
+    for historical_tag in 1..=11 {
+        assert!(
+            tags.contains(&historical_tag),
+            "tag {} must be present in encoded wire",
+            historical_tag
+        );
+    }
+    assert!(
+        tags.contains(&12),
+        "tag 12 (retrieved_chunks) must be present in encoded wire when populated"
+    );
+
+    let decoded = crate::pb::lancet::v1::RetrievalSnapshot::decode(&buf[..])
+        .expect("RetrievalSnapshot decoding must succeed");
+    assert_eq!(decoded, populated);
+    assert_eq!(decoded.retrieved_chunks.len(), 2);
+    assert_eq!(decoded.retrieved_chunks[0].chunk_id, "chunk-001");
+    assert_eq!(decoded.retrieved_chunks[0].rank, 1);
+    assert_eq!(decoded.retrieved_chunks[0].score, 0.95);
+    assert_eq!(decoded.retrieved_chunks[0].excerpt, "This is a test excerpt 1");
+    assert!(!decoded.retrieved_chunks[0].is_truncated);
+    assert_eq!(decoded.retrieved_chunks[1].chunk_id, "chunk-002");
+    assert_eq!(decoded.retrieved_chunks[1].rank, 2);
+    assert_eq!(decoded.retrieved_chunks[1].score, 0.85);
+    assert_eq!(decoded.retrieved_chunks[1].excerpt, "This is a truncated excerpt...");
+    assert!(decoded.retrieved_chunks[1].is_truncated);
+
+    // Empty retrieved_chunks: tag 12 must be absent
+    let empty_chunks_snapshot = crate::pb::lancet::v1::RetrievalSnapshot {
+        index_generation: "gen-2026-test".to_string(),
+        embedding_model: "test-embedding-model-v1".to_string(),
+        vector_weight: 1.0,
+        bm25_weight: 0.8,
+        rrf_k: 60,
+        candidate_limit: 32,
+        final_limit: 8,
+        active_filter: None,
+        result_hash: "deadbeef01234567".to_string(),
+        variant_count: 1,
+        variant_identities: vec!["v0:test".to_string()],
+        retrieved_chunks: vec![],
+    };
+
+    let mut empty_buf = Vec::new();
+    empty_chunks_snapshot
+        .encode(&mut empty_buf)
+        .expect("encoding empty snapshot must succeed");
+
+    let mut empty_tags = std::collections::BTreeSet::new();
+    let mut empty_slice = &empty_buf[..];
+    while !empty_slice.is_empty() {
+        let (tag, wire_type) = prost::encoding::decode_key(&mut empty_slice)
+            .expect("protobuf wire key must decode cleanly");
+        empty_tags.insert(tag);
+        prost::encoding::skip_field(
+            wire_type,
+            tag,
+            &mut empty_slice,
+            prost::encoding::DecodeContext::default(),
+        )
+        .expect("protobuf field must skip cleanly");
+    }
+
+    assert!(
+        !empty_tags.contains(&12),
+        "tag 12 must be absent from encoded wire when retrieved_chunks is empty"
+    );
+
+    let decoded_empty = crate::pb::lancet::v1::RetrievalSnapshot::decode(&empty_buf[..])
+        .expect("decoding empty snapshot must succeed");
+    assert_eq!(decoded_empty, empty_chunks_snapshot);
+    assert!(decoded_empty.retrieved_chunks.is_empty());
+}
+
+#[tokio::test]
+async fn retrieve_populates_retrieved_chunks_in_rank_order() {
+    use crate::workflow::nodes::RetrieveHybridNode;
+    use crate::workflow::ports::FakeDenseRetrievalPort;
+    use crate::workflow::{Node, WorkflowContext};
+    use tokio_util::sync::CancellationToken;
+
+    let c_1 = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-1",
+        "Short text 1",
+    );
+    let c_2 = candidate(
+        "00000000-0000-4000-8000-000000000002",
+        "chunk-2",
+        "Short text 2",
+    );
+
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![c_1.clone(), c_2.clone()]));
+    let settings = RetrievalSettings::default();
+    let node = RetrieveHybridNode::new(Some(fake_dense), None, None, settings);
+
+    let req = crate::testkit::test_query_request("test query", "sess-1");
+    let mut ctx = WorkflowContext::new("sess-1".into(), "trace-1".into(), &req);
+    let cancel = CancellationToken::new();
+    node.run(&mut ctx, &cancel).await.unwrap();
+
+    let snapshot = ctx.snapshot.as_ref().expect("snapshot must be present");
+    let chunk_ids: Vec<String> = snapshot
+        .retrieved_chunks
+        .iter()
+        .map(|c| c.chunk_id.clone())
+        .collect();
+    assert_eq!(chunk_ids, ctx.final_candidates);
+    assert_eq!(snapshot.retrieved_chunks.len(), 2);
+    assert_eq!(snapshot.retrieved_chunks[0].rank, 1);
+    assert_eq!(snapshot.retrieved_chunks[1].rank, 2);
+    assert!(snapshot.retrieved_chunks[0].rank < snapshot.retrieved_chunks[1].rank);
+}
+
+#[tokio::test]
+async fn retrieve_marks_truncated_retrieved_chunk_excerpt() {
+    use crate::workflow::nodes::RetrieveHybridNode;
+    use crate::workflow::ports::FakeDenseRetrievalPort;
+    use crate::workflow::{Node, WorkflowContext};
+    use tokio_util::sync::CancellationToken;
+
+    let long_text = "This is a long chunk content exceeding sixteen characters.";
+    let short_text = "Short text.";
+
+    let c_long = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-long",
+        long_text,
+    );
+    let c_short = candidate(
+        "00000000-0000-4000-8000-000000000002",
+        "chunk-short",
+        short_text,
+    );
+
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![c_long.clone(), c_short.clone()]));
+    let settings = RetrievalSettings::default();
+    let node = RetrieveHybridNode::new(Some(fake_dense), None, None, settings)
+        .with_excerpt_max_chars(16);
+
+    let req = crate::testkit::test_query_request("test query", "sess-1");
+    let mut ctx = WorkflowContext::new("sess-1".into(), "trace-1".into(), &req);
+    let cancel = CancellationToken::new();
+    node.run(&mut ctx, &cancel).await.unwrap();
+
+    let snapshot = ctx.snapshot.as_ref().expect("snapshot must be present");
+    assert_eq!(snapshot.retrieved_chunks.len(), 2);
+
+    let long_res = &snapshot.retrieved_chunks[0];
+    assert_eq!(long_res.chunk_id, "chunk-long");
+    assert_eq!(long_res.excerpt.chars().count(), 16);
+    assert_eq!(long_res.excerpt, "This is a long c");
+    assert!(long_res.is_truncated);
+
+    let short_res = &snapshot.retrieved_chunks[1];
+    assert_eq!(short_res.chunk_id, "chunk-short");
+    assert_eq!(short_res.excerpt, short_text);
+    assert!(!short_res.is_truncated);
+}
+
+#[tokio::test]
+async fn retrieve_empty_candidates_leaves_snapshot_some_with_empty_retrieved_chunks() {
+    use crate::workflow::nodes::RetrieveHybridNode;
+    use crate::workflow::ports::FakeDenseRetrievalPort;
+    use crate::workflow::{Node, WorkflowContext};
+    use tokio_util::sync::CancellationToken;
+
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![]));
+    let settings = RetrievalSettings::default();
+    let node = RetrieveHybridNode::new(Some(fake_dense), None, None, settings);
+
+    let req = crate::testkit::test_query_request("test query", "sess-1");
+    let mut ctx = WorkflowContext::new("sess-1".into(), "trace-1".into(), &req);
+    let cancel = CancellationToken::new();
+    node.run(&mut ctx, &cancel).await.unwrap();
+
+    assert!(ctx.snapshot.is_some(), "ctx.snapshot must be Some even on zero evidence");
+    let snapshot = ctx.snapshot.as_ref().unwrap();
+    assert!(snapshot.retrieved_chunks.is_empty(), "retrieved_chunks must be empty");
 }

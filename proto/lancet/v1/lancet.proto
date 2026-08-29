@@ -143,6 +143,8 @@ message RetrievalSnapshot {
   string result_hash = 9;
   uint32 variant_count = 10;
   repeated string variant_identities = 11;
+  // The full ranked retrieval result set independent of what the generator cited.
+  repeated StructuredCitation retrieved_chunks = 12;
 }
 
 message QueryRAGResponse {

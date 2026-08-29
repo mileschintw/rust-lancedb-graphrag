@@ -11,6 +11,8 @@ use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
 use crate::rerank::Reranker;
 use crate::retrieval::{fuse_candidates, fuse_cross_variant_candidates, RetrievalSettings};
 
+pub const DEFAULT_RETRIEVED_EXCERPT_MAX_CHARS: usize = 512;
+
 pub struct RetrieveHybridNode {
     dense_port: Option<Arc<dyn DenseRetrievalPort>>,
     bm25_port: Option<Arc<dyn Bm25RetrievalPort>>,
@@ -19,6 +21,7 @@ pub struct RetrieveHybridNode {
     index_generation: String,
     embedding_model: String,
     rebuild_degraded: bool,
+    excerpt_max_chars: usize,
 }
 
 impl RetrieveHybridNode {
@@ -36,6 +39,7 @@ impl RetrieveHybridNode {
             index_generation: String::new(),
             embedding_model: String::new(),
             rebuild_degraded: false,
+            excerpt_max_chars: DEFAULT_RETRIEVED_EXCERPT_MAX_CHARS,
         }
     }
 
@@ -51,6 +55,11 @@ impl RetrieveHybridNode {
 
     pub fn with_rebuild_degraded(mut self, rebuild_degraded: bool) -> Self {
         self.rebuild_degraded = rebuild_degraded;
+        self
+    }
+
+    pub fn with_excerpt_max_chars(mut self, max_chars: usize) -> Self {
+        self.excerpt_max_chars = max_chars;
         self
     }
 
@@ -249,6 +258,32 @@ impl RetrieveHybridNode {
             .map(|b| b.chunk_id.clone())
             .collect();
 
+        let retrieved_chunks: Vec<crate::pb::lancet::v1::StructuredCitation> = ctx
+            .evidence_blocks
+            .iter()
+            .map(|block| {
+                let (excerpt, is_truncated) =
+                    crate::prompt::bounded_unicode_excerpt(&block.text, self.excerpt_max_chars);
+                crate::pb::lancet::v1::StructuredCitation {
+                    chunk_id: block.chunk_id.clone(),
+                    document_id: block.document_id.clone(),
+                    title: block
+                        .title
+                        .clone()
+                        .unwrap_or_else(|| "Untitled Document".into()),
+                    section_path: block.section_path.clone().unwrap_or_else(|| "Root".into()),
+                    excerpt,
+                    is_truncated,
+                    score: block.score,
+                    rank: block.rank as i32,
+                    content_type: block
+                        .content_type
+                        .clone()
+                        .unwrap_or_else(|| "text/plain".into()),
+                }
+            })
+            .collect();
+
         ctx.snapshot = Some(crate::pb::lancet::v1::RetrievalSnapshot {
             index_generation: self.index_generation.clone(),
             embedding_model: self.embedding_model.clone(),
@@ -261,6 +296,7 @@ impl RetrieveHybridNode {
             result_hash: result_hasher.finalize().to_hex().to_string(),
             variant_count: ctx.variants.len() as u32,
             variant_identities: ctx.variants.clone(),
+            retrieved_chunks,
         });
 
         // 5. Zero evidence check

@@ -130,6 +130,9 @@ pub struct RetrievalSnapshot {
     pub variant_count: u32,
     #[prost(string, repeated, tag="11")]
     pub variant_identities: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The full ranked retrieval result set independent of what the generator cited.
+    #[prost(message, repeated, tag="12")]
+    pub retrieved_chunks: ::prost::alloc::vec::Vec<StructuredCitation>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryRagResponse {
