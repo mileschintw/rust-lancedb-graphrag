@@ -6,6 +6,14 @@ The Lancet evaluation harness (`eval/`) is a Python package managed by `uv` that
 
 The harness operates as a black-box HTTP/SSE client driving the `/rag/query` endpoint of the Lancet gateway, asserting streaming contracts, extracting deterministic IR metrics (recall@k, context precision@k, MRR@10, nDCG@k, SQuAD EM/F1, abstention rate) without LLM dependencies, and running cached LLM-as-judge groundedness/faithfulness evaluations.
 
+## Two-Armed Ablation Execution (D-46, D-47)
+
+The harness evaluates both arms of every benchmark question against a single running engine instance:
+- **`graph-on`:** Standard RAG execution with graph context enabled (request body omits `disable_graph_context`).
+- **`graph-off`:** Ablated execution without graph context (request body sets `disable_graph_context: true`).
+- **Ablation Delta:** `delta = graph_on_score - graph_off_score`. Near-zero or negative deltas are published as-is to report honest empirical results.
+- **Provenance Verification:** `graph-off` responses must carry the typed notice `GRAPH_ABLATION` (code 18) and must not carry `GRAPH_UNAVAILABLE` (code 10).
+
 ## Isolated Evaluation Store (D-56, D-57, D-84)
 
 The evaluation stack is completely isolated from the development environment across both storage layers:
@@ -23,17 +31,7 @@ cd gateway
 atlas schema apply --env eval --auto-approve
 ```
 
-### 2. Schema Staleness Verification (Branch 3)
-
-The evaluation schema definition `gateway/db/schema.eval.hcl` is generated from `gateway/db/schema.hcl`. Verify that `schema.eval.hcl` is up to date:
-
-```bash
-# Verify schema.eval.hcl matches schema.hcl:
-cd gateway
-atlas schema inspect --env local --url "file://db/schema.hcl" --format "{{ hcl . }}"
-```
-
-### 3. Starting the Isolated Services
+### 2. Starting the Isolated Services
 
 ```bash
 # Terminal 1 — Start Engine from repository root with eval overlay:
@@ -60,11 +58,14 @@ uv run --project eval lancet-eval preflight --corpus multihop_rag
 # Seed benchmark corpus into isolated evaluation store
 uv run --project eval lancet-eval seed --corpus multihop_rag
 
-# Explicit destructive reseed
-uv run --project eval lancet-eval reseed --corpus multihop_rag --confirm
+# Drive full two-armed benchmark run (resumable across quota interruptions)
+uv run --project eval lancet-eval run --corpus multihop_rag
 
-# Probe a single question end-to-end (requires running stack)
-uv run --project eval lancet-eval probe --corpus multihop_rag --question-id "mhr-0001" --out ./tmp-probe
+# Smoke test a run with limited questions (stamped partial: true)
+uv run --project eval lancet-eval run --corpus multihop_rag --limit 3
+
+# Score completed run offline with zero HTTP requests
+uv run --project eval lancet-eval score --run eval/runs/latest --no-judge
 ```
 
 ## CLI Sub-commands
@@ -77,14 +78,9 @@ uv run --project eval lancet-eval probe --corpus multihop_rag --question-id "mhr
 | `lancet-eval seed` | **Implemented** | Plan 06.3-04 | Ingest evaluation documents into isolated evaluation store |
 | `lancet-eval reseed` | **Implemented** | Plan 06.3-04 | Drop and recreate isolated evaluation store schema |
 | `lancet-eval probe` | **Implemented** | Plans 06.3-01 / 06.3-03 | Single-question end-to-end smoke check with deterministic scoring |
-| `lancet-eval run` | Planned | Plan 06.3-05 | Execute benchmark questions with graph-on / graph-off arms |
-| `lancet-eval score` | Planned | Plans 06.3-05 / 06.3-06 | Compute deterministic and cached LLM-judged metrics |
+| `lancet-eval run` | **Implemented** | Plan 06.3-05 | Execute benchmark questions with graph-on / graph-off arms |
+| `lancet-eval score` | **Implemented** | Plan 06.3-05 | Compute deterministic offline IR & answer metrics |
 | `lancet-eval report` | Planned | Plan 06.3-07 | Emit final dated Markdown and JSON evaluation reports |
-
-## Benchmark Corpora
-
-- **MultiHop-RAG:** Tang & Yang (2024), ODC-BY 1.0 license. Committed 500-question sample (`eval/corpora/multihop_rag/questions.sample.jsonl`) and 338-document subset (`eval/corpora/multihop_rag/documents.subset.jsonl`).
-- **GraphRAG-Bench:** Unspecified license. Hand-authored synthetic schema fixture (`eval/corpora/graphrag_bench/questions.sample.jsonl`, `fixture_only = true`) used for offline corpus-agnostic loader verification.
 
 ## Offline Testing
 

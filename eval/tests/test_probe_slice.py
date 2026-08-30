@@ -36,8 +36,6 @@ def test_cli_help_lists_all_subcommands() -> None:
 @pytest.mark.parametrize(
     "args,expected_plan",
     [
-        (["run"], "06.3-05"),
-        (["score"], "06.3-05"),
         (["report"], "06.3-07"),
     ],
 )

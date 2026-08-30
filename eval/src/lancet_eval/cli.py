@@ -211,15 +211,115 @@ def reseed_command(
 
 
 @app.command("run")
-def run_benchmark() -> None:
-    """Run evaluation benchmark questions against gateway."""
-    _unimplemented("run will be implemented in plan 06.3-05")
+def run_benchmark(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus to drive (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            "-o",
+            help="Path to output journal file",
+        ),
+    ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            "--limit",
+            "-l",
+            help="Limit number of questions (smoke test only, marks partial)",
+        ),
+    ] = None,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume/--no-resume",
+            help="Resume from existing journal and skip completed questions",
+        ),
+    ] = True,
+    workers: Annotated[
+        int,
+        typer.Option(
+            "--workers",
+            "-w",
+            help="Number of concurrent worker threads",
+        ),
+    ] = 1,
+) -> None:
+    """Run evaluation benchmark questions across graph-on and graph-off arms."""
+    try:
+        from lancet_eval.run import drive
+
+        if out is None:
+            ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+            out = repo_root() / "eval" / "runs" / f"{corpus}_{ts}" / "journal.jsonl"
+
+        msg = (
+            f"[bold blue]Driving corpus '{corpus}' "
+            f"(limit={limit}, resume={resume}, workers={workers})...[/bold blue]"
+        )
+        console.print(msg)
+        count = drive(
+            corpus=corpus,
+            journal_path=out,
+            limit=limit,
+            resume=resume,
+            workers=workers,
+        )
+        console.print(
+            f"[green]Successfully recorded {count} new work units to {out}[/green]"
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Run error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("score")
-def score_benchmark() -> None:
-    """Score journaled evaluation runs."""
-    _unimplemented("score will be implemented in plan 06.3-05 and 06.3-06")
+def score_benchmark(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Path to run directory containing journal.jsonl",
+        ),
+    ],
+    no_judge: Annotated[
+        bool,
+        typer.Option(
+            "--no-judge",
+            help="Compute offline deterministic metrics only without LLM judge calls",
+        ),
+    ] = True,
+    sample: Annotated[
+        int | None,
+        typer.Option(
+            "--sample",
+            "-s",
+            help="Sample size for judged evaluation pass",
+        ),
+    ] = None,
+) -> None:
+    """Score journaled evaluation runs offline."""
+    try:
+        from lancet_eval.score import score_run
+
+        console.print(f"[bold blue]Scoring run at {run}...[/bold blue]")
+        report = score_run(run_dir=run, no_judge=no_judge, sample=sample)
+        md = render_markdown(report)
+        console.print(md)
+        console.print(
+            f"[green]Score report written to {run / 'report.json'}[/green]"
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Score error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("report")

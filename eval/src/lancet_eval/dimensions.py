@@ -7,6 +7,9 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+NOTICE_CODE_GRAPH_UNAVAILABLE = 10
+NOTICE_CODE_GRAPH_ABLATION = 18
+
 
 class DimensionResult(BaseModel):
     """Result of an evaluation dimension with cross-field consistency validation."""
@@ -74,3 +77,40 @@ OBS_04_PLACEHOLDER = DimensionResult(
     ),
 )
 register_dimension("community_summary_quality", lambda: OBS_04_PLACEHOLDER)
+
+
+def make_graph_ablation_delta(
+    *,
+    graph_on_score: float,
+    graph_on_n: int,
+    graph_on_errors: int,
+    graph_off_score: float,
+    graph_off_n: int,
+    graph_off_errors: int,
+) -> DimensionResult:
+    """Build DimensionResult for graph ablation comparison."""
+    if graph_on_n == 0 and graph_off_n == 0:
+        return DimensionResult(
+            name="graph_ablation_delta",
+            status="error",
+            reason="No successfully evaluated records for graph-on or graph-off arms",
+            n=0,
+        )
+    delta = graph_on_score - graph_off_score
+    detail = {
+        "graph_on_score": graph_on_score,
+        "graph_on_n": float(graph_on_n),
+        "graph_on_errors": float(graph_on_errors),
+        "graph_off_score": graph_off_score,
+        "graph_off_n": float(graph_off_n),
+        "graph_off_errors": float(graph_off_errors),
+        "delta": delta,
+    }
+    return DimensionResult(
+        name="graph_ablation_delta",
+        status="ok",
+        score=delta,
+        detail=detail,
+        n=graph_on_n + graph_off_n,
+    )
+

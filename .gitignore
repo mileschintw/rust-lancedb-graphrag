@@ -58,6 +58,7 @@ lancedb/
 .lancedb/
 data/
 data/lancedb-eval/
+eval/runs/
 data/lancedb-verify-02-06/
 data/.phase02-lancedb-preclean-*/
 .planning/phases/02-ingestion-chunking-vector-storage/.02-LIVE-CHALLENGE.json

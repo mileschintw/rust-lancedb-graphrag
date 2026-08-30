@@ -406,6 +406,38 @@ def em_f1(gold_answer: str, predicted_answer: str) -> tuple[float, float]:
     return (em, f1)
 
 
+def squad_em(question: GoldQuestion, predicted_answer: str) -> MetricOutcome:
+    """Compute SQuAD exact match (EM) for a single question."""
+    if not question.gold_answer:
+        return MetricOutcome(
+            status="skipped",
+            reason="Question has no gold answer",
+            n=0,
+        )
+    em, _ = em_f1(question.gold_answer, predicted_answer)
+    return MetricOutcome(
+        status="ok",
+        score=em,
+        n=1,
+    )
+
+
+def squad_f1(question: GoldQuestion, predicted_answer: str) -> MetricOutcome:
+    """Compute SQuAD token F1 for a single question."""
+    if not question.gold_answer:
+        return MetricOutcome(
+            status="skipped",
+            reason="Question has no gold answer",
+            n=0,
+        )
+    _, f1 = em_f1(question.gold_answer, predicted_answer)
+    return MetricOutcome(
+        status="ok",
+        score=f1,
+        n=1,
+    )
+
+
 def abstention_outcome(
     question: GoldQuestion, notices: list[Any], answer: str, citations: list[Any]
 ) -> str:
@@ -429,6 +461,23 @@ def abstention_outcome(
         return "hallucinated_on_null"
 
     return "other"
+
+
+def abstention_rate(
+    question: GoldQuestion,
+    answer: str,
+    citations: list[Any] | None = None,
+    notices: list[Any] | None = None,
+) -> MetricOutcome:
+    """Compute binary abstention success for a null question."""
+    outcome = abstention_outcome(question, notices or [], answer, citations or [])
+    score = 1.0 if outcome == "correct_abstention" else 0.0
+    return MetricOutcome(
+        status="ok",
+        score=score,
+        detail={"outcome": 1.0 if outcome == "correct_abstention" else 0.0},
+        n=1,
+    )
 
 
 def reference_convention_map_at_10(

@@ -34,6 +34,11 @@ class GoldQuestion(BaseModel):
     evidence_list: list[dict[str, Any]] = Field(default_factory=list)
 
     @property
+    def id(self) -> str:
+        """Alias for question_id."""
+        return self.question_id
+
+    @property
     def is_null(self) -> bool:
         """True if the query has no gold evidence (the null-query slice)."""
         return len(self.evidence_list) == 0 or len(self.gold_facts) == 0
@@ -164,6 +169,16 @@ class CorpusConfig:
 def load_corpus(corpus_name: str) -> CorpusConfig:
     """Load a corpus by name (e.g. 'multihop_rag' or 'graphrag_bench')."""
     return CorpusConfig(corpus_name)
+
+
+def load_corpus_config(corpus_name: str) -> CorpusConfig:
+    """Alias for load_corpus."""
+    return load_corpus(corpus_name)
+
+
+def load_sample_questions(corpus_name: str) -> list[GoldQuestion]:
+    """Load sampled gold questions for a corpus."""
+    return load_corpus(corpus_name).questions
 
 
 def _question_sort_key(raw: dict[str, Any]) -> str:
