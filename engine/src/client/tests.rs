@@ -137,8 +137,8 @@ fn client(server: &MockServer, max_retries: u32) -> OpenRouterClient {
 }
 
 #[tokio::test]
-async fn production_client_times_out_at_locked_ten_seconds() {
-    let server = MockServer::start(vec![200], Duration::from_secs(11));
+async fn production_client_times_out_at_locked_fifteen_seconds() {
+    let server = MockServer::start(vec![200], Duration::from_secs(20));
     let started = Instant::now();
     let client = OpenRouterClient::for_test(server.endpoint.clone(), 0, Duration::ZERO);
 
@@ -154,11 +154,11 @@ async fn production_client_times_out_at_locked_ten_seconds() {
         "expected a timeout error, got: {error}"
     );
     assert!(
-        elapsed >= Duration::from_secs(9),
+        elapsed >= Duration::from_secs(14),
         "request returned before the locked timeout: {elapsed:?}"
     );
     assert!(
-        elapsed < Duration::from_secs(15),
+        elapsed < Duration::from_secs(20),
         "request exceeded the narrow timeout tolerance: {elapsed:?}"
     );
 }
@@ -186,14 +186,14 @@ async fn retries_server_errors_then_returns_error() {
 }
 
 #[tokio::test]
-async fn caps_parallel_embedding_requests_at_five() {
+async fn caps_parallel_embedding_requests_at_two() {
     let server = MockServer::start(vec![200], Duration::from_millis(30));
     let texts = (0..12)
         .map(|index| format!("text {index}"))
         .collect::<Vec<_>>();
     let embeddings = client(&server, 3).get_embeddings(&texts).await.unwrap();
     assert_eq!(embeddings.len(), texts.len());
-    assert_eq!(server.max_active.load(Ordering::SeqCst), 5);
+    assert_eq!(server.max_active.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -246,9 +246,9 @@ async fn embedding_config_preserves_bounds_and_redaction() {
     let server = MockServer::start(vec![500, 500, 500, 500], Duration::ZERO);
     let config = OpenRouterEmbeddingConfig::new("custom/embedding-model", server.endpoint).unwrap();
 
-    assert_eq!(config.timeout, Duration::from_secs(10));
-    assert_eq!(config.max_retries, 3);
-    assert_eq!(config.max_concurrency, 5);
+    assert_eq!(config.timeout, Duration::from_secs(15));
+    assert_eq!(config.max_retries, 6);
+    assert_eq!(config.max_concurrency, 2);
     assert_eq!(config.expected_dimension, 2048);
 
     let secret = "secret-must-not-appear";
