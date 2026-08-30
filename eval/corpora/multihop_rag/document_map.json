@@ -1,19 +1,37 @@
 {
   "corpus": "multihop_rag",
-  "seeded_at": "2026-08-29T23:49:04.986703+00:00",
+  "seeded_at": "2026-08-30T22:45:31.258337+00:00",
   "index_generation": "",
   "entries": {
-    "0abbe020-d26d-41e6-8d5f-f7867a3608db": {
+    "54e48651-01fd-4535-9565-fe42361f09eb": {
       "corpus_id": "&#039;Massive intel failure by Mossad&#039;: Hamas&#039; surprise attack on Israel shocks internet",
-      "document_id": "0abbe020-d26d-41e6-8d5f-f7867a3608db",
+      "document_id": "54e48651-01fd-4535-9565-fe42361f09eb",
       "title": "&#039;Massive intel failure by Mossad&#039;: Hamas&#039; surprise attack on Israel shocks internet",
       "url": "https://www.businesstoday.in/latest/world/story/massive-intel-failure-by-mossad-hamas-surprise-attack-on-israel-shocks-internet-401106-2023-10-07?utm_source=rssfeed"
     },
-    "8c3b3fb6-b512-45ec-879b-27f88ba9b328": {
+    "66649391-13bd-4699-a6d8-6fc2fcc73930": {
       "corpus_id": "'They seemed primed to take over': How the Great Dying doomed the 'beast tooth' and set the stage for the dawn of the dinosaurs",
-      "document_id": "8c3b3fb6-b512-45ec-879b-27f88ba9b328",
+      "document_id": "66649391-13bd-4699-a6d8-6fc2fcc73930",
       "title": "'They seemed primed to take over': How the Great Dying doomed the 'beast tooth' and set the stage for the dawn of the dinosaurs",
       "url": "https://www.livescience.com/animals/extinct-species/they-seemed-primed-to-take-over-how-the-great-dying-doomed-the-beast-tooth-and-set-the-stage-for-the-dawn-of-the-dinosaurs"
+    },
+    "9c06eb32-74aa-4a90-8d2a-f1e270cb1fba": {
+      "corpus_id": "200+ of the best deals from Amazon's Cyber Monday sale",
+      "document_id": "9c06eb32-74aa-4a90-8d2a-f1e270cb1fba",
+      "title": "200+ of the best deals from Amazon's Cyber Monday sale",
+      "url": "https://mashable.com/article/cyber-monday-deals-amazon-2023"
+    },
+    "cbe7b49c-1056-44ce-bc00-99b713f55e65": {
+      "corpus_id": "10 scorching-hot discoveries made about the sun in 2023",
+      "document_id": "cbe7b49c-1056-44ce-bc00-99b713f55e65",
+      "title": "10 scorching-hot discoveries made about the sun in 2023",
+      "url": "https://www.livescience.com/space/the-sun/10-scorching-hot-discoveries-made-about-the-sun-in-2023"
+    },
+    "eb547d15-8b89-418f-876d-c9ef6d3a0cec": {
+      "corpus_id": "14 Best Deals: TVs, Keyboards, Mice, Chargers, and Earbuds",
+      "document_id": "eb547d15-8b89-418f-876d-c9ef6d3a0cec",
+      "title": "14 Best Deals: TVs, Keyboards, Mice, Chargers, and Earbuds",
+      "url": "https://www.wired.com/story/midweek-deals-october-19-2023/"
     }
   }
 }
