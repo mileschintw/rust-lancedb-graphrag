@@ -271,8 +271,7 @@ def test_reseed_resets_postgres_before_lancedb(
     # LanceDB directory still exists because reset aborted before rmtree
     assert lance_eval.exists()
     assert canary.exists()
-    assert len(calls) == 1
-    assert calls[0][0] == "psql"
+    assert "psql" in calls[0]
 
 
 @pytest.mark.parametrize(

@@ -97,18 +97,54 @@ def reset_eval_schema(settings: EvalSettings) -> None:
     create_sql = f"CREATE SCHEMA {_quote_pg_identifier(schema_name)};"
     drop_create_sql = f"{drop_sql} {create_sql}"
 
+    admin_url = urlparse(settings.dev_database_url)
+    admin_user = admin_url.username or "postgres"
+    admin_db = admin_url.path.lstrip("/") or "lancet"
+
     gateway_dir = repo_root() / "gateway"
 
-    res_psql = subprocess.run(
-        [
+    if shutil.which("psql"):
+        psql_cmd = [
             "psql",
             settings.dev_database_url,
             "-v",
             "ON_ERROR_STOP=1",
             "-c",
             drop_create_sql,
-        ],
-        cwd=gateway_dir,
+        ]
+        cmd_cwd = gateway_dir
+    elif shutil.which("docker"):
+        psql_cmd = [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "db",
+            "psql",
+            "-U",
+            admin_user,
+            "-d",
+            admin_db,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-c",
+            drop_create_sql,
+        ]
+        cmd_cwd = repo_root()
+    else:
+        psql_cmd = [
+            "psql",
+            settings.dev_database_url,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-c",
+            drop_create_sql,
+        ]
+        cmd_cwd = gateway_dir
+
+    res_psql = subprocess.run(
+        psql_cmd,
+        cwd=cmd_cwd,
         capture_output=True,
         text=True,
         timeout=30.0,
