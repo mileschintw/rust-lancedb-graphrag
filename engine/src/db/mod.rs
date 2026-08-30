@@ -108,53 +108,49 @@ impl DatabaseManager {
         Ok(())
     }
 
+    async fn get_or_create_table(&self, name: &str) -> Result<Table, String> {
+        match self.connection.open_table(name).execute().await {
+            Ok(tbl) => Ok(tbl),
+            Err(_) => {
+                let schemas = table_schemas();
+                if let Some((_, expected)) = schemas.into_iter().find(|(n, _)| *n == name) {
+                    let tbl = self
+                        .connection
+                        .create_empty_table(name, expected)
+                        .execute()
+                        .await
+                        .map_err(|error| format!("failed to create LanceDB table {name}: {error}"))?;
+                    Ok(tbl)
+                } else {
+                    Err(format!("unknown LanceDB table {name}"))
+                }
+            }
+        }
+    }
+
     pub async fn documents_table(&self) -> Result<Table, String> {
-        self.connection
-            .open_table("documents")
-            .execute()
-            .await
-            .map_err(|error| format!("failed to open LanceDB documents table: {error}"))
+        self.get_or_create_table("documents").await
     }
 
     /// Durable queue-admission staging table.
     pub async fn staged_documents_table(&self) -> Result<Table, String> {
-        self.connection
-            .open_table("staged_documents_v2")
-            .execute()
-            .await
-            .map_err(|error| format!("failed to open LanceDB staged_documents_v2 table: {error}"))
+        self.get_or_create_table("staged_documents_v2").await
     }
 
     pub async fn nodes_table(&self) -> Result<Table, String> {
-        self.connection
-            .open_table("nodes")
-            .execute()
-            .await
-            .map_err(|error| format!("failed to open LanceDB nodes table: {error}"))
+        self.get_or_create_table("nodes").await
     }
 
     pub async fn edges_table(&self) -> Result<Table, String> {
-        self.connection
-            .open_table("edges")
-            .execute()
-            .await
-            .map_err(|error| format!("failed to open LanceDB edges table: {error}"))
+        self.get_or_create_table("edges").await
     }
 
     pub async fn entities_table(&self) -> Result<Table, String> {
-        self.connection
-            .open_table("entities")
-            .execute()
-            .await
-            .map_err(|error| format!("failed to open LanceDB entities table: {error}"))
+        self.get_or_create_table("entities").await
     }
 
     pub async fn entity_edges_table(&self) -> Result<Table, String> {
-        self.connection
-            .open_table("entity_edges")
-            .execute()
-            .await
-            .map_err(|error| format!("failed to open LanceDB entity_edges table: {error}"))
+        self.get_or_create_table("entity_edges").await
     }
 }
 
