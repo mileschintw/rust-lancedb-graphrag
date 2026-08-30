@@ -42,7 +42,13 @@ from lancet_eval.metrics import (
     squad_em,
     squad_f1,
 )
-from lancet_eval.report import CorpusReport, RunMetadata, render_json
+from lancet_eval.report import (
+    CorpusReport,
+    RunMetadata,
+    compute_result_hash,
+    get_lock_hash,
+    render_json,
+)
 from lancet_eval.seed import load_document_map
 
 
@@ -102,6 +108,7 @@ def score_run(
     # Read journal records
     records: list[RunRecord] = []
     header_corpus: str | None = None
+    header_partial: bool = False
     with open(journal_path, encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
             line_str = line.strip()
@@ -116,6 +123,7 @@ def score_run(
 
             if isinstance(data, dict) and data.get("type") == "header":
                 header_corpus = data.get("corpus")
+                header_partial = bool(data.get("partial", False))
                 continue
 
             if isinstance(data, dict) and "question_id" in data:
@@ -701,12 +709,37 @@ def score_run(
         )
     )
 
+    res_hash = compute_result_hash(dimensions)
+    lock_hash = get_lock_hash()
+    index_gen = sorted(distinct_gens)[0] if distinct_gens else "unknown-gen"
+    gen_model_name = (
+        _get_engine_generation_model() or "dots-studio/dots-3-note-preview:free"
+    )
+
+    # Find embedding model from first available snapshot or fallback
+    emb_model = "text-embedding-3-small"
+    for r in records:
+        if r.snapshot and getattr(r.snapshot, "embedding_model", None):
+            emb_model = r.snapshot.embedding_model
+            break
+
     metadata = RunMetadata(
         corpus=corpus_name,
-        generated_at=datetime.now(UTC).isoformat(),
-        commit_sha="local",
+        run_date=datetime.now(UTC).isoformat(),
+        commit_sha=os.environ.get("GIT_COMMIT_SHA") or "local",
+        generation_model=gen_model_name,
+        embedding_model=emb_model,
+        judge_model=config.judge_model,
+        judge_temperature=config.judge_temperature,
+        judge_prompt_version=config.judge_prompt_version,
+        sampling_seed=config.sample_seed,
         sample_size_deterministic=len(sampled_questions),
         sample_size_judged=judged_sample_count,
+        index_generation=index_gen,
+        result_hash=res_hash,
+        arm_labels=config.arms,
+        dependency_lock_hash=lock_hash,
+        partial=header_partial,
     )
 
     report = CorpusReport(
@@ -715,9 +748,10 @@ def score_run(
         dimensions=dimensions,
     )
 
-    # Write report.json to run_dir
-    report_json_path = dir_path / "report.json"
-    with open(report_json_path, "w", encoding="utf-8") as f:
-        f.write(render_json(report))
+    # Write report.json to run_dir if not partial
+    if not header_partial:
+        report_json_path = dir_path / "report.json"
+        with open(report_json_path, "w", encoding="utf-8") as f:
+            f.write(render_json(report))
 
     return report

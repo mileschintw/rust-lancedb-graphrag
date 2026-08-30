@@ -69,14 +69,39 @@
           "title": "Corpus",
           "type": "string"
         },
-        "generated_at": {
-          "title": "Generated At",
+        "run_date": {
+          "title": "Run Date",
           "type": "string"
         },
         "commit_sha": {
-          "default": "unknown",
           "title": "Commit Sha",
           "type": "string"
+        },
+        "generation_model": {
+          "title": "Generation Model",
+          "type": "string"
+        },
+        "embedding_model": {
+          "title": "Embedding Model",
+          "type": "string"
+        },
+        "judge_model": {
+          "title": "Judge Model",
+          "type": "string"
+        },
+        "judge_temperature": {
+          "default": 0.0,
+          "title": "Judge Temperature",
+          "type": "number"
+        },
+        "judge_prompt_version": {
+          "title": "Judge Prompt Version",
+          "type": "string"
+        },
+        "sampling_seed": {
+          "default": 42,
+          "title": "Sampling Seed",
+          "type": "integer"
         },
         "sample_size_deterministic": {
           "default": 0,
@@ -88,6 +113,30 @@
           "title": "Sample Size Judged",
           "type": "integer"
         },
+        "index_generation": {
+          "title": "Index Generation",
+          "type": "string"
+        },
+        "result_hash": {
+          "title": "Result Hash",
+          "type": "string"
+        },
+        "arm_labels": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Arm Labels",
+          "type": "array"
+        },
+        "dependency_lock_hash": {
+          "title": "Dependency Lock Hash",
+          "type": "string"
+        },
+        "partial": {
+          "default": false,
+          "title": "Partial",
+          "type": "boolean"
+        },
         "notes": {
           "default": "",
           "title": "Notes",
@@ -96,7 +145,15 @@
       },
       "required": [
         "corpus",
-        "generated_at"
+        "run_date",
+        "commit_sha",
+        "generation_model",
+        "embedding_model",
+        "judge_model",
+        "judge_prompt_version",
+        "index_generation",
+        "result_hash",
+        "dependency_lock_hash"
       ],
       "title": "RunMetadata",
       "type": "object"

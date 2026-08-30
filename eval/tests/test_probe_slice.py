@@ -33,18 +33,11 @@ def test_cli_help_lists_all_subcommands() -> None:
     assert "sample" in corpus_result.output
 
 
-@pytest.mark.parametrize(
-    "args,expected_plan",
-    [
-        (["report"], "06.3-07"),
-    ],
-)
-def test_unimplemented_subcommands_exit_nonzero_naming_plan(
-    args: list[str], expected_plan: str
-) -> None:
-    result = runner.invoke(app, args)
-    assert result.exit_code != 0
-    assert expected_plan in result.output
+def test_report_command_help() -> None:
+    result = runner.invoke(app, ["report", "--help"])
+    assert result.exit_code == 0
+    assert "--run" in result.output
+    assert "--compare-to" in result.output
 
 
 def test_corpus_fetch_print_urls() -> None:

@@ -13,7 +13,6 @@ from lancet_eval.dimensions import (
 )
 from lancet_eval.journal import Journal, RunRecord
 from lancet_eval.score import ScoreError, score_run
-from lancet_eval.seed import DocumentMap, DocumentMapEntry, save_document_map_atomic
 
 
 def _setup_mock_corpus_files(tmp_path: Path) -> tuple[Path, str]:

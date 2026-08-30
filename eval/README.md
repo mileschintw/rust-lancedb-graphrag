@@ -75,6 +75,12 @@ uv run --project eval lancet-eval score --run eval/runs/latest --judge --sample 
 
 # Score run with human calibration validation and observed agreement
 uv run --project eval lancet-eval score --run eval/runs/latest --judge --sample 100 --calibration-file eval/runs/latest/calibration_completed.jsonl
+
+# Generate final Markdown and JSON report
+uv run --project eval lancet-eval report --run eval/runs/latest
+
+# Compare report against a previous run
+uv run --project eval lancet-eval report --run eval/runs/2026-08-29-multihop-rag --compare-to eval/runs/2026-08-28-multihop-rag
 ```
 
 ## LLM-as-Judge Evaluation & Calibration (D-52, D-53)
@@ -85,6 +91,29 @@ The evaluation harness evaluates answer groundedness and faithfulness using an L
 - **Bounded Evidence Truncation:** Passages are truncated in wire ranked order (`PER_PASSAGE_CHAR_BUDGET = 1500`, `EVIDENCE_CHAR_BUDGET = 12000`) with explicit `[TRUNCATED: N further passages omitted]` markers included in the cache key.
 - **Empty Citation Handling:** Responses without citations are marked `status: skipped` with reason "no evidence returned; groundedness undefined" without calling the judge.
 - **Calibration Slice:** Human evaluators grade ~20 representative questions in a calibration worksheet (`.jsonl`). `score --calibration-file` validates prompt version alignment and calculates exact-match rate and mean absolute difference (MAD).
+
+## Run-Record Directory Layout & Publication
+
+A committed run record lives in `eval/runs/<date>-<corpus>/` and contains 5 required artifacts:
+1. `journal.jsonl`: The durable append-only record of all executed question queries and responses across both arms.
+2. `judge_cache.json`: The plain-text auditable verdicts and cached responses from the LLM judge.
+3. `report.md`: Human-readable GitHub-Flavored Markdown report with full pins, dimension results, and methodological caveats.
+4. `report.json`: Machine-readable evaluation report conforming to `eval/report.schema.json`.
+5. `metadata.json`: Execution metadata carrying all required pins (commit SHA, models, seed, sample sizes, index generation, lock hash).
+
+### Pre-Commit Run-Record Reviewer Checklist
+Before committing an evaluation run record, verify:
+1. **Metadata Complete:** All required pins are present in `metadata.json` and `report.md` (commit SHA, judge model and prompt version, both sample sizes, corpus, index generation, lock hash).
+2. **Dimension Statuses:** Every dimension has a status (`ok`, `skipped`, or `error`) with a clear reason for non-`ok` entries.
+3. **No Unmeasured Values:** No dimension reports a fabricated or simulated value; skipped dimensions display `—`.
+4. **No Cross-Corpus Aggregation:** Each corpus report is standalone; no aggregate or overall score is computed across corpora.
+5. **Sample Size Consistency:** Sample sizes match previous runs or changes are explicitly called out.
+
+### 10-Item Reference-Set Spot-Check
+Perform a manual end-to-end spot-check on roughly 10 scored records (question, retrieved chunks, model answer, gold facts, and computed metric scores):
+- **Weighted Selection:** Focus on records with notices (`GRAPH_ABLATION`), errors, zero citations, judge errors, and exact-match-zero with high F1.
+- **Random Selection:** Include 2–3 uniformly random records to ensure the boring majority has no matching bugs.
+- **Integrity Rule:** If the spot-check discovers a metric mismatch or parser flaw, record it as a finding rather than committing a false report.
 
 ## CLI Sub-commands
 
@@ -98,7 +127,7 @@ The evaluation harness evaluates answer groundedness and faithfulness using an L
 | `lancet-eval probe` | **Implemented** | Plans 06.3-01 / 06.3-03 | Single-question end-to-end smoke check with deterministic scoring |
 | `lancet-eval run` | **Implemented** | Plan 06.3-05 | Execute benchmark questions with graph-on / graph-off arms |
 | `lancet-eval score` | **Implemented** | Plans 06.3-05 / 06.3-06 | Compute offline IR metrics or cached LLM-as-judge scores |
-| `lancet-eval report` | Planned | Plan 06.3-07 | Emit final dated Markdown and JSON evaluation reports |
+| `lancet-eval report` | **Implemented** | Plan 06.3-07 | Emit final dated Markdown and JSON evaluation reports |
 
 ## Offline Testing
 
@@ -107,3 +136,4 @@ The test suite in `eval/tests/` passes completely offline with no network access
 ```bash
 uv run --project eval pytest eval/tests/ -v
 ```
+

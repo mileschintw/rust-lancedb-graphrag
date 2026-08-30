@@ -11,7 +11,6 @@ from lancet_eval.client import RetrievalSnapshot, StructuredCitation
 from lancet_eval.corpus import load_sample_questions
 from lancet_eval.journal import Journal, RunRecord
 from lancet_eval.score import ScoreError, score_run
-from lancet_eval.seed import DocumentMap, DocumentMapEntry, save_document_map_atomic
 
 
 def _setup_fixtures(tmp_path: Path) -> list[str]:

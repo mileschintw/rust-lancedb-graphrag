@@ -36,8 +36,15 @@ def test_corpus_report_forbids_cross_corpus_fields() -> None:
 def test_render_markdown_obs_04_row() -> None:
     metadata = RunMetadata(
         corpus="multihop_rag",
-        generated_at="2026-08-29T12:00:00Z",
+        run_date="2026-08-29T12:00:00Z",
         commit_sha="abcdef123456",
+        generation_model="dots-studio/dots-3-note-preview:free",
+        embedding_model="text-embedding-3-small",
+        judge_model="meta-llama/llama-3.3-70b-instruct:free",
+        judge_prompt_version="v1",
+        index_generation="gen-01",
+        result_hash="res-hash-01",
+        dependency_lock_hash="lock-hash-01",
         sample_size_deterministic=500,
         sample_size_judged=50,
     )
@@ -60,18 +67,29 @@ def test_render_markdown_obs_04_row() -> None:
     assert cells[0] == "`community_summary_quality`"
     assert cells[1] == "skipped"
     assert cells[2] == "—"
-    assert "999.1" in cells[3]
+    assert "999.1" in cells[4]
 
 
 def test_render_precision_and_rounding() -> None:
     metadata = RunMetadata(
         corpus="multihop_rag",
-        generated_at="2026-08-29T12:00:00Z",
+        run_date="2026-08-29T12:00:00Z",
+        commit_sha="abcdef123456",
+        generation_model="dots-studio/dots-3-note-preview:free",
+        embedding_model="text-embedding-3-small",
+        judge_model="meta-llama/llama-3.3-70b-instruct:free",
+        judge_prompt_version="v1",
+        index_generation="gen-01",
+        result_hash="res-hash-01",
+        dependency_lock_hash="lock-hash-01",
+        sample_size_deterministic=500,
+        sample_size_judged=50,
     )
     dim = DimensionResult(
         name="evidence_recall_at_4",
         status="ok",
         score=0.123456,
+        n=100,
     )
     report = CorpusReport(
         corpus="multihop_rag",

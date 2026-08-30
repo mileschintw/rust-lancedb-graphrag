@@ -1,25 +1,53 @@
 # Evaluation Report: {{ report.corpus }}
 
+{% if sample_size_diffs %}
+> [!WARNING]
+> **Sample Size Differences Detected from Comparison Run:**
+{% for diff in sample_size_diffs %}
+> - {{ diff }}
+{% endfor %}
+
+{% endif %}
 ## Run Metadata
-- **Corpus:** {{ report.metadata.corpus }}
-- **Generated At:** {{ report.metadata.generated_at }}
-- **Commit SHA:** `{{ report.metadata.commit_sha }}`
-- **Deterministic Sample Size:** {{ report.metadata.sample_size_deterministic }}
-- **Judged Sample Size:** {{ report.metadata.sample_size_judged }}
-{% if report.metadata.notes %}- **Notes:** {{ report.metadata.notes }}
+
+| Parameter | Value |
+|---|---|
+| **Corpus** | `{{ report.metadata.corpus }}` |
+| **Run Date** | `{{ report.metadata.run_date }}` |
+| **Commit SHA** | `{{ report.metadata.commit_sha }}` |
+| **Generation Model** | `{{ report.metadata.generation_model }}` |
+| **Embedding Model** | `{{ report.metadata.embedding_model }}` |
+| **Judge Model** | `{{ report.metadata.judge_model }}` |
+| **Judge Temperature** | `{{ report.metadata.judge_temperature }}` |
+| **Judge Prompt Version** | `{{ report.metadata.judge_prompt_version }}` |
+| **Sampling Seed** | `{{ report.metadata.sampling_seed }}` |
+| **Deterministic Sample Size** | `{{ report.metadata.sample_size_deterministic }}` |
+| **Judged Sample Size** | `{{ report.metadata.sample_size_judged }}` |
+| **Index Generation** | `{{ report.metadata.index_generation }}` |
+| **Result Hash** | `{{ report.metadata.result_hash }}` |
+| **Dependency Lock Hash** | `{{ report.metadata.dependency_lock_hash }}` |
+| **Arm Labels** | `{{ report.metadata.arm_labels | join(", ") }}` |
+{% if report.metadata.notes %}| **Notes** | {{ report.metadata.notes }} |
 {% endif %}
 
-## Dimensions
+## Evaluation Dimensions
 
-| Dimension | Status | Score | Reason / Details |
-|---|---|---|---|
+| Dimension | Status | Score | Sample Size (n) | Details / Reason |
+|---|---|---|---|---|
 {% for d in report.dimensions %}
 {% if d.status == "ok" %}
-| `{{ d.name }}` | ok | {{ format_score(d.name, d.score) }} | {{ format_details(d.detail) }} |
+| `{{ d.name }}` | ok | **{{ format_score(d.name, d.score) }}** | {{ d.n }} | {{ format_details(d.detail) }} |
 {% else %}
-| `{{ d.name }}` | {{ d.status }} | — | {{ d.reason }} |
+| `{{ d.name }}` | {{ d.status }} | — | {{ d.n }} | {{ d.reason }} |
 {% endif %}
 {% endfor %}
 
----
-*Note: This report is advisory only with no automated pass/fail gate. Scores are rounded using Python's built-in banker's rounding (round-half-to-even: 3 decimals for ratios, 2 decimals for judged scales). Full float precision is recorded in report.json.*
+## Methodological Caveats & Notes
+
+1. **Evidence Matching Rule:** A retrieved chunk matches a gold fact if and only if the chunk's normalized text contains the fact's normalized text as a contiguous substring or the fact's normalized text contains the chunk's text (for facts truncated at passage boundaries).
+2. **Evidence Source Distinction:** Every retrieval metric is computed over the response's retrieved-chunk list (what the retriever returned), not over the citations the model emitted. Judged dimensions are computed over cited evidence instead.
+3. **Chunk Size & Overlength Facts:** Gold facts longer than the corpus's chunk size cannot appear verbatim in any single chunk, are excluded from the recall denominator, and are reported as their own count.
+4. **Paper Comparability:** Lancet's answer metrics are not comparable to the MultiHop-RAG paper's reported accuracy, because the reference scorer credits any shared lowercased token.
+5. **Ranking Metric Convention:** Neither reported ranking metric is the MultiHop-RAG paper's own convention unless the additive reference-convention figure is present and labelled.
+6. **Failed Query Snapshot Exclusion:** A query whose generation failed carries no retrieval snapshot on the wire and is excluded from retrieval denominators rather than scored as zero.
+7. **Rounding & Advisory Status:** This report is advisory only with no automated pass/fail gate. Scores are rounded using banker's rounding (3 decimals for ratios, 2 decimals for judged scales). Full float precision is recorded in report.json.

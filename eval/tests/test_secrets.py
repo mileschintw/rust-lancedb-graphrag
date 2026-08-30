@@ -12,7 +12,6 @@ from lancet_eval.corpus import load_sample_questions
 from lancet_eval.journal import Journal, RunRecord
 from lancet_eval.report import render_markdown
 from lancet_eval.score import score_run
-from lancet_eval.seed import DocumentMap, DocumentMapEntry, save_document_map_atomic
 
 SENTINEL_API_KEY = "SECRET_SENTINEL_KEY_DO_NOT_LEAK_12345"
 

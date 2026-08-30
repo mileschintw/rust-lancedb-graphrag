@@ -23,6 +23,8 @@ from lancet_eval.dimensions import OBS_04_PLACEHOLDER, DimensionResult
 from lancet_eval.report import (
     CorpusReport,
     RunMetadata,
+    compute_result_hash,
+    get_lock_hash,
     render_json,
     render_markdown,
 )
@@ -343,9 +345,83 @@ def score_benchmark(
 
 
 @app.command("report")
-def generate_report() -> None:
-    """Generate markdown and JSON report from scored results."""
-    _unimplemented("report will be implemented in plan 06.3-07")
+def generate_report(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Path to run directory containing report.json or journal.jsonl",
+        ),
+    ],
+    compare_to: Annotated[
+        Path | None,
+        typer.Option(
+            "--compare-to",
+            "-c",
+            help="Optional path to previous run directory for sample size comparison",
+        ),
+    ] = None,
+) -> None:
+    """Generate final Markdown and JSON evaluation report from a run directory."""
+    try:
+        import json
+
+        from lancet_eval.report import (
+            CorpusReport,
+            ReportError,
+            RunMetadata,
+            render_json,
+            render_markdown,
+        )
+
+        report_json_path = run / "report.json"
+        if not report_json_path.is_file():
+            from lancet_eval.score import score_run
+
+            report = score_run(run_dir=run, no_judge=True)
+        else:
+            with open(report_json_path, encoding="utf-8") as f:
+                data = json.load(f)
+            report = CorpusReport.model_validate(data)
+
+        if report.metadata.partial:
+            raise ReportError(
+                "Cannot render report for partial run "
+                "(partial: true set by --limit smoke knob)"
+            )
+
+        compare_meta: RunMetadata | None = None
+        if compare_to is not None:
+            comp_report_path = compare_to / "report.json"
+            comp_meta_path = compare_to / "metadata.json"
+            if comp_report_path.is_file():
+                with open(comp_report_path, encoding="utf-8") as f:
+                    comp_data = json.load(f)
+                compare_meta = CorpusReport.model_validate(comp_data).metadata
+            elif comp_meta_path.is_file():
+                with open(comp_meta_path, encoding="utf-8") as f:
+                    comp_meta_data = json.load(f)
+                compare_meta = RunMetadata.model_validate(comp_meta_data)
+
+        md_text = render_markdown(report, compare_to_metadata=compare_meta)
+        report_md_path = run / "report.md"
+        with open(report_md_path, "w", encoding="utf-8") as f:
+            f.write(md_text)
+
+        with open(run / "report.json", "w", encoding="utf-8") as f:
+            f.write(render_json(report))
+
+        with open(run / "metadata.json", "w", encoding="utf-8") as f:
+            f.write(report.metadata.model_dump_json(indent=2) + "\n")
+
+        console.print(md_text)
+        console.print(
+            f"[green]Report successfully rendered to {report_md_path}[/green]"
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Report error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 def get_commit_sha() -> str:
@@ -590,10 +666,24 @@ def probe(
 
     dimensions.append(OBS_04_PLACEHOLDER)
     corr_id = outcome.correlation_id if outcome else ""
+    res_hash = compute_result_hash(dimensions)
+    lock_hash = get_lock_hash()
+    index_gen = (
+        outcome.answer.snapshot.index_generation
+        if outcome and outcome.answer and outcome.answer.snapshot
+        else "gen-probe"
+    )
     metadata = RunMetadata(
         corpus=corpus or "probe",
-        generated_at=datetime.now(UTC).isoformat(),
+        run_date=datetime.now(UTC).isoformat(),
         commit_sha=get_commit_sha(),
+        generation_model="dots-studio/dots-3-note-preview:free",
+        embedding_model="text-embedding-3-small",
+        judge_model="meta-llama/llama-3.3-70b-instruct:free",
+        judge_prompt_version="v1",
+        index_generation=index_gen,
+        result_hash=res_hash,
+        dependency_lock_hash=lock_hash,
         sample_size_deterministic=1,
         sample_size_judged=0,
         notes=f"Single question probe (arm={arm}, correlation_id={corr_id})",
