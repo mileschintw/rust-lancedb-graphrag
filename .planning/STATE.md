@@ -3,30 +3,35 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3
 current_phase_name: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04)
-status: executing
-stopped_at: Phase 06.2 complete, ready to plan Phase 06.3
-last_updated: "2026-08-29T23:15:31.344Z"
+status: plans_complete
+stopped_at: Phase 6.3 all 8 plans executed and committed
+last_updated: "2026-08-29T23:59:00.000Z"
 last_activity: 2026-08-29
-state_head: b123005db5b29d2da01f2be3771c49fe66cff842
+state_head: 3858d25
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 129
-  completed_plans: 121
+  completed_plans: 129
 milestone_name: milestone
-current_plan: 1
+current_plan: 8
 ---
 
 # Project State
 
 ## Current Status
 
-- Phase 06.2 completed successfully (2026-08-28): OpenTelemetry traces, metrics, and logs across Go and Rust with Prometheus, Grafana, Loki, and Jaeger.
-  - **All 12 plans executed and summarized:** 06.2-01 through 06.2-12 complete.
-  - **Security review complete:** `06.2-SECURITY.md` verified with `threats_open: 0` (ASVS L1).
-  - **Verification passed:** `06.2-VERIFICATION.md` status canonicalized to `passed`.
-  - **UAT complete:** 7/7 tests passed with user acceptance and deferred operational note recorded.
-  - **Phase 06.2 complete.** Ready to plan Phase 06.3 (Evaluation Harness, Corpora and Recorded Run).
+- **Phase 06.3 (Evaluation Harness, Corpora and Recorded Run): All 8 plans executed and committed:**
+  - `06.3-08` (Wave 1): Additive `retrieved_chunks` on `RetrievalSnapshot` wire format (`b7d50b4`).
+  - `06.3-01` (Wave 2): `eval/` uv package, SSE client, `DimensionResult`, `CorpusReport` schema, Typer CLI (`ddc1d73`, `0278256`).
+  - `06.3-02` (Wave 2): Generation model drift-anchored Rust tests and raised engine test invariants (`5e12605`, `9adb2a1`).
+  - `06.3-03` (Wave 3): Deterministic corpora loaders, MultiHop-RAG sample, deterministic IR & answer metrics, registered dimensions (`07d4b83`, `000dd75`, `c19418e`, `8a454b9`).
+  - `06.3-04` (Wave 4): Database isolation (`schema.eval.hcl`), store paths, document seeder, atomic `document_map.json`, preflight checks (`6a00834`, `0973b65`).
+  - `06.3-05` (Wave 5): Resumable journal, two-armed driver, offline deterministic scorer, graph ablation dimension (`a3028d2`, `54f604b`).
+  - `06.3-06` (Wave 6): LLM-as-judge scoring, calibration slice, OpenRouter cache (`ed9801c`, `e1092a5`).
+  - `06.3-07` (Wave 7): Report generator, run-record layout, publication preconditions, reviewer checklist (`2bea5e8`, `3858d25`).
+  - **Test Suite:** 119/119 unit/integration tests passing offline across `eval/tests/`.
+  - **Boundary:** Stopped before phase-level code review, regression gate, verification, or UAT per user directive.
 
 - Phase 06.1 Plan 06.1-01 executed: implemented index rebuild-and-swap, CorpusStore snapshot isolation, same-snapshot dense/BM25 pinning, worker burst debouncing, fail-closed rebuild_debounce_ms configuration, and degraded notice emission (NoticeCode::IndexRebuildFailed).
 - Phase 06.1 Plan 06.1-02 executed: deterministic proofs for DEBT-BU-01 (run_window evaluation before challenge validation) and DEBT-BU-02 (sample_owned cleanup isolation harness and 26/26 passing unit tests).
