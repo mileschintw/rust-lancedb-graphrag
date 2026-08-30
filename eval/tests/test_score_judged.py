@@ -13,6 +13,16 @@ from lancet_eval.journal import Journal, RunRecord
 from lancet_eval.score import ScoreError, score_run
 
 
+def _get_valid_doc_id() -> str:
+    try:
+        from lancet_eval.seed import load_document_map
+
+        doc_map = load_document_map("multihop_rag")
+        return next(iter(doc_map.entries.keys()))
+    except Exception:
+        return "0abbe020-d26d-41e6-8d5f-f7867a3608db"
+
+
 def _setup_fixtures(tmp_path: Path) -> list[str]:
     """Return list of valid question IDs."""
     questions = load_sample_questions("multihop_rag")
@@ -24,6 +34,7 @@ def test_score_no_judge_skips_judged_dimensions(
 ) -> None:
     """Proves score --no-judge skips judged dimensions with zero HTTP calls."""
     qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -39,7 +50,7 @@ def test_score_no_judge_skips_judged_dimensions(
             retrieved_chunks=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="Paris is capital",
                     rank=1,
                 )
@@ -48,7 +59,7 @@ def test_score_no_judge_skips_judged_dimensions(
         structured_citations=[
             StructuredCitation(
                 chunk_id="c1",
-                document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                document_id=doc_id,
                 excerpt="Paris is capital",
                 rank=1,
             )
@@ -72,6 +83,7 @@ def test_score_sample_judged_and_caching(
 ) -> None:
     """Proves score --sample judges seeded subset and caches verdicts for second run."""
     qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -88,7 +100,7 @@ def test_score_sample_judged_and_caching(
                 retrieved_chunks=[
                     StructuredCitation(
                         chunk_id="c1",
-                        document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                        document_id=doc_id,
                         excerpt="Paris is capital",
                         rank=1,
                     )
@@ -97,7 +109,7 @@ def test_score_sample_judged_and_caching(
             structured_citations=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="Paris is capital",
                     rank=1,
                 )
@@ -229,6 +241,7 @@ def test_calibration_worksheet_emission_and_ingestion(
 ) -> None:
     """Proves worksheet emission, human scoring, and calibration agreement."""
     qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -245,7 +258,7 @@ def test_calibration_worksheet_emission_and_ingestion(
                 retrieved_chunks=[
                     StructuredCitation(
                         chunk_id="c1",
-                        document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                        document_id=doc_id,
                         excerpt="Evidence text",
                         rank=1,
                     )
@@ -254,7 +267,7 @@ def test_calibration_worksheet_emission_and_ingestion(
             structured_citations=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="Evidence text",
                     rank=1,
                 )
@@ -372,6 +385,7 @@ def test_worksheet_rows_are_drawn_from_the_judged_subset(
 ) -> None:
     """Proves worksheet rows are selected from the judged subset."""
     qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -387,7 +401,7 @@ def test_worksheet_rows_are_drawn_from_the_judged_subset(
             structured_citations=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="Evidence text",
                     rank=1,
                 )

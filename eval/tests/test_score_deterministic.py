@@ -15,6 +15,16 @@ from lancet_eval.journal import Journal, RunRecord
 from lancet_eval.score import ScoreError, score_run
 
 
+def _get_valid_doc_id() -> str:
+    try:
+        from lancet_eval.seed import load_document_map
+
+        doc_map = load_document_map("multihop_rag")
+        return next(iter(doc_map.entries.keys()))
+    except Exception:
+        return "0abbe020-d26d-41e6-8d5f-f7867a3608db"
+
+
 def _setup_mock_corpus_files(tmp_path: Path) -> tuple[Path, str]:
     """Return run directory and first question id."""
     questions = load_sample_questions("multihop_rag")
@@ -27,6 +37,7 @@ def test_score_offline_guarantee_zero_http_calls(
 ) -> None:
     """Proves score --no-judge makes zero HTTP requests."""
     _, qid = _setup_mock_corpus_files(tmp_path)
+    doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -42,7 +53,7 @@ def test_score_offline_guarantee_zero_http_calls(
             retrieved_chunks=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="London is the capital",
                     rank=1,
                 )
@@ -68,7 +79,7 @@ def test_score_offline_guarantee_zero_http_calls(
             retrieved_chunks=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="London is the capital",
                     rank=1,
                 )
@@ -86,6 +97,7 @@ def test_score_offline_guarantee_zero_http_calls(
 def test_discriminating_retrieval_input_assertion(tmp_path: Path) -> None:
     """Proves retrieval dimensions strictly read snapshot.retrieved_chunks."""
     _, qid = _setup_mock_corpus_files(tmp_path)
+    doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -101,7 +113,7 @@ def test_discriminating_retrieval_input_assertion(tmp_path: Path) -> None:
             retrieved_chunks=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="Irrelevant content about apples and oranges",
                     rank=1,
                 )
@@ -110,7 +122,7 @@ def test_discriminating_retrieval_input_assertion(tmp_path: Path) -> None:
         structured_citations=[
             StructuredCitation(
                 chunk_id="c9",
-                document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                document_id=doc_id,
                 excerpt="This text matches gold fact exactly",
                 rank=1,
             )
@@ -132,6 +144,7 @@ def test_discriminating_retrieval_input_mirror(tmp_path: Path) -> None:
     q1 = questions[0]
 
     _setup_mock_corpus_files(tmp_path)
+    doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -139,7 +152,7 @@ def test_discriminating_retrieval_input_mirror(tmp_path: Path) -> None:
     chunks = [
         StructuredCitation(
             chunk_id=f"c{idx}",
-            document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+            document_id=doc_id,
             excerpt=f"Context containing {fact} verbatim",
             rank=idx + 1,
         )
@@ -282,6 +295,7 @@ def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
     q1 = questions[0]
 
     _setup_mock_corpus_files(tmp_path)
+    doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -297,7 +311,7 @@ def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
             retrieved_chunks=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="irrelevant",
                     rank=1,
                 )
@@ -309,7 +323,7 @@ def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
     chunks_off = [
         StructuredCitation(
             chunk_id=f"c{idx}",
-            document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+            document_id=doc_id,
             excerpt=f"match {fact}",
             rank=idx + 1,
         )

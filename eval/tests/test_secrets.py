@@ -25,6 +25,14 @@ def test_no_api_key_leak_in_any_artifact(
     questions = load_sample_questions("multihop_rag")
     qid = questions[0].question_id
 
+    try:
+        from lancet_eval.seed import load_document_map
+
+        doc_map = load_document_map("multihop_rag")
+        doc_id = next(iter(doc_map.entries.keys()))
+    except Exception:
+        doc_id = "0abbe020-d26d-41e6-8d5f-f7867a3608db"
+
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
@@ -40,7 +48,7 @@ def test_no_api_key_leak_in_any_artifact(
             retrieved_chunks=[
                 StructuredCitation(
                     chunk_id="c1",
-                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    document_id=doc_id,
                     excerpt="Paris is capital",
                     rank=1,
                 )
@@ -49,7 +57,7 @@ def test_no_api_key_leak_in_any_artifact(
         structured_citations=[
             StructuredCitation(
                 chunk_id="c1",
-                document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                document_id=doc_id,
                 excerpt="Paris is capital",
                 rank=1,
             )
