@@ -344,3 +344,37 @@ def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
     assert ablation_dim.status == "ok"
     assert ablation_dim.score == -1.0
     assert ablation_dim.detail["delta"] == -1.0
+
+
+def test_score_run_stamps_real_commit_sha(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Proves score_run stamps a real 40-char SHA when GIT_COMMIT_SHA is unset."""
+    _, qid = _setup_mock_corpus_files(tmp_path)
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+    journal.append(
+        RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="ans",
+            index_generation="gen-test-1",
+        )
+    )
+
+    # 1. Unset GIT_COMMIT_SHA -> resolves git commit SHA
+    monkeypatch.delenv("GIT_COMMIT_SHA", raising=False)
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    sha = report.metadata.commit_sha
+    assert len(sha) == 40
+    assert all(c in "0123456789abcdef" for c in sha.lower())
+    assert sha != "local"
+    assert sha != "unknown"
+
+    # 2. Set GIT_COMMIT_SHA -> explicit override wins
+    monkeypatch.setenv("GIT_COMMIT_SHA", "custom_sha_1234567890abcdef")
+    report_override = score_run(run_dir=tmp_path, no_judge=True)
+    assert report_override.metadata.commit_sha == "custom_sha_1234567890abcdef"
+

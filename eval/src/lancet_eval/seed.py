@@ -5,14 +5,16 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.config import EvalSettings, load_settings, repo_root
+from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
 from lancet_eval.corpus import load_corpus
 
 if TYPE_CHECKING:
@@ -21,6 +23,112 @@ if TYPE_CHECKING:
 
 class SeedError(Exception):
     """Raised when seeding fails or is blocked by an isolation error."""
+
+
+def _quote_pg_identifier(name: str) -> str:
+    """Validate and quote a PostgreSQL identifier."""
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+        raise SeedError(f"Invalid PostgreSQL identifier: {name!r}")
+    return f'"{name}"'
+
+
+def assert_schema_isolated(settings: EvalSettings) -> str:
+    """Resolve and validate that the PostgreSQL eval schema is isolated and safe."""
+    eval_schema = pg_schema_of(settings.database_url)
+    dev_schema = pg_schema_of(settings.dev_database_url)
+
+    if not eval_schema or not eval_schema.strip():
+        raise SeedError(
+            f"Eval PostgreSQL schema cannot be empty, got {eval_schema!r} "
+            "from database_url"
+        )
+
+    if eval_schema == "public":
+        raise SeedError(
+            "Eval PostgreSQL schema cannot be default schema 'public', "
+            f"got {eval_schema!r} from database_url"
+        )
+
+    if dev_schema and eval_schema == dev_schema:
+        raise SeedError(
+            f"Eval PostgreSQL schema {eval_schema!r} collides with "
+            f"dev schema {dev_schema!r}"
+        )
+
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", eval_schema):
+        raise SeedError(
+            f"Eval PostgreSQL schema {eval_schema!r} is not a valid SQL identifier "
+            "from database_url"
+        )
+
+    return eval_schema
+
+
+def assert_admin_dsn_targets_eval_database(eval_dsn: str, admin_dsn: str) -> None:
+    """Assert admin DSN targets the same host, port, and database as eval DSN."""
+    eval_url = urlparse(eval_dsn)
+    admin_url = urlparse(admin_dsn)
+
+    eval_host = eval_url.hostname or "127.0.0.1"
+    admin_host = admin_url.hostname or "127.0.0.1"
+
+    eval_port = eval_url.port or 5432
+    admin_port = admin_url.port or 5432
+
+    eval_db = eval_url.path.lstrip("/")
+    admin_db = admin_url.path.lstrip("/")
+
+    if eval_host != admin_host or eval_port != admin_port or eval_db != admin_db:
+        raise SeedError(
+            f"Admin DSN {admin_dsn!r} does not target eval database {eval_dsn!r} "
+            f"(host: {admin_host} vs {eval_host}, port: {admin_port} vs {eval_port}, "
+            f"db: {admin_db} vs {eval_db})"
+        )
+
+
+def reset_eval_schema(settings: EvalSettings) -> None:
+    """Reset the PostgreSQL eval schema via drop/create and Atlas apply."""
+    schema_name = assert_schema_isolated(settings)
+    assert_admin_dsn_targets_eval_database(
+        settings.database_url, settings.dev_database_url
+    )
+
+    drop_sql = f"DROP SCHEMA IF EXISTS {_quote_pg_identifier(schema_name)} CASCADE;"
+    create_sql = f"CREATE SCHEMA {_quote_pg_identifier(schema_name)};"
+    drop_create_sql = f"{drop_sql} {create_sql}"
+
+    gateway_dir = repo_root() / "gateway"
+
+    res_psql = subprocess.run(
+        [
+            "psql",
+            settings.dev_database_url,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-c",
+            drop_create_sql,
+        ],
+        cwd=gateway_dir,
+        capture_output=True,
+        text=True,
+        timeout=30.0,
+    )
+    if res_psql.returncode != 0:
+        err = res_psql.stderr or res_psql.stdout
+        raise SeedError(f"psql schema reset failed (exit {res_psql.returncode}): {err}")
+
+    res_atlas = subprocess.run(
+        ["atlas", "schema", "apply", "--env", "eval", "--auto-approve"],
+        cwd=gateway_dir,
+        capture_output=True,
+        text=True,
+        timeout=60.0,
+    )
+    if res_atlas.returncode != 0:
+        err = res_atlas.stderr or res_atlas.stdout
+        raise SeedError(
+            f"Atlas schema apply failed (exit {res_atlas.returncode}): {err}"
+        )
 
 
 class DocumentMapEntry(BaseModel):
@@ -290,6 +398,9 @@ def reseed_corpus(
         raise SeedError(
             f"Eval LanceDB path '{eval_lance}' equals dev path '{dev_lance}'. Aborting."
         )
+
+    # Verify and reset PostgreSQL eval schema before touching LanceDB
+    reset_eval_schema(settings)
 
     # Clean eval LanceDB directory
     if eval_lance.exists():

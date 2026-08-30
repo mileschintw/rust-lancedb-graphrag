@@ -65,23 +65,25 @@ uv run --project eval lancet-eval run --corpus multihop_rag
 uv run --project eval lancet-eval run --corpus multihop_rag --limit 3
 
 # Score completed run offline with zero HTTP requests
-uv run --project eval lancet-eval score --run eval/runs/latest --no-judge
+uv run --project eval lancet-eval score --run eval/runs/2026-08-30-multihop_rag --no-judge
 
 # Score completed run with LLM judge sampling and caching
-uv run --project eval lancet-eval score --run eval/runs/latest --judge --sample 100
+uv run --project eval lancet-eval score --run eval/runs/2026-08-30-multihop_rag --judge --sample 100
 
 # Emit human calibration worksheet
-uv run --project eval lancet-eval score --run eval/runs/latest --judge --sample 100 --emit-calibration-worksheet eval/runs/latest/calibration_worksheet.jsonl
+uv run --project eval lancet-eval score --run eval/runs/2026-08-30-multihop_rag --judge --sample 100 --emit-calibration-worksheet eval/runs/2026-08-30-multihop_rag/calibration_worksheet.jsonl
 
 # Score run with human calibration validation and observed agreement
-uv run --project eval lancet-eval score --run eval/runs/latest --judge --sample 100 --calibration-file eval/runs/latest/calibration_completed.jsonl
+uv run --project eval lancet-eval score --run eval/runs/2026-08-30-multihop_rag --judge --sample 100 --calibration-file eval/runs/2026-08-30-multihop_rag/calibration_completed.jsonl
 
 # Generate final Markdown and JSON report
-uv run --project eval lancet-eval report --run eval/runs/latest
+uv run --project eval lancet-eval report --run eval/runs/2026-08-30-multihop_rag
 
 # Compare report against a previous run
-uv run --project eval lancet-eval report --run eval/runs/2026-08-29-multihop-rag --compare-to eval/runs/2026-08-28-multihop-rag
+uv run --project eval lancet-eval report --run eval/runs/2026-08-30-multihop_rag --compare-to eval/runs/2026-08-29-multihop_rag
 ```
+
+The `run` command enables `--resume` by default and resolves to the newest existing dated directory for the corpus. Starting a second recorded run requires either passing `--no-resume` or specifying an explicit new dated `--out` path; otherwise, running `lancet-eval run --corpus multihop_rag` appends to the already-published record.
 
 ## LLM-as-Judge Evaluation & Calibration (D-52, D-53)
 
@@ -94,7 +96,7 @@ The evaluation harness evaluates answer groundedness and faithfulness using an L
 
 ## Run-Record Directory Layout & Publication
 
-A committed run record lives in `eval/runs/<date>-<corpus>/` and contains 5 required artifacts:
+A committed run record lives in `eval/runs/<YYYY-MM-DD>-<corpus>/` and contains 5 required artifacts (a dated corpus run directory is tracked by git, while every other path under `eval/runs/` is scratch and stays ignored):
 1. `journal.jsonl`: The durable append-only record of all executed question queries and responses across both arms.
 2. `judge_cache.json`: The plain-text auditable verdicts and cached responses from the LLM judge.
 3. `report.md`: Human-readable GitHub-Flavored Markdown report with full pins, dimension results, and methodological caveats.
@@ -128,6 +130,8 @@ Perform a manual end-to-end spot-check on roughly 10 scored records (question, r
 | `lancet-eval run` | **Implemented** | Plan 06.3-05 | Execute benchmark questions with graph-on / graph-off arms |
 | `lancet-eval score` | **Implemented** | Plans 06.3-05 / 06.3-06 | Compute offline IR metrics or cached LLM-as-judge scores |
 | `lancet-eval report` | **Implemented** | Plan 06.3-07 | Emit final dated Markdown and JSON evaluation reports |
+
+> **Note on `reseed` implementation:** `lancet-eval reseed` executes a guarded drop-and-recreate of the isolated `lancet_eval` PostgreSQL schema (via direct SQL drop/recreate followed by `atlas schema apply --env eval`) and wipes the evaluation LanceDB directory (`./data/lancedb-eval`). Destructive resets fail closed if the target schema is blank, default (`public`), or collides with the dev database/schema.
 
 ## Offline Testing
 

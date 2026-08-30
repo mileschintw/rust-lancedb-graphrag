@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +17,7 @@ from lancet_eval.client import (
     QueryOutcome,
     run_query,
 )
-from lancet_eval.config import load_settings, repo_root
+from lancet_eval.config import get_commit_sha, load_settings, repo_root
 from lancet_eval.dimensions import OBS_04_PLACEHOLDER, DimensionResult
 from lancet_eval.report import (
     CorpusReport,
@@ -212,6 +211,26 @@ def reseed_command(
         raise typer.Exit(code=1) from exc
 
 
+def resolve_run_dir(corpus: str, resume: bool, runs_root: Path | None = None) -> Path:
+    """Resolve the run-record directory for a drive.
+
+    When resume is True and one or more directories matching ????-??-??-<corpus>
+    exist under runs_root, reuses the lexicographically newest (latest ISO date).
+    Otherwise returns runs_root / f"{today}-{corpus}".
+    """
+    root = runs_root if runs_root is not None else repo_root() / "eval" / "runs"
+    if resume and root.exists():
+        matching = [
+            p
+            for p in root.glob(f"????-??-??-{corpus}")
+            if p.is_dir()
+        ]
+        if matching:
+            return max(matching, key=lambda p: p.name)
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    return root / f"{today}-{corpus}"
+
+
 @app.command("run")
 def run_benchmark(
     corpus: Annotated[
@@ -259,17 +278,20 @@ def run_benchmark(
         from lancet_eval.run import drive
 
         if out is None:
-            ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-            out = repo_root() / "eval" / "runs" / f"{corpus}_{ts}" / "journal.jsonl"
+            run_dir = resolve_run_dir(corpus=corpus, resume=resume)
+            out = run_dir / "journal.jsonl"
 
+        console.print(f"[dim]Resolved run directory: {out.parent}[/dim]")
         msg = (
             f"[bold blue]Driving corpus '{corpus}' "
             f"(limit={limit}, resume={resume}, workers={workers})...[/bold blue]"
         )
         console.print(msg)
+        settings = load_settings()
         count = drive(
             corpus=corpus,
             journal_path=out,
+            settings=settings,
             limit=limit,
             resume=resume,
             workers=workers,
@@ -422,21 +444,6 @@ def generate_report(
     except Exception as exc:
         console.print(f"[bold red]Report error:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
-
-
-def get_commit_sha() -> str:
-    """Get current git commit SHA or return 'unknown'."""
-    try:
-        res = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=repo_root(),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return res.stdout.strip()
-    except Exception:
-        return "unknown"
 
 
 def _normalize_ws(text: str) -> str:

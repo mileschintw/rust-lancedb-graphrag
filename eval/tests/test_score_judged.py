@@ -365,3 +365,85 @@ def test_calibration_blank_human_score_fails_loud(tmp_path: Path) -> None:
 
     assert "mhr-bad-row-99" in str(exc_info.value)
     assert "blank human score" in str(exc_info.value)
+
+
+def test_worksheet_rows_are_drawn_from_the_judged_subset(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves worksheet rows are selected from the judged subset."""
+    qids = _setup_fixtures(tmp_path)
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    # Populate 30 primary arm records
+    for qid in qids[:30]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer for {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
+                    excerpt="Evidence text",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ]
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    client = httpx.Client()
+    worksheet_path = tmp_path / "calibration_ws.jsonl"
+
+    # Run score with sample=5 out of 30 records
+    score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=5,
+        emit_calibration_worksheet=worksheet_path,
+        api_key="test-key",
+        client=client,
+    )
+
+    # Load judge_cache.json
+    cache_path = tmp_path / "judge_cache.json"
+    assert cache_path.is_file()
+    with open(cache_path, encoding="utf-8") as f:
+        cache_data = json.load(f)
+
+    # Load emitted worksheet
+    assert worksheet_path.is_file()
+    with open(worksheet_path, encoding="utf-8") as f:
+        ws_lines = [json.loads(line_text) for line_text in f if line_text.strip()]
+
+    # Header + data rows
+    header = ws_lines[0]
+    data_rows = ws_lines[1:]
+
+    assert header["type"] == "header"
+    assert len(data_rows) == 5
+    assert len(data_rows) <= 20
+
+    # Every data row's cache_key must be present in judge_cache.json
+    for row in data_rows:
+        assert row["cache_key"] in cache_data
+

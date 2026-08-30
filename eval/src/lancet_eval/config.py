@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Self
@@ -18,6 +19,21 @@ class EvalConfigError(Exception):
 def repo_root() -> Path:
     """Return the repository root directory."""
     return Path(__file__).resolve().parents[3]
+
+
+def get_commit_sha() -> str:
+    """Get current git commit SHA or return 'unknown'."""
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root(),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return res.stdout.strip()
+    except Exception:
+        return "unknown"
 
 
 def pg_schema_of(dsn: str) -> str:

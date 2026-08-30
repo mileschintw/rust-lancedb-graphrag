@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 from pytest_httpx import HTTPXMock
 
 from lancet_eval.corpus import GoldQuestion, load_corpus_config
@@ -166,3 +167,117 @@ def test_drive_resume_issues_zero_requests_when_done(
     assert count2 == 0
     # Zero additional HTTP requests issued
     assert len(httpx_mock.get_requests()) == 2
+
+
+def test_resolve_run_dir_reuses_newest_dated_dir_on_resume(tmp_path: Path) -> None:
+    """Proves resolve_run_dir reuses latest dated dir on resume."""
+    from datetime import UTC, datetime
+
+    from lancet_eval.cli import resolve_run_dir
+
+    # Create test directories in tmp_path
+    dir_old = tmp_path / "2026-08-28-multihop_rag"
+    dir_new = tmp_path / "2026-08-30-multihop_rag"
+    dir_decoy = tmp_path / "zzz-multihop_rag"
+    dir_other = tmp_path / "2026-08-31-other_corpus"
+
+    dir_old.mkdir()
+    dir_new.mkdir()
+    dir_decoy.mkdir()
+    dir_other.mkdir()
+
+    # On resume=True, pick newest dated directory and ignore non-dated decoy
+    resumed = resolve_run_dir("multihop_rag", resume=True, runs_root=tmp_path)
+    assert resumed == dir_new
+    assert "multihop_rag" in resumed.name
+    assert "_" in resumed.name
+
+    # On resume=False, should return today's dated directory
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    fresh = resolve_run_dir("multihop_rag", resume=False, runs_root=tmp_path)
+    assert fresh == tmp_path / f"{today}-multihop_rag"
+
+
+def test_drive_passes_configured_deadline_to_run_query(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Proves configured deadline reaches run_query for both arms."""
+    from lancet_eval.client import QueryOutcome, RagAnswer, WorkflowCompleted
+    from lancet_eval.config import EvalSettings
+
+    deadlines_seen: list[float] = []
+
+    def mock_run_query(
+        client: httpx.Client,
+        *,
+        query: str,
+        deadline_s: float = 600.0,
+        **kwargs: object,
+    ) -> QueryOutcome:
+        deadlines_seen.append(deadline_s)
+        return QueryOutcome(
+            status="ok",
+            answer=RagAnswer(answer="ans"),
+            completion=WorkflowCompleted(success=True),
+        )
+
+    monkeypatch.setattr("lancet_eval.run.run_query", mock_run_query)
+
+    settings = EvalSettings(
+        question_deadline_secs=456.7,
+        lancedb_path=str(tmp_path / "lancedb-eval"),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+    )
+
+    client = httpx.Client(base_url="http://testserver")
+    drive(
+        corpus="graphrag_bench",
+        journal_path=tmp_path / "journal.jsonl",
+        limit=1,
+        settings=settings,
+        client=client,
+    )
+
+    # 1 question x 2 arms = 2 calls
+    assert len(deadlines_seen) == 2
+    assert deadlines_seen == [456.7, 456.7]
+
+
+def test_run_command_loads_settings_and_forwards_to_drive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Proves CLI run command loads TOML settings and forwards them to drive."""
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+    from lancet_eval.config import EvalSettings
+
+    runner = CliRunner()
+
+    eval_dir = tmp_path / "eval"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    config_file = eval_dir / "config.toml"
+    config_file.write_text('question_deadline_secs = 789.0\n', encoding="utf-8")
+
+    monkeypatch.setattr("lancet_eval.config.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("lancet_eval.cli.repo_root", lambda: tmp_path)
+
+    captured_kwargs: dict[str, object] = {}
+
+    def mock_drive(*args: object, **kwargs: object) -> int:
+        captured_kwargs.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("lancet_eval.run.drive", mock_drive)
+
+    res = runner.invoke(
+        app,
+        ["run", "--corpus", "multihop_rag", "--out", str(tmp_path / "journal.jsonl")],
+    )
+    assert res.exit_code == 0
+    assert "settings" in captured_kwargs
+    forwarded_settings = captured_kwargs["settings"]
+    assert isinstance(forwarded_settings, EvalSettings)
+    assert forwarded_settings.question_deadline_secs == 789.0
+
+

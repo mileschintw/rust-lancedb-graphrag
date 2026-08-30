@@ -160,3 +160,27 @@ def test_check_openrouter_api_and_model_differentiation() -> None:
         "dots-studio/dots-3-note-preview:free", "openai/gpt-4o-mini"
     )
     assert res_diff.passed
+
+
+def test_gateway_failure_message_names_service_and_remedy(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Proves preflight failure when gateway is down carries remedy string."""
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    httpx_mock.add_callback(error_handler)
+
+    with httpx.Client(base_url="http://testserver:8080") as client:
+        gw_check, eng_check = check_gateway_and_engine(client)
+
+    assert not gw_check.passed
+    assert "Gateway" in gw_check.message
+    assert "LANCET_ENV=eval" in gw_check.message
+    assert "docker compose up -d db" in gw_check.message
+
+    assert not eng_check.passed
+    assert "gateway is down" in eng_check.message.lower()
+    assert "engine failed" not in eng_check.message.lower()
+

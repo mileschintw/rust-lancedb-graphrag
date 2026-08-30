@@ -26,6 +26,7 @@ def drive_one(
     question: GoldQuestion,
     arm: str,
     partial: bool = False,
+    deadline_s: float = 600.0,
 ) -> RunRecord:
     """Drive a single question work unit through the gateway.
 
@@ -40,6 +41,7 @@ def drive_one(
             client,
             query=question.question,
             disable_graph_context=disable_graph_context,
+            deadline_s=deadline_s,
         )
 
         answer_text = outcome.answer.answer if outcome.answer else ""
@@ -145,6 +147,7 @@ def drive(
                     question=q,
                     arm=arm,
                     partial=partial,
+                    deadline_s=eval_settings.question_deadline_secs,
                 ): (q, arm)
                 for q, arm in remaining_units
             }

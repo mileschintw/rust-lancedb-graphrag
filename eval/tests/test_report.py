@@ -297,3 +297,19 @@ def test_report_cli_exits_zero_regardless_of_metric_values(tmp_path: Path) -> No
     res = runner.invoke(app, ["report", "--run", str(tmp_path)])
     assert res.exit_code == 0
 
+
+def test_matching_rule_caveat_matches_implemented_rule() -> None:
+    """Proves Evidence Matching Rule caveat reflects unidirectional containment."""
+    meta = RunMetadata.model_validate(_valid_metadata())
+    report = CorpusReport(corpus="multihop_rag", metadata=meta)
+    md = render_markdown(report)
+
+    assert "boundary_attributable_misses" in md
+    assert (
+        "chunk's normalized text contains the fact's normalized text "
+        "as a contiguous substring"
+    ) in md
+    assert "or the fact's normalized text contains the chunk's text" not in md
+
+
+

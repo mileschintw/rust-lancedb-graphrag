@@ -80,7 +80,11 @@ def check_gateway_and_engine(
         gw_check = PreflightCheckResult(
             name="gateway_reachable",
             passed=False,
-            message=f"Gateway connection failed: {exc}",
+            message=(
+                f"Gateway connection failed: {exc}. Start the gateway with "
+                "LANCET_ENV=eval after starting PostgreSQL with "
+                "docker compose up -d db."
+            ),
         )
         engine_check = PreflightCheckResult(
             name="engine_reachable",

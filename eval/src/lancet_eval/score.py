@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from lancet_eval.config import get_commit_sha
 from lancet_eval.corpus import (
     load_corpus_config,
     load_sample_questions,
@@ -283,6 +284,7 @@ def score_run(
     judged_sample_count = 0
     cache_path = dir_path / "judge_cache.json"
     cache = JudgeCache(cache_path)
+    judged_qids: set[str] = set()
 
     if not no_judge:
         # Check judge model distinctness from generator model
@@ -457,7 +459,13 @@ def score_run(
         ]
 
         # Select up to 20 representative items across query types
-        selected_records = p_records[:20]
+        if not no_judge and judged_qids:
+            selected_records = [
+                r for r in p_records if r.question_id in judged_qids
+            ][:20]
+        else:
+            selected_records = p_records[:20]
+
         for r in selected_records:
             gold = gold_map.get(r.question_id)
             if not gold:
@@ -491,6 +499,9 @@ def score_run(
         with open(out_ws_path, "w", encoding="utf-8", newline="\n") as f:
             for w_row in worksheet_rows:
                 f.write(json.dumps(w_row, ensure_ascii=False) + "\n")
+
+        count_emitted = len(worksheet_rows) - 1
+        print(f"Emitted {count_emitted} calibration worksheet rows to {out_ws_path}")
 
     dimensions: list[DimensionResult] = []
 
@@ -726,7 +737,7 @@ def score_run(
     metadata = RunMetadata(
         corpus=corpus_name,
         run_date=datetime.now(UTC).isoformat(),
-        commit_sha=os.environ.get("GIT_COMMIT_SHA") or "local",
+        commit_sha=os.environ.get("GIT_COMMIT_SHA") or get_commit_sha(),
         generation_model=gen_model_name,
         embedding_model=emb_model,
         judge_model=config.judge_model,

@@ -205,3 +205,153 @@ def test_reseed_requires_confirmation_and_isolation_check(
     # Without confirmation -> raises
     with pytest.raises(SeedError, match="Pass confirmation=True"):
         reseed_corpus("multihop_rag", confirmation=False, settings=settings)
+
+
+def test_reset_refuses_default_schema() -> None:
+    """Proves assert_schema_isolated refuses default public schema."""
+    from lancet_eval.seed import assert_schema_isolated
+
+    settings = EvalSettings.model_construct(
+        database_url="postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable",
+        dev_database_url="postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=dev",
+    )
+    with pytest.raises(SeedError) as exc_info:
+        assert_schema_isolated(settings)
+    assert "public" in str(exc_info.value)
+
+
+def test_reset_refuses_dev_equal_schema() -> None:
+    """Proves assert_schema_isolated refuses schema colliding with dev schema."""
+    from lancet_eval.seed import assert_schema_isolated
+
+    settings = EvalSettings.model_construct(
+        database_url="postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=colliding_schema",
+        dev_database_url="postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=colliding_schema",
+    )
+    with pytest.raises(SeedError) as exc_info:
+        assert_schema_isolated(settings)
+    assert "colliding_schema" in str(exc_info.value)
+
+
+def test_reseed_resets_postgres_before_lancedb(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proves reseed runs PostgreSQL reset before LanceDB removal."""
+    import subprocess
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+
+    lance_eval = tmp_path / "lancedb-eval"
+    lance_eval.mkdir(parents=True, exist_ok=True)
+    canary = lance_eval / "canary.txt"
+    canary.write_text("survives", encoding="utf-8")
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        # Fail on psql reset
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=1, stdout="", stderr="psql simulated connection error"
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    settings = EvalSettings(
+        gateway_url="http://testgateway:8080",
+        lancedb_path=str(lance_eval),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+        database_url="postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=lancet_eval",
+        dev_database_url="postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable",
+    )
+
+    with pytest.raises(SeedError, match="psql schema reset failed"):
+        reseed_corpus("multihop_rag", confirmation=True, settings=settings)
+
+    # LanceDB directory still exists because reset aborted before rmtree
+    assert lance_eval.exists()
+    assert canary.exists()
+    assert len(calls) == 1
+    assert calls[0][0] == "psql"
+
+
+@pytest.mark.parametrize(
+    "bad_schema",
+    ["lancet_eval,public", "lancet eval", "1eval", 'eval";DROP'],
+)
+def test_reset_refuses_non_identifier_schema_name(
+    bad_schema: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proves non-identifier schema names are rejected without running subprocess."""
+    import subprocess
+
+    from lancet_eval.seed import assert_schema_isolated, reset_eval_schema
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+
+    settings = EvalSettings.model_construct(
+        database_url=f"postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path={bad_schema}",
+        dev_database_url="postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable",
+    )
+
+    with pytest.raises(SeedError) as exc_info:
+        assert_schema_isolated(settings)
+    assert bad_schema in str(exc_info.value)
+
+    with pytest.raises(SeedError) as exc_info2:
+        reset_eval_schema(settings)
+    assert bad_schema in str(exc_info2.value)
+
+    # Subprocess.run was never called
+    assert len(calls) == 0
+
+
+@pytest.mark.parametrize(
+    ("eval_dsn", "admin_dsn", "expected_match"),
+    [
+        (
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet?search_path=lancet_eval",
+            "postgres://postgres:postgres@127.0.0.2:5432/lancet",
+            "host",
+        ),
+        (
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet?search_path=lancet_eval",
+            "postgres://postgres:postgres@127.0.0.1:5433/lancet",
+            "port",
+        ),
+        (
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet?search_path=lancet_eval",
+            "postgres://postgres:postgres@127.0.0.1:5432/other_db",
+            "db",
+        ),
+    ],
+)
+def test_reset_refuses_dsn_with_foreign_host_or_dbname(
+    eval_dsn: str, admin_dsn: str, expected_match: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proves mismatching admin DSN is rejected with no subprocess spawned."""
+    import subprocess
+
+    from lancet_eval.seed import (
+        assert_admin_dsn_targets_eval_database,
+        reset_eval_schema,
+    )
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+
+    with pytest.raises(SeedError) as exc_info:
+        assert_admin_dsn_targets_eval_database(eval_dsn, admin_dsn)
+    assert admin_dsn in str(exc_info.value)
+
+    settings = EvalSettings.model_construct(
+        database_url=eval_dsn,
+        dev_database_url=admin_dsn,
+    )
+    with pytest.raises(SeedError) as exc_info2:
+        reset_eval_schema(settings)
+    assert admin_dsn in str(exc_info2.value)
+
+    assert len(calls) == 0
+
