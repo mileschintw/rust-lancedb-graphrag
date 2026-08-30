@@ -17,21 +17,9 @@ from lancet_eval.seed import DocumentMap, DocumentMapEntry, save_document_map_at
 
 
 def _setup_mock_corpus_files(tmp_path: Path) -> tuple[Path, str]:
-    """Setup fixture document map and return run directory and first question id."""
+    """Return run directory and first question id."""
     questions = load_sample_questions("multihop_rag")
     q1 = questions[0]
-
-    entry = DocumentMapEntry(
-        corpus_id="doc1",
-        document_id="0abbe020-d26d-41e6-8d5f-f7867a3608db",
-        title="Title 1",
-    )
-    doc_map = DocumentMap(
-        corpus="multihop_rag",
-        index_generation="gen-test-1",
-        entries={"0abbe020-d26d-41e6-8d5f-f7867a3608db": entry},
-    )
-    save_document_map_atomic(doc_map)
     return tmp_path, q1.question_id
 
 

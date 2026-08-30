@@ -114,3 +114,104 @@ def make_graph_ablation_delta(
         n=graph_on_n + graph_off_n,
     )
 
+
+def make_groundedness_result(
+    *,
+    verdicts: list[int | float],
+    judge_errors: int,
+    skipped_no_evidence: int,
+    total_sampled: int,
+    calibration_exact_match: float | None = None,
+    calibration_mad: float | None = None,
+) -> DimensionResult:
+    """Build DimensionResult for judged answer groundedness."""
+    if not verdicts:
+        if judge_errors > 0 and judge_errors == total_sampled:
+            return DimensionResult(
+                name="answer_groundedness",
+                status="error",
+                reason=f"All {judge_errors} judge calls failed with errors",
+                n=0,
+            )
+        if skipped_no_evidence == total_sampled and total_sampled > 0:
+            return DimensionResult(
+                name="answer_groundedness",
+                status="skipped",
+                reason="No evidence returned in responses; groundedness undefined",
+                n=0,
+            )
+        return DimensionResult(
+            name="answer_groundedness",
+            status="skipped",
+            reason="No judged items available",
+            n=0,
+        )
+    mean_val = sum(verdicts) / len(verdicts)
+    detail: dict[str, float] = {
+        "judged_n": float(len(verdicts)),
+        "judge_errors": float(judge_errors),
+        "skipped_no_evidence": float(skipped_no_evidence),
+    }
+    if calibration_exact_match is not None:
+        detail["calibration_exact_match"] = float(calibration_exact_match)
+    if calibration_mad is not None:
+        detail["calibration_mad"] = float(calibration_mad)
+    return DimensionResult(
+        name="answer_groundedness",
+        status="ok",
+        score=mean_val,
+        detail=detail,
+        n=len(verdicts),
+    )
+
+
+def make_faithfulness_result(
+    *,
+    verdicts: list[int | float],
+    judge_errors: int,
+    skipped_no_evidence: int,
+    total_sampled: int,
+    calibration_exact_match: float | None = None,
+    calibration_mad: float | None = None,
+) -> DimensionResult:
+    """Build DimensionResult for judged answer faithfulness."""
+    if not verdicts:
+        if judge_errors > 0 and judge_errors == total_sampled:
+            return DimensionResult(
+                name="answer_faithfulness",
+                status="error",
+                reason=f"All {judge_errors} judge calls failed with errors",
+                n=0,
+            )
+        if skipped_no_evidence == total_sampled and total_sampled > 0:
+            return DimensionResult(
+                name="answer_faithfulness",
+                status="skipped",
+                reason="No evidence returned in responses; faithfulness undefined",
+                n=0,
+            )
+        return DimensionResult(
+            name="answer_faithfulness",
+            status="skipped",
+            reason="No judged items available",
+            n=0,
+        )
+    mean_val = sum(verdicts) / len(verdicts)
+    detail: dict[str, float] = {
+        "judged_n": float(len(verdicts)),
+        "judge_errors": float(judge_errors),
+        "skipped_no_evidence": float(skipped_no_evidence),
+    }
+    if calibration_exact_match is not None:
+        detail["calibration_exact_match"] = float(calibration_exact_match)
+    if calibration_mad is not None:
+        detail["calibration_mad"] = float(calibration_mad)
+    return DimensionResult(
+        name="answer_faithfulness",
+        status="ok",
+        score=mean_val,
+        detail=detail,
+        n=len(verdicts),
+    )
+
+

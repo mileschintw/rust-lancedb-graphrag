@@ -17,7 +17,9 @@ selection_algorithm = "referenced_plus_distractors"
 distractor_count = 0
 
 [models]
-judge_model = "openai/gpt-4o-mini"
+judge_model = "meta-llama/llama-3.3-70b-instruct:free"
+judge_temperature = 0.0
+judge_max_tokens = 400
 judge_prompt_version = "v1"
 
 [arms]

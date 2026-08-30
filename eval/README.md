@@ -66,7 +66,25 @@ uv run --project eval lancet-eval run --corpus multihop_rag --limit 3
 
 # Score completed run offline with zero HTTP requests
 uv run --project eval lancet-eval score --run eval/runs/latest --no-judge
+
+# Score completed run with LLM judge sampling and caching
+uv run --project eval lancet-eval score --run eval/runs/latest --judge --sample 100
+
+# Emit human calibration worksheet
+uv run --project eval lancet-eval score --run eval/runs/latest --judge --sample 100 --emit-calibration-worksheet eval/runs/latest/calibration_worksheet.jsonl
+
+# Score run with human calibration validation and observed agreement
+uv run --project eval lancet-eval score --run eval/runs/latest --judge --sample 100 --calibration-file eval/runs/latest/calibration_completed.jsonl
 ```
+
+## LLM-as-Judge Evaluation & Calibration (D-52, D-53)
+
+The evaluation harness evaluates answer groundedness and faithfulness using an LLM-as-judge model (`meta-llama/llama-3.3-70b-instruct:free`) pinned distinctly from the engine's generation model (`dots-studio/dots-3-note-preview:free`):
+- **Groundedness & Faithfulness Rubrics:** 1-5 scale with anchored definitions.
+- **Auditable Plain-Text Cache:** All judge verdicts are stored in `judge_cache.json` keyed by `sha256(prompt_version, judge_model, question, answer, post_truncation_evidence)`.
+- **Bounded Evidence Truncation:** Passages are truncated in wire ranked order (`PER_PASSAGE_CHAR_BUDGET = 1500`, `EVIDENCE_CHAR_BUDGET = 12000`) with explicit `[TRUNCATED: N further passages omitted]` markers included in the cache key.
+- **Empty Citation Handling:** Responses without citations are marked `status: skipped` with reason "no evidence returned; groundedness undefined" without calling the judge.
+- **Calibration Slice:** Human evaluators grade ~20 representative questions in a calibration worksheet (`.jsonl`). `score --calibration-file` validates prompt version alignment and calculates exact-match rate and mean absolute difference (MAD).
 
 ## CLI Sub-commands
 
@@ -79,7 +97,7 @@ uv run --project eval lancet-eval score --run eval/runs/latest --no-judge
 | `lancet-eval reseed` | **Implemented** | Plan 06.3-04 | Drop and recreate isolated evaluation store schema |
 | `lancet-eval probe` | **Implemented** | Plans 06.3-01 / 06.3-03 | Single-question end-to-end smoke check with deterministic scoring |
 | `lancet-eval run` | **Implemented** | Plan 06.3-05 | Execute benchmark questions with graph-on / graph-off arms |
-| `lancet-eval score` | **Implemented** | Plan 06.3-05 | Compute deterministic offline IR & answer metrics |
+| `lancet-eval score` | **Implemented** | Plans 06.3-05 / 06.3-06 | Compute offline IR metrics or cached LLM-as-judge scores |
 | `lancet-eval report` | Planned | Plan 06.3-07 | Emit final dated Markdown and JSON evaluation reports |
 
 ## Offline Testing

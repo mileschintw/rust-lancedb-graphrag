@@ -136,12 +136,33 @@ class CorpusConfig:
         self.models = data.get("models", {})
         self.arms = list(data.get("arms", {}).get("arms", ["graph-on", "graph-off"]))
 
+    @property
+    def judge_model(self) -> str:
+        return str(
+            self.models.get(
+                "judge_model", "meta-llama/llama-3.3-70b-instruct:free"
+            )
+        )
+
+    @property
+    def judge_temperature(self) -> float:
+        return float(self.models.get("judge_temperature", 0.0))
+
+    @property
+    def judge_max_tokens(self) -> int:
+        return int(self.models.get("judge_max_tokens", 400))
+
+    @property
+    def judge_prompt_version(self) -> str:
+        return str(self.models.get("judge_prompt_version", "v1"))
+
+    @property
+    def adapter(self) -> Callable[[dict[str, Any]], GoldQuestion]:
         if self.label_format not in LABEL_ADAPTERS:
             raise CorpusError(
-                f"Unknown label_format '{self.label_format}' for corpus '{corpus_name}'"
+                f"Unknown label_format '{self.label_format}' for corpus '{self.name}'"
             )
-
-        self._adapter = LABEL_ADAPTERS[self.label_format]
+        return LABEL_ADAPTERS[self.label_format]
 
     @property
     def questions(self) -> list[GoldQuestion]:
@@ -157,7 +178,7 @@ class CorpusConfig:
                     continue
                 try:
                     raw = json.loads(clean_line)
-                    q = self._adapter(raw)
+                    q = self.adapter(raw)
                     questions.append(q)
                 except Exception as exc:
                     raise CorpusError(

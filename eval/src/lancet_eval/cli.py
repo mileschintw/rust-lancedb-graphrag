@@ -293,7 +293,7 @@ def score_benchmark(
     no_judge: Annotated[
         bool,
         typer.Option(
-            "--no-judge",
+            "--no-judge/--judge",
             help="Compute offline deterministic metrics only without LLM judge calls",
         ),
     ] = True,
@@ -305,13 +305,33 @@ def score_benchmark(
             help="Sample size for judged evaluation pass",
         ),
     ] = None,
+    emit_calibration_worksheet: Annotated[
+        Path | None,
+        typer.Option(
+            "--emit-calibration-worksheet",
+            help="Path to write calibration worksheet JSONL file",
+        ),
+    ] = None,
+    calibration_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--calibration-file",
+            help="Path to human-scored calibration worksheet JSONL file",
+        ),
+    ] = None,
 ) -> None:
-    """Score journaled evaluation runs offline."""
+    """Score journaled evaluation runs offline or with LLM judge."""
     try:
         from lancet_eval.score import score_run
 
         console.print(f"[bold blue]Scoring run at {run}...[/bold blue]")
-        report = score_run(run_dir=run, no_judge=no_judge, sample=sample)
+        report = score_run(
+            run_dir=run,
+            no_judge=no_judge,
+            sample=sample,
+            emit_calibration_worksheet=emit_calibration_worksheet,
+            calibration_file=calibration_file,
+        )
         md = render_markdown(report)
         console.print(md)
         console.print(

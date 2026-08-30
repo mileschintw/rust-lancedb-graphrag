@@ -1,24 +1,38 @@
-"""Offline deterministic evaluation scorer reading committed journals."""
+"""Offline deterministic and cached LLM-judged evaluation scorer."""
 
 from __future__ import annotations
 
 import json
+import os
+import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from lancet_eval.corpus import (
     load_corpus_config,
     load_sample_questions,
+    sample_questions,
 )
 from lancet_eval.dimensions import (
     NOTICE_CODE_GRAPH_ABLATION,
     NOTICE_CODE_GRAPH_UNAVAILABLE,
     OBS_04_PLACEHOLDER,
     DimensionResult,
+    make_faithfulness_result,
     make_graph_ablation_delta,
+    make_groundedness_result,
 )
 from lancet_eval.journal import RunRecord
+from lancet_eval.judge import (
+    JudgeCache,
+    JudgeCacheEntry,
+    cache_key,
+    judge_once,
+    truncate_evidence,
+)
 from lancet_eval.metrics import (
     abstention_rate,
     context_precision_at_k,
@@ -33,7 +47,24 @@ from lancet_eval.seed import load_document_map
 
 
 class ScoreError(Exception):
-    """Raised when score encounters corrupt, invalid, or unmapped journal data."""
+    """Raised when score encounters corrupt, invalid, or unmapped data."""
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def _get_engine_generation_model() -> str:
+    """Read generation_model from config/config.toml."""
+    cfg_path = _repo_root() / "config" / "config.toml"
+    if cfg_path.is_file():
+        try:
+            with open(cfg_path, "rb") as f:
+                data = tomllib.load(f)
+            return str(data.get("openrouter", {}).get("generation_model", ""))
+        except Exception:
+            return ""
+    return ""
 
 
 def _check_provenance(record: RunRecord) -> bool:
@@ -55,8 +86,12 @@ def score_run(
     run_dir: Path | str,
     no_judge: bool = True,
     sample: int | None = None,
+    emit_calibration_worksheet: Path | str | None = None,
+    calibration_file: Path | str | None = None,
+    api_key: str | None = None,
+    client: httpx.Client | None = None,
 ) -> CorpusReport:
-    """Read a run journal and produce a scored evaluation report offline."""
+    """Read a run journal and produce a scored evaluation report."""
     dir_path = Path(run_dir)
     journal_path = dir_path / "journal.jsonl"
     if not journal_path.is_file():
@@ -122,7 +157,7 @@ def score_run(
             for chunk in rec.snapshot.retrieved_chunks:
                 if chunk.document_id not in doc_map.entries:
                     raise ScoreError(
-                        f"Unmapped document_id '{chunk.document_id}' in journal record "
+                        f"Unmapped document_id '{chunk.document_id}' in record "
                         f"for question '{rec.question_id}'"
                     )
 
@@ -137,7 +172,7 @@ def score_run(
         if rec.graph_arm in records_by_arm:
             records_by_arm[rec.graph_arm].append(rec)
 
-    # Compute scores for graph-on and graph-off
+    # Compute deterministic scores for graph-on and graph-off
     arm_metrics: dict[str, dict[str, Any]] = {}
 
     for arm, arm_records in records_by_arm.items():
@@ -230,6 +265,224 @@ def score_run(
     else:
         primary_arm = next(iter(arm_metrics.keys()))
     p_data = arm_metrics[primary_arm]
+    p_records = records_by_arm.get(primary_arm, [])
+
+    # LLM-as-judge evaluation pass
+    groundedness_scores: list[int | float] = []
+    faithfulness_scores: list[int | float] = []
+    judge_errors = 0
+    skipped_no_evidence = 0
+    judged_sample_count = 0
+    cache_path = dir_path / "judge_cache.json"
+    cache = JudgeCache(cache_path)
+
+    if not no_judge:
+        # Check judge model distinctness from generator model
+        gen_model = _get_engine_generation_model()
+        judge_model = config.judge_model
+        if gen_model and judge_model and gen_model.strip() == judge_model.strip():
+            raise ScoreError(
+                f"Configured judge model '{judge_model}' equals engine generation "
+                f"model '{gen_model}'. A judge cannot evaluate its own model family."
+            )
+
+        api_key_val = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+
+        # Select judged question subset
+        if sample is not None and sample > 0:
+            distinct_qids = [
+                {"question_id": q.question_id}
+                for q in sampled_questions
+                if any(r.question_id == q.question_id for r in p_records)
+            ]
+            sampled_q_dicts = sample_questions(
+                distinct_qids, n=sample, seed=config.sample_seed
+            )
+            judged_qids = {d["question_id"] for d in sampled_q_dicts}
+        else:
+            judged_qids = {r.question_id for r in p_records}
+
+        for rec in p_records:
+            if rec.question_id not in judged_qids:
+                continue
+            gold = gold_map.get(rec.question_id)
+            if not gold:
+                continue
+
+            judged_sample_count += 1
+
+            if not rec.structured_citations:
+                skipped_no_evidence += 1
+                continue
+
+            ev = truncate_evidence(rec.structured_citations)
+            k = cache_key(
+                prompt_version=config.judge_prompt_version,
+                judge_model=judge_model,
+                question=gold.question,
+                answer=rec.answer or "",
+                post_truncation_evidence=ev,
+            )
+
+            cached_entry = cache.get(k)
+            if cached_entry is not None:
+                if cached_entry.verdict is not None:
+                    groundedness_scores.append(cached_entry.verdict.groundedness)
+                    faithfulness_scores.append(cached_entry.verdict.faithfulness)
+                elif cached_entry.error is not None:
+                    judge_errors += 1
+            else:
+                verdict, err = judge_once(
+                    client=client,
+                    api_key=api_key_val,
+                    model=judge_model,
+                    question=gold.question,
+                    answer=rec.answer or "",
+                    evidence=ev,
+                    prompt_version=config.judge_prompt_version,
+                    temperature=config.judge_temperature,
+                    max_tokens=config.judge_max_tokens,
+                )
+                entry = JudgeCacheEntry(
+                    cache_key=k,
+                    prompt_version=config.judge_prompt_version,
+                    judge_model=judge_model,
+                    question=gold.question,
+                    answer=rec.answer or "",
+                    evidence=ev,
+                    verdict=verdict,
+                    error=err,
+                )
+                cache.set(k, entry)
+                if verdict is not None:
+                    groundedness_scores.append(verdict.groundedness)
+                    faithfulness_scores.append(verdict.faithfulness)
+                else:
+                    judge_errors += 1
+
+    # Calibration evaluation
+    g_calibration_em: float | None = None
+    g_calibration_mad: float | None = None
+    f_calibration_em: float | None = None
+    f_calibration_mad: float | None = None
+
+    if calibration_file is not None:
+        calib_path = Path(calibration_file)
+        if not calib_path.is_file():
+            raise ScoreError(f"Calibration file not found at {calib_path}")
+
+        g_matches: list[float] = []
+        g_diffs: list[float] = []
+        f_matches: list[float] = []
+        f_diffs: list[float] = []
+
+        with open(calib_path, encoding="utf-8") as f:
+            for line_idx, line in enumerate(f, 1):
+                clean_l = line.strip()
+                if not clean_l:
+                    continue
+                row = json.loads(clean_l)
+                if row.get("type") == "header":
+                    hdr_ver = row.get("judge_prompt_version")
+                    if hdr_ver != config.judge_prompt_version:
+                        raise ScoreError(
+                            f"Calibration prompt version '{hdr_ver}' does not match "
+                            f"configured '{config.judge_prompt_version}'"
+                        )
+                    continue
+
+                row_id = row.get("question_id") or f"line-{line_idx}"
+                hg = row.get("human_groundedness")
+                hf = row.get("human_faithfulness")
+
+                hg_blank = hg is None or str(hg).strip() == ""
+                hf_blank = hf is None or str(hf).strip() == ""
+                if hg_blank or hf_blank:
+                    raise ScoreError(
+                        f"Row '{row_id}' in calibration worksheet has blank human score"
+                    )
+
+                try:
+                    hg_val = int(hg)
+                    hf_val = int(hf)
+                except ValueError as e:
+                    raise ScoreError(
+                        f"Row '{row_id}' has invalid human score: {hg}, {hf}"
+                    ) from e
+
+                if not (1 <= hg_val <= 5 and 1 <= hf_val <= 5):
+                    raise ScoreError(
+                        f"Row '{row_id}' human score outside 1..5: {hg_val}, {hf_val}"
+                    )
+
+                c_key = row.get("cache_key", "")
+                cached = cache.get(c_key)
+                if cached and cached.verdict:
+                    g_matches.append(
+                        1.0 if hg_val == cached.verdict.groundedness else 0.0
+                    )
+                    g_diffs.append(abs(hg_val - cached.verdict.groundedness))
+                    f_matches.append(
+                        1.0 if hf_val == cached.verdict.faithfulness else 0.0
+                    )
+                    f_diffs.append(abs(hf_val - cached.verdict.faithfulness))
+
+        if g_matches:
+            g_calibration_em = sum(g_matches) / len(g_matches)
+            g_calibration_mad = sum(g_diffs) / len(g_diffs)
+            f_calibration_em = sum(f_matches) / len(f_matches)
+            f_calibration_mad = sum(f_diffs) / len(f_diffs)
+
+    # Emit calibration worksheet if requested
+    if emit_calibration_worksheet is not None:
+        out_ws_path = Path(emit_calibration_worksheet)
+        out_ws_path.parent.mkdir(parents=True, exist_ok=True)
+
+        worksheet_rows: list[dict[str, Any]] = [
+            {
+                "type": "header",
+                "corpus": corpus_name,
+                "judge_prompt_version": config.judge_prompt_version,
+                "judge_model": config.judge_model,
+                "generated_at": datetime.now(UTC).isoformat(),
+            }
+        ]
+
+        # Select up to 20 representative items across query types
+        selected_records = p_records[:20]
+        for r in selected_records:
+            gold = gold_map.get(r.question_id)
+            if not gold:
+                continue
+            ev = (
+                truncate_evidence(r.structured_citations)
+                if r.structured_citations
+                else ""
+            )
+            k = cache_key(
+                prompt_version=config.judge_prompt_version,
+                judge_model=config.judge_model,
+                question=gold.question,
+                answer=r.answer or "",
+                post_truncation_evidence=ev,
+            )
+            worksheet_rows.append(
+                {
+                    "question_id": r.question_id,
+                    "query_type": gold.question_type,
+                    "cache_key": k,
+                    "question": gold.question,
+                    "answer": r.answer or "",
+                    "evidence": ev,
+                    "human_groundedness": None,
+                    "human_faithfulness": None,
+                    "notes": "",
+                }
+            )
+
+        with open(out_ws_path, "w", encoding="utf-8", newline="\n") as f:
+            for w_row in worksheet_rows:
+                f.write(json.dumps(w_row, ensure_ascii=False) + "\n")
 
     dimensions: list[DimensionResult] = []
 
@@ -313,25 +566,49 @@ def score_run(
         )
     )
 
-    # 6. answer_faithfulness (skipped under --no-judge)
-    dimensions.append(
-        DimensionResult(
-            name="answer_faithfulness",
-            status="skipped",
-            reason="Deferred to LLM-as-judge scoring pass (--no-judge specified)",
-            n=0,
+    # 6. answer_faithfulness
+    if no_judge:
+        dimensions.append(
+            DimensionResult(
+                name="answer_faithfulness",
+                status="skipped",
+                reason="Deferred to LLM-as-judge scoring pass (--no-judge specified)",
+                n=0,
+            )
         )
-    )
+    else:
+        dimensions.append(
+            make_faithfulness_result(
+                verdicts=faithfulness_scores,
+                judge_errors=judge_errors,
+                skipped_no_evidence=skipped_no_evidence,
+                total_sampled=judged_sample_count,
+                calibration_exact_match=f_calibration_em,
+                calibration_mad=f_calibration_mad,
+            )
+        )
 
-    # 7. answer_groundedness (skipped under --no-judge)
-    dimensions.append(
-        DimensionResult(
-            name="answer_groundedness",
-            status="skipped",
-            reason="Deferred to LLM-as-judge scoring pass (--no-judge specified)",
-            n=0,
+    # 7. answer_groundedness
+    if no_judge:
+        dimensions.append(
+            DimensionResult(
+                name="answer_groundedness",
+                status="skipped",
+                reason="Deferred to LLM-as-judge scoring pass (--no-judge specified)",
+                n=0,
+            )
         )
-    )
+    else:
+        dimensions.append(
+            make_groundedness_result(
+                verdicts=groundedness_scores,
+                judge_errors=judge_errors,
+                skipped_no_evidence=skipped_no_evidence,
+                total_sampled=judged_sample_count,
+                calibration_exact_match=g_calibration_em,
+                calibration_mad=g_calibration_mad,
+            )
+        )
 
     # 8. graph_ablation_delta
     on_data = arm_metrics.get("graph-on", {"recalls": [], "errors": 0, "total": 0})
@@ -429,7 +706,7 @@ def score_run(
         generated_at=datetime.now(UTC).isoformat(),
         commit_sha="local",
         sample_size_deterministic=len(sampled_questions),
-        sample_size_judged=0,
+        sample_size_judged=judged_sample_count,
     )
 
     report = CorpusReport(
