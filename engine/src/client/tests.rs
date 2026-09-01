@@ -242,6 +242,47 @@ async fn embedding_request_uses_effective_model() {
 }
 
 #[tokio::test]
+async fn embedding_request_sends_expected_dimensions() {
+    let server = MockServer::start(vec![200], Duration::ZERO);
+    let model = "custom/embedding-model";
+    let config = OpenRouterEmbeddingConfig::new(model, server.endpoint.clone()).unwrap();
+    let client = OpenRouterClient::new_with_config("test-secret", config).unwrap();
+
+    client
+        .get_embeddings(&["dimension check request".into()])
+        .await
+        .unwrap();
+
+    let body = server
+        .request_bodies
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["dimensions"], 2048);
+}
+
+#[tokio::test]
+#[ignore]
+async fn live_embedding_returns_shipped_dimension() {
+    let client = match OpenRouterClient::from_env() {
+        Ok(client) => client,
+        Err(err) => {
+            eprintln!("Skipping live_embedding_returns_shipped_dimension: {err}");
+            return;
+        }
+    };
+    let embeddings = client
+        .get_embeddings(&["live embedding smoke test".into()])
+        .await
+        .expect("live embedding request failed");
+    assert_eq!(embeddings.len(), 1);
+    assert_eq!(embeddings[0].len(), 2048);
+}
+
+#[tokio::test]
 async fn embedding_config_preserves_bounds_and_redaction() {
     let server = MockServer::start(vec![500, 500, 500, 500], Duration::ZERO);
     let config = OpenRouterEmbeddingConfig::new("custom/embedding-model", server.endpoint).unwrap();

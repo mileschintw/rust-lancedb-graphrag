@@ -342,7 +342,7 @@ def seed_corpus(
 
             # Poll for completion if status is not completed
             status = str(data.get("status") or data.get("Status") or "")
-            max_poll_time = 900.0
+            max_poll_time = 1800.0
             start_poll = time.monotonic()
             poll_interval = 0.5
 

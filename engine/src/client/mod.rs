@@ -5,10 +5,11 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 
 const OPENROUTER_EMBEDDINGS_URL: &str = "https://openrouter.ai/api/v1/embeddings";
-pub const EMBEDDING_MODEL: &str = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
+pub const EMBEDDING_MODEL: &str = "voyageai/voyage-4-large";
 const EMBEDDING_DIMENSION: usize = 2048;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
-const MAX_CONCURRENCY: usize = 2;
+pub const DEFAULT_EMBEDDING_CONCURRENCY: usize = 12;
+const MAX_CONCURRENCY: usize = DEFAULT_EMBEDDING_CONCURRENCY;
 const MAX_RETRIES: u32 = 6;
 const INITIAL_BACKOFF: Duration = Duration::from_secs(2);
 
@@ -71,12 +72,12 @@ fn build_http_client(timeout: Duration) -> Result<Client, reqwest::Error> {
 
 #[derive(Debug, Clone)]
 pub struct OpenRouterEmbeddingConfig {
-    model: String,
-    endpoint: String,
-    timeout: Duration,
-    max_retries: u32,
-    max_concurrency: usize,
-    expected_dimension: usize,
+    pub model: String,
+    pub endpoint: String,
+    pub timeout: Duration,
+    pub max_retries: u32,
+    pub max_concurrency: usize,
+    pub expected_dimension: usize,
 }
 
 impl OpenRouterEmbeddingConfig {
@@ -89,6 +90,17 @@ impl OpenRouterEmbeddingConfig {
             max_concurrency: MAX_CONCURRENCY,
             expected_dimension: EMBEDDING_DIMENSION,
         };
+        config.validate()?;
+        Ok(config)
+    }
+
+    pub fn new_with_concurrency(
+        model: impl Into<String>,
+        endpoint: impl Into<String>,
+        max_concurrency: usize,
+    ) -> Result<Self, String> {
+        let mut config = Self::new(model, endpoint)?;
+        config.max_concurrency = max_concurrency;
         config.validate()?;
         Ok(config)
     }
@@ -125,6 +137,7 @@ pub struct OpenRouterClient {
 struct EmbeddingRequest<'a> {
     model: &'a str,
     input: [&'a str; 1],
+    dimensions: usize,
 }
 
 #[derive(Deserialize)]
@@ -264,6 +277,7 @@ impl OpenRouterClient {
             .json(&EmbeddingRequest {
                 model: &self.config.model,
                 input: [text],
+                dimensions: self.config.expected_dimension,
             })
             .send()
             .await
@@ -291,7 +305,7 @@ impl OpenRouterClient {
                 RequestFailure::Permanent(format!("invalid embedding response: {err}"))
             }
             BoundedBodyError::Read(msg) => {
-                RequestFailure::Permanent(format!("failed to read embedding response: {msg}"))
+                RequestFailure::Retryable(format!("failed to read embedding response: {msg}"))
             }
         })?;
         let mut data = serde_json::from_slice::<EmbeddingResponse>(&body_bytes)
