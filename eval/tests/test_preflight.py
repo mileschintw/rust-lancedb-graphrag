@@ -157,7 +157,7 @@ def test_check_openrouter_api_and_model_differentiation() -> None:
     assert "matches generation model" in res_same.message
 
     res_diff = check_model_differentiation(
-        "dots-studio/dots-3-note-preview:free", "openai/gpt-4o-mini"
+        "deepseek/deepseek-v4-flash-0731", "openai/gpt-4o-mini"
     )
     assert res_diff.passed
 

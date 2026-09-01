@@ -227,7 +227,7 @@ def test_judge_model_equals_generator_raises(
     monkeypatch.setattr(
         score,
         "_get_engine_generation_model",
-        lambda: "meta-llama/llama-3.3-70b-instruct:free",
+        lambda: "meta-llama/llama-3.3-70b-instruct",
     )
 
     with pytest.raises(ScoreError) as exc_info:

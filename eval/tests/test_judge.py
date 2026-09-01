@@ -254,7 +254,7 @@ def test_judge_cache_round_trip(tmp_path: Path) -> None:
     entry = JudgeCacheEntry(
         cache_key="k123",
         prompt_version="v1",
-        judge_model="meta-llama/llama-3.3-70b-instruct:free",
+        judge_model="meta-llama/llama-3.3-70b-instruct",
         question="Q?",
         answer="A.",
         evidence="E.",

@@ -289,7 +289,7 @@ def run_preflight_checks(
     judged: bool = False,
     settings: EvalSettings | None = None,
     client: httpx.Client | None = None,
-    generation_model: str = "dots-studio/dots-3-note-preview:free",
+    generation_model: str = "deepseek/deepseek-v4-flash-0731",
 ) -> list[PreflightCheckResult]:
     """Execute the full preflight checklist and return all results."""
     import httpx

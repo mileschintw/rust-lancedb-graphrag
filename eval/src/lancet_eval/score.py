@@ -724,11 +724,11 @@ def score_run(
     lock_hash = get_lock_hash()
     index_gen = sorted(distinct_gens)[0] if distinct_gens else "unknown-gen"
     gen_model_name = (
-        _get_engine_generation_model() or "dots-studio/dots-3-note-preview:free"
+        _get_engine_generation_model() or "deepseek/deepseek-v4-flash-0731"
     )
 
     # Find embedding model from first available snapshot or fallback
-    emb_model = "text-embedding-3-small"
+    emb_model = "voyageai/voyage-4-large"
     for r in records:
         if r.snapshot and getattr(r.snapshot, "embedding_model", None):
             emb_model = r.snapshot.embedding_model

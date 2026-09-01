@@ -140,7 +140,7 @@ class CorpusConfig:
     def judge_model(self) -> str:
         return str(
             self.models.get(
-                "judge_model", "meta-llama/llama-3.3-70b-instruct:free"
+                "judge_model", "meta-llama/llama-3.3-70b-instruct"
             )
         )
 

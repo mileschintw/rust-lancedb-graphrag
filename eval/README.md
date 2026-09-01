@@ -87,7 +87,7 @@ The `run` command enables `--resume` by default and resolves to the newest exist
 
 ## LLM-as-Judge Evaluation & Calibration (D-52, D-53)
 
-The evaluation harness evaluates answer groundedness and faithfulness using an LLM-as-judge model (`meta-llama/llama-3.3-70b-instruct:free`) pinned distinctly from the engine's generation model (`dots-studio/dots-3-note-preview:free`):
+The evaluation harness evaluates answer groundedness and faithfulness using an LLM-as-judge model (`meta-llama/llama-3.3-70b-instruct`) pinned distinctly from the engine's generation model (`deepseek/deepseek-v4-flash-0731`):
 - **Groundedness & Faithfulness Rubrics:** 1-5 scale with anchored definitions.
 - **Auditable Plain-Text Cache:** All judge verdicts are stored in `judge_cache.json` keyed by `sha256(prompt_version, judge_model, question, answer, post_truncation_evidence)`.
 - **Bounded Evidence Truncation:** Passages are truncated in wire ranked order (`PER_PASSAGE_CHAR_BUDGET = 1500`, `EVIDENCE_CHAR_BUDGET = 12000`) with explicit `[TRUNCATED: N further passages omitted]` markers included in the cache key.

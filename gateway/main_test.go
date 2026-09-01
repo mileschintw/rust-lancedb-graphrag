@@ -888,7 +888,7 @@ func TestRAGQueryNoResults(t *testing.T) {
 				},
 				Snapshot: &pb.RetrievalSnapshot{
 					IndexGeneration: "gen-1",
-					EmbeddingModel:  "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+					EmbeddingModel:  "voyageai/voyage-4-large",
 					VectorWeight:    0.5,
 					Bm25Weight:      0.5,
 					RrfK:            60,
@@ -2305,7 +2305,7 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 				Model string   `json:"model"`
 				Input []string `json:"input"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != "nvidia/llama-nemotron-embed-vl-1b-v2:free" || len(request.Input) != 1 {
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != "voyageai/voyage-4-large" || len(request.Input) != 1 {
 				http.Error(w, "invalid embedding request", http.StatusBadRequest)
 				return
 			}
@@ -2639,7 +2639,7 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	if len(dto.Citations) != 1 || dto.Citations[0] != "[1]" || len(dto.StructuredCitations) != 1 || dto.StructuredCitations[0].DocumentID != "00000000-0000-4000-8000-000000000005" {
 		t.Fatalf("citation provenance = %#v / %#v", dto.Citations, dto.StructuredCitations)
 	}
-	if dto.Snapshot == nil || dto.Snapshot.EmbeddingModel != "nvidia/llama-nemotron-embed-vl-1b-v2:free" || dto.Snapshot.CandidateLimit != 32 {
+	if dto.Snapshot == nil || dto.Snapshot.EmbeddingModel != "voyageai/voyage-4-large" || dto.Snapshot.CandidateLimit != 32 {
 		t.Fatalf("retrieval snapshot = %#v", dto.Snapshot)
 	}
 	if dto.Notices == nil {
@@ -2685,7 +2685,7 @@ func TestRAGQuerySSEFirstFrame(t *testing.T) {
 		Notices: []*pb.Notice{},
 		Snapshot: &pb.RetrievalSnapshot{
 			IndexGeneration: "gen-1",
-			EmbeddingModel:  "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+			EmbeddingModel:  "voyageai/voyage-4-large",
 			CandidateLimit:  32,
 			FinalLimit:      8,
 		},
@@ -2799,7 +2799,7 @@ func TestRAGQuerySSEFirstFrame(t *testing.T) {
 	if len(dto.StructuredCitations) != 1 || dto.StructuredCitations[0].DocumentID != docID {
 		t.Fatalf("structured_citations = %#v", dto.StructuredCitations)
 	}
-	if dto.Snapshot == nil || dto.Snapshot.EmbeddingModel != "nvidia/llama-nemotron-embed-vl-1b-v2:free" {
+	if dto.Snapshot == nil || dto.Snapshot.EmbeddingModel != "voyageai/voyage-4-large" {
 		t.Fatalf("snapshot = %#v", dto.Snapshot)
 	}
 	if dto.Notices == nil {
@@ -4116,7 +4116,7 @@ func TestRAGQueryClientDisconnectCancelsRustWorkflow(t *testing.T) {
 func TestRetrievalSnapshotWireContract(t *testing.T) {
 	orig := &pb.RetrievalSnapshot{
 		IndexGeneration: "gen-12345",
-		EmbeddingModel:  "nvidia/llama-nemotron-embed-vl-1b-v2:free",
+		EmbeddingModel:  "voyageai/voyage-4-large",
 		VectorWeight:    1.0,
 		Bm25Weight:      1.0,
 		RrfK:            60,

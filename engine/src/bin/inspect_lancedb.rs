@@ -12,7 +12,7 @@ use lancedb::{
 use serde::Serialize;
 use uuid::Uuid;
 
-const EMBEDDING_MODEL: &str = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
+const EMBEDDING_MODEL: &str = "voyageai/voyage-4-large";
 
 #[derive(Serialize, serde::Deserialize, Debug)]
 struct Inspection {

@@ -14,7 +14,7 @@ use engine::db::DatabaseManager;
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase};
 
-const EMBEDDING_MODEL: &str = "nvidia/llama-nemotron-embed-vl-1b-v2:free";
+const EMBEDDING_MODEL: &str = "voyageai/voyage-4-large";
 const DOCUMENT_ID: &str = "00000000-0000-4000-8000-000000000005";
 
 // GRAPH_SEED_ENTITY_ID = "00000000-0000-4000-8000-000000000101"

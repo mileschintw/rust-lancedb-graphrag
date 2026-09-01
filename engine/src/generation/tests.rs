@@ -1857,7 +1857,7 @@ async fn fake_generator_stall_can_be_cancelled() {
     assert_eq!(generator.calls(), 1);
 }
 
-const SHIPPED_GENERATION_MODEL: &str = "dots-studio/dots-3-note-preview:free";
+const SHIPPED_GENERATION_MODEL: &str = "deepseek/deepseek-v4-flash-0731";
 
 fn load_shipped_generation_model() -> String {
     #[derive(serde::Deserialize)]

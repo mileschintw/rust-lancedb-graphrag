@@ -239,6 +239,7 @@ impl OpenRouterExtractionGenerator {
             "temperature": self.config.temperature(),
             "top_p": self.config.top_p(),
             "max_completion_tokens": self.config.max_completion_tokens(),
+            "reasoning": { "effort": "none" },
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {

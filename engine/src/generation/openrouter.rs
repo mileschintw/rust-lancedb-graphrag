@@ -605,6 +605,9 @@ impl OpenRouterGenerator {
             temperature: self.config.temperature,
             top_p: self.config.top_p,
             max_completion_tokens: self.config.max_completion_tokens(),
+            reasoning: Some(ReasoningConfig {
+                effort: "none".into(),
+            }),
             response_format: ResponseFormat {
                 format_type: "json_schema".into(),
                 json_schema: JsonSchemaWrapper {
@@ -830,12 +833,19 @@ impl Generator for OpenRouterGenerator {
 }
 
 #[derive(Serialize)]
+struct ReasoningConfig {
+    effort: String,
+}
+
+#[derive(Serialize)]
 struct OpenRouterChatPayload {
     model: String,
     messages: Vec<ChatMessage>,
     temperature: f64,
     top_p: f64,
     max_completion_tokens: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<ReasoningConfig>,
     response_format: ResponseFormat,
 }
 
