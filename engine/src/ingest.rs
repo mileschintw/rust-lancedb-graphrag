@@ -906,16 +906,36 @@ pub struct ExtractionPersistSummary {
     pub written_entity_edges_count: usize,
 }
 
-/// Extracts entities and relationships from a document and persists them to LanceDB.
-///
-/// Phase A (read-only): extracts per-chunk entities and relations, reading entities_table for exact match resolution.
-/// Phase B (mutation): captures table versions, deletes existing entity_edges for document_id, and inserts updated/new entity and edge rows.
-/// If Phase B fails, table versions are restored. This rollback is safe because document ingestion is serialized through spawn_worker_with_boundary.
+pub const DEFAULT_EXTRACTION_CONCURRENCY: usize = 15;
+
+/// Extracts entities and relationships from a document and persists them to LanceDB using default concurrency.
 pub async fn extract_and_persist_entities(
     database: &DatabaseManager,
     job: &IngestionJob,
     extraction_generator: &dyn graph::extraction::ExtractionGenerator,
     embedder: &dyn EmbeddingProvider,
+) -> Result<ExtractionPersistSummary, String> {
+    extract_and_persist_entities_with_concurrency(
+        database,
+        job,
+        extraction_generator,
+        embedder,
+        DEFAULT_EXTRACTION_CONCURRENCY,
+    )
+    .await
+}
+
+/// Extracts entities and relationships from a document and persists them to LanceDB.
+///
+/// Phase A (read-only): extracts per-chunk entities and relations, reading entities_table for exact match resolution.
+/// Phase B (mutation): captures table versions, deletes existing entity_edges for document_id, and inserts updated/new entity and edge rows.
+/// If Phase B fails, table versions are restored. This rollback is safe because document ingestion is serialized through spawn_worker_with_boundary.
+pub async fn extract_and_persist_entities_with_concurrency(
+    database: &DatabaseManager,
+    job: &IngestionJob,
+    extraction_generator: &dyn graph::extraction::ExtractionGenerator,
+    embedder: &dyn EmbeddingProvider,
+    extraction_concurrency: usize,
 ) -> Result<ExtractionPersistSummary, String> {
     let (_strategy, chunks) = chunk_ingestion_job(job);
     let chunk_ids: Vec<String> = (0..chunks.len())
@@ -935,6 +955,12 @@ pub async fn extract_and_persist_entities(
         })
         .collect();
 
+    let concurrency = if extraction_concurrency == 0 {
+        DEFAULT_EXTRACTION_CONCURRENCY
+    } else {
+        extraction_concurrency
+    };
+
     let mut indexed_results = futures::stream::iter(stream_items.into_iter().map(
         |(index, chunk_id, chunk_text)| {
             let doc_id = job.document_id.clone();
@@ -949,7 +975,7 @@ pub async fn extract_and_persist_entities(
             }
         },
     ))
-    .buffer_unordered(5)
+    .buffer_unordered(concurrency)
     .collect::<Vec<_>>()
     .await;
 
@@ -1236,12 +1262,19 @@ pub async fn extract_and_persist_entities(
 
         let updated_entities: Vec<&StagedEntity> =
             resolved_entities.values().filter(|e| !e.is_new).collect();
-        for entity in &updated_entities {
-            let ent_pred = format!("entity_id = '{}'", escape_sql_literal(&entity.entity_id));
-            entities_table
-                .delete(&ent_pred)
-                .await
-                .map_err(|e| format!("delete updated entity failed: {e}"))?;
+        if !updated_entities.is_empty() {
+            for chunk in updated_entities.chunks(500) {
+                let id_list = chunk
+                    .iter()
+                    .map(|e| format!("'{}'", escape_sql_literal(&e.entity_id)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let ent_pred = format!("entity_id IN ({id_list})");
+                entities_table
+                    .delete(&ent_pred)
+                    .await
+                    .map_err(|e| format!("delete updated entities failed: {e}"))?;
+            }
         }
 
         let all_entities: Vec<&StagedEntity> = resolved_entities.values().collect();
@@ -1777,7 +1810,32 @@ pub fn spawn_worker(
     rebuild_tx: watch::Sender<u64>,
     trigger_links: RebuildTriggerLinks,
 ) -> JoinHandle<()> {
-    spawn_worker_with_boundary(
+    spawn_worker_with_concurrency(
+        receiver,
+        statuses,
+        database,
+        embedder,
+        extraction_generator,
+        shutdown,
+        rebuild_tx,
+        trigger_links,
+        DEFAULT_EXTRACTION_CONCURRENCY,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_worker_with_concurrency(
+    receiver: mpsc::Receiver<IngestionJob>,
+    statuses: Arc<DashMap<String, IngestionStatus>>,
+    database: DatabaseManager,
+    embedder: Arc<dyn EmbeddingProvider>,
+    extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator>,
+    shutdown: watch::Receiver<bool>,
+    rebuild_tx: watch::Sender<u64>,
+    trigger_links: RebuildTriggerLinks,
+    extraction_concurrency: usize,
+) -> JoinHandle<()> {
+    spawn_worker_with_concurrency_and_boundary(
         receiver,
         statuses,
         database,
@@ -1787,6 +1845,7 @@ pub fn spawn_worker(
         shutdown,
         rebuild_tx,
         trigger_links,
+        extraction_concurrency,
     )
 }
 
@@ -1798,9 +1857,36 @@ pub fn spawn_worker_with_boundary(
     embedder: Arc<dyn EmbeddingProvider>,
     extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator>,
     boundary: Arc<dyn ReplacementMutationBoundary>,
+    shutdown: watch::Receiver<bool>,
+    rebuild_tx: watch::Sender<u64>,
+    trigger_links: RebuildTriggerLinks,
+) -> JoinHandle<()> {
+    spawn_worker_with_concurrency_and_boundary(
+        receiver,
+        statuses,
+        database,
+        embedder,
+        extraction_generator,
+        boundary,
+        shutdown,
+        rebuild_tx,
+        trigger_links,
+        DEFAULT_EXTRACTION_CONCURRENCY,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_worker_with_concurrency_and_boundary(
+    receiver: mpsc::Receiver<IngestionJob>,
+    statuses: Arc<DashMap<String, IngestionStatus>>,
+    database: DatabaseManager,
+    embedder: Arc<dyn EmbeddingProvider>,
+    extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator>,
+    boundary: Arc<dyn ReplacementMutationBoundary>,
     mut shutdown: watch::Receiver<bool>,
     rebuild_tx: watch::Sender<u64>,
     trigger_links: RebuildTriggerLinks,
+    extraction_concurrency: usize,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut receiver = receiver;
@@ -1872,11 +1958,12 @@ pub fn spawn_worker_with_boundary(
                             lancet.graph.written_entity_edges = tracing::field::Empty,
                             lancet.graph.prior_entity_edges = tracing::field::Empty,
                         );
-                        let extraction_res = extract_and_persist_entities(
+                        let extraction_res = extract_and_persist_entities_with_concurrency(
                             &database,
                             &job,
                             extraction_generator.as_ref(),
                             embedder.as_ref(),
+                            extraction_concurrency,
                         )
                         .instrument(graph_extraction_span.clone())
                         .await;

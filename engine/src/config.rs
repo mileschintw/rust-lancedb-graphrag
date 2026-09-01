@@ -54,7 +54,7 @@ pub fn default_embedding_endpoint() -> String {
     "https://openrouter.ai/api/v1/embeddings".into()
 }
 pub fn default_embedding_model() -> String {
-    "nvidia/llama-nemotron-embed-vl-1b-v2:free".into()
+    "voyageai/voyage-4-large".into()
 }
 pub fn default_generation_model() -> String {
     "openai/gpt-4o-mini".into()
@@ -76,6 +76,12 @@ pub fn default_top_p() -> f64 {
 }
 pub fn default_max_output_tokens() -> u32 {
     2048
+}
+pub fn default_embedding_concurrency() -> usize {
+    12
+}
+pub fn default_extraction_concurrency() -> usize {
+    15
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -475,6 +481,10 @@ pub struct OpenRouterSettings {
     pub embedding_model: String,
     #[serde(default = "default_generation_model")]
     pub generation_model: String,
+    #[serde(default = "default_embedding_concurrency")]
+    pub embedding_concurrency: usize,
+    #[serde(default = "default_extraction_concurrency")]
+    pub extraction_concurrency: usize,
     #[serde(default = "default_chat_endpoint")]
     pub chat_endpoint: String,
     #[serde(default = "default_models_endpoint", alias = "models_endpoint")]
@@ -493,8 +503,10 @@ impl Default for OpenRouterSettings {
     fn default() -> Self {
         Self {
             embedding_endpoint: "https://openrouter.ai/api/v1/embeddings".into(),
-            embedding_model: "nvidia/llama-nemotron-embed-vl-1b-v2:free".into(),
+            embedding_model: "voyageai/voyage-4-large".into(),
             generation_model: "openai/gpt-4o-mini".into(),
+            embedding_concurrency: default_embedding_concurrency(),
+            extraction_concurrency: default_extraction_concurrency(),
             chat_endpoint: "https://openrouter.ai/api/v1/chat/completions".into(),
             model_metadata_endpoint: "https://openrouter.ai/api/v1/models".into(),
             generation_timeout_secs: 30,
@@ -519,6 +531,8 @@ pub struct EffectiveRagSettings {
     pub embedding_endpoint: String,
     pub embedding_model: String,
     pub generation_model: String,
+    pub embedding_concurrency: usize,
+    pub extraction_concurrency: usize,
     pub chat_endpoint: String,
     pub model_metadata_endpoint: String,
     pub generation_timeout_secs: u64,
@@ -558,6 +572,8 @@ impl EffectiveRagSettings {
             embedding_endpoint: settings.openrouter.embedding_endpoint.clone(),
             embedding_model: settings.openrouter.embedding_model.clone(),
             generation_model: settings.openrouter.generation_model.clone(),
+            embedding_concurrency: settings.openrouter.embedding_concurrency,
+            extraction_concurrency: settings.openrouter.extraction_concurrency,
             chat_endpoint: settings.openrouter.chat_endpoint.clone(),
             model_metadata_endpoint: settings.openrouter.model_metadata_endpoint.clone(),
             generation_timeout_secs: settings.openrouter.generation_timeout_secs,
@@ -590,6 +606,9 @@ impl EffectiveRagSettings {
                 graph::MAX_HOP_CAP
             ));
         }
+        if self.evidence_token_budget == 0 {
+            return Err("invalid evidence_token_budget: must be greater than 0".into());
+        }
         if self.citation_excerpt_max_chars == 0 {
             return Err("invalid excerpt_max_chars: must be greater than 0".into());
         }
@@ -601,6 +620,12 @@ impl EffectiveRagSettings {
         }
         if self.generation_model.trim().is_empty() {
             return Err("invalid generation_model: must not be empty".into());
+        }
+        if self.embedding_concurrency == 0 {
+            return Err("invalid embedding_concurrency: must be greater than 0".into());
+        }
+        if self.extraction_concurrency == 0 {
+            return Err("invalid extraction_concurrency: must be greater than 0".into());
         }
         if self.chat_endpoint.trim().is_empty() {
             return Err("invalid chat_endpoint: must not be empty".into());

@@ -1142,6 +1142,7 @@ fn configured_settings(lancedb_path: &str) -> Settings {
             temperature: 0.2,
             top_p: 0.95,
             max_output_tokens: 1024,
+            ..OpenRouterSettings::default()
         },
     }
 }
@@ -3301,6 +3302,7 @@ async fn configured_rag_settings_drive_service() {
             temperature: 0.2,
             top_p: 0.9,
             max_output_tokens: 1024,
+            ..OpenRouterSettings::default()
         },
     };
 
@@ -5366,8 +5368,8 @@ async fn extraction_concurrency_bound_is_observed_not_assumed() {
 
     let max_conc = fake_gen.max_observed_concurrency();
     assert!(
-        max_conc <= 5,
-        "Max observed concurrency must be <= 5 (bound held), got {max_conc}"
+        max_conc <= 15,
+        "Max observed concurrency must be <= 15 (bound held), got {max_conc}"
     );
     assert!(
         max_conc >= 2,
@@ -6838,6 +6840,7 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
             temperature: 0.0,
             top_p: 1.0,
             max_output_tokens: 32,
+            ..OpenRouterSettings::default()
         },
     };
 
@@ -7134,6 +7137,8 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
     let entities_dir = std::path::Path::new(&path).join("entities.lance");
     std::fs::remove_dir_all(&entities_dir)
         .expect("remove entities.lance to force a real table-open failure");
+    std::fs::write(&entities_dir, b"corrupted non-directory file")
+        .expect("write corrupted file in place of entities.lance");
 
     let service = query_graph_service_with_db(database).await;
 

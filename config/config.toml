@@ -60,8 +60,10 @@ section_boost = 1.5
 
 [openrouter]
 embedding_endpoint = "https://openrouter.ai/api/v1/embeddings"
-embedding_model = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
-generation_model = "dots-studio/dots-3-note-preview:free"
+embedding_model = "voyageai/voyage-4-large"
+generation_model = "deepseek/deepseek-v4-flash-0731"
+embedding_concurrency = 12
+extraction_concurrency = 15
 chat_endpoint = "https://openrouter.ai/api/v1/chat/completions"
 models_endpoint = "https://openrouter.ai/api/v1/models"
 generation_timeout_secs = 30

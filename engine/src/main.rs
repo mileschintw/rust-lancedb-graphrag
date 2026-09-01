@@ -10,7 +10,7 @@ use engine::db::DatabaseManager;
 use engine::generation;
 use engine::graph;
 use engine::ingest::{
-    read_staged_jobs, spawn_rebuild_debounce_task, spawn_worker, IngestionStatus,
+    read_staged_jobs, spawn_rebuild_debounce_task, spawn_worker_with_concurrency, IngestionStatus,
     RebuildTriggerLinks, QUEUE_CAPACITY,
 };
 use engine::pb::lancet::v1::lancet_service_server::LancetServiceServer;
@@ -55,9 +55,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if api_key.trim().is_empty() {
         return Err("OPENROUTER_API_KEY environment variable must not be empty or blank".into());
     }
-    let embedding_config = OpenRouterEmbeddingConfig::new(
+    let embedding_config = OpenRouterEmbeddingConfig::new_with_concurrency(
         effective_settings.embedding_model.clone(),
         effective_settings.embedding_endpoint.clone(),
+        effective_settings.embedding_concurrency,
     )?;
     let embedder = Arc::new(OpenRouterClient::new_with_config(
         api_key.clone(),
@@ -87,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (rebuild_tx, rebuild_rx) = watch::channel(0u64);
     let trigger_links = RebuildTriggerLinks::default();
 
-    let worker = spawn_worker(
+    let worker = spawn_worker_with_concurrency(
         receiver,
         statuses.clone(),
         database.clone(),
@@ -96,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shutdown_rx.clone(),
         rebuild_tx,
         trigger_links.clone(),
+        effective_settings.extraction_concurrency,
     );
 
     let debounce_ms = effective_settings.workflow.rebuild_debounce_ms;

@@ -32,14 +32,11 @@ current_plan: 8
   - `06.3-07` (Wave 7): Report generator, run-record layout, publication preconditions, reviewer checklist (`2bea5e8`, `3858d25`).
   - **Test Suite:** 119/119 unit/integration tests passing offline across `eval/tests/`.
   - **Boundary:** Stopped before phase-level code review, regression gate, verification, or UAT per user directive.
-- **Phase 06.3 Gap Closure Execution (2026-08-30):**
-  - **Plan 06.3-09 (Wave 8): FULLY COMPLETED & COMMITTED (`23099c9`):** Closed CR-01 (`reset_eval_schema` drop/apply), CR-02 (`deadline_s` driver wiring), run directory resolution (`resolve_run_dir`), calibration worksheet judged-subset filtering, and Caveat 1 report wording.
-  - **Plan 06.3-10 (Wave 9): Paused at Task 1 (Corpus Seeding):**
-    - `ea77cbf`: Added Windows Docker `psql` fallback in `reset_eval_schema`.
-    - `2f8f7cc`: Added LanceDB missing table self-healing in `engine/src/db/mod.rs`.
-    - `8255b0a`: Raised seeder polling timeout to 900s and updated scoring test fixtures to use dynamic `doc_id`. All 136 tests pass offline.
-    - **Pause Point**: Seeding halted at 6/346 documents due to OpenRouter free-tier rate limiting on `:free` model names (`nvidia/...:free` and `dots-studio/...:free`).
-    - **Handover & Discussion Record**: `.planning/phases/06.3-python-evaluation-harness-benchmark-corpora-and-recorded-run/06.3-HANDOVER.md` created with root-cause analysis and proposed options (switching to `openai/text-embedding-3-large` and `google/gemini-2.0-flash-001` on paid tier).
+- **Quick Task 260831-az7 (Paid Model Migration & Reseed Execution - 2026-08-31):**
+  - **Task 1 (Engine Models & Invariants):** Migrated embedding model to `voyageai/voyage-4-large` with explicit `dimensions: 2048` parameter; migrated generation model to `deepseek/deepseek-v4-flash-0731` with explicit `"reasoning": {"effort": "none"}` to suppress chain-of-thought token depletion. All 488/488 Rust tests and Go tests passing.
+  - **Task 2 (Eval Harness Models & Pytest):** Repinned judge model to `meta-llama/llama-3.3-70b-instruct` (paid tier) and generator fallback to `deepseek/deepseek-v4-flash-0731`. All 136 eval pytest tests passing offline.
+  - **Task 3 (Corpus Reseed & Concurrency Optimization):** Resumed 346-document reseed of `multihop_rag` with `LANCET_ENV=eval` isolated store. Migrated hardcoded extraction concurrency (`5`) and embedding concurrency (`4`) into explicit configuration parameters (`openrouter.extraction_concurrency = 15`, `openrouter.embedding_concurrency = 12` in `config/config.toml` & `engine/src/config.rs`) to improve maintainability and maximize throughput under paid tier API limits. All 488/488 Rust tests and 7/7 test target invariants passing.
+  - **Task Summary:** `.planning/quick/260831-az7-phase-6-3-is-currently-stuck-the-previou/260831-az7-SUMMARY.md` produced.
 
 
 - Phase 06.1 Plan 06.1-01 executed: implemented index rebuild-and-swap, CorpusStore snapshot isolation, same-snapshot dense/BM25 pinning, worker burst debouncing, fail-closed rebuild_debounce_ms configuration, and degraded notice emission (NoticeCode::IndexRebuildFailed).

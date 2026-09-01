@@ -94,9 +94,13 @@ max_hop_cap = 3
 # unit=URL string; range=nonblank
 embedding_endpoint = "https://openrouter.ai/api/v1/embeddings"
 # unit=provider identifier; range=nonblank
-embedding_model = "nvidia/llama-nemotron-embed-vl-1b-v2:free"
+embedding_model = "voyageai/voyage-4-large"
 # unit=provider identifier; range=nonblank
 generation_model = "openai/gpt-4o-mini"
+# unit=count; range=1..=64
+embedding_concurrency = 12
+# unit=count; range=1..=64
+extraction_concurrency = 15
 # unit=URL string; range=nonblank
 chat_endpoint = "https://openrouter.ai/api/v1/chat/completions"
 # unit=URL string; range=nonblank
