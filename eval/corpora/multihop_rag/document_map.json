@@ -15,6 +15,12 @@
       "title": "Know the price-matching policies for Best Buy, Target, Walmart, and others",
       "url": "https://www.theverge.com/21570383/price-matching-policy-apple-google-microsoft"
     },
+    "08097061-f638-4546-a028-26ccef820122": {
+      "corpus_id": "Rollback Policy, a Boon or a Curse? The Controversial System That Might Redefine the Golfing World by the End of 2030",
+      "document_id": "08097061-f638-4546-a028-26ccef820122",
+      "title": "Rollback Policy, a Boon or a Curse? The Controversial System That Might Redefine the Golfing World by the End of 2030",
+      "url": "https://www.essentiallysports.com/golf-news-perspectives-rollback-policy-a-boon-or-a-curse-the-controversial-system-that-might-redefine-the-golfing-world-by-the-end-of-two-zero-three-zero/"
+    },
     "0884001b-bfe5-4580-a681-0540556832ae": {
       "corpus_id": "Cranberries: A Thanksgiving Staple With a Rich History and Unique Biology",
       "document_id": "0884001b-bfe5-4580-a681-0540556832ae",
@@ -50,6 +56,12 @@
       "document_id": "0e0733a7-29df-468f-b5bd-9106f6c2f449",
       "title": "From Justin Timberlake to Sam Asghari: A timeline of Britney Spears\u2019 relationships",
       "url": "https://www.independent.co.uk/life-style/justin-timberlake-sam-asghari-britney-spears-b2431507.html"
+    },
+    "0faa50e3-840e-41cb-a90d-84627a252d93": {
+      "corpus_id": "Sam Bankman-Fried didn\u2019t ask where the $8 billion went",
+      "document_id": "0faa50e3-840e-41cb-a90d-84627a252d93",
+      "title": "Sam Bankman-Fried didn\u2019t ask where the $8 billion went",
+      "url": "https://www.theverge.com/2023/10/31/23940814/sam-bankman-fried-ftx-alameda-customer-funds-fraud-trial"
     },
     "101720c8-908b-4fbf-a4d5-e6974efb1699": {
       "corpus_id": "Is the Coverage on Taylor Swift and Travis Kelce\u2019s Romance Nothing but Hype or a Pivotal Shift in NFL\u2019s Century-Old Game Plan Towards Global Recognition?",
@@ -111,11 +123,23 @@
       "title": "M.L.B. Superstar Shohei Ohtani to Sign $700 Million Deal With Dodgers",
       "url": "https://theathletic.com/5106526/2023/12/09/shohei-ohtani-signs/"
     },
+    "1b0dccdd-1d95-4339-8961-9a37850c7c78": {
+      "corpus_id": "SBF Trial: The latest updates from the FTX collapse\u2019s courtroom drama",
+      "document_id": "1b0dccdd-1d95-4339-8961-9a37850c7c78",
+      "title": "SBF Trial: The latest updates from the FTX collapse\u2019s courtroom drama",
+      "url": "https://techcrunch.com/2023/10/06/sbf-trial-the-latest-updates-from-the-ftx-collapses-courtroom-drama/"
+    },
     "1b25c182-b59c-4dfc-93fe-df7a89e6508a": {
       "corpus_id": "Nobel Prize winner shocked by early morning phone call from Sweden: 'It was ringing during the night, but I didn\u2019t answer it because I\u2019m trying to get some sleep, basically'",
       "document_id": "1b25c182-b59c-4dfc-93fe-df7a89e6508a",
       "title": "Nobel Prize winner shocked by early morning phone call from Sweden: 'It was ringing during the night, but I didn\u2019t answer it because I\u2019m trying to get some sleep, basically'",
       "url": "https://fortune.com/2023/10/04/nobel-prize-winner-shocked-phone-call-sweden-columbia-professor-chemistry/"
+    },
+    "1bdcefdc-de8e-4a5e-a7b1-b944b35b1f96": {
+      "corpus_id": "Sarah Michelle Gellar hits out at Roblox after her son\u2019s account gets hacked",
+      "document_id": "1bdcefdc-de8e-4a5e-a7b1-b944b35b1f96",
+      "title": "Sarah Michelle Gellar hits out at Roblox after her son\u2019s account gets hacked",
+      "url": "https://www.independent.co.uk/life-style/sarah-michelle-gellar-roblox-hacked-b2458897.html"
     },
     "1df05ec0-7b92-4eec-8fbf-8f85ee14e5c3": {
       "corpus_id": "Creation of quantum dots wins 2023 chemistry Nobel",
@@ -273,6 +297,12 @@
       "title": "Manchester divided as ten Hag pressure mounts after United Hammered, Ange-ball pays off again as Spurs sink Everton",
       "url": "https://www.theroar.com.au/2023/12/24/manchester-divided-as-ten-hag-pressure-mounts-after-united-hammered-ange-ball-pays-off-again-as-spurs-sink-everton/"
     },
+    "397efae7-b294-4bf8-bf85-08467047e3f3": {
+      "corpus_id": "Spider-Man: Across the Spider-Verse on Netflix, A Haunting in Venice, and every new movie to watch this weekend",
+      "document_id": "397efae7-b294-4bf8-bf85-08467047e3f3",
+      "title": "Spider-Man: Across the Spider-Verse on Netflix, A Haunting in Venice, and every new movie to watch this weekend",
+      "url": "https://www.polygon.com/2023/11/3/23938342/new-movies-watch-spider-man-across-spider-verse-netflix-jawan-haunting-venice-hulu"
+    },
     "39b6b705-4e35-407d-88ce-8ed928608643": {
       "corpus_id": "Fantasy Football TE PPR Rankings Week 14: Who to start, best sleepers at tight end",
       "document_id": "39b6b705-4e35-407d-88ce-8ed928608643",
@@ -320,6 +350,12 @@
       "document_id": "4286c5cf-39cd-4e21-a1fc-565246aa0db3",
       "title": "College football odds, lines, schedule for Week 6: Texas, Alabama, Notre Dame among favorites in ranked games",
       "url": "https://www.cbssports.com/college-football/news/college-football-odds-lines-schedule-for-week-6-texas-alabama-notre-dame-among-favorites-in-ranked-games/"
+    },
+    "4628960b-b1c5-4929-8170-7d8e30979536": {
+      "corpus_id": "Salah seals emphatic Europa League win for Liverpool against Toulouse",
+      "document_id": "4628960b-b1c5-4929-8170-7d8e30979536",
+      "title": "Salah seals emphatic Europa League win for Liverpool against Toulouse",
+      "url": "https://www.theguardian.com/football/2023/oct/26/liverpool-toulouse-europa-league-match-report"
     },
     "4629e203-071f-4f64-b20b-aa11b51e1ed4": {
       "corpus_id": "European football: Eintracht Frankfurt hit Bayern for five in famous thrashing",
@@ -374,6 +410,12 @@
       "document_id": "4ad45878-0d35-4dea-ae4b-0ba2732a01b4",
       "title": "NFL awards odds: Six longshots bettors should consider for MVP, OPOY, DPOY and more",
       "url": "https://www.sportingnews.com/us/betting/news/nfl-awards-odds-longshots-mvp-opoy-dpoy/ed7dc8b5ba19eb3e71c53349"
+    },
+    "4ad73812-336a-47f2-9ac7-860dcd4f5da5": {
+      "corpus_id": "Sam Altman backs teens\u2019 startup, Google unveils the Pixel 8 and TikTok tests an ad-free tier",
+      "document_id": "4ad73812-336a-47f2-9ac7-860dcd4f5da5",
+      "title": "Sam Altman backs teens\u2019 startup, Google unveils the Pixel 8 and TikTok tests an ad-free tier",
+      "url": "https://techcrunch.com/2023/10/07/sam-altman-backs-a-teens-startup-google-unveils-the-pixel-8-and-tiktok-tests-an-ad-free-tier/"
     },
     "4bd27011-4efe-4c81-9f56-0b20155f7023": {
       "corpus_id": "Patriots vs. Steelers FanDuel Picks: NFL DFS lineup advice for Week 14 TNF single-game tournaments",
@@ -459,6 +501,12 @@
       "title": "Fantasy Football WR PPR Rankings Week 14: Who to start, best sleepers at wide receiver",
       "url": "https://www.sportingnews.com/us/fantasy/news/fantasy-football-wr-ppr-rankings-week-14-wide-receiver/61c46f5567ecacb64e039100"
     },
+    "57396a17-96ce-49fb-b221-ed54d936bebb": {
+      "corpus_id": "SBF\u2019s trial starts soon, but how did he \u2014 and FTX \u2014 get here?",
+      "document_id": "57396a17-96ce-49fb-b221-ed54d936bebb",
+      "title": "SBF\u2019s trial starts soon, but how did he \u2014 and FTX \u2014 get here?",
+      "url": "https://techcrunch.com/2023/10/01/ftx-lawsuit-timeline/"
+    },
     "596a429b-7cff-43a3-8401-2d863b3e4207": {
       "corpus_id": "NBL Round 4: Creek pours in points as Phoenix swamp Sixers, CJ claims Kings didn\u2019t look after DJ",
       "document_id": "596a429b-7cff-43a3-8401-2d863b3e4207",
@@ -531,6 +579,12 @@
       "title": "Author Melissa Lucashenko on playing with black and white binaries",
       "url": "https://www.theage.com.au/culture/books/author-melissa-lucashenko-on-playing-with-black-and-white-binaries-20230919-p5e5uy.html?ref=rss&utm_medium=rss&utm_source=rss_culture"
     },
+    "65ae18fd-4299-47d1-82b1-6a54ca7525d0": {
+      "corpus_id": "Sam Bankman-Fried was a terrible boyfriend",
+      "document_id": "65ae18fd-4299-47d1-82b1-6a54ca7525d0",
+      "title": "Sam Bankman-Fried was a terrible boyfriend",
+      "url": "https://www.theverge.com/2023/10/10/23912036/sam-bankman-fried-ftx-caroline-ellison-alameda-research"
+    },
     "663a90f2-4958-4df2-8fa5-1186ba6328c9": {
       "corpus_id": "Fantasy Football RB Rankings Week 14: Who to start, best sleepers at running back",
       "document_id": "663a90f2-4958-4df2-8fa5-1186ba6328c9",
@@ -549,6 +603,12 @@
       "title": "After a Stunning Snub, College Football Is Facing an Identity Crisis",
       "url": "https://theathletic.com/5108140/2023/12/03/college-football-playoff-florida-state-alabama/"
     },
+    "66db51ea-93b9-48f0-a5cb-75f589c555a8": {
+      "corpus_id": "See stunning images of STEVE and auroras from this weekend's powerful solar storm",
+      "document_id": "66db51ea-93b9-48f0-a5cb-75f589c555a8",
+      "title": "See stunning images of STEVE and auroras from this weekend's powerful solar storm",
+      "url": "https://www.livescience.com/space/astronomy/see-stunning-images-of-steve-and-auroras-from-this-weekends-powerful-solar-storm"
+    },
     "674a05d3-f3e1-44d9-9678-335fec317c19": {
       "corpus_id": "Can Alabama make College Football Playoff? How Texas, Oregon losses could impact Tide's 2023 chances",
       "document_id": "674a05d3-f3e1-44d9-9678-335fec317c19",
@@ -566,6 +626,12 @@
       "document_id": "6953d20e-5e1c-40fc-aa03-44b76e642dfd",
       "title": "More from the US v Google trial: vertical search, pre-installs and the case of Firefox/Yahoo",
       "url": "https://techcrunch.com/2023/11/13/more-from-the-us-v-google-trial-vertical-search-pre-installs-and-the-case-of-firefox-yahoo/"
+    },
+    "6a2de7aa-d3dd-4ff7-ae5a-0fc843e2c54d": {
+      "corpus_id": "Robin Williams' drug addiction made him 'a monster': Friends recall depth of actor's cocaine use",
+      "document_id": "6a2de7aa-d3dd-4ff7-ae5a-0fc843e2c54d",
+      "title": "Robin Williams' drug addiction made him 'a monster': Friends recall depth of actor's cocaine use",
+      "url": "https://www.foxnews.com/entertainment/robin-williams-drug-addiction-made-monster-friends-recall-depth-actors-cocaine-use"
     },
     "6cbe5a08-9630-4d31-af52-06b46ec26a40": {
       "corpus_id": "Bride defended after asking mother to walk her down the aisle instead of stepfather",
@@ -626,6 +692,12 @@
       "document_id": "71c9ff16-b9f5-4c3e-98c2-ed17cd919801",
       "title": "Founders, are events useful?",
       "url": "https://techcrunch.com/2023/10/13/founders-are-events-useful/"
+    },
+    "728187d6-09c3-434f-9353-2b3ecb364408": {
+      "corpus_id": "SBF, riding high on FTX, reportedly offered $5B to Trump to cancel President re-run",
+      "document_id": "728187d6-09c3-434f-9353-2b3ecb364408",
+      "title": "SBF, riding high on FTX, reportedly offered $5B to Trump to cancel President re-run",
+      "url": "https://techcrunch.com/2023/10/02/sbf-60-minutes/"
     },
     "752f9573-1ceb-41a0-8652-07a534c9dd6c": {
       "corpus_id": "Israel's blockade of Gaza means that a region the size of Philadelphia faces a real risk of starvation, says Peace Studies scholar",
@@ -741,6 +813,12 @@
       "title": "Here are the best deals on headphones and wireless earbuds we could find",
       "url": "https://www.theverge.com/22307388/wireless-earbuds-deals-airpods-galaxy-buds-powerbeats"
     },
+    "858bad0e-7cf3-4378-bf57-c5a12109e8c4": {
+      "corpus_id": "Sony Music has issued nearly 10,000 deepfake takedowns\u2026 and other things we learned from Dennis Kooker\u2019s speech about AI",
+      "document_id": "858bad0e-7cf3-4378-bf57-c5a12109e8c4",
+      "title": "Sony Music has issued nearly 10,000 deepfake takedowns\u2026 and other things we learned from Dennis Kooker\u2019s speech about AI",
+      "url": "https://www.musicbusinessworldwide.com/sony-music-has-issued-nearly-10000-deepfake-takedowns-and-other-things-we-learned-from-dennis-kookers-speech-about-ai/"
+    },
     "85b17a76-7c18-41ed-aeb5-3ffde708586f": {
       "corpus_id": "City old boy has final say for Chelsea in eight-goal thriller, supreme Salah leads Liverpool surge",
       "document_id": "85b17a76-7c18-41ed-aeb5-3ffde708586f",
@@ -783,6 +861,12 @@
       "title": "European consumer groups band together to fight Meta\u2019s self-serving ad-free sub \u2014 branding it \u2018unfair\u2019 and \u2018illegal\u2019",
       "url": "https://techcrunch.com/2023/11/29/beuc-cpc-meta-complaint/"
     },
+    "8b440377-e9a9-4982-bc4c-bc56f040f241": {
+      "corpus_id": "Steam Deck OLED review: It's just better",
+      "document_id": "8b440377-e9a9-4982-bc4c-bc56f040f241",
+      "title": "Steam Deck OLED review: It's just better",
+      "url": "https://www.engadget.com/steam-deck-oled-review-its-just-better-180038030.html?src=rss"
+    },
     "8b4559c2-8002-42f5-998e-905eca96597c": {
       "corpus_id": "A provocative role for technologists in product innovation",
       "document_id": "8b4559c2-8002-42f5-998e-905eca96597c",
@@ -812,6 +896,12 @@
       "document_id": "8e3e3d1a-4e5c-4b99-a3bf-cbfc5cf9853a",
       "title": "Britney Spears and Kevin Federline: A complete timeline of their relationship",
       "url": "https://www.independent.co.uk/life-style/britney-spears-kevin-federline-relationship-timeline-b2143493.html"
+    },
+    "8fa2b6b7-e934-40c9-9e82-51ee48b053e0": {
+      "corpus_id": "Sex, Signal messages, and sabotaging FTX's code: SBF execs and Bahamas roommates tell all in court",
+      "document_id": "8fa2b6b7-e934-40c9-9e82-51ee48b053e0",
+      "title": "Sex, Signal messages, and sabotaging FTX's code: SBF execs and Bahamas roommates tell all in court",
+      "url": "https://www.cnbc.com/2023/10/06/sex-signal-messages-and-sabotaging-ftxs-code-sbf-criminal-trial.html"
     },
     "90e3a4fa-9e16-4104-a3de-7236bcaf086e": {
       "corpus_id": "Paul Mitchell signed Tottenham and Chelsea superstars, fell out with Daniel Levy and has tailor-made plan for Manchester United",
@@ -891,6 +981,12 @@
       "title": "A timeline of Will Smith and Jada Pinkett Smith\u2019s relationship amid separation",
       "url": "https://www.independent.co.uk/life-style/love-sex/will-smith-jada-pinkett-relationship-timeline-divorce-b2427925.html"
     },
+    "a2c669af-f8fb-497d-a733-3ea2b8f2cdf4": {
+      "corpus_id": "Reliance Industries: With the stock having underperformed Nifty 50 in last three years, is it time to buy?",
+      "document_id": "a2c669af-f8fb-497d-a733-3ea2b8f2cdf4",
+      "title": "Reliance Industries: With the stock having underperformed Nifty 50 in last three years, is it time to buy?",
+      "url": "https://www.thehindubusinessline.com/portfolio/stock-fundamental-analysis-india/reliance-industries-with-the-stock-having-underperformed-nifty-50-in-last-three-years-is-it-time-to-buy/article67618354.ece"
+    },
     "a40c4554-875a-4794-9d2d-551f09c60c0e": {
       "corpus_id": "Is Google Search better than the rest? And is that fair?",
       "document_id": "a40c4554-875a-4794-9d2d-551f09c60c0e",
@@ -908,6 +1004,12 @@
       "document_id": "a5ecbaf0-6d0f-41a2-9db9-c8035b16812c",
       "title": "ASX set to drop as Wall Street\u2019s September slump deepens",
       "url": "https://www.smh.com.au/business/markets/asx-set-to-drop-as-wall-street-s-september-slump-deepens-20230927-p5e7v7.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "a7fb26d5-2bef-4abe-b417-df5836e601e1": {
+      "corpus_id": "Shohei Ohtani rumors tracker: Latest news, updates on free agent's MLB future",
+      "document_id": "a7fb26d5-2bef-4abe-b417-df5836e601e1",
+      "title": "Shohei Ohtani rumors tracker: Latest news, updates on free agent's MLB future",
+      "url": "https://www.sportingnews.com/us/mlb/news/shohei-ohtani-rumors-tracker-latest-news-updates-free-agent/6593aa54c999febe209052e3"
     },
     "a8377b08-7276-443b-9978-5cc6c70778d4": {
       "corpus_id": "Fantasy Football QB Rankings Week 14: Who to start, best sleepers at quarterback",
@@ -945,6 +1047,12 @@
       "title": "OpenAI's ex-chairman accuses board of going rogue in firing Altman: 'Sam and I are shocked and saddened by what the board did'",
       "url": "https://fortune.com/2023/11/18/how-did-openai-fire-sam-altman-greg-brockman-rogue-board/"
     },
+    "ace84fed-a0e7-4720-a14d-717b669efa93": {
+      "corpus_id": "Sam Altman ousted as OpenAI\u2019s CEO",
+      "document_id": "ace84fed-a0e7-4720-a14d-717b669efa93",
+      "title": "Sam Altman ousted as OpenAI\u2019s CEO",
+      "url": "https://techcrunch.com/2023/11/17/sam-altman-is-out-as-openais-ceo/"
+    },
     "acfd99a6-0142-43f6-958b-82d99756a73f": {
       "corpus_id": "Emily Ratajkowski\u2019s latest photo shoot sparks fury",
       "document_id": "acfd99a6-0142-43f6-958b-82d99756a73f",
@@ -968,6 +1076,12 @@
       "document_id": "af9732b2-54ef-4206-b932-16ecc778e584",
       "title": "MLB Betting Sites & Apps - The Best Baseball Sportsbooks 2023",
       "url": "https://www.sportingnews.com/us/betting/news/mlb-betting-sites/90537abdc639ffc5d57a8c1b"
+    },
+    "b0a88380-63d9-4023-ba63-b3f2de27bfd5": {
+      "corpus_id": "Shohei Ohtani rumors tracker: Latest news, updates on Dodgers, Cubs & more as free agency short list emerges",
+      "document_id": "b0a88380-63d9-4023-ba63-b3f2de27bfd5",
+      "title": "Shohei Ohtani rumors tracker: Latest news, updates on Dodgers, Cubs & more as free agency short list emerges",
+      "url": "https://www.sportingnews.com/us/mlb/news/shohei-ohtani-rumors-tracker-free-agency-updates/5749c16d66b36883ecd888d9"
     },
     "b0c25551-ae2d-4577-a1a9-0d1d8e113c0a": {
       "corpus_id": "Lions vs. Packers live score, updates, highlights from NFL 'Thursday Night Football' game",
@@ -1125,6 +1239,12 @@
       "title": "200+ of the best deals from Amazon's Cyber Monday sale",
       "url": "https://mashable.com/article/cyber-monday-deals-amazon-2023"
     },
+    "cf0a6374-f15d-4e86-80cd-518d959857a7": {
+      "corpus_id": "Spider-Man 2 toys with Marvel history to be as much fun as possible",
+      "document_id": "cf0a6374-f15d-4e86-80cd-518d959857a7",
+      "title": "Spider-Man 2 toys with Marvel history to be as much fun as possible",
+      "url": "https://www.polygon.com/reviews/23910756/spider-man-2-review-insomniac-release-date-ps5"
+    },
     "cf2cf0f7-1657-44b1-9e35-7e76d569089e": {
       "corpus_id": "News publisher files class action antitrust suit against Google, citing AI\u2019s harms to their bottom line",
       "document_id": "cf2cf0f7-1657-44b1-9e35-7e76d569089e",
@@ -1178,6 +1298,12 @@
       "document_id": "d5b38c60-611a-4716-ab68-bcae2fe232ad",
       "title": "Christmas proves that love triumphs over hate \u2014 even amid war, suffering, tragedy and turmoil",
       "url": "https://www.foxnews.com/lifestyle/christmas-proves-love-triumphs-hate-amid-war-suffering-tragedy-turmoil"
+    },
+    "d7fa2a12-aac2-4b6e-a44a-e424e86c4c83": {
+      "corpus_id": "Sony Music\u2019s artists aren\u2019t involved in YouTube\u2019s new voice-cloning AI experiment. Not unrelated: Google\u2019s recent filing with the US Copyright Office.",
+      "document_id": "d7fa2a12-aac2-4b6e-a44a-e424e86c4c83",
+      "title": "Sony Music\u2019s artists aren\u2019t involved in YouTube\u2019s new voice-cloning AI experiment. Not unrelated: Google\u2019s recent filing with the US Copyright Office.",
+      "url": "https://www.musicbusinessworldwide.com/sony-musics-artists-arent-involved-in-youtubes-new-cloned-voice-ai-experiment-not-unrelated-googles-recent-filing-with-the-us-copyright-office/"
     },
     "d87c9ea4-6a5b-4c0c-a573-e0e190957f1a": {
       "corpus_id": "French soccer players back African mobile video network StarNews Mobile in $3M round",
@@ -1299,6 +1425,12 @@
       "title": "Bringing aqueous rechargeable zinc iodine batteries to the mainstream energy market",
       "url": "https://www.advancedsciencenews.com/bringing-aqueous-rechargeable-zinc-iodine-batteries-to-the-mainstream-energy-market/"
     },
+    "ed4825c9-4721-473b-88a2-6d375dad2df3": {
+      "corpus_id": "Save on the winners from the 2023 Game Awards this weekend",
+      "document_id": "ed4825c9-4721-473b-88a2-6d375dad2df3",
+      "title": "Save on the winners from the 2023 Game Awards this weekend",
+      "url": "https://www.polygon.com/23993517/best-gaming-deals-game-awards-winners-xbox-series-x"
+    },
     "ed5d5a31-5b61-4fdf-b3dc-94ff61095f37": {
       "corpus_id": "5 things we learned so far about the Google antitrust case",
       "document_id": "ed5d5a31-5b61-4fdf-b3dc-94ff61095f37",
@@ -1322,6 +1454,12 @@
       "document_id": "f0f1c7c1-048e-43a7-86bf-da6c5eb8b0c4",
       "title": "Norway seeks to extend ban on Meta\u2019s consentless tracking ads across the EU",
       "url": "https://techcrunch.com/2023/09/28/norway-meta-ads-edpb-referral/"
+    },
+    "f3eaddd7-1387-4250-89b3-31a4b7535e0f": {
+      "corpus_id": "Rogue Trader\u2019s role-playing embraces the brutality and freedom of Warhammer 40K",
+      "document_id": "f3eaddd7-1387-4250-89b3-31a4b7535e0f",
+      "title": "Rogue Trader\u2019s role-playing embraces the brutality and freedom of Warhammer 40K",
+      "url": "https://www.polygon.com/23989600/rogue-trader-warhammer-40k-crpg-combat-characters-impressions"
     },
     "f6dd12fb-4750-408f-ae9f-af6cd8f1f4aa": {
       "corpus_id": "Champions League permutations, scenarios: What teams need to qualify from groups for 2023/24 Round of 16 stage",

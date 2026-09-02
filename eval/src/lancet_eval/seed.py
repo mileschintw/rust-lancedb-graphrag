@@ -328,59 +328,69 @@ def seed_corpus(
                 "file": (safe_name, content_bytes, "text/plain"),
             }
 
-            resp = client.post("/documents", files=files)
-            if resp.status_code not in (200, 201, 202):
-                raise SeedError(
-                    f"Upload failed for article '{corpus_id}' "
-                    f"(HTTP {resp.status_code}): {resp.text}"
-                )
-
-            data = resp.json()
-            gw_doc_id = str(data.get("id") or data.get("ID") or "")
-            if not gw_doc_id:
-                raise SeedError(f"No document id returned for article '{corpus_id}'")
-
-            # Poll for completion if status is not completed
-            status = str(data.get("status") or data.get("Status") or "")
-            max_poll_time = 1800.0
-            start_poll = time.monotonic()
-            poll_interval = 0.5
-
-            while status not in ("completed", "failed"):
-                if time.monotonic() - start_poll > max_poll_time:
+            max_article_attempts = 3
+            last_err = ""
+            for article_attempt in range(max_article_attempts):
+                resp = client.post("/documents", files=files)
+                if resp.status_code not in (200, 201, 202):
                     raise SeedError(
-                        f"Timed out polling '{gw_doc_id}' for '{corpus_id}'"
+                        f"Upload failed for article '{corpus_id}' "
+                        f"(HTTP {resp.status_code}): {resp.text}"
                     )
-                time.sleep(poll_interval)
-                poll_interval = min(2.0, poll_interval * 1.5)
 
-                poll_resp = client.get(f"/documents/{gw_doc_id}")
-                if poll_resp.status_code == 200:
-                    poll_data = poll_resp.json()
-                    status = str(
-                        poll_data.get("status") or poll_data.get("Status") or ""
-                    )
-                    if status == "failed":
-                        err = (
-                            poll_data.get("error_message")
-                            or poll_data.get("ErrorMessage")
-                            or "unknown error"
-                        )
+                data = resp.json()
+                gw_doc_id = str(data.get("id") or data.get("ID") or "")
+                if not gw_doc_id:
+                    raise SeedError(f"No document id returned for article '{corpus_id}'")
+
+                # Poll for completion if status is not completed
+                status = str(data.get("status") or data.get("Status") or "")
+                max_poll_time = 1800.0
+                start_poll = time.monotonic()
+                poll_interval = 0.5
+
+                while status not in ("completed", "failed"):
+                    if time.monotonic() - start_poll > max_poll_time:
                         raise SeedError(
-                            f"Ingestion failed for '{corpus_id}' "
-                            f"(document '{gw_doc_id}'): {err}"
+                            f"Timed out polling '{gw_doc_id}' for '{corpus_id}'"
                         )
-                elif poll_resp.status_code == 404:
-                    time.sleep(0.5)
+                    time.sleep(poll_interval)
+                    poll_interval = min(2.0, poll_interval * 1.5)
 
-            # Record entry and save incrementally
-            doc_map.entries[gw_doc_id] = DocumentMapEntry(
-                corpus_id=corpus_id,
-                document_id=gw_doc_id,
-                title=title,
-                url=url,
-            )
-            save_document_map_atomic(doc_map)
+                    poll_resp = client.get(f"/documents/{gw_doc_id}")
+                    if poll_resp.status_code == 200:
+                        poll_data = poll_resp.json()
+                        status = str(
+                            poll_data.get("status") or poll_data.get("Status") or ""
+                        )
+                        if status == "failed":
+                            err = (
+                                poll_data.get("error_message")
+                                or poll_data.get("ErrorMessage")
+                                or "unknown error"
+                            )
+                            last_err = (
+                                f"Ingestion failed for '{corpus_id}' "
+                                f"(document '{gw_doc_id}'): {err}"
+                            )
+                            break
+                    elif poll_resp.status_code == 404:
+                        time.sleep(0.5)
+
+                if status == "completed":
+                    # Record entry and save incrementally
+                    doc_map.entries[gw_doc_id] = DocumentMapEntry(
+                        corpus_id=corpus_id,
+                        document_id=gw_doc_id,
+                        title=title,
+                        url=url,
+                    )
+                    save_document_map_atomic(doc_map)
+                    break
+                else:
+                    if article_attempt == max_article_attempts - 1:
+                        raise SeedError(last_err)
+                    time.sleep(3.0)
 
             if (idx + 1) % 10 == 0 or (idx + 1) == total_docs:
                 print(
