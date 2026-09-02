@@ -328,7 +328,7 @@ def seed_corpus(
                 "file": (safe_name, content_bytes, "text/plain"),
             }
 
-            max_article_attempts = 3
+            max_article_attempts = 5
             last_err = ""
             for article_attempt in range(max_article_attempts):
                 resp = client.post("/documents", files=files)
@@ -390,7 +390,7 @@ def seed_corpus(
                 else:
                     if article_attempt == max_article_attempts - 1:
                         raise SeedError(last_err)
-                    time.sleep(3.0)
+                    time.sleep(5.0 * (article_attempt + 1))
 
             if (idx + 1) % 10 == 0 or (idx + 1) == total_docs:
                 print(

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 const OPENROUTER_EMBEDDINGS_URL: &str = "https://openrouter.ai/api/v1/embeddings";
 pub const EMBEDDING_MODEL: &str = "voyageai/voyage-4-large";
 const EMBEDDING_DIMENSION: usize = 2048;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
 pub const DEFAULT_EMBEDDING_CONCURRENCY: usize = 12;
 const MAX_CONCURRENCY: usize = DEFAULT_EMBEDDING_CONCURRENCY;
 const MAX_RETRIES: u32 = 6;
