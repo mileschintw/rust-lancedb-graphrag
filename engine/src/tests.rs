@@ -88,6 +88,8 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "openrouter.embedding_endpoint",
     "openrouter.embedding_model",
     "openrouter.generation_model",
+    "openrouter.embedding_concurrency",
+    "openrouter.extraction_concurrency",
     "openrouter.chat_endpoint",
     "openrouter.models_endpoint",
     "openrouter.generation_timeout_secs",
@@ -199,6 +201,14 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     (
         "openrouter.generation_model",
         "unit=provider identifier; range=nonblank",
+    ),
+    (
+        "openrouter.embedding_concurrency",
+        "unit=count; range=1..=64",
+    ),
+    (
+        "openrouter.extraction_concurrency",
+        "unit=count; range=1..=64",
     ),
     (
         "openrouter.chat_endpoint",

@@ -155,10 +155,16 @@ def check_corpus_generation(
         )
 
     try:
+        probe_query = "What hospital program helps teenage patients in Nebraska?"
+        if doc_map.entries:
+            first_entry = next(iter(doc_map.entries.values()))
+            if first_entry.title:
+                probe_query = first_entry.title
+
         resp = client.post(
             "/rag/query",
             json={
-                "query": "preflight throwaway query",
+                "query": probe_query,
                 "disable_graph_context": False,
             },
         )

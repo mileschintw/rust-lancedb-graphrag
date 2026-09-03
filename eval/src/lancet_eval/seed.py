@@ -400,7 +400,13 @@ def seed_corpus(
                 )
 
         # Issue throwaway query to extract index_generation
-        query_resp = client.post("/rag/query", json={"query": "ping index generation"})
+        probe_query = "What hospital program helps teenage patients in Nebraska?"
+        if doc_map.entries:
+            first_entry = next(iter(doc_map.entries.values()))
+            if first_entry.title:
+                probe_query = first_entry.title
+
+        query_resp = client.post("/rag/query", json={"query": probe_query})
         if query_resp.status_code == 200:
             for line in query_resp.text.splitlines():
                 if line.startswith("data:"):
