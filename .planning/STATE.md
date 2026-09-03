@@ -227,6 +227,7 @@ current_plan: 8
 | ignore-gsd-runtime-dir | 2026-08-21 | Ignore .gsd runtime directory in .gitignore | Complete |
 | 260824-ipd | 2026-08-24 | Fix the shared Phase 6 CONTEXT tag-extractor landmine. Do not add any per-phase CONTEXT.md. | Verified |
 | commit-cross-ai-review | 2026-08-27 | Commit cross-AI review for plans 10-12 in 06.2-REVIEWS.md | Complete |
+| 260831-az7 | 2026-08-31 / 2026-09-02 | Migrate engine/eval from free-tier OpenRouter models (embedding, generation, judge) to paid-tier pins with an explicit embedding `dimensions` field, and complete the stalled 346-document multihop_rag reseed | Complete |
 
 ## Performance Metrics
 
