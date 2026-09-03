@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3
-current_phase_name: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04) (INSERTED)
+current_phase_name: python-evaluation-harness-benchmark-corpora-and-recorded-run
 status: executing
 stopped_at: Phase 6.3 post-execution gates run (code review, regression, verification) — gaps_found, 1 new gap (judge calibration undischarged)
-last_updated: "2026-09-03T23:10:00.000Z"
+last_updated: "2026-09-03T23:49:58.920Z"
 last_activity: 2026-09-03
-state_head: 82879f7
+state_head: f6c053f06e8401ef071748c9b7df726b78cb4d55
 progress:
   total_phases: 11
   completed_phases: 6
-  total_plans: 133
+  total_plans: 132
   completed_plans: 133
 milestone_name: milestone
 current_plan: 10
@@ -45,7 +45,6 @@ current_plan: 10
   - **Task 3 (Corpus Reseed & Concurrency Optimization):** Successfully seeded all **346 / 346 articles** of `multihop_rag` with `LANCET_ENV=eval` isolated store (PostgreSQL + LanceDB). Migrated extraction concurrency (`15`) and embedding concurrency (`12`) into explicit configuration parameters (`config/config.toml` & `engine/src/config.rs`) to maximize throughput under paid tier API limits. Optimized LanceDB entity deletions to batched `IN (...)` queries, eliminating version bloat and stalling.
   - **Task 4 (Preflight Health Verification):** Verified `lancet-eval preflight --corpus multihop_rag` passed all checks (`store_isolation`, `gateway_reachable`, `engine_reachable`, `corpus_generation` at `lance-701`, and `openrouter_api`).
   - **Task Summary:** `.planning/quick/260831-az7-phase-6-3-is-currently-stuck-the-previou/260831-az7-SUMMARY.md` produced and committed.
-
 
 - Phase 06.1 Plan 06.1-01 executed: implemented index rebuild-and-swap, CorpusStore snapshot isolation, same-snapshot dense/BM25 pinning, worker burst debouncing, fail-closed rebuild_debounce_ms configuration, and degraded notice emission (NoticeCode::IndexRebuildFailed).
 - Phase 06.1 Plan 06.1-02 executed: deterministic proofs for DEBT-BU-01 (run_window evaluation before challenge validation) and DEBT-BU-02 (sample_owned cleanup isolation harness and 26/26 passing unit tests).
@@ -141,8 +140,8 @@ current_plan: 10
 ## Active Phase
 
 - **Phase:** 06.3 — Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04)
-- **Status:** Executing Phase 06.3
-- **Total Plans in Phase:** 10
+- **Status:** Ready to execute
+- **Total Plans in Phase:** 11
 - **Completed Plans in Phase:** 8/8 (executed; phase-level gates run 2026-08-29/30, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (6/9 must-haves)
 - **Next:** `/gsd-plan-phase 6.3 --gaps`
@@ -313,7 +312,7 @@ current_plan: 10
 ## Session
 
 **Last session:** 2026-08-24T20:40:00.000Z
-**Last activity:** 2026-08-30
+**Last activity:** 2026-09-03
 **Stopped at:** Phase 06.2 complete, ready to plan Phase 06.3
 **Resume file:** None
 
