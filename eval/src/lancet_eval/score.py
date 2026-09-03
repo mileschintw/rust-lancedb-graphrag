@@ -164,7 +164,10 @@ def score_run(
     for rec in records:
         if rec.snapshot and rec.snapshot.retrieved_chunks:
             for chunk in rec.snapshot.retrieved_chunks:
-                if chunk.document_id not in doc_map.entries:
+                if (
+                    chunk.document_id not in doc_map.entries
+                    and chunk.document_id not in doc_map.aliases
+                ):
                     raise ScoreError(
                         f"Unmapped document_id '{chunk.document_id}' in record "
                         f"for question '{rec.question_id}'"

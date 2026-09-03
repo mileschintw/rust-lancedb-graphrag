@@ -1,0 +1,38 @@
+{
+  "ae392258ff889eed54debf27671fa5969159a2eb846af63c907c8e117f791e2d": {
+    "cache_key": "ae392258ff889eed54debf27671fa5969159a2eb846af63c907c8e117f791e2d",
+    "prompt_version": "v1",
+    "judge_model": "meta-llama/llama-3.3-70b-instruct",
+    "question": "Does 'The Verge' article on Prime Big Deal Days indicate that there are no gaming deals for the same range of gaming platforms as 'Polygon' staff play games on, including PlayStation 5, PS4, Xbox Series X / S, Nintendo Switch, and PC?",
+    "answer": "No, the evidence does not support that claim. The Verge article on Prime Big Deal Days explicitly states it covers gaming deals across PlayStation 5, PS4, Xbox Series X / S, Nintendo Switch, and PC [1], which matches the platforms mentioned in the question. The article also provides specific examples of deals for PS5, Xbox Series X, and PS4 [5], and for Xbox, PC, PlayStation 5, and PS4 [7]. Therefore, the article indicates there are gaming deals for the same range of platforms, not that there are none.",
+    "evidence": "[1] (Document: d7ac10fe-86f8-4f4d-8cc3-73aca6940f9e, Rank: 1):\nHere, we’ll go over all the best gaming deals we can scrounge up during Prime Big Deal Days across PlayStation 5, PS4, Xbox Series X / S, Nintendo Switch, and PC. We’re also on the lookout for hardware deals on things like controllers, streaming peripherals, and the consoles themselves.\n\n[2] (Document: d7ac10fe-86f8-4f4d-8cc3-73aca6940f9e, Rank: 5):\nfor the PS5 is on sale at Amazon for $9.99 ($20 off). Crisis Core: Final Fantasy VII Reunion on Xbox Series X and PlayStation 4 (with free PS5 upgrade) is selling for $24.99 ($25 off) at Amazon.\n\n[3] (Document: d7ac10fe-86f8-4f4d-8cc3-73aca6940f9e, Rank: 7):\nfor Xbox and PC is on sale at Amazon for $29.99 ($15 off). In addition to its colorful lights, it’s one of the cheapest controllers around to sport hair trigger lockouts. The PDP Victrix BFG Wireless Controller for PlayStation 5, PS4, and PC in its Call of Duty: Modern Warfare II-branded black-and-gold design is on sale at Amazon for $169.99 ($30 off). I know this controller looks very Extra (and it is), but it’s a very versatile DualSense alternative if you like FPS and fighting games. It’s got",
+    "verdict": {
+      "groundedness": 5,
+      "faithfulness": 5,
+      "unsupported_claims": [],
+      "rationale": "The answer is directly supported by excerpts [1], [2], and [3]"
+    },
+    "error": null,
+    "created_at": "2026-09-03T22:22:10.535800+00:00"
+  },
+  "b93be9a2bd75ba8462ac237380af1d9265950757a681322c7f7431ba669891c4": {
+    "cache_key": "b93be9a2bd75ba8462ac237380af1d9265950757a681322c7f7431ba669891c4",
+    "prompt_version": "v1",
+    "judge_model": "meta-llama/llama-3.3-70b-instruct",
+    "question": "Which company, recently reported by both TechCrunch and The Verge, is involved in controversies over not fully releasing an AI model, influencing local search result rankings, and facing a class action antitrust suit for its impact on news publishers' business?",
+    "answer": "The company matching all three controversies is Google (and its parent Alphabet). However, the evidence provided does NOT mention TechCrunch or The Verge reporting on this story, nor does it mention Google not fully releasing an AI model. The evidence only covers the class action antitrust suit and Google's AI search impact. [1], [2], [6] Also, the evidence does not explicitly state Google is influencing local search result rankings, though it describes Google ",
+    "evidence": "[1] (Document: cf2cf0f7-1657-44b1-9e35-7e76d569089e, Rank: 1):\nA new class action lawsuit filed this week in the U.S. District Court in D.C. accuses Google and parent company Alphabet of anticompetitive behavior in violation of U.S. antitrust law, the Sherman Act, and others, on behalf of news publishers. The case, filed by Arkansas-based publisher Helena World Chronicle, argues that Google “siphons off” news publishers’ content, their readers and ad revenue through anticompetitive means. It also specifically cites new AI technologies like Google’s Search G\n\n[2] (Document: cf2cf0f7-1657-44b1-9e35-7e76d569089e, Rank: 2):\nMore importantly, perhaps, is the suit’s tackling of how AI will impact publishers’ businesses. The problem was recently detailed in a report on Thursday by The Wall Street Journal, which led with a shocking statistic. When online magazine The Atlantic modeled what would happen if Google integrated AI into search, it found that 75% of the time the AI would answer the user’s query without requiring a click-through to its website, losing it traffic. This could have a major impact on publishers’ tr\n\n[3] (Document: cf2cf0f7-1657-44b1-9e35-7e76d569089e, Rank: 6):\nHelena World Chronicle, LLC v. Google LLC and Alphabet Inc by TechCrunch on Scribd",
+    "verdict": {
+      "groundedness": 3,
+      "faithfulness": 3,
+      "unsupported_claims": [
+        "Google not fully releasing an AI model",
+        "influencing local search result rankings",
+        "reported by The Verge"
+      ],
+      "rationale": "The answer identifies Google as the company involved in controversies, which is supported by the evidence. However, it includes unsupported details about not fully releasing an AI model and influencing local search result rankings. The evidence also does not mention The Verge reporting on the story."
+    },
+    "error": null,
+    "created_at": "2026-09-03T22:22:15.895137+00:00"
+  }
+}

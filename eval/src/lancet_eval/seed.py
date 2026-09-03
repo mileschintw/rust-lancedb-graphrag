@@ -187,14 +187,16 @@ class DocumentMap(BaseModel):
     seeded_at: str = ""
     index_generation: str = ""
     entries: dict[str, DocumentMapEntry] = Field(default_factory=dict)
+    aliases: dict[str, str] = Field(default_factory=dict)
 
     def get_by_document_id(self, doc_id: str) -> DocumentMapEntry:
         """Resolve gateway document_id to its corpus entry, raising if unmapped."""
-        if doc_id not in self.entries:
+        target_id = self.aliases.get(doc_id, doc_id)
+        if target_id not in self.entries:
             raise KeyError(
                 f"Document ID {doc_id!r} not found in map for corpus {self.corpus!r}"
             )
-        return self.entries[doc_id]
+        return self.entries[target_id]
 
     def get_by_corpus_id(self, corpus_id: str) -> DocumentMapEntry | None:
         """Find entry by corpus article identifier."""
@@ -218,11 +220,13 @@ def load_document_map(corpus_name: str) -> DocumentMap:
         data = json.load(f)
 
     entries = {k: DocumentMapEntry(**v) for k, v in data.get("entries", {}).items()}
+    aliases = data.get("aliases", {})
     return DocumentMap(
         corpus=data.get("corpus", corpus_name),
         seeded_at=data.get("seeded_at", ""),
         index_generation=data.get("index_generation", ""),
         entries=entries,
+        aliases=aliases,
     )
 
 
@@ -238,6 +242,8 @@ def save_document_map_atomic(doc_map: DocumentMap) -> None:
         "index_generation": doc_map.index_generation,
         "entries": {k: v.model_dump() for k, v in sorted(doc_map.entries.items())},
     }
+    if doc_map.aliases:
+        payload["aliases"] = doc_map.aliases
 
     with open(tmp_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(payload, f, indent=2)

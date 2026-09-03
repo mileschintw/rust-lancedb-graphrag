@@ -1,0 +1,162 @@
+{
+  "corpus": "multihop_rag",
+  "metadata": {
+    "corpus": "multihop_rag",
+    "run_date": "2026-09-03T22:22:32.228846+00:00",
+    "commit_sha": "bb8545f1202bb54ed10fc97b748a9338631df98d",
+    "generation_model": "deepseek/deepseek-v4-flash-0731",
+    "embedding_model": "voyageai/voyage-4-large",
+    "judge_model": "meta-llama/llama-3.3-70b-instruct",
+    "judge_temperature": 0.0,
+    "judge_prompt_version": "v1",
+    "sampling_seed": 42,
+    "sample_size_deterministic": 500,
+    "sample_size_judged": 100,
+    "index_generation": "lance-701",
+    "result_hash": "33f716234a2ac341",
+    "arm_labels": [
+      "graph-on",
+      "graph-off"
+    ],
+    "dependency_lock_hash": "8e71ea9ce7a3532b",
+    "partial": false,
+    "notes": ""
+  },
+  "dimensions": [
+    {
+      "name": "retrieval_evidence_coverage",
+      "status": "ok",
+      "score": 0.4270833333333333,
+      "detail": {
+        "errors": 0.0,
+        "sample_size": 16.0
+      },
+      "reason": null,
+      "n": 16
+    },
+    {
+      "name": "context_precision_at_k",
+      "status": "ok",
+      "score": 0.25,
+      "detail": {
+        "errors": 0.0,
+        "sample_size": 16.0
+      },
+      "reason": null,
+      "n": 16
+    },
+    {
+      "name": "ranking_quality",
+      "status": "ok",
+      "score": 0.6651785714285714,
+      "detail": {
+        "errors": 0.0,
+        "sample_size": 16.0
+      },
+      "reason": null,
+      "n": 16
+    },
+    {
+      "name": "answer_exact_match",
+      "status": "ok",
+      "score": 0.0,
+      "detail": {
+        "errors": 0.0,
+        "sample_size": 447.0
+      },
+      "reason": null,
+      "n": 447
+    },
+    {
+      "name": "answer_f1",
+      "status": "ok",
+      "score": 0.0008260141465330436,
+      "detail": {
+        "errors": 0.0,
+        "sample_size": 447.0
+      },
+      "reason": null,
+      "n": 447
+    },
+    {
+      "name": "answer_faithfulness",
+      "status": "ok",
+      "score": 4.0,
+      "detail": {
+        "judged_n": 2.0,
+        "judge_errors": 0.0,
+        "skipped_no_evidence": 98.0
+      },
+      "reason": null,
+      "n": 2
+    },
+    {
+      "name": "answer_groundedness",
+      "status": "ok",
+      "score": 4.0,
+      "detail": {
+        "judged_n": 2.0,
+        "judge_errors": 0.0,
+        "skipped_no_evidence": 98.0
+      },
+      "reason": null,
+      "n": 2
+    },
+    {
+      "name": "graph_ablation_delta",
+      "status": "ok",
+      "score": 0.010416666666666685,
+      "detail": {
+        "graph_on_score": 0.4270833333333333,
+        "graph_on_n": 16.0,
+        "graph_on_errors": 0.0,
+        "graph_off_score": 0.41666666666666663,
+        "graph_off_n": 17.0,
+        "graph_off_errors": 4.0,
+        "delta": 0.010416666666666685
+      },
+      "reason": null,
+      "n": 33
+    },
+    {
+      "name": "abstention_on_unanswerable",
+      "status": "ok",
+      "score": 0.0,
+      "detail": {
+        "null_samples": 53.0
+      },
+      "reason": null,
+      "n": 53
+    },
+    {
+      "name": "wire_contract_conformance",
+      "status": "ok",
+      "score": 1.0,
+      "detail": {
+        "total_records": 1000.0,
+        "error_records": 0.0
+      },
+      "reason": null,
+      "n": 1000
+    },
+    {
+      "name": "community_summary_quality",
+      "status": "skipped",
+      "score": null,
+      "detail": {},
+      "reason": "Deferred to Phase 999.1 (community summaries not yet implemented in engine)",
+      "n": 0
+    },
+    {
+      "name": "run_traceability",
+      "status": "ok",
+      "score": 0.034,
+      "detail": {
+        "traced_records": 34.0,
+        "total_records": 1000.0
+      },
+      "reason": null,
+      "n": 1000
+    }
+  ]
+}
