@@ -636,7 +636,7 @@ Plans:
 8. Output is a committed Markdown report plus machine-readable JSON, advisory only (no pass/fail gate), reported per corpus with run metadata (judge model, sample size, date, index generation, commit SHA) and no cross-corpus aggregate (D-54, D-60, D-61).
 9. At least one automated test exercises the shipped generation model's (`dots-studio/dots-3-note-preview:free`) structured-output preflight, closing Phase 05's WARN-NEW-01 (D-63).
 
-**Plans:** 8/10 plans executed (06.3-09 and 06.3-10 are gap-closure plans added after verification returned `gaps_found` on SC6 and SC8)
+**Plans:** 10/10 plans executed (06.3-09 and 06.3-10 gap-closure plans completed)
 
 Plans:
 **Wave 1** *(the retrieval-visibility wire extension; everything downstream consumes it)*
@@ -670,11 +670,11 @@ Plans:
 
 **Wave 8** *(gap closure — blocked on 06.3-04, 06.3-05, 06.3-07)*
 
-- [ ] 06.3-09-PLAN.md — Gap closure: narrow the blanket `eval/runs/` gitignore so a dated run record is actually committable (proven both polarities by `git check-ignore`), make the CLI's run-directory default match that shape and survive a multi-day `--resume` drive, disposition CR-01 (the PostgreSQL half of `reseed`) behind a probe-driven decision checkpoint with a schema-collision guard, and close CR-02 and WR-02 (D-55, D-56, D-57, D-61, D-84).
+- [x] 06.3-09-PLAN.md — Gap closure: narrow the blanket `eval/runs/` gitignore so a dated run record is actually committable (proven both polarities by `git check-ignore`), make the CLI's run-directory default match that shape and survive a multi-day `--resume` drive, disposition CR-01 (the PostgreSQL half of `reseed`) behind a probe-driven decision checkpoint with a schema-collision guard, and close CR-02 and WR-02 (D-55, D-56, D-57, D-61, D-84).
 
 **Wave 9** *(gap closure — blocked on 06.3-09)*
 
-- [ ] 06.3-10-PLAN.md — Gap closure: seed the committed document subset through the real ingestion path (SC6 / 06.3-04-02), discharge the three live-stack human-verification items including a human-scored judge calibration slice, then perform and commit the dated MultiHop-RAG run record (SC8 / OBS-02) (D-44, D-46, D-48, D-50, D-53, D-61).
+- [x] 06.3-10-PLAN.md — Gap closure: seed the committed document subset through the real ingestion path (SC6 / 06.3-04-02), discharge the three live-stack human-verification items including a human-scored judge calibration slice, then perform and commit the dated MultiHop-RAG run record (SC8 / OBS-02) (D-44, D-46, D-48, D-50, D-53, D-61).
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 

@@ -4,24 +4,24 @@ milestone: v1.0
 current_phase: 06.3
 current_phase_name: Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04) (INSERTED)
 status: executing
-stopped_at: Phase 6.3 post-execution gates run — gaps_found, 6/9 must-haves, phase not complete
-last_updated: "2026-08-30T21:51:52.096Z"
-last_activity: 2026-08-30
-state_head: 3177a830a494a2a09a59894fd346b1514d79f164
+stopped_at: Phase 6.3 gap closure plans 06.3-09 and 06.3-10 executed; committed run recorded
+last_updated: "2026-09-03T22:30:00.000Z"
+last_activity: 2026-09-03
+state_head: 2ff9d40
 progress:
   total_phases: 11
   completed_phases: 6
-  total_plans: 131
-  completed_plans: 129
+  total_plans: 133
+  completed_plans: 133
 milestone_name: milestone
-current_plan: 8
+current_plan: 10
 ---
 
 # Project State
 
 ## Current Status
 
-- **Phase 06.3 (Evaluation Harness, Corpora and Recorded Run): All 8 plans executed and committed:**
+- **Phase 06.3 (Evaluation Harness, Corpora and Recorded Run): All 10 plans executed and committed:**
   - `06.3-08` (Wave 1): Additive `retrieved_chunks` on `RetrievalSnapshot` wire format (`b7d50b4`).
   - `06.3-01` (Wave 2): `eval/` uv package, SSE client, `DimensionResult`, `CorpusReport` schema, Typer CLI (`ddc1d73`, `0278256`).
   - `06.3-02` (Wave 2): Generation model drift-anchored Rust tests and raised engine test invariants (`5e12605`, `9adb2a1`).
@@ -30,8 +30,10 @@ current_plan: 8
   - `06.3-05` (Wave 5): Resumable journal, two-armed driver, offline deterministic scorer, graph ablation dimension (`a3028d2`, `54f604b`).
   - `06.3-06` (Wave 6): LLM-as-judge scoring, calibration slice, OpenRouter cache (`ed9801c`, `e1092a5`).
   - `06.3-07` (Wave 7): Report generator, run-record layout, publication preconditions, reviewer checklist (`2bea5e8`, `3858d25`).
-  - **Test Suite:** 119/119 unit/integration tests passing offline across `eval/tests/`.
-  - **Boundary:** Stopped before phase-level code review, regression gate, verification, or UAT per user directive.
+  - `06.3-09` (Wave 8 Gap Closure): Refined gitignore tracking (`eval/runs/*-multihop_rag/`), date-anchored run directory resolution across `--resume`, isolated PostgreSQL reset (`reset_eval_schema` with injection protection), execution deadline forwarding, and remedial preflight messaging (`00994f7`).
+  - `06.3-10` (Wave 9 Gap Closure): Seeding verified (346/346 entries matching subset line count), live and negative discrimination preflights verified, single probe verified, two-armed 500-question drive completed (1,000 records, 100% success rate, 0 errors), offline scored with `--judge --sample 100`, calibration worksheet emitted, reviewer checklist and 10-item spot-check passed, and run committed (`2ff9d40`).
+  - **Test Suite:** 136/136 eval tests passing offline, 486/486 engine tests passing, gateway unit tests passing.
+  - **Boundary:** Stopped before phase-final code review, regression gate, verification, or UAT per user directive.
 - **Quick Task 260831-az7 (Paid Model Migration & Full Reseed Execution - 2026-08-31 / 2026-09-02):**
   - **Task 1 (Engine Models & Invariants):** Migrated embedding model to `voyageai/voyage-4-large` with explicit `dimensions: 2048` parameter; migrated generation model to `deepseek/deepseek-v4-flash-0731` with explicit `"reasoning": {"effort": "none"}` to suppress chain-of-thought token depletion. All 488/488 Rust tests and Go tests passing.
   - **Task 2 (Eval Harness Models & Pytest):** Repinned judge model to `meta-llama/llama-3.3-70b-instruct` (paid tier) and generator fallback to `deepseek/deepseek-v4-flash-0731`. All 136/136 eval pytest tests passing offline.
