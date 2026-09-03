@@ -32,11 +32,12 @@ current_plan: 8
   - `06.3-07` (Wave 7): Report generator, run-record layout, publication preconditions, reviewer checklist (`2bea5e8`, `3858d25`).
   - **Test Suite:** 119/119 unit/integration tests passing offline across `eval/tests/`.
   - **Boundary:** Stopped before phase-level code review, regression gate, verification, or UAT per user directive.
-- **Quick Task 260831-az7 (Paid Model Migration & Reseed Execution - 2026-08-31):**
+- **Quick Task 260831-az7 (Paid Model Migration & Full Reseed Execution - 2026-08-31 / 2026-09-02):**
   - **Task 1 (Engine Models & Invariants):** Migrated embedding model to `voyageai/voyage-4-large` with explicit `dimensions: 2048` parameter; migrated generation model to `deepseek/deepseek-v4-flash-0731` with explicit `"reasoning": {"effort": "none"}` to suppress chain-of-thought token depletion. All 488/488 Rust tests and Go tests passing.
-  - **Task 2 (Eval Harness Models & Pytest):** Repinned judge model to `meta-llama/llama-3.3-70b-instruct` (paid tier) and generator fallback to `deepseek/deepseek-v4-flash-0731`. All 136 eval pytest tests passing offline.
-  - **Task 3 (Corpus Reseed & Concurrency Optimization):** Resumed 346-document reseed of `multihop_rag` with `LANCET_ENV=eval` isolated store. Migrated hardcoded extraction concurrency (`5`) and embedding concurrency (`4`) into explicit configuration parameters (`openrouter.extraction_concurrency = 15`, `openrouter.embedding_concurrency = 12` in `config/config.toml` & `engine/src/config.rs`) to improve maintainability and maximize throughput under paid tier API limits. All 488/488 Rust tests and 7/7 test target invariants passing.
-  - **Task Summary:** `.planning/quick/260831-az7-phase-6-3-is-currently-stuck-the-previou/260831-az7-SUMMARY.md` produced.
+  - **Task 2 (Eval Harness Models & Pytest):** Repinned judge model to `meta-llama/llama-3.3-70b-instruct` (paid tier) and generator fallback to `deepseek/deepseek-v4-flash-0731`. All 136/136 eval pytest tests passing offline.
+  - **Task 3 (Corpus Reseed & Concurrency Optimization):** Successfully seeded all **346 / 346 articles** of `multihop_rag` with `LANCET_ENV=eval` isolated store (PostgreSQL + LanceDB). Migrated extraction concurrency (`15`) and embedding concurrency (`12`) into explicit configuration parameters (`config/config.toml` & `engine/src/config.rs`) to maximize throughput under paid tier API limits. Optimized LanceDB entity deletions to batched `IN (...)` queries, eliminating version bloat and stalling.
+  - **Task 4 (Preflight Health Verification):** Verified `lancet-eval preflight --corpus multihop_rag` passed all checks (`store_isolation`, `gateway_reachable`, `engine_reachable`, `corpus_generation` at `lance-701`, and `openrouter_api`).
+  - **Task Summary:** `.planning/quick/260831-az7-phase-6-3-is-currently-stuck-the-previou/260831-az7-SUMMARY.md` produced and committed.
 
 
 - Phase 06.1 Plan 06.1-01 executed: implemented index rebuild-and-swap, CorpusStore snapshot isolation, same-snapshot dense/BM25 pinning, worker burst debouncing, fail-closed rebuild_debounce_ms configuration, and degraded notice emission (NoticeCode::IndexRebuildFailed).
