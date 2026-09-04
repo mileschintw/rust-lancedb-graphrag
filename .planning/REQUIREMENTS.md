@@ -40,9 +40,9 @@
 ## Observability & Evaluation
 
 - [x] **OBS-01**: Add OpenTelemetry-compatible tracing across Go, gRPC, Rust nodes, retrieval, graph queries, and LLM calls.
-- [ ] **OBS-02**: Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval/answer quality.
+- [x] **OBS-02**: Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval/answer quality.
 - [ ] **OBS-03**: Provide a README/design narrative that explains the architecture, alternatives, choices, and how to run/evaluate.
-- [ ] **OBS-04**: Add a placeholder metric (e.g. `global_faithfulness` or `global_coverage`) returning a simulated score or skipped flag in the offline evaluation script framework.
+- [x] **OBS-04**: Add a placeholder metric (e.g. `global_faithfulness` or `global_coverage`) returning a simulated score or skipped flag in the offline evaluation script framework.
 
 ## Traceability
 

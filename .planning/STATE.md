@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 06.3
-current_phase_name: python-evaluation-harness-benchmark-corpora-and-recorded-run
-status: executing
-stopped_at: Plan 06.3-11 executed — calibration worksheet selector fixed, judge cache expanded to 16, calibration pending
-last_updated: "2026-09-04T22:26:35.356Z"
+current_phase: 06.3.1
+current_phase_name: Fix retrieval citation collapse and graph ablation measurement fidelity
+status: planning
+stopped_at: Phase 06.3 complete, ready to plan Phase 06.3.1
+last_updated: "2026-09-04T23:01:30.587Z"
 last_activity: 2026-09-04
-state_head: 8bac79851191b43e8a0f283805aa144e90134338
+state_head: 8d6450c5659b78fdd04c9a6cdff61774c9f08e66
 progress:
   total_phases: 12
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 132
   completed_plans: 132
 milestone_name: milestone
@@ -140,8 +140,8 @@ current_plan: 11
 
 ## Active Phase
 
-- **Phase:** 06.3 — Evaluation Harness, Corpora and Recorded Run (OBS-02, OBS-04)
-- **Status:** Ready to execute
+- **Phase:** 06.3.1 — Fix retrieval citation collapse and graph ablation measurement fidelity
+- **Status:** Ready to plan
 - **Total Plans in Phase:** 11
 - **Completed Plans in Phase:** 8/8 (executed; phase-level gates run 2026-08-29/30, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (6/9 must-haves)
@@ -313,8 +313,8 @@ current_plan: 11
 ## Session
 
 **Last session:** 2026-08-24T20:40:00.000Z
-**Last activity:** 2026-09-03
-**Stopped at:** Phase 06.2 complete, ready to plan Phase 06.3
+**Last activity:** 2026-09-04
+**Stopped at:** Phase 06.3 complete, ready to plan Phase 06.3.1
 **Resume file:** None
 
 ## Accumulated Context

@@ -636,7 +636,7 @@ Plans:
 8. Output is a committed Markdown report plus machine-readable JSON, advisory only (no pass/fail gate), reported per corpus with run metadata (judge model, sample size, date, index generation, commit SHA) and no cross-corpus aggregate (D-54, D-60, D-61).
 9. At least one automated test exercises the shipped generation model's (`dots-studio/dots-3-note-preview:free`) structured-output preflight, closing Phase 05's WARN-NEW-01 (D-63).
 
-**Plans:** 11 plans (10 executed; 06.3-11 gap closure planned, closing 06.3-VERIFICATION.md Truth 10)
+**Plans:** 11/11 plans complete
 
 Plans:
 **Wave 1** *(the retrieval-visibility wire extension; everything downstream consumes it)*
@@ -678,7 +678,7 @@ Plans:
 
 **Wave 10** *(gap closure — blocked on 06.3-10)*
 
-- [ ] 06.3-11-PLAN.md — Gap closure: fix the calibration-worksheet selector to require a cache-resolvable, non-null judge verdict (not merely judged-sample membership), re-judge the full primary arm to reach the citation-rate ceiling, and have a human hand-score and commit the corrected worksheet — closing 06.3-VERIFICATION.md's sole remaining gap, Truth 10 (D-50, D-52, D-53).
+- [x] 06.3-11-PLAN.md — Gap closure: fix the calibration-worksheet selector to require a cache-resolvable, non-null judge verdict (not merely judged-sample membership), re-judge the full primary arm to reach the citation-rate ceiling, and have a human hand-score and commit the corrected worksheet — closing 06.3-VERIFICATION.md's sole remaining gap, Truth 10 (D-50, D-52, D-53).
 
 ### Phase 06.3.1: Fix retrieval citation collapse and graph ablation measurement fidelity (INSERTED)
 
