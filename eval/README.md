@@ -92,7 +92,7 @@ The evaluation harness evaluates answer groundedness and faithfulness using an L
 - **Auditable Plain-Text Cache:** All judge verdicts are stored in `judge_cache.json` keyed by `sha256(prompt_version, judge_model, question, answer, post_truncation_evidence)`.
 - **Bounded Evidence Truncation:** Passages are truncated in wire ranked order (`PER_PASSAGE_CHAR_BUDGET = 1500`, `EVIDENCE_CHAR_BUDGET = 12000`) with explicit `[TRUNCATED: N further passages omitted]` markers included in the cache key.
 - **Empty Citation Handling:** Responses without citations are marked `status: skipped` with reason "no evidence returned; groundedness undefined" without calling the judge.
-- **Calibration Slice:** Human evaluators grade ~20 representative questions in a calibration worksheet (`.jsonl`). `score --calibration-file` validates prompt version alignment and calculates exact-match rate and mean absolute difference (MAD).
+- **Calibration Slice:** Human evaluators grade ~20 representative questions in a calibration worksheet (`.jsonl`). The worksheet's candidate pool is capped by whatever `--sample` scope the preceding judge pass used, and omitting `--sample` maximizes it up to the run's real citation rate. `score --calibration-file` validates prompt version alignment and calculates exact-match rate and mean absolute difference (MAD).
 
 ## Run-Record Directory Layout & Publication
 

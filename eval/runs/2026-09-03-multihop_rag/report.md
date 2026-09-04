@@ -6,8 +6,8 @@
 | Parameter | Value |
 |---|---|
 | **Corpus** | `multihop_rag` |
-| **Run Date** | `2026-09-03T22:22:32.228846+00:00` |
-| **Commit SHA** | `bb8545f1202bb54ed10fc97b748a9338631df98d` |
+| **Run Date** | `2026-09-04T13:22:51.810113+00:00` |
+| **Commit SHA** | `05302e6e146f722d96c101ec2b2c132123bd1812` |
 | **Generation Model** | `deepseek/deepseek-v4-flash-0731` |
 | **Embedding Model** | `voyageai/voyage-4-large` |
 | **Judge Model** | `meta-llama/llama-3.3-70b-instruct` |
@@ -15,9 +15,9 @@
 | **Judge Prompt Version** | `v1` |
 | **Sampling Seed** | `42` |
 | **Deterministic Sample Size** | `500` |
-| **Judged Sample Size** | `100` |
+| **Judged Sample Size** | `500` |
 | **Index Generation** | `lance-701` |
-| **Result Hash** | `33f716234a2ac341` |
+| **Result Hash** | `36e12fd0dcf553f2` |
 | **Dependency Lock Hash** | `8e71ea9ce7a3532b` |
 | **Arm Labels** | `graph-on, graph-off` |
 
@@ -48,11 +48,11 @@
 
 
 
-| `answer_faithfulness` | ok | **4.00** | 2 | judged_n=2.0, judge_errors=0.0, skipped_no_evidence=98.0 |
+| `answer_faithfulness` | ok | **4.88** | 16 | judged_n=16.0, judge_errors=0.0, skipped_no_evidence=484.0 |
 
 
 
-| `answer_groundedness` | ok | **4.00** | 2 | judged_n=2.0, judge_errors=0.0, skipped_no_evidence=98.0 |
+| `answer_groundedness` | ok | **4.62** | 16 | judged_n=16.0, judge_errors=0.0, skipped_no_evidence=484.0 |
 
 
 
