@@ -289,6 +289,32 @@ def score_run(
     cache = JudgeCache(cache_path)
     judged_qids: set[str] = set()
 
+    if calibration_file is not None:
+        cached_verdict_count = sum(
+            1 for e in cache.entries.values() if e.verdict is not None
+        )
+        if no_judge and cached_verdict_count > 0:
+            raise ScoreError(
+                "calibration_file was provided with --no-judge, but "
+                f"judge_cache.json already has {cached_verdict_count} cached "
+                "verdict(s) from a prior --judge invocation. Running without "
+                "--judge here would silently discard that judged population "
+                "when report.json is rewritten (score_run always rewrites "
+                "report.json on a non-partial run). Re-run with --judge "
+                "(same --sample scope used to build the cache) to feed "
+                "calibration scores back safely."
+            )
+        if sample is not None and sample < cached_verdict_count:
+            raise ScoreError(
+                f"calibration_file was provided with --sample {sample}, "
+                f"narrower than the {cached_verdict_count} verdict(s) already "
+                "cached in judge_cache.json from a prior, larger judging "
+                "invocation. This would silently shrink the judged population "
+                "report.json records. Re-run without --sample (or with a "
+                "value >= the cached verdict count) before feeding back "
+                "calibration scores."
+            )
+
     if not no_judge:
         # Check judge model distinctness from generator model
         gen_model = _get_engine_generation_model()

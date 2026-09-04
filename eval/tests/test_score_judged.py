@@ -678,3 +678,132 @@ def test_worksheet_never_sources_graph_off_records(
     assert emitted_qids == set(qids[5:10])
 
 
+def _judge_five_records(httpx_mock: HTTPXMock, tmp_path: Path, journal: Journal, doc_id: str, qids: list[str]) -> None:
+    """Populate journal + judge_cache.json with 5 cited, successfully-judged graph-on records."""
+    for qid in qids[:5]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer for {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Evidence text",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ]
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    client = httpx.Client()
+    score_run(run_dir=tmp_path, no_judge=False, sample=None, api_key="test-key", client=client)
+
+
+def test_calibration_file_rejects_no_judge_when_cache_populated(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves --calibration-file with --no-judge is rejected once judge_cache.json
+    already holds verdicts from a prior --judge invocation.
+
+    06.3-11-PLAN.md's must_haves.prohibitions: the final --calibration-file score
+    invocation MUST NOT omit --judge, because score_run rewrites report.json on
+    every non-partial invocation -- omitting --judge here would silently discard
+    the enlarged judged pass a prior invocation produced.
+    """
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    _judge_five_records(httpx_mock, tmp_path, journal, doc_id, qids)
+
+    cache_path = tmp_path / "judge_cache.json"
+    with open(cache_path, encoding="utf-8") as f:
+        cache_data = json.load(f)
+    assert len(cache_data) == 5
+
+    calib_path = tmp_path / "calibration_completed.jsonl"
+    with open(calib_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "header", "judge_prompt_version": "v1"}) + "\n")
+        for qid in qids[:5]:
+            f.write(json.dumps({
+                "question_id": qid,
+                "cache_key": next(iter(cache_data.keys())),
+                "human_groundedness": 5,
+                "human_faithfulness": 5,
+            }) + "\n")
+
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(
+            run_dir=tmp_path,
+            no_judge=True,
+            calibration_file=calib_path,
+        )
+    assert "--no-judge" in str(exc_info.value)
+    assert "5 cached verdict" in str(exc_info.value)
+
+
+def test_calibration_file_rejects_narrower_sample_than_cache(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves --calibration-file with a --sample narrower than the already-cached
+    verdict count is rejected, matching the same prohibition as the --no-judge case
+    above -- a narrower --sample would re-judge a smaller subset and silently
+    shrink the judged population report.json records.
+    """
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    _judge_five_records(httpx_mock, tmp_path, journal, doc_id, qids)
+
+    cache_path = tmp_path / "judge_cache.json"
+    with open(cache_path, encoding="utf-8") as f:
+        cache_data = json.load(f)
+    assert len(cache_data) == 5
+
+    calib_path = tmp_path / "calibration_completed.jsonl"
+    with open(calib_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "header", "judge_prompt_version": "v1"}) + "\n")
+        f.write(json.dumps({
+            "question_id": qids[0],
+            "cache_key": next(iter(cache_data.keys())),
+            "human_groundedness": 5,
+            "human_faithfulness": 5,
+        }) + "\n")
+
+    client = httpx.Client()
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(
+            run_dir=tmp_path,
+            no_judge=False,
+            sample=2,
+            calibration_file=calib_path,
+            api_key="test-key",
+            client=client,
+        )
+    assert "narrower" in str(exc_info.value)
+    assert "5 verdict" in str(exc_info.value)
+
+
