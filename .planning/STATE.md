@@ -4,24 +4,24 @@ milestone: v1.0
 current_phase: 06.3
 current_phase_name: python-evaluation-harness-benchmark-corpora-and-recorded-run
 status: executing
-stopped_at: Phase 6.3 post-execution gates run (code review, regression, verification) — gaps_found, 1 new gap (judge calibration undischarged)
-last_updated: "2026-09-03T23:49:58.920Z"
-last_activity: 2026-09-03
-state_head: f6c053f06e8401ef071748c9b7df726b78cb4d55
+stopped_at: "Plan 06.3-11 executed — calibration worksheet selector fixed, judge cache expanded to 16, calibration pending"
+last_updated: "2026-09-04T14:00:00.000Z"
+last_activity: 2026-09-04
+state_head: a72dc27
 progress:
   total_phases: 11
   completed_phases: 6
-  total_plans: 132
-  completed_plans: 133
+  total_plans: 133
+  completed_plans: 134
 milestone_name: milestone
-current_plan: 10
+current_plan: 11
 ---
 
 # Project State
 
 ## Current Status
 
-- **Phase 06.3 (Evaluation Harness, Corpora and Recorded Run): All 10 plans executed and committed:**
+- **Phase 06.3 (Evaluation Harness, Corpora and Recorded Run): All 11 plans executed and committed:**
   - `06.3-08` (Wave 1): Additive `retrieved_chunks` on `RetrievalSnapshot` wire format (`b7d50b4`).
   - `06.3-01` (Wave 2): `eval/` uv package, SSE client, `DimensionResult`, `CorpusReport` schema, Typer CLI (`ddc1d73`, `0278256`).
   - `06.3-02` (Wave 2): Generation model drift-anchored Rust tests and raised engine test invariants (`5e12605`, `9adb2a1`).
@@ -32,7 +32,8 @@ current_plan: 10
   - `06.3-07` (Wave 7): Report generator, run-record layout, publication preconditions, reviewer checklist (`2bea5e8`, `3858d25`).
   - `06.3-09` (Wave 8 Gap Closure): Refined gitignore tracking (`eval/runs/*-multihop_rag/`), date-anchored run directory resolution across `--resume`, isolated PostgreSQL reset (`reset_eval_schema` with injection protection), execution deadline forwarding, and remedial preflight messaging (`00994f7`).
   - `06.3-10` (Wave 9 Gap Closure): Seeding verified (346/346 entries matching subset line count), live and negative discrimination preflights verified, single probe verified, two-armed 500-question drive completed (1,000 records, 100% success rate, 0 errors), offline scored with `--judge --sample 100`, calibration worksheet emitted, reviewer checklist and 10-item spot-check passed, and run committed (`2ff9d40`).
-  - **Test Suite:** 136/136 eval tests passing offline, 486/486 engine tests passing, gateway unit tests passing.
+  - `06.3-11` (Wave 10 Gap Closure): Fixed calibration-worksheet candidate selector in `score.py` to verify cache entry existence and non-null verdict (`05302e6`). Proved via TDD regression tests (`test_worksheet_rows_are_drawn_from_the_judged_subset` and `test_worksheet_excludes_judge_errored_records`). Expanded judge cache over full primary-arm population (`sample_size_judged=500`, `n=16`, 0 errors), re-emitted `calibration_worksheet.jsonl` with strict 16/16 pairing, and updated run metadata (`a72dc27`). Task 2 concluded with `calibration pending` per blocking-human gate protocol (`06.3-11-SUMMARY.md`).
+  - **Test Suite:** 137/137 eval tests passing offline, 486/486 engine tests passing, gateway unit tests passing.
   - **Post-execution gates RUN (2026-09-03), resuming manually past the mechanical `--gaps-only` "no matching incomplete plans" exit** (all 10 plans, including both gap-closure ones, were already complete; existing `06.3-REVIEW.md`/`06.3-VERIFICATION.md` were stale — dated 2026-08-29, predating the 06.3-09/06.3-10 gap-closure commits — not missing, so the manual gate walk was correct per the same class of situation as Phase 6.2, see project memory `gaps-only-resume-to-gates-lancet`):
     - **Code review** (`06.3-REVIEW.md`, `82879f7`; scope: 31 files — union of 06.3-09/06.3-10's own diff and an interleaved unrelated Quick Task 260831-az7 paid-model-migration that landed in the same window): `status: issues_found` — 1 critical, 5 warning, 3 info. **Critical: `engine/src/db/mod.rs`'s `get_or_create_table`** (backs `entities_table()`/`documents_table()`/`nodes_table()`/`edges_table()`/`entity_edges_table()`/`staged_documents_table()`, called on every live RAG query and on ingestion) catches *any* `open_table()` error and silently recreates an empty table instead of failing closed — silent data-loss risk on the hot path. Out of 06.3's own plan scope (introduced by the interleaved Quick Task, not by 06.3-09/06.3-10), flagged for a dedicated fix, not addressed in this pass.
     - **Gap-closure-artifacts (`close_parent_artifacts`):** parent `06-UAT.md` exists but its two gaps (D-18 total-drop flag semantics, truncated-citation resolution) are unrelated to 06.3 and were already `status: resolved` back on 2026-08-22 by `06-16-PLAN.md` — correctly a no-op, nothing updated.
