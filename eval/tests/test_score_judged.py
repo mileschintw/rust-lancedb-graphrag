@@ -562,3 +562,119 @@ def test_worksheet_excludes_judge_errored_records(
     assert len(data_rows) == 0
 
 
+def test_worksheet_never_sources_graph_off_records(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves the calibration worksheet only ever draws from the graph-on (primary) arm.
+
+    06.3-11-PLAN.md's must_haves.prohibitions: calibration measures agreement on the
+    population the judge actually scores for the headline dimensions (graph-on only);
+    sourcing rows from graph-off would produce an agreement figure that does not
+    describe what the report claims it describes. This is a distinct regression guard
+    from test_worksheet_rows_are_drawn_from_the_judged_subset (which proves uncited
+    graph-on records are excluded) and test_worksheet_excludes_judge_errored_records
+    (which proves judge-errored records are excluded) -- both of those fixtures are
+    entirely graph-on and so cannot catch a primary-arm-scoping regression.
+    """
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    # Cited graph-off records with their own distinct question_ids. If the selector
+    # ever iterated over all records instead of the primary-arm-scoped p_records,
+    # these would look exactly as eligible as the graph-on records below.
+    graph_off_qids = set(qids[:5])
+    for qid in qids[:5]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-off",
+            outcome="success",
+            answer=f"Graph-off answer for {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Graph-off evidence text",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    # Cited graph-on records -- the only population the worksheet should ever draw from.
+    for qid in qids[5:10]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Graph-on answer for {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Graph-on evidence text",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ]
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    client = httpx.Client()
+    worksheet_path = tmp_path / "calibration_ws.jsonl"
+
+    score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=None,
+        emit_calibration_worksheet=worksheet_path,
+        api_key="test-key",
+        client=client,
+    )
+
+    # judge_cache.json must only ever contain entries for the 5 graph-on records --
+    # the 5 graph-off records must never reach the judge at all.
+    cache_path = tmp_path / "judge_cache.json"
+    assert cache_path.is_file()
+    with open(cache_path, encoding="utf-8") as f:
+        cache_data = json.load(f)
+    assert len(cache_data) == 5
+    for entry in cache_data.values():
+        assert entry["answer"].startswith("Graph-on answer for")
+
+    assert worksheet_path.is_file()
+    with open(worksheet_path, encoding="utf-8") as f:
+        ws_lines = [json.loads(line_text) for line_text in f if line_text.strip()]
+
+    header = ws_lines[0]
+    data_rows = ws_lines[1:]
+    assert header["type"] == "header"
+
+    # All 5 graph-on records are cited and judged successfully -> all 5 emitted.
+    assert len(data_rows) == 5
+
+    emitted_qids = {row["question_id"] for row in data_rows}
+    assert not (graph_off_qids & emitted_qids)
+    assert emitted_qids == set(qids[5:10])
+
+
