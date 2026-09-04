@@ -6,8 +6,8 @@
 | Parameter | Value |
 |---|---|
 | **Corpus** | `multihop_rag` |
-| **Run Date** | `2026-09-04T13:22:51.810113+00:00` |
-| **Commit SHA** | `05302e6e146f722d96c101ec2b2c132123bd1812` |
+| **Run Date** | `2026-09-04T21:26:02.092213+00:00` |
+| **Commit SHA** | `53188d3072c1a6479396fad542b37b21f5ec820d` |
 | **Generation Model** | `deepseek/deepseek-v4-flash-0731` |
 | **Embedding Model** | `voyageai/voyage-4-large` |
 | **Judge Model** | `meta-llama/llama-3.3-70b-instruct` |
@@ -48,11 +48,11 @@
 
 
 
-| `answer_faithfulness` | ok | **4.88** | 16 | judged_n=16.0, judge_errors=0.0, skipped_no_evidence=484.0 |
+| `answer_faithfulness` | ok | **4.88** | 16 | judged_n=16.0, judge_errors=0.0, skipped_no_evidence=484.0, calibration_exact_match=1.0, calibration_mad=0.0 |
 
 
 
-| `answer_groundedness` | ok | **4.62** | 16 | judged_n=16.0, judge_errors=0.0, skipped_no_evidence=484.0 |
+| `answer_groundedness` | ok | **4.62** | 16 | judged_n=16.0, judge_errors=0.0, skipped_no_evidence=484.0, calibration_exact_match=0.9375, calibration_mad=0.25 |
 
 
 
