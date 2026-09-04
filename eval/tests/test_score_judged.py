@@ -383,14 +383,28 @@ def test_calibration_blank_human_score_fails_loud(tmp_path: Path) -> None:
 def test_worksheet_rows_are_drawn_from_the_judged_subset(
     httpx_mock: HTTPXMock, tmp_path: Path
 ) -> None:
-    """Proves worksheet rows are selected from the judged subset."""
+    """Proves worksheet rows are selected from judged subset and exclude uncited records."""
     qids = _setup_fixtures(tmp_path)
     doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
 
-    # Populate 30 primary arm records
-    for qid in qids[:30]:
+    # Populate 2 uncited records first in p_records
+    uncited_qids = {qids[0], qids[1]}
+    for qid in [qids[0], qids[1]]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Uncited answer for {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[],  # Empty citations -> skipped from judging
+        )
+        journal.append(rec)
+
+    # Populate 30 cited primary arm records
+    for qid in qids[2:32]:
         rec = RunRecord(
             corpus="multihop_rag",
             question_id=qid,
@@ -428,11 +442,11 @@ def test_worksheet_rows_are_drawn_from_the_judged_subset(
     client = httpx.Client()
     worksheet_path = tmp_path / "calibration_ws.jsonl"
 
-    # Run score with sample=5 out of 30 records
+    # Run score with full primary arm population
     score_run(
         run_dir=tmp_path,
         no_judge=False,
-        sample=5,
+        sample=None,
         emit_calibration_worksheet=worksheet_path,
         api_key="test-key",
         client=client,
@@ -454,10 +468,97 @@ def test_worksheet_rows_are_drawn_from_the_judged_subset(
     data_rows = ws_lines[1:]
 
     assert header["type"] == "header"
-    assert len(data_rows) == 5
-    assert len(data_rows) <= 20
+    assert len(data_rows) == 20
 
-    # Every data row's cache_key must be present in judge_cache.json
+    # Emitted worksheet must never contain uncited records
+    emitted_qids = {row["question_id"] for row in data_rows}
+    assert not (uncited_qids & emitted_qids)
+
+    # Every data row's cache_key must be present in judge_cache.json with a non-null verdict
     for row in data_rows:
         assert row["cache_key"] in cache_data
+        assert cache_data[row["cache_key"]]["verdict"] is not None
+
+
+def test_worksheet_excludes_judge_errored_records(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves records with judge errors (verdict: null) are excluded from calibration worksheet."""
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    qid = qids[0]
+    rec = RunRecord(
+        corpus="multihop_rag",
+        question_id=qid,
+        graph_arm="graph-on",
+        outcome="success",
+        answer=f"Answer for {qid}",
+        index_generation="gen-test-1",
+        structured_citations=[
+            StructuredCitation(
+                chunk_id="c1",
+                document_id=doc_id,
+                excerpt="Evidence text",
+                rank=1,
+            )
+        ],
+    )
+    journal.append(rec)
+
+    # Mock two malformed responses to exhaust the single re-ask
+    bad_payload_1 = json.dumps({
+        "groundedness": 6,
+        "faithfulness": 4,
+        "unsupported_claims": [],
+        "rationale": "Score 6 is invalid",
+    })
+    bad_payload_2 = json.dumps({
+        "groundedness": 0,
+        "faithfulness": 4,
+        "unsupported_claims": [],
+        "rationale": "Score 0 is invalid",
+    })
+    httpx_mock.add_response(
+        json={"choices": [{"message": {"content": bad_payload_1}}]}
+    )
+    httpx_mock.add_response(
+        json={"choices": [{"message": {"content": bad_payload_2}}]}
+    )
+
+    client = httpx.Client()
+    worksheet_path = tmp_path / "calibration_ws.jsonl"
+
+    score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=None,
+        emit_calibration_worksheet=worksheet_path,
+        api_key="test-key",
+        client=client,
+    )
+
+    cache_path = tmp_path / "judge_cache.json"
+    assert cache_path.is_file()
+    with open(cache_path, encoding="utf-8") as f:
+        cache_data = json.load(f)
+
+    # Entry exists in judge_cache.json with verdict=None and error recorded
+    assert len(cache_data) == 1
+    cache_entry = next(iter(cache_data.values()))
+    assert cache_entry["verdict"] is None
+    assert cache_entry["error"] is not None
+
+    # Emitted worksheet must not contain the errored record
+    assert worksheet_path.is_file()
+    with open(worksheet_path, encoding="utf-8") as f:
+        ws_lines = [json.loads(line_text) for line_text in f if line_text.strip()]
+
+    header = ws_lines[0]
+    data_rows = ws_lines[1:]
+    assert header["type"] == "header"
+    assert len(data_rows) == 0
+
 

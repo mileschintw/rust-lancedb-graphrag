@@ -463,9 +463,28 @@ def score_run(
 
         # Select up to 20 representative items across query types
         if not no_judge and judged_qids:
-            selected_records = [
-                r for r in p_records if r.question_id in judged_qids
-            ][:20]
+            selected_records = []
+            for r in p_records:
+                if r.question_id not in judged_qids:
+                    continue
+                gold = gold_map.get(r.question_id)
+                if not gold:
+                    continue
+                if not r.structured_citations:
+                    continue
+                ev = truncate_evidence(r.structured_citations)
+                k = cache_key(
+                    prompt_version=config.judge_prompt_version,
+                    judge_model=config.judge_model,
+                    question=gold.question,
+                    answer=r.answer or "",
+                    post_truncation_evidence=ev,
+                )
+                entry = cache.get(k)
+                if entry is not None and entry.verdict is not None:
+                    selected_records.append(r)
+                if len(selected_records) == 20:
+                    break
         else:
             selected_records = p_records[:20]
 
