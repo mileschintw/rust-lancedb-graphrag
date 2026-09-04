@@ -4,15 +4,15 @@ milestone: v1.0
 current_phase: 06.3
 current_phase_name: python-evaluation-harness-benchmark-corpora-and-recorded-run
 status: executing
-stopped_at: "Plan 06.3-11 executed — calibration worksheet selector fixed, judge cache expanded to 16, calibration pending"
-last_updated: "2026-09-04T14:00:00.000Z"
+stopped_at: Plan 06.3-11 executed — calibration worksheet selector fixed, judge cache expanded to 16, calibration pending
+last_updated: "2026-09-04T22:26:35.356Z"
 last_activity: 2026-09-04
-state_head: a72dc27
+state_head: 8bac79851191b43e8a0f283805aa144e90134338
 progress:
-  total_phases: 11
+  total_phases: 12
   completed_phases: 6
-  total_plans: 133
-  completed_plans: 134
+  total_plans: 132
+  completed_plans: 132
 milestone_name: milestone
 current_plan: 11
 ---
@@ -326,3 +326,4 @@ current_plan: 11
 - Phase 6.2 inserted after Phase 6: OTel traces/metrics/logs (OBS-01), split from Phase 6 per 06-CONTEXT.md D-77
 - Phase 6.3 inserted after Phase 6: Evaluation harness (OBS-02, OBS-04), split from Phase 6 per 06-CONTEXT.md D-77
 - Phase 6.4 inserted after Phase 6: Docs suite + v1 closure (OBS-03), split from Phase 6 per 06-CONTEXT.md D-77
+- Phase 06.3.1 inserted after Phase 6.3: Fix retrieval citation collapse (run_traceability=0.034) and refactor graph_ablation_delta to a per-question paired comparison, surfaced by Phase 6.3's evaluation run; must land before Phase 6.4 documents eval results for v1 milestone closure (URGENT)

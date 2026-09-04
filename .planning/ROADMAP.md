@@ -680,13 +680,25 @@ Plans:
 
 - [ ] 06.3-11-PLAN.md — Gap closure: fix the calibration-worksheet selector to require a cache-resolvable, non-null judge verdict (not merely judged-sample membership), re-judge the full primary arm to reach the citation-rate ceiling, and have a human hand-score and commit the corrected worksheet — closing 06.3-VERIFICATION.md's sole remaining gap, Truth 10 (D-50, D-52, D-53).
 
+### Phase 06.3.1: Fix retrieval citation collapse and graph ablation measurement fidelity (INSERTED)
+
+**Goal:** Fix the fail-open get_or_create_table fallback in engine/src/db/mod.rs, root-cause the near-zero structured-citation rate (run_traceability=0.034) surfaced by Phase 6.3's recorded MultiHop-RAG run, refactor graph_ablation_delta to a per-question paired comparison instead of two independently-averaged per-arm lists, and re-run the full two-arm drive with a corrected, trustworthy graph-ablation signal — before Phase 6.4 documents evaluation results for v1 milestone closure.
+**Requirements**: TBD (confirm during planning whether this cites OBS-02 as an evaluation-fidelity fix, or stays requirement-less as an internal-quality phase)
+**Depends on:** Phase 6.3
+**Canonical refs:** `.planning/phases/06.3-python-evaluation-harness-benchmark-corpora-and-recorded-run/06.3-VERIFICATION.md` (Known Issue Outside Phase Scope) and `06.3-REVIEW.md` (finding on get_or_create_table) — both independently flagged this defect and carried it forward as out-of-scope for 6.3.
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.3.1 to break down; proposed shape: (1) fix get_or_create_table to fail closed on every open_table error except lancedb::Error::TableNotFound, with a regression test, applied at the shared function backing all 5 tables; (2) root-cause the citation collapse via engine logs if retained + a small ~20-question citation-emission test against the current model/prompt, writing a short root-cause doc; (3) refactor graph_ablation_delta to pair recall by question_id across arms rather than averaging two independently-scoped lists; (4) re-run the small-scale citation check against the Task-1 fix before committing to the full paid 500-question x 2-arm re-drive)
+
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
 **Goal:** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone
 **Mode:** mvp
 **Requirements:** OBS-03
-**Depends on:** Phase 6
-**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record.
+**Depends on:** Phase 6, Phase 06.3.1
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phase 06.3.1 (inserted between 6.3 and 6.4) fixes the retrieval-citation defect surfaced by Phase 6.3's evaluation run — this phase's evaluation-methodology and eval-results documentation must reflect 06.3.1's corrected run, not the original 2026-09-03 one.
 **Success Criteria:**
 
 1. The README stays the readable front door (story, architecture sketch, quickstart, headline results, links); `docs/` gains a design narrative (alternatives-considered, linking ADRs), an observability walkthrough following one real query end to end, and an evaluation methodology + results page — each written after the implementation it documents (D-66, D-67, D-72, D-73).
