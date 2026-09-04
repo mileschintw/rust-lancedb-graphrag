@@ -23,6 +23,7 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - ✓ Add lightweight checkpoints or snapshots for workflow state during development and debugging. — Phase 05 (PostgreSQL-backed `workflow_checkpoints`; FIFO drain and cancellation atomicity proven against live Postgres)
 - ✓ Support degraded mode when graph extraction or one retrieval path fails, while still returning a useful vector/BM25-backed answer when possible. — Phase 06 (RAG-03: model-only opt-in with explicit notice, per-path `RETRIEVAL_DEGRADED`, citation repair with `CITATION_REPAIRED`/`CITATION_DROPPED` and basis downgrade, table-driven bad-input matrix, `GRAPH_UNAVAILABLE` on both silent-degrade paths — 11/11 must-haves verified, 06-VERIFICATION.md)
 - ✓ Add OpenTelemetry-compatible tracing, metrics, and structured logs across Go, gRPC, Rust nodes, retrieval, graph queries, and LLM calls with Grafana visualization. — Phase 06.2
+- ✓ Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval recall, context precision, groundedness, and faithfulness. — Phase 06.3
 
 ### Active
 - [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
@@ -32,7 +33,6 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - [ ] Persist chunks and metadata in LanceDB as the local-first vector/graph store.
   - *Port:* Define separate `nodes` and `edges` tables with nullable `summary`, `summary_vector`, and `unsummarized_refs` columns.
 - [ ] Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
-- [ ] Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval recall, context precision, groundedness, and faithfulness.
 - [ ] Provide a local development path with `go run`, `cargo run`, and Docker Compose for PostgreSQL/Jaeger and optional local LLM fallback.
 - [ ] Provide a README/design narrative that explains the architecture, alternatives considered, custom-vs-existing-tool choices, and how to run/evaluate the system.
 
@@ -93,6 +93,8 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | Grafana Loki derived fields mapped via `matcherType: label` / `matcherRegex: trace_id` for bidirectional trace<->log correlation | Standardized on structured metadata labels for OTel trace_id linkage rather than body regex | ✓ Shipped, Phase 06.2 (Plan 10) |
 | Typed Go dashboard generator using `histogram_quantile` for duration metrics | Ensured duration dashboard panels represent latency distribution rather than query throughput | ✓ Shipped, Phase 06.2 (Plan 11) |
 | Rate-limited exporter diagnostic suppression on Collector outage | Installed custom error handlers in Go and Rust to prevent unbounded console log spam during backend outages while preserving application availability | ✓ Shipped, Phase 06.2 (Plan 12) |
+| Isolated evaluation schema via dedicated Atlas environment and store paths | `LANCET_ENV=eval` protects production/dev store integrity with zero risk of database clobbering | ✓ Shipped, Phase 06.3 (Plan 04) |
+| Calibration worksheet candidate pool strictly filtered by cached non-null judge verdicts | Ensures human scoring worksheets only contain rows with matching automated judge evaluations | ✓ Shipped, Phase 06.3 (Plan 11) |
 
 ## Evolution
 
@@ -110,6 +112,7 @@ This document evolves at phase transitions and milestone boundaries.
 2. Core Value check — still the right priority?
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
+5. Update Roadmap status
 
 ---
-*Last updated: 2026-08-28 after Phase 06.2*
+*Last updated: 2026-09-04 after Phase 06.3*
