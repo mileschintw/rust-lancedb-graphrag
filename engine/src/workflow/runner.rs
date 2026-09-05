@@ -13,7 +13,7 @@ use super::{
     node::{Node, NodeError, NodeKind},
     WorkflowContext, WorkflowDependencies,
 };
-use crate::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, NoticeCode, WorkflowEvent};
+use crate::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, NoticeCode, NoticeSeverity, WorkflowEvent};
 
 const MAX_PENDING_CHECKPOINTS: usize = 32;
 
@@ -465,6 +465,13 @@ impl WorkflowRunner {
                 }
             }
             Err(err) => {
+                if kind == NodeKind::RetrieveHybrid && err.kind != NodeErrorKind::Cancelled {
+                    ctx.add_notice(super::notice(
+                        NoticeCode::RetrievalFailed,
+                        format!("Retrieval node failed ({:?}): {}", err.kind, err.message),
+                        NoticeSeverity::Error,
+                    ));
+                }
                 let _ = sink
                     .send_event_or_cancel(
                         events::node_failed(name, err.kind, &err.message, err.retryable),
@@ -628,6 +635,8 @@ impl WorkflowRunner {
             prompt_tokens: ctx.prompt_tokens,
             completion_tokens: ctx.completion_tokens,
             degraded_mode,
+            // Plan 06.3.1-04 owns replacing this inert stub with a real value.
+            graph_prompt_fact_count: 0,
         };
 
         let current_span = tracing::Span::current();

@@ -5501,3 +5501,77 @@ func TestGatewaySpanRecordsDegradedModeFromTerminalEvent(t *testing.T) {
 	}
 }
 
+// TestRetrievalFailedNoticeRendersAsString pins that NOTICE_CODE_RETRIEVAL_FAILED
+// renders as its string name through the gateway and root span attributes (06.3.1-01 Task 3).
+func TestRetrievalFailedNoticeRendersAsString(t *testing.T) {
+	// (a) The regeneration gate: against a stale vendored tree without tag 19,
+	// .String() returns "19", and TrimPrefix leaves "19", failing this equality.
+	derived := strings.TrimPrefix(pb.NoticeCode_NOTICE_CODE_RETRIEVAL_FAILED.String(), "NOTICE_CODE_")
+	if derived != "RETRIEVAL_FAILED" {
+		t.Fatalf("proto regeneration gate failed: got %q, want 'RETRIEVAL_FAILED'", derived)
+	}
+
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr), sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	defer func() { _ = tp.Shutdown(t.Context()) }()
+
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			events := []*pb.WorkflowEvent{
+				{
+					Event: &pb.WorkflowEvent_WorkflowCompleted{
+						WorkflowCompleted: &pb.WorkflowCompletedEvent{
+							Success:      false,
+							ErrorKind:    pb.NodeErrorKind_NODE_ERROR_KIND_TIMEOUT,
+							ErrorMessage: "RetrieveHybrid timeout",
+							Notices: []*pb.Notice{
+								{
+									Code:      derived,
+									Message:   "Retrieval failed",
+									Severity:  pb.NoticeSeverity_NOTICE_SEVERITY_ERROR,
+									TypedCode: pb.NoticeCode_NOTICE_CODE_RETRIEVAL_FAILED,
+								},
+							},
+						},
+					},
+				},
+			}
+			return &fakeQueryRAGStream{events: events}, nil
+		},
+	}
+
+	appInstance := app{
+		store:      &fakeStore{},
+		engine:     engine,
+		logger:     zap.NewNop(),
+		dispatcher: NewCheckpointDispatcherWithLogger(NewPostgresCheckpointSink(nil, zap.NewNop()), zap.NewNop()),
+	}
+
+	otelHandler := otelhttp.NewHandler(appInstance.routes(), "lancet-gateway", otelhttp.WithTracerProvider(tp))
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(`{"query":"test","session_id":"00000000-0000-4000-8000-000000000001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	otelHandler.ServeHTTP(rec, req)
+
+	// (b) Assert root span contains derived
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	span := spans[0]
+	val, ok := findSpanAttr(span.Attributes(), "lancet.notice_codes")
+	if !ok {
+		t.Fatalf("missing lancet.notice_codes attribute on root span")
+	}
+	codes := val.AsStringSlice()
+	if len(codes) != 1 || codes[0] != derived {
+		t.Errorf("notice_codes attribute = %v, want [%q]", codes, derived)
+	}
+
+	// (c) Assert response body contains derived
+	body := rec.Body.String()
+	if !strings.Contains(body, derived) {
+		t.Errorf("response body does not contain derived code %q: %s", derived, body)
+	}
+}
+

@@ -6719,3 +6719,159 @@ async fn workflow_prompt_packing_truncation_drops_citation_to_truncated_block() 
         .iter()
         .any(|n| n.typed_code == NoticeCode::CitationDropped as i32));
 }
+
+/// 06.3.1-01 Task 2: RetrieveHybrid node failure emits NOTICE_CODE_RETRIEVAL_FAILED.
+#[tokio::test]
+async fn workflow_phase5_retrieve_failure_emits_retrieval_failed_notice() {
+    tokio::time::pause();
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-ret-fail".to_string(),
+        "sess-ret-fail".to_string(),
+    );
+
+    let req = test_query_request("Retrieve failure test", "sess-ret-fail");
+    let ctx = WorkflowContext::new(
+        "sess-ret-fail".to_string(),
+        "trace-ret-fail".to_string(),
+        &req,
+    );
+
+    let fake_dense_stalled = Arc::new(FakeDenseRetrievalPort::stall());
+    let mut runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense_stalled),
+        None,
+        None,
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::new());
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+
+    tokio::time::advance(Duration::from_millis(10000)).await;
+    handle.await.unwrap();
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let completed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event");
+
+    assert!(!completed_event.success);
+    assert_eq!(completed_event.error_kind, NodeErrorKind::Timeout as i32);
+    assert!(
+        completed_event
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::RetrievalFailed as i32),
+        "RETRIEVAL_FAILED notice must be present on RetrieveHybrid failure"
+    );
+}
+
+/// 06.3.1-01 Task 2: Completed retrieval with zero evidence emits NO_EVIDENCE and NOT RETRIEVAL_FAILED.
+#[tokio::test]
+async fn workflow_phase5_zero_evidence_does_not_emit_retrieval_failed_notice() {
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-zero-ev".to_string(),
+        "sess-zero-ev".to_string(),
+    );
+
+    let req = test_query_request("Zero evidence test", "sess-zero-ev");
+    let ctx = WorkflowContext::new(
+        "sess-zero-ev".to_string(),
+        "trace-zero-ev".to_string(),
+        &req,
+    );
+
+    let fake_dense_empty = Arc::new(FakeDenseRetrievalPort::success(vec![]));
+    let mut runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(RetrieveHybridNode::new(
+        Some(fake_dense_empty),
+        None,
+        None,
+        RetrievalSettings::default(),
+    ));
+
+    runner.run_workflow(ctx, cancel, sink).await;
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let completed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event");
+
+    assert!(
+        completed_event
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::NoEvidence as i32),
+        "NO_EVIDENCE notice must be present on empty retrieval completion"
+    );
+    assert!(
+        !completed_event
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::RetrievalFailed as i32),
+        "RETRIEVAL_FAILED notice must NOT be present when retrieval completed successfully with zero results"
+    );
+}
+
+/// 06.3.1-01 Task 2: derive_degraded_mode returns true for NoticeCode::RetrievalFailed regardless of position.
+#[test]
+fn derive_degraded_mode_includes_retrieval_failed_regardless_of_position() {
+    let failed_notice = engine::workflow::notice(
+        NoticeCode::RetrievalFailed,
+        "Retrieval failed",
+        NoticeSeverity::Error,
+    );
+    let other_notice = engine::workflow::notice(
+        NoticeCode::NoEvidence,
+        "No evidence",
+        NoticeSeverity::Info,
+    );
+
+    // Index 0
+    let notices_first = vec![failed_notice.clone(), other_notice.clone()];
+    assert!(
+        engine::workflow::derive_degraded_mode(&notices_first, engine::pb::lancet::v1::AnswerBasis::Retrieval),
+        "derive_degraded_mode must be true with RetrievalFailed at index 0"
+    );
+
+    // Last index
+    let notices_last = vec![other_notice, failed_notice];
+    assert!(
+        engine::workflow::derive_degraded_mode(&notices_last, engine::pb::lancet::v1::AnswerBasis::Retrieval),
+        "derive_degraded_mode must be true with RetrievalFailed at last index"
+    );
+}

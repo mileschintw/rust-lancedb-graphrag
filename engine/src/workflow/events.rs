@@ -371,5 +371,7 @@ pub fn workflow_completed(
         final_response,
         notices,
         metadata,
+        // Plan 06.3.1-04 owns replacing this inert stub with a real value.
+        partial_snapshot: None,
     })
 }

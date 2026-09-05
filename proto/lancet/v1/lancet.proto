@@ -91,6 +91,9 @@ enum NoticeCode {
   NOTICE_CODE_RETRIEVAL_DEGRADED_BM25 = 16;
   reserved 17; // Tag 17 reserved: in-fusion graph retrieval is unreachable (hybrid retrieval holds no graph port)
   NOTICE_CODE_GRAPH_ABLATION = 18;
+  // Tag 19 (D-28): emitted when RetrieveHybrid fails rather than completes.
+  // The "completed but matched nothing" case keeps tag 1 (NOTICE_CODE_NO_EVIDENCE).
+  NOTICE_CODE_RETRIEVAL_FAILED = 19;
 
   // ── RESERVED FOR PHASE 6.1 (D-24/D-25), declared HERE on purpose ──────────
   NOTICE_CODE_INDEX_REBUILD_FAILED = 20;
@@ -116,6 +119,7 @@ message Notice {
   string code = 1;
   string message = 2;
   NoticeSeverity severity = 3;
+  // D-76: typed counterpart to `code`.
   NoticeCode typed_code = 4;
 }
 
@@ -242,6 +246,9 @@ message WorkflowMetadata {
   uint32 completion_tokens = 9;
   // DERIVED, never independently set — see the derivation rule.
   bool degraded_mode = 10;
+  // D-06: counts graph-derived facts that reached the assembled prompt (influence),
+  // which is distinct from the presence counters at tags 6 and 7.
+  uint32 graph_prompt_fact_count = 11;
 }
 
 message WorkflowCompletedEvent {
@@ -252,6 +259,9 @@ message WorkflowCompletedEvent {
   QueryRAGResponse final_response = 5;
   repeated Notice notices = 6;
   WorkflowMetadata metadata = 7; // NEW (D-41)
+  // D-33: carries retrieval provenance on a terminal where final_response is absent,
+  // so a failed query is still attributable to an index generation.
+  RetrievalSnapshot partial_snapshot = 8;
 }
 
 message WorkflowEvent {

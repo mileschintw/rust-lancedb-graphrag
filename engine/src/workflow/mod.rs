@@ -252,6 +252,7 @@ pub fn derive_degraded_mode(
                 | NoticeCode::GraphTimeout
                 | NoticeCode::RetrievalDegradedDense
                 | NoticeCode::RetrievalDegradedBm25
+                | NoticeCode::RetrievalFailed
                 | NoticeCode::CitationDropped
                 | NoticeCode::ModelOnly
                 | NoticeCode::BasisReconciled

@@ -82,6 +82,7 @@ pub struct Notice {
     pub message: ::prost::alloc::string::String,
     #[prost(enumeration="NoticeSeverity", tag="3")]
     pub severity: i32,
+    /// D-76: typed counterpart to `code`.
     #[prost(enumeration="NoticeCode", tag="4")]
     pub typed_code: i32,
 }
@@ -262,6 +263,10 @@ pub struct WorkflowMetadata {
     /// DERIVED, never independently set — see the derivation rule.
     #[prost(bool, tag="10")]
     pub degraded_mode: bool,
+    /// D-06: counts graph-derived facts that reached the assembled prompt (influence),
+    /// which is distinct from the presence counters at tags 6 and 7.
+    #[prost(uint32, tag="11")]
+    pub graph_prompt_fact_count: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkflowCompletedEvent {
@@ -280,6 +285,10 @@ pub struct WorkflowCompletedEvent {
     /// NEW (D-41)
     #[prost(message, optional, tag="7")]
     pub metadata: ::core::option::Option<WorkflowMetadata>,
+    /// D-33: carries retrieval provenance on a terminal where final_response is absent,
+    /// so a failed query is still attributable to an index generation.
+    #[prost(message, optional, tag="8")]
+    pub partial_snapshot: ::core::option::Option<RetrievalSnapshot>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkflowEvent {
@@ -338,6 +347,9 @@ pub enum NoticeCode {
     BasisReconciled = 15,
     RetrievalDegradedBm25 = 16,
     GraphAblation = 18,
+    /// Tag 19 (D-28): emitted when RetrieveHybrid fails rather than completes.
+    /// The "completed but matched nothing" case keeps tag 1 (NOTICE_CODE_NO_EVIDENCE).
+    RetrievalFailed = 19,
     /// ── RESERVED FOR PHASE 6.1 (D-24/D-25), declared HERE on purpose ──────────
     IndexRebuildFailed = 20,
     IndexStale = 21,
@@ -364,6 +376,7 @@ impl NoticeCode {
             Self::BasisReconciled => "NOTICE_CODE_BASIS_RECONCILED",
             Self::RetrievalDegradedBm25 => "NOTICE_CODE_RETRIEVAL_DEGRADED_BM25",
             Self::GraphAblation => "NOTICE_CODE_GRAPH_ABLATION",
+            Self::RetrievalFailed => "NOTICE_CODE_RETRIEVAL_FAILED",
             Self::IndexRebuildFailed => "NOTICE_CODE_INDEX_REBUILD_FAILED",
             Self::IndexStale => "NOTICE_CODE_INDEX_STALE",
             Self::IndexGenerationMismatch => "NOTICE_CODE_INDEX_GENERATION_MISMATCH",
@@ -386,6 +399,7 @@ impl NoticeCode {
             "NOTICE_CODE_BASIS_RECONCILED" => Some(Self::BasisReconciled),
             "NOTICE_CODE_RETRIEVAL_DEGRADED_BM25" => Some(Self::RetrievalDegradedBm25),
             "NOTICE_CODE_GRAPH_ABLATION" => Some(Self::GraphAblation),
+            "NOTICE_CODE_RETRIEVAL_FAILED" => Some(Self::RetrievalFailed),
             "NOTICE_CODE_INDEX_REBUILD_FAILED" => Some(Self::IndexRebuildFailed),
             "NOTICE_CODE_INDEX_STALE" => Some(Self::IndexStale),
             "NOTICE_CODE_INDEX_GENERATION_MISMATCH" => Some(Self::IndexGenerationMismatch),
