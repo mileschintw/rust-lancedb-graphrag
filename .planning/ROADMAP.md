@@ -755,7 +755,7 @@ Plans:
 
 - [ ] 06.3.2-04-PLAN.md — Replace the ablation measurement that produced the phase's worst number: dedup per `(question_id, arm)`, pair per question, bootstrap deterministically, stratify by gold `question_type`, and report latency and prompt-token cost alongside quality (SC-4, SC-5, SC-6, SC-10 part; D-37–D-43)
 
-**Wave 4** *(blocked on 06.3.2-04)*
+**Wave 4** *(blocked on 06.3.2-03 and 06.3.2-04)*
 
 - [ ] 06.3.2-05-PLAN.md — Close the four open `06.3-REVIEW.md` findings (CR-01, WR-02, WR-03, WR-04 + IN-02) and finish the report surface so the run reads honestly end to end (SC-10; D-36, D-02, D-34, D-35)
 
