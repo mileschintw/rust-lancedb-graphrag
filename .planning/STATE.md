@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.1
-current_phase_name: fix-retrieval-citation-collapse-and-graph-ablation-measureme
+current_phase_name: Fix retrieval citation collapse and graph ablation measurement fidelity (INSERTED)
 status: executing
 stopped_at: "Phase 06.3.1 split into siblings 06.3.1-06.3.4 (OBS-05 registered); next: /gsd-ai-integration-phase for the family, then plan each sibling with context_path injected by hand"
-last_updated: "2026-09-05T18:25:30.051Z"
+last_updated: "2026-09-05T19:06:30.538Z"
 last_activity: 2026-09-05
-state_head: 8a629fa329072fa8685a39cadb3528fa3401ac96
+state_head: db5bd653f795fec6db332ec930ca93266c7c7b02
 progress:
   total_phases: 15
   completed_phases: 7
@@ -141,7 +141,7 @@ current_plan: 11
 ## Active Phase
 
 - **Phase:** 06.3.1 — Fix retrieval citation collapse and graph ablation measurement fidelity
-- **Status:** Ready to execute
+- **Status:** Executing Phase 06.3.1
 - **Total Plans in Phase:** 4
 - **Completed Plans in Phase:** 8/8 (executed; phase-level gates run 2026-08-29/30, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (6/9 must-haves)
