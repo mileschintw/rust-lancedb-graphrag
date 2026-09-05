@@ -24,11 +24,11 @@ from lancet_eval.dimensions import (
     DimensionResult,
     make_bm25_yield,
     make_faithfulness_result,
-    make_graph_ablation_delta,
     make_graph_influence_rate,
     make_graph_latency_ms,
     make_graph_presence_rate,
     make_groundedness_result,
+    make_paired_ablation_delta,
     make_retrieve_latency_ms,
     make_unusable_record_rate,
     make_vector_yield,
@@ -50,6 +50,11 @@ from lancet_eval.metrics import (
     recall_at_k,
     squad_em,
     squad_f1,
+)
+from lancet_eval.pairing import (
+    compute_paired_delta,
+    deduplicate_by_arm,
+    form_pairs,
 )
 from lancet_eval.report import (
     CorpusReport,
@@ -90,8 +95,7 @@ def _check_provenance(record: RunRecord) -> bool:
         for n in record.notices
     )
     has_unavailable = any(
-        n.typed_code == NOTICE_CODE_GRAPH_UNAVAILABLE
-        or n.code == "GRAPH_UNAVAILABLE"
+        n.typed_code == NOTICE_CODE_GRAPH_UNAVAILABLE or n.code == "GRAPH_UNAVAILABLE"
         for n in record.notices
     )
     return has_ablation and not has_unavailable
@@ -147,6 +151,9 @@ def score_run(
 
     if not records:
         raise ScoreError(f"Journal {journal_path} contains no evaluation records")
+
+    # WR-02: Deduplicate records journal-wide per (question_id, graph_arm)
+    records, collapsed_records_n = deduplicate_by_arm(records)
 
     corpus_name = header_corpus or records[0].corpus
 
@@ -228,9 +235,7 @@ def score_run(
                 chunks = rec.snapshot.retrieved_chunks
                 if not gold.is_null:
                     # Recall@4
-                    r_out = recall_at_k(
-                        gold, chunks, k=4, chunk_size=config.chunk_size
-                    )
+                    r_out = recall_at_k(gold, chunks, k=4, chunk_size=config.chunk_size)
                     if r_out.status == "ok" and r_out.score is not None:
                         recalls.append(r_out.score)
                     # Precision@4
@@ -242,9 +247,7 @@ def score_run(
                     if m_out.status == "ok" and m_out.score is not None:
                         mrrs.append(m_out.score)
                     # nDCG@10
-                    n_out = ndcg_at_k(
-                        gold, chunks, k=10, chunk_size=config.chunk_size
-                    )
+                    n_out = ndcg_at_k(gold, chunks, k=10, chunk_size=config.chunk_size)
                     if n_out.status == "ok" and n_out.score is not None:
                         ndcgs.append(n_out.score)
 
@@ -259,9 +262,7 @@ def score_run(
 
             # Abstention on unanswerable
             if gold.is_null:
-                snap_chunks = (
-                    rec.snapshot.retrieved_chunks if rec.snapshot else None
-                )
+                snap_chunks = rec.snapshot.retrieved_chunks if rec.snapshot else None
                 abs_out = abstention_rate(gold, rec.answer or "", snap_chunks)
                 if abs_out.status == "ok" and abs_out.score is not None:
                     abstentions.append(abs_out.score)
@@ -280,8 +281,7 @@ def score_run(
             "f1s": f1s,
             "abstentions": abstentions,
             "usable_records": [
-                r for r in usable_records
-                if arm != "graph-off" or has_arm_provenance(r)
+                r for r in usable_records if arm != "graph-off" or has_arm_provenance(r)
             ],
         }
 
@@ -544,19 +544,17 @@ def score_run(
                 answer=r.answer or "",
                 post_truncation_evidence=ev,
             )
-            worksheet_rows.append(
-                {
-                    "question_id": r.question_id,
-                    "query_type": gold.question_type,
-                    "cache_key": k,
-                    "question": gold.question,
-                    "answer": r.answer or "",
-                    "evidence": ev,
-                    "human_groundedness": None,
-                    "human_faithfulness": None,
-                    "notes": "",
-                }
-            )
+            worksheet_rows.append({
+                "question_id": r.question_id,
+                "query_type": gold.question_type,
+                "cache_key": k,
+                "question": gold.question,
+                "answer": r.answer or "",
+                "evidence": ev,
+                "human_groundedness": None,
+                "human_faithfulness": None,
+                "notes": "",
+            })
 
         with open(out_ws_path, "w", encoding="utf-8", newline="\n") as f:
             for w_row in worksheet_rows:
@@ -568,7 +566,11 @@ def score_run(
     dimensions: list[DimensionResult] = []
 
     # 0. Integrity & path health dimensions
-    dimensions.append(make_unusable_record_rate(records=records))
+    dimensions.append(
+        make_unusable_record_rate(
+            records=records, collapsed_records_n=collapsed_records_n
+        )
+    )
 
     usable_primary_records = p_data.get("usable_records", [])
 
@@ -592,18 +594,10 @@ def score_run(
             retrieve_latencies=retrieve_latencies,
         )
     )
-    dimensions.append(
-        make_retrieve_latency_ms(records=usable_primary_records)
-    )
-    dimensions.append(
-        make_graph_presence_rate(records=usable_primary_records)
-    )
-    dimensions.append(
-        make_graph_influence_rate(records=usable_primary_records)
-    )
-    dimensions.append(
-        make_graph_latency_ms(records=usable_primary_records)
-    )
+    dimensions.append(make_retrieve_latency_ms(records=usable_primary_records))
+    dimensions.append(make_graph_presence_rate(records=usable_primary_records))
+    dimensions.append(make_graph_influence_rate(records=usable_primary_records))
+    dimensions.append(make_graph_latency_ms(records=usable_primary_records))
 
     # Helper for building mean score dimension
 
@@ -730,32 +724,181 @@ def score_run(
             )
         )
 
-    # 8. graph_ablation_delta
-    on_data = arm_metrics.get("graph-on", {"recalls": [], "errors": 0, "total": 0})
-    off_data = arm_metrics.get(
-        "graph-off", {"recalls": [], "errors": 0, "total": 0}
+    # 8. graph_ablation_delta (redefined paired difference of evidence coverage)
+    # Form pairs once from deduplicated records
+    join_res = form_pairs(records, gold_map)
+    pairs = join_res.pairs
+
+    # Distinct questions attempted in this journal across both arms
+    coverage_denom = join_res.total_distinct_questions
+    answerable_n = sum(1 for q in sampled_questions if not q.is_null)
+
+    # 8a. Evidence coverage (primary ablation delta)
+    def _score_evidence_coverage(rec: RunRecord, gold: Any) -> float | None:
+        if rec.snapshot is None:
+            return None
+        out = recall_at_k(
+            gold, rec.snapshot.retrieved_chunks, k=4, chunk_size=config.chunk_size
+        )
+        return out.score if out.status == "ok" else None
+
+    res_coverage = compute_paired_delta(
+        pairs,
+        _score_evidence_coverage,
+        coverage_denominator=coverage_denom,
+        answerable_count=answerable_n,
+        join_result=join_res,
+    )
+    dimensions.append(
+        make_paired_ablation_delta(
+            name="graph_ablation_delta",
+            paired_result=res_coverage,
+        )
     )
 
-    on_score = (
-        (sum(on_data["recalls"]) / len(on_data["recalls"]))
-        if on_data["recalls"]
-        else 0.0
+    # 8b. Exact Match delta
+    def _score_em(rec: RunRecord, gold: Any) -> float | None:
+        if rec.answer is None or gold.is_null:
+            return None
+        out = squad_em(gold, rec.answer)
+        return out.score if out.status == "ok" else None
+
+    res_em = compute_paired_delta(
+        pairs,
+        _score_em,
+        coverage_denominator=coverage_denom,
+        answerable_count=answerable_n,
     )
-    off_score = (
-        (sum(off_data["recalls"]) / len(off_data["recalls"]))
-        if off_data["recalls"]
-        else 0.0
+    dimensions.append(
+        make_paired_ablation_delta(
+            name="graph_ablation_delta_exact_match",
+            paired_result=res_em,
+        )
     )
 
-    ablation_dim = make_graph_ablation_delta(
-        graph_on_score=on_score,
-        graph_on_n=len(on_data["recalls"]),
-        graph_on_errors=on_data["errors"],
-        graph_off_score=off_score,
-        graph_off_n=len(off_data["recalls"]),
-        graph_off_errors=off_data["errors"],
+    # 8c. F1 delta
+    def _score_f1(rec: RunRecord, gold: Any) -> float | None:
+        if rec.answer is None or gold.is_null:
+            return None
+        out = squad_f1(gold, rec.answer)
+        return out.score if out.status == "ok" else None
+
+    res_f1 = compute_paired_delta(
+        pairs,
+        _score_f1,
+        coverage_denominator=coverage_denom,
+        answerable_count=answerable_n,
     )
-    dimensions.append(ablation_dim)
+    dimensions.append(
+        make_paired_ablation_delta(
+            name="graph_ablation_delta_f1",
+            paired_result=res_f1,
+        )
+    )
+
+    # 8d. Context Precision delta
+    def _score_cp(rec: RunRecord, gold: Any) -> float | None:
+        if rec.snapshot is None:
+            return None
+        out = context_precision_at_k(gold, rec.snapshot.retrieved_chunks, k=4)
+        return out.score if out.status == "ok" else None
+
+    res_cp = compute_paired_delta(
+        pairs,
+        _score_cp,
+        coverage_denominator=coverage_denom,
+        answerable_count=answerable_n,
+    )
+    dimensions.append(
+        make_paired_ablation_delta(
+            name="graph_ablation_delta_context_precision",
+            paired_result=res_cp,
+        )
+    )
+
+    # 8e. Ranking Quality (MRR@10) delta
+    def _score_mrr(rec: RunRecord, gold: Any) -> float | None:
+        if rec.snapshot is None:
+            return None
+        out = mrr_at_k(gold, rec.snapshot.retrieved_chunks, k=10)
+        return out.score if out.status == "ok" else None
+
+    res_mrr = compute_paired_delta(
+        pairs,
+        _score_mrr,
+        coverage_denominator=coverage_denom,
+        answerable_count=answerable_n,
+    )
+    dimensions.append(
+        make_paired_ablation_delta(
+            name="graph_ablation_delta_ranking_quality",
+            paired_result=res_mrr,
+        )
+    )
+
+    # 8f. Latency delta (duration_ms)
+    def _score_latency(rec: RunRecord, gold: Any) -> float | None:
+        return float(rec.duration_ms)
+
+    res_lat = compute_paired_delta(
+        pairs,
+        _score_latency,
+        coverage_denominator=coverage_denom,
+        answerable_count=answerable_n,
+    )
+    dimensions.append(
+        make_paired_ablation_delta(
+            name="graph_ablation_latency_delta",
+            paired_result=res_lat,
+        )
+    )
+
+    # 8g. Prompt token delta
+    has_any_tokens = any(
+        (
+            p.graph_on.workflow_meta is not None
+            and p.graph_on.workflow_meta.prompt_tokens > 0
+        )
+        or (
+            p.graph_off.workflow_meta is not None
+            and p.graph_off.workflow_meta.prompt_tokens > 0
+        )
+        for p in pairs
+    )
+    if pairs and not has_any_tokens:
+        dimensions.append(
+            DimensionResult(
+                name="graph_ablation_prompt_token_delta",
+                status="skipped",
+                reason="No records in join carry workflow_meta.prompt_tokens",
+                detail={
+                    "n_pairs": float(len(pairs)),
+                    "pairing_coverage": float(len(pairs) / coverage_denom)
+                    if coverage_denom > 0
+                    else 0.0,
+                },
+                n=0,
+            )
+        )
+    else:
+
+        def _score_tokens(rec: RunRecord, gold: Any) -> float | None:
+            if rec.workflow_meta is None:
+                return None
+            return float(rec.workflow_meta.prompt_tokens)
+
+        res_tokens = compute_paired_delta(
+            pairs,
+            _score_tokens,
+            coverage_denominator=coverage_denom,
+            answerable_count=answerable_n,
+        )
+        dimensions.append(
+            make_paired_ablation_delta(
+                name="graph_ablation_prompt_token_delta",
+                paired_result=res_tokens,
+            )
+        )
 
     # 9. abstention_on_unanswerable
     if p_data["abstentions"]:
@@ -788,9 +931,7 @@ def score_run(
     # 12. run_traceability
     total_recs = len(records)
     traced_count = sum(
-        1
-        for r in records
-        if r.session_id and r.correlation_id and r.index_generation
+        1 for r in records if r.session_id and r.correlation_id and r.index_generation
     )
     traceability_rate = (traced_count / total_recs) if total_recs > 0 else 0.0
 
@@ -810,9 +951,7 @@ def score_run(
     res_hash = compute_result_hash(dimensions)
     lock_hash = get_lock_hash()
     index_gen = sorted(distinct_gens)[0] if distinct_gens else "unknown-gen"
-    gen_model_name = (
-        _get_engine_generation_model() or "deepseek/deepseek-v4-flash-0731"
-    )
+    gen_model_name = _get_engine_generation_model() or "deepseek/deepseek-v4-flash-0731"
 
     # Find embedding model from first available snapshot or fallback
     emb_model = "voyageai/voyage-4-large"

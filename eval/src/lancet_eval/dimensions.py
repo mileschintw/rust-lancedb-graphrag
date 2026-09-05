@@ -62,6 +62,12 @@ REGISTERED_DIMENSIONS: list[str] = [
     "answer_faithfulness",
     "answer_groundedness",
     "graph_ablation_delta",
+    "graph_ablation_delta_exact_match",
+    "graph_ablation_delta_f1",
+    "graph_ablation_delta_context_precision",
+    "graph_ablation_delta_ranking_quality",
+    "graph_ablation_latency_delta",
+    "graph_ablation_prompt_token_delta",
     "abstention_on_unanswerable",
     "wire_contract_conformance",
     "community_summary_quality",
@@ -84,39 +90,59 @@ OBS_04_PLACEHOLDER = DimensionResult(
 register_dimension("community_summary_quality", lambda: OBS_04_PLACEHOLDER)
 
 
-def make_graph_ablation_delta(
+def make_paired_ablation_delta(
     *,
-    graph_on_score: float,
-    graph_on_n: int,
-    graph_on_errors: int,
-    graph_off_score: float,
-    graph_off_n: int,
-    graph_off_errors: int,
+    name: str = "graph_ablation_delta",
+    paired_result: Any,
+    seed: int = 42,
+    reason_on_empty: str = (
+        "No paired usable (graph-on, graph-off) records on same question_id"
+    ),
 ) -> DimensionResult:
-    """Build DimensionResult for graph ablation comparison."""
-    if graph_on_n == 0 and graph_off_n == 0:
+    """Build DimensionResult for a paired ablation delta over ArmPairs."""
+    res = paired_result
+    detail: dict[str, float] = {
+        "n_pairs": float(res.pair_count),
+        "pairing_coverage": float(res.pairing_coverage),
+        "n_answerable_in_sample": float(res.answerable_count),
+        "bootstrap_seed": float(seed),
+        "excluded_unscorable_pairs": float(res.excluded_count),
+    }
+    if res.join_result is not None:
+        jr = res.join_result
+        detail["single_arm_usable_drops"] = float(jr.single_arm_usable_drops)
+        detail["missing_arm_drops"] = float(jr.missing_arm_drops)
+        detail["null_gold_drops"] = float(jr.null_gold_drops)
+        detail["provenance_drops"] = float(jr.provenance_drops)
+
+    if res.ci_lower is not None:
+        detail["ci_lower"] = float(res.ci_lower)
+    if res.ci_upper is not None:
+        detail["ci_upper"] = float(res.ci_upper)
+    if res.is_degenerate:
+        detail["degenerate_ci"] = 1.0
+
+    # Stratified per-type deltas and counts
+    for qtype, diff_mean in res.strata.items():
+        detail[f"delta_{qtype}"] = float(diff_mean)
+        if qtype in res.strata_counts:
+            detail[f"n_pairs_{qtype}"] = float(res.strata_counts[qtype])
+
+    if res.pair_count == 0 or res.mean is None:
         return DimensionResult(
-            name="graph_ablation_delta",
+            name=name,
             status="error",
-            reason="No successfully evaluated records for graph-on or graph-off arms",
+            reason=reason_on_empty,
+            detail=detail,
             n=0,
         )
-    delta = graph_on_score - graph_off_score
-    detail = {
-        "graph_on_score": graph_on_score,
-        "graph_on_n": float(graph_on_n),
-        "graph_on_errors": float(graph_on_errors),
-        "graph_off_score": graph_off_score,
-        "graph_off_n": float(graph_off_n),
-        "graph_off_errors": float(graph_off_errors),
-        "delta": delta,
-    }
+
     return DimensionResult(
-        name="graph_ablation_delta",
+        name=name,
         status="ok",
-        score=delta,
+        score=res.mean,
         detail=detail,
-        n=graph_on_n + graph_off_n,
+        n=res.pair_count,
     )
 
 
@@ -223,6 +249,7 @@ def make_faithfulness_result(
 def make_unusable_record_rate(
     *,
     records: list[Any],
+    collapsed_records_n: int = 0,
 ) -> DimensionResult:
     """Build DimensionResult for unusable_record_rate scored over full journal."""
     from lancet_eval.stats import wilson_ci
@@ -245,6 +272,7 @@ def make_unusable_record_rate(
         "unusable_rate": float(p),
         "ci_lower": float(ci_lo),
         "ci_upper": float(ci_hi),
+        "collapsed_records_n": float(collapsed_records_n),
     }
     return DimensionResult(
         name="unusable_record_rate",
@@ -288,9 +316,7 @@ def make_vector_yield(
     )
     n_denom = len(records_with_meta)
     p, ci_lo, ci_hi = wilson_ci(positive_vector_n, n_denom)
-    mean_count = sum(
-        r.workflow_meta.vector_count for r in records_with_meta
-    ) / n_denom
+    mean_count = sum(r.workflow_meta.vector_count for r in records_with_meta) / n_denom
 
     detail: dict[str, float] = {
         "mean_count": float(mean_count),
@@ -347,9 +373,7 @@ def make_bm25_yield(
     )
     n_denom = len(records_with_meta)
     p, ci_lo, ci_hi = wilson_ci(positive_bm25_n, n_denom)
-    mean_count = sum(
-        r.workflow_meta.bm25_count for r in records_with_meta
-    ) / n_denom
+    mean_count = sum(r.workflow_meta.bm25_count for r in records_with_meta) / n_denom
 
     detail: dict[str, float] = {
         "mean_count": float(mean_count),
@@ -454,8 +478,7 @@ def make_graph_presence_rate(
     positive_graph_n = sum(
         1
         for r in records_with_meta
-        if r.workflow_meta.graph_node_count > 0
-        or r.workflow_meta.graph_edge_count > 0
+        if r.workflow_meta.graph_node_count > 0 or r.workflow_meta.graph_edge_count > 0
     )
     n_denom = len(records_with_meta)
     p, ci_lo, ci_hi = wilson_ci(positive_graph_n, n_denom)
@@ -550,9 +573,7 @@ def make_graph_influence_rate(
         )
 
     positive_influence_n = sum(
-        1
-        for r in records_with_influence
-        if r.workflow_meta.graph_prompt_fact_count > 0
+        1 for r in records_with_influence if r.workflow_meta.graph_prompt_fact_count > 0
     )
     n_denom = len(records_with_influence)
     p, ci_lo, ci_hi = wilson_ci(positive_influence_n, n_denom)
@@ -604,8 +625,7 @@ def make_graph_latency_ms(
             name="graph_latency_ms",
             status="skipped",
             reason=(
-                "All graph-attempting records missing ExtractGraphContext "
-                "node timing"
+                "All graph-attempting records missing ExtractGraphContext node timing"
             ),
             detail={"missing_timing_n": float(missing_timing_n)},
             n=len(attempting_records),
@@ -676,6 +696,3 @@ def make_wire_contract_conformance(
         detail=detail,
         n=n_journal,
     )
-
-
-

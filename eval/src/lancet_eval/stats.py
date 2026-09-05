@@ -50,3 +50,44 @@ def percentile(xs: list[float], q: float) -> float:
     frac = pos - lo
     return float(ys[lo] * (1.0 - frac) + ys[hi] * frac)
 
+
+def bootstrap_mean_ci(
+    diffs: list[float],
+    *,
+    seed: int = BOOTSTRAP_SEED,
+    b: int = BOOTSTRAP_B,
+) -> tuple[float, float, float]:
+    """Calculate nonparametric bootstrap percentile 95% CI of the mean.
+
+    Args:
+        diffs: list of per-question differences.
+        seed: PRNG seed for deterministic resampling.
+        b: number of bootstrap resamples (default 10,000).
+
+    Returns:
+        (mean, ci_lower, ci_upper)
+    Raises:
+        ValueError if diffs is empty.
+    """
+    import random
+    from statistics import mean
+
+    n = len(diffs)
+    if n == 0:
+        raise ValueError("n_pairs=0: diffs must not be empty")
+    mu = float(mean(diffs))
+    if n == 1:
+        return mu, mu, mu
+
+    rng = random.Random(seed)
+    means: list[float] = []
+    for _ in range(b):
+        acc = 0.0
+        for _ in range(n):
+            acc += diffs[rng.randrange(n)]
+        means.append(acc / n)
+    means.sort()
+    ci_lo = float(means[int(0.025 * b)])
+    ci_hi = float(means[min(b - 1, int(0.975 * b))])
+    return mu, ci_lo, ci_hi
+

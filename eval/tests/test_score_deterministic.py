@@ -189,14 +189,14 @@ def test_mixed_index_generations_fails_loud(tmp_path: Path) -> None:
 
     rec1 = RunRecord(
         corpus="multihop_rag",
-        question_id=qid,
+        question_id="qid-1",
         graph_arm="graph-on",
         outcome="success",
         index_generation="gen-1",
     )
     rec2 = RunRecord(
         corpus="multihop_rag",
-        question_id=qid,
+        question_id="qid-2",
         graph_arm="graph-on",
         outcome="success",
         index_generation="gen-2",
@@ -245,7 +245,7 @@ def test_unmapped_document_id_fails_loud(tmp_path: Path) -> None:
 
 
 def test_graph_ablation_provenance_failure(tmp_path: Path) -> None:
-    """Proves graph-off record missing ablation notice is recorded as error."""
+    """Proves graph-off record missing notice is dropped from join and errors."""
     _, qid = _setup_mock_corpus_files(tmp_path)
     j_path = tmp_path / "journal.jsonl"
     journal = Journal(j_path)
@@ -256,9 +256,7 @@ def test_graph_ablation_provenance_failure(tmp_path: Path) -> None:
         graph_arm="graph-on",
         outcome="success",
         index_generation="gen-test-1",
-        snapshot=RetrievalSnapshot(
-            index_generation="gen-test-1", retrieved_chunks=[]
-        ),
+        snapshot=RetrievalSnapshot(index_generation="gen-test-1", retrieved_chunks=[]),
     )
     # graph-off record with graph-unavailable notice (invalid provenance)
     rec_off_bad = RunRecord(
@@ -274,9 +272,7 @@ def test_graph_ablation_provenance_failure(tmp_path: Path) -> None:
                 typed_code=NOTICE_CODE_GRAPH_UNAVAILABLE,
             )
         ],
-        snapshot=RetrievalSnapshot(
-            index_generation="gen-test-1", retrieved_chunks=[]
-        ),
+        snapshot=RetrievalSnapshot(index_generation="gen-test-1", retrieved_chunks=[]),
     )
     journal.append(rec_on)
     journal.append(rec_off_bad)
@@ -285,8 +281,10 @@ def test_graph_ablation_provenance_failure(tmp_path: Path) -> None:
     ablation_dim = next(
         d for d in report.dimensions if d.name == "graph_ablation_delta"
     )
-    assert ablation_dim.status == "ok"
-    assert ablation_dim.detail["graph_off_errors"] == 1.0
+    assert ablation_dim.status == "error"
+    assert ablation_dim.score is None
+    assert ablation_dim.detail["provenance_drops"] == 1.0
+    assert ablation_dim.detail["n_pairs"] == 0.0
 
 
 def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
@@ -357,7 +355,9 @@ def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
     )
     assert ablation_dim.status == "ok"
     assert ablation_dim.score == -1.0
-    assert ablation_dim.detail["delta"] == -1.0
+    assert ablation_dim.detail["n_pairs"] == 1.0
+    assert ablation_dim.detail["ci_lower"] == -1.0
+    assert ablation_dim.detail["ci_upper"] == -1.0
 
 
 def test_score_run_stamps_real_commit_sha(
@@ -391,4 +391,3 @@ def test_score_run_stamps_real_commit_sha(
     monkeypatch.setenv("GIT_COMMIT_SHA", "custom_sha_1234567890abcdef")
     report_override = score_run(run_dir=tmp_path, no_judge=True)
     assert report_override.metadata.commit_sha == "custom_sha_1234567890abcdef"
-
