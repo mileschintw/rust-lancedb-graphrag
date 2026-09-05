@@ -62,6 +62,11 @@ def test_registered_dimensions_inventory() -> None:
     expected = [
         "unusable_record_rate",
         "vector_yield",
+        "bm25_yield",
+        "retrieve_latency_ms",
+        "graph_presence_rate",
+        "graph_influence_rate",
+        "graph_latency_ms",
         "retrieval_evidence_coverage",
         "context_precision_at_k",
         "ranking_quality",
@@ -80,6 +85,7 @@ def test_registered_dimensions_inventory() -> None:
 
 
 def test_obs_04_placeholder_registered() -> None:
+
     assert "community_summary_quality" in DIMENSION_REGISTRY
     built = DIMENSION_REGISTRY["community_summary_quality"]()
     assert built.name == "community_summary_quality"

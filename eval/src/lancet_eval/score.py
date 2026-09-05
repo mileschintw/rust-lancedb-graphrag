@@ -22,11 +22,17 @@ from lancet_eval.dimensions import (
     NOTICE_CODE_GRAPH_UNAVAILABLE,
     OBS_04_PLACEHOLDER,
     DimensionResult,
+    make_bm25_yield,
     make_faithfulness_result,
     make_graph_ablation_delta,
+    make_graph_influence_rate,
+    make_graph_latency_ms,
+    make_graph_presence_rate,
     make_groundedness_result,
+    make_retrieve_latency_ms,
     make_unusable_record_rate,
     make_vector_yield,
+    make_wire_contract_conformance,
 )
 from lancet_eval.journal import RunRecord
 from lancet_eval.judge import (
@@ -565,9 +571,42 @@ def score_run(
     dimensions.append(make_unusable_record_rate(records=records))
 
     usable_primary_records = p_data.get("usable_records", [])
-    dimensions.append(make_vector_yield(records=usable_primary_records))
+
+    # Extract RetrieveHybrid durations once from usable primary records
+    retrieve_latencies: list[float] = []
+    for r in usable_primary_records:
+        for nt in r.node_timings:
+            if nt.node_name == "RetrieveHybrid":
+                retrieve_latencies.append(nt.duration_ms)
+                break
+
+    dimensions.append(
+        make_vector_yield(
+            records=usable_primary_records,
+            retrieve_latencies=retrieve_latencies,
+        )
+    )
+    dimensions.append(
+        make_bm25_yield(
+            records=usable_primary_records,
+            retrieve_latencies=retrieve_latencies,
+        )
+    )
+    dimensions.append(
+        make_retrieve_latency_ms(records=usable_primary_records)
+    )
+    dimensions.append(
+        make_graph_presence_rate(records=usable_primary_records)
+    )
+    dimensions.append(
+        make_graph_influence_rate(records=usable_primary_records)
+    )
+    dimensions.append(
+        make_graph_latency_ms(records=usable_primary_records)
+    )
 
     # Helper for building mean score dimension
+
     def _build_mean_dim(
         name: str, values: list[float], errors: int, total: int
     ) -> DimensionResult:
@@ -741,34 +780,20 @@ def score_run(
         )
 
     # 10. wire_contract_conformance
-    total_recs = len(records)
-    error_recs = sum(1 for r in records if r.outcome == "error")
-    conformance_rate = (
-        ((total_recs - error_recs) / total_recs) if total_recs > 0 else 0.0
-    )
-    dimensions.append(
-        DimensionResult(
-            name="wire_contract_conformance",
-            status="ok",
-            score=conformance_rate,
-            detail={
-                "total_records": float(total_recs),
-                "error_records": float(error_recs),
-            },
-            n=total_recs,
-        )
-    )
+    dimensions.append(make_wire_contract_conformance(records=records))
 
     # 11. community_summary_quality (placeholder)
     dimensions.append(OBS_04_PLACEHOLDER)
 
     # 12. run_traceability
+    total_recs = len(records)
     traced_count = sum(
         1
         for r in records
         if r.session_id and r.correlation_id and r.index_generation
     )
     traceability_rate = (traced_count / total_recs) if total_recs > 0 else 0.0
+
     dimensions.append(
         DimensionResult(
             name="run_traceability",
