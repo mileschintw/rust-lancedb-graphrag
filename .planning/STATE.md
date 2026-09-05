@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 06.3.1
 current_phase_name: Fix retrieval citation collapse and graph ablation measurement fidelity
 status: planning
-stopped_at: Phase 06.3 complete, ready to plan Phase 06.3.1
-last_updated: "2026-09-04T23:01:30.587Z"
+stopped_at: Phase 06.3.1 context gathered (shared record for the 06.3.1 family; roadmap split pending)
+last_updated: "2026-09-05T01:30:48.290Z"
 last_activity: 2026-09-04
-state_head: 8d6450c5659b78fdd04c9a6cdff61774c9f08e66
+state_head: 7a8921bf9976a33463f880c3807827860f783d36
 progress:
   total_phases: 12
   completed_phases: 7
@@ -312,10 +312,10 @@ current_plan: 11
 
 ## Session
 
-**Last session:** 2026-08-24T20:40:00.000Z
+**Last session:** 2026-09-05T01:30:47.059Z
 **Last activity:** 2026-09-04
-**Stopped at:** Phase 06.3 complete, ready to plan Phase 06.3.1
-**Resume file:** None
+**Stopped at:** Phase 06.3.1 context gathered (shared record for the 06.3.1 family; roadmap split pending)
+**Resume file:** .planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md
 
 ## Accumulated Context
 
