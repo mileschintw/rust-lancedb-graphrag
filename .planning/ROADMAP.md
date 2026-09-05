@@ -702,10 +702,22 @@ Plans:
 
 Plans:
 
+**Wave 1** *(no prerequisites; file-disjoint, parallel-safe)*
+
 - [ ] 06.3.1-01-PLAN.md — Tracer: publish notice code 19, regenerate both proto trees, emit the retrieval-failure notice from the runner (the only place a node timeout is observed), and pin it end to end through the Go gateway (SC-1, SC-7; D-28, D-52, D-50)
 - [ ] 06.3.1-02-PLAN.md — Fail-closed LanceDB table access: propagate every `open_table` error except the missing-table condition, at the shared function backing all six accessors, with a regression test (SC-5; D-24, D-25)
 - [ ] 06.3.1-03-PLAN.md — Graph-path legibility: retain `graph_traversal` spans regardless of the configured sampling ratio, and document timeout-budget nesting in both operator TOML files without changing a value (SC-6, SC-8; D-08, D-17)
+
+**Wave 2** *(blocked on Wave 1 completion — 06.3.1-01, -02, -03)*
+
 - [ ] 06.3.1-04-PLAN.md — Provenance on failure and graph influence: seed the retrieval snapshot before the first await so a killed node still reports its index generation, count graph facts that reached the assembled prompt, surface both through the SSE contract, and close the phase test-count invariants (SC-2, SC-3, SC-4, SC-7; D-33, D-06, D-29, D-30, D-52)
+
+**Cross-cutting constraints:**
+
+- **One `buf generate` regenerates both proto trees** (`buf.gen.yaml` targets `engine/src/pb` and `gateway/proto`). D-52's "both trees" is a single task in plan 01 — plan 04's additive fields ride the same contract and must not trigger a second, divergent regeneration.
+- **Node timeouts are observed in `engine/src/workflow/runner.rs:386`, never inside the node body.** A notice or snapshot emitted from inside `retrieve.rs` is unreachable on a timeout because the future is dropped. Plans 01 and 04 both depend on this; `06.3.1-PATTERNS.md` states the opposite and is superseded.
+- **Test-count invariants (`scripts/*-test-targets.sh`) are owned solely by plan 04.** Plans 01–03 must not touch them; plan 04's criteria assert the superseded constants are absent so a red gate cannot be cleared by lowering a count.
+- **Timeout budget *values* are out of scope for the whole phase** — SC-8 documents the nesting relationship only. 06.3.3 derives the numbers (D-13, D-14, D-15).
 
 ### Phase 06.3.2: Eval harness diagnostics, scored dimensions and paired ablation (INSERTED)
 

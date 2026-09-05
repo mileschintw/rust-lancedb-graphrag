@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.1
-current_phase_name: Fix retrieval citation collapse and graph ablation measurement fidelity
-status: planning
+current_phase_name: fix-retrieval-citation-collapse-and-graph-ablation-measureme
+status: executing
 stopped_at: "Phase 06.3.1 split into siblings 06.3.1-06.3.4 (OBS-05 registered); next: /gsd-ai-integration-phase for the family, then plan each sibling with context_path injected by hand"
-last_updated: "2026-09-05T01:38:20.132Z"
+last_updated: "2026-09-05T03:07:25.875Z"
 last_activity: 2026-09-04
-state_head: b99ff7242b89492348f110f5de763fc89dbb7f32
+state_head: 3d47cf9e752921dc770dd02f6d488744a0cd3217
 progress:
   total_phases: 15
   completed_phases: 7
-  total_plans: 132
+  total_plans: 136
   completed_plans: 132
 milestone_name: milestone
 current_plan: 11
@@ -141,8 +141,8 @@ current_plan: 11
 ## Active Phase
 
 - **Phase:** 06.3.1 — Fix retrieval citation collapse and graph ablation measurement fidelity
-- **Status:** Ready to plan
-- **Total Plans in Phase:** 11
+- **Status:** Ready to execute
+- **Total Plans in Phase:** 4
 - **Completed Plans in Phase:** 8/8 (executed; phase-level gates run 2026-08-29/30, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (6/9 must-haves)
 - **Next:** `/gsd-plan-phase 6.3 --gaps`
@@ -318,6 +318,26 @@ current_plan: 11
 **Resume file:** .planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md
 
 ## Accumulated Context
+
+### Planning Gate Overrides
+
+- **Phase 06.3.1 — decision-coverage gate (step 13a): "Proceed anyway" override recorded 2026-09-04.**
+  The gate reported 18/54 decisions covered and failed. This is a **shared-context false positive**, not a
+  coverage gap: `06.3.1-CONTEXT.md` is one decision record governing four sibling phases (D-46), so a
+  single-phase audit necessarily flags the other three siblings' decisions as uncovered.
+  Hand-verified at override time: **all 11 decisions owned by 06.3.1 are covered** — D-06, D-08, D-17,
+  D-24, D-25, D-28, D-29, D-30, D-33, D-50, D-52 — and **zero owned decisions were uncovered**.
+  The 36 flagged IDs resolve as: 06.3.2-owned (D-02, D-07, D-10, D-11, D-12, D-31, D-34, D-35, D-36,
+  D-37, D-38, D-39, D-40, D-41, D-42, D-43); 06.3.3-owned (D-04, D-05, D-14, D-15, D-16, D-18, D-19,
+  D-20, D-21, D-22, D-47); 06.3.4-owned (D-32, D-44, D-45, D-48, D-49, D-54); already satisfied at split
+  time (D-51 — `06.3.1-AI-SPEC.md` exists); process-level with no plan artifact (D-23); and dual-owned
+  (D-27 — engine half pinned here by regression test, harness half owned by 06.3.2).
+  The two alternative branches were rejected deliberately: re-planning to cover them would pull sibling
+  work backwards into a closed phase (forbidden by D-46), and marking them `[informational]` would mutate
+  the shared record and break every sibling's own coverage gate.
+  **Expect this gate to SKIP silently (reporting passed) for 06.3.2/06.3.3/06.3.4** — its glob is
+  phase-directory-scoped and those directories hold no CONTEXT.md. Silence there is not a pass; verify
+  by hand against the owning sibling's ROADMAP success criteria.
 
 ### Roadmap Evolution
 
