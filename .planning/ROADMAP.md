@@ -765,7 +765,7 @@ Plans:
 - **Deduplication is keyed on `(question_id, arm)`, never on `question_id` alone.** Dedup by question deletes one arm and destroys the pairing this phase exists to build.
 - **Graph emptiness never gates a run as bad.** Graph dimensions report their numbers and stay `status="ok"` on a presence-floor miss; the preflight canary is the *only* place a missing graph hit may fail a run, and only on its two designated rows.
 - **Line numbers cited for `score.py` will drift.** Plans 01, 02 and 04 each rewrite parts of it in sequence, so the ranges quoted in plans 02/04/05 reflect pre-phase state. Executors must locate targets by function/block name, not by the cited line range.
-- **Upstream contract dependency on 06.3.1 (not yet executed):** notice tag 19 / `NOTICE_CODE_RETRIEVAL_FAILED`, `WorkflowCompletedEvent.partial_snapshot` (tag 8), and `WorkflowMetadata.graph_prompt_fact_count` (tag 11, `uint32`). Referenced by contract only — these do not exist in code yet.
+- **Upstream contract from 06.3.1 (shipped):** notice tag 19 / `NOTICE_CODE_RETRIEVAL_FAILED`, `WorkflowCompletedEvent.partial_snapshot` (tag 8), and `WorkflowMetadata.graph_prompt_fact_count` (tag 11, `uint32`) are in proto, engine, and gateway. `partial_snapshot` is `null` on success (`engine/src/workflow/runner.rs:663-672`) and populated only on the failure path (`runner.rs:679-688`) — plans must not assume a populated empty-chunk object on a healthy query.
 
 ### Phase 06.3.3: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
 

@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.2
-current_phase_name: Eval harness diagnostics, scored dimensions and paired ablation
-status: planning
+current_phase_name: eval-harness-diagnostics-scored-dimensions-and-paired-ablati
+status: executing
 stopped_at: Phase 06.3.1 complete, ready to plan Phase 06.3.2
-last_updated: "2026-09-05T20:59:30.373Z"
+last_updated: "2026-09-05T22:25:05.830Z"
 last_activity: 2026-09-05
-state_head: b6dd93955672bfa61abca449debd10120bf22a34
+state_head: ed8f73a425e38353d1482880a6ce952ec3e26e8a
 progress:
   total_phases: 15
   completed_phases: 8
@@ -141,8 +141,8 @@ current_plan: 11
 ## Active Phase
 
 - **Phase:** 06.3.2 — Eval harness diagnostics, scored dimensions and paired ablation
-- **Status:** Ready to plan
-- **Total Plans in Phase:** 4
+- **Status:** Ready to execute
+- **Total Plans in Phase:** 5
 - **Completed Plans in Phase:** 8/8 (executed; phase-level gates run 2026-08-29/30, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (6/9 must-haves)
 - **Next:** `/gsd-plan-phase 6.3 --gaps`
