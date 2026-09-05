@@ -1309,3 +1309,100 @@ async fn test_terminal_failure_event_carries_workflow_metadata() {
     assert!(meta.started_at_ms > 0);
     assert!(meta.completed_at_ms >= meta.started_at_ms);
 }
+
+/// 06.3.1-03 Task 1: graph_spans_retained_when_global_sampler_is_off (sampler seam).
+#[test]
+fn graph_spans_retained_when_global_sampler_is_off() {
+    use opentelemetry_sdk::trace::{Sampler, SamplingDecision, ShouldSample};
+    use crate::telemetry::GraphSpanRetainingSampler;
+
+    let trace_id = opentelemetry::trace::TraceId::from_bytes([1; 16]);
+    let span_kind = opentelemetry::trace::SpanKind::Internal;
+
+    // 1. Constructed over an inner sampler that drops everything (AlwaysOff)
+    let off_sampler = GraphSpanRetainingSampler::new(Sampler::AlwaysOff);
+
+    // Graph names must return RecordAndSample
+    let res_traversal = off_sampler.should_sample(None, trace_id, "graph_traversal", &span_kind, &[], &[]);
+    assert_eq!(res_traversal.decision, SamplingDecision::RecordAndSample);
+
+    let res_extraction = off_sampler.should_sample(None, trace_id, "graph_context_extraction", &span_kind, &[], &[]);
+    assert_eq!(res_extraction.decision, SamplingDecision::RecordAndSample);
+
+    // Non-graph name (hybrid_retrieval) must return Drop
+    let res_retrieval = off_sampler.should_sample(None, trace_id, "hybrid_retrieval", &span_kind, &[], &[]);
+    assert_eq!(res_retrieval.decision, SamplingDecision::Drop);
+
+    // 2. Constructed over an always-on inner sampler (AlwaysOn)
+    let on_sampler = GraphSpanRetainingSampler::new(Sampler::AlwaysOn);
+
+    let res_on_graph = on_sampler.should_sample(None, trace_id, "graph_traversal", &span_kind, &[], &[]);
+    assert_eq!(res_on_graph.decision, SamplingDecision::RecordAndSample);
+
+    let res_on_non_graph = on_sampler.should_sample(None, trace_id, "hybrid_retrieval", &span_kind, &[], &[]);
+    assert_eq!(res_on_non_graph.decision, SamplingDecision::RecordAndSample);
+}
+
+/// 06.3.1-03 Task 1: graph_spans_survive_a_dropped_parent_through_the_tracing_layer (provider level).
+#[test]
+fn graph_spans_survive_a_dropped_parent_through_the_tracing_layer() {
+    use opentelemetry::trace::TracerProvider as _;
+    use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
+    use crate::telemetry::GraphSpanRetainingSampler;
+
+    crate::telemetry::ensure_propagators();
+
+    let (exporter, mut rx_span, _) = new_test_exporter();
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_sampler(GraphSpanRetainingSampler::new(Sampler::AlwaysOff))
+        .with_simple_exporter(exporter)
+        .build();
+    let tracer = tracer_provider.tracer("test_retention_tracer");
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    // Open a parent query_rag span (which will be dropped by AlwaysOff inner sampler)
+    let parent_span = tracing::info_span!("query_rag");
+    {
+        let _parent_entered = parent_span.enter();
+
+        // Emit graph_traversal span
+        let graph_span = tracing::info_span!("graph_traversal");
+        {
+            let _graph_entered = graph_span.enter();
+        }
+        drop(graph_span);
+
+        // Emit sibling hybrid_retrieval span
+        let non_graph_span = tracing::info_span!("hybrid_retrieval");
+        {
+            let _non_graph_entered = non_graph_span.enter();
+        }
+        drop(non_graph_span);
+    }
+    drop(parent_span);
+
+    let _ = tracer_provider.force_flush();
+
+    let mut exported_names = Vec::new();
+    while let Ok(s) = rx_span.try_recv() {
+        exported_names.push(s.name.to_string());
+    }
+
+    assert!(
+        exported_names.contains(&"graph_traversal".to_string()),
+        "graph_traversal MUST be exported even when parent is dropped: got {:?}",
+        exported_names
+    );
+    assert!(
+        !exported_names.contains(&"hybrid_retrieval".to_string()),
+        "hybrid_retrieval must NOT be exported under AlwaysOff sampler: got {:?}",
+        exported_names
+    );
+    assert!(
+        !exported_names.contains(&"query_rag".to_string()),
+        "query_rag parent must NOT be exported under AlwaysOff sampler: got {:?}",
+        exported_names
+    );
+}

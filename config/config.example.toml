@@ -33,6 +33,26 @@ service_name = "lancet-engine"
 deployment_environment = "dev"
 
 [engine.workflow]
+# Budget nesting and timeout hierarchy (D-17):
+# Runner-level (top-level) node budgets enforced by WorkflowRunner around a whole node:
+# - reformulate_timeout_ms (ReformulateQuery)
+# - graph_node_timeout_ms (ExtractGraphContext outer envelope)
+# - retrieve_timeout_ms (RetrieveHybrid)
+# - prompt_timeout_ms (AssemblePrompt)
+# - generation_node_timeout_ms (GenerateAnswer)
+#
+# Inner budgets enforced inside ExtractGraphContextNode that nest inside graph_node_timeout_ms:
+# - query_embedding_timeout_ms (inner embedding generation)
+# - graph_operation_timeout_ms (inner graph Cypher traversal / augmentation)
+#
+# Known incoherence (D-17):
+# graph_operation_timeout_ms = 4000 nests inside graph_node_timeout_ms = 15000.
+# Because inner graph operation expiry is handled as non-fatal degradation (emits GRAPH_TIMEOUT and returns Ok),
+# the outer graph_node_timeout_ms budget can never fire for the graph operation itself.
+# Combined inner budgets: query_embedding (10000ms) + graph_operation (4000ms) = 14000ms < 15000ms.
+# In the 2026-09-03 run, 494 of 500 graph-arm queries reported graph_operation_timeout_ms expiry and none reported graph_node_timeout_ms.
+# Nesting is documented for operator visibility and is NOT enforced at startup (startup validation was explicitly rejected by D-17).
+# Budget values themselves are derived from empirical measurements in Phase 06.3.3.
 # unit=milliseconds; range=>0
 reformulate_timeout_ms = 5000
 # unit=milliseconds; range=>0

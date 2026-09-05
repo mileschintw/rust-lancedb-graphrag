@@ -17,7 +17,9 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::logs::{BatchLogProcessor, SdkLoggerProvider};
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::propagation::{BaggagePropagator, TraceContextPropagator};
-use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
+use opentelemetry_sdk::trace::{
+    Sampler, SamplingDecision, SamplingResult, SdkTracerProvider, ShouldSample,
+};
 use opentelemetry_sdk::Resource;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Layer as _;
@@ -36,6 +38,57 @@ pub fn ensure_propagators() {
         ];
         opentelemetry::global::set_text_map_propagator(TextMapCompositePropagator::new(propagators));
     });
+}
+
+/// Span names retained even when the global sampling ratio would drop them (D-08).
+///
+/// 1. `graph_traversal`: Cypher-level traversal span emitted by `ProductionGraphQueryPort::query_graph`.
+/// 2. `graph_context_extraction`: workflow node span for graph context extraction in `WorkflowRunner::run_node`.
+pub const RETAINED_GRAPH_SPAN_NAMES: [&str; 2] = ["graph_traversal", "graph_context_extraction"];
+
+/// Composite sampler that unconditionally samples graph-path spans (D-08)
+/// while delegating all other spans to the configured inner sampler.
+///
+/// Notes:
+/// (a) Implements D-08 so Phase 6's existing Cypher instrumentation is usable during the 06.3.3 investigation.
+/// (b) Wire capture remains the primary diagnostic instrument for all queries (D-01); this is an additional graph-path channel.
+/// (c) At the shipped `sampler_ratio = 1.0` this wrapper is a no-op because the inner sampler already exports everything.
+/// (d) When the inner sampler drops a parent trace, a retained graph span is exported as a root-less span, which is the accepted cost of retaining it.
+#[derive(Clone, Debug)]
+pub struct GraphSpanRetainingSampler {
+    inner: Sampler,
+}
+
+impl GraphSpanRetainingSampler {
+    pub fn new(inner: Sampler) -> Self {
+        Self { inner }
+    }
+}
+
+impl ShouldSample for GraphSpanRetainingSampler {
+    fn should_sample(
+        &self,
+        parent_context: Option<&opentelemetry::Context>,
+        trace_id: opentelemetry::trace::TraceId,
+        name: &str,
+        span_kind: &opentelemetry::trace::SpanKind,
+        attributes: &[KeyValue],
+        links: &[opentelemetry::trace::Link],
+    ) -> SamplingResult {
+        if RETAINED_GRAPH_SPAN_NAMES.contains(&name) {
+            let trace_state = parent_context
+                .map(|ctx| opentelemetry::trace::TraceContextExt::span(ctx).span_context().trace_state().clone())
+                .unwrap_or_default();
+            SamplingResult {
+                decision: SamplingDecision::RecordAndSample,
+                attributes: Vec::new(),
+                trace_state,
+            }
+        } else {
+            self.inner
+                .should_sample(parent_context, trace_id, name, span_kind, attributes, links)
+        }
+    }
 }
 
 /// Builds the shared OpenTelemetry resource containing service and deployment metadata.
@@ -210,7 +263,7 @@ pub fn build_providers_and_layers(
         Ok(exporter) => {
             let tp = SdkTracerProvider::builder()
                 .with_resource(resource.clone())
-                .with_sampler(sampler)
+                .with_sampler(GraphSpanRetainingSampler::new(sampler))
                 .with_batch_exporter(exporter)
                 .build();
             opentelemetry::global::set_tracer_provider(tp.clone());
