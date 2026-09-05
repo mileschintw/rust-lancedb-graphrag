@@ -78,6 +78,42 @@ func toStructuredCitationDTOs(in []*pb.StructuredCitation) []StructuredCitationD
 	return out
 }
 
+// ToRetrievalSnapshotDTO maps a protobuf RetrievalSnapshot to its JSON DTO representation.
+// Note: variant_count and variant_identities are deliberately omitted to preserve the exact
+// 10-key payload contract asserted across gateway tests.
+func ToRetrievalSnapshotDTO(in *pb.RetrievalSnapshot) *RetrievalSnapshotDTO {
+	if in == nil {
+		return nil
+	}
+	var activeFilter *DocumentFilterDTO
+	if in.ActiveFilter != nil {
+		docIDs := make([]string, 0)
+		if len(in.ActiveFilter.DocumentIds) > 0 {
+			docIDs = in.ActiveFilter.DocumentIds
+		}
+		contentTypes := make([]string, 0)
+		if len(in.ActiveFilter.ContentTypes) > 0 {
+			contentTypes = in.ActiveFilter.ContentTypes
+		}
+		activeFilter = &DocumentFilterDTO{
+			DocumentIDs:  docIDs,
+			ContentTypes: contentTypes,
+		}
+	}
+	return &RetrievalSnapshotDTO{
+		IndexGeneration: in.IndexGeneration,
+		EmbeddingModel:  in.EmbeddingModel,
+		VectorWeight:    in.VectorWeight,
+		Bm25Weight:      in.Bm25Weight,
+		RrfK:            in.RrfK,
+		CandidateLimit:  in.CandidateLimit,
+		FinalLimit:      in.FinalLimit,
+		ActiveFilter:    activeFilter,
+		ResultHash:      in.ResultHash,
+		RetrievedChunks: toStructuredCitationDTOs(in.RetrievedChunks),
+	}
+}
+
 // ToQueryRAGResponseDTO maps a protobuf QueryRAGResponse into its JSON DTO representation.
 func ToQueryRAGResponseDTO(resp *pb.QueryRAGResponse) QueryRAGResponseDTO {
 	if resp == nil {
@@ -107,36 +143,7 @@ func ToQueryRAGResponseDTO(resp *pb.QueryRAGResponse) QueryRAGResponseDTO {
 		})
 	}
 
-	var snapshot *RetrievalSnapshotDTO
-	if resp.Snapshot != nil {
-		var activeFilter *DocumentFilterDTO
-		if resp.Snapshot.ActiveFilter != nil {
-			docIDs := make([]string, 0)
-			if len(resp.Snapshot.ActiveFilter.DocumentIds) > 0 {
-				docIDs = resp.Snapshot.ActiveFilter.DocumentIds
-			}
-			contentTypes := make([]string, 0)
-			if len(resp.Snapshot.ActiveFilter.ContentTypes) > 0 {
-				contentTypes = resp.Snapshot.ActiveFilter.ContentTypes
-			}
-			activeFilter = &DocumentFilterDTO{
-				DocumentIDs:  docIDs,
-				ContentTypes: contentTypes,
-			}
-		}
-		snapshot = &RetrievalSnapshotDTO{
-			IndexGeneration: resp.Snapshot.IndexGeneration,
-			EmbeddingModel:  resp.Snapshot.EmbeddingModel,
-			VectorWeight:    resp.Snapshot.VectorWeight,
-			Bm25Weight:      resp.Snapshot.Bm25Weight,
-			RrfK:            resp.Snapshot.RrfK,
-			CandidateLimit:  resp.Snapshot.CandidateLimit,
-			FinalLimit:      resp.Snapshot.FinalLimit,
-			ActiveFilter:    activeFilter,
-			ResultHash:      resp.Snapshot.ResultHash,
-			RetrievedChunks: toStructuredCitationDTOs(resp.Snapshot.RetrievedChunks),
-		}
-	}
+	snapshot := ToRetrievalSnapshotDTO(resp.Snapshot)
 
 	return QueryRAGResponseDTO{
 		Answer:              resp.Answer,

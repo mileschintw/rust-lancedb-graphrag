@@ -18,6 +18,7 @@ use engine::generation::{
     AnswerBasis, FakeGenerator, GenerationRequest, Generator, GroundingLimits, ModelOutput,
 };
 use engine::pb::lancet::v1::{workflow_event::Event, NodeErrorKind, NoticeCode, NoticeSeverity};
+use engine::prompt::{DEFAULT_ANSWER_TOKEN_BUDGET, DEFAULT_MAX_PROMPT_TOKENS};
 use engine::retrieval::{Candidate, RetrievalSettings};
 use engine::testkit::{test_notice, test_query_request};
 use engine::workflow::{
@@ -6832,6 +6833,10 @@ async fn workflow_phase5_zero_evidence_does_not_emit_retrieval_failed_notice() {
         .expect("WorkflowCompleted event");
 
     assert!(
+        completed_event.success,
+        "Completed empty retrieval must report success = true"
+    );
+    assert!(
         completed_event
             .notices
             .iter()
@@ -6844,6 +6849,18 @@ async fn workflow_phase5_zero_evidence_does_not_emit_retrieval_failed_notice() {
             .iter()
             .any(|n| n.typed_code == NoticeCode::RetrievalFailed as i32),
         "RETRIEVAL_FAILED notice must NOT be present when retrieval completed successfully with zero results"
+    );
+    let final_resp = completed_event
+        .final_response
+        .as_ref()
+        .expect("final_response must be present on success");
+    let snapshot = final_resp
+        .snapshot
+        .as_ref()
+        .expect("snapshot must be present in final_response");
+    assert!(
+        !snapshot.result_hash.is_empty(),
+        "Completed-but-empty retrieval must produce a non-empty result_hash, discriminating it from partial_snapshot"
     );
 }
 
@@ -6875,3 +6892,356 @@ fn derive_degraded_mode_includes_retrieval_failed_regardless_of_position() {
         "derive_degraded_mode must be true with RetrievalFailed at last index"
     );
 }
+
+/// 06.3.1-04 Task 1: Paused-clock RetrieveHybrid timeout emits partial_snapshot with full provenance audit set.
+/// A partial snapshot is an audit record, not evidence that retrieval produced anything.
+/// The discriminators are empty result_hash + empty chunk list + retrieval-failure notice present
+/// + zero-evidence notice absent + success == false.
+#[tokio::test]
+async fn workflow_phase5_retrieve_timeout_emits_partial_snapshot_with_provenance() {
+    tokio::time::pause();
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        "trace-partial-snap".to_string(),
+        "sess-partial-snap".to_string(),
+    );
+
+    let req = test_query_request("Retrieve timeout partial snapshot test", "sess-partial-snap");
+    let ctx = WorkflowContext::new(
+        "sess-partial-snap".to_string(),
+        "trace-partial-snap".to_string(),
+        &req,
+    );
+
+    let fake_dense_stalled = Arc::new(FakeDenseRetrievalPort::stall());
+    let mut runner = WorkflowRunner::new().with_timeouts(5000, 15000, 10000, 2000, 65000);
+    runner.add_node(ReformulateQueryNode::new());
+    runner.add_node(
+        RetrieveHybridNode::new(
+            Some(fake_dense_stalled),
+            None,
+            None,
+            RetrievalSettings {
+                vector_weight: 0.75,
+                bm25_weight: 0.25,
+                rrf_k: 42.0,
+                candidate_limit: 88,
+                final_limit: 12,
+                ..Default::default()
+            },
+        )
+        .with_snapshot_metadata("idx-gen-audit-123", "text-embedding-audit-model"),
+    );
+    runner.add_node(AssemblePromptNode::new());
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+
+    tokio::time::advance(Duration::from_millis(10000)).await;
+    handle.await.unwrap();
+
+    let mut events = Vec::new();
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(wf_event) = item {
+            events.push(wf_event);
+        }
+    }
+
+    let completed_event = events
+        .iter()
+        .find_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .expect("WorkflowCompleted event");
+
+    // All seven discriminators from Plan 04 Task 1:
+    // (1) success == false
+    assert!(!completed_event.success, "Timed-out retrieval must have success == false");
+
+    // (2) retrieval-failure notice IS present
+    assert!(
+        completed_event
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::RetrievalFailed as i32),
+        "RETRIEVAL_FAILED notice must be present on timeout"
+    );
+
+    // (3) zero-evidence notice is ABSENT — the two outcomes never co-occur
+    assert!(
+        !completed_event
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::NoEvidence as i32),
+        "NO_EVIDENCE notice must be ABSENT when retrieval timed out"
+    );
+
+    let partial = completed_event
+        .partial_snapshot
+        .as_ref()
+        .expect("partial_snapshot must be populated on failure");
+
+    // (4) index_generation is non-empty AND equals configured value
+    assert_eq!(partial.index_generation, "idx-gen-audit-123");
+
+    // (5) retrieved-chunk list is EMPTY
+    assert!(
+        partial.retrieved_chunks.is_empty(),
+        "partial_snapshot retrieved_chunks must be empty"
+    );
+
+    // (6) result_hash is the EMPTY string — the sentinel distinguishing 'never completed' from hash of 0 chunks
+    assert_eq!(
+        partial.result_hash, "",
+        "result_hash must be empty string on partial snapshot"
+    );
+
+    // (7) embedding_model, weights, rrf_k, candidate_limit, final_limit equal configured settings
+    assert_eq!(partial.embedding_model, "text-embedding-audit-model");
+    assert_eq!(partial.vector_weight, 0.75);
+    assert_eq!(partial.bm25_weight, 0.25);
+    assert_eq!(partial.rrf_k, 42);
+    assert_eq!(partial.candidate_limit, 88);
+    assert_eq!(partial.final_limit, 12);
+}
+
+/// 06.3.1-04 Task 2: Graph facts reaching prompt are counted.
+/// Case A: positive graph weight -> graph_prompt_fact_count > 0.
+/// Case B: graph weight 0.0 -> graph_prompt_fact_count == 0 while graph presence counters > 0.
+/// Case C: retrieval failure -> graph_prompt_fact_count == 0 (never reached prompt assembly).
+#[tokio::test]
+async fn workflow_phase5_graph_facts_reaching_prompt_are_counted() {
+    // --- Case A: Positive graph weight ---
+    {
+        let (tx, mut rx) = mpsc::channel(100);
+        let cancel = CancellationToken::new();
+        let sink = WorkflowEventSink::new(
+            tx,
+            Arc::new(EventSequence::new()),
+            "trace-graph-influence-a".to_string(),
+            "sess-graph-influence-a".to_string(),
+        );
+
+        let req = test_query_request("Graph influence Case A", "sess-graph-influence-a");
+        let ctx = WorkflowContext::new(
+            "sess-graph-influence-a".to_string(),
+            "trace-graph-influence-a".to_string(),
+            &req,
+        );
+
+        let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+        let fake_graph = Arc::new(FakeGraphQueryPort::success("Lancet -- uses -- LanceDB graph vector hybrid"));
+        let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+            "doc-graph-1",
+            "chk-graph-1",
+            0.95,
+        )]));
+        let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+            answer: "Answer with graph influence [1].".to_string(),
+            cited_evidence_ids: vec!["[1]".to_string()],
+            answer_basis: AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        })));
+
+        let mut runner = WorkflowRunner::new();
+        runner.add_node(ExtractGraphContextNode::new(
+            Some(fake_embedder),
+            Some(fake_graph),
+        ));
+        runner.add_node(RetrieveHybridNode::new(
+            Some(fake_dense),
+            None,
+            None,
+            RetrievalSettings::default(),
+        ));
+        runner.add_node(AssemblePromptNode::with_settings(
+            DEFAULT_MAX_PROMPT_TOKENS,
+            DEFAULT_ANSWER_TOKEN_BUDGET,
+            1.0,
+        ));
+        runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+        runner.run_workflow(ctx, cancel, sink).await;
+
+        let mut events = Vec::new();
+        while let Ok(item) = rx.try_recv() {
+            if let Ok(wf_event) = item {
+                events.push(wf_event);
+            }
+        }
+
+        let completed_event = events
+            .iter()
+            .find_map(|e| match &e.event {
+                Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+                _ => None,
+            })
+            .expect("WorkflowCompleted event");
+
+        let meta = completed_event.metadata.expect("WorkflowMetadata present");
+        assert!(
+            meta.graph_prompt_fact_count > 0,
+            "Case A: graph_prompt_fact_count must be > 0 when graph facts are packed (got {})",
+            meta.graph_prompt_fact_count
+        );
+        assert!(
+            meta.graph_node_count > 0,
+            "Case A: graph_node_count presence counter must be > 0"
+        );
+    }
+
+    // --- Case B: Graph weight 0.0 -> presence > 0, influence == 0 ---
+    {
+        let (tx, mut rx) = mpsc::channel(100);
+        let cancel = CancellationToken::new();
+        let sink = WorkflowEventSink::new(
+            tx,
+            Arc::new(EventSequence::new()),
+            "trace-graph-influence-b".to_string(),
+            "sess-graph-influence-b".to_string(),
+        );
+
+        let req = test_query_request("Graph influence Case B", "sess-graph-influence-b");
+        let ctx = WorkflowContext::new(
+            "sess-graph-influence-b".to_string(),
+            "trace-graph-influence-b".to_string(),
+            &req,
+        );
+
+        let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+        let fake_graph = Arc::new(FakeGraphQueryPort::success("Lancet -- uses -- LanceDB graph vector hybrid"));
+        let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+            "doc-graph-2",
+            "chk-graph-2",
+            0.95,
+        )]));
+        let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+            answer: "Answer with no graph influence [1].".to_string(),
+            cited_evidence_ids: vec!["[1]".to_string()],
+            answer_basis: AnswerBasis::Retrieval,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        })));
+
+        let mut runner = WorkflowRunner::new();
+        runner.add_node(ExtractGraphContextNode::new(
+            Some(fake_embedder),
+            Some(fake_graph),
+        ));
+        runner.add_node(RetrieveHybridNode::new(
+            Some(fake_dense),
+            None,
+            None,
+            RetrievalSettings::default(),
+        ));
+        // Explicitly set graph_weight to 0.0
+        runner.add_node(AssemblePromptNode::with_settings(
+            DEFAULT_MAX_PROMPT_TOKENS,
+            DEFAULT_ANSWER_TOKEN_BUDGET,
+            0.0,
+        ));
+        runner.add_node(GenerateAnswerNode::new(Some(fake_gen)));
+
+        runner.run_workflow(ctx, cancel, sink).await;
+
+        let mut events = Vec::new();
+        while let Ok(item) = rx.try_recv() {
+            if let Ok(wf_event) = item {
+                events.push(wf_event);
+            }
+        }
+
+        let completed_event = events
+            .iter()
+            .find_map(|e| match &e.event {
+                Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+                _ => None,
+            })
+            .expect("WorkflowCompleted event");
+
+        let meta = completed_event.metadata.expect("WorkflowMetadata present");
+        assert_eq!(
+            meta.graph_prompt_fact_count, 0,
+            "Case B: graph_prompt_fact_count must be 0 when graph_weight is 0.0"
+        );
+        assert!(
+            meta.graph_node_count > 0,
+            "Case B: graph presence counters must be > 0 even when influence is 0"
+        );
+    }
+
+    // --- Case C: Retrieval failed -> never reaches prompt assembly -> influence == 0 ---
+    {
+        let (tx, mut rx) = mpsc::channel(100);
+        let cancel = CancellationToken::new();
+        let sink = WorkflowEventSink::new(
+            tx,
+            Arc::new(EventSequence::new()),
+            "trace-graph-influence-c".to_string(),
+            "sess-graph-influence-c".to_string(),
+        );
+
+        let req = test_query_request("Graph influence Case C", "sess-graph-influence-c");
+        let ctx = WorkflowContext::new(
+            "sess-graph-influence-c".to_string(),
+            "trace-graph-influence-c".to_string(),
+            &req,
+        );
+
+        let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
+        let fake_graph = Arc::new(FakeGraphQueryPort::success("Lancet -- uses -- LanceDB graph vector hybrid"));
+        let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+            "doc-c-1",
+            "chk-c-1",
+            0.9,
+        )]));
+        let fake_reranker_fail = Arc::new(FakeReranker::failure());
+
+        let mut runner = WorkflowRunner::new();
+        runner.add_node(ExtractGraphContextNode::new(
+            Some(fake_embedder),
+            Some(fake_graph),
+        ));
+        runner.add_node(RetrieveHybridNode::new(
+            Some(fake_dense),
+            None,
+            Some(fake_reranker_fail),
+            RetrievalSettings::default(),
+        ));
+        runner.add_node(AssemblePromptNode::new());
+
+        runner.run_workflow(ctx, cancel, sink).await;
+
+        let mut events = Vec::new();
+        while let Ok(item) = rx.try_recv() {
+            if let Ok(wf_event) = item {
+                events.push(wf_event);
+            }
+        }
+
+        let completed_event = events
+            .iter()
+            .find_map(|e| match &e.event {
+                Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+                _ => None,
+            })
+            .expect("WorkflowCompleted event");
+
+        assert!(!completed_event.success, "Case C: retrieval failure must report success == false");
+        let meta = completed_event.metadata.expect("WorkflowMetadata present");
+        assert_eq!(
+            meta.graph_prompt_fact_count, 0,
+            "Case C: graph_prompt_fact_count must be 0 when prompt assembly was never reached"
+        );
+    }
+}
+

@@ -13,17 +13,19 @@
 #        /rag/query JSON wire contract that plan 06-07 extends.
 #   80 — 75 plus TestBadInputMatrixHTTP (plan 06-12), the D-15 bad-input matrix's HTTP half.
 #   110 — 109 plus TestOTelErrorHandlerBoundsRepeatedExportErrors (plan 06.2-12), bounding export errors (D-38).
+#   112 — baseline before Phase 06.3.1.
+#   114 — Phase 06.3.1 (gateway 79, internal/sse 12): plan 01 added TestRetrievalFailedNoticeRendersAsString, plan 04 added TestWorkflowCompletedCarriesPartialSnapshotAndGraphInfluence.
 set -e
 
-EXPECTED_TOTAL=112
+EXPECTED_TOTAL=114
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 78
+EXPECTED_PACKAGES="gateway 79
 gateway/db 7
 gateway/internal/config 4
-gateway/internal/sse 11
+gateway/internal/sse 12
 gateway/internal/telemetry 12"
 
 # Ensure go is found in standard user environments

@@ -1242,6 +1242,7 @@ async fn test_workflow_span_carries_workflow_metadata_attributes() {
         "lancet.workflow.bm25_count" = tracing::field::Empty,
         "lancet.workflow.graph_node_count" = tracing::field::Empty,
         "lancet.workflow.graph_edge_count" = tracing::field::Empty,
+        "lancet.workflow.graph_prompt_fact_count" = tracing::field::Empty,
         "lancet.workflow.prompt_tokens" = tracing::field::Empty,
         "lancet.workflow.completion_tokens" = tracing::field::Empty,
         "lancet.degraded_mode" = tracing::field::Empty,
@@ -1271,6 +1272,7 @@ async fn test_workflow_span_carries_workflow_metadata_attributes() {
     assert!(find_attr("lancet.workflow.reformulation_used").is_some());
     assert!(find_attr("lancet.workflow.vector_count").is_some());
     assert!(find_attr("lancet.workflow.bm25_count").is_some());
+    assert!(find_attr("lancet.workflow.graph_prompt_fact_count").is_some());
     assert!(find_attr("lancet.workflow.prompt_tokens").is_some());
     assert!(find_attr("lancet.workflow.completion_tokens").is_some());
     assert!(find_attr("lancet.degraded_mode").is_some());

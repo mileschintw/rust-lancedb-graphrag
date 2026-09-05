@@ -594,3 +594,116 @@ func TestRetrievedChunksSerialisesAsEmptyArray(t *testing.T) {
 		t.Fatalf("expected nil Snapshot pointer, got %#v", dtoNilSnapshot.Snapshot)
 	}
 }
+
+// 06.3.1-04 Task 3: TestWorkflowCompletedCarriesPartialSnapshotAndGraphInfluence
+func TestWorkflowCompletedCarriesPartialSnapshotAndGraphInfluence(t *testing.T) {
+	// Case 1: Failure terminal event with partial_snapshot and graph influence in metadata
+	meta := &pb.WorkflowMetadata{
+		GraphPromptFactCount: 7,
+		GraphNodeCount:       10,
+	}
+	partialSnap := &pb.RetrievalSnapshot{
+		IndexGeneration: "idx-gen-sse-test",
+		EmbeddingModel:  "embed-model-sse",
+		VectorWeight:    0.8,
+		Bm25Weight:      0.2,
+		RrfK:            60,
+		CandidateLimit:  50,
+		FinalLimit:      10,
+		ActiveFilter: &pb.DocumentFilter{
+			DocumentIds:  []string{"doc-1"},
+			ContentTypes: []string{"text/plain"},
+		},
+		ResultHash:      "",
+		RetrievedChunks: []*pb.StructuredCitation{},
+	}
+	evFail := &pb.WorkflowEvent{
+		Event: &pb.WorkflowEvent_WorkflowCompleted{
+			WorkflowCompleted: &pb.WorkflowCompletedEvent{
+				Success:         false,
+				DurationMs:      1200,
+				Metadata:        meta,
+				PartialSnapshot: partialSnap,
+			},
+		},
+	}
+
+	rawFail := writeEvent(t, evFail)
+	nameFail, dataFail := splitFrame(t, rawFail)
+	if nameFail != "workflow_completed" {
+		t.Fatalf("expected event name 'workflow_completed', got %q", nameFail)
+	}
+
+	var payloadFail struct {
+		Success         bool                  `json:"success"`
+		DurationMs      int64                 `json:"duration_ms"`
+		PartialSnapshot *RetrievalSnapshotDTO `json:"partial_snapshot"`
+		Metadata        map[string]any        `json:"metadata"`
+		Notices         []NoticeDTO           `json:"notices"`
+	}
+	if err := json.Unmarshal([]byte(dataFail), &payloadFail); err != nil {
+		t.Fatalf("unmarshal fail payload: %v", err)
+	}
+
+	if payloadFail.Success {
+		t.Fatal("expected success: false on failure event")
+	}
+	if payloadFail.PartialSnapshot == nil {
+		t.Fatal("expected partial_snapshot to be non-nil on failure event")
+	}
+	if payloadFail.PartialSnapshot.IndexGeneration != "idx-gen-sse-test" {
+		t.Errorf("expected index_generation 'idx-gen-sse-test', got %q", payloadFail.PartialSnapshot.IndexGeneration)
+	}
+	if payloadFail.Metadata == nil {
+		t.Fatal("expected metadata map in payload")
+	}
+	if payloadFail.Metadata["graph_prompt_fact_count"] != float64(7) {
+		t.Errorf("expected graph_prompt_fact_count: 7, got %v", payloadFail.Metadata["graph_prompt_fact_count"])
+	}
+
+	// Case 2: Success terminal event with final_response
+	evSuccess := &pb.WorkflowEvent{
+		Event: &pb.WorkflowEvent_WorkflowCompleted{
+			WorkflowCompleted: &pb.WorkflowCompletedEvent{
+				Success:    true,
+				DurationMs: 800,
+				Metadata:   meta,
+				FinalResponse: &pb.QueryRAGResponse{
+					Answer: "Successful answer",
+				},
+				PartialSnapshot: nil,
+			},
+		},
+	}
+
+	rawSuccess := writeEvent(t, evSuccess)
+	nameSuccess, dataSuccess := splitFrame(t, rawSuccess)
+	if nameSuccess != "workflow_completed" {
+		t.Fatalf("expected event name 'workflow_completed', got %q", nameSuccess)
+	}
+
+	var rawMapSuccess map[string]any
+	if err := json.Unmarshal([]byte(dataSuccess), &rawMapSuccess); err != nil {
+		t.Fatalf("unmarshal success payload: %v", err)
+	}
+
+	// partial_snapshot key must be present (with null value)
+	if _, ok := rawMapSuccess["partial_snapshot"]; !ok {
+		t.Fatal("expected partial_snapshot key to be present on success payload")
+	}
+	if rawMapSuccess["partial_snapshot"] != nil {
+		t.Errorf("expected partial_snapshot to be null on success payload, got %v", rawMapSuccess["partial_snapshot"])
+	}
+
+	// notices key must NOT be present on success
+	if _, hasNotices := rawMapSuccess["notices"]; hasNotices {
+		t.Fatal("expected notices key to be absent on success payload with final_response")
+	}
+
+	// metadata must carry graph_prompt_fact_count
+	metaMapSuccess, ok := rawMapSuccess["metadata"].(map[string]any)
+	if !ok || metaMapSuccess["graph_prompt_fact_count"] != float64(7) {
+		t.Errorf("expected graph_prompt_fact_count: 7 in success metadata, got %v", metaMapSuccess["graph_prompt_fact_count"])
+	}
+}
+

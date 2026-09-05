@@ -84,6 +84,28 @@ impl RetrieveHybridNode {
             ctx.variants.push(ctx.original_query.clone());
         }
 
+        // D-33: Seed snapshot with pre-retrieval provenance before any await point.
+        // If RetrieveHybrid stalls or fails, this seed survives the dropped node future,
+        // allowing emit_terminal_once to attach partial_snapshot to WorkflowCompletedEvent.
+        // On the successful path, step 4 below overwrites this seed with the completed snapshot
+        // including retrieved chunks and result_hash.
+        // An empty result_hash on a partial snapshot is the sentinel distinguishing
+        // "never ran to completion" from "completed with 0 results".
+        ctx.snapshot = Some(crate::pb::lancet::v1::RetrievalSnapshot {
+            index_generation: self.index_generation.clone(),
+            embedding_model: self.embedding_model.clone(),
+            vector_weight: self.settings.vector_weight,
+            bm25_weight: self.settings.bm25_weight,
+            rrf_k: self.settings.rrf_k as i32,
+            candidate_limit: self.settings.candidate_limit as i32,
+            final_limit: self.settings.final_limit as i32,
+            active_filter: ctx.filter.clone(),
+            result_hash: String::new(),
+            variant_count: ctx.variants.len() as u32,
+            variant_identities: ctx.variants.clone(),
+            retrieved_chunks: Vec::new(),
+        });
+
         let embedding = ctx.query_embedding.as_deref().unwrap_or(&[]);
 
         // 1. Dense retrieval for variant-zero embedding

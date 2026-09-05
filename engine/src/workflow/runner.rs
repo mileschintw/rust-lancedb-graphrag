@@ -635,8 +635,7 @@ impl WorkflowRunner {
             prompt_tokens: ctx.prompt_tokens,
             completion_tokens: ctx.completion_tokens,
             degraded_mode,
-            // Plan 06.3.1-04 owns replacing this inert stub with a real value.
-            graph_prompt_fact_count: 0,
+            graph_prompt_fact_count: ctx.graph_prompt_fact_count,
         };
 
         let current_span = tracing::Span::current();
@@ -647,6 +646,7 @@ impl WorkflowRunner {
         current_span.record("lancet.workflow.bm25_count", metadata.bm25_count);
         current_span.record("lancet.workflow.graph_node_count", metadata.graph_node_count);
         current_span.record("lancet.workflow.graph_edge_count", metadata.graph_edge_count);
+        current_span.record("lancet.workflow.graph_prompt_fact_count", metadata.graph_prompt_fact_count);
         current_span.record("lancet.workflow.prompt_tokens", metadata.prompt_tokens);
         current_span.record("lancet.workflow.completion_tokens", metadata.completion_tokens);
         current_span.record("lancet.degraded_mode", metadata.degraded_mode);
@@ -668,10 +668,14 @@ impl WorkflowRunner {
                     Some(response),
                     ctx.notices.clone(),
                     Some(metadata),
+                    None,
                 );
                 sink.send_terminal_event(event).await;
             }
             Some(err) => {
+                // D-33: On failure, final_response is absent by contract.
+                // Attach ctx.snapshot (if populated by pre-retrieval seeding or execution)
+                // as partial_snapshot so a failed query carries attribution and provenance.
                 let event = events::workflow_completed(
                     false,
                     duration_ms,
@@ -680,6 +684,7 @@ impl WorkflowRunner {
                     None,
                     ctx.notices.clone(),
                     Some(metadata),
+                    ctx.snapshot.clone(),
                 );
                 sink.send_terminal_event(event).await;
             }

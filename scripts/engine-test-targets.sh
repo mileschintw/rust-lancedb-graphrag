@@ -14,9 +14,9 @@ if ! command -v cargo >/dev/null 2>&1; then
   fi
 fi
 
-# Note on test distribution invariants:
-# The library/binary split became assertable at plan 06-03 because 06-01 and 06-02
-# deliberately left it free while modules were still in flight.
+# Invariant history:
+#   488 — the Phase 06 baseline (TOTAL 488, lib 448, inspect_lancedb 18, config_startup 22).
+#   498 — Phase 06.3.1 (TOTAL 498, lib 458): plans 01, 02, 03, 04 added 10 unit/integration tests in engine lib.
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -53,18 +53,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + INTEG_CONFIG_COUNT 
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (7 named assertions)
-if [ "$TOTAL" -ne 488 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 488, got $TOTAL" >&2
+if [ "$TOTAL" -ne 498 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 498, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 448 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 448, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 458 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 458, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 448 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 448, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 458 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 458, got $LIB_COUNT" >&2
   exit 1
 fi
 

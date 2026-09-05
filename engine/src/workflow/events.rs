@@ -354,6 +354,7 @@ pub fn checkpoint(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn workflow_completed(
     success: bool,
     duration_ms: i64,
@@ -362,6 +363,7 @@ pub fn workflow_completed(
     final_response: Option<QueryRagResponse>,
     notices: Vec<Notice>,
     metadata: Option<crate::pb::lancet::v1::WorkflowMetadata>,
+    partial_snapshot: Option<RetrievalSnapshot>,
 ) -> Event {
     Event::WorkflowCompleted(WorkflowCompletedEvent {
         success,
@@ -371,7 +373,6 @@ pub fn workflow_completed(
         final_response,
         notices,
         metadata,
-        // Plan 06.3.1-04 owns replacing this inert stub with a real value.
-        partial_snapshot: None,
+        partial_snapshot,
     })
 }

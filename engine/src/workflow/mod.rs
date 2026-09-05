@@ -104,6 +104,10 @@ pub struct WorkflowContext {
     pub snapshot: Option<RetrievalSnapshot>,
     pub graph_node_count: u32,
     pub graph_edge_count: u32,
+    /// D-06: counts graph-derived facts that actually reached the assembled prompt (influence).
+    /// Distinct from graph_node_count and graph_edge_count, which measure graph presence.
+    /// Non-zero presence with zero influence is a valid, expected outcome (e.g. graph weight 0.0 or low priority).
+    pub graph_prompt_fact_count: u32,
     pub generation_attempts: u32,
     pub started_at_ms: i64,
     pub prompt_tokens: u32,
@@ -136,6 +140,7 @@ impl WorkflowContext {
             snapshot: None,
             graph_node_count: 0,
             graph_edge_count: 0,
+            graph_prompt_fact_count: 0,
             generation_attempts: 0,
             started_at_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

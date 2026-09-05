@@ -2951,9 +2951,9 @@ func TestQueryRAG_SSE_WorkflowCompletedPayloadKeySet(t *testing.T) {
 		if evs[0].Event != "workflow_completed" {
 			t.Fatalf("event = %q, want workflow_completed", evs[0].Event)
 		}
-		// Plan 06-07 legitimately updates this expected key set
+		// Plan 06.3.1-04 updates this expected key set with partial_snapshot
 		assertSSEPayloadKeySet(t, evs[0].Data, []string{
-			"error_kind", "error_message", "final_response", "metadata", "success", "total_duration_ms",
+			"error_kind", "error_message", "final_response", "metadata", "partial_snapshot", "success", "total_duration_ms",
 		})
 	}
 
@@ -2990,9 +2990,9 @@ func TestQueryRAG_SSE_WorkflowCompletedPayloadKeySet(t *testing.T) {
 		if evs[0].Event != "workflow_completed" {
 			t.Fatalf("event = %q, want workflow_completed", evs[0].Event)
 		}
-		// Plan 06-07 legitimately updates this expected key set
+		// Plan 06.3.1-04 updates this expected key set with partial_snapshot
 		assertSSEPayloadKeySet(t, evs[0].Data, []string{
-			"error_kind", "error_message", "metadata", "notices", "success", "total_duration_ms",
+			"error_kind", "error_message", "metadata", "notices", "partial_snapshot", "success", "total_duration_ms",
 		})
 		var rawWc map[string]json.RawMessage
 		if err := json.Unmarshal([]byte(evs[0].Data), &rawWc); err != nil {
@@ -3002,7 +3002,7 @@ func TestQueryRAG_SSE_WorkflowCompletedPayloadKeySet(t *testing.T) {
 			"code", "message", "severity", "typed_code",
 		})
 		assertSSEPayloadKeySet(t, string(rawWc["metadata"]), []string{
-			"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_edge_count", "graph_node_count", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
+			"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_edge_count", "graph_node_count", "graph_prompt_fact_count", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
 		})
 	}
 }
@@ -4482,7 +4482,7 @@ func TestQueryRAG_SSE_WorkflowCompletedWithExplicitMetadata(t *testing.T) {
 	}
 
 	assertSSEPayloadKeySet(t, string(rawWc["metadata"]), []string{
-		"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_edge_count", "graph_node_count", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
+		"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_edge_count", "graph_node_count", "graph_prompt_fact_count", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
 	})
 
 	var metaMap map[string]any

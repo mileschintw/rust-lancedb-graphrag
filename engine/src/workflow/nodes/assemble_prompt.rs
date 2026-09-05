@@ -93,6 +93,7 @@ impl Node for AssemblePromptNode {
                 Ok(packed) => {
                     ctx.assembled_prompt = packed.prompt;
                     ctx.evidence_blocks = packed.evidence;
+                    ctx.graph_prompt_fact_count = packed.graph_facts.len() as u32;
                     ctx.graph_facts = packed.graph_facts;
                     crate::telemetry::metrics::record_evidence_set_size(
                         ctx.evidence_blocks.len() as u64,
