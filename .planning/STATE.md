@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.1
-current_phase_name: eval-harness-diagnostics-scored-dimensions-and-paired-ablati
+current_phase_name: retrieval-latency-measurement-pass-and-timeout-budget-deriva
 status: executing
 stopped_at: "Phase 06.3.1 split into siblings 06.3.1-06.3.4 (OBS-05 registered); next: /gsd-ai-integration-phase for the family, then plan each sibling with context_path injected by hand"
-last_updated: "2026-09-05T07:25:44.258Z"
+last_updated: "2026-09-05T08:16:25.036Z"
 last_activity: 2026-09-05
-state_head: 2071193e93213d56acaa154ca7284d926fac28a5
+state_head: 1fdd48d50be91a45474b60a4ebd4c4116f00fec5
 progress:
   total_phases: 15
   completed_phases: 7
-  total_plans: 141
+  total_plans: 145
   completed_plans: 132
 milestone_name: milestone
 current_plan: 11
@@ -142,7 +142,7 @@ current_plan: 11
 
 - **Phase:** 06.3.1 — Fix retrieval citation collapse and graph ablation measurement fidelity
 - **Status:** Ready to execute
-- **Total Plans in Phase:** 5
+- **Total Plans in Phase:** 4
 - **Completed Plans in Phase:** 8/8 (executed; phase-level gates run 2026-08-29/30, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (6/9 must-haves)
 - **Next:** `/gsd-plan-phase 6.3 --gaps`
