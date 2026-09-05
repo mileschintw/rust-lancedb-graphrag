@@ -108,14 +108,36 @@ impl DatabaseManager {
         Ok(())
     }
 
+    /// Delegates to `finish_get_or_create` (tested directly with synthetic errors — see
+    /// its doc comment). This wrapper's own two-line composition — resolving
+    /// `open_table` and forwarding the result unmodified — has no test that would catch
+    /// a regression introduced here specifically (e.g. reinlining the match and
+    /// dropping the propagate arm) rather than in `finish_get_or_create` itself; a test
+    /// for that would need a real, non-synthetic non-`TableNotFound` error out of a live
+    /// `open_table` call, which is exactly the platform-sensitive induction this split
+    /// was written to avoid (see `finish_get_or_create`'s doc comment). Known, accepted
+    /// residual — flagged in 06.3.1-VERIFICATION.md rather than left implicit.
     async fn get_or_create_table(&self, name: &str) -> Result<Table, String> {
-        match self.connection.open_table(name).execute().await {
+        let open_result = self.connection.open_table(name).execute().await;
+        Self::finish_get_or_create(&self.connection, name, open_result).await
+    }
+
+    /// The decision-and-create logic `get_or_create_table` runs once `open_table` has
+    /// already resolved. Split out so tests can drive it with a synthetic
+    /// `Err(lancedb::Error)` — proving the fail-closed propagation branch itself,
+    /// not just the standalone `is_table_not_found` classifier — without depending on
+    /// inducing a real, platform-sensitive I/O error from `open_table` (D-24, D-25).
+    async fn finish_get_or_create(
+        connection: &Connection,
+        name: &str,
+        open_result: Result<Table, lancedb::Error>,
+    ) -> Result<Table, String> {
+        match open_result {
             Ok(tbl) => Ok(tbl),
             Err(err) if is_table_not_found(&err) => {
                 let schemas = table_schemas();
                 if let Some((_, expected)) = schemas.into_iter().find(|(n, _)| *n == name) {
-                    let tbl = self
-                        .connection
+                    let tbl = connection
                         .create_empty_table(name, expected)
                         .execute()
                         .await

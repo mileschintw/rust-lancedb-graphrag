@@ -345,26 +345,47 @@ fn is_table_not_found_discriminates_missing_from_non_missing() {
     );
 }
 
-/// 06.3.1-02 Test 3: get_or_create_table fails closed on non-missing table error.
-/// Marked #[ignore] due to Windows file-locking non-determinism during table corruption,
-/// as specified in Plan 06.3.1-02.
+/// 06.3.1-02 Test 3 (rewritten): get_or_create_table fails closed on non-missing-table
+/// error, exercising the actual method's control flow — not just the standalone
+/// `is_table_not_found` classifier `is_table_not_found_discriminates_missing_from_non_missing`
+/// covers. The original version of this test tried to induce a real non-`TableNotFound`
+/// error by corrupting an on-disk LanceDB table directory, which was unconditionally
+/// `#[ignore]`d for Windows file-locking non-determinism and never ran on any platform —
+/// confirmed by 06.3.1-VERIFICATION.md's revert-test that no executing test caught a
+/// reversion to the original fail-open wildcard. This version drives
+/// `DatabaseManager::finish_get_or_create` — the exact decision logic
+/// `get_or_create_table` delegates to — with a synthetic, constructed
+/// `lancedb::Error::Runtime` standing in for a real non-missing-table `open_table`
+/// failure, so the test is deterministic on every platform with no filesystem
+/// corruption involved.
 #[tokio::test]
-#[ignore = "Windows file-locking non-determinism during on-disk directory corruption; covered by is_table_not_found_discriminates_missing_from_non_missing"]
 async fn get_or_create_table_fails_closed_on_non_missing_table_error() {
     let path = database_path("fail-closed-non-missing");
-    let manager = DatabaseManager::initialize(&path).await.unwrap();
+    let connection = lancedb::connect(&path).execute().await.unwrap();
 
-    let table_dir = std::path::Path::new(&path).join("documents.lance");
-    if table_dir.exists() {
-        let dummy_file = table_dir.join("corrupted.data");
-        std::fs::write(&dummy_file, b"invalid lance data").unwrap();
-    }
+    let synthetic_err = lancedb::Error::Runtime {
+        message: "synthetic non-missing-table failure for regression coverage".into(),
+    };
+    let res =
+        DatabaseManager::finish_get_or_create(&connection, "documents", Err(synthetic_err)).await;
 
-    let res = manager.documents_table().await;
-    if let Err(msg) = res {
-        assert!(msg.contains("documents"));
-    }
+    assert!(
+        res.is_err(),
+        "get_or_create_table must fail closed (return Err) on a non-TableNotFound open error, got Ok"
+    );
+    let msg = res.unwrap_err();
+    assert!(
+        msg.contains("failed to open LanceDB table documents"),
+        "error must come from the propagate branch, not the create branch: {msg}"
+    );
 
-    drop(manager);
+    // The propagate branch must never attempt to create the table: on this fresh,
+    // never-initialized store, "documents" must still not exist afterward.
+    let names = connection.table_names().execute().await.unwrap();
+    assert!(
+        !names.contains(&"documents".to_string()),
+        "the fail-closed branch must not create a table as a side effect"
+    );
+
     let _ = std::fs::remove_dir_all(path);
 }
