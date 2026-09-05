@@ -738,11 +738,34 @@ Plans:
 9. The preflight gains query-path checks driven by a committed canary set with fixed floors: each canary returns >= 1 retrieved chunk, graph-on canaries whose entities are known to be in the graph return >= 1 graph node, per-node duration under budget (D-10, D-11, D-31). This canary is also what locks the 06.3.3 budget values in (D-12).
 10. All four open `06.3-REVIEW.md` findings are closed: CR-01, WR-02, WR-03, WR-04 + IN-02 (D-36).
 
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 06.3.2 to break down)
+**Wave 1**
+
+- [ ] 06.3.2-01-PLAN.md — Tracer: carry one wire field the whole way (SSE frame → journal record → usable-record filter → scored dimension → `report.md` row), stop `run.py:58` writing `success` on a workflow that failed, and unify the denominator convention across retrieval and answer dimensions (SC-1, SC-7; D-01, D-27, D-34)
+
+**Wave 2** *(blocked on 06.3.2-01)*
+
+- [ ] 06.3.2-02-PLAN.md — Per-path and graph-health dimensions the report has never had, and `wire_contract_conformance` redefined to count self-contradiction rather than rows that parsed (SC-3, SC-8; D-02, D-09, D-31, D-35)
+- [ ] 06.3.2-03-PLAN.md — Forensic retention of the raw stream where things went wrong, plus a preflight that actually probes the query path against the committed canary set (SC-2, SC-9; D-07, D-10, D-11, D-12)
+
+**Wave 3** *(blocked on 06.3.2-02)*
+
+- [ ] 06.3.2-04-PLAN.md — Replace the ablation measurement that produced the phase's worst number: dedup per `(question_id, arm)`, pair per question, bootstrap deterministically, stratify by gold `question_type`, and report latency and prompt-token cost alongside quality (SC-4, SC-5, SC-6, SC-10 part; D-37–D-43)
+
+**Wave 4** *(blocked on 06.3.2-04)*
+
+- [ ] 06.3.2-05-PLAN.md — Close the four open `06.3-REVIEW.md` findings (CR-01, WR-02, WR-03, WR-04 + IN-02) and finish the report surface so the run reads honestly end to end (SC-10; D-36, D-02, D-34, D-35)
+
+**Cross-cutting constraints:**
+
+- **`is_usable()` is the single denominator predicate for the whole phase.** Declared in plan 01, consumed by 02, 04 and 05. Infrastructure-failed records leave *every* quality mean — retrieval and answer alike. The old asymmetry (retrieval excluded them, answer scored them as zeros) is what produced the headline `answer_exact_match = 0.000`.
+- **Deduplication is keyed on `(question_id, arm)`, never on `question_id` alone.** Dedup by question deletes one arm and destroys the pairing this phase exists to build.
+- **Graph emptiness never gates a run as bad.** Graph dimensions report their numbers and stay `status="ok"` on a presence-floor miss; the preflight canary is the *only* place a missing graph hit may fail a run, and only on its two designated rows.
+- **Line numbers cited for `score.py` will drift.** Plans 01, 02 and 04 each rewrite parts of it in sequence, so the ranges quoted in plans 02/04/05 reflect pre-phase state. Executors must locate targets by function/block name, not by the cited line range.
+- **Upstream contract dependency on 06.3.1 (not yet executed):** notice tag 19 / `NOTICE_CODE_RETRIEVAL_FAILED`, `WorkflowCompletedEvent.partial_snapshot` (tag 8), and `WorkflowMetadata.graph_prompt_fact_count` (tag 11, `uint32`). Referenced by contract only — these do not exist in code yet.
 
 ### Phase 06.3.3: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
 

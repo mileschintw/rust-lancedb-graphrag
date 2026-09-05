@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.1
-current_phase_name: fix-retrieval-citation-collapse-and-graph-ablation-measureme
+current_phase_name: eval-harness-diagnostics-scored-dimensions-and-paired-ablati
 status: executing
 stopped_at: "Phase 06.3.1 split into siblings 06.3.1-06.3.4 (OBS-05 registered); next: /gsd-ai-integration-phase for the family, then plan each sibling with context_path injected by hand"
-last_updated: "2026-09-05T03:07:25.875Z"
-last_activity: 2026-09-04
-state_head: 3d47cf9e752921dc770dd02f6d488744a0cd3217
+last_updated: "2026-09-05T07:25:44.258Z"
+last_activity: 2026-09-05
+state_head: 2071193e93213d56acaa154ca7284d926fac28a5
 progress:
   total_phases: 15
   completed_phases: 7
-  total_plans: 136
+  total_plans: 141
   completed_plans: 132
 milestone_name: milestone
 current_plan: 11
@@ -142,7 +142,7 @@ current_plan: 11
 
 - **Phase:** 06.3.1 — Fix retrieval citation collapse and graph ablation measurement fidelity
 - **Status:** Ready to execute
-- **Total Plans in Phase:** 4
+- **Total Plans in Phase:** 5
 - **Completed Plans in Phase:** 8/8 (executed; phase-level gates run 2026-08-29/30, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (6/9 must-haves)
 - **Next:** `/gsd-plan-phase 6.3 --gaps`
@@ -313,7 +313,7 @@ current_plan: 11
 ## Session
 
 **Last session:** 2026-09-05T01:38:18.754Z
-**Last activity:** 2026-09-04
+**Last activity:** 2026-09-05
 **Stopped at:** Phase 06.3.1 split into siblings 06.3.1-06.3.4 (OBS-05 registered); next: /gsd-ai-integration-phase for the family, then plan each sibling with context_path injected by hand
 **Resume file:** .planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md
 
