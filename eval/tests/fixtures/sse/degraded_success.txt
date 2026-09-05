@@ -1,0 +1,3 @@
+event: workflow_completed
+data: {"success":true,"total_duration_ms":90,"final_response":{"answer":"Degraded valid answer","citations":[],"session_id":"s","answer_basis":2,"structured_citations":[],"notices":[{"code":"GRAPH_TIMEOUT","message":"Timeout","severity":1,"typed_code":10}],"snapshot":{"index_generation":"g1","embedding_model":"bge","vector_weight":1.0,"bm25_weight":0.8,"rrf_k":60,"candidate_limit":32,"final_limit":8,"result_hash":"h","retrieved_chunks":[]}}}
+

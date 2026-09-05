@@ -1,0 +1,6 @@
+event: node_failed
+data: {"node_name":"RetrieveHybrid","error_kind":4,"error_message":"dense index query failed","retryable":false}
+
+event: workflow_completed
+data: {"success":false,"total_duration_ms":80,"error_kind":4,"error_message":"dense index query failed","partial_snapshot":{"index_generation":"gen-failed-audit","embedding_model":"bge-small","vector_weight":1.0,"bm25_weight":0.8,"rrf_k":60,"candidate_limit":32,"final_limit":8,"result_hash":"hash-failed","retrieved_chunks":[]}}
+

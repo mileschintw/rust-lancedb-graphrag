@@ -1,0 +1,9 @@
+event: node_failed
+data: {"node_name":"GenerateAnswer","error_kind":1,"error_message":"timeout retryable","retryable":true}
+
+event: final_answer
+data: {"answer":"Recovered answer","citations":[],"session_id":"s","answer_basis":1,"structured_citations":[],"notices":[],"snapshot":{"index_generation":"g1","embedding_model":"bge","vector_weight":1.0,"bm25_weight":0.8,"rrf_k":60,"candidate_limit":32,"final_limit":8,"result_hash":"h","retrieved_chunks":[]}}
+
+event: workflow_completed
+data: {"success":true,"total_duration_ms":250}
+

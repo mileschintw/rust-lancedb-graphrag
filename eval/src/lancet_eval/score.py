@@ -25,6 +25,8 @@ from lancet_eval.dimensions import (
     make_faithfulness_result,
     make_graph_ablation_delta,
     make_groundedness_result,
+    make_unusable_record_rate,
+    make_vector_yield,
 )
 from lancet_eval.journal import RunRecord
 from lancet_eval.judge import (
@@ -51,6 +53,7 @@ from lancet_eval.report import (
     render_json,
 )
 from lancet_eval.seed import load_document_map
+from lancet_eval.usability import has_arm_provenance, is_usable
 
 
 class ScoreError(Exception):
@@ -189,8 +192,8 @@ def score_run(
 
     for arm, arm_records in records_by_arm.items():
         total_records = len(arm_records)
-        error_records = [r for r in arm_records if r.outcome == "error"]
-        success_records = [r for r in arm_records if r.outcome == "success"]
+        unusable_records = [r for r in arm_records if not is_usable(r)]
+        usable_records = [r for r in arm_records if is_usable(r)]
 
         recalls: list[float] = []
         precisions: list[float] = []
@@ -202,13 +205,13 @@ def score_run(
         retrieval_skipped_count = 0
         provenance_error_count = 0
 
-        for rec in success_records:
+        for rec in usable_records:
             gold = gold_map.get(rec.question_id)
             if not gold:
                 continue
 
             # Provenance check on graph-off
-            if arm == "graph-off" and not _check_provenance(rec):
+            if arm == "graph-off" and not has_arm_provenance(rec):
                 provenance_error_count += 1
                 continue
 
@@ -259,8 +262,9 @@ def score_run(
 
         arm_metrics[arm] = {
             "total": total_records,
-            "errors": len(error_records) + provenance_error_count,
-            "success": len(success_records) - provenance_error_count,
+            "errors": len(unusable_records) + provenance_error_count,
+            "success": len(usable_records) - provenance_error_count,
+            "provenance_excluded": provenance_error_count,
             "retrieval_skipped": retrieval_skipped_count,
             "recalls": recalls,
             "precisions": precisions,
@@ -269,6 +273,10 @@ def score_run(
             "ems": ems,
             "f1s": f1s,
             "abstentions": abstentions,
+            "usable_records": [
+                r for r in usable_records
+                if arm != "graph-off" or has_arm_provenance(r)
+            ],
         }
 
     # Primary scoring over graph-on arm
@@ -552,6 +560,12 @@ def score_run(
         print(f"Emitted {count_emitted} calibration worksheet rows to {out_ws_path}")
 
     dimensions: list[DimensionResult] = []
+
+    # 0. Integrity & path health dimensions
+    dimensions.append(make_unusable_record_rate(records=records))
+
+    usable_primary_records = p_data.get("usable_records", [])
+    dimensions.append(make_vector_yield(records=usable_primary_records))
 
     # Helper for building mean score dimension
     def _build_mean_dim(

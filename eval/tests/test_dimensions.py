@@ -60,6 +60,8 @@ def test_dimension_result_forbids_extra_fields() -> None:
 
 def test_registered_dimensions_inventory() -> None:
     expected = [
+        "unusable_record_rate",
+        "vector_yield",
         "retrieval_evidence_coverage",
         "context_precision_at_k",
         "ranking_quality",

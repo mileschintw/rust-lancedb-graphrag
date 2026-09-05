@@ -150,7 +150,8 @@ def test_all_normative_caveats_present_in_markdown() -> None:
         "Gold facts longer than the corpus's chunk size cannot appear verbatim",
         "Lancet's answer metrics are not comparable to the MultiHop-RAG paper",
         "Neither reported ranking metric is the MultiHop-RAG paper's own convention",
-        "A query whose generation failed carries no retrieval snapshot on the wire",
+        "Infrastructure-failed records are excluded from every quality denominator",
+        "A graph-off record that fails provenance verification is excluded",
         "This report is advisory only with no automated pass/fail gate",
     ]
 

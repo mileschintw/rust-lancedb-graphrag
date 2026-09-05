@@ -10,7 +10,14 @@ import httpx
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
-from lancet_eval.journal import Journal, RunRecord, journal_key, load_done
+from lancet_eval.journal import (
+    Journal,
+    NodeTiming,
+    RunRecord,
+    WorkflowWireMeta,
+    journal_key,
+    load_done,
+)
 
 # The sole durable arm-to-flag mapping in the evaluation harness (Task 1 / D-47).
 GRAPH_ARMS: dict[str, bool] = {
@@ -44,18 +51,50 @@ def drive_one(
             deadline_s=deadline_s,
         )
 
+        outcome_literal = "error" if outcome.status == "failed" else "success"
         answer_text = outcome.answer.answer if outcome.answer else ""
-        snapshot = outcome.answer.snapshot if outcome.answer else None
+
+        # Answer snapshot takes precedence; fallback to failure-path partial_snapshot
+        snapshot = (
+            outcome.answer.snapshot
+            if (outcome.answer and outcome.answer.snapshot is not None)
+            else outcome.partial_snapshot
+        )
         index_generation = snapshot.index_generation if snapshot else ""
         structured_citations = (
             outcome.answer.structured_citations if outcome.answer else []
         )
 
+        node_timings = [
+            NodeTiming(
+                node_name=t.node_name,
+                duration_ms=float(t.duration_ms if t.duration_ms is not None else 0.0),
+            )
+            for t in outcome.node_timings
+            if t.duration_ms is not None
+        ]
+
+        workflow_meta = None
+        if outcome.workflow_meta is not None:
+            workflow_meta = WorkflowWireMeta(
+                started_at_ms=outcome.workflow_meta.started_at_ms,
+                completed_at_ms=outcome.workflow_meta.completed_at_ms,
+                reformulation_used=outcome.workflow_meta.reformulation_used,
+                vector_count=outcome.workflow_meta.vector_count,
+                bm25_count=outcome.workflow_meta.bm25_count,
+                graph_node_count=outcome.workflow_meta.graph_node_count,
+                graph_edge_count=outcome.workflow_meta.graph_edge_count,
+                prompt_tokens=outcome.workflow_meta.prompt_tokens,
+                completion_tokens=outcome.workflow_meta.completion_tokens,
+                degraded_mode=outcome.workflow_meta.degraded_mode,
+                graph_prompt_fact_count=outcome.workflow_meta.graph_prompt_fact_count,
+            )
+
         return RunRecord(
             corpus=corpus,
             question_id=question.id,
             graph_arm=arm,
-            outcome="success",
+            outcome=outcome_literal,
             answer=answer_text,
             snapshot=snapshot,
             structured_citations=structured_citations,
@@ -66,6 +105,8 @@ def drive_one(
             correlation_id=outcome.correlation_id,
             index_generation=index_generation,
             partial=partial,
+            node_timings=node_timings,
+            workflow_meta=workflow_meta,
         )
     except Exception as exc:
         return RunRecord(

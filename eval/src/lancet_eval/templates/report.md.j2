@@ -38,7 +38,7 @@
 {% if d.status == "ok" %}
 | `{{ d.name }}` | ok | **{{ format_score(d.name, d.score) }}** | {{ d.n }} | {{ format_details(d.detail) }} |
 {% else %}
-| `{{ d.name }}` | {{ d.status }} | — | {{ d.n }} | {{ d.reason }} |
+| `{{ d.name }}` | {{ d.status }} | — | {{ d.n }} | {{ d.reason }}{% if d.detail %}; {{ format_details(d.detail) }}{% endif %} |
 {% endif %}
 {% endfor %}
 
@@ -49,5 +49,6 @@
 3. **Chunk Size & Overlength Facts:** Gold facts longer than the corpus's chunk size cannot appear verbatim in any single chunk, are excluded from the recall denominator, and are reported as their own count.
 4. **Paper Comparability:** Lancet's answer metrics are not comparable to the MultiHop-RAG paper's reported accuracy, because the reference scorer credits any shared lowercased token.
 5. **Ranking Metric Convention:** Neither reported ranking metric is the MultiHop-RAG paper's own convention unless the additive reference-convention figure is present and labelled.
-6. **Failed Query Snapshot Exclusion:** A query whose generation failed carries no retrieval snapshot on the wire and is excluded from retrieval denominators rather than scored as zero.
-7. **Rounding & Advisory Status:** This report is advisory only with no automated pass/fail gate. Scores are rounded using banker's rounding (3 decimals for ratios, 2 decimals for judged scales). Full float precision is recorded in report.json.
+6. **Infrastructure Failure Denominator Exclusion:** Infrastructure-failed records are excluded from every quality denominator, retrieval and answer alike, and their count and rate are published as their own dimension.
+7. **Arm Provenance Exclusion:** A graph-off record that fails provenance verification is excluded from graph-off quality metrics and recorded as an arm provenance exclusion.
+8. **Rounding & Advisory Status:** This report is advisory only with no automated pass/fail gate. Scores are rounded using banker's rounding (3 decimals for ratios, 2 decimals for judged scales). Full float precision is recorded in report.json.

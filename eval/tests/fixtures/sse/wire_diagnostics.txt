@@ -1,0 +1,12 @@
+event: node_completed
+data: {"node_name":"RetrieveHybrid","outputs_summary":"retrieved 5 chunks","duration_ms":42.5}
+
+event: node_completed
+data: {"node_name":"GenerateAnswer","outputs_summary":"generated answer","duration_ms":120.0}
+
+event: final_answer
+data: {"answer":"Healthy answer","citations":[],"session_id":"sess-diag-1","answer_basis":1,"structured_citations":[],"notices":[],"snapshot":{"index_generation":"gen-diag","embedding_model":"bge-small","vector_weight":1.0,"bm25_weight":0.8,"rrf_k":60,"candidate_limit":32,"final_limit":8,"result_hash":"hash-diag","retrieved_chunks":[{"chunk_id":"c1","document_id":"d1","title":"t1","section_path":"s1","excerpt":"e1","is_truncated":false,"score":0.9,"rank":1,"content_type":"text"}]}}
+
+event: workflow_completed
+data: {"success":true,"total_duration_ms":200,"metadata":{"started_at_ms":1000,"completed_at_ms":1200,"reformulation_used":true,"vector_count":5,"bm25_count":3,"graph_node_count":2,"graph_edge_count":1,"prompt_tokens":150,"completion_tokens":40,"degraded_mode":false,"graph_prompt_fact_count":2}}
+

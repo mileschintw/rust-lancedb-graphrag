@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import httpx
@@ -84,6 +87,32 @@ class NodeFailed(BaseModel):
     retryable: bool
 
 
+class NodeCompleted(BaseModel):
+    """Diagnostic event describing a completed node execution."""
+
+    model_config = ConfigDict(extra="ignore")
+    node_name: str
+    outputs_summary: str = ""
+    duration_ms: float | None = None
+
+
+class WorkflowMetadata(BaseModel):
+    """Workflow execution metadata emitted with workflow_completed."""
+
+    model_config = ConfigDict(extra="ignore")
+    started_at_ms: int = 0
+    completed_at_ms: int = 0
+    reformulation_used: bool = False
+    vector_count: int = 0
+    bm25_count: int = 0
+    graph_node_count: int = 0
+    graph_edge_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    degraded_mode: bool = False
+    graph_prompt_fact_count: int | None = None
+
+
 class WorkflowCompleted(BaseModel):
     """Terminal event signalling end of workflow."""
 
@@ -94,6 +123,8 @@ class WorkflowCompleted(BaseModel):
     error_message: str = ""
     final_response: RagAnswer | None = None
     notices: list[Notice] = Field(default_factory=list)
+    metadata: WorkflowMetadata | None = None
+    partial_snapshot: RetrievalSnapshot | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -144,6 +175,10 @@ class QueryOutcome(BaseModel):
     session_id: str = ""
     correlation_id: str = ""
     duration_ms: int = 0
+    node_timings: list[NodeCompleted] = Field(default_factory=list)
+    workflow_meta: WorkflowMetadata | None = None
+    partial_snapshot: RetrievalSnapshot | None = None
+    dropped_node_timings: int = 0
 
 
 def run_query(
@@ -185,6 +220,8 @@ def run_query(
             answer: RagAnswer | None = None
             completion: WorkflowCompleted | None = None
             node_failures: list[NodeFailed] = []
+            node_timings: list[NodeCompleted] = []
+            dropped_node_timings = 0
 
             for sse in event_source.iter_sse():
                 if time.monotonic() - started > deadline_s:
@@ -211,10 +248,15 @@ def run_query(
                         completion = WorkflowCompleted.model_validate(raw_wc)
                     case "node_failed":
                         node_failures.append(NodeFailed.model_validate_json(sse.data))
+                    case "node_completed":
+                        if len(node_timings) < 64:
+                            node_timings.append(NodeCompleted.model_validate_json(sse.data))
+                        else:
+                            dropped_node_timings += 1
                     case "stream_error":
                         f = StreamErrorFrame.model_validate_json(sse.data)
                         raise StreamAborted(f"{f.code}: {f.message}")
-                    case "answer_chunk" | "node_started" | "node_completed":
+                    case "answer_chunk" | "node_started":
                         pass
                     case other:
                         raise ContractViolation(f"unknown SSE event {other!r}")
@@ -229,6 +271,15 @@ def run_query(
             f"{final_answer_count} final_answer frames, expected <= 1"
         )
 
+    if dropped_node_timings > 0:
+        logger.warning(
+            "Dropped %d node_completed frames exceeding 64-entry cap",
+            dropped_node_timings,
+        )
+
+    workflow_meta = completion.metadata
+    partial_snapshot = completion.partial_snapshot
+
     if not completion.success:
         return QueryOutcome(
             status="failed",
@@ -239,6 +290,10 @@ def run_query(
             session_id=session,
             correlation_id=correlation,
             duration_ms=completion.total_duration_ms,
+            node_timings=node_timings,
+            workflow_meta=workflow_meta,
+            partial_snapshot=partial_snapshot,
+            dropped_node_timings=dropped_node_timings,
         )
 
     # Success path
@@ -253,6 +308,10 @@ def run_query(
             session_id=session,
             correlation_id=correlation,
             duration_ms=completion.total_duration_ms,
+            node_timings=node_timings,
+            workflow_meta=workflow_meta,
+            partial_snapshot=partial_snapshot,
+            dropped_node_timings=dropped_node_timings,
         )
 
     # final_answer_count == 0 with success == True
@@ -266,6 +325,10 @@ def run_query(
             session_id=session,
             correlation_id=correlation,
             duration_ms=completion.total_duration_ms,
+            node_timings=node_timings,
+            workflow_meta=workflow_meta,
+            partial_snapshot=partial_snapshot,
+            dropped_node_timings=dropped_node_timings,
         )
 
     if completion.notices:
@@ -278,6 +341,10 @@ def run_query(
             session_id=session,
             correlation_id=correlation,
             duration_ms=completion.total_duration_ms,
+            node_timings=node_timings,
+            workflow_meta=workflow_meta,
+            partial_snapshot=partial_snapshot,
+            dropped_node_timings=dropped_node_timings,
         )
 
     raise ContractViolation(

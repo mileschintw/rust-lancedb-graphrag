@@ -1,0 +1,6 @@
+event: final_answer
+data: {"answer":"A","citations":[],"session_id":"s","answer_basis":1,"structured_citations":[],"notices":[],"snapshot":{"index_generation":"gen-ans","embedding_model":"bge","vector_weight":1.0,"bm25_weight":0.8,"rrf_k":60,"candidate_limit":32,"final_limit":8,"result_hash":"h1","retrieved_chunks":[{"chunk_id":"c1","document_id":"d1","title":"","section_path":"","excerpt":"","is_truncated":false,"score":1.0,"rank":1,"content_type":""},{"chunk_id":"c2","document_id":"d1","title":"","section_path":"","excerpt":"","is_truncated":false,"score":0.9,"rank":2,"content_type":""},{"chunk_id":"c3","document_id":"d1","title":"","section_path":"","excerpt":"","is_truncated":false,"score":0.8,"rank":3,"content_type":""}]}}
+
+event: workflow_completed
+data: {"success":true,"total_duration_ms":100,"partial_snapshot":{"index_generation":"gen-part","embedding_model":"bge","vector_weight":1.0,"bm25_weight":0.8,"rrf_k":60,"candidate_limit":32,"final_limit":8,"result_hash":"h2","retrieved_chunks":[]}}
+

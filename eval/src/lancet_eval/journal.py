@@ -17,6 +17,31 @@ from lancet_eval.client import (
 )
 
 
+class NodeTiming(BaseModel):
+    """Durable record of completed node timing."""
+
+    model_config = ConfigDict(extra="forbid")
+    node_name: str
+    duration_ms: float
+
+
+class WorkflowWireMeta(BaseModel):
+    """Durable record of workflow execution metadata from wire."""
+
+    model_config = ConfigDict(extra="forbid")
+    started_at_ms: int = 0
+    completed_at_ms: int = 0
+    reformulation_used: bool = False
+    vector_count: int = 0
+    bm25_count: int = 0
+    graph_node_count: int = 0
+    graph_edge_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    degraded_mode: bool = False
+    graph_prompt_fact_count: int | None = None
+
+
 class RunRecord(BaseModel):
     """Durable record of a single question execution under one experimental arm."""
 
@@ -38,6 +63,8 @@ class RunRecord(BaseModel):
     partial: bool = False
     error_type: str | None = None
     error: str | None = None
+    node_timings: list[NodeTiming] = Field(default_factory=list)
+    workflow_meta: WorkflowWireMeta | None = None
 
 
 def journal_key(corpus: str, question_id: str, graph_arm: str) -> str:

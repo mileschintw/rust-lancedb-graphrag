@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -35,10 +35,6 @@ class DimensionResult(BaseModel):
                 raise ValueError(
                     f"status {self.status!r} cannot carry a score, got {self.score}"
                 )
-            if self.detail:
-                raise ValueError(
-                    f"status {self.status!r} cannot carry detail, got {self.detail}"
-                )
             if not self.reason or not self.reason.strip():
                 raise ValueError(f"status {self.status!r} requires a non-blank reason")
         return self
@@ -49,6 +45,8 @@ DimensionBuilder = Callable[..., DimensionResult]
 DIMENSION_REGISTRY: dict[str, DimensionBuilder] = {}
 
 REGISTERED_DIMENSIONS: list[str] = [
+    "unusable_record_rate",
+    "vector_yield",
     "retrieval_evidence_coverage",
     "context_precision_at_k",
     "ranking_quality",
@@ -212,6 +210,94 @@ def make_faithfulness_result(
         score=mean_val,
         detail=detail,
         n=len(verdicts),
+    )
+
+
+def make_unusable_record_rate(
+    *,
+    records: list[Any],
+) -> DimensionResult:
+    """Build DimensionResult for unusable_record_rate scored over full journal."""
+    from lancet_eval.stats import wilson_ci
+    from lancet_eval.usability import is_usable
+
+    n_journal = len(records)
+    if n_journal == 0:
+        return DimensionResult(
+            name="unusable_record_rate",
+            status="skipped",
+            reason="Journal contains 0 records",
+            n=0,
+        )
+
+    unusable_n = sum(1 for r in records if not is_usable(r))
+    p, ci_lo, ci_hi = wilson_ci(unusable_n, n_journal)
+    detail: dict[str, float] = {
+        "unusable_n": float(unusable_n),
+        "n_journal": float(n_journal),
+        "unusable_rate": float(p),
+        "ci_lower": float(ci_lo),
+        "ci_upper": float(ci_hi),
+    }
+    return DimensionResult(
+        name="unusable_record_rate",
+        status="ok",
+        score=p,
+        detail=detail,
+        n=n_journal,
+    )
+
+
+def make_vector_yield(
+    *,
+    records: list[Any],
+) -> DimensionResult:
+    """Build DimensionResult for vector_yield scored over usable records."""
+    from lancet_eval.stats import wilson_ci
+
+    if not records:
+        return DimensionResult(
+            name="vector_yield",
+            status="skipped",
+            reason="No usable records available to evaluate vector yield",
+            n=0,
+        )
+
+    records_with_meta = [r for r in records if r.workflow_meta is not None]
+    missing_meta_n = len(records) - len(records_with_meta)
+
+    if not records_with_meta:
+        return DimensionResult(
+            name="vector_yield",
+            status="skipped",
+            reason="All usable records missing workflow_meta",
+            detail={"missing_meta_n": float(missing_meta_n)},
+            n=len(records),
+        )
+
+    positive_vector_n = sum(
+        1 for r in records_with_meta if r.workflow_meta.vector_count > 0
+    )
+    n_denom = len(records_with_meta)
+    p, ci_lo, ci_hi = wilson_ci(positive_vector_n, n_denom)
+    mean_count = sum(
+        r.workflow_meta.vector_count for r in records_with_meta
+    ) / n_denom
+
+    detail: dict[str, float] = {
+        "mean_count": float(mean_count),
+        "positive_n": float(positive_vector_n),
+        "n_eval": float(n_denom),
+        "missing_meta_n": float(missing_meta_n),
+        "ci_lower": float(ci_lo),
+        "ci_upper": float(ci_hi),
+    }
+    return DimensionResult(
+        name="vector_yield",
+        status="ok",
+        score=p,
+        detail=detail,
+        n=len(records),
     )
 
 
