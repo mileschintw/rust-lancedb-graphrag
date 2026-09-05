@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tomllib
 from datetime import UTC, datetime
@@ -66,6 +67,8 @@ from lancet_eval.report import (
 from lancet_eval.seed import load_document_map
 from lancet_eval.usability import has_arm_provenance, is_usable
 
+logger = logging.getLogger(__name__)
+
 
 class ScoreError(Exception):
     """Raised when score encounters corrupt, invalid, or unmapped data."""
@@ -76,16 +79,22 @@ def _repo_root() -> Path:
 
 
 def _get_engine_generation_model() -> str:
-    """Read generation_model from config/config.toml."""
+    """Read generation_model from config/config.toml, logging warning on failure."""
     cfg_path = _repo_root() / "config" / "config.toml"
-    if cfg_path.is_file():
-        try:
-            with open(cfg_path, "rb") as f:
-                data = tomllib.load(f)
-            return str(data.get("openrouter", {}).get("generation_model", ""))
-        except Exception:
-            return ""
-    return ""
+    if not cfg_path.is_file():
+        logger.warning("Config file not found at %s (FileNotFoundError)", cfg_path)
+        return ""
+    try:
+        with open(cfg_path, "rb") as f:
+            data = tomllib.load(f)
+        return str(data.get("openrouter", {}).get("generation_model", ""))
+    except Exception as e:
+        logger.warning(
+            "Failed to read engine generation model from %s (%s)",
+            cfg_path,
+            type(e).__name__,
+        )
+        return ""
 
 
 def _check_provenance(record: RunRecord) -> bool:
@@ -285,11 +294,15 @@ def score_run(
             ],
         }
 
-    # Primary scoring over graph-on arm
-    if "graph-on" in arm_metrics and arm_metrics["graph-on"]["total"] > 0:
+    # WR-03: Primary scoring arm is chosen from the arm that actually has records
+    if arm_metrics.get("graph-on", {}).get("total", 0) > 0:
         primary_arm = "graph-on"
+    elif arm_metrics.get("graph-off", {}).get("total", 0) > 0:
+        primary_arm = "graph-off"
     else:
-        primary_arm = next(iter(arm_metrics.keys()))
+        # Belt-and-suspenders fallback if neither has records
+        # (though score_run refuses empty journals)
+        primary_arm = "graph-on"
     p_data = arm_metrics[primary_arm]
     p_records = records_by_arm.get(primary_arm, [])
 
@@ -332,8 +345,14 @@ def score_run(
     if not no_judge:
         # Check judge model distinctness from generator model
         gen_model = _get_engine_generation_model()
+        if not gen_model or not gen_model.strip():
+            raise ScoreError(
+                "Could not read engine generation model from configuration. "
+                "Judging cannot proceed because distinctness of judge and generation "
+                "models cannot be verified."
+            )
         judge_model = config.judge_model
-        if gen_model and judge_model and gen_model.strip() == judge_model.strip():
+        if judge_model and gen_model.strip() == judge_model.strip():
             raise ScoreError(
                 f"Configured judge model '{judge_model}' equals engine generation "
                 f"model '{gen_model}'. A judge cannot evaluate its own model family."
@@ -488,6 +507,15 @@ def score_run(
 
     # Emit calibration worksheet if requested
     if emit_calibration_worksheet is not None:
+        # CR-01: Refuse to emit worksheet without judging enabled
+        if no_judge:
+            raise ScoreError(
+                "Cannot emit calibration worksheet (--emit-calibration-worksheet) "
+                "when judging is disabled (--no-judge). Generating a valid "
+                "calibration worksheet requires cache-verified verdicts from "
+                "the judge model. Re-run with judging enabled (--judge) to "
+                "produce a valid calibration worksheet."
+            )
         out_ws_path = Path(emit_calibration_worksheet)
         out_ws_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -502,8 +530,8 @@ def score_run(
         ]
 
         # Select up to 20 representative items across query types
-        if not no_judge and judged_qids:
-            selected_records = []
+        selected_records = []
+        if judged_qids:
             for r in p_records:
                 if r.question_id not in judged_qids:
                     continue
@@ -525,8 +553,6 @@ def score_run(
                     selected_records.append(r)
                 if len(selected_records) == 20:
                     break
-        else:
-            selected_records = p_records[:20]
 
         for r in selected_records:
             gold = gold_map.get(r.question_id)
@@ -951,14 +977,15 @@ def score_run(
     res_hash = compute_result_hash(dimensions)
     lock_hash = get_lock_hash()
     index_gen = sorted(distinct_gens)[0] if distinct_gens else "unknown-gen"
-    gen_model_name = _get_engine_generation_model() or "deepseek/deepseek-v4-flash-0731"
+    gen_model_name = _get_engine_generation_model() or "unknown-generation-model"
 
     # Find embedding model from first available snapshot or fallback
-    emb_model = "voyageai/voyage-4-large"
+    emb_model = "unknown-embedding-model"
     for r in records:
         if r.snapshot and getattr(r.snapshot, "embedding_model", None):
-            emb_model = r.snapshot.embedding_model
-            break
+            if r.snapshot.embedding_model and r.snapshot.embedding_model.strip():
+                emb_model = r.snapshot.embedding_model
+                break
 
     metadata = RunMetadata(
         corpus=corpus_name,

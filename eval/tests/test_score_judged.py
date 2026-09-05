@@ -383,7 +383,7 @@ def test_calibration_blank_human_score_fails_loud(tmp_path: Path) -> None:
 def test_worksheet_rows_are_drawn_from_the_judged_subset(
     httpx_mock: HTTPXMock, tmp_path: Path
 ) -> None:
-    """Proves worksheet rows are selected from judged subset and exclude uncited records."""
+    """Proves worksheet rows are from judged subset and exclude uncited records."""
     qids = _setup_fixtures(tmp_path)
     doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
@@ -474,7 +474,7 @@ def test_worksheet_rows_are_drawn_from_the_judged_subset(
     emitted_qids = {row["question_id"] for row in data_rows}
     assert not (uncited_qids & emitted_qids)
 
-    # Every data row's cache_key must be present in judge_cache.json with a non-null verdict
+    # Every data row's cache_key must be present in judge_cache.json with a verdict
     for row in data_rows:
         assert row["cache_key"] in cache_data
         assert cache_data[row["cache_key"]]["verdict"] is not None
@@ -483,7 +483,7 @@ def test_worksheet_rows_are_drawn_from_the_judged_subset(
 def test_worksheet_excludes_judge_errored_records(
     httpx_mock: HTTPXMock, tmp_path: Path
 ) -> None:
-    """Proves records with judge errors (verdict: null) are excluded from calibration worksheet."""
+    """Proves records with judge errors (verdict: null) are excluded from worksheet."""
     qids = _setup_fixtures(tmp_path)
     doc_id = _get_valid_doc_id()
     j_path = tmp_path / "journal.jsonl"
@@ -678,8 +678,14 @@ def test_worksheet_never_sources_graph_off_records(
     assert emitted_qids == set(qids[5:10])
 
 
-def _judge_five_records(httpx_mock: HTTPXMock, tmp_path: Path, journal: Journal, doc_id: str, qids: list[str]) -> None:
-    """Populate journal + judge_cache.json with 5 cited, successfully-judged graph-on records."""
+def _judge_five_records(
+    httpx_mock: HTTPXMock,
+    tmp_path: Path,
+    journal: Journal,
+    doc_id: str,
+    qids: list[str],
+) -> None:
+    """Populate journal + judge_cache.json with 5 cited, judged graph-on records."""
     for qid in qids[:5]:
         rec = RunRecord(
             corpus="multihop_rag",
@@ -716,7 +722,13 @@ def _judge_five_records(httpx_mock: HTTPXMock, tmp_path: Path, journal: Journal,
     httpx_mock.add_response(json=verdict_resp, is_reusable=True)
 
     client = httpx.Client()
-    score_run(run_dir=tmp_path, no_judge=False, sample=None, api_key="test-key", client=client)
+    score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=None,
+        api_key="test-key",
+        client=client,
+    )
 
 
 def test_calibration_file_rejects_no_judge_when_cache_populated(

@@ -347,7 +347,9 @@ def seed_corpus(
                 data = resp.json()
                 gw_doc_id = str(data.get("id") or data.get("ID") or "")
                 if not gw_doc_id:
-                    raise SeedError(f"No document id returned for article '{corpus_id}'")
+                    raise SeedError(
+                        f"No document id returned for article '{corpus_id}'"
+                    )
 
                 # Poll for completion if status is not completed
                 status = str(data.get("status") or data.get("Status") or "")

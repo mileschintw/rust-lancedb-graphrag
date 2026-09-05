@@ -95,7 +95,7 @@ def test_no_cross_corpus_aggregation() -> None:
 
 
 def test_registered_dimensions_rendered_with_status_and_reasons() -> None:
-    """Proves all registered dimensions appear in report with scores/reasons."""
+    """Proves all registered dimensions appear in report with scores and details."""
     metadata = RunMetadata.model_validate(_valid_metadata())
     dims: list[DimensionResult] = []
 
@@ -117,6 +117,7 @@ def test_registered_dimensions_rendered_with_status_and_reasons() -> None:
                     name=name,
                     status="ok",
                     score=0.85,
+                    detail={"sample_diagnostic": 1.0},
                     n=50,
                 )
             )
@@ -126,6 +127,10 @@ def test_registered_dimensions_rendered_with_status_and_reasons() -> None:
 
     for name in REGISTERED_DIMENSIONS:
         assert f"`{name}`" in md
+        # Check that rows with detail render at least one detail key
+        if name not in ("community_summary_quality", "abstention_on_unanswerable"):
+            row = next(line for line in md.splitlines() if f"`{name}`" in line)
+            assert "sample_diagnostic=" in row
 
     # Assert OBS-04 placeholder renders reason without number
     obs_rows = [
@@ -136,6 +141,91 @@ def test_registered_dimensions_rendered_with_status_and_reasons() -> None:
     assert len(obs_rows) == 1
     assert "—" in obs_rows[0]
     assert "999.1" in obs_rows[0]
+
+
+def test_detail_float_renders_rounded() -> None:
+    """Proves long-precision detail float is rounded without binary precision."""
+    metadata = RunMetadata.model_validate(_valid_metadata())
+    dims = [
+        DimensionResult(
+            name="retrieval_evidence_coverage",
+            status="ok",
+            score=0.75,
+            detail={"ci_lower": 0.1234567890123},
+            n=50,
+        )
+    ]
+    report = CorpusReport(corpus="multihop_rag", metadata=metadata, dimensions=dims)
+    md = render_markdown(report)
+    assert "0.1234567890123" not in md
+    assert "ci_lower=0.123" in md
+
+
+def test_integral_detail_float_renders_without_decimal() -> None:
+    """Proves integral detail float renders as integer without trailing zeros."""
+    metadata = RunMetadata.model_validate(_valid_metadata())
+    dims = [
+        DimensionResult(
+            name="graph_ablation_f1_delta",
+            status="ok",
+            score=0.05,
+            detail={"n_pairs": 6.0},
+            n=6,
+        )
+    ]
+    report = CorpusReport(corpus="multihop_rag", metadata=metadata, dimensions=dims)
+    md = render_markdown(report)
+    assert "n_pairs=6" in md
+    assert "n_pairs=6.0" not in md
+    assert "n_pairs=6.000" not in md
+
+
+def test_latency_dimension_above_one_renders_one_decimal() -> None:
+    """Proves millisecond/latency dimension > 1.0 renders at 1 decimal place, not 2."""
+    metadata = RunMetadata.model_validate(_valid_metadata())
+    dims = [
+        DimensionResult(
+            name="retrieve_latency_ms",
+            status="ok",
+            score=1234.5678,
+            n=100,
+        )
+    ]
+    report = CorpusReport(corpus="multihop_rag", metadata=metadata, dimensions=dims)
+    md = render_markdown(report)
+    row = next(line for line in md.splitlines() if "`retrieve_latency_ms`" in line)
+    assert "1234.6" in row
+    assert "1234.57" not in row
+
+
+def test_genuine_judged_dimension_renders_two_decimals() -> None:
+    """Proves genuine judged dimensions still render at 2 decimal places."""
+    metadata = RunMetadata.model_validate(_valid_metadata())
+    dims = [
+        DimensionResult(
+            name="answer_groundedness",
+            status="ok",
+            score=4.256,
+            n=50,
+        )
+    ]
+    report = CorpusReport(corpus="multihop_rag", metadata=metadata, dimensions=dims)
+    md = render_markdown(report)
+    row = next(line for line in md.splitlines() if "`answer_groundedness`" in line)
+    assert "4.26" in row
+
+
+def test_rounding_caveat_describes_all_three_conventions() -> None:
+    """Proves methodology caveat covers ratios, judged scales, and magnitudes."""
+    metadata = RunMetadata.model_validate(_valid_metadata())
+    report = CorpusReport(corpus="multihop_rag", metadata=metadata)
+    md = render_markdown(report)
+    assert "3 decimals for ratios" in md
+    assert "2 decimals for judged scales" in md
+    assert (
+        "1 decimal for absolute magnitudes such as latency milliseconds "
+        "and prompt token counts" in md
+    )
 
 
 def test_all_normative_caveats_present_in_markdown() -> None:
@@ -150,7 +240,10 @@ def test_all_normative_caveats_present_in_markdown() -> None:
         "Gold facts longer than the corpus's chunk size cannot appear verbatim",
         "Lancet's answer metrics are not comparable to the MultiHop-RAG paper",
         "Neither reported ranking metric is the MultiHop-RAG paper's own convention",
-        "Infrastructure-failed records are excluded from every quality denominator",
+        (
+            "Infrastructure-failed records (unusable records) are excluded "
+            "from every quality denominator"
+        ),
         "A graph-off record that fails provenance verification is excluded",
         "This report is advisory only with no automated pass/fail gate",
     ]
@@ -288,9 +381,7 @@ def test_report_cli_exits_zero_regardless_of_metric_values(tmp_path: Path) -> No
     runner = CliRunner()
     meta = RunMetadata.model_validate(_valid_metadata())
     dim_zero = DimensionResult(name="answer_f1", status="ok", score=0.0, n=100)
-    report = CorpusReport(
-        corpus="multihop_rag", metadata=meta, dimensions=[dim_zero]
-    )
+    report = CorpusReport(corpus="multihop_rag", metadata=meta, dimensions=[dim_zero])
 
     with open(tmp_path / "report.json", "w", encoding="utf-8") as f:
         f.write(report.model_dump_json(indent=2))
@@ -311,6 +402,3 @@ def test_matching_rule_caveat_matches_implemented_rule() -> None:
         "as a contiguous substring"
     ) in md
     assert "or the fact's normalized text contains the chunk's text" not in md
-
-
-

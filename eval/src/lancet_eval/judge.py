@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 from datetime import UTC, datetime
@@ -88,9 +89,7 @@ class JudgeCacheEntry(BaseModel):
     evidence: str
     verdict: JudgeVerdict | None = None
     error: str | None = None
-    created_at: str = Field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 def truncate_evidence(
@@ -115,8 +114,7 @@ def truncate_evidence(
             excerpt = excerpt[:per_passage_budget] + "..."
 
         passage_str = (
-            f"[{idx + 1}] (Document: {c.document_id}, Rank: {c.rank}):\n"
-            f"{excerpt}\n\n"
+            f"[{idx + 1}] (Document: {c.document_id}, Rank: {c.rank}):\n{excerpt}\n\n"
         )
         passage_len = len(passage_str)
 
@@ -198,6 +196,9 @@ def _post_judge(
     return resp.json()
 
 
+logger = logging.getLogger(__name__)
+
+
 class JudgeCache:
     """Atomic, auditable plain-text JSON cache for judge verdicts."""
 
@@ -213,21 +214,36 @@ class JudgeCache:
             with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
+                dropped_count = 0
                 for k, v in data.items():
                     try:
                         self.entries[k] = JudgeCacheEntry.model_validate(v)
                     except Exception:
-                        continue
-        except Exception:
-            pass
+                        dropped_count += 1
+                if dropped_count > 0:
+                    logger.warning(
+                        "Dropped %d invalid judge cache entries from %s",
+                        dropped_count,
+                        self.path,
+                    )
+            else:
+                logger.warning(
+                    "Judge cache at %s is not a valid JSON dictionary",
+                    self.path,
+                )
+        except Exception as e:
+            logger.warning(
+                "Failed to parse judge cache at %s (%s)",
+                self.path,
+                type(e).__name__,
+            )
 
     def save(self) -> None:
         """Save cache atomically to disk."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp_file = self.path.with_suffix(f".tmp-{os.getpid()}")
         raw_dict = {
-            k: v.model_dump(mode="json")
-            for k, v in sorted(self.entries.items())
+            k: v.model_dump(mode="json") for k, v in sorted(self.entries.items())
         }
         with open(tmp_file, "w", encoding="utf-8", newline="\n") as f:
             json.dump(raw_dict, f, indent=2, ensure_ascii=False)
@@ -320,16 +336,14 @@ def judge_once(
                         f"Judge output validation failed after re-ask: {exc}",
                     )
                 messages.append({"role": "assistant", "content": content})
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "That did not validate against the required schema:\n"
-                            f"{exc.errors(include_url=False)}\n"
-                            "Reply with ONLY the corrected JSON object."
-                        ),
-                    }
-                )
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "That did not validate against the required schema:\n"
+                        f"{exc.errors(include_url=False)}\n"
+                        "Reply with ONLY the corrected JSON object."
+                    ),
+                })
         return (None, "Judge validation exhausted")
     finally:
         if close_client:

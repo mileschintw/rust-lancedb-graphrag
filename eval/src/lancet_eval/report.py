@@ -14,6 +14,7 @@ from lancet_eval.dimensions import DimensionResult
 
 ROUND_RATIO_DP: int = 3
 ROUND_JUDGED_DP: int = 2
+ROUND_MAGNITUDE_DP: int = 1
 
 
 class ReportError(Exception):
@@ -80,24 +81,42 @@ class CorpusReport(BaseModel):
 
 
 def format_score(name: str, score: float | None) -> str:
-    """Format numeric dimension score using banker's rounding."""
+    """Format numeric dimension score using banker's rounding and type awareness."""
     if score is None:
         return "—"
-    is_judged = score > 1.0 or any(
-        k in name for k in ("judged", "groundedness", "faithfulness")
-    )
-    if is_judged:
+    # Absolute magnitudes: latency in ms or prompt token counts
+    if name.endswith("_ms") or "latency" in name or "token" in name:
+        val = round(score, ROUND_MAGNITUDE_DP)
+        return f"{val:.{ROUND_MAGNITUDE_DP}f}"
+    # Judged dimensions
+    if any(k in name for k in ("judged", "groundedness", "faithfulness")):
         val = round(score, ROUND_JUDGED_DP)
         return f"{val:.{ROUND_JUDGED_DP}f}"
+    # Standard ratios
     val = round(score, ROUND_RATIO_DP)
     return f"{val:.{ROUND_RATIO_DP}f}"
 
 
 def format_details(detail: dict[str, float]) -> str:
-    """Format detail dictionary as comma-separated key-value pairs."""
+    """Format detail dictionary with type-aware precision.
+
+    - Integral values (counts, seeds) format as integers.
+    - Latency and token values format with 1 decimal place.
+    - Ratios format with standard ratio precision (3 decimals).
+    """
     if not detail:
         return ""
-    return ", ".join(f"{k}={v}" for k, v in detail.items())
+    formatted_parts: list[str] = []
+    for k, v in detail.items():
+        if v.is_integer():
+            formatted_parts.append(f"{k}={int(v)}")
+        elif k.endswith("_ms") or "latency" in k or "token" in k:
+            formatted_parts.append(
+                f"{k}={round(v, ROUND_MAGNITUDE_DP):.{ROUND_MAGNITUDE_DP}f}"
+            )
+        else:
+            formatted_parts.append(f"{k}={round(v, ROUND_RATIO_DP):.{ROUND_RATIO_DP}f}")
+    return ", ".join(formatted_parts)
 
 
 def compute_result_hash(dimensions: list[DimensionResult]) -> str:
@@ -144,10 +163,7 @@ def render_markdown(
                 f"{compare_to_metadata.sample_size_deterministic} to "
                 f"{report.metadata.sample_size_deterministic}"
             )
-        if (
-            report.metadata.sample_size_judged
-            != compare_to_metadata.sample_size_judged
-        ):
+        if report.metadata.sample_size_judged != compare_to_metadata.sample_size_judged:
             sample_size_diffs.append(
                 f"Judged sample size changed from "
                 f"{compare_to_metadata.sample_size_judged} to "
@@ -156,7 +172,7 @@ def render_markdown(
 
     template_dir = Path(__file__).resolve().parent / "templates"
     env = Environment(
-        loader=FileSystemLoader(template_dir),
+        loader=FileSystemLoader(template_dir, encoding="utf-8"),
         undefined=StrictUndefined,
         autoescape=False,
     )
