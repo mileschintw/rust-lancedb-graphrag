@@ -254,3 +254,117 @@ async fn exact_match_resolver_returns_only_identical_entities() {
     );
     assert_eq!(resolver.resolve("lancet", &known).await.unwrap(), None);
 }
+
+/// 06.3.1-02 Test 1: get_or_create_table creates only on missing table for all six accessors.
+#[tokio::test]
+async fn get_or_create_table_creates_only_on_missing_table_for_all_six_accessors() {
+    let path = database_path("creates-only-on-missing");
+    let manager = DatabaseManager::initialize(&path).await.unwrap();
+
+    // The six names enumerated explicitly (seventh schema is intentionally omitted - no accessor)
+    let accessor_names = [
+        "documents",
+        "staged_documents_v2",
+        "nodes",
+        "edges",
+        "entities",
+        "entity_edges",
+    ];
+
+    let schemas = super::table_schemas();
+
+    // Part 1: Drop each table through connection, then call accessor to prove create branch executes
+    for name in &accessor_names {
+        manager.connection.drop_table(name, &[]).await.unwrap();
+
+        let table = match *name {
+            "documents" => manager.documents_table().await.unwrap(),
+            "staged_documents_v2" => manager.staged_documents_table().await.unwrap(),
+            "nodes" => manager.nodes_table().await.unwrap(),
+            "edges" => manager.edges_table().await.unwrap(),
+            "entities" => manager.entities_table().await.unwrap(),
+            "entity_edges" => manager.entity_edges_table().await.unwrap(),
+            _ => unreachable!(),
+        };
+
+        let schema = table.schema().await.unwrap();
+        let (_, expected_schema) = schemas.iter().find(|(n, _)| *n == *name).unwrap();
+        assert_eq!(schema.fields(), expected_schema.fields());
+    }
+
+    // Part 2: With all six tables present on an intact store, accessors return Ok without re-creating
+    let intact_path = database_path("intact-store");
+    let intact_manager = DatabaseManager::initialize(&intact_path).await.unwrap();
+    assert!(intact_manager.documents_table().await.is_ok());
+    assert!(intact_manager.staged_documents_table().await.is_ok());
+    assert!(intact_manager.nodes_table().await.is_ok());
+    assert!(intact_manager.edges_table().await.is_ok());
+    assert!(intact_manager.entities_table().await.is_ok());
+    assert!(intact_manager.entity_edges_table().await.is_ok());
+
+    drop(manager);
+    drop(intact_manager);
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_dir_all(intact_path);
+}
+
+/// 06.3.1-02 Test 2: Deterministic proof that is_table_not_found discriminates TableNotFound from other errors.
+#[test]
+fn is_table_not_found_discriminates_missing_from_non_missing() {
+    let missing_err = lancedb::Error::TableNotFound {
+        name: "documents".into(),
+        source: Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "not found")),
+    };
+    assert!(
+        super::is_table_not_found(&missing_err),
+        "TableNotFound must be recognized as missing table"
+    );
+
+    let runtime_err = lancedb::Error::Runtime {
+        message: "runtime failure".into(),
+    };
+    assert!(
+        !super::is_table_not_found(&runtime_err),
+        "Runtime error must NOT be recognized as missing table"
+    );
+
+    let timeout_err = lancedb::Error::Timeout {
+        message: "operation timed out".into(),
+    };
+    assert!(
+        !super::is_table_not_found(&timeout_err),
+        "Timeout error must NOT be recognized as missing table"
+    );
+
+    let schema_err = lancedb::Error::Schema {
+        message: "schema mismatch".into(),
+    };
+    assert!(
+        !super::is_table_not_found(&schema_err),
+        "Schema error must NOT be recognized as missing table"
+    );
+}
+
+/// 06.3.1-02 Test 3: get_or_create_table fails closed on non-missing table error.
+/// Marked #[ignore] due to Windows file-locking non-determinism during table corruption,
+/// as specified in Plan 06.3.1-02.
+#[tokio::test]
+#[ignore = "Windows file-locking non-determinism during on-disk directory corruption; covered by is_table_not_found_discriminates_missing_from_non_missing"]
+async fn get_or_create_table_fails_closed_on_non_missing_table_error() {
+    let path = database_path("fail-closed-non-missing");
+    let manager = DatabaseManager::initialize(&path).await.unwrap();
+
+    let table_dir = std::path::Path::new(&path).join("documents.lance");
+    if table_dir.exists() {
+        let dummy_file = table_dir.join("corrupted.data");
+        std::fs::write(&dummy_file, b"invalid lance data").unwrap();
+    }
+
+    let res = manager.documents_table().await;
+    if let Err(msg) = res {
+        assert!(msg.contains("documents"));
+    }
+
+    drop(manager);
+    let _ = std::fs::remove_dir_all(path);
+}

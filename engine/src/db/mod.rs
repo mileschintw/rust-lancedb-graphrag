@@ -111,7 +111,7 @@ impl DatabaseManager {
     async fn get_or_create_table(&self, name: &str) -> Result<Table, String> {
         match self.connection.open_table(name).execute().await {
             Ok(tbl) => Ok(tbl),
-            Err(_) => {
+            Err(err) if is_table_not_found(&err) => {
                 let schemas = table_schemas();
                 if let Some((_, expected)) = schemas.into_iter().find(|(n, _)| *n == name) {
                     let tbl = self
@@ -125,6 +125,7 @@ impl DatabaseManager {
                     Err(format!("unknown LanceDB table {name}"))
                 }
             }
+            Err(err) => Err(format!("failed to open LanceDB table {name}: {err}")),
         }
     }
 
@@ -325,6 +326,15 @@ impl EntityResolver for ExactMatchResolver {
             .find(|known| known.as_str() == entity)
             .cloned())
     }
+}
+
+/// Returns true only when the LanceDB error indicates the table was not found.
+///
+/// Pinned to lancedb 0.31.0: `lancedb::Error::TableNotFound { .. }`.
+/// Every other open failure (I/O, timeout, runtime, corrupted data) must propagate
+/// to prevent silent table recreation over live data (D-24).
+fn is_table_not_found(err: &lancedb::Error) -> bool {
+    matches!(err, lancedb::Error::TableNotFound { .. })
 }
 
 #[cfg(test)]
