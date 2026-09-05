@@ -43,6 +43,7 @@
 - [x] **OBS-02**: Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval/answer quality.
 - [ ] **OBS-03**: Provide a README/design narrative that explains the architecture, alternatives, choices, and how to run/evaluate.
 - [x] **OBS-04**: Add a placeholder metric (e.g. `global_faithfulness` or `global_coverage`) returning a simulated score or skipped flag in the offline evaluation script framework.
+- [ ] **OBS-05**: Ensure the evaluation signal is trustworthy: a failed query path must be visible on the wire and in the report rather than reported as success; every benchmark record must carry provenance; retrieval and graph path health must be measured per path; and graph capability must be compared per-question across arms rather than by averaging two independently-scoped lists. Added during the Phase 06.3.1 discussion (see `06.3.1-CONTEXT.md` D-50), following the GATE-01/GATE-02 precedent of formalizing a quality requirement surfaced mid-milestone. Deliberately distinct from OBS-02: OBS-02 asked for an evaluation script, which exists and is complete — OBS-05 asks that what it measures can be believed.
 
 ## Traceability
 
@@ -55,6 +56,7 @@
 | OBS-02 | Phase 06.3 | Offline evaluation harness against MultiHop-RAG (06-CONTEXT.md D-78). |
 | OBS-03 | Phase 06.4 | README/design-narrative suite and verified quickstart (06-CONTEXT.md D-78). |
 | OBS-04 | Phase 06.3 | Placeholder global-evaluation metric, registered as an explicit `skipped` dimension (06-CONTEXT.md D-78, D-51). |
+| OBS-05 | Phases 06.3.1, 06.3.2, 06.3.3, 06.3.4 | Evaluation fidelity. Split across the family sharing `06.3.1-CONTEXT.md` (D-46): 06.3.1 engine/config failure signalling and provenance; 06.3.2 harness capture, scored dimensions and paired ablation; 06.3.3 latency measurement and budget derivation; 06.3.4 corrected re-drive, calibration and root-cause docs. |
 
 The Phase 03 source audit and coverage matrix must show RAG-03 as opted out/deferred rather than covered.
 

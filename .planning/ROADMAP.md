@@ -682,23 +682,105 @@ Plans:
 
 ### Phase 06.3.1: Fix retrieval citation collapse and graph ablation measurement fidelity (INSERTED)
 
-**Goal:** Fix the fail-open get_or_create_table fallback in engine/src/db/mod.rs, root-cause the near-zero structured-citation rate (run_traceability=0.034) surfaced by Phase 6.3's recorded MultiHop-RAG run, refactor graph_ablation_delta to a per-question paired comparison instead of two independently-averaged per-arm lists, and re-run the full two-arm drive with a corrected, trustworthy graph-ablation signal — before Phase 6.4 documents evaluation results for v1 milestone closure.
-**Requirements**: TBD (confirm during planning whether this cites OBS-02 as an evaluation-fidelity fix, or stays requirement-less as an internal-quality phase)
+**Goal:** Land the engine and config fidelity fixes that are knowable without measurement — emit a notice when the retrieval node dies (nothing is emitted today), attach provenance to failed records, make total non-graph retrieval failure read as failure in eval, count graph influence at prompt assembly, and close the fail-open `get_or_create_table` — so that every later sibling measures a system that reports its own failures.
+**Requirements:** OBS-05
 **Depends on:** Phase 6.3
-**Canonical refs:** `.planning/phases/06.3-python-evaluation-harness-benchmark-corpora-and-recorded-run/06.3-VERIFICATION.md` (Known Issue Outside Phase Scope) and `06.3-REVIEW.md` (finding on get_or_create_table) — both independently flagged this defect and carried it forward as out-of-scope for 6.3.
+**Canonical refs:** `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md` — **the shared decision record for Phases 06.3.1–06.3.4** (D-46), following the `06-CONTEXT.md` pattern (D-77). Do not re-run discussion for any sibling. **Planning 06.3.2–06.3.4 requires injecting `context_path` by hand** — the auto-load needs `context_window >= 500K` and this repo resolves to 375K, so siblings otherwise plan with no context. The decision-coverage gate also silently skips for shared-context phases (its glob is phase-dir-scoped); verify D-ID coverage by hand. Also: `.planning/phases/06.3-python-evaluation-harness-benchmark-corpora-and-recorded-run/06.3-VERIFICATION.md` (Known Issue Outside Phase Scope) and `06.3-REVIEW.md`.
+**Success Criteria:**
+
+1. A new notice code (tag 19, e.g. `NOTICE_CODE_RETRIEVAL_FAILED`) is emitted when `RetrieveHybrid` *fails* rather than completes, and is included in `derive_degraded_mode` (D-28). Today the snapshot (`retrieve.rs:287`) and `NO_EVIDENCE` (`retrieve.rs:305`) both sit at the end of `run`, so a timeout reaches neither and 904 failures produced no retrieval signal at all.
+2. A failed retrieval emits a partial snapshot carrying the provenance known before retrieval runs — `index_generation`, `embedding_model`, weights, `rrf_k`, candidate/final limits, active filter — with an empty chunk list (D-33). 966 records currently carry `index_generation: ""` and are unattributable.
+3. In the eval/test path only, `success = false` when `RetrieveHybrid` failed **and** no snapshot was produced (D-29, D-30). The predicate is the node-failure condition, **not** a conjunction of `RETRIEVAL_DEGRADED_DENSE`/`_BM25` — those fire at the end of `run` and would evaluate false on exactly the records that must be caught. Graph failure of any kind stays a non-fatal degradation.
+4. A graph-influence counter at `AssemblePrompt` records whether graph-derived context reached the prompt, distinct from graph presence (D-06).
+5. `get_or_create_table` fails closed on every `open_table` error except `lancedb::Error::TableNotFound`, with a regression test, at the shared function backing all **six** accessors — `documents`, `staged_documents_v2`, `nodes`, `edges`, `entities`, `entity_edges` (D-24, D-25).
+6. OTel span retention is enabled for the graph node so Phase 6's existing `graph_traversal` Cypher instrumentation is usable (D-08).
+7. Both proto trees are regenerated and a gateway test pins the new notice end to end (D-52). `gateway/main.go:554` renders codes generically so no gateway logic changes, but the vendored `gateway/proto/lancet/v1/lancet.pb.go` must be regenerated or the code surfaces to clients as the bare number `19`.
+8. Timeout-budget nesting is documented in `config.toml`/`config.example.toml`, including that `graph_operation_timeout_ms=4000` nests inside `graph_node_timeout_ms=15000` so the outer budget can never fire (D-17). Values are **not** set here — they are derived in 06.3.3.
+9. *(Already satisfied at split time.)* OBS-05 is registered in REQUIREMENTS.md as this family's requirement, with a traceability row mapping it across all four siblings (D-50). OBS-02 is deliberately not cited — it is already complete under Phase 06.3, and re-citing it risks a gaps/revert operation un-checking the parent's box.
+
 **Plans:** 0 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 06.3.1 to break down; proposed shape: (1) fix get_or_create_table to fail closed on every open_table error except lancedb::Error::TableNotFound, with a regression test, applied at the shared function backing all 5 tables; (2) root-cause the citation collapse via engine logs if retained + a small ~20-question citation-emission test against the current model/prompt, writing a short root-cause doc; (3) refactor graph_ablation_delta to pair recall by question_id across arms rather than averaging two independently-scoped lists; (4) re-run the small-scale citation check against the Task-1 fix before committing to the full paid 500-question x 2-arm re-drive)
+- [ ] TBD (run /gsd-plan-phase 06.3.1 to break down)
+
+### Phase 06.3.2: Eval harness diagnostics, scored dimensions and paired ablation (INSERTED)
+
+**Goal:** Stop the eval harness discarding the diagnostics the engine already emits, turn them into scored per-path and graph dimensions, replace the two-independently-averaged-lists ablation with a per-question paired comparison, fix the denominator convention that let infrastructure failure masquerade as a quality score, and close the four open Phase 6.3 review findings — so the next run can be read honestly.
+**Requirements:** OBS-05
+**Depends on:** Phase 06.3.1
+**Canonical refs:** `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md` — shared decision record (D-46). **Inject `context_path` by hand when planning this phase** (see 06.3.1's canonical refs for why). Also `eval/runs/2026-09-03-multihop_rag/journal.jsonl` (primary evidence) and `06.3-REVIEW.md`.
+**Success Criteria:**
+
+1. The eval client persists `NodeCompletedEvent.duration_ms` and `WorkflowCompletedEvent.metadata` (`graph_node_count`, `graph_edge_count`, `vector_count`, `bm25_count`, `reformulation_used`, `degraded_mode`, token counts) into every journal record (D-01). `client.py:218` currently discards `node_completed` in a bare `pass` arm and `graph_node_count` appears zero times in the 1000-record journal.
+2. Raw SSE events are retained for any query with non-empty `node_failures`, plus a fixed sample of successes as baseline (D-07).
+3. `report.md` gains first-class scored dimensions for graph health and per-path yield/latency, covering vector, BM25 and graph symmetrically (D-02, D-09). Graph dimensions report their numbers; graph emptiness never gates a run as bad.
+4. `graph_ablation_delta` is redefined in place as a per-question paired comparison: unpaired questions are dropped, pairing coverage is reported alongside, and the delta always carries a confidence interval (D-37, D-38, D-43). The 2026-09-03 value of `0.010` is explicitly marked non-comparable — it averaged 16 graph-on against 18 graph-off scores sharing only 8 questions.
+5. Pairing covers `retrieval_evidence_coverage` plus the deterministic answer metrics (exact match, F1, context precision, ranking quality), and is stratified by gold `question_type` as well as reported in aggregate (D-39, D-40). Judged dimensions are not paired.
+6. The ablation reports paired latency delta and paired prompt-token delta alongside the quality deltas (D-42).
+7. Infrastructure-failed records are excluded from **all** denominators with an explicit unusable-record count and rate (D-34), making the convention consistent — retrieval dimensions already excluded them while answer dimensions scored them as zeros, which is what produced `answer_exact_match = 0.000`.
+8. `wire_contract_conformance` is redefined to count self-contradiction — success asserted alongside a hard node failure, null snapshot and empty answer (D-35). It read `1.000` on a fully dead run.
+9. The preflight gains query-path checks driven by a committed canary set with fixed floors: each canary returns >= 1 retrieved chunk, graph-on canaries whose entities are known to be in the graph return >= 1 graph node, per-node duration under budget (D-10, D-11, D-31). This canary is also what locks the 06.3.3 budget values in (D-12).
+10. All four open `06.3-REVIEW.md` findings are closed: CR-01, WR-02, WR-03, WR-04 + IN-02 (D-36).
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.3.2 to break down)
+
+### Phase 06.3.3: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
+
+**Goal:** Establish, by measurement, whether the 2026-09-03 collapse was mis-sized timeout budgets or progressive resource exhaustion — then derive all six production budgets from the observed latency. Closes at the go/no-go for paid spend, so that decision sits on a phase boundary rather than mid-phase.
+**Requirements:** OBS-05
+**Depends on:** Phase 06.3.2
+**Canonical refs:** `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md` — shared decision record (D-46). **Inject `context_path` by hand when planning this phase.** See its `<code_context>` for the decay evidence.
+**Success Criteria:**
+
+1. Graph population in the surviving `data/lancedb-eval/` store is verified before any timeout work — node/edge/entity_edge counts, degree distribution, a hand-run traversal from a known entity, using `engine/src/bin/inspect_lancedb.rs` (D-05). Re-seeding is out of scope.
+2. A measurement pass runs several hundred full end-to-end queries against a cheap generation model, with budgets raised far above any plausible value, starting from the store and PostgreSQL checkpoint rows **as-is** to reproduce the original conditions, with starting row counts recorded (D-20, D-22). No judge is involved.
+3. The pass includes a **mid-run engine restart** splitting it into two segments (D-21). Latency resetting to baseline indicates process state (leaked handles, pool, memory); staying elevated indicates accumulated store state (checkpoint growth per 06-CONTEXT D-58, LanceDB versions/fragments).
+4. The decay question is answered against a stated criterion: retrieval latency trending upward with query ordinal — a clear positive slope, or a late-window p95 materially above the early-window p95 (D-19). The recorded run's signature was 10 successes in positions 1–11, then 13, then 4, then 3, then **zero across the last 436**.
+5. Every node that blew a budget is investigated as a possible defect before its budget is widened (D-16). Any engine or config fix the diagnostics expose lands **here or in 06.3.4 — it does not reopen 06.3.1** (D-46 back-edge rule).
+6. All six budgets — `query_embedding`, `retrieve`, `graph_operation`, `graph_node`, `prompt`, `generation_node` — are re-derived together from measured p95/p99 with a stated multiplier and written to production `config/config.toml` (D-13, D-14, D-15). `config.eval.toml` overrides only `lancedb_path`, so these are production defaults, not harness settings. Generation latency from this pass is **not** usable for `generation_node_timeout_ms` (the cheap model distorts it).
+7. If graph traversal proves inherently too slow for any sane budget, the graph budget is raised to what the measured p95 needs and the latency cost is recorded for Phase 6.4's honest-limitations section (D-04).
+8. Spend for this pass is capped per-stage against the daily limit (D-47). The original run's `$0.0199` is not a usable estimate — it was cheap because 966 queries generated nothing.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.3.3 to break down)
+
+### Phase 06.3.4: Corrected re-drive, calibration and root-cause documentation (INSERTED)
+
+**Goal:** Produce the trustworthy recorded run that Phase 6.4 documents for v1 milestone closure — staged then full two-arm drive, freshly human-calibrated — and write the root-cause record, in the phase directory and in `docs/`, that explains what was wrong with the 2026-09-03 run and what the corrected numbers mean.
+**Requirements:** OBS-05
+**Depends on:** Phase 06.3.3
+**Canonical refs:** `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md` — shared decision record (D-46). **Inject `context_path` by hand when planning this phase.** Also `eval/runs/2026-09-03-multihop_rag/` — retained as primary evidence, marked superseded (D-45).
+**Success Criteria:**
+
+1. A smaller staged drive runs first and its pairing coverage and graph yield are verified before the full 500 x 2 drive is committed to (D-44). Per-stage spend caps apply (D-47).
+2. The corrected run lands in a new dated run directory. The 2026-09-03 run is **kept**, marked superseded, and cited as evidence (D-45) — every forensic number in the shared CONTEXT.md came from its journal.
+3. Human calibration is performed fresh against the corrected run, with the worksheet explicitly sized to available effort and that sample size stated in the report (D-48). No agent back-fill. Expect more scoring than last time: 98 of 100 sampled questions were `skipped_no_evidence` before, so the judged sample will be full for the first time.
+4. Graph yield / `NoMatchFound` rate on MultiHop-RAG is measured and published against a stated provisional floor; missing it triggers investigation before results are published in 6.4 (D-32). The true rate is currently unknown — the broken run produced 494 `GRAPH_TIMEOUT` against only 4 `GRAPH_UNAVAILABLE`.
+5. If the corrected paired comparison shows the graph makes things worse, that is reported — after a bounded investigation confirming it is not another measurement artifact (D-49). Not suppressed, not re-run until it looks better.
+6. `06.3.1-ROOT-CAUSE.md` carries the full forensic trail in the 06.3.1 phase directory, and a distilled public-facing note lands under `docs/` for Phase 6.4's design narrative and honest-limitations section (D-54).
+7. Phase 6.4's ROADMAP entry is updated as this family's closing act (D-53) — canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new code from 06.3.1. (`Depends on:` was repointed to 06.3.4 at split time.)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.3.4 to break down)
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
 **Goal:** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone
 **Mode:** mvp
 **Requirements:** OBS-03
-**Depends on:** Phase 6, Phase 06.3.1
-**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phase 06.3.1 (inserted between 6.3 and 6.4) fixes the retrieval-citation defect surfaced by Phase 6.3's evaluation run — this phase's evaluation-methodology and eval-results documentation must reflect 06.3.1's corrected run, not the original 2026-09-03 one.
+**Depends on:** Phase 6, Phase 06.3.4
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phases 06.3.1–06.3.4 (inserted between 6.3 and 6.4, sharing `06.3.1-CONTEXT.md` as their own decision record) fix the retrieval collapse surfaced by Phase 6.3's evaluation run and produce the corrected recorded run — this phase's evaluation-methodology and eval-results documentation must reflect **06.3.4's** corrected run, not the original 2026-09-03 one. Phase 06.3.4 updates this entry at its closure (06.3.1-CONTEXT D-53): canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new retrieval-failure code added in 06.3.1.
 **Success Criteria:**
 
 1. The README stays the readable front door (story, architecture sketch, quickstart, headline results, links); `docs/` gains a design narrative (alternatives-considered, linking ADRs), an observability walkthrough following one real query end to end, and an evaluation methodology + results page — each written after the implementation it documents (D-66, D-67, D-72, D-73).
