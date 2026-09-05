@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 from pathlib import Path
 
 import httpx
@@ -18,6 +19,9 @@ from lancet_eval.journal import (
     journal_key,
     load_done,
 )
+from lancet_eval.raw_events import RawEventSink, baseline_sample_ids
+
+logger = logging.getLogger(__name__)
 
 # The sole durable arm-to-flag mapping in the evaluation harness (Task 1 / D-47).
 GRAPH_ARMS: dict[str, bool] = {
@@ -34,6 +38,8 @@ def drive_one(
     arm: str,
     partial: bool = False,
     deadline_s: float = 600.0,
+    raw_sink: RawEventSink | None = None,
+    baseline_ids: set[str] | None = None,
 ) -> RunRecord:
     """Drive a single question work unit through the gateway.
 
@@ -49,6 +55,7 @@ def drive_one(
             query=question.question,
             disable_graph_context=disable_graph_context,
             deadline_s=deadline_s,
+            capture_raw_events=raw_sink is not None,
         )
 
         outcome_literal = "error" if outcome.status == "failed" else "success"
@@ -89,6 +96,29 @@ def drive_one(
                 degraded_mode=outcome.workflow_meta.degraded_mode,
                 graph_prompt_fact_count=outcome.workflow_meta.graph_prompt_fact_count,
             )
+
+        # Raw event retention: keep when node failure occurred or in baseline set
+        if raw_sink is not None and outcome.raw_events is not None:
+            should_retain = bool(outcome.node_failures) or (
+                baseline_ids is not None and question.id in baseline_ids
+            )
+            if should_retain:
+                try:
+                    raw_sink.write_events(
+                        corpus=corpus,
+                        question_id=question.id,
+                        graph_arm=arm,
+                        events=outcome.raw_events,
+                        dropped_frames=outcome.raw_events_dropped_frames,
+                        truncated=outcome.raw_events_truncated,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Swallowing raw_sink error for %s:%s: %s",
+                        arm,
+                        question.id,
+                        exc,
+                    )
 
         return RunRecord(
             corpus=corpus,
@@ -162,6 +192,9 @@ def drive(
     if not remaining_units:
         return 0
 
+    baseline_ids = baseline_sample_ids(questions)
+    raw_sink = RawEventSink(target_path.parent)
+
     effective_workers = max(1, workers)
     limits = httpx.Limits(
         max_connections=effective_workers,
@@ -189,6 +222,8 @@ def drive(
                     arm=arm,
                     partial=partial,
                     deadline_s=eval_settings.question_deadline_secs,
+                    raw_sink=raw_sink,
+                    baseline_ids=baseline_ids,
                 ): (q, arm)
                 for q, arm in remaining_units
             }

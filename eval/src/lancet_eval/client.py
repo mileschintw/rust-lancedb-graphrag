@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -179,6 +179,9 @@ class QueryOutcome(BaseModel):
     workflow_meta: WorkflowMetadata | None = None
     partial_snapshot: RetrievalSnapshot | None = None
     dropped_node_timings: int = 0
+    raw_events: list[dict[str, Any]] | None = None
+    raw_events_truncated: bool = False
+    raw_events_dropped_frames: int = 0
 
 
 def run_query(
@@ -188,10 +191,13 @@ def run_query(
     session_id: str = "",
     disable_graph_context: bool = False,
     deadline_s: float = 600.0,
+    capture_raw_events: bool = False,
 ) -> QueryOutcome:
     """Drive gateway /rag/query endpoint with SSE streaming and contract assertions."""
     import httpx
     from httpx_sse import SSEError, connect_sse
+
+    import lancet_eval.raw_events as raw_mod
 
     started = time.monotonic()
     body: dict[str, object] = {"query": query, "session_id": session_id}
@@ -223,13 +229,36 @@ def run_query(
             node_timings: list[NodeCompleted] = []
             dropped_node_timings = 0
 
+            raw_events_list: list[dict[str, Any]] | None = (
+                [] if capture_raw_events else None
+            )
+            raw_bytes = 0
+            raw_truncated = False
+            raw_dropped_frames = 0
+            bytes_per_unit = getattr(
+                raw_mod, "RAW_EVENT_BYTES_PER_UNIT", 32768
+            )
+
             for sse in event_source.iter_sse():
                 if time.monotonic() - started > deadline_s:
                     raise StreamDeadlineExceeded(
                         f"exceeded {deadline_s}s wall-clock deadline"
                     )
 
+                if capture_raw_events and raw_events_list is not None:
+                    ev_dict = {"event": sse.event, "data": sse.data}
+                    approx_bytes = len(sse.event.encode("utf-8")) + len(
+                        sse.data.encode("utf-8")
+                    )
+                    if raw_bytes + approx_bytes <= bytes_per_unit:
+                        raw_events_list.append(ev_dict)
+                        raw_bytes += approx_bytes
+                    else:
+                        raw_truncated = True
+                        raw_dropped_frames += 1
+
                 match sse.event:
+
                     case "final_answer":
                         final_answer_count += 1
                         answer = RagAnswer.model_validate_json(sse.data)
@@ -294,6 +323,9 @@ def run_query(
             workflow_meta=workflow_meta,
             partial_snapshot=partial_snapshot,
             dropped_node_timings=dropped_node_timings,
+            raw_events=raw_events_list,
+            raw_events_truncated=raw_truncated,
+            raw_events_dropped_frames=raw_dropped_frames,
         )
 
     # Success path
@@ -312,6 +344,9 @@ def run_query(
             workflow_meta=workflow_meta,
             partial_snapshot=partial_snapshot,
             dropped_node_timings=dropped_node_timings,
+            raw_events=raw_events_list,
+            raw_events_truncated=raw_truncated,
+            raw_events_dropped_frames=raw_dropped_frames,
         )
 
     # final_answer_count == 0 with success == True
@@ -329,6 +364,9 @@ def run_query(
             workflow_meta=workflow_meta,
             partial_snapshot=partial_snapshot,
             dropped_node_timings=dropped_node_timings,
+            raw_events=raw_events_list,
+            raw_events_truncated=raw_truncated,
+            raw_events_dropped_frames=raw_dropped_frames,
         )
 
     if completion.notices:
@@ -345,6 +383,9 @@ def run_query(
             workflow_meta=workflow_meta,
             partial_snapshot=partial_snapshot,
             dropped_node_timings=dropped_node_timings,
+            raw_events=raw_events_list,
+            raw_events_truncated=raw_truncated,
+            raw_events_dropped_frames=raw_dropped_frames,
         )
 
     raise ContractViolation(
