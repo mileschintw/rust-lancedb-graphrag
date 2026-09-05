@@ -698,11 +698,14 @@ Plans:
 8. Timeout-budget nesting is documented in `config.toml`/`config.example.toml`, including that `graph_operation_timeout_ms=4000` nests inside `graph_node_timeout_ms=15000` so the outer budget can never fire (D-17). Values are **not** set here — they are derived in 06.3.3.
 9. *(Already satisfied at split time.)* OBS-05 is registered in REQUIREMENTS.md as this family's requirement, with a traceability row mapping it across all four siblings (D-50). OBS-02 is deliberately not cited — it is already complete under Phase 06.3, and re-citing it risks a gaps/revert operation un-checking the parent's box.
 
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 06.3.1 to break down)
+- [ ] 06.3.1-01-PLAN.md — Tracer: publish notice code 19, regenerate both proto trees, emit the retrieval-failure notice from the runner (the only place a node timeout is observed), and pin it end to end through the Go gateway (SC-1, SC-7; D-28, D-52, D-50)
+- [ ] 06.3.1-02-PLAN.md — Fail-closed LanceDB table access: propagate every `open_table` error except the missing-table condition, at the shared function backing all six accessors, with a regression test (SC-5; D-24, D-25)
+- [ ] 06.3.1-03-PLAN.md — Graph-path legibility: retain `graph_traversal` spans regardless of the configured sampling ratio, and document timeout-budget nesting in both operator TOML files without changing a value (SC-6, SC-8; D-08, D-17)
+- [ ] 06.3.1-04-PLAN.md — Provenance on failure and graph influence: seed the retrieval snapshot before the first await so a killed node still reports its index generation, count graph facts that reached the assembled prompt, surface both through the SSE contract, and close the phase test-count invariants (SC-2, SC-3, SC-4, SC-7; D-33, D-06, D-29, D-30, D-52)
 
 ### Phase 06.3.2: Eval harness diagnostics, scored dimensions and paired ablation (INSERTED)
 
