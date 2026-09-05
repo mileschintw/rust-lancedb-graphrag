@@ -4,12 +4,12 @@ milestone: v1.0
 current_phase: 06.3.1
 current_phase_name: Fix retrieval citation collapse and graph ablation measurement fidelity
 status: planning
-stopped_at: Phase 06.3.1 context gathered (shared record for the 06.3.1 family; roadmap split pending)
-last_updated: "2026-09-05T01:30:48.290Z"
+stopped_at: "Phase 06.3.1 split into siblings 06.3.1-06.3.4 (OBS-05 registered); next: /gsd-ai-integration-phase for the family, then plan each sibling with context_path injected by hand"
+last_updated: "2026-09-05T01:38:20.132Z"
 last_activity: 2026-09-04
-state_head: 7a8921bf9976a33463f880c3807827860f783d36
+state_head: b99ff7242b89492348f110f5de763fc89dbb7f32
 progress:
-  total_phases: 12
+  total_phases: 15
   completed_phases: 7
   total_plans: 132
   completed_plans: 132
@@ -312,9 +312,9 @@ current_plan: 11
 
 ## Session
 
-**Last session:** 2026-09-05T01:30:47.059Z
+**Last session:** 2026-09-05T01:38:18.754Z
 **Last activity:** 2026-09-04
-**Stopped at:** Phase 06.3.1 context gathered (shared record for the 06.3.1 family; roadmap split pending)
+**Stopped at:** Phase 06.3.1 split into siblings 06.3.1-06.3.4 (OBS-05 registered); next: /gsd-ai-integration-phase for the family, then plan each sibling with context_path injected by hand
 **Resume file:** .planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md
 
 ## Accumulated Context
