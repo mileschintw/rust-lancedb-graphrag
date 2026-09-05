@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.1
-current_phase_name: corrected-re-drive-calibration-and-root-cause-documentation
+current_phase_name: fix-retrieval-citation-collapse-and-graph-ablation-measureme
 status: executing
 stopped_at: "Phase 06.3.1 split into siblings 06.3.1-06.3.4 (OBS-05 registered); next: /gsd-ai-integration-phase for the family, then plan each sibling with context_path injected by hand"
-last_updated: "2026-09-05T12:48:38.232Z"
+last_updated: "2026-09-05T18:25:30.051Z"
 last_activity: 2026-09-05
-state_head: aba4a219d6986a050b989094dba13a05a23c45b0
+state_head: 8a629fa329072fa8685a39cadb3528fa3401ac96
 progress:
   total_phases: 15
   completed_phases: 7
@@ -142,7 +142,7 @@ current_plan: 11
 
 - **Phase:** 06.3.1 — Fix retrieval citation collapse and graph ablation measurement fidelity
 - **Status:** Ready to execute
-- **Total Plans in Phase:** 6
+- **Total Plans in Phase:** 4
 - **Completed Plans in Phase:** 8/8 (executed; phase-level gates run 2026-08-29/30, gaps found)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (6/9 must-haves)
 - **Next:** `/gsd-plan-phase 6.3 --gaps`
@@ -338,6 +338,16 @@ current_plan: 11
   **Expect this gate to SKIP silently (reporting passed) for 06.3.2/06.3.3/06.3.4** — its glob is
   phase-directory-scoped and those directories hold no CONTEXT.md. Silence there is not a pass; verify
   by hand against the owning sibling's ROADMAP success criteria.
+
+- **Phase 06.3.1 — decision-coverage gate (step 13a): "Proceed anyway" override RE-CONFIRMED 2026-09-05**
+  after `/gsd-plan-phase 06.3.1 --reviews` (incorporating cross-AI review feedback from `06.3.1-REVIEWS.md`
+  into all 4 plans; commits `fe85350`, `5ac6e3f`, `8a629fa`). Independently re-ran the gate and re-derived
+  the covered/uncovered partition from scratch (not trusted from memory): **identical result to the
+  2026-09-04 override** — 18/54 covered, the same exact 36 IDs uncovered (D-02/04/05/07/10-12/14-16/18-22/
+  23/27/31/32/34-45/47-49/51/54), same ownership breakdown (06.3.2/06.3.3/06.3.4-owned, D-51 satisfied by
+  `06.3.1-AI-SPEC.md` existing, D-23 process-level, D-27 dual-owned). The review-incorporation replan added
+  to `must_haves` and fixed a verify-gate weakness but did not touch decision citations — coverage shape is
+  unchanged. Re-approved "Proceed anyway" on that basis rather than re-litigating the original analysis.
 
 ### Roadmap Evolution
 
