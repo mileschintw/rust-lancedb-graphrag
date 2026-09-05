@@ -784,11 +784,35 @@ Plans:
 7. If graph traversal proves inherently too slow for any sane budget, the graph budget is raised to what the measured p95 needs and the latency cost is recorded for Phase 6.4's honest-limitations section (D-04).
 8. Spend for this pass is capped per-stage against the daily limit (D-47). The original run's `$0.0199` is not a usable estimate — it was cheap because 966 queries generated nothing.
 
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 06.3.3 to break down)
+**Wave 1** *(parallel — file-disjoint: plan 01 is Python harness, plan 02 is Rust)*
+
+- [ ] 06.3.3-01-PLAN.md — Tracer: the measurement spine end to end — committed decision thresholds, per-node duration extraction, censoring detection, percentile intervals, the derivation rule, the provider-contract generation budget, the strict nesting report, the decay statistics, the driver with ordinal/segment stamping and a spend stop-rule, a `measure` CLI command, an environment-aware live-timeout reader, and one calibration micro-pass (SC-2 instrument, SC-4 criterion, SC-6 machinery, SC-8 cap; D-13, D-14, D-15, D-18, D-19, D-20, D-21, D-47)
+- [ ] 06.3.3-02-PLAN.md — Store truth: read-only store-wide graph-population and bounded-neighbourhood modes on `inspect_lancedb`, then the committed `06.3.3-STORE-BASELINE.md` recording population, degree distribution, a reproducible traversal, starting store and PostgreSQL checkpoint row counts, the 06.3.2 canary-entity confirmation, and the zero-count reclassification verdict (SC-1, SC-2 starting-condition half; D-05, D-22)
+
+**Wave 2** *(blocked on 06.3.3-01 and 06.3.3-02)*
+
+- [ ] 06.3.3-03-PLAN.md — The measurement pass: several hundred end-to-end queries under lifted ceilings supplied through the process environment, split by a recorded mid-run engine restart, under a per-stage spend cap; then the censoring census, the two-pronged decay verdict against the pre-committed criterion, the inner-budget arm-difference decomposition, and one investigation disposition per node (SC-2, SC-3, SC-4, SC-5, SC-8 part; D-16, D-18, D-19, D-20, D-21, D-22, D-47)
+
+**Wave 3** *(blocked on 06.3.3-03; `autonomous: false` — closes on the paid-spend decision)*
+
+- [ ] 06.3.3-04-PLAN.md — Derive and write: the containment gate on the disposition set, the six budgets written to production `config/config.toml` and `config.example.toml` with refreshed nesting documentation, the superseded arithmetic literals in `engine/src/tests.rs` swept, `06.3.3-BUDGETS.md` with the full derivation trail and the honest graph cost, and the blocking go/no-go decision for paid spend (SC-5 gate, SC-6, SC-7, SC-8; D-04, D-13, D-14, D-15, D-16, D-47)
+
+**Cross-cutting constraints:**
+
+- **Acceptance criteria in this phase are PROCEDURAL, never value-bearing.** The numbers the phase depends on are produced by the measurement pass it runs; a criterion that embeds a budget value, a percentile, a multiplier or a spend figure would need a rewrite the moment reality differed. Criteria assert instead that a derivation was performed, recorded, and is reproducible from its recorded inputs.
+- **Censoring is the phase's central hazard.** The 2026-09-03 run's observed retrieval p95 is exactly `retrieve_timeout_ms`, because 904 of 1000 queries were clipped there. A budget derived from that percentile reproduces the original defect. The pass therefore runs with budgets raised far above any plausible value, every observation at or above a ceiling is counted as censored, and a percentile over censored data is refused or explicitly flagged.
+- **There are two censoring ceilings, not one.** The engine's per-node budgets and the harness read timeout / question deadline (`gateway_timeout_secs = 300`, `question_deadline_secs = 600`). A raised engine budget whose worst-case sum exceeds the harness read timeout buys nothing. Both are recorded.
+- **`query_embedding` and `graph_operation` are inner budgets with no per-node wire timing.** The node timer wraps a whole node, so the wire carries one duration for `ExtractGraphContext`. They are decomposed from the arm difference — graph-off pays the embedding then early-returns at `graph_context.rs:96`, graph-on additionally pays the traversal — corroborated by 06.3.1-03's retained `embedding_request` and `graph_traversal` spans where available. Both are labelled estimates.
+- **`generation_node_timeout_ms` is derived from the provider attempt contract, not from this pass** — the cheap model distorts generation latency (D-20, SC-6). The engine already carries the executable rule at `engine/src/config.rs:333-344`. The measured figure is reported beside it, marked non-derivable.
+- **`reformulate_timeout_ms` is measured and reported but NOT derived or rewritten.** SC-6 names six budgets and does not name it; deriving a seventh would exceed the criterion. Recorded as an open input.
+- **Budgets are raised for the pass through the seven `LANCET_ENGINE__WORKFLOW__*_TIMEOUT_MS` environment overrides**, never by editing a committed file, so nothing can leak into the repository. `config.eval.toml` continues to override only `lancedb_path`; `config.verify.toml` is a test fixture with literal assertions bound to it and is not touched.
+- **`06.3.3-PATTERNS.md` is superseded on one point:** its direction to filter with `is_usable` before latency and trend analysis would delete every clipped observation — exactly the censoring evidence the pass exists to collect. The usable-record predicate governs quality means only.
+- **The pass consumes the as-is condition it measures.** It appends PostgreSQL checkpoint rows and advances LanceDB versions, and re-seeding is out of scope, so the original starting state cannot be restored. 06.3.4's re-drive therefore starts from a post-pass store. This is why 06.3.3-02's baseline recording is load-bearing rather than ceremonial.
+- **Every PLAN carries a `## Revise-before-execute` section** enumerating the inputs assumed unavailable at planning time and their producers. Siblings 06.3.1 and 06.3.2 are planned but NOT executed; their contracts are referenced by name only, and their absence from the codebase is not a plan defect.
 
 ### Phase 06.3.4: Corrected re-drive, calibration and root-cause documentation (INSERTED)
 
