@@ -832,11 +832,40 @@ Plans:
 6. `06.3.1-ROOT-CAUSE.md` carries the full forensic trail in the 06.3.1 phase directory, and a distilled public-facing note lands under `docs/` for Phase 6.4's design narrative and honest-limitations section (D-54).
 7. Phase 6.4's ROADMAP entry is updated as this family's closing act (D-53) — canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new code from 06.3.1. (`Depends on:` was repointed to 06.3.4 at split time.)
 
-**Plans:** 0 plans
+**Plans:** 6 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 06.3.4 to break down)
+**Wave 1** *(no prerequisites)*
+
+- [ ] 06.3.4-01-PLAN.md — Tracer: prove the whole corrected-drive chain on one thin slice — committed decision inputs, a live micro-drive into the corrected run directory, an offline score, a gate evaluated against the committed floors, and a recorded verdict — then land the staged-gate evaluator and the header reconciliation the chain cannot run without (SC-1, SC-2; D-32, D-44, D-45, D-47, D-48, D-49)
+- [ ] 06.3.4-02-PLAN.md — The two agreement statistics the calibration decision requires (quadratic weighted kappa and Spearman rho), on the standard library, built before any human score exists to compute them from (SC-3; D-48)
+
+**Wave 2** *(blocked on 06.3.4-01)*
+
+- [ ] 06.3.4-03-PLAN.md — Drive the staged prefix, compute the two numbers the staged gate checks, compare them against floors committed before any of them existed, record the verdict with what the staged stage actually cost, and close on the decision to spend (SC-1; D-32, D-44, D-45, D-47, D-49)
+
+**Wave 3** *(blocked on 06.3.4-03 — and on its closing spend decision)*
+
+- [ ] 06.3.4-04-PLAN.md — The full two-arm drive over the whole committed sample, resuming into the same dated run directory, then publishing the report the staged stage deliberately does not (SC-2; D-44, D-45, D-47)
+
+**Wave 4** *(blocked on 06.3.4-04 and 06.3.4-02)*
+
+- [ ] 06.3.4-05-PLAN.md — The judged pass as its own capped stage, the calibration worksheet at the committed size, a blocking halt for fresh human scoring, then the graph-yield disposition and the negative-delta investigation (SC-3, SC-4, SC-5; D-32, D-47, D-48, D-49)
+
+**Wave 5** *(blocked on 06.3.4-05)*
+
+- [ ] 06.3.4-06-PLAN.md — `06.3.1-ROOT-CAUSE.md` into the 06.3.1 directory, the distilled public note under `docs/`, and Phase 6.4's entry updated as this family's closing act (SC-6, SC-7; D-53, D-54)
+
+**Cross-cutting constraints:**
+
+- **The 2026-09-03 run is KEPT, marked superseded, and still cited as evidence (D-45).** It is the primary source behind every forensic number in the shared CONTEXT.md. The superseded and corrected runs stay distinct, separately-dated artefacts — never merged, never overwritten.
+- **Human calibration is performed fresh, by a human, at a blocking halt.** No agent back-fill; the superseded run's sixteen scores cannot carry forward (D-48). That halt is typed `checkpoint:decision`, not `checkpoint:human-verify` — under this repo's `human_verify_mode = end-of-phase` the latter is folded into an end-of-phase batch and would never actually stop.
+- **Spend is staged and capped.** The commitment to the full drive is a decision on a plan boundary (06.3.4-03's closing task), never an automatic continuation. The superseded run's `$0.0199` is not a usable estimate — it was cheap only because 966 queries generated nothing.
+- **"The graph looks bad" is a publishable outcome, not a failure state (D-49).** A negative paired delta is reported after a bounded investigation confirming it is not another measurement artefact — not suppressed, and not re-run until it looks better. Likewise, missing the provisional graph-yield floor triggers investigation before 6.4 publication; it does not fail the run and does not apply in production (D-32).
+- **`index_generation` is read from the engine at preflight and recorded verbatim, never hand-written.** 966 records in the superseded run carried an empty value and were unattributable. Note it lives under `snapshot`, not at the record's top level.
+- **The notice enum's exact name is not locked** — it is illustrative in the shared decision record. 06.3.4-06 reads it from `proto/lancet/v1/lancet.proto` verbatim rather than hard-coding it.
+- **`docs/` does not exist yet and is created here.** The distilled note must not preempt the three `docs/` pages Phase 6.4's own first success criterion already names; it is a note 6.4's narrative can cite.
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
