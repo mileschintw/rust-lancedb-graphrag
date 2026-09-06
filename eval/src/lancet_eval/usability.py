@@ -42,6 +42,29 @@ def is_usable(record: RunRecord) -> bool:
     return True
 
 
+def has_scorable_payload(record: RunRecord) -> bool:
+    """Determine if a usable record carries scorable retrieval and answer payload.
+
+    Per D-34 / CR-01:
+    A record is scorable if and only if:
+      - record.snapshot is not None (retrieval snapshot exists)
+      - record.answer is not None and record.answer.strip() != ""
+        (answer text is non-blank)
+
+    Boundaries:
+      - NO_EVIDENCE carve-out: A present snapshot with an empty retrieved_chunks
+        list is scorable. It yields an honest zero recall rather than being
+        excluded from the denominator.
+      - Blank answers: An answer of None, empty string "", or whitespace-only
+        string are treated identically as lacking an answer payload.
+    """
+    if record.snapshot is None:
+        return False
+    if record.answer is None or not record.answer.strip():
+        return False
+    return True
+
+
 def has_arm_provenance(record: RunRecord) -> bool:
     """Verify that a graph-off record carries ablation notice and not unavailable."""
     has_ablation = any(

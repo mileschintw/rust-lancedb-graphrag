@@ -65,7 +65,11 @@ from lancet_eval.report import (
     render_json,
 )
 from lancet_eval.seed import load_document_map
-from lancet_eval.usability import has_arm_provenance, is_usable
+from lancet_eval.usability import (
+    has_arm_provenance,
+    has_scorable_payload,
+    is_usable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +228,8 @@ def score_run(
         ems: list[float] = []
         f1s: list[float] = []
         abstentions: list[float] = []
-        retrieval_skipped_count = 0
+        payload_excluded_answerable_count = 0
+        payload_excluded_unanswerable_count = 0
         provenance_error_count = 0
 
         for rec in usable_records:
@@ -237,28 +242,33 @@ def score_run(
                 provenance_error_count += 1
                 continue
 
+            # Scorable payload guard: must carry retrieval snapshot and non-blank answer
+            if not has_scorable_payload(rec):
+                if gold.is_null:
+                    payload_excluded_unanswerable_count += 1
+                else:
+                    payload_excluded_answerable_count += 1
+                continue
+
             # Retrieval dimensions strictly read snapshot.retrieved_chunks
-            if rec.snapshot is None:
-                retrieval_skipped_count += 1
-            else:
-                chunks = rec.snapshot.retrieved_chunks
-                if not gold.is_null:
-                    # Recall@4
-                    r_out = recall_at_k(gold, chunks, k=4, chunk_size=config.chunk_size)
-                    if r_out.status == "ok" and r_out.score is not None:
-                        recalls.append(r_out.score)
-                    # Precision@4
-                    p_out = context_precision_at_k(gold, chunks, k=4)
-                    if p_out.status == "ok" and p_out.score is not None:
-                        precisions.append(p_out.score)
-                    # MRR@10
-                    m_out = mrr_at_k(gold, chunks, k=10)
-                    if m_out.status == "ok" and m_out.score is not None:
-                        mrrs.append(m_out.score)
-                    # nDCG@10
-                    n_out = ndcg_at_k(gold, chunks, k=10, chunk_size=config.chunk_size)
-                    if n_out.status == "ok" and n_out.score is not None:
-                        ndcgs.append(n_out.score)
+            chunks = rec.snapshot.retrieved_chunks
+            if not gold.is_null:
+                # Recall@4
+                r_out = recall_at_k(gold, chunks, k=4, chunk_size=config.chunk_size)
+                if r_out.status == "ok" and r_out.score is not None:
+                    recalls.append(r_out.score)
+                # Precision@4
+                p_out = context_precision_at_k(gold, chunks, k=4)
+                if p_out.status == "ok" and p_out.score is not None:
+                    precisions.append(p_out.score)
+                # MRR@10
+                m_out = mrr_at_k(gold, chunks, k=10)
+                if m_out.status == "ok" and m_out.score is not None:
+                    mrrs.append(m_out.score)
+                # nDCG@10
+                n_out = ndcg_at_k(gold, chunks, k=10, chunk_size=config.chunk_size)
+                if n_out.status == "ok" and n_out.score is not None:
+                    ndcgs.append(n_out.score)
 
             # Answer metrics
             if rec.answer is not None and not gold.is_null:
@@ -281,7 +291,8 @@ def score_run(
             "errors": len(unusable_records) + provenance_error_count,
             "success": len(usable_records) - provenance_error_count,
             "provenance_excluded": provenance_error_count,
-            "retrieval_skipped": retrieval_skipped_count,
+            "payload_excluded_answerable": payload_excluded_answerable_count,
+            "payload_excluded_unanswerable": payload_excluded_unanswerable_count,
             "recalls": recalls,
             "precisions": precisions,
             "mrrs": mrrs,
@@ -628,33 +639,49 @@ def score_run(
     # Helper for building mean score dimension
 
     def _build_mean_dim(
-        name: str, values: list[float], errors: int, total: int
+        name: str,
+        values: list[float],
+        errors: int,
+        total: int,
+        extra_detail: dict[str, float] | None = None,
     ) -> DimensionResult:
+        merged_detail = dict(extra_detail) if extra_detail else {}
         if not values:
             if errors == total and total > 0:
                 return DimensionResult(
                     name=name,
                     status="error",
                     reason=f"All {total} records failed execution with errors",
+                    detail=merged_detail,
                     n=0,
                 )
             return DimensionResult(
                 name=name,
                 status="skipped",
                 reason="No valid records available to compute metric",
+                detail=merged_detail,
                 n=0,
             )
         mean_val = sum(values) / len(values)
+        ok_detail = {
+            "errors": float(errors),
+            "sample_size": float(len(values)),
+        }
+        if extra_detail:
+            ok_detail.update(extra_detail)
         return DimensionResult(
             name=name,
             status="ok",
             score=mean_val,
-            detail={
-                "errors": float(errors),
-                "sample_size": float(len(values)),
-            },
+            detail=ok_detail,
             n=len(values),
         )
+
+    answerable_payload_detail = {
+        "excluded_payload_records": float(
+            p_data.get("payload_excluded_answerable", 0)
+        )
+    }
 
     # 1. retrieval_evidence_coverage
     dimensions.append(
@@ -663,6 +690,7 @@ def score_run(
             p_data["recalls"],
             p_data["errors"],
             p_data["total"],
+            extra_detail=answerable_payload_detail,
         )
     )
 
@@ -673,6 +701,7 @@ def score_run(
             p_data["precisions"],
             p_data["errors"],
             p_data["total"],
+            extra_detail=answerable_payload_detail,
         )
     )
 
@@ -683,6 +712,7 @@ def score_run(
             p_data["mrrs"],
             p_data["errors"],
             p_data["total"],
+            extra_detail=answerable_payload_detail,
         )
     )
 
@@ -693,6 +723,7 @@ def score_run(
             p_data["ems"],
             p_data["errors"],
             p_data["total"],
+            extra_detail=answerable_payload_detail,
         )
     )
 
@@ -703,6 +734,7 @@ def score_run(
             p_data["f1s"],
             p_data["errors"],
             p_data["total"],
+            extra_detail=answerable_payload_detail,
         )
     )
 
@@ -927,6 +959,9 @@ def score_run(
         )
 
     # 9. abstention_on_unanswerable
+    unanswerable_payload_excluded = float(
+        p_data.get("payload_excluded_unanswerable", 0)
+    )
     if p_data["abstentions"]:
         abs_mean = sum(p_data["abstentions"]) / len(p_data["abstentions"])
         dimensions.append(
@@ -934,7 +969,10 @@ def score_run(
                 name="abstention_on_unanswerable",
                 status="ok",
                 score=abs_mean,
-                detail={"null_samples": float(len(p_data["abstentions"]))},
+                detail={
+                    "null_samples": float(len(p_data["abstentions"])),
+                    "excluded_payload_records": unanswerable_payload_excluded,
+                },
                 n=len(p_data["abstentions"]),
             )
         )
@@ -944,6 +982,9 @@ def score_run(
                 name="abstention_on_unanswerable",
                 status="skipped",
                 reason="Corpus contains no unanswerable questions",
+                detail={
+                    "excluded_payload_records": unanswerable_payload_excluded,
+                },
                 n=0,
             )
         )

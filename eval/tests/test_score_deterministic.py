@@ -107,6 +107,7 @@ def test_discriminating_retrieval_input_assertion(tmp_path: Path) -> None:
         question_id=qid,
         graph_arm="graph-on",
         outcome="success",
+        answer="test answer",
         index_generation="gen-test-1",
         snapshot=RetrievalSnapshot(
             index_generation="gen-test-1",
@@ -164,6 +165,7 @@ def test_discriminating_retrieval_input_mirror(tmp_path: Path) -> None:
         question_id=q1.question_id,
         graph_arm="graph-on",
         outcome="success",
+        answer="test answer",
         index_generation="gen-test-1",
         snapshot=RetrievalSnapshot(
             index_generation="gen-test-1",

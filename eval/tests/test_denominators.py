@@ -296,7 +296,8 @@ def test_scorable_payload_exclusion_and_reconciliation(tmp_path: Path) -> None:
             f"Detail for {name} missing excluded_payload_records"
         )
         assert d.detail["excluded_payload_records"] == 2.0, (
-            f"{name} excluded count expected 2.0, got {d.detail['excluded_payload_records']}"
+            f"{name} excluded count expected 2.0, got "
+            f"{d.detail['excluded_payload_records']}"
         )
         # Reconciliation identity: n + excluded_payload_records == 8
         assert d.n + int(d.detail["excluded_payload_records"]) == 8
@@ -521,7 +522,8 @@ def test_abstention_on_unanswerable_payload_exclusion_population_scoped(
     assert cov_dim.n == 6
     assert cov_dim.detail["excluded_payload_records"] == 2.0
 
-    # Abstention dimension must have excluded_payload_records == 1.0 (scoped to null population)
+    # Abstention dimension must have excluded_payload_records == 1.0
+    # (scoped to null population)
     abs_dim = dim_map["abstention_on_unanswerable"]
     assert abs_dim.status == "ok"
     assert abs_dim.n == 2
