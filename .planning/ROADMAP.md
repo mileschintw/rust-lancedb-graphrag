@@ -738,7 +738,7 @@ Plans:
 9. The preflight gains query-path checks driven by a committed canary set with fixed floors: each canary returns >= 1 retrieved chunk, graph-on canaries whose entities are known to be in the graph return >= 1 graph node, per-node duration under budget (D-10, D-11, D-31). This canary is also what locks the 06.3.3 budget values in (D-12).
 10. All four open `06.3-REVIEW.md` findings are closed: CR-01, WR-02, WR-03, WR-04 + IN-02 (D-36).
 
-**Plans:** 6/6 plans executed
+**Plans:** 6/6 plans complete
 
 Plans:
 

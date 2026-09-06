@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 06.3.2
-current_phase_name: eval-harness-diagnostics-scored-dimensions-and-paired-ablati
-status: executing
-stopped_at: Completed 06.3.2-06-PLAN.md
-last_updated: "2026-09-06T15:50:11.174Z"
+current_phase: 06.3.3
+current_phase_name: Retrieval latency measurement pass and timeout budget derivation
+status: planning
+stopped_at: Phase 06.3.2 complete, ready to plan Phase 06.3.3
+last_updated: "2026-09-06T16:51:53.160Z"
 last_activity: 2026-09-06
-state_head: f62f5b62ab2c69c7765fbe44237c5247e001cd6b
+state_head: 0f86741a0beac7dcac777cdb02c5e0f5aace6342
 progress:
   total_phases: 15
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 152
   completed_plans: 142
 milestone_name: milestone
@@ -148,8 +148,8 @@ current_plan: 11
 
 ## Active Phase
 
-- **Phase:** 06.3.2 — Eval harness diagnostics, scored dimensions and paired ablation
-- **Status:** Gates run, gaps found — not complete
+- **Phase:** 06.3.3 — Retrieval latency measurement pass and timeout budget derivation
+- **Status:** Ready to plan
 - **Total Plans in Phase:** 6
 - **Completed Plans in Phase:** 5/5 (executed; phase-level gates run 2026-09-05)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (9/10 must-haves)
@@ -322,7 +322,7 @@ current_plan: 11
 
 **Last session:** 2026-09-06T15:50:09.004Z
 **Last activity:** 2026-09-06
-**Stopped at:** Completed 06.3.2-06-PLAN.md
+**Stopped at:** Phase 06.3.2 complete, ready to plan Phase 06.3.3
 **Resume file:** None
 
 ## Accumulated Context
