@@ -792,14 +792,14 @@ Plans:
 
 Plans:
 
-**Wave 1** *(parallel — file-disjoint: plan 01 is Python harness, plan 02 is Rust)*
+**Wave 1** *(parallel — file-disjoint: plan 01 is Python harness, plan 02 is Rust. Note that file-disjointness alone is not sufficient here: plan 01's tracer drives live queries, which persist `workflow_checkpoints` rows into the same PostgreSQL eval schema whose row count plan 02 records as the D-22 baseline. Plan 01's task 1 therefore asserts schema isolation — a scratch schema preferred, the dev stack as fallback — and refuses to issue a calibration query against the eval schema. The parallelism is preserved by isolating the state, not by serialising the wave.)*
 
 - [ ] 06.3.3-01-PLAN.md — Tracer: the measurement spine end to end — committed decision thresholds, per-node duration extraction, censoring detection, percentile intervals, the derivation rule, the provider-contract generation budget, the strict nesting report, the decay statistics, the driver with ordinal/segment stamping and a spend stop-rule, a `measure` CLI command, an environment-aware live-timeout reader, and one calibration micro-pass (SC-2 instrument, SC-4 criterion, SC-6 machinery, SC-8 cap; D-13, D-14, D-15, D-18, D-19, D-20, D-21, D-47)
 - [ ] 06.3.3-02-PLAN.md — Store truth: read-only store-wide graph-population and bounded-neighbourhood modes on `inspect_lancedb`, then the committed `06.3.3-STORE-BASELINE.md` recording population, degree distribution, a reproducible traversal, starting store and PostgreSQL checkpoint row counts, the 06.3.2 canary-entity confirmation, and the zero-count reclassification verdict (SC-1, SC-2 starting-condition half; D-05, D-22)
 
-**Wave 2** *(blocked on 06.3.3-01 and 06.3.3-02)*
+**Wave 2** *(blocked on 06.3.3-01 and 06.3.3-02; `autonomous: false` — a blocking `checkpoint:decision` authorises the measurement stage's spend cap before any paid query runs, because `measure` requires the cap with no default and no artifact in the phase produces the figure)*
 
-- [ ] 06.3.3-03-PLAN.md — The measurement pass: several hundred end-to-end queries under lifted ceilings supplied through the process environment, split by a recorded mid-run engine restart, under a per-stage spend cap; then the censoring census, the two-pronged decay verdict against the pre-committed criterion, the inner-budget arm-difference decomposition, and one investigation disposition per node (SC-2, SC-3, SC-4, SC-5, SC-8 part; D-16, D-18, D-19, D-20, D-21, D-22, D-47)
+- [ ] 06.3.3-03-PLAN.md — The measurement pass: the blocking spend-cap authorisation, then several hundred end-to-end queries under lifted ceilings supplied through the process environment, split by a recorded mid-run engine restart, under that per-stage cap; then the censoring census, the two-pronged decay verdict against the pre-committed criterion, the inner-budget arm-difference decomposition, and one investigation disposition per node (SC-2, SC-3, SC-4, SC-5, SC-8 part; D-16, D-18, D-19, D-20, D-21, D-22, D-47)
 
 **Wave 3** *(blocked on 06.3.3-03; `autonomous: false` — closes on the paid-spend decision)*
 
