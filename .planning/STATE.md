@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.2
-current_phase_name: Eval harness diagnostics, scored dimensions and paired ablation (INSERTED)
+current_phase_name: eval-harness-diagnostics-scored-dimensions-and-paired-ablati
 status: executing
 stopped_at: Phase 06.3.2 gates run (code review + verification), gaps_found 9/10 must-haves — ready to plan gap closure
-last_updated: "2026-09-05T23:59:00.000Z"
-last_activity: 2026-09-05
-state_head: 9096f508d268b9fa3a395c3676aa7aec282107c7
+last_updated: "2026-09-06T15:33:07.003Z"
+last_activity: 2026-09-06
+state_head: 787d3b8bb37c4b1e8b0267e5e89451d4fcb41645
 progress:
   total_phases: 15
   completed_phases: 8
-  total_plans: 151
+  total_plans: 152
   completed_plans: 136
 milestone_name: milestone
 current_plan: 11
@@ -150,7 +150,7 @@ current_plan: 11
 
 - **Phase:** 06.3.2 — Eval harness diagnostics, scored dimensions and paired ablation
 - **Status:** Gates run, gaps found — not complete
-- **Total Plans in Phase:** 5
+- **Total Plans in Phase:** 6
 - **Completed Plans in Phase:** 5/5 (executed; phase-level gates run 2026-09-05)
 - **Progress:** [██████████] 100% execution / gates: gaps_found (9/10 must-haves)
 - **Next:** `/gsd-plan-phase 06.3.2 --gaps`
@@ -321,7 +321,7 @@ current_plan: 11
 ## Session
 
 **Last session:** 2026-09-05T01:38:18.754Z
-**Last activity:** 2026-09-05
+**Last activity:** 2026-09-06
 **Stopped at:** Phase 06.3.1 complete, ready to plan Phase 06.3.2
 **Resume file:** .planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md
 
@@ -356,6 +356,30 @@ current_plan: 11
   `06.3.1-AI-SPEC.md` existing, D-23 process-level, D-27 dual-owned). The review-incorporation replan added
   to `must_haves` and fixed a verify-gate weakness but did not touch decision citations — coverage shape is
   unchanged. Re-approved "Proceed anyway" on that basis rather than re-litigating the original analysis.
+
+- **Phase 06.3.2 — decision-coverage gate (step 13a): "Proceed anyway" override recorded 2026-09-06**
+  during `/gsd-plan-phase 06.3.2 --gaps` (additive gap-closure plan `06.3.2-06-PLAN.md` for the SC-7/
+  CR-01 denominator-asymmetry gap `06.3.2-VERIFICATION.md` found). Correcting the prior 06.3.1 entry's
+  expectation: the gate does **not** skip silently here — passing the manually-injected context path
+  (`06.3.1-CONTEXT.md`, since 06.3.2 has no phase-local CONTEXT.md) gives a real result: **27/54
+  covered**, uncovered = D-03/04/08/13-16/18-26/28/30/36/44/46/47/50-54. Cross-referenced against
+  06.3.2's owned decisions (D-02, D-07, D-10, D-11, D-12, D-31, D-34, D-35, D-36, D-37-D-43): **only
+  D-36 is uncovered; all 15 other owned decisions are covered.**
+  D-36 ("all four open `06.3-REVIEW.md` findings close before the re-drive: CR-01 calibration-worksheet,
+  WR-02 duplicate journal records, WR-03 `primary_arm` resolution, WR-04+IN-02 config-read/judge-cache")
+  is a **citation-scan false negative, not an implementation gap**: `06.3.2-05-PLAN.md`/`-SUMMARY.md`
+  (already executed, pre-dates this run) closed exactly this work — its own summary title is "Review
+  Findings CR-01, WR-03, WR-04, IN-02" and content confirms the calibration-worksheet fix D-36 names —
+  it just never cited the literal string `D-36:` in a scanned plan surface. This run's new plan
+  (06.3.2-06) is additive-only and does not touch plans 01-05 (verified twice by gsd-plan-checker), so
+  retroactively adding a D-36 citation to plan 05 is out of scope and would violate that constraint.
+  **Also note:** `06.3-REVIEW.md` and `06.3.2-REVIEW.md` each restart their own CR-*/WR-*/IN-* numbering
+  from 1 — the same ID (e.g. CR-01, WR-01-04) means unrelated findings depending on which REVIEW.md is
+  meant. Confirmed while disambiguating this gap: `06.3.2-REVIEW.md`'s CR-01 (the actual SC-7 target) is
+  unrelated to `06.3-REVIEW.md`'s CR-01 (D-36's calibration-worksheet finding, already closed).
+  All 26 other uncovered IDs belong to sibling phases (06.3.1 graph/decay/budget, 06.3.3 latency
+  measurement, 06.3.4 re-drive) or are family-wide process decisions (D-46/47/50-54) — none are 06.3.2's
+  to cover. Proceeding without re-planning or mutating the shared CONTEXT.md.
 
 ### Roadmap Evolution
 
