@@ -218,3 +218,391 @@ def test_rendered_report_shows_error_row_detail() -> None:
     md = render_markdown(report)
     assert "No valid pairs" in md
     assert "n_pairs: 0.0" in md or "n_pairs" in md
+
+
+def test_scorable_payload_exclusion_and_reconciliation(tmp_path: Path) -> None:
+    from lancet_eval.corpus import load_sample_questions
+    from lancet_eval.seed import load_document_map
+
+    doc_map = load_document_map("multihop_rag")
+    valid_doc_id = next(iter(doc_map.entries.keys()))
+    questions = [q for q in load_sample_questions("multihop_rag") if not q.is_null][:8]
+    assert len(questions) == 8
+
+    # 8 records: 6 fully-populated, 2 usable but payload-less (answer="", snapshot=None)
+    journal_file = tmp_path / "journal.jsonl"
+    j = Journal(journal_file)
+    j.write_header(corpus="multihop_rag", partial=False)
+
+    for i in range(8):
+        is_payload_less = i >= 6
+        q = questions[i]
+        fact = q.gold_facts[0] if q.gold_facts else "fact"
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=q.question_id,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="" if is_payload_less else (q.gold_answer or "Sam Altman"),
+            snapshot=None
+            if is_payload_less
+            else {
+                "index_generation": "gen-1",
+                "embedding_model": "bge",
+                "vector_weight": 1.0,
+                "bm25_weight": 0.8,
+                "rrf_k": 60,
+                "candidate_limit": 32,
+                "final_limit": 8,
+                "result_hash": "h",
+                "retrieved_chunks": [
+                    {
+                        "chunk_id": f"c_{i}",
+                        "document_id": valid_doc_id,
+                        "title": "t",
+                        "section_path": "s",
+                        "excerpt": f"Evidence fact is: {fact}",
+                        "is_truncated": False,
+                        "score": 1.0,
+                        "rank": 1,
+                        "content_type": "text",
+                    }
+                ],
+            },
+            node_failures=[],
+            duration_ms=100.0,
+            session_id="sess",
+            correlation_id="corr",
+            index_generation="gen-1",
+        )
+        j.append(rec)
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    dim_map = {d.name: d for d in report.dimensions}
+
+    target_dims = [
+        "retrieval_evidence_coverage",
+        "answer_exact_match",
+        "answer_f1",
+        "context_precision_at_k",
+        "ranking_quality",
+    ]
+    for name in target_dims:
+        assert name in dim_map, f"Missing dimension {name}"
+        d = dim_map[name]
+        assert d.status == "ok"
+        assert d.n == 6, f"{name}.n expected 6, got {d.n}"
+        assert "excluded_payload_records" in d.detail, (
+            f"Detail for {name} missing excluded_payload_records"
+        )
+        assert d.detail["excluded_payload_records"] == 2.0, (
+            f"{name} excluded count expected 2.0, got {d.detail['excluded_payload_records']}"
+        )
+        # Reconciliation identity: n + excluded_payload_records == 8
+        assert d.n + int(d.detail["excluded_payload_records"]) == 8
+
+
+def test_whitespace_only_answer_treated_as_payload_less(tmp_path: Path) -> None:
+    from lancet_eval.corpus import load_sample_questions
+    from lancet_eval.seed import load_document_map
+
+    doc_map = load_document_map("multihop_rag")
+    valid_doc_id = next(iter(doc_map.entries.keys()))
+    questions = [q for q in load_sample_questions("multihop_rag") if not q.is_null][:8]
+    assert len(questions) == 8
+
+    journal_file = tmp_path / "journal.jsonl"
+    j = Journal(journal_file)
+    j.write_header(corpus="multihop_rag", partial=False)
+
+    for i in range(8):
+        is_payload_less = i >= 6
+        q = questions[i]
+        fact = q.gold_facts[0] if q.gold_facts else "fact"
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=q.question_id,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="   \n\t  " if is_payload_less else (q.gold_answer or "Sam Altman"),
+            snapshot=None
+            if is_payload_less
+            else {
+                "index_generation": "gen-1",
+                "embedding_model": "bge",
+                "vector_weight": 1.0,
+                "bm25_weight": 0.8,
+                "rrf_k": 60,
+                "candidate_limit": 32,
+                "final_limit": 8,
+                "result_hash": "h",
+                "retrieved_chunks": [
+                    {
+                        "chunk_id": f"c_{i}",
+                        "document_id": valid_doc_id,
+                        "title": "t",
+                        "section_path": "s",
+                        "excerpt": f"Evidence fact is: {fact}",
+                        "is_truncated": False,
+                        "score": 1.0,
+                        "rank": 1,
+                        "content_type": "text",
+                    }
+                ],
+            },
+            node_failures=[],
+            duration_ms=100.0,
+            session_id="sess",
+            correlation_id="corr",
+            index_generation="gen-1",
+        )
+        j.append(rec)
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    dim_map = {d.name: d for d in report.dimensions}
+
+    target_dims = [
+        "retrieval_evidence_coverage",
+        "answer_exact_match",
+        "answer_f1",
+        "context_precision_at_k",
+        "ranking_quality",
+    ]
+    for name in target_dims:
+        d = dim_map[name]
+        assert d.n == 6
+        assert d.detail["excluded_payload_records"] == 2.0
+
+
+def test_empty_retrieved_chunks_snapshot_is_scorable_zero_recall(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.corpus import load_sample_questions
+
+    questions = [q for q in load_sample_questions("multihop_rag") if not q.is_null][:2]
+    journal_file = tmp_path / "journal.jsonl"
+    j = Journal(journal_file)
+    j.write_header(corpus="multihop_rag", partial=False)
+
+    for q in questions:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=q.question_id,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=q.gold_answer or "An answer",
+            snapshot={
+                "index_generation": "gen-1",
+                "embedding_model": "bge",
+                "vector_weight": 1.0,
+                "bm25_weight": 0.8,
+                "rrf_k": 60,
+                "candidate_limit": 32,
+                "final_limit": 8,
+                "result_hash": "h",
+                "retrieved_chunks": [],  # NO_EVIDENCE carve-out
+            },
+            node_failures=[],
+            duration_ms=100.0,
+            session_id="sess",
+            correlation_id="corr",
+            index_generation="gen-1",
+        )
+        j.append(rec)
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    dim_map = {d.name: d for d in report.dimensions}
+    cov_dim = dim_map["retrieval_evidence_coverage"]
+    assert cov_dim.status == "ok"
+    assert cov_dim.n == 2
+    assert cov_dim.score == 0.0
+    assert cov_dim.detail.get("excluded_payload_records", 0.0) == 0.0
+
+
+def test_abstention_on_unanswerable_payload_exclusion_population_scoped(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.corpus import load_sample_questions
+    from lancet_eval.seed import load_document_map
+
+    doc_map = load_document_map("multihop_rag")
+    valid_doc_id = next(iter(doc_map.entries.keys()))
+
+    ans_questions = [
+        q for q in load_sample_questions("multihop_rag") if not q.is_null
+    ][:8]
+    null_questions = [q for q in load_sample_questions("multihop_rag") if q.is_null][
+        :3
+    ]
+    assert len(ans_questions) == 8
+    assert len(null_questions) == 3
+
+    journal_file = tmp_path / "journal.jsonl"
+    j = Journal(journal_file)
+    j.write_header(corpus="multihop_rag", partial=False)
+
+    # In answerable population: 6 populated, 2 payload-less -> exclusion count = 2
+    for i, q in enumerate(ans_questions):
+        is_bad = i >= 6
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=q.question_id,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="" if is_bad else (q.gold_answer or "ans"),
+            snapshot=None
+            if is_bad
+            else {
+                "index_generation": "gen-1",
+                "embedding_model": "bge",
+                "vector_weight": 1.0,
+                "bm25_weight": 0.8,
+                "rrf_k": 60,
+                "candidate_limit": 32,
+                "final_limit": 8,
+                "result_hash": "h",
+                "retrieved_chunks": [
+                    {
+                        "chunk_id": f"c_{i}",
+                        "document_id": valid_doc_id,
+                        "title": "t",
+                        "section_path": "s",
+                        "excerpt": "Evidence fact is: fact",
+                        "is_truncated": False,
+                        "score": 1.0,
+                        "rank": 1,
+                        "content_type": "text",
+                    }
+                ],
+            },
+            node_failures=[],
+            duration_ms=100.0,
+            session_id="sess",
+            correlation_id="corr",
+            index_generation="gen-1",
+        )
+        j.append(rec)
+
+    # In null-gold population: 2 populated, 1 payload-less -> exclusion count = 1
+    for i, q in enumerate(null_questions):
+        is_bad = i == 2
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=q.question_id,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="" if is_bad else "I do not have enough information to answer.",
+            snapshot=None
+            if is_bad
+            else {
+                "index_generation": "gen-1",
+                "embedding_model": "bge",
+                "vector_weight": 1.0,
+                "bm25_weight": 0.8,
+                "rrf_k": 60,
+                "candidate_limit": 32,
+                "final_limit": 8,
+                "result_hash": "h",
+                "retrieved_chunks": [],
+            },
+            node_failures=[],
+            duration_ms=100.0,
+            session_id="sess",
+            correlation_id="corr",
+            index_generation="gen-1",
+        )
+        j.append(rec)
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    dim_map = {d.name: d for d in report.dimensions}
+
+    # Answerable dimensions must have excluded_payload_records == 2.0
+    cov_dim = dim_map["retrieval_evidence_coverage"]
+    assert cov_dim.n == 6
+    assert cov_dim.detail["excluded_payload_records"] == 2.0
+
+    # Abstention dimension must have excluded_payload_records == 1.0 (scoped to null population)
+    abs_dim = dim_map["abstention_on_unanswerable"]
+    assert abs_dim.status == "ok"
+    assert abs_dim.n == 2
+    assert abs_dim.detail["excluded_payload_records"] == 1.0
+    # Reconciliation identity for null-gold population: n + excluded == 3
+    assert abs_dim.n + int(abs_dim.detail["excluded_payload_records"]) == 3
+
+
+def test_all_payload_less_journal_non_ok_status_and_rendered_report(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.corpus import load_sample_questions
+    from lancet_eval.report import render_markdown
+
+    questions = [q for q in load_sample_questions("multihop_rag") if not q.is_null][:4]
+    journal_file = tmp_path / "journal.jsonl"
+    j = Journal(journal_file)
+    j.write_header(corpus="multihop_rag", partial=False)
+
+    for q in questions:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=q.question_id,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="",
+            snapshot=None,
+            node_failures=[],
+            duration_ms=100.0,
+            session_id="sess",
+            correlation_id="corr",
+            index_generation="gen-1",
+        )
+        j.append(rec)
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    dim_map = {d.name: d for d in report.dimensions}
+
+    target_dims = [
+        "retrieval_evidence_coverage",
+        "answer_exact_match",
+        "answer_f1",
+        "context_precision_at_k",
+        "ranking_quality",
+    ]
+    for name in target_dims:
+        d = dim_map[name]
+        assert d.status != "ok"
+        assert d.n == 0
+        assert "excluded_payload_records" in d.detail
+        assert d.detail["excluded_payload_records"] == 4.0
+
+    md = render_markdown(report)
+    assert "excluded_payload_records=4" in md
+
+
+def test_caveat_6_mentions_payload_rule_and_has_no_numerals() -> None:
+    import re
+
+    template_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "lancet_eval"
+        / "templates"
+        / "report.md.j2"
+    )
+    text = template_path.read_text(encoding="utf-8")
+
+    # Find caveat 6 line
+    caveat_line = ""
+    for line in text.splitlines():
+        if line.strip().startswith("6. "):
+            caveat_line = line.strip()
+            break
+    assert caveat_line, "Caveat 6 not found in template"
+
+    # Assert payload rule mentioned
+    assert "payload" in caveat_line.lower()
+
+    # The caveat text (after the '6. ') must contain no numerals [0-9]
+    body = caveat_line[3:]
+    digits = re.findall(r"\d", body)
+    assert not digits, f"Caveat 6 body contains numerals: {digits}"
+
