@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lancet_eval.client import NodeFailed
+from lancet_eval.client import NodeFailed, Notice
 from lancet_eval.dimensions import DimensionResult
 from lancet_eval.journal import Journal, RunRecord
 from lancet_eval.score import score_run
@@ -530,6 +530,153 @@ def test_abstention_on_unanswerable_payload_exclusion_population_scoped(
     assert abs_dim.detail["excluded_payload_records"] == 1.0
     # Reconciliation identity for null-gold population: n + excluded == 3
     assert abs_dim.n + int(abs_dim.detail["excluded_payload_records"]) == 3
+
+
+def test_abstention_credits_notice_based_no_evidence_over_text_match(
+    tmp_path: Path,
+) -> None:
+    """CR-01 regression: score.py must pass rec.notices into abstention_rate so
+    a NOTICE_CODE_NO_EVIDENCE (typed_code=1) notice credits correct_abstention
+    even when the answer text matches neither hardcoded refusal phrase."""
+    from lancet_eval.corpus import load_sample_questions
+
+    null_questions = [q for q in load_sample_questions("multihop_rag") if q.is_null]
+    assert len(null_questions) >= 1
+    q = null_questions[0]
+
+    journal_file = tmp_path / "journal.jsonl"
+    j = Journal(journal_file)
+    j.write_header(corpus="multihop_rag", partial=False)
+
+    rec = RunRecord(
+        corpus="multihop_rag",
+        question_id=q.question_id,
+        graph_arm="graph-on",
+        outcome="success",
+        # Deliberately matches neither "insufficient information" nor "cannot
+        # answer" — only the typed notice should credit this as abstention.
+        answer="The requested information isn't present.",
+        snapshot={
+            "index_generation": "gen-1",
+            "embedding_model": "bge",
+            "vector_weight": 1.0,
+            "bm25_weight": 0.8,
+            "rrf_k": 60,
+            "candidate_limit": 32,
+            "final_limit": 8,
+            "result_hash": "h",
+            "retrieved_chunks": [],
+        },
+        notices=[
+            Notice(code="NO_EVIDENCE", message="no evidence found", typed_code=1)
+        ],
+        node_failures=[],
+        duration_ms=100.0,
+        session_id="sess",
+        correlation_id="corr",
+        index_generation="gen-1",
+    )
+    j.append(rec)
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    dim_map = {d.name: d for d in report.dimensions}
+
+    abs_dim = dim_map["abstention_on_unanswerable"]
+    assert abs_dim.status == "ok"
+    assert abs_dim.n == 1
+    assert abs_dim.score == 1.0
+
+
+def test_abstention_skip_reason_distinguishes_payload_excluded_from_absent(
+    tmp_path: Path,
+) -> None:
+    """CR-02 regression: when null-gold records exist but all are payload-
+    excluded, the skip reason must say so rather than falsely claiming the
+    corpus contains no unanswerable questions."""
+    from lancet_eval.corpus import load_sample_questions
+    from lancet_eval.seed import load_document_map
+
+    doc_map = load_document_map("multihop_rag")
+    valid_doc_id = next(iter(doc_map.entries.keys()))
+
+    ans_questions = [
+        q for q in load_sample_questions("multihop_rag") if not q.is_null
+    ][:2]
+    null_questions = [q for q in load_sample_questions("multihop_rag") if q.is_null][
+        :2
+    ]
+    assert len(ans_questions) == 2
+    assert len(null_questions) == 2
+
+    journal_file = tmp_path / "journal.jsonl"
+    j = Journal(journal_file)
+    j.write_header(corpus="multihop_rag", partial=False)
+
+    # Normal, fully scorable answerable records.
+    for i, q in enumerate(ans_questions):
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=q.question_id,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=q.gold_answer or "ans",
+            snapshot={
+                "index_generation": "gen-1",
+                "embedding_model": "bge",
+                "vector_weight": 1.0,
+                "bm25_weight": 0.8,
+                "rrf_k": 60,
+                "candidate_limit": 32,
+                "final_limit": 8,
+                "result_hash": "h",
+                "retrieved_chunks": [
+                    {
+                        "chunk_id": f"c_{i}",
+                        "document_id": valid_doc_id,
+                        "title": "t",
+                        "section_path": "s",
+                        "excerpt": "Evidence fact is: fact",
+                        "is_truncated": False,
+                        "score": 1.0,
+                        "rank": 1,
+                        "content_type": "text",
+                    }
+                ],
+            },
+            node_failures=[],
+            duration_ms=100.0,
+            session_id="sess",
+            correlation_id="corr",
+            index_generation="gen-1",
+        )
+        j.append(rec)
+
+    # All null-gold records payload-excluded (blank answer, no snapshot) —
+    # unanswerable questions exist but every one was excluded, not absent.
+    for q in null_questions:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=q.question_id,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="",
+            snapshot=None,
+            node_failures=[],
+            duration_ms=100.0,
+            session_id="sess",
+            correlation_id="corr",
+            index_generation="gen-1",
+        )
+        j.append(rec)
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    dim_map = {d.name: d for d in report.dimensions}
+
+    abs_dim = dim_map["abstention_on_unanswerable"]
+    assert abs_dim.status == "skipped"
+    assert abs_dim.detail["excluded_payload_records"] == 2.0
+    assert "no unanswerable questions" not in abs_dim.reason
+    assert "payload" in abs_dim.reason.lower()
 
 
 def test_all_payload_less_journal_non_ok_status_and_rendered_report(
