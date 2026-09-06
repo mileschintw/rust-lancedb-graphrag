@@ -2,24 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.3
-current_phase_name: retrieval-latency-measurement-pass-and-timeout-budget-deriva
-status: planning
-stopped_at: "Phase 06.3.2 complete, ready to execute Phase 06.3.3 (already planned: 4 plans)"
-last_updated: "2026-09-06T20:38:28.794Z"
+current_phase_name: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
+status: executing
+stopped_at: "Phase 06.3.3 Plan 01 complete, executing Plan 02"
+last_updated: "2026-09-06T21:35:00.000Z"
 last_activity: 2026-09-06
-state_head: e00c7a141de7c3e24cb0ffb78eec7666e6de535d
+state_head: c15fcdaf100601f8429374a7a7ce57808bd1123d
 progress:
   total_phases: 15
   completed_phases: 9
   total_plans: 152
-  completed_plans: 142
+  completed_plans: 143
 milestone_name: milestone
-current_plan: 11
+current_plan: 02
 ---
 
 # Project State
 
 ## Current Status
+
+- **Phase 06.3.3 Plan 06.3.3-01 executed**: Latency measurement spine, censoring census, budget derivation, decay analysis, measurement driver, and calibration micro-pass (`06.3.3-01-SUMMARY.md`).
 
 - **Phase 06.3 (Evaluation Harness, Corpora and Recorded Run): All 11 plans executed and committed:**
   - `06.3-08` (Wave 1): Additive `retrieved_chunks` on `RetrievalSnapshot` wire format (`b7d50b4`).
@@ -160,7 +162,7 @@ current_plan: 11
 ## Active Phase
 
 - **Phase:** 06.3.3 — Retrieval latency measurement pass and timeout budget derivation
-- **Status:** Planned, not yet executed (4 plans on disk: 06.3.3-01..04)
+- **Status:** Executing Phase 06.3.3
 - **Total Plans in Phase:** 4
 - **Completed Plans in Phase:** 0/4
 - **Progress:** [░░░░░░░░░░] 0% execution

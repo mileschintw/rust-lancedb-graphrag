@@ -220,11 +220,7 @@ def resolve_run_dir(corpus: str, resume: bool, runs_root: Path | None = None) ->
     """
     root = runs_root if runs_root is not None else repo_root() / "eval" / "runs"
     if resume and root.exists():
-        matching = [
-            p
-            for p in root.glob(f"????-??-??-{corpus}")
-            if p.is_dir()
-        ]
+        matching = [p for p in root.glob(f"????-??-??-{corpus}") if p.is_dir()]
         if matching:
             return max(matching, key=lambda p: p.name)
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -358,9 +354,7 @@ def score_benchmark(
         )
         md = render_markdown(report)
         console.print(md)
-        console.print(
-            f"[green]Score report written to {run / 'report.json'}[/green]"
-        )
+        console.print(f"[green]Score report written to {run / 'report.json'}[/green]")
     except Exception as exc:
         console.print(f"[bold red]Score error:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -712,6 +706,88 @@ def probe(
 
     console.print(md_content)
     console.print(f"[green]Probe reports written to:[/green] {out_dir}")
+
+
+@app.command("measure")
+def measure_latency(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus to measure (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+    sample_size: Annotated[
+        int,
+        typer.Option(
+            "--sample-size",
+            "-n",
+            help=(
+                "Number of questions to measure "
+                "(issues two queries per question across both arms)"
+            ),
+        ),
+    ] = 10,
+    segment_boundary: Annotated[
+        int,
+        typer.Option(
+            "--segment-boundary",
+            help="Ordinal boundary at which to switch from segment-1 to segment-2",
+        ),
+    ] = 500,
+    cheap_model: Annotated[
+        str,
+        typer.Option(
+            "--cheap-model",
+            help="Generation model to use for measurement pass",
+        ),
+    ] = "deepseek/deepseek-v4-flash-0731",
+    stage_cap: Annotated[
+        float,
+        typer.Option(
+            "--stage-cap",
+            help="Maximum spend cap in USD for this measurement stage",
+        ),
+    ] = 5.0,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            "-o",
+            help="Output directory for measurement pass",
+        ),
+    ] = None,
+    workers: Annotated[
+        int,
+        typer.Option(
+            "--workers",
+            "-w",
+            help="Number of concurrent worker threads",
+        ),
+    ] = 1,
+) -> None:
+    """Run two-armed latency measurement pass and derive proposed timeout budgets."""
+    from lancet_eval.measure import run_measurement_pass
+
+    try:
+        run_dir, summary = run_measurement_pass(
+            corpus_name=corpus,
+            sample_size_questions=sample_size,
+            segment_boundary_ordinal=segment_boundary,
+            stage_spend_cap=stage_cap,
+            output_dir=out,
+            workers=workers,
+        )
+        console.print(
+            f"[green]Measurement pass complete. Results written to:[/green] {run_dir}"
+        )
+        console.print(f"Total queries: {summary.get('total_records_emitted')}")
+        spend_usd = summary.get("spend_summary", {}).get("spend_usd", 0.0)
+        console.print(f"Observed spend: ${spend_usd:.4f}")
+    except Exception as exc:
+        console.print(f"[red]Measurement pass failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 def main() -> None:

@@ -191,6 +191,7 @@ def run_query(
     session_id: str = "",
     disable_graph_context: bool = False,
     deadline_s: float = 600.0,
+    read_timeout_s: float | None = None,
     capture_raw_events: bool = False,
 ) -> QueryOutcome:
     """Drive gateway /rag/query endpoint with SSE streaming and contract assertions."""
@@ -198,13 +199,24 @@ def run_query(
     from httpx_sse import SSEError, connect_sse
 
     import lancet_eval.raw_events as raw_mod
+    from lancet_eval.config import EvalSettings
 
     started = time.monotonic()
     body: dict[str, object] = {"query": query, "session_id": session_id}
     if disable_graph_context:
         body["disable_graph_context"] = True
 
-    eval_timeout = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
+    effective_read_timeout = (
+        read_timeout_s
+        if read_timeout_s is not None
+        else EvalSettings().gateway_timeout_secs
+    )
+    eval_timeout = httpx.Timeout(
+        connect=10.0,
+        read=effective_read_timeout,
+        write=30.0,
+        pool=10.0,
+    )
 
     try:
         with connect_sse(
@@ -235,9 +247,7 @@ def run_query(
             raw_bytes = 0
             raw_truncated = False
             raw_dropped_frames = 0
-            bytes_per_unit = getattr(
-                raw_mod, "RAW_EVENT_BYTES_PER_UNIT", 32768
-            )
+            bytes_per_unit = getattr(raw_mod, "RAW_EVENT_BYTES_PER_UNIT", 32768)
 
             for sse in event_source.iter_sse():
                 if time.monotonic() - started > deadline_s:
@@ -258,7 +268,6 @@ def run_query(
                         raw_dropped_frames += 1
 
                 match sse.event:
-
                     case "final_answer":
                         final_answer_count += 1
                         answer = RagAnswer.model_validate_json(sse.data)
@@ -279,7 +288,9 @@ def run_query(
                         node_failures.append(NodeFailed.model_validate_json(sse.data))
                     case "node_completed":
                         if len(node_timings) < 64:
-                            node_timings.append(NodeCompleted.model_validate_json(sse.data))
+                            node_timings.append(
+                                NodeCompleted.model_validate_json(sse.data)
+                            )
                         else:
                             dropped_node_timings += 1
                     case "stream_error":

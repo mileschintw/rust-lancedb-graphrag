@@ -38,6 +38,7 @@ def drive_one(
     arm: str,
     partial: bool = False,
     deadline_s: float = 600.0,
+    read_timeout_s: float | None = None,
     raw_sink: RawEventSink | None = None,
     baseline_ids: set[str] | None = None,
 ) -> RunRecord:
@@ -55,6 +56,7 @@ def drive_one(
             query=question.question,
             disable_graph_context=disable_graph_context,
             deadline_s=deadline_s,
+            read_timeout_s=read_timeout_s,
             capture_raw_events=raw_sink is not None,
         )
 
@@ -205,7 +207,12 @@ def drive(
     eval_client = client or httpx.Client(
         base_url=eval_settings.gateway_url,
         limits=limits,
-        timeout=httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0),
+        timeout=httpx.Timeout(
+            connect=10.0,
+            read=eval_settings.gateway_timeout_secs,
+            write=30.0,
+            pool=10.0,
+        ),
     )
 
     executed_count = 0
@@ -222,6 +229,7 @@ def drive(
                     arm=arm,
                     partial=partial,
                     deadline_s=eval_settings.question_deadline_secs,
+                    read_timeout_s=eval_settings.gateway_timeout_secs,
                     raw_sink=raw_sink,
                     baseline_ids=baseline_ids,
                 ): (q, arm)

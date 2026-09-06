@@ -1,0 +1,115 @@
+{
+  "calibration_note": "This micro-pass is calibration of the instrument only and is not an input to any derived budget.",
+  "corpus": "multihop_rag",
+  "sample_size_questions": 2,
+  "total_records_emitted": 4,
+  "measured_records": 4,
+  "raised_budgets": {
+    "reformulate_timeout_ms": 5000,
+    "query_embedding_timeout_ms": 10000,
+    "retrieve_timeout_ms": 10000,
+    "graph_operation_timeout_ms": 4000,
+    "graph_node_timeout_ms": 15000,
+    "prompt_timeout_ms": 2000,
+    "generation_node_timeout_ms": 65000
+  },
+  "sse_read_timeout_s": 300.0,
+  "question_deadline_s": 600.0,
+  "spend_summary": {
+    "spend_usd": 5.76e-05,
+    "includes_embeddings": true,
+    "stage_spend_cap": 5.0
+  },
+  "censoring_census": {
+    "total_records": 4,
+    "node_counts": {
+      "ReformulateQuery": {
+        "OBSERVED": 4,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      },
+      "ExtractGraphContext": {
+        "OBSERVED": 4,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      },
+      "RetrieveHybrid": {
+        "OBSERVED": 4,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      },
+      "AssemblePrompt": {
+        "OBSERVED": 4,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      },
+      "GenerateAnswer": {
+        "OBSERVED": 4,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      }
+    },
+    "inner_labels": {}
+  },
+  "proposed_budgets": {
+    "graph_node_timeout_ms": 14500,
+    "retrieve_timeout_ms": 10500,
+    "prompt_timeout_ms": 23,
+    "generation_node_timeout_ms": 65000,
+    "query_embedding_timeout_ms": 10000,
+    "graph_operation_timeout_ms": 4000
+  },
+  "nesting_report": {
+    "has_violations": true,
+    "groups": [
+      {
+        "outer_name": "graph_node_timeout_ms",
+        "outer_budget_ms": 450,
+        "inner_budgets": {
+          "query_embedding_timeout_ms": 10000,
+          "graph_operation_timeout_ms": 4000
+        },
+        "inner_sum_ms": 14000,
+        "slack_ms": -13550,
+        "fires_first": "graph_node_timeout_ms",
+        "is_violation": true,
+        "adjusted_outer_ms": 14500,
+        "is_invariant_driven": true
+      },
+      {
+        "outer_name": "retrieve_timeout_ms",
+        "outer_budget_ms": 675,
+        "inner_budgets": {
+          "query_embedding_timeout_ms": 10000
+        },
+        "inner_sum_ms": 10000,
+        "slack_ms": -9325,
+        "fires_first": "retrieve_timeout_ms",
+        "is_violation": true,
+        "adjusted_outer_ms": 10500,
+        "is_invariant_driven": true
+      }
+    ]
+  },
+  "ceiling_report": {
+    "largest_single_node_budget_ms": 65000,
+    "largest_single_node_name": "generation_node_timeout_ms",
+    "sse_read_timeout_ms": 300000,
+    "single_exceeds_read_timeout": false,
+    "worst_case_sum_ms": 90023,
+    "question_deadline_ms": 600000,
+    "sum_exceeds_deadline": false,
+    "summary_message": "PASS: Proposed budgets satisfy both harness ceilings independently."
+  },
+  "run_timestamp": "2026-09-06T21:32:28.686913+00:00"
+}

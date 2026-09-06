@@ -399,19 +399,25 @@ def check_canary_manifest(
         )
 
 
-def read_workflow_timeouts(config_path: Path | str | None = None) -> dict[str, int]:
-    """Read [engine.workflow] timeout keys from config.toml live using tomllib.
+def read_effective_workflow_config(
+    config_path: Path | str | None = None,
+) -> dict[str, int]:
+    """Read effective [engine.workflow] timeouts.
 
-    Returns mapping of node names to configured timeout in milliseconds.
-    Never exposes provider keys or other configuration sections.
+    Resolves base, overlay, and env overrides per engine config model.
     """
+    import os
     import tomllib
 
-    cfg_p = (
-        Path(config_path)
-        if config_path is not None
-        else repo_root() / "config" / "config.toml"
-    )
+    if config_path is not None:
+        cfg_p = Path(config_path)
+    else:
+        cfg_dir = os.getenv("LANCET_CONFIG_DIR", "").strip()
+        if cfg_dir:
+            cfg_p = Path(cfg_dir) / "config.toml"
+        else:
+            cfg_p = repo_root() / "config" / "config.toml"
+
     if not cfg_p.exists():
         raise FileNotFoundError(f"Engine config file not found: {cfg_p}")
 
@@ -421,6 +427,53 @@ def read_workflow_timeouts(config_path: Path | str | None = None) -> dict[str, i
     workflow_sec = data.get("engine", {}).get("workflow")
     if not isinstance(workflow_sec, dict):
         raise ValueError("Missing or invalid [engine.workflow] section in config")
+
+    # Mirror LANCET_ENV overlay resolution from engine/src/config.rs:674-679
+    env_name = os.getenv("LANCET_ENV", "").strip()
+    if env_name:
+        overlay_p = cfg_p.parent / f"{cfg_p.stem}.{env_name}.toml"
+        if overlay_p.exists():
+            with open(overlay_p, "rb") as f:
+                overlay_data = tomllib.load(f)
+            overlay_sec = overlay_data.get("engine", {}).get("workflow")
+            if isinstance(overlay_sec, dict):
+                workflow_sec.update(overlay_sec)
+
+    # Mirror explicit environment overrides from engine/src/config.rs:698-732
+    prefix = "LANCET_ENGINE__WORKFLOW__"
+    key_to_env = {
+        "reformulate_timeout_ms": f"{prefix}REFORMULATE_TIMEOUT_MS",
+        "query_embedding_timeout_ms": f"{prefix}QUERY_EMBEDDING_TIMEOUT_MS",
+        "retrieve_timeout_ms": f"{prefix}RETRIEVE_TIMEOUT_MS",
+        "graph_operation_timeout_ms": f"{prefix}GRAPH_OPERATION_TIMEOUT_MS",
+        "graph_node_timeout_ms": f"{prefix}GRAPH_NODE_TIMEOUT_MS",
+        "prompt_timeout_ms": f"{prefix}PROMPT_TIMEOUT_MS",
+        "generation_node_timeout_ms": f"{prefix}GENERATION_NODE_TIMEOUT_MS",
+    }
+
+    effective: dict[str, int] = {}
+    for key, env_var in key_to_env.items():
+        env_val = os.getenv(env_var, "").strip()
+        if env_val:
+            try:
+                effective[key] = int(env_val)
+                continue
+            except ValueError:
+                pass
+        val = workflow_sec.get(key)
+        if val is not None:
+            effective[key] = int(val)
+
+    return effective
+
+
+def read_workflow_timeouts(config_path: Path | str | None = None) -> dict[str, int]:
+    """Read [engine.workflow] timeout keys live using tomllib.
+
+    Returns mapping of node names to configured timeout in milliseconds.
+    Never exposes provider keys or other configuration sections.
+    """
+    effective = read_effective_workflow_config(config_path)
 
     # Authoritative mapping mirroring engine/src/workflow/runner.rs:298-317
     node_to_key = {
@@ -433,7 +486,7 @@ def read_workflow_timeouts(config_path: Path | str | None = None) -> dict[str, i
 
     timeouts: dict[str, int] = {}
     for node_name, key in node_to_key.items():
-        val = workflow_sec.get(key)
+        val = effective.get(key)
         if val is None:
             raise ValueError(f"Missing timeout key '{key}' in [engine.workflow]")
         timeouts[node_name] = int(val)
@@ -519,9 +572,7 @@ def check_canary_floors(
 
         # 1. Retrieval floor check
         snapshot = (
-            outcome.answer.snapshot
-            if outcome.answer
-            else outcome.partial_snapshot
+            outcome.answer.snapshot if outcome.answer else outcome.partial_snapshot
         )
         observed_chunks = len(snapshot.retrieved_chunks) if snapshot else 0
         if req_retrieval_completed:
