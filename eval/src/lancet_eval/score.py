@@ -282,7 +282,9 @@ def score_run(
             # Abstention on unanswerable
             if gold.is_null:
                 snap_chunks = rec.snapshot.retrieved_chunks if rec.snapshot else None
-                abs_out = abstention_rate(gold, rec.answer or "", snap_chunks)
+                abs_out = abstention_rate(
+                    gold, rec.answer or "", snap_chunks, rec.notices
+                )
                 if abs_out.status == "ok" and abs_out.score is not None:
                     abstentions.append(abs_out.score)
 
@@ -977,11 +979,18 @@ def score_run(
             )
         )
     else:
+        if unanswerable_payload_excluded > 0:
+            skip_reason = (
+                "All unanswerable-question records lacked scorable payload "
+                "(excluded by the payload rule); none were scored"
+            )
+        else:
+            skip_reason = "Corpus contains no unanswerable questions"
         dimensions.append(
             DimensionResult(
                 name="abstention_on_unanswerable",
                 status="skipped",
-                reason="Corpus contains no unanswerable questions",
+                reason=skip_reason,
                 detail={
                     "excluded_payload_records": unanswerable_payload_excluded,
                 },
