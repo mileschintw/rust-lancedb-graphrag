@@ -305,6 +305,7 @@ def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
         question_id=q1.question_id,
         graph_arm="graph-on",
         outcome="success",
+        answer="test answer",
         index_generation="gen-test-1",
         snapshot=RetrievalSnapshot(
             index_generation="gen-test-1",
@@ -335,6 +336,7 @@ def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
         question_id=q1.question_id,
         graph_arm="graph-off",
         outcome="success",
+        answer="test answer",
         index_generation="gen-test-1",
         notices=[
             Notice(

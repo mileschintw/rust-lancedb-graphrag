@@ -793,7 +793,7 @@ def score_run(
 
     # 8a. Evidence coverage (primary ablation delta)
     def _score_evidence_coverage(rec: RunRecord, gold: Any) -> float | None:
-        if rec.snapshot is None:
+        if not has_scorable_payload(rec):
             return None
         out = recall_at_k(
             gold, rec.snapshot.retrieved_chunks, k=4, chunk_size=config.chunk_size
@@ -816,7 +816,7 @@ def score_run(
 
     # 8b. Exact Match delta
     def _score_em(rec: RunRecord, gold: Any) -> float | None:
-        if rec.answer is None or gold.is_null:
+        if not has_scorable_payload(rec) or gold.is_null:
             return None
         out = squad_em(gold, rec.answer)
         return out.score if out.status == "ok" else None
@@ -836,7 +836,7 @@ def score_run(
 
     # 8c. F1 delta
     def _score_f1(rec: RunRecord, gold: Any) -> float | None:
-        if rec.answer is None or gold.is_null:
+        if not has_scorable_payload(rec) or gold.is_null:
             return None
         out = squad_f1(gold, rec.answer)
         return out.score if out.status == "ok" else None
@@ -856,7 +856,7 @@ def score_run(
 
     # 8d. Context Precision delta
     def _score_cp(rec: RunRecord, gold: Any) -> float | None:
-        if rec.snapshot is None:
+        if not has_scorable_payload(rec):
             return None
         out = context_precision_at_k(gold, rec.snapshot.retrieved_chunks, k=4)
         return out.score if out.status == "ok" else None
@@ -876,7 +876,7 @@ def score_run(
 
     # 8e. Ranking Quality (MRR@10) delta
     def _score_mrr(rec: RunRecord, gold: Any) -> float | None:
-        if rec.snapshot is None:
+        if not has_scorable_payload(rec):
             return None
         out = mrr_at_k(gold, rec.snapshot.retrieved_chunks, k=10)
         return out.score if out.status == "ok" else None
