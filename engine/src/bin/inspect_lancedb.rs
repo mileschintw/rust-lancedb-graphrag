@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use arrow_array::{
     Array, FixedSizeListArray, Float32Array, Int32Array, Int64Array, RecordBatch, StringArray,
@@ -13,6 +13,61 @@ use serde::Serialize;
 use uuid::Uuid;
 
 const EMBEDDING_MODEL: &str = "voyageai/voyage-4-large";
+
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DegreeDistribution {
+    pub min: usize,
+    pub median: f64,
+    pub upper_percentile: f64,
+    pub p95: f64,
+    pub max: usize,
+}
+
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct GraphPopulationReport {
+    pub document_rows: usize,
+    pub staged_document_rows: usize,
+    pub node_rows: usize,
+    pub edge_rows: usize,
+    pub entity_rows: usize,
+    pub entity_edge_rows: usize,
+    pub degree_distribution: Option<DegreeDistribution>,
+    pub isolated_entity_count: usize,
+    pub highest_degree_entity_id: Option<String>,
+    pub unpopulated: bool,
+}
+
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NeighborhoodEdge {
+    pub edge_id: String,
+    pub source_node_id: String,
+    pub target_node_id: String,
+    pub relation_type: String,
+    pub neighbor_id: String,
+}
+
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct NeighborhoodReport {
+    pub seed_entity_id: String,
+    pub status: String,
+    pub hop_bound: u32,
+    pub edge_count: usize,
+    pub edges: Vec<NeighborhoodEdge>,
+}
+
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EntityMatch {
+    pub entity_id: String,
+    pub name: String,
+    pub entity_type: String,
+}
+
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct EntityNameReport {
+    pub queried_name: String,
+    pub match_count: usize,
+    pub matches: Vec<EntityMatch>,
+}
 
 #[derive(Serialize, serde::Deserialize, Debug)]
 struct Inspection {
@@ -334,40 +389,435 @@ async fn inspect_document(
     })
 }
 
+pub async fn inspect_graph_population(
+    database: &DatabaseManager,
+) -> Result<GraphPopulationReport, String> {
+    let documents = database.documents_table().await?;
+    let staged = database.staged_documents_table().await?;
+    let nodes = database.nodes_table().await?;
+    let edges = database.edges_table().await?;
+    let entities = database.entities_table().await?;
+    let entity_edges = database.entity_edges_table().await?;
+
+    let document_rows = documents
+        .count_rows(None)
+        .await
+        .map_err(|error| error.to_string())?;
+    let staged_document_rows = staged
+        .count_rows(None)
+        .await
+        .map_err(|error| error.to_string())?;
+    let node_rows = nodes
+        .count_rows(None)
+        .await
+        .map_err(|error| error.to_string())?;
+    let edge_rows = edges
+        .count_rows(None)
+        .await
+        .map_err(|error| error.to_string())?;
+    let entity_rows = entities
+        .count_rows(None)
+        .await
+        .map_err(|error| error.to_string())?;
+    let entity_edge_rows = entity_edges
+        .count_rows(None)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut all_entity_ids = Vec::new();
+    if entity_rows > 0 {
+        let batches = entities
+            .query()
+            .select(Select::columns(&["entity_id"]))
+            .execute()
+            .await
+            .map_err(|error| error.to_string())?
+            .try_collect::<Vec<RecordBatch>>()
+            .await
+            .map_err(|error| error.to_string())?;
+        for batch in &batches {
+            let col = string_column(batch, "entity_id")?;
+            for row in 0..batch.num_rows() {
+                all_entity_ids.push(col.value(row).to_string());
+            }
+        }
+    }
+
+    let mut edge_counts: HashMap<String, usize> = HashMap::new();
+    if entity_edge_rows > 0 {
+        let batches = entity_edges
+            .query()
+            .select(Select::columns(&["source_node_id", "target_node_id"]))
+            .execute()
+            .await
+            .map_err(|error| error.to_string())?
+            .try_collect::<Vec<RecordBatch>>()
+            .await
+            .map_err(|error| error.to_string())?;
+        for batch in &batches {
+            let src_col = string_column(batch, "source_node_id")?;
+            let tgt_col = string_column(batch, "target_node_id")?;
+            for row in 0..batch.num_rows() {
+                *edge_counts.entry(src_col.value(row).to_string()).or_insert(0) += 1;
+                *edge_counts.entry(tgt_col.value(row).to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let unpopulated = entity_rows == 0 || entity_edge_rows == 0;
+
+    let (degree_distribution, isolated_entity_count, highest_degree_entity_id) = if entity_rows == 0 {
+        (None, 0, None)
+    } else {
+        let mut degrees = Vec::with_capacity(all_entity_ids.len());
+        let mut isolated = 0;
+        for id in &all_entity_ids {
+            let deg = edge_counts.get(id).copied().unwrap_or(0);
+            degrees.push(deg);
+            if deg == 0 {
+                isolated += 1;
+            }
+        }
+        degrees.sort_unstable();
+        let min = degrees[0];
+        let max = degrees[degrees.len() - 1];
+        let n = degrees.len();
+        let median = if n % 2 == 1 {
+            degrees[n / 2] as f64
+        } else {
+            (degrees[n / 2 - 1] + degrees[n / 2]) as f64 / 2.0
+        };
+        let p95 = if n == 1 {
+            degrees[0] as f64
+        } else {
+            let idx = (n - 1) as f64 * 0.95;
+            let lower = idx.floor() as usize;
+            let upper = idx.ceil() as usize;
+            let frac = idx - lower as f64;
+            degrees[lower] as f64 * (1.0 - frac) + degrees[upper] as f64 * frac
+        };
+
+        all_entity_ids.sort();
+        let highest = all_entity_ids
+            .iter()
+            .max_by_key(|id| (edge_counts.get(*id).copied().unwrap_or(0), std::cmp::Reverse(*id)))
+            .cloned();
+
+        (
+            Some(DegreeDistribution {
+                min,
+                median,
+                upper_percentile: p95,
+                p95,
+                max,
+            }),
+            isolated,
+            highest,
+        )
+    };
+
+    Ok(GraphPopulationReport {
+        document_rows,
+        staged_document_rows,
+        node_rows,
+        edge_rows,
+        entity_rows,
+        entity_edge_rows,
+        degree_distribution,
+        isolated_entity_count,
+        highest_degree_entity_id,
+        unpopulated,
+    })
+}
+
+pub async fn inspect_entity_neighborhood(
+    database: &DatabaseManager,
+    seed_entity_id: &str,
+    hop_bound: u32,
+) -> Result<NeighborhoodReport, String> {
+    if Uuid::parse_str(seed_entity_id).is_err() {
+        return Err(format!(
+            "seed entity '{seed_entity_id}' is not a valid UUID; use --entity-name to look up an entity ID by name"
+        ));
+    }
+
+    if hop_bound == 0 || hop_bound > 3 {
+        return Err(format!("max-hops must be between 1 and 3, got {hop_bound}"));
+    }
+
+    let entities = database.entities_table().await?;
+    let filter = format!("entity_id = '{}'", seed_entity_id.replace('\'', "''"));
+    let seed_count = entities
+        .count_rows(Some(filter))
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if seed_count == 0 {
+        return Ok(NeighborhoodReport {
+            seed_entity_id: seed_entity_id.to_string(),
+            status: "absent".to_string(),
+            hop_bound,
+            edge_count: 0,
+            edges: Vec::new(),
+        });
+    }
+
+    let (_entities_batch, edges_batch) =
+        engine::graph::fetch_neighborhood(database, seed_entity_id, hop_bound, true)
+            .await
+            .map_err(|error| format!("fetch_neighborhood failed: {error}"))?;
+
+    let mut edges = Vec::new();
+    if edges_batch.num_rows() > 0 {
+        let edge_id_col = string_column(&edges_batch, "edge_id")?;
+        let src_col = string_column(&edges_batch, "source_node_id")?;
+        let tgt_col = string_column(&edges_batch, "target_node_id")?;
+        let rel_col = string_column(&edges_batch, "relation_type")?;
+
+        let mut seen = HashSet::new();
+        for row in 0..edges_batch.num_rows() {
+            let edge_id = edge_id_col.value(row).to_string();
+            if !seen.insert(edge_id.clone()) {
+                continue;
+            }
+            let source_node_id = src_col.value(row).to_string();
+            let target_node_id = tgt_col.value(row).to_string();
+            let relation_type = rel_col.value(row).to_string();
+            let neighbor_id = if source_node_id == seed_entity_id {
+                target_node_id.clone()
+            } else {
+                source_node_id.clone()
+            };
+            edges.push(NeighborhoodEdge {
+                edge_id,
+                source_node_id,
+                target_node_id,
+                relation_type,
+                neighbor_id,
+            });
+        }
+    }
+
+    edges.sort_by(|a, b| {
+        (&a.neighbor_id, &a.relation_type, &a.edge_id)
+            .cmp(&(&b.neighbor_id, &b.relation_type, &b.edge_id))
+    });
+
+    let status = if edges.is_empty() {
+        "isolated".to_string()
+    } else {
+        "populated".to_string()
+    };
+
+    Ok(NeighborhoodReport {
+        seed_entity_id: seed_entity_id.to_string(),
+        status,
+        hop_bound,
+        edge_count: edges.len(),
+        edges,
+    })
+}
+
+pub async fn inspect_entity_name(
+    database: &DatabaseManager,
+    queried_name: &str,
+) -> Result<EntityNameReport, String> {
+    let entities = database.entities_table().await?;
+    let batches = entities
+        .query()
+        .select(Select::columns(&["entity_id", "name", "entity_type"]))
+        .execute()
+        .await
+        .map_err(|error| error.to_string())?
+        .try_collect::<Vec<RecordBatch>>()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let target = queried_name.to_lowercase();
+    let mut matches = Vec::new();
+    for batch in &batches {
+        let id_col = string_column(batch, "entity_id")?;
+        let name_col = string_column(batch, "name")?;
+        let type_col = string_column(batch, "entity_type")?;
+        for row in 0..batch.num_rows() {
+            let name_val = name_col.value(row);
+            if name_val.to_lowercase() == target {
+                matches.push(EntityMatch {
+                    entity_id: id_col.value(row).to_string(),
+                    name: name_val.to_string(),
+                    entity_type: type_col.value(row).to_string(),
+                });
+            }
+        }
+    }
+
+    matches.sort_by(|a, b| a.entity_id.cmp(&b.entity_id));
+
+    Ok(EntityNameReport {
+        queried_name: queried_name.to_string(),
+        match_count: matches.len(),
+        matches,
+    })
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum InspectMode {
+    Document(String),
+    GraphPopulation,
+    EntityNeighborhood { seed: String, max_hops: u32 },
+    EntityName(String),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct InspectConfig {
+    pub mode: InspectMode,
+    pub lancedb_path: Option<String>,
+}
+
+pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME] [--lancedb-path PATH]";
+
+pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConfig, String> {
+    let mut iter = args.into_iter();
+    let mut document_id = None;
+    let mut graph_population = false;
+    let mut entity_id = None;
+    let mut max_hops = None;
+    let mut entity_name = None;
+    let mut lancedb_path = None;
+
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--document-id" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--document-id requires a value\n{USAGE}"))?;
+                document_id = Some(val);
+            }
+            "--graph-population" => {
+                graph_population = true;
+            }
+            "--entity" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--entity requires a value\n{USAGE}"))?;
+                entity_id = Some(val);
+            }
+            "--max-hops" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--max-hops requires a value\n{USAGE}"))?;
+                let n: u32 = val
+                    .parse()
+                    .map_err(|_| format!("--max-hops must be an integer\n{USAGE}"))?;
+                max_hops = Some(n);
+            }
+            "--entity-name" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--entity-name requires a value\n{USAGE}"))?;
+                entity_name = Some(val);
+            }
+            "--lancedb-path" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--lancedb-path requires a value\n{USAGE}"))?;
+                lancedb_path = Some(val);
+            }
+            _ => {
+                return Err(format!("unknown argument '{arg}'\n{USAGE}"));
+            }
+        }
+    }
+
+    if max_hops.is_some() && entity_id.is_none() {
+        return Err(format!("--max-hops is only valid with --entity\n{USAGE}"));
+    }
+
+    let mode_count = (document_id.is_some() as usize)
+        + (graph_population as usize)
+        + (entity_id.is_some() as usize)
+        + (entity_name.is_some() as usize);
+
+    if mode_count == 0 {
+        return Err(format!("no mode specified\n{USAGE}"));
+    }
+    if mode_count > 1 {
+        return Err(format!(
+            "multiple modes specified; select exactly one\n{USAGE}"
+        ));
+    }
+
+    let mode = if let Some(doc_id) = document_id {
+        let id = Uuid::parse_str(&doc_id).map_err(|_| "document_id must be a UUID".to_owned())?;
+        if id.get_version_num() != 4 {
+            return Err("document_id must be a UUIDv4".to_owned());
+        }
+        InspectMode::Document(doc_id)
+    } else if graph_population {
+        InspectMode::GraphPopulation
+    } else if let Some(seed) = entity_id {
+        let hops = max_hops.unwrap_or(1);
+        if hops == 0 || hops > 3 {
+            return Err(format!("max-hops must be between 1 and 3, got {hops}"));
+        }
+        InspectMode::EntityNeighborhood {
+            seed,
+            max_hops: hops,
+        }
+    } else if let Some(name) = entity_name {
+        InspectMode::EntityName(name)
+    } else {
+        unreachable!();
+    };
+
+    Ok(InspectConfig {
+        mode,
+        lancedb_path,
+    })
+}
+
 #[cfg(test)]
 #[path = "../inspect_lancedb_tests.rs"]
 mod tests;
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
-    let mut args = std::env::args().skip(1);
-    let mut document_id = None;
-    let mut path = None;
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--document-id" => document_id = args.next(),
-            "--lancedb-path" => path = args.next(),
-            _ => {
-                return Err(
-                    "usage: inspect_lancedb --document-id UUID [--lancedb-path PATH]".to_owned(),
-                )
-            }
-        }
-    }
-    let document_id = document_id.ok_or_else(|| "--document-id is required".to_owned())?;
-    let id = Uuid::parse_str(&document_id).map_err(|_| "document_id must be a UUID".to_owned())?;
-    if id.get_version_num() != 4 {
-        return Err("document_id must be a UUIDv4".to_owned());
-    }
-    let target_path = match path {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let config = parse_args(args)?;
+    let target_path = match config.lancedb_path {
         Some(p) => p,
         None => settings_path()?,
     };
     let database = DatabaseManager::open_and_validate(&target_path).await?;
-    let inspection = inspect_document(&database, &document_id).await?;
-    println!(
-        "{}",
-        serde_json::to_string(&inspection).map_err(|error| error.to_string())?
-    );
+    match config.mode {
+        InspectMode::Document(document_id) => {
+            let inspection = inspect_document(&database, &document_id).await?;
+            println!(
+                "{}",
+                serde_json::to_string(&inspection).map_err(|error| error.to_string())?
+            );
+        }
+        InspectMode::GraphPopulation => {
+            let report = inspect_graph_population(&database).await?;
+            println!(
+                "{}",
+                serde_json::to_string(&report).map_err(|error| error.to_string())?
+            );
+        }
+        InspectMode::EntityNeighborhood { seed, max_hops } => {
+            let report = inspect_entity_neighborhood(&database, &seed, max_hops).await?;
+            println!(
+                "{}",
+                serde_json::to_string(&report).map_err(|error| error.to_string())?
+            );
+        }
+        InspectMode::EntityName(name) => {
+            let report = inspect_entity_name(&database, &name).await?;
+            println!(
+                "{}",
+                serde_json::to_string(&report).map_err(|error| error.to_string())?
+            );
+        }
+    }
     Ok(())
 }

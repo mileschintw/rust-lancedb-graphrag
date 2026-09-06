@@ -3,25 +3,28 @@ gsd_state_version: 1.0
 milestone: v1.0
 current_phase: 06.3.3
 current_phase_name: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
-status: executing
-stopped_at: "Phase 06.3.3 Plan 01 complete, executing Plan 02"
-last_updated: "2026-09-06T21:35:00.000Z"
+status: paused
+stopped_at: "Wave 1 complete (Plans 01 and 02 executed). Wave 2 (Plan 03) requires spend authorization checkpoint."
+last_updated: "2026-09-06T21:48:00.000Z"
 last_activity: 2026-09-06
 state_head: c15fcdaf100601f8429374a7a7ce57808bd1123d
 progress:
   total_phases: 15
   completed_phases: 9
   total_plans: 152
-  completed_plans: 143
+  completed_plans: 144
 milestone_name: milestone
-current_plan: 02
+current_plan: 03
 ---
 
 # Project State
 
 ## Current Status
 
-- **Phase 06.3.3 Plan 06.3.3-01 executed**: Latency measurement spine, censoring census, budget derivation, decay analysis, measurement driver, and calibration micro-pass (`06.3.3-01-SUMMARY.md`).
+- **Phase 06.3.3 Wave 1 executed and verified**:
+  - **Plan 06.3.3-01**: Latency measurement spine, censoring census, budget derivation, decay analysis, measurement driver, and calibration micro-pass (`06.3.3-01-SUMMARY.md`).
+  - **Plan 06.3.3-02**: LanceDB store baseline & inspection modes (`06.3.3-02-SUMMARY.md`, `06.3.3-STORE-BASELINE.md`). Graph disposition: `populated`. All canary entities confirmed present and connected. D-22 baseline: 2,262 eval checkpoint rows.
+- **Wave 2 (Plan 06.3.3-03) Status**: Wave 1 is complete. Wave 2 is ready to plan/execute but blocked on human spend authorization (`autonomous: false`) per roadmap.
 
 - **Phase 06.3 (Evaluation Harness, Corpora and Recorded Run): All 11 plans executed and committed:**
   - `06.3-08` (Wave 1): Additive `retrieved_chunks` on `RetrievalSnapshot` wire format (`b7d50b4`).
