@@ -4,7 +4,7 @@ milestone: v1.0
 current_phase: 06.3.3
 current_phase_name: Retrieval latency measurement pass and timeout budget derivation
 status: planning
-stopped_at: Phase 06.3.2 complete, ready to plan Phase 06.3.3
+stopped_at: Phase 06.3.2 complete, ready to execute Phase 06.3.3 (already planned: 4 plans)
 last_updated: "2026-09-06T16:51:53.160Z"
 last_activity: 2026-09-06
 state_head: 0f86741a0beac7dcac777cdb02c5e0f5aace6342
@@ -146,14 +146,25 @@ current_plan: 11
   - **Verification** (`06.3.2-VERIFICATION.md`, `e416cca`, initial verification): `status: gaps_found`, **9/10 must-haves**. SC-1 through SC-6, SC-8, SC-9 VERIFIED directly against code and, where practical, against a live re-score of the real committed `eval/runs/2026-09-03-multihop_rag/journal.jsonl` rather than SUMMARY.md self-report (e.g. `wire_contract_conformance` re-measured at `0.034` against that journal, matching the phase's stated target exactly). **SC-7 FAILED** — the verifier independently reproduced CR-01 by re-scoring a scratch copy of the real journal with current HEAD code: `retrieval_evidence_coverage.n=16` vs `answer_exact_match.n=18` for the same arm and the same unusable population, a live 2-record denominator gap, not a theoretical one. **SC-10 VERIFIED** — all five (`06.3-REVIEW.md` names five IDs despite ROADMAP's "four" phrasing) prior findings (CR-01, WR-02, WR-03, WR-04, IN-02) independently confirmed closed in current code, including one IMPORTANT disambiguation: `06.3-REVIEW.md`'s CR-01 (calibration-worksheet bypass, closed by `06.3.2-05`) and `06.3.2-REVIEW.md`'s CR-01 (the new denominator asymmetry, open) are unrelated defects that happen to share an ID across two independently-numbered review files — closing one does not cover the other. One Manual-Only Verification (graph canary entity IDs) correctly ruled a legitimate, explicitly-documented deferral to Phase 06.3.3's D-05 (`06.3.2-03-SUMMARY.md`'s Recorded Deferral), not a gap. The other Manual-Only item ("report reads honestly end to end") was directly performed against real data rather than left to a human, and resolves into the SC-7 gap above.
   - **Phase 06.3.2 NOT complete.** `phase.complete`/`update_roadmap` correctly NOT run; REQUIREMENTS.md OBS-05 stays unchecked (correctly — it's jointly owned across 06.3.1–06.3.4 by design, D-50, not a per-phase checkbox this phase alone controls). Next: `/gsd-plan-phase 06.3.2 --gaps` to plan the fix (one consistent policy in `score.py`'s per-record scoring loop for usable-but-payload-less records — either exclude both retrieval and answer families symmetrically or score both as an honest zero symmetrically; publish `retrieval_skipped_count`; add a regression test for this exact record shape), then `/gsd-execute-phase 06.3.2 --gaps-only`. The four warnings and four info items from `06.3.2-REVIEW.md` (mislabeled `single_arm_usable_drops` counter, missing `check_canary_floors` defensive guard, raw-event byte-cap re-admission gap, CWD-dependent test, plus three low-severity info items) were not counted against any success criterion — worth a look during gap-closure planning but not blocking. Security gate still open: `workflow.security_enforcement` active and no `06.3.2-SECURITY.md` exists — `/gsd-secure-phase 06.3.2` still required before advancing.
 
+- Phase 06.3.2 gap-closure plan `06.3.2-06` executed and summarized (SC-7 payload-denominator fix), but the session stopped again before code review/verification. Resumed at the phase gates 2026-09-06 (`--gaps-only` was in the literal args; bypassed the mechanical "no matching incomplete plans" exit per [[gaps-only-resume-to-gates-lancet]] after confirming empirically: all 6 plans summarized/`incomplete_count: 0`, and the existing `06.3.2-REVIEW.md`/`06.3.2-VERIFICATION.md` predated 06.3.2-06's commits by a full day).
+  - **`close_parent_artifacts` again correctly treated as a no-op** for the same double-decimal reason as the initial gate run: checked both `06-UAT.md` (gaps already resolved 2026-08-22, unrelated) and `06.3-UAT.md` (empty Gaps, `status: complete`) by hand.
+  - **Code review scope required manual correction, not just the usual PADDED workaround**: the naive `git diff` scope (59 files) pulled in Phase 06.3.1's entire interleaved execution history (planning through completion, landed between 06.3.2's first and last commits) — engine/gateway/proto/config files that are 06.3.1's already-reviewed work, not 06.3.2's. Cross-checked every file's commit-scope tag by hand and scoped `--files=` to the 36 files genuinely tagged `06.3.2`/`(eval)`, all under `eval/`.
+  - **Code review** (`06.3.2-REVIEW.md`, `75be9ab`): `status: issues_found` — 2 critical, 4 warning, 1 info. The SC-7 payload-gate fix itself reviewed clean and well-tested. Two NEW criticals found adjacent to it, both in `abstention_on_unanswerable` scoring: **CR-01** — `abstention_rate()` called without `notices`, permanently disabling the documented typed-notice (`NOTICE_CODE_NO_EVIDENCE`) abstention-detection path in `metrics.py`. **CR-02** — misleading `"Corpus contains no unanswerable questions"` skip-reason printed even when unanswerable records existed but were all payload-excluded.
+  - **Regression gate PASSED** (orchestrator-run): `cargo test --manifest-path engine/Cargo.toml --locked` = 496 passed/2 ignored/0 failed; `cd gateway && go test ./...` all ok; `uv run --project eval pytest eval/tests -q` = 251/251 (independently re-run, not taken from SUMMARY.md self-report).
+  - **Verification** (`06.3.2-VERIFICATION.md`, `dcc7f98`, re-verification after SC-7 gap closure): `status: human_needed`, **10/10 must-haves** (SC-7 independently re-derived clean — re-scored a fresh scratch copy of the real `2026-09-03-multihop_rag` journal, reproduced the exact closed numbers). Escalated CR-01/CR-02 as human-verification items (neither fails a numbered success criterion, but both are confirmed-present defects in a dimension this phase's own gap-closure plan took ownership of scoring) rather than unilaterally deciding they were acceptable.
+  - **User chose "fix both now."** Applied `rec.notices` to the `abstention_rate()` call site and branched the skip-reason string on `unanswerable_payload_excluded > 0`; added two regression tests (`test_abstention_credits_notice_based_no_evidence_over_text_match`, `test_abstention_skip_reason_distinguishes_payload_excluded_from_absent`) to `test_denominators.py` (`cc1e71d`, `0cc78b9`). Full eval suite re-run clean at 253/253; ruff and `uv lock --check` clean.
+  - **Re-verification** (`06.3.2-VERIFICATION.md`, `5b3da9d`): `status: passed`, **10/10 must-haves**, both CR-01/CR-02 independently confirmed closed (not taken on the fix commits' word) and the new tests confirmed to genuinely exercise the pre-fix bug shape. `06.3.2-UAT.md` (`0f86741`) reconciled to `status: resolved`, both items closed with `resolution:` blocks. `06.3.2-REVIEW.md` deliberately left as the original point-in-time record (this repo's established convention — see Phase 06.3's SC-10 precedent) rather than rewritten; the fresh VERIFICATION.md is now the authoritative record that CR-01/CR-02 are closed.
+  - **Phase 06.3.2 COMPLETE** (`phase.complete` run, `025fbec`). REQUIREMENTS.md OBS-05 correctly left unchecked — jointly owned across 06.3.1–06.3.4 by design (D-50), not satisfied until the whole family closes.
+  - Security gate still open: `workflow.security_enforcement` active and no `06.3.2-SECURITY.md` exists — `/gsd-secure-phase 06.3.2` still required before that gate clears.
+
 ## Active Phase
 
 - **Phase:** 06.3.3 — Retrieval latency measurement pass and timeout budget derivation
-- **Status:** Ready to plan
-- **Total Plans in Phase:** 6
-- **Completed Plans in Phase:** 5/5 (executed; phase-level gates run 2026-09-05)
-- **Progress:** [██████████] 100% execution / gates: gaps_found (9/10 must-haves)
-- **Next:** `/gsd-plan-phase 06.3.2 --gaps`
+- **Status:** Planned, not yet executed (4 plans on disk: 06.3.3-01..04)
+- **Total Plans in Phase:** 4
+- **Completed Plans in Phase:** 0/4
+- **Progress:** [░░░░░░░░░░] 0% execution
+- **Next:** `/gsd-execute-phase 06.3.3`
 
 ## Completed Phases
 
@@ -163,6 +174,7 @@ current_plan: 11
 - **Phase 4: Knowledge Graph Extraction & Query** (Completed: 2026-08-06 — lance-graph compatibility spike only; full implementation deferred to Phase 04.1)
 - **Phase 5: State Machine & Workflow Events** (Completed: 2026-08-19 — UAT 10/10 passed, 0 issues; `05-SECURITY.md` confirmed `threats_open: 0`)
 - **Phase 6: Observability, Evaluation & Polish** (Completed: 2026-08-22 — 16/16 plans; re-verification `passed` 11/11 must-haves after gap-closure plan 06-16 closed UAT gaps G-06-1/G-06-2; RAG-03 satisfied)
+- **Phase 06.3.2: Eval Harness Diagnostics, Scored Dimensions and Paired Ablation** (Completed: 2026-09-06 — 6/6 plans; re-verification `passed` 10/10 must-haves after gap-closure plan 06.3.2-06 closed SC-7 and two follow-up fixes closed code-review criticals CR-01/CR-02; OBS-05 remains jointly owned across 06.3.1–06.3.4, not yet checked)
 
 ## Known Issues & Debt
 
@@ -322,7 +334,7 @@ current_plan: 11
 
 **Last session:** 2026-09-06T15:50:09.004Z
 **Last activity:** 2026-09-06
-**Stopped at:** Phase 06.3.2 complete, ready to plan Phase 06.3.3
+**Stopped at:** Phase 06.3.2 complete, ready to execute Phase 06.3.3 (already planned: 4 plans)
 **Resume file:** None
 
 ## Accumulated Context
