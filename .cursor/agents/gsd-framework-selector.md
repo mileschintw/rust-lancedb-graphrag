@@ -133,9 +133,7 @@ FRAMEWORK_RECOMMENDATION:
 Display to user:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- FRAMEWORK RECOMMENDATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### FRAMEWORK RECOMMENDATION
 
 ◆ Primary Pick: {framework}
   {rationale}

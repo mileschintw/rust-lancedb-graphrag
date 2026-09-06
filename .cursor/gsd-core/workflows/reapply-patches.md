@@ -1,3 +1,5 @@
+@D:/Repos/lancet/.cursor/gsd-core/references/response-language-directive.md
+
 # Reapply Local Patches Workflow
 
 Invoked by `/gsd-update --reapply` (`commands/gsd/update.md`).
