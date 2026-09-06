@@ -384,3 +384,72 @@ def test_report_renders_all_ablation_family_rows(tmp_path: Path) -> None:
     assert len(ablation_names) >= 7
     for name in ablation_names:
         assert name in md
+
+
+def test_paired_ablation_payload_exclusion_across_all_five_metrics(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.corpus import load_sample_questions
+
+    questions = [
+        q for q in load_sample_questions("multihop_rag") if not q.is_null
+    ][:5]
+    assert len(questions) == 5
+
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+    journal.write_header(corpus="multihop_rag", partial=False)
+
+    # 3 fully-populated pairs (i = 0, 1, 2)
+    # 2 pairs where graph-off is payload-less (i = 3, 4)
+    for i, q in enumerate(questions):
+        r_on = _make_record(
+            q.question_id,
+            "graph-on",
+            answer=q.gold_answer or "expected answer",
+        )
+        journal.append(r_on)
+
+        if i < 3:
+            r_off = _make_record(
+                q.question_id,
+                "graph-off",
+                answer=q.gold_answer or "expected answer",
+            )
+        else:
+            r_off = RunRecord(
+                corpus="multihop_rag",
+                question_id=q.question_id,
+                graph_arm="graph-off",
+                outcome="success",
+                answer="",
+                snapshot=None,
+                node_failures=[],
+                notices=[
+                    Notice(code="GRAPH_ABLATION", message="", typed_code=18)
+                ],
+                duration_ms=100.0,
+                index_generation="gen-1",
+            )
+        journal.append(r_off)
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    dim_map = {d.name: d for d in report.dimensions}
+
+    five_paired_metrics = [
+        "graph_ablation_delta",
+        "graph_ablation_delta_exact_match",
+        "graph_ablation_delta_f1",
+        "graph_ablation_delta_context_precision",
+        "graph_ablation_delta_ranking_quality",
+    ]
+
+    for name in five_paired_metrics:
+        assert name in dim_map, f"Missing paired dimension {name}"
+        d = dim_map[name]
+        assert d.n == 3, f"{name}.n expected 3, got {d.n}"
+        assert d.detail.get("excluded_unscorable_pairs") == 2.0, (
+            f"{name} excluded_unscorable_pairs expected 2.0, got "
+            f"{d.detail.get('excluded_unscorable_pairs')}"
+        )
+
