@@ -738,7 +738,7 @@ Plans:
 9. The preflight gains query-path checks driven by a committed canary set with fixed floors: each canary returns >= 1 retrieved chunk, graph-on canaries whose entities are known to be in the graph return >= 1 graph node, per-node duration under budget (D-10, D-11, D-31). This canary is also what locks the 06.3.3 budget values in (D-12).
 10. All four open `06.3-REVIEW.md` findings are closed: CR-01, WR-02, WR-03, WR-04 + IN-02 (D-36).
 
-**Plans:** 5 plans
+**Plans:** 6 plans
 
 Plans:
 
@@ -758,6 +758,10 @@ Plans:
 **Wave 4** *(blocked on 06.3.2-03 and 06.3.2-04)*
 
 - [ ] 06.3.2-05-PLAN.md — Close the four open `06.3-REVIEW.md` findings (CR-01, WR-02, WR-03, WR-04 + IN-02) and finish the report surface so the run reads honestly end to end (SC-10; D-36, D-02, D-34, D-35)
+
+**Gap closure** *(from `06.3.2-VERIFICATION.md`, SC-7 failed)*
+
+- [ ] 06.3.2-06-PLAN.md — One scorable-payload rule applied wherever a record enters a quality mean: payload-less usable records leave the retrieval, answer, abstention and paired-ablation denominators alike instead of being dropped from one family and scored as a hard zero in the other, with the excluded count published on every affected dimension row (SC-7; D-34)
 
 **Cross-cutting constraints:**
 
