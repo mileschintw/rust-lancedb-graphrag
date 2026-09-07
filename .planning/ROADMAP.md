@@ -788,7 +788,7 @@ Plans:
 7. If graph traversal proves inherently too slow for any sane budget, the graph budget is raised to what the measured p95 needs and the latency cost is recorded for Phase 6.4's honest-limitations section (D-04).
 8. Spend for this pass is capped per-stage against the daily limit (D-47). The original run's `$0.0199` is not a usable estimate — it was cheap because 966 queries generated nothing.
 
-**Plans:** 4 plans
+**Plans:** 4/4 plans executed
 
 Plans:
 
@@ -799,11 +799,11 @@ Plans:
 
 **Wave 2** *(blocked on 06.3.3-01 and 06.3.3-02; `autonomous: false` — a blocking `checkpoint:decision` authorises the measurement stage's spend cap before any paid query runs, because `measure` requires the cap with no default and no artifact in the phase produces the figure)*
 
-- [ ] 06.3.3-03-PLAN.md — The measurement pass: the blocking spend-cap authorisation, then several hundred end-to-end queries under lifted ceilings supplied through the process environment, split by a recorded mid-run engine restart, under that per-stage cap; then the censoring census, the two-pronged decay verdict against the pre-committed criterion, the inner-budget arm-difference decomposition, and one investigation disposition per node (SC-2, SC-3, SC-4, SC-5, SC-8 part; D-16, D-18, D-19, D-20, D-21, D-22, D-47)
+- [x] 06.3.3-03-PLAN.md — The measurement pass: the blocking spend-cap authorisation, then several hundred end-to-end queries under lifted ceilings supplied through the process environment, split by a recorded mid-run engine restart, under that per-stage cap; then the censoring census, the two-pronged decay verdict against the pre-committed criterion, the inner-budget arm-difference decomposition, and one investigation disposition per node (SC-2, SC-3, SC-4, SC-5, SC-8 part; D-16, D-18, D-19, D-20, D-21, D-22, D-47)
 
 **Wave 3** *(blocked on 06.3.3-03; `autonomous: false` — closes on the paid-spend decision)*
 
-- [ ] 06.3.3-04-PLAN.md — Derive and write: the containment gate on the disposition set, the six budgets written to production `config/config.toml` and `config.example.toml` with refreshed nesting documentation, the superseded arithmetic literals in `engine/src/tests.rs` swept, `06.3.3-BUDGETS.md` with the full derivation trail and the honest graph cost, and the blocking go/no-go decision for paid spend (SC-5 gate, SC-6, SC-7, SC-8; D-04, D-13, D-14, D-15, D-16, D-47)
+- [x] 06.3.3-04-PLAN.md — Derive and write: the containment gate on the disposition set, the six budgets written to production `config/config.toml` and `config.example.toml` with refreshed nesting documentation, the superseded arithmetic literals in `engine/src/tests.rs` swept, `06.3.3-BUDGETS.md` with the full derivation trail and the honest graph cost, and the blocking go/no-go decision for paid spend (SC-5 gate, SC-6, SC-7, SC-8; D-04, D-13, D-14, D-15, D-16, D-47)
 
 **Cross-cutting constraints:**
 
