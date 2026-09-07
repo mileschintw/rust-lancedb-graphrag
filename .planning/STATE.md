@@ -4,9 +4,9 @@ milestone: v1.0
 current_phase: 06.3.3
 current_phase_name: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
 status: executing
-stopped_at: Wave 2 complete (Plan 06.3.3-03 executed and committed). Next is Wave 3 (Plan 06.3.3-04).
-last_updated: "2026-09-07T00:40:00.000Z"
-last_activity: 2026-09-06
+stopped_at: Wave 3 Plan 06.3.3-04 Tasks 1–2 committed; blocked on Task 3 blocking-human go/no-go.
+last_updated: "2026-09-07T13:15:00.000Z"
+last_activity: 2026-09-07
 progress:
   total_phases: 15
   completed_phases: 9
@@ -26,7 +26,7 @@ current_plan: 04
 - **Phase 06.3.3 Wave 1 executed and verified**:
   - **Plan 06.3.3-01**: Latency measurement spine, censoring census, budget derivation, decay analysis, measurement driver, and calibration micro-pass (`06.3.3-01-SUMMARY.md`).
   - **Plan 06.3.3-02**: LanceDB store baseline & inspection modes (`06.3.3-02-SUMMARY.md`, `06.3.3-STORE-BASELINE.md`). Graph disposition: `populated`. All canary entities confirmed present and connected. D-22 baseline: 2,262 eval checkpoint rows.
-- **Wave 3 (Plan 06.3.3-04) Status**: Ready to plan/execute. Plan 04 derives production timeout budgets from Plan 03's measurement distributions, reconciles inner/outer budget invariants with slack, updates `config/config.toml`, and requests go/no-go spend authorization for Phase 06.3.4.
+- **Wave 3 (Plan 06.3.3-04) Status**: Tasks 1–2 committed (`9bd85dd`, `4433eba`). Six production budgets written; `06.3.3-BUDGETS.md` recorded. **Halted on Task 3** (`checkpoint:decision`, `gate: blocking-human`) — go/no-go for paid 06.3.4 spend. Phase-final code review and verification skipped per this execute-phase invocation (`--wave 3`).
 
 - **Phase 06.3 (Evaluation Harness, Corpora and Recorded Run): All 11 plans executed and committed:**
   - `06.3-08` (Wave 1): Additive `retrieved_chunks` on `RetrievalSnapshot` wire format (`b7d50b4`).
