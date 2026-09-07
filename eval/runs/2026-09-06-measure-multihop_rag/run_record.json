@@ -1,115 +1,159 @@
 {
-  "calibration_note": "This micro-pass is calibration of the instrument only and is not an input to any derived budget.",
   "corpus": "multihop_rag",
-  "sample_size_questions": 2,
-  "total_records_emitted": 4,
-  "measured_records": 4,
+  "sample_size_questions": 160,
+  "sample_size_unit": "questions",
+  "sample_size_records": 320,
+  "total_records_emitted": 320,
+  "measured_records": 320,
+  "segment_boundary_ordinal": 160,
+  "restart_ordinal": 160,
+  "restart_timestamp": "2026-09-07T00:04:03.593886+00:00",
+  "probe_query_latency_ms": 27213.591899955645,
   "raised_budgets": {
-    "reformulate_timeout_ms": 5000,
-    "query_embedding_timeout_ms": 10000,
-    "retrieve_timeout_ms": 10000,
-    "graph_operation_timeout_ms": 4000,
-    "graph_node_timeout_ms": 15000,
-    "prompt_timeout_ms": 2000,
-    "generation_node_timeout_ms": 65000
+    "reformulate_timeout_ms": 15000,
+    "query_embedding_timeout_ms": 25000,
+    "retrieve_timeout_ms": 60000,
+    "graph_operation_timeout_ms": 30000,
+    "graph_node_timeout_ms": 60000,
+    "prompt_timeout_ms": 10000,
+    "generation_node_timeout_ms": 65000,
+    "seed_match_min_score": 0.3
   },
+  "raised_budgets_source": "process_environment",
+  "committed_config_unmodified": true,
   "sse_read_timeout_s": 300.0,
   "question_deadline_s": 600.0,
+  "two_ceiling_comparisons": {
+    "sse_read_timeout_comparison": {
+      "quantity_checked": "largest single raised node budget (GenerateAnswer)",
+      "largest_single_budget_ms": 65000.0,
+      "sse_read_timeout_ms": 300000.0,
+      "exceeds_ceiling": false,
+      "verdict": "passed (single largest budget 65s < read timeout 300s)"
+    },
+    "question_deadline_comparison": {
+      "quantity_checked": "worst-case sum of raised node budgets across workflow",
+      "sum_budgets_ms": 210000.0,
+      "question_deadline_ms": 600000.0,
+      "exceeds_ceiling": false,
+      "verdict": "passed (worst-case sum 210s < deadline 600s)"
+    }
+  },
   "spend_summary": {
-    "spend_usd": 5.76e-05,
+    "spend_usd": 0.08315948000000001,
+    "generation_spend_usd": 0.07855148,
+    "embedding_spend_usd": 0.004608000000000001,
     "includes_embeddings": true,
-    "stage_spend_cap": 5.0
+    "is_lower_bound": false,
+    "stage_spend_cap": 5.0,
+    "within_cap": true
   },
   "censoring_census": {
-    "total_records": 4,
+    "total_records": 320,
     "node_counts": {
       "ReformulateQuery": {
-        "OBSERVED": 4,
+        "OBSERVED": 320,
         "CENSORED_AT_CEILING": 0,
         "CENSORED_NODE_TIMEOUT": 0,
         "NOT_REACHED": 0,
         "INSTRUMENT_GAP": 0
       },
       "ExtractGraphContext": {
-        "OBSERVED": 4,
+        "OBSERVED": 320,
         "CENSORED_AT_CEILING": 0,
         "CENSORED_NODE_TIMEOUT": 0,
         "NOT_REACHED": 0,
         "INSTRUMENT_GAP": 0
       },
       "RetrieveHybrid": {
-        "OBSERVED": 4,
+        "OBSERVED": 320,
         "CENSORED_AT_CEILING": 0,
         "CENSORED_NODE_TIMEOUT": 0,
         "NOT_REACHED": 0,
         "INSTRUMENT_GAP": 0
       },
       "AssemblePrompt": {
-        "OBSERVED": 4,
+        "OBSERVED": 320,
         "CENSORED_AT_CEILING": 0,
         "CENSORED_NODE_TIMEOUT": 0,
         "NOT_REACHED": 0,
         "INSTRUMENT_GAP": 0
       },
       "GenerateAnswer": {
-        "OBSERVED": 4,
+        "OBSERVED": 320,
         "CENSORED_AT_CEILING": 0,
         "CENSORED_NODE_TIMEOUT": 0,
         "NOT_REACHED": 0,
         "INSTRUMENT_GAP": 0
       }
     },
-    "inner_labels": {}
+    "inner_labels": {
+      "CENSORED_INNER_GRAPH_OP": 21
+    }
   },
-  "proposed_budgets": {
-    "graph_node_timeout_ms": 14500,
-    "retrieve_timeout_ms": 10500,
-    "prompt_timeout_ms": 23,
-    "generation_node_timeout_ms": 65000,
-    "query_embedding_timeout_ms": 10000,
-    "graph_operation_timeout_ms": 4000
-  },
-  "nesting_report": {
-    "has_violations": true,
-    "groups": [
+  "checkpoint_reconciliation": {
+    "baseline_06_3_3_02_count": 2262,
+    "pre_pass_count": 2420,
+    "seg1_count": 3286,
+    "probe_count": 3292,
+    "post_pass_count": 4152,
+    "growth_segment_1": 866,
+    "growth_restart_probe": 6,
+    "growth_segment_2": 860,
+    "total_pass_growth": 1732,
+    "monotonic_append_only": true,
+    "reseed_or_compaction_occurred": false,
+    "attribution_table": [
       {
-        "outer_name": "graph_node_timeout_ms",
-        "outer_budget_ms": 450,
-        "inner_budgets": {
-          "query_embedding_timeout_ms": 10000,
-          "graph_operation_timeout_ms": 4000
-        },
-        "inner_sum_ms": 14000,
-        "slack_ms": -13550,
-        "fires_first": "graph_node_timeout_ms",
-        "is_violation": true,
-        "adjusted_outer_ms": 14500,
-        "is_invariant_driven": true
+        "activity": "06.3.3-02 Store Baseline",
+        "start_count": 2262,
+        "end_count": 2262,
+        "delta": 0,
+        "note": "Reference baseline captured 2026-09-06T14:46:08-07:00"
       },
       {
-        "outer_name": "retrieve_timeout_ms",
-        "outer_budget_ms": 675,
-        "inner_budgets": {
-          "query_embedding_timeout_ms": 10000
-        },
-        "inner_sum_ms": 10000,
-        "slack_ms": -9325,
-        "fires_first": "retrieve_timeout_ms",
-        "is_violation": true,
-        "adjusted_outer_ms": 10500,
-        "is_invariant_driven": true
+        "activity": "Preflight Canary Probes & Test Queries",
+        "start_count": 2262,
+        "end_count": 2420,
+        "delta": 158,
+        "note": "Preflight canaries and sanity test queries"
+      },
+      {
+        "activity": "Measurement Pass Segment 1 (ordinals 1..160)",
+        "start_count": 2420,
+        "end_count": 3286,
+        "delta": 866,
+        "note": "160 queries across 80 questions (two arms)"
+      },
+      {
+        "activity": "Mid-Run Restart Probe Query",
+        "start_count": 3286,
+        "end_count": 3292,
+        "delta": 6,
+        "note": "1 probe query verifying gateway/engine path post-restart"
+      },
+      {
+        "activity": "Measurement Pass Segment 2 (ordinals 161..320)",
+        "start_count": 3292,
+        "end_count": 4152,
+        "delta": 860,
+        "note": "160 queries across 80 questions (two arms)"
       }
     ]
   },
-  "ceiling_report": {
-    "largest_single_node_budget_ms": 65000,
-    "largest_single_node_name": "generation_node_timeout_ms",
-    "sse_read_timeout_ms": 300000,
-    "single_exceeds_read_timeout": false,
-    "worst_case_sum_ms": 90023,
-    "question_deadline_ms": 600000,
-    "sum_exceeds_deadline": false,
-    "summary_message": "PASS: Proposed budgets satisfy both harness ceilings independently."
+  "graph_disposition": "populated",
+  "graph_canary_floor_status": "applied",
+  "suspended_canary_question_ids": [],
+  "required_sample_size_analysis": {
+    "required_questions": 160,
+    "binding_cell": "arm[2] x question_type[n=4] x segment[n=2] x window[n=2]",
+    "size_driven": 160,
+    "stratification_degraded": false,
+    "unanswerable_strata": []
   },
-  "run_timestamp": "2026-09-06T21:32:28.686913+00:00"
+  "model_configuration": {
+    "generation_model": "deepseek/deepseek-v4-flash-0731",
+    "judge_model": null
+  },
+  "run_timestamp": "2026-09-07T00:35:06.843968+00:00"
 }

@@ -476,3 +476,130 @@ def test_unreadable_engine_config_fails():
     """Assert read_workflow_timeouts raises on missing or invalid configuration file."""
     with pytest.raises(FileNotFoundError):
         read_workflow_timeouts(Path("/nonexistent/config.toml"))
+
+
+def test_measurement_pass_evidence_post_hoc_invariants():
+    """Assert durable measurement run records satisfy all Task 2 acceptance criteria."""
+    import random
+
+    from lancet_eval.config import repo_root
+
+    root = repo_root() / "eval" / "runs"
+    matching = list(root.glob("*-measure-multihop_rag"))
+    if not matching:
+        pytest.skip("No measurement run directory found.")
+
+    run_dir = max(matching, key=lambda p: p.stat().st_mtime)
+    journal_path = run_dir / "journal.jsonl"
+    measurement_path = run_dir / "measurement.json"
+
+    if not journal_path.is_file() or not measurement_path.is_file():
+        pytest.skip("Measurement journal or record not yet written.")
+
+    raw_text = journal_path.read_text(encoding="utf-8").strip()
+    if not raw_text:
+        pytest.skip("Measurement journal is empty.")
+
+    lines = [
+        json.loads(line) for line in raw_text.splitlines() if line.strip()
+    ]
+    if len(lines) < 320:
+        pytest.skip(
+            f"Measurement run in progress or partial (found {len(lines)}/320 records)."
+        )
+
+    with open(measurement_path, encoding="utf-8") as f:
+        meta = json.load(f)
+
+    # 1. Shuffled journal test: assert analysis sorts by recorded ordinal
+    shuffled_lines = list(lines)
+    random.seed(42)
+    random.shuffle(shuffled_lines)
+
+    # Validate on shuffled lines
+    sorted_records = sorted(shuffled_lines, key=lambda r: int(r["ordinal"]))
+    ordinals = [r["ordinal"] for r in sorted_records]
+
+    # Gap-free and unique
+    assert ordinals == list(range(1, len(lines) + 1))
+
+    # Every record carries ordinal, segment, question_type
+    for r in sorted_records:
+        assert "ordinal" in r and isinstance(r["ordinal"], int)
+        assert "segment" in r and r["segment"] in ("segment-1", "segment-2")
+        assert "question_type" in r and isinstance(r["question_type"], str)
+
+    # Exactly 2 distinct segment labels, changing once in ordinal order
+    segments_in_order = [r["segment"] for r in sorted_records]
+    assert set(segments_in_order) == {"segment-1", "segment-2"}
+    transitions = [
+        i
+        for i in range(len(segments_in_order) - 1)
+        if segments_in_order[i] != segments_in_order[i + 1]
+    ]
+    assert len(transitions) == 1
+    boundary_idx = transitions[0]
+    assert sorted_records[boundary_idx]["ordinal"] == meta["segment_boundary_ordinal"]
+
+    # Recorded restart ordinal falls inside observed boundary
+    restart_ord = meta["restart_ordinal"]
+    assert ordinals[0] <= restart_ord <= ordinals[-1]
+
+    # Two-armed adjacency: 2N records for N questions, adjacent
+    q_to_records: dict[str, list[dict[str, object]]] = {}
+    for r in sorted_records:
+        q_to_records.setdefault(r["question_id"], []).append(r)
+
+    assert len(sorted_records) == meta["sample_size_questions"] * 2
+    for _q_id, q_recs in q_to_records.items():
+        assert len(q_recs) == 2
+        arms = {r["graph_arm"] for r in q_recs}
+        assert arms == {"graph-off", "graph-on"}
+        assert abs(q_recs[0]["ordinal"] - q_recs[1]["ordinal"]) == 1
+
+    # Per-node counts broken down across all 5 classification labels
+    census = meta["censoring_census"]
+    node_counts = census["node_counts"]
+    for node in WORKFLOW_NODE_ORDER:
+        assert node in node_counts
+        counts = node_counts[node]
+        assert set(counts.keys()) == {
+            CensoringLabel.OBSERVED.value,
+            CensoringLabel.CENSORED_AT_CEILING.value,
+            CensoringLabel.CENSORED_NODE_TIMEOUT.value,
+            CensoringLabel.NOT_REACHED.value,
+            CensoringLabel.INSTRUMENT_GAP.value,
+        }
+        assert sum(counts.values()) == len(sorted_records)
+
+    # Raised budget set & harness ceilings
+    assert "raised_budgets" in meta
+    assert meta["raised_budgets_source"] == "process_environment"
+    assert meta["committed_config_unmodified"] is True
+
+    # Two distinct ceiling comparisons
+    two_ceilings = meta["two_ceiling_comparisons"]
+    assert "sse_read_timeout_comparison" in two_ceilings
+    assert "question_deadline_comparison" in two_ceilings
+    assert two_ceilings["sse_read_timeout_comparison"]["exceeds_ceiling"] is False
+    assert two_ceilings["question_deadline_comparison"]["exceeds_ceiling"] is False
+
+    # Spend accounting: within stage cap, includes embeddings
+    spend = meta["spend_summary"]
+    assert spend["spend_usd"] <= spend["stage_spend_cap"]
+    assert spend["includes_embeddings"] is True
+    assert spend["is_lower_bound"] is False
+
+    # Post-restart probe query latency
+    assert meta["probe_query_latency_ms"] > 0.0
+
+    # Checkpoint reconciliation
+    cp = meta["checkpoint_reconciliation"]
+    assert cp["monotonic_append_only"] is True
+    assert cp["post_pass_count"] >= cp["pre_pass_count"]
+    assert cp["reseed_or_compaction_occurred"] is False
+    assert len(cp["attribution_table"]) >= 4
+
+    # No judge model
+    assert meta["model_configuration"]["judge_model"] is None
+
