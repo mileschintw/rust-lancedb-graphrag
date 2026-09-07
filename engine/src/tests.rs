@@ -359,16 +359,41 @@ fn config_workflow_timeout_overlays_match_contract() {
     assert!(verify_content.contains("prompt_timeout_ms = 2000"));
     assert!(verify_content.contains("generation_node_timeout_ms = 7000"));
 
-    // Nested graph deadline inequality: 10000 + 4000 < 15000
+    // Nesting and provider-attempt arithmetic against the loaded operator defaults,
+    // not restated literals of a superseded budget set.
+    let prod_path = repo_root.join("config/config.toml");
+    let prod_content = std::fs::read_to_string(&prod_path).expect("read config.toml");
+    let parse_ms = |content: &str, key: &str| -> u64 {
+        content
+            .lines()
+            .find_map(|line| {
+                let line = line.trim();
+                let prefix = format!("{key} = ");
+                line.strip_prefix(&prefix)
+                    .and_then(|v| v.split_whitespace().next())
+                    .and_then(|v| v.parse().ok())
+            })
+            .unwrap_or_else(|| panic!("missing {key} in config.toml"))
+    };
+    let query_embedding_ms = parse_ms(&prod_content, "query_embedding_timeout_ms");
+    let graph_operation_ms = parse_ms(&prod_content, "graph_operation_timeout_ms");
+    let graph_node_ms = parse_ms(&prod_content, "graph_node_timeout_ms");
+    let generation_node_ms = parse_ms(&prod_content, "generation_node_timeout_ms");
     assert!(
-        10000 + 4000 < 15000,
-        "query embedding and graph operation must fit within graph node timeout"
+        query_embedding_ms + graph_operation_ms < graph_node_ms,
+        "query embedding and graph operation must fit strictly within graph node timeout"
     );
-    // Production generation node budget: 65000 >= 2 * 30000 + 5000
     assert!(
-        65000 >= 2 * 30000 + 5000,
-        "production 65000 generation node deadline accommodates 2x 30s attempts + slack"
+        generation_node_ms >= 2 * 30_000 + 5_000,
+        "production generation node deadline accommodates 2x 30s attempts + slack"
     );
+    let rust_defaults = WorkflowSettings::default();
+    rust_defaults
+        .validate()
+        .expect("Rust serde defaults must pass the graph-node floor");
+    rust_defaults
+        .validate_against_provider(30)
+        .expect("Rust serde defaults must pass the provider-attempt generation rule");
     assert!(
         30 * 1000 > 7000,
         "generation_timeout_secs (30s) > generation_node_timeout_ms (7000ms)"

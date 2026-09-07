@@ -126,19 +126,19 @@ pub fn default_reformulate_timeout_ms() -> u64 {
     5000
 }
 pub fn default_query_embedding_timeout_ms() -> u64 {
-    10000
+    645
 }
 pub fn default_retrieve_timeout_ms() -> u64 {
-    10000
+    16647
 }
 pub fn default_graph_operation_timeout_ms() -> u64 {
-    4000
+    38595
 }
 pub fn default_graph_node_timeout_ms() -> u64 {
-    15000
+    45674
 }
 pub fn default_prompt_timeout_ms() -> u64 {
-    2000
+    1070
 }
 pub fn default_generation_node_timeout_ms() -> u64 {
     65000

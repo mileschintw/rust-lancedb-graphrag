@@ -34,16 +34,18 @@ async fn workflow_phase5_production_five_node() {
 
     let snapshot = service.corpus_store.read().await.clone();
     let (runner, _deps) = service.build_production_workflow(snapshot);
+    // timeout_for_node resolves via EffectiveRagSettings::default() ->
+    // WorkflowSettings::default() -> config.rs default_*_timeout_ms, not any TOML file.
     assert_eq!(
         runner.timeout_for_node("ReformulateQuery").as_millis(),
         5000
     );
     assert_eq!(
         runner.timeout_for_node("ExtractGraphContext").as_millis(),
-        15000
+        45674
     );
-    assert_eq!(runner.timeout_for_node("RetrieveHybrid").as_millis(), 10000);
-    assert_eq!(runner.timeout_for_node("AssemblePrompt").as_millis(), 2000);
+    assert_eq!(runner.timeout_for_node("RetrieveHybrid").as_millis(), 16647);
+    assert_eq!(runner.timeout_for_node("AssemblePrompt").as_millis(), 1070);
     assert_eq!(runner.timeout_for_node("GenerateAnswer").as_millis(), 65000);
 
     let req = test_query_request(
