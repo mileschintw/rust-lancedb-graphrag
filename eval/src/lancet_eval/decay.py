@@ -93,6 +93,7 @@ class DecayVerdict:
     restart_result: RestartDiscriminatorResult | None
     stratified_results: dict[str, Any] = field(default_factory=dict)
     provenance: str = ""
+    unusable_dropped_count: int = 0
 
 
 def _normal_cdf(x: float) -> float:
@@ -475,9 +476,10 @@ def analyze_decay(
         )
 
     # Extract ordinals, latencies, and check censoring
-    ordinals: list[int] = []
-    latencies: list[float] = []
+    all_ordinals: list[int] = []
+    paired: list[tuple[int, float]] = []
     censored_count = 0
+    unusable_dropped_count = 0
 
     seg1_latencies: list[float] = []
     seg2_latencies: list[float] = []
@@ -488,7 +490,7 @@ def analyze_decay(
 
     for r in sorted_records:
         ord_val = int(r.ordinal)
-        ordinals.append(ord_val)
+        all_ordinals.append(ord_val)
         seg = getattr(r, "segment", "segment-1")
         if not seen_segments or seen_segments[-1] != seg:
             seen_segments.append(seg)
@@ -513,12 +515,18 @@ def analyze_decay(
 
         if t is not None and getattr(t, "duration_ms", None) is not None:
             dur = float(t.duration_ms)
-            latencies.append(dur)
+            paired.append((ord_val, dur))
             strata[strata_key].append(dur)
             if seg == "segment-1":
                 seg1_latencies.append(dur)
             elif seg == "segment-2":
                 seg2_latencies.append(dur)
+            continue
+
+        unusable_dropped_count += 1
+
+    trend_ordinals = [o for o, _ in paired]
+    latencies = [d for _, d in paired]
 
     # Validate segment transitions if segment-2 is present
     if len(seen_segments) > 2:
@@ -528,8 +536,8 @@ def analyze_decay(
 
     restart_res: RestartDiscriminatorResult | None = None
     if restart_ordinal is not None:
-        min_ord = ordinals[0] if ordinals else 0
-        max_ord = ordinals[-1] if ordinals else 0
+        min_ord = all_ordinals[0] if all_ordinals else 0
+        max_ord = all_ordinals[-1] if all_ordinals else 0
         if not (min_ord <= restart_ordinal <= max_ord):
             raise DecayAnalysisError(
                 f"Recorded restart ordinal {restart_ordinal} lies "
@@ -545,7 +553,7 @@ def analyze_decay(
 
     # Compute prongs
     trend_res = compute_theil_sen_trend(
-        ordinals[: len(latencies)],
+        trend_ordinals,
         latencies,
         thresholds=thresh,
         censored_count=censored_count,
@@ -594,4 +602,5 @@ def analyze_decay(
         restart_result=restart_res,
         stratified_results=strat_summary,
         provenance=thresh.provenance,
+        unusable_dropped_count=unusable_dropped_count,
     )

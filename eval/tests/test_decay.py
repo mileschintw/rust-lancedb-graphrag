@@ -304,10 +304,12 @@ def test_decay_mid_sequence_node_timeout_does_not_shift_pairs():
     )
     usable_v = analyze_decay(usable)
     timeout_v = analyze_decay(timed_out)
-    assert timeout_v.slope_statistic == pytest.approx(
-        usable_v.slope_statistic, abs=1e-9
-    )
-    assert timeout_v.verdict_decay_present == usable_v.verdict_decay_present
+    assert usable_v.slope_statistic == pytest.approx(100.0, abs=1e-9)
+    assert timeout_v.unusable_dropped_count == 0
+    assert timeout_v.trend_result.censored_count == 1
+    assert timeout_v.trend_result.is_censored is True
+    assert timeout_v.trend_result.is_available is False
+    assert timeout_v.verdict_decay_present is False
 
 
 def test_decay_reports_unusable_dropped_count():
