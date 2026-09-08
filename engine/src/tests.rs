@@ -486,6 +486,31 @@ fn generation_node_timeout_below_retry_budget_is_rejected() {
 }
 
 #[test]
+fn effective_settings_reject_provider_contract_violation_at_load() {
+    let mut settings = Settings::default();
+    settings.openrouter.generation_timeout_secs = 40;
+    let err = EffectiveRagSettings::try_from_settings(&settings)
+        .expect_err("must reject settings whose doubled provider budget exceeds generation_node_timeout_ms");
+    assert!(err.contains("generation_node_timeout_ms"));
+    assert!(err.contains("80000"));
+}
+
+#[test]
+fn effective_settings_accept_provider_contract_at_boundary() {
+    let mut accepted = Settings::default();
+    accepted.openrouter.generation_timeout_secs = 32;
+    EffectiveRagSettings::try_from_settings(&accepted)
+        .expect("32s provider timeout requires 64000ms and must fit in the default 65000ms node budget");
+
+    let mut rejected = Settings::default();
+    rejected.openrouter.generation_timeout_secs = 33;
+    let err = EffectiveRagSettings::try_from_settings(&rejected)
+        .expect_err("33s provider timeout requires 66000ms and must be refused against the default 65000ms node budget");
+    assert!(err.contains("generation_node_timeout_ms"));
+    assert!(err.contains("66000"));
+}
+
+#[test]
 fn config_openrouter_model_env_overrides_match_contract() {
     let _guard = ENV_MUTEX.lock().unwrap();
 
