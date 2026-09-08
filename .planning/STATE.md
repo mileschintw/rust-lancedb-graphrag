@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 06.3.3
 current_phase_name: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
 current_plan: 6
-status: executing
-stopped_at: Completed 06.3.3-05-PLAN.md
-last_updated: "2026-09-08T09:10:18.795Z"
+status: verifying
+stopped_at: Completed 06.3.3-06-PLAN.md
+last_updated: "2026-09-08T09:31:28.651Z"
 last_activity: 2026-09-08
-state_head: 2c1a32910d8859a5ec136c0baa7e3fbe028933d2
+state_head: f3e5d2c143159cdebfa8ea0186ac8c7bf3caa5fc
 progress:
   total_phases: 15
   completed_phases: 9
   total_plans: 154
-  completed_plans: 147
+  completed_plans: 148
 milestone_name: milestone
 ---
 
@@ -21,7 +21,7 @@ milestone_name: milestone
 
 ## Current Status
 
-- **Phase 06.3.3 Wave 4 plan 05 executed**: VERIFICATION.md gaps 1–2 closed in eval Python (`NodeDurationExtraction`, `derive_budgets_from_records` censored_count wiring, `analyze_decay` parallel pairing). Commits `c81c45c`..`826c41b`; `06.3.3-05-SUMMARY.md`. Next: 06.3.3-06 (engine `validate_against_provider` + BUDGETS.md proof).
+- **Phase 06.3.3 Wave 4 plan 06 executed**: VERIFICATION.md gap 3 closed — `EffectiveRagSettings::validate()` calls `validate_against_provider`; `config.verify.toml` `generation_timeout_secs` 30→3; `effective_settings_reject_provider_contract_violation_at_load` plus boundary 32/33 tests; `06.3.3-BUDGETS.md` Engine startup proof amended. Commits `9d8a66c`..`f3e5d2c`; `06.3.3-06-SUMMARY.md`. Next: phase 06.3.3 code review / re-verification gates.
 
 - **Phase 06.3.3 Wave 2 executed and verified**:
   - **Plan 06.3.3-03**: Two-segment retrieval latency measurement pass (160 questions, 320 records), mid-run engine restart at ordinal 160, post-restart probe query latency (27.2s), 5-label censoring census, two-pronged decay analysis (`RetrieveHybrid` slope: -6.73 ms/query, window delta: -4.78s; verdict `decay_present: False`), restart boundary discriminator (supports `process_state` hypothesis: delta -11.3s, 95% CI [-12.3s, -10.5s]), inner budget decomposition (outer `graph_node` p95: 30.4s, `query_embedding` p95: 430ms, `graph_operation` p95: >= 25.7s lower bound per survivor guard), and D-16 node investigation dispositions for all five workflow nodes (`06.3.3-03-SUMMARY.md`, `06.3.3-MEASUREMENT.md`). Spend: $0.08316 USD against $5.00 cap. Monotonic append-only checkpoints: 2,420 -> 4,152 (+1,732 rows).
@@ -170,12 +170,12 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 06.3.3 — Retrieval latency measurement pass and timeout budget derivation
-- **Status:** Executing Phase 06.3.3
+- **Status:** Phase complete — ready for verification
 - **Current Plan:** 6
 - **Total Plans in Phase:** 6
-- **Completed Plans in Phase:** 5/6
-- **Progress:** [████████░░] 83% execution
-- **Next:** Execute `06.3.3-06-PLAN.md` (engine startup `validate_against_provider` wiring and BUDGETS.md proof correction).
+- **Completed Plans in Phase:** 6/6
+- **Progress:** [██████████] 100% execution
+- **Next:** `/gsd-verify-work 06.3.3` (and code review) — all six plans have SUMMARYs.
 
 ## Completed Phases
 
@@ -295,6 +295,7 @@ milestone_name: milestone
 | Phase 05 P21 | 7 min | 2 tasks | 2 files |
 | Phase 06.3.3 P04 | 90 | 3 tasks | 8 files |
 | Phase 06.3.3 P05 | 18 min | 3 tasks | 7 files |
+| Phase 06.3.3 P06 | 16 min | 3 tasks | 5 files |
 
 ## Decisions
 
@@ -343,12 +344,15 @@ milestone_name: milestone
 - [Phase ?]: query_embedding is represented by dimension plus a deterministic fixed-size hexadecimal digest, not the raw vector.
 - [Phase ?]: WorkflowCompleted carries the accumulated ordered notices so degradation remains visible through terminal failure.
 - [Phase 06.3.3]: Keep percentile_with_ci refuse_on_censored off; flag via is_lower_bound and censored_status
+- [Phase 06.3.3]: Lower verify overlay generation_timeout_secs to 3 instead of raising generation_node_timeout_ms past SlowLiveProvider's 30s stall
+- [Phase 06.3.3]: Raise env-override generation node marker 8888 to 68888 rather than parsing LANCET_OPENROUTER__GENERATION_TIMEOUT_SECS
+- [Phase 06.3.3]: Do not re-run the live engine binary; the new try_from_settings test is the wiring proof
 
 ## Session
 
-**Last session:** 2026-09-08T09:10:16.916Z
+**Last session:** 2026-09-08T09:31:26.810Z
 **Last activity:** 2026-09-08
-**Stopped at:** Completed 06.3.3-05-PLAN.md
+**Stopped at:** Completed 06.3.3-06-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
