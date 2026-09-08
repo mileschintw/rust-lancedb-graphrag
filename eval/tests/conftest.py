@@ -4,6 +4,31 @@ from pathlib import Path
 
 import pytest
 
+from lancet_eval.client import NodeFailed
+from lancet_eval.journal import NodeTiming
+from lancet_eval.measure import MeasurementRecord
+
+CEILING_CENSORED_RETRIEVE_MS = 10000.0
+
+
+def _measurement_record(
+    ordinal: int,
+    *,
+    timings: list[NodeTiming],
+    failures: list[NodeFailed] | None = None,
+) -> MeasurementRecord:
+    return MeasurementRecord(
+        corpus="multihop_rag",
+        question_id=f"q_{ordinal}",
+        graph_arm="graph-on" if ordinal % 2 else "graph-off",
+        outcome="success",
+        ordinal=ordinal,
+        segment="segment-1",
+        question_type="bridge",
+        node_timings=timings,
+        node_failures=failures or [],
+    )
+
 
 @pytest.fixture
 def fixtures_dir() -> Path:
@@ -88,3 +113,72 @@ def synthetic_upward_latencies() -> list[float]:
 def synthetic_all_at_ceiling_latencies() -> list[float]:
     """Synthetic observation set where all values sit at the 10000ms ceiling."""
     return [10000.0] * 50
+
+
+@pytest.fixture
+def ceiling_censored_retrieve_ceilings() -> dict[str, float]:
+    """Ceilings map the ceiling-censored measurement fixture was built against."""
+    return {"RetrieveHybrid": CEILING_CENSORED_RETRIEVE_MS}
+
+
+@pytest.fixture
+def ceiling_censored_measurement_records() -> list[MeasurementRecord]:
+    """MeasurementRecord objects with ceiling-clipped and node-timer-expired retrieval.
+
+    Mirrors the 904-of-1000 RetrieveHybrid-at-ceiling shape from 2026-09-03,
+    scaled to 50 timed records (40 exactly at the retrieve_timeout_ms ceiling,
+    10 genuinely observed sub-ceiling values) plus 5 NodeFailed timeout records
+    with no RetrieveHybrid timing.
+    """
+    records: list[MeasurementRecord] = []
+    ordinal = 1
+    sub_ceiling = [
+        120.0,
+        480.0,
+        910.0,
+        1500.0,
+        2100.0,
+        3400.0,
+        5100.0,
+        7200.0,
+        8800.0,
+        9999.0,
+    ]
+    for dur in sub_ceiling:
+        records.append(
+            _measurement_record(
+                ordinal,
+                timings=[NodeTiming(node_name="RetrieveHybrid", duration_ms=dur)],
+            )
+        )
+        ordinal += 1
+    for _ in range(40):
+        records.append(
+            _measurement_record(
+                ordinal,
+                timings=[
+                    NodeTiming(
+                        node_name="RetrieveHybrid",
+                        duration_ms=CEILING_CENSORED_RETRIEVE_MS,
+                    )
+                ],
+            )
+        )
+        ordinal += 1
+    for _ in range(5):
+        records.append(
+            _measurement_record(
+                ordinal,
+                timings=[],
+                failures=[
+                    NodeFailed(
+                        node_name="RetrieveHybrid",
+                        error_kind=1,
+                        error_message="node timeout",
+                        retryable=True,
+                    )
+                ],
+            )
+        )
+        ordinal += 1
+    return records

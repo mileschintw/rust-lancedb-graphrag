@@ -5,10 +5,13 @@ import random
 import pytest
 
 from lancet_eval.latency import (
+    WORKFLOW_NODE_ORDER,
     check_harness_ceilings,
     check_nesting_invariants,
+    compute_censoring_census,
     derive_budget,
     derive_provider_contract_budget,
+    extract_node_durations,
     guard_graph_operation_percentile,
     percentile_with_ci,
     required_sample_size,
@@ -222,3 +225,104 @@ def test_graph_timeout_survivor_guard():
     )
     assert res_clean.is_lower_bound is False
     assert res_clean.is_available is True
+
+
+def test_censored_fixture_yields_record_objects(ceiling_censored_measurement_records):
+    """Fixture must be record objects: getattr on dicts silently returns defaults."""
+    records = ceiling_censored_measurement_records
+    assert not isinstance(records[0], dict)
+    timings = getattr(records[0], "node_timings")
+    assert isinstance(timings, list)
+    assert len(timings) > 0
+
+
+def test_extract_durations_drops_and_counts_at_ceiling_values(
+    ceiling_censored_measurement_records,
+    ceiling_censored_retrieve_ceilings,
+):
+    """At-ceiling RetrieveHybrid timings are dropped, not treated as tail samples."""
+    records = ceiling_censored_measurement_records
+    ceilings = ceiling_censored_retrieve_ceilings
+    ceiling = ceilings["RetrieveHybrid"]
+    result = extract_node_durations(records, ceilings_by_node=ceilings)
+    surviving = result.by_node["RetrieveHybrid"]
+    assert len(surviving) == 10
+    assert result.dropped_at_ceiling["RetrieveHybrid"] == 40
+    assert all(v < ceiling for v in surviving)
+
+
+def test_extract_durations_ceiling_boundary_is_a_drop():
+    """Duration equal to the ceiling is a drop; one millisecond below survives."""
+    from lancet_eval.journal import NodeTiming
+    from lancet_eval.measure import MeasurementRecord
+
+    ceiling = 10000.0
+    at_ceiling = MeasurementRecord(
+        corpus="multihop_rag",
+        question_id="q_at",
+        graph_arm="graph-on",
+        outcome="success",
+        ordinal=1,
+        segment="segment-1",
+        question_type="bridge",
+        node_timings=[NodeTiming(node_name="RetrieveHybrid", duration_ms=ceiling)],
+    )
+    below = MeasurementRecord(
+        corpus="multihop_rag",
+        question_id="q_below",
+        graph_arm="graph-off",
+        outcome="success",
+        ordinal=2,
+        segment="segment-1",
+        question_type="bridge",
+        node_timings=[
+            NodeTiming(node_name="RetrieveHybrid", duration_ms=ceiling - 1.0)
+        ],
+    )
+    result = extract_node_durations(
+        [at_ceiling, below],
+        ceilings_by_node={"RetrieveHybrid": ceiling},
+    )
+    surviving = result.by_node["RetrieveHybrid"]
+    assert surviving == [ceiling - 1.0]
+    assert result.dropped_at_ceiling["RetrieveHybrid"] == 1
+    assert ceiling not in surviving
+
+
+def test_extract_durations_without_ceilings_drops_nothing(
+    ceiling_censored_measurement_records,
+):
+    """None ceilings are unbounded: every timed duration survives and drop counts are 0."""
+    result = extract_node_durations(
+        ceiling_censored_measurement_records, ceilings_by_node=None
+    )
+    assert len(result.by_node["RetrieveHybrid"]) == 50
+    assert all(result.dropped_at_ceiling[node] == 0 for node in WORKFLOW_NODE_ORDER)
+
+
+def test_extract_drop_count_matches_census_at_ceiling_count(
+    ceiling_censored_measurement_records,
+    ceiling_censored_retrieve_ceilings,
+):
+    """Extractor drop count agrees with census CENSORED_AT_CEILING for the same map."""
+    records = ceiling_censored_measurement_records
+    ceilings = ceiling_censored_retrieve_ceilings
+    dropped = extract_node_durations(
+        records, ceilings_by_node=ceilings
+    ).dropped_at_ceiling["RetrieveHybrid"]
+    census = compute_censoring_census(records, ceilings)
+    assert dropped == census.node_counts["RetrieveHybrid"]["CENSORED_AT_CEILING"]
+
+
+def test_extract_durations_ignores_node_timer_expiry(
+    ceiling_censored_measurement_records,
+    ceiling_censored_retrieve_ceilings,
+):
+    """Node-timer expiry contributes neither surviving duration nor at-ceiling drop."""
+    records = ceiling_censored_measurement_records
+    ceilings = ceiling_censored_retrieve_ceilings
+    result = extract_node_durations(records, ceilings_by_node=ceilings)
+    census = compute_censoring_census(records, ceilings)
+    assert len(result.by_node["RetrieveHybrid"]) == 10
+    assert result.dropped_at_ceiling["RetrieveHybrid"] == 40
+    assert census.node_counts["RetrieveHybrid"]["CENSORED_NODE_TIMEOUT"] == 5
