@@ -573,8 +573,10 @@ def run_measurement_pass(
 
     summary: dict[str, Any] = {
         "calibration_note": (
-            "This micro-pass is calibration of the instrument only and "
-            "is not an input to any derived budget."
+            "This micro-pass derives proposed timeout budgets from measured "
+            "node latencies. Inner query_embedding and graph_operation "
+            "timeouts are carried forward unmeasured. Generation uses the "
+            "provider attempt contract, not this pass's generation p95."
         ),
         "corpus": corpus_name,
         "sample_size_questions": sample_size_questions,

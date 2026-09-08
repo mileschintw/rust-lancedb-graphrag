@@ -772,3 +772,14 @@ def test_run_measurement_pass_summary_keeps_existing_keys():
     for key in _SUMMARY_KEYS:
         assert f'"{key}"' in src
 
+
+def test_run_measurement_pass_calibration_note_matches_derivation_contract():
+    """Summary note must not claim budgets are unused after derivation exists."""
+    import inspect
+
+    from lancet_eval.measure import run_measurement_pass
+
+    src = inspect.getsource(run_measurement_pass)
+    assert "is not an input to any derived budget" not in src
+    assert "derives proposed timeout budgets" in src
+
