@@ -702,7 +702,13 @@ def test_derivation_clean_records_report_clean_status():
         for i in range(1, 21)
     ]
     result = _derive_from_records(records)
-    assert all(row["censored_status"] == "clean" for row in result.proposed_records)
+    measured = [
+        row
+        for row in result.proposed_records
+        if "provider_contract" not in row["rule"]
+    ]
+    assert measured
+    assert all(row["censored_status"] == "clean" for row in measured)
     assert all(count == 0 for count in result.censored_by_node.values())
 
 

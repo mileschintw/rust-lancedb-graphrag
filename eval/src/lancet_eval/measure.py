@@ -6,6 +6,7 @@ import concurrent.futures
 import json
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -22,6 +23,8 @@ from lancet_eval.journal import (
     WorkflowWireMeta,
 )
 from lancet_eval.latency import (
+    CensoringLabel,
+    NodeDurationExtraction,
     check_harness_ceilings,
     check_nesting_invariants,
     compute_censoring_census,
@@ -280,6 +283,104 @@ def measure_one(
         )
 
 
+@dataclass(frozen=True)
+class BudgetDerivation:
+    """Pure post-drive budget derivation over already-collected records."""
+
+    census: Any
+    durations: NodeDurationExtraction
+    censored_by_node: dict[str, int]
+    proposed_budgets: dict[str, int]
+    proposed_records: list[dict[str, Any]]
+    nesting_report: Any
+    ceiling_report: Any
+
+
+def derive_budgets_from_records(
+    analysis_records: Sequence[Any],
+    effective_cfg: dict[str, Any],
+    thresholds: DecisionThresholds,
+    sse_read_timeout_s: float,
+    question_deadline_s: float,
+) -> BudgetDerivation:
+    """Derive proposed budgets from records without querying a live gateway."""
+    node_to_key = {
+        "ReformulateQuery": "reformulate_timeout_ms",
+        "RetrieveHybrid": "retrieve_timeout_ms",
+        "ExtractGraphContext": "graph_node_timeout_ms",
+        "AssemblePrompt": "prompt_timeout_ms",
+        "GenerateAnswer": "generation_node_timeout_ms",
+    }
+    ceilings = {
+        node: float(effective_cfg.get(k, float("inf")))
+        for node, k in node_to_key.items()
+    }
+    census = compute_censoring_census(analysis_records, ceilings)
+    extraction = extract_node_durations(
+        analysis_records, ceilings_by_node=ceilings
+    )
+
+    proposed_budgets: dict[str, int] = {}
+    proposed_records: list[dict[str, Any]] = []
+    censored_by_node: dict[str, int] = {}
+
+    for node, vals in extraction.by_node.items():
+        if node == "GenerateAnswer":
+            p_rec = derive_provider_contract_budget()
+            proposed_budgets["generation_node_timeout_ms"] = p_rec.proposed_ms
+            proposed_records.append(p_rec.__dict__)
+            censored_by_node[node] = 0
+            continue
+
+        if node == "ReformulateQuery":
+            censored_by_node[node] = 0
+            continue
+
+        node_census = census.node_counts.get(node, {})
+        censored = extraction.dropped_at_ceiling.get(node, 0) + node_census.get(
+            CensoringLabel.CENSORED_NODE_TIMEOUT.value, 0
+        )
+        censored_by_node[node] = censored
+        cfg_key = node_to_key[node]
+        pct = percentile_with_ci(
+            vals,
+            p=thresholds.derivation_percentile,
+            seed=thresholds.bootstrap_seed,
+            censored_count=censored,
+        )
+        if pct.is_available:
+            p_rec = derive_budget(cfg_key, pct, thresholds=thresholds)
+            proposed_budgets[cfg_key] = p_rec.proposed_ms
+            proposed_records.append(p_rec.__dict__)
+
+    if "query_embedding_timeout_ms" not in proposed_budgets:
+        proposed_budgets["query_embedding_timeout_ms"] = effective_cfg.get(
+            "query_embedding_timeout_ms", 10000
+        )
+    if "graph_operation_timeout_ms" not in proposed_budgets:
+        proposed_budgets["graph_operation_timeout_ms"] = effective_cfg.get(
+            "graph_operation_timeout_ms", 4000
+        )
+
+    nesting_rep = check_nesting_invariants(
+        proposed_budgets, required_slack_ms=thresholds.slack_ms
+    )
+    ceiling_rep = check_harness_ceilings(
+        nesting_rep.resolved_budgets,
+        sse_read_timeout_s=sse_read_timeout_s,
+        question_deadline_s=question_deadline_s,
+    )
+    return BudgetDerivation(
+        census=census,
+        durations=extraction,
+        censored_by_node=censored_by_node,
+        proposed_budgets=nesting_rep.resolved_budgets,
+        proposed_records=proposed_records,
+        nesting_report=nesting_rep,
+        ceiling_report=ceiling_rep,
+    )
+
+
 def run_measurement_pass(
     corpus_name: str = "multihop_rag",
     sample_size_questions: int = 10,
@@ -421,65 +522,16 @@ def run_measurement_pass(
     # Post-drive analysis and summary record
     analysis_records = [r for r in records if not r.warm_up]
     effective_cfg = read_effective_workflow_config()
-
-    # Map node name to effective budget ceiling
-    node_to_key = {
-        "ReformulateQuery": "reformulate_timeout_ms",
-        "RetrieveHybrid": "retrieve_timeout_ms",
-        "ExtractGraphContext": "graph_node_timeout_ms",
-        "AssemblePrompt": "prompt_timeout_ms",
-        "GenerateAnswer": "generation_node_timeout_ms",
-    }
-    ceilings = {
-        node: float(effective_cfg.get(k, float("inf")))
-        for node, k in node_to_key.items()
-    }
-    census = compute_censoring_census(analysis_records, ceilings)
-    durations = extract_node_durations(analysis_records)
-
-    # Propose budgets from measured p95
-    proposed_budgets: dict[str, int] = {}
-    proposed_records: list[dict[str, Any]] = []
-
-    for node, vals in durations.items():
-        if node == "GenerateAnswer":
-            # Derived via provider contract, not measured generation latency
-            p_rec = derive_provider_contract_budget()
-            proposed_budgets["generation_node_timeout_ms"] = p_rec.proposed_ms
-            proposed_records.append(p_rec.__dict__)
-            continue
-
-        if node == "ReformulateQuery":
-            # Reformulate is reported as observed, not derived into production budgets
-            continue
-
-        cfg_key = node_to_key[node]
-        pct = percentile_with_ci(
-            vals, p=thresholds.derivation_percentile, seed=thresholds.bootstrap_seed
-        )
-        if pct.is_available:
-            p_rec = derive_budget(cfg_key, pct, thresholds=thresholds)
-            proposed_budgets[cfg_key] = p_rec.proposed_ms
-            proposed_records.append(p_rec.__dict__)
-
-    # Inner budgets default or derived
-    if "query_embedding_timeout_ms" not in proposed_budgets:
-        proposed_budgets["query_embedding_timeout_ms"] = effective_cfg.get(
-            "query_embedding_timeout_ms", 10000
-        )
-    if "graph_operation_timeout_ms" not in proposed_budgets:
-        proposed_budgets["graph_operation_timeout_ms"] = effective_cfg.get(
-            "graph_operation_timeout_ms", 4000
-        )
-
-    nesting_rep = check_nesting_invariants(
-        proposed_budgets, required_slack_ms=thresholds.slack_ms
-    )
-    ceiling_rep = check_harness_ceilings(
-        nesting_rep.resolved_budgets,
+    derivation = derive_budgets_from_records(
+        analysis_records,
+        effective_cfg,
+        thresholds,
         sse_read_timeout_s=settings.gateway_timeout_secs,
         question_deadline_s=settings.question_deadline_secs,
     )
+    census = derivation.census
+    nesting_rep = derivation.nesting_report
+    ceiling_rep = derivation.ceiling_report
 
     total_spend, is_lower = compute_spend(records, include_embeddings=True)
 
