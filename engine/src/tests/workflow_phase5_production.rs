@@ -637,7 +637,9 @@ impl generation::Generator for SlowLiveProvider {
             self.call_count
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             self.started.notify_one();
-            // Stalls for 30s (the openrouter attempt budget)
+            // Stalls for 30s so the 7000ms GenerateAnswer node timer fires first.
+            // This fake does not read generation_timeout_secs; the overlay's 3s
+            // per-attempt budget is unused here.
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             Err(generation::GenerationError::new(
                 generation::GenerationErrorKind::ProviderError,
@@ -746,10 +748,13 @@ async fn workflow_phase5_config_verify_generation_timeout() {
         "stream cancellation token must be cancelled on timeout"
     );
 
-    // Wall-clock time should be near 7000ms, and materially below 30000ms (provider budget)
+    // Wall-clock time should be near 7000ms (generation_node_timeout_ms).
+    // SlowLiveProvider sleeps 30s and ignores overlay generation_timeout_secs=3,
+    // so the node timer binds first — 30000ms is the fake stall, not a live
+    // provider attempt budget.
     assert!(
         elapsed >= std::time::Duration::from_millis(6500) && elapsed < std::time::Duration::from_millis(15000),
-        "elapsed time ({:?}) must be close to configured 7000ms generation_node_timeout_ms and well below 30s",
+        "elapsed time ({:?}) must be close to configured 7000ms generation_node_timeout_ms and well below the 30s SlowLiveProvider stall",
         elapsed
     );
 

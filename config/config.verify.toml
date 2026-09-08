@@ -6,6 +6,11 @@
 lancedb_path = "./data/lancedb-verify-02-06"
 
 [openrouter]
+# 3s per attempt so 2 * 3s * 1000 <= generation_node_timeout_ms (7000).
+# verify-ingestion.sh only exercises ingest/embeddings, not /rag generation.
+# Live GenerateAnswer under LANCET_ENV=verify is expected to fail fast at this
+# per-attempt budget (completions in (3s, 7s] that used to race the 7s node
+# timer will now fail at the provider client).
 generation_timeout_secs = 3
 
 [engine.workflow]
