@@ -4,9 +4,9 @@
   "milestone": "v1.0",
   "phases": [],
   "next": {
-    "command": "/gsd-progress",
-    "label": "Show progress",
-    "reason": "Unsure of state — showing progress"
+    "command": "/gsd-progress --next",
+    "label": "Advance to the next step (plan phase 06.3.4)",
+    "reason": "Phase 06.3.4 of 15 — needs a plan"
   },
-  "updated_at": "2026-09-06T22:15:22.318Z"
+  "updated_at": "2026-09-08T20:44:18.697Z"
 }
