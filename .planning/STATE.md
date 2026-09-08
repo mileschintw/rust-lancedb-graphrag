@@ -2,24 +2,26 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 06.3.3
-current_phase_name: retrieval-latency-measurement-pass-and-timeout-budget-deriva
-current_plan: 04
+current_phase_name: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
+current_plan: 6
 status: executing
-stopped_at: Completed 06.3.3-04-PLAN.md
-last_updated: "2026-09-08T00:21:17.021Z"
-last_activity: 2026-09-07
-state_head: 4579049476c49bcd82890db73d3ff5830102f494
+stopped_at: Completed 06.3.3-05-PLAN.md
+last_updated: "2026-09-08T09:10:18.795Z"
+last_activity: 2026-09-08
+state_head: 2c1a32910d8859a5ec136c0baa7e3fbe028933d2
 progress:
   total_phases: 15
   completed_phases: 9
   total_plans: 154
-  completed_plans: 146
+  completed_plans: 147
 milestone_name: milestone
 ---
 
 # Project State
 
 ## Current Status
+
+- **Phase 06.3.3 Wave 4 plan 05 executed**: VERIFICATION.md gaps 1–2 closed in eval Python (`NodeDurationExtraction`, `derive_budgets_from_records` censored_count wiring, `analyze_decay` parallel pairing). Commits `c81c45c`..`826c41b`; `06.3.3-05-SUMMARY.md`. Next: 06.3.3-06 (engine `validate_against_provider` + BUDGETS.md proof).
 
 - **Phase 06.3.3 Wave 2 executed and verified**:
   - **Plan 06.3.3-03**: Two-segment retrieval latency measurement pass (160 questions, 320 records), mid-run engine restart at ordinal 160, post-restart probe query latency (27.2s), 5-label censoring census, two-pronged decay analysis (`RetrieveHybrid` slope: -6.73 ms/query, window delta: -4.78s; verdict `decay_present: False`), restart boundary discriminator (supports `process_state` hypothesis: delta -11.3s, 95% CI [-12.3s, -10.5s]), inner budget decomposition (outer `graph_node` p95: 30.4s, `query_embedding` p95: 430ms, `graph_operation` p95: >= 25.7s lower bound per survivor guard), and D-16 node investigation dispositions for all five workflow nodes (`06.3.3-03-SUMMARY.md`, `06.3.3-MEASUREMENT.md`). Spend: $0.08316 USD against $5.00 cap. Monotonic append-only checkpoints: 2,420 -> 4,152 (+1,732 rows).
@@ -168,12 +170,12 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 06.3.3 — Retrieval latency measurement pass and timeout budget derivation
-- **Status:** Ready to execute
-- **Current Plan:** 4
+- **Status:** Executing Phase 06.3.3
+- **Current Plan:** 6
 - **Total Plans in Phase:** 6
-- **Completed Plans in Phase:** 4/4
-- **Progress:** [██████████] 100% execution
-- **Next:** Phase-final `/gsd-execute-phase 06.3.3` (no `--wave`) for code review and verification, or `/gsd-plan-phase 06.3.4` if proceeding under the recorded spend caps.
+- **Completed Plans in Phase:** 5/6
+- **Progress:** [████████░░] 83% execution
+- **Next:** Execute `06.3.3-06-PLAN.md` (engine startup `validate_against_provider` wiring and BUDGETS.md proof correction).
 
 ## Completed Phases
 
@@ -292,6 +294,7 @@ milestone_name: milestone
 | Phase 05 P10 | 112m | 2 tasks | 4 files |
 | Phase 05 P21 | 7 min | 2 tasks | 2 files |
 | Phase 06.3.3 P04 | 90 | 3 tasks | 8 files |
+| Phase 06.3.3 P05 | 18 min | 3 tasks | 7 files |
 
 ## Decisions
 
@@ -339,12 +342,13 @@ milestone_name: milestone
 - [Phase ?]: CheckpointSnapshot in events.rs is the canonical Rust-owned nineteen-field stable JSON contract.
 - [Phase ?]: query_embedding is represented by dimension plus a deterministic fixed-size hexadecimal digest, not the raw vector.
 - [Phase ?]: WorkflowCompleted carries the accumulated ordered notices so degradation remains visible through terminal failure.
+- [Phase 06.3.3]: Keep percentile_with_ci refuse_on_censored off; flag via is_lower_bound and censored_status
 
 ## Session
 
-**Last session:** 2026-09-07T14:49:15.901Z
-**Last activity:** 2026-09-07
-**Stopped at:** Completed 06.3.3-04-PLAN.md
+**Last session:** 2026-09-08T09:10:16.916Z
+**Last activity:** 2026-09-08
+**Stopped at:** Completed 06.3.3-05-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context

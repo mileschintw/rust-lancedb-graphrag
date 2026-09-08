@@ -788,7 +788,7 @@ Plans:
 7. If graph traversal proves inherently too slow for any sane budget, the graph budget is raised to what the measured p95 needs and the latency cost is recorded for Phase 6.4's honest-limitations section (D-04).
 8. Spend for this pass is capped per-stage against the daily limit (D-47). The original run's `$0.0199` is not a usable estimate — it was cheap because 966 queries generated nothing.
 
-**Plans:** 6 plans — 4/4 original plans executed; 2 gap-closure plans pending (`06.3.3-VERIFICATION.md`, `status: gaps_found`, 8/10)
+**Plans:** 5/6 plans executed — gap-closure plan 05 complete; plan 06 pending (`06.3.3-VERIFICATION.md`, `status: gaps_found`, 8/10)
 
 Plans:
 
@@ -807,7 +807,7 @@ Plans:
 
 **Wave 4** *(gap closure — blocked on the whole executed set; the two plans are parallel and file-disjoint, plan 05 being Python-only and plan 06 Rust + one planning record. Closes the three gaps `06.3.3-VERIFICATION.md` found and independently re-confirmed against source: two instrument-correctness defects in reusable library code and one dead-at-runtime validator plus the false claim about it in the phase's own closing record. None of the three changes a shipped budget value or reverses the go/no-go; all three are invisible on the dataset this phase measured, so each requires a NEW fixture that drives the previously-unexercised path.)*
 
-- [ ] 06.3.3-05-PLAN.md — Python instrument correctness: make duration extraction ceiling-aware by construction, extract the post-drive derivation into a pure function and feed `percentile_with_ci` the summed at-ceiling and node-timer censoring counts so a censored percentile is recorded as a lower bound rather than `clean`, and rebuild `decay.py`'s ordinal/latency pairing as one parallel structure so a mid-sequence drop of any kind cannot silently flip a decay verdict (VERIFICATION gaps 1-2, SC-2b; OBS-05, D-14, D-46)
+- [x] 06.3.3-05-PLAN.md — Python instrument correctness: make duration extraction ceiling-aware by construction, extract the post-drive derivation into a pure function and feed `percentile_with_ci` the summed at-ceiling and node-timer censoring counts so a censored percentile is recorded as a lower bound rather than `clean`, and rebuild `decay.py`'s ordinal/latency pairing as one parallel structure so a mid-sequence drop of any kind cannot silently flip a decay verdict (VERIFICATION gaps 1-2, SC-2b; OBS-05, D-14, D-46)
 - [ ] 06.3.3-06-PLAN.md — Startup enforcement and record correction: call `validate_against_provider` from `EffectiveRagSettings::validate()` so the provider-attempt invariant is enforced on every settings load, make the `config.verify.toml` overlay coherent with it rather than exempting it (its 7000 ms generation node budget could not contain even one 30 s provider attempt, and `verify-ingestion.sh` boots the engine under that overlay), add a startup-path regression test distinct from the isolated-arithmetic one, and correct `06.3.3-BUDGETS.md`'s "Engine startup proof" section (VERIFICATION gap 3, SC-6b; OBS-05, D-46)
 
 **Cross-cutting constraints:**
