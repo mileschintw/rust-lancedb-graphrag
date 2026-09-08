@@ -371,10 +371,32 @@ def derive_budgets_from_records(
         proposed_budgets["query_embedding_timeout_ms"] = effective_cfg.get(
             "query_embedding_timeout_ms", 10000
         )
+        proposed_records.append({
+            "node_or_budget": "query_embedding_timeout_ms",
+            "proposed_ms": proposed_budgets["query_embedding_timeout_ms"],
+            "percentile_value_ms": None,
+            "multiplier": None,
+            "rule": "carried_forward_unmeasured",
+            "sample_size": 0,
+            "censored_status": "not_applicable_unmeasured_inner",
+            "provenance": "effective workflow config (not derived from this pass)",
+            "is_invariant_driven": False,
+        })
     if "graph_operation_timeout_ms" not in proposed_budgets:
         proposed_budgets["graph_operation_timeout_ms"] = effective_cfg.get(
             "graph_operation_timeout_ms", 4000
         )
+        proposed_records.append({
+            "node_or_budget": "graph_operation_timeout_ms",
+            "proposed_ms": proposed_budgets["graph_operation_timeout_ms"],
+            "percentile_value_ms": None,
+            "multiplier": None,
+            "rule": "carried_forward_unmeasured",
+            "sample_size": 0,
+            "censored_status": "not_applicable_unmeasured_inner",
+            "provenance": "effective workflow config (not derived from this pass)",
+            "is_invariant_driven": False,
+        })
 
     nesting_rep = check_nesting_invariants(
         proposed_budgets, required_slack_ms=thresholds.slack_ms

@@ -708,6 +708,8 @@ def test_derivation_clean_records_report_clean_status():
         row
         for row in result.proposed_records
         if "provider_contract" not in row["rule"]
+        and row["rule"] != "carried_forward_unmeasured"
+        and row["rule"] != "derivation_refused_empty_or_unavailable"
     ]
     assert measured
     assert all(row["censored_status"] == "clean" for row in measured)
@@ -730,6 +732,24 @@ def test_derivation_refuses_empty_survivors_without_nesting_fill_in(
     assert refused[0]["proposed_ms"] is None
     assert refused[0]["rule"] == "derivation_refused_empty_or_unavailable"
     assert str(refused[0]["censored_status"]).startswith("unavailable(")
+
+
+def test_inner_budgets_are_tagged_carried_forward_unmeasured(
+    ceiling_censored_measurement_records,
+):
+    """Pass-through inner budgets are labeled, not mixed with derived rows."""
+    result = _derive_from_records(ceiling_censored_measurement_records)
+    inner = [
+        row
+        for row in result.proposed_records
+        if row["node_or_budget"]
+        in ("query_embedding_timeout_ms", "graph_operation_timeout_ms")
+    ]
+    assert {row["node_or_budget"] for row in inner} == {
+        "query_embedding_timeout_ms",
+        "graph_operation_timeout_ms",
+    }
+    assert all(row["rule"] == "carried_forward_unmeasured" for row in inner)
 
 
 def test_derivation_is_pure_and_needs_no_client(ceiling_censored_measurement_records):
