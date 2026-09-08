@@ -841,7 +841,7 @@ Plans:
 6. `06.3.1-ROOT-CAUSE.md` carries the full forensic trail in the 06.3.1 phase directory, and a distilled public-facing note lands under `docs/` for Phase 6.4's design narrative and honest-limitations section (D-54).
 7. Phase 6.4's ROADMAP entry is updated as this family's closing act (D-53) — canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new code from 06.3.1. (`Depends on:` was repointed to 06.3.4 at split time.)
 
-**Plans:** 6 plans
+**Plans:** 7 plans
 
 Plans:
 
@@ -860,9 +860,13 @@ Plans:
 
 **Wave 4** *(blocked on 06.3.4-04 and 06.3.4-02)*
 
-- [ ] 06.3.4-05-PLAN.md — The judged pass as its own capped stage, the calibration worksheet at the committed size, a blocking halt for fresh human scoring, then the graph-yield disposition and the negative-delta investigation (SC-3, SC-4, SC-5; D-32, D-47, D-48, D-49)
+- [ ] 06.3.4-05-PLAN.md — The judged pass as its own capped stage, the calibration worksheet at the committed size, and a blocking halt for fresh human scoring (SC-3; D-47, D-48)
 
-**Wave 5** *(blocked on 06.3.4-05)*
+**Wave 5** *(blocked on 06.3.4-05 — split from it during plan review: the two headline dispositions sit entirely after the paid-judged/human-halt/feed-back unit and are taken on fresh context, per the revise-before-execute ledger in 06.3.4-07-PLAN.md)*
+
+- [ ] 06.3.4-07-PLAN.md — The graph-yield disposition and the paired-comparison negative-delta investigation, against thresholds committed before the numbers existed (SC-4, SC-5; D-32, D-49)
+
+**Wave 6** *(blocked on 06.3.4-07)*
 
 - [ ] 06.3.4-06-PLAN.md — `06.3.1-ROOT-CAUSE.md` into the 06.3.1 directory, the distilled public note under `docs/`, and Phase 6.4's entry updated as this family's closing act (SC-6, SC-7; D-53, D-54)
 
