@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 06.3.3
-current_phase_name: Retrieval latency measurement pass and timeout budget derivation (INSERTED)
-current_plan: 6
-status: verifying
-stopped_at: Completed 06.3.3-06-PLAN.md
-last_updated: "2026-09-08T09:31:28.651Z"
+current_phase: 06.3.4
+current_phase_name: Corrected re-drive, calibration and root-cause documentation
+current_plan: Not started
+status: planning
+stopped_at: Phase 06.3.3 complete, ready to plan Phase 06.3.4
+last_updated: "2026-09-08T20:44:18.643Z"
 last_activity: 2026-09-08
-state_head: f3e5d2c143159cdebfa8ea0186ac8c7bf3caa5fc
+state_head: b50a849e4f8a87141e7081d0f830667d4490994a
 progress:
   total_phases: 15
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 154
   completed_plans: 148
 milestone_name: milestone
@@ -20,6 +20,12 @@ milestone_name: milestone
 # Project State
 
 ## Current Status
+
+- **Phase 06.3.3 (Retrieval Latency Measurement Pass and Timeout Budget Derivation) complete and verified**:
+  - Verification passed (11/11 must-haves, `06.3.3-VERIFICATION.md`).
+  - UAT complete (4/4 passed, 0 issues, `06.3.3-UAT.md`).
+  - Security review complete (35/35 threats closed, 0 open, `06.3.3-SECURITY.md`).
+  - Next phase: Phase 06.3.4 (Corrected re-drive, calibration and root-cause documentation).
 
 - **Phase 06.3.3 Wave 4 plan 06 executed**: VERIFICATION.md gap 3 closed — `EffectiveRagSettings::validate()` calls `validate_against_provider`; `config.verify.toml` `generation_timeout_secs` 30→3; `effective_settings_reject_provider_contract_violation_at_load` plus boundary 32/33 tests; `06.3.3-BUDGETS.md` Engine startup proof amended. Commits `9d8a66c`..`f3e5d2c`; `06.3.3-06-SUMMARY.md`. Next: phase 06.3.3 code review / re-verification gates.
 
@@ -169,9 +175,9 @@ milestone_name: milestone
 
 ## Active Phase
 
-- **Phase:** 06.3.3 — Retrieval latency measurement pass and timeout budget derivation
-- **Status:** Phase complete — ready for verification
-- **Current Plan:** 6
+- **Phase:** 06.3.4 — Corrected re-drive, calibration and root-cause documentation
+- **Status:** Ready to plan
+- **Current Plan:** Not started
 - **Total Plans in Phase:** 6
 - **Completed Plans in Phase:** 6/6
 - **Progress:** [██████████] 100% execution
@@ -352,7 +358,7 @@ milestone_name: milestone
 
 **Last session:** 2026-09-08T09:31:26.810Z
 **Last activity:** 2026-09-08
-**Stopped at:** Completed 06.3.3-06-PLAN.md
+**Stopped at:** Phase 06.3.3 complete, ready to plan Phase 06.3.4
 **Resume file:** None
 
 ## Accumulated Context

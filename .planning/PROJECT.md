@@ -24,6 +24,7 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - ✓ Support degraded mode when graph extraction or one retrieval path fails, while still returning a useful vector/BM25-backed answer when possible. — Phase 06 (RAG-03: model-only opt-in with explicit notice, per-path `RETRIEVAL_DEGRADED`, citation repair with `CITATION_REPAIRED`/`CITATION_DROPPED` and basis downgrade, table-driven bad-input matrix, `GRAPH_UNAVAILABLE` on both silent-degrade paths — 11/11 must-haves verified, 06-VERIFICATION.md)
 - ✓ Add OpenTelemetry-compatible tracing, metrics, and structured logs across Go, gRPC, Rust nodes, retrieval, graph queries, and LLM calls with Grafana visualization. — Phase 06.2
 - ✓ Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval recall, context precision, groundedness, and faithfulness. — Phase 06.3
+- ✓ Empirically measure retrieval node latency distributions, establish collapse root cause (budget undersizing vs memory decay), enforce engine provider-contract invariant at startup, and derive/apply six synchronized production timeout budgets. — Phase 06.3.3
 
 ### Active
 - [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
@@ -95,6 +96,10 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | Rate-limited exporter diagnostic suppression on Collector outage | Installed custom error handlers in Go and Rust to prevent unbounded console log spam during backend outages while preserving application availability | ✓ Shipped, Phase 06.2 (Plan 12) |
 | Isolated evaluation schema via dedicated Atlas environment and store paths | `LANCET_ENV=eval` protects production/dev store integrity with zero risk of database clobbering | ✓ Shipped, Phase 06.3 (Plan 04) |
 | Calibration worksheet candidate pool strictly filtered by cached non-null judge verdicts | Ensures human scoring worksheets only contain rows with matching automated judge evaluations | ✓ Shipped, Phase 06.3 (Plan 11) |
+| Empirical collapse diagnosis: timeout budget undersizing rather than progressive resource decay | Two-segment measurement pass (320 records across mid-run restart) proved steady negative slope (-6.73 ms/query) and process_state restart jump (-11.3s), ruling out memory leaks | ✓ Shipped, Phase 06.3.3 |
+| Six derived production timeout budgets synchronized across TOML and Rust defaults | Replaced uncalibrated 10s guesses with p95 empirical derivations (645 / 16647 / 38595 / 45674 / 1070 / 65000 ms) | ✓ Shipped, Phase 06.3.3 |
+| Engine startup validation enforces provider-attempt invariant | `generation_node_timeout_ms >= 2 * per_attempt_timeout_ms` prevents node timer preempting provider retries | ✓ Shipped, Phase 06.3.3 |
+| Censoring-aware derivation refuses unobserved nodes | Explicit `derivation_refused_empty_or_unavailable` row prevents fabricating integers via nesting invariants | ✓ Shipped, Phase 06.3.3 |
 
 ## Evolution
 
@@ -115,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. Update Roadmap status
 
 ---
-*Last updated: 2026-09-04 after Phase 06.3*
+*Last updated: 2026-09-08 after Phase 06.3.3*

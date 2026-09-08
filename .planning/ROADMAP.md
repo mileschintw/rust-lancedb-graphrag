@@ -788,7 +788,7 @@ Plans:
 7. If graph traversal proves inherently too slow for any sane budget, the graph budget is raised to what the measured p95 needs and the latency cost is recorded for Phase 6.4's honest-limitations section (D-04).
 8. Spend for this pass is capped per-stage against the daily limit (D-47). The original run's `$0.0199` is not a usable estimate — it was cheap because 966 queries generated nothing.
 
-**Plans:** 6/6 plans executed (`06.3.3-VERIFICATION.md` still records the pre-closure `gaps_found` 8/10 until re-verification)
+**Plans:** 6/6 plans complete
 
 Plans:
 
