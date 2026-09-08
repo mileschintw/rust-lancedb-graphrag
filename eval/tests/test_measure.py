@@ -626,6 +626,8 @@ _SUMMARY_KEYS = (
     "spend_summary",
     "censoring_census",
     "proposed_budgets",
+    "proposed_records",
+    "censored_by_node",
     "nesting_report",
 )
 

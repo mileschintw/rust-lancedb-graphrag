@@ -572,6 +572,8 @@ def run_measurement_pass(
             "inner_labels": census.inner_labels,
         },
         "proposed_budgets": nesting_rep.resolved_budgets,
+        "proposed_records": derivation.proposed_records,
+        "censored_by_node": derivation.censored_by_node,
         "nesting_report": {
             "has_violations": nesting_rep.has_violations,
             "groups": [g.__dict__ for g in nesting_rep.groups],
