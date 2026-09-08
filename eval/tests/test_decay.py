@@ -2,6 +2,7 @@
 
 import pytest
 
+from lancet_eval.client import NodeFailed
 from lancet_eval.decay import (
     DecayAnalysisError,
     analyze_decay,
@@ -232,3 +233,174 @@ def test_stratification_reads_question_type_from_record():
     assert "graph-on:bridge" in verdict.stratified_results
     assert "graph-off:comparison" in verdict.stratified_results
     assert verdict.stratified_results["graph-on:bridge"]["observation_count"] == 1
+
+
+def _retrieve_record(
+    ordinal: int,
+    *,
+    duration_ms: float | None,
+    failure: NodeFailed | None = None,
+    segment: str = "segment-1",
+) -> MeasurementRecord:
+    timings = (
+        [NodeTiming(node_name="RetrieveHybrid", duration_ms=duration_ms)]
+        if duration_ms is not None
+        else []
+    )
+    return MeasurementRecord(
+        corpus="m",
+        question_id=f"q{ordinal}",
+        graph_arm="graph-on",
+        ordinal=ordinal,
+        segment=segment,
+        outcome="success",
+        question_type="bridge",
+        node_timings=timings,
+        node_failures=[failure] if failure else [],
+    )
+
+
+def _linear_series(n: int) -> list[MeasurementRecord]:
+    return [
+        _retrieve_record(i, duration_ms=100.0 * i) for i in range(1, n + 1)
+    ]
+
+
+def test_decay_mid_sequence_unusable_record_does_not_shift_pairs():
+    """A mid-sequence non-timeout drop must not re-pair later ordinals."""
+    usable = _linear_series(20)
+    dropped = list(usable)
+    dropped[9] = _retrieve_record(
+        10,
+        duration_ms=None,
+        failure=NodeFailed(
+            node_name="RetrieveHybrid",
+            error_kind=2,
+            error_message="node error",
+            retryable=False,
+        ),
+    )
+    usable_v = analyze_decay(usable)
+    dropped_v = analyze_decay(dropped)
+    assert dropped_v.slope_statistic == pytest.approx(
+        usable_v.slope_statistic, abs=1e-9
+    )
+    assert dropped_v.verdict_decay_present == usable_v.verdict_decay_present
+
+
+def test_decay_mid_sequence_node_timeout_does_not_shift_pairs():
+    """A mid-sequence node timeout must not leave a dangling ordinal behind."""
+    usable = _linear_series(20)
+    timed_out = list(usable)
+    timed_out[9] = _retrieve_record(
+        10,
+        duration_ms=None,
+        failure=NodeFailed(
+            node_name="RetrieveHybrid",
+            error_kind=1,
+            error_message="node timeout",
+            retryable=True,
+        ),
+    )
+    usable_v = analyze_decay(usable)
+    timeout_v = analyze_decay(timed_out)
+    assert timeout_v.slope_statistic == pytest.approx(
+        usable_v.slope_statistic, abs=1e-9
+    )
+    assert timeout_v.verdict_decay_present == usable_v.verdict_decay_present
+
+
+def test_decay_reports_unusable_dropped_count():
+    """Unusable drops are counted separately from classified node timeouts."""
+    records = _linear_series(12)
+    records[2] = _retrieve_record(
+        3,
+        duration_ms=None,
+        failure=NodeFailed(
+            node_name="RetrieveHybrid",
+            error_kind=2,
+            error_message="node error",
+            retryable=False,
+        ),
+    )
+    records[3] = _retrieve_record(
+        4,
+        duration_ms=None,
+        failure=NodeFailed(
+            node_name="RetrieveHybrid",
+            error_kind=2,
+            error_message="upstream",
+            retryable=False,
+        ),
+    )
+    records[4] = _retrieve_record(
+        5,
+        duration_ms=None,
+        failure=NodeFailed(
+            node_name="RetrieveHybrid",
+            error_kind=1,
+            error_message="node timeout",
+            retryable=True,
+        ),
+    )
+    verdict = analyze_decay(records)
+    assert verdict.unusable_dropped_count == 2
+    assert verdict.trend_result.censored_count == 1
+
+
+def test_decay_restart_boundary_uses_full_observed_ordinal_range():
+    """Restart ordinal may sit on an unusable first/last record's observed ordinal."""
+    records = []
+    for i in range(1, 21):
+        segment = "segment-1" if i <= 10 else "segment-2"
+        if i in {1, 20}:
+            records.append(
+                _retrieve_record(
+                    i,
+                    duration_ms=None,
+                    failure=NodeFailed(
+                        node_name="RetrieveHybrid",
+                        error_kind=2,
+                        error_message="unusable",
+                        retryable=False,
+                    ),
+                    segment=segment,
+                )
+            )
+        else:
+            records.append(
+                _retrieve_record(i, duration_ms=100.0 * i, segment=segment)
+            )
+    verdict = analyze_decay(records, restart_ordinal=1)
+    assert verdict.restart_result is not None
+
+
+def test_decay_zero_usable_latencies_returns_verdict():
+    """Zero usable timings still return a DecayVerdict with an unavailable trend."""
+    records = [
+        _retrieve_record(
+            i,
+            duration_ms=None,
+            failure=NodeFailed(
+                node_name="RetrieveHybrid",
+                error_kind=2,
+                error_message="unusable",
+                retryable=False,
+            ),
+        )
+        for i in range(1, 6)
+    ]
+    verdict = analyze_decay(records)
+    assert verdict.trend_result.is_available is False
+    assert verdict.trend_result.reason
+
+
+def test_decay_all_usable_records_unchanged():
+    """Clean ascending series stays significant, decay-present, and deterministic."""
+    records = _linear_series(40)
+    first = analyze_decay(records)
+    second = analyze_decay(records)
+    assert first.slope_statistic > 0
+    assert first.verdict_decay_present is True
+    assert first.slope_statistic == second.slope_statistic
+    assert first.window_delta_ms == second.window_delta_ms
