@@ -70,8 +70,8 @@ def test_reader_parses_with_measurement_record_type():
         segment="segment-1",
         node_timings=[NodeTiming(node_name="RetrieveHybrid", duration_ms=250.0)],
     )
-    durations = extract_node_durations([rec])
-    assert durations["RetrieveHybrid"] == [250.0]
+    extraction = extract_node_durations([rec])
+    assert extraction.by_node["RetrieveHybrid"] == [250.0]
 
 
 def test_measure_command_help_specifies_sample_size_units():
@@ -602,4 +602,127 @@ def test_measurement_pass_evidence_post_hoc_invariants():
 
     # No judge model
     assert meta["model_configuration"]["judge_model"] is None
+
+
+_FIXTURE_EFFECTIVE_CFG = {
+    "reformulate_timeout_ms": 5000,
+    "query_embedding_timeout_ms": 10000,
+    "retrieve_timeout_ms": 10000,
+    "graph_operation_timeout_ms": 4000,
+    "graph_node_timeout_ms": 30000,
+    "prompt_timeout_ms": 5000,
+    "generation_node_timeout_ms": 65000,
+}
+
+_SUMMARY_KEYS = (
+    "calibration_note",
+    "corpus",
+    "sample_size_questions",
+    "total_records_emitted",
+    "measured_records",
+    "raised_budgets",
+    "sse_read_timeout_s",
+    "question_deadline_s",
+    "spend_summary",
+    "censoring_census",
+    "proposed_budgets",
+    "nesting_report",
+)
+
+
+def _derive_from_records(records):
+    from lancet_eval.measure import derive_budgets_from_records
+    from lancet_eval.thresholds import COMMITTED_THRESHOLDS
+
+    return derive_budgets_from_records(
+        records,
+        _FIXTURE_EFFECTIVE_CFG,
+        COMMITTED_THRESHOLDS,
+        sse_read_timeout_s=300.0,
+        question_deadline_s=180.0,
+    )
+
+
+def _retrieve_proposed(result):
+    return next(
+        row
+        for row in result.proposed_records
+        if row["node_or_budget"] == "retrieve_timeout_ms"
+    )
+
+
+def test_derivation_flags_ceiling_censored_node_as_lower_bound(
+    ceiling_censored_measurement_records,
+):
+    """Censored RetrieveHybrid budgets must not be recorded as clean."""
+    result = _derive_from_records(ceiling_censored_measurement_records)
+    status = _retrieve_proposed(result)["censored_status"]
+    assert status != "clean"
+    assert status.startswith("censored_lower_bound(")
+    count = int(status.removeprefix("censored_lower_bound(").removesuffix(")"))
+    assert count > 0
+
+
+def test_derivation_censored_count_sums_ceiling_drops_and_timer_expiries(
+    ceiling_censored_measurement_records,
+):
+    """Censored count is 40 at-ceiling drops plus 5 node-timer expiries."""
+    result = _derive_from_records(ceiling_censored_measurement_records)
+    assert result.censored_by_node["RetrieveHybrid"] == 45
+
+
+def test_derivation_percentile_excludes_clipped_observations(
+    ceiling_censored_measurement_records,
+):
+    """Clipped 10000ms observations must not enter the percentile."""
+    result = _derive_from_records(ceiling_censored_measurement_records)
+    assert _retrieve_proposed(result)["percentile_value_ms"] < 10000.0
+
+
+def test_derivation_clean_records_report_clean_status():
+    """Uncensored records still derive clean budgets."""
+    from lancet_eval.journal import NodeTiming
+    from lancet_eval.measure import MeasurementRecord
+
+    records = [
+        MeasurementRecord(
+            corpus="multihop_rag",
+            question_id=f"q_{i}",
+            graph_arm="graph-on",
+            outcome="success",
+            ordinal=i,
+            segment="segment-1",
+            question_type="bridge",
+            node_timings=[
+                NodeTiming(node_name="RetrieveHybrid", duration_ms=100.0 + i),
+                NodeTiming(node_name="ExtractGraphContext", duration_ms=200.0 + i),
+                NodeTiming(node_name="AssemblePrompt", duration_ms=50.0 + i),
+            ],
+        )
+        for i in range(1, 21)
+    ]
+    result = _derive_from_records(records)
+    assert all(row["censored_status"] == "clean" for row in result.proposed_records)
+    assert all(count == 0 for count in result.censored_by_node.values())
+
+
+def test_derivation_is_pure_and_needs_no_client(ceiling_censored_measurement_records):
+    """Derivation is a pure function of records and config, not a live stack."""
+    import os
+
+    os.environ.pop("OPENROUTER_API_KEY", None)
+    result = _derive_from_records(ceiling_censored_measurement_records)
+    assert result.proposed_records
+    assert result.census.total_records == len(ceiling_censored_measurement_records)
+
+
+def test_run_measurement_pass_summary_keeps_existing_keys():
+    """run_measurement_pass summary still emits every pre-extraction key."""
+    import inspect
+
+    from lancet_eval.measure import run_measurement_pass
+
+    src = inspect.getsource(run_measurement_pass)
+    for key in _SUMMARY_KEYS:
+        assert f'"{key}"' in src
 
