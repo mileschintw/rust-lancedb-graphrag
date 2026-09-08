@@ -455,73 +455,80 @@ def check_nesting_invariants(
     If outer <= inner sum, it is reported as a violation, and the enclosing budget
     is RAISED to (inner sum + slack) with is_invariant_driven=True.
     Inner budgets are never shaved down.
+    Outer keys absent from ``budgets`` are skipped: they are not treated as 0
+    and must not be filled in from inner sum + slack.
     """
     resolved = dict(budgets)
+    present = set(budgets)
     groups: list[NestingGroupReport] = []
     has_violations = False
 
-    # Relationship 1: ExtractGraphContext contains query_embedding and graph_operation
-    graph_node = resolved.get("graph_node_timeout_ms", 0)
+    # Relationship 1: ExtractGraphContext contains query_embedding and graph_operation.
+    # Skip when the outer was never derived: missing keys must not default to 0
+    # and get raised from inner sum + slack (unmeasured fabrication).
     q_emb = resolved.get("query_embedding_timeout_ms", 0)
     g_op = resolved.get("graph_operation_timeout_ms", 0)
-    inner_sum_1 = q_emb + g_op
-    slack_1 = graph_node - inner_sum_1
-    is_viol_1 = slack_1 < required_slack_ms
-    adj_1 = graph_node
-    inv_driven_1 = False
-    if is_viol_1:
-        has_violations = True
-        adj_1 = int(math.ceil(inner_sum_1 + required_slack_ms))
-        resolved["graph_node_timeout_ms"] = adj_1
-        inv_driven_1 = True
+    if "graph_node_timeout_ms" in present:
+        graph_node = resolved["graph_node_timeout_ms"]
+        inner_sum_1 = q_emb + g_op
+        slack_1 = graph_node - inner_sum_1
+        is_viol_1 = slack_1 < required_slack_ms
+        adj_1 = graph_node
+        inv_driven_1 = False
+        if is_viol_1:
+            has_violations = True
+            adj_1 = int(math.ceil(inner_sum_1 + required_slack_ms))
+            resolved["graph_node_timeout_ms"] = adj_1
+            inv_driven_1 = True
 
-    groups.append(
-        NestingGroupReport(
-            outer_name="graph_node_timeout_ms",
-            outer_budget_ms=graph_node,
-            inner_budgets={
-                "query_embedding_timeout_ms": q_emb,
-                "graph_operation_timeout_ms": g_op,
-            },
-            inner_sum_ms=inner_sum_1,
-            slack_ms=slack_1,
-            fires_first="graph_operation_timeout_ms"
-            if g_op < graph_node
-            else "graph_node_timeout_ms",
-            is_violation=is_viol_1,
-            adjusted_outer_ms=adj_1,
-            is_invariant_driven=inv_driven_1,
+        groups.append(
+            NestingGroupReport(
+                outer_name="graph_node_timeout_ms",
+                outer_budget_ms=graph_node,
+                inner_budgets={
+                    "query_embedding_timeout_ms": q_emb,
+                    "graph_operation_timeout_ms": g_op,
+                },
+                inner_sum_ms=inner_sum_1,
+                slack_ms=slack_1,
+                fires_first="graph_operation_timeout_ms"
+                if g_op < graph_node
+                else "graph_node_timeout_ms",
+                is_violation=is_viol_1,
+                adjusted_outer_ms=adj_1,
+                is_invariant_driven=inv_driven_1,
+            )
         )
-    )
 
     # Relationship 2: RetrieveHybrid contains query_embedding
-    ret_node = resolved.get("retrieve_timeout_ms", 0)
-    inner_sum_2 = q_emb
-    slack_2 = ret_node - inner_sum_2
-    is_viol_2 = slack_2 < required_slack_ms
-    adj_2 = ret_node
-    inv_driven_2 = False
-    if is_viol_2:
-        has_violations = True
-        adj_2 = int(math.ceil(inner_sum_2 + required_slack_ms))
-        resolved["retrieve_timeout_ms"] = adj_2
-        inv_driven_2 = True
+    if "retrieve_timeout_ms" in present:
+        ret_node = resolved["retrieve_timeout_ms"]
+        inner_sum_2 = q_emb
+        slack_2 = ret_node - inner_sum_2
+        is_viol_2 = slack_2 < required_slack_ms
+        adj_2 = ret_node
+        inv_driven_2 = False
+        if is_viol_2:
+            has_violations = True
+            adj_2 = int(math.ceil(inner_sum_2 + required_slack_ms))
+            resolved["retrieve_timeout_ms"] = adj_2
+            inv_driven_2 = True
 
-    groups.append(
-        NestingGroupReport(
-            outer_name="retrieve_timeout_ms",
-            outer_budget_ms=ret_node,
-            inner_budgets={"query_embedding_timeout_ms": q_emb},
-            inner_sum_ms=inner_sum_2,
-            slack_ms=slack_2,
-            fires_first="query_embedding_timeout_ms"
-            if q_emb < ret_node
-            else "retrieve_timeout_ms",
-            is_violation=is_viol_2,
-            adjusted_outer_ms=adj_2,
-            is_invariant_driven=inv_driven_2,
+        groups.append(
+            NestingGroupReport(
+                outer_name="retrieve_timeout_ms",
+                outer_budget_ms=ret_node,
+                inner_budgets={"query_embedding_timeout_ms": q_emb},
+                inner_sum_ms=inner_sum_2,
+                slack_ms=slack_2,
+                fires_first="query_embedding_timeout_ms"
+                if q_emb < ret_node
+                else "retrieve_timeout_ms",
+                is_violation=is_viol_2,
+                adjusted_outer_ms=adj_2,
+                is_invariant_driven=inv_driven_2,
+            )
         )
-    )
 
     return FullNestingReport(
         groups=groups,

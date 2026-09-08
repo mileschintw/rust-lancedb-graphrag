@@ -172,6 +172,19 @@ def test_nesting_report_equality_is_violation():
     assert rep.resolved_budgets["graph_node_timeout_ms"] == 14500
 
 
+def test_nesting_skips_missing_outer_instead_of_fabricating():
+    """Missing outer keys must not be raised from inner sum + slack."""
+    budgets = {
+        "query_embedding_timeout_ms": 10000,
+        "graph_operation_timeout_ms": 4000,
+        "retrieve_timeout_ms": 15000,
+    }
+    rep = check_nesting_invariants(budgets, required_slack_ms=500.0)
+    assert "graph_node_timeout_ms" not in rep.resolved_budgets
+    assert all(g.outer_name != "graph_node_timeout_ms" for g in rep.groups)
+    assert "retrieve_timeout_ms" in rep.resolved_budgets
+
+
 def test_two_ceiling_report_mirror_cases():
     """Assert two ceilings flags max-vs-read and sum-vs-deadline independently."""
     # Exceeds read timeout only

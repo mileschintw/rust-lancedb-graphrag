@@ -712,6 +712,24 @@ def test_derivation_clean_records_report_clean_status():
     assert all(count == 0 for count in result.censored_by_node.values())
 
 
+def test_derivation_refuses_empty_survivors_without_nesting_fill_in(
+    ceiling_censored_measurement_records,
+):
+    """Unmeasured outers stay out of proposed_budgets instead of nesting fill-in."""
+    result = _derive_from_records(ceiling_censored_measurement_records)
+    assert "graph_node_timeout_ms" not in result.proposed_budgets
+    assert "prompt_timeout_ms" not in result.proposed_budgets
+    refused = [
+        row
+        for row in result.proposed_records
+        if row["node_or_budget"] == "graph_node_timeout_ms"
+    ]
+    assert len(refused) == 1
+    assert refused[0]["proposed_ms"] is None
+    assert refused[0]["rule"] == "derivation_refused_empty_or_unavailable"
+    assert str(refused[0]["censored_status"]).startswith("unavailable(")
+
+
 def test_derivation_is_pure_and_needs_no_client(ceiling_censored_measurement_records):
     """Derivation is a pure function of records and config, not a live stack."""
     import os

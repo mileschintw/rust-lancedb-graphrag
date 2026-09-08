@@ -348,10 +348,24 @@ def derive_budgets_from_records(
             seed=thresholds.bootstrap_seed,
             censored_count=censored,
         )
-        if pct.is_available:
-            p_rec = derive_budget(cfg_key, pct, thresholds=thresholds)
-            proposed_budgets[cfg_key] = p_rec.proposed_ms
-            proposed_records.append(p_rec.__dict__)
+        if not pct.is_available:
+            proposed_records.append({
+                "node_or_budget": cfg_key,
+                "proposed_ms": None,
+                "percentile_value_ms": None,
+                "multiplier": thresholds.multiplier,
+                "rule": "derivation_refused_empty_or_unavailable",
+                "sample_size": pct.sample_size,
+                "censored_status": (
+                    f"unavailable({pct.reason}; censored_count={censored})"
+                ),
+                "provenance": thresholds.provenance,
+                "is_invariant_driven": False,
+            })
+            continue
+        p_rec = derive_budget(cfg_key, pct, thresholds=thresholds)
+        proposed_budgets[cfg_key] = p_rec.proposed_ms
+        proposed_records.append(p_rec.__dict__)
 
     if "query_embedding_timeout_ms" not in proposed_budgets:
         proposed_budgets["query_embedding_timeout_ms"] = effective_cfg.get(
