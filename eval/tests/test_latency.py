@@ -231,7 +231,7 @@ def test_censored_fixture_yields_record_objects(ceiling_censored_measurement_rec
     """Fixture must be record objects: getattr on dicts silently returns defaults."""
     records = ceiling_censored_measurement_records
     assert not isinstance(records[0], dict)
-    timings = getattr(records[0], "node_timings")
+    timings = getattr(records[0], "node_timings")  # noqa: B009 — plan requires getattr vs dict
     assert isinstance(timings, list)
     assert len(timings) > 0
 
@@ -292,7 +292,7 @@ def test_extract_durations_ceiling_boundary_is_a_drop():
 def test_extract_durations_without_ceilings_drops_nothing(
     ceiling_censored_measurement_records,
 ):
-    """None ceilings are unbounded: every timed duration survives and drop counts are 0."""
+    """None ceilings are unbounded: all timed durations survive; drops are 0."""
     result = extract_node_durations(
         ceiling_censored_measurement_records, ceilings_by_node=None
     )

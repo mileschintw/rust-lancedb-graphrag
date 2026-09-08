@@ -171,18 +171,41 @@ def compute_censoring_census(
     return census
 
 
-def extract_node_durations(records: Sequence[Any]) -> dict[str, list[float]]:
+@dataclass(frozen=True)
+class NodeDurationExtraction:
+    """Surviving node durations together with per-node at-ceiling drop counts."""
+
+    by_node: dict[str, list[float]]
+    dropped_at_ceiling: dict[str, int]
+
+
+def extract_node_durations(
+    records: Sequence[Any],
+    ceilings_by_node: dict[str, float] | None = None,
+) -> NodeDurationExtraction:
     """Extract observed duration values grouped by node name.
 
-    Records without a timing entry for a node are excluded and counted, never imputed.
+    Records without a timing entry for a node are excluded and never imputed.
+    Durations at or above a node's ceiling are dropped and counted instead of
+    surviving into the duration list. A missing ceiling is treated as unbounded.
     """
     results: dict[str, list[float]] = {node: [] for node in WORKFLOW_NODE_ORDER}
+    dropped_at_ceiling: dict[str, int] = dict.fromkeys(WORKFLOW_NODE_ORDER, 0)
+    ceilings = ceilings_by_node or {}
     for rec in records:
         for t in getattr(rec, "node_timings", []) or []:
             name = getattr(t, "node_name", "")
-            if name in results and getattr(t, "duration_ms", None) is not None:
-                results[name].append(float(t.duration_ms))
-    return results
+            if name not in results or getattr(t, "duration_ms", None) is None:
+                continue
+            duration = float(t.duration_ms)
+            ceiling = ceilings.get(name, float("inf"))
+            if duration >= ceiling:
+                dropped_at_ceiling[name] += 1
+                continue
+            results[name].append(duration)
+    return NodeDurationExtraction(
+        by_node=results, dropped_at_ceiling=dropped_at_ceiling
+    )
 
 
 @dataclass(frozen=True)
