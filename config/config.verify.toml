@@ -6,7 +6,7 @@
 lancedb_path = "./data/lancedb-verify-02-06"
 
 [openrouter]
-generation_timeout_secs = 30
+generation_timeout_secs = 3
 
 [engine.workflow]
 reformulate_timeout_ms = 5000

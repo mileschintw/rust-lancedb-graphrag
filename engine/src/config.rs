@@ -589,6 +589,7 @@ impl EffectiveRagSettings {
 
     pub fn validate(&self) -> Result<(), String> {
         self.workflow.validate()?;
+        self.workflow.validate_against_provider(self.generation_timeout_secs)?;
         self.retrieval
             .validate()
             .map_err(|err| format!("invalid retrieval settings: {}", err.message()))?;

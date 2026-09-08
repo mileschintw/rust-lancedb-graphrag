@@ -670,7 +670,7 @@ async fn workflow_phase5_config_verify_generation_timeout() {
     let effective_settings = crate::config::EffectiveRagSettings::try_from_settings(&settings)
         .expect("effective settings from config.verify.toml");
     assert_eq!(effective_settings.workflow.generation_node_timeout_ms, 7000);
-    assert_eq!(effective_settings.generation_timeout_secs, 30);
+    assert_eq!(effective_settings.generation_timeout_secs, 3);
 
     let path = database_path("prod-verify-gen-timeout");
     let db = DatabaseManager::initialize(&path).await.unwrap();

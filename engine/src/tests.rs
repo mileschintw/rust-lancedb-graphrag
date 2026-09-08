@@ -350,7 +350,7 @@ fn config_workflow_timeout_overlays_match_contract() {
 
     let verify_path = repo_root.join("config/config.verify.toml");
     let verify_content = std::fs::read_to_string(&verify_path).expect("read config.verify.toml");
-    assert!(verify_content.contains("generation_timeout_secs = 30"));
+    assert!(verify_content.contains("generation_timeout_secs = 3"));
     assert!(verify_content.contains("reformulate_timeout_ms = 5000"));
     assert!(verify_content.contains("query_embedding_timeout_ms = 10000"));
     assert!(verify_content.contains("retrieve_timeout_ms = 10000"));
@@ -394,9 +394,11 @@ fn config_workflow_timeout_overlays_match_contract() {
     rust_defaults
         .validate_against_provider(30)
         .expect("Rust serde defaults must pass the provider-attempt generation rule");
+    let verify_generation_timeout_secs = parse_ms(&verify_content, "generation_timeout_secs");
+    let verify_generation_node_ms = parse_ms(&verify_content, "generation_node_timeout_ms");
     assert!(
-        30 * 1000 > 7000,
-        "generation_timeout_secs (30s) > generation_node_timeout_ms (7000ms)"
+        2 * verify_generation_timeout_secs * 1000 <= verify_generation_node_ms,
+        "two attempts at the verify overlay provider budget must fit within generation_node_timeout_ms"
     );
 }
 
@@ -419,7 +421,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
         ("LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS", "7777"),
         (
             "LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS",
-            "8888",
+            "68888",
         ),
     ];
 
@@ -449,7 +451,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
     assert_eq!(settings.engine.workflow.graph_operation_timeout_ms, 3333);
     assert_eq!(settings.engine.workflow.graph_node_timeout_ms, 6666);
     assert_eq!(settings.engine.workflow.prompt_timeout_ms, 7777);
-    assert_eq!(settings.engine.workflow.generation_node_timeout_ms, 8888);
+    assert_eq!(settings.engine.workflow.generation_node_timeout_ms, 68888);
 
     let effective = EffectiveRagSettings::try_from_settings(&settings)
         .expect("effective settings from overridden workflow settings");
@@ -459,7 +461,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
     assert_eq!(effective.workflow.graph_operation_timeout_ms, 3333);
     assert_eq!(effective.workflow.graph_node_timeout_ms, 6666);
     assert_eq!(effective.workflow.prompt_timeout_ms, 7777);
-    assert_eq!(effective.workflow.generation_node_timeout_ms, 8888);
+    assert_eq!(effective.workflow.generation_node_timeout_ms, 68888);
 }
 
 #[test]
