@@ -12,6 +12,18 @@ from typing import Any
 
 import httpx
 
+from lancet_eval.agreement import (
+    CALIBRATION_STATE_BELOW_TARGET,
+    CALIBRATION_STATE_NONE,
+    CALIBRATION_STATE_SATISFIED,
+    KAPPA_STATE_COMPUTED,
+    KAPPA_STATE_UNDEFINED_EXPECTED_AGREEMENT,
+    SPEARMAN_STATE_COMPUTED,
+    SPEARMAN_STATE_UNDEFINED_ZERO_VARIANCE,
+    bootstrap_agreement_ci,
+    quadratic_weighted_kappa,
+    spearman_rank_correlation,
+)
 from lancet_eval.config import get_commit_sha
 from lancet_eval.corpus import (
     load_corpus_config,
@@ -35,6 +47,7 @@ from lancet_eval.dimensions import (
     make_vector_yield,
     make_wire_contract_conformance,
 )
+from lancet_eval.gate import AGREEMENT_TARGET
 from lancet_eval.journal import RunRecord
 from lancet_eval.judge import (
     JudgeCache,
@@ -451,7 +464,41 @@ def score_run(
     f_calibration_em: float | None = None
     f_calibration_mad: float | None = None
 
-    if calibration_file is not None:
+    g_calibration_kappa: float | None = None
+    g_calibration_spearman: float | None = None
+    g_calibration_kappa_state: float | None = None
+    g_calibration_spearman_state: float | None = None
+    g_calibration_state: float | None = None
+    g_calibration_kappa_ci_lower: float | None = None
+    g_calibration_kappa_ci_upper: float | None = None
+    g_calibration_spearman_ci_lower: float | None = None
+    g_calibration_spearman_ci_upper: float | None = None
+    g_calibration_pairs_n: float | None = None
+    g_calibration_excluded_n: float | None = None
+
+    f_calibration_kappa: float | None = None
+    f_calibration_spearman: float | None = None
+    f_calibration_kappa_state: float | None = None
+    f_calibration_spearman_state: float | None = None
+    f_calibration_state: float | None = None
+    f_calibration_kappa_ci_lower: float | None = None
+    f_calibration_kappa_ci_upper: float | None = None
+    f_calibration_spearman_ci_lower: float | None = None
+    f_calibration_spearman_ci_upper: float | None = None
+    f_calibration_pairs_n: float | None = None
+    f_calibration_excluded_n: float | None = None
+
+    completed_dual_scores: int = 0
+    calibration_notes: str = ""
+
+    if calibration_file is None:
+        g_calibration_state = CALIBRATION_STATE_NONE
+        f_calibration_state = CALIBRATION_STATE_NONE
+        calibration_notes = (
+            "No judge-versus-human calibration was performed; "
+            "judged dimensions are uncalibrated."
+        )
+    else:
         calib_path = Path(calibration_file)
         if not calib_path.is_file():
             raise ScoreError(f"Calibration file not found at {calib_path}")
@@ -460,6 +507,13 @@ def score_run(
         g_diffs: list[float] = []
         f_matches: list[float] = []
         f_diffs: list[float] = []
+
+        g_human: list[int] = []
+        g_judge: list[int] = []
+        f_human: list[int] = []
+        f_judge: list[int] = []
+        g_excluded = 0
+        f_excluded = 0
 
         with open(calib_path, encoding="utf-8") as f:
             for line_idx, line in enumerate(f, 1):
@@ -500,6 +554,8 @@ def score_run(
                         f"Row '{row_id}' human score outside 1..5: {hg_val}, {hf_val}"
                     )
 
+                completed_dual_scores += 1
+
                 c_key = row.get("cache_key", "")
                 cached = cache.get(c_key)
                 if cached and cached.verdict:
@@ -512,11 +568,184 @@ def score_run(
                     )
                     f_diffs.append(abs(hf_val - cached.verdict.faithfulness))
 
+                    g_human.append(hg_val)
+                    g_judge.append(cached.verdict.groundedness)
+                    f_human.append(hf_val)
+                    f_judge.append(cached.verdict.faithfulness)
+                else:
+                    g_excluded += 1
+                    f_excluded += 1
+
         if g_matches:
             g_calibration_em = sum(g_matches) / len(g_matches)
             g_calibration_mad = sum(g_diffs) / len(g_diffs)
             f_calibration_em = sum(f_matches) / len(f_matches)
             f_calibration_mad = sum(f_diffs) / len(f_diffs)
+
+        g_calibration_pairs_n = float(len(g_human))
+        g_calibration_excluded_n = float(g_excluded)
+        if g_human:
+            res_kappa = quadratic_weighted_kappa(
+                g_human, g_judge, min_rating=1, max_rating=5
+            )
+            if res_kappa.value is not None:
+                g_calibration_kappa = res_kappa.value
+                g_calibration_kappa_state = KAPPA_STATE_COMPUTED
+                ci_k = bootstrap_agreement_ci(
+                    g_human,
+                    g_judge,
+                    "kappa",
+                    min_rating=1,
+                    max_rating=5,
+                    seed=config.sample_seed,
+                )
+                if ci_k is not None:
+                    g_calibration_kappa_ci_lower, g_calibration_kappa_ci_upper = ci_k
+            else:
+                g_calibration_kappa = None
+                if res_kappa.state == "undefined_expected_agreement":
+                    g_calibration_kappa_state = KAPPA_STATE_UNDEFINED_EXPECTED_AGREEMENT
+
+            res_spearman = spearman_rank_correlation(g_human, g_judge)
+            if res_spearman.value is not None:
+                g_calibration_spearman = res_spearman.value
+                g_calibration_spearman_state = SPEARMAN_STATE_COMPUTED
+                ci_s = bootstrap_agreement_ci(
+                    g_human,
+                    g_judge,
+                    "spearman",
+                    seed=config.sample_seed,
+                )
+                if ci_s is not None:
+                    g_calibration_spearman_ci_lower, g_calibration_spearman_ci_upper = (
+                        ci_s
+                    )
+            else:
+                g_calibration_spearman = None
+                if res_spearman.state == "undefined_zero_variance":
+                    g_calibration_spearman_state = (
+                        SPEARMAN_STATE_UNDEFINED_ZERO_VARIANCE
+                    )
+
+        f_calibration_pairs_n = float(len(f_human))
+        f_calibration_excluded_n = float(f_excluded)
+        if f_human:
+            res_kappa = quadratic_weighted_kappa(
+                f_human, f_judge, min_rating=1, max_rating=5
+            )
+            if res_kappa.value is not None:
+                f_calibration_kappa = res_kappa.value
+                f_calibration_kappa_state = KAPPA_STATE_COMPUTED
+                ci_k = bootstrap_agreement_ci(
+                    f_human,
+                    f_judge,
+                    "kappa",
+                    min_rating=1,
+                    max_rating=5,
+                    seed=config.sample_seed,
+                )
+                if ci_k is not None:
+                    f_calibration_kappa_ci_lower, f_calibration_kappa_ci_upper = ci_k
+            else:
+                f_calibration_kappa = None
+                if res_kappa.state == "undefined_expected_agreement":
+                    f_calibration_kappa_state = KAPPA_STATE_UNDEFINED_EXPECTED_AGREEMENT
+
+            res_spearman = spearman_rank_correlation(f_human, f_judge)
+            if res_spearman.value is not None:
+                f_calibration_spearman = res_spearman.value
+                f_calibration_spearman_state = SPEARMAN_STATE_COMPUTED
+                ci_s = bootstrap_agreement_ci(
+                    f_human,
+                    f_judge,
+                    "spearman",
+                    seed=config.sample_seed,
+                )
+                if ci_s is not None:
+                    f_calibration_spearman_ci_lower, f_calibration_spearman_ci_upper = (
+                        ci_s
+                    )
+            else:
+                f_calibration_spearman = None
+                if res_spearman.state == "undefined_zero_variance":
+                    f_calibration_spearman_state = (
+                        SPEARMAN_STATE_UNDEFINED_ZERO_VARIANCE
+                    )
+
+        if completed_dual_scores == 0:
+            g_calibration_state = CALIBRATION_STATE_NONE
+            f_calibration_state = CALIBRATION_STATE_NONE
+            calibration_notes = (
+                "No judge-versus-human calibration was performed; "
+                "judged dimensions are uncalibrated."
+            )
+        else:
+            g_kappa_satisfied = (
+                g_calibration_kappa is not None
+                and g_calibration_kappa >= AGREEMENT_TARGET
+            )
+            g_spearman_satisfied = (
+                g_calibration_spearman is not None
+                and g_calibration_spearman >= AGREEMENT_TARGET
+            )
+            f_kappa_satisfied = (
+                f_calibration_kappa is not None
+                and f_calibration_kappa >= AGREEMENT_TARGET
+            )
+            f_spearman_satisfied = (
+                f_calibration_spearman is not None
+                and f_calibration_spearman >= AGREEMENT_TARGET
+            )
+
+            g_calibration_state = (
+                CALIBRATION_STATE_SATISFIED
+                if (g_kappa_satisfied and g_spearman_satisfied)
+                else CALIBRATION_STATE_BELOW_TARGET
+            )
+            f_calibration_state = (
+                CALIBRATION_STATE_SATISFIED
+                if (f_kappa_satisfied and f_spearman_satisfied)
+                else CALIBRATION_STATE_BELOW_TARGET
+            )
+
+            shortfalls = []
+            if not g_kappa_satisfied:
+                val_repr = (
+                    f"{g_calibration_kappa:.4f}"
+                    if g_calibration_kappa is not None
+                    else "undefined"
+                )
+                shortfalls.append(f"groundedness kappa={val_repr}")
+            if not g_spearman_satisfied:
+                val_repr = (
+                    f"{g_calibration_spearman:.4f}"
+                    if g_calibration_spearman is not None
+                    else "undefined"
+                )
+                shortfalls.append(f"groundedness spearman={val_repr}")
+            if not f_kappa_satisfied:
+                val_repr = (
+                    f"{f_calibration_kappa:.4f}"
+                    if f_calibration_kappa is not None
+                    else "undefined"
+                )
+                shortfalls.append(f"faithfulness kappa={val_repr}")
+            if not f_spearman_satisfied:
+                val_repr = (
+                    f"{f_calibration_spearman:.4f}"
+                    if f_calibration_spearman is not None
+                    else "undefined"
+                )
+                shortfalls.append(f"faithfulness spearman={val_repr}")
+
+            if shortfalls:
+                prefix = (
+                    f"Calibration agreement fell below target "
+                    f"({AGREEMENT_TARGET:.2f}) for: "
+                )
+                calibration_notes = f"{prefix}{', '.join(shortfalls)}."
+            else:
+                calibration_notes = ""
 
     # Emit calibration worksheet if requested
     if emit_calibration_worksheet is not None:
@@ -680,9 +909,7 @@ def score_run(
         )
 
     answerable_payload_detail = {
-        "excluded_payload_records": float(
-            p_data.get("payload_excluded_answerable", 0)
-        )
+        "excluded_payload_records": float(p_data.get("payload_excluded_answerable", 0))
     }
 
     # 1. retrieval_evidence_coverage
@@ -759,6 +986,17 @@ def score_run(
                 total_sampled=judged_sample_count,
                 calibration_exact_match=f_calibration_em,
                 calibration_mad=f_calibration_mad,
+                calibration_kappa=f_calibration_kappa,
+                calibration_spearman=f_calibration_spearman,
+                calibration_kappa_state=f_calibration_kappa_state,
+                calibration_spearman_state=f_calibration_spearman_state,
+                calibration_state=f_calibration_state,
+                calibration_kappa_ci_lower=f_calibration_kappa_ci_lower,
+                calibration_kappa_ci_upper=f_calibration_kappa_ci_upper,
+                calibration_spearman_ci_lower=f_calibration_spearman_ci_lower,
+                calibration_spearman_ci_upper=f_calibration_spearman_ci_upper,
+                calibration_pairs_n=f_calibration_pairs_n,
+                calibration_excluded_n=f_calibration_excluded_n,
             )
         )
 
@@ -781,6 +1019,17 @@ def score_run(
                 total_sampled=judged_sample_count,
                 calibration_exact_match=g_calibration_em,
                 calibration_mad=g_calibration_mad,
+                calibration_kappa=g_calibration_kappa,
+                calibration_spearman=g_calibration_spearman,
+                calibration_kappa_state=g_calibration_kappa_state,
+                calibration_spearman_state=g_calibration_spearman_state,
+                calibration_state=g_calibration_state,
+                calibration_kappa_ci_lower=g_calibration_kappa_ci_lower,
+                calibration_kappa_ci_upper=g_calibration_kappa_ci_upper,
+                calibration_spearman_ci_lower=g_calibration_spearman_ci_lower,
+                calibration_spearman_ci_upper=g_calibration_spearman_ci_upper,
+                calibration_pairs_n=g_calibration_pairs_n,
+                calibration_excluded_n=g_calibration_excluded_n,
             )
         )
 
@@ -1049,11 +1298,13 @@ def score_run(
         sampling_seed=config.sample_seed,
         sample_size_deterministic=len(sampled_questions),
         sample_size_judged=judged_sample_count,
+        calibration_completed_n=completed_dual_scores,
         index_generation=index_gen,
         result_hash=res_hash,
         arm_labels=config.arms,
         dependency_lock_hash=lock_hash,
         partial=header_partial,
+        notes=calibration_notes,
     )
 
     report = CorpusReport(

@@ -113,6 +113,11 @@
           "title": "Sample Size Judged",
           "type": "integer"
         },
+        "calibration_completed_n": {
+          "default": 0,
+          "title": "Calibration Completed N",
+          "type": "integer"
+        },
         "index_generation": {
           "title": "Index Generation",
           "type": "string"

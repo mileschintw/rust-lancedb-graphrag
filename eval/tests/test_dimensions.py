@@ -24,6 +24,16 @@ def test_dimension_result_ok_without_score_raises() -> None:
         DimensionResult(name="test_dim", status="ok")
 
 
+def test_dimension_result_ok_with_reason_raises() -> None:
+    with pytest.raises(ValidationError, match="status 'ok' cannot have a reason"):
+        DimensionResult(
+            name="test_dim",
+            status="ok",
+            score=0.85,
+            reason="forbidden reason",
+        )
+
+
 def test_dimension_result_skipped_with_score_raises() -> None:
     with pytest.raises(ValidationError, match="status 'skipped' cannot carry a score"):
         DimensionResult(

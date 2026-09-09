@@ -37,6 +37,7 @@ class RunMetadata(BaseModel):
     sampling_seed: int = 42
     sample_size_deterministic: int = 0
     sample_size_judged: int = 0
+    calibration_completed_n: int = 0
     index_generation: str
     result_hash: str
     arm_labels: list[str] = Field(default_factory=lambda: ["graph-on", "graph-off"])

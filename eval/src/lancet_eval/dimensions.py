@@ -154,6 +154,17 @@ def make_groundedness_result(
     total_sampled: int,
     calibration_exact_match: float | None = None,
     calibration_mad: float | None = None,
+    calibration_kappa: float | None = None,
+    calibration_spearman: float | None = None,
+    calibration_kappa_state: float | None = None,
+    calibration_spearman_state: float | None = None,
+    calibration_state: float | None = None,
+    calibration_kappa_ci_lower: float | None = None,
+    calibration_kappa_ci_upper: float | None = None,
+    calibration_spearman_ci_lower: float | None = None,
+    calibration_spearman_ci_upper: float | None = None,
+    calibration_pairs_n: float | None = None,
+    calibration_excluded_n: float | None = None,
 ) -> DimensionResult:
     """Build DimensionResult for judged answer groundedness."""
     if not verdicts:
@@ -187,6 +198,28 @@ def make_groundedness_result(
         detail["calibration_exact_match"] = float(calibration_exact_match)
     if calibration_mad is not None:
         detail["calibration_mad"] = float(calibration_mad)
+    if calibration_kappa is not None:
+        detail["calibration_kappa"] = float(calibration_kappa)
+    if calibration_spearman is not None:
+        detail["calibration_spearman"] = float(calibration_spearman)
+    if calibration_kappa_state is not None:
+        detail["calibration_kappa_state"] = float(calibration_kappa_state)
+    if calibration_spearman_state is not None:
+        detail["calibration_spearman_state"] = float(calibration_spearman_state)
+    if calibration_state is not None:
+        detail["calibration_state"] = float(calibration_state)
+    if calibration_kappa_ci_lower is not None:
+        detail["calibration_kappa_ci_lower"] = float(calibration_kappa_ci_lower)
+    if calibration_kappa_ci_upper is not None:
+        detail["calibration_kappa_ci_upper"] = float(calibration_kappa_ci_upper)
+    if calibration_spearman_ci_lower is not None:
+        detail["calibration_spearman_ci_lower"] = float(calibration_spearman_ci_lower)
+    if calibration_spearman_ci_upper is not None:
+        detail["calibration_spearman_ci_upper"] = float(calibration_spearman_ci_upper)
+    if calibration_pairs_n is not None:
+        detail["calibration_pairs_n"] = float(calibration_pairs_n)
+    if calibration_excluded_n is not None:
+        detail["calibration_excluded_n"] = float(calibration_excluded_n)
     return DimensionResult(
         name="answer_groundedness",
         status="ok",
@@ -204,6 +237,17 @@ def make_faithfulness_result(
     total_sampled: int,
     calibration_exact_match: float | None = None,
     calibration_mad: float | None = None,
+    calibration_kappa: float | None = None,
+    calibration_spearman: float | None = None,
+    calibration_kappa_state: float | None = None,
+    calibration_spearman_state: float | None = None,
+    calibration_state: float | None = None,
+    calibration_kappa_ci_lower: float | None = None,
+    calibration_kappa_ci_upper: float | None = None,
+    calibration_spearman_ci_lower: float | None = None,
+    calibration_spearman_ci_upper: float | None = None,
+    calibration_pairs_n: float | None = None,
+    calibration_excluded_n: float | None = None,
 ) -> DimensionResult:
     """Build DimensionResult for judged answer faithfulness."""
     if not verdicts:
@@ -237,6 +281,28 @@ def make_faithfulness_result(
         detail["calibration_exact_match"] = float(calibration_exact_match)
     if calibration_mad is not None:
         detail["calibration_mad"] = float(calibration_mad)
+    if calibration_kappa is not None:
+        detail["calibration_kappa"] = float(calibration_kappa)
+    if calibration_spearman is not None:
+        detail["calibration_spearman"] = float(calibration_spearman)
+    if calibration_kappa_state is not None:
+        detail["calibration_kappa_state"] = float(calibration_kappa_state)
+    if calibration_spearman_state is not None:
+        detail["calibration_spearman_state"] = float(calibration_spearman_state)
+    if calibration_state is not None:
+        detail["calibration_state"] = float(calibration_state)
+    if calibration_kappa_ci_lower is not None:
+        detail["calibration_kappa_ci_lower"] = float(calibration_kappa_ci_lower)
+    if calibration_kappa_ci_upper is not None:
+        detail["calibration_kappa_ci_upper"] = float(calibration_kappa_ci_upper)
+    if calibration_spearman_ci_lower is not None:
+        detail["calibration_spearman_ci_lower"] = float(calibration_spearman_ci_lower)
+    if calibration_spearman_ci_upper is not None:
+        detail["calibration_spearman_ci_upper"] = float(calibration_spearman_ci_upper)
+    if calibration_pairs_n is not None:
+        detail["calibration_pairs_n"] = float(calibration_pairs_n)
+    if calibration_excluded_n is not None:
+        detail["calibration_excluded_n"] = float(calibration_excluded_n)
     return DimensionResult(
         name="answer_faithfulness",
         status="ok",
