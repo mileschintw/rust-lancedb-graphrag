@@ -841,17 +841,17 @@ Plans:
 6. `06.3.1-ROOT-CAUSE.md` carries the full forensic trail in the 06.3.1 phase directory, and a distilled public-facing note lands under `docs/` for Phase 6.4's design narrative and honest-limitations section (D-54).
 7. Phase 6.4's ROADMAP entry is updated as this family's closing act (D-53) — canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new code from 06.3.1. (`Depends on:` was repointed to 06.3.4 at split time.)
 
-**Plans:** 7 plans
+**Plans:** 2/7 plans complete
 
 Plans:
 
 **Wave 1** *(no prerequisites)*
 
-- [ ] 06.3.4-01-PLAN.md — Tracer: prove the whole corrected-drive chain on one thin slice — committed decision inputs, a live micro-drive into the corrected run directory, an offline score, a gate evaluated against the committed floors, and a recorded verdict — then land the staged-gate evaluator and the header reconciliation the chain cannot run without (SC-1, SC-2; D-32, D-44, D-45, D-47, D-48, D-49)
+- [x] 06.3.4-01-PLAN.md — Tracer: prove the whole corrected-drive chain on one thin slice — committed decision inputs, a live micro-drive into the corrected run directory, an offline score, a gate evaluated against the committed floors, and a recorded verdict — then land the staged-gate evaluator and the header reconciliation the chain cannot run without (SC-1, SC-2; D-32, D-44, D-45, D-47, D-48, D-49)
 
 **Wave 2** *(blocked on 06.3.4-01)*
 
-- [ ] 06.3.4-02-PLAN.md — The two agreement statistics the calibration decision requires (quadratic weighted kappa and Spearman rho), on the standard library, built before any human score exists to compute them from (SC-3; D-48)
+- [x] 06.3.4-02-PLAN.md — The two agreement statistics the calibration decision requires (quadratic weighted kappa and Spearman rho), on the standard library, built before any human score exists to compute them from (SC-3; D-48)
 - [ ] 06.3.4-03-PLAN.md — Drive the staged prefix, compute the two numbers the staged gate checks, compare them against floors committed before any of them existed, record the verdict with what the staged stage actually cost, and close on the decision to spend (SC-1; D-32, D-44, D-45, D-47, D-49)
 
 **Wave 3** *(blocked on 06.3.4-03 — and on its closing spend decision)*
