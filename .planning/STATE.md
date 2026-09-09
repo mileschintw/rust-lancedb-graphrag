@@ -2,24 +2,27 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 06.3.4
-current_phase_name: corrected-re-drive-calibration-and-root-cause-documentation
-current_plan: Not started
+current_phase_name: Corrected re-drive, calibration and root-cause documentation (INSERTED)
+current_plan: 2
 status: executing
-stopped_at: Phase 06.3.4 replanned against cross-AI review feedback (7 plans), ready to execute
-last_updated: "2026-09-09T08:57:43.014Z"
+stopped_at: Plan 06.3.4-01 complete; Wave 2 ready to execute (Plan 06.3.4-02 & 06.3.4-03)
+last_updated: "2026-09-09T17:00:00.000Z"
 last_activity: 2026-09-09
-state_head: 36c1946c03874f64c0e1fa3e6d95c54a3879b1ef
+state_head: eb893ba
 progress:
   total_phases: 15
-  completed_phases: 10
+  completed_phases: 9
   total_plans: 155
-  completed_plans: 148
+  completed_plans: 149
 milestone_name: milestone
 ---
 
 # Project State
 
 ## Current Status
+
+- **Phase 06.3.4 Plan 01 executed and verified**:
+  - **Plan 06.3.4-01 (Wave 1)**: Tracer micro-slice, gate evaluator, stage cap, journal reconciliation, preconditions ledger (`06.3.4-01-SUMMARY.md`, `06.3.4-DRIVE-PRECONDITIONS.md`, `eval/runs/2026-09-09-multihop_rag/`). Live tracer micro-slice completed across 2 questions (4 work units) on live engine and gateway with observed spend $0.0014 against $2.00 staged cap. Historical run `2026-09-03-multihop_rag` confirmed untouched. Next: Wave 2 (Plan 06.3.4-02 & Plan 06.3.4-03).
 
 - **Phase 06.3.3 (Retrieval Latency Measurement Pass and Timeout Budget Derivation) complete and verified**:
   - Verification passed (11/11 must-haves, `06.3.3-VERIFICATION.md`).
@@ -176,8 +179,8 @@ milestone_name: milestone
 ## Active Phase
 
 - **Phase:** 06.3.4 — Corrected re-drive, calibration and root-cause documentation
-- **Status:** Ready to execute
-- **Current Plan:** Not started
+- **Status:** Executing Phase 06.3.4
+- **Current Plan:** 1
 - **Total Plans in Phase:** 7
 - **Completed Plans in Phase:** 0/7
 - **Progress:** [░░░░░░░░░░] 0% execution
