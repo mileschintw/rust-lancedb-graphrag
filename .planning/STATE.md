@@ -3,23 +3,26 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 06.3.4
 current_phase_name: Corrected re-drive, calibration and root-cause documentation (INSERTED)
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Plan 06.3.4-02 complete; Wave 2 Plan 06.3.4-03 ready to execute
-last_updated: "2026-09-09T17:15:00.000Z"
+stopped_at: Plan 06.3.4-03 complete; Wave 3 Plan 06.3.4-04 ready to execute
+last_updated: "2026-09-09T18:45:00.000Z"
 last_activity: 2026-09-09
 state_head: b945b15
 progress:
   total_phases: 15
   completed_phases: 9
   total_plans: 155
-  completed_plans: 150
+  completed_plans: 151
 milestone_name: milestone
 ---
 
 # Project State
 
 ## Current Status
+
+- **Phase 06.3.4 Plan 03 executed and verified**:
+  - **Plan 06.3.4-03 (Wave 2)**: Preflight canary diagnostic probing, offline staged gate evaluation, spend projection, and human go-with-investigation checkpoint decision (`06.3.4-03-SUMMARY.md`, `06.3.4-STAGED-GATE.md`, `STAGED-GATE.json`). All 5 production timeout budgets passed across all canaries without violation. Preflight halted on Canary 5 graph floor miss (predicted query semantic distance limitation on un-named entity). Evaluated gate offline on micro-slice records: `d44_staged_coverage = 0.0400` against 50 locked size, `d44_coverage_ceiling = 0.9000` (5 drops headroom), `graph_presence_rate = 0.5000` (>= 0.20 floor passed). Spend: staged $0.0014, projected full drive $0.35, provider allowance $14.99 remaining. Operator checkpoint decision: `go-with-investigation` under authorized full drive spend cap `$5.00` USD, carrying Canary 5 yield investigation into Phase 6.4 evaluation reporting. Next: Wave 3 Plan 06.3.4-04 (Full 500-question drive).
 
 - **Phase 06.3.4 Plan 02 executed and verified**:
   - **Plan 06.3.4-02 (Wave 2)**: Standard-library quadratic weighted kappa and Spearman rank correlation (`eval/src/lancet_eval/agreement.py`), disjoint calibration state bands (`0.0-2.0`, `10.0-11.0`, `20.0-21.0`), bootstrap uncertainty intervals, uncalibrated label composition in `RunMetadata.notes` without touching `DimensionResult.reason`, completed dual-scores reporting (`calibration_completed_n`), and synchronized schema/template updates (`06.3.4-02-SUMMARY.md`, commit `b945b15`). Tests: 12 agreement tests, 14 scoring integration tests, 1 dimension invariant regression guard; full eval suite 372/372 passing. Next: Plan 06.3.4-03 (50-question staged drive & gate evaluation).
