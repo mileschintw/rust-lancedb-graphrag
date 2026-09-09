@@ -1,0 +1,33 @@
+{
+  "overall_status": "hold",
+  "d44_staged_coverage": 0.04,
+  "harness_pairing_coverage": 1.0,
+  "distinct_questions_in_journal": 2,
+  "d44_coverage_ceiling": 1.0,
+  "d44_coverage_denominator": 50,
+  "headroom_answerable_drops": 10,
+  "coverage_outcome": "hold",
+  "presence_rate": 0.5,
+  "yield_outcome": "pass",
+  "yield_suspended": false,
+  "no_match_rate": 0.0,
+  "complement_trigger_fired": false,
+  "reason": "Short journal: 2 distinct questions in journal < locked stage size 50",
+  "comparison_inputs": {
+    "staged_pairing_coverage_floor": 0.8,
+    "graph_yield_investigation_floor": 0.2,
+    "complement_trigger": 0.8,
+    "locked_stage_size": 50,
+    "calibration_size": 12,
+    "agreement_target": 0.7
+  },
+  "observed_values": {
+    "n_pairs": 2,
+    "d44_staged_coverage": 0.04,
+    "harness_pairing_coverage": 1.0,
+    "distinct_questions_in_journal": 2,
+    "presence_rate": 0.5,
+    "no_match_rate": 0.0,
+    "null_gold_drops": 0
+  }
+}

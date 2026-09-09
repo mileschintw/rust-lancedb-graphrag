@@ -268,6 +268,13 @@ def run_benchmark(
             help="Number of concurrent worker threads",
         ),
     ] = 1,
+    stage_cap: Annotated[
+        float,
+        typer.Option(
+            "--stage-cap",
+            help="Stage spend cap in USD (fail-closed, required with no silent default)",
+        ),
+    ] = ...,
 ) -> None:
     """Run evaluation benchmark questions across graph-on and graph-off arms."""
     try:
@@ -280,24 +287,121 @@ def run_benchmark(
         console.print(f"[dim]Resolved run directory: {out.parent}[/dim]")
         msg = (
             f"[bold blue]Driving corpus '{corpus}' "
-            f"(limit={limit}, resume={resume}, workers={workers})...[/bold blue]"
+            f"(limit={limit}, resume={resume}, workers={workers}, stage_cap=${stage_cap:.2f})...[/bold blue]"
         )
         console.print(msg)
         settings = load_settings()
         count = drive(
             corpus=corpus,
             journal_path=out,
+            stage_spend_cap=stage_cap,
             settings=settings,
             limit=limit,
             resume=resume,
             workers=workers,
         )
-        console.print(
-            f"[green]Successfully recorded {count} new work units to {out}[/green]"
-        )
+        stopped = getattr(count, "stopped_by_cap", False)
+        spend = getattr(count, "observed_spend", 0.0)
+        if stopped:
+            console.print(
+                f"[yellow]Drive stopped early: reached stage spend cap (${stage_cap:.2f}); "
+                f"recorded {count} work units (observed spend: ${spend:.4f})[/yellow]"
+            )
+        else:
+            console.print(
+                f"[green]Successfully recorded {count} new work units to {out} "
+                f"(observed spend: ${spend:.4f})[/green]"
+            )
     except Exception as exc:
         console.print(f"[bold red]Run error:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
+
+
+@app.command("staged-gate")
+def staged_gate(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Run directory containing journal to evaluate against staged gate",
+        ),
+    ],
+) -> None:
+    """Evaluate staged run against committed floors and render verdict."""
+    try:
+        from lancet_eval.gate import (
+            evaluate_staged_gate,
+            read_store_suspension,
+            render_staged_gate_verdict,
+        )
+        from lancet_eval.journal import load_records
+        from lancet_eval.score import score_run
+
+        console.print(f"[bold blue]Evaluating staged gate for {run}...[/bold blue]")
+        report = score_run(
+            run_dir=run,
+            no_judge=True,
+        )
+        is_suspended = read_store_suspension()
+        journal_path = run / "journal.jsonl"
+        records = load_records(journal_path) if journal_path.exists() else []
+        distinct_q = len({r.question_id for r in records})
+
+        verdict = evaluate_staged_gate(
+            report=report,
+            is_suspended=is_suspended,
+            distinct_questions_in_journal=distinct_q,
+        )
+        json_path, md_path = render_staged_gate_verdict(verdict, run)
+        console.print(f"[green]Staged gate verdict: {verdict.overall_status}[/green]")
+        console.print(f"Machine-readable verdict: {json_path}")
+        console.print(f"Human-readable verdict: {md_path}")
+        if verdict.overall_status not in ("pass", "investigate"):
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        console.print(f"[bold red]Staged gate error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("reconcile")
+def reconcile_run(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Run directory containing journal to reconcile",
+        ),
+    ],
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus name (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+) -> None:
+    """Reconcile journal header from partial to publishable when drive is complete."""
+    try:
+        from lancet_eval.journal import reconcile_header
+
+        journal_path = run / "journal.jsonl"
+        success, msg = reconcile_header(journal_path=journal_path, corpus=corpus)
+        if success:
+            console.print(f"[green]{msg}[/green]")
+        else:
+            console.print(f"[bold red]Reconciliation rejected:[/bold red] {msg}")
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        console.print(f"[bold red]Reconcile error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
 
 
 @app.command("score")

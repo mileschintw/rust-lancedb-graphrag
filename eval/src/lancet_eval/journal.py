@@ -103,6 +103,119 @@ def load_done(journal_path: Path | str) -> set[str]:
     return done
 
 
+def load_records(journal_path: Path | str) -> list[RunRecord]:
+    """Load the list of RunRecord objects from a journal file.
+
+    Skips header lines and any half-written or unparseable lines exactly
+    as load_done does, guaranteeing consistency between the resume key set
+    and the loaded record objects.
+    """
+    path = Path(journal_path)
+    records: list[RunRecord] = []
+    if not path.exists():
+        return records
+
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            try:
+                data = json.loads(line_str)
+                if (
+                    isinstance(data, dict)
+                    and "corpus" in data
+                    and "question_id" in data
+                    and "graph_arm" in data
+                ):
+                    rec = RunRecord.model_validate(data)
+                    records.append(rec)
+            except Exception:
+                continue
+    return records
+
+
+def completeness_comparison(
+    journal_path: Path | str, corpus: str
+) -> tuple[bool, set[str]]:
+    """Compare journal work units against the full cross-product of sample questions and arms.
+
+    Delegates to load_done() to ensure consistency with the resume predicate.
+    Returns (is_complete, missing_keys).
+    """
+    from lancet_eval.corpus import load_corpus_config, load_sample_questions
+
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)
+
+    expected_keys = {
+        journal_key(corpus, q.id, arm)
+        for q in questions
+        for arm in config.arms
+    }
+
+    done_keys = load_done(journal_path)
+    missing = expected_keys - done_keys
+    return len(missing) == 0, missing
+
+
+def reconcile_header(
+    journal_path: Path | str, corpus: str
+) -> tuple[bool, str]:
+    """Reconcile a journal header from partial to publishable when complete.
+
+    Conditioned on completeness_comparison. If incomplete, makes no change.
+    Rewrites ONLY the header line (clearing partial: false), preserving all record lines byte-identical.
+    Uses an atomic write via temporary file beside the journal.
+    """
+    import os
+
+    path = Path(journal_path)
+    if not path.is_file():
+        return False, f"Journal file does not exist: {path}"
+
+    is_complete, missing = completeness_comparison(path, corpus)
+    if not is_complete:
+        return False, f"Journal is incomplete: missing {len(missing)} work unit(s)"
+
+    # Read all lines
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    if not lines:
+        return False, "Journal file is empty"
+
+    header_line = lines[0].strip()
+    try:
+        header_data = json.loads(header_line)
+    except Exception as e:
+        return False, f"Failed to parse journal header: {e}"
+
+    if not isinstance(header_data, dict) or header_data.get("type") != "header":
+        return False, "First line of journal is not a valid header"
+
+    if not header_data.get("partial", False):
+        return True, "Journal is already publishable (partial is False); no-op"
+
+    header_data["partial"] = False
+    new_header_line = json.dumps(header_data, ensure_ascii=False) + "\n"
+
+    # Write atomically via temp file in same directory
+    tmp_path = path.parent / f".{path.name}.tmp.{time.time_ns()}"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(new_header_line)
+            for rec_line in lines[1:]:
+                f.write(rec_line)
+            f.flush()
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+
+    return True, "Successfully reconciled journal header to publishable"
+
+
 class Journal:
     """Append-only thread-safe manager for JSONL evaluation records."""
 

@@ -114,6 +114,7 @@ def test_drive_sibling_isolation_on_failure(
     count = drive(
         corpus="graphrag_bench",
         journal_path=j_path,
+        stage_spend_cap=10.0,
         limit=2,
         client=client,
     )
@@ -150,6 +151,7 @@ def test_drive_resume_issues_zero_requests_when_done(
     count1 = drive(
         corpus="graphrag_bench",
         journal_path=j_path,
+        stage_spend_cap=10.0,
         limit=1,
         client=client,
     )
@@ -160,6 +162,7 @@ def test_drive_resume_issues_zero_requests_when_done(
     count2 = drive(
         corpus="graphrag_bench",
         journal_path=j_path,
+        stage_spend_cap=10.0,
         limit=1,
         resume=True,
         client=client,
@@ -233,6 +236,7 @@ def test_drive_passes_configured_deadline_to_run_query(
     drive(
         corpus="graphrag_bench",
         journal_path=tmp_path / "journal.jsonl",
+        stage_spend_cap=10.0,
         limit=1,
         settings=settings,
         client=client,
@@ -272,12 +276,13 @@ def test_run_command_loads_settings_and_forwards_to_drive(
 
     res = runner.invoke(
         app,
-        ["run", "--corpus", "multihop_rag", "--out", str(tmp_path / "journal.jsonl")],
+        ["run", "--corpus", "multihop_rag", "--stage-cap", "2.0", "--out", str(tmp_path / "journal.jsonl")],
     )
     assert res.exit_code == 0
     assert "settings" in captured_kwargs
     forwarded_settings = captured_kwargs["settings"]
     assert isinstance(forwarded_settings, EvalSettings)
     assert forwarded_settings.question_deadline_secs == 789.0
+    assert captured_kwargs.get("stage_spend_cap") == 2.0
 
 

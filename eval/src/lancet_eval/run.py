@@ -18,10 +18,36 @@ from lancet_eval.journal import (
     WorkflowWireMeta,
     journal_key,
     load_done,
+    load_records,
 )
+from lancet_eval.measure import compute_spend
 from lancet_eval.raw_events import RawEventSink, baseline_sample_ids
 
 logger = logging.getLogger(__name__)
+
+
+class DriveResult(int):
+    """Result of drive() execution with spend and cap reporting."""
+
+    executed_count: int
+    stopped_by_cap: bool
+    observed_spend: float
+
+    def __new__(
+        cls,
+        executed_count: int,
+        stopped_by_cap: bool = False,
+        observed_spend: float = 0.0,
+    ) -> DriveResult:
+        val = super().__new__(cls, executed_count)
+        val.executed_count = executed_count
+        val.stopped_by_cap = stopped_by_cap
+        val.observed_spend = observed_spend
+        return val
+
+    @property
+    def capped(self) -> bool:
+        return self.stopped_by_cap
 
 # The sole durable arm-to-flag mapping in the evaluation harness (Task 1 / D-47).
 GRAPH_ARMS: dict[str, bool] = {
@@ -156,15 +182,17 @@ def drive(
     *,
     corpus: str,
     journal_path: Path | str,
+    stage_spend_cap: float,
     settings: EvalSettings | None = None,
     limit: int | None = None,
     resume: bool = True,
     workers: int = 1,
     client: httpx.Client | None = None,
-) -> int:
+) -> DriveResult:
     """Drive questions across graph-on and graph-off arms into a journal.
 
-    Returns the number of executed work units.
+    Enforces fail-closed stage spend cap in-process with a bounded in-flight window.
+    Returns DriveResult with executed count, stopped_by_cap status, and observed spend.
     """
     eval_settings = settings or EvalSettings()
     config = load_corpus_config(corpus)
@@ -181,6 +209,7 @@ def drive(
 
     target_path = Path(journal_path)
     done_keys = load_done(target_path) if resume else set()
+    records: list[RunRecord] = load_records(target_path) if resume else []
 
     remaining_units = [
         (q, arm)
@@ -192,7 +221,13 @@ def drive(
     journal.write_header(corpus=corpus, partial=partial)
 
     if not remaining_units:
-        return 0
+        spend_so_far, _ = compute_spend(records)
+        return DriveResult(0, stopped_by_cap=False, observed_spend=spend_so_far)
+
+    # Check if accumulator already reached cap before dispatching any unit
+    initial_spend, _ = compute_spend(records)
+    if initial_spend >= stage_spend_cap:
+        return DriveResult(0, stopped_by_cap=True, observed_spend=initial_spend)
 
     baseline_ids = baseline_sample_ids(questions)
     raw_sink = RawEventSink(target_path.parent)
@@ -216,12 +251,21 @@ def drive(
     )
 
     executed_count = 0
+    stopped_by_cap = False
+    remaining_iter = iter(remaining_units)
+    in_flight: set[concurrent.futures.Future[RunRecord]] = set()
+
     try:
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=effective_workers
         ) as executor:
-            future_to_unit = {
-                executor.submit(
+            # Prime the window with at most effective_workers
+            for _ in range(effective_workers):
+                try:
+                    q, arm = next(remaining_iter)
+                except StopIteration:
+                    break
+                fut = executor.submit(
                     drive_one,
                     eval_client,
                     corpus=corpus,
@@ -232,16 +276,47 @@ def drive(
                     read_timeout_s=eval_settings.gateway_timeout_secs,
                     raw_sink=raw_sink,
                     baseline_ids=baseline_ids,
-                ): (q, arm)
-                for q, arm in remaining_units
-            }
+                )
+                in_flight.add(fut)
 
-            for future in concurrent.futures.as_completed(future_to_unit):
-                record = future.result()
-                journal.append(record)
-                executed_count += 1
+            while in_flight:
+                done, in_flight = concurrent.futures.wait(
+                    in_flight,
+                    return_when=concurrent.futures.FIRST_COMPLETED,
+                )
+                for fut in done:
+                    record = fut.result()
+                    journal.append(record)
+                    records.append(record)
+                    executed_count += 1
+
+                # Before submitting each next unit, check spend vs cap
+                while len(in_flight) < effective_workers and not stopped_by_cap:
+                    current_spend, _ = compute_spend(records)
+                    if current_spend >= stage_spend_cap:
+                        stopped_by_cap = True
+                        break
+                    try:
+                        q, arm = next(remaining_iter)
+                    except StopIteration:
+                        break
+                    fut = executor.submit(
+                        drive_one,
+                        eval_client,
+                        corpus=corpus,
+                        question=q,
+                        arm=arm,
+                        partial=partial,
+                        deadline_s=eval_settings.question_deadline_secs,
+                        read_timeout_s=eval_settings.gateway_timeout_secs,
+                        raw_sink=raw_sink,
+                        baseline_ids=baseline_ids,
+                    )
+                    in_flight.add(fut)
     finally:
         if should_close_client:
             eval_client.close()
 
-    return executed_count
+    total_spend, _ = compute_spend(records)
+    return DriveResult(executed_count, stopped_by_cap=stopped_by_cap, observed_spend=total_spend)
+
