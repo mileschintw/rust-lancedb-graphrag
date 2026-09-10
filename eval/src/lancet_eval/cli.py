@@ -268,6 +268,14 @@ def run_benchmark(
             help="Number of concurrent worker threads",
         ),
     ] = 1,
+    retries: Annotated[
+        int,
+        typer.Option(
+            "--retries",
+            "-r",
+            help="Maximum retries per work unit if query early terminates or fails",
+        ),
+    ] = 2,
     stage_cap: Annotated[
         float,
         typer.Option(
@@ -287,7 +295,7 @@ def run_benchmark(
         console.print(f"[dim]Resolved run directory: {out.parent}[/dim]")
         msg = (
             f"[bold blue]Driving corpus '{corpus}' "
-            f"(limit={limit}, resume={resume}, workers={workers}, stage_cap=${stage_cap:.2f})...[/bold blue]"
+            f"(limit={limit}, resume={resume}, workers={workers}, retries={retries}, stage_cap=${stage_cap:.2f})...[/bold blue]"
         )
         console.print(msg)
         settings = load_settings()
@@ -299,6 +307,7 @@ def run_benchmark(
             limit=limit,
             resume=resume,
             workers=workers,
+            max_retries=retries,
         )
         stopped = getattr(count, "stopped_by_cap", False)
         spend = getattr(count, "observed_spend", 0.0)

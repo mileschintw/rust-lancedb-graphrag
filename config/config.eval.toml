@@ -3,3 +3,12 @@
 
 [engine]
 lancedb_path = "./data/lancedb-eval"
+
+[engine.workflow]
+reformulate_timeout_ms = 5000
+query_embedding_timeout_ms = 15000
+retrieve_timeout_ms = 30000
+graph_operation_timeout_ms = 40000
+graph_node_timeout_ms = 60000
+prompt_timeout_ms = 10000
+generation_node_timeout_ms = 65000

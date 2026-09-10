@@ -50,11 +50,11 @@ deployment_environment = "dev"
 # Nesting is documented for operator visibility and is NOT enforced at startup (D-17).
 # Six derived values: p95 × 1.5 (ceil) except generation_node (provider contract: 2×30s + 5s slack).
 reformulate_timeout_ms = 5000
-query_embedding_timeout_ms = 645
-retrieve_timeout_ms = 16647
-graph_operation_timeout_ms = 38595
-graph_node_timeout_ms = 45674
-prompt_timeout_ms = 1070
+query_embedding_timeout_ms = 15000
+retrieve_timeout_ms = 30000
+graph_operation_timeout_ms = 40000
+graph_node_timeout_ms = 60000
+prompt_timeout_ms = 10000
 generation_node_timeout_ms = 65000
 allow_model_only_answers = false # D-10/D-12
 citation_repair_enabled = true # D-14/D-84

@@ -56,15 +56,15 @@ deployment_environment = "dev"
 # unit=milliseconds; range=>0
 reformulate_timeout_ms = 5000
 # unit=milliseconds; range=>0
-query_embedding_timeout_ms = 645
+query_embedding_timeout_ms = 15000
 # unit=milliseconds; range=>0
-retrieve_timeout_ms = 16647
+retrieve_timeout_ms = 30000
 # unit=milliseconds; range=>0
-graph_operation_timeout_ms = 38595
+graph_operation_timeout_ms = 40000
 # unit=milliseconds; range=>0
-graph_node_timeout_ms = 45674
+graph_node_timeout_ms = 60000
 # unit=milliseconds; range=>0
-prompt_timeout_ms = 1070
+prompt_timeout_ms = 10000
 # unit=milliseconds; range=>0
 generation_node_timeout_ms = 65000
 
