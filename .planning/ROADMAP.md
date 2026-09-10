@@ -841,7 +841,7 @@ Plans:
 6. `06.3.1-ROOT-CAUSE.md` carries the full forensic trail in the 06.3.1 phase directory, and a distilled public-facing note lands under `docs/` for Phase 6.4's design narrative and honest-limitations section (D-54).
 7. Phase 6.4's ROADMAP entry is updated as this family's closing act (D-53) — canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new code from 06.3.1. (`Depends on:` was repointed to 06.3.4 at split time.)
 
-**Plans:** 2/7 plans complete
+**Plans:** 7/7 plans complete
 
 Plans:
 
