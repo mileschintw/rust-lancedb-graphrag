@@ -1,25 +1,32 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 06.3.4
-current_phase_name: Corrected re-drive, calibration and root-cause documentation (INSERTED)
-current_plan: 4
-status: executing
-stopped_at: Plan 06.3.4-03 complete; Wave 3 Plan 06.3.4-04 ready to execute
-last_updated: "2026-09-09T18:45:00.000Z"
-last_activity: 2026-09-09
+current_phase: 06.4
+current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
+current_plan: 1
+status: ready_to_plan
+stopped_at: Phase 06.3.4 complete; ready to proceed to Phase 6.4
+last_updated: "2026-09-10T21:50:00.000Z"
+last_activity: 2026-09-10
 state_head: b945b15
 progress:
   total_phases: 15
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 155
-  completed_plans: 151
+  completed_plans: 155
 milestone_name: milestone
 ---
 
 # Project State
 
 ## Current Status
+
+- **Phase 06.3.4 (Corrected re-drive, calibration and root-cause documentation) complete**:
+  - Full drive executed to 658 records ($0.1194 spend) across 329 questions with 145 dual-success pairs and 312 completed answers.
+  - Halted by operator directive to investigate `RetrieveHybrid` linear latency escalation (7.4s to >30s) and graph yield limitation (9.8% presence, -0.0024 F1 delta).
+  - Findings formally documented in `06.3.4-FINDINGS.md` and `06.3.4-FINDINGS-PREFIX.sha256`, carrying 3 open engineering items (OI-01, OI-02, OI-03) into Phase 6.4 / subsequent work.
+  - Forensic trail completed in `06.3.1-ROOT-CAUSE.md`, public note in `docs/evaluation-fidelity-and-graph-yield.md`, historical run marked in `SUPERSEDED.md`, and Phase 6.4 entry updated in `ROADMAP.md` (D-53, D-54).
+  - Next: Phase 6.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure).
 
 - **Phase 06.3.4 Plan 03 executed and verified**:
   - **Plan 06.3.4-03 (Wave 2)**: Preflight canary diagnostic probing, offline staged gate evaluation, spend projection, and human go-with-investigation checkpoint decision (`06.3.4-03-SUMMARY.md`, `06.3.4-STAGED-GATE.md`, `STAGED-GATE.json`). All 5 production timeout budgets passed across all canaries without violation. Preflight halted on Canary 5 graph floor miss (predicted query semantic distance limitation on un-named entity). Evaluated gate offline on micro-slice records: `d44_staged_coverage = 0.0400` against 50 locked size, `d44_coverage_ceiling = 0.9000` (5 drops headroom), `graph_presence_rate = 0.5000` (>= 0.20 floor passed). Spend: staged $0.0014, projected full drive $0.35, provider allowance $14.99 remaining. Operator checkpoint decision: `go-with-investigation` under authorized full drive spend cap `$5.00` USD, carrying Canary 5 yield investigation into Phase 6.4 evaluation reporting. Next: Wave 3 Plan 06.3.4-04 (Full 500-question drive).
@@ -184,13 +191,10 @@ milestone_name: milestone
 
 ## Active Phase
 
-- **Phase:** 06.3.4 — Corrected re-drive, calibration and root-cause documentation
-- **Status:** Executing Phase 06.3.4
+- **Phase:** 06.4 — Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
+- **Status:** Ready to plan
 - **Current Plan:** 1
-- **Total Plans in Phase:** 7
-- **Completed Plans in Phase:** 0/7
-- **Progress:** [░░░░░░░░░░] 0% execution
-- **Next:** `/gsd-execute-phase 06.3.4` — 7 plans across 6 waves, replanned against cross-AI review feedback.
+- **Next:** Plan Phase 06.4 (Docs suite, quickstart verification, promotion of un-closed debt backlog, v1 milestone closure).
 
 ## Completed Phases
 
@@ -201,6 +205,8 @@ milestone_name: milestone
 - **Phase 5: State Machine & Workflow Events** (Completed: 2026-08-19 — UAT 10/10 passed, 0 issues; `05-SECURITY.md` confirmed `threats_open: 0`)
 - **Phase 6: Observability, Evaluation & Polish** (Completed: 2026-08-22 — 16/16 plans; re-verification `passed` 11/11 must-haves after gap-closure plan 06-16 closed UAT gaps G-06-1/G-06-2; RAG-03 satisfied)
 - **Phase 06.3.2: Eval Harness Diagnostics, Scored Dimensions and Paired Ablation** (Completed: 2026-09-06 — 6/6 plans; re-verification `passed` 10/10 must-haves after gap-closure plan 06.3.2-06 closed SC-7 and two follow-up fixes closed code-review criticals CR-01/CR-02; OBS-05 remains jointly owned across 06.3.1–06.3.4, not yet checked)
+- **Phase 06.3.3: Retrieval Latency Measurement Pass and Timeout Budget Derivation** (Completed: 2026-09-07 — 6/6 plans; timeout budgets anchored)
+- **Phase 06.3.4: Corrected re-drive, calibration and root-cause documentation** (Completed: 2026-09-10 — 7/7 plans; 658 records driven, findings documented in `06.3.4-FINDINGS.md`, forensic trail in `06.3.1-ROOT-CAUSE.md`, open items carried into Phase 6.4)
 
 ## Known Issues & Debt
 

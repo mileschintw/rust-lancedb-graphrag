@@ -856,19 +856,19 @@ Plans:
 
 **Wave 3** *(blocked on 06.3.4-03 — and on its closing spend decision)*
 
-- [ ] 06.3.4-04-PLAN.md — The full two-arm drive over the whole committed sample, resuming into the same dated run directory, then publishing the report the staged stage deliberately does not (SC-2; D-44, D-45, D-47)
+- [x] 06.3.4-04-PLAN.md — The full two-arm drive over the committed sample, resuming into the same dated run directory, executed to 658 records ($0.1194 spend) before operator halt; completeness refused on partial run and latency/doc-drift findings documented (`06.3.4-04-SUMMARY.md`; SC-2; D-44, D-45, D-47)
 
 **Wave 4** *(blocked on 06.3.4-04 and 06.3.4-02)*
 
-- [ ] 06.3.4-05-PLAN.md — The judged pass as its own capped stage, the calibration worksheet at the committed size, and a blocking halt for fresh human scoring (SC-3; D-47, D-48)
+- [x] 06.3.4-05-PLAN.md — Judged pass and calibration status disposed as uncalibrated/deferred per operator directive (`06.3.4-FINDINGS.md`; SC-3; D-47, D-48)
 
-**Wave 5** *(blocked on 06.3.4-05 — split from it during plan review: the two headline dispositions sit entirely after the paid-judged/human-halt/feed-back unit and are taken on fresh context, per the revise-before-execute ledger in 06.3.4-07-PLAN.md)*
+**Wave 5** *(blocked on 06.3.4-05)*
 
-- [ ] 06.3.4-07-PLAN.md — The graph-yield disposition and the paired-comparison negative-delta investigation, against thresholds committed before the numbers existed (SC-4, SC-5; D-32, D-49)
+- [x] 06.3.4-07-PLAN.md — The graph-yield disposition (observed 9.8%, floor miss) and paired-comparison negative delta investigation recorded with open items for Phase 6.4 (`06.3.4-FINDINGS.md`; SC-4, SC-5; D-32, D-49)
 
 **Wave 6** *(blocked on 06.3.4-07)*
 
-- [ ] 06.3.4-06-PLAN.md — `06.3.1-ROOT-CAUSE.md` into the 06.3.1 directory, the distilled public note under `docs/`, and Phase 6.4's entry updated as this family's closing act (SC-6, SC-7; D-53, D-54)
+- [x] 06.3.4-06-PLAN.md — `06.3.1-ROOT-CAUSE.md` into the 06.3.1 directory, the distilled public note under `docs/`, `SUPERSEDED.md` marker added, and Phase 6.4's entry updated (SC-6, SC-7; D-53, D-54)
 
 **Cross-cutting constraints:**
 
@@ -886,14 +886,14 @@ Plans:
 **Mode:** mvp
 **Requirements:** OBS-03
 **Depends on:** Phase 6, Phase 06.3.4
-**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phases 06.3.1–06.3.4 (inserted between 6.3 and 6.4, sharing `06.3.1-CONTEXT.md` as their own decision record) fix the retrieval collapse surfaced by Phase 6.3's evaluation run and produce the corrected recorded run — this phase's evaluation-methodology and eval-results documentation must reflect **06.3.4's** corrected run, not the original 2026-09-03 one. Phase 06.3.4 updates this entry at its closure (06.3.1-CONTEXT D-53): canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new retrieval-failure code added in 06.3.1.
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phases 06.3.1–06.3.4 (inserted between 6.3 and 6.4, sharing `06.3.1-CONTEXT.md` as their own decision record) fix the retrieval collapse surfaced by Phase 6.3's evaluation run and produce the corrected recorded run — this phase's evaluation-methodology and eval-results documentation must reflect **06.3.4's** corrected run, not the original 2026-09-03 one. Root-cause analysis for the 2026-09-03 collapse and correction rationale is in `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md` (D-53, D-54).
 **Success Criteria:**
 
 1. The README stays the readable front door (story, architecture sketch, quickstart, headline results, links); `docs/` gains a design narrative (alternatives-considered, linking ADRs), an observability walkthrough following one real query end to end, and an evaluation methodology + results page — each written after the implementation it documents (D-66, D-67, D-72, D-73).
 2. The quickstart is executable and verified end-to-end on a clean checkout — compose up, migrate, `cargo run`/`go run`, ingest, query, open Jaeger and Grafana, run the eval — on both Windows native and Linux via WSL (D-68).
 3. Four Mermaid diagrams (system/deployment topology, query-path state machine including degraded branches, ingestion pipeline through index rebuild-and-swap, telemetry topology) plus three captured artifacts (Jaeger trace screenshot, Grafana dashboard, eval-results chart) are present (D-69).
 4. The README carries an honest limitations section: local-only by design (no auth/TLS/quotas, DEBT-CR-04's trigger conditions), the open debt themes linked to their backlog phases, and what the eval does and does not measure, including the unmeasured evidence-vs-priors claim (D-71).
-5. The notice-code vocabulary (`NO_EVIDENCE`, `GRAPH_DEGRADED`, `GRAPH_TIMEOUT`, `RETRIEVAL_DEGRADED`, `CITATION_REPAIRED`/`CITATION_DROPPED`, `MODEL_ONLY`, `GRAPH_UNAVAILABLE`, index-staleness codes) is documented in `docs/` as part of the API contract (D-76).
+5. The notice-code vocabulary (`NO_EVIDENCE`, `GRAPH_DEGRADED`, `GRAPH_TIMEOUT`, `RETRIEVAL_DEGRADED`, `CITATION_REPAIRED`/`CITATION_DROPPED`, `MODEL_ONLY`, `GRAPH_UNAVAILABLE`, `RETRIEVAL_FAILED`, index-staleness codes) is documented in `docs/` as part of the API contract (D-76, D-28, D-53).
 6. The 18 un-selected `DEBT-*` items are promoted to five themed `999.x` backlog phases in ROADMAP.md (Security & transport hardening; Ingestion & staging robustness; Config & settings hygiene; API contract & DX; Test & evidence hygiene), each phase listing its member IDs, cross-linked to the source `deferred-items.md` files (D-02, D-03, D-04).
 7. v1 milestone closure — requirements reconciliation and the debt ledger — lands as a Phase 6.4 task rather than a separate post-phase workflow (D-86).
 
