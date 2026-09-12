@@ -189,7 +189,9 @@ def test_no_calibration_state_and_completed_n_zero(tmp_path: Path) -> None:
         judge_verdicts=[(5, 5), (4, 4), (3, 3)],
     )
 
-    report = score_run(run_dir=tmp_path, no_judge=False, api_key="dummy")
+    report = score_run(
+        run_dir=tmp_path, no_judge=False, stage_spend_cap=10.0, api_key="dummy"
+    )
     assert report.metadata.calibration_completed_n == 0
     expected_note = (
         "No judge-versus-human calibration was performed; "
@@ -250,6 +252,7 @@ def test_calibration_exact_target_match_satisfied(tmp_path: Path) -> None:
         run_dir=tmp_path,
         no_judge=False,
         calibration_file=ws_path,
+        stage_spend_cap=10.0,
         api_key="dummy",
     )
 
@@ -278,6 +281,7 @@ def test_calibration_below_target_notes_and_state(tmp_path: Path) -> None:
         run_dir=tmp_path,
         no_judge=False,
         calibration_file=ws_path,
+        stage_spend_cap=10.0,
         api_key="dummy",
     )
 
@@ -303,7 +307,9 @@ def test_distinguishable_states_without_parsing_prose(tmp_path: Path) -> None:
     _create_synthetic_run(
         p0, n_questions=4, judge_verdicts=[(1, 1), (2, 2), (3, 3), (4, 4)]
     )
-    r0 = score_run(run_dir=p0, no_judge=False, api_key="dummy")
+    r0 = score_run(
+        run_dir=p0, no_judge=False, stage_spend_cap=10.0, api_key="dummy"
+    )
     g0 = next(d for d in r0.dimensions if d.name == "answer_groundedness")
     assert g0.detail["calibration_state"] == 0.0
 
@@ -315,7 +321,13 @@ def test_distinguishable_states_without_parsing_prose(tmp_path: Path) -> None:
     recs1, keys1 = _create_synthetic_run(p1, n_questions=12, judge_verdicts=v1)
     ws1 = p1 / "calibration.jsonl"
     _write_calibration_worksheet(ws1, keys1, h1, [r.question_id for r in recs1])
-    r1 = score_run(run_dir=p1, no_judge=False, calibration_file=ws1, api_key="dummy")
+    r1 = score_run(
+        run_dir=p1,
+        no_judge=False,
+        calibration_file=ws1,
+        stage_spend_cap=10.0,
+        api_key="dummy",
+    )
     g1 = next(d for d in r1.dimensions if d.name == "answer_groundedness")
     assert g1.detail["calibration_state"] == 1.0
 
@@ -327,7 +339,13 @@ def test_distinguishable_states_without_parsing_prose(tmp_path: Path) -> None:
     recs2, keys2 = _create_synthetic_run(p2, n_questions=12, judge_verdicts=v2)
     ws2 = p2 / "calibration.jsonl"
     _write_calibration_worksheet(ws2, keys2, h2, [r.question_id for r in recs2])
-    r2 = score_run(run_dir=p2, no_judge=False, calibration_file=ws2, api_key="dummy")
+    r2 = score_run(
+        run_dir=p2,
+        no_judge=False,
+        calibration_file=ws2,
+        stage_spend_cap=10.0,
+        api_key="dummy",
+    )
     g2 = next(d for d in r2.dimensions if d.name == "answer_groundedness")
     assert g2.detail["calibration_state"] == 2.0
 
@@ -356,6 +374,7 @@ def test_calibrated_run_dimension_result_reason_none(tmp_path: Path) -> None:
         run_dir=tmp_path,
         no_judge=False,
         calibration_file=ws_path,
+        stage_spend_cap=10.0,
         api_key="dummy",
     )
 
@@ -384,6 +403,7 @@ def test_degenerate_statistic_omits_detail_key_companion_state(tmp_path: Path) -
         run_dir=tmp_path,
         no_judge=False,
         calibration_file=ws_path,
+        stage_spend_cap=10.0,
         api_key="dummy",
     )
 
@@ -451,6 +471,7 @@ def test_per_dimension_not_pooled(tmp_path: Path) -> None:
         run_dir=tmp_path,
         no_judge=False,
         calibration_file=ws_path,
+        stage_spend_cap=10.0,
         api_key="dummy",
     )
 
@@ -503,10 +524,18 @@ def test_bootstrap_ci_brackets_point_estimate_and_reproducible(tmp_path: Path) -
     _write_calibration_worksheet(ws_path, keys, human, [r.question_id for r in records])
 
     r1 = score_run(
-        run_dir=tmp_path, no_judge=False, calibration_file=ws_path, api_key="dummy"
+        run_dir=tmp_path,
+        no_judge=False,
+        calibration_file=ws_path,
+        stage_spend_cap=10.0,
+        api_key="dummy",
     )
     r2 = score_run(
-        run_dir=tmp_path, no_judge=False, calibration_file=ws_path, api_key="dummy"
+        run_dir=tmp_path,
+        no_judge=False,
+        calibration_file=ws_path,
+        stage_spend_cap=10.0,
+        api_key="dummy",
     )
 
     g1 = next(d for d in r1.dimensions if d.name == "answer_groundedness")
@@ -560,7 +589,11 @@ def test_pass_fail_on_point_estimate_alone(tmp_path: Path) -> None:
     _write_calibration_worksheet(ws_path, keys, human, [r.question_id for r in records])
 
     report = score_run(
-        run_dir=tmp_path, no_judge=False, calibration_file=ws_path, api_key="dummy"
+        run_dir=tmp_path,
+        no_judge=False,
+        calibration_file=ws_path,
+        stage_spend_cap=10.0,
+        api_key="dummy",
     )
     g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
 
@@ -606,7 +639,11 @@ def test_excluded_row_accounting_when_cache_verdict_missing(tmp_path: Path) -> N
     )
 
     report = score_run(
-        run_dir=tmp_path, no_judge=False, calibration_file=ws_path, api_key="dummy"
+        run_dir=tmp_path,
+        no_judge=False,
+        calibration_file=ws_path,
+        stage_spend_cap=10.0,
+        api_key="dummy",
     )
     g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
 
@@ -635,7 +672,11 @@ def test_rendered_report_metadata_table_and_schema_validation(tmp_path: Path) ->
     )
 
     report = score_run(
-        run_dir=tmp_path, no_judge=False, calibration_file=ws_path, api_key="dummy"
+        run_dir=tmp_path,
+        no_judge=False,
+        calibration_file=ws_path,
+        stage_spend_cap=10.0,
+        api_key="dummy",
     )
 
     # The fixture journal is deliberately short and the render guard is a publication

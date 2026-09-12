@@ -86,6 +86,7 @@ def test_no_api_key_leak_in_any_artifact(
         run_dir=tmp_path,
         no_judge=False,
         sample=1,
+        stage_spend_cap=10.0,
         api_key=SENTINEL_API_KEY,
         client=client,
     )

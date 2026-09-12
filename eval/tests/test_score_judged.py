@@ -140,6 +140,7 @@ def test_score_sample_judged_and_caching(
         run_dir=tmp_path,
         no_judge=False,
         sample=3,
+        stage_spend_cap=10.0,
         api_key="test-api-key",
         client=client,
     )
@@ -156,6 +157,7 @@ def test_score_sample_judged_and_caching(
         run_dir=tmp_path,
         no_judge=False,
         sample=3,
+        stage_spend_cap=10.0,
         api_key="test-api-key",
         client=client,
     )
@@ -195,6 +197,7 @@ def test_zero_citations_record_skipped_from_judged(
         run_dir=tmp_path,
         no_judge=False,
         sample=1,
+        stage_spend_cap=10.0,
         api_key="test-api-key",
         client=client,
     )
@@ -231,7 +234,7 @@ def test_judge_model_equals_generator_raises(
     )
 
     with pytest.raises(ScoreError) as exc_info:
-        score_run(run_dir=tmp_path, no_judge=False)
+        score_run(run_dir=tmp_path, no_judge=False, stage_spend_cap=10.0)
 
     assert "equals engine generation model" in str(exc_info.value)
 
@@ -300,6 +303,7 @@ def test_calibration_worksheet_emission_and_ingestion(
         no_judge=False,
         sample=3,
         emit_calibration_worksheet=worksheet_path,
+        stage_spend_cap=10.0,
         api_key="test-key",
         client=client,
     )
@@ -326,6 +330,7 @@ def test_calibration_worksheet_emission_and_ingestion(
         no_judge=False,
         sample=3,
         calibration_file=completed_ws_path,
+        stage_spend_cap=10.0,
         api_key="test-key",
         client=client,
     )
@@ -448,6 +453,7 @@ def test_worksheet_rows_are_drawn_from_the_judged_subset(
         no_judge=False,
         sample=None,
         emit_calibration_worksheet=worksheet_path,
+        stage_spend_cap=10.0,
         api_key="test-key",
         client=client,
     )
@@ -536,6 +542,7 @@ def test_worksheet_excludes_judge_errored_records(
         no_judge=False,
         sample=None,
         emit_calibration_worksheet=worksheet_path,
+        stage_spend_cap=10.0,
         api_key="test-key",
         client=client,
     )
@@ -648,6 +655,7 @@ def test_worksheet_never_sources_graph_off_records(
         no_judge=False,
         sample=None,
         emit_calibration_worksheet=worksheet_path,
+        stage_spend_cap=10.0,
         api_key="test-key",
         client=client,
     )
@@ -726,6 +734,7 @@ def _judge_five_records(
         run_dir=tmp_path,
         no_judge=False,
         sample=None,
+        stage_spend_cap=10.0,
         api_key="test-key",
         client=client,
     )
@@ -814,8 +823,244 @@ def test_calibration_file_rejects_narrower_sample_than_cache(
             calibration_file=calib_path,
             api_key="test-key",
             client=client,
+            stage_spend_cap=10.0,
         )
     assert "narrower" in str(exc_info.value)
     assert "5 verdict" in str(exc_info.value)
+
+
+def test_compute_judge_spend_arithmetic_and_distinct_from_generation() -> None:
+    """Proves compute_judge_spend computes correct arithmetic and differs from generation."""
+    from lancet_eval.measure import (
+        JUDGE_INPUT_PRICE_PER_1M,
+        JUDGE_OUTPUT_PRICE_PER_1M,
+        compute_judge_spend,
+        compute_spend,
+    )
+
+    prompt_toks = 1000
+    comp_toks = 200
+
+    judge_spend = compute_judge_spend(prompt_toks, comp_toks)
+    expected = (
+        (prompt_toks * JUDGE_INPUT_PRICE_PER_1M)
+        + (comp_toks * JUDGE_OUTPUT_PRICE_PER_1M)
+    ) / 1_000_000.0
+    assert abs(judge_spend - expected) < 1e-12
+
+    # Generation pricing for same tokens:
+    gen_dummy = RunRecord(
+        corpus="multihop_rag",
+        question_id="dummy",
+        graph_arm="graph-on",
+        outcome="success",
+        workflow_meta={"prompt_tokens": prompt_toks, "completion_tokens": comp_toks},
+    )
+    gen_spend, _ = compute_spend([gen_dummy], include_embeddings=False)
+    assert judge_spend != gen_spend
+
+
+def test_score_run_judging_enabled_without_cap_raises_score_error(
+    tmp_path: Path,
+) -> None:
+    """Proves score_run with no_judge=False and no stage_spend_cap raises ScoreError."""
+    qids = _setup_fixtures(tmp_path)
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+    journal.append(
+        RunRecord(
+            corpus="multihop_rag",
+            question_id=qids[0],
+            graph_arm="graph-on",
+            outcome="success",
+            answer="Answer",
+            index_generation="gen-test-1",
+        )
+    )
+
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(run_dir=tmp_path, no_judge=False, api_key="dummy")
+    assert "stage_spend_cap" in str(exc_info.value).lower()
+
+
+def test_score_run_judging_disabled_without_cap_does_not_raise(
+    tmp_path: Path,
+) -> None:
+    """Proves score_run with no_judge=True and no stage_spend_cap does not raise."""
+    qids = _setup_fixtures(tmp_path)
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+    journal.append(
+        RunRecord(
+            corpus="multihop_rag",
+            question_id=qids[0],
+            graph_arm="graph-on",
+            outcome="success",
+            answer="Answer",
+            index_generation="gen-test-1",
+        )
+    )
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    assert report is not None
+
+
+def test_judge_loop_breaks_at_spend_cap(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves judge loop stops dispatching when accumulated spend reaches cap."""
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:3]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="Paris is capital of France",
+            index_generation="gen-test-1",
+            snapshot=RetrievalSnapshot(
+                index_generation="gen-test-1",
+                retrieved_chunks=[
+                    StructuredCitation(
+                        chunk_id="c1",
+                        document_id=doc_id,
+                        excerpt="Paris is capital",
+                        rank=1,
+                    )
+                ],
+            ),
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Paris is capital",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 4,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        # 1000 prompt tokens @ $0.12/1M ($0.00012) + 100 comp tokens @ $0.30/1M ($0.000030) = $0.000150
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    client = httpx.Client()
+    # Cap set to $0.0001: 1st live call costs $0.000150, so before 2nd call, 0.000150 >= 0.0001 -> breaks!
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=3,
+        stage_spend_cap=0.0001,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    requests = httpx_mock.get_requests()
+    assert len(requests) == 1  # Exactly 1 call made!
+    # Distinguishable in report outcome
+    assert "cap" in report.metadata.notes.lower() or report.dimensions[0].detail.get("cap_stopped", 0.0) == 1.0
+
+
+def test_judge_loop_cached_verdicts_consume_no_cap_headroom(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves fully-cached verdicts judge to completion with zero HTTP calls under tiny cap."""
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:3]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer="Paris is capital of France",
+            index_generation="gen-test-1",
+            snapshot=RetrievalSnapshot(
+                index_generation="gen-test-1",
+                retrieved_chunks=[
+                    StructuredCitation(
+                        chunk_id="c1",
+                        document_id=doc_id,
+                        excerpt="Paris is capital",
+                        rank=1,
+                    )
+                ],
+            ),
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Paris is capital",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    # First pass with sufficient cap to fill cache
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 4,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    client = httpx.Client()
+    score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=3,
+        stage_spend_cap=1.0,
+        api_key="test-api-key",
+        client=client,
+    )
+    assert len(httpx_mock.get_requests()) == 3
+
+    # Second pass with microscopic cap: cached calls consume 0 cap headroom
+    report2 = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=3,
+        stage_spend_cap=0.000001,
+        api_key="test-api-key",
+        client=client,
+    )
+    # Zero new HTTP requests issued
+    assert len(httpx_mock.get_requests()) == 3
+    g_dim = next(d for d in report2.dimensions if d.name == "answer_groundedness")
+    assert g_dim.status == "ok"
+    assert g_dim.detail["judged_n"] == 3.0
+
 
 

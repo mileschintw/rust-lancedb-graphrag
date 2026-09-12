@@ -51,6 +51,13 @@ GENERATION_OUTPUT_PRICE_PER_1M = 0.28
 EMBEDDING_PRICE_PER_1M = 0.12
 ESTIMATED_EMBEDDING_TOKENS_PER_QUERY = 120
 
+# meta-llama/llama-3.3-70b-instruct judge pricing per million tokens via OpenRouter
+# Recorded on 2026-09-10 ($0.12 / 1M prompt, $0.30 / 1M completion)
+JUDGE_INPUT_PRICE_PER_1M = 0.12
+JUDGE_OUTPUT_PRICE_PER_1M = 0.30
+# Estimated prompt tokens per judge question (judge prompt + question + evidence + answer)
+ESTIMATED_JUDGE_PROMPT_TOKENS = 1200
+
 
 class MeasurementRecord(RunRecord):
     """Durable record of a measurement run with dispatch ordinal and segment."""
@@ -111,6 +118,19 @@ def compute_spend(
     emb_tokens = query_count * ESTIMATED_EMBEDDING_TOKENS_PER_QUERY
     emb_spend = (emb_tokens / 1_000_000.0) * EMBEDDING_PRICE_PER_1M
     return gen_spend + emb_spend, False
+
+
+def compute_judge_spend(prompt_tokens: int, completion_tokens: int) -> float:
+    """Calculate token-based spend in USD for judge evaluation tokens."""
+    return (
+        (prompt_tokens * JUDGE_INPUT_PRICE_PER_1M)
+        + (completion_tokens * JUDGE_OUTPUT_PRICE_PER_1M)
+    ) / 1_000_000.0
+
+
+def estimate_judge_cost_per_question(judge_max_tokens: int = 400) -> float:
+    """Estimate worst-case cost in USD for one judged question using completion ceiling."""
+    return compute_judge_spend(ESTIMATED_JUDGE_PROMPT_TOKENS, judge_max_tokens)
 
 
 def check_provider_allowance(

@@ -255,7 +255,12 @@ def test_wr04_judging_refuses_when_gen_model_unread(
     journal.append(_make_record(qid, "graph-on"))
 
     with pytest.raises(ScoreError, match="Could not read engine generation model"):
-        score_run(run_dir=tmp_path, no_judge=False, api_key="dummy-key")
+        score_run(
+            run_dir=tmp_path,
+            no_judge=False,
+            stage_spend_cap=10.0,
+            api_key="dummy-key",
+        )
 
 
 # ---------------------------------------------------------------------------

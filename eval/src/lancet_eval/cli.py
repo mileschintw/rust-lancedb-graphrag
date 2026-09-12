@@ -456,6 +456,13 @@ def score_benchmark(
             help="Path to human-scored calibration worksheet JSONL file",
         ),
     ] = None,
+    stage_cap: Annotated[
+        float | None,
+        typer.Option(
+            "--stage-cap",
+            help="Stage spend cap in USD. Required when --judge is enabled to bound accumulated judged spend.",
+        ),
+    ] = None,
 ) -> None:
     """Score journaled evaluation runs offline or with LLM judge."""
     try:
@@ -468,6 +475,7 @@ def score_benchmark(
             sample=sample,
             emit_calibration_worksheet=emit_calibration_worksheet,
             calibration_file=calibration_file,
+            stage_spend_cap=stage_cap,
         )
         md = render_markdown(report)
         console.print(md)

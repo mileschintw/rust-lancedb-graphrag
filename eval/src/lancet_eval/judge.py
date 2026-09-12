@@ -76,6 +76,15 @@ class JudgeVerdict(BaseModel):
     rationale: str = Field(default="", max_length=600)
 
 
+class JudgeUsage(BaseModel):
+    """Token usage metrics reported by the judge provider."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
 class JudgeCacheEntry(BaseModel):
     """Auditable cache entry stored in plain-text JSON."""
 
@@ -271,13 +280,13 @@ def judge_once(
     temperature: float = DEFAULT_TEMPERATURE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     max_reasks: int = 1,
-) -> tuple[JudgeVerdict | None, str | None]:
+) -> tuple[JudgeVerdict | None, str | None, JudgeUsage | None]:
     """Execute LLM-as-judge with single bounded re-ask on validation failure."""
     if not evidence.strip():
-        return (None, "no evidence returned; groundedness undefined")
+        return (None, "no evidence returned; groundedness undefined", None)
 
     if not api_key.strip():
-        return (None, "OPENROUTER_API_KEY is not set")
+        return (None, "OPENROUTER_API_KEY is not set", None)
 
     system_prompt = JUDGE_SYSTEM_V1
     user_content = (
@@ -299,6 +308,10 @@ def judge_once(
     http_client = client or httpx.Client()
     close_client = client is None
 
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    usage_seen = False
+
     try:
         for attempt in range(max_reasks + 1):
             payload = {
@@ -317,23 +330,52 @@ def judge_once(
                     payload=payload,
                 )
             except Exception as e:
-                return (None, f"Judge transport failure: {e}")
+                usage = (
+                    JudgeUsage(
+                        prompt_tokens=total_prompt_tokens,
+                        completion_tokens=total_completion_tokens,
+                    )
+                    if usage_seen
+                    else None
+                )
+                return (None, f"Judge transport failure: {e}", usage)
+
+            usage_data = resp_json.get("usage")
+            if isinstance(usage_data, dict):
+                try:
+                    p_tok = int(usage_data.get("prompt_tokens", 0))
+                    c_tok = int(usage_data.get("completion_tokens", 0))
+                    total_prompt_tokens += p_tok
+                    total_completion_tokens += c_tok
+                    usage_seen = True
+                except (ValueError, TypeError):
+                    pass
+
+            usage = (
+                JudgeUsage(
+                    prompt_tokens=total_prompt_tokens,
+                    completion_tokens=total_completion_tokens,
+                )
+                if usage_seen
+                else None
+            )
 
             choices = resp_json.get("choices") or []
             if not choices:
-                return (None, "Judge returned empty choices")
+                return (None, "Judge returned empty choices", usage)
 
             content = choices[0].get("message", {}).get("content", "")
             cleaned = _strip_fences(content)
 
             try:
                 verdict = JudgeVerdict.model_validate_json(cleaned)
-                return (verdict, None)
+                return (verdict, None, usage)
             except ValidationError as exc:
                 if attempt >= max_reasks:
                     return (
                         None,
                         f"Judge output validation failed after re-ask: {exc}",
+                        usage,
                     )
                 messages.append({"role": "assistant", "content": content})
                 messages.append({
@@ -344,7 +386,15 @@ def judge_once(
                         "Reply with ONLY the corrected JSON object."
                     ),
                 })
-        return (None, "Judge validation exhausted")
+        usage = (
+            JudgeUsage(
+                prompt_tokens=total_prompt_tokens,
+                completion_tokens=total_completion_tokens,
+            )
+            if usage_seen
+            else None
+        )
+        return (None, "Judge validation exhausted", usage)
     finally:
         if close_client:
             http_client.close()

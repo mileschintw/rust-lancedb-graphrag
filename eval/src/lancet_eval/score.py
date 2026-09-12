@@ -56,6 +56,7 @@ from lancet_eval.judge import (
     judge_once,
     truncate_evidence,
 )
+from lancet_eval.measure import compute_judge_spend
 from lancet_eval.metrics import (
     abstention_rate,
     context_precision_at_k,
@@ -136,6 +137,7 @@ def score_run(
     calibration_file: Path | str | None = None,
     api_key: str | None = None,
     client: httpx.Client | None = None,
+    stage_spend_cap: float | None = None,
 ) -> CorpusReport:
     """Read a run journal and produce a scored evaluation report."""
     dir_path = Path(run_dir)
@@ -342,6 +344,7 @@ def score_run(
     cache_path = dir_path / "judge_cache.json"
     cache = JudgeCache(cache_path)
     judged_qids: set[str] = set()
+    judge_stop_note: str = ""
 
     if calibration_file is not None:
         cached_verdict_count = sum(
@@ -385,7 +388,17 @@ def score_run(
                 f"model '{gen_model}'. A judge cannot evaluate its own model family."
             )
 
+        if stage_spend_cap is None:
+            raise ScoreError(
+                "Judged evaluation requires an explicit stage_spend_cap. "
+                "Specify --stage-cap to bound provider spend."
+            )
+
         api_key_val = api_key or os.environ.get("OPENROUTER_API_KEY", "")
+
+        accumulated_judge_spend = 0.0
+        cap_stopped = False
+        verdicts_obtained = 0
 
         # Select judged question subset
         if sample is not None and sample > 0:
@@ -428,10 +441,15 @@ def score_run(
                 if cached_entry.verdict is not None:
                     groundedness_scores.append(cached_entry.verdict.groundedness)
                     faithfulness_scores.append(cached_entry.verdict.faithfulness)
+                    verdicts_obtained += 1
                 elif cached_entry.error is not None:
                     judge_errors += 1
             else:
-                verdict, err = judge_once(
+                if stage_spend_cap is not None and accumulated_judge_spend >= stage_spend_cap:
+                    cap_stopped = True
+                    break
+
+                verdict, err, usage = judge_once(
                     client=client,
                     api_key=api_key_val,
                     model=judge_model,
@@ -442,6 +460,11 @@ def score_run(
                     temperature=config.judge_temperature,
                     max_tokens=config.judge_max_tokens,
                 )
+                if usage is not None:
+                    accumulated_judge_spend += compute_judge_spend(
+                        usage.prompt_tokens, usage.completion_tokens
+                    )
+
                 entry = JudgeCacheEntry(
                     cache_key=k,
                     prompt_version=config.judge_prompt_version,
@@ -456,8 +479,15 @@ def score_run(
                 if verdict is not None:
                     groundedness_scores.append(verdict.groundedness)
                     faithfulness_scores.append(verdict.faithfulness)
+                    verdicts_obtained += 1
                 else:
                     judge_errors += 1
+
+        if cap_stopped:
+            judge_stop_note = (
+                f"Judged pass stopped by spend cap "
+                f"(${accumulated_judge_spend:.6f} spent >= ${stage_spend_cap:.6f} cap)."
+            )
 
     # Calibration evaluation
     g_calibration_em: float | None = None
@@ -1309,10 +1339,16 @@ def score_run(
             )
 
     final_notes = calibration_notes
+    if judge_stop_note:
+        final_notes = (
+            f"{final_notes} {judge_stop_note}".strip()
+            if final_notes
+            else judge_stop_note
+        )
     if missing_units_note:
         final_notes = (
-            f"{calibration_notes} {missing_units_note}".strip()
-            if calibration_notes
+            f"{final_notes} {missing_units_note}".strip()
+            if final_notes
             else missing_units_note
         )
 

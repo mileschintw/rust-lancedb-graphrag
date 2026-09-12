@@ -116,7 +116,7 @@ def test_fenced_and_unfenced_json_validation(httpx_mock: HTTPXMock) -> None:
     )
 
     client = httpx.Client()
-    verdict, err = judge_once(
+    verdict, err, usage = judge_once(
         client,
         api_key="test-key",
         model="judge-model",
@@ -154,7 +154,7 @@ def test_judge_score_bounds_and_single_reask(httpx_mock: HTTPXMock) -> None:
     )
 
     client = httpx.Client()
-    verdict, err = judge_once(
+    verdict, err, usage = judge_once(
         client,
         api_key="test-key",
         model="judge-model",
@@ -176,7 +176,7 @@ def test_judge_empty_citations_makes_zero_http_calls(
 ) -> None:
     """Proves empty citations short-circuit without issuing HTTP requests."""
     client = httpx.Client()
-    verdict, err = judge_once(
+    verdict, err, usage = judge_once(
         client,
         api_key="test-key",
         model="judge-model",
@@ -294,3 +294,125 @@ def test_judge_and_generator_model_family_differentiation() -> None:
             f"Corpus {corpus} judge model {judge_model} shares family "
             f"prefix {gen_prefix} with {gen_model}"
         )
+
+
+def test_judge_once_returns_usage_on_success(httpx_mock: HTTPXMock) -> None:
+    """Proves judge_once returns JudgeUsage with token counts on successful response."""
+    payload = json.dumps({
+        "groundedness": 5,
+        "faithfulness": 5,
+        "unsupported_claims": [],
+        "rationale": "High fidelity",
+    })
+    httpx_mock.add_response(
+        json={
+            "choices": [{"message": {"content": payload}}],
+            "usage": {"prompt_tokens": 1234, "completion_tokens": 56},
+        }
+    )
+
+    client = httpx.Client()
+    verdict, err, usage = judge_once(
+        client,
+        api_key="test-key",
+        model="judge-model",
+        question="Q?",
+        answer="A.",
+        evidence="E.",
+    )
+    assert err is None
+    assert verdict is not None
+    assert usage is not None
+    assert usage.prompt_tokens == 1234
+    assert usage.completion_tokens == 56
+
+
+def test_judge_once_returns_none_usage_when_omitted(httpx_mock: HTTPXMock) -> None:
+    """Proves judge_once yields None usage when response body omits usage block."""
+    payload = json.dumps({
+        "groundedness": 4,
+        "faithfulness": 4,
+        "unsupported_claims": [],
+        "rationale": "Good match",
+    })
+    httpx_mock.add_response(
+        json={"choices": [{"message": {"content": payload}}]}
+    )
+
+    client = httpx.Client()
+    verdict, err, usage = judge_once(
+        client,
+        api_key="test-key",
+        model="judge-model",
+        question="Q?",
+        answer="A.",
+        evidence="E.",
+    )
+    assert err is None
+    assert verdict is not None
+    assert usage is None
+
+
+def test_judge_once_returns_none_usage_on_transport_failure(httpx_mock: HTTPXMock) -> None:
+    """Proves judge_once yields None usage and error string on transport failure."""
+    httpx_mock.add_exception(httpx.ConnectError("Connection refused"), is_reusable=True)
+
+    client = httpx.Client()
+    verdict, err, usage = judge_once(
+        client,
+        api_key="test-key",
+        model="judge-model",
+        question="Q?",
+        answer="A.",
+        evidence="E.",
+    )
+    assert verdict is None
+    assert err is not None
+    assert "transport failure" in err.lower()
+    assert usage is None
+
+
+def test_judge_once_accumulates_usage_across_reasks(httpx_mock: HTTPXMock) -> None:
+    """Proves re-asked judge calls accumulate token counts across attempts."""
+    bad_payload = json.dumps({
+        "groundedness": 7,  # invalid
+        "faithfulness": 4,
+        "unsupported_claims": [],
+        "rationale": "Score 7 is out of bounds",
+    })
+    good_payload = json.dumps({
+        "groundedness": 5,
+        "faithfulness": 4,
+        "unsupported_claims": [],
+        "rationale": "Corrected score",
+    })
+    httpx_mock.add_response(
+        json={
+            "choices": [{"message": {"content": bad_payload}}],
+            "usage": {"prompt_tokens": 1000, "completion_tokens": 50},
+        }
+    )
+    httpx_mock.add_response(
+        json={
+            "choices": [{"message": {"content": good_payload}}],
+            "usage": {"prompt_tokens": 1100, "completion_tokens": 40},
+        }
+    )
+
+    client = httpx.Client()
+    verdict, err, usage = judge_once(
+        client,
+        api_key="test-key",
+        model="judge-model",
+        question="Q?",
+        answer="A.",
+        evidence="E.",
+        max_reasks=1,
+    )
+    assert err is None
+    assert verdict is not None
+    assert verdict.groundedness == 5
+    assert usage is not None
+    assert usage.prompt_tokens == 2100  # 1000 + 1100
+    assert usage.completion_tokens == 90   # 50 + 40
+
