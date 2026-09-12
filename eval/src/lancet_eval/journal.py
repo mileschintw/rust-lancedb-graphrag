@@ -187,14 +187,14 @@ def reconcile_header(
     if not path.is_file():
         return False, False, f"Journal file does not exist: {path}"
 
-    # Read all lines
-    with open(path, "r", encoding="utf-8") as f:
+    # Read all lines as raw bytes to guarantee byte-identity of record lines
+    with open(path, "rb") as f:
         lines = f.readlines()
 
     if not lines:
         return False, False, "Journal file is empty"
 
-    header_line = lines[0].strip()
+    header_line = lines[0].decode("utf-8").strip()
     try:
         header_data = json.loads(header_line)
     except Exception as e:
@@ -222,15 +222,14 @@ def reconcile_header(
         action_msg = f"Journal is incomplete: missing {len(missing)} work unit(s); corrected header to staged"
         publishable = False
 
-    new_header_line = json.dumps(header_data, ensure_ascii=False) + "\n"
+    new_header_bytes = (json.dumps(header_data, ensure_ascii=False) + "\n").encode("utf-8")
 
     # Write atomically via temp file in same directory
     tmp_path = path.parent / f".{path.name}.tmp.{time.time_ns()}"
     try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            f.write(new_header_line)
-            for rec_line in lines[1:]:
-                f.write(rec_line)
+        with open(tmp_path, "wb") as f:
+            f.write(new_header_bytes)
+            f.writelines(lines[1:])
             f.flush()
         os.replace(tmp_path, path)
     finally:
