@@ -3,17 +3,16 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 06.3.4
 current_phase_name: Corrected re-drive, calibration and root-cause documentation
-current_plan: N/A (2 gap-closure plans ready — 06.3.4-08, 06.3.4-09)
-status: gap_closure_planned
-stopped_at: "Gap-closure plans for Phase 06.3.4 written and checker-verified 2026-09-12 (06.3.4-08-PLAN.md wave 7, 06.3.4-09-PLAN.md wave 8, depends_on 08). Next: /gsd-execute-phase 06.3.4 --gaps-only, then /gsd-code-review, verification, and /gsd-secure-phase 06.3.4 until threats_open is 0. Only after that: plan and execute Phase 06.3.4.1 (retrieval diagnosis, index identity, graph-yield repair), then Phase 6.4 (parked) — 6.4 stays NOT ready to plan until 06.3.4.1 demonstrates a real graph-on vs graph-off effect on a gold-in-index subset."
-last_updated: "2026-09-12T22:12:56.371Z"
+current_plan: 06.3.4-09
+status: plans_complete
+stopped_at: "Gap-closure plans for Phase 06.3.4 (06.3.4-08 and 06.3.4-09) completed and verified 2026-09-12. All 9 plans in phase executed. Phase-final code review and verification gates not entered per user instruction."
+last_updated: "2026-09-12T23:05:00.000Z"
 last_activity: 2026-09-12
-state_head: 07f4709d23b2ce9e2ec0eefd46635ccfd0987b4f
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 157
-  completed_plans: 155
+  completed_plans: 157
 milestone_name: milestone
 ---
 
@@ -21,7 +20,10 @@ milestone_name: milestone
 
 ## Current Status
 
-- **Phase 06.3.4 gap-closure plans created** (`/gsd-plan-phase 06.3.4 --gaps`, commit `07f4709`, checker-verified 0 blockers/0 warnings/2 info): two plans, both `gap_closure: true`, `requirements: [OBS-05]`, `context_path` injected by hand from the shared `06.3.1-CONTEXT.md` (this repo's 375K context window is below the 500K auto-load threshold).
+- **Phase 06.3.4 gap-closure execution complete** (Plans 06.3.4-08 and 06.3.4-09 completed and committed):
+  - **`06.3.4-08-PLAN.md` (Wave 7)**: Reconciles journal headers dynamically from measured completeness, enforces fail-closed publication in `score_run`/`report.py`, corrected the live journal header via `lancet-eval reconcile`, and documented the journal-reset finding and corrections in `06.3.4-FINDINGS.md` §5, `06.3.4-04-SUMMARY.md`, `06.3.4-STAGED-GATE.md`, and `docs/evaluation-fidelity-and-graph-yield.md`. Closes CR-01, T-06.3.4-19, WR-01, WR-05, IN-01.
+  - **`06.3.4-09-PLAN.md` (Wave 8)**: Built `JudgeUsage` and metered judge spend with committed model-specific price constants; added `--stage-cap` to `score` CLI and fail-closed `stage_spend_cap` to `score_run`; broke judge loop on spend ceiling before calls; reordered `derive_judged_slice_size` guards so cached-verdict refusal is reachable and wired to `score_run`'s subset selection; made file finders deterministic (WR-03); published `judged_slice_committed`, `verdicts_obtained`, and `judged_slice_state` across `RunMetadata`, regenerated `eval/report.schema.json`, and both judged dimensions; unified `GRAPH_YIELD_INVESTIGATION_FLOOR` in `thresholds.py` eliminating the `dimensions -> gate -> report -> dimensions` cycle (IN-02). Closes T-06.3.4-24, T-06.3.4-25, T-06.3.4-43, IN-03, WR-03, IN-02.
+  - **User Constraint**: Stopped after plan completion without entering phase-final code review or verification gates.
   - **`06.3.4-08-PLAN.md`** (Wave 7, tracer-first): derives the journal `partial` flag from measured completeness at every `drive()` exit path, makes `score`/`report` fail closed when completeness can't be positively verified, and makes `reconcile_header` bidirectional (previously true→false only). Corrects the live `eval/runs/2026-09-09-multihop_rag/journal.jsonl` header through the fixed reconcile (not a hand-edit), plus four artefacts that assert something false: `06.3.4-04-SUMMARY.md`'s "header correctly remains partial: true" claim, `docs/evaluation-fidelity-and-graph-yield.md` point 5's overclaim, and records the SC-1 disclosed-deviation amendment into `06.3.4-STAGED-GATE.md` §6 and the journal-reset finding into a new `06.3.4-FINDINGS.md` §5 (evidence: `git log` shows only two commits touching the journal path — `eb893ba` wrote the 4-record micro-slice, `33e774b` replaced it wholesale, 5 deletions/659 insertions, not an append; neither `drive()` nor the CLI's `run` command contains any code path capable of clearing an existing non-empty file, so the reset was out-of-band and its exact cause is not reconstructable from committed artifacts). Closes CR-01 / T-06.3.4-19, plus WR-01, WR-05, IN-01 by file locality. SC-1 recorded as a disclosed deviation (no 50-question re-drive); SC-3 stays deferred (no calibration back-fill).
   - **`06.3.4-09-PLAN.md`** (Wave 8, `depends_on: [06.3.4-08]`): adds judge usage metering and a required `--stage-cap` on `score` with a pre-dispatch spend break in the judge loop; reorders `derive_judged_slice_size`'s guard so the `cached_verdict_count` invariant can't be bypassed by the zero-shortcut, and wires it to a real caller (`score_run`'s judged-subset selection); adds `judged_slice_committed`/`verdicts_obtained`/`judged_slice_state` through `RunMetadata`, `eval/report.schema.json`, and both judged dimensions. Closes T-06.3.4-24/25/43 (exact IDs reused per the security contribution hook, ASVS L1/block_on high) plus IN-03, WR-03, IN-02 by file locality. WR-02, WR-04, and OI-01/02/03 explicitly deferred (the latter belong to Phase 06.3.4.1).
   - **`must_haves.prohibitions` on 06.3.4-08** structurally forbids any task's `<action>`/`<verify>` from running `lancet-eval score`/`report` against the real run of record before the header is corrected; checker confirmed no task in either plan invokes `score`/`report` against that run at all.
