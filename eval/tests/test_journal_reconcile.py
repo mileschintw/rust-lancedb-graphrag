@@ -4,8 +4,11 @@ import inspect
 import json
 from pathlib import Path
 
+import httpx
 import pytest
+from typer.testing import CliRunner
 
+from lancet_eval.cli import app
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
 from lancet_eval.journal import (
     RunRecord,
@@ -14,6 +17,7 @@ from lancet_eval.journal import (
     load_done,
     reconcile_header,
 )
+from lancet_eval.run import drive
 from lancet_eval.score import score_run
 
 
@@ -130,8 +134,9 @@ def test_reconcile_header_byte_identical_record_lines(tmp_path: Path) -> None:
     with open(j_path, "r", encoding="utf-8") as f:
         orig_lines = f.readlines()
 
-    success, msg = reconcile_header(j_path, corpus)
-    assert success is True
+    publishable, changed, msg = reconcile_header(j_path, corpus)
+    assert publishable is True
+    assert changed is True
 
     # Read new lines
     with open(j_path, "r", encoding="utf-8") as f:
@@ -148,8 +153,8 @@ def test_reconcile_header_byte_identical_record_lines(tmp_path: Path) -> None:
     assert new_lines[1:] == orig_lines[1:]
 
 
-def test_reconcile_incomplete_makes_no_change(tmp_path: Path) -> None:
-    """Proves reconciling incomplete journal makes no change and reports missing keys."""
+def test_reconcile_incomplete_staged_makes_no_change(tmp_path: Path) -> None:
+    """Proves reconciling incomplete journal with staged header makes no change and reports missing keys."""
     corpus = "graphrag_bench"
     config = load_corpus_config(corpus)
     questions = load_sample_questions(corpus)
@@ -160,14 +165,45 @@ def test_reconcile_incomplete_makes_no_change(tmp_path: Path) -> None:
     with open(j_path, "r", encoding="utf-8") as f:
         orig_content = f.read()
 
-    success, msg = reconcile_header(j_path, corpus)
-    assert success is False
+    publishable, changed, msg = reconcile_header(j_path, corpus)
+    assert publishable is False
+    assert changed is False
     assert "missing 1 work unit" in msg
 
     with open(j_path, "r", encoding="utf-8") as f:
         new_content = f.read()
 
     assert new_content == orig_content
+
+
+def test_reconcile_incomplete_publishable_header_corrected_to_staged(tmp_path: Path) -> None:
+    """Proves reconciling incomplete journal with publishable header corrects header to staged and preserves records."""
+    corpus = "graphrag_bench"
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)
+
+    j_path = tmp_path / "journal.jsonl"
+    _create_synthetic_journal(j_path, corpus, questions, config.arms, partial=False, omit_last=True)
+
+    with open(j_path, "r", encoding="utf-8") as f:
+        orig_lines = f.readlines()
+
+    publishable, changed, msg = reconcile_header(j_path, corpus)
+    assert publishable is False
+    assert changed is True
+    assert "missing 1 work unit" in msg
+
+    with open(j_path, "r", encoding="utf-8") as f:
+        new_lines = f.readlines()
+
+    assert len(new_lines) == len(orig_lines)
+    orig_header = json.loads(orig_lines[0])
+    new_header = json.loads(new_lines[0])
+    assert orig_header["partial"] is False
+    assert new_header["partial"] is True
+
+    # Record lines are byte-identical
+    assert new_lines[1:] == orig_lines[1:]
 
 
 def test_reconcile_already_publishable_is_noop(tmp_path: Path) -> None:
@@ -182,8 +218,9 @@ def test_reconcile_already_publishable_is_noop(tmp_path: Path) -> None:
     with open(j_path, "r", encoding="utf-8") as f:
         orig_content = f.read()
 
-    success, msg = reconcile_header(j_path, corpus)
-    assert success is True
+    publishable, changed, msg = reconcile_header(j_path, corpus)
+    assert publishable is True
+    assert changed is False
     assert "already publishable" in msg
 
     with open(j_path, "r", encoding="utf-8") as f:
@@ -192,8 +229,23 @@ def test_reconcile_already_publishable_is_noop(tmp_path: Path) -> None:
     assert new_content == orig_content
 
 
-def test_no_public_entrypoint_can_set_partial_true() -> None:
-    """Proves reconcile_header cannot be instructed to set partial: True back."""
+def test_cannot_mark_complete_journal_staged_and_no_override_param(tmp_path: Path) -> None:
+    """Proves complete journal cannot be marked staged by reconcile, and no override param exists."""
+    corpus = "graphrag_bench"
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)
+
+    j_path = tmp_path / "journal.jsonl"
+    _create_synthetic_journal(j_path, corpus, questions, config.arms, partial=False)
+
+    publishable, changed, msg = reconcile_header(j_path, corpus)
+    assert publishable is True
+    assert changed is False
+
+    with open(j_path, "r", encoding="utf-8") as f:
+        header = json.loads(f.readline())
+    assert header["partial"] is False
+
     sig = inspect.signature(reconcile_header)
     param_names = list(sig.parameters.keys())
     assert "partial" not in param_names
@@ -245,10 +297,123 @@ def test_score_run_on_reconciled_writes_report_json(tmp_path: Path) -> None:
     assert not report_json.exists()
 
     # Reconcile
-    success, msg = reconcile_header(j_path, corpus)
-    assert success is True
+    publishable, changed, msg = reconcile_header(j_path, corpus)
+    assert publishable is True
+    assert changed is True
 
     # Score run offline without judge
     report = score_run(run_dir=run_dir, no_judge=True)
     assert report.metadata.partial is False
     assert report_json.is_file(), "report.json must be written on reconciled journal"
+
+
+def test_reconcile_cli_outcomes(tmp_path: Path) -> None:
+    """Proves lancet-eval reconcile CLI handles all three outcomes with correct exit codes."""
+    runner = CliRunner()
+    corpus = "graphrag_bench"
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)
+
+    # 1. Complete journal with staged header -> reconciled to publishable (exit 0)
+    run_dir_1 = tmp_path / "run_complete_staged"
+    j_1 = run_dir_1 / "journal.jsonl"
+    _create_synthetic_journal(j_1, corpus, questions, config.arms, partial=True)
+    res_1 = runner.invoke(app, ["reconcile", "--run", str(run_dir_1), "--corpus", corpus])
+    assert res_1.exit_code == 0
+    assert "reconciled" in res_1.output.lower() or "publishable" in res_1.output.lower()
+
+    # 2. Incomplete journal with publishable header -> corrected to staged, still unpublishable (exit 1)
+    run_dir_2 = tmp_path / "run_incomplete_publishable"
+    j_2 = run_dir_2 / "journal.jsonl"
+    _create_synthetic_journal(j_2, corpus, questions, config.arms, partial=False, omit_last=True)
+    res_2 = runner.invoke(app, ["reconcile", "--run", str(run_dir_2), "--corpus", corpus])
+    assert res_2.exit_code == 1
+    assert "corrected" in res_2.output.lower()
+    assert "unpublishable" in res_2.output.lower()
+
+    # 3. Incomplete journal with staged header -> rejected unchanged (exit 1)
+    run_dir_3 = tmp_path / "run_incomplete_staged"
+    j_3 = run_dir_3 / "journal.jsonl"
+    _create_synthetic_journal(j_3, corpus, questions, config.arms, partial=True, omit_last=True)
+    res_3 = runner.invoke(app, ["reconcile", "--run", str(run_dir_3), "--corpus", corpus])
+    assert res_3.exit_code == 1
+    assert "reconciliation rejected" in res_3.output.lower()
+
+
+def test_drive_header_staged_mid_run_and_publishable_on_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proves drive() leaves header staged when stopped early and reconciles to publishable on full completion."""
+    corpus = "graphrag_bench"
+    j_path = tmp_path / "journal.jsonl"
+
+    def mock_drive_one(client, *, corpus, question, arm, partial=False, **kwargs) -> RunRecord:
+        return RunRecord(
+            corpus=corpus,
+            question_id=question.id,
+            graph_arm=arm,
+            outcome="success",
+            index_generation="gen-1",
+            partial=partial,
+        )
+
+    monkeypatch.setattr("lancet_eval.run.drive_one", mock_drive_one)
+
+    fake_client = httpx.Client(base_url="http://testserver")
+
+    # Step 1: Drive with limit=2 (2 questions x 2 arms = 4 units out of 10)
+    res_1 = drive(
+        client=fake_client,
+        corpus=corpus,
+        journal_path=j_path,
+        limit=2,
+        stage_spend_cap=10.0,
+        workers=1,
+    )
+    assert res_1.executed_count == 4
+    with open(j_path, "r", encoding="utf-8") as f:
+        hdr_1 = json.loads(f.readline())
+    assert hdr_1["partial"] is True, "Header must remain staged when drive is partial"
+
+    # Step 2: Resume with no limit to complete remaining 6 units
+    res_2 = drive(
+        client=fake_client,
+        corpus=corpus,
+        journal_path=j_path,
+        stage_spend_cap=10.0,
+        workers=1,
+        resume=True,
+    )
+    assert res_2.executed_count == 6
+    with open(j_path, "r", encoding="utf-8") as f:
+        hdr_2 = json.loads(f.readline())
+    assert hdr_2["partial"] is False, "Header must be reconciled to publishable on full completion"
+
+
+def test_drive_resume_no_remaining_units_reconciles_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proves drive() on resume with zero remaining units reconciles an un-reconciled header to publishable."""
+    corpus = "graphrag_bench"
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)
+    j_path = tmp_path / "journal.jsonl"
+
+    # Create synthetic journal with all 10 units complete, but header still staged (partial=True)
+    _create_synthetic_journal(j_path, corpus, questions, config.arms, partial=True)
+
+    fake_client = httpx.Client(base_url="http://testserver")
+
+    res = drive(
+        client=fake_client,
+        corpus=corpus,
+        journal_path=j_path,
+        stage_spend_cap=10.0,
+        workers=1,
+        resume=True,
+    )
+    assert res.executed_count == 0, "No remaining units should be executed"
+    with open(j_path, "r", encoding="utf-8") as f:
+        hdr = json.loads(f.readline())
+    assert hdr["partial"] is False, "Resume with zero remaining units must reconcile header to publishable"
+

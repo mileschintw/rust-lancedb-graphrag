@@ -60,7 +60,13 @@ class RunRecord(BaseModel):
     session_id: str = ""
     correlation_id: str = ""
     index_generation: str = ""
-    partial: bool = False
+    partial: bool = Field(
+        default=False,
+        description=(
+            "Informational marker indicating whether this record was written during an invocation "
+            "that passed the --limit sampling knob; explicitly not a run-level completeness signal."
+        ),
+    )
     error_type: str | None = None
     error: str | None = None
     node_timings: list[NodeTiming] = Field(default_factory=list)
@@ -161,43 +167,61 @@ def completeness_comparison(
 
 def reconcile_header(
     journal_path: Path | str, corpus: str
-) -> tuple[bool, str]:
-    """Reconcile a journal header from partial to publishable when complete.
+) -> tuple[bool, bool, str]:
+    """Reconcile a journal header between staged and publishable based on measured completeness.
 
-    Conditioned on completeness_comparison. If incomplete, makes no change.
-    Rewrites ONLY the header line (clearing partial: false), preserving all record lines byte-identical.
+    Handles all four (completeness, header) states:
+    1. complete and header says staged -> flip to publishable (returns True, True, msg).
+    2. complete and header says publishable -> no-op, already correct (returns True, False, msg).
+    3. incomplete and header says staged -> no change, already correct (returns False, False, msg).
+    4. incomplete and header says publishable -> correct header from publishable to staged (returns False, True, msg).
+
+    Rewrites ONLY the header line, preserving all record lines byte-identical.
     Uses an atomic write via temporary file beside the journal.
+    Note: publishable=False does not imply that nothing was written (e.g. state 4 writes a corrected header).
+    Returns (publishable, header_changed, message).
     """
     import os
 
     path = Path(journal_path)
     if not path.is_file():
-        return False, f"Journal file does not exist: {path}"
-
-    is_complete, missing = completeness_comparison(path, corpus)
-    if not is_complete:
-        return False, f"Journal is incomplete: missing {len(missing)} work unit(s)"
+        return False, False, f"Journal file does not exist: {path}"
 
     # Read all lines
     with open(path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     if not lines:
-        return False, "Journal file is empty"
+        return False, False, "Journal file is empty"
 
     header_line = lines[0].strip()
     try:
         header_data = json.loads(header_line)
     except Exception as e:
-        return False, f"Failed to parse journal header: {e}"
+        return False, False, f"Failed to parse journal header: {e}"
 
     if not isinstance(header_data, dict) or header_data.get("type") != "header":
-        return False, "First line of journal is not a valid header"
+        return False, False, "First line of journal is not a valid header"
 
-    if not header_data.get("partial", False):
-        return True, "Journal is already publishable (partial is False); no-op"
+    is_complete, missing = completeness_comparison(path, corpus)
+    header_partial = bool(header_data.get("partial", False))
 
-    header_data["partial"] = False
+    if is_complete:
+        if not header_partial:
+            return True, False, "Journal is already publishable (partial is False); no-op"
+        # Complete and header is staged -> flip to publishable
+        header_data["partial"] = False
+        action_msg = "Successfully reconciled journal header to publishable"
+        publishable = True
+    else:
+        if header_partial:
+            # Incomplete and header already says staged -> no change
+            return False, False, f"Journal is incomplete: missing {len(missing)} work unit(s)"
+        # Incomplete and header says publishable -> correct to staged
+        header_data["partial"] = True
+        action_msg = f"Journal is incomplete: missing {len(missing)} work unit(s); corrected header to staged"
+        publishable = False
+
     new_header_line = json.dumps(header_data, ensure_ascii=False) + "\n"
 
     # Write atomically via temp file in same directory
@@ -213,7 +237,7 @@ def reconcile_header(
         if tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
 
-    return True, "Successfully reconciled journal header to publishable"
+    return publishable, True, action_msg
 
 
 class Journal:

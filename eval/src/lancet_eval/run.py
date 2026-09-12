@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import time
 from pathlib import Path
 
 import httpx
@@ -19,6 +20,7 @@ from lancet_eval.journal import (
     journal_key,
     load_done,
     load_records,
+    reconcile_header,
 )
 from lancet_eval.measure import compute_spend
 from lancet_eval.raw_events import RawEventSink, baseline_sample_ids
@@ -75,7 +77,11 @@ def drive_one(
     errors become durable error records with outcome='error' so sibling results are
     never discarded. Retries up to max_retries on transient failure or early termination.
     """
-    disable_graph_context = GRAPH_ARMS.get(arm, False)
+    if arm not in GRAPH_ARMS:
+        raise ValueError(
+            f"Unknown arm {arm!r}. Expected one of: {sorted(GRAPH_ARMS.keys())}"
+        )
+    disable_graph_context = GRAPH_ARMS[arm]
 
     last_record: RunRecord | None = None
     for attempt in range(max_retries + 1):
@@ -184,7 +190,6 @@ def drive_one(
                     attempt + 1,
                     max_retries,
                 )
-                import time
                 time.sleep(1.0 * (attempt + 1))
                 continue
 
@@ -209,7 +214,6 @@ def drive_one(
                     attempt + 1,
                     max_retries,
                 )
-                import time
                 time.sleep(1.0 * (attempt + 1))
                 continue
             return last_record
@@ -244,7 +248,7 @@ def drive(
     config = load_corpus_config(corpus)
     questions = load_sample_questions(corpus)
 
-    partial = limit is not None
+    is_limited = limit is not None
     if limit is not None:
         questions = questions[:limit]
 
@@ -264,85 +268,56 @@ def drive(
     ]
 
     journal = Journal(target_path)
-    journal.write_header(corpus=corpus, partial=partial)
+    journal.write_header(corpus=corpus, partial=True)
 
-    if not remaining_units:
-        spend_so_far, _ = compute_spend(records)
-        return DriveResult(0, stopped_by_cap=False, observed_spend=spend_so_far)
-
-    # Check if accumulator already reached cap before dispatching any unit
-    initial_spend, _ = compute_spend(records)
-    if initial_spend >= stage_spend_cap:
-        return DriveResult(0, stopped_by_cap=True, observed_spend=initial_spend)
-
-    baseline_ids = baseline_sample_ids(questions)
-    raw_sink = RawEventSink(target_path.parent)
-
-    effective_workers = max(1, workers)
-    limits = httpx.Limits(
-        max_connections=effective_workers,
-        max_keepalive_connections=effective_workers,
-    )
-
-    should_close_client = client is None
-    eval_client = client or httpx.Client(
-        base_url=eval_settings.gateway_url,
-        limits=limits,
-        timeout=httpx.Timeout(
-            connect=10.0,
-            read=eval_settings.gateway_timeout_secs,
-            write=30.0,
-            pool=10.0,
-        ),
-    )
-
-    executed_count = 0
-    stopped_by_cap = False
-    remaining_iter = iter(remaining_units)
-    in_flight: set[concurrent.futures.Future[RunRecord]] = set()
+    def _safe_reconcile() -> None:
+        try:
+            reconcile_header(target_path, corpus)
+        except Exception as exc:
+            logger.warning("Failed to reconcile header for %s: %s", target_path, exc)
 
     try:
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=effective_workers
-        ) as executor:
-            # Prime the window with at most effective_workers
-            for _ in range(effective_workers):
-                try:
-                    q, arm = next(remaining_iter)
-                except StopIteration:
-                    break
-                fut = executor.submit(
-                    drive_one,
-                    eval_client,
-                    corpus=corpus,
-                    question=q,
-                    arm=arm,
-                    partial=partial,
-                    deadline_s=eval_settings.question_deadline_secs,
-                    read_timeout_s=eval_settings.gateway_timeout_secs,
-                    raw_sink=raw_sink,
-                    baseline_ids=baseline_ids,
-                    max_retries=max_retries,
-                )
-                in_flight.add(fut)
+        if not remaining_units:
+            spend_so_far, _ = compute_spend(records)
+            return DriveResult(0, stopped_by_cap=False, observed_spend=spend_so_far)
 
-            while in_flight:
-                done, in_flight = concurrent.futures.wait(
-                    in_flight,
-                    return_when=concurrent.futures.FIRST_COMPLETED,
-                )
-                for fut in done:
-                    record = fut.result()
-                    journal.append(record)
-                    records.append(record)
-                    executed_count += 1
+        # Check if accumulator already reached cap before dispatching any unit
+        initial_spend, _ = compute_spend(records)
+        if initial_spend >= stage_spend_cap:
+            return DriveResult(0, stopped_by_cap=True, observed_spend=initial_spend)
 
-                # Before submitting each next unit, check spend vs cap
-                while len(in_flight) < effective_workers and not stopped_by_cap:
-                    current_spend, _ = compute_spend(records)
-                    if current_spend >= stage_spend_cap:
-                        stopped_by_cap = True
-                        break
+        baseline_ids = baseline_sample_ids(questions)
+        raw_sink = RawEventSink(target_path.parent)
+
+        effective_workers = max(1, workers)
+        limits = httpx.Limits(
+            max_connections=effective_workers,
+            max_keepalive_connections=effective_workers,
+        )
+
+        should_close_client = client is None
+        eval_client = client or httpx.Client(
+            base_url=eval_settings.gateway_url,
+            limits=limits,
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=eval_settings.gateway_timeout_secs,
+                write=30.0,
+                pool=10.0,
+            ),
+        )
+
+        executed_count = 0
+        stopped_by_cap = False
+        remaining_iter = iter(remaining_units)
+        in_flight: set[concurrent.futures.Future[RunRecord]] = set()
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=effective_workers
+            ) as executor:
+                # Prime the window with at most effective_workers
+                for _ in range(effective_workers):
                     try:
                         q, arm = next(remaining_iter)
                     except StopIteration:
@@ -353,7 +328,7 @@ def drive(
                         corpus=corpus,
                         question=q,
                         arm=arm,
-                        partial=partial,
+                        partial=is_limited,
                         deadline_s=eval_settings.question_deadline_secs,
                         read_timeout_s=eval_settings.gateway_timeout_secs,
                         raw_sink=raw_sink,
@@ -361,10 +336,48 @@ def drive(
                         max_retries=max_retries,
                     )
                     in_flight.add(fut)
-    finally:
-        if should_close_client:
-            eval_client.close()
 
-    total_spend, _ = compute_spend(records)
-    return DriveResult(executed_count, stopped_by_cap=stopped_by_cap, observed_spend=total_spend)
+                while in_flight:
+                    done, in_flight = concurrent.futures.wait(
+                        in_flight,
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
+                    for fut in done:
+                        record = fut.result()
+                        journal.append(record)
+                        records.append(record)
+                        executed_count += 1
+
+                    # Before submitting each next unit, check spend vs cap
+                    while len(in_flight) < effective_workers and not stopped_by_cap:
+                        current_spend, _ = compute_spend(records)
+                        if current_spend >= stage_spend_cap:
+                            stopped_by_cap = True
+                            break
+                        try:
+                            q, arm = next(remaining_iter)
+                        except StopIteration:
+                            break
+                        fut = executor.submit(
+                            drive_one,
+                            eval_client,
+                            corpus=corpus,
+                            question=q,
+                            arm=arm,
+                            partial=is_limited,
+                            deadline_s=eval_settings.question_deadline_secs,
+                            read_timeout_s=eval_settings.gateway_timeout_secs,
+                            raw_sink=raw_sink,
+                            baseline_ids=baseline_ids,
+                            max_retries=max_retries,
+                        )
+                        in_flight.add(fut)
+        finally:
+            if should_close_client:
+                eval_client.close()
+
+        total_spend, _ = compute_spend(records)
+        return DriveResult(executed_count, stopped_by_cap=stopped_by_cap, observed_spend=total_spend)
+    finally:
+        _safe_reconcile()
 

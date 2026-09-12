@@ -394,14 +394,18 @@ def reconcile_run(
         ),
     ] = "multihop_rag",
 ) -> None:
-    """Reconcile journal header from partial to publishable when drive is complete."""
+    """Reconcile journal header to reflect measured completeness. Non-zero exit indicates run is not publishable, but does not imply nothing was written."""
     try:
         from lancet_eval.journal import reconcile_header
 
         journal_path = run / "journal.jsonl"
-        success, msg = reconcile_header(journal_path=journal_path, corpus=corpus)
-        if success:
+        publishable, header_changed, msg = reconcile_header(journal_path=journal_path, corpus=corpus)
+        if publishable:
             console.print(f"[green]{msg}[/green]")
+        elif header_changed:
+            # Header was corrected to staged on disk; non-zero exit signifies run is unpublishable
+            console.print(f"[bold yellow]Header corrected to staged:[/bold yellow] {msg}. Run remains unpublishable.")
+            raise typer.Exit(code=1)
         else:
             console.print(f"[bold red]Reconciliation rejected:[/bold red] {msg}")
             raise typer.Exit(code=1)

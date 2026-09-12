@@ -24,6 +24,14 @@ def test_arm_vocabulary_consistency() -> None:
     assert GRAPH_ARMS["graph-off"] is True
 
 
+def test_unknown_arm_raises_value_error() -> None:
+    """Proves unrecognised arm raises ValueError naming the arm and valid keys (WR-01)."""
+    client = httpx.Client(base_url="http://testserver")
+    q = GoldQuestion(question_id="q1", question="What is Paris?", gold_facts=["Paris"])
+    with pytest.raises(ValueError, match="Unknown arm 'unknown-arm'"):
+        drive_one(client, corpus="multihop_rag", question=q, arm="unknown-arm")
+
+
 def test_request_body_polarity_and_model_only_absence(httpx_mock: HTTPXMock) -> None:
     """Proves graph-off sends disable_graph_context: True, graph-on omits key."""
     def sse_response(request: httpx.Request) -> httpx.Response:
