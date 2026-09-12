@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 from lancet_eval.config import repo_root
 from lancet_eval.report import CorpusReport
+from lancet_eval.thresholds import GRAPH_YIELD_INVESTIGATION_FLOOR
 
 # --- Committed Decision Inputs (AI-SPEC §5 / D-32, D-44, D-48) ---
 # Boundary semantics are part of the lock:
@@ -18,7 +19,6 @@ from lancet_eval.report import CorpusReport
 # - Yield floor: at-or-above (>= 0.20)
 # - Complement trigger: strictly above (> 0.80)
 STAGED_PAIRING_COVERAGE_FLOOR: float = 0.80
-GRAPH_YIELD_INVESTIGATION_FLOOR: float = 0.20
 COMPLEMENT_TRIGGER: float = 0.80
 STAGED_SIZE: int = 50
 CALIBRATION_SIZE: int = 12

@@ -7,10 +7,25 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from lancet_eval.thresholds import GRAPH_YIELD_INVESTIGATION_FLOOR
+
 NOTICE_CODE_NO_EVIDENCE = 1
 NOTICE_CODE_GRAPH_TIMEOUT = 2
 NOTICE_CODE_GRAPH_UNAVAILABLE = 10
 NOTICE_CODE_GRAPH_ABLATION = 18
+
+# --- Judged slice state constants and mapping (T-06.3.4-43) ---
+JUDGED_SLICE_STATE_NOT_JUDGED: float = 0.0
+JUDGED_SLICE_STATE_COMPLETED: float = 1.0
+JUDGED_SLICE_STATE_CAP_BOUND: float = 2.0
+JUDGED_SLICE_STATE_CAP_STOPPED: float = 3.0
+
+JUDGED_SLICE_STATES: dict[float, str] = {
+    JUDGED_SLICE_STATE_NOT_JUDGED: "not_judged",
+    JUDGED_SLICE_STATE_COMPLETED: "completed",
+    JUDGED_SLICE_STATE_CAP_BOUND: "cap_bound",
+    JUDGED_SLICE_STATE_CAP_STOPPED: "cap_stopped",
+}
 
 
 class DimensionResult(BaseModel):
@@ -165,14 +180,26 @@ def make_groundedness_result(
     calibration_spearman_ci_upper: float | None = None,
     calibration_pairs_n: float | None = None,
     calibration_excluded_n: float | None = None,
+    judged_slice_committed: int | float | None = None,
+    verdicts_obtained: int | float | None = None,
+    judged_slice_state: float | None = None,
 ) -> DimensionResult:
     """Build DimensionResult for judged answer groundedness."""
+    err_detail: dict[str, float] = {}
+    if judged_slice_committed is not None:
+        err_detail["judged_slice_committed"] = float(judged_slice_committed)
+    if verdicts_obtained is not None:
+        err_detail["verdicts_obtained"] = float(verdicts_obtained)
+    if judged_slice_state is not None:
+        err_detail["judged_slice_state"] = float(judged_slice_state)
+
     if not verdicts:
         if judge_errors > 0 and judge_errors == total_sampled:
             return DimensionResult(
                 name="answer_groundedness",
                 status="error",
                 reason=f"All {judge_errors} judge calls failed with errors",
+                detail=err_detail,
                 n=0,
             )
         if skipped_no_evidence == total_sampled and total_sampled > 0:
@@ -180,12 +207,14 @@ def make_groundedness_result(
                 name="answer_groundedness",
                 status="skipped",
                 reason="No evidence returned in responses; groundedness undefined",
+                detail=err_detail,
                 n=0,
             )
         return DimensionResult(
             name="answer_groundedness",
             status="skipped",
             reason="No judged items available",
+            detail=err_detail,
             n=0,
         )
     mean_val = sum(verdicts) / len(verdicts)
@@ -194,6 +223,12 @@ def make_groundedness_result(
         "judge_errors": float(judge_errors),
         "skipped_no_evidence": float(skipped_no_evidence),
     }
+    if judged_slice_committed is not None:
+        detail["judged_slice_committed"] = float(judged_slice_committed)
+    if verdicts_obtained is not None:
+        detail["verdicts_obtained"] = float(verdicts_obtained)
+    if judged_slice_state is not None:
+        detail["judged_slice_state"] = float(judged_slice_state)
     if calibration_exact_match is not None:
         detail["calibration_exact_match"] = float(calibration_exact_match)
     if calibration_mad is not None:
@@ -248,14 +283,26 @@ def make_faithfulness_result(
     calibration_spearman_ci_upper: float | None = None,
     calibration_pairs_n: float | None = None,
     calibration_excluded_n: float | None = None,
+    judged_slice_committed: int | float | None = None,
+    verdicts_obtained: int | float | None = None,
+    judged_slice_state: float | None = None,
 ) -> DimensionResult:
     """Build DimensionResult for judged answer faithfulness."""
+    err_detail: dict[str, float] = {}
+    if judged_slice_committed is not None:
+        err_detail["judged_slice_committed"] = float(judged_slice_committed)
+    if verdicts_obtained is not None:
+        err_detail["verdicts_obtained"] = float(verdicts_obtained)
+    if judged_slice_state is not None:
+        err_detail["judged_slice_state"] = float(judged_slice_state)
+
     if not verdicts:
         if judge_errors > 0 and judge_errors == total_sampled:
             return DimensionResult(
                 name="answer_faithfulness",
                 status="error",
                 reason=f"All {judge_errors} judge calls failed with errors",
+                detail=err_detail,
                 n=0,
             )
         if skipped_no_evidence == total_sampled and total_sampled > 0:
@@ -263,12 +310,14 @@ def make_faithfulness_result(
                 name="answer_faithfulness",
                 status="skipped",
                 reason="No evidence returned in responses; faithfulness undefined",
+                detail=err_detail,
                 n=0,
             )
         return DimensionResult(
             name="answer_faithfulness",
             status="skipped",
             reason="No judged items available",
+            detail=err_detail,
             n=0,
         )
     mean_val = sum(verdicts) / len(verdicts)
@@ -277,6 +326,12 @@ def make_faithfulness_result(
         "judge_errors": float(judge_errors),
         "skipped_no_evidence": float(skipped_no_evidence),
     }
+    if judged_slice_committed is not None:
+        detail["judged_slice_committed"] = float(judged_slice_committed)
+    if verdicts_obtained is not None:
+        detail["verdicts_obtained"] = float(verdicts_obtained)
+    if judged_slice_state is not None:
+        detail["judged_slice_state"] = float(judged_slice_state)
     if calibration_exact_match is not None:
         detail["calibration_exact_match"] = float(calibration_exact_match)
     if calibration_mad is not None:
@@ -550,7 +605,7 @@ def make_graph_presence_rate(
     p, ci_lo, ci_hi = wilson_ci(positive_graph_n, n_denom)
 
     # MultiHop-RAG floor is 0.20
-    floor_val = 0.20
+    floor_val = GRAPH_YIELD_INVESTIGATION_FLOOR
     floor_miss = 1.0 if p < floor_val else 0.0
 
     # NoMatchFound complement:

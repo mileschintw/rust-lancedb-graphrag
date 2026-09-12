@@ -31,6 +31,11 @@ from lancet_eval.corpus import (
     sample_questions,
 )
 from lancet_eval.dimensions import (
+    JUDGED_SLICE_STATE_CAP_BOUND,
+    JUDGED_SLICE_STATE_CAP_STOPPED,
+    JUDGED_SLICE_STATE_COMPLETED,
+    JUDGED_SLICE_STATE_NOT_JUDGED,
+    JUDGED_SLICE_STATES,
     NOTICE_CODE_GRAPH_ABLATION,
     NOTICE_CODE_GRAPH_UNAVAILABLE,
     OBS_04_PLACEHOLDER,
@@ -350,7 +355,8 @@ def score_run(
     )
     judged_slice_committed: int = 0
     verdicts_obtained: int = 0
-    judged_slice_state: str = "not_judged"
+    judged_slice_state_code: float = JUDGED_SLICE_STATE_NOT_JUDGED
+    judged_slice_state: str = JUDGED_SLICE_STATES[JUDGED_SLICE_STATE_NOT_JUDGED]
 
     if calibration_file is not None:
         if no_judge and cached_verdict_count > 0:
@@ -519,9 +525,13 @@ def score_run(
                 f"Judged pass stopped by spend cap "
                 f"(${accumulated_judge_spend:.6f} spent >= ${stage_spend_cap:.6f} cap)."
             )
-            judged_slice_state = "cap_stopped"
+            judged_slice_state_code = JUDGED_SLICE_STATE_CAP_STOPPED
+        elif judged_slice_binding == "cap":
+            judged_slice_state_code = JUDGED_SLICE_STATE_CAP_BOUND
         else:
-            judged_slice_state = judged_slice_binding
+            judged_slice_state_code = JUDGED_SLICE_STATE_COMPLETED
+
+        judged_slice_state = JUDGED_SLICE_STATES[judged_slice_state_code]
 
     # Calibration evaluation
     g_calibration_em: float | None = None
@@ -1039,6 +1049,11 @@ def score_run(
                 name="answer_faithfulness",
                 status="skipped",
                 reason="Deferred to LLM-as-judge scoring pass (--no-judge specified)",
+                detail={
+                    "judged_slice_committed": float(judged_slice_committed),
+                    "verdicts_obtained": float(verdicts_obtained),
+                    "judged_slice_state": float(judged_slice_state_code),
+                },
                 n=0,
             )
         )
@@ -1062,6 +1077,9 @@ def score_run(
                 calibration_spearman_ci_upper=f_calibration_spearman_ci_upper,
                 calibration_pairs_n=f_calibration_pairs_n,
                 calibration_excluded_n=f_calibration_excluded_n,
+                judged_slice_committed=judged_slice_committed,
+                verdicts_obtained=verdicts_obtained,
+                judged_slice_state=judged_slice_state_code,
             )
         )
 
@@ -1072,6 +1090,11 @@ def score_run(
                 name="answer_groundedness",
                 status="skipped",
                 reason="Deferred to LLM-as-judge scoring pass (--no-judge specified)",
+                detail={
+                    "judged_slice_committed": float(judged_slice_committed),
+                    "verdicts_obtained": float(verdicts_obtained),
+                    "judged_slice_state": float(judged_slice_state_code),
+                },
                 n=0,
             )
         )
@@ -1095,6 +1118,9 @@ def score_run(
                 calibration_spearman_ci_upper=g_calibration_spearman_ci_upper,
                 calibration_pairs_n=g_calibration_pairs_n,
                 calibration_excluded_n=g_calibration_excluded_n,
+                judged_slice_committed=judged_slice_committed,
+                verdicts_obtained=verdicts_obtained,
+                judged_slice_state=judged_slice_state_code,
             )
         )
 
@@ -1405,6 +1431,9 @@ def score_run(
         dependency_lock_hash=lock_hash,
         partial=effective_partial,
         notes=final_notes,
+        judged_slice_committed=judged_slice_committed,
+        verdicts_obtained=verdicts_obtained,
+        judged_slice_state=judged_slice_state,
     )
 
     report = CorpusReport(

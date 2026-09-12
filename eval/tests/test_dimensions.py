@@ -105,3 +105,70 @@ def test_obs_04_placeholder_registered() -> None:
     assert built.reason is not None
     assert "999.1" in built.reason
     assert OBS_04_PLACEHOLDER.status == "skipped"
+
+
+def test_in02_graph_yield_investigation_floor_relocated() -> None:
+    """Proves GRAPH_YIELD_INVESTIGATION_FLOOR is defined in thresholds and re-exported."""
+    import lancet_eval.dimensions as D
+    import lancet_eval.gate as G
+    import lancet_eval.thresholds as T
+
+    assert hasattr(T, "GRAPH_YIELD_INVESTIGATION_FLOOR")
+    assert G.GRAPH_YIELD_INVESTIGATION_FLOOR is T.GRAPH_YIELD_INVESTIGATION_FLOOR
+    assert D.GRAPH_YIELD_INVESTIGATION_FLOOR is T.GRAPH_YIELD_INVESTIGATION_FLOOR
+    assert T.GRAPH_YIELD_INVESTIGATION_FLOOR == 0.20
+
+
+def test_judged_slice_state_constants_and_mapping() -> None:
+    """Proves judged slice state constants and mapping exist with expected values."""
+    from lancet_eval.dimensions import (
+        JUDGED_SLICE_STATE_CAP_BOUND,
+        JUDGED_SLICE_STATE_CAP_STOPPED,
+        JUDGED_SLICE_STATE_COMPLETED,
+        JUDGED_SLICE_STATE_NOT_JUDGED,
+        JUDGED_SLICE_STATES,
+    )
+
+    expected = {
+        JUDGED_SLICE_STATE_NOT_JUDGED: "not_judged",
+        JUDGED_SLICE_STATE_COMPLETED: "completed",
+        JUDGED_SLICE_STATE_CAP_BOUND: "cap_bound",
+        JUDGED_SLICE_STATE_CAP_STOPPED: "cap_stopped",
+    }
+    assert JUDGED_SLICE_STATES == expected
+
+
+def test_make_groundedness_and_faithfulness_results_carry_provenance() -> None:
+    """Proves make_groundedness_result and make_faithfulness_result carry provenance in detail."""
+    from lancet_eval.dimensions import (
+        JUDGED_SLICE_STATE_CAP_BOUND,
+        make_faithfulness_result,
+        make_groundedness_result,
+    )
+
+    g_res = make_groundedness_result(
+        verdicts=[5.0, 4.0],
+        judge_errors=0,
+        skipped_no_evidence=0,
+        total_sampled=2,
+        judged_slice_committed=5,
+        verdicts_obtained=2,
+        judged_slice_state=JUDGED_SLICE_STATE_CAP_BOUND,
+    )
+    assert g_res.detail["judged_slice_committed"] == 5.0
+    assert g_res.detail["verdicts_obtained"] == 2.0
+    assert g_res.detail["judged_slice_state"] == JUDGED_SLICE_STATE_CAP_BOUND
+
+    f_res = make_faithfulness_result(
+        verdicts=[4.0, 4.0],
+        judge_errors=0,
+        skipped_no_evidence=0,
+        total_sampled=2,
+        judged_slice_committed=5,
+        verdicts_obtained=2,
+        judged_slice_state=JUDGED_SLICE_STATE_CAP_BOUND,
+    )
+    assert f_res.detail["judged_slice_committed"] == 5.0
+    assert f_res.detail["verdicts_obtained"] == 2.0
+    assert f_res.detail["judged_slice_state"] == JUDGED_SLICE_STATE_CAP_BOUND
+

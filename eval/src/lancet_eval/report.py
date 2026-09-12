@@ -10,7 +10,11 @@ from typing import Self
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from lancet_eval.dimensions import DimensionResult
+from lancet_eval.dimensions import (
+    JUDGED_SLICE_STATE_NOT_JUDGED,
+    JUDGED_SLICE_STATES,
+    DimensionResult,
+)
 
 ROUND_RATIO_DP: int = 3
 ROUND_JUDGED_DP: int = 2
@@ -44,6 +48,9 @@ class RunMetadata(BaseModel):
     dependency_lock_hash: str
     partial: bool = False
     notes: str = ""
+    judged_slice_committed: int = 0
+    verdicts_obtained: int = 0
+    judged_slice_state: str = JUDGED_SLICE_STATES[JUDGED_SLICE_STATE_NOT_JUDGED]
 
     @model_validator(mode="after")
     def _validate_non_blank_fields(self) -> Self:
@@ -58,12 +65,19 @@ class RunMetadata(BaseModel):
             ("index_generation", self.index_generation),
             ("result_hash", self.result_hash),
             ("dependency_lock_hash", self.dependency_lock_hash),
+            ("judged_slice_state", self.judged_slice_state),
         ]
         for name, val in required_str_fields:
             if not val or not val.strip():
                 raise ValueError(
                     f"RunMetadata field '{name}' must not be blank or empty"
                 )
+
+        if self.judged_slice_state not in JUDGED_SLICE_STATES.values():
+            raise ValueError(
+                f"RunMetadata field 'judged_slice_state' must be one of "
+                f"{sorted(list(JUDGED_SLICE_STATES.values()))}, got {self.judged_slice_state!r}"
+            )
 
         if not self.arm_labels:
             raise ValueError("RunMetadata field 'arm_labels' must not be empty")

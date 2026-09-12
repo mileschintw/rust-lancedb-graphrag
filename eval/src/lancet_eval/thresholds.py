@@ -109,3 +109,6 @@ COMMITTED_THRESHOLDS = DecisionThresholds(
         "nesting invariant slack=500ms."
     ),
 )
+
+# Committed investigation floor for graph yield (06.3.4-STAGED-GATE.md §2).
+GRAPH_YIELD_INVESTIGATION_FLOOR: float = 0.20

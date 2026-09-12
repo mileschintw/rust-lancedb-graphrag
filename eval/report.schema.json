@@ -146,6 +146,21 @@
           "default": "",
           "title": "Notes",
           "type": "string"
+        },
+        "judged_slice_committed": {
+          "default": 0,
+          "title": "Judged Slice Committed",
+          "type": "integer"
+        },
+        "verdicts_obtained": {
+          "default": 0,
+          "title": "Verdicts Obtained",
+          "type": "integer"
+        },
+        "judged_slice_state": {
+          "default": "not_judged",
+          "title": "Judged Slice State",
+          "type": "string"
         }
       },
       "required": [

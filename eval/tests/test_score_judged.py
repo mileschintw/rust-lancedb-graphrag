@@ -1245,5 +1245,219 @@ def test_score_run_sample_at_or_below_bound_honoured(
     assert len(httpx_mock.get_requests()) == 2
 
 
+def test_score_run_publishes_judged_slice_provenance(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves score_run publishes judged_slice_committed, verdicts_obtained, and judged_slice_state."""
+    from lancet_eval.dimensions import JUDGED_SLICE_STATE_COMPLETED
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:3]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question()
+    cap = cost_per_q * 5.0
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=3,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    assert report.metadata.judged_slice_committed == 3
+    assert report.metadata.verdicts_obtained == 3
+    assert report.metadata.judged_slice_state == "completed"
+
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    f_dim = next(d for d in report.dimensions if d.name == "answer_faithfulness")
+
+    assert g_dim.detail["judged_slice_committed"] == 3.0
+    assert g_dim.detail["verdicts_obtained"] == 3.0
+    assert g_dim.detail["judged_slice_state"] == JUDGED_SLICE_STATE_COMPLETED
+
+    assert f_dim.detail["judged_slice_committed"] == 3.0
+    assert f_dim.detail["verdicts_obtained"] == 3.0
+    assert f_dim.detail["judged_slice_state"] == JUDGED_SLICE_STATE_COMPLETED
+
+
+def test_score_run_cap_stopped_publishes_provenance(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves cap-stopped judged pass publishes cap_stopped state and verdicts_obtained < committed."""
+    from lancet_eval.dimensions import JUDGED_SLICE_STATE_CAP_STOPPED
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:3]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    # 1st call usage costs $0.0024
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 15000, "completion_tokens": 2000},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question()
+    cap = cost_per_q * 3.5
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=3,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    assert report.metadata.judged_slice_committed == 3
+    assert report.metadata.verdicts_obtained == 1
+    assert report.metadata.verdicts_obtained < report.metadata.judged_slice_committed
+    assert report.metadata.judged_slice_state == "cap_stopped"
+
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    assert g_dim.detail["judged_slice_committed"] == 3.0
+    assert g_dim.detail["verdicts_obtained"] == 1.0
+    assert g_dim.detail["judged_slice_state"] == JUDGED_SLICE_STATE_CAP_STOPPED
+
+
+def test_score_run_unjudged_publishes_not_judged_provenance(tmp_path: Path) -> None:
+    """Proves unjudged run publishes not_judged state with 0 counts."""
+    from lancet_eval.dimensions import JUDGED_SLICE_STATE_NOT_JUDGED
+
+    qids = _setup_fixtures(tmp_path)
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+    journal.append(
+        RunRecord(
+            corpus="multihop_rag",
+            question_id=qids[0],
+            graph_arm="graph-on",
+            outcome="success",
+            answer="Answer",
+            index_generation="gen-test-1",
+        )
+    )
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+    assert report.metadata.judged_slice_committed == 0
+    assert report.metadata.verdicts_obtained == 0
+    assert report.metadata.judged_slice_state == "not_judged"
+
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    assert g_dim.detail["judged_slice_committed"] == 0.0
+    assert g_dim.detail["verdicts_obtained"] == 0.0
+    assert g_dim.detail["judged_slice_state"] == JUDGED_SLICE_STATE_NOT_JUDGED
+
+
+def test_run_metadata_judged_slice_state_validation() -> None:
+    """Proves RunMetadata validates judged_slice_state against known mapping."""
+    from pydantic import ValidationError
+
+    from lancet_eval.report import RunMetadata
+
+    base_args = dict(
+        corpus="multihop_rag",
+        run_date="2026-09-09T00:00:00Z",
+        commit_sha="dummy-sha",
+        generation_model="gen-model",
+        embedding_model="emb-model",
+        judge_model="judge-model",
+        judge_temperature=0.0,
+        judge_prompt_version="v1",
+        sampling_seed=42,
+        sample_size_deterministic=50,
+        sample_size_judged=0,
+        index_generation="gen1",
+        result_hash="hash1",
+        arm_labels=["graph-on", "graph-off"],
+        dependency_lock_hash="lock1",
+        partial=True,
+    )
+
+    # Unknown state string raises ValidationError
+    with pytest.raises(ValidationError):
+        RunMetadata(**base_args, judged_slice_state="unauthorized_free_text")
+
+    # Blank state string raises ValidationError
+    with pytest.raises(ValidationError):
+        RunMetadata(**base_args, judged_slice_state="  ")
+
+
+
 
 
