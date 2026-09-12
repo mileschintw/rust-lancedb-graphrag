@@ -723,7 +723,12 @@ def test_all_payload_less_journal_non_ok_status_and_rendered_report(
         assert "excluded_payload_records" in d.detail
         assert d.detail["excluded_payload_records"] == 4.0
 
-    md = render_markdown(report)
+    # The fixture journal is deliberately short and the render guard is a publication
+    # guard rather than a rendering limitation.
+    report_unblocked = report.model_copy(
+        update={"metadata": report.metadata.model_copy(update={"partial": False})}
+    )
+    md = render_markdown(report_unblocked)
     assert "excluded_payload_records=4" in md
 
 

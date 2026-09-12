@@ -520,8 +520,9 @@ def generate_report(
 
         if report.metadata.partial:
             raise ReportError(
-                "Cannot render report for partial run "
-                "(partial: true set by --limit smoke knob)"
+                "Cannot render report for incomplete run (partial: true): "
+                "completeness comparison did not confirm every committed work unit was driven. "
+                "Use 'lancet-eval reconcile' to re-check and correct header."
             )
 
         compare_meta: RunMetadata | None = None

@@ -48,7 +48,7 @@ from lancet_eval.dimensions import (
     make_wire_contract_conformance,
 )
 from lancet_eval.gate import AGREEMENT_TARGET
-from lancet_eval.journal import RunRecord
+from lancet_eval.journal import RunRecord, completeness_comparison
 from lancet_eval.judge import (
     JudgeCache,
     JudgeCacheEntry,
@@ -148,7 +148,7 @@ def score_run(
     # Read journal records
     records: list[RunRecord] = []
     header_corpus: str | None = None
-    header_partial: bool = False
+    header_partial: bool | None = None
     with open(journal_path, encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
             line_str = line.strip()
@@ -163,7 +163,8 @@ def score_run(
 
             if isinstance(data, dict) and data.get("type") == "header":
                 header_corpus = data.get("corpus")
-                header_partial = bool(data.get("partial", False))
+                if "partial" in data:
+                    header_partial = bool(data["partial"])
                 continue
 
             if isinstance(data, dict) and "question_id" in data:
@@ -1286,6 +1287,35 @@ def score_run(
                 emb_model = r.snapshot.embedding_model
                 break
 
+    record_corpora = {r.corpus for r in records if r.corpus}
+    records_corpus = next(iter(record_corpora)) if len(record_corpora) == 1 else None
+    corpus_disagreement = (
+        records_corpus is None
+        or (header_corpus is not None and header_corpus != records_corpus)
+    )
+
+    effective_partial = True
+    missing_units_note: str | None = None
+
+    if header_partial is False and not corpus_disagreement and records_corpus is not None:
+        is_complete, missing = completeness_comparison(journal_path, records_corpus)
+        if is_complete:
+            effective_partial = False
+        else:
+            effective_partial = True
+            missing_units_note = (
+                f"Completeness comparison contradicted publishable header: "
+                f"missing {len(missing)} work unit{'s' if len(missing) != 1 else ''}."
+            )
+
+    final_notes = calibration_notes
+    if missing_units_note:
+        final_notes = (
+            f"{calibration_notes} {missing_units_note}".strip()
+            if calibration_notes
+            else missing_units_note
+        )
+
     metadata = RunMetadata(
         corpus=corpus_name,
         run_date=datetime.now(UTC).isoformat(),
@@ -1303,8 +1333,8 @@ def score_run(
         result_hash=res_hash,
         arm_labels=config.arms,
         dependency_lock_hash=lock_hash,
-        partial=header_partial,
-        notes=calibration_notes,
+        partial=effective_partial,
+        notes=final_notes,
     )
 
     report = CorpusReport(
@@ -1314,7 +1344,7 @@ def score_run(
     )
 
     # Write report.json to run_dir if not partial
-    if not header_partial:
+    if not effective_partial:
         report_json_path = dir_path / "report.json"
         with open(report_json_path, "w", encoding="utf-8") as f:
             f.write(render_json(report))

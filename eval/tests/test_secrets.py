@@ -10,7 +10,7 @@ from pytest_httpx import HTTPXMock
 from lancet_eval.client import RetrievalSnapshot, StructuredCitation
 from lancet_eval.corpus import load_sample_questions
 from lancet_eval.journal import Journal, RunRecord
-from lancet_eval.report import render_markdown
+from lancet_eval.report import render_json, render_markdown
 from lancet_eval.score import score_run
 
 SENTINEL_API_KEY = "SECRET_SENTINEL_KEY_DO_NOT_LEAK_12345"
@@ -90,11 +90,21 @@ def test_no_api_key_leak_in_any_artifact(
         client=client,
     )
 
+    # The fixture journal is deliberately short and the render guard is a publication
+    # guard rather than a rendering limitation.
+    report_unblocked = report.model_copy(
+        update={"metadata": report.metadata.model_copy(update={"partial": False})}
+    )
+
     # Render Markdown report
-    md_content = render_markdown(report)
+    md_content = render_markdown(report_unblocked)
     md_path = tmp_path / "report.md"
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(md_content)
+
+    json_path = tmp_path / "report.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        f.write(render_json(report_unblocked))
 
     # Assert sentinel absent from all 6 artifact types
     artifacts = [

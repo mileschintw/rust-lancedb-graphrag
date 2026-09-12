@@ -17,8 +17,9 @@ from lancet_eval.journal import (
     load_done,
     reconcile_header,
 )
+from lancet_eval.report import ReportError, render_markdown
 from lancet_eval.run import drive
-from lancet_eval.score import score_run
+from lancet_eval.score import ScoreError, score_run
 
 
 def _create_synthetic_journal(
@@ -416,4 +417,138 @@ def test_drive_resume_no_remaining_units_reconciles_header(
     with open(j_path, "r", encoding="utf-8") as f:
         hdr = json.loads(f.readline())
     assert hdr["partial"] is False, "Resume with zero remaining units must reconcile header to publishable"
+
+
+def test_score_run_missing_header_resolves_incomplete(tmp_path: Path) -> None:
+    """Proves a journal with no header line scores as incomplete and fails closed."""
+    corpus = "multihop_rag"
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)[:2]
+    run_dir = tmp_path / "no_header"
+    j_path = run_dir / "journal.jsonl"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(j_path, "w", encoding="utf-8") as f:
+        for q in questions:
+            for arm in config.arms:
+                rec = RunRecord(
+                    corpus=corpus,
+                    question_id=q.id,
+                    graph_arm=arm,
+                    outcome="success",
+                    index_generation="gen-1",
+                )
+                f.write(rec.model_dump_json() + "\n")
+
+    report = score_run(run_dir=run_dir, no_judge=True)
+    assert report.metadata.partial is True
+    assert not (run_dir / "report.json").exists()
+    with pytest.raises(ReportError):
+        render_markdown(report)
+
+
+def test_score_run_header_missing_partial_key_resolves_incomplete(tmp_path: Path) -> None:
+    """Proves a journal whose header omits the 'partial' key scores as incomplete."""
+    corpus = "multihop_rag"
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)[:2]
+    run_dir = tmp_path / "missing_partial_key"
+    j_path = run_dir / "journal.jsonl"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(j_path, "w", encoding="utf-8") as f:
+        hdr = {"type": "header", "corpus": corpus, "created_at": 1000.0}
+        f.write(json.dumps(hdr) + "\n")
+        for q in questions:
+            for arm in config.arms:
+                rec = RunRecord(
+                    corpus=corpus,
+                    question_id=q.id,
+                    graph_arm=arm,
+                    outcome="success",
+                    index_generation="gen-1",
+                )
+                f.write(rec.model_dump_json() + "\n")
+
+    report = score_run(run_dir=run_dir, no_judge=True)
+    assert report.metadata.partial is True
+    assert not (run_dir / "report.json").exists()
+
+
+def test_score_run_staged_header_with_complete_records_trusted_as_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proves an explicit staged header (partial: true) is trusted even when records are complete."""
+    corpus = "multihop_rag"
+    config = load_corpus_config(corpus)
+    sample_q = load_sample_questions(corpus)[:2]
+    monkeypatch.setattr("lancet_eval.corpus.load_sample_questions", lambda c: sample_q)
+
+    run_dir = tmp_path / "staged_complete"
+    j_path = run_dir / "journal.jsonl"
+
+    _create_synthetic_journal(j_path, corpus, sample_q, config.arms, partial=True)
+
+    report = score_run(run_dir=run_dir, no_judge=True)
+    assert report.metadata.partial is True
+    assert not (run_dir / "report.json").exists()
+
+
+def test_score_run_publishable_header_with_missing_units_resolves_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Proves publishable header contradicted by missing work units scores as incomplete and notes name missing count."""
+    corpus = "multihop_rag"
+    config = load_corpus_config(corpus)
+    sample_q = load_sample_questions(corpus)[:2]
+    monkeypatch.setattr("lancet_eval.corpus.load_sample_questions", lambda c: sample_q)
+
+    run_dir = tmp_path / "falsely_publishable"
+    j_path = run_dir / "journal.jsonl"
+
+    _create_synthetic_journal(j_path, corpus, sample_q, config.arms, partial=False, omit_last=True)
+
+    report = score_run(run_dir=run_dir, no_judge=True)
+    assert report.metadata.partial is True
+    assert not (run_dir / "report.json").exists()
+    assert "missing 1 work unit" in report.metadata.notes.lower()
+
+
+def test_score_run_records_corpus_disagreement_resolves_incomplete(tmp_path: Path) -> None:
+    """Proves records disagreeing with header corpus fails closed as incomplete."""
+    config = load_corpus_config("multihop_rag")
+    questions = load_sample_questions("multihop_rag")[:2]
+    run_dir = tmp_path / "corpus_disagreement"
+    j_path = run_dir / "journal.jsonl"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(j_path, "w", encoding="utf-8") as f:
+        # Header claims multihop_rag, but records claim other_corpus
+        hdr = {"type": "header", "corpus": "multihop_rag", "partial": False, "created_at": 1000.0}
+        f.write(json.dumps(hdr) + "\n")
+        for q in questions:
+            for arm in config.arms:
+                rec = RunRecord(
+                    corpus="other_corpus",
+                    question_id=q.id,
+                    graph_arm=arm,
+                    outcome="success",
+                    index_generation="gen-1",
+                )
+                f.write(rec.model_dump_json() + "\n")
+
+    report = score_run(run_dir=run_dir, no_judge=True)
+    assert report.metadata.partial is True
+    assert not (run_dir / "report.json").exists()
+
+
+def test_score_run_zero_records_raises_score_error(tmp_path: Path) -> None:
+    """Proves a journal with zero records still raises the existing ScoreError."""
+    run_dir = tmp_path / "empty_journal"
+    j_path = run_dir / "journal.jsonl"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    j_path.write_text('{"type": "header", "corpus": "multihop_rag", "partial": false}\n')
+
+    with pytest.raises(ScoreError, match="contains no evaluation records"):
+        score_run(run_dir=run_dir, no_judge=True)
 

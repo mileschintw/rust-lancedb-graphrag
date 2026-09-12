@@ -638,8 +638,14 @@ def test_rendered_report_metadata_table_and_schema_validation(tmp_path: Path) ->
         run_dir=tmp_path, no_judge=False, calibration_file=ws_path, api_key="dummy"
     )
 
+    # The fixture journal is deliberately short and the render guard is a publication
+    # guard rather than a rendering limitation.
+    report_unblocked = report.model_copy(
+        update={"metadata": report.metadata.model_copy(update={"partial": False})}
+    )
+
     # Render markdown and verify table row
-    md = render_markdown(report)
+    md = render_markdown(report_unblocked)
     assert "| **Completed Calibration Dual Scores** | `12` |" in md
 
     # Validate against JSON schema
@@ -647,7 +653,7 @@ def test_rendered_report_metadata_table_and_schema_validation(tmp_path: Path) ->
     with open(schema_path, encoding="utf-8") as f:
         schema = json.load(f)
 
-    json_str = render_json(report)
+    json_str = render_json(report_unblocked)
     validated_report = CorpusReport.model_validate_json(json_str)
     assert validated_report.metadata.calibration_completed_n == 12
 

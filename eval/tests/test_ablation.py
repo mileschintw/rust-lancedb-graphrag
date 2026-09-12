@@ -376,7 +376,12 @@ def test_report_renders_all_ablation_family_rows(tmp_path: Path) -> None:
     journal.append(r_off)
 
     report = score_run(run_dir=tmp_path, no_judge=True)
-    md = render_markdown(report)
+    # The fixture journal is deliberately short and the render guard is a publication
+    # guard rather than a rendering limitation.
+    report_unblocked = report.model_copy(
+        update={"metadata": report.metadata.model_copy(update={"partial": False})}
+    )
+    md = render_markdown(report_unblocked)
 
     ablation_names = [
         n for n in REGISTERED_DIMENSIONS if n.startswith("graph_ablation")

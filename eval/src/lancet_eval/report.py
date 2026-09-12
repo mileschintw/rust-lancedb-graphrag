@@ -149,8 +149,9 @@ def render_markdown(
     """Render a CorpusReport to GitHub-flavored Markdown via Jinja2."""
     if report.metadata.partial:
         raise ReportError(
-            "Cannot render report for partial run "
-            "(partial: true set by --limit smoke knob)"
+            "Cannot render report for incomplete run (partial: true): "
+            "completeness comparison did not confirm every committed work unit was driven. "
+            "Use 'lancet-eval reconcile' to re-check and correct header."
         )
 
     sample_size_diffs: list[str] = []
@@ -190,8 +191,9 @@ def render_json(report: CorpusReport) -> str:
     """Render a CorpusReport to JSON with full float precision."""
     if report.metadata.partial:
         raise ReportError(
-            "Cannot render report for partial run "
-            "(partial: true set by --limit smoke knob)"
+            "Cannot render report for incomplete run (partial: true): "
+            "completeness comparison did not confirm every committed work unit was driven. "
+            "Use 'lancet-eval reconcile' to re-check and correct header."
         )
     return report.model_dump_json(indent=2)
 
