@@ -841,7 +841,7 @@ Plans:
 6. `06.3.1-ROOT-CAUSE.md` carries the full forensic trail in the 06.3.1 phase directory, and a distilled public-facing note lands under `docs/` for Phase 6.4's design narrative and honest-limitations section (D-54).
 7. Phase 6.4's ROADMAP entry is updated as this family's closing act (D-53) — canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new code from 06.3.1. (`Depends on:` was repointed to 06.3.4 at split time.)
 
-**Plans:** 7/7 plans complete
+**Plans:** 7/9 plans complete — 2 gap-closure plans added 2026-09-12 by `/gsd-plan-phase 06.3.4 --gaps`, closing `06.3.4-VERIFICATION.md` gap 0, `06.3.4-REVIEW.md` CR-01/WR-01/WR-05/IN-01/IN-02/IN-03/WR-03, and `06.3.4-SECURITY.md` T-06.3.4-19/24/25/43. SC-1 is recorded as a disclosed deviation (no re-drive) and SC-3 stays deferred (no calibration back-fill).
 
 Plans:
 
@@ -869,6 +869,14 @@ Plans:
 **Wave 6** *(blocked on 06.3.4-07)*
 
 - [x] 06.3.4-06-PLAN.md — `06.3.1-ROOT-CAUSE.md` into the 06.3.1 directory, the distilled public note under `docs/`, `SUPERSEDED.md` marker added, and Phase 6.4's entry updated (SC-6, SC-7; D-53, D-54)
+
+**Wave 7** *(gap closure — blocked on 06.3.4-01, -03, -04, -06, -07)*
+
+- [ ] 06.3.4-08-PLAN.md — `gap_closure: true`. Make the journal `partial` flag a function of the measured completeness comparison at every `drive()` exit path, make `score`/`report` fail closed when completeness cannot be positively verified, correct the live journal's header through the fixed reconcile, and correct the four records that assert otherwise — the journal-reset finding into `06.3.4-FINDINGS.md` §5, `06.3.4-04-SUMMARY.md`'s header claim, the dated SC-1 deviation amendment into `06.3.4-STAGED-GATE.md` §6, and `docs/evaluation-fidelity-and-graph-yield.md` point 5 (CR-01, T-06.3.4-19, WR-01, WR-05, IN-01; D-44, D-45)
+
+**Wave 8** *(gap closure — blocked on 06.3.4-08)*
+
+- [ ] 06.3.4-09-PLAN.md — `gap_closure: true`. The judged-pass controls that must exist before any future judged or calibration spend: judge usage metering and a required `--stage-cap` on `score` with a spend break in the judge loop, `derive_judged_slice_size`'s unreachable invariant made reachable and given a production caller, and the judged-slice provenance fields carried through `RunMetadata`, the regenerated report schema and both judged dimensions (T-06.3.4-24, T-06.3.4-25, T-06.3.4-43, IN-03, WR-03, IN-02; D-47, D-48)
 
 **Cross-cutting constraints:**
 
