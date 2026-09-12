@@ -58,12 +58,18 @@ def _find_budgets_file(budgets_path: Path | str | None = None) -> Path:
 
     root = repo_root()
     planning_phases = root / ".planning" / "phases"
-    matches = list(planning_phases.glob("*06.3.3*/06.3.3-BUDGETS.md"))
+    matches = sorted(planning_phases.glob("*06.3.3*/06.3.3-BUDGETS.md"))
     if not matches:
         raise FileNotFoundError(
             "06.3.3-BUDGETS.md not found in .planning/phases/*06.3.3*/"
         )
-    return matches[0]
+    if len(matches) > 1:
+        candidates = ", ".join(str(m) for m in matches)
+        raise FileNotFoundError(
+            f"Ambiguous 06.3.3-BUDGETS.md matches ({len(matches)} found): {candidates}"
+        )
+    (target_file,) = matches
+    return target_file
 
 
 def read_stage_caps(budgets_path: Path | str | None = None) -> dict[str, float]:
@@ -144,12 +150,18 @@ def _find_store_baseline_file(baseline_path: Path | str | None = None) -> Path:
 
     root = repo_root()
     planning_phases = root / ".planning" / "phases"
-    matches = list(planning_phases.glob("*06.3.3*/06.3.3-STORE-BASELINE.md"))
+    matches = sorted(planning_phases.glob("*06.3.3*/06.3.3-STORE-BASELINE.md"))
     if not matches:
         raise FileNotFoundError(
             "06.3.3-STORE-BASELINE.md not found in .planning/phases/*06.3.3*/"
         )
-    return matches[0]
+    if len(matches) > 1:
+        candidates = ", ".join(str(m) for m in matches)
+        raise FileNotFoundError(
+            f"Ambiguous 06.3.3-STORE-BASELINE.md matches ({len(matches)} found): {candidates}"
+        )
+    (target_file,) = matches
+    return target_file
 
 
 def read_store_suspension(baseline_path: Path | str | None = None) -> bool:
@@ -391,21 +403,31 @@ def derive_judged_slice_size(
 ) -> tuple[int, str]:
     """Derive judged slice size N from judgeable count and cap-derived bound.
 
+    Evaluation order is load-bearing:
+    1. Compute cap-derived bound `n_cap`.
+    2. Refuse if `n_cap < cached_verdict_count` or `judgeable_count < cached_verdict_count`.
+       This refusal must be evaluated BEFORE the zero-judgeable shortcut so that an
+       empty or collapsed judgeable population with already-cached verdicts raises
+       ValueError naming the cached count rather than silently returning a zero slice size.
+    3. Only if cached verdict count is satisfied, return (0, "judgeable_count_is_zero")
+       when judgeable_count <= 0.
+    4. Bind to cap, data, or coincident.
+
     Returns (slice_size, binding_bound_description).
     Refuses a result below cached_verdict_count.
     """
-    if judgeable_count <= 0:
-        return 0, "judgeable_count_is_zero"
-
     if cost_per_question <= 0:
         n_cap = judgeable_count
     else:
-        n_cap = int(stage_spend_cap // cost_per_question)
+        n_cap = cached_verdict_count + int(stage_spend_cap // cost_per_question)
 
     if n_cap < cached_verdict_count or judgeable_count < cached_verdict_count:
         raise ValueError(
             f"Derived slice size cannot be below cached verdict count {cached_verdict_count}"
         )
+
+    if judgeable_count <= 0:
+        return 0, "judgeable_count_is_zero"
 
     if n_cap < judgeable_count:
         binding = "cap"

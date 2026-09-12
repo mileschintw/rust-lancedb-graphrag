@@ -47,7 +47,7 @@ from lancet_eval.dimensions import (
     make_vector_yield,
     make_wire_contract_conformance,
 )
-from lancet_eval.gate import AGREEMENT_TARGET
+from lancet_eval.gate import AGREEMENT_TARGET, derive_judged_slice_size
 from lancet_eval.journal import RunRecord, completeness_comparison
 from lancet_eval.judge import (
     JudgeCache,
@@ -56,7 +56,7 @@ from lancet_eval.judge import (
     judge_once,
     truncate_evidence,
 )
-from lancet_eval.measure import compute_judge_spend
+from lancet_eval.measure import compute_judge_spend, estimate_judge_cost_per_question
 from lancet_eval.metrics import (
     abstention_rate,
     context_precision_at_k,
@@ -345,11 +345,14 @@ def score_run(
     cache = JudgeCache(cache_path)
     judged_qids: set[str] = set()
     judge_stop_note: str = ""
+    cached_verdict_count = sum(
+        1 for e in cache.entries.values() if e.verdict is not None
+    )
+    judged_slice_committed: int = 0
+    verdicts_obtained: int = 0
+    judged_slice_state: str = "not_judged"
 
     if calibration_file is not None:
-        cached_verdict_count = sum(
-            1 for e in cache.entries.values() if e.verdict is not None
-        )
         if no_judge and cached_verdict_count > 0:
             raise ScoreError(
                 "calibration_file was provided with --no-judge, but "
@@ -400,19 +403,47 @@ def score_run(
         cap_stopped = False
         verdicts_obtained = 0
 
-        # Select judged question subset
+        # Select judged question subset via derive_judged_slice_size
+        distinct_qids = [
+            {"question_id": q.question_id}
+            for q in sampled_questions
+            if any(r.question_id == q.question_id for r in p_records)
+        ]
+        judgeable_count = len(distinct_qids)
+        cost_per_question = estimate_judge_cost_per_question(
+            judge_max_tokens=config.judge_max_tokens
+        )
+        try:
+            derived_slice_size, judged_slice_binding = derive_judged_slice_size(
+                judgeable_count=judgeable_count,
+                stage_spend_cap=stage_spend_cap,
+                cost_per_question=cost_per_question,
+                cached_verdict_count=cached_verdict_count,
+            )
+        except ValueError as exc:
+            raise ScoreError(str(exc)) from exc
+
+        if sample is not None and sample > derived_slice_size:
+            raise ScoreError(
+                f"--sample {sample} exceeds the cap-derived bound of {derived_slice_size} "
+                f"(stage_spend_cap={stage_spend_cap}, estimated cost per question={cost_per_question:.4f}). "
+                f"Reduce --sample to <= {derived_slice_size} or increase --stage-cap."
+            )
+
         if sample is not None and sample > 0:
-            distinct_qids = [
-                {"question_id": q.question_id}
-                for q in sampled_questions
-                if any(r.question_id == q.question_id for r in p_records)
-            ]
+            slice_count = sample
+        else:
+            slice_count = derived_slice_size
+
+        judged_slice_committed = slice_count
+
+        if slice_count < len(distinct_qids):
             sampled_q_dicts = sample_questions(
-                distinct_qids, n=sample, seed=config.sample_seed
+                distinct_qids, n=slice_count, seed=config.sample_seed
             )
             judged_qids = {d["question_id"] for d in sampled_q_dicts}
         else:
-            judged_qids = {r.question_id for r in p_records}
+            judged_qids = {d["question_id"] for d in distinct_qids}
 
         for rec in p_records:
             if rec.question_id not in judged_qids:
@@ -488,6 +519,9 @@ def score_run(
                 f"Judged pass stopped by spend cap "
                 f"(${accumulated_judge_spend:.6f} spent >= ${stage_spend_cap:.6f} cap)."
             )
+            judged_slice_state = "cap_stopped"
+        else:
+            judged_slice_state = judged_slice_binding
 
     # Calibration evaluation
     g_calibration_em: float | None = None

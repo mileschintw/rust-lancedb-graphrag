@@ -1,5 +1,7 @@
 """Tests for staged-gate evaluation, committed thresholds, and budget caps."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -16,6 +18,8 @@ from lancet_eval.gate import (
     STAGED_PAIRING_COVERAGE_FLOOR,
     STAGED_SIZE,
     StagedGateVerdict,
+    _find_budgets_file,
+    _find_store_baseline_file,
     derive_judged_slice_size,
     evaluate_staged_gate,
     get_stage_cap,
@@ -470,3 +474,72 @@ def test_per_stage_caps_read_from_budgets() -> None:
     finally:
         import os
         os.unlink(tmp_name)
+
+
+def test_derive_judged_slice_size_refusal_when_zero_judgeable_with_cached_verdicts() -> None:
+    """Proves derive_judged_slice_size raises ValueError naming cached count when judgeable=0."""
+    with pytest.raises(ValueError) as exc_info:
+        derive_judged_slice_size(
+            judgeable_count=0,
+            stage_spend_cap=5.0,
+            cost_per_question=0.01,
+            cached_verdict_count=3,
+        )
+    assert "3" in str(exc_info.value)
+    assert "cached verdict count" in str(exc_info.value)
+
+
+def test_derive_judged_slice_size_zero_judgeable_zero_cached() -> None:
+    """Proves genuinely empty population with 0 cached returns judgeable_count_is_zero."""
+    chosen, reason = derive_judged_slice_size(
+        judgeable_count=0,
+        stage_spend_cap=5.0,
+        cost_per_question=0.01,
+        cached_verdict_count=0,
+    )
+    assert chosen == 0
+    assert reason == "judgeable_count_is_zero"
+
+
+def test_derive_judged_slice_size_coincident_bound() -> None:
+    """Proves cap-derived bound exactly equal to judgeable count returns coincident."""
+    chosen, reason = derive_judged_slice_size(
+        judgeable_count=10,
+        stage_spend_cap=0.10,
+        cost_per_question=0.01,
+        cached_verdict_count=0,
+    )
+    assert chosen == 10
+    assert reason == "coincident"
+
+
+def test_find_budgets_and_baseline_files_ambiguity_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Proves _find_budgets_file and _find_store_baseline_file raise naming all candidates on ambiguity."""
+    monkeypatch.setattr("lancet_eval.gate.repo_root", lambda: tmp_path)
+    p1 = tmp_path / ".planning" / "phases" / "06.3.3-first"
+    p2 = tmp_path / ".planning" / "phases" / "06.3.3-second"
+    p1.mkdir(parents=True)
+    p2.mkdir(parents=True)
+
+    b1 = p1 / "06.3.3-BUDGETS.md"
+    b2 = p2 / "06.3.3-BUDGETS.md"
+    b1.write_text("dummy budgets 1", encoding="utf-8")
+    b2.write_text("dummy budgets 2", encoding="utf-8")
+
+    s1 = p1 / "06.3.3-STORE-BASELINE.md"
+    s2 = p2 / "06.3.3-STORE-BASELINE.md"
+    s1.write_text("dummy store 1", encoding="utf-8")
+    s2.write_text("dummy store 2", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        _find_budgets_file()
+    msg = str(exc_info.value)
+    assert "06.3.3-first" in msg
+    assert "06.3.3-second" in msg
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        _find_store_baseline_file()
+    msg = str(exc_info.value)
+    assert "06.3.3-first" in msg
+    assert "06.3.3-second" in msg
+

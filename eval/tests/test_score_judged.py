@@ -957,18 +957,22 @@ def test_judge_loop_breaks_at_spend_cap(
                 }
             }
         ],
-        # 1000 prompt tokens @ $0.12/1M ($0.00012) + 100 comp tokens @ $0.30/1M ($0.000030) = $0.000150
-        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+        # Usage costing $0.0024: 15000 prompt tokens @ $0.12/1M + 2000 comp tokens @ $0.30/1M
+        "usage": {"prompt_tokens": 15000, "completion_tokens": 2000},
     }
     httpx_mock.add_response(json=verdict_resp, is_reusable=True)
 
+    from lancet_eval.measure import estimate_judge_cost_per_question
+    cost_per_q = estimate_judge_cost_per_question()
+    # Cap set to allow 3 questions estimated (~$0.00158), but 1st call costs $0.0024 -> breaks before 2nd call!
+    cap = cost_per_q * 3.5
+
     client = httpx.Client()
-    # Cap set to $0.0001: 1st live call costs $0.000150, so before 2nd call, 0.000150 >= 0.0001 -> breaks!
     report = score_run(
         run_dir=tmp_path,
         no_judge=False,
         sample=3,
-        stage_spend_cap=0.0001,
+        stage_spend_cap=cap,
         api_key="test-api-key",
         client=client,
     )
@@ -1061,6 +1065,185 @@ def test_judge_loop_cached_verdicts_consume_no_cap_headroom(
     g_dim = next(d for d in report2.dimensions if d.name == "answer_groundedness")
     assert g_dim.status == "ok"
     assert g_dim.detail["judged_n"] == 3.0
+
+
+def test_score_run_judged_subset_bounded_by_cap(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves score_run with sample=None sizes judged subset to cap-derived bound."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:5]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question()
+    # Bound cap to exactly 2 questions
+    cap = cost_per_q * 2.5
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=None,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    assert g_dim.detail["judged_n"] == 2.0
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_score_run_sample_exceeds_cap_derived_bound_raises(
+    tmp_path: Path,
+) -> None:
+    """Proves explicit --sample larger than cap-derived slice size raises ScoreError."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:5]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    cost_per_q = estimate_judge_cost_per_question()
+    # Bound cap to 2 questions
+    cap = cost_per_q * 2.5
+
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(
+            run_dir=tmp_path,
+            no_judge=False,
+            sample=4,
+            stage_spend_cap=cap,
+            api_key="test-api-key",
+        )
+    msg = str(exc_info.value)
+    assert "4" in msg
+    assert "2" in msg
+    assert "exceeds" in msg or "cap-derived" in msg
+
+
+def test_score_run_sample_at_or_below_bound_honoured(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves explicit --sample at or below cap-derived slice size is honoured."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:5]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question()
+    # Cap allows 4 questions; sample is 2
+    cap = cost_per_q * 4.5
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=2,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    assert g_dim.detail["judged_n"] == 2.0
+    assert len(httpx_mock.get_requests()) == 2
+
 
 
 
