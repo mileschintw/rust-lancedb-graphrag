@@ -880,16 +880,58 @@ Plans:
 - **The notice enum's exact name is not locked** — it is illustrative in the shared decision record. 06.3.4-06 reads it from `proto/lancet/v1/lancet.proto` verbatim rather than hard-coding it.
 - **`docs/` does not exist yet and is created here.** The distilled note must not preempt the three `docs/` pages Phase 6.4's own first success criterion already names; it is a note 6.4's narrative can cite.
 
+### Phase 06.3.4.1: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
+
+**Goal:** Separate seeding/index drift vs vector/hybrid retrieval vs graph architecture; restore a working vector baseline; then make graph-on produce a measurable paired effect. This phase unblocks parked Phase 6.4 docs — it is not a docs phase. Also in scope: diagnose why graph-off is also near floor (EM 0.0000, Token-F1 0.0223, Recall@4 0.3613, Precision@4 0.2150) — the operator suspects vector search and/or seeding, not only graph, and the phase must split the hypothesis rather than assume the cause.
+**Mode:** mvp
+**Requirements:** OBS-05, DATA-03, DATA-04, DATA-05
+**Depends on:** Phase 06.3.4 (including its still-open gap-closure items: T-19/CR-01, T-24, T-25, T-43)
+**Constraints (mandatory layer order — do not invert):**
+
+1. Consume 06.3.4 gap-closure if not already landed: honest `partial` / score-report fail-closed (T-19). This phase must not publish a false-complete report.
+2. Index identity (OI-03): the eval index may contain only the mapped document set (or the map must be formally expanded). A gold-evidence doc IDs vs `document_map.json` coverage table is a required artifact.
+3. `RetrieveHybrid` health (OI-02) so a small paired sample can finish without timeout dominating.
+4. Vector-only diagnosis on questions whose gold docs are in the mapped index: is the gold chunk present in LanceDB? In vector top-4? Then graph-off EM/F1/Recall/Precision. This answers "is vector enough?" without touching graph architecture.
+5. Only then OI-01: multi-entity seed / path search instead of whole-question cosine `limit(1)`. Measure graph-on effect only on questions where vector already retrieves some gold.
+
+**Required diagnostic artifact:** a per-question yes/no table (not a narrative) for (a) gold doc in `document_map.json`, (b) gold chunk in LanceDB, (c) gold in vector top-4, (d) graph seed hit, (e) answer usable.
+
+**Carried findings (from `06.3.4-FINDINGS.md` §4, retargeted from Phase 6.4 to this phase — see that file's Open Items section):**
+
+- **OI-01 Graph retrieval architecture:** `engine/src/service.rs`'s `attempt_graph_augmentation` uses `nearest_to(full-question embedding).column("name_vector").limit(1)` with `seed_match_min_score` 0.5. Presence 9.79% (14/143 answerable dual-success pairs); 90.2% `GRAPH_TIMEOUT` or zero nodes; the remaining 9.8% injects unfiltered 1-hop noise (Token-F1 delta -0.0024).
+- **OI-02 `RetrieveHybrid` monotonic slowdown:** 7.4s -> >30s; 289 timeouts; 162 both-arm errors. Cannot measure retrieval quality on late slices.
+- **OI-03 Corpus/index drift:** PostgreSQL `lancet_eval` 367 docs vs `document_map.json`/`subset_selection.json` 347. Extra docs leak into `RetrieveHybrid` (e.g. `fa85cb0e...`).
+
+**Success Criteria** (these ARE the Phase 6.4 unpark gates — all required):
+
+1. Journal completeness metadata matches reality (`partial: true` if incomplete). No score/report of a halted run as complete.
+2. Timeout is not the dominant both-arm error mode on the diagnostic sample.
+3. graph-off is no longer ~EM 0 / F1 ~0.02 on the gold-in-index subset (the vector baseline actually answers some questions).
+4. Graph presence is clearly above 9.8%, and at least past the D-32 0.20 investigation floor unless a new dated floor is explicitly amended.
+5. The paired graph-on vs graph-off delta has a CI that is not "both arms fail" — graph must change retrieval composition or answer quality in a way a reader can see.
+
+**Out of Scope:**
+
+- Phase 6.4 docs, quickstart, v1 closure, judged/human calibration spend (blocked until T-24/T-25/T-43 exist from 06.3.4's gap-closure).
+- Rewriting 06.3.4 as complete.
+- Agent back-fill of calibration worksheets.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 06.3.4.1 to break down)
+
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
-**Goal:** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone
+**Goal:** **[PARKED — not ready to plan.]** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone. Parked until Phase 06.3.4.1 (Retrieval diagnosis, index identity, and graph-yield repair) clears its unpark gates — a demonstrable graph-on vs graph-off effect on a gold-in-index subset. "Both arms fail to answer" is not a v1 story: do not draft the evaluation-methodology, eval-results, or quickstart pages before that unpark.
 **Mode:** mvp
 **Requirements:** OBS-03
-**Depends on:** Phase 6, Phase 06.3.4
-**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phases 06.3.1–06.3.4 (inserted between 6.3 and 6.4, sharing `06.3.1-CONTEXT.md` as their own decision record) fix the retrieval collapse surfaced by Phase 6.3's evaluation run and produce the corrected recorded run — this phase's evaluation-methodology and eval-results documentation must reflect **06.3.4's** corrected run, not the original 2026-09-03 one. Root-cause analysis for the 2026-09-03 collapse and correction rationale is in `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md` (D-53, D-54).
-**Success Criteria:**
+**Depends on:** Phase 6, Phase 06.3.4 (including its still-open gap-closure items T-19/CR-01, T-24, T-25, T-43), Phase 06.3.4.1 (unpark gate — see that phase's Success Criteria; this phase does not start planning until 06.3.4.1 clears them)
+**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phases 06.3.1–06.3.4 (inserted between 6.3 and 6.4, sharing `06.3.1-CONTEXT.md` as their own decision record) attempted to fix the retrieval collapse surfaced by Phase 6.3's evaluation run; 06.3.4's own drive halted at 658/1000 records, uncalibrated, with an open journal-completeness defect (T-19/CR-01) — **it is not a run of record and must not be cited as complete.** Phase 06.3.4.1 was inserted after 06.3.4 to diagnose and repair retrieval/graph yield (OI-01 graph architecture, OI-02 `RetrieveHybrid` latency, OI-03 corpus/index drift — see `06.3.4-FINDINGS.md` §4 — these are 06.3.4.1's work, not this phase's); this phase's evaluation-methodology and eval-results documentation must reflect whatever run 06.3.4.1 validates as trustworthy, not the 2026-09-03 run and not 06.3.4's halted re-drive. Root-cause analysis for the 2026-09-03 collapse and correction rationale is in `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md` (D-53, D-54).
+**Success Criteria** (parked — none of these are achievable, and none should be drafted against, until Phase 06.3.4.1 clears its unpark gates):
 
-1. The README stays the readable front door (story, architecture sketch, quickstart, headline results, links); `docs/` gains a design narrative (alternatives-considered, linking ADRs), an observability walkthrough following one real query end to end, and an evaluation methodology + results page — each written after the implementation it documents (D-66, D-67, D-72, D-73).
+1. The README stays the readable front door (story, architecture sketch, quickstart, headline results, links); `docs/` gains a design narrative (alternatives-considered, linking ADRs), an observability walkthrough following one real query end to end, and an evaluation methodology + results page reporting the run Phase 06.3.4.1 validates — not 06.3.4's halted, uncalibrated re-drive — each written after the implementation it documents (D-66, D-67, D-72, D-73).
 2. The quickstart is executable and verified end-to-end on a clean checkout — compose up, migrate, `cargo run`/`go run`, ingest, query, open Jaeger and Grafana, run the eval — on both Windows native and Linux via WSL (D-68).
 3. Four Mermaid diagrams (system/deployment topology, query-path state machine including degraded branches, ingestion pipeline through index rebuild-and-swap, telemetry topology) plus three captured artifacts (Jaeger trace screenshot, Grafana dashboard, eval-results chart) are present (D-69).
 4. The README carries an honest limitations section: local-only by design (no auth/TLS/quotas, DEBT-CR-04's trigger conditions), the open debt themes linked to their backlog phases, and what the eval does and does not measure, including the unmeasured evidence-vs-priors claim (D-71).

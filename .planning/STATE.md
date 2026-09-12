@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 06.4
-current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
-current_plan: 1
-status: ready_to_plan
-stopped_at: Phase 06.3.4 was closed prematurely without code review/verification; retroactive gates now run and found gaps_found (5/8) — see correction entry. Two human decisions pending before Phase 6.4 can rely on this run.
-last_updated: "2026-09-10T23:15:00.000Z"
+current_phase: 06.3.4
+current_phase_name: Corrected re-drive, calibration and root-cause documentation
+current_plan: N/A (pending /gsd-plan-phase 06.3.4 --gaps)
+status: gaps_found_pending_replan
+stopped_at: "Phase 06.3.4.1 (Retrieval diagnosis, index identity, and graph-yield repair) inserted after Phase 06.3.4 as urgent decimal work, and its stub fields filled in ROADMAP.md. Sequence: (1) /gsd-plan-phase 06.3.4 --gaps to fix the still-open gap-closure items (T-19/CR-01 journal-completeness/partial-flag defect; T-24, T-25, T-43 from 06.3.4-SECURITY.md), (2) plan and execute Phase 06.3.4.1 to repair retrieval/graph yield, (3) only then Phase 6.4 (parked): 6.4 stays NOT ready to plan until 06.3.4.1 demonstrates a real graph-on vs graph-off effect on a gold-in-index subset — both arms failing to answer is not a v1 story."
+last_updated: "2026-09-12T21:05:26.070Z"
 last_activity: 2026-09-10
-state_head: b945b15
+state_head: 83ba3870d926d01932d8145d5541b883fd1b6382
 progress:
-  total_phases: 15
-  completed_phases: 10
+  total_phases: 16
+  completed_phases: 9
   total_plans: 155
   completed_plans: 155
 milestone_name: milestone
@@ -200,10 +200,10 @@ milestone_name: milestone
 
 ## Active Phase
 
-- **Phase:** 06.4 — Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
-- **Status:** Ready to plan
-- **Current Plan:** 1
-- **Next:** Plan Phase 06.4 (Docs suite, quickstart verification, promotion of un-closed debt backlog, v1 milestone closure).
+- **Phase:** 06.3.4 — Corrected re-drive, calibration and root-cause documentation (gap-closure required)
+- **Status:** gaps_found_pending_replan
+- **Current Plan:** N/A (pending /gsd-plan-phase 06.3.4 --gaps)
+- **Next:** `/gsd-plan-phase 06.3.4 --gaps` (fix journal-completeness/partial-flag defect T-19/CR-01 and resolve the two pending human decisions), then plan and execute Phase 06.3.4.1 (Retrieval diagnosis, index identity, and graph-yield repair). Phase 6.4 (Docs suite, quickstart verification, promotion of un-closed debt backlog, v1 milestone closure) is **parked** — not ready to plan — until Phase 06.3.4.1 clears its unpark gates (a demonstrable graph-on vs graph-off effect on a gold-in-index subset; both arms failing to answer is not a v1 story).
 
 ## Completed Phases
 
@@ -382,7 +382,7 @@ milestone_name: milestone
 
 **Last session:** 2026-09-08T09:31:26.810Z
 **Last activity:** 2026-09-09
-**Stopped at:** Phase 06.3.3 complete, ready to plan Phase 06.3.4
+**Stopped at:** Phase 06.3.4.1 (Retrieval diagnosis, index identity, and graph-yield repair) inserted after Phase 06.3.4 as urgent decimal work, and its stub fields filled in ROADMAP.md. Sequence: (1) /gsd-plan-phase 06.3.4 --gaps to fix the still-open gap-closure items (T-19/CR-01 journal-completeness/partial-flag defect; T-24, T-25, T-43 from 06.3.4-SECURITY.md), (2) plan and execute Phase 06.3.4.1 to repair retrieval/graph yield, (3) only then Phase 6.4 (parked): 6.4 stays NOT ready to plan until 06.3.4.1 demonstrates a real graph-on vs graph-off effect on a gold-in-index subset — both arms failing to answer is not a v1 story.
 **Resume file:** None
 
 ## Accumulated Context
@@ -449,3 +449,6 @@ milestone_name: milestone
 - Phase 6.3 inserted after Phase 6: Evaluation harness (OBS-02, OBS-04), split from Phase 6 per 06-CONTEXT.md D-77
 - Phase 6.4 inserted after Phase 6: Docs suite + v1 closure (OBS-03), split from Phase 6 per 06-CONTEXT.md D-77
 - Phase 06.3.1 inserted after Phase 6.3: Fix retrieval citation collapse (run_traceability=0.034) and refactor graph_ablation_delta to a per-question paired comparison, surfaced by Phase 6.3's evaluation run; must land before Phase 6.4 documents eval results for v1 milestone closure (URGENT)
+- Phase 06.3.4.1 inserted after Phase 06.3.4: Retrieval diagnosis, index identity, and graph-yield repair (URGENT)
+- Phase 06.3.4.1 edited: filled stub: Goal, Mode (mvp), Requirements (OBS-05, DATA-03, DATA-04, DATA-05), Depends on, mandatory-layer-order Constraints, Success Criteria (5, = Phase 6.4 unpark gates), Out of Scope; retargeted 06.3.4-FINDINGS.md §4 (OI-01/02/03) from Phase 6.4 to this phase
+- Phase 6.4 edited: parked indefinitely: Goal/Depends on/Success Criteria/Canonical refs now encode the unpark gate (Phase 06.3.4.1 must clear its gates first); stripped OI-01/02/03 and 06.3.4-corrected-run framing (not a run of record); STATE.md current_phase repointed to 06.3.4 (gap-closure), Active Phase Next rewritten to the 06.3.4 --gaps -> 06.3.4.1 -> parked 6.4 sequence
