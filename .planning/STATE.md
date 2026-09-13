@@ -6,12 +6,13 @@ current_phase_name: Corrected re-drive, calibration and root-cause documentation
 current_plan: 06.3.4-09
 status: gaps_found
 stopped_at: "Phase-final gates (code review, security audit, verification) run 2026-09-13 after gap-closure plans 08/09. All three found the phase still not complete: 2 threats open (T-06.3.4-25, T-06.3.4-42), verification gaps_found (6/8, SC-1/SC-3). Not marked phase.complete. Next: fix T-25/T-42, get a human decision on SC-1, then re-run /gsd-secure-phase 06.3.4 and /gsd-execute-phase 06.3.4 --gaps-only."
-last_updated: "2026-09-13T00:30:00.000Z"
+last_updated: "2026-09-13T08:47:19.850Z"
 last_activity: 2026-09-13
+state_head: 54c611e1672d000d8bf7fcefb0e7b0342ef550c7
 progress:
   total_phases: 16
   completed_phases: 9
-  total_plans: 157
+  total_plans: 158
   completed_plans: 157
 milestone_name: milestone
 ---
@@ -399,7 +400,7 @@ milestone_name: milestone
 ## Session
 
 **Last session:** 2026-09-08T09:31:26.810Z
-**Last activity:** 2026-09-12
+**Last activity:** 2026-09-13
 **Stopped at:** Phase 06.3.4.1 (Retrieval diagnosis, index identity, and graph-yield repair) inserted after Phase 06.3.4 as urgent decimal work, and its stub fields filled in ROADMAP.md. Sequence: (1) /gsd-plan-phase 06.3.4 --gaps to fix the still-open gap-closure items (T-19/CR-01 journal-completeness/partial-flag defect; T-24, T-25, T-43 from 06.3.4-SECURITY.md), (2) plan and execute Phase 06.3.4.1 to repair retrieval/graph yield, (3) only then Phase 6.4 (parked): 6.4 stays NOT ready to plan until 06.3.4.1 demonstrates a real graph-on vs graph-off effect on a gold-in-index subset — both arms failing to answer is not a v1 story.
 **Resume file:** None
 
