@@ -172,3 +172,59 @@ def test_make_groundedness_and_faithfulness_results_carry_provenance() -> None:
     assert f_res.detail["verdicts_obtained"] == 2.0
     assert f_res.detail["judged_slice_state"] == JUDGED_SLICE_STATE_CAP_BOUND
 
+
+def test_make_groundedness_and_faithfulness_results_carry_usage_absent_fallback_count() -> None:
+    """Proves make_groundedness_result and make_faithfulness_result carry usage_absent_fallback_count in detail and err_detail."""
+    from lancet_eval.dimensions import (
+        make_faithfulness_result,
+        make_groundedness_result,
+    )
+
+    # Success case with verdicts
+    g_res = make_groundedness_result(
+        verdicts=[5.0],
+        judge_errors=0,
+        skipped_no_evidence=0,
+        total_sampled=1,
+        usage_absent_fallback_count=2,
+    )
+    assert g_res.detail["usage_absent_fallback_count"] == 2.0
+
+    f_res = make_faithfulness_result(
+        verdicts=[4.0],
+        judge_errors=0,
+        skipped_no_evidence=0,
+        total_sampled=1,
+        usage_absent_fallback_count=2.0,
+    )
+    assert f_res.detail["usage_absent_fallback_count"] == 2.0
+
+    # Error case without verdicts
+    g_err = make_groundedness_result(
+        verdicts=[],
+        judge_errors=1,
+        skipped_no_evidence=0,
+        total_sampled=1,
+        usage_absent_fallback_count=1,
+    )
+    assert g_err.detail["usage_absent_fallback_count"] == 1.0
+
+    f_err = make_faithfulness_result(
+        verdicts=[],
+        judge_errors=1,
+        skipped_no_evidence=0,
+        total_sampled=1,
+        usage_absent_fallback_count=1.0,
+    )
+    assert f_err.detail["usage_absent_fallback_count"] == 1.0
+
+    # Default (None) omits key
+    g_def = make_groundedness_result(
+        verdicts=[5.0],
+        judge_errors=0,
+        skipped_no_evidence=0,
+        total_sampled=1,
+    )
+    assert "usage_absent_fallback_count" not in g_def.detail
+
+

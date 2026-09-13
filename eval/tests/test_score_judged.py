@@ -1458,6 +1458,409 @@ def test_run_metadata_judged_slice_state_validation() -> None:
         RunMetadata(**base_args, judged_slice_state="  ")
 
 
+def test_judge_loop_breaks_at_spend_cap_with_usage_absent_fallback(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves discriminating cap-break: 1 observed call > estimate + usage-absent calls break on spend cap."""
+    from lancet_eval.dimensions import JUDGED_SLICE_STATE_CAP_STOPPED
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    # 5 primary-arm records, all carrying non-empty structured citations
+    for qid in qids[:5]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    # First mocked response costs 3 * cost_per_question:
+    # 3600 prompt tokens @ $0.12/1M + 1200 comp tokens @ $0.30/1M = $0.000792
+    verdict_resp_with_usage = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 3600, "completion_tokens": 1200},
+    }
+    # Subsequent mocked responses omit the usage block
+    verdict_resp_no_usage = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+    }
+    httpx_mock.add_response(json=verdict_resp_with_usage)
+    httpx_mock.add_response(json=verdict_resp_no_usage, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question(judge_max_tokens=400)
+    cap = cost_per_q * 4.5  # derived slice is 4
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    requests = httpx_mock.get_requests()
+    # Post-fix: 3 requests made (strictly fewer than committed 4)
+    assert len(requests) < report.metadata.judged_slice_committed
+    assert len(requests) == 3
+    assert report.metadata.judged_slice_committed == 4
+    assert report.metadata.verdicts_obtained == 3
+    assert report.metadata.verdicts_obtained < report.metadata.judged_slice_committed
+    assert report.metadata.judged_slice_state == "cap_stopped"
+
+    # Published fallback count equals number of usage-absent dispatches (2)
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    f_dim = next(d for d in report.dimensions if d.name == "answer_faithfulness")
+    assert g_dim.detail["usage_absent_fallback_count"] == 2.0
+    assert f_dim.detail["usage_absent_fallback_count"] == 2.0
+    assert g_dim.detail["judged_slice_state"] == JUDGED_SLICE_STATE_CAP_STOPPED
+
+    # Disclosure in notes
+    assert "2" in report.metadata.notes
+    assert "stopped by spend cap" in report.metadata.notes.lower()
+
+
+def test_judge_loop_all_usage_absent_exhausts_and_discloses_in_notes(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves all-usage-absent slice runs to exhaustion and discloses fallback in notes."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:3]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    # Every response omits usage
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question(judge_max_tokens=400)
+    cap = cost_per_q * 5.0
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=3,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    assert report.metadata.judged_slice_committed == 3
+    assert report.metadata.verdicts_obtained == 3
+    assert len(httpx_mock.get_requests()) == 3
+    # Notes names the fallback count of 3
+    assert "3" in report.metadata.notes
+    assert "estimated" in report.metadata.notes.lower()
+
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    f_dim = next(d for d in report.dimensions if d.name == "answer_faithfulness")
+    assert g_dim.detail["usage_absent_fallback_count"] == 3.0
+    assert f_dim.detail["usage_absent_fallback_count"] == 3.0
+
+
+def test_judge_loop_usage_absent_distinct_from_observed_zero(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves observed zero tokens charges zero and does not increment fallback count, while absent charges and increments."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:2]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    resp_zero = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+    }
+    resp_absent = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+    }
+    httpx_mock.add_response(json=resp_zero)
+    httpx_mock.add_response(json=resp_absent)
+
+    cost_per_q = estimate_judge_cost_per_question(judge_max_tokens=400)
+    cap = cost_per_q * 5.0
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=2,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    # Only 1 call was usage-absent, zero was not fallback
+    assert g_dim.detail["usage_absent_fallback_count"] == 1.0
+    assert "1 judged call" in report.metadata.notes or "1 call" in report.metadata.notes
+
+
+def test_judge_loop_cap_stop_note_discloses_fallback_count(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves cap-stop sentence names the fallback count when fallback charges occurred."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:3]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    # Cost 2.5 * cost_per_q
+    verdict_resp_with_usage = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 3000, "completion_tokens": 1000},
+    }
+    verdict_resp_no_usage = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+    }
+    httpx_mock.add_response(json=verdict_resp_with_usage)
+    httpx_mock.add_response(json=verdict_resp_no_usage, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question(judge_max_tokens=400)
+    cap = cost_per_q * 3.0
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=3,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    assert report.metadata.judged_slice_state == "cap_stopped"
+    # Cap-stop sentence in notes must name the fallback count (1)
+    assert "stopped by spend cap" in report.metadata.notes.lower()
+    assert "1 call" in report.metadata.notes or "1 judged call" in report.metadata.notes
+
+
+def test_judge_loop_fully_observed_spend_unchanged(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves fully-observed run publishes fallback count 0 and no estimation disclosure in notes."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    for qid in qids[:2]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question(judge_max_tokens=400)
+    cap = cost_per_q * 5.0
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=2,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    assert g_dim.detail["usage_absent_fallback_count"] == 0.0
+    assert "omitted usage" not in (report.metadata.notes or "").lower()
+    assert "fallback" not in (report.metadata.notes or "").lower()
+
+
+
 
 
 

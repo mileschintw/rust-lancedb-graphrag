@@ -357,6 +357,7 @@ def score_run(
     verdicts_obtained: int = 0
     judged_slice_state_code: float = JUDGED_SLICE_STATE_NOT_JUDGED
     judged_slice_state: str = JUDGED_SLICE_STATES[JUDGED_SLICE_STATE_NOT_JUDGED]
+    usage_absent_fallback_count: int = 0
 
     if calibration_file is not None:
         if no_judge and cached_verdict_count > 0:
@@ -408,6 +409,7 @@ def score_run(
         accumulated_judge_spend = 0.0
         cap_stopped = False
         verdicts_obtained = 0
+        usage_absent_fallback_count = 0
 
         # Select judged question subset via derive_judged_slice_size
         distinct_qids = [
@@ -501,6 +503,9 @@ def score_run(
                     accumulated_judge_spend += compute_judge_spend(
                         usage.prompt_tokens, usage.completion_tokens
                     )
+                else:
+                    accumulated_judge_spend += cost_per_question
+                    usage_absent_fallback_count += 1
 
                 entry = JudgeCacheEntry(
                     cache_key=k,
@@ -521,10 +526,17 @@ def score_run(
                     judge_errors += 1
 
         if cap_stopped:
-            judge_stop_note = (
-                f"Judged pass stopped by spend cap "
-                f"(${accumulated_judge_spend:.6f} spent >= ${stage_spend_cap:.6f} cap)."
-            )
+            if usage_absent_fallback_count > 0:
+                judge_stop_note = (
+                    f"Judged pass stopped by spend cap "
+                    f"(${accumulated_judge_spend:.6f} spent >= ${stage_spend_cap:.6f} cap, "
+                    f"including {usage_absent_fallback_count} call{'s' if usage_absent_fallback_count != 1 else ''} charged at estimated cost)."
+                )
+            else:
+                judge_stop_note = (
+                    f"Judged pass stopped by spend cap "
+                    f"(${accumulated_judge_spend:.6f} spent >= ${stage_spend_cap:.6f} cap)."
+                )
             judged_slice_state_code = JUDGED_SLICE_STATE_CAP_STOPPED
         elif judged_slice_binding == "cap":
             judged_slice_state_code = JUDGED_SLICE_STATE_CAP_BOUND
@@ -1053,6 +1065,7 @@ def score_run(
                     "judged_slice_committed": float(judged_slice_committed),
                     "verdicts_obtained": float(verdicts_obtained),
                     "judged_slice_state": float(judged_slice_state_code),
+                    "usage_absent_fallback_count": 0.0,
                 },
                 n=0,
             )
@@ -1080,6 +1093,7 @@ def score_run(
                 judged_slice_committed=judged_slice_committed,
                 verdicts_obtained=verdicts_obtained,
                 judged_slice_state=judged_slice_state_code,
+                usage_absent_fallback_count=usage_absent_fallback_count,
             )
         )
 
@@ -1094,6 +1108,7 @@ def score_run(
                     "judged_slice_committed": float(judged_slice_committed),
                     "verdicts_obtained": float(verdicts_obtained),
                     "judged_slice_state": float(judged_slice_state_code),
+                    "usage_absent_fallback_count": 0.0,
                 },
                 n=0,
             )
@@ -1121,6 +1136,7 @@ def score_run(
                 judged_slice_committed=judged_slice_committed,
                 verdicts_obtained=verdicts_obtained,
                 judged_slice_state=judged_slice_state_code,
+                usage_absent_fallback_count=usage_absent_fallback_count,
             )
         )
 
@@ -1398,12 +1414,25 @@ def score_run(
                 f"missing {len(missing)} work unit{'s' if len(missing) != 1 else ''}."
             )
 
+    fallback_note: str | None = None
+    if usage_absent_fallback_count > 0:
+        fallback_note = (
+            f"Provider omitted usage for {usage_absent_fallback_count} judged call{'s' if usage_absent_fallback_count != 1 else ''}; "
+            f"spend was charged at estimated cost per question."
+        )
+
     final_notes = calibration_notes
     if judge_stop_note:
         final_notes = (
             f"{final_notes} {judge_stop_note}".strip()
             if final_notes
             else judge_stop_note
+        )
+    if fallback_note:
+        final_notes = (
+            f"{final_notes} {fallback_note}".strip()
+            if final_notes
+            else fallback_note
         )
     if missing_units_note:
         final_notes = (

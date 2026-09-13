@@ -183,6 +183,7 @@ def make_groundedness_result(
     judged_slice_committed: int | float | None = None,
     verdicts_obtained: int | float | None = None,
     judged_slice_state: float | None = None,
+    usage_absent_fallback_count: int | float | None = None,
 ) -> DimensionResult:
     """Build DimensionResult for judged answer groundedness."""
     err_detail: dict[str, float] = {}
@@ -192,6 +193,8 @@ def make_groundedness_result(
         err_detail["verdicts_obtained"] = float(verdicts_obtained)
     if judged_slice_state is not None:
         err_detail["judged_slice_state"] = float(judged_slice_state)
+    if usage_absent_fallback_count is not None:
+        err_detail["usage_absent_fallback_count"] = float(usage_absent_fallback_count)
 
     if not verdicts:
         if judge_errors > 0 and judge_errors == total_sampled:
@@ -229,6 +232,8 @@ def make_groundedness_result(
         detail["verdicts_obtained"] = float(verdicts_obtained)
     if judged_slice_state is not None:
         detail["judged_slice_state"] = float(judged_slice_state)
+    if usage_absent_fallback_count is not None:
+        detail["usage_absent_fallback_count"] = float(usage_absent_fallback_count)
     if calibration_exact_match is not None:
         detail["calibration_exact_match"] = float(calibration_exact_match)
     if calibration_mad is not None:
@@ -286,6 +291,7 @@ def make_faithfulness_result(
     judged_slice_committed: int | float | None = None,
     verdicts_obtained: int | float | None = None,
     judged_slice_state: float | None = None,
+    usage_absent_fallback_count: int | float | None = None,
 ) -> DimensionResult:
     """Build DimensionResult for judged answer faithfulness."""
     err_detail: dict[str, float] = {}
@@ -295,6 +301,8 @@ def make_faithfulness_result(
         err_detail["verdicts_obtained"] = float(verdicts_obtained)
     if judged_slice_state is not None:
         err_detail["judged_slice_state"] = float(judged_slice_state)
+    if usage_absent_fallback_count is not None:
+        err_detail["usage_absent_fallback_count"] = float(usage_absent_fallback_count)
 
     if not verdicts:
         if judge_errors > 0 and judge_errors == total_sampled:
@@ -332,6 +340,8 @@ def make_faithfulness_result(
         detail["verdicts_obtained"] = float(verdicts_obtained)
     if judged_slice_state is not None:
         detail["judged_slice_state"] = float(judged_slice_state)
+    if usage_absent_fallback_count is not None:
+        detail["usage_absent_fallback_count"] = float(usage_absent_fallback_count)
     if calibration_exact_match is not None:
         detail["calibration_exact_match"] = float(calibration_exact_match)
     if calibration_mad is not None:
