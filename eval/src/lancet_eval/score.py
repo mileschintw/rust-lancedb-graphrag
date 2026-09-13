@@ -371,6 +371,7 @@ def score_run(
     cache = JudgeCache(cache_path)
     judged_qids: set[str] = set()
     judge_stop_note: str = ""
+    sample_clamp_note: str = ""
     cap_stop_discloses_fallback: bool = False
     cached_verdict_count = _reusable_verdict_count(
         cache,
@@ -467,6 +468,10 @@ def score_run(
                     f"(stage_spend_cap={stage_spend_cap}, estimated cost per question={cost_per_question:.4f}). "
                     f"Reduce --sample to <= {derived_slice_size} or increase --stage-cap."
                 )
+            sample_clamp_note = (
+                f"--sample {sample} exceeded the judgeable population ({derived_slice_size}); "
+                f"judged slice was clamped to {derived_slice_size}."
+            )
             slice_count = derived_slice_size
         elif sample is not None and sample > 0:
             slice_count = sample
@@ -1452,6 +1457,12 @@ def score_run(
             f"{final_notes} {judge_stop_note}".strip()
             if final_notes
             else judge_stop_note
+        )
+    if sample_clamp_note:
+        final_notes = (
+            f"{final_notes} {sample_clamp_note}".strip()
+            if final_notes
+            else sample_clamp_note
         )
     if fallback_note:
         final_notes = (
