@@ -841,7 +841,7 @@ Plans:
 6. `06.3.1-ROOT-CAUSE.md` carries the full forensic trail in the 06.3.1 phase directory, and a distilled public-facing note lands under `docs/` for Phase 6.4's design narrative and honest-limitations section (D-54).
 7. Phase 6.4's ROADMAP entry is updated as this family's closing act (D-53) — canonical refs gain the root-cause doc, and Success Criterion 5's notice vocabulary gains the new code from 06.3.1. (`Depends on:` was repointed to 06.3.4 at split time.)
 
-**Plans:** 9/9 plans complete — all 9 plans executed (including 2 gap-closure plans closed 2026-09-12), closing `06.3.4-VERIFICATION.md` gap 0, `06.3.4-REVIEW.md` CR-01/WR-01/WR-05/IN-01/IN-02/IN-03/WR-03, and `06.3.4-SECURITY.md` T-06.3.4-19/24/25/43. SC-1 is recorded as a disclosed deviation (no re-drive) and SC-3 stays deferred (no calibration back-fill).
+**Plans:** 9/10 plans complete — plans 01-09 executed (including 2 gap-closure plans closed 2026-09-12), closing `06.3.4-VERIFICATION.md` gap 0, `06.3.4-REVIEW.md` CR-01/WR-01/WR-05/IN-01/IN-02/IN-03/WR-03, and `06.3.4-SECURITY.md` T-06.3.4-19/24/43. Plan 10 is a third gap-closure round (planned 2026-09-13) closing `06.3.4-SECURITY.md`'s two remaining blocking threats, T-06.3.4-25 (judge-spend meter fails open on a usage-absent provider response) and T-06.3.4-42 (judged-candidate selection missing the judgeable predicate the loop applies — a regression activated when plan 09 wired that path into production). SC-1 is formally accepted as a disclosed deviation via the `overrides:` entry in `06.3.4-VERIFICATION.md` (2026-09-13) and SC-3 stays deferred (no calibration back-fill).
 
 Plans:
 
@@ -877,6 +877,10 @@ Plans:
 **Wave 8** *(gap closure — blocked on 06.3.4-08)*
 
 - [x] 06.3.4-09-PLAN.md — `gap_closure: true`. The judged-pass controls that must exist before any future judged or calibration spend: judge usage metering and a required `--stage-cap` on `score` with a spend break in the judge loop, `derive_judged_slice_size`'s unreachable invariant made reachable and given a production caller, and the judged-slice provenance fields carried through `RunMetadata`, the regenerated report schema and both judged dimensions (T-06.3.4-24, T-06.3.4-25, T-06.3.4-43, IN-03, WR-03, IN-02; D-47, D-48)
+
+**Wave 9** *(gap closure — blocked on 06.3.4-09)*
+
+- [ ] 06.3.4-10-PLAN.md — `gap_closure: true`. Close the two threats the parallel code-review and security gates found after 08/09 landed: the judged-spend meter fails open when a provider response omits `usage`, so the pre-dispatch cap check freezes and the rest of the slice dispatches unmetered (fallback to the pre-estimate with the fallback count disclosed in `notes` and both judged dimensions); and judged-candidate selection sizes its slice against an unfiltered population while the loop filters afterwards, reproducing the superseded run's "requested N, delivered fewer" (one judgeable predicate shared by selection, the judge loop and the worksheet) (T-06.3.4-25, T-06.3.4-42, CR-01, WR-07; D-34, D-47)
 
 **Cross-cutting constraints:**
 
