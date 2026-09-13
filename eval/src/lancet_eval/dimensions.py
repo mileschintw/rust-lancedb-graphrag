@@ -197,7 +197,7 @@ def make_groundedness_result(
         err_detail["usage_absent_fallback_count"] = float(usage_absent_fallback_count)
 
     if not verdicts:
-        if judge_errors > 0 and judge_errors == total_sampled:
+        if judge_errors > 0 and judge_errors == total_sampled - skipped_no_evidence:
             return DimensionResult(
                 name="answer_groundedness",
                 status="error",
@@ -305,7 +305,7 @@ def make_faithfulness_result(
         err_detail["usage_absent_fallback_count"] = float(usage_absent_fallback_count)
 
     if not verdicts:
-        if judge_errors > 0 and judge_errors == total_sampled:
+        if judge_errors > 0 and judge_errors == total_sampled - skipped_no_evidence:
             return DimensionResult(
                 name="answer_faithfulness",
                 status="error",
