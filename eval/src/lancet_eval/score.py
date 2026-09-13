@@ -142,16 +142,45 @@ def _is_judgeable(rec: RunRecord, gold_map: dict[str, Any]) -> bool:
 
 
 def _reusable_verdict_count(
-    cache: JudgeCache, prompt_version: str, judge_model: str
+    cache: JudgeCache,
+    prompt_version: str,
+    judge_model: str,
+    records: list[RunRecord],
+    gold_map: dict[str, Any],
 ) -> int:
-    """WR-07: Count only cache entries whose prompt_version and judge_model match configured values."""
-    return sum(
-        1
-        for e in cache.entries.values()
-        if e.verdict is not None
-        and e.prompt_version == prompt_version
-        and e.judge_model == judge_model
-    )
+    """WR-07/WR-03: Count only cache entries reachable from the current judgeable population.
+
+    WR-07 scoped this count to entries whose stored `prompt_version`/`judge_model` fields
+    matched the configured values. That is necessary but not sufficient: on a corrected
+    re-drive into the same run_dir, a stale entry can still match on those two fields while
+    being unreachable for any other reason -- the cache key also embeds the record's answer
+    and post-truncation evidence, either of which a corrected engine run can change for the
+    same question_id.
+
+    Rather than comparing stored fields, recompute the exact cache_key each currently
+    judgeable record would produce under the *current* prompt_version/judge_model and count
+    only the cache hits among those keys. Since prompt_version and judge_model are inputs to
+    the key's hash, a stored entry from a superseded prompt version or a different judge
+    model naturally fails to match (same guarantee as WR-07); a stored entry that is stale by
+    answer/evidence content also naturally fails to match (the new WR-03 guarantee) -- both
+    without any separate field comparison.
+    """
+    count = 0
+    for rec in records:
+        if not _is_judgeable(rec, gold_map):
+            continue
+        gold = gold_map[rec.question_id]
+        k = cache_key(
+            prompt_version=prompt_version,
+            judge_model=judge_model,
+            question=gold.question,
+            answer=rec.answer or "",
+            post_truncation_evidence=truncate_evidence(rec.structured_citations),
+        )
+        entry = cache.get(k)
+        if entry is not None and entry.verdict is not None:
+            count += 1
+    return count
 
 
 def score_run(
@@ -377,6 +406,8 @@ def score_run(
         cache,
         prompt_version=config.judge_prompt_version,
         judge_model=config.judge_model,
+        records=p_records,
+        gold_map=gold_map,
     )
     judged_slice_committed: int = 0
     verdicts_obtained: int = 0

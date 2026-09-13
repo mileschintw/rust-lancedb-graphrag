@@ -2077,61 +2077,124 @@ def test_worksheet_selection_parity_with_judgeable_predicate(
 
 
 def test_cached_verdict_count_scoped_by_prompt_version_and_model(tmp_path: Path) -> None:
-    """Proves WR-07: cached_verdict_count ignores entries with different prompt_version or judge_model."""
-    from lancet_eval.judge import JudgeCache, JudgeCacheEntry, JudgeVerdict
+    """Proves WR-07: cached_verdict_count ignores entries with different prompt_version or
+    judge_model. Extended for WR-03: also proves an entry that matches on prompt_version
+    and judge_model but is stale by *content* (answer text changed on a corrected re-drive)
+    is excluded too, since reachability is now judged by recomputing each currently-judgeable
+    record's real cache_key rather than by comparing stored fields on cache.entries directly.
+    """
+    from lancet_eval.corpus import GoldQuestion
+    from lancet_eval.client import StructuredCitation
+    from lancet_eval.journal import RunRecord
+    from lancet_eval.judge import (
+        JudgeCache,
+        JudgeCacheEntry,
+        JudgeVerdict,
+        cache_key,
+        truncate_evidence,
+    )
     from lancet_eval.score import _reusable_verdict_count
 
     cache_path = tmp_path / "judge_cache.json"
     cache = JudgeCache(cache_path)
-
     v = JudgeVerdict(groundedness=5, faithfulness=5, unsupported_claims=[], rationale="Good")
-    # Entry with matching version and model
-    entry_valid = JudgeCacheEntry(
-        cache_key="k1",
-        prompt_version="v1",
-        judge_model="openai/gpt-4o-mini",
-        question="q1",
-        answer="a1",
-        evidence="e1",
-        verdict=v,
+
+    citation = StructuredCitation(
+        chunk_id="c1", document_id="doc-1", excerpt="Excerpt", rank=1
     )
-    # Entry with old prompt version
-    entry_old_version = JudgeCacheEntry(
-        cache_key="k2",
-        prompt_version="superseded_v0",
-        judge_model="openai/gpt-4o-mini",
-        question="q2",
-        answer="a2",
-        evidence="e2",
-        verdict=v,
-    )
-    # Entry with different model
-    entry_diff_model = JudgeCacheEntry(
-        cache_key="k3",
-        prompt_version="v1",
-        judge_model="different/model",
-        question="q3",
-        answer="a3",
-        evidence="e3",
-        verdict=v,
-    )
-    # Entry without verdict (e.g. error)
-    entry_err = JudgeCacheEntry(
-        cache_key="k4",
-        prompt_version="v1",
-        judge_model="openai/gpt-4o-mini",
-        question="q4",
-        answer="a4",
-        evidence="e4",
-        error="Some error",
+    gold_map = {
+        "q1": GoldQuestion(question_id="q1", question="Question one?"),
+        "q2": GoldQuestion(question_id="q2", question="Question two?"),
+        "q3": GoldQuestion(question_id="q3", question="Question three?"),
+        "q4": GoldQuestion(question_id="q4", question="Question four?"),
+        "q5": GoldQuestion(question_id="q5", question="Question five?"),
+    }
+
+    def _record(qid: str, answer: str) -> RunRecord:
+        return RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=answer,
+            index_generation="gen-test-1",
+            structured_citations=[citation],
+        )
+
+    def _key(qid: str, answer: str, *, prompt_version: str = "v1", judge_model: str = "openai/gpt-4o-mini") -> str:
+        return cache_key(
+            prompt_version=prompt_version,
+            judge_model=judge_model,
+            question=gold_map[qid].question,
+            answer=answer,
+            post_truncation_evidence=truncate_evidence([citation]),
+        )
+
+    # q1: reachable — cache_key computed under the CURRENT prompt_version/judge_model/content.
+    rec_valid = _record("q1", "a1")
+    k_valid = _key("q1", "a1")
+    cache.set(
+        k_valid,
+        JudgeCacheEntry(
+            cache_key=k_valid, prompt_version="v1", judge_model="openai/gpt-4o-mini",
+            question=gold_map["q1"].question, answer="a1", evidence="e1", verdict=v,
+        ),
     )
 
-    cache.set("k1", entry_valid)
-    cache.set("k2", entry_old_version)
-    cache.set("k3", entry_diff_model)
-    cache.set("k4", entry_err)
+    # q2: stored under a superseded prompt_version — the current lookup recomputes the key
+    # with prompt_version="v1", which hashes differently, so it is unreachable.
+    rec_old_version = _record("q2", "a2")
+    k_old_version = _key("q2", "a2", prompt_version="superseded_v0")
+    cache.set(
+        k_old_version,
+        JudgeCacheEntry(
+            cache_key=k_old_version, prompt_version="superseded_v0", judge_model="openai/gpt-4o-mini",
+            question=gold_map["q2"].question, answer="a2", evidence="e2", verdict=v,
+        ),
+    )
 
-    reusable = _reusable_verdict_count(cache, prompt_version="v1", judge_model="openai/gpt-4o-mini")
+    # q3: stored under a different judge_model — unreachable for the same reason.
+    rec_diff_model = _record("q3", "a3")
+    k_diff_model = _key("q3", "a3", judge_model="different/model")
+    cache.set(
+        k_diff_model,
+        JudgeCacheEntry(
+            cache_key=k_diff_model, prompt_version="v1", judge_model="different/model",
+            question=gold_map["q3"].question, answer="a3", evidence="e3", verdict=v,
+        ),
+    )
+
+    # q4: reachable by key, but has no verdict (e.g. a cached judge error) — excluded.
+    rec_err = _record("q4", "a4")
+    k_err = _key("q4", "a4")
+    cache.set(
+        k_err,
+        JudgeCacheEntry(
+            cache_key=k_err, prompt_version="v1", judge_model="openai/gpt-4o-mini",
+            question=gold_map["q4"].question, answer="a4", evidence="e4", error="Some error",
+        ),
+    )
+
+    # q5 (WR-03): stored under the PRE-correction answer text; the corrected re-drive's
+    # record now has different answer content, so its freshly-computed key never matches
+    # this stale entry, even though prompt_version and judge_model both still match.
+    rec_stale_by_content = _record("q5", "corrected answer after re-drive")
+    k_stale = _key("q5", "pre-correction answer")
+    cache.set(
+        k_stale,
+        JudgeCacheEntry(
+            cache_key=k_stale, prompt_version="v1", judge_model="openai/gpt-4o-mini",
+            question=gold_map["q5"].question, answer="pre-correction answer", evidence="e5", verdict=v,
+        ),
+    )
+
+    reusable = _reusable_verdict_count(
+        cache,
+        prompt_version="v1",
+        judge_model="openai/gpt-4o-mini",
+        records=[rec_valid, rec_old_version, rec_diff_model, rec_err, rec_stale_by_content],
+        gold_map=gold_map,
+    )
     assert reusable == 1
 
 
