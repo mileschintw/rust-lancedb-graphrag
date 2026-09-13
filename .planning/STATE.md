@@ -3,23 +3,29 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 06.3.4
 current_phase_name: Corrected re-drive, calibration and root-cause documentation
-current_plan: 06.3.4-09
-status: gaps_found
-stopped_at: "Phase-final gates (code review, security audit, verification) run 2026-09-13 after gap-closure plans 08/09. All three found the phase still not complete: 2 threats open (T-06.3.4-25, T-06.3.4-42), verification gaps_found (6/8, SC-1/SC-3). Not marked phase.complete. Next: fix T-25/T-42, get a human decision on SC-1, then re-run /gsd-secure-phase 06.3.4 and /gsd-execute-phase 06.3.4 --gaps-only."
-last_updated: "2026-09-13T08:47:19.850Z"
+current_plan: 06.3.4-10
+status: ready_for_verification
+stopped_at: "Plan 06.3.4-10 completed (T-06.3.4-25 usage-absent fallback metering, T-06.3.4-42 single judgeable predicate and candidate slice sizing). Ready for phase-final code review and verification."
+last_updated: "2026-09-13T13:33:00.000Z"
 last_activity: 2026-09-13
-state_head: 54c611e1672d000d8bf7fcefb0e7b0342ef550c7
+state_head: 25371d80b62e49c95861b5c2105151528654854f
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 158
-  completed_plans: 157
+  completed_plans: 158
 milestone_name: milestone
 ---
 
 # Project State
 
 ## Current Status
+
+- **2026-09-13: Plan 06.3.4-10 executed and verified (Wave 9 Gap Closure):**
+  - Closed T-06.3.4-25: Judge loop charges `cost_per_question` and increments `usage_absent_fallback_count` when provider omits `usage`, preventing fail-open unmetered spend; observed-zero tokens correctly charges $0 without fallback increment; fallback count disclosed in `RunMetadata.notes` and dimension `detail`; cap-stop note names fallback count. Discriminating mixed observed/absent fixture proved cap breaks early (3 calls made vs 4 committed, observed 4 pre-fix).
+  - Closed T-06.3.4-42 / WR-07: Extracted single module-level `_is_judgeable` predicate (`score.py:136`), unifying candidate selection (`score.py:441`), judge loop (`score.py:488`), and calibration worksheet (`score.py:892`); candidate selection sizes slice against actual judgeable count; preserved D-34 no-evidence diagnostic at selection time; scoped `--sample` refusal to `cap` binding (clamping on data/coincident/zero-judgeable bindings); scoped `cached_verdict_count` to matching prompt version and judge model via `_reusable_verdict_count` (`score.py:144`).
+  - Suite: 416/416 tests passing; `eval/runs/`, `eval/report.schema.json`, and `eval/src/lancet_eval/gate.py` untouched.
+  - Stopped per user instruction: "Complete plans without getting into phase-final code review and verification."
 
 - **2026-09-13: Phase-final gates run (code review, security audit, verification), all three resuming past the mechanical `--gaps-only` "no matching incomplete plans" exit on explicit user instruction** (all 9 plans were already summarized; the prior 2026-09-10 REVIEW.md/VERIFICATION.md/SECURITY.md predated gap-closure plans 08/09 and were stale, not missing — see `gaps-only-resume-to-gates` precedent). Regression gate clean first (`cargo test`, `go test`, `eval/` pytest — one unrelated pre-existing Phase 02 test failure requiring `-O` invocation, not a regression).
   - **Code review** (`06.3.4-REVIEW.md`, re-scoped to the 21-file union of plans 08/09's `files_modified`): `status: issues_found` — 1 critical, 2 warning, 2 info. All ten originally-targeted findings (CR-01/T-19, WR-01, WR-05, IN-01, WR-03, IN-02, IN-03, T-24, T-25, T-43) confirmed genuinely fixed against actual code and tests. **New critical (CR-01 in this review):** the T-06.3.4-25 judge-spend meter fails open when the provider response omits `usage` — `score.py:500` has no fallback branch, so once a provider stops reporting usage the pre-dispatch cap check can never trip again. `06.3.4-05-PLAN.md`'s own original mitigation text required exactly this fallback ("falling back to `p` with the fallback count recorded"); it was never built, and no test exercises the path.
