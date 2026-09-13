@@ -371,6 +371,7 @@ def score_run(
     cache = JudgeCache(cache_path)
     judged_qids: set[str] = set()
     judge_stop_note: str = ""
+    cap_stop_discloses_fallback: bool = False
     cached_verdict_count = _reusable_verdict_count(
         cache,
         prompt_version=config.judge_prompt_version,
@@ -557,6 +558,7 @@ def score_run(
                     f"(${accumulated_judge_spend:.6f} spent >= ${stage_spend_cap:.6f} cap, "
                     f"including {usage_absent_fallback_count} call{'s' if usage_absent_fallback_count != 1 else ''} charged at estimated cost)."
                 )
+                cap_stop_discloses_fallback = True
             else:
                 judge_stop_note = (
                     f"Judged pass stopped by spend cap "
@@ -1438,7 +1440,7 @@ def score_run(
             )
 
     fallback_note: str | None = None
-    if usage_absent_fallback_count > 0:
+    if usage_absent_fallback_count > 0 and not cap_stop_discloses_fallback:
         fallback_note = (
             f"Provider omitted usage for {usage_absent_fallback_count} judged call{'s' if usage_absent_fallback_count != 1 else ''}; "
             f"spend was charged at estimated cost per question."
