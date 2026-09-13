@@ -4,10 +4,10 @@ milestone: v1.0
 current_phase: 06.3.4
 current_phase_name: Corrected re-drive, calibration and root-cause documentation
 current_plan: 06.3.4-09
-status: plans_complete
-stopped_at: "Gap-closure plans for Phase 06.3.4 (06.3.4-08 and 06.3.4-09) completed and verified 2026-09-12. All 9 plans in phase executed. Phase-final code review and verification gates not entered per user instruction."
-last_updated: "2026-09-12T23:05:00.000Z"
-last_activity: 2026-09-12
+status: gaps_found
+stopped_at: "Phase-final gates (code review, security audit, verification) run 2026-09-13 after gap-closure plans 08/09. All three found the phase still not complete: 2 threats open (T-06.3.4-25, T-06.3.4-42), verification gaps_found (6/8, SC-1/SC-3). Not marked phase.complete. Next: fix T-25/T-42, get a human decision on SC-1, then re-run /gsd-secure-phase 06.3.4 and /gsd-execute-phase 06.3.4 --gaps-only."
+last_updated: "2026-09-13T00:30:00.000Z"
+last_activity: 2026-09-13
 progress:
   total_phases: 16
   completed_phases: 9
@@ -19,6 +19,15 @@ milestone_name: milestone
 # Project State
 
 ## Current Status
+
+- **2026-09-13: Phase-final gates run (code review, security audit, verification), all three resuming past the mechanical `--gaps-only` "no matching incomplete plans" exit on explicit user instruction** (all 9 plans were already summarized; the prior 2026-09-10 REVIEW.md/VERIFICATION.md/SECURITY.md predated gap-closure plans 08/09 and were stale, not missing — see `gaps-only-resume-to-gates` precedent). Regression gate clean first (`cargo test`, `go test`, `eval/` pytest — one unrelated pre-existing Phase 02 test failure requiring `-O` invocation, not a regression).
+  - **Code review** (`06.3.4-REVIEW.md`, re-scoped to the 21-file union of plans 08/09's `files_modified`): `status: issues_found` — 1 critical, 2 warning, 2 info. All ten originally-targeted findings (CR-01/T-19, WR-01, WR-05, IN-01, WR-03, IN-02, IN-03, T-24, T-25, T-43) confirmed genuinely fixed against actual code and tests. **New critical (CR-01 in this review):** the T-06.3.4-25 judge-spend meter fails open when the provider response omits `usage` — `score.py:500` has no fallback branch, so once a provider stops reporting usage the pre-dispatch cap check can never trip again. `06.3.4-05-PLAN.md`'s own original mitigation text required exactly this fallback ("falling back to `p` with the fallback count recorded"); it was never built, and no test exercises the path.
+  - **Security audit** (`06.3.4-SECURITY.md`): auditor independently found the same T-25 gap but classified it as a non-blocking caveat and reported `threats_open: 0`. **Orchestrator overrode this** — per secure-phase.md's own closure rule (mitigation found OR accepted risk OR transfer; a plan-specified fallback that is absent is none of the three) — and kept T-25 open. The auditor also found a genuine regression: **T-06.3.4-42** (closed 2026-09-10 on "not yet exercised in production — judging deferred") is not actually mitigated now that plan 09 wired the judged-candidate-selection path into production — `score.py:412-418` builds the candidate set without the gold-present/non-empty-citations filter T-42's original mitigation required, reproducing the superseded run's original "requested N, delivered fewer" failure. Reopened. Auditor also closed 6 new threats plans 08/09 self-registered (T-06.3.4-44 through -49). Net: `threats_open: 2` (T-25, T-42), not 0.
+  - **Verification** (`06.3.4-VERIFICATION.md`): `status: gaps_found`, **6/8** (up from 5/8). Gap 0 (journal completeness/CR-01/T-19) independently confirmed closed. SC-1 (D-44 staged-drive coverage floor) and SC-3 (D-48 fresh human calibration) remain open — both pre-existing, honestly disclosed deviations this round was never meant to close (both gap-closure plans' `must_haves.prohibitions` explicitly forbid a re-drive). One `human_verification` item remains (down from two — whether Phase 6.4 may cite this run is now resolved by ROADMAP.md's own text: it may not, until 06.3.4.1 lands): **whether to formally accept the SC-1 "go-with-investigation" deviation via override, or reopen the phase for an actual staged drive.**
+  - **`phase.complete` NOT run** — verification is `gaps_found` and `threats_open > 0`. `requirements.revert-phase` deliberately NOT run (OBS-05 is a shared checkbox across all four 06.3.x siblings; 06.3.1-06.3.3 already independently completed their own slices — same class as the Phase 6.1 RAG-03 precedent).
+  - **Not run this round (deliberately, not an oversight):** Nyquist validation (`/gsd-validate-phase 06.3.4`) — it's an advisory `execute:post`/`verify:post` hook, not a completion gate (`loop-hook-dispatch.md`: "a step never blocks or redirects the host workflow"), and the sibling-phase VALIDATION.md pattern is weaker than it first looks (06.3.1, another inserted X.Y.Z sibling, also lacks one). Available as a follow-up, not required.
+  - **Noted, not acted on:** a leftover worktree at `.claude/worktrees/charming-khayyam-f3c4a9/` (full repo copy, unrelated Phase 02 content) — residue from a prior wave's cleanup deviation. May hold uncommitted work; needs manual inspection before removal, out of scope for this run.
+  - **Next:** fix T-06.3.4-25 (usage-absent fallback in the judge-spend meter) and T-06.3.4-42 (restrict judged-candidate selection to the same predicate the judge loop applies) — likely a small `06.3.4-10` gap-closure plan. Get a human decision on SC-1. Then re-run `/gsd-secure-phase 06.3.4` to confirm `threats_open: 0`, and `/gsd-execute-phase 06.3.4 --gaps-only` to re-verify.
 
 - **Phase 06.3.4 gap-closure execution complete** (Plans 06.3.4-08 and 06.3.4-09 completed and committed):
   - **`06.3.4-08-PLAN.md` (Wave 7)**: Reconciles journal headers dynamically from measured completeness, enforces fail-closed publication in `score_run`/`report.py`, corrected the live journal header via `lancet-eval reconcile`, and documented the journal-reset finding and corrections in `06.3.4-FINDINGS.md` §5, `06.3.4-04-SUMMARY.md`, `06.3.4-STAGED-GATE.md`, and `docs/evaluation-fidelity-and-graph-yield.md`. Closes CR-01, T-06.3.4-19, WR-01, WR-05, IN-01.
