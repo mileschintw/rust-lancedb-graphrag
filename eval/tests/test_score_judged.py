@@ -1860,6 +1860,282 @@ def test_judge_loop_fully_observed_spend_unchanged(
     assert "fallback" not in (report.metadata.notes or "").lower()
 
 
+def test_judgeable_predicate_parity_and_selection_sizing(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves candidate selection sizes slice against judgeable population only and records selection-time exclusions."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    # 4 records: 2 with structured citations, 2 without
+    for i, qid in enumerate(qids[:4]):
+        has_citations = i % 2 == 0
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ]
+            if has_citations
+            else [],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question(judge_max_tokens=400)
+    cap = cost_per_q * 10.0
+
+    client = httpx.Client()
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    # Candidate selection only sized for the 2 judgeable questions
+    assert report.metadata.judged_slice_committed == 2
+    assert report.metadata.verdicts_obtained == 2
+    assert len(httpx_mock.get_requests()) == 2
+
+    g_dim = next(d for d in report.dimensions if d.name == "answer_groundedness")
+    f_dim = next(d for d in report.dimensions if d.name == "answer_faithfulness")
+    # Selection-time exclusion count preserved in detail
+    assert g_dim.detail["skipped_no_evidence"] == 2.0
+    assert f_dim.detail["skipped_no_evidence"] == 2.0
+
+
+def test_score_run_sample_exceeds_data_bound_clamps_and_does_not_raise(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves --sample exceeding data bound clamps to judgeable count rather than raising ScoreError."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    # 2 judgeable records
+    for qid in qids[:2]:
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question(judge_max_tokens=400)
+    cap = cost_per_q * 10.0  # Cap funds 10 questions, but data only has 2
+
+    client = httpx.Client()
+    # sample=5 exceeds data bound (2) but is well within cap (10) -> clamps to 2 and does NOT raise!
+    report = score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        sample=5,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+    )
+
+    assert report.metadata.judged_slice_committed == 2
+    assert report.metadata.verdicts_obtained == 2
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_worksheet_selection_parity_with_judgeable_predicate(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """Proves calibration-worksheet selection uses the single judgeable predicate and never admits zero-citation records."""
+    from lancet_eval.measure import estimate_judge_cost_per_question
+
+    qids = _setup_fixtures(tmp_path)
+    doc_id = _get_valid_doc_id()
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    # 3 records: qids[0] and qids[1] with citations, qids[2] with empty citations
+    for i, qid in enumerate(qids[:3]):
+        has_citations = (i < 2)
+        rec = RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-on",
+            outcome="success",
+            answer=f"Answer {qid}",
+            index_generation="gen-test-1",
+            structured_citations=[
+                StructuredCitation(
+                    chunk_id="c1",
+                    document_id=doc_id,
+                    excerpt="Excerpt",
+                    rank=1,
+                )
+            ]
+            if has_citations
+            else [],
+        )
+        journal.append(rec)
+
+    verdict_resp = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps({
+                        "groundedness": 5,
+                        "faithfulness": 5,
+                        "unsupported_claims": [],
+                        "rationale": "High quality answer",
+                    })
+                }
+            }
+        ],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+    }
+    httpx_mock.add_response(json=verdict_resp, is_reusable=True)
+
+    cost_per_q = estimate_judge_cost_per_question(judge_max_tokens=400)
+    cap = cost_per_q * 10.0
+
+    ws_path = tmp_path / "calibration_worksheet.jsonl"
+    client = httpx.Client()
+    score_run(
+        run_dir=tmp_path,
+        no_judge=False,
+        stage_spend_cap=cap,
+        api_key="test-api-key",
+        client=client,
+        emit_calibration_worksheet=ws_path,
+    )
+
+    assert ws_path.exists()
+    rows = [json.loads(line) for line in ws_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    data_rows = [r for r in rows if r.get("type") != "header"]
+    ws_qids = {r["question_id"] for r in data_rows}
+    assert qids[0] in ws_qids
+    assert qids[1] in ws_qids
+    assert qids[2] not in ws_qids
+
+
+def test_cached_verdict_count_scoped_by_prompt_version_and_model(tmp_path: Path) -> None:
+    """Proves WR-07: cached_verdict_count ignores entries with different prompt_version or judge_model."""
+    from lancet_eval.judge import JudgeCache, JudgeCacheEntry, JudgeVerdict
+    from lancet_eval.score import _reusable_verdict_count
+
+    cache_path = tmp_path / "judge_cache.json"
+    cache = JudgeCache(cache_path)
+
+    v = JudgeVerdict(groundedness=5, faithfulness=5, unsupported_claims=[], rationale="Good")
+    # Entry with matching version and model
+    entry_valid = JudgeCacheEntry(
+        cache_key="k1",
+        prompt_version="v1",
+        judge_model="openai/gpt-4o-mini",
+        question="q1",
+        answer="a1",
+        evidence="e1",
+        verdict=v,
+    )
+    # Entry with old prompt version
+    entry_old_version = JudgeCacheEntry(
+        cache_key="k2",
+        prompt_version="superseded_v0",
+        judge_model="openai/gpt-4o-mini",
+        question="q2",
+        answer="a2",
+        evidence="e2",
+        verdict=v,
+    )
+    # Entry with different model
+    entry_diff_model = JudgeCacheEntry(
+        cache_key="k3",
+        prompt_version="v1",
+        judge_model="different/model",
+        question="q3",
+        answer="a3",
+        evidence="e3",
+        verdict=v,
+    )
+    # Entry without verdict (e.g. error)
+    entry_err = JudgeCacheEntry(
+        cache_key="k4",
+        prompt_version="v1",
+        judge_model="openai/gpt-4o-mini",
+        question="q4",
+        answer="a4",
+        evidence="e4",
+        error="Some error",
+    )
+
+    cache.set("k1", entry_valid)
+    cache.set("k2", entry_old_version)
+    cache.set("k3", entry_diff_model)
+    cache.set("k4", entry_err)
+
+    reusable = _reusable_verdict_count(cache, prompt_version="v1", judge_model="openai/gpt-4o-mini")
+    assert reusable == 1
+
+
+
 
 
 

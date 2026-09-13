@@ -133,6 +133,27 @@ def _check_provenance(record: RunRecord) -> bool:
     return has_ablation and not has_unavailable
 
 
+def _is_judgeable(rec: RunRecord, gold_map: dict[str, Any]) -> bool:
+    """T-06.3.4-42: Single judgeable predicate read by candidate selection, judge loop, and calibration worksheet.
+
+    A record is judgeable if gold is present for its question_id and it carries non-empty structured_citations.
+    """
+    return bool(gold_map.get(rec.question_id)) and bool(rec.structured_citations)
+
+
+def _reusable_verdict_count(
+    cache: JudgeCache, prompt_version: str, judge_model: str
+) -> int:
+    """WR-07: Count only cache entries whose prompt_version and judge_model match configured values."""
+    return sum(
+        1
+        for e in cache.entries.values()
+        if e.verdict is not None
+        and e.prompt_version == prompt_version
+        and e.judge_model == judge_model
+    )
+
+
 def score_run(
     *,
     run_dir: Path | str,
@@ -350,8 +371,10 @@ def score_run(
     cache = JudgeCache(cache_path)
     judged_qids: set[str] = set()
     judge_stop_note: str = ""
-    cached_verdict_count = sum(
-        1 for e in cache.entries.values() if e.verdict is not None
+    cached_verdict_count = _reusable_verdict_count(
+        cache,
+        prompt_version=config.judge_prompt_version,
+        judge_model=config.judge_model,
     )
     judged_slice_committed: int = 0
     verdicts_obtained: int = 0
@@ -415,9 +438,14 @@ def score_run(
         distinct_qids = [
             {"question_id": q.question_id}
             for q in sampled_questions
-            if any(r.question_id == q.question_id for r in p_records)
+            if any(r.question_id == q.question_id and _is_judgeable(r, gold_map) for r in p_records)
         ]
         judgeable_count = len(distinct_qids)
+        skipped_no_evidence = sum(
+            1
+            for r in p_records
+            if gold_map.get(r.question_id) and not r.structured_citations
+        )
         cost_per_question = estimate_judge_cost_per_question(
             judge_max_tokens=config.judge_max_tokens
         )
@@ -432,13 +460,14 @@ def score_run(
             raise ScoreError(str(exc)) from exc
 
         if sample is not None and sample > derived_slice_size:
-            raise ScoreError(
-                f"--sample {sample} exceeds the cap-derived bound of {derived_slice_size} "
-                f"(stage_spend_cap={stage_spend_cap}, estimated cost per question={cost_per_question:.4f}). "
-                f"Reduce --sample to <= {derived_slice_size} or increase --stage-cap."
-            )
-
-        if sample is not None and sample > 0:
+            if judged_slice_binding == "cap":
+                raise ScoreError(
+                    f"--sample {sample} exceeds the cap-derived bound of {derived_slice_size} "
+                    f"(stage_spend_cap={stage_spend_cap}, estimated cost per question={cost_per_question:.4f}). "
+                    f"Reduce --sample to <= {derived_slice_size} or increase --stage-cap."
+                )
+            slice_count = derived_slice_size
+        elif sample is not None and sample > 0:
             slice_count = sample
         else:
             slice_count = derived_slice_size
@@ -456,15 +485,11 @@ def score_run(
         for rec in p_records:
             if rec.question_id not in judged_qids:
                 continue
-            gold = gold_map.get(rec.question_id)
-            if not gold:
+            if not _is_judgeable(rec, gold_map):
                 continue
+            gold = gold_map[rec.question_id]
 
             judged_sample_count += 1
-
-            if not rec.structured_citations:
-                skipped_no_evidence += 1
-                continue
 
             ev = truncate_evidence(rec.structured_citations)
             k = cache_key(
@@ -864,11 +889,9 @@ def score_run(
             for r in p_records:
                 if r.question_id not in judged_qids:
                     continue
-                gold = gold_map.get(r.question_id)
-                if not gold:
+                if not _is_judgeable(r, gold_map):
                     continue
-                if not r.structured_citations:
-                    continue
+                gold = gold_map[r.question_id]
                 ev = truncate_evidence(r.structured_citations)
                 k = cache_key(
                     prompt_version=config.judge_prompt_version,
@@ -1076,7 +1099,7 @@ def score_run(
                 verdicts=faithfulness_scores,
                 judge_errors=judge_errors,
                 skipped_no_evidence=skipped_no_evidence,
-                total_sampled=judged_sample_count,
+                total_sampled=skipped_no_evidence + judged_sample_count,
                 calibration_exact_match=f_calibration_em,
                 calibration_mad=f_calibration_mad,
                 calibration_kappa=f_calibration_kappa,
@@ -1119,7 +1142,7 @@ def score_run(
                 verdicts=groundedness_scores,
                 judge_errors=judge_errors,
                 skipped_no_evidence=skipped_no_evidence,
-                total_sampled=judged_sample_count,
+                total_sampled=skipped_no_evidence + judged_sample_count,
                 calibration_exact_match=g_calibration_em,
                 calibration_mad=g_calibration_mad,
                 calibration_kappa=g_calibration_kappa,
