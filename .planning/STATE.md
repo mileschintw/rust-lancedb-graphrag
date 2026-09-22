@@ -1,20 +1,20 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 06.3.4
-current_phase_name: Corrected re-drive, calibration and root-cause documentation
-current_plan: 06.3.4-10
 status: gaps_found
-stopped_at: "Phase-final gates re-run after plan 06.3.4-10: code review found and fixed a new critical (CR-01) plus 3 warnings; security confirmed threats_open:0; verification re-scored 7/8 with SC-1 formally accepted via a genuine human override. SC-3 (human calibration) remains the sole open gap, deferred by design to Phase 06.3.4.1/Phase 6.4. Phase NOT marked complete."
-last_updated: "2026-09-13T22:20:00.000Z"
+stopped_at: Phase 06.3.4.1 context gathered
+last_updated: "2026-09-22T23:34:12.705Z"
 last_activity: 2026-09-13
-state_head: cc51b599ee678aa4c44acd6892e288eaeff3ee26
+state_head: 4da108b389e90b748a8bbb52ddafeaef981e16a7
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 158
   completed_plans: 158
 milestone_name: milestone
+current_phase: 06.3.4
+current_phase_name: Corrected re-drive, calibration and root-cause documentation
+current_plan: 06.3.4-10
 ---
 
 # Project State
@@ -416,10 +416,10 @@ milestone_name: milestone
 
 ## Session
 
-**Last session:** 2026-09-08T09:31:26.810Z
+**Last session:** 2026-09-22T23:34:11.485Z
 **Last activity:** 2026-09-13
-**Stopped at:** Phase 06.3.4.1 (Retrieval diagnosis, index identity, and graph-yield repair) inserted after Phase 06.3.4 as urgent decimal work, and its stub fields filled in ROADMAP.md. Sequence: (1) /gsd-plan-phase 06.3.4 --gaps to fix the still-open gap-closure items (T-19/CR-01 journal-completeness/partial-flag defect; T-24, T-25, T-43 from 06.3.4-SECURITY.md), (2) plan and execute Phase 06.3.4.1 to repair retrieval/graph yield, (3) only then Phase 6.4 (parked): 6.4 stays NOT ready to plan until 06.3.4.1 demonstrates a real graph-on vs graph-off effect on a gold-in-index subset — both arms failing to answer is not a v1 story.
-**Resume file:** None
+**Stopped at:** Phase 06.3.4.1 context gathered
+**Resume file:** .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-CONTEXT.md
 
 ## Accumulated Context
 
