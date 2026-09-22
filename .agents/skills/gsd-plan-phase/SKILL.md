@@ -23,9 +23,7 @@ Create executable phase prompts (PLAN.md files) for a roadmap phase with integra
 @.agents/gsd-core/references/ui-brand.md
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `AskUserQuestion`. They are equivalent — `vscode_askquestions` is the VS Code Copilot implementation of the same interactive question API. Do not skip questioning steps because `AskUserQuestion` appears unavailable; use `vscode_askquestions` instead.
-</runtime_note>
+
 
 <context>
 Phase number: $ARGUMENTS (optional — when omitted, the orchestrating workflow reads ROADMAP.md and selects the next unplanned phase; `gsd-tools.cjs` itself has no auto-detect feature and requires an explicit phase number)

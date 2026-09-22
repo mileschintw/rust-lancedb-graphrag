@@ -100,11 +100,27 @@ const PLANNING_LOCK_RETRY_ERRNOS = new Set([
     'ENOENT', // Docker overlay-fs: parent dir transiently missing during race
     'ESTALE', // NFS: stale file handle (self-resolves on retry)
 ]);
+/**
+ * #4257: the ONE owner of the env workstream discriminator `planningDir`
+ * itself applies when handed no `ws` argument. `planningPaths(cwd)` — and
+ * therefore every workstream-scoped `PlanningSnapshot` read — resolves its
+ * base through exactly this read, and the CLI bootstrap has already folded
+ * the stored active-workstream pointer into the env by the time any
+ * diagnostic runs (`resolveActiveWorkstream` → `applyResolvedWorkstreamEnv`,
+ * `active-workstream-store.cjs`). Exposed so a consumer that needs to NAME
+ * the scope those reads used (W002's warning message, via the snapshot's
+ * `workstream` field) derives it from the same resolution point instead of
+ * growing a second env read site that can drift (the #612 PR-2
+ * two-readers-two-bases lesson).
+ */
+function resolveEnvWorkstream() {
+    return process.env['GSD_WORKSTREAM'] ?? null;
+}
 function planningDir(cwd, ws, project) {
     if (project === undefined)
         project = process.env['GSD_PROJECT'] ?? null;
     if (ws === undefined)
-        ws = process.env['GSD_WORKSTREAM'] ?? null;
+        ws = resolveEnvWorkstream();
     // Reject path separators and traversal components in project/workstream names
     const BAD_SEGMENT = /[/\\]|\.\./;
     if (project && BAD_SEGMENT.test(project)) {
@@ -284,6 +300,31 @@ function listAvailableWorkstreams(cwd) {
 function quickDirFrom(planningBase) {
     return node_path_1.default.join(planningBase, 'quick');
 }
+// #4256: the todos directory — deliberately ROOT-SCOPED, unlike every other
+// planningPaths key. Todos are shared project state by construction: the
+// migrateToWorkstreams contract keeps them among the shared files that "stay
+// in place" at .planning/todos/ (workstream.cts), and every workflow writer
+// writes that literal cwd-relative root path. The six todos readers
+// previously hand-composed `path.join(planningDir(cwd), 'todos', ...)`,
+// which silently re-scoped to .planning/workstreams/<ws>/todos/ — a
+// directory nothing creates — under a workstream, so todos went invisible
+// and audit-open passed the milestone-close gate vacuously. Same
+// two-composers-of-one-path shape the `debug` (#3149) and `quick` (#2142)
+// keys were introduced to eliminate (DEFECT.GENERATIVE-FIX).
+//
+// Exported as its own function pair (not only as a `planningPaths` key)
+// because `audit.cts`'s `scanTodos`/`cmdAuditAcknowledge` consume an
+// already-resolved todos base rather than a `cwd`, mirroring how #2142
+// exported `quickDirFrom` for `scanQuickTasks`. `todosDir` takes NO ws/project
+// parameter — todos have no workstream- or project-scoped form anywhere, so
+// there is no discriminator to thread. This is also the single root #4327's
+// future filename-containment guard should enforce against.
+function todosDirFrom(planningBase) {
+    return node_path_1.default.join(planningBase, 'todos');
+}
+function todosDir(cwd) {
+    return todosDirFrom(planningRoot(cwd));
+}
 function planningPaths(cwd, ws) {
     const base = planningDir(cwd, ws);
     return {
@@ -300,6 +341,11 @@ function planningPaths(cwd, ws) {
         debug: node_path_1.default.join(base, 'debug'),
         // #2142: quick-task directory, composed via the shared quickDirFrom helper.
         quick: quickDirFrom(base),
+        // #4256: todos directory — deliberately ROOT-scoped while the rest of
+        // this record follows the active workstream/project (todos are shared
+        // project state per the migrateToWorkstreams contract), composed via the
+        // shared todosDir helper so this key and every direct caller agree.
+        todos: todosDir(cwd),
     };
 }
 /**
@@ -567,10 +613,13 @@ module.exports = {
     createMemoryPointerAdapter,
     planningDir,
     planningRoot,
+    resolveEnvWorkstream,
     resolvePhaseIdConvention,
     listAvailableWorkstreams,
     planningPaths,
     quickDirFrom,
+    todosDirFrom,
+    todosDir,
     withPlanningLock,
     getActiveWorkstream,
     peekActiveWorkstream,

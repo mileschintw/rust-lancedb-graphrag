@@ -48,6 +48,7 @@ const coreUtilsMod = require("./core-utils.cjs");
 const planningScopeMod = require("./planning-scope.cjs");
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
+const security_cjs_1 = require("./security.cjs");
 const { output, error } = io;
 const { extractPhaseToken, scopeToPhase } = phaseId;
 const { extractFrontmatter } = frontmatterMod;
@@ -251,8 +252,11 @@ function computeCoveredDigest(projectRoot, coveredFiles) {
             // confinement check above is not enough. realpathSync resolves the
             // actual target; re-confining against realRoot closes that gap.
             const real = node_fs_1.default.realpathSync(resolved);
-            const realRel = node_path_1.default.relative(realRoot, real);
-            if (realRel === '' || realRel === '..' || realRel.startsWith(`..${node_path_1.default.sep}`) || node_path_1.default.isAbsolute(realRel)) {
+            // Both operands are already realpath-resolved (this fn's own realpathSync calls
+            // above), so the shared containment comparison applies directly (ADR-4650) —
+            // no re-resolution through assertWithinRoot/tryWithinRoot, which would redo work
+            // this function already owns for its exists-vs-escaped tri-state.
+            if (!(0, security_cjs_1.isContainedIn)(real, realRoot)) {
                 return null;
             }
             const st = node_fs_1.default.statSync(real);
@@ -471,7 +475,7 @@ function resolvePhaseArtifactFile(entries, bareName, options = {}) {
         // filtered out, and if that leaves nothing the code falls through to
         // `allowBare`/`null` deliberately.
         const scoped = options.phaseDirName
-            ? scopeToPhase(candidates, options.phaseDirName)
+            ? scopeToPhase(candidates, options.phaseDirName, options.convention)
             : candidates;
         if (scoped.length > 0)
             return scoped[0];
@@ -528,7 +532,7 @@ function resolveVerificationFile(entries, options = {}) {
 function resolveUatFile(entries, options = {}) {
     return resolvePhaseArtifactFile(entries, 'UAT.md', options);
 }
-function findStaleVerificationSummary(phaseDir, fsImpl = defaultFsImpl, phaseCleanCommitTimesMs = defaultPhaseCleanCommitTimesMs) {
+function findStaleVerificationSummary(phaseDir, fsImpl = defaultFsImpl, phaseCleanCommitTimesMs = defaultPhaseCleanCommitTimesMs, convention) {
     // FS errors (TOCTOU: a SUMMARY listed by scanPhasePlans then removed before statSync;
     // unreadable dir; broken symlink; file->dir swap) must degrade rather than throw
     // uncaught into callers that are NOT under the planning lock (init.manager /
@@ -544,9 +548,20 @@ function findStaleVerificationSummary(phaseDir, fsImpl = defaultFsImpl, phaseCle
         // or sentinel-numbered canonically-shaped file cannot outrank this
         // phase's own (possibly non-canonical) report. #3511: phaseDirName scopes
         // the fallback path to this same phase (see resolveVerificationFile docs).
+        // #4187: allowBare — this staleness seam must see the same report set the
+        // status reader sees, or a bare report could never read `stale` while its
+        // dashed twin could (two answers from one verb).
         const phaseDirName = node_path_1.default.basename(phaseDir);
-        const phaseToken = extractPhaseToken(phaseDirName);
-        const verificationFile = resolveVerificationFile(phaseFiles, { phaseToken, phaseDirName });
+        // #612: derive the token with the resolved convention so a bracket dir's
+        // own token is read behind its `{CODE}.{MM}-` prefix. #4187: keep the bare
+        // report tier aligned with the status reader.
+        const phaseToken = extractPhaseToken(phaseDirName, convention);
+        const verificationFile = resolveVerificationFile(phaseFiles, {
+            allowBare: true,
+            phaseToken,
+            phaseDirName,
+            convention,
+        });
         if (!verificationFile)
             return { determined: true, stale: false };
         const summaryFiles = scanPhasePlans(phaseDir).summaryFiles
@@ -587,7 +602,9 @@ function findStaleVerificationSummary(phaseDir, fsImpl = defaultFsImpl, phaseCle
  * 1. Find the phase's verification report via `resolveVerificationFile`
  *    (canonical `<phase-token>-VERIFICATION.md` preferred; falls back to the
  *    alphabetically-first `*-VERIFICATION.md` that belongs to THIS phase when
- *    none is canonical — #3357/#3511). If none → status 'missing'.
+ *    none is canonical — #3357/#3511; and, when the directory's only report
+ *    is a bare `VERIFICATION.md`, that file — #4187, matching
+ *    `verification.resolve-file`). If none → status 'missing'.
  * 2. Extract `status` from FRONTMATTER ONLY via the shared extractFrontmatter
  *    parser (DEFECT.FRONTMATTER-SCALAR-BROAD-GREP fix — parser anchors at byte 0).
  *    If no frontmatter block or no `status` key → status 'missing'.
@@ -608,7 +625,12 @@ function readVerificationStatus(phaseDir, opts = {}) {
     const fsImpl = opts.fs ?? defaultFsImpl;
     const phaseCleanCommitTimesMs = opts.phaseCleanCommitTimesMs ?? defaultPhaseCleanCommitTimesMs;
     const runtime = opts.runtime ?? 'claude';
-    // Phase token for the gaps_found command
+    // Phase token for the gaps_found command — deliberately convention-LESS
+    // even when `opts.convention` is present: the token becomes a bare COMMAND
+    // ARGUMENT below, and a bare bracket phase number is milestone-ambiguous
+    // (`02` cannot tell GSD.01-02 from GSD.02-02), so the argument keeps its
+    // pre-#612 shape. The convention-aware token is derived separately for
+    // FILE RESOLUTION only (`resolutionToken`, at the readdir below).
     const baseName = node_path_1.default.basename(phaseDir);
     const phaseToken = extractPhaseToken(baseName);
     const derivedPhaseNumber = phaseToken.length > 0 ? phaseToken : baseName;
@@ -624,12 +646,21 @@ function readVerificationStatus(phaseDir, opts = {}) {
     let verificationFile = null;
     try {
         const entries = fsImpl.readdirSync(phaseDir);
-        // #3492: pin selection to THIS phase's own token (already derived above
-        // for the routed command argument) so a stray cross-phase or
-        // sentinel-numbered canonically-shaped file cannot outrank this phase's
-        // own (possibly non-canonical) report. #3511: baseName also scopes the
-        // fallback path to this same phase (see resolveVerificationFile docs).
-        verificationFile = resolveVerificationFile(entries, { phaseToken, phaseDirName: baseName });
+        // #3492: pin selection to THIS phase's own token so a stray cross-phase
+        // or sentinel-numbered canonically-shaped file cannot outrank this phase's
+        // own report. #612: derive a separate convention-aware RESOLUTION token
+        // for bracket directories while the routed command argument above stays
+        // convention-less and milestone-unambiguous. #4187: keep the bare report
+        // tier aligned with every other verification reader.
+        const resolutionToken = opts.convention === 'bracket'
+            ? extractPhaseToken(baseName, opts.convention)
+            : phaseToken;
+        verificationFile = resolveVerificationFile(entries, {
+            allowBare: true,
+            phaseToken: resolutionToken,
+            phaseDirName: baseName,
+            convention: opts.convention,
+        });
     }
     catch {
         // Directory unreadable → treat as missing
@@ -716,7 +747,7 @@ function readVerificationStatus(phaseDir, opts = {}) {
                 !allCurrentArtifactsCovered(phaseDir, coveredFilesVal);
     }
     else {
-        const staleCheck = findStaleVerificationSummary(phaseDir, fsImpl, phaseCleanCommitTimesMs);
+        const staleCheck = findStaleVerificationSummary(phaseDir, fsImpl, phaseCleanCommitTimesMs, opts.convention);
         isStale = staleCheck.determined && staleCheck.stale;
         // staleCheck is either {determined:true, stale:false} (checked; nothing
         // stale) or {determined:false} (could not check — fs/scan/clock failure).
@@ -800,6 +831,7 @@ function isPhaseComplete(phaseDir, deps = {}) {
         phaseCleanCommitTimesMs: deps.phaseCleanCommitTimesMs,
         runtime: deps.runtime,
         phaseNumber: deps.phaseNumber,
+        convention: deps.convention,
     });
     return {
         value: {

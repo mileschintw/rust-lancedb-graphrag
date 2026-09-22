@@ -11,6 +11,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
+const security_cjs_1 = require("./security.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ioMod = require("./io.cjs");
 const { output, error, ERROR_REASON } = ioMod;
@@ -108,12 +109,14 @@ function routeResolveContent({ args, cwd, raw }, deps = {}) {
         return;
     }
     const projectRoot = node_path_1.default.resolve(cwd || process.cwd());
-    const resolvedPlanPath = node_path_1.default.resolve(projectRoot, plan);
-    const rel = node_path_1.default.relative(projectRoot, resolvedPlanPath);
-    if (rel === '..' || rel.startsWith(`..${node_path_1.default.sep}`)) {
+    // Lexical containment (ADR-4650): this path is validated before existence is
+    // checked below, so realpath resolution is neither available nor required.
+    const contained = (0, security_cjs_1.tryWithinRootLexical)(plan, projectRoot);
+    if (contained === null) {
         error(`Plan file is outside project scope: ${plan}`, ERROR_REASON.USAGE);
         return;
     }
+    const resolvedPlanPath = contained;
     if (!node_fs_1.default.existsSync(resolvedPlanPath)) {
         error(`Plan file not found: ${plan}`, ERROR_REASON.USAGE);
         return;
@@ -173,11 +176,14 @@ function routeTaskCommand({ args, cwd, raw }) {
     else if (args[2]) {
         const projectRoot = node_path_1.default.resolve(cwd || process.cwd());
         const requestedPath = args[2];
-        const resolvedTaskPath = node_path_1.default.resolve(projectRoot, requestedPath);
-        const rel = node_path_1.default.relative(projectRoot, resolvedTaskPath);
-        if (rel === '..' || rel.startsWith(`..${node_path_1.default.sep}`)) {
+        // Lexical containment (ADR-4650): validated before existence is checked below.
+        // `error()` here does not return/throw (preserved from before this migration),
+        // so resolvedTaskPath must still be computed identically on the rejected path.
+        const contained = (0, security_cjs_1.tryWithinRootLexical)(requestedPath, projectRoot);
+        if (contained === null) {
             error(`Task file is outside project scope: ${requestedPath}`, ERROR_REASON.USAGE);
         }
+        const resolvedTaskPath = contained ?? node_path_1.default.resolve(projectRoot, requestedPath);
         if (!node_fs_1.default.existsSync(resolvedTaskPath)) {
             error(`Task file not found: ${requestedPath}`, ERROR_REASON.USAGE);
         }

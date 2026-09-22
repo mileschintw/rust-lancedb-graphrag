@@ -733,6 +733,7 @@ module.exports = {
     inspectWorkstream,
     isCompletedInventory: workstream_inventory_builder_cjs_1.isCompletedInventory,
     listWorkstreamInventories,
+    readCurrentMilestoneVersion,
     sortWorkstreamInventories,
     workstreamsRoot,
 };

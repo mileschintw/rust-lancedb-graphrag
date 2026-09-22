@@ -25,9 +25,7 @@ Clarify phase requirements through structured Socratic questioning with quantita
 @.agents/gsd-core/templates/spec.md
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `AskUserQuestion`. They are equivalent.
-</runtime_note>
+
 
 <context>
 Phase number: $ARGUMENTS (required)

@@ -31,6 +31,8 @@ exports.resolveTimeoutMs = resolveTimeoutMs;
 exports.nativeTimeoutToken = nativeTimeoutToken;
 exports.isEmptyReview = isEmptyReview;
 exports.fileRefPrompt = fileRefPrompt;
+exports.artifactPaths = artifactPaths;
+exports.resolveLaneBudget = resolveLaneBudget;
 exports.resolveLanePlan = resolveLanePlan;
 const review_lane_descriptor_cjs_1 = require("./review-lane-descriptor.cjs");
 /* ------------------------------------------------------------------ *
@@ -235,6 +237,27 @@ function artifactPaths(runDir, slug) {
         reviewPath: `${base}/gsd-review-${slug}.md`,
         errPath: `${base}/gsd-review-${slug}.err`,
     };
+}
+/**
+ * Per-lane prompt budget (#2797 semantics, preserved exactly).
+ *
+ * `-1` is the UNSET sentinel and falls back to the central `review.max_prompt_tokens`, because
+ * `0` is a legitimate value meaning "do not trim this lane". Treating 0 as unset would silently
+ * switch a user who deliberately disabled trimming onto the global budget.
+ *
+ * Single source of truth: `gsd-core/bin/gsd-tools.cjs`'s `review-lane plan`/`invoke` and
+ * `src/reviewer-step-dispatch.cts`'s `dispatchReviewerLanes` both resolve a lane's budget through
+ * this function rather than each carrying their own copy (#4209 R3 — two verbatim copies drift).
+ */
+function resolveLaneBudget(lane, configGet) {
+    if (!lane.promptBudgetKey)
+        return null;
+    const per = configGet(lane.promptBudgetKey);
+    const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+    if (isNum(per) && per !== -1)
+        return per;
+    const global = configGet('review.max_prompt_tokens');
+    return isNum(global) ? global : null;
 }
 /* ------------------------------------------------------------------ *
  * Resolution

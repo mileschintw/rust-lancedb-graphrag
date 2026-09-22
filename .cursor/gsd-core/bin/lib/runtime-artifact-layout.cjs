@@ -24,6 +24,7 @@ const node_os_1 = __importDefault(require("node:os"));
 // unless the top-level installRuntimeArtifacts call injected a `deps.fs`.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const installFsAdapter = require("./install-fs-adapter.cjs");
+const security_cjs_1 = require("./security.cjs");
 const { installFs, mkInstallTempDir } = installFsAdapter;
 // Reuse the install manifest's existing parser and streamed SHA-256
 // classification instead of deriving a second integrity implementation here.
@@ -101,10 +102,15 @@ function isReadableDirectory(candidate, routed) {
     }
 }
 function isPhysicallyConfinedTo(root, candidate) {
+    // ADR-4650 decision 6: lexical family on already-realpath'd operands — the
+    // surrounding try/catch must survive verbatim, since a non-existent
+    // candidate throwing out of realpathSync (not `tryWithinRootLexical`, which
+    // would accept it) is exactly the "incomplete manifest" signal this
+    // function's callers depend on.
     try {
         const physicalRoot = installFs().realpathSync(root);
         const physicalCandidate = installFs().realpathSync(candidate);
-        return physicalCandidate === physicalRoot || physicalCandidate.startsWith(physicalRoot + node_path_1.default.sep);
+        return (0, security_cjs_1.tryWithinRootLexical)(physicalCandidate, physicalRoot) !== null;
     }
     catch {
         return false;
@@ -167,9 +173,11 @@ function installedManifestIsComplete(runtimeConfigDir, required) {
                 const parts = key.split('/');
                 if (parts.some((part) => part === '' || part === '.' || part === '..'))
                     return false;
-                const candidate = node_path_1.default.resolve(runtimeConfigDir, ...parts);
-                const root = node_path_1.default.resolve(runtimeConfigDir);
-                if (!candidate.startsWith(root + node_path_1.default.sep))
+                // ADR-4650 decision 6: lexical family — the object is lstat'd (never
+                // stat'd) and refused if it is a symlink just below, so this gate must
+                // refuse rather than resolve.
+                const candidate = (0, security_cjs_1.tryWithinRootLexical)(parts.join('/'), runtimeConfigDir);
+                if (candidate === null || candidate === node_path_1.default.resolve(runtimeConfigDir))
                     return false;
                 const stat = io.lstatSync(candidate);
                 if (!stat.isFile() || stat.isSymbolicLink())
@@ -217,7 +225,7 @@ function providersShareRequiredRoots(left, right, required) {
         const overlap = (leftPath, rightPath) => {
             const relative = node_path_1.default.relative(leftPath, rightPath);
             return relative === '' ||
-                (relative !== '..' && !relative.startsWith(`..${node_path_1.default.sep}`) && !node_path_1.default.isAbsolute(relative));
+                (relative !== '..' && !relative.startsWith(`..${node_path_1.default.sep}`) && !node_path_1.default.isAbsolute(relative)); // allow-handrolled-containment: bidirectional physical-root overlap/identity check between two providers for dedup detection — not a security confinement gate on untrusted input
         };
         const physicalLeft = canonicalize(leftFs, leftRoot);
         const physicalRight = canonicalize(rightFs, rightRoot);

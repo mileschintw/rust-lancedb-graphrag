@@ -81,6 +81,11 @@ const SCHEMA_DEFAULTS = {
     // #1689: per-plan agent_hint executor routing — default-on. A no-op for plans
     // without an agent_hint field, so existing dispatch is byte-identical.
     'workflow.agent_hint_routing': true,
+    // #4401: Compact Content mode gate — derived from the defaults manifest via
+    // CONFIG_DEFAULTS (added in config-loader.cts) so the manifest stays the
+    // single source of truth, matching workflow.smart_zone_tokens /
+    // planning.pr_strict / workflow.inline_plan_threshold below.
+    'workflow.compact_content': CONFIG_DEFAULTS.compact_content,
     // Derived from the defaults manifest rather than restated, so the manifest
     // stays the single source of truth for the smart-zone budget (#2630).
     'workflow.smart_zone_tokens': CONFIG_DEFAULTS.smart_zone_tokens,
@@ -93,6 +98,27 @@ const SCHEMA_DEFAULTS = {
     // effective default existed only as the workflow's shell fallback and the
     // docs disagreed (settings-advanced said 3). Manifest stays the one owner.
     'workflow.inline_plan_threshold': CONFIG_DEFAULTS.inline_plan_threshold,
+    // #4285 review: an absent threshold resolved to "Key not found" while the
+    // hook silently used 35/25 — the query surface disagreeing with the reader.
+    //
+    // Restated here rather than derived: `CONFIG_DEFAULTS` is re-exported with a
+    // FLATTENED shape that drops the manifest's nested blocks, so
+    // `CONFIG_DEFAULTS.hooks` is undefined at runtime and the manifest cannot
+    // feed these two rows the way `workflow.smart_zone_tokens` above is fed.
+    //
+    // Not added to `buildNewProjectConfig` either, and that one is deliberate
+    // rather than incidental: it writes a `hooks` object into every NEW project's
+    // config.json, which would freeze today's fire-points as an explicit
+    // per-project override everywhere — the opposite of this PR's premise that an
+    // absent key tracks the shipped default. (The manifest alone would NOT have
+    // that effect; `buildNewProjectConfig` builds its own literal. Correcting an
+    // earlier version of this comment that ran the two together.)
+    //
+    // That leaves ONE copy of 35/25 outside the hook — these two rows — and
+    // `tests/config.test.cjs` pins them against the hook's exported
+    // WARNING_THRESHOLD/CRITICAL_THRESHOLD so the copies cannot drift.
+    'hooks.context_warning_threshold': 35,
+    'hooks.context_critical_threshold': 25,
 };
 /**
  * Resolve a schema-level default for an absent key (#2256). Checks the legacy
@@ -308,6 +334,7 @@ function buildNewProjectConfig(userChoices) {
             human_verify_mode: 'end-of-phase',
             context_guard_mode: 'warn',
             text_mode: false,
+            compact_content: false,
             research_before_questions: false,
             discuss_mode: 'discuss',
             skip_discuss: false,
@@ -564,19 +591,35 @@ function _unsetNestedValue(config, keyPath) {
  * Does not call `output()`, so can be used as one step in a command without triggering `exit(0)` in
  * the happy path. But note that `error()` will still `exit(1)` out of the process.
  */
+/**
+ * Loads `.planning/config.json` as a plain object, or `{}` if the file does
+ * not exist. A parse failure calls `error()` (process-exiting) rather than
+ * throwing, matching every caller's existing behavior.
+ *
+ * Single source for this load+parse step — `setConfigValue`,
+ * `unsetConfigValue`, `setConfigValues`, `previewConfigValue`, and
+ * `previewUnsetConfigValue` all delegate here instead of each repeating the
+ * same try/catch (CLAUDE.md's "Generative Fix Divergence" known-defect
+ * pattern: independently-guessed copies of the same logic can silently
+ * drift apart).
+ */
+function loadConfigJson(cwd) {
+    const configPath = node_path_1.default.join(planningDir(cwd), 'config.json');
+    let config = {};
+    try {
+        if (node_fs_1.default.existsSync(configPath)) {
+            config = JSON.parse(node_fs_1.default.readFileSync(configPath, 'utf-8'));
+        }
+    }
+    catch (err) {
+        error('Failed to read config.json: ' + err.message, ERROR_REASON.CONFIG_PARSE_FAILED);
+    }
+    return config;
+}
 function unsetConfigValue(cwd, keyPath) {
     const configPath = node_path_1.default.join(planningDir(cwd), 'config.json');
     return withPlanningLock(cwd, () => {
-        // Load existing config or start with empty object
-        let config = {};
-        try {
-            if (node_fs_1.default.existsSync(configPath)) {
-                config = JSON.parse(node_fs_1.default.readFileSync(configPath, 'utf-8'));
-            }
-        }
-        catch (err) {
-            error('Failed to read config.json: ' + err.message, ERROR_REASON.CONFIG_PARSE_FAILED);
-        }
+        const config = loadConfigJson(cwd);
         const { previousValue, existed } = _unsetNestedValue(config, keyPath);
         // Write back
         try {
@@ -598,16 +641,7 @@ function unsetConfigValue(cwd, keyPath) {
 function setConfigValue(cwd, keyPath, parsedValue) {
     const configPath = node_path_1.default.join(planningDir(cwd), 'config.json');
     return withPlanningLock(cwd, () => {
-        // Load existing config or start with empty object
-        let config = {};
-        try {
-            if (node_fs_1.default.existsSync(configPath)) {
-                config = JSON.parse(node_fs_1.default.readFileSync(configPath, 'utf-8'));
-            }
-        }
-        catch (err) {
-            error('Failed to read config.json: ' + err.message, ERROR_REASON.CONFIG_PARSE_FAILED);
-        }
+        const config = loadConfigJson(cwd);
         const previousValue = _setNestedValue(config, keyPath, parsedValue);
         // Write back
         try {
@@ -618,6 +652,29 @@ function setConfigValue(cwd, keyPath, parsedValue) {
             error('Failed to write config.json: ' + err.message);
         }
     });
+}
+/**
+ * #4444: read-only preview counterpart to `setConfigValue` — loads config
+ * exactly like the real setter and reuses `_setNestedValue` (the SAME
+ * traversal/creation logic, including its prototype-pollution guards) on a
+ * throwaway in-memory copy that is NEVER written back to disk. This is what
+ * makes the dry-run preview provably identical to what the real write would
+ * compute, rather than a second, hand-maintained traversal that could drift
+ * from the real one.
+ */
+function previewConfigValue(cwd, keyPath, parsedValue) {
+    const config = loadConfigJson(cwd);
+    const previousValue = _setNestedValue(config, keyPath, parsedValue);
+    return { key: keyPath, value: parsedValue, previousValue };
+}
+/**
+ * #4444: read-only preview counterpart to `unsetConfigValue` — same pattern
+ * as `previewConfigValue`, reusing `_unsetNestedValue` on a throwaway copy.
+ */
+function previewUnsetConfigValue(cwd, keyPath) {
+    const config = loadConfigJson(cwd);
+    const { previousValue, existed } = _unsetNestedValue(config, keyPath);
+    return { key: keyPath, value: null, previousValue, existed };
 }
 /**
  * Batched sibling of setConfigValue: apply multiple key-path writes in a
@@ -635,16 +692,7 @@ function setConfigValues(cwd, entries) {
     }
     const configPath = node_path_1.default.join(planningDir(cwd), 'config.json');
     return withPlanningLock(cwd, () => {
-        // Load existing config or start with empty object
-        let config = {};
-        try {
-            if (node_fs_1.default.existsSync(configPath)) {
-                config = JSON.parse(node_fs_1.default.readFileSync(configPath, 'utf-8'));
-            }
-        }
-        catch (err) {
-            error('Failed to read config.json: ' + err.message, ERROR_REASON.CONFIG_PARSE_FAILED);
-        }
+        const config = loadConfigJson(cwd);
         const results = [];
         for (const entry of entries) {
             const previousValue = _setNestedValue(config, entry.keyPath, entry.value);
@@ -676,14 +724,8 @@ function assertEnumValue(parsedValue, rawVal, allowed, label) {
         error(`Invalid ${label} '${rawVal}'. Valid values: ${allowed.join(', ')}`);
     }
 }
-/**
- * Command to set a value in the config file, allowing nested values via dot notation (e.g.,
- * "workflow.research").
- *
- * Note that this exits the process (via `output()`) even in the happy path; use `setConfigValue()`
- * directly if you need to avoid this.
- */
-function cmdConfigSet(cwd, keyPath, value, raw) {
+function cmdConfigSet(cwd, keyPath, value, raw, options = {}) {
+    const dryRun = options.dryRun === true;
     if (!keyPath) {
         error('Usage: config-set <key.path> <value>', ERROR_REASON.USAGE);
     }
@@ -733,6 +775,18 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
     // present, truthy-adjacent value that consumers must special-case — worst for
     // secret keys where a leftover value can be passed as a real credential.
     if (parsedValue === null) {
+        if (dryRun) {
+            const preview = previewUnsetConfigValue(cwd, kp);
+            if ((0, secrets_cjs_1.isSecretKey)(kp)) {
+                const maskedPrev = preview.previousValue === undefined
+                    ? undefined
+                    : (0, secrets_cjs_1.maskSecret)(preview.previousValue);
+                output({ dry_run: true, would_unset: true, key: kp, value: null, previousValue: maskedPrev, masked: true }, raw, `${kp} unset (dry run)`);
+                return;
+            }
+            output({ dry_run: true, would_unset: true, key: kp, value: null, previousValue: preview.previousValue }, raw, `${kp} unset (dry run)`);
+            return;
+        }
         const unsetResult = unsetConfigValue(cwd, kp);
         if ((0, secrets_cjs_1.isSecretKey)(kp)) {
             const maskedPrev = unsetResult.previousValue === undefined
@@ -787,6 +841,12 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
             error(`Invalid workflow.post_planning_gaps '${val}'. Must be a boolean (true or false).`);
         }
     }
+    // Compact Content mode gate (#4139)
+    if (kp === 'workflow.compact_content') {
+        if (typeof parsedValue !== 'boolean') {
+            error(`Invalid workflow.compact_content '${val}'. Must be a boolean (true or false).`);
+        }
+    }
     // Per-plan executor routing via agent_hint frontmatter (#1689)
     if (kp === 'workflow.agent_hint_routing') {
         if (typeof parsedValue !== 'boolean') {
@@ -833,6 +893,48 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
     if (kp === 'statusline.show_git') {
         if (typeof parsedValue !== 'boolean') {
             error(`Invalid statusline.show_git '${val}'. Must be a boolean (true or false).`);
+        }
+    }
+    // Context-monitor fire-points (#4285) — a percentage of the context window
+    // REMAINING, so the domain is 0-100 and the hook compares them against
+    // `remaining_percentage`. Rejecting an out-of-domain value here keeps accept
+    // and honour in agreement ON THE DOMAIN: the hook falls back to its default
+    // for a value outside it, so reporting success would be a lie. That agreement
+    // is per-key and no wider — a value accepted here can still be superseded at
+    // read time by the hook's pair check, and a scoped write (GSD_PROJECT /
+    // GSD_WORKSTREAM) lands in a config the hook does not read at all. The PAIR
+    // (critical < warning) is deliberately NOT enforced here: config-set writes
+    // one key per call, so a two-step retune can be transiently inconsistent on
+    // disk and a check here would reject that intermediate write.
+    if (kp === 'hooks.context_warning_threshold' || kp === 'hooks.context_critical_threshold') {
+        if (typeof parsedValue !== 'number' || !Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 100) {
+            error(`Invalid ${kp} '${val}'. Must be a number between 0 and 100 (percent of context window remaining).`);
+        }
+        // The two ENDPOINTS that are in range but can never form a valid pair are
+        // refused here rather than stored (#4285 review). `critical < warning` must
+        // hold at read time and BOTH sides are clamped to 0-100, so `warning: 0`
+        // has no legal partner (nothing is below 0) and `critical: 100` has none
+        // either (nothing above 100). Either one is silently discarded by the hook
+        // for EVERY value of the other key — verified: both resolve to the 35/25
+        // defaults against a present, absent, or extreme partner, while 0.001 and
+        // 99.999 are honoured.
+        //
+        // Storing a value the reader can never honour is exactly the
+        // accept-then-discard shape this codebase refuses elsewhere, so this fails
+        // at write time where the operator can see it. The pair itself is still NOT
+        // checked here — config-set writes one key per call, so a two-step retune
+        // is legitimately inconsistent on disk in between.
+        if (kp === 'hooks.context_warning_threshold' && parsedValue === 0) {
+            error(`Invalid ${kp} '${val}'. 0 is in range but unusable: the monitor requires `
+                + `hooks.context_critical_threshold < hooks.context_warning_threshold, and no valid `
+                + `critical value is below 0, so a warning of 0 would always fall back to the 35/25 `
+                + `defaults. Use a value above 0.`);
+        }
+        if (kp === 'hooks.context_critical_threshold' && parsedValue === 100) {
+            error(`Invalid ${kp} '${val}'. 100 is in range but unusable: the monitor requires `
+                + `hooks.context_critical_threshold < hooks.context_warning_threshold, and no valid `
+                + `warning value is above 100, so a critical of 100 would always fall back to the `
+                + `35/25 defaults. Use a value below 100.`);
         }
     }
     // Fallow scope + profile enum validation (#3424)
@@ -920,6 +1022,19 @@ function cmdConfigSet(cwd, keyPath, value, raw) {
                 error(`Invalid reviewer_instances.${instanceName}.${field} '${val}'. Must be a string.`);
             }
         }
+    }
+    if (dryRun) {
+        const preview = previewConfigValue(cwd, kp, parsedValue);
+        if ((0, secrets_cjs_1.isSecretKey)(kp)) {
+            const masked = (0, secrets_cjs_1.maskSecret)(parsedValue);
+            const maskedPrev = preview.previousValue === undefined
+                ? undefined
+                : (0, secrets_cjs_1.maskSecret)(preview.previousValue);
+            output({ dry_run: true, would_update: true, key: kp, value: masked, previousValue: maskedPrev, masked: true }, raw, `${kp}=${masked} (dry run)`);
+            return;
+        }
+        output({ dry_run: true, would_update: true, key: kp, value: parsedValue, previousValue: preview.previousValue }, raw, `${kp}=${String(parsedValue)} (dry run)`);
+        return;
     }
     const setConfigValueResult = setConfigValue(cwd, kp, parsedValue);
     // Mask secrets in both JSON and text output. The plaintext is written

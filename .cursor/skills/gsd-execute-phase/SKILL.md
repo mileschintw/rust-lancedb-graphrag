@@ -49,9 +49,7 @@ Context budget: ~15% orchestrator, 100% fresh per subagent.
 @D:/Repos/lancet/.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `conversational prompting`. They are equivalent — `vscode_askquestions` is the VS Code Copilot implementation of the same interactive question API.
-</runtime_note>
+
 
 <context>
 Phase: {{GSD_ARGS}}

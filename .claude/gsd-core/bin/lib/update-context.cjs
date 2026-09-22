@@ -127,6 +127,23 @@ function preferFirst(entries, preferred) {
     const rest = entries.filter(([rt]) => rt !== preferred);
     return [...pref, ...rest];
 }
+// GLOBAL probe: absolute env candidates first (in preferFirst order, first
+// hasInstall hit wins), then $HOME-relative. Single resolver shared by the
+// preferredConfigDir fast path's same-path dedup and the full cascade (#4197),
+// so both compare against the global dir the resolution would actually select —
+// an env-directed candidate, not necessarily the $HOME-relative pathname.
+function resolveGlobalCandidate(fs, env, home, preferred) {
+    for (const [rt, absdir] of preferFirst(envRuntimeDirs({ env, home }), preferred)) {
+        if (hasInstall(fs, absdir))
+            return { runtime: rt, dir: node_path_1.default.resolve(absdir) };
+    }
+    for (const [rt, reldir] of preferFirst(exports.RUNTIME_DIRS, preferred)) {
+        const cand = node_path_1.default.resolve(home, reldir);
+        if (hasInstall(fs, cand))
+            return { runtime: rt, dir: cand };
+    }
+    return { runtime: '', dir: '' };
+}
 /**
  * Pure resolver. Returns { installedVersion, scope, runtime, gsdDir }.
  */
@@ -137,11 +154,17 @@ function resolveUpdateContext({ home, cwd, env = {}, fs, preferredConfigDir = ''
     // Fast path: a validated preferredConfigDir (custom --config-dir install).
     if (preferredConfigDir && hasInstall(fs, preferredConfigDir)) {
         const resolvedPref = node_path_1.default.resolve(preferredConfigDir);
+        // Same-path dedup the cascade applies (#4197): a preferred dir that IS the
+        // selected global install (an env candidate or the $HOME-relative dir) is
+        // GLOBAL even when cwd === $HOME also makes it the cwd-relative match.
+        const { dir: globalDir } = resolveGlobalCandidate(fs, env, home, preferred);
         let scope = 'GLOBAL';
-        for (const [, reldir] of exports.RUNTIME_DIRS) {
-            if (node_path_1.default.resolve(cwd, reldir) === resolvedPref) {
-                scope = 'LOCAL';
-                break;
+        if (resolvedPref !== globalDir) {
+            for (const [, reldir] of exports.RUNTIME_DIRS) {
+                if (node_path_1.default.resolve(cwd, reldir) === resolvedPref) {
+                    scope = 'LOCAL';
+                    break;
+                }
             }
         }
         return {
@@ -151,7 +174,6 @@ function resolveUpdateContext({ home, cwd, env = {}, fs, preferredConfigDir = ''
             gsdDir: preferredConfigDir,
         };
     }
-    const orderedEnv = preferFirst(envRuntimeDirs({ env, home }), preferred);
     const orderedRuntime = preferFirst(exports.RUNTIME_DIRS, preferred);
     // LOCAL probe (relative to cwd).
     let localRuntime = '', localDir = '';
@@ -163,25 +185,9 @@ function resolveUpdateContext({ home, cwd, env = {}, fs, preferredConfigDir = ''
             break;
         }
     }
-    // GLOBAL probe: absolute env candidates first, then $HOME-relative.
-    let globalRuntime = '', globalDir = '';
-    for (const [rt, absdir] of orderedEnv) {
-        if (hasInstall(fs, absdir)) {
-            globalRuntime = rt;
-            globalDir = node_path_1.default.resolve(absdir);
-            break;
-        }
-    }
-    if (!globalRuntime) {
-        for (const [rt, reldir] of orderedRuntime) {
-            const cand = node_path_1.default.resolve(home, reldir);
-            if (hasInstall(fs, cand)) {
-                globalRuntime = rt;
-                globalDir = cand;
-                break;
-            }
-        }
-    }
+    // GLOBAL probe: absolute env candidates first, then $HOME-relative — the
+    // same resolver the fast path dedups against.
+    const { runtime: globalRuntime, dir: globalDir } = resolveGlobalCandidate(fs, env, home, preferred);
     const localValid = trustedVersionAt(fs, localDir);
     const isLocal = !!localValid && (!globalDir || localDir !== globalDir);
     if (isLocal) {

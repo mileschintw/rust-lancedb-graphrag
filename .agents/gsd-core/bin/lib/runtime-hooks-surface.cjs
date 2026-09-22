@@ -459,9 +459,18 @@ function normalizeNodePath(execPath, opts) {
     // survives the upgrade. Derive <prefix> from the path itself (more reliable
     // than HOMEBREW_PREFIX env — the path IS the install location) so every layout
     // is covered by one branch instead of one per known prefix (#2185).
+    //
+    // #4137: rewrite only when the symlink exists; otherwise fall through to the
+    // raw execPath, exactly like the mise and volta branches. A keg-only/versioned
+    // formula (node@24 installed but never `brew link`ed) has no <prefix>/bin/node
+    // at all, so the unconditional rewrite handed every managed hook a path that
+    // fails at invocation — a rewrite must never turn a working keg path into an
+    // immediately broken one.
     const homebrewMatch = normalizedForMatch.match(/^(.+)\/Cellar\/node(@\d+)?\/[^/]+\/bin\/node(\.exe)?$/i);
     if (homebrewMatch) {
-        return `${homebrewMatch[1]}/bin/node${homebrewMatch[3] || ''}`;
+        const homebrewStable = `${homebrewMatch[1]}/bin/node${homebrewMatch[3] || ''}`;
+        if (existsSync(homebrewStable))
+            return homebrewStable;
     }
     // mise pins a concrete node version at <data>/installs/node/<ver>/bin/node
     // (Windows: <data>/installs/node/<ver>/node.exe). Node realpaths
@@ -802,16 +811,52 @@ function rewriteLegacyCodexHookBlock(content, absoluteRunner, opts) {
     });
     return { content: updated, changed };
 }
+function _installEngineSymlinkGuard() {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+    const mod = require('./install-engine.cjs');
+    return mod;
+}
 function reconcileCodexHooksJsonEvent(targetDir, eventName, opts = {}) {
     const hooksJsonPath = node_path_1.default.join(targetDir, 'hooks.json');
     const managedCommand = typeof opts.managedCommand === 'string' ? opts.managedCommand : null;
     const commandWindows = typeof opts.commandWindows === 'string' ? opts.commandWindows : null;
     const matcher = typeof opts.matcher === 'string' ? opts.matcher : undefined;
     const timeout = typeof opts.timeout === 'number' ? opts.timeout : undefined;
+    // #2586 Major 2: every Codex hooks.json writer funnels through this one
+    // function, and atomicWriteFileSync's final step is a rename(2) onto
+    // `hooksJsonPath` — which, when that path is a symlink, REPLACES the
+    // symlink with a plain file rather than writing through it. Refuse (with
+    // the same GSD_ALLOW_SYMLINKED_DEST opt-in every other install call site
+    // honors) before reading or writing, so a symlinked hooks.json is neither
+    // silently destroyed nor left the caller no escape hatch.
+    const symlinkGuard = _installEngineSymlinkGuard();
+    // The path this function actually reads/writes. Defaults to the nominal
+    // hooks.json path; reassigned below to the symlink's real target when the
+    // opt-in is active, so the write lands on the file the user's symlink
+    // points at instead of clobbering the symlink itself (see note below).
+    let effectiveHooksJsonPath = hooksJsonPath;
+    if (node_fs_1.default.existsSync(hooksJsonPath) && node_fs_1.default.lstatSync(hooksJsonPath).isSymbolicLink()) {
+        if (symlinkGuard.hasExistingSymlinkBetween(targetDir, hooksJsonPath, {
+            allowOptInFollow: symlinkGuard.isSymlinkedDestOptIn(),
+        })) {
+            throw new Error(`hooks.json at "${hooksJsonPath}" contains a symlink the install root "${targetDir}" does not trust — ` +
+                'refusing to read or write it. If this is an intentional user-owned symlink layout, re-run with ' +
+                'GSD_ALLOW_SYMLINKED_DEST=1.');
+        }
+        // hasExistingSymlinkBetween returned false only because the opt-in is
+        // active (a symlinked leaf always trips it otherwise) — so this IS a
+        // symlink and we are cleared to follow it. atomicWriteFileSync's final
+        // step is a rename(2) onto its target, which REPLACES an existing
+        // symlink at that path rather than writing through it; resolving to the
+        // real path here makes the read AND the write operate on the symlink's
+        // target, leaving the symlink itself untouched, matching what "follow"
+        // is supposed to mean.
+        effectiveHooksJsonPath = node_fs_1.default.realpathSync(hooksJsonPath);
+    }
     let parsed = {};
     let currentContent = null;
-    if (node_fs_1.default.existsSync(hooksJsonPath)) {
-        const raw = node_fs_1.default.readFileSync(hooksJsonPath, 'utf8');
+    if (node_fs_1.default.existsSync(effectiveHooksJsonPath)) {
+        const raw = node_fs_1.default.readFileSync(effectiveHooksJsonPath, 'utf8');
         currentContent = raw;
         if (raw.trim()) {
             try {
@@ -845,6 +890,12 @@ function reconcileCodexHooksJsonEvent(targetDir, eventName, opts = {}) {
     }
     parsed['hooks'] = hookTable;
     const eventEntries = Array.isArray(hookTable[eventName]) ? hookTable[eventName] : [];
+    // Minor 5 (#2586 review): an event key the user already had, already
+    // holding an empty array, must survive removal as an empty array — not be
+    // deleted outright. Deleting is only correct when OUR removal is what
+    // emptied a previously non-empty array. Tracked before the loop below can
+    // mutate anything.
+    const wasArrayEmpty = Array.isArray(hookTable[eventName]) && eventEntries.length === 0;
     let removedLegacy = false;
     const sanitizedEntries = [];
     for (const entry of eventEntries) {
@@ -886,6 +937,11 @@ function reconcileCodexHooksJsonEvent(targetDir, eventName, opts = {}) {
     if (sanitizedEntries.length > 0) {
         hookTable[eventName] = sanitizedEntries;
     }
+    else if (wasArrayEmpty) {
+        // Nothing of ours was ever here to remove — preserve the user's own
+        // empty array exactly as found (Minor 5).
+        hookTable[eventName] = [];
+    }
     else {
         delete hookTable[eventName];
     }
@@ -898,7 +954,7 @@ function reconcileCodexHooksJsonEvent(targetDir, eventName, opts = {}) {
     const changed = currentContent !== nextContent;
     const shouldWrite = changed && (currentContent !== null || Object.keys(parsed).length > 0);
     if (shouldWrite) {
-        atomicWriteFileSync(hooksJsonPath, nextContent, 'utf8');
+        atomicWriteFileSync(effectiveHooksJsonPath, nextContent, 'utf8');
     }
     return { changed: changed || removedLegacy, wrote: shouldWrite, path: hooksJsonPath };
 }
@@ -1014,6 +1070,136 @@ function removeCodexHooksJsonEvent(targetDir, eventName) {
 }
 function removeCodexHooksJsonSessionStart(targetDir) {
     return reconcileCodexHooksJsonSessionStart(targetDir, { managedCommand: null });
+}
+// Literal, version-stable markers every shipped gsd-context-monitor.js
+// carries. Stable across the {{GSD_VERSION}} and runtime-path substitutions
+// the Codex copy step applies (#2586 design doc "Ownership check" — a raw
+// content hash would differ per runtime/version by construction, so a marker
+// check is used instead of manifest-membership, which has a bootstrap gap on
+// the exact case that matters most: a pre-#2586 install's manifest never
+// recorded this file at all).
+const CODEX_CONTEXT_MONITOR_OWNERSHIP_MARKERS = [
+    '#!/usr/bin/env node',
+    '// gsd-hook-version:',
+    '// Context Monitor - PostToolUse/AfterTool hook',
+];
+function isGsdOwnedCodexContextMonitorScript(filePath) {
+    let content;
+    try {
+        content = node_fs_1.default.readFileSync(filePath, 'utf8');
+    }
+    catch {
+        return false;
+    }
+    // The .cmd shim (buildCodexHookWindowsShimIR) is a tiny generated batch
+    // wrapper, not the JS file itself — it never carries the JS markers above,
+    // so it gets its own narrower, still-specific signature: the exact
+    // "@ECHO OFF" / "@SETLOCAL" preamble the shim generator emits, invoking a
+    // script path that ends in gsd-context-monitor.js.
+    if (filePath.endsWith('.cmd')) {
+        return content.startsWith('@ECHO OFF') && content.includes('@SETLOCAL')
+            && /gsd-context-monitor\.js/.test(content);
+    }
+    return CODEX_CONTEXT_MONITOR_OWNERSHIP_MARKERS.every((marker) => content.includes(marker));
+}
+/**
+ * Scan every event in hooks.json for a surviving reference to the
+ * context-monitor script or its Windows .cmd shim, by basename — not scoped
+ * to CODEX_EXTENDED_HOOK_EVENTS, so a user who hand-registered it under an
+ * unrelated event key is still detected as "referenced" and the script is
+ * preserved.
+ */
+function hooksJsonReferencesCodexContextMonitor(targetDir) {
+    const hooksJsonPath = node_path_1.default.join(targetDir, 'hooks.json');
+    if (!node_fs_1.default.existsSync(hooksJsonPath))
+        return false;
+    let raw;
+    try {
+        raw = node_fs_1.default.readFileSync(hooksJsonPath, 'utf8');
+    }
+    catch {
+        return true; // unreadable — conservatively assume referenced, never delete
+    }
+    if (!raw.trim())
+        return false;
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    }
+    catch {
+        return true; // unparseable — conservatively assume referenced
+    }
+    if (!parsed || typeof parsed !== 'object')
+        return false;
+    const hooks = parsed['hooks'];
+    const table = hooks && typeof hooks === 'object' && !Array.isArray(hooks)
+        ? hooks
+        : parsed;
+    for (const key of Object.keys(table)) {
+        const entries = table[key];
+        if (!Array.isArray(entries))
+            continue;
+        for (const entry of entries) {
+            if (!entry || typeof entry !== 'object')
+                continue;
+            const entryHooks = entry['hooks'];
+            const hookList = Array.isArray(entryHooks) ? entryHooks : [entry];
+            for (const hook of hookList) {
+                if (!hook || typeof hook !== 'object')
+                    continue;
+                const values = [
+                    hook['command'],
+                    hook['commandWindows'],
+                ];
+                for (const value of values) {
+                    if (typeof value === 'string' && /gsd-context-monitor(\.js|\.cmd)?/.test(value)) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+/**
+ * #2586 must-have #4/#8: after hooks.json registrations for
+ * CODEX_EXTENDED_HOOK_EVENTS have been reconciled away (by the caller, via
+ * removeCodexHooksJsonEvent), delete `hooks/gsd-context-monitor.js` and its
+ * `.cmd` shim ONLY when (a) no surviving hooks.json registration under ANY
+ * event still references either basename, and (b) the on-disk file carries
+ * GSD's own ownership markers (a user's hand-edited or unrelated file at that
+ * path is left alone). Each file is deleted independently — a failure
+ * deleting one is reported as a warning and never rolls back the (already
+ * safe, already-written) hooks.json deregistration the caller performed
+ * first.
+ */
+function cleanupOrphanedCodexContextMonitorScript(targetDir) {
+    const result = { deleted: [], warnings: [], stillReferenced: false };
+    if (hooksJsonReferencesCodexContextMonitor(targetDir)) {
+        result.stillReferenced = true;
+        return result;
+    }
+    const candidates = [
+        node_path_1.default.join(targetDir, 'hooks', 'gsd-context-monitor.js'),
+        node_path_1.default.join(targetDir, 'hooks', 'gsd-context-monitor.cmd'),
+    ];
+    for (const candidate of candidates) {
+        if (!node_fs_1.default.existsSync(candidate))
+            continue;
+        if (!isGsdOwnedCodexContextMonitorScript(candidate))
+            continue;
+        try {
+            node_fs_1.default.unlinkSync(candidate);
+            result.deleted.push(candidate);
+        }
+        catch (err) {
+            result.warnings.push({
+                path: candidate,
+                reason: err && err.message ? err.message : String(err),
+            });
+        }
+    }
+    return result;
 }
 function buildHookCommand(configDir, hookName, opts) {
     if (!opts)
@@ -2692,6 +2878,9 @@ module.exports = {
     removeCodexHooksJsonEvent,
     removeCodexHooksJsonSessionStart,
     buildCodexHookWindowsShimIR,
+    cleanupOrphanedCodexContextMonitorScript,
+    isGsdOwnedCodexContextMonitorScript,
+    hooksJsonReferencesCodexContextMonitor,
     // Codex TOML
     buildCodexHookBlock,
     rewriteLegacyCodexHookBlock,

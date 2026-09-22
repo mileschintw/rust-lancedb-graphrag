@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gsd-hook-version: 1.13.0
+# gsd-hook-version: 1.14.0
 # gsd-validate-commit.sh — PreToolUse hook: enforce Conventional Commits format
 # Blocks git commit commands with non-conforming messages (exit 2).
 # Allows conforming messages and all non-commit commands (exit 0).
@@ -69,7 +69,11 @@ if [ -f .planning/config.json ]; then
     echo "gsd-validate-commit.sh: could not read .planning/config.json (opt-in check) — validator disabled for this call. $(cat "$ENABLED_ERR")" >&2
     exit 0
   fi
-  ENABLED=$(printf '%s\n' "$CONFIG_OUT" | head -1)
+  # Pure parameter expansion, not `printf ... | head -1`: same SIGPIPE race
+  # class as the SUBJECT extraction below (`echo "$MSG" | head -1`) — CONFIG_OUT
+  # is multi-line whenever extra commit types are configured, and `head -1`
+  # closing early can SIGPIPE `printf` under `set -euo pipefail`.
+  ENABLED="${CONFIG_OUT%%$'\n'*}"
   if [ "$ENABLED" != "1" ]; then exit 0; fi
   # Remaining lines (if any) are the sanitized, deduped configured commit
   # types beyond the 10 built-ins (#3811). Read into a bash-3.2-safe array —
@@ -214,7 +218,24 @@ if [ "$CLASSIFY_STATUS" = "0" ]; then
       # the message — the window a guard must use when the token it scans for
       # is also legal English inside a commit message, but may legally appear
       # on EITHER side of the message on the command line.
-      MSG_SUFFIX="${CMD#*"$MSG_MATCH"}"
+      # Indexed, not searched (#4492). `${CMD#*"$MSG_MATCH"}` is quadratic in
+      # the message: bash walks every prefix length and compares the whole
+      # matched literal at each one, and MSG_MATCH is BASH_REMATCH[0] — the
+      # entire `-m "..."` — so the cost grows with the thing being scanned.
+      # Measured on the path EVERY commit takes (conforming and non-conforming
+      # cost the same): 10.0 s at a 64 KB message, 22.0 s at 96 KB, 30.2 s at
+      # 112 KB. Sizes stop there deliberately — a single argument above Linux's
+      # MAX_ARG_STRLEN (131072 on a 4 KB-page kernel) never reaches this code
+      # at all, because execve fails and the hook fails open, so a larger
+      # "measurement" would be timing the wrong thing.
+      #
+      # MSG_PREFIX above has already located the match, so the suffix is
+      # arithmetic rather than a search: skip the prefix and the match. This
+      # removes the quadratic SEARCH; the expansion still counts characters and
+      # materialises a substring, so it is linear in the command, not O(1).
+      # Same first-occurrence assumption both expansions here always made —
+      # MSG_MATCH is a literal substring of CMD by construction.
+      MSG_SUFFIX="${CMD:$(( ${#MSG_PREFIX} + ${#MSG_MATCH} ))}"
       # LINE CONTINUATIONS ARE NOT SEPARATORS (review of #3816, rounds 8 and 9).
       # `git commit \` newline `  -m "$(cat <<'EOF' …` is an ordinary way to
       # spread an invocation over lines, and every guard below reads a newline in
@@ -521,9 +542,18 @@ if [ "$CLASSIFY_STATUS" = "0" ]; then
       SUBJECT=$(GIT_CMD_LIB="$HOOK_DIR/lib/git-cmd.js" MSG="$MSG" node -e "
         const {resolveCommitSubject}=require(process.env.GIT_CMD_LIB);
         process.stdout.write(resolveCommitSubject(process.env.MSG));
-      " 2>/dev/null) || SUBJECT=$(echo "$MSG" | head -1)
+      " 2>/dev/null) || SUBJECT="${MSG%%$'\n'*}"
     else
-      SUBJECT=$(echo "$MSG" | head -1)
+      # Pure parameter expansion, not `echo "$MSG" | head -1`: that pipeline
+      # raced a SIGPIPE under `set -euo pipefail` whenever $MSG had a body
+      # (the common case) — `head -1` can close its read end as soon as it
+      # has the first line, and if `echo`'s write lands after that close,
+      # `echo` dies with signal 13 (exit 141), which is NOT suppressed by
+      # `set -e` and aborted the whole hook intermittently (observed in
+      # tests/hooks-opt-in.test.cjs's --fixup=HEAD "round 7" case). Zero
+      # subprocesses here means zero pipe/race surface. Equivalent to
+      # `head -1` for single-line, multi-line, and trailing-newline input.
+      SUBJECT="${MSG%%$'\n'*}"
     fi
     # Single source of truth for the accepted commit-type list (#3811): the
     # 10 built-ins plus whatever passed the safe-token filter above. Both the

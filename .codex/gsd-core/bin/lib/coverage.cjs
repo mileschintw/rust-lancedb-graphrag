@@ -435,7 +435,7 @@ function cmdClassify(cwd, options = {}, raw) {
     }
     let resolvedPath;
     try {
-        resolvedPath = (0, security_cjs_1.requireSafePath)(filePath, cwd, 'SUMMARY file', { allowAbsolute: true });
+        resolvedPath = (0, security_cjs_1.requireSafePath)(filePath, cwd, 'SUMMARY file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
     }
     catch (e) {
         // Emit a structured command error instead of leaking a raw stack trace.

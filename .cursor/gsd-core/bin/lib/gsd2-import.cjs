@@ -307,8 +307,7 @@ function buildStateMd(phaseMap) {
     const currentPhaseNum = currentEntry ? zeroPad(currentEntry.phaseNum) : zeroPad(totalPhases);
     const currentSlug = currentEntry ? slugify(currentEntry.slice.title) : 'complete';
     const status = currentEntry ? 'Ready to plan' : 'All phases complete';
-    const filled = Math.round(pct / 10);
-    const bar = `[${'█'.repeat(filled)}${'░'.repeat(10 - filled)}]`;
+    const bar = `[${(0, phase_lifecycle_cjs_1.renderProgressBar)(pct, 10)}]`;
     const today = clock_cjs_1.realClock.localToday();
     return [
         '# Project State',

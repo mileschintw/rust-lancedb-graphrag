@@ -45,9 +45,7 @@ Replaces gsd-plan-phase's internal gsd-plan-checker with external AI reviewers (
 @D:/Repos/lancet/.cursor/gsd-core/references/agent-contracts.md
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `conversational prompting`. They are equivalent — `vscode_askquestions` is the VS Code Copilot implementation of the same interactive question API. Do not skip questioning steps because `conversational prompting` appears unavailable; use `vscode_askquestions` instead.
-</runtime_note>
+
 
 <context>
 Phase number: extracted from {{GSD_ARGS}} (required)

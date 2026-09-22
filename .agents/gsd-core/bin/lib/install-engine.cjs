@@ -23,6 +23,7 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
 const runtimeArtifactConversion = require("./runtime-artifact-conversion.cjs");
+const security_cjs_1 = require("./security.cjs");
 const runtimeArtifactLayout = require("./runtime-artifact-layout.cjs");
 const runtimeArtifactInstallPlan = require("./runtime-artifact-install-plan.cjs");
 const runtimeNamePolicy = require("./runtime-name-policy.cjs");
@@ -111,7 +112,7 @@ function previousOwnedCorpusFiles(configDir, prefix) {
 }
 function pruneEmptyCorpusParents(start, stop) {
     let current = node_path_1.default.dirname(start);
-    while (current !== stop && current.startsWith(stop + node_path_1.default.sep)) {
+    while (current !== stop && current.startsWith(stop + node_path_1.default.sep)) { // allow-handrolled-containment: ancestor-walk loop condition, not a containment gate
         if (installFs().readdirSync(current).length > 0)
             return;
         installFs().rmdirSync(current);
@@ -347,8 +348,11 @@ function hasExistingSymlinkBetween(root, fullPath, options = {}) {
     const resolvedFullPath = node_path_1.default.resolve(fullPath);
     // (a) Path-traversal refusal — ALWAYS enforced, even with opt-in. An untrusted
     // destSubpath string that escapes the install root via '..' is rejected
-    // regardless of user opt-in state (ADR-1239 Phase B threat (a)).
-    if (resolvedFullPath !== resolvedRoot && !resolvedFullPath.startsWith(resolvedRoot + node_path_1.default.sep)) {
+    // regardless of user opt-in state (ADR-1239 Phase B threat (a)). Lexical
+    // (ADR-4650 decision 6): this function's whole purpose is to DETECT
+    // symlinks between root and target, so resolving them here would erase what
+    // it measures.
+    if ((0, security_cjs_1.tryWithinRootLexical)(resolvedFullPath, resolvedRoot) === null) {
         return true;
     }
     // #2393 (security-review finding): realpathSync fully resolves all symlink
@@ -1492,6 +1496,15 @@ function installOpencodeFamilySkills(runtime, targetDir, rawCommandsDir, pathPre
             content = applyOpencodeFamilyPathPrefix(content, runtime, pathPrefix);
             content = processAttribution(content, resolveAttribution(runtime));
             const skillDir = node_path_1.default.join(dest, skillName);
+            // isPathConfined is lexical and cannot see a symlink. mkdirSync({recursive:true})
+            // does NOT throw when skillDir already exists as a symlink to a directory, so a
+            // pre-planted link would redirect the SKILL.md write outside `dest`. Refuse to
+            // write through a link (epic #4636; mirrors retired-artifact-cleanup.cts:77).
+            try {
+                if (installFs().lstatSync(skillDir).isSymbolicLink())
+                    continue;
+            }
+            catch { /* ENOENT: not created yet — the normal case */ }
             installFs().mkdirSync(skillDir, { recursive: true });
             installFs().writeFileSync(node_path_1.default.join(skillDir, 'SKILL.md'), content);
             // #2322 HIGH-3 parity: persist the capability-owned marker so a later

@@ -17,7 +17,11 @@ const pattern_cjs_1 = require("./pattern.cjs");
 const security_cjs_1 = require("./security.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ioMod = require("./io.cjs");
-const { output, error, ERROR_REASON } = ioMod;
+const { output, ERROR_REASON } = ioMod;
+// Explicitly annotated so TypeScript applies never-return control-flow narrowing.
+// See the identical note in check-command-router.cts: a destructured const carries no
+// type annotation, so TS will not narrow after `error(...)` without this.
+const error = ioMod.error;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const configLoaderMod = require("./config-loader.cjs");
 const { loadConfig, isGitIgnored } = configLoaderMod;
@@ -26,7 +30,7 @@ const coreUtilsMod = require("./core-utils.cjs");
 const { toPosixPath, generateSlugInternal, extractOneLinerFromBody } = coreUtilsMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const phaseIdMod = require("./phase-id.cjs");
-const { normalizePhaseName, comparePhaseNum, extractPhaseToken, PHASE_NUMBER_TOKEN_SOURCE, isSentinelPhaseId } = phaseIdMod;
+const { normalizePhaseName, comparePhaseNum, extractPhaseToken, PHASE_NUMBER_TOKEN_SOURCE, isSentinelPhaseId, renderPhaseBranchName } = phaseIdMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const phaseLocatorMod = require("./phase-locator.cjs");
 const { getArchivedPhaseDirs, findPhaseInternal, listMilestonePhaseDirs } = phaseLocatorMod;
@@ -52,7 +56,7 @@ const codex_agent_toml_cjs_1 = require("./codex-agent-toml.cjs");
 const hostIntegrationMod = require("./host-integration.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
-const { planningDir, planningPaths } = planningWorkspace;
+const { planningDir, planningPaths, todosDir } = planningWorkspace;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const frontmatter = require("./frontmatter.cjs");
 const { extractFrontmatter, agentScalarNeedsDoubleQuoting, escapeDoubleQuotedScalar } = frontmatter;
@@ -186,7 +190,10 @@ function cmdCurrentTimestamp(format, raw) {
     output({ timestamp: result }, raw, result);
 }
 function cmdListTodos(cwd, area, raw) {
-    const pendingDir = node_path_1.default.join(planningDir(cwd), 'todos', 'pending');
+    // #4256: todos are root-scoped shared state — resolve via todosDir(cwd),
+    // never planningDir(cwd) (workstream-scoped), or the listing goes empty
+    // under a workstream.
+    const pendingDir = node_path_1.default.join(todosDir(cwd), 'pending');
     let count = 0;
     const todos = [];
     try {
@@ -282,7 +289,7 @@ function cmdListSeeds(cwd, statusFilter, raw) {
             continue;
         let safeFilePath;
         try {
-            safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(seedsDir, entry.name), planDir, 'seed file', { allowAbsolute: true });
+            safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(seedsDir, entry.name), planDir, 'seed file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         }
         catch {
             continue;
@@ -553,13 +560,11 @@ function cmdResolveExecution(cwd, agentType, raw, opts) {
             // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/unbound-method
             const { getGlobalConfigDir } = require('./runtime-homes.cjs');
             const agentsDirEff = node_path_1.default.join(getGlobalConfigDir(runtime), 'agents');
-            const agentPath = node_path_1.default.join(agentsDirEff, `${agentType}.md`);
             // agentType is an unvalidated CLI positional: keep the read inside the
             // agents dir so `../../x` cannot point it elsewhere (defense in depth —
-            // the reflected surface is only a frontmatter effort line).
-            if (!node_path_1.default.resolve(agentPath).startsWith(node_path_1.default.resolve(agentsDirEff) + node_path_1.default.sep)) {
-                throw new Error('agent path escapes the agents directory');
-            }
+            // the reflected surface is only a frontmatter effort line). Untrusted
+            // input feeding a real read → realpath family (ADR-4650 decision 6).
+            const agentPath = (0, security_cjs_1.assertWithinRoot)(`${agentType}.md`, agentsDirEff, 'agent file');
             const agentContent = node_fs_1.default.readFileSync(agentPath, 'utf8');
             // eslint-disable-next-line local/no-unbounded-quantifier -- same lazy `*?` bounded by the `^---$/m` closing anchor as the sibling frontmatter regexes in this file
             const fmMatchEff = /^---\r?\n([\s\S]*?)^---\r?$/m.exec(agentContent);
@@ -1357,19 +1362,33 @@ function detectPhaseNumberFromFiles(files) {
                 if (!phaseDir)
                     continue;
                 const token = extractPhaseToken(phaseDir);
-                // extractPhaseToken falls back to returning dirName unchanged when no
-                // numeric token is found. normalizePhaseName is the canonical arbiter
-                // of "is this a real phase token": it strips the project-code prefix
-                // and returns a zero-padded numeric form for a genuine phase token, or
-                // the input unchanged otherwise. Accept the token only when it
-                // normalizes to a numeric phase form (the single-owner rule shared by
-                // every other phase-token reader — see #2528).
-                const normalized = normalizePhaseName(token);
+                // normalizePhaseName is the canonical arbiter of "is this a real phase
+                // token": it strips the project-code prefix and returns a zero-padded
+                // numeric form for a genuine phase token, or the input unchanged
+                // otherwise. Accept the token whenever it normalizes to a numeric
+                // phase form (the single-owner rule shared by every other phase-token
+                // reader — see #2528).
+                //
+                // #4126 fix: this used to also require `token !== phaseDir`, on the
+                // assumption that extractPhaseToken returning its input unchanged
+                // always means "no numeric token found" (its no-match fallback).
+                // That assumption is false for a BARE phase directory with no slug
+                // remainder (e.g. `.planning/phases/01/`): extractPhaseToken correctly
+                // reads "01" as the token, which is simply identical to the directory
+                // name in that case — not a fallback. The stale equality check
+                // rejected every such directory, leaving `phaseNum` null and silently
+                // skipping the whole phase-branch block below (undetected because
+                // `phaseTokenShape.test(normalized)` already excludes genuine
+                // non-phase fallbacks — e.g. `docs`, `CK-docs` — on its own, since
+                // extractPhaseToken's real no-match fallback only fires for dirNames
+                // that do not start with a digit or short letter+digit prefix, which
+                // normalizePhaseName's leading-`\d+` requirement rejects regardless).
                 // Built from the single-owner PHASE_NUMBER_TOKEN_SOURCE (the canonical
                 // phase-number grammar — #2128 anti-divergence guard) so this read-side
                 // acceptance check cannot drift from every other phase-token reader.
+                const normalized = normalizePhaseName(token);
                 const phaseTokenShape = new RegExp(`^${PHASE_NUMBER_TOKEN_SOURCE}$`, 'i');
-                if (token !== phaseDir && phaseTokenShape.test(normalized)) {
+                if (phaseTokenShape.test(normalized)) {
                     return token;
                 }
             }
@@ -1442,7 +1461,296 @@ const COMMIT_DOCS_SKIP_REASON = {
     config: 'skipped_commit_docs_false',
     gitignore: 'skipped_gitignored',
 };
-function cmdCommit(cwd, message, files, raw, amend, noVerify) {
+// #4208 review: the declared-removal staging lifted out of cmdCommit, which was
+// already a critical-risk hotspot before this flag existed. Pure motion -- the
+// classification, canonicalisation and entry recording below are unchanged; only
+// the two accumulators are local names that the caller merges. `removedPathspec`
+// is what joins the commit's pathspec; `removedEntries` is what the caller's
+// rollback and its no-change exits restore from.
+function stageDeclaredRemovals(cwd, removedDeclared) {
+    const failures = [];
+    const removedPathspec = [];
+    // The empty blob under SHA-1 and SHA-256 object formats — intent-to-add's tell.
+    const EMPTY_BLOBS = new Set(['e69de29bb2d1d6434b8b29ae775ad8c2e48c5391', '473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813']);
+    // A PATH FROM THE INDEX IS NOT A PATHSPEC. `git rm`, `ls-files` and friends
+    // parse their operands as pathspecs, so a tracked file literally named
+    // `.planning/*.md` GLOBS when handed back to git: driven, `rm --cached` on it
+    // also removed `peer.md` and `stays.md`, and only the declared entry was
+    // recorded — so the rollback restored one of three and the other two rode out
+    // as undisclosed staged deletions. The magic-prefix twin is quieter still: a
+    // file named `:(literal)mine` has its prefix PARSED, so the rm matches nothing,
+    // exits 0, and the entry silently survives a removal this call then claims.
+    // `:(literal)` disables every other magic, including globbing, so the operand
+    // means the file it names.
+    const lit = (p) => `:(literal)${p}`;
+    const notARemoval = (e) => {
+        if (e.mode === '160000')
+            return 'a submodule gitlink, not a file';
+        if (e.tag === 'S')
+            return 'skip-worktree (sparse-checkout): absent by checkout, not removed';
+        if (e.tag === 'h')
+            return 'assume-unchanged: git does not consult its worktree state';
+        if (e.stage !== '0')
+            return 'an unmerged index entry';
+        if (e.tag !== 'H')
+            return `index state '${e.tag}'`;
+        return null;
+    };
+    const lstatState = (p) => {
+        try {
+            node_fs_1.default.lstatSync(p);
+            return 'present';
+        }
+        catch (e) {
+            const err = e;
+            return err.code === 'ENOENT' || err.code === 'ENOTDIR' ? 'absent' : err;
+        }
+    };
+    // `rev-parse -q --verify HEAD` exits 1 both for an unborn HEAD and for a
+    // spawn timeout (`execGit` collapses one to `exitCode: 1`). Only a probe that
+    // actually answered may downgrade the union to index-only; an unanswered one
+    // fails closed, because silently dropping the HEAD half re-opens the
+    // pre-staged-deletion omission this union exists to close.
+    let headExists = false;
+    let headProbeFailure = null;
+    if (removedDeclared.length > 0) {
+        const headProbe = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '-q', '--verify', 'HEAD'], { cwd });
+        if (headProbe.exitCode === 0) {
+            headExists = true;
+        }
+        else if ((0, shell_command_projection_cjs_1.isSpawnTimeout)(headProbe) || headProbe.error !== null) {
+            headProbeFailure = { error: headProbe.stderr || headProbe.stdout || 'HEAD probe failed', timed_out: (0, shell_command_projection_cjs_1.isSpawnTimeout)(headProbe) };
+        }
+    }
+    // Every index entry this call removes, recorded BEFORE the `rm --cached`
+    // so the rollback below can put it back exactly — mode and blob — with
+    // `update-index --cacheinfo`. `git reset -- <path>` cannot do that: it
+    // restores from HEAD, which does not exist on an unborn branch (so a root
+    // commit's failed call used to leave every earlier removal unstaged, in
+    // violation of the only-what-THIS-call-staged invariant above) and which
+    // is not what the index held when the caller had pre-staged a modified
+    // blob at that path. Recording the entry answers both without putting the
+    // path on the commit pathspec, where an unborn HEAD makes `git commit`
+    // refuse it (driven; see the union note above).
+    const removedEntries = [];
+    for (const entry of removedDeclared) {
+        if (headProbeFailure !== null) {
+            failures.push({ file: entry, ...headProbeFailure });
+            continue;
+        }
+        // `-v -s`: tag, mode, blob, stage and path per record — see notARemoval.
+        // `lit` here too: the caller's declared entry is a PATH, not a glob —
+        // that is `--files-removed`'s whole contract — and :(literal) still
+        // resolves a directory to its descendants (driven), so the directory form
+        // is unaffected while a file literally named `*.md` or `:(literal)x` means
+        // itself.
+        const listed = (0, shell_command_projection_cjs_1.execGit)(['ls-files', '-v', '-s', '-z', '--', lit(entry)], { cwd });
+        if (listed.exitCode !== 0) {
+            failures.push({
+                file: entry,
+                error: listed.stderr || listed.stdout,
+                timed_out: (0, shell_command_projection_cjs_1.isSpawnTimeout)(listed),
+            });
+            continue;
+        }
+        const indexed = new Map();
+        let unparseable = null;
+        for (const rec of listed.stdout.split('\0').filter(Boolean)) {
+            const m = /^(\S) (\d{6}) ([0-9a-f]+) ([0-3])\t([\s\S]+)$/.exec(rec);
+            if (m === null) {
+                unparseable = rec;
+                break;
+            }
+            indexed.set(m[5], { tag: m[1], mode: m[2], sha: m[3], stage: m[4] });
+        }
+        if (unparseable !== null) {
+            // A record this code cannot read is not a path it may remove.
+            failures.push({ file: entry, error: `unparseable ls-files record: ${unparseable}`, timed_out: false });
+            continue;
+        }
+        const tracked = new Set(indexed.keys());
+        // Does the entry name THIS tracked path itself (the caller declared a
+        // FILE removed) or a directory above it? Decided on RESOLVED paths, never
+        // on the strings: `ls-files` prints cwd-relative paths, and a caller may
+        // pass an absolute path, `./x`, a trailing slash, or run under `--cwd`,
+        // any of which fails a string compare and would silently take the
+        // directory polarity — a directly named gitlink then SKIPS instead of
+        // refusing (found by the round's review, driven with an absolute path).
+        const entryAbs = node_path_1.default.resolve(cwd, entry);
+        const entryRel = node_path_1.default.relative(cwd, entryAbs).split(node_path_1.default.sep).join('/');
+        // Canonical form: realpath of the longest EXISTING prefix, with the absent
+        // tail re-appended. The declared path is usually absent (that is the
+        // point), and `process.cwd()` returns the real path where the caller may
+        // hold a symlinked spelling — macOS `/var` → `/private/var` is the live
+        // instance (CI, this PR's own test) — so a resolve-only compare still
+        // took the directory polarity there.
+        const canon = (p) => {
+            let cur = node_path_1.default.resolve(cwd, p);
+            const tail = [];
+            for (;;) {
+                try {
+                    return node_path_1.default.join(node_fs_1.default.realpathSync.native(cur), ...tail);
+                }
+                catch { /* absent: climb */ }
+                const parent = node_path_1.default.dirname(cur);
+                if (parent === cur)
+                    return node_path_1.default.join(cur, ...tail);
+                tail.unshift(node_path_1.default.basename(cur));
+                cur = parent;
+            }
+        };
+        const namesItself = (p) => p === entryRel || node_path_1.default.resolve(cwd, p) === entryAbs || canon(p) === canon(entry);
+        const inHeadPaths = new Set();
+        if (headExists) {
+            const inHead = (0, shell_command_projection_cjs_1.execGit)(['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', lit(entry)], { cwd });
+            if (inHead.exitCode !== 0) {
+                failures.push({
+                    file: entry,
+                    error: inHead.stderr || inHead.stdout,
+                    timed_out: (0, shell_command_projection_cjs_1.isSpawnTimeout)(inHead),
+                });
+                continue;
+            }
+            for (const p of inHead.stdout.split('\0').filter(Boolean)) {
+                tracked.add(p);
+                inHeadPaths.add(p);
+            }
+        }
+        if (tracked.size === 0)
+            continue;
+        const entryState = lstatState(node_path_1.default.resolve(cwd, entry));
+        if (entryState !== 'present' && entryState !== 'absent') {
+            failures.push({ file: entry, error: `lstat ${entryState.code ?? ''}: ${entryState.message}`, timed_out: false });
+            continue;
+        }
+        let entryIsDirectory = false;
+        if (entryState === 'present') {
+            try {
+                entryIsDirectory = node_fs_1.default.lstatSync(node_path_1.default.resolve(cwd, entry)).isDirectory();
+            }
+            catch { /* raced away: treat as a present non-directory below */ }
+        }
+        if (entryState === 'present' && !entryIsDirectory) {
+            // A present non-directory entry (a file, or ANY symlink — a link to a
+            // directory is still one tracked path) contradicts the declaration.
+            failures.push({
+                file: entry,
+                error: `declared in --files-removed but still present on disk: ${entry}`,
+                timed_out: false,
+            });
+            continue;
+        }
+        for (const trackedPath of tracked) {
+            const indexEntry = indexed.get(trackedPath);
+            let reason = indexEntry === undefined ? null : notARemoval(indexEntry);
+            // Intent-to-add (`git add -N`) renders as a plain `H 100644 <empty
+            // blob> 0` — the flag is not in the listing — yet nothing tracked exists
+            // to remove, and a rollback via `--cacheinfo` cannot restore the flag.
+            // It is the one state whose blob is the empty blob, whose path is not in
+            // HEAD, and which `diff --cached` treats as absent from the index; an
+            // ordinary staged empty file shows there as added. Three probes, on the
+            // rare empty-blob path only.
+            if (reason === null && indexEntry !== undefined && EMPTY_BLOBS.has(indexEntry.sha) && !inHeadPaths.has(trackedPath)) {
+                const cached = (0, shell_command_projection_cjs_1.execGit)(['diff', '--cached', '--name-only', '-z', '--', lit(trackedPath)], { cwd });
+                if (cached.exitCode === 0 && cached.stdout.split('\0').filter(Boolean).length === 0)
+                    reason = 'an intent-to-add entry (git add -N), not tracked content';
+            }
+            if (reason !== null) {
+                if (namesItself(trackedPath)) {
+                    failures.push({
+                        file: entry,
+                        error: `declared in --files-removed but is ${reason}: ${trackedPath}`,
+                        timed_out: false,
+                    });
+                }
+                continue;
+            }
+            const state = lstatState(node_path_1.default.resolve(cwd, trackedPath));
+            if (state === 'present')
+                continue;
+            if (state !== 'absent') {
+                failures.push({ file: trackedPath, error: `lstat ${state.code ?? ''}: ${state.message}`, timed_out: false });
+                continue;
+            }
+            // A HEAD-only path (the caller already `git rm`'d it) has no index entry
+            // to record or restore; the `rm` below is then a no-op.
+            // READ the entry before the mutation, RECORD it only after the mutation
+            // SUCCEEDS. The read must precede (the rm is what destroys the mode/blob
+            // the restore needs); the record must not, because `removedEntries` is
+            // the set this call claims to have staged. Recording ahead of the rm made
+            // a FAILED rm — a stale `index.lock` is the driven case — contribute an
+            // entry the rollback then reported as "still staged in the index" when
+            // nothing had been staged at all: a false disclosure, the mirror of the
+            // silent one the disclosure was added to fix.
+            const recordable = indexEntry !== undefined
+                ? { path: trackedPath, mode: indexEntry.mode, sha: indexEntry.sha }
+                : null;
+            // `--ignore-unmatch` makes "no such index entry" a success, so a non-zero
+            // exit is a real I/O failure — same reading as the default-mode branch.
+            const rmResult = (0, shell_command_projection_cjs_1.execGit)(['rm', '--cached', '--ignore-unmatch', '--', lit(trackedPath)], { cwd });
+            if (rmResult.exitCode === 0) {
+                if (recordable !== null)
+                    removedEntries.push(recordable);
+                // Re-check AFTER the index mutation. The absence test and the `rm` are
+                // not atomic, and the scoped `git commit -- <paths>` below reads the
+                // WORKTREE, so a path recreated in between would be committed as its
+                // new content under a message that declared it removed. A reappearance
+                // is a contradiction like any other: staging failure, and the rollback
+                // restores the recorded entry. Narrows the window; does not close it.
+                if (lstatState(node_path_1.default.resolve(cwd, trackedPath)) !== 'absent') {
+                    failures.push({
+                        file: trackedPath,
+                        error: `declared in --files-removed but reappeared on disk: ${trackedPath}`,
+                        timed_out: false,
+                    });
+                    continue;
+                }
+                // Unborn HEAD: nothing to delete FROM, so the path is unstaged only and
+                // never joins the pathspec; its rollback is the recorded entry above.
+                if (headExists)
+                    removedPathspec.push(trackedPath);
+            }
+            else {
+                // A NON-ZERO rm is NOT proof the index is untouched. `execGit` collapses
+                // a spawn timeout to a non-zero exit, and a killed `git rm` can already
+                // have written the index — so keying the record on the exit code alone
+                // drops a real mutation on the timeout path (driven: a post-index-change
+                // hook that outlives the timeout leaves `D <path>` staged and reported
+                // nowhere). The exit code answers "did the command succeed", never "did
+                // the index change". ASK THE INDEX instead — three honest arms, and no
+                // arm asserts a state it did not observe.
+                // THE ORIGINAL FAILURE IS PUSHED FIRST. `failures[0]` sets the result's
+                // `reason`, `file`, `error` and timeout classification, so appending the
+                // probe's diagnostic ahead of it renamed the cause: a timed-out rm was
+                // reported as a permission error and lost its `timed_out: true`.
+                failures.push({
+                    file: trackedPath,
+                    error: rmResult.stderr || rmResult.stdout,
+                    timed_out: (0, shell_command_projection_cjs_1.isSpawnTimeout)(rmResult),
+                });
+                if (recordable !== null) {
+                    const after = (0, shell_command_projection_cjs_1.execGit)(['ls-files', '-s', '-z', '--', lit(trackedPath)], { cwd });
+                    if (after.exitCode !== 0) {
+                        // Could not determine. Say so; never silently assume either way.
+                        failures.push({
+                            file: trackedPath,
+                            error: `removal failed and the index state for this path could NOT be determined: ${after.stderr || after.stdout}`,
+                            timed_out: (0, shell_command_projection_cjs_1.isSpawnTimeout)(after),
+                        });
+                    }
+                    else if (after.stdout.replace(/\0/g, '').trim() === '') {
+                        // The entry is gone: the rm mutated the index before it failed, so
+                        // this call owns the removal and must restore/disclose it.
+                        removedEntries.push(recordable);
+                    }
+                    // else: the entry is still there — nothing was staged, nothing to undo.
+                }
+            }
+        }
+    }
+    return { removedEntries, removedPathspec, failures };
+}
+function cmdCommit(cwd, message, files, raw, amend, noVerify, filesRemoved) {
     if (!message && !amend) {
         error('commit message required');
     }
@@ -1478,6 +1786,10 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
     const branchingStrategy = config['branching_strategy'];
     if (branchingStrategy && branchingStrategy !== 'none') {
         let branchName = null;
+        // #4055: the phase directory (cwd-relative POSIX path from
+        // findPhaseInternal) captured while resolving the phase identity — the
+        // state-3 guard below needs it for the committed-history check.
+        let phaseDirRelative = null;
         if (branchingStrategy === 'phase') {
             // Determine which phase we're committing for from the file paths.
             // #2539: the extraction is anchored to the directory SEGMENT immediately
@@ -1499,9 +1811,16 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
             if (phaseNum && !isSentinelPhaseId(phaseNum)) {
                 const phaseInfo = findPhaseInternal(cwd, phaseNum);
                 if (phaseInfo) {
-                    branchName = config['phase_branch_template']
-                        .replace('{phase}', normalizePhaseName(phaseInfo['phase_number']))
-                        .replace('{slug}', phaseInfo['phase_slug'] || 'phase');
+                    // #4126: shared with init.cts's cmdInitExecutePhase branch_name field
+                    // via the one canonical renderer (src/phase-id.cts) so an undeliverable
+                    // phase_slug degrades identically at both call sites instead of each
+                    // independently substituting the literal word 'phase'.
+                    branchName = renderPhaseBranchName(config['phase_branch_template'], phaseInfo['phase_number'], phaseInfo['phase_slug']);
+                    // #4055: findPhaseInternal already returns the directory as a
+                    // cwd-relative POSIX path.
+                    const dir = phaseInfo['directory'];
+                    if (typeof dir === 'string' && dir !== '')
+                        phaseDirRelative = dir;
                 }
             }
         }
@@ -1526,6 +1845,14 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
             }
         }
         if (branchName) {
+            // #4055: state-3 discriminator for the create arm. `rev-parse --verify`
+            // alone cannot distinguish "branch never existed" (create is the #1278
+            // intent) from "branch existed, was merged, then deleted" (the phase is
+            // over — recreating it hijacks the close-out commit onto a resurrected
+            // ref, the #3079 bug #3363 reopened). Both extra conditions come from
+            // the confirmed issue: the create arm may fire only for a phase whose
+            // directory has NO committed history on the current line (a genuinely
+            // new phase) while the caller sits on the resolved base branch.
             const currentBranch = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd });
             if (currentBranch.exitCode === 0 && currentBranch.stdout.trim() !== branchName) {
                 // #2539/#3079/#3207: two cases the prior (#3079) code collapsed into one.
@@ -1540,18 +1867,63 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
                 // EXISTING branch is never switched to (the else arm logs + commits in
                 // place). The fresh create is logged so the first phase-scoped commit is
                 // not silent about where the work is landing (#3207 AC3).
+                // #4055: "brand-new" is now VERIFIED, not assumed — see the state-3
+                // guard between the verify and the create below.
                 const verify = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--verify', `refs/heads/${branchName}`], { cwd });
                 if (verify.exitCode !== 0) {
-                    // Branch does not exist — CREATE AND SWITCH (the #1278 first-commit
-                    // case). checkout -b cannot resurrect anything: the branch was just
-                    // verified absent, so it is created fresh at HEAD.
-                    const create = (0, shell_command_projection_cjs_1.execGit)(['checkout', '-b', branchName], { cwd });
-                    if (create.exitCode === 0) {
-                        process.stderr.write(`${branchingStrategy} branch "${branchName}" created; switched to it for this commit.\n`);
+                    // Branch does not exist — but absence alone cannot distinguish a
+                    // genuinely new phase from a merged-and-deleted one (#4055).
+                    let createBlockReason = null;
+                    if (branchingStrategy === 'phase' && phaseDirRelative) {
+                        // #4055 residual: searchPhaseInDir's #2237 fail-safe can return an
+                        // empty `directory` for ambiguous phase names (leaving
+                        // phaseDirRelative null) — there the history half is skipped and
+                        // only the base check below guards; shallow clones can also show
+                        // an empty probe for old merged phases (depth-sensitive).
+                        const history = (0, shell_command_projection_cjs_1.execGit)(['log', 'HEAD', '--oneline', '--', phaseDirRelative], { cwd });
+                        if (history.exitCode === 0 && history.stdout.trim() !== '') {
+                            createBlockReason =
+                                'its phase directory already has committed history (the phase is resolved)';
+                        }
+                    }
+                    if (!createBlockReason) {
+                        // The base half of the guard applies to BOTH strategies (it does
+                        // not need a directory): a phase/milestone branch is created only
+                        // from the resolved base branch. NOTE the milestone arm keeps its
+                        // existence-only guard for the HISTORY half — a merged-and-deleted
+                        // milestone branch remains resurrectable by an on-base caller
+                        // until a milestone-directory derivation exists here (#4055
+                        // follow-up candidate).
+                        /* eslint-disable @typescript-eslint/no-require-imports */
+                        const gitBaseBranch = require('./git-base-branch.cjs');
+                        /* eslint-enable @typescript-eslint/no-require-imports */
+                        const resolvedBase = gitBaseBranch.resolveBaseBranch(cwd);
+                        if (resolvedBase && resolvedBase !== currentBranch.stdout.trim()) {
+                            createBlockReason =
+                                `the current branch "${currentBranch.stdout.trim()}" is not the ` +
+                                    `resolved base branch "${resolvedBase}"`;
+                        }
+                    }
+                    if (createBlockReason === null) {
+                        // State 1 confirmed: brand-new phase, first phase-scoped commit
+                        // from the base branch. CREATE AND SWITCH (the #1278 first-commit
+                        // case). checkout -b cannot resurrect anything: the branch was
+                        // just verified absent, so it is created fresh at HEAD.
+                        const create = (0, shell_command_projection_cjs_1.execGit)(['checkout', '-b', branchName], { cwd });
+                        if (create.exitCode === 0) {
+                            process.stderr.write(`${branchingStrategy} branch "${branchName}" created; switched to it for this commit.\n`);
+                        }
+                        else {
+                            process.stderr.write(`Warning: could not create ${branchingStrategy} branch "${branchName}" ` +
+                                `(${create.stderr.trim()}); committing on the current branch "${currentBranch.stdout.trim()}".\n`);
+                        }
                     }
                     else {
-                        process.stderr.write(`Warning: could not create ${branchingStrategy} branch "${branchName}" ` +
-                            `(${create.stderr.trim()}); committing on the current branch "${currentBranch.stdout.trim()}".\n`);
+                        // State 3 (or a non-base caller): the phase is resolved — commit
+                        // in place, disclosed (#2539 AC2), never recreate the branch.
+                        process.stderr.write(`Warning: resolved ${branchingStrategy} branch "${branchName}" is absent and ` +
+                            `will not be recreated (${createBlockReason}); committing on the current ` +
+                            `branch "${currentBranch.stdout.trim()}" instead of recreating it.\n`);
                     }
                 }
                 else {
@@ -1563,8 +1935,12 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
         }
     }
     // Stage files
-    const explicitFiles = files && files.length > 0;
-    const filesToStage = explicitFiles ? files : ['.planning/'];
+    // #4208: `--files-removed` is a declared scope in its own right — a caller
+    // that names only removals must not fall through to the unscoped
+    // `.planning/` sweep, which would commit everything under it.
+    const removedDeclared = filesRemoved ?? [];
+    const explicitFiles = (files && files.length > 0) || removedDeclared.length > 0;
+    const filesToStage = explicitFiles ? (files ?? []) : ['.planning/'];
     const stagedPaths = [];
     // #2608: a `git add` that fails must abort the commit, not be skipped.
     // #2523 stopped a failed path entering the commit pathspec, but skipping it
@@ -1574,11 +1950,27 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
     // a linked worktree, timeout) was discarded and the operator saw a downstream
     // pathspec error pointing at an innocent file.
     const stagingFailures = [];
+    // #4454: explicit --files paths skipped because they were missing from disk
+    // (the #2014 guard below). Tracked so the caller can tell a partial commit
+    // from a complete one instead of an unqualified `committed: true`.
+    const skippedFiles = [];
     // Paths already in the index BEFORE this call. On a staging failure the
     // rollback below unstages only what THIS call added — unstaging a path the
     // caller had staged themselves would destroy their work.
-    const preStaged = new Set((0, shell_command_projection_cjs_1.execGit)(['diff', '--cached', '--name-only'], { cwd })
-        .stdout.split('\n').map(s => s.trim()).filter(Boolean));
+    // `-z`: without it `core.quotePath` renders a non-ASCII name as
+    // `"caf\303\251.md"`, which never equals the raw path in `stagedPaths`, so
+    // the rollback below would treat a caller-pre-staged `café.md` as this
+    // call's own and unstage it (#4208 review, driven).
+    // `--relative`: `diff --cached` prints REPO-relative paths whatever the cwd,
+    // while `stagedPaths` holds the caller's own cwd-relative names. In a project
+    // nested inside its repo (`<repo>/sub/.planning/...`) the two name spaces
+    // never intersect, so `preStaged` matched NOTHING and the rollback unstaged
+    // every path including the caller's own pre-staged work. Driven on a nested
+    // fixture: a caller-staged deletion vanished from `diff --cached` after an
+    // unrelated declaration failed. Pre-existing -- it governs the `--files` side
+    // too -- and a no-op when the project IS the repo root.
+    const preStaged = new Set((0, shell_command_projection_cjs_1.execGit)(['diff', '--cached', '--name-only', '-z', '--relative'], { cwd })
+        .stdout.split('\0').filter(Boolean));
     for (const file of filesToStage) {
         const fullPath = node_path_1.default.resolve(cwd, file);
         if (!node_fs_1.default.existsSync(fullPath)) {
@@ -1586,6 +1978,9 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
                 // Caller passed an explicit --files list: missing files are skipped.
                 // Staging a deletion here would silently remove tracked planning files
                 // (e.g. STATE.md, ROADMAP.md) when they are temporarily absent (#2014).
+                // #4454: record what was skipped so the caller can tell a partial
+                // commit from a complete one, instead of an unqualified success.
+                skippedFiles.push(file);
                 continue;
             }
             // Default mode (staging all of .planning/): stage the deletion so
@@ -1623,6 +2018,75 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
             }
         }
     }
+    // #4208: caller-declared removals -- see stageDeclaredRemovals.
+    const declaredRemovals = stageDeclaredRemovals(cwd, removedDeclared);
+    const removedEntries = declaredRemovals.removedEntries;
+    stagingFailures.push(...declaredRemovals.failures);
+    stagedPaths.push(...declaredRemovals.removedPathspec);
+    // A REMOVAL'S PATH IS A PATH DOWNSTREAM TOO. Literalising the staging alone
+    // does not protect the COMMIT's own pathspec: with a tracked file literally
+    // named `.planning/*.md` declared removed beside a MODIFIED `peer.md`, the
+    // `git commit -- <paths>` below globs and commits `M peer.md` the caller
+    // never declared — the sweep this flag exists to remove, arriving one step
+    // later. Driven. Only the removal-derived entries are literalised: `--files`
+    // entries keep whatever pathspec behaviour they have today, which is not this
+    // change's to alter.
+    const removalPathspecs = new Set(declaredRemovals.removedPathspec);
+    const asPathspec = (p) => (removalPathspecs.has(p) ? `:(literal)${p}` : p);
+    const restoreRemovedEntries = () => {
+        if (removedEntries.length === 0)
+            return 'restored';
+        (0, shell_command_projection_cjs_1.execGit)(['update-index', '--add', ...removedEntries.flatMap(e => ['--cacheinfo', `${e.mode},${e.sha},${e.path}`])], { cwd });
+        // VERIFY BY READING THE INDEX BACK, never by the exit code. `execGit`
+        // collapses a spawn timeout to a non-zero exit, and a killed `update-index`
+        // can already have written the index — so an exit code answers "did the
+        // command succeed", never "is the entry back". Driven: a post-index-change
+        // hook outliving the timeout made the restore report failure over an index
+        // it had in fact restored, publishing a disclosure that was simply false.
+        //
+        // `-z` IS LOAD-BEARING, and its absence is the #2014-era defect this PR
+        // already fixed once for `preStaged`: without it `core.quotePath` renders a
+        // non-ASCII name as `"caf\303\251.md"`, which never equals the raw path, so
+        // an exactly-restored `café.md` (and any name carrying a tab or a newline)
+        // read as NOT restored. Driven on all three shapes.
+        const back = (0, shell_command_projection_cjs_1.execGit)(['ls-files', '-s', '-z', '--', ...removedEntries.map(e => `:(literal)${e.path}`)], { cwd });
+        if (back.exitCode !== 0)
+            return 'unverified'; // no observation — never an assertion of failure
+        // COMPARE THE WHOLE ENTRY, not just the path. `--cacheinfo` restores mode,
+        // blob and stage; a path present at a DIFFERENT mode or blob is not the
+        // entry this call removed. Driven: a hook that rewrote the restored entry
+        // 100644 -> 100755 was reported as restored by a path-only test.
+        const present = new Map();
+        for (const rec of back.stdout.split('\0')) {
+            if (rec === '')
+                continue;
+            const tab = rec.indexOf('\t');
+            if (tab === -1)
+                continue;
+            present.set(rec.slice(tab + 1), rec.slice(0, tab));
+        }
+        const ok = removedEntries.every(e => present.get(e.path) === `${e.mode} ${e.sha} 0`);
+        return ok ? 'restored' : 'not-restored';
+    };
+    // The no-change exits' shared arm: restore, and if the restore failed, say so
+    // instead of claiming nothing changed. `staging_failed` is the honest reason —
+    // the index carries a mutation this call made and could not undo.
+    const removalsLeftStaged = (verdict) => ({
+        committed: false,
+        hash: null,
+        reason: 'staging_failed',
+        file: removedEntries[0]?.path ?? null,
+        error: verdict === 'not-restored'
+            ? `declared removal(s) staged but could not be restored after the commit recorded nothing: ${removedEntries.map(e => e.path).join(', ')}`
+            : `declared removal(s) staged and the restore could NOT be VERIFIED after the commit recorded nothing: ${removedEntries.map(e => e.path).join(', ')}`,
+        failures: removedEntries.map(e => ({
+            file: e.path,
+            error: verdict === 'not-restored'
+                ? 'update-index --cacheinfo restore failed'
+                : 'update-index --cacheinfo restore could not be verified — the index was not readable',
+            timed_out: false,
+        })),
+    });
     // #2608: fail closed before `git commit` runs. Checked ahead of the
     // nothing_to_commit branch below so a run where EVERY path failed to stage
     // reports the staging cause rather than "nothing to commit", and ahead of the
@@ -1637,10 +2101,37 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
         // best-effort: if the index is unwritable — the very failure being reported
         // — the reset cannot succeed either, and the staging error is still what
         // gets returned.
-        const toUnstage = stagedPaths.filter(p => !preStaged.has(p));
+        const removedPaths = new Set(removedEntries.map(e => e.path));
+        const toUnstage = stagedPaths.filter(p => !preStaged.has(p) && !removedPaths.has(p));
         if (toUnstage.length > 0) {
-            (0, shell_command_projection_cjs_1.execGit)(['reset', '-q', '--', ...toUnstage], { cwd });
+            // `asPathspec` here too. This reset is the LAST place a removal-derived
+            // name reaches git as a pathspec, and it is the most damaging: driven,
+            // a wildcard-named entry that slipped into `toUnstage` globbed and
+            // unstaged the CALLER'S OWN pre-staged deletion and modification, then
+            // reported only the contradiction that triggered the rollback.
+            (0, shell_command_projection_cjs_1.execGit)(['reset', '-q', '--', ...toUnstage.map(asPathspec)], { cwd });
         }
+        // Removals are restored from the recorded entries, never via `reset`
+        // (no HEAD to reset to on an unborn branch; not the pre-staged blob when
+        // the caller had one) — and unconditionally, since a removal this call
+        // performed is this call's to undo whether or not the path was pre-staged.
+        // DISCLOSE a failed restore here too. The earlier reading -- that this exit
+        // is already reporting a failure, so the restore's result adds nothing --
+        // is wrong, and the counterexample is the ordinary one: the reported
+        // failure is usually a DIFFERENT cause (a contradictory declaration, a
+        // reappeared path), so a caller reading `failures` sees only that cause
+        // and learns nothing about the removal still sitting in its index. Append
+        // rather than replace: the original failure is still the reason.
+        const restoreVerdict = restoreRemovedEntries();
+        const failures = restoreVerdict === 'restored'
+            ? stagingFailures
+            : [...stagingFailures, ...removedEntries.map(e => ({
+                    file: e.path,
+                    error: restoreVerdict === 'not-restored'
+                        ? 'staged removal could NOT be restored during rollback — it is still staged in the index'
+                        : 'staged removal was rolled back but the result could NOT be VERIFIED — the index was not readable',
+                    timed_out: false,
+                }))];
         const first = stagingFailures[0];
         const result = {
             committed: false,
@@ -1648,7 +2139,7 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
             reason: first.timed_out ? 'staging_timeout' : 'staging_failed',
             file: first.file,
             error: first.error,
-            failures: stagingFailures,
+            failures,
         };
         output(result, raw, 'failed');
         return;
@@ -1851,13 +2342,13 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
     // failing-closed (drop the content) and failing-open (re-enter #3776) are
     // wrong answers to a question we can just ask directly.
     const assumeUnchangedWouldRecord = () => {
-        const listed = (0, shell_command_projection_cjs_1.execGit)(['ls-files', '-v', '--', ...stagedPaths], { cwd });
+        const listed = (0, shell_command_projection_cjs_1.execGit)(['ls-files', '-v', '--', ...stagedPaths.map(asPathspec)], { cwd });
         // Only the TAG is read; the path is deliberately never parsed out — see the
         // `core.quotePath` note above, and the dry run below needs no path anyway.
         if (listed.exitCode === 0
             && !listed.stdout.split('\n').some((line) => /^[a-z] /.test(line)))
             return false;
-        const dryRun = (0, shell_command_projection_cjs_1.execGit)(['commit', '--dry-run', '--porcelain', '--no-verify', '-m', sanitizedMessage, '--', ...stagedPaths], { cwd });
+        const dryRun = (0, shell_command_projection_cjs_1.execGit)(['commit', '--dry-run', '--porcelain', '--no-verify', '-m', sanitizedMessage, '--', ...stagedPaths.map(asPathspec)], { cwd });
         // Only a CONFIRMED "nothing to record" closes the path: rc 1 from a git
         // that actually answered. This is the one probe in the guard whose rc 0
         // is the REASSURING answer, so it inverts the diff probe's safety: there
@@ -1879,10 +2370,30 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
     const nothingToCommit = guardApplies
         && (stagedPaths.length === 0
             || (!partialCommitRefused
-                && (0, shell_command_projection_cjs_1.execGit)(['diff', '--quiet', '--ignore-submodules=dirty', '--no-textconv', 'HEAD', '--', ...stagedPaths], { cwd }).exitCode === 0
+                && (0, shell_command_projection_cjs_1.execGit)(['diff', '--quiet', '--ignore-submodules=dirty', '--no-textconv', 'HEAD', '--', ...stagedPaths.map(asPathspec)], { cwd }).exitCode === 0
                 && !assumeUnchangedWouldRecord()));
     if (nothingToCommit) {
-        const result = { committed: false, hash: null, reason: 'nothing_to_commit' };
+        // Nothing is being recorded, so any removal this call staged has no commit
+        // to land in. Put it back before reporting no state change. Reachable on
+        // two shapes, and keying on either one alone leaves the other broken:
+        // an unborn HEAD (a removal never joins `stagedPaths`, so the pathspec is
+        // empty), and a HEAD that simply does not carry the removed path -- an
+        // index-only entry the caller `git add`ed but never committed, where the
+        // `diff HEAD` probe reads clean because the path is absent on both sides.
+        const rv = restoreRemovedEntries();
+        if (rv !== 'restored') {
+            output(removalsLeftStaged(rv), raw, 'failed');
+            return;
+        }
+        // #4454: an explicit --files list where every named path was missing
+        // reaches this branch via `stagedPaths.length === 0` above — surface
+        // which path(s) were the reason, same as the success result below.
+        const result = {
+            committed: false,
+            hash: null,
+            reason: 'nothing_to_commit',
+            ...(skippedFiles.length > 0 ? { skipped_files: skippedFiles } : {}),
+        };
         output(result, raw, 'nothing');
         return;
     }
@@ -1894,7 +2405,7 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
     if (noVerify)
         commitArgs.push('--no-verify');
     if (canScope) {
-        commitArgs.push('--', ...stagedPaths);
+        commitArgs.push('--', ...stagedPaths.map(asPathspec));
     }
     // #3859 follow-up: on git 2.39.5 (confirmed on the CI Linux bench image,
     // ghcr.io/open-gsd/gsd-tester-linux:v1.8.0-node24; NOT reproducible on git
@@ -1952,7 +2463,28 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
             return;
         }
         if (commitResult.stdout.includes('nothing to commit') || commitResult.stderr.includes('nothing to commit')) {
-            const result = { committed: false, hash: null, reason: 'nothing_to_commit' };
+            // Same reading as the guard above: git recorded nothing, so a removal
+            // this call staged must not be left behind under a `nothing_to_commit`
+            // report. The failure exits below are deliberately NOT restored -- they
+            // report a failure rather than "no state changed", and the addition side
+            // leaves its own staged paths in place there too.
+            const rv = restoreRemovedEntries();
+            if (rv !== 'restored') {
+                output(removalsLeftStaged(rv), raw, 'failed');
+                return;
+            }
+            // #4454: this is the residual window the surrounding comments already
+            // document (a partial skip + partialCommitRefused bypassing the diff
+            // probe + git's own empty-commit refusal) — skippedFiles can be
+            // non-empty here too, and omitting it would be the same misreport
+            // this fix exists to close, just on the other branch that reaches
+            // "nothing to commit".
+            const result = {
+                committed: false,
+                hash: null,
+                reason: 'nothing_to_commit',
+                ...(skippedFiles.length > 0 ? { skipped_files: skippedFiles } : {}),
+            };
             output(result, raw, 'nothing');
             return;
         }
@@ -1968,7 +2500,15 @@ function cmdCommit(cwd, message, files, raw, amend, noVerify) {
     // Get short hash
     const hashResult = (0, shell_command_projection_cjs_1.execGit)(['rev-parse', '--short', 'HEAD'], { cwd });
     const hash = hashResult.exitCode === 0 ? hashResult.stdout : null;
-    const result = { committed: true, hash, reason: 'committed' };
+    // #4454: report explicit --files paths that were skipped as missing (the
+    // #2014 guard above) so a caller can tell a partial commit from a complete
+    // one, without changing the payload shape when nothing was skipped.
+    const result = {
+        committed: true,
+        hash,
+        reason: 'committed',
+        ...(skippedFiles.length > 0 ? { skipped_files: skippedFiles } : {}),
+    };
     output(result, raw, hash || 'committed');
 }
 /**
@@ -2007,7 +2547,7 @@ function groupFilesBySubrepo(files, subRepos) {
         let matchLen = -1;
         if (candidates) {
             for (const repo of candidates) {
-                if (file.startsWith(repo + '/')) {
+                if (file.startsWith(repo + '/')) { // allow-handrolled-containment: sub-repo file grouping, not a safety decision
                     const repoLen = String(repo).length;
                     if (repoLen > matchLen) {
                         match = repo;
@@ -2156,15 +2696,13 @@ function cmdPrSubrepo(cwd, repo, branch, commitMessage, raw) {
         error(`Branch name must not start with '-': ${branch}`);
     }
     // 0. Security: validate repo path is contained within the workspace root.
-    //    Uses security.cjs validatePath (symlink-safe realpathSync + startsWith guard)
+    //    Uses security.cjs tryWithinRoot (symlink-safe realpathSync + startsWith guard)
     //    to reject ../escape, absolute paths, and symlink traversal.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/unbound-method
-    const { validatePath } = require('./security.cjs');
-    const pathCheck = validatePath(repo, cwd);
-    if (!pathCheck.safe) {
-        error(`Sub-repo path is unsafe: ${pathCheck.error}`);
+    const repoContained = (0, security_cjs_1.tryWithinRoot)(repo, cwd);
+    if (repoContained === null) {
+        error(`Sub-repo path is unsafe: resolves outside the workspace root`);
     }
-    const repoCwd = pathCheck.resolved;
+    const repoCwd = repoContained;
     if (!node_fs_1.default.existsSync(repoCwd)) {
         error(`Sub-repo not found: ${repoCwd}`);
     }
@@ -2508,9 +3046,7 @@ function cmdProgressRender(cwd, format, raw) {
         : null;
     if (format === 'table') {
         // Render markdown table
-        const barWidth = 10;
-        const filled = percent === null ? 0 : Math.round((percent / 100) * barWidth);
-        const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+        const bar = (0, phase_lifecycle_cjs_1.renderProgressBar)(percent, 10);
         const percentSuffix = percent === null ? '' : ` (${percent}%)`;
         let out = `# ${milestone?.version ?? ''} ${milestone?.name ?? ''}\n\n`;
         out += `**Progress:** [${bar}] ${totalSummaries}/${totalPlans} plans${percentSuffix}\n\n`;
@@ -2522,9 +3058,7 @@ function cmdProgressRender(cwd, format, raw) {
         output({ rendered: out }, raw, out);
     }
     else if (format === 'bar') {
-        const barWidth = 20;
-        const filled = percent === null ? 0 : Math.round((percent / 100) * barWidth);
-        const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+        const bar = (0, phase_lifecycle_cjs_1.renderProgressBar)(percent, 20);
         const percentSuffix = percent === null ? '' : ` (${percent}%)`;
         const text = `[${bar}] ${totalSummaries}/${totalPlans} plans${percentSuffix}`;
         output({ bar: text, percent, completed: totalSummaries, total: totalPlans }, raw, text);
@@ -2553,7 +3087,8 @@ function cmdTodoMatchPhase(cwd, phase, raw) {
     if (!phase) {
         error('phase required for todo match-phase');
     }
-    const pendingDir = node_path_1.default.join(planningDir(cwd), 'todos', 'pending');
+    // #4256: root-scoped todos read — see cmdListTodos.
+    const pendingDir = node_path_1.default.join(todosDir(cwd), 'pending');
     const todos = [];
     // Load pending todos
     try {
@@ -2685,13 +3220,58 @@ function cmdTodoComplete(cwd, filename, options, raw) {
     if (!filename) {
         error('filename required for todo complete');
     }
-    const pendingDir = node_path_1.default.join(planningDir(cwd), 'todos', 'pending');
-    const completedDir = node_path_1.default.join(planningDir(cwd), 'todos', 'completed');
+    // #4256: root-scoped todos read/write — see cmdListTodos. The pending and
+    // completed halves of the move must resolve from the SAME root or the
+    // completion would strand files where no reader looks.
+    const todosRoot = todosDir(cwd);
+    const pendingDir = node_path_1.default.join(todosRoot, 'pending');
+    const completedDir = node_path_1.default.join(todosRoot, 'completed');
+    // #4652: containment against todosRoot only rejects paths that leave the
+    // root — it cannot express "a todo name is a basename, not a path" (see
+    // #4327). `../sibling.md`, `a/../../b.md`, and `sub/name.md` all resolve
+    // to a location inside todosRoot (or inside pending/) and would pass
+    // containment, yet none of them is a bare filename. Reject on basename
+    // shape FIRST, before any path is even joined — same predicate shape as
+    // findPhaseArtifact in check-command-router.cts. Checking both `/` and
+    // `\` explicitly (not just path.basename) matters on POSIX, where a
+    // literal backslash is just an ordinary filename character to
+    // path.basename but not to path.win32.basename or to the user's intent.
+    const rawFilename = filename;
+    if (rawFilename === '.' ||
+        rawFilename === '..' ||
+        rawFilename.includes('\0') ||
+        rawFilename.includes('/') ||
+        rawFilename.includes('\\') ||
+        node_path_1.default.basename(rawFilename) !== rawFilename ||
+        node_path_1.default.win32.basename(rawFilename) !== rawFilename) {
+        error(`todo name must be a plain filename inside the pending directory, not a path: ${rawFilename}`, ERROR_REASON.USAGE);
+    }
     const sourcePath = node_path_1.default.join(pendingDir, filename);
-    if (!node_fs_1.default.existsSync(sourcePath)) {
+    const targetPath = node_path_1.default.join(completedDir, filename);
+    const sourceContained = (0, security_cjs_1.tryWithinRoot)(sourcePath, todosRoot, security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
+    if (sourceContained === null) {
+        error(`todo file escapes its allowed directory: ${filename}`, ERROR_REASON.USAGE);
+    }
+    const targetContained = (0, security_cjs_1.tryWithinRoot)(targetPath, todosRoot, security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
+    if (targetContained === null) {
+        error(`todo file escapes its allowed directory: ${filename}`, ERROR_REASON.USAGE);
+    }
+    const resolvedSource = sourceContained;
+    const resolvedTarget = targetContained;
+    if (!node_fs_1.default.existsSync(resolvedSource)) {
         error(`Todo not found: ${filename}`);
     }
-    const content = node_fs_1.default.readFileSync(sourcePath, 'utf-8');
+    // #4652: a name that IS a bare basename can still resolve to something that
+    // is not a regular file — a directory, symlink-to-directory, FIFO or socket
+    // sitting in pending/ under an ordinary-looking name. `.` and `..` no longer
+    // reach here (the basename guard above rejects them first), so this is not
+    // about traversal; it stops fs.readFileSync from throwing an uncaught EISDIR
+    // with an absolute-path stack trace where every sibling case gives a clean
+    // USAGE rejection.
+    if (!node_fs_1.default.statSync(resolvedSource).isFile()) {
+        error(`todo name is not a file: ${filename}`, ERROR_REASON.USAGE);
+    }
+    const content = node_fs_1.default.readFileSync(resolvedSource, 'utf-8');
     const today = clock_cjs_1.realClock.localToday();
     // #4096: --dry-run mirrors `milestone complete --dry-run` (#2118) — every
     // existence check above still runs, nothing below mutates, and the payload
@@ -2703,8 +3283,8 @@ function cmdTodoComplete(cwd, filename, options, raw) {
             file: filename,
             date: today,
             would_move: {
-                source: node_path_1.default.relative(cwd, sourcePath).split(node_path_1.default.sep).join('/'),
-                target: node_path_1.default.relative(cwd, node_path_1.default.join(completedDir, filename)).split(node_path_1.default.sep).join('/'),
+                source: node_path_1.default.relative(cwd, resolvedSource).split(node_path_1.default.sep).join('/'),
+                target: node_path_1.default.relative(cwd, resolvedTarget).split(node_path_1.default.sep).join('/'),
             },
             would_set: { completed: today, status: 'completed' },
         }, raw);
@@ -2714,8 +3294,8 @@ function cmdTodoComplete(cwd, filename, options, raw) {
     // creates nothing).
     (0, shell_command_projection_cjs_1.platformEnsureDir)(completedDir);
     const completedContent = upsertTodoCompletionFields(content, today);
-    (0, shell_command_projection_cjs_1.platformWriteSync)(node_path_1.default.join(completedDir, filename), completedContent);
-    node_fs_1.default.unlinkSync(sourcePath);
+    (0, shell_command_projection_cjs_1.platformWriteSync)(resolvedTarget, completedContent);
+    node_fs_1.default.unlinkSync(resolvedSource);
     output({ completed: true, file: filename, date: today }, raw, 'completed');
 }
 function cmdScaffold(cwd, type, options, raw) {
@@ -2925,9 +3505,7 @@ function cmdStats(cwd, format, raw) {
         phase_scope: phaseScope,
     };
     if (format === 'table') {
-        const barWidth = 10;
-        const filled = percent === null ? 0 : Math.round((percent / 100) * barWidth);
-        const bar = '█'.repeat(filled) + '░'.repeat(barWidth - filled);
+        const bar = (0, phase_lifecycle_cjs_1.renderProgressBar)(percent, 10);
         let out = `# ${milestone?.version ?? ''} ${milestone?.name ?? ''} — Statistics\n\n`;
         const percentSuffix = percent === null ? '' : ` (${percent}%)`;
         out += `**Progress:** [${bar}] ${completedPhases}/${phases.length} phases${percentSuffix}\n`;

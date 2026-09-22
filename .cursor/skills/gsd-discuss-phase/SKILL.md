@@ -46,9 +46,7 @@ Workflow files are loaded on-demand in the <process> section below — not upfro
 Do not pre-load any workflow files before reading the mode routing instructions.
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `conversational prompting`. They are equivalent — `vscode_askquestions` is the VS Code Copilot implementation of the same interactive question API.
-</runtime_note>
+
 
 <context>
 Phase number: {{GSD_ARGS}} (required)

@@ -826,7 +826,7 @@ function cmdMilestoneComplete(cwd, version, options, raw) {
         // never disagree with what a real run actually archives. Absent
         // --archive-quick this stays `[]` and nothing on disk is touched either
         // way (dry-run always returns before any mutation below).
-        const quickDirsToArchive = options.archiveQuick ? listQuickTaskDirsForArchive(cwd) : [];
+        const quickDirsToArchive = options.archiveQuick ? listQuickTaskDirsForArchive(cwd).map((d) => d.name) : [];
         const dryRunResult = {
             dry_run: true,
             version,
@@ -1482,6 +1482,16 @@ function writeQuickArchiveReadme(archiveQuickDir) {
  * written three times, and only the real-run copy applied `requireSafePath`,
  * so a dry-run preview could list a directory the real run would silently
  * skip).
+ *
+ * Returns the proven `ContainedPath` alongside each entry's bare `name`
+ * (`no-unconfined-path-join`'s `discardedContainmentResult` arm — a bare
+ * statement call to `requireSafePath` throws away the exact answer it just
+ * computed). The two dry-run previews only need `name` for display;
+ * `archiveQuickTaskDirectories` deliberately does NOT reuse `abs` for its
+ * rename — it re-derives and re-validates independently as TOCTOU
+ * defense-in-depth (see its own comment), so `abs` exists here only to make
+ * this function's own discard explicit, not to be trusted downstream as a
+ * stale-safe proof.
  */
 function listQuickTaskDirsForArchive(cwd) {
     const planningBase = planningPaths(cwd).planning;
@@ -1494,19 +1504,20 @@ function listQuickTaskDirsForArchive(cwd) {
         // .planning/quick absent or unreadable — nothing to select.
         return [];
     }
-    const names = [];
+    const results = [];
     for (const entry of sourceEntries) {
         if (!entry.isDirectory())
             continue; // excludes symlinks too — see MAJOR 3 note above
+        let abs;
         try {
-            (0, security_cjs_1.requireSafePath)(node_path_1.default.join(quickDir, entry.name), planningBase, 'quick task dir', { allowAbsolute: true });
+            abs = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(quickDir, entry.name), planningBase, 'quick task dir', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         }
         catch {
             continue; // symlink/escape attempt — never a candidate, in preview OR real run
         }
-        names.push(entry.name);
+        results.push({ name: entry.name, abs });
     }
-    return names.sort();
+    return results.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 /**
  * #2142: move each DIRECTORY entry under `.planning/quick/` into
@@ -1555,7 +1566,7 @@ function archiveQuickTaskDirectories(cwd, version) {
     // #2142 MAJOR 5 (review): dirNames is the SAME selection
     // `listQuickTaskDirsForArchive` hands to both dry-run previews — this is
     // the real run, so it cannot disagree with what a preview reported.
-    const dirNames = listQuickTaskDirsForArchive(cwd);
+    const dirNames = listQuickTaskDirsForArchive(cwd).map((d) => d.name);
     if (dirNames.length === 0) {
         // Boundary 0 (#2142): zero (safe) directory entries (empty dir, only
         // stray files, or every entry excluded by the selection rule) must not
@@ -1576,7 +1587,7 @@ function archiveQuickTaskDirectories(cwd, version) {
                 // rename are two separate filesystem observations, and an entry
                 // that was a safe real directory at selection time could in theory
                 // be swapped for a symlink before this loop reaches it.
-                safeSrc = (0, security_cjs_1.requireSafePath)(src, planningBase, 'quick task dir', { allowAbsolute: true });
+                safeSrc = (0, security_cjs_1.requireSafePath)(src, planningBase, 'quick task dir', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
             }
             catch {
                 continue; // symlink/escape attempt — skip, not archived
@@ -1669,7 +1680,7 @@ function cmdQuickArchive(cwd, version, options, raw) {
     // `cmdMilestoneComplete`'s own dry-run preview and the real
     // `archiveQuickTaskDirectories` both use, so all three can never disagree.
     if (options.dryRun) {
-        const quickDirsToArchive = listQuickTaskDirsForArchive(cwd);
+        const quickDirsToArchive = listQuickTaskDirsForArchive(cwd).map((d) => d.name);
         output({
             dry_run: true,
             version,

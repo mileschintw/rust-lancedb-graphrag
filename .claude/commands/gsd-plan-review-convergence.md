@@ -32,9 +32,7 @@ Replaces gsd-plan-phase's internal gsd-plan-checker with external AI reviewers (
 @D:/Repos/lancet/.claude/gsd-core/references/agent-contracts.md
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `AskUserQuestion`. They are equivalent — `vscode_askquestions` is the VS Code Copilot implementation of the same interactive question API. Do not skip questioning steps because `AskUserQuestion` appears unavailable; use `vscode_askquestions` instead.
-</runtime_note>
+
 
 <context>
 Phase number: extracted from $ARGUMENTS (required)

@@ -126,7 +126,13 @@ function routePhaseCommand({ phase, args, cwd, raw, error }) {
                 if (args.includes('--dry-run')) {
                     return makeInvalidArgs('--dry-run', 'phase insert does not support --dry-run');
                 }
-                phase.cmdPhaseInsert(cwd, args[2], args.slice(3).join(' '), raw);
+                // #4569: --sibling opts into joining afterPhase's parent decimal level
+                // instead of nesting one level deeper. Filtered out like other
+                // boolean flags (see `remove`'s --force handling above) so it never
+                // leaks into the free-text description.
+                const sibling = args.includes('--sibling');
+                const insertArgs = args.slice(2).filter(token => token !== '--sibling');
+                phase.cmdPhaseInsert(cwd, insertArgs[0], insertArgs.slice(1).join(' '), raw, sibling ? 'sibling' : 'nested');
                 return { ok: true, data: null };
             },
             remove: (_ctx) => {

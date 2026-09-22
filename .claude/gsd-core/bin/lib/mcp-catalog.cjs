@@ -402,8 +402,8 @@ function classifyUnindexedUri(uri) {
 }
 /** Second, independent gate (design "Hostile inputs" gate 2): re-validate an INDEXED entry's relPath against the catalog root, catching a symlink planted after the index was built. */
 function readIndexedResource(catalog, entry) {
-    const check = (0, security_cjs_1.validatePath)(entry.relPath, catalog.root);
-    if (!check.safe) {
+    const contained = (0, security_cjs_1.tryWithinRoot)(entry.relPath, catalog.root);
+    if (contained === null) {
         fail(exports.REASON.TRAVERSAL_REFUSED, `indexed resource escapes catalog root: ${entry.relPath}`);
     }
     let raw;

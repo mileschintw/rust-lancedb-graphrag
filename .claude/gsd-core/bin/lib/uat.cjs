@@ -322,7 +322,7 @@ function cmdRenderCheckpoint(cwd, options = {}, raw) {
     if (!filePath) {
         error('UAT file required: use uat render-checkpoint --file <path>');
     }
-    const resolvedPath = (0, security_cjs_1.requireSafePath)(filePath, cwd, 'UAT file', { allowAbsolute: true });
+    const resolvedPath = (0, security_cjs_1.requireSafePath)(filePath, cwd, 'UAT file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
     if (!node_fs_1.default.existsSync(resolvedPath)) {
         error(`UAT file not found: ${filePath}`);
     }

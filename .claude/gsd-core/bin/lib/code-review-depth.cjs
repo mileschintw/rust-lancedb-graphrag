@@ -61,7 +61,7 @@ function normalizeRelPath(p, repoRoot) {
     let relativized = false;
     if (typeof repoRoot === 'string' && repoRoot !== '') {
         const rootNormalized = repoRoot.trim().replace(/\\/g, '/').replace(/\/+$/, '');
-        if (rootNormalized !== '' && value.startsWith(`${rootNormalized}/`)) {
+        if (rootNormalized !== '' && value.startsWith(`${rootNormalized}/`)) { // allow-handrolled-containment: display-path normalization — strips a caller-declared repoRoot prefix so a path renders repo-relative, not a security root-confinement decision
             value = value.slice(rootNormalized.length + 1);
             relativized = true;
         }
@@ -86,7 +86,7 @@ function normalizeRelPath(p, repoRoot) {
  * with `rulePath + '/'`. Both arguments must already be normalized. Case-sensitive.
  */
 function ruleMatchesFile(rulePath, filePath) {
-    return filePath === rulePath || filePath.startsWith(`${rulePath}/`);
+    return filePath === rulePath || filePath.startsWith(`${rulePath}/`); // allow-handrolled-containment: rule-to-file segment match for selecting which review-depth rule applies — not a filesystem root-confinement gate
 }
 /**
  * Validate + normalize a single rule path (not yet matched against files).

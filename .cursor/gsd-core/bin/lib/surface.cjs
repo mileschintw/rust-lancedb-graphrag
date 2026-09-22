@@ -364,14 +364,25 @@ function applySurface(runtimeConfigDir, layout, manifest, clusterMap, registry, 
     try {
         for (const kind of layout.kinds) {
             let staged;
-            if (kind.kind === 'agents') {
+            // #4211: kimi-agents is an AGENT kind — kimiAgentsKind.stage() forwards
+            // agentCtx into stageAgentsForRuntimeWithConverter exactly as agentsKind
+            // does, and createRuntimeArtifactInstallPlan hands every kind the
+            // context. Staging it bare here dropped the path-prefix rewrites and the
+            // attribution trailer from Kimi's generated subagents, and (under an
+            // unmodified `full` profile) staged only the skill-referenced subset the
+            // install path stages with `skills: '*'`.
+            if (kind.kind === 'agents' || kind.kind === 'kimi-agents') {
                 const agentProfile = _isUnmodifiedFull ? { ...resolved, skills: '*' } : resolved;
                 staged = kind.stage(agentProfile, agentCtx);
             }
             else {
                 staged = kind.stage(resolved);
             }
-            if (kind.kind === 'skills') {
+            // #4211: kimi-agents takes the skill-body rewrite too —
+            // createRuntimeArtifactInstallPlan routes `skills` and `kimi-agents`
+            // through rewriteStagedSkillBodies together, so omitting it here left
+            // Kimi's surface-materialized prompts with unrewritten paths.
+            if (kind.kind === 'skills' || kind.kind === 'kimi-agents') {
                 runtimeArtifactConversion.rewriteStagedSkillBodies(staged, {
                     runtime: layout.runtime,
                     configDir: layout.configDir,
@@ -572,6 +583,53 @@ function _syncGsdDir(stagedDir, destDir, kind, manifest, runtime) {
     // (no agentFileExtension declared) keep the staged filename verbatim.
     const _agentExt = runtime ? runtimeArtifactConversion.agentFileExtensionFor(runtime) : undefined;
     const isRenamedAgents = !!_agentExt && kindName === 'agents';
+    if (kindName === 'kimi-agents') {
+        // #4211: Kimi's managed tree is `gsd.yaml` + `gsd.md` + `subagents/gsd-*.{yaml,md}`
+        // (runtime-artifact-layout.cts kimiAgentsKind), and install copies it
+        // RECURSIVELY (_copyStaged in src/install-engine.cts). Surface apply fell
+        // through to the flat command/agent branch below, which reads only `*.md`
+        // at the top level: the YAML half and the whole subagents/ subtree were
+        // dropped, and `gsd.md` was written as `gsdgsd.md` (the flat branch
+        // re-applies kind.prefix to a name that already carries it). A surface
+        // change could therefore corrupt Kimi's installed artifacts while still
+        // reporting success.
+        node_fs_1.default.cpSync(stagedDir, destDir, { recursive: true });
+        // Prune GSD-owned files the new surface no longer stages, with exactly the
+        // ownership rule install's _removeGsdEntries applies to this kind: the two
+        // root files, and `gsd-`-prefixed .yaml/.md under subagents/. Everything
+        // else in the directory is user-owned and is preserved.
+        const _rootStaged = new Set(node_fs_1.default.readdirSync(stagedDir));
+        for (const fileName of ['gsd.yaml', 'gsd.md']) {
+            if (!_rootStaged.has(fileName)) {
+                try {
+                    node_fs_1.default.rmSync(node_path_1.default.join(destDir, fileName), { force: true });
+                }
+                catch { /* ignore */ }
+            }
+        }
+        const _stagedSubagentsDir = node_path_1.default.join(stagedDir, 'subagents');
+        const _destSubagentsDir = node_path_1.default.join(destDir, 'subagents');
+        const _stagedSubagents = node_fs_1.default.existsSync(_stagedSubagentsDir)
+            ? new Set(node_fs_1.default.readdirSync(_stagedSubagentsDir))
+            : new Set();
+        if (node_fs_1.default.existsSync(_destSubagentsDir)) {
+            for (const entry of node_fs_1.default.readdirSync(_destSubagentsDir, { withFileTypes: true })) {
+                if (!entry.isFile())
+                    continue;
+                if (!entry.name.startsWith('gsd-'))
+                    continue;
+                if (!entry.name.endsWith('.yaml') && !entry.name.endsWith('.md'))
+                    continue;
+                if (_stagedSubagents.has(entry.name))
+                    continue;
+                try {
+                    node_fs_1.default.rmSync(node_path_1.default.join(_destSubagentsDir, entry.name), { force: true });
+                }
+                catch { /* ignore */ }
+            }
+        }
+        return;
+    }
     if (kindName === 'skills') {
         // Skills kind: work with directories, not files.
         // Each staged entry is a directory named ${prefix}${stem}.

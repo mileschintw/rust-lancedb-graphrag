@@ -14,6 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
+const security_cjs_1 = require("./security.cjs");
 // Default timeout for worktree-related git subprocess calls.
 // 10 s is generous enough for normal git operations on large repos while still
 // providing a deterministic failure path when git stalls (locked index, hung
@@ -578,7 +579,7 @@ function normalizeScopePath(raw) {
  */
 function isSummaryArtifactRelPath(relPath) {
     const normalized = normalizeScopePath(relPath);
-    return normalized.startsWith(`${SUMMARY_ARTIFACT_DIR}/`)
+    return normalized.startsWith(`${SUMMARY_ARTIFACT_DIR}/`) // allow-handrolled-containment: artifact-type classification by a fixed known subdirectory name, not a filesystem root-confinement gate
         && normalized.endsWith(SUMMARY_ARTIFACT_SUFFIX);
 }
 /**
@@ -772,7 +773,8 @@ function planWaveScopeConformance(changedPaths, declaredFiles, branch) {
         seen.add(changed);
         if (isSummaryArtifactRelPath(changed))
             continue;
-        const covered = prefixes.some((prefix) => (prefix === null || changed === prefix || changed.startsWith(`${prefix}/`)));
+        const covered = prefixes.some((prefix) => (prefix === null || changed === prefix || changed.startsWith(`${prefix}/`) // allow-handrolled-containment: advisory scope-coverage match against a caller-declared prefix (documented above as deliberately distinct from a security gate) — not a filesystem root-confinement decision
+        ));
         if (covered)
             continue;
         warnings.push({ code: WAVE_CLEANUP_WARNING.SCOPE_OUT_OF_DECLARED, branch, path: changed });
@@ -1581,11 +1583,15 @@ function cmdWorktreeCreate(cwd, args = [], deps = {}) {
     {
         const absRoot = node_path_1.default.resolve(cwd, rootFlag);
         const absWorktree = node_path_1.default.resolve(cwd, plan.entry.worktree_path);
-        const rel = node_path_1.default.relative(absRoot, absWorktree);
-        // rel === ''           → the worktree IS the root (would clobber the checkout)
-        // rel === '..' / '../…' → escapes the root
-        // path.isAbsolute(rel) → a different Windows drive or UNC root
-        if (rel === '' || rel === '..' || rel.startsWith(`..${node_path_1.default.sep}`) || node_path_1.default.isAbsolute(rel)) {
+        // Lexical containment (ADR-4650): the worktree does not exist yet, so there is
+        // nothing to realpath. Both operands are already resolved above, so the shared
+        // `isContainedIn` comparison applies directly (mirrors the already-resolved-caller
+        // exception documented on `isContainedIn`) — a different Windows drive/UNC root
+        // fails the prefix comparison the same way an escaping relative path does.
+        // The canonical predicate treats target === root as CONTAINED; this call site
+        // explicitly REJECTS that case (absWorktree === absRoot below), because a worktree
+        // AT the root would clobber the checkout — the inversion this migration preserves.
+        if (absWorktree === absRoot || !(0, security_cjs_1.isContainedIn)(absWorktree, absRoot)) {
             const hint = `--path must resolve INSIDE --root (root="${absRoot}", path="${absWorktree}"). A worktree outside the declared root is unreachable by manifest-scoped cleanup and would let a spawned executor write outside the project.`;
             writeErr(`[gsd] worktree.create: path_outside_root — ${hint}\n`);
             write(`${JSON.stringify({ ok: false, reason: 'path_outside_root', hint }, null, 2)}\n`);

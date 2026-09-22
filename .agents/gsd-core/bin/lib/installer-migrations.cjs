@@ -17,6 +17,7 @@ const installer_migration_authoring_cjs_1 = require("./installer-migration-autho
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 const clock_cjs_1 = require("./clock.cjs");
 const install_scope_cjs_1 = require("./install-scope.cjs");
+const security_cjs_1 = require("./security.cjs");
 // #2874 (ADR-58 cleanup phase): this file is the ~1200-line migration
 // plan/apply/rollback/lock/journal engine — almost none of it is on the
 // installRuntimeArtifacts call tree. Only `readInstallManifest` and
@@ -122,8 +123,17 @@ function evaluateRemoveEmptyDir(configDir, fullPath) {
     catch {
         return 'left-in-place';
     }
-    if (resolvedTarget === resolvedRoot || !resolvedTarget.startsWith(resolvedRoot + node_path_1.default.sep)) {
-        // Refuses both "target IS configDir" and "target escaped configDir".
+    // `resolvedTarget === resolvedRoot` is a DELIBERATE ADDITIONAL rejection,
+    // separate from the containment decision: `tryWithinRootLexical` treats
+    // target === root as CONTAINED, but removing the config root itself is
+    // never in scope for this action (see the doc comment above) — this arm
+    // prevents `rmdirSync` from ever being asked to remove `configDir` itself.
+    // Kept as its own check per ADR-4650 decision 6 (a wrapper may add its own
+    // conditions on top of the canonical predicate, never invert it).
+    if (resolvedTarget === resolvedRoot)
+        return 'left-in-place';
+    if ((0, security_cjs_1.tryWithinRootLexical)(resolvedTarget, resolvedRoot) === null) {
+        // Refuses "target escaped configDir".
         return 'left-in-place';
     }
     let entries;
@@ -598,11 +608,30 @@ function acquireInstallMigrationLock(configDir, { timeoutMs = DEFAULT_LOCK_TIMEO
         }
     }
 }
+// DELIBERATELY LEXICAL — the RESOLUTION policy stays lexical, never realpath
+// (`assertWithinRoot` / `tryWithinRoot`, src/security.cts).
+//
+// Reviewed under epic #4636 Phase 3 and reverted after the remote matrix proved
+// the realpath collapse wrong. This module's contract is that a symlinked
+// managed path is treated AS A LINK and never dereferenced — it is snapshotted
+// as a link, restored as a link, and backed up as a link. The realpath-based
+// predicate dereferences exactly the symlinks this module exists to preserve
+// and then rejects them for escaping configDir
+// ("migration path escapes configDir: extensions/gsd.cjs"). Four tests in
+// tests/installer-migrations.test.cjs pin that behavior.
+//
+// The containment DECISION now routes through the canonical LEXICAL predicate
+// (`tryWithinRootLexical`, ADR-4650 decision 6) — only the comparison moved;
+// the lexical policy itself remains this module's own required choice, and
+// the thrown message / returned `fullPath` are unchanged.
+//
+// `normalizeRelPath` is the pre-gate: it throws on absolute paths and on any
+// '..' segment BEFORE this runs, so the check below is defense-in-depth over
+// already-traversal-free input rather than the primary boundary.
 function ensureInsideConfig(configDir, relPath) {
     const normalized = normalizeRelPath(relPath);
     const fullPath = node_path_1.default.resolve(configDir, normalized);
-    const root = node_path_1.default.resolve(configDir);
-    if (fullPath !== root && !fullPath.startsWith(root + node_path_1.default.sep)) {
+    if ((0, security_cjs_1.tryWithinRootLexical)(fullPath, configDir) === null) {
         throw new Error(`migration path escapes configDir: ${relPath}`);
     }
     return { normalized, fullPath };

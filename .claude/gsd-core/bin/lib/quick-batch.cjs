@@ -210,7 +210,7 @@ function parseTaskListFromFile(cwd, filePath) {
     const root = planningRoot(cwd);
     let safePath;
     try {
-        safePath = (0, security_cjs_1.requireSafePath)(filePath, root, 'quick-batch --file', { allowAbsolute: true });
+        safePath = (0, security_cjs_1.requireSafePath)(filePath, root, 'quick-batch --file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
     }
     catch (err) {
         return { ok: false, reason: err instanceof Error ? err.message : String(err) };

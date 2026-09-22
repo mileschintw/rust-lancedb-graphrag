@@ -27,10 +27,6 @@ When the workflow needs to spawn a subagent:
 - The `model` parameter maps to Cursor's model options (e.g., "fast")
 </cursor_skill_adapter>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `conversational prompting`. They are equivalent — `vscode_askquestions` is the VS Code Copilot implementation of the same interactive question API.
-</runtime_note>
-
 <context>
 **Flags:**
 - `--auto` — Automatic mode. After config questions, runs research → requirements → roadmap without further interaction. Expects idea document via @ reference.

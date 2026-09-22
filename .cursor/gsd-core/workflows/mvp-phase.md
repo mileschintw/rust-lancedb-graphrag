@@ -9,8 +9,6 @@ Guide the user through MVP-mode planning for a phase. Prompts for an "As a / I w
 </required_reading>
 
 <runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `conversational prompting`. They are equivalent.
-
 **TEXT_MODE fallback:** Set TEXT_MODE=true if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is true. When TEXT_MODE is active, replace every conversational prompting call with a plain-text numbered list and ask the user to type their choice number.
 </runtime_note>
 

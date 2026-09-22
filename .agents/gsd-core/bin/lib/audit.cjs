@@ -25,7 +25,7 @@ const coreUtils = require("./core-utils.cjs");
 const { normalizeLineEndings } = coreUtils;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
-const { planningDir, quickDirFrom } = planningWorkspace;
+const { planningDir, quickDirFrom, todosDir } = planningWorkspace;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const frontmatter = require("./frontmatter.cjs");
 const { extractFrontmatter, spliceFrontmatter } = frontmatter;
@@ -277,7 +277,7 @@ function scanDebugSessions(planDir) {
         const filePath = node_path_1.default.join(debugDir, entry.name);
         let safeFilePath;
         try {
-            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'debug session file', { allowAbsolute: true });
+            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'debug session file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         }
         catch {
             continue;
@@ -387,7 +387,7 @@ function scanQuickTasks(planDir) {
         const taskDir = node_path_1.default.join(quickDir, dirName);
         let safeTaskDir;
         try {
-            safeTaskDir = (0, security_cjs_1.requireSafePath)(taskDir, planDir, 'quick task dir', { allowAbsolute: true });
+            safeTaskDir = (0, security_cjs_1.requireSafePath)(taskDir, planDir, 'quick task dir', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         }
         catch {
             continue;
@@ -399,7 +399,7 @@ function scanQuickTasks(planDir) {
         if (summaryPath && node_fs_1.default.existsSync(summaryPath)) {
             let safeSum;
             try {
-                safeSum = (0, security_cjs_1.requireSafePath)(summaryPath, planDir, 'quick task summary', { allowAbsolute: true });
+                safeSum = (0, security_cjs_1.requireSafePath)(summaryPath, planDir, 'quick task summary', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
             }
             catch {
                 continue;
@@ -475,7 +475,7 @@ function scanThreads(planDir) {
         const filePath = node_path_1.default.join(threadsDir, entry.name);
         let safeFilePath;
         try {
-            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'thread file', { allowAbsolute: true });
+            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'thread file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         }
         catch {
             continue;
@@ -522,9 +522,16 @@ function scanThreads(planDir) {
  * Scan .planning/todos/pending/ for pending todos.
  * Returns array of { filename, priority, area, summary }.
  * Display limited to first 5 + count of remainder.
+ *
+ * #4256: takes the ROOT-scoped todos base (`todosDir(cwd)`), NOT the
+ * workstream-scoped planning dir the other scans use — todos are shared
+ * project state (the migrateToWorkstreams contract keeps them at
+ * .planning/todos/), so the close gate must read the root or it clears
+ * vacuously under a workstream. The requireSafePath boundary below moves
+ * with the base.
  */
-function scanTodos(planDir) {
-    const pendingDir = node_path_1.default.join(planDir, 'todos', 'pending');
+function scanTodos(todosBase) {
+    const pendingDir = node_path_1.default.join(todosBase, 'pending');
     if (!node_fs_1.default.existsSync(pendingDir))
         return { items: [], acknowledged: 0 };
     let files;
@@ -550,7 +557,7 @@ function scanTodos(planDir) {
         const filePath = node_path_1.default.join(pendingDir, entry.name);
         let safeFilePath;
         try {
-            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'todo file', { allowAbsolute: true });
+            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, todosBase, 'todo file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         }
         catch {
             continue;
@@ -622,7 +629,7 @@ function scanSeeds(planDir) {
         const filePath = node_path_1.default.join(seedsDir, entry.name);
         let safeFilePath;
         try {
-            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'seed file', { allowAbsolute: true });
+            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'seed file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         }
         catch {
             continue;
@@ -785,7 +792,7 @@ function scanUatGaps(planDir, cwd) {
             const filePath = node_path_1.default.join(target.fullPath, file);
             let safeFilePath;
             try {
-                safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'UAT file', { allowAbsolute: true });
+                safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'UAT file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
             }
             catch {
                 continue;
@@ -858,7 +865,7 @@ function scanVerificationGaps(planDir, cwd) {
             const filePath = node_path_1.default.join(target.fullPath, file);
             let safeFilePath;
             try {
-                safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'VERIFICATION file', { allowAbsolute: true });
+                safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'VERIFICATION file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
             }
             catch {
                 continue;
@@ -920,7 +927,7 @@ function scanContextQuestions(planDir, cwd) {
             const filePath = node_path_1.default.join(target.fullPath, file);
             let safeFilePath;
             try {
-                safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'CONTEXT file', { allowAbsolute: true });
+                safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'CONTEXT file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
             }
             catch {
                 continue;
@@ -1008,7 +1015,7 @@ function scanDeferredItems(planDir, cwd) {
             continue;
         let safeFilePath;
         try {
-            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'deferred items file', { allowAbsolute: true });
+            safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'deferred items file', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         }
         catch {
             continue;
@@ -1076,8 +1083,13 @@ function auditOpenArtifacts(cwd) {
         }
     })();
     const todos = (() => {
+        // #4256: the ONE root-scoped category — todos are shared project state,
+        // so the close gate reads todosDir(cwd) (the root), not the workstream-
+        // scoped planDir every other scan below receives. Reading planDir here
+        // made audit-open print "All artifact types clear. Safe to proceed."
+        // with pending todos on disk under a workstream.
         try {
-            return scanTodos(planDir);
+            return scanTodos(todosDir(cwd));
         }
         catch {
             return { items: [{ scan_error: true, filename: '', priority: '', area: '', summary: '' }], acknowledged: 0 };
@@ -1421,7 +1433,7 @@ function cmdAuditAcknowledge(cwd, args, raw) {
             ioError(`no phase directory found for phase "${phase}"${archivedMilestone ? ` (archived-milestone "${archivedMilestone}")` : ''}`);
         }
         const filePath = node_path_1.default.join(targetDir, file);
-        const safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'audit acknowledge target', { allowAbsolute: true });
+        const safeFilePath = (0, security_cjs_1.requireSafePath)(filePath, planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         if (!node_fs_1.default.existsSync(safeFilePath))
             ioError(`file not found: ${file}`);
         if (category === 'deferred_items') {
@@ -1503,7 +1515,7 @@ function cmdAuditAcknowledge(cwd, args, raw) {
     if (category === 'debug_sessions') {
         if (!slug)
             ioError('--slug is required for --category debug_sessions');
-        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'debug', `${slug}.md`), planDir, 'audit acknowledge target', { allowAbsolute: true });
+        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'debug', `${slug}.md`), planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         if (!node_fs_1.default.existsSync(safeFilePath))
             ioError(`file not found: debug/${slug}.md`);
         const content = node_fs_1.default.readFileSync(safeFilePath, 'utf-8');
@@ -1512,7 +1524,7 @@ function cmdAuditAcknowledge(cwd, args, raw) {
     else if (category === 'threads') {
         if (!slug)
             ioError('--slug is required for --category threads');
-        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'threads', `${slug}.md`), planDir, 'audit acknowledge target', { allowAbsolute: true });
+        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'threads', `${slug}.md`), planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         if (!node_fs_1.default.existsSync(safeFilePath))
             ioError(`file not found: threads/${slug}.md`);
         const content = node_fs_1.default.readFileSync(safeFilePath, 'utf-8');
@@ -1521,7 +1533,7 @@ function cmdAuditAcknowledge(cwd, args, raw) {
     else if (category === 'seeds') {
         if (!seedId)
             ioError('--seed-id is required for --category seeds');
-        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'seeds', `${seedId}.md`), planDir, 'audit acknowledge target', { allowAbsolute: true });
+        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'seeds', `${seedId}.md`), planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         if (!node_fs_1.default.existsSync(safeFilePath))
             ioError(`file not found: seeds/${seedId}.md`);
         const content = node_fs_1.default.readFileSync(safeFilePath, 'utf-8');
@@ -1530,7 +1542,12 @@ function cmdAuditAcknowledge(cwd, args, raw) {
     else if (category === 'todos') {
         if (!filename)
             ioError('--filename is required for --category todos');
-        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'todos', 'pending', filename), planDir, 'audit acknowledge target', { allowAbsolute: true });
+        // #4256: todos are root-scoped shared state — derive the todos base and
+        // pass it as BOTH the path base and the requireSafePath boundary. The
+        // old workstream-scoped planDir boundary would refuse a root todos file
+        // outright, and even a path fix alone would have thrown here.
+        const rootTodos = todosDir(cwd);
+        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(rootTodos, 'pending', filename), rootTodos, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         if (!node_fs_1.default.existsSync(safeFilePath))
             ioError(`file not found: todos/pending/${filename}`);
         currentValue = ''; // presence-only — see scanTodos
@@ -1538,14 +1555,14 @@ function cmdAuditAcknowledge(cwd, args, raw) {
     else if (category === 'quick_tasks') {
         if (!quickDir)
             ioError('--dir is required for --category quick_tasks');
-        const taskDir = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'quick', quickDir), planDir, 'audit acknowledge target dir', { allowAbsolute: true });
+        const taskDir = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'quick', quickDir), planDir, 'audit acknowledge target dir', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
         if (!node_fs_1.default.existsSync(taskDir))
             ioError(`directory not found: quick/${quickDir}`);
         // Shared with scanQuickTasks (#3458 follow-up) so the reader and this
         // writer can never disagree about which file is the task's record.
         const resolvedSummaryPath = resolveQuickTaskSummaryFile(taskDir, quickDir);
         if (resolvedSummaryPath) {
-            safeFilePath = (0, security_cjs_1.requireSafePath)(resolvedSummaryPath, planDir, 'audit acknowledge target', { allowAbsolute: true });
+            safeFilePath = (0, security_cjs_1.requireSafePath)(resolvedSummaryPath, planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
             const content = node_fs_1.default.readFileSync(safeFilePath, 'utf-8');
             currentValue = (extractFrontmatter(content, safeFilePath).status || 'unknown').toLowerCase();
         }
@@ -1556,7 +1573,7 @@ function cmdAuditAcknowledge(cwd, args, raw) {
             // acknowledgment's own snapshot of "no summary exists yet", which
             // self-invalidates the moment a real SUMMARY.md is written (the
             // scanner then reads THAT file's own status instead).
-            safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(taskDir, `${quickDir}-SUMMARY.md`), planDir, 'audit acknowledge target', { allowAbsolute: true });
+            safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(taskDir, `${quickDir}-SUMMARY.md`), planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
             currentValue = 'missing';
             createIfMissing = true;
             fmForCreate = { status: 'missing' };

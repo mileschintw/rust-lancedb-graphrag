@@ -94,6 +94,9 @@ const { parseMarkdownTable, matchTableSchema } = markdownTable;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const coreUtilsMod = require("./core-utils.cjs");
 const { normalizeLineEndings } = coreUtilsMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const securityMod = require("./security.cjs");
+const { tryWithinRoot, PathAcceptance, isContainedIn } = securityMod;
 /**
  * The wire schema version. A consumer MUST reject any value other than this
  * one rather than best-effort-parsing an unknown shape.
@@ -184,32 +187,45 @@ function toPosix(value) {
  * directory like `.planning-evil/` that merely shares a string prefix. Pure
  * string comparison, no I/O — callers own their own `fs.realpathSync` call
  * (and its own not-found/broken-symlink handling).
+ *
+ * NOT an independent containment implementation — it is the comparison step
+ * of one, and that comparison now comes from `security.cts`'s exported
+ * `isContainedIn` rather than being redeclared here. `readDocument` below
+ * realpaths target and root itself (to keep its own exists-vs-escaped
+ * tri-state) and calls `isContainedIn` directly; `isPathContained` gets its
+ * containment DECISION from the canonical `tryWithinRoot` predicate instead
+ * (ADR-4650 decision 6) and never called this comparison directly. Every
+ * caller owns its own resolution.
  */
-function isWithinRoot(resolvedTarget, resolvedRoot) {
-    return resolvedTarget === resolvedRoot || resolvedTarget.startsWith(resolvedRoot + node_path_1.default.sep);
-}
 /**
- * Containment check for a path (file OR directory) that resolves its own
- * `fs.realpathSync`, then delegates the actual boundary comparison to
- * `isWithinRoot`. Used where the caller does not need to distinguish "target
- * vanished / broken symlink" from "target resolved but escapes root" — both
- * degrade the same way at every call site that uses this (an escaped or
- * unresolvable phase directory is treated identically to an unreadable one).
- * `readDocument` below needs that distinction for its own exists/readable
- * tri-state, so it keeps its own inline `realpathSync` calls and calls
- * `isWithinRoot` directly instead of this wrapper.
+ * Containment check for a path (file OR directory), used where the caller
+ * does not need to distinguish "target vanished / broken symlink" from
+ * "target resolved but escapes root" — both degrade the same way at every
+ * call site that uses this (an escaped or unresolvable phase directory is
+ * treated identically to an unreadable one). `readDocument` below needs
+ * that distinction for its own exists/readable tri-state, so it keeps its
+ * own inline `realpathSync` calls and calls `isContainedIn` directly instead
+ * of this wrapper.
+ *
+ * The containment DECISION comes from the canonical `tryWithinRoot`
+ * predicate (ADR-4650 decision 6: a wrapper may decide HOW to degrade,
+ * never WHETHER a path is contained). Must-exist stays this module's OWN
+ * degradation condition, applied after: `tryWithinRoot` deliberately accepts
+ * a not-yet-created path under the root (ancestor-walk realpath), but every
+ * caller of `isPathContained` guards an `fs` read that is about to happen
+ * against an already-existing directory, so a vanished/unresolvable path
+ * must still degrade the same as an escaped one.
  */
 function isPathContained(target, root) {
-    let realTarget;
-    let realRoot;
+    if (tryWithinRoot(target, root, PathAcceptance.AbsoluteInsideRoot) === null)
+        return false;
     try {
-        realTarget = node_fs_1.default.realpathSync(target);
-        realRoot = node_fs_1.default.realpathSync(root);
+        node_fs_1.default.realpathSync(target);
     }
     catch {
         return false;
     }
-    return isWithinRoot(realTarget, realRoot);
+    return true;
 }
 function readDocument(filePath, root) {
     let stat;
@@ -234,7 +250,7 @@ function readDocument(filePath, root) {
         // here — the same non-answer `readDocument` already gives "not exists".
         return { text: null, exists: false, readable: false };
     }
-    if (!isWithinRoot(realTarget, realRoot)) {
+    if (!isContainedIn(realTarget, realRoot)) {
         return { text: null, exists: true, readable: false };
     }
     try {

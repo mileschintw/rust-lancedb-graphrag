@@ -626,16 +626,17 @@ function hasPhaseEntries(markdown, phaseIdConvention) {
     return collectTablePhaseRows(markdown).length > 0;
 }
 // ─── #3577: markdown-table phase listings ─────────────────────────────────────
-// #3577: a GFM table declares phases when its header's FIRST cell is the literal
-// `Phase` (optionally `Phase #` / `Phase No.` / `Phase number`) and the header does
-// NOT match a known non-listing schema — the canonical RoadmapProgress table
-// (`| Phase | Plans Complete | Status | Completed |`) leads with `Phase` too, and
-// its rows are progress markers, not declarations. Data rows carry the phase id in
-// their first cell (digit-bearing canonical shape — `Phase`-word header cells and
-// `---` delimiter rows are digit-free and excluded by construction). Fence-aware
-// via stripFencedCode, matching the #3184 lesson: a fenced EXAMPLE of the table
-// form is not a declared phase.
+// #3577/#4480: a GFM table declares phases only when its header's FIRST cell is
+// the literal `Phase` (optionally `Phase #` / `Phase No.` / `Phase number`) AND
+// it positively identifies a `Name` or `Phase Name` column. This fails closed:
+// ordinary progress/summary tables such as `| Phase | Status |` cannot mint a
+// phase whose name is whichever value happens to occupy column two. Data rows
+// carry the phase id in their first cell (digit-bearing canonical shape —
+// `Phase`-word header cells and `---` delimiter rows are digit-free and excluded
+// by construction). Fence-aware via stripFencedCode, matching the #3184 lesson:
+// a fenced EXAMPLE of the table form is not a declared phase.
 const PHASE_LISTING_HEADER_RE = /^\|?\s*phase(?:\s*(?:#|no\.?|number))?\s*\|/i;
+const PHASE_NAME_HEADER_RE = /^(?:phase\s+)?name$/i;
 const TABLE_PHASE_ID_RE = /^[A-Za-z]?\d[\w.-]*$/;
 function collectTablePhaseRows(window) {
     const unfenced = (0, markdown_sectionizer_cjs_1.stripFencedCode)(window).text;
@@ -645,8 +646,9 @@ function collectTablePhaseRows(window) {
         if (!PHASE_LISTING_HEADER_RE.test(lines[i]))
             continue;
         const headerCells = (0, markdown_table_cjs_1.splitTableRow)(lines[i]);
-        if ((0, markdown_table_cjs_1.matchTableSchema)(headerCells) !== null)
-            continue; // canonical non-listing schema
+        const nameColumn = headerCells.findIndex((cell) => PHASE_NAME_HEADER_RE.test(cell));
+        if (nameColumn === -1)
+            continue;
         if (!(0, markdown_table_cjs_1.isDelimiterRow)((0, markdown_table_cjs_1.splitTableRow)(lines[i + 1])))
             continue;
         for (let j = i + 2; j < lines.length; j++) {
@@ -662,7 +664,8 @@ function collectTablePhaseRows(window) {
             if (!TABLE_PHASE_ID_RE.test(first))
                 continue;
             if (!/^999\b/.test(first)) {
-                rows.push({ id: first, name: cells[1] && cells[1] !== '' ? cells[1] : null, row: lines[j] });
+                const name = cells[nameColumn];
+                rows.push({ id: first, name: name && name !== '' ? name : null, row: lines[j] });
             }
         }
     }
@@ -1482,6 +1485,23 @@ function stripLeadingDelimiter(s) {
     return s.replace(/^[\s—–:-]+/, '').trim();
 }
 /**
+ * #4134/#4433 (§7.2 rule 6 floor, applied symmetrically): a captured "name"
+ * with no letter or digit anywhere is heading/bullet STRUCTURE, not a curated
+ * name — e.g. the trailing `)` a name-then-version heading leaves after its
+ * version token, or a malformed 🚧-bullet whose only content past the version
+ * is punctuation (`---`, `***`, a lone `:`). #4134 fixed this for
+ * `extractMilestoneHeadingName`'s heading path only; #4433 found the sibling
+ * 🚧-bullet capture (`getMilestoneInfo`'s `listMatch`) and the no-STATE.md
+ * fallback (`inProgressMatch`) both skipped straight to a bare truthiness
+ * check, so a punctuation-only bullet name passed through as a real one. This
+ * is now the SOLE name-validity predicate — every capture site in this file
+ * calls it instead of re-deriving the character class. A name that merely
+ * CONTAINS punctuation is unaffected; digits alone qualify.
+ */
+function hasNameableContent(s) {
+    return /[\p{L}\p{N}]/u.test(s);
+}
+/**
  * #3216 (ADR-3180 §7.2's "Name extraction — pinned rule"): the sole "milestone
  * heading text → version + curated name" rule. Strips everything through the
  * heading's OWN version token — NOT necessarily a version a caller is
@@ -1492,6 +1512,13 @@ function stripLeadingDelimiter(s) {
  * by `listMilestoneHeadings` and `getMilestoneInfo` so this rule has exactly
  * one implementation. Returns `null` when `headingText` carries no version
  * token at all (e.g. a non-milestone heading reached this by mistake).
+ *
+ * #4134 (§7.2 rule 6 floor): the rule's direction assumes version-then-name.
+ * A name-then-version heading (`# Roadmap: Project — Name (v1.13)`) leaves a
+ * punctuation fragment (`)`) after the token; a remainder with no letter or
+ * digit anywhere is heading structure, not a curated name, and is refused as
+ * `name: null` so callers report the honest rule-6 answer instead of
+ * fabricating garbage. Names that merely CONTAIN punctuation are unaffected.
  *
  * @param expectedVersion - When the caller already knows the exact version it
  *   is looking for (the STATE-anchored `getMilestoneInfo` path, which located
@@ -1529,7 +1556,18 @@ function extractMilestoneHeadingName(headingText, expectedVersion) {
     // whitespace — the marker is already carried structurally by `closed`, so
     // duplicating it inside `name` (e.g. "Old ✅") is redundant and wrong. Only
     // these three markers, only at the end; a marker inside a name is untouched.
-    const name = stripLeadingDelimiter(afterVersion).replace(/\s*(?:[✅📋🚧]\s*)+$/, '') || null;
+    const candidate = stripLeadingDelimiter(afterVersion).replace(/\s*(?:[✅📋🚧]\s*)+$/, '') || null;
+    // #4134 (§7.2 rule 6 floor): a "name" with no letter or digit anywhere is
+    // heading structure, not a curated name. The pinned rule takes everything
+    // AFTER the version token, so a name-then-version heading (`# Roadmap:
+    // Project — Name (v1.13)` — the shape a first-ever ROADMAP.md drifts into)
+    // leaves exactly `)` there, which used to be returned as a COMPLETE-scope
+    // name and propagated into init.* output and STATE.md. Refuse it: callers
+    // already report the honest rule-6 answer (version kept, `name: null`,
+    // scope TRUNCATED) for an unresolvable name. A name that merely CONTAINS
+    // punctuation is untouched — `(` is an ordinary name character (#3171) —
+    // and digits alone qualify (`## v4.0 — 42` is the name `42`).
+    const name = candidate !== null && hasNameableContent(candidate) ? candidate : null;
     return { version, name };
 }
 /**
@@ -1614,7 +1652,7 @@ function getMilestoneInfo(cwd) {
             const listMatch = roadmap.match(new RegExp(`🚧\\s*\\*?\\*?${escapedVer}\\*?\\*?\\s+([^*\\n]+)`, 'i'));
             if (listMatch) {
                 const name = stripLeadingDelimiter(listMatch[1]);
-                if (name)
+                if (name && hasNameableContent(name))
                     return scoped({ version: stateVersion, name }, SCOPE.COMPLETE);
             }
             // #3216: heading selection routes through the shared owner
@@ -1648,7 +1686,10 @@ function getMilestoneInfo(cwd) {
         // (unchanged from the pre-#3216 fallback).
         const inProgressMatch = roadmap.match(/🚧\s*\*\*v(\d+(?:\.\d+)+)\s+([^*]+)\*\*/);
         if (inProgressMatch) {
-            return scoped({ version: 'v' + inProgressMatch[1], name: inProgressMatch[2].trim() }, SCOPE.COMPLETE);
+            const inProgressName = inProgressMatch[2].trim();
+            if (hasNameableContent(inProgressName)) {
+                return scoped({ version: 'v' + inProgressMatch[1], name: inProgressName }, SCOPE.COMPLETE);
+            }
         }
         // #3216: enumerate every OPEN (non-shipped) milestone heading via the
         // shared owner and take the first in document order — deletes the

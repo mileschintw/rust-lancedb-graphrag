@@ -48,9 +48,7 @@ Clarify phase requirements through structured Socratic questioning with quantita
 @D:/Repos/lancet/.cursor/gsd-core/templates/spec.md
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `conversational prompting`. They are equivalent.
-</runtime_note>
+
 
 <context>
 Phase number: {{GSD_ARGS}} (required)

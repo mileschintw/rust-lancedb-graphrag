@@ -136,9 +136,7 @@ Does not require prior new-project setup — auto-creates `.planning/sketches/` 
 @D:/Repos/lancet/.codex/gsd-core/references/sketch-variant-patterns.md
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `AskUserQuestion`.
-</runtime_note>
+
 
 <context>
 Design idea: {{GSD_ARGS}}

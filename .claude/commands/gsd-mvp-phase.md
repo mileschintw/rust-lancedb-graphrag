@@ -29,9 +29,7 @@ Phase 1 of the vertical-mvp-slice PRD shipped the planner-side machinery; this c
 @D:/Repos/lancet/.claude/gsd-core/references/user-story-template.md
 </execution_context>
 
-<runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `AskUserQuestion`. Equivalent API.
-</runtime_note>
+
 
 <context>
 Phase number: $ARGUMENTS (required — integer or decimal like `2.1`)
