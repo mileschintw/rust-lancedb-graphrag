@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0
 status: gaps_found
 stopped_at: Phase 06.3.4.1 context gathered
-last_updated: "2026-09-22T23:34:12.705Z"
-last_activity: 2026-09-13
-state_head: 4da108b389e90b748a8bbb52ddafeaef981e16a7
+last_updated: "2026-09-23T10:12:52.275Z"
+last_activity: 2026-09-23
+state_head: 85110a75b80e0b65ffc98f5ec355676c84441ffa
 progress:
   total_phases: 16
   completed_phases: 9
-  total_plans: 158
+  total_plans: 178
   completed_plans: 158
 milestone_name: milestone
+current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 current_phase: 06.3.4
-current_phase_name: Corrected re-drive, calibration and root-cause documentation
 current_plan: 06.3.4-10
 ---
 
@@ -417,7 +417,7 @@ current_plan: 06.3.4-10
 ## Session
 
 **Last session:** 2026-09-22T23:34:11.485Z
-**Last activity:** 2026-09-13
+**Last activity:** 2026-09-23
 **Stopped at:** Phase 06.3.4.1 context gathered
 **Resume file:** .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-CONTEXT.md
 
