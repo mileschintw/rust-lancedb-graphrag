@@ -1,0 +1,1 @@
+No external API integration: this phase repairs the existing locked stack (Rust engine retrieval/graph/prompt, Go gateway SSE, lancet-eval harness, local LanceDB/PostgreSQL eval stores) and keeps using the already-integrated OpenRouter provider unchanged; the detector's only signal is an OTel collector_endpoint TCP reachability check, not a new API surface.
