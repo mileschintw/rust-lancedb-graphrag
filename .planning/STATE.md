@@ -1,8 +1,8 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-status: gaps_found
-stopped_at: Phase 06.3.4.1 context gathered
+status: executing
+stopped_at: Phase 06.3.4.1 execution started (wave 1 of 16)
 last_updated: "2026-09-23T10:12:52.275Z"
 last_activity: 2026-09-23
 state_head: 85110a75b80e0b65ffc98f5ec355676c84441ffa
@@ -13,8 +13,8 @@ progress:
   completed_plans: 158
 milestone_name: milestone
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
-current_phase: 06.3.4
-current_plan: 06.3.4-10
+current_phase: 06.3.4.1
+current_plan: 06.3.4.1-01
 ---
 
 # Project State
@@ -236,10 +236,11 @@ current_plan: 06.3.4-10
 
 ## Active Phase
 
-- **Phase:** 06.3.4 — Corrected re-drive, calibration and root-cause documentation (gap-closure required)
-- **Status:** gaps_found_pending_replan
-- **Current Plan:** N/A (pending /gsd-plan-phase 06.3.4 --gaps)
-- **Next:** `/gsd-plan-phase 06.3.4 --gaps` (fix journal-completeness/partial-flag defect T-19/CR-01 and resolve the two pending human decisions), then plan and execute Phase 06.3.4.1 (Retrieval diagnosis, index identity, and graph-yield repair). Phase 6.4 (Docs suite, quickstart verification, promotion of un-closed debt backlog, v1 milestone closure) is **parked** — not ready to plan — until Phase 06.3.4.1 clears its unpark gates (a demonstrable graph-on vs graph-off effect on a gold-in-index subset; both arms failing to answer is not a v1 story).
+- **Phase:** 06.3.4.1 — Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
+- **Status:** executing (started 2026-09-23 via `/gsd-execute-phase 06.3.4.1`; 20 plans across 16 waves, run sequentially on main — see note below)
+- **Current Plan:** 06.3.4.1-01 (Wave 1)
+- **Execution mode note:** worktree isolation deliberately not used for this run. Plan 01's precondition reads the gitignored live eval store (`data/lancedb-eval/nodes.lance`), which does not exist inside a harness worktree, and plan 03 is a release-build latency/working-set soak whose slopes select the class plan 07 must fix (D-64), so it needs a quiet machine rather than sibling executors' parallel cargo builds. Waves 2+ would have degraded to sequential anyway once wave 1 merges past `origin/HEAD` (#1369).
+- **Previous phase:** 06.3.4 remains `gaps_found` (7/8; SC-3 D-48 fresh human calibration parked, see Current Status). Phase 6.4 stays **parked** until Phase 06.3.4.1 clears its unpark gates (a demonstrable graph-on vs graph-off effect on a gold-in-index subset; both arms failing to answer is not a v1 story).
 
 ## Completed Phases
 
