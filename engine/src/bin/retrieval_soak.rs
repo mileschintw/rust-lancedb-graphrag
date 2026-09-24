@@ -56,12 +56,26 @@ use engine::workflow::{EventSequence, WorkflowContext, WorkflowEventSink, Workfl
 
 const USAGE: &str = "\
 retrieval_soak --arm <R|RP|RG|RGT|W> [--iterations N] [--graph-timeout-ms N] [--lancedb-path PATH]
+                [--pace-ms N] [--duration-secs N]
 
   --arm              R (retrieval only), RP (+prompt pack), RG (+graph, no timeout),
                       RGT (+graph, tokio::time::timeout), or W (full production node sequence)
-  --iterations       default 300
+  --iterations       default 300. In fixed mode (no --duration-secs) this is both the seeded
+                      sample size and the exact loop count. In duration mode (--duration-secs
+                      given) this becomes only the seeded sample size to fetch up front; pass a
+                      value comfortably above the expected iteration count to avoid cycling
+                      through the sample (06.3.4.1-03 long-duration soak, round 3).
   --graph-timeout-ms default 200 (RGT only)
-  --lancedb-path     overrides the configured store path";
+  --lancedb-path     overrides the configured store path
+  --pace-ms          idle delay after each iteration, via `tokio::time::sleep` (not a blocking
+                      thread sleep, per M-YIELD-POINTS: a thread sleep would distort the very
+                      `alive_tasks`/`global_queue_depth` counters this bin reports). Default 0
+                      (no pacing, matches the original P0 soak behaviour exactly).
+  --duration-secs    when set, overrides --iterations as the loop's stop condition: the soak
+                      runs until this many wall-clock seconds have elapsed instead of a fixed
+                      iteration count. The seeded sample is cycled (wrapped modulo its size) if
+                      the run outlives it; the header's `requested_sample_size` and each run's
+                      stderr summary report whether cycling occurred.";
 
 /// Fixed seed for the deterministic chunk/entity sample (06.3.4.1-03 Task 1). Recorded in the
 /// header line of every run so the exact sample is reproducible against the same store state.
@@ -114,6 +128,8 @@ struct Args {
     iterations: usize,
     graph_timeout_ms: u64,
     lancedb_path: Option<String>,
+    pace_ms: u64,
+    duration_secs: Option<u64>,
 }
 
 fn parse_args(args: Vec<String>) -> Result<Args, String> {
@@ -121,6 +137,8 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
     let mut iterations: usize = 300;
     let mut graph_timeout_ms: u64 = 200;
     let mut lancedb_path: Option<String> = None;
+    let mut pace_ms: u64 = 0;
+    let mut duration_secs: Option<u64> = None;
 
     let mut iter = args.into_iter();
     while let Some(flag) = iter.next() {
@@ -151,6 +169,26 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
                     .ok_or_else(|| format!("--lancedb-path requires a value\n{USAGE}"))?;
                 lancedb_path = Some(value);
             }
+            "--pace-ms" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| format!("--pace-ms requires a value\n{USAGE}"))?;
+                pace_ms = value
+                    .parse()
+                    .map_err(|_| format!("--pace-ms must be a non-negative integer\n{USAGE}"))?;
+            }
+            "--duration-secs" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| format!("--duration-secs requires a value\n{USAGE}"))?;
+                let parsed_secs: u64 = value
+                    .parse()
+                    .map_err(|_| format!("--duration-secs must be a positive integer\n{USAGE}"))?;
+                if parsed_secs == 0 {
+                    return Err(format!("--duration-secs must be greater than 0\n{USAGE}"));
+                }
+                duration_secs = Some(parsed_secs);
+            }
             other => return Err(format!("unrecognized flag '{other}'\n{USAGE}")),
         }
     }
@@ -164,6 +202,8 @@ fn parse_args(args: Vec<String>) -> Result<Args, String> {
         iterations,
         graph_timeout_ms,
         lancedb_path,
+        pace_ms,
+        duration_secs,
     })
 }
 
@@ -455,6 +495,16 @@ struct HeaderLine {
     seed: u64,
     pid: u32,
     lancedb_path: String,
+    /// Idle delay applied after every iteration (06.3.4.1-03 long-duration soak, round 3).
+    /// `0` reproduces the original P0 soak's unpaced behaviour exactly.
+    pace_ms: u64,
+    /// When set, the loop's stop condition is wall-clock elapsed time rather than a fixed
+    /// iteration count; `iterations` above is then only the requested seeded-sample size.
+    duration_secs: Option<u64>,
+    /// The seeded sample size requested via `--iterations` (identical to `iterations` above;
+    /// named separately so a duration-mode header is self-documenting about which of the two
+    /// roles `--iterations` played for this run).
+    requested_sample_size: usize,
 }
 
 #[derive(Serialize, Clone, Copy)]
@@ -767,6 +817,9 @@ async fn main() -> Result<(), String> {
         seed: SOAK_SEED,
         pid: std::process::id(),
         lancedb_path: lancedb_path.clone(),
+        pace_ms: parsed.pace_ms,
+        duration_secs: parsed.duration_secs,
+        requested_sample_size: parsed.iterations,
     };
     println!(
         "{}",
@@ -824,8 +877,33 @@ async fn main() -> Result<(), String> {
         + effective_settings.grounding_limits().max_output_tokens() as usize;
     let answer_token_budget = effective_settings.grounding_limits().max_output_tokens() as usize;
 
-    for (index, row) in rows.iter().enumerate() {
-        let ordinal = index + 1;
+    // 06.3.4.1-03 long-duration soak (round 3): the loop's stop condition is either a fixed
+    // iteration count (original P0 behaviour, `duration_secs: None`) or wall-clock elapsed time
+    // (`--duration-secs`). In duration mode the seeded sample is indexed modulo its length, so a
+    // run that outlives its sample cycles back to the start rather than panicking; whether that
+    // happened is reported below so a cycled run is never silently mistaken for a fresh-row run.
+    let sample_size = rows.len();
+    let pace = Duration::from_millis(parsed.pace_ms);
+    let run_start = Instant::now();
+    let stop_after = parsed.duration_secs.map(Duration::from_secs);
+    let mut ordinal: usize = 0;
+
+    loop {
+        match stop_after {
+            Some(deadline) => {
+                if run_start.elapsed() >= deadline {
+                    break;
+                }
+            }
+            None => {
+                if ordinal >= parsed.iterations {
+                    break;
+                }
+            }
+        }
+        let row = &rows[ordinal % sample_size];
+        ordinal += 1;
+
         match parsed.arm {
             Arm::W => {
                 run_w(
@@ -864,7 +942,34 @@ async fn main() -> Result<(), String> {
                 );
             }
         }
+
+        // `tokio::time::sleep`, not `std::thread::sleep` (M-YIELD-POINTS): a blocking thread
+        // sleep would stall a runtime worker and distort the very `alive_tasks`/
+        // `global_queue_depth` counters this bin exists to report.
+        if parsed.pace_ms > 0 {
+            tokio::time::sleep(pace).await;
+        }
     }
+
+    let cycles = if sample_size == 0 {
+        0
+    } else {
+        ordinal.div_ceil(sample_size)
+    };
+    // Summary goes to stderr (tracing), not stdout: the stdout JSONL contract is one header line
+    // plus one iteration line per query, consumed as-is by `flatness.records_from_soak_jsonl`
+    // (unmodified this round) — a stdout footer line would be misread as a censored iteration.
+    tracing::info!(
+        arm = parsed.arm.label(),
+        total_iterations = ordinal,
+        sample_size,
+        cycles,
+        cycled = cycles > 1,
+        elapsed_secs = run_start.elapsed().as_secs_f64(),
+        pace_ms = parsed.pace_ms,
+        duration_secs = parsed.duration_secs,
+        "retrieval_soak_run_complete"
+    );
 
     telemetry_handle.shutdown();
     Ok(())
