@@ -3,15 +3,18 @@
 from pathlib import Path
 
 import httpx
+import pytest
 from pytest_httpx import HTTPXMock
 
 from lancet_eval.config import EvalSettings
 from lancet_eval.preflight import (
     check_corpus_generation,
     check_gateway_and_engine,
+    check_index_identity,
     check_model_differentiation,
     check_openrouter_api,
     check_store_isolation,
+    run_preflight_checks,
 )
 from lancet_eval.seed import DocumentMap, DocumentMapEntry, save_document_map_atomic
 
@@ -160,6 +163,91 @@ def test_check_openrouter_api_and_model_differentiation() -> None:
         "deepseek/deepseek-v4-flash-0731", "openai/gpt-4o-mini"
     )
     assert res_diff.passed
+
+
+def test_check_index_identity_passes_and_reports_failure_detail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """check_index_identity wraps compute_identity: passes when equal, fails with
+    the symmetric differences in detail when it does not."""
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    doc_map = DocumentMap(
+        corpus="multihop_rag",
+        entries={
+            "doc-1": DocumentMapEntry(corpus_id="a", document_id="doc-1", title="a"),
+        },
+    )
+    save_document_map_atomic(doc_map)
+
+    settings = EvalSettings(
+        lancedb_path=str(tmp_path / "lancedb-eval"),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+    )
+
+    # Passing case: the autouse identity fixture mirrors the map for equal sets.
+    res_pass = check_index_identity(settings, "multihop_rag")
+    assert res_pass.name == "index_identity"
+    assert res_pass.passed is True
+
+    # Failing case: force a mismatch by overriding the faked LanceDB listing.
+    import lancet_eval.identity as identity_mod
+
+    monkeypatch.setattr(
+        identity_mod,
+        "list_lancedb_document_ids",
+        lambda path: {
+            "documents": [],
+            "nodes": [],
+            "edges": [],
+            "entity_edges": [],
+            "staged_documents_v2_rows": 0,
+        },
+    )
+    res_fail = check_index_identity(settings, "multihop_rag")
+    assert res_fail.name == "index_identity"
+    assert res_fail.passed is False
+    assert res_fail.detail.get("failures")
+
+
+def test_check_index_identity_never_raises_on_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """check_index_identity converts any exception (missing map, store error) into
+    passed=False rather than propagating it."""
+    import lancet_eval.identity as identity_mod
+
+    def boom(settings: EvalSettings, corpus_name: str) -> None:
+        raise RuntimeError("store unreachable")
+
+    monkeypatch.setattr(identity_mod, "compute_identity", boom)
+
+    settings = EvalSettings(lancedb_path="./x-lancedb", dev_lancedb_path="./y-lancedb")
+    res = check_index_identity(settings, "multihop_rag")
+    assert res.passed is False
+    assert "store unreachable" in res.message
+
+
+def test_run_preflight_checks_index_identity_is_second_check(
+    httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """index_identity runs as the second preflight check, right after store_isolation."""
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    doc_map = DocumentMap(corpus="multihop_rag", entries={})
+    save_document_map_atomic(doc_map)
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    httpx_mock.add_callback(error_handler, is_reusable=True)
+
+    settings = EvalSettings(
+        lancedb_path=str(tmp_path / "lancedb-eval"),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+    )
+
+    results = run_preflight_checks(corpus_name="multihop_rag", settings=settings)
+    assert results[0].name == "store_isolation"
+    assert results[1].name == "index_identity"
 
 
 def test_gateway_failure_message_names_service_and_remedy(

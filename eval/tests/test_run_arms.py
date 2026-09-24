@@ -8,6 +8,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from lancet_eval.corpus import GoldQuestion, load_corpus_config
+from lancet_eval.identity import IdentityGateError
 from lancet_eval.journal import load_done
 from lancet_eval.run import GRAPH_ARMS, drive, drive_one
 
@@ -178,6 +179,40 @@ def test_drive_resume_issues_zero_requests_when_done(
     assert count2 == 0
     # Zero additional HTTP requests issued
     assert len(httpx_mock.get_requests()) == 2
+
+
+def test_drive_raises_identity_gate_error_before_journal_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """drive() raises IdentityGateError before the journal header is created or read
+    when the identity report fails, and the journal path does not exist afterwards."""
+    import lancet_eval.identity as identity_mod
+
+    monkeypatch.setattr(
+        identity_mod,
+        "list_lancedb_document_ids",
+        lambda path: {
+            "documents": ["extra-doc-id"],
+            "nodes": ["extra-doc-id"],
+            "edges": [],
+            "entity_edges": [],
+            "staged_documents_v2_rows": 0,
+        },
+    )
+
+    client = httpx.Client(base_url="http://testserver")
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(IdentityGateError):
+        drive(
+            corpus="graphrag_bench",
+            journal_path=j_path,
+            stage_spend_cap=10.0,
+            limit=1,
+            client=client,
+        )
+
+    assert not j_path.exists()
 
 
 def test_resolve_run_dir_reuses_newest_dated_dir_on_resume(tmp_path: Path) -> None:

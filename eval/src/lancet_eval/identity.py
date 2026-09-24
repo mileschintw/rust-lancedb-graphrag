@@ -132,7 +132,10 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
     """
     doc_map = load_document_map(corpus_name)
     map_ids = set(doc_map.entries.keys())
-    alias_ids = set(doc_map.aliases.keys()) | set(doc_map.aliases.values())
+    # Only the alias *keys* (stale IDs that resolve elsewhere via aliasing) must be
+    # absent from the stores. Alias *values* are the canonical current document_id
+    # they resolve to and are expected to be present as ordinary map entries (D-60).
+    alias_ids = set(doc_map.aliases.keys())
 
     lance_data = list_lancedb_document_ids(settings.lancedb_path)
     pg_status = list_pg_documents(settings)

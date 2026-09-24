@@ -17,6 +17,7 @@ from pydantic import ConfigDict
 from lancet_eval.client import QueryOutcome, run_query
 from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
 from lancet_eval.corpus import GoldQuestion, load_corpus
+from lancet_eval.identity import require_index_identity
 from lancet_eval.journal import (
     NodeTiming,
     RunRecord,
@@ -455,6 +456,8 @@ def run_measurement_pass(
     For N questions, dispatches 2N queries adjacently across both experimental arms.
     """
     settings = settings or load_settings()
+    require_index_identity(settings, corpus_name)
+
     thresholds = thresholds or COMMITTED_THRESHOLDS
     run_dir = output_dir or resolve_measurement_run_dir(corpus_name)
     run_dir.mkdir(parents=True, exist_ok=True)

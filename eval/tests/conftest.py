@@ -11,6 +11,67 @@ from lancet_eval.measure import MeasurementRecord
 CEILING_CENSORED_RETRIEVE_MS = 10000.0
 
 
+@pytest.fixture(autouse=True)
+def _identity_gate_matches_document_map(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Make the identity gate (require_index_identity/compute_identity) a no-op pass
+    for every existing test, so drive()/run_measurement_pass()/preflight callers keep
+    working without a live PostgreSQL/LanceDB store (T-06.3.4.1-02-02 wiring, Task 2).
+
+    Patches `lancet_eval.identity.list_lancedb_document_ids` and `list_pg_documents`
+    to mirror whatever document map the corpus under test resolves to via
+    `load_document_map` — tracked through a lightweight wrapper around that same
+    name, so the real comparison logic in `compute_identity` still runs. A corpus
+    with no committed `document_map.json` (e.g. the `graphrag_bench` test fixture)
+    resolves to an empty map, which trivially matches empty LanceDB/PostgreSQL sets.
+
+    Tests that need a failing gate override `list_lancedb_document_ids` /
+    `list_pg_documents` (or `load_document_map`) themselves, after this fixture runs.
+
+    Skipped for test_identity.py, which exercises the real
+    `list_lancedb_document_ids` / `list_pg_documents` implementations (mocking
+    `subprocess.run` / `run_psql` underneath) and must not have them replaced.
+    """
+    if request.node.path.name == "test_identity.py":
+        return
+
+    import lancet_eval.identity as identity_mod
+    from lancet_eval.seed import DocumentMap
+
+    real_load_document_map = identity_mod.load_document_map
+    last_map_ids: dict[str, set[str]] = {"ids": set()}
+
+    def _tracking_load_document_map(corpus_name: str) -> DocumentMap:
+        try:
+            doc_map = real_load_document_map(corpus_name)
+        except Exception:
+            doc_map = DocumentMap(corpus=corpus_name, entries={})
+        last_map_ids["ids"] = set(doc_map.entries.keys())
+        return doc_map
+
+    def _fake_list_lancedb_document_ids(lancedb_path: str) -> dict[str, object]:
+        ids = sorted(last_map_ids["ids"])
+        return {
+            "documents": ids,
+            "nodes": ids,
+            "edges": [],
+            "entity_edges": [],
+            "staged_documents_v2_rows": 0,
+        }
+
+    def _fake_list_pg_documents(settings: object) -> dict[str, str]:
+        return {doc_id: "completed" for doc_id in last_map_ids["ids"]}
+
+    monkeypatch.setattr(
+        identity_mod, "load_document_map", _tracking_load_document_map
+    )
+    monkeypatch.setattr(
+        identity_mod, "list_lancedb_document_ids", _fake_list_lancedb_document_ids
+    )
+    monkeypatch.setattr(identity_mod, "list_pg_documents", _fake_list_pg_documents)
+
+
 def _measurement_record(
     ordinal: int,
     *,

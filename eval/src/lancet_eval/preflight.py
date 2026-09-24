@@ -652,6 +652,45 @@ def check_canary_floors(
     )
 
 
+def check_index_identity(
+    settings: EvalSettings, corpus_name: str
+) -> PreflightCheckResult:
+    """Wrap the three-way identity comparison as a preflight check.
+
+    Never raises: any exception from `compute_identity` (including a missing
+    document map) becomes `passed=False` with the exception text as the message.
+    """
+    from lancet_eval.identity import compute_identity
+
+    try:
+        report = compute_identity(settings, corpus_name)
+    except Exception as exc:
+        return PreflightCheckResult(
+            name="index_identity",
+            passed=False,
+            message=f"Index identity gate could not run: {exc}",
+        )
+
+    if not report.passed:
+        return PreflightCheckResult(
+            name="index_identity",
+            passed=False,
+            message="Index identity mismatch: " + "; ".join(report.failures),
+            detail={
+                "failures": report.failures,
+                "alias_ids": report.alias_ids,
+                "staged_rows": report.staged_rows,
+            },
+        )
+
+    return PreflightCheckResult(
+        name="index_identity",
+        passed=True,
+        message="PostgreSQL, LanceDB, and document map document IDs agree.",
+        detail={"map_size": len(report.map_ids), "staged_rows": report.staged_rows},
+    )
+
+
 def run_preflight_checks(
     corpus_name: str,
     judged: bool = False,
@@ -668,10 +707,13 @@ def run_preflight_checks(
     # 1. Store isolation
     results.append(check_store_isolation(settings))
 
-    # 2. Canary manifest check (unconditional, independent of gateway/engine)
+    # 2. Index identity (must agree across stores before any live check runs)
+    results.append(check_index_identity(settings, corpus_name))
+
+    # 3. Canary manifest check (unconditional, independent of gateway/engine)
     results.append(check_canary_manifest())
 
-    # 3. Gateway and engine reachability
+    # 4. Gateway and engine reachability
     should_close_client = False
     if client is None:
         client = httpx.Client(
@@ -685,7 +727,7 @@ def run_preflight_checks(
         results.append(gw_check)
         results.append(eng_check)
 
-        # 4. Gated live checks: corpus generation and canary floors
+        # 5. Gated live checks: corpus generation and canary floors
         if gw_check.passed and eng_check.passed:
             results.append(check_corpus_generation(client, corpus_name))
             results.append(check_canary_floors(client))
@@ -693,11 +735,11 @@ def run_preflight_checks(
         if should_close_client:
             client.close()
 
-    # 5. OpenRouter API key check
+    # 6. OpenRouter API key check
     api_key = os.getenv("OPENROUTER_API_KEY")
     results.append(check_openrouter_api(api_key, judged))
 
-    # 6. Model differentiation check
+    # 7. Model differentiation check
     if judged:
         results.append(
             check_model_differentiation(generation_model, settings.judge_model)

@@ -12,6 +12,7 @@ import httpx
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
+from lancet_eval.identity import require_index_identity
 from lancet_eval.journal import (
     Journal,
     NodeTiming,
@@ -245,6 +246,8 @@ def drive(
     Returns DriveResult with executed count, stopped_by_cap status, and observed spend.
     """
     eval_settings = settings or EvalSettings()
+    require_index_identity(eval_settings, corpus)
+
     config = load_corpus_config(corpus)
     questions = load_sample_questions(corpus)
 
