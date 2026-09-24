@@ -15,7 +15,8 @@
     "phase_branch_template": "gsd/phase-{phase}-{slug}",
     "milestone_branch_template": "gsd/{milestone}-{slug}",
     "quick_branch_template": null,
-    "base_branch": "main"
+    "base_branch": "main",
+    "allow_default_branch_commits": true
   },
   "workflow": {
     "research": true,
