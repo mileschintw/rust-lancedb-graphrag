@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use arrow_array::{
     Array, FixedSizeListArray, Float32Array, Int32Array, Int64Array, RecordBatch, StringArray,
 };
 use engine::db::DatabaseManager;
+use engine::graph::escape_sql_literal;
 use futures::TryStreamExt;
 use lancedb::{
     query::{ExecutableQuery, QueryBase, Select},
@@ -660,12 +662,274 @@ pub async fn inspect_entity_name(
     })
 }
 
+/// One `document_map.json` entry, keeping only the `title` field.
+///
+/// The `aliases` object (if present in the file) is intentionally never parsed
+/// here: `--gold-chunks` matches evidence titles against primary map entries
+/// only (RESEARCH §E scope for Task 1 of this plan).
+#[derive(serde::Deserialize)]
+struct DocumentMapEntryRaw {
+    #[serde(default)]
+    title: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DocumentMapFileRaw {
+    #[serde(default)]
+    entries: HashMap<String, DocumentMapEntryRaw>,
+}
+
+#[derive(serde::Deserialize)]
+struct EvidenceItemRaw {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    fact: String,
+}
+
+#[derive(serde::Deserialize)]
+struct QuestionRaw {
+    question_id: String,
+    #[serde(default)]
+    evidence_list: Vec<EvidenceItemRaw>,
+}
+
+/// Per-evidence-item classification of whether a gold fact is present in the
+/// live eval LanceDB store, emitted as one JSON line per evidence item by
+/// `--gold-chunks` (RESEARCH §E).
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct GoldChunkRecord {
+    pub question_id: String,
+    pub evidence_index: usize,
+    pub title: String,
+    pub document_id: Option<String>,
+    pub state: &'static str,
+    pub chunk_ids: Vec<String>,
+}
+
+/// Collapses whitespace runs and lowercases `text`.
+///
+/// Mirrors `lancet_eval.metrics.normalize_ws` exactly (`" ".join(text.split()).lower()`
+/// in Python) so column (b) classification agrees between this probe and any
+/// Python-side recomputation of the same evidence-containment rule.
+fn normalize_ws(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+/// Maximum number of `document_id` values per `IN (...)` predicate batch.
+///
+/// Keeps generated LanceDB/DataFusion predicates from growing unbounded when a
+/// large question set references many distinct documents; matches the
+/// RESEARCH §E batching note for this probe.
+const IN_PREDICATE_BATCH_SIZE: usize = 500;
+
+fn document_id_in_predicate(ids: &[String]) -> String {
+    let list = ids
+        .iter()
+        .map(|id| format!("'{}'", escape_sql_literal(id)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("document_id IN ({list})")
+}
+
+/// Classifies one evidence item's gold fact against a document's chunks.
+///
+/// Tri-state per RESEARCH §E: `in_chunk` when the normalized fact is a substring
+/// of a single chunk's normalized content; else `split_across_chunks` when it is
+/// contained in the normalized concatenation of two adjacent `chunk_index`
+/// chunks; else `absent`. Returns `unmapped_title` when `document_id` is `None`.
+fn classify_evidence_item(
+    fact: &str,
+    document_id: Option<&str>,
+    chunks_by_document: &HashMap<String, Vec<(i32, String, String)>>,
+) -> (&'static str, Vec<String>) {
+    let Some(document_id) = document_id else {
+        return ("unmapped_title", Vec::new());
+    };
+    let Some(chunks) = chunks_by_document.get(document_id) else {
+        return ("absent", Vec::new());
+    };
+
+    let normalized_fact = normalize_ws(fact);
+
+    let mut matching_chunk_ids: Vec<String> = chunks
+        .iter()
+        .filter(|(_, _, content)| content.contains(&normalized_fact))
+        .map(|(_, chunk_id, _)| chunk_id.clone())
+        .collect();
+    if !matching_chunk_ids.is_empty() {
+        matching_chunk_ids.sort();
+        return ("in_chunk", matching_chunk_ids);
+    }
+
+    for window in chunks.windows(2) {
+        let (index_a, _, content_a) = &window[0];
+        let (index_b, _, content_b) = &window[1];
+        if index_b - index_a != 1 {
+            continue;
+        }
+        let concatenated = format!("{content_a} {content_b}");
+        if concatenated.contains(&normalized_fact) {
+            return ("split_across_chunks", Vec::new());
+        }
+    }
+
+    ("absent", Vec::new())
+}
+
+struct PendingEvidenceItem {
+    question_id: String,
+    evidence_index: usize,
+    title: String,
+    document_id: Option<String>,
+    fact: String,
+}
+
+/// Runs the `--gold-chunks` probe: for every non-empty-fact evidence item across
+/// `questions_path`, classifies whether the gold fact is present in the live
+/// `nodes` table content for its mapped document.
+///
+/// Opens no write path: `database` is expected to already be a validated,
+/// read-only-use `DatabaseManager` (see `DatabaseManager::open_and_validate`),
+/// and this function issues only `query()` calls against `nodes`.
+///
+/// # Errors
+/// Returns an error if either input file cannot be read or parsed, or if a
+/// mapped `document_id` is not a valid UUIDv4 — untrusted document-map content
+/// is never interpolated into a predicate unvalidated.
+pub async fn inspect_gold_chunks(
+    database: &DatabaseManager,
+    questions_path: &Path,
+    map_path: &Path,
+) -> Result<Vec<GoldChunkRecord>, String> {
+    let map_bytes = std::fs::read_to_string(map_path)
+        .map_err(|error| format!("failed to read document map {}: {error}", map_path.display()))?;
+    let map_file: DocumentMapFileRaw = serde_json::from_str(&map_bytes)
+        .map_err(|error| format!("failed to parse document map {}: {error}", map_path.display()))?;
+
+    let mut title_to_document_id: HashMap<String, String> =
+        HashMap::with_capacity(map_file.entries.len());
+    for (document_id, entry) in &map_file.entries {
+        title_to_document_id.insert(entry.title.clone(), document_id.clone());
+    }
+
+    let questions_bytes = std::fs::read_to_string(questions_path).map_err(|error| {
+        format!(
+            "failed to read questions file {}: {error}",
+            questions_path.display()
+        )
+    })?;
+
+    let mut pending: Vec<PendingEvidenceItem> = Vec::new();
+    let mut referenced_document_ids: HashSet<String> = HashSet::new();
+
+    for (line_number, line) in questions_bytes.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let question: QuestionRaw = serde_json::from_str(trimmed).map_err(|error| {
+            format!(
+                "failed to parse questions file {} at line {}: {error}",
+                questions_path.display(),
+                line_number + 1
+            )
+        })?;
+
+        for (evidence_index, item) in question.evidence_list.iter().enumerate() {
+            if item.fact.is_empty() {
+                continue;
+            }
+            let document_id = title_to_document_id.get(&item.title).cloned();
+            if let Some(id) = &document_id {
+                referenced_document_ids.insert(id.clone());
+            }
+            pending.push(PendingEvidenceItem {
+                question_id: question.question_id.clone(),
+                evidence_index,
+                title: item.title.clone(),
+                document_id,
+                fact: item.fact.clone(),
+            });
+        }
+    }
+
+    let mut validated_ids: Vec<String> = Vec::with_capacity(referenced_document_ids.len());
+    for id in &referenced_document_ids {
+        let parsed = Uuid::parse_str(id)
+            .map_err(|_| format!("document map entry '{id}' is not a valid UUID"))?;
+        if parsed.get_version_num() != 4 {
+            return Err(format!("document map entry '{id}' is not a UUIDv4"));
+        }
+        validated_ids.push(id.clone());
+    }
+    validated_ids.sort();
+
+    let nodes = database.nodes_table().await?;
+
+    // document_id -> (chunk_index, chunk_id, normalized content), sorted by chunk_index below.
+    let mut chunks_by_document: HashMap<String, Vec<(i32, String, String)>> = HashMap::new();
+
+    for batch_ids in validated_ids.chunks(IN_PREDICATE_BATCH_SIZE) {
+        let predicate = document_id_in_predicate(batch_ids);
+        let batches = query_columns(
+            &nodes,
+            &predicate,
+            &["document_id", "chunk_id", "chunk_index", "content"],
+        )
+        .await?;
+        for batch in &batches {
+            let document_id_col = string_column(batch, "document_id")?;
+            let chunk_id_col = string_column(batch, "chunk_id")?;
+            let chunk_index_col = int32_column(batch, "chunk_index")?;
+            let content_col = string_column(batch, "content")?;
+            for row in 0..batch.num_rows() {
+                let document_id = document_id_col.value(row).to_owned();
+                let chunk_id = chunk_id_col.value(row).to_owned();
+                let chunk_index = chunk_index_col.value(row);
+                let content = normalize_ws(content_col.value(row));
+                chunks_by_document
+                    .entry(document_id)
+                    .or_default()
+                    .push((chunk_index, chunk_id, content));
+            }
+        }
+    }
+    for chunks in chunks_by_document.values_mut() {
+        chunks.sort_by_key(|(chunk_index, _, _)| *chunk_index);
+    }
+
+    let mut records = Vec::with_capacity(pending.len());
+    for item in pending {
+        let (state, chunk_ids) = classify_evidence_item(
+            &item.fact,
+            item.document_id.as_deref(),
+            &chunks_by_document,
+        );
+        records.push(GoldChunkRecord {
+            question_id: item.question_id,
+            evidence_index: item.evidence_index,
+            title: item.title,
+            document_id: item.document_id,
+            state,
+            chunk_ids,
+        });
+    }
+
+    records.sort_by(|a, b| {
+        (a.question_id.as_str(), a.evidence_index).cmp(&(b.question_id.as_str(), b.evidence_index))
+    });
+
+    Ok(records)
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum InspectMode {
     Document(String),
     GraphPopulation,
     EntityNeighborhood { seed: String, max_hops: u32 },
     EntityName(String),
+    GoldChunks { questions: PathBuf, map: PathBuf },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -674,7 +938,7 @@ pub struct InspectConfig {
     pub lancedb_path: Option<String>,
 }
 
-pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME] [--lancedb-path PATH]";
+pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME | --gold-chunks QUESTIONS_JSONL --map DOCUMENT_MAP_JSON] [--lancedb-path PATH]";
 
 pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConfig, String> {
     let mut iter = args.into_iter();
@@ -683,6 +947,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
     let mut entity_id = None;
     let mut max_hops = None;
     let mut entity_name = None;
+    let mut gold_chunks_questions = None;
+    let mut gold_chunks_map = None;
     let mut lancedb_path = None;
 
     while let Some(arg) = iter.next() {
@@ -717,6 +983,18 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
                     .ok_or_else(|| format!("--entity-name requires a value\n{USAGE}"))?;
                 entity_name = Some(val);
             }
+            "--gold-chunks" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--gold-chunks requires a value\n{USAGE}"))?;
+                gold_chunks_questions = Some(val);
+            }
+            "--map" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--map requires a value\n{USAGE}"))?;
+                gold_chunks_map = Some(val);
+            }
             "--lancedb-path" => {
                 let val = iter
                     .next()
@@ -732,11 +1010,15 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
     if max_hops.is_some() && entity_id.is_none() {
         return Err(format!("--max-hops is only valid with --entity\n{USAGE}"));
     }
+    if gold_chunks_map.is_some() && gold_chunks_questions.is_none() {
+        return Err(format!("--map is only valid with --gold-chunks\n{USAGE}"));
+    }
 
     let mode_count = (document_id.is_some() as usize)
         + (graph_population as usize)
         + (entity_id.is_some() as usize)
-        + (entity_name.is_some() as usize);
+        + (entity_name.is_some() as usize)
+        + (gold_chunks_questions.is_some() as usize);
 
     if mode_count == 0 {
         return Err(format!("no mode specified\n{USAGE}"));
@@ -766,6 +1048,13 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
         }
     } else if let Some(name) = entity_name {
         InspectMode::EntityName(name)
+    } else if let Some(questions) = gold_chunks_questions {
+        let map = gold_chunks_map
+            .ok_or_else(|| format!("--gold-chunks requires --map\n{USAGE}"))?;
+        InspectMode::GoldChunks {
+            questions: PathBuf::from(questions),
+            map: PathBuf::from(map),
+        }
     } else {
         unreachable!();
     };
@@ -817,6 +1106,15 @@ async fn main() -> Result<(), String> {
                 "{}",
                 serde_json::to_string(&report).map_err(|error| error.to_string())?
             );
+        }
+        InspectMode::GoldChunks { questions, map } => {
+            let records = inspect_gold_chunks(&database, &questions, &map).await?;
+            for record in &records {
+                println!(
+                    "{}",
+                    serde_json::to_string(record).map_err(|error| error.to_string())?
+                );
+            }
         }
     }
     Ok(())

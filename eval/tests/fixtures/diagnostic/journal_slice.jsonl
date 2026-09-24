@@ -1,0 +1,5 @@
+{"type": "header", "corpus": "multihop_rag", "partial": true, "created_at": 1700000000.0}
+{"corpus": "multihop_rag", "question_id": "mhr-0073ab564e55", "graph_arm": "graph-off", "outcome": "success", "answer": "The CBSSports.com article credits Jonathan Smith with seven victories. [1]\nAnswer: Yes"}
+{"corpus": "multihop_rag", "question_id": "mhr-0073ab564e55", "graph_arm": "graph-on", "outcome": "error", "error_type": "StreamDeadlineExceeded", "error": "exceeded 600.0s wall-clock deadline"}
+{"corpus": "multihop_rag", "question_id": "mhr-0085f76defbe", "graph_arm": "graph-off", "outcome": "success", "answer": "Both services are VPN products. [1][2]\nAnswer: Yes"}
+{"corpus": "multihop_rag", "question_id": "mhr-0279d4a349c3", "graph_arm": "graph-off", "outcome": "success", "answer": "The provided evidence does not contain sufficient information.\nAnswer: Insufficient information"}

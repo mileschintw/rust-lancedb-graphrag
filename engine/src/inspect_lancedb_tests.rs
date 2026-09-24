@@ -9,9 +9,9 @@ use arrow_array::{
 use uuid::Uuid;
 
 use super::{
-    inspect_document, inspect_entity_name, inspect_entity_neighborhood, inspect_graph_population,
-    parse_args, DegreeDistribution, EntityMatch, EntityNameReport, GraphPopulationReport,
-    Inspection, NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
+    inspect_document, inspect_entity_name, inspect_entity_neighborhood, inspect_gold_chunks,
+    inspect_graph_population, parse_args, DegreeDistribution, EntityMatch, EntityNameReport,
+    GraphPopulationReport, Inspection, NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
 };
 use engine::db::DatabaseManager;
 
@@ -21,6 +21,7 @@ struct NodeFixture {
     chunk_index: i32,
     embedding_model: Option<String>,
     ingested_at: Option<i64>,
+    content: String,
 }
 
 #[derive(Clone)]
@@ -37,6 +38,23 @@ fn valid_nodes(document_id: &str) -> Vec<NodeFixture> {
             chunk_index: index,
             embedding_model: Some(EMBEDDING_MODEL.to_owned()),
             ingested_at: Some(42),
+            content: "fixture".to_owned(),
+        })
+        .collect()
+}
+
+/// Builds one node per entry in `contents`, at contiguous `chunk_index` 0.., for
+/// `--gold-chunks` probe tests that need real, differentiated chunk text.
+fn gold_chunk_nodes(document_id: &str, contents: &[&str]) -> Vec<NodeFixture> {
+    contents
+        .iter()
+        .enumerate()
+        .map(|(index, content)| NodeFixture {
+            chunk_id: format!("{document_id}:{index}"),
+            chunk_index: index as i32,
+            embedding_model: Some(EMBEDDING_MODEL.to_owned()),
+            ingested_at: Some(42),
+            content: (*content).to_owned(),
         })
         .collect()
 }
@@ -126,7 +144,12 @@ async fn fixture(
                     .enumerate()
                     .map(|(index, _)| (index * 10 + 9) as i32),
             )),
-            Arc::new(StringArray::from(vec!["fixture"; node_count])),
+            Arc::new(StringArray::from(
+                nodes
+                    .iter()
+                    .map(|node| node.content.as_str())
+                    .collect::<Vec<_>>(),
+            )),
             Arc::new(embeddings),
             Arc::new(Int32Array::from(vec![1; node_count])),
             Arc::new(StringArray::from(vec!["o200k_base"; node_count])),
@@ -1143,4 +1166,217 @@ async fn no_content_or_vector_columns_in_serialized_output() {
             "name_report JSON must not contain '{f}': {json_name}"
         );
     }
+}
+
+#[test]
+fn normalize_ws_matches_python_rule() {
+    // Mirrors `lancet_eval.metrics.normalize_ws`: " ".join(text.split()).lower()
+    assert_eq!(super::normalize_ws("  Hello   World  "), "hello world");
+    assert_eq!(super::normalize_ws("Tab\tSeparated\nWords"), "tab separated words");
+    assert_eq!(super::normalize_ws(""), "");
+    assert_eq!(super::normalize_ws("MiXeD Case"), "mixed case");
+}
+
+#[tokio::test]
+async fn gold_chunks_flags_parse_and_require_pairing() {
+    let cfg = parse_args(vec![
+        "--gold-chunks".to_string(),
+        "questions.jsonl".to_string(),
+        "--map".to_string(),
+        "map.json".to_string(),
+    ])
+    .unwrap();
+    match cfg.mode {
+        super::InspectMode::GoldChunks { questions, map } => {
+            assert_eq!(questions, std::path::PathBuf::from("questions.jsonl"));
+            assert_eq!(map, std::path::PathBuf::from("map.json"));
+        }
+        other => panic!("expected GoldChunks mode, got {other:?}"),
+    }
+
+    let map_only = parse_args(vec!["--map".to_string(), "map.json".to_string()]);
+    assert!(map_only.is_err());
+    assert!(map_only
+        .unwrap_err()
+        .contains("--map is only valid with --gold-chunks"));
+
+    let missing_map = parse_args(vec![
+        "--gold-chunks".to_string(),
+        "questions.jsonl".to_string(),
+    ]);
+    assert!(missing_map.is_err());
+    assert!(missing_map.unwrap_err().contains("--gold-chunks requires --map"));
+}
+
+#[tokio::test]
+async fn gold_chunks_probe_classifies_evidence_states() {
+    let document_id = Uuid::new_v4().to_string();
+    let contents = [
+        "Alpha corp shipped their first product in the year twenty twenty",
+        "one to great fanfare across the industry",
+        "Unrelated filler content chunk three. Product   Widget    Zeta   Released today.",
+    ];
+    let nodes = gold_chunk_nodes(&document_id, &contents);
+    let (database, path, stored_document_id) = fixture("gold-chunks", &nodes, &[]).await;
+
+    let questions_jsonl = serde_json::json!({
+        "question_id": "q-1",
+        "evidence_list": [
+            {"title": "Widget Launch", "fact": "Unrelated filler content"},
+            {"title": "Widget Launch", "fact": "twenty twenty one to great fanfare"},
+            {"title": "Widget Launch", "fact": "This exact phrase does not exist anywhere"},
+            {"title": "Unmapped Article", "fact": "some fact"},
+            {"title": "Widget Launch", "fact": "product widget zeta released"},
+            {"title": "Widget Launch", "fact": ""}
+        ]
+    })
+    .to_string();
+
+    let map = serde_json::json!({
+        "corpus": "test",
+        "entries": {
+            stored_document_id.clone(): {
+                "corpus_id": "widget-launch",
+                "document_id": stored_document_id.clone(),
+                "title": "Widget Launch",
+                "url": "https://example.com"
+            }
+        },
+        "aliases": {
+            "some-other-id": stored_document_id.clone()
+        }
+    });
+
+    let dir = std::env::temp_dir();
+    let questions_path = dir.join(format!("gold-chunks-questions-{}.jsonl", Uuid::new_v4()));
+    let map_path = dir.join(format!("gold-chunks-map-{}.json", Uuid::new_v4()));
+    std::fs::write(&questions_path, &questions_jsonl).unwrap();
+    std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+
+    let records = inspect_gold_chunks(&database, &questions_path, &map_path)
+        .await
+        .unwrap();
+
+    // The 6th evidence item has an empty fact and is skipped entirely.
+    assert_eq!(records.len(), 5);
+
+    assert_eq!(records[0].question_id, "q-1");
+    assert_eq!(records[0].evidence_index, 0);
+    assert_eq!(records[0].state, "in_chunk");
+    assert_eq!(
+        records[0].document_id.as_deref(),
+        Some(stored_document_id.as_str())
+    );
+    assert_eq!(records[0].chunk_ids, vec![format!("{document_id}:2")]);
+
+    assert_eq!(records[1].evidence_index, 1);
+    assert_eq!(records[1].state, "split_across_chunks");
+    assert!(records[1].chunk_ids.is_empty());
+
+    assert_eq!(records[2].evidence_index, 2);
+    assert_eq!(records[2].state, "absent");
+    assert!(records[2].chunk_ids.is_empty());
+
+    assert_eq!(records[3].evidence_index, 3);
+    assert_eq!(records[3].state, "unmapped_title");
+    assert_eq!(records[3].document_id, None);
+    assert!(records[3].chunk_ids.is_empty());
+
+    // Whitespace/case rule: fact normalized differently from stored content, still matches.
+    assert_eq!(records[4].evidence_index, 4);
+    assert_eq!(records[4].state, "in_chunk");
+    assert_eq!(records[4].chunk_ids, vec![format!("{document_id}:2")]);
+
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_file(&questions_path);
+    let _ = std::fs::remove_file(&map_path);
+}
+
+#[tokio::test]
+async fn gold_chunks_probe_rejects_non_uuid_document_id() {
+    let document_id = Uuid::new_v4().to_string();
+    let contents = ["Alpha content chunk zero."];
+    let nodes = gold_chunk_nodes(&document_id, &contents);
+    let (database, path, _stored_document_id) = fixture("gold-chunks-bad-uuid", &nodes, &[]).await;
+
+    let questions_jsonl = serde_json::json!({
+        "question_id": "q-1",
+        "evidence_list": [{"title": "Doc Title", "fact": "Alpha content chunk zero"}]
+    })
+    .to_string();
+    let map = serde_json::json!({
+        "corpus": "test",
+        "entries": {
+            "not-a-uuid": {
+                "corpus_id": "doc-title",
+                "document_id": "not-a-uuid",
+                "title": "Doc Title",
+                "url": ""
+            }
+        }
+    });
+
+    let dir = std::env::temp_dir();
+    let questions_path = dir.join(format!("gold-chunks-bad-uuid-questions-{}.jsonl", Uuid::new_v4()));
+    let map_path = dir.join(format!("gold-chunks-bad-uuid-map-{}.json", Uuid::new_v4()));
+    std::fs::write(&questions_path, &questions_jsonl).unwrap();
+    std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+
+    let result = inspect_gold_chunks(&database, &questions_path, &map_path).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("not a valid UUID"));
+
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_file(&questions_path);
+    let _ = std::fs::remove_file(&map_path);
+}
+
+#[tokio::test]
+async fn gold_chunks_probe_does_not_mutate_table_versions() {
+    let document_id = Uuid::new_v4().to_string();
+    let contents = ["Alpha content chunk zero.", "Beta content chunk one."];
+    let nodes = gold_chunk_nodes(&document_id, &contents);
+    let (database, path, stored_document_id) = fixture("gold-chunks-versions", &nodes, &[]).await;
+
+    let questions_jsonl = serde_json::json!({
+        "question_id": "q-1",
+        "evidence_list": [{"title": "Doc Title", "fact": "Alpha content chunk zero"}]
+    })
+    .to_string();
+    let map = serde_json::json!({
+        "corpus": "test",
+        "entries": {
+            stored_document_id.clone(): {
+                "corpus_id": "doc-title",
+                "document_id": stored_document_id.clone(),
+                "title": "Doc Title",
+                "url": ""
+            }
+        }
+    });
+
+    let dir = std::env::temp_dir();
+    let questions_path = dir.join(format!("gold-chunks-versions-questions-{}.jsonl", Uuid::new_v4()));
+    let map_path = dir.join(format!("gold-chunks-versions-map-{}.json", Uuid::new_v4()));
+    std::fs::write(&questions_path, &questions_jsonl).unwrap();
+    std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+
+    let nodes_table = database.nodes_table().await.unwrap();
+    let documents_table = database.documents_table().await.unwrap();
+    let version_before_nodes = nodes_table.version().await.unwrap();
+    let version_before_documents = documents_table.version().await.unwrap();
+
+    let records = inspect_gold_chunks(&database, &questions_path, &map_path)
+        .await
+        .unwrap();
+    assert_eq!(records.len(), 1);
+
+    let version_after_nodes = nodes_table.version().await.unwrap();
+    let version_after_documents = documents_table.version().await.unwrap();
+    assert_eq!(version_before_nodes, version_after_nodes);
+    assert_eq!(version_before_documents, version_after_documents);
+
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_file(&questions_path);
+    let _ = std::fs::remove_file(&map_path);
 }
