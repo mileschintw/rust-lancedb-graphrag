@@ -112,3 +112,18 @@ COMMITTED_THRESHOLDS = DecisionThresholds(
 
 # Committed investigation floor for graph yield (06.3.4-STAGED-GATE.md §2).
 GRAPH_YIELD_INVESTIGATION_FLOOR: float = 0.20
+
+# 06.3.4.1 D-69/D-73: committed before paid drive 1 (AI-SPEC §5 #2/#4/#6).
+CITATION_REJECTION_TRIPWIRE: float = 0.159
+# 06.3.4.1 D-69/D-73: committed before paid drive 1 (AI-SPEC §5 #2/#4/#6).
+CITATION_REJECTION_NULL_BASELINE: tuple[int, int] = (29, 42)
+# 06.3.4.1 D-69/D-73: committed before paid drive 1 (AI-SPEC §5 #2/#4/#6).
+SC2_TIMEOUT_DOMINANCE_RULE: str = "plurality_tie_is_dominant"
+# 06.3.4.1 D-69/D-73: committed before paid drive 1 (AI-SPEC §5 #2/#4/#6).
+FINAL_ANSWER_MISSING_REVIEW_RATE: float = 0.10
+
+# NOTE: VECTOR_BASELINE_USABLE_FLOOR (D-73 SC-3 floor) is deliberately NOT
+# committed here. 06.3.4.1-10 commits it after G is fixed. unpark_gates.py's
+# evaluate_sc3 reads it via getattr(thresholds, "VECTOR_BASELINE_USABLE_FLOOR",
+# None) and returns MISS "floor not committed" when absent -- it must never
+# supply a default.

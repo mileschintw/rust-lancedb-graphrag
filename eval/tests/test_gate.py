@@ -26,6 +26,7 @@ from lancet_eval.gate import (
     read_stage_caps,
     read_store_suspension,
 )
+from lancet_eval import thresholds as thresholds_module
 from lancet_eval.journal import NodeTiming, RunRecord, WorkflowWireMeta
 from lancet_eval.report import CorpusReport, RunMetadata
 
@@ -542,4 +543,45 @@ def test_find_budgets_and_baseline_files_ambiguity_raises(tmp_path: Path, monkey
     msg = str(exc_info.value)
     assert "06.3.3-first" in msg
     assert "06.3.3-second" in msg
+
+
+# --- 06.3.4.1 D-69/D-73 drive-1 companion literals ------------------------------------
+
+
+def test_citation_rejection_tripwire_committed() -> None:
+    """CITATION_REJECTION_TRIPWIRE is committed as a float before paid drive 1."""
+    assert hasattr(thresholds_module, "CITATION_REJECTION_TRIPWIRE")
+    value = thresholds_module.CITATION_REJECTION_TRIPWIRE
+    assert isinstance(value, float)
+    assert value == pytest.approx(0.159)
+
+
+def test_citation_rejection_null_baseline_committed() -> None:
+    """CITATION_REJECTION_NULL_BASELINE is committed as a (numerator, denominator) tuple."""
+    assert hasattr(thresholds_module, "CITATION_REJECTION_NULL_BASELINE")
+    value = thresholds_module.CITATION_REJECTION_NULL_BASELINE
+    assert isinstance(value, tuple)
+    assert value == (29, 42)
+
+
+def test_sc2_timeout_dominance_rule_committed() -> None:
+    """SC2_TIMEOUT_DOMINANCE_RULE is committed as a string reading of 'dominant'."""
+    assert hasattr(thresholds_module, "SC2_TIMEOUT_DOMINANCE_RULE")
+    value = thresholds_module.SC2_TIMEOUT_DOMINANCE_RULE
+    assert isinstance(value, str)
+    assert value == "plurality_tie_is_dominant"
+
+
+def test_final_answer_missing_review_rate_committed() -> None:
+    """FINAL_ANSWER_MISSING_REVIEW_RATE is committed as a float review trigger."""
+    assert hasattr(thresholds_module, "FINAL_ANSWER_MISSING_REVIEW_RATE")
+    value = thresholds_module.FINAL_ANSWER_MISSING_REVIEW_RATE
+    assert isinstance(value, float)
+    assert value == pytest.approx(0.10)
+
+
+def test_vector_baseline_usable_floor_not_yet_committed() -> None:
+    """D-73: VECTOR_BASELINE_USABLE_FLOOR must NOT exist yet -- 06.3.4.1-10 commits it
+    after G is fixed. unpark_gates.evaluate_sc3 must never default it."""
+    assert not hasattr(thresholds_module, "VECTOR_BASELINE_USABLE_FLOOR")
 
