@@ -74,6 +74,16 @@ REGISTERED_DIMENSIONS: list[str] = [
     "ranking_quality",
     "answer_exact_match",
     "answer_f1",
+    # D-70: exact match / whole-token containment of the extracted `Answer:` line.
+    "final_answer_em",
+    # D-70: whole-token containment of gold on the full answer (secondary, not gated).
+    "final_answer_containment",
+    # D-70: final_answer_em OR gold_contained(extracted line) -- the SC-3 headline metric.
+    "answer_usable",
+    # D-70/D-74: rate of non-null records with no extractable `Answer:` line.
+    "final_answer_missing_rate",
+    # D-72: correctness of null-query abstention, scored on null_query records only.
+    "null_abstention_correctness",
     "answer_faithfulness",
     "answer_groundedness",
     "graph_ablation_delta",

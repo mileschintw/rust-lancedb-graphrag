@@ -3,7 +3,11 @@
 import json
 
 from lancet_eval.config import repo_root
-from lancet_eval.dimensions import OBS_04_PLACEHOLDER, REGISTERED_DIMENSIONS, DimensionResult
+from lancet_eval.dimensions import (
+    OBS_04_PLACEHOLDER,
+    REGISTERED_DIMENSIONS,
+    DimensionResult,
+)
 from lancet_eval.report import (
     CorpusReport,
     RunMetadata,
@@ -51,7 +55,9 @@ def test_schema_validates_five_new_answer_dimensions() -> None:
         sample_size_deterministic=500,
         sample_size_judged=50,
     )
-    dims = [DimensionResult(name=name, status="ok", score=0.5, n=10) for name in new_dims]
+    dims = [
+        DimensionResult(name=name, status="ok", score=0.5, n=10) for name in new_dims
+    ]
     report = CorpusReport(corpus="multihop_rag", metadata=metadata, dimensions=dims)
 
     payload = json.loads(render_json(report))

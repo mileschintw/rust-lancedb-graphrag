@@ -65,12 +65,17 @@ from lancet_eval.measure import compute_judge_spend, estimate_judge_cost_per_que
 from lancet_eval.metrics import (
     abstention_rate,
     context_precision_at_k,
+    extract_final_answer,
+    final_answer_em,
+    gold_contained,
     mrr_at_k,
     ndcg_at_k,
+    null_abstention_correct,
     recall_at_k,
     squad_em,
     squad_f1,
 )
+from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval.pairing import (
     compute_paired_delta,
     deduplicate_by_arm,
@@ -299,6 +304,11 @@ def score_run(
         ems: list[float] = []
         f1s: list[float] = []
         abstentions: list[float] = []
+        final_answer_ems: list[float] = []
+        final_answer_containments: list[float] = []
+        answer_usables: list[float] = []
+        final_answer_missings: list[float] = []
+        null_abstention_corrects: list[float] = []
         payload_excluded_answerable_count = 0
         payload_excluded_unanswerable_count = 0
         provenance_error_count = 0
@@ -350,6 +360,22 @@ def score_run(
                 if f1_out.status == "ok" and f1_out.score is not None:
                     f1s.append(f1_out.score)
 
+                # D-70: metrics on the extracted `Answer:` line (next to the
+                # unchanged full-explanation EM/F1 above). final_answer_missing
+                # records stay in every one of these denominators (D-34/D-74).
+                fa_em_out = final_answer_em(gold, rec.answer)
+                if fa_em_out.status == "ok" and fa_em_out.score is not None:
+                    final_answer_ems.append(fa_em_out.score)
+                final_answer_containments.append(
+                    1.0 if gold_contained(gold.gold_answer, rec.answer) else 0.0
+                )
+                answer_usables.append(
+                    1.0 if compute_answer_usable(gold, rec.answer) else 0.0
+                )
+                final_answer_missings.append(
+                    1.0 if extract_final_answer(rec.answer) is None else 0.0
+                )
+
             # Abstention on unanswerable
             if gold.is_null:
                 snap_chunks = rec.snapshot.retrieved_chunks if rec.snapshot else None
@@ -358,6 +384,10 @@ def score_run(
                 )
                 if abs_out.status == "ok" and abs_out.score is not None:
                     abstentions.append(abs_out.score)
+                # D-72: null_abstention_correctness, null_query records only.
+                nac_out = null_abstention_correct(gold, rec.answer or "")
+                if nac_out.status == "ok" and nac_out.score is not None:
+                    null_abstention_corrects.append(nac_out.score)
 
         arm_metrics[arm] = {
             "total": total_records,
@@ -373,6 +403,11 @@ def score_run(
             "ems": ems,
             "f1s": f1s,
             "abstentions": abstentions,
+            "final_answer_ems": final_answer_ems,
+            "final_answer_containments": final_answer_containments,
+            "answer_usables": answer_usables,
+            "final_answer_missings": final_answer_missings,
+            "null_abstention_corrects": null_abstention_corrects,
             "usable_records": [
                 r for r in usable_records if arm != "graph-off" or has_arm_provenance(r)
             ],
@@ -1115,6 +1150,54 @@ def score_run(
         )
     )
 
+    # 5a. final_answer_em (D-70): EM on the extracted `Answer:` line
+    dimensions.append(
+        _build_mean_dim(
+            "final_answer_em",
+            p_data["final_answer_ems"],
+            p_data["errors"],
+            p_data["total"],
+            extra_detail=answerable_payload_detail,
+        )
+    )
+
+    # 5b. final_answer_containment (D-70): whole-token gold containment on the
+    # full answer text (secondary/context metric, not gated)
+    dimensions.append(
+        _build_mean_dim(
+            "final_answer_containment",
+            p_data["final_answer_containments"],
+            p_data["errors"],
+            p_data["total"],
+            extra_detail=answerable_payload_detail,
+        )
+    )
+
+    # 5c. answer_usable (D-70): final_answer_em OR gold_contained(extracted
+    # line) -- the SC-3 headline metric, judged on the extracted line only
+    dimensions.append(
+        _build_mean_dim(
+            "answer_usable",
+            p_data["answer_usables"],
+            p_data["errors"],
+            p_data["total"],
+            extra_detail=answerable_payload_detail,
+        )
+    )
+
+    # 5d. final_answer_missing_rate (D-70/D-74): rate of non-null records with
+    # no extractable `Answer:` line; these records stay in every denominator
+    # above (D-34) rather than being excluded
+    dimensions.append(
+        _build_mean_dim(
+            "final_answer_missing_rate",
+            p_data["final_answer_missings"],
+            p_data["errors"],
+            p_data["total"],
+            extra_detail=answerable_payload_detail,
+        )
+    )
+
     # 6. answer_faithfulness
     if no_judge:
         dimensions.append(
@@ -1408,6 +1491,45 @@ def score_run(
                 name="abstention_on_unanswerable",
                 status="skipped",
                 reason=skip_reason,
+                detail={
+                    "excluded_payload_records": unanswerable_payload_excluded,
+                },
+                n=0,
+            )
+        )
+
+    # 9a. null_abstention_correctness (D-72): scored on null_query records
+    # only; never enters answer_usable's denominator (see the answerable-only
+    # guard around answer_usables above)
+    if p_data["null_abstention_corrects"]:
+        nac_mean = sum(p_data["null_abstention_corrects"]) / len(
+            p_data["null_abstention_corrects"]
+        )
+        dimensions.append(
+            DimensionResult(
+                name="null_abstention_correctness",
+                status="ok",
+                score=nac_mean,
+                detail={
+                    "null_samples": float(len(p_data["null_abstention_corrects"])),
+                    "excluded_payload_records": unanswerable_payload_excluded,
+                },
+                n=len(p_data["null_abstention_corrects"]),
+            )
+        )
+    else:
+        if unanswerable_payload_excluded > 0:
+            nac_skip_reason = (
+                "All unanswerable-question records lacked scorable payload "
+                "(excluded by the payload rule); none were scored"
+            )
+        else:
+            nac_skip_reason = "Corpus contains no unanswerable questions"
+        dimensions.append(
+            DimensionResult(
+                name="null_abstention_correctness",
+                status="skipped",
+                reason=nac_skip_reason,
                 detail={
                     "excluded_payload_records": unanswerable_payload_excluded,
                 },
