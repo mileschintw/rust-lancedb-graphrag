@@ -86,17 +86,15 @@ def assert_admin_dsn_targets_eval_database(eval_dsn: str, admin_dsn: str) -> Non
         )
 
 
-def reset_eval_schema(settings: EvalSettings) -> None:
-    """Reset the PostgreSQL eval schema via drop/create and Atlas apply."""
-    schema_name = assert_schema_isolated(settings)
-    assert_admin_dsn_targets_eval_database(
-        settings.database_url, settings.dev_database_url
-    )
+def run_psql(settings: EvalSettings, sql: str, *, timeout_s: float = 30.0) -> str:
+    """Run a SQL statement via psql against the eval admin DSN.
 
-    drop_sql = f"DROP SCHEMA IF EXISTS {_quote_pg_identifier(schema_name)} CASCADE;"
-    create_sql = f"CREATE SCHEMA {_quote_pg_identifier(schema_name)};"
-    drop_create_sql = f"{drop_sql} {create_sql}"
-
+    Falls back to `docker compose exec` when the psql CLI is not on PATH, matching
+    the fallback order and error wording `reset_eval_schema` has always used. SQL is
+    passed on stdin (never as a `-c` command-line argument) so no literal lands on a
+    command line, using unaligned tuples-only output (`-A -t`) for row-based parsing.
+    Returns stdout; raises `SeedError` on non-zero exit.
+    """
     admin_url = urlparse(settings.dev_database_url)
     admin_user = admin_url.username or "postgres"
     admin_db = admin_url.path.lstrip("/") or "lancet"
@@ -109,8 +107,8 @@ def reset_eval_schema(settings: EvalSettings) -> None:
             settings.dev_database_url,
             "-v",
             "ON_ERROR_STOP=1",
-            "-c",
-            drop_create_sql,
+            "-A",
+            "-t",
         ]
         cmd_cwd = gateway_dir
     elif shutil.which("docker"):
@@ -127,8 +125,8 @@ def reset_eval_schema(settings: EvalSettings) -> None:
             admin_db,
             "-v",
             "ON_ERROR_STOP=1",
-            "-c",
-            drop_create_sql,
+            "-A",
+            "-t",
         ]
         cmd_cwd = repo_root()
     else:
@@ -137,22 +135,42 @@ def reset_eval_schema(settings: EvalSettings) -> None:
             settings.dev_database_url,
             "-v",
             "ON_ERROR_STOP=1",
-            "-c",
-            drop_create_sql,
+            "-A",
+            "-t",
         ]
         cmd_cwd = gateway_dir
 
-    res_psql = subprocess.run(
+    res = subprocess.run(
         psql_cmd,
         cwd=cmd_cwd,
+        input=sql,
         capture_output=True,
         text=True,
-        timeout=30.0,
+        timeout=timeout_s,
     )
-    if res_psql.returncode != 0:
-        err = res_psql.stderr or res_psql.stdout
-        raise SeedError(f"psql schema reset failed (exit {res_psql.returncode}): {err}")
+    if res.returncode != 0:
+        err = res.stderr or res.stdout
+        raise SeedError(f"psql command failed (exit {res.returncode}): {err}")
+    return res.stdout
 
+
+def reset_eval_schema(settings: EvalSettings) -> None:
+    """Reset the PostgreSQL eval schema via drop/create and Atlas apply."""
+    schema_name = assert_schema_isolated(settings)
+    assert_admin_dsn_targets_eval_database(
+        settings.database_url, settings.dev_database_url
+    )
+
+    drop_sql = f"DROP SCHEMA IF EXISTS {_quote_pg_identifier(schema_name)} CASCADE;"
+    create_sql = f"CREATE SCHEMA {_quote_pg_identifier(schema_name)};"
+    drop_create_sql = f"{drop_sql} {create_sql}"
+
+    try:
+        run_psql(settings, drop_create_sql)
+    except SeedError as exc:
+        raise SeedError(f"psql schema reset failed: {exc}") from exc
+
+    gateway_dir = repo_root() / "gateway"
     res_atlas = subprocess.run(
         ["atlas", "schema", "apply", "--env", "eval", "--auto-approve"],
         cwd=gateway_dir,

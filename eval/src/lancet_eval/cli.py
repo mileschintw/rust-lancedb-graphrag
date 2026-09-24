@@ -41,6 +41,13 @@ corpus_app = typer.Typer(
 )
 app.add_typer(corpus_app, name="corpus")
 
+identity_app = typer.Typer(
+    name="identity",
+    help="Index identity gate commands.",
+    no_args_is_help=True,
+)
+app.add_typer(identity_app, name="identity")
+
 console = Console()
 
 
@@ -209,6 +216,82 @@ def reseed_command(
     except Exception as exc:
         console.print(f"[bold red]Reseeding error:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
+
+
+@identity_app.command("check")
+def identity_check(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus to check identity for (e.g. multihop_rag)",
+        ),
+    ] = "multihop_rag",
+) -> None:
+    """Run the three-way index identity comparison and print the report."""
+    from lancet_eval.identity import compute_identity
+
+    settings = load_settings()
+    report = compute_identity(settings, corpus)
+    console.print_json(data=report.model_dump())
+
+    if not report.passed:
+        console.print("[bold red]Identity gate FAILED.[/bold red]")
+        raise typer.Exit(code=1)
+
+    console.print("[green]Identity gate passed.[/green]")
+
+
+@identity_app.command("pg-delete-extras")
+def identity_pg_delete_extras(
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            "-c",
+            help="Corpus whose document map defines the allowed document IDs",
+        ),
+    ] = "multihop_rag",
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply",
+            help="Apply the delete (default: dry-run, prints extras only)",
+        ),
+    ] = False,
+    pg_dump: Annotated[
+        Path | None,
+        typer.Option(
+            "--pg-dump",
+            help="Path to an existing non-empty pg_dump backup file, required with --apply",
+        ),
+    ] = None,
+) -> None:
+    """Delete PostgreSQL documents outside the corpus's map (dry-run by default)."""
+    from lancet_eval.identity import delete_pg_extras
+    from lancet_eval.seed import load_document_map
+
+    settings = load_settings()
+    try:
+        doc_map = load_document_map(corpus)
+        allow_ids = set(doc_map.entries.keys())
+        result = delete_pg_extras(
+            settings, allow_ids, apply=apply, pg_dump_path=pg_dump
+        )
+    except Exception as exc:
+        console.print(f"[bold red]pg-delete-extras error:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if apply:
+        console.print(
+            f"[green]Deleted {len(result)} extra document(s): {result}[/green]"
+        )
+    else:
+        console.print(
+            f"[yellow]Dry run: {len(result)} extra document(s) would be deleted: "
+            f"{result}[/yellow]"
+        )
 
 
 def resolve_run_dir(corpus: str, resume: bool, runs_root: Path | None = None) -> Path:
