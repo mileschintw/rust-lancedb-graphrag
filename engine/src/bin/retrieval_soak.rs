@@ -528,6 +528,33 @@ struct IterationLine {
     alive_tasks: usize,
     global_queue_depth: usize,
     rss_hint: Option<u64>,
+    /// `lance::session::Session::size_bytes()` (06.3.4.1-03 long-duration soak, round 3): a
+    /// full `deep_size_of` walk over the session's index/metadata caches, per its own doc
+    /// comment "not trivial to compute" — not O(1), but cheap relative to this soak's
+    /// multi-second iteration pace. `None` only if the table's dataset handle could not be
+    /// read (never expected against a stable, already-open connection).
+    session_size_bytes: Option<u64>,
+    /// `lance::session::Session::approx_num_items()` — a rough, O(1)-ish estimate of index +
+    /// metadata cache entry count plus extension count. Class-3 (Lance session cache growth)
+    /// discriminator the original profile flagged as "not exercised as a contrast".
+    session_approx_num_items: Option<usize>,
+}
+
+/// Reads the shared connection-scoped `lance::session::Session`'s size discriminators through
+/// any already-open table on that connection (06.3.4.1-03 long-duration soak, round 3). Returns
+/// `(None, None)` if the table is not a native table or its dataset handle can't be resolved —
+/// this is a best-effort diagnostic read, never a fatal soak condition.
+async fn lance_session_stats(table: &Table) -> (Option<u64>, Option<usize>) {
+    let Some(wrapper) = table.dataset() else {
+        return (None, None);
+    };
+    match wrapper.get().await {
+        Ok(dataset) => {
+            let session = dataset.session();
+            (Some(session.size_bytes()), Some(session.approx_num_items()))
+        }
+        Err(_) => (None, None),
+    }
 }
 
 async fn probe_collector_reachable(endpoint: &str) -> bool {
@@ -578,6 +605,7 @@ async fn run_r_rp_rg_rgt(
     database: &DatabaseManager,
     graph_settings: &GraphSettings,
     graph_timeout_ms: u64,
+    session_stats_table: &Table,
 ) -> IterationLine {
     let node = RetrieveHybridNode::new(
         Some(dense_port),
@@ -644,6 +672,8 @@ async fn run_r_rp_rg_rgt(
     }
 
     let (alive_tasks, global_queue_depth) = runtime_counters();
+    let (session_size_bytes, session_approx_num_items) =
+        lance_session_stats(session_stats_table).await;
     let unix_ms = unix_millis_now();
 
     IterationLine {
@@ -663,6 +693,8 @@ async fn run_r_rp_rg_rgt(
         alive_tasks,
         global_queue_depth,
         rss_hint: None,
+        session_size_bytes,
+        session_approx_num_items,
     }
 }
 
@@ -675,6 +707,7 @@ async fn run_w(
     dense_port: Arc<dyn DenseRetrievalPort>,
     bm25_port: Arc<dyn engine::workflow::ports::Bm25RetrievalPort>,
     generation_label: &str,
+    session_stats_table: &Table,
 ) -> Result<(), String> {
     let wf = &effective_settings.workflow;
     let mut runner = WorkflowRunner::new().with_timeouts(
@@ -743,6 +776,8 @@ async fn run_w(
 
     let report: RetrieveSubStageReport = *report_handle.lock().unwrap_or_else(|p| p.into_inner());
     let (alive_tasks, global_queue_depth) = runtime_counters();
+    let (session_size_bytes, session_approx_num_items) =
+        lance_session_stats(session_stats_table).await;
 
     // AssemblePrompt/ExtractGraphContext node-level durations are not separately instrumented
     // for arm W (out of this task's file scope: only retrieve.rs and service.rs carry new
@@ -767,6 +802,8 @@ async fn run_w(
         "global_queue_depth": global_queue_depth,
         "rss_hint": serde_json::Value::Null,
         "full_workflow_ms": full_workflow_ms,
+        "session_size_bytes": session_size_bytes,
+        "session_approx_num_items": session_approx_num_items,
     });
     println!(
         "{}",
@@ -914,6 +951,7 @@ async fn main() -> Result<(), String> {
                     Arc::clone(&dense_port),
                     Arc::clone(&bm25_port),
                     &generation_label,
+                    &nodes_table,
                 )
                 .await?;
             }
@@ -934,6 +972,7 @@ async fn main() -> Result<(), String> {
                     &database,
                     &graph_settings,
                     parsed.graph_timeout_ms,
+                    &nodes_table,
                 )
                 .await;
                 println!(
