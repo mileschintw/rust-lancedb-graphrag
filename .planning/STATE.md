@@ -4,9 +4,9 @@ milestone: v1.0
 current_plan: 4
 status: executing
 stopped_at: Completed 06.3.4.1-03-PLAN.md
-last_updated: "2026-09-24T20:46:46.056Z"
+last_updated: "2026-09-24T21:25:21.497Z"
 last_activity: 2026-09-24
-state_head: 0c5a78606d1fd827315f30c1225ff32d5c4864f1
+state_head: 8fffa9c884778212916876d09114f1d1bd91e21a
 progress:
   total_phases: 16
   completed_phases: 9
@@ -506,3 +506,4 @@ Total Plans in Phase: 20
 ### Blockers
 
 - 06.3.4.1-07 precondition unmet -- OI-02 accumulator not reproduced/named by three independent soak rounds. 07's Task 1 requires fix-named-class or mimalloc with a named class; neither is available. Skip or replan 07 before wave 4 runs.
+- 06.3.4.1-04 Task 3 (live read-only census) blocked: precondition unmet -- docker compose ps db shows the db service down (Exited, all other compose services also down except collector). data/lancedb-eval exists and no engine.exe process is running (both met). Tasks 1-2 complete and committed (91f9d99e, 430680d0, 74343ea6, 8fffa9c8); resume by starting docker compose up -d db (and any other services Task 3's identity/pg-delete-extras checks need) then re-dispatching 06.3.4.1-04 Task 3 only.
