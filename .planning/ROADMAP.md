@@ -928,60 +928,76 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 20 plans
+**Plans:** 1/20 plans executed
 
 Plans:
 
 **Wave 1**
-- [ ] 06.3.4.1-01-PLAN.md — Lead the phase with one thin, production-quality path through every layer the diagnosis touches
+
+- [x] 06.3.4.1-01-PLAN.md — Lead the phase with one thin, production-quality path through every layer the diagnosis touches
 - [ ] 06.3.4.1-02-PLAN.md — Make "refuses to drive on an identity mismatch" (D-61) a property of the harness entry points, not a checklist item
 - [ ] 06.3.4.1-03-PLAN.md — Find the in-process resource that makes RetrieveHybrid (and AssemblePrompt, and the embedding call) slow down linearly within one engine process (OI-02, layer 3), before…
 
 **Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 06.3.4.1-04-PLAN.md — Build the tooling for layer 2 (index identity, OI-03) and take a read-only census of what it would delete
 - [ ] 06.3.4.1-05-PLAN.md — Put the new answer metrics into the fail-closed scored report, commit the drive-1 companion literals, and make every SC-1..SC-3 gate reading a computed PASS/MISS rather than a…
 
 **Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 06.3.4.1-06-PLAN.md — Walk through the D-58 one-way door that 06.3.4.1-04 measured
 
 **Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 06.3.4.1-07-PLAN.md — Fix the OI-02 accumulator at its root (D-64), in the engine, for the class the profile named and the user confirmed at 06.3.4.1-03's checkpoint
 
 **Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 06.3.4.1-08-PLAN.md — Add D-71's final-answer line to the production prompt so the vector baseline's answers can be scored on a short extracted answer (SC-3, column e), without weakening the…
 - [ ] 06.3.4.1-09-PLAN.md — Layer 4, first half
 
 **Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 06.3.4.1-10-PLAN.md — Close layer 4's setup
 
 **Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 06.3.4.1-11-PLAN.md — Re-derive the six workflow budgets on the fixed engine (D-66) from a capped, authorised measurement pass, and write production config and code defaults together with a…
 
 **Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 06.3.4.1-12-PLAN.md — Run paid drive 1 on the fixed index, engine and prompt, and read SC-2 (timeout not dominant, flatness) and SC-3 (the vector baseline answers some questions) as computed gates
 
 **Wave 9** *(blocked on Wave 8 completion)*
+
 - [ ] 06.3.4.1-13-PLAN.md — Build OI-01's seeding and path search as library code, prove it end to end on the real reconciled graph with an offline probe (store → mention seeds → seed-to-seed paths →…
 
 **Wave 10** *(blocked on Wave 9 completion)*
+
 - [ ] 06.3.4.1-14-PLAN.md — Cut production graph augmentation over to 06.3.4.1-13's mention seeding and path search as the only seeding path (D-75, D-78), with the per-generation `GraphIndex` in the…
 
 **Wave 11** *(blocked on Wave 10 completion)*
+
 - [ ] 06.3.4.1-15-PLAN.md — Make graph-on change what is retrieved, not only what is appended to the prompt (D-76, D-81)
 
 **Wave 12** *(blocked on Wave 11 completion)*
+
 - [ ] 06.3.4.1-16-PLAN.md — Carry the new graph diagnostics from the engine to the journal so SC-4 and SC-5 can be computed per record
 
 **Wave 13** *(blocked on Wave 12 completion)*
+
 - [ ] 06.3.4.1-17-PLAN.md — Commit the drive-2 gate rules and make SC-4 and SC-5 computed readings, and extend the canaries with a seed-to-seed path canary
 
 **Wave 14** *(blocked on Wave 13 completion)*
+
 - [ ] 06.3.4.1-18-PLAN.md — Re-derive the graph operation budget on the new seeding (D-77), then prove the canaries hold live on the engine that drive 2 will use (D-80)
 
 **Wave 15** *(blocked on Wave 14 completion)*
+
 - [ ] 06.3.4.1-19-PLAN.md — Run paid drive 2, the run of record, on the repaired graph path, and read SC-1, SC-4 and SC-5 as computed gates, with SC-2/SC-3 re-reported
 
 **Wave 16** *(blocked on Wave 15 completion)*
+
 - [ ] 06.3.4.1-20-PLAN.md — Record non-comparability publicly (D-88)
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)

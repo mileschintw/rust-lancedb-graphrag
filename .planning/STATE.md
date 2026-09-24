@@ -1,23 +1,28 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
+current_plan: 2
 status: executing
-stopped_at: Phase 06.3.4.1 execution started (wave 1 of 16)
-last_updated: "2026-09-23T10:12:52.275Z"
+stopped_at: Completed 06.3.4.1-01-PLAN.md
+last_updated: "2026-09-24T01:24:05.216Z"
 last_activity: 2026-09-23
-state_head: 85110a75b80e0b65ffc98f5ec355676c84441ffa
+state_head: 10a6895b426c78aa02a9ec2f981e4baa70bd1610
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 158
+  completed_plans: 159
 milestone_name: milestone
-current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 current_phase: 06.3.4.1
-current_plan: 06.3.4.1-01
+current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 ---
 
 # Project State
+
+## Current Position
+
+Current Plan: 2
+Total Plans in Phase: 20
 
 ## Current Status
 
@@ -238,7 +243,7 @@ current_plan: 06.3.4.1-01
 
 - **Phase:** 06.3.4.1 — Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
 - **Status:** executing (started 2026-09-23 via `/gsd-execute-phase 06.3.4.1`; 20 plans across 16 waves, run sequentially on main — see note below)
-- **Current Plan:** 06.3.4.1-01 (Wave 1)
+- **Current Plan (compound ID):** 06.3.4.1-01 (Wave 1) — see `## Current Position` above for the machine-readable `Current Plan`/`Total Plans in Phase` counters
 - **Execution mode note:** worktree isolation deliberately not used for this run. Plan 01's precondition reads the gitignored live eval store (`data/lancedb-eval/nodes.lance`), which does not exist inside a harness worktree, and plan 03 is a release-build latency/working-set soak whose slopes select the class plan 07 must fix (D-64), so it needs a quiet machine rather than sibling executors' parallel cargo builds. Waves 2+ would have degraded to sequential anyway once wave 1 merges past `origin/HEAD` (#1369).
 - **Previous phase:** 06.3.4 remains `gaps_found` (7/8; SC-3 D-48 fresh human calibration parked, see Current Status). Phase 6.4 stays **parked** until Phase 06.3.4.1 clears its unpark gates (a demonstrable graph-on vs graph-off effect on a gold-in-index subset; both arms failing to answer is not a v1 story).
 
@@ -363,6 +368,7 @@ current_plan: 06.3.4.1-01
 | Phase 06.3.3 P04 | 90 | 3 tasks | 8 files |
 | Phase 06.3.3 P05 | 18 min | 3 tasks | 7 files |
 | Phase 06.3.3 P06 | 16 min | 3 tasks | 5 files |
+| Phase 06.3.4.1 P01 | 3h 05min | 3 tasks | 15 files |
 
 ## Decisions
 
@@ -414,13 +420,15 @@ current_plan: 06.3.4.1-01
 - [Phase 06.3.3]: Lower verify overlay generation_timeout_secs to 3 instead of raising generation_node_timeout_ms past SlowLiveProvider's 30s stall
 - [Phase 06.3.3]: Raise env-override generation node marker 8888 to 68888 rather than parsing LANCET_OPENROUTER__GENERATION_TIMEOUT_SECS
 - [Phase 06.3.3]: Do not re-run the live engine binary; the new try_from_settings test is the wiring proof
+- [Phase 06.3.4.1]: Measured (b)=no rate on real data is 11.0% (49/447), well above RESEARCH A2's 'a few percent' assumption — Flagged for 06.3.4.1-10's reconcile/G sizing rather than acted on in this plan
+- [Phase 06.3.4.1]: retro_lenient.py reimplements D-69 message classification locally instead of importing lancet_eval.diagnostic.classify_record — Keeps its import surface statically AST-provable as excluding the fail-closed score/report path (OBS-05)
 
 ## Session
 
-**Last session:** 2026-09-22T23:34:11.485Z
+**Last session:** 2026-09-24T01:24:03.983Z
 **Last activity:** 2026-09-23
-**Stopped at:** Phase 06.3.4.1 context gathered
-**Resume file:** .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-CONTEXT.md
+**Stopped at:** Completed 06.3.4.1-01-PLAN.md
+**Resume file:** None
 
 ## Accumulated Context
 
