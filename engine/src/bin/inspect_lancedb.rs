@@ -940,9 +940,6 @@ pub struct DocumentIdsReport {
 
 /// Collects the distinct, non-null `document_id` values from `table` via a
 /// full read-only column scan (`Select::columns(&["document_id"])`).
-// RED-phase: not yet called by `inspect_document_ids`'s stub body; wired in
-// the GREEN commit.
-#[expect(dead_code, reason = "RED-phase stub; wired into inspect_document_ids in the GREEN commit")]
 async fn collect_document_ids(table: &Table) -> Result<BTreeSet<String>, String> {
     let batches = table
         .query()
@@ -972,18 +969,31 @@ async fn collect_document_ids(table: &Table) -> Result<BTreeSet<String>, String>
 ///
 /// # Errors
 /// Returns an error if any table cannot be opened or queried.
-// RED-phase stub (06.3.4.1-04 Task 1): intentionally returns an empty report
-// regardless of store contents so `document_ids_lists_sorted_dedup_sets`
-// fails on assert_eq! while `document_ids_empty_store_yields_empty` passes
-// vacuously. Implemented for real in the GREEN commit.
-#[expect(
-    clippy::unused_async,
-    reason = "RED-phase stub; GREEN commit adds the real table reads"
-)]
 pub async fn inspect_document_ids(
-    _database: &DatabaseManager,
+    database: &DatabaseManager,
 ) -> Result<DocumentIdsReport, String> {
-    Ok(DocumentIdsReport::default())
+    let documents = database.documents_table().await?;
+    let nodes = database.nodes_table().await?;
+    let edges = database.edges_table().await?;
+    let entity_edges = database.entity_edges_table().await?;
+    let staged = database.staged_documents_table().await?;
+
+    let documents_ids = collect_document_ids(&documents).await?;
+    let nodes_ids = collect_document_ids(&nodes).await?;
+    let edges_ids = collect_document_ids(&edges).await?;
+    let entity_edges_ids = collect_document_ids(&entity_edges).await?;
+    let staged_documents_v2_rows = staged
+        .count_rows(None)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    Ok(DocumentIdsReport {
+        documents: documents_ids,
+        nodes: nodes_ids,
+        edges: edges_ids,
+        entity_edges: entity_edges_ids,
+        staged_documents_v2_rows,
+    })
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1002,7 +1012,7 @@ pub struct InspectConfig {
     pub lancedb_path: Option<String>,
 }
 
-pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME | --gold-chunks QUESTIONS_JSONL --map DOCUMENT_MAP_JSON] [--lancedb-path PATH]";
+pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME | --gold-chunks QUESTIONS_JSONL --map DOCUMENT_MAP_JSON | --document-ids] [--lancedb-path PATH]";
 
 pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConfig, String> {
     let mut iter = args.into_iter();
@@ -1013,6 +1023,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
     let mut entity_name = None;
     let mut gold_chunks_questions = None;
     let mut gold_chunks_map = None;
+    let mut document_ids = false;
     let mut lancedb_path = None;
 
     while let Some(arg) = iter.next() {
@@ -1059,6 +1070,9 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
                     .ok_or_else(|| format!("--map requires a value\n{USAGE}"))?;
                 gold_chunks_map = Some(val);
             }
+            "--document-ids" => {
+                document_ids = true;
+            }
             "--lancedb-path" => {
                 let val = iter
                     .next()
@@ -1082,7 +1096,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
         + (graph_population as usize)
         + (entity_id.is_some() as usize)
         + (entity_name.is_some() as usize)
-        + (gold_chunks_questions.is_some() as usize);
+        + (gold_chunks_questions.is_some() as usize)
+        + (document_ids as usize);
 
     if mode_count == 0 {
         return Err(format!("no mode specified\n{USAGE}"));
@@ -1119,6 +1134,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
             questions: PathBuf::from(questions),
             map: PathBuf::from(map),
         }
+    } else if document_ids {
+        InspectMode::DocumentIds
     } else {
         unreachable!();
     };

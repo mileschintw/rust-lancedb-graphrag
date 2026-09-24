@@ -27,6 +27,9 @@ fi
 #         inspect_lancedb tests (gold_chunks_flags_parse_and_require_pairing,
 #         gold_chunks_probe_classifies_evidence_states, gold_chunks_probe_rejects_non_uuid_document_id,
 #         gold_chunks_probe_does_not_mutate_table_versions, normalize_ws_matches_python_rule).
+#   520 — Phase 06.3.4.1 plan 04 Task 1: `--document-ids` mode added 2 inspect_lancedb tests
+#         (document_ids_lists_sorted_dedup_sets, document_ids_empty_store_yields_empty), 36->38.
+#         lib/config_startup unchanged (460/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -63,8 +66,8 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + INTEG_CONFIG_COUNT 
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (7 named assertions)
-if [ "$TOTAL" -ne 518 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 518, got $TOTAL" >&2
+if [ "$TOTAL" -ne 520 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 520, got $TOTAL" >&2
   exit 1
 fi
 
@@ -83,8 +86,8 @@ if [ "$BIN_MAIN_COUNT" -ne 0 ]; then
   exit 1
 fi
 
-if [ "$BIN_INSPECT_COUNT" -ne 36 ]; then
-  echo "FAIL: inspect_lancedb test count mismatch: expected 36, got $BIN_INSPECT_COUNT" >&2
+if [ "$BIN_INSPECT_COUNT" -ne 38 ]; then
+  echo "FAIL: inspect_lancedb test count mismatch: expected 38, got $BIN_INSPECT_COUNT" >&2
   exit 1
 fi
 
