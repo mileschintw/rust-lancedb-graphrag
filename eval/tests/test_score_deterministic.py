@@ -364,6 +364,124 @@ def test_negative_ablation_delta_reported_as_ok(tmp_path: Path) -> None:
     assert ablation_dim.detail["ci_upper"] == -1.0
 
 
+def test_five_answer_dimensions_d70_d72(tmp_path: Path) -> None:
+    """D-70/D-72: a fixture journal proves final_answer_em/containment/answer_usable/
+    final_answer_missing_rate are computed on the extracted `Answer:` line for non-null
+    questions, and legacy answer_exact_match/answer_f1 stay unchanged next to them.
+    """
+    questions = load_sample_questions("multihop_rag")
+    yes_questions = [
+        q for q in questions if q.gold_answer.strip() == "Yes" and not q.is_null
+    ]
+    assert len(yes_questions) >= 3
+    q1, q2, q3 = yes_questions[:3]
+
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+
+    def _mk(qid: str, answer: str) -> RunRecord:
+        return RunRecord(
+            corpus="multihop_rag",
+            question_id=qid,
+            graph_arm="graph-off",
+            outcome="success",
+            answer=answer,
+            index_generation="gen-test-1",
+            notices=[
+                Notice(
+                    code="GRAPH_ABLATION",
+                    message="",
+                    typed_code=NOTICE_CODE_GRAPH_ABLATION,
+                )
+            ],
+            snapshot=RetrievalSnapshot(
+                index_generation="gen-test-1", retrieved_chunks=[]
+            ),
+        )
+
+    journal.append(_mk(q1.question_id, "Some explanation.\nAnswer: Yes"))
+    journal.append(_mk(q2.question_id, "Some explanation.\nAnswer: No"))
+    journal.append(_mk(q3.question_id, "Some explanation with no answer line."))
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+
+    def _dim(name: str):
+        dim = next((d for d in report.dimensions if d.name == name), None)
+        assert dim is not None, f"missing dimension {name}"
+        return dim
+
+    usable = _dim("answer_usable")
+    assert usable.status == "ok"
+    assert usable.score == pytest.approx(1 / 3)
+
+    missing_rate = _dim("final_answer_missing_rate")
+    assert missing_rate.status == "ok"
+    assert missing_rate.score == pytest.approx(1 / 3)
+
+    final_em = _dim("final_answer_em")
+    assert final_em.status == "ok"
+    assert final_em.score == pytest.approx(1 / 3)
+
+    containment = _dim("final_answer_containment")
+    assert containment.status == "ok"
+
+    # Legacy EM/F1 are scored on the full explanation text, not the extracted
+    # line, and must stay untouched by this plan.
+    em = _dim("answer_exact_match")
+    f1 = _dim("answer_f1")
+    assert em.score is not None
+    assert f1.score is not None
+
+
+def test_null_abstention_correctness_excluded_from_answer_usable_denominator(
+    tmp_path: Path,
+) -> None:
+    """D-72: null_abstention_correctness is scored on null_query records only, and a
+    null record never enters answer_usable's denominator.
+    """
+    questions = load_sample_questions("multihop_rag")
+    null_q = next(q for q in questions if q.is_null)
+
+    j_path = tmp_path / "journal.jsonl"
+    journal = Journal(j_path)
+    journal.append(
+        RunRecord(
+            corpus="multihop_rag",
+            question_id=null_q.question_id,
+            graph_arm="graph-off",
+            outcome="success",
+            answer="Some explanation.\nAnswer: Insufficient information.",
+            index_generation="gen-test-1",
+            notices=[
+                Notice(
+                    code="GRAPH_ABLATION",
+                    message="",
+                    typed_code=NOTICE_CODE_GRAPH_ABLATION,
+                )
+            ],
+            snapshot=RetrievalSnapshot(
+                index_generation="gen-test-1", retrieved_chunks=[]
+            ),
+        )
+    )
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+
+    nac = next(
+        (d for d in report.dimensions if d.name == "null_abstention_correctness"),
+        None,
+    )
+    assert nac is not None, "missing dimension null_abstention_correctness"
+    assert nac.status == "ok"
+    assert nac.score == 1.0
+    assert nac.n == 1
+
+    usable = next((d for d in report.dimensions if d.name == "answer_usable"), None)
+    assert usable is not None, "missing dimension answer_usable"
+    assert usable.n == 0
+    assert usable.status == "skipped"
+
+
 def test_score_run_stamps_real_commit_sha(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

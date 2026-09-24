@@ -3,7 +3,7 @@
 import json
 
 from lancet_eval.config import repo_root
-from lancet_eval.dimensions import OBS_04_PLACEHOLDER, DimensionResult
+from lancet_eval.dimensions import OBS_04_PLACEHOLDER, REGISTERED_DIMENSIONS, DimensionResult
 from lancet_eval.report import (
     CorpusReport,
     RunMetadata,
@@ -21,6 +21,42 @@ def test_schema_file_byte_identical() -> None:
 
     generated_schema = emit_schema()
     assert committed_schema == generated_schema
+
+
+def test_schema_validates_five_new_answer_dimensions() -> None:
+    """D-70/D-72: the five new answer dimensions are registered and round-trip through
+    the pinned CorpusReport schema (the schema itself is unchanged -- DimensionResult's
+    shape is name-agnostic)."""
+    new_dims = [
+        "final_answer_em",
+        "final_answer_containment",
+        "answer_usable",
+        "final_answer_missing_rate",
+        "null_abstention_correctness",
+    ]
+    for name in new_dims:
+        assert name in REGISTERED_DIMENSIONS
+
+    metadata = RunMetadata(
+        corpus="multihop_rag",
+        run_date="2026-08-29T12:00:00Z",
+        commit_sha="abcdef123456",
+        generation_model="deepseek/deepseek-v4-flash-0731",
+        embedding_model="voyageai/voyage-4-large",
+        judge_model="meta-llama/llama-3.3-70b-instruct",
+        judge_prompt_version="v1",
+        index_generation="gen-01",
+        result_hash="res-hash-01",
+        dependency_lock_hash="lock-hash-01",
+        sample_size_deterministic=500,
+        sample_size_judged=50,
+    )
+    dims = [DimensionResult(name=name, status="ok", score=0.5, n=10) for name in new_dims]
+    report = CorpusReport(corpus="multihop_rag", metadata=metadata, dimensions=dims)
+
+    payload = json.loads(render_json(report))
+    reloaded = CorpusReport.model_validate(payload)
+    assert {d.name for d in reloaded.dimensions} == set(new_dims)
 
 
 def test_corpus_report_forbids_cross_corpus_fields() -> None:
