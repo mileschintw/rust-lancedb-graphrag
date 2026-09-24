@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 2/20 plans executed
+**Plans:** 3/20 plans executed
 
 Plans:
 
@@ -936,7 +936,7 @@ Plans:
 
 - [x] 06.3.4.1-01-PLAN.md — Lead the phase with one thin, production-quality path through every layer the diagnosis touches
 - [x] 06.3.4.1-02-PLAN.md — Make "refuses to drive on an identity mismatch" (D-61) a property of the harness entry points, not a checklist item
-- [ ] 06.3.4.1-03-PLAN.md — Find the in-process resource that makes RetrieveHybrid (and AssemblePrompt, and the embedding call) slow down linearly within one engine process (OI-02, layer 3), before…
+- [x] 06.3.4.1-03-PLAN.md — Find the in-process resource that makes RetrieveHybrid (and AssemblePrompt, and the embedding call) slow down linearly within one engine process (OI-02, layer 3), before…
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

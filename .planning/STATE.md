@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 06.3.4.1-02-PLAN.md
-last_updated: "2026-09-24T05:34:18.711Z"
-last_activity: 2026-09-23
-state_head: 049f68badcf5012e45f6c6a59a3ee04cf016a60d
+stopped_at: Completed 06.3.4.1-03-PLAN.md
+last_updated: "2026-09-24T20:46:46.056Z"
+last_activity: 2026-09-24
+state_head: 0c5a78606d1fd827315f30c1225ff32d5c4864f1
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 160
+  completed_plans: 161
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
@@ -21,7 +21,7 @@ current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 
 ## Current Position
 
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 20
 
 ## Current Status
@@ -370,6 +370,7 @@ Total Plans in Phase: 20
 | Phase 06.3.3 P06 | 16 min | 3 tasks | 5 files |
 | Phase 06.3.4.1 P01 | 3h 05min | 3 tasks | 15 files |
 | Phase 06.3.4.1 P02 | 75min | 3 tasks | 14 files |
+| Phase 06.3.4.1 P03 | 13h 43min | 3 tasks | 26 files |
 
 ## Decisions
 
@@ -425,12 +426,13 @@ Total Plans in Phase: 20
 - [Phase 06.3.4.1]: retro_lenient.py reimplements D-69 message classification locally instead of importing lancet_eval.diagnostic.classify_record — Keeps its import surface statically AST-provable as excluding the fail-closed score/report path (OBS-05)
 - [Phase 06.3.4.1]: Fixed a real bug found while wiring the gate against the committed multihop_rag document_map.json: the alias_present check (D-60) must test only alias keys (stale IDs that must be absent), not alias values (the canonical replacement ID, which legitimately is present as an ordinary entry) — the plan's must_haves named only the key ID (0370301a...) as the one that must be absent.
 - [Phase 06.3.4.1]: delete_pg_extras enforces schema == 'lancet_eval' explicitly, beyond what assert_schema_isolated alone checks, since the DELETE SQL hardcodes the lancet_eval.documents table name; also refuses an empty allow_ids rather than building WHERE id NOT IN ().
+- [Phase 06.3.4.1]: 06.3.4.1-03: OI-02 checkpoint resolved diagnose-in-drive-1 after three soak rounds (release n=300, debug n=300, 2.5h paced debug n=474) found no arm reproducing RetrieveHybrid growth. No accumulator class named. Plan 06.3.4.1-07's fix-named-class/mimalloc precondition is unmet; 07 must be skipped or replanned before it runs (orchestrator to route to user). D-64 root-cause work moves to paid drive 1 via the P1 tracing and flatness adapter already built. — Ruled out: production ran --workers 1 (concurrency not explanatory); embedding/generation happen outside the RetrieveHybrid span (provider latency not explanatory); eval store unwritten during the 06.3.4 drive (store mutation not explanatory). Lance session cache grows continuously but decelerating and uncorrelated with retrieval latency at soak scale -- recorded as a watch item for drive 1, not a named cause.
 
 ## Session
 
-**Last session:** 2026-09-24T05:34:17.536Z
-**Last activity:** 2026-09-23
-**Stopped at:** Completed 06.3.4.1-02-PLAN.md
+**Last session:** 2026-09-24T20:46:30.281Z
+**Last activity:** 2026-09-24
+**Stopped at:** Completed 06.3.4.1-03-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
@@ -500,3 +502,7 @@ Total Plans in Phase: 20
 - Phase 06.3.4.1 inserted after Phase 06.3.4: Retrieval diagnosis, index identity, and graph-yield repair (URGENT)
 - Phase 06.3.4.1 edited: filled stub: Goal, Mode (mvp), Requirements (OBS-05, DATA-03, DATA-04, DATA-05), Depends on, mandatory-layer-order Constraints, Success Criteria (5, = Phase 6.4 unpark gates), Out of Scope; retargeted 06.3.4-FINDINGS.md §4 (OI-01/02/03) from Phase 6.4 to this phase
 - Phase 6.4 edited: parked indefinitely: Goal/Depends on/Success Criteria/Canonical refs now encode the unpark gate (Phase 06.3.4.1 must clear its gates first); stripped OI-01/02/03 and 06.3.4-corrected-run framing (not a run of record); STATE.md current_phase repointed to 06.3.4 (gap-closure), Active Phase Next rewritten to the 06.3.4 --gaps -> 06.3.4.1 -> parked 6.4 sequence
+
+### Blockers
+
+- 06.3.4.1-07 precondition unmet -- OI-02 accumulator not reproduced/named by three independent soak rounds. 07's Task 1 requires fix-named-class or mimalloc with a named class; neither is available. Skip or replan 07 before wave 4 runs.
