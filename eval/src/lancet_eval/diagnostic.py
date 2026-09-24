@@ -20,7 +20,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from lancet_eval.corpus import GoldQuestion, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records
+from lancet_eval.metrics import answer_usable as _answer_usable
+from lancet_eval.metrics import extract_final_answer
 from lancet_eval.seed import load_document_map
+
+_D69_MIXED = "answer basis 'mixed' requires at least one cited evidence ID"
+_D69_RETRIEVAL = "answer basis 'retrieval' requires at least one cited evidence ID"
+_D69_MODEL_ONLY = "ModelOnly answer basis is not supported"
+_MARKER_MISMATCH = "mismatch between cited_evidence_ids"
+_HARNESS_TIMEOUT_ERROR_TYPES = ("StreamDeadlineExceeded", "ReadTimeout")
 
 
 def classify_record(record: RunRecord) -> str | None:
@@ -32,7 +40,30 @@ def classify_record(record: RunRecord) -> str | None:
     match, and a harness-level `error_type` is checked only when no
     node-level failure explains the error.
     """
-    raise NotImplementedError  # RED stub — Task 2 implements this
+    if record.outcome != "error":
+        return None
+
+    for node_failure in record.node_failures:
+        if node_failure.error_kind == 1:
+            return "timeout"
+        if node_failure.node_name != "GenerateAnswer":
+            continue
+        message = node_failure.error_message
+        if message.startswith(_D69_MIXED):
+            return "citation_basis_mixed"
+        if message.startswith(_D69_RETRIEVAL):
+            return "citation_basis_retrieval"
+        if message.startswith(_D69_MODEL_ONLY):
+            return "model_only_unsupported"
+        if message.startswith(_MARKER_MISMATCH):
+            return "citation_marker_mismatch"
+
+    if record.error_type in _HARNESS_TIMEOUT_ERROR_TYPES:
+        return "timeout"
+    if record.error_type is not None:
+        return "transport"
+
+    return "other"
 
 
 class DiagnosticError(Exception):
@@ -182,10 +213,13 @@ def build_rows(
 ) -> list[DiagnosticRow]:
     """Builds one DiagnosticRow per question in `corpus_name`'s sample.
 
-    Columns (c)/(d)/seed_count/path_found and per-arm `answer_usable`/
-    `error_class`/`final_answer_missing`/`final_answer` are left `None` here;
-    later tasks in this phase compute them from additional inputs this task
-    does not yet have.
+    Columns (c)/(d)/seed_count/path_found are left `None` here; later tasks in
+    this phase compute them from additional inputs this task does not yet
+    have. Per-arm `error_class` (via `classify_record`) and, for successful
+    records, `final_answer`/`final_answer_missing`/`answer_usable` (via
+    `lancet_eval.metrics`) are computed here. D-72: null questions never get
+    `answer_usable` populated — `final_answer`/`final_answer_missing` still
+    are, so a null question's abstention can still be read off the raw text.
     """
     questions = load_sample_questions(corpus_name)
     document_map = load_document_map(corpus_name)
@@ -208,8 +242,29 @@ def build_rows(
             record = records_by_key.get((question.question_id, arm))
             if record is None:
                 arms[arm] = ArmResult(arm=arm, outcome="not_run")
-            else:
-                arms[arm] = ArmResult(arm=arm, outcome=record.outcome)
+                continue
+
+            error_class = classify_record(record)
+            if record.outcome != "success":
+                arms[arm] = ArmResult(
+                    arm=arm, outcome=record.outcome, error_class=error_class
+                )
+                continue
+
+            final_answer = extract_final_answer(record.answer)
+            usable = (
+                None
+                if question.is_null
+                else _answer_usable(question, record.answer or "")
+            )
+            arms[arm] = ArmResult(
+                arm=arm,
+                outcome=record.outcome,
+                error_class=error_class,
+                answer_usable=usable,
+                final_answer_missing=final_answer is None,
+                final_answer=final_answer,
+            )
 
         graph_off = arms.get("graph-off")
         e_answer_usable = graph_off.answer_usable if graph_off is not None else None

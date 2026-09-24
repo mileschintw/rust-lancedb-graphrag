@@ -533,7 +533,8 @@ def test_final_answer_em_missing_line_scores_zero_and_flags_missing() -> None:
 
 def test_null_abstention_correct_true_on_insufficient_information() -> None:
     q = _null_question()
-    outcome = null_abstention_correct(q, "I checked the evidence.\nAnswer: Insufficient information")
+    answer = "I checked the evidence.\nAnswer: Insufficient information"
+    outcome = null_abstention_correct(q, answer)
     assert outcome.score == 1.0
 
 

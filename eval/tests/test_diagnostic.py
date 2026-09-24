@@ -52,11 +52,14 @@ def test_all_in_chunk_question_is_yes_yes() -> None:
 
     assert row.arms["graph-off"].outcome == "success"
     assert row.arms["graph-on"].outcome == "error"
-    # Task 1 defers answer_usable/error_class/final_answer to Task 2.
-    assert row.arms["graph-off"].answer_usable is None
+    # graph-off fixture answer ends "Answer: Yes"; real gold_answer is "Yes".
+    assert row.arms["graph-off"].answer_usable is True
+    assert row.arms["graph-off"].final_answer_missing is False
+    assert row.arms["graph-off"].final_answer == "yes"
     assert row.arms["graph-off"].error_class is None
-    assert row.arms["graph-on"].error_class is None
-    assert row.e_answer_usable is None
+    # graph-on fixture record has error_type="StreamDeadlineExceeded".
+    assert row.arms["graph-on"].error_class == "timeout"
+    assert row.e_answer_usable is True
 
 
 def test_split_item_question_fails_b_and_index_subset() -> None:
@@ -89,6 +92,12 @@ def test_null_question_has_none_ab_and_excluded_from_subset() -> None:
 
     assert row.arms["graph-off"].outcome == "success"
     assert row.arms["graph-on"].outcome == "not_run"
+    # D-72: null questions never get answer_usable populated...
+    assert row.arms["graph-off"].answer_usable is None
+    # ...but final_answer/final_answer_missing still are (abstention context).
+    assert row.arms["graph-off"].final_answer == "insufficient information"
+    assert row.arms["graph-off"].final_answer_missing is False
+    assert row.e_answer_usable is None
 
 
 def test_question_with_no_journal_record_is_not_run_on_every_arm() -> None:
@@ -204,12 +213,13 @@ def test_classify_record_none_for_success_outcome() -> None:
 
 
 def test_classify_record_citation_basis_mixed() -> None:
+    message = "answer basis 'mixed' requires at least one cited evidence ID"
     record = _base_record(
         node_failures=[
             NodeFailed(
                 node_name="GenerateAnswer",
                 error_kind=3,
-                error_message="answer basis 'mixed' requires at least one cited evidence ID",
+                error_message=message,
                 retryable=False,
             )
         ]
@@ -218,12 +228,13 @@ def test_classify_record_citation_basis_mixed() -> None:
 
 
 def test_classify_record_citation_basis_retrieval() -> None:
+    message = "answer basis 'retrieval' requires at least one cited evidence ID"
     record = _base_record(
         node_failures=[
             NodeFailed(
                 node_name="GenerateAnswer",
                 error_kind=3,
-                error_message="answer basis 'retrieval' requires at least one cited evidence ID",
+                error_message=message,
                 retryable=False,
             )
         ]
@@ -232,12 +243,13 @@ def test_classify_record_citation_basis_retrieval() -> None:
 
 
 def test_classify_record_model_only_unsupported() -> None:
+    message = "ModelOnly answer basis is not supported on Phase 03 QueryRAG path"
     record = _base_record(
         node_failures=[
             NodeFailed(
                 node_name="GenerateAnswer",
                 error_kind=3,
-                error_message="ModelOnly answer basis is not supported on Phase 03 QueryRAG path",
+                error_message=message,
                 retryable=False,
             )
         ]
@@ -246,12 +258,13 @@ def test_classify_record_model_only_unsupported() -> None:
 
 
 def test_classify_record_citation_marker_mismatch() -> None:
+    message = "mismatch between cited_evidence_ids ({'1'}) and inline markers (set())"
     record = _base_record(
         node_failures=[
             NodeFailed(
                 node_name="GenerateAnswer",
                 error_kind=3,
-                error_message="mismatch between cited_evidence_ids ({'1'}) and inline markers (set())",
+                error_message=message,
                 retryable=False,
             )
         ]

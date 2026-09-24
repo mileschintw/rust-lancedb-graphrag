@@ -75,16 +75,29 @@ def extract_final_answer(answer: str | None) -> str | None:
     (last one wins). Returns None if no line matches or nothing survives
     normalization (D-70/D-74: this is `final_answer_missing`).
     """
-    raise NotImplementedError  # RED stub — Task 2 implements this
+    matches = list(_ANSWER_LINE.finditer(answer or ""))
+    if not matches:
+        return None
+    text = _MARKER.sub("", matches[-1].group("a")).replace("*", "").replace("_", " ")
+    norm = squad_normalize(text)
+    return norm or None
 
 
 def gold_contained(gold: str, text: str) -> bool:
-    """Whole-token containment of `squad_normalize(gold)` within `squad_normalize(text)`.
+    """Whole-token containment of `squad_normalize(gold)` in `squad_normalize(text)`.
 
     Token-boundary aware, so a gold of "no" never matches inside "not" or
     "know" (D-70) the way a raw substring check would.
     """
-    raise NotImplementedError  # RED stub — Task 2 implements this
+    gold_tokens = squad_normalize(gold).split()
+    text_tokens = squad_normalize(text).split()
+    if not gold_tokens:
+        return False
+    span = len(gold_tokens)
+    return any(
+        text_tokens[i : i + span] == gold_tokens
+        for i in range(len(text_tokens) - span + 1)
+    )
 
 
 def final_answer_em(question: GoldQuestion, answer: str) -> MetricOutcome:
@@ -93,7 +106,16 @@ def final_answer_em(question: GoldQuestion, answer: str) -> MetricOutcome:
     Scores 0.0 with `detail={"final_answer_missing": True}` when no line
     could be extracted — a miss that stays in the denominator (D-74).
     """
-    raise NotImplementedError  # RED stub — Task 2 implements this
+    extracted = extract_final_answer(answer)
+    if extracted is None:
+        return MetricOutcome(
+            status="ok",
+            score=0.0,
+            detail={"final_answer_missing": 1.0},
+            n=1,
+        )
+    score = 1.0 if extracted == squad_normalize(question.gold_answer) else 0.0
+    return MetricOutcome(status="ok", score=score, n=1)
 
 
 def answer_usable(question: GoldQuestion, answer: str) -> bool:
@@ -102,15 +124,22 @@ def answer_usable(question: GoldQuestion, answer: str) -> bool:
     Judged on the extracted line ONLY, never the full explanation (D-70) — a
     missing line is False, not skipped.
     """
-    raise NotImplementedError  # RED stub — Task 2 implements this
+    extracted = extract_final_answer(answer)
+    if extracted is None:
+        return False
+    return gold_contained(question.gold_answer, extracted)
 
 
 def null_abstention_correct(question: GoldQuestion, answer: str) -> MetricOutcome:
-    """Whether the extracted final-answer line correctly abstains on a null question (D-72).
+    """Whether the extracted final-answer line correctly abstains (D-72).
 
     Raises ValueError on a non-null question (same guard as `abstention_outcome`).
     """
-    raise NotImplementedError  # RED stub — Task 2 implements this
+    if not question.is_null:
+        raise ValueError("null_abstention_correct requires a null question")
+    extracted = extract_final_answer(answer)
+    score = 1.0 if extracted == "insufficient information" else 0.0
+    return MetricOutcome(status="ok", score=score, n=1)
 
 
 def fact_matches_excerpt(fact: str, chunk: StructuredCitation) -> MatchVerdict:
