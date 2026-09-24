@@ -175,6 +175,14 @@ impl DatabaseManager {
     pub async fn entity_edges_table(&self) -> Result<Table, String> {
         self.get_or_create_table("entity_edges").await
     }
+
+    /// Accessor added for 06.3.4.1-04: the store has seven LanceDB tables
+    /// (`table_schemas()` below), but only six had accessors before this
+    /// (RESEARCH §D). The reconcile bin's before/after version record needs
+    /// all seven, including `communities`, which is otherwise never written.
+    pub async fn communities_table(&self) -> Result<Table, String> {
+        self.get_or_create_table("communities").await
+    }
 }
 
 async fn validate_schema(name: &str, table: &Table, expected: &SchemaRef) -> Result<(), String> {

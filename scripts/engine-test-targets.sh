@@ -30,6 +30,8 @@ fi
 #   520 — Phase 06.3.4.1 plan 04 Task 1: `--document-ids` mode added 2 inspect_lancedb tests
 #         (document_ids_lists_sorted_dedup_sets, document_ids_empty_store_yields_empty), 36->38.
 #         lib/config_startup unchanged (460/22).
+#   538 — Phase 06.3.4.1 plan 04 Task 2: new bin `reconcile_eval_store` (18 tests) — cascade
+#         reconcile with dry-run-by-default and apply guards. All other counts unchanged (520+18).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -46,28 +48,31 @@ LIB_COUNT=$(awk '/Running unittests src\/lib\.rs/ {found=1; next} found && /test
 BIN_MAIN_COUNT=$(awk '/Running unittests src\/main\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 BIN_INSPECT_COUNT=$(awk '/Running unittests src\/bin\/inspect_lancedb\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 BIN_SEED_COUNT=$(awk '/Running unittests src\/bin\/seed_rag_fixture\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
+BIN_RECONCILE_COUNT=$(awk '/Running unittests src\/bin\/reconcile_eval_store\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 INTEG_CONFIG_COUNT=$(awk '/Running tests\/config_startup\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 
 LIB_COUNT=${LIB_COUNT:-0}
 BIN_MAIN_COUNT=${BIN_MAIN_COUNT:-0}
 BIN_INSPECT_COUNT=${BIN_INSPECT_COUNT:-0}
 BIN_SEED_COUNT=${BIN_SEED_COUNT:-0}
+BIN_RECONCILE_COUNT=${BIN_RECONCILE_COUNT:-0}
 INTEG_CONFIG_COUNT=${INTEG_CONFIG_COUNT:-0}
 
 echo "engine (lib): $LIB_COUNT"
 echo "engine (bin): $BIN_MAIN_COUNT"
 echo "inspect_lancedb (bin): $BIN_INSPECT_COUNT"
 echo "seed_rag_fixture (bin): $BIN_SEED_COUNT"
+echo "reconcile_eval_store (bin): $BIN_RECONCILE_COUNT"
 echo "config_startup (test): $INTEG_CONFIG_COUNT"
 
 LIB_BIN_SUM=$(( LIB_COUNT + BIN_MAIN_COUNT ))
-TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + INTEG_CONFIG_COUNT ))
+TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT + INTEG_CONFIG_COUNT ))
 
-echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
+echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
-# Assert invariants (7 named assertions)
-if [ "$TOTAL" -ne 520 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 520, got $TOTAL" >&2
+# Assert invariants (8 named assertions)
+if [ "$TOTAL" -ne 538 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 538, got $TOTAL" >&2
   exit 1
 fi
 
@@ -96,10 +101,15 @@ if [ "$BIN_SEED_COUNT" -ne 0 ]; then
   exit 1
 fi
 
+if [ "$BIN_RECONCILE_COUNT" -ne 18 ]; then
+  echo "FAIL: reconcile_eval_store test count mismatch: expected 18, got $BIN_RECONCILE_COUNT" >&2
+  exit 1
+fi
+
 if [ "$INTEG_CONFIG_COUNT" -ne 22 ]; then
   echo "FAIL: config_startup test count mismatch: expected 22, got $INTEG_CONFIG_COUNT" >&2
   exit 1
 fi
 
-echo "All 7 Rust test target invariants verified successfully."
+echo "All 8 Rust test target invariants verified successfully."
 exit 0
