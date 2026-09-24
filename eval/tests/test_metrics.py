@@ -12,13 +12,19 @@ from lancet_eval.corpus import GoldQuestion
 from lancet_eval.metrics import (
     MatchVerdict,
     abstention_outcome,
+    abstention_rate,
+    answer_usable,
     boundary_attributable,
     context_precision_at_k,
     em_f1,
+    extract_final_answer,
     fact_matches_excerpt,
+    final_answer_em,
+    gold_contained,
     hits_at_k,
     mrr_at_k,
     ndcg_at_k,
+    null_abstention_correct,
     recall_at_k,
 )
 
@@ -419,3 +425,134 @@ def test_rank_wire_order_tie_break() -> None:
     # First match in MRR is at rank 2
     res_mrr = mrr_at_k(q, retrieved, k=10)
     assert res_mrr.score == 0.5
+
+
+# --- D-70/D-71/D-72/D-74: final-answer extraction and lenient metrics ---
+
+
+def _null_question(question_id: str = "null-1") -> GoldQuestion:
+    return GoldQuestion(
+        question_id=question_id,
+        question="Is there a fact for this?",
+        question_type="null_query",
+        gold_facts=[],
+        gold_answer="",
+        evidence_list=[],
+    )
+
+
+def _yes_no_question(gold_answer: str, question_id: str = "q1") -> GoldQuestion:
+    return GoldQuestion(
+        question_id=question_id,
+        question="Does X hold?",
+        question_type="comparison_query",
+        gold_facts=["Some supporting fact."],
+        gold_answer=gold_answer,
+        evidence_list=[{"title": "Doc", "fact": "Some supporting fact."}],
+    )
+
+
+def test_extract_final_answer_basic_yes() -> None:
+    assert extract_final_answer("Some explanation. [1]\nAnswer: Yes") == "yes"
+
+
+def test_extract_final_answer_strips_bold_marker_on_label() -> None:
+    assert extract_final_answer("Explanation.\n**Answer:** Yes") == "yes"
+
+
+def test_extract_final_answer_strips_bold_marker_on_label_and_value() -> None:
+    assert extract_final_answer("Explanation.\n**Answer**: **Yes**") == "yes"
+
+
+def test_extract_final_answer_strips_citation_markers() -> None:
+    assert extract_final_answer("Explanation. [1]\nAnswer: Yes [1]") == "yes"
+
+
+def test_extract_final_answer_last_line_wins() -> None:
+    text = "Draft thought.\nAnswer: No\nMore reasoning.\nAnswer: Yes"
+    assert extract_final_answer(text) == "yes"
+
+
+def test_extract_final_answer_missing_line_is_none() -> None:
+    assert extract_final_answer("No answer line here at all.") is None
+
+
+def test_extract_final_answer_empty_after_label_is_none() -> None:
+    assert extract_final_answer("Explanation.\nAnswer:") is None
+
+
+def test_extract_final_answer_none_input_is_none() -> None:
+    assert extract_final_answer(None) is None
+
+
+def test_gold_contained_whole_token_no_does_not_match_inside_not_or_know() -> None:
+    assert gold_contained("no", "I do not know") is False
+
+
+def test_gold_contained_whole_token_no_matches_standalone_word() -> None:
+    assert gold_contained("no", "The answer is no.") is True
+
+
+def test_answer_usable_loophole_closed_by_extracted_line_only() -> None:
+    # Full explanation says "yes" but the final line says "No" — (e) must be
+    # judged on the extracted line only, closing the yes/no loophole.
+    q = _yes_no_question(gold_answer="Yes")
+    answer = "The evidence strongly suggests yes based on the sources. [1]\nAnswer: No"
+    assert answer_usable(q, answer) is False
+
+
+def test_answer_usable_true_when_extracted_line_contains_gold() -> None:
+    q = _yes_no_question(gold_answer="Yes")
+    answer = "Explanation of the evidence. [1]\nAnswer: Yes"
+    assert answer_usable(q, answer) is True
+
+
+def test_answer_usable_false_when_line_missing() -> None:
+    q = _yes_no_question(gold_answer="Yes")
+    assert answer_usable(q, "No answer line was produced.") is False
+
+
+def test_final_answer_em_true_when_extracted_line_equals_gold() -> None:
+    q = _yes_no_question(gold_answer="Yes")
+    outcome = final_answer_em(q, "Explanation. [1]\nAnswer: Yes")
+    assert outcome.score == 1.0
+
+
+def test_final_answer_em_false_when_extracted_line_differs() -> None:
+    q = _yes_no_question(gold_answer="Yes")
+    outcome = final_answer_em(q, "Explanation. [1]\nAnswer: No")
+    assert outcome.score == 0.0
+
+
+def test_final_answer_em_missing_line_scores_zero_and_flags_missing() -> None:
+    q = _yes_no_question(gold_answer="Yes")
+    outcome = final_answer_em(q, "No answer line was produced.")
+    assert outcome.score == 0.0
+    assert outcome.detail.get("final_answer_missing") == 1.0
+
+
+def test_null_abstention_correct_true_on_insufficient_information() -> None:
+    q = _null_question()
+    outcome = null_abstention_correct(q, "I checked the evidence.\nAnswer: Insufficient information")
+    assert outcome.score == 1.0
+
+
+def test_null_abstention_correct_false_on_confident_answer() -> None:
+    q = _null_question()
+    outcome = null_abstention_correct(q, "I checked the evidence.\nAnswer: Yes")
+    assert outcome.score == 0.0
+
+
+def test_null_abstention_correct_raises_on_non_null_question() -> None:
+    q = _yes_no_question(gold_answer="Yes")
+    with pytest.raises(ValueError, match="null"):
+        null_abstention_correct(q, "Answer: Yes")
+
+
+def test_em_f1_and_abstention_rate_unchanged_by_d70() -> None:
+    """D-70: em_f1 and abstention_rate stay byte-identical bodies — smoke-check
+    their existing behavior still holds after this module gained new siblings."""
+    assert em_f1("Yes", "Yes") == (1.0, 1.0)
+    q = _null_question()
+    outcome = abstention_rate(q, "Insufficient information here.")
+    assert outcome.score == 1.0

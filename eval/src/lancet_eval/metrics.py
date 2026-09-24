@@ -59,6 +59,60 @@ def squad_normalize(text: str) -> str:
     return white_space_fix(remove_articles(remove_punc(lower(text))))
 
 
+# D-71 final-answer line: "Answer: <short>", tolerating leading blockquote/emphasis
+# markers and surrounding emphasis punctuation. The last match in the text wins
+# (D-70/D-74): a model that restates its answer keeps only the final line.
+_ANSWER_LINE = re.compile(r"(?im)^[ \t>*_-]*answer[ \t*_]*:[ \t]*(?P<a>.+?)[ \t]*$")
+# Inline citation markers like [1], [12] stripped from the extracted answer line
+# before normalization (D-70) — they are not part of the short answer itself.
+_MARKER = re.compile(r"\[\s*\d+\s*\]")
+
+
+def extract_final_answer(answer: str | None) -> str | None:
+    """Extracts and normalizes the last `Answer: <short>` line from `answer`.
+
+    Stable across `**Answer:**`, `Answer: X [1]`, and repeated Answer lines
+    (last one wins). Returns None if no line matches or nothing survives
+    normalization (D-70/D-74: this is `final_answer_missing`).
+    """
+    raise NotImplementedError  # RED stub — Task 2 implements this
+
+
+def gold_contained(gold: str, text: str) -> bool:
+    """Whole-token containment of `squad_normalize(gold)` within `squad_normalize(text)`.
+
+    Token-boundary aware, so a gold of "no" never matches inside "not" or
+    "know" (D-70) the way a raw substring check would.
+    """
+    raise NotImplementedError  # RED stub — Task 2 implements this
+
+
+def final_answer_em(question: GoldQuestion, answer: str) -> MetricOutcome:
+    """Exact match between the extracted final-answer line and the gold answer (D-70).
+
+    Scores 0.0 with `detail={"final_answer_missing": True}` when no line
+    could be extracted — a miss that stays in the denominator (D-74).
+    """
+    raise NotImplementedError  # RED stub — Task 2 implements this
+
+
+def answer_usable(question: GoldQuestion, answer: str) -> bool:
+    """Column (e): whether the extracted final-answer line contains the gold answer.
+
+    Judged on the extracted line ONLY, never the full explanation (D-70) — a
+    missing line is False, not skipped.
+    """
+    raise NotImplementedError  # RED stub — Task 2 implements this
+
+
+def null_abstention_correct(question: GoldQuestion, answer: str) -> MetricOutcome:
+    """Whether the extracted final-answer line correctly abstains on a null question (D-72).
+
+    Raises ValueError on a non-null question (same guard as `abstention_outcome`).
+    """
+    raise NotImplementedError  # RED stub — Task 2 implements this
+
+
 def fact_matches_excerpt(fact: str, chunk: StructuredCitation) -> MatchVerdict:
     """Primary evidence-matching rule using normalized containment."""
     if chunk.is_truncated:

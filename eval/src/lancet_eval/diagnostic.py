@@ -23,6 +23,18 @@ from lancet_eval.journal import RunRecord, load_records
 from lancet_eval.seed import load_document_map
 
 
+def classify_record(record: RunRecord) -> str | None:
+    """Classifies an errored journal record into a stable D-69/timeout/transport class.
+
+    Returns None for a non-error outcome (nothing to classify). See RESEARCH
+    §B for the exact message prefixes and the fixed classification order:
+    a node `error_kind == 1` (timeout) takes priority over the D-69 message
+    match, and a harness-level `error_type` is checked only when no
+    node-level failure explains the error.
+    """
+    raise NotImplementedError  # RED stub — Task 2 implements this
+
+
 class DiagnosticError(Exception):
     """Raised when diagnostic table inputs are internally inconsistent.
 

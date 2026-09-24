@@ -8,14 +8,17 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from lancet_eval.client import NodeFailed
 from lancet_eval.diagnostic import (
     ArmResult,
     DiagnosticError,
     DiagnosticRow,
     _compose_label,
     build_rows,
+    classify_record,
     write_table,
 )
+from lancet_eval.journal import RunRecord
 
 FIXTURES = Path(__file__).parent / "fixtures" / "diagnostic"
 GOLD_CHUNKS = FIXTURES / "gold_chunks.jsonl"
@@ -173,3 +176,118 @@ def test_compose_label_passthrough_when_journal_not_partial(tmp_path: Path) -> N
 def test_arm_result_rejects_unknown_fields() -> None:
     with pytest.raises(ValidationError):
         ArmResult(arm="graph-off", outcome="success", not_a_real_field=True)  # type: ignore[call-arg]
+
+
+# --- D-69/RESEARCH §B: classify_record error-class mapping ---
+
+
+def _base_record(**overrides: object) -> RunRecord:
+    fields: dict[str, object] = {
+        "corpus": "multihop_rag",
+        "question_id": "q-1",
+        "graph_arm": "graph-off",
+        "outcome": "error",
+    }
+    fields.update(overrides)
+    return RunRecord(**fields)  # type: ignore[arg-type]
+
+
+def test_classify_record_none_for_success_outcome() -> None:
+    record = RunRecord(
+        corpus="multihop_rag",
+        question_id="q-1",
+        graph_arm="graph-off",
+        outcome="success",
+        answer="Answer: Yes",
+    )
+    assert classify_record(record) is None
+
+
+def test_classify_record_citation_basis_mixed() -> None:
+    record = _base_record(
+        node_failures=[
+            NodeFailed(
+                node_name="GenerateAnswer",
+                error_kind=3,
+                error_message="answer basis 'mixed' requires at least one cited evidence ID",
+                retryable=False,
+            )
+        ]
+    )
+    assert classify_record(record) == "citation_basis_mixed"
+
+
+def test_classify_record_citation_basis_retrieval() -> None:
+    record = _base_record(
+        node_failures=[
+            NodeFailed(
+                node_name="GenerateAnswer",
+                error_kind=3,
+                error_message="answer basis 'retrieval' requires at least one cited evidence ID",
+                retryable=False,
+            )
+        ]
+    )
+    assert classify_record(record) == "citation_basis_retrieval"
+
+
+def test_classify_record_model_only_unsupported() -> None:
+    record = _base_record(
+        node_failures=[
+            NodeFailed(
+                node_name="GenerateAnswer",
+                error_kind=3,
+                error_message="ModelOnly answer basis is not supported on Phase 03 QueryRAG path",
+                retryable=False,
+            )
+        ]
+    )
+    assert classify_record(record) == "model_only_unsupported"
+
+
+def test_classify_record_citation_marker_mismatch() -> None:
+    record = _base_record(
+        node_failures=[
+            NodeFailed(
+                node_name="GenerateAnswer",
+                error_kind=3,
+                error_message="mismatch between cited_evidence_ids ({'1'}) and inline markers (set())",
+                retryable=False,
+            )
+        ]
+    )
+    assert classify_record(record) == "citation_marker_mismatch"
+
+
+def test_classify_record_node_timeout_error_kind_one() -> None:
+    record = _base_record(
+        node_failures=[
+            NodeFailed(
+                node_name="RetrieveHybrid",
+                error_kind=1,
+                error_message="node timeout",
+                retryable=True,
+            )
+        ]
+    )
+    assert classify_record(record) == "timeout"
+
+
+def test_classify_record_harness_deadline_is_timeout() -> None:
+    record = _base_record(error_type="StreamDeadlineExceeded", error="exceeded 600.0s")
+    assert classify_record(record) == "timeout"
+
+
+def test_classify_record_read_timeout_is_timeout() -> None:
+    record = _base_record(error_type="ReadTimeout", error="read timed out")
+    assert classify_record(record) == "timeout"
+
+
+def test_classify_record_other_error_type_is_transport() -> None:
+    record = _base_record(error_type="ConnectError", error="connection refused")
+    assert classify_record(record) == "transport"
+
+
+def test_classify_record_no_node_failure_or_error_type_is_other() -> None:
+    record = _base_record()
+    assert classify_record(record) == "other"
