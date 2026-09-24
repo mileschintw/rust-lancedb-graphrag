@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 4/20 plans executed
+**Plans:** 5/20 plans executed
 
 Plans:
 
@@ -941,7 +941,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 06.3.4.1-04-PLAN.md — Build the tooling for layer 2 (index identity, OI-03) and take a read-only census of what it would delete
-- [ ] 06.3.4.1-05-PLAN.md — Put the new answer metrics into the fail-closed scored report, commit the drive-1 companion literals, and make every SC-1..SC-3 gate reading a computed PASS/MISS rather than a…
+- [x] 06.3.4.1-05-PLAN.md — Put the new answer metrics into the fail-closed scored report, commit the drive-1 companion literals, and make every SC-1..SC-3 gate reading a computed PASS/MISS rather than a…
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
