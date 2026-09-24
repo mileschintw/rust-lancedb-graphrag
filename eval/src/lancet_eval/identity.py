@@ -1,10 +1,11 @@
-"""Index identity comparison between PostgreSQL, LanceDB, and the committed document map.
+"""Index identity comparison between PostgreSQL, LanceDB, and the document map.
 
-Compares the document-ID sets recorded in PostgreSQL (`lancet_eval.documents`), LanceDB
-(`documents`, distinct `nodes.document_id`, and `edges`/`entity_edges.document_id` as
-subsets), and the committed `document_map.json` for a corpus. The gate exists to prevent
-a drive or measurement pass from running against a store whose contents have drifted from
-what the harness believes it seeded (D-61).
+Compares the document-ID sets recorded in PostgreSQL (`lancet_eval.documents`),
+LanceDB (`documents`, distinct `nodes.document_id`, and `edges`/
+`entity_edges.document_id` as subsets), and the committed `document_map.json`
+for a corpus. The gate exists to prevent a drive or measurement pass from
+running against a store whose contents have drifted from what the harness
+believes it seeded (D-61).
 """
 
 from __future__ import annotations
@@ -98,7 +99,13 @@ def list_lancedb_document_ids(lancedb_path: str) -> dict[str, Any]:
             f"inspect_lancedb --document-ids produced unparseable output: {exc}"
         ) from exc
 
-    required = ("documents", "nodes", "edges", "entity_edges", "staged_documents_v2_rows")
+    required = (
+        "documents",
+        "nodes",
+        "edges",
+        "entity_edges",
+        "staged_documents_v2_rows",
+    )
     missing = [k for k in required if k not in data]
     if missing:
         raise IdentityGateError(
@@ -183,7 +190,8 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
     if extra_in_pg or missing_from_pg:
         failures.append(
             "PostgreSQL documents vs map mismatch: "
-            f"extra_in_pg={sorted(extra_in_pg)}, missing_from_pg={sorted(missing_from_pg)}"
+            f"extra_in_pg={sorted(extra_in_pg)}, "
+            f"missing_from_pg={sorted(missing_from_pg)}"
         )
 
     non_completed = {
@@ -294,7 +302,10 @@ def delete_pg_extras(
         )
 
     quoted_ids = ", ".join(f"'{doc_id}'" for doc_id in sorted(allow_ids))
-    sql = f"BEGIN; DELETE FROM lancet_eval.documents WHERE id NOT IN ({quoted_ids}); COMMIT;"
+    sql = (
+        f"BEGIN; DELETE FROM lancet_eval.documents WHERE id NOT IN ({quoted_ids}); "
+        "COMMIT;"
+    )
     run_psql(settings, sql)
 
     after = list_pg_documents(settings)

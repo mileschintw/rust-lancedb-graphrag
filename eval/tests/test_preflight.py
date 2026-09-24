@@ -230,7 +230,7 @@ def test_check_index_identity_never_raises_on_exception(
 def test_run_preflight_checks_index_identity_is_second_check(
     httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """index_identity runs as the second preflight check, right after store_isolation."""
+    """index_identity runs second, right after store_isolation."""
     monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
     doc_map = DocumentMap(corpus="multihop_rag", entries={})
     save_document_map_atomic(doc_map)

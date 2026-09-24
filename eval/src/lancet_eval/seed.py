@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field
 
 from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
-from lancet_eval.corpus import load_corpus
+from lancet_eval.corpus import CorpusError, load_corpus, load_corpus_config
 
 if TYPE_CHECKING:
     import httpx
@@ -225,8 +225,17 @@ class DocumentMap(BaseModel):
 
 
 def get_document_map_path(corpus_name: str) -> Path:
-    """Return the absolute path to a corpus's document_map.json."""
-    return repo_root() / "eval" / "corpora" / corpus_name / "document_map.json"
+    """Return the absolute path to a corpus's document_map.json.
+
+    Resolves through the corpus's `map_corpus` indirection (D-68) so a corpus
+    without its own map (e.g. a diagnostic corpus) shares another corpus's map.
+    Falls back to `corpus_name` itself when the corpus config cannot be loaded.
+    """
+    try:
+        target_corpus = load_corpus_config(corpus_name).map_corpus
+    except CorpusError:
+        target_corpus = corpus_name
+    return repo_root() / "eval" / "corpora" / target_corpus / "document_map.json"
 
 
 def load_document_map(corpus_name: str) -> DocumentMap:
@@ -268,6 +277,77 @@ def save_document_map_atomic(doc_map: DocumentMap) -> None:
         f.write("\n")
 
     tmp_path.replace(path)
+
+
+def record_index_generation(
+    settings: EvalSettings,
+    corpus_name: str,
+    client: httpx.Client | None = None,
+) -> str:
+    """Probe `/rag/query` for the live index_generation and record it in the map.
+
+    The sole writer of `document_map.json`'s `index_generation` field (D-62):
+    POSTs the probe question, parses the SSE `data:` lines for
+    `snapshot.index_generation`, and atomically writes the observed value.
+    Raises `SeedError` (leaving the file byte-identical) if no generation is
+    observed, rather than silently swallowing the parse error as the prior
+    inline probe did.
+    """
+    import httpx as httpx_module
+
+    doc_map = load_document_map(corpus_name)
+
+    probe_query = "What hospital program helps teenage patients in Nebraska?"
+    if doc_map.entries:
+        first_entry = next(iter(doc_map.entries.values()))
+        if first_entry.title:
+            probe_query = first_entry.title
+
+    should_close_client = False
+    active_client = client
+    if active_client is None:
+        active_client = httpx_module.Client(
+            base_url=settings.gateway_url,
+            timeout=settings.gateway_timeout_secs,
+        )
+        should_close_client = True
+
+    try:
+        query_resp = active_client.post("/rag/query", json={"query": probe_query})
+    finally:
+        if should_close_client:
+            active_client.close()
+
+    if query_resp.status_code != 200:
+        raise SeedError(
+            f"No index_generation observed for corpus '{corpus_name}': "
+            f"/rag/query returned HTTP {query_resp.status_code}"
+        )
+
+    observed_generation = ""
+    for line in query_resp.text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        try:
+            event_data = json.loads(line[5:].strip())
+        except Exception:
+            continue
+        snap = event_data.get("snapshot") or (
+            event_data.get("final_response", {}).get("snapshot")
+        )
+        if snap and snap.get("index_generation"):
+            observed_generation = snap["index_generation"]
+            break
+
+    if not observed_generation:
+        raise SeedError(
+            f"No index_generation observed in probe query response for corpus "
+            f"'{corpus_name}'"
+        )
+
+    doc_map.index_generation = observed_generation
+    save_document_map_atomic(doc_map)
+    return observed_generation
 
 
 def _sanitize_filename(name: str) -> str:
@@ -425,28 +505,13 @@ def seed_corpus(
                     flush=True,
                 )
 
-        # Issue throwaway query to extract index_generation
-        probe_query = "What hospital program helps teenage patients in Nebraska?"
-        if doc_map.entries:
-            first_entry = next(iter(doc_map.entries.values()))
-            if first_entry.title:
-                probe_query = first_entry.title
-
-        query_resp = client.post("/rag/query", json={"query": probe_query})
-        if query_resp.status_code == 200:
-            for line in query_resp.text.splitlines():
-                if line.startswith("data:"):
-                    try:
-                        event_data = json.loads(line[5:].strip())
-                        snap = event_data.get("snapshot") or (
-                            event_data.get("final_response", {}).get("snapshot")
-                        )
-                        if snap and snap.get("index_generation"):
-                            doc_map.index_generation = snap["index_generation"]
-                            save_document_map_atomic(doc_map)
-                            break
-                    except Exception:
-                        pass
+        # Probe /rag/query to record the live index_generation (D-62: the only
+        # writer of this field is record_index_generation). Persist first so a
+        # fresh, zero-new-document seed still has a map on disk to read back, then
+        # reload so the returned object reflects what record_index_generation wrote.
+        save_document_map_atomic(doc_map)
+        record_index_generation(settings, corpus_name, client=client)
+        doc_map = load_document_map(corpus_name)
     finally:
         if should_close_client:
             client.close()

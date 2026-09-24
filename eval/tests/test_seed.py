@@ -11,6 +11,9 @@ from lancet_eval.seed import (
     DocumentMap,
     DocumentMapEntry,
     SeedError,
+    get_document_map_path,
+    load_document_map,
+    record_index_generation,
     reseed_corpus,
     save_document_map_atomic,
     seed_corpus,
@@ -353,4 +356,62 @@ def test_reset_refuses_dsn_with_foreign_host_or_dbname(
     assert admin_dsn in str(exc_info2.value)
 
     assert len(calls) == 0
+
+
+def test_record_index_generation_writes_atomically(
+    httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A mocked SSE body with snapshot.index_generation writes that value atomically."""
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    doc_map = DocumentMap(corpus="multihop_rag", entries={})
+    save_document_map_atomic(doc_map)
+
+    httpx_mock.add_response(
+        url="http://testgateway:8080/rag/query",
+        method="POST",
+        status_code=200,
+        text='data: {"snapshot":{"index_generation":"lance-802"}}\n\n',
+    )
+
+    settings = EvalSettings(
+        gateway_url="http://testgateway:8080",
+        lancedb_path=str(tmp_path / "lancedb-eval"),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+    )
+
+    result = record_index_generation(settings, "multihop_rag")
+    assert result == "lance-802"
+
+    reloaded = load_document_map("multihop_rag")
+    assert reloaded.index_generation == "lance-802"
+
+
+def test_record_index_generation_raises_and_leaves_file_unchanged(
+    httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no generation in the response body, raises SeedError and leaves the file
+    byte-identical rather than silently swallowing the missing value."""
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    doc_map = DocumentMap(corpus="multihop_rag", index_generation="", entries={})
+    save_document_map_atomic(doc_map)
+    path = get_document_map_path("multihop_rag")
+    before_bytes = path.read_bytes()
+
+    httpx_mock.add_response(
+        url="http://testgateway:8080/rag/query",
+        method="POST",
+        status_code=200,
+        text='data: {"snapshot":{}}\n\n',
+    )
+
+    settings = EvalSettings(
+        gateway_url="http://testgateway:8080",
+        lancedb_path=str(tmp_path / "lancedb-eval"),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+    )
+
+    with pytest.raises(SeedError, match="No index_generation observed"):
+        record_index_generation(settings, "multihop_rag")
+
+    assert path.read_bytes() == before_bytes
 

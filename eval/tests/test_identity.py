@@ -51,7 +51,8 @@ def _write_map(
     aliases: dict[str, str] | None = None,
 ) -> None:
     monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
-    entries = entries if entries is not None else {DOC_A: "Article A", DOC_B: "Article B"}
+    if entries is None:
+        entries = {DOC_A: "Article A", DOC_B: "Article B"}
     doc_map = DocumentMap(
         corpus=corpus,
         seeded_at="2026-09-01T00:00:00Z",
@@ -83,15 +84,27 @@ def _pg_ok(**overrides: dict[str, str]) -> dict[str, str]:
     return base
 
 
+def _patch_lance(monkeypatch: pytest.MonkeyPatch, **overrides: object) -> None:
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_lancedb_document_ids",
+        lambda path: _lance_ok(**overrides),
+    )
+
+
+def _patch_pg(monkeypatch: pytest.MonkeyPatch, **overrides: str) -> None:
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_pg_documents",
+        lambda settings: _pg_ok(**overrides),
+    )
+
+
 def test_equal_sets_and_zero_staged_rows_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Equal sets and 0 staged rows: IdentityReport.passed is True."""
     _write_map(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids", lambda path: _lance_ok()
-    )
-    monkeypatch.setattr("lancet_eval.identity.list_pg_documents", lambda settings: _pg_ok())
+    _patch_lance(monkeypatch)
+    _patch_pg(monkeypatch)
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is True
@@ -105,11 +118,8 @@ def test_extra_id_in_lancedb_documents_fails(
     """An extra ID in LanceDB documents fails, naming the symmetric difference."""
     _write_map(tmp_path, monkeypatch)
     extra = "ffffffff-ffff-ffff-ffff-ffffffffffff"
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids",
-        lambda path: _lance_ok(documents=[DOC_A, DOC_B, extra]),
-    )
-    monkeypatch.setattr("lancet_eval.identity.list_pg_documents", lambda settings: _pg_ok())
+    _patch_lance(monkeypatch, documents=[DOC_A, DOC_B, extra])
+    _patch_pg(monkeypatch)
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -123,11 +133,8 @@ def test_map_id_missing_from_nodes_fails(
 ) -> None:
     """A map ID missing from nodes fails, naming the symmetric difference."""
     _write_map(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids",
-        lambda path: _lance_ok(nodes=[DOC_A]),
-    )
-    monkeypatch.setattr("lancet_eval.identity.list_pg_documents", lambda settings: _pg_ok())
+    _patch_lance(monkeypatch, nodes=[DOC_A])
+    _patch_pg(monkeypatch)
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -140,13 +147,8 @@ def test_extra_postgresql_id_fails(
     """An extra PostgreSQL ID fails, naming the symmetric difference."""
     _write_map(tmp_path, monkeypatch)
     extra = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids", lambda path: _lance_ok()
-    )
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_pg_documents",
-        lambda settings: _pg_ok(**{extra: "completed"}),
-    )
+    _patch_lance(monkeypatch)
+    _patch_pg(monkeypatch, **{extra: "completed"})
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -159,11 +161,8 @@ def test_entity_edges_ids_outside_map_fail(
     """entity_edges IDs outside the map fail."""
     _write_map(tmp_path, monkeypatch)
     outside = "dddddddd-dddd-dddd-dddd-dddddddddddd"
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids",
-        lambda path: _lance_ok(entity_edges=[outside]),
-    )
-    monkeypatch.setattr("lancet_eval.identity.list_pg_documents", lambda settings: _pg_ok())
+    _patch_lance(monkeypatch, entity_edges=[outside])
+    _patch_pg(monkeypatch)
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -176,11 +175,8 @@ def test_edges_ids_outside_map_fail(
     """edges IDs outside the map fail."""
     _write_map(tmp_path, monkeypatch)
     outside = "cccccccc-cccc-cccc-cccc-cccccccccccc"
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids",
-        lambda path: _lance_ok(edges=[outside]),
-    )
-    monkeypatch.setattr("lancet_eval.identity.list_pg_documents", lambda settings: _pg_ok())
+    _patch_lance(monkeypatch, edges=[outside])
+    _patch_pg(monkeypatch)
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -192,11 +188,8 @@ def test_alias_present_in_lancedb_fails(
 ) -> None:
     """The alias ID present in LanceDB fails with reason alias_present (D-60)."""
     _write_map(tmp_path, monkeypatch, aliases={ALIAS_ID: DOC_A})
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids",
-        lambda path: _lance_ok(documents=[DOC_A, DOC_B, ALIAS_ID]),
-    )
-    monkeypatch.setattr("lancet_eval.identity.list_pg_documents", lambda settings: _pg_ok())
+    _patch_lance(monkeypatch, documents=[DOC_A, DOC_B, ALIAS_ID])
+    _patch_pg(monkeypatch)
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -208,13 +201,8 @@ def test_alias_present_in_postgresql_fails(
 ) -> None:
     """The alias ID present in PostgreSQL fails with reason alias_present (D-60)."""
     _write_map(tmp_path, monkeypatch, aliases={ALIAS_ID: DOC_A})
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids", lambda path: _lance_ok()
-    )
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_pg_documents",
-        lambda settings: _pg_ok(**{ALIAS_ID: "completed"}),
-    )
+    _patch_lance(monkeypatch)
+    _patch_pg(monkeypatch, **{ALIAS_ID: "completed"})
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -226,11 +214,8 @@ def test_staged_rows_present_fails(
 ) -> None:
     """staged_documents_v2_rows > 0 fails with reason staged_rows_present."""
     _write_map(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids",
-        lambda path: _lance_ok(staged_documents_v2_rows=3),
-    )
-    monkeypatch.setattr("lancet_eval.identity.list_pg_documents", lambda settings: _pg_ok())
+    _patch_lance(monkeypatch, staged_documents_v2_rows=3)
+    _patch_pg(monkeypatch)
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -243,13 +228,8 @@ def test_postgresql_row_not_completed_fails(
 ) -> None:
     """A PostgreSQL row whose status is not completed fails."""
     _write_map(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_lancedb_document_ids", lambda path: _lance_ok()
-    )
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_pg_documents",
-        lambda settings: _pg_ok(**{DOC_A: "processing"}),
-    )
+    _patch_lance(monkeypatch)
+    _patch_pg(monkeypatch, **{DOC_A: "processing"})
 
     report = compute_identity(_settings(tmp_path), "multihop_rag")
     assert report.passed is False
@@ -268,7 +248,9 @@ def test_list_lancedb_document_ids_parses_subprocess_json(
     def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert "--document-ids" in cmd
         assert "--lancedb-path" in cmd
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=payload, stderr="")
+        return subprocess.CompletedProcess(
+            args=cmd, returncode=0, stdout=payload, stderr=""
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -327,15 +309,16 @@ def test_list_pg_documents_parses_run_psql_output(
 def test_delete_pg_extras_apply_without_dump_raises(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """delete_pg_extras(apply=True) without an existing non-empty pg_dump_path raises."""
-    monkeypatch.setattr(
-        "lancet_eval.identity.list_pg_documents",
-        lambda settings: _pg_ok(**{"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee": "completed"}),
-    )
+    """delete_pg_extras(apply=True) with no existing non-empty pg_dump_path raises."""
+    extra = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+    _patch_pg(monkeypatch, **{extra: "completed"})
 
     with pytest.raises(SeedError, match="pg_dump_path"):
         delete_pg_extras(
-            _settings(tmp_path), allow_ids={DOC_A, DOC_B}, apply=True, pg_dump_path=None
+            _settings(tmp_path),
+            allow_ids={DOC_A, DOC_B},
+            apply=True,
+            pg_dump_path=None,
         )
 
 
@@ -379,7 +362,9 @@ def test_delete_pg_extras_refuses_non_uuid_id_before_any_sql(
 def test_delete_pg_extras_refuses_empty_allow_ids(tmp_path: Path) -> None:
     """An empty allow_ids is refused rather than deleting every document."""
     with pytest.raises(SeedError, match="empty allow_ids"):
-        delete_pg_extras(_settings(tmp_path), allow_ids=set(), apply=False, pg_dump_path=None)
+        delete_pg_extras(
+            _settings(tmp_path), allow_ids=set(), apply=False, pg_dump_path=None
+        )
 
 
 def test_delete_pg_extras_dry_run_returns_extras_and_executes_no_delete(
@@ -405,7 +390,7 @@ def test_delete_pg_extras_dry_run_returns_extras_and_executes_no_delete(
 def test_delete_pg_extras_apply_runs_single_transaction_and_returns_deleted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """apply=True with a valid dump path runs one transaction and returns deleted IDs."""
+    """apply=True with a valid dump path runs one transaction, returns deleted IDs."""
     dump_path = tmp_path / "backup.sql"
     dump_path.write_text("-- pg_dump contents\n", encoding="utf-8")
 

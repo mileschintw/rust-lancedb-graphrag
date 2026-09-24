@@ -235,7 +235,7 @@ def measure_one(
             if (outcome.answer and outcome.answer.snapshot is not None)
             else outcome.partial_snapshot
         )
-        index_generation = snapshot.index_generation if snapshot else ""
+        snapshot_index_generation = snapshot.index_generation if snapshot else ""
         structured_citations = (
             outcome.answer.structured_citations if outcome.answer else []
         )
@@ -283,7 +283,7 @@ def measure_one(
             duration_ms=float(outcome.duration_ms),
             session_id=outcome.session_id,
             correlation_id=outcome.correlation_id,
-            index_generation=index_generation,
+            index_generation=snapshot_index_generation,
             partial=False,
             node_timings=node_timings,
             workflow_meta=workflow_meta,

@@ -135,6 +135,10 @@ class CorpusConfig:
         self.document_subset = data.get("document_subset", {})
         self.models = data.get("models", {})
         self.arms = list(data.get("arms", {}).get("arms", ["graph-on", "graph-off"]))
+        # D-68: a corpus may name a different corpus's document map via
+        # [documents] map_corpus, so a corpus without its own seeded map (e.g. a
+        # diagnostic corpus) can share another's. Defaults to itself.
+        self.map_corpus = str(self.documents.get("map_corpus", corpus_name))
 
     @property
     def judge_model(self) -> str:

@@ -3,6 +3,7 @@
 import hashlib
 import json
 import random
+from pathlib import Path
 
 import pytest
 
@@ -94,6 +95,52 @@ def test_committed_subset_selection_metadata() -> None:
         doc_lines = [line for line in f if line.strip()]
 
     assert len(doc_lines) == meta["total_count"]
+
+
+def test_map_corpus_defaults_to_own_name() -> None:
+    """CorpusConfig.map_corpus defaults to the corpus's own name when unset."""
+    assert CorpusConfig("multihop_rag").map_corpus == "multihop_rag"
+    assert CorpusConfig("graphrag_bench").map_corpus == "graphrag_bench"
+
+
+def test_map_corpus_indirection_resolves_document_map_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A [documents] map_corpus entry redirects get_document_map_path (D-68)."""
+    from lancet_eval.seed import get_document_map_path
+
+    corpora_dir = tmp_path / "eval" / "corpora"
+    corpora_dir.mkdir(parents=True)
+    (corpora_dir / "diag_corpus.toml").write_text(
+        '[documents]\nmap_corpus = "multihop_rag"\n\n'
+        '[questions]\nfile = "diag_corpus/questions.sample.jsonl"\n'
+        'label_format = "multihop_rag"\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: tmp_path)
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+
+    cfg = CorpusConfig("diag_corpus")
+    assert cfg.map_corpus == "multihop_rag"
+
+    path = get_document_map_path("diag_corpus")
+    assert path == tmp_path / "eval" / "corpora" / "multihop_rag" / "document_map.json"
+
+
+def test_map_corpus_falls_back_to_corpus_name_when_config_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A corpus with no TOML falls back to its own name (CorpusError caught)."""
+    from lancet_eval.seed import get_document_map_path
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+
+    path = get_document_map_path("nonexistent_corpus")
+    assert (
+        path
+        == tmp_path / "eval" / "corpora" / "nonexistent_corpus" / "document_map.json"
+    )
 
 
 def test_attribution_file_content() -> None:

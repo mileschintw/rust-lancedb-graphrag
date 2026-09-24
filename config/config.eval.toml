@@ -1,14 +1,9 @@
 # Evaluation configuration overlay (LANCET_ENV=eval)
 # Provides isolated LanceDB directory for evaluation benchmarks.
+# lancedb_path-only overlay restored per 06.3.1 D-13 and 06.3.4.1 D-66: the
+# [engine.workflow] table this overlay previously carried was accidentally
+# added by 33e774b and duplicated config.toml's own values with no effective
+# difference, so the effective eval workflow budgets equal config.toml's.
 
 [engine]
 lancedb_path = "./data/lancedb-eval"
-
-[engine.workflow]
-reformulate_timeout_ms = 5000
-query_embedding_timeout_ms = 15000
-retrieve_timeout_ms = 30000
-graph_operation_timeout_ms = 40000
-graph_node_timeout_ms = 60000
-prompt_timeout_ms = 10000
-generation_node_timeout_ms = 65000

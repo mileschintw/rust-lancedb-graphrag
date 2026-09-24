@@ -264,7 +264,10 @@ def identity_pg_delete_extras(
         Path | None,
         typer.Option(
             "--pg-dump",
-            help="Path to an existing non-empty pg_dump backup file, required with --apply",
+            help=(
+                "Path to an existing non-empty pg_dump backup file, "
+                "required with --apply"
+            ),
         ),
     ] = None,
 ) -> None:
