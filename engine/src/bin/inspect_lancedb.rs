@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use arrow_array::{
@@ -923,6 +923,69 @@ pub async fn inspect_gold_chunks(
     Ok(records)
 }
 
+/// Sorted, de-duplicated `document_id` sets across the four document-linked
+/// LanceDB tables, plus the `staged_documents_v2` row count.
+///
+/// Emitted by `--document-ids` as the JSON contract `eval/src/lancet_eval/identity.py`
+/// consumes (`documents, nodes, edges, entity_edges, staged_documents_v2_rows`).
+/// `BTreeSet` guarantees sorted, de-duplicated output on serialization.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct DocumentIdsReport {
+    pub documents: BTreeSet<String>,
+    pub nodes: BTreeSet<String>,
+    pub edges: BTreeSet<String>,
+    pub entity_edges: BTreeSet<String>,
+    pub staged_documents_v2_rows: usize,
+}
+
+/// Collects the distinct, non-null `document_id` values from `table` via a
+/// full read-only column scan (`Select::columns(&["document_id"])`).
+// RED-phase: not yet called by `inspect_document_ids`'s stub body; wired in
+// the GREEN commit.
+#[expect(dead_code, reason = "RED-phase stub; wired into inspect_document_ids in the GREEN commit")]
+async fn collect_document_ids(table: &Table) -> Result<BTreeSet<String>, String> {
+    let batches = table
+        .query()
+        .select(Select::columns(&["document_id"]))
+        .execute()
+        .await
+        .map_err(|error| error.to_string())?
+        .try_collect::<Vec<RecordBatch>>()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut ids = BTreeSet::new();
+    for batch in &batches {
+        let col = string_column(batch, "document_id")?;
+        for row in 0..batch.num_rows() {
+            if !col.is_null(row) {
+                ids.insert(col.value(row).to_owned());
+            }
+        }
+    }
+    Ok(ids)
+}
+
+/// Runs the `--document-ids` probe: read-only `document_id` sets over
+/// `documents`, `nodes`, `edges` and `entity_edges`, plus the
+/// `staged_documents_v2` row count (RESEARCH §D `--document-ids` mode).
+///
+/// # Errors
+/// Returns an error if any table cannot be opened or queried.
+// RED-phase stub (06.3.4.1-04 Task 1): intentionally returns an empty report
+// regardless of store contents so `document_ids_lists_sorted_dedup_sets`
+// fails on assert_eq! while `document_ids_empty_store_yields_empty` passes
+// vacuously. Implemented for real in the GREEN commit.
+#[expect(
+    clippy::unused_async,
+    reason = "RED-phase stub; GREEN commit adds the real table reads"
+)]
+pub async fn inspect_document_ids(
+    _database: &DatabaseManager,
+) -> Result<DocumentIdsReport, String> {
+    Ok(DocumentIdsReport::default())
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum InspectMode {
     Document(String),
@@ -930,6 +993,7 @@ pub enum InspectMode {
     EntityNeighborhood { seed: String, max_hops: u32 },
     EntityName(String),
     GoldChunks { questions: PathBuf, map: PathBuf },
+    DocumentIds,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1115,6 +1179,13 @@ async fn main() -> Result<(), String> {
                     serde_json::to_string(record).map_err(|error| error.to_string())?
                 );
             }
+        }
+        InspectMode::DocumentIds => {
+            let report = inspect_document_ids(&database).await?;
+            println!(
+                "{}",
+                serde_json::to_string(&report).map_err(|error| error.to_string())?
+            );
         }
     }
     Ok(())

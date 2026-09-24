@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use arrow_array::builder::{ListBuilder, StringBuilder};
@@ -9,9 +10,10 @@ use arrow_array::{
 use uuid::Uuid;
 
 use super::{
-    inspect_document, inspect_entity_name, inspect_entity_neighborhood, inspect_gold_chunks,
-    inspect_graph_population, parse_args, DegreeDistribution, EntityMatch, EntityNameReport,
-    GraphPopulationReport, Inspection, NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
+    inspect_document, inspect_document_ids, inspect_entity_name, inspect_entity_neighborhood,
+    inspect_gold_chunks, inspect_graph_population, parse_args, DegreeDistribution,
+    DocumentIdsReport, EntityMatch, EntityNameReport, GraphPopulationReport, Inspection,
+    NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
 };
 use engine::db::DatabaseManager;
 
@@ -1379,4 +1381,212 @@ async fn gold_chunks_probe_does_not_mutate_table_versions() {
     let _ = std::fs::remove_dir_all(path);
     let _ = std::fs::remove_file(&questions_path);
     let _ = std::fs::remove_file(&map_path);
+}
+
+/// Builds a synthetic store with arbitrary `document_id` values written into
+/// `documents`, `nodes`, `edges`, `entity_edges` (one row per supplied ID,
+/// duplicates allowed to prove dedup) and `staged_count` `staged_documents_v2`
+/// rows, for `--document-ids` probe tests (06.3.4.1-04 Task 1).
+async fn document_ids_store(
+    test_name: &str,
+    document_ids: &[&str],
+    node_document_ids: &[&str],
+    edge_document_ids: &[&str],
+    entity_edge_document_ids: &[&str],
+    staged_count: usize,
+) -> (DatabaseManager, String) {
+    let path = database_path(test_name);
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    if !document_ids.is_empty() {
+        let documents = database.documents_table().await.unwrap();
+        let n = document_ids.len();
+        let batch = RecordBatch::try_new(
+            documents.schema().await.unwrap(),
+            vec![
+                Arc::new(StringArray::from(document_ids.to_vec())),
+                Arc::new(BinaryArray::from_vec(vec![b"fixture" as &[u8]; n])),
+            ],
+        )
+        .unwrap();
+        documents.add(batch).execute().await.unwrap();
+    }
+
+    if !node_document_ids.is_empty() {
+        let nodes = database.nodes_table().await.unwrap();
+        let schema = nodes.schema().await.unwrap();
+        let n = node_document_ids.len();
+        let nullable = |name: &str| {
+            new_null_array(schema.field_with_name(name).unwrap().data_type(), n)
+        };
+        let embeddings = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+            (0..n).map(|_| Some((0..2048).map(|_| Some(0.1f32)))),
+            2048,
+        );
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(node_document_ids.to_vec())),
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| format!("chunk-{i}")).collect::<Vec<_>>(),
+                )),
+                Arc::new(Int32Array::from_iter_values((0..n).map(|i| i as i32))),
+                Arc::new(Int32Array::from_iter_values((0..n).map(|_| 0))),
+                Arc::new(Int32Array::from_iter_values((0..n).map(|_| 9))),
+                Arc::new(StringArray::from(vec!["fixture"; n])),
+                Arc::new(embeddings),
+                Arc::new(Int32Array::from(vec![1; n])),
+                Arc::new(StringArray::from(vec!["o200k_base"; n])),
+                Arc::new(StringArray::from(vec!["1"; n])),
+                nullable("title"),
+                nullable("section_path"),
+                nullable("page_start"),
+                nullable("page_end"),
+                nullable("content_hash"),
+                nullable("chunker_version"),
+                nullable("embedding_model"),
+                nullable("ingested_at"),
+                nullable("content_type"),
+            ],
+        )
+        .unwrap();
+        nodes.add(batch).execute().await.unwrap();
+    }
+
+    if !edge_document_ids.is_empty() {
+        let edges = database.edges_table().await.unwrap();
+        let schema = edges.schema().await.unwrap();
+        let n = edge_document_ids.len();
+        let nullable = |name: &str| {
+            new_null_array(schema.field_with_name(name).unwrap().data_type(), n)
+        };
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| format!("edge-{i}")).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| format!("src-{i}")).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| format!("tgt-{i}")).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(vec!["next_chunk"; n])),
+                Arc::new(Float32Array::from(vec![1.0; n])),
+                Arc::new(StringArray::from(edge_document_ids.to_vec())),
+                nullable("summary"),
+                nullable("summary_vector"),
+            ],
+        )
+        .unwrap();
+        edges.add(batch).execute().await.unwrap();
+    }
+
+    if !entity_edge_document_ids.is_empty() {
+        let entity_edges = database.entity_edges_table().await.unwrap();
+        let schema = entity_edges.schema().await.unwrap();
+        let n = entity_edge_document_ids.len();
+        let nullable = |name: &str| {
+            new_null_array(schema.field_with_name(name).unwrap().data_type(), n)
+        };
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| format!("ee-{i}")).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| format!("esrc-{i}")).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| format!("etgt-{i}")).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(vec!["relates_to"; n])),
+                Arc::new(Float32Array::from(vec![1.0; n])),
+                Arc::new(StringArray::from(entity_edge_document_ids.to_vec())),
+                nullable("summary"),
+                nullable("summary_vector"),
+            ],
+        )
+        .unwrap();
+        entity_edges.add(batch).execute().await.unwrap();
+    }
+
+    if staged_count > 0 {
+        let staged = database.staged_documents_table().await.unwrap();
+        let schema = staged.schema().await.unwrap();
+        let n = staged_count;
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(
+                    (0..n).map(|i| format!("staged-doc-{i}")).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(vec!["fixture.txt"; n])),
+                Arc::new(BinaryArray::from_vec(vec![b"fixture" as &[u8]; n])),
+                Arc::new(StringArray::from(vec!["fixed_size"; n])),
+                Arc::new(Int32Array::from(vec![500; n])),
+                Arc::new(Int32Array::from(vec![50; n])),
+                Arc::new(Int64Array::from(vec![1i64; n])),
+            ],
+        )
+        .unwrap();
+        staged.add(batch).execute().await.unwrap();
+    }
+
+    (database, path)
+}
+
+fn ids(values: &[&str]) -> BTreeSet<String> {
+    values.iter().map(|v| (*v).to_owned()).collect()
+}
+
+#[tokio::test]
+async fn document_ids_lists_sorted_dedup_sets() {
+    let (database, path) = document_ids_store(
+        "document-ids-populated",
+        &["B", "A"],
+        &["A", "B", "C", "A"],
+        &["B"],
+        &["A"],
+        2,
+    )
+    .await;
+
+    let report = inspect_document_ids(&database).await.unwrap();
+
+    assert_eq!(
+        report,
+        DocumentIdsReport {
+            documents: ids(&["A", "B"]),
+            nodes: ids(&["A", "B", "C"]),
+            edges: ids(&["B"]),
+            entity_edges: ids(&["A"]),
+            staged_documents_v2_rows: 2,
+        }
+    );
+
+    let json = serde_json::to_string(&report).unwrap();
+    assert_eq!(
+        json,
+        r#"{"documents":["A","B"],"nodes":["A","B","C"],"edges":["B"],"entity_edges":["A"],"staged_documents_v2_rows":2}"#
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn document_ids_empty_store_yields_empty() {
+    let (database, path) = document_ids_store("document-ids-empty", &[], &[], &[], &[], 0).await;
+
+    let report = inspect_document_ids(&database).await.unwrap();
+
+    assert!(report.documents.is_empty());
+    assert!(report.nodes.is_empty());
+    assert!(report.edges.is_empty());
+    assert!(report.entity_edges.is_empty());
+    assert_eq!(report.staged_documents_v2_rows, 0);
+
+    let _ = std::fs::remove_dir_all(path);
 }
