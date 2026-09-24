@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 06.3.4.1-03-PLAN.md
-last_updated: "2026-09-24T21:25:21.497Z"
+stopped_at: Completed 06.3.4.1-04-PLAN.md
+last_updated: "2026-09-24T21:35:40.489Z"
 last_activity: 2026-09-24
-state_head: 8fffa9c884778212916876d09114f1d1bd91e21a
+state_head: d949d1a9a54246acdff9393db0ec43831c44a3a2
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 161
+  completed_plans: 162
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
@@ -21,7 +21,7 @@ current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 
 ## Current Position
 
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 20
 
 ## Current Status
@@ -371,6 +371,7 @@ Total Plans in Phase: 20
 | Phase 06.3.4.1 P01 | 3h 05min | 3 tasks | 15 files |
 | Phase 06.3.4.1 P02 | 75min | 3 tasks | 14 files |
 | Phase 06.3.4.1 P03 | 13h 43min | 3 tasks | 26 files |
+| Phase 06.3.4.1 P04 | ~35min | 3 tasks | 11 files |
 
 ## Decisions
 
@@ -427,12 +428,13 @@ Total Plans in Phase: 20
 - [Phase 06.3.4.1]: Fixed a real bug found while wiring the gate against the committed multihop_rag document_map.json: the alias_present check (D-60) must test only alias keys (stale IDs that must be absent), not alias values (the canonical replacement ID, which legitimately is present as an ordinary entry) — the plan's must_haves named only the key ID (0370301a...) as the one that must be absent.
 - [Phase 06.3.4.1]: delete_pg_extras enforces schema == 'lancet_eval' explicitly, beyond what assert_schema_isolated alone checks, since the DELETE SQL hardcodes the lancet_eval.documents table name; also refuses an empty allow_ids rather than building WHERE id NOT IN ().
 - [Phase 06.3.4.1]: 06.3.4.1-03: OI-02 checkpoint resolved diagnose-in-drive-1 after three soak rounds (release n=300, debug n=300, 2.5h paced debug n=474) found no arm reproducing RetrieveHybrid growth. No accumulator class named. Plan 06.3.4.1-07's fix-named-class/mimalloc precondition is unmet; 07 must be skipped or replanned before it runs (orchestrator to route to user). D-64 root-cause work moves to paid drive 1 via the P1 tracing and flatness adapter already built. — Ruled out: production ran --workers 1 (concurrency not explanatory); embedding/generation happen outside the RetrieveHybrid span (provider latency not explanatory); eval store unwritten during the 06.3.4 drive (store mutation not explanatory). Lance session cache grows continuously but decelerating and uncorrelated with retrieval latency at soak scale -- recorded as a watch item for drive 1, not a named cause.
+- [Phase 06.3.4.1]: communities_table() accessor added to DatabaseManager (Rule 2) so reconcile's version record covers all 7 LanceDB tables, not just the 6 with prior accessors — RESEARCH §D flagged the gap; the plan's own report spec requires all seven table versions
 
 ## Session
 
-**Last session:** 2026-09-24T20:46:30.281Z
+**Last session:** 2026-09-24T21:35:39.280Z
 **Last activity:** 2026-09-24
-**Stopped at:** Completed 06.3.4.1-03-PLAN.md
+**Stopped at:** Completed 06.3.4.1-04-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
