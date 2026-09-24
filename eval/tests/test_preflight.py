@@ -6,7 +6,7 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
-from lancet_eval.config import EvalSettings
+from lancet_eval.config import EvalSettings, repo_root
 from lancet_eval.preflight import (
     check_corpus_generation,
     check_gateway_and_engine,
@@ -14,6 +14,7 @@ from lancet_eval.preflight import (
     check_model_differentiation,
     check_openrouter_api,
     check_store_isolation,
+    read_effective_workflow_config,
     run_preflight_checks,
 )
 from lancet_eval.seed import DocumentMap, DocumentMapEntry, save_document_map_atomic
@@ -248,6 +249,35 @@ def test_run_preflight_checks_index_identity_is_second_check(
     results = run_preflight_checks(corpus_name="multihop_rag", settings=settings)
     assert results[0].name == "store_isolation"
     assert results[1].name == "index_identity"
+
+
+def test_effective_workflow_config_same_under_eval_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With LANCET_ENV=eval, read_effective_workflow_config returns the same seven
+    workflow values as for the base config (D-66): the restored lancedb_path-only
+    overlay carries no [engine.workflow] table, so nothing overrides the base."""
+    for env_var in (
+        "LANCET_ENGINE__WORKFLOW__REFORMULATE_TIMEOUT_MS",
+        "LANCET_ENGINE__WORKFLOW__QUERY_EMBEDDING_TIMEOUT_MS",
+        "LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS",
+        "LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS",
+        "LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS",
+        "LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS",
+        "LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+
+    base_config = repo_root() / "config" / "config.toml"
+
+    monkeypatch.delenv("LANCET_ENV", raising=False)
+    base_values = read_effective_workflow_config(base_config)
+
+    monkeypatch.setenv("LANCET_ENV", "eval")
+    eval_values = read_effective_workflow_config(base_config)
+
+    assert len(base_values) == 7
+    assert eval_values == base_values
 
 
 def test_gateway_failure_message_names_service_and_remedy(
