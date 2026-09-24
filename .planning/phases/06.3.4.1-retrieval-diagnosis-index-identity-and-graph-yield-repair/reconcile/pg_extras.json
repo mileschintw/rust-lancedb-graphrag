@@ -1,0 +1,133 @@
+{
+  "corpus": "multihop_rag",
+  "extra_count": 21,
+  "expected_count": 21,
+  "extras": [
+    {
+      "id": "02038bd6-acdd-4895-b983-f7cc45ababdd",
+      "filename": "The_restaurant_nearest_Google.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 10:10:56.722756"
+    },
+    {
+      "id": "0370301a-0ad7-4267-a337-ba2dda34595f",
+      "filename": "ChatGPT__Everything_you_need_to_know_about_the_AI-powered_ch.txt",
+      "status": "queued",
+      "created_at": "2026-08-31 20:23:59.409318"
+    },
+    {
+      "id": "12399f25-2f92-4843-9d48-df7dca3871a2",
+      "filename": "These_jellyfish_can_learn_without_brains.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 11:39:28.127166"
+    },
+    {
+      "id": "1c5c0745-5331-472c-99a6-9b05b57bd97c",
+      "filename": "Tim_Sweeney_on_Epic_s_victory_royale_over_Google.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 13:37:34.297789"
+    },
+    {
+      "id": "1cb7048c-522a-43c5-8535-49d6b853f320",
+      "filename": "Top_25_MLB_offseason_trade_candidates.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 14:56:44.508675"
+    },
+    {
+      "id": "213f38a2-239f-4be7-ab28-626296d8bc09",
+      "filename": "Fantasy_Football_WR_PPR_Rankings_Week_13__Who_to_start__best.txt",
+      "status": "failed",
+      "created_at": "2026-09-01 01:26:01.607681"
+    },
+    {
+      "id": "32d2c38d-ee13-4f93-a963-6cb6e46835aa",
+      "filename": "Thirty-seven_phases_of_agony_define_Ireland_s_greatest_heart.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 12:09:48.228063"
+    },
+    {
+      "id": "3aadce3b-564d-41b8-b968-d785e6ff09f8",
+      "filename": "The_people_who_ruined_the_internet.txt",
+      "status": "queued",
+      "created_at": "2026-09-02 08:49:54.381041"
+    },
+    {
+      "id": "53b6be50-e36b-4139-ad53-0f9f6b562da4",
+      "filename": "The_obsessive_tormenter_who_made_professors__lives_miserable.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 08:15:25.749082"
+    },
+    {
+      "id": "56b160f2-55c0-4084-adb1-a8570aee0160",
+      "filename": "Today_the_FTX_jury_suffered_through_a_code_review.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 14:16:46.006188"
+    },
+    {
+      "id": "61a7872e-1f1a-47fa-a972-4906afbc502e",
+      "filename": "Top_25_MLB_offseason_trade_candidates.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 15:01:08.587659"
+    },
+    {
+      "id": "7ff91dc7-25aa-4d99-ae48-1a24f9d5cae9",
+      "filename": "There_s_something_going_on_with_AI_startups_in_France.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 11:12:13.600876"
+    },
+    {
+      "id": "8d192b83-3727-494b-a767-cc0412ae84fc",
+      "filename": "Top_25_MLB_offseason_trade_candidates.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 14:50:54.376641"
+    },
+    {
+      "id": "9423e8e2-8db9-4e82-8841-6688c29e0b7e",
+      "filename": "Suicide_prevention_program_at_Nebraska_children_s_hospital_e.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 01:28:24.799003"
+    },
+    {
+      "id": "b1541663-27bb-4a53-a10e-1ff15e7bfb12",
+      "filename": "The_best_video_games_of_the_year_so_far.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 06:40:12.140806"
+    },
+    {
+      "id": "be6ee61c-b36f-4179-9cd2-ab07d7f331dd",
+      "filename": "Thursday_Night_Football_FanDuel_Picks__NFL_DFS_lineup_advice.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 13:07:27.993931"
+    },
+    {
+      "id": "cd88cd4f-268c-4ae5-96b2-793147271d64",
+      "filename": "The_people_who_ruined_the_internet.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 09:21:24.959119"
+    },
+    {
+      "id": "da3f31e4-097b-4deb-85f7-060fb2d61fc1",
+      "filename": "This_horror_flick_boasts_the_best_opening_13_minutes_of_a_fi.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 12:37:18.878034"
+    },
+    {
+      "id": "ea999b7e-aff3-4f52-a52f-f6cf2546261f",
+      "filename": "Their_kids_died_after_buying_drugs_on_Snapchat._Now_the_pare.txt",
+      "status": "failed",
+      "created_at": "2026-09-02 10:42:51.393557"
+    },
+    {
+      "id": "f9992c53-a97e-412c-b2c9-978dc892c1fe",
+      "filename": "Know_the_price-matching_policies_for_Best_Buy__Target__Walma.txt",
+      "status": "queued",
+      "created_at": "2026-09-01 11:44:08.172379"
+    },
+    {
+      "id": "fa85cb0e-13f9-4909-908c-0dc39d0d40de",
+      "filename": "Moneyline_Betting_-_What_is_the_Moneyline_and_How_Does_it_Wo.txt",
+      "status": "queued",
+      "created_at": "2026-09-01 16:32:11.04637"
+    }
+  ]
+}
