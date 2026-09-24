@@ -78,7 +78,7 @@ REGISTERED_DIMENSIONS: list[str] = [
     "final_answer_em",
     # D-70: whole-token containment of gold on the full answer (secondary, not gated).
     "final_answer_containment",
-    # D-70: final_answer_em OR gold_contained(extracted line) -- the SC-3 headline metric.
+    # D-70: final_answer_em OR gold_contained(extracted line) -- SC-3 headline metric.
     "answer_usable",
     # D-70/D-74: rate of non-null records with no extractable `Answer:` line.
     "final_answer_missing_rate",

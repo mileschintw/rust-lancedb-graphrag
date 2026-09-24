@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from lancet_eval import thresholds as thresholds_module
 from lancet_eval.dimensions import (
     DimensionResult,
     make_graph_presence_rate,
@@ -26,7 +27,6 @@ from lancet_eval.gate import (
     read_stage_caps,
     read_store_suspension,
 )
-from lancet_eval import thresholds as thresholds_module
 from lancet_eval.journal import NodeTiming, RunRecord, WorkflowWireMeta
 from lancet_eval.report import CorpusReport, RunMetadata
 
@@ -557,7 +557,7 @@ def test_citation_rejection_tripwire_committed() -> None:
 
 
 def test_citation_rejection_null_baseline_committed() -> None:
-    """CITATION_REJECTION_NULL_BASELINE is committed as a (numerator, denominator) tuple."""
+    """CITATION_REJECTION_NULL_BASELINE is committed as (numerator, denominator)."""
     assert hasattr(thresholds_module, "CITATION_REJECTION_NULL_BASELINE")
     value = thresholds_module.CITATION_REJECTION_NULL_BASELINE
     assert isinstance(value, tuple)
