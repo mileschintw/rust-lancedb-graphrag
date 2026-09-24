@@ -568,18 +568,33 @@ impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
                                 err.message(),
                             )
                         })?;
+                let open_table_start = std::time::Instant::now();
                 let nodes = self.database.nodes_table().await.map_err(|err| {
                     workflow::node::NodeError::new(
                         v1::NodeErrorKind::RetrievalFailed,
                         format!("failed to open nodes table: {err}"),
                     )
                 })?;
+                let open_table_ms = open_table_start.elapsed().as_secs_f64() * 1000.0;
+                let checkout_start = std::time::Instant::now();
                 nodes.checkout(self.nodes_version).await.map_err(|err| {
                     workflow::node::NodeError::new(
                         v1::NodeErrorKind::RetrievalFailed,
                         format!("dense checkout failure at version {}: {err}", self.nodes_version),
                     )
                 })?;
+                let checkout_ms = checkout_start.elapsed().as_secs_f64() * 1000.0;
+                // Best-effort OI-02 side channel (06.3.4.1-03 Task 1): populated only when this
+                // call runs inside `RetrieveHybridNode::execute`'s task-local scope
+                // (`workflow::nodes::retrieve::DENSE_SUBSTAGE_TIMINGS`). A direct caller outside
+                // that scope (e.g. a unit test constructing this port standalone) silently gets
+                // no-op behavior here rather than a panic.
+                let _ = crate::workflow::nodes::retrieve::DENSE_SUBSTAGE_TIMINGS.try_with(|cell| {
+                    cell.set(crate::workflow::nodes::retrieve::DenseSubStageTimings {
+                        open_table_ms,
+                        checkout_ms,
+                    });
+                });
                 let dense_retriever = DenseRetriever::new(nodes);
                 dense_retriever
                     .query(query_embedding, &query_req, &self.retrieval_settings)

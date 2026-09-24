@@ -239,8 +239,16 @@ pub fn build_providers_and_layers(
 
     let endpoint = settings.otlp_endpoint.trim();
     if endpoint.is_empty() {
-        // Console-only mode: only fmt layer
-        let fmt_layer = tracing_subscriber::fmt::layer();
+        // Console-only mode: only fmt layer.
+        //
+        // Writes to stderr, not stdout (06.3.4.1-03 Task 1 deviation, Rule 3): stdout is
+        // reserved for CLI/inspection binaries that intentionally use it as their user
+        // interface (M-LOG-NOT-PRINT's inspect-bin exception — e.g. `inspect_lancedb`,
+        // `retrieval_soak`), and this subscriber is process-global, so leaving it on stdout
+        // would interleave unrelated tracing output into any such binary's structured output.
+        // `main.rs`'s own stdout is not consumed by anything today, so this is behavior-neutral
+        // for production.
+        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
         let subscriber = Registry::default().with(fmt_layer);
         return (TelemetryHandle::default(), Box::new(subscriber));
     }
@@ -320,9 +328,12 @@ pub fn build_providers_and_layers(
         }
     };
 
-    let fmt_layer = tracing_subscriber::fmt::layer().with_filter(OtelDiagnosticsFilter::new(
-        std::sync::Arc::new(BoundedOtelDiagnostics::new(1, std::time::Duration::from_secs(300))),
-    ));
+    // Stderr, not stdout — see the console-only branch above for why (06.3.4.1-03 Task 1).
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_filter(OtelDiagnosticsFilter::new(std::sync::Arc::new(
+            BoundedOtelDiagnostics::new(1, std::time::Duration::from_secs(300)),
+        )));
 
     let otel_trace_layer = tracer_provider.as_ref().map(|tp| {
         let tracer = tp.tracer(settings.service_name.clone());
