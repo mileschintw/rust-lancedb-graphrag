@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 06.3.4.1-01-PLAN.md
-last_updated: "2026-09-24T01:24:05.216Z"
+stopped_at: Completed 06.3.4.1-02-PLAN.md
+last_updated: "2026-09-24T05:34:18.711Z"
 last_activity: 2026-09-23
-state_head: 10a6895b426c78aa02a9ec2f981e4baa70bd1610
+state_head: 049f68badcf5012e45f6c6a59a3ee04cf016a60d
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 159
+  completed_plans: 160
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
@@ -21,7 +21,7 @@ current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 
 ## Current Position
 
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 20
 
 ## Current Status
@@ -369,6 +369,7 @@ Total Plans in Phase: 20
 | Phase 06.3.3 P05 | 18 min | 3 tasks | 7 files |
 | Phase 06.3.3 P06 | 16 min | 3 tasks | 5 files |
 | Phase 06.3.4.1 P01 | 3h 05min | 3 tasks | 15 files |
+| Phase 06.3.4.1 P02 | 75min | 3 tasks | 14 files |
 
 ## Decisions
 
@@ -422,12 +423,14 @@ Total Plans in Phase: 20
 - [Phase 06.3.3]: Do not re-run the live engine binary; the new try_from_settings test is the wiring proof
 - [Phase 06.3.4.1]: Measured (b)=no rate on real data is 11.0% (49/447), well above RESEARCH A2's 'a few percent' assumption — Flagged for 06.3.4.1-10's reconcile/G sizing rather than acted on in this plan
 - [Phase 06.3.4.1]: retro_lenient.py reimplements D-69 message classification locally instead of importing lancet_eval.diagnostic.classify_record — Keeps its import surface statically AST-provable as excluding the fail-closed score/report path (OBS-05)
+- [Phase 06.3.4.1]: Fixed a real bug found while wiring the gate against the committed multihop_rag document_map.json: the alias_present check (D-60) must test only alias keys (stale IDs that must be absent), not alias values (the canonical replacement ID, which legitimately is present as an ordinary entry) — the plan's must_haves named only the key ID (0370301a...) as the one that must be absent.
+- [Phase 06.3.4.1]: delete_pg_extras enforces schema == 'lancet_eval' explicitly, beyond what assert_schema_isolated alone checks, since the DELETE SQL hardcodes the lancet_eval.documents table name; also refuses an empty allow_ids rather than building WHERE id NOT IN ().
 
 ## Session
 
-**Last session:** 2026-09-24T01:24:03.983Z
+**Last session:** 2026-09-24T05:34:17.536Z
 **Last activity:** 2026-09-23
-**Stopped at:** Completed 06.3.4.1-01-PLAN.md
+**Stopped at:** Completed 06.3.4.1-02-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
