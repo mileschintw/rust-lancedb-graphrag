@@ -1,7 +1,7 @@
 {
   "corpus": "multihop_rag",
   "seeded_at": "2026-08-31T16:32:58.773866+00:00",
-  "index_generation": "lance-701",
+  "index_generation": "lance-702",
   "entries": {
     "01070ac6-0fc0-464d-9f1f-756573b99c0e": {
       "corpus_id": "The best VPN services for 2023",
