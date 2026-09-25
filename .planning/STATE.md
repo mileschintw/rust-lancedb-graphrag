@@ -514,4 +514,4 @@ Total Plans in Phase: 20
 
 ### Blockers
 
-- 06.3.4.1-07 being REPLANNED by user decision (2026-09-24): the OI-02 decay cause is still unknown and could sit anywhere in the full pipeline, so 07 is rewritten to find the actual cause first (reproduce production's starting latency, then its growth, through a free full-stack replay), with a decision checkpoint before any fix. Execution stopped after wave 3 (plans 01-06 complete); 07, 08, 09 and everything downstream wait on the revised 07.
+- 06.3.4.1-07 REPLANNED (2026-09-24, user decision): revised to diagnose the OI-02 decay cause across the whole pipeline (forensics → full-stack replay → bisection), with checkpoints after the primary replay and before any fix, then fix and same-replay proof. Plan-checker passed (warning fixed); downstream 08/09/11/12 aligned to its `## Fix` section. Resume with /gsd-execute-phase 06.3.4.1 at wave 4. Note: the 06.3.4 drive's Prometheus export is preserved only in gitignored data/oi02-evidence/prometheus-06.3.4-drive/ (Task 1 input).
