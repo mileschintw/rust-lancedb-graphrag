@@ -2,11 +2,11 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 7
-status: paused
-stopped_at: "PAUSED — 06.3.4.1-07 Task 3 resolved (rerun-primary with real stub vectors; paid run pre-approved up to $0.25 if required); not yet executed. See 06.3.4.1-HANDOVER.md"
-last_updated: "2026-09-25T09:01:28.708Z"
+status: executing
+stopped_at: "06.3.4.1-07: resumed after Task 3 checkpoint (rerun-primary); building stub-vectors.jsonl"
+last_updated: "2026-09-25T19:13:52.176Z"
 last_activity: 2026-09-24
-state_head: a1f9562d374c42f97008f7412d800ca60ed44e1f
+state_head: 0d339ae3e8f5d211404991b345758ce19f021ad4
 progress:
   total_phases: 16
   completed_phases: 9
@@ -439,9 +439,9 @@ Total Plans in Phase: 20
 
 ## Session
 
-**Last session:** 2026-09-25T09:01:27.390Z
+**Last session:** 2026-09-25T19:13:50.724Z
 **Last activity:** 2026-09-24
-**Stopped at:** 06.3.4.1-07 Task 3 checkpoint (decision)
+**Stopped at:** 06.3.4.1-07: resumed after Task 3 checkpoint (rerun-primary); building stub-vectors.jsonl
 **Resume file:** None
 
 ## Accumulated Context
