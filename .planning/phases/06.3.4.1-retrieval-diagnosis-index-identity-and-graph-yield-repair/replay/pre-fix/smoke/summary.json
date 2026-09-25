@@ -1,0 +1,95 @@
+{
+  "arm_dir": ".planning\\phases\\06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair\\replay\\pre-fix\\smoke",
+  "fidelity_vs_production": [
+    {
+      "AssemblePrompt": {
+        "production": 453.0,
+        "replay": 260.0
+      },
+      "ExtractGraphContext": {
+        "production": 2564.0,
+        "replay": 468.0
+      },
+      "GenerateAnswer": {
+        "production": 6970.5,
+        "replay": 270.0
+      },
+      "RetrieveHybrid": {
+        "production": 4910.5,
+        "replay": 1320.0
+      },
+      "slice": 0
+    }
+  ],
+  "flatness_verdict_first_200": {
+    "censored_count": 0,
+    "decay_present": false,
+    "n": 4,
+    "passed": false,
+    "reason": "unavailable",
+    "slope_ms_per_query": 28.666666666666664,
+    "trend_available": true,
+    "window_available": false,
+    "window_delta_ms": 0.0
+  },
+  "flatness_verdict_full": {
+    "censored_count": 0,
+    "decay_present": false,
+    "n": 4,
+    "passed": false,
+    "reason": "unavailable",
+    "slope_ms_per_query": 28.666666666666664,
+    "trend_available": true,
+    "window_available": false,
+    "window_delta_ms": 0.0
+  },
+  "graph_notice_counts": {
+    "GRAPH_ABLATION": 2,
+    "GRAPH_UNAVAILABLE": 2
+  },
+  "m1": {
+    "status": "unavailable"
+  },
+  "m2": {
+    "class": "ambiguous",
+    "committed_flatness_verdict_passed": false,
+    "later_slice_ms": null,
+    "slice0_ms": 1320.0,
+    "window_delta_ms": 0.0
+  },
+  "order_match_production": true,
+  "outcome_counts": {
+    "success": 4
+  },
+  "record_count": 4,
+  "slices_ordinal_50": [
+    {
+      "AssemblePrompt": 260.0,
+      "ExtractGraphContext": 468.0,
+      "GenerateAnswer": 270.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1320.0,
+      "n": 4,
+      "slice": 0
+    }
+  ],
+  "slices_wallclock_15m": [
+    {
+      "AssemblePrompt": 260.0,
+      "ExtractGraphContext": 468.0,
+      "GenerateAnswer": 270.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1320.0,
+      "n": 4,
+      "slice": 0
+    }
+  ],
+  "uncensored_prefix_n": 4,
+  "uncensored_prefix_verdict": {
+    "decay_present": false,
+    "slope_ms_per_query": 28.666666666666664,
+    "trend_available": true,
+    "window_available": false,
+    "window_delta_ms": 0.0
+  }
+}

@@ -1,0 +1,53 @@
+{
+    "phase":  "pre-fix",
+    "telemetry":  {
+                      "engine":  "otlp",
+                      "gateway":  "otlp"
+                  },
+    "stderr_sink":  "console",
+    "build_profile":  "debug",
+    "dirty":  true,
+    "nodes_version":  "18446744073709551614.manifest",
+    "actual_invocation":  "cargo build (same args, un-redirected) then exec engine/target/debug/engine.exe directly -- see this script\u0027s comment at the engine-build step for why cargo run itself is never used from this detached process tree",
+    "config_dir_diff":  "",
+    "pid":  46308,
+    "paid":  false,
+    "binary_path":  "engine/target/debug/engine.exe",
+    "limit":  2,
+    "egress_443_max":  0,
+    "observability":  "on",
+    "start_utc":  "2026-09-25T07:40:17.9966694Z",
+    "gateway_pid":  4456,
+    "warmup_n":  0,
+    "store_source":  "reconciled",
+    "workers":  1,
+    "label":  "smoke",
+    "commit":  "92cf84a5a120bc685f25181b1ce3143d138e2cce",
+    "otlp_4317_conns_max":  {
+                                "engine":  3,
+                                "gateway":  3
+                            },
+    "harness_exit_code":  0,
+    "end_utc":  "2026-09-25T07:40:32.8676227Z",
+    "stub_delays":  {
+                        "embed_ms":  0,
+                        "chat_ms":  0
+                    },
+    "launch_command":  "cargo run --manifest-path engine/Cargo.toml --locked --bin engine",
+    "scratch_db":  "lancet_replay",
+    "retries":  {
+                    "value":  0,
+                    "mode":  "fixed"
+                },
+    "env_vars":  {
+                     "LANCET_OPENROUTER__EMBEDDING_ENDPOINT":  "http://127.0.0.1:18573/embeddings",
+                     "LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT":  "http://127.0.0.1:18573/models",
+                     "LANCET_GATEWAY__DATABASE_URL":  "[dsn to lancet_replay, password redacted]",
+                     "LANCET_OPENROUTER__CHAT_ENDPOINT":  "http://127.0.0.1:18573/chat/completions",
+                     "LANCET_ENGINE__LANCEDB_PATH":  "[replay store copy path]",
+                     "LANCET_ENV":  "eval"
+                 },
+    "stub_vector_source":  "hash-fallback-only",
+    "arm_kind":  "full-stack",
+    "spend_guard":  "dummy key; egress sampling is supporting evidence only"
+}

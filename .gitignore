@@ -80,6 +80,7 @@ data/.phase02-lancedb-preclean-*/
 # Compiled binaries
 gateway/gateway
 gateway/gateway.exe
+gateway/gateway-replay.exe
 deploy/grafana/dashboard_gen/*.exe
 deploy/grafana/dashboard_gen/dashboard_gen
 /bin/
