@@ -740,35 +740,65 @@ def replay_summary(
         "committed_flatness_verdict_passed": full_verdict.passed,
     }
 
-    # M1: needs a reference ratio (forensics.json's m1_prod_ratio) and a denominator
-    # (soak-baseline.json's soak_w_ms_reconciled). Both optional -- M1 is "unavailable" if
-    # either input is missing, never fabricated.
+    # M1 formula depends on the arm's own store_source (header.json), per the plan's Task 2
+    # text: a RECONCILED-store arm is D-88 non-comparable with production's lance-701 numbers,
+    # so it compares a RATIO (slice0 / soak_w_ms_reconciled) against m1_prod_ratio. A
+    # PRE-RECONCILE-store arm runs on the SAME store production did, so it compares slice-0
+    # DIRECTLY against m1_reference_ms (no soak-baseline denominator needed or correct) -- both
+    # use the shared 0.5x-2x band via `classify_m1`, just with a different denominator/target.
+    # Unknown/missing store_source defaults to "reconciled" (every arm this tool produced a
+    # header for before this fix was reconciled-store; a missing header is not itself evidence
+    # of a pre-reconcile arm).
     m1_result: dict[str, Any] = {"status": "unavailable"}
     if forensics_json is not None and rh_slices:
         try:
             forensics_data = json.loads(Path(forensics_json).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             forensics_data = {}
-        ratio_data = forensics_data.get("m1_prod_ratio")
-        target_ratio = None
-        if isinstance(ratio_data, dict):
-            target_ratio = ratio_data.get("debug") or ratio_data.get("release")
-        denominator = None
-        if soak_baseline_json is not None:
+
+        store_source = "reconciled"
+        header_path = arm_path / "header.json"
+        if header_path.exists():
             try:
-                soak_data = json.loads(Path(soak_baseline_json).read_text(encoding="utf-8"))
-                denominator = soak_data.get("soak_w_ms_reconciled")
+                header_data = json.loads(header_path.read_text(encoding="utf-8"))
+                store_source = header_data.get("store_source") or "reconciled"
             except (OSError, json.JSONDecodeError):
-                denominator = None
-        if target_ratio and denominator:
-            status, ratio = classify_m1(rh_slices[0], denominator, target_ratio)
-            m1_result = {
-                "status": status,
-                "ratio": ratio,
-                "target_ratio": target_ratio,
-                "primary_slice0_ms": rh_slices[0],
-                "denominator_ms": denominator,
-            }
+                pass
+
+        if store_source == "pre-reconcile":
+            reference_ms = forensics_data.get("m1_reference_ms")
+            if reference_ms:
+                status, ratio = classify_m1(rh_slices[0], reference_ms, 1.0)
+                m1_result = {
+                    "status": status,
+                    "ratio": ratio,
+                    "target_ratio": 1.0,
+                    "primary_slice0_ms": rh_slices[0],
+                    "denominator_ms": reference_ms,
+                    "formula": "store_matched",
+                }
+        else:
+            ratio_data = forensics_data.get("m1_prod_ratio")
+            target_ratio = None
+            if isinstance(ratio_data, dict):
+                target_ratio = ratio_data.get("debug") or ratio_data.get("release")
+            denominator = None
+            if soak_baseline_json is not None:
+                try:
+                    soak_data = json.loads(Path(soak_baseline_json).read_text(encoding="utf-8"))
+                    denominator = soak_data.get("soak_w_ms_reconciled")
+                except (OSError, json.JSONDecodeError):
+                    denominator = None
+            if target_ratio and denominator:
+                status, ratio = classify_m1(rh_slices[0], denominator, target_ratio)
+                m1_result = {
+                    "status": status,
+                    "ratio": ratio,
+                    "target_ratio": target_ratio,
+                    "primary_slice0_ms": rh_slices[0],
+                    "denominator_ms": denominator,
+                    "formula": "ratio",
+                }
     summary["m1"] = m1_result
 
     # Order match against production's prefix, and a fidelity table (production slices 0-6
