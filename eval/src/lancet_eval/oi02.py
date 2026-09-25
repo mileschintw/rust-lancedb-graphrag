@@ -598,22 +598,32 @@ def _find_journal_file(arm_dir: Path) -> Path | None:
 def classify_m2(
     slices: list[float], window_delta_ms: float
 ) -> str:
-    """Classifies growth as `grows`, `not grows`, or `ambiguous` per Task 2's fixed thresholds.
-    `slices` are 50-record RetrieveHybrid slice medians in ordinal order; `window_delta_ms` is
-    `decay.analyze_decay`'s own window-prong delta on the uncensored prefix."""
+    """Classifies growth as `grows`, `not grows`, or `ambiguous` per Task 2/Task 4's fixed
+    thresholds. `slices` are 50-record RetrieveHybrid slice medians in ordinal order;
+    `window_delta_ms` is `decay.analyze_decay`'s own window-prong delta on the uncensored
+    prefix.
+
+    The plan states two DIFFERENT slice references, not one shared "later slice" (06.3.4.1-07
+    primary-r2 self-review, #bug -- both were read from a single `min(3, len-1)` index until
+    this fix, which is correct only when a run has exactly 4 slices):
+    - "grows": "the slice-3 median is at least 1.5x the slice-0 median" -- a fixed early-growth
+      checkpoint. At Task 4's 150-record/3-slice arm scale, slice 3 doesn't exist, so this reads
+      the last available slice instead (Task 4's own text separately calls that "slice-2").
+    - "not grows": "the last full slice's median is under 1.2x the slice-0 median" -- literally
+      the LAST slice, whatever the run length. At Task 2's 350-record/7-slice primary scale this
+      is slice 6, not slice 3 -- a materially different check for any run with more than 4
+      slices.
+    """
     if len(slices) < 2:
         return "ambiguous"
     slice0 = slices[0]
-    # "slice-3"/"slice-2" per Task 2 vs Task 4 both read as "a later slice, index per that
-    # task's own record count" -- use the last available slice up to index 3 (Task 2's primary
-    # scale) so a shorter run (Task 4's 150-record arms) still classifies sensibly.
-    later_index = min(3, len(slices) - 1)
-    later = slices[later_index]
     if slice0 <= 0:
         return "ambiguous"
-    ratio = later / slice0
-    grows = ratio >= _M2_GROWTH_RATIO and window_delta_ms >= _M2_GROWTH_WINDOW_DELTA_MS
-    not_grows = ratio < _M2_FLAT_RATIO and window_delta_ms < _M2_FLAT_WINDOW_DELTA_MS
+    growth_index = min(3, len(slices) - 1)
+    growth_ratio = slices[growth_index] / slice0
+    flat_ratio = slices[-1] / slice0
+    grows = growth_ratio >= _M2_GROWTH_RATIO and window_delta_ms >= _M2_GROWTH_WINDOW_DELTA_MS
+    not_grows = flat_ratio < _M2_FLAT_RATIO and window_delta_ms < _M2_FLAT_WINDOW_DELTA_MS
     if grows:
         return "grows"
     if not_grows:
@@ -719,7 +729,13 @@ def replay_summary(
     summary["m2"] = {
         "class": m2_class,
         "slice0_ms": rh_slices[0] if rh_slices else None,
-        "later_slice_ms": rh_slices[min(3, len(rh_slices) - 1)] if len(rh_slices) >= 2 else None,
+        # Two distinct reference slices per classify_m2's docstring: "grows" reads a fixed
+        # early-growth checkpoint (slice-3, or the last slice on a shorter run); "not grows"
+        # reads literally the last full slice. These are the SAME slice only on a run with
+        # exactly 4 slices (e.g. Task 4's 150-record/3-slice arms) -- on Task 2's 350-record/
+        # 7-slice primary scale they differ (slice 3 vs slice 6).
+        "growth_check_slice_ms": rh_slices[min(3, len(rh_slices) - 1)] if len(rh_slices) >= 2 else None,
+        "last_slice_ms": rh_slices[-1] if len(rh_slices) >= 2 else None,
         "window_delta_ms": window_delta,
         "committed_flatness_verdict_passed": full_verdict.passed,
     }
