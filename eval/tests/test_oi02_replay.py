@@ -192,6 +192,103 @@ def test_replay_summary_order_mismatch_detected(tmp_path: Path):
     assert summary["order_match_production"] is False
 
 
+# --- replay_summary: M1 formula depends on the arm's store_source (06.3.4.1-07 Task 4 --------
+# drive-era arm self-review: replay_summary always used the ratio formula against
+# soak_w_ms_reconciled, even for a pre-reconcile-store arm, where the plan requires a direct
+# slice-0-vs-m1_reference_ms comparison instead (both arms run on the SAME store production
+# did, so no soak-baseline denominator is needed or correct).
+
+
+def _write_json(path: Path, obj: dict) -> None:
+    path.write_text(json.dumps(obj), encoding="utf-8")
+
+
+def test_replay_summary_m1_reconciled_arm_uses_ratio_against_soak_baseline(tmp_path: Path):
+    arm_dir = tmp_path / "arm"
+    arm_dir.mkdir()
+    lines = [_run_record_line(f"q{i}", started_at_ms=i * 100, completed_at_ms=i * 100 + 50, retrieve_ms=100.0) for i in range(1, 3)]
+    _write_jsonl(arm_dir / "journal.jsonl", lines)
+    _write_json(arm_dir / "header.json", {"store_source": "reconciled"})
+
+    forensics = tmp_path / "forensics.json"
+    _write_json(forensics, {"m1_prod_ratio": {"debug": 2.0}, "m1_reference_ms": 999.0})
+    soak_baseline = tmp_path / "soak-baseline.json"
+    _write_json(soak_baseline, {"soak_w_ms_reconciled": 50.0})
+
+    summary = replay_summary(arm_dir, forensics_json=forensics, soak_baseline_json=soak_baseline)
+
+    # slice0=100.0, denominator=50.0 -> ratio 2.0, target 2.0 (band 1.0-4.0) -> met
+    assert summary["m1"] == {
+        "status": "met",
+        "ratio": 2.0,
+        "target_ratio": 2.0,
+        "primary_slice0_ms": 100.0,
+        "denominator_ms": 50.0,
+        "formula": "ratio",
+    }
+
+
+def test_replay_summary_m1_pre_reconcile_arm_compares_slice0_directly_to_reference(tmp_path: Path):
+    arm_dir = tmp_path / "arm"
+    arm_dir.mkdir()
+    lines = [_run_record_line(f"q{i}", started_at_ms=i * 100, completed_at_ms=i * 100 + 50, retrieve_ms=100.0) for i in range(1, 3)]
+    _write_jsonl(arm_dir / "journal.jsonl", lines)
+    _write_json(arm_dir / "header.json", {"store_source": "pre-reconcile"})
+
+    forensics = tmp_path / "forensics.json"
+    # m1_prod_ratio/soak baseline are irrelevant here -- a pre-reconcile arm runs on the SAME
+    # store production did, so it compares directly against m1_reference_ms, not a ratio.
+    _write_json(forensics, {"m1_prod_ratio": {"debug": 999.0}, "m1_reference_ms": 200.0})
+    soak_baseline = tmp_path / "soak-baseline.json"
+    _write_json(soak_baseline, {"soak_w_ms_reconciled": 999.0})
+
+    summary = replay_summary(arm_dir, forensics_json=forensics, soak_baseline_json=soak_baseline)
+
+    # slice0=100.0 vs m1_reference_ms=200.0 -> ratio 0.5 (band 0.5-2.0, inclusive) -> met
+    assert summary["m1"] == {
+        "status": "met",
+        "ratio": 0.5,
+        "target_ratio": 1.0,
+        "primary_slice0_ms": 100.0,
+        "denominator_ms": 200.0,
+        "formula": "store_matched",
+    }
+
+
+def test_replay_summary_m1_pre_reconcile_arm_not_met_outside_band(tmp_path: Path):
+    arm_dir = tmp_path / "arm"
+    arm_dir.mkdir()
+    lines = [_run_record_line(f"q{i}", started_at_ms=i * 100, completed_at_ms=i * 100 + 50, retrieve_ms=100.0) for i in range(1, 3)]
+    _write_jsonl(arm_dir / "journal.jsonl", lines)
+    _write_json(arm_dir / "header.json", {"store_source": "pre-reconcile"})
+
+    forensics = tmp_path / "forensics.json"
+    _write_json(forensics, {"m1_reference_ms": 4910.5})  # slice0=100.0, ratio 0.02 -- way under 0.5
+
+    summary = replay_summary(arm_dir, forensics_json=forensics)
+
+    assert summary["m1"]["status"] == "not met"
+    assert summary["m1"]["formula"] == "store_matched"
+
+
+def test_replay_summary_m1_defaults_to_ratio_formula_when_header_missing(tmp_path: Path):
+    # No header.json at all -- must not crash, and must fall back to the pre-existing ratio
+    # behavior (every arm this tool has ever produced a header for was reconciled-store, so
+    # a missing header is not itself evidence of a pre-reconcile arm).
+    arm_dir = tmp_path / "arm"
+    arm_dir.mkdir()
+    lines = [_run_record_line(f"q{i}", started_at_ms=i * 100, completed_at_ms=i * 100 + 50, retrieve_ms=100.0) for i in range(1, 3)]
+    _write_jsonl(arm_dir / "journal.jsonl", lines)
+
+    forensics = tmp_path / "forensics.json"
+    _write_json(forensics, {"m1_prod_ratio": {"debug": 2.0}})
+    soak_baseline = tmp_path / "soak-baseline.json"
+    _write_json(soak_baseline, {"soak_w_ms_reconciled": 50.0})
+
+    summary = replay_summary(arm_dir, forensics_json=forensics, soak_baseline_json=soak_baseline)
+    assert summary["m1"]["formula"] == "ratio"
+
+
 # --- check_arm -------------------------------------------------------------------------
 
 
