@@ -18,8 +18,13 @@ param(
     [Parameter(Mandatory = $true)][string]$Label,
     [ValidateSet('pre-fix', 'post-fix')][string]$Phase = 'pre-fix',
     [string]$EngineLaunch = 'cargo-debug',
-    [ValidateSet('head')][string]$HarnessFrom = 'head',
-    [ValidateSet('head')][string]$GatewayFrom = 'head',
+    # 'head' or 'worktree:<abs path>' (06.3.4.1-07 Task 4 Route B: the drive-era whole-stack
+    # arm needs the harness -- Python, not Rust/Go -- driven from a DIFFERENT commit's `eval/`
+    # tree, specifically to predate HEAD's D-61 harness identity gate, which correctly refuses
+    # a 350-document pre-reconcile store). Validated below (not via ValidateSet, since the
+    # allowed set includes an arbitrary path suffix) so an unsupported value still fails fast.
+    [string]$HarnessFrom = 'head',
+    [string]$GatewayFrom = 'head',
     [ValidateSet('full-stack', 'grpc-direct', 'soak-inprocess')][string]$ArmKind = 'full-stack',
     [string]$EngineConfigDir = '',
     [string]$GatewayConfigDir = '',
@@ -60,6 +65,26 @@ $env:CARGO_TERM_PROGRESS_WHEN = 'never'
 $env:CI = 'true'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
+function Resolve-FromSpec {
+    # Validates and resolves a 'head' | 'worktree:<path>' spec for -HarnessFrom/-GatewayFrom/
+    # -EngineLaunch's worktree case. Fails fast (unsupported value) rather than silently
+    # falling back to head, per gotcha #1's "resolve pre-built artifacts only, throw if
+    # missing" pattern.
+    param([string]$Spec, [string]$ParamName)
+    if ($Spec -eq 'head') { return @{ Kind = 'head'; Path = $null } }
+    if ($Spec -like 'worktree:*') {
+        $wtPath = $Spec.Substring('worktree:'.Length)
+        if ([string]::IsNullOrWhiteSpace($wtPath)) {
+            throw "-$ParamName worktree:<path> requires a non-empty path"
+        }
+        if (-not (Test-Path $wtPath)) {
+            throw "-$ParamName worktree path does not exist: $wtPath"
+        }
+        return @{ Kind = 'worktree'; Path = (Resolve-Path $wtPath).Path }
+    }
+    throw "-$ParamName must be 'head' or 'worktree:<path>', got: $Spec"
+}
+
 function Write-JsonFile {
     param([string]$Path, $Object)
     $json = $Object | ConvertTo-Json -Depth 10
@@ -83,6 +108,18 @@ function Invoke-TrimmedOutput {
 
 $RepoRoot = Get-RepoRoot
 Set-Location $RepoRoot
+
+$HarnessSpec = Resolve-FromSpec -Spec $HarnessFrom -ParamName 'HarnessFrom'
+$GatewaySpec = Resolve-FromSpec -Spec $GatewayFrom -ParamName 'GatewayFrom'
+$EngineIsWorktree = $EngineLaunch -like 'worktree:*'
+$EngineWorktreePath = $null
+if ($EngineIsWorktree) {
+    $EngineWorktreePath = $EngineLaunch.Substring('worktree:'.Length)
+    if ([string]::IsNullOrWhiteSpace($EngineWorktreePath) -or -not (Test-Path $EngineWorktreePath)) {
+        throw "-EngineLaunch worktree:<path> requires an existing path, got: $EngineLaunch"
+    }
+    $EngineWorktreePath = (Resolve-Path $EngineWorktreePath).Path
+}
 
 $PhaseDir = ".planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/replay/$Phase"
 $ArmDir = Join-Path $PhaseDir $Label
@@ -122,7 +159,11 @@ $rollbackFileCountBefore = $rollbackFiles.Count
 $rollbackBytesBefore = ($rollbackFiles | Measure-Object -Property Length -Sum).Sum
 
 # --- 3. Scratch database ----------------------------------------------------------------
-$ScratchDbName = 'lancet_replay'
+# Named by store source (06.3.4.1-07 Task 4 self-review): the restore below only runs when
+# the DB doesn't already exist, so a single shared 'lancet_replay' name would silently pair a
+# pre-reconcile store copy with whatever schema state a PRIOR reconciled-store arm already
+# restored there (or vice versa) instead of the matching pre-reconcile dump.
+$ScratchDbName = if ($StoreSource -eq 'pre-reconcile') { 'lancet_replay_prereconcile' } else { 'lancet_replay' }
 $dumpPath = if ($StoreSource -eq 'pre-reconcile') { 'data/backups/lancet_eval.pre-06.3.4.1-reconcile.sql' } else { $null }
 
 $dbExists = Invoke-TrimmedOutput (& docker exec lancet-postgres psql -U postgres -tAc "select 1 from pg_database where datname='$ScratchDbName'" 2>$null)
@@ -270,7 +311,16 @@ if ($EngineLaunch -eq 'release-exe' -or $EngineLaunch -eq 'cargo-release') {
     $engineExeRelPath = 'engine/target/release/engine.exe'
     $engineBuildArgs = @('build', '--manifest-path', 'engine/Cargo.toml', '--locked', '--release', '--bin', 'engine')
 }
-$engineExePath = Join-Path $RepoRoot $engineExeRelPath
+# Worktree engine (Task 4 Route B, drive-era whole stack): the binary lives under the
+# worktree's own target dir, never HEAD's -- CARGO_TARGET_DIR is left unset so cargo defaults
+# to `<worktree>/engine/target`, which cannot collide with HEAD's `engine/target`.
+$engineWorkingDir = $RepoRoot
+if ($EngineIsWorktree) {
+    $engineExePath = Join-Path $EngineWorktreePath $engineExeRelPath
+    $engineWorkingDir = $EngineWorktreePath
+} else {
+    $engineExePath = Join-Path $RepoRoot $engineExeRelPath
+}
 
 # Build via `cargo build` (never `cargo run`) and then exec the compiled binary directly.
 # `cargo`/`rustc`'s progress-bar renderer has been observed to write raw, unreadable
@@ -289,6 +339,8 @@ $engineExePath = Join-Path $RepoRoot $engineExeRelPath
 # script really used.
 if ($SkipEngineBuild) {
     Write-Host "SkipEngineBuild=true -- expecting a fresh $engineExePath already built by the caller"
+} elseif ($EngineIsWorktree) {
+    throw "-EngineLaunch worktree:<path> requires a pre-built binary (-SkipEngineBuild `$true, the default) -- build it yourself first in a normal foreground shell: cargo build --manifest-path `"$EngineWorktreePath/engine/Cargo.toml`" --locked --bin engine (never inline in this detached script, gotcha #1)"
 } else {
     Write-Host "Building engine ($engineBuildProfile, CARGO_BUILD_JOBS=4)"
     & cargo @engineBuildArgs
@@ -301,19 +353,19 @@ if (-not (Test-Path $engineExePath)) {
 }
 
 $engineStderrPath = Join-Path $ArmDir 'engine-stderr.log'
-Write-Host "Starting engine binary directly: $engineExePath"
+Write-Host "Starting engine binary directly: $engineExePath (cwd=$engineWorkingDir)"
 if ($StderrSink -eq 'file') {
-    $engineProc = Start-Process -FilePath $engineExePath -WorkingDirectory $RepoRoot -PassThru `
+    $engineProc = Start-Process -FilePath $engineExePath -WorkingDirectory $engineWorkingDir -PassThru `
         -WindowStyle Hidden -RedirectStandardError $engineStderrPath -RedirectStandardOutput (Join-Path $ArmDir 'engine-stdout.log')
 } elseif ($StderrSink -eq 'null') {
-    $engineProc = Start-Process -FilePath $engineExePath -WorkingDirectory $RepoRoot -PassThru `
+    $engineProc = Start-Process -FilePath $engineExePath -WorkingDirectory $engineWorkingDir -PassThru `
         -WindowStyle Hidden -RedirectStandardError 'NUL' -RedirectStandardOutput 'NUL'
 } else {
     # console sink: not redirected to a file, matching production's own launch (a genuinely
     # visible window is not load-bearing for the file-vs-console distinction this replay
     # cares about, and may not be creatable in a non-interactive session -- WindowStyle
     # Hidden avoids that failure mode while still leaving stdio un-redirected).
-    $engineProc = Start-Process -FilePath $engineExePath -WorkingDirectory $RepoRoot -PassThru -WindowStyle Hidden
+    $engineProc = Start-Process -FilePath $engineExePath -WorkingDirectory $engineWorkingDir -PassThru -WindowStyle Hidden
 }
 
 Start-Sleep -Seconds 2
@@ -338,8 +390,16 @@ if ($ArmKind -eq 'full-stack') {
     # child on Windows, which leaked an orphaned gateway.exe (still holding port 8080) on an
     # earlier run of this script. Build once, then exec the compiled binary directly, exactly
     # as the engine launch above already does for the identical reason.
-    $gatewayExePath = Join-Path $RepoRoot 'gateway\gateway-replay.exe'
-    if ((-not $SkipEngineBuild) -or (-not (Test-Path $gatewayExePath))) {
+    $gatewayRepoRoot = if ($GatewaySpec.Kind -eq 'worktree') { $GatewaySpec.Path } else { $RepoRoot }
+    $gatewayExePath = Join-Path $gatewayRepoRoot 'gateway\gateway-replay.exe'
+    if ($GatewaySpec.Kind -eq 'worktree') {
+        # Same pre-build-only contract as the engine worktree case above -- go build is fast
+        # and has not shown the cargo/docker-compose log-corruption symptom in this detached
+        # tree, but keep the split explicit rather than silently building mid-run anyway.
+        if (-not (Test-Path $gatewayExePath)) {
+            throw "-GatewayFrom worktree:<path> requires a pre-built binary: cd `"$gatewayRepoRoot/gateway`" && go build -o gateway-replay.exe ."
+        }
+    } elseif ((-not $SkipEngineBuild) -or (-not (Test-Path $gatewayExePath))) {
         Write-Host "Building gateway"
         Push-Location (Join-Path $RepoRoot 'gateway')
         try {
@@ -348,7 +408,7 @@ if ($ArmKind -eq 'full-stack') {
         } finally { Pop-Location }
     }
     Write-Host "Starting gateway binary directly: $gatewayExePath"
-    $gatewayProc = Start-Process -FilePath $gatewayExePath -WorkingDirectory (Join-Path $RepoRoot 'gateway') -PassThru `
+    $gatewayProc = Start-Process -FilePath $gatewayExePath -WorkingDirectory (Join-Path $gatewayRepoRoot 'gateway') -PassThru `
         -WindowStyle Hidden -RedirectStandardError (Join-Path $ArmDir 'gateway-stderr.log') -RedirectStandardOutput (Join-Path $ArmDir 'gateway-stdout.log')
     $deadline = (Get-Date).AddSeconds(60)
     while (-not (Test-PortListening -Port 8080)) {
@@ -374,6 +434,18 @@ $samplerProc = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
 $env:LANCET_EVAL__LANCEDB_PATH = (Resolve-Path $CopyStorePath).Path
 $env:LANCET_EVAL__DATABASE_URL = "postgres://postgres:postgres@127.0.0.1:5432/${ScratchDbName}?sslmode=disable&search_path=lancet_eval"
 
+# Worktree harness (Task 4 Route B pre-reconcile-store arms, D-61): `--project <worktree>/eval`
+# runs that commit's OWN `eval/` code (predating HEAD's harness identity gate), not HEAD's.
+# uv creates/reuses that worktree's own `.venv` under its own `eval/` dir -- sync it yourself
+# first (`uv sync --project <worktree>/eval`), same pre-build-only contract as the engine and
+# gateway above; this script never runs `uv sync` inline (matches the "never let a Rust/Go/
+# Python build tool execute inline" gotcha for `uv run`/`uv sync` too, since `uv` can compile
+# native extensions).
+$harnessProject = if ($HarnessSpec.Kind -eq 'worktree') { Join-Path $HarnessSpec.Path 'eval' } else { 'eval' }
+if ($HarnessSpec.Kind -eq 'worktree' -and -not (Test-Path (Join-Path $harnessProject '.venv'))) {
+    throw "-HarnessFrom worktree:<path> requires a synced venv: uv sync --project `"$harnessProject`""
+}
+
 $journalPath = Join-Path $ArmDir 'journal.jsonl'
 $startUtc = (Get-Date).ToUniversalTime().ToString('o')
 
@@ -383,12 +455,12 @@ try {
         New-Item -ItemType Directory -Force -Path $warmupDir | Out-Null
         $warmupJournal = Join-Path $warmupDir 'journal.jsonl'
         Write-Host "Running warm-up: $WarmupQuestions questions"
-        & uv run --project eval lancet-eval run --corpus multihop_rag --out $warmupJournal --no-resume `
+        & uv run --project $harnessProject lancet-eval run --corpus multihop_rag --out $warmupJournal --no-resume `
             --limit $WarmupQuestions --workers $Workers --retries $Retries --stage-cap $StageCap
     }
 
-    Write-Host "Running primary harness: $Questions questions"
-    & uv run --project eval lancet-eval run --corpus multihop_rag --out $journalPath --no-resume `
+    Write-Host "Running primary harness: $Questions questions (project=$harnessProject)"
+    & uv run --project $harnessProject lancet-eval run --corpus multihop_rag --out $journalPath --no-resume `
         --limit $Questions --workers $Workers --retries $Retries --stage-cap $StageCap
     $harnessExit = $LASTEXITCODE
 } finally {
@@ -452,15 +524,28 @@ try {
     $otlpEngineMax = if ($procRows.Count -gt 0) { ($procRows | Measure-Object -Property otlp_4317_engine -Maximum).Maximum } else { 0 }
     $otlpGatewayMax = if ($procRows.Count -gt 0) { ($procRows | Measure-Object -Property otlp_4317_gateway -Maximum).Maximum } else { 0 }
 
+    $engineCommit = if ($EngineIsWorktree) { Invoke-TrimmedOutput (& git -C $EngineWorktreePath rev-parse HEAD) } else { Invoke-TrimmedOutput (& git rev-parse HEAD) }
+    $harnessCommit = if ($HarnessSpec.Kind -eq 'worktree') { Invoke-TrimmedOutput (& git -C $HarnessSpec.Path rev-parse HEAD) } else { Invoke-TrimmedOutput (& git rev-parse HEAD) }
+    $gatewayCommit = if ($GatewaySpec.Kind -eq 'worktree') { Invoke-TrimmedOutput (& git -C $GatewaySpec.Path rev-parse HEAD) } else { Invoke-TrimmedOutput (& git rev-parse HEAD) }
+
     $header = @{
         arm_kind = $ArmKind
         label = $Label
         phase = $Phase
         commit = Invoke-TrimmedOutput (& git rev-parse HEAD)
         dirty = ((& git status --porcelain).Length -gt 0)
+        # Per-component provenance (Task 4 Route B: these can differ from `commit`/each other
+        # when -EngineLaunch/-HarnessFrom/-GatewayFrom point at a worktree). Equal to `commit`
+        # for every HEAD-only arm (every arm before Route B).
+        engine_source = if ($EngineIsWorktree) { "worktree:$EngineWorktreePath" } else { 'head' }
+        engine_commit = $engineCommit
+        harness_source = if ($HarnessSpec.Kind -eq 'worktree') { "worktree:$($HarnessSpec.Path)" } else { 'head' }
+        harness_commit = $harnessCommit
+        gateway_source = if ($GatewaySpec.Kind -eq 'worktree') { "worktree:$($GatewaySpec.Path)" } else { 'head' }
+        gateway_commit = $gatewayCommit
         launch_command = "cargo run --manifest-path engine/Cargo.toml --locked --bin engine"
-        actual_invocation = "cargo build (same args, un-redirected) then exec $engineExeRelPath directly -- see this script's comment at the engine-build step for why cargo run itself is never used from this detached process tree"
-        binary_path = "engine/target/$engineBuildProfile/engine.exe"
+        actual_invocation = "cargo build (same args, un-redirected) then exec $engineExePath directly -- see this script's comment at the engine-build step for why cargo run itself is never used from this detached process tree"
+        binary_path = $engineExePath
         build_profile = $engineBuildProfile
         pid = $enginePid
         gateway_pid = $(if ($gatewayProc) { $gatewayProc.Id } else { $null })
