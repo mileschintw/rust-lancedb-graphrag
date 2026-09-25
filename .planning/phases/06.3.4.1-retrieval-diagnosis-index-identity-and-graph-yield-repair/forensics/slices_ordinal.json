@@ -1,0 +1,128 @@
+[
+  {
+    "slice": 0,
+    "n": 50,
+    "AssemblePrompt": 453.0,
+    "ExtractGraphContext": 2564.0,
+    "GenerateAnswer": 6970.5,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 4910.5
+  },
+  {
+    "slice": 1,
+    "n": 50,
+    "AssemblePrompt": 574.0,
+    "ExtractGraphContext": 4711.5,
+    "GenerateAnswer": 5426.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 10441.0
+  },
+  {
+    "slice": 2,
+    "n": 50,
+    "AssemblePrompt": 725.5,
+    "ExtractGraphContext": 5925.0,
+    "GenerateAnswer": 3427.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 13947.0
+  },
+  {
+    "slice": 3,
+    "n": 50,
+    "AssemblePrompt": 786.0,
+    "ExtractGraphContext": 6629.5,
+    "GenerateAnswer": 6275.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 16785.5
+  },
+  {
+    "slice": 4,
+    "n": 50,
+    "AssemblePrompt": 957.5,
+    "ExtractGraphContext": 8519.0,
+    "GenerateAnswer": 4847.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 21254.0
+  },
+  {
+    "slice": 5,
+    "n": 50,
+    "AssemblePrompt": 1019.5,
+    "ExtractGraphContext": 10879.5,
+    "GenerateAnswer": 5419.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 24626.0
+  },
+  {
+    "slice": 6,
+    "n": 50,
+    "AssemblePrompt": 998.0,
+    "ExtractGraphContext": 12876.0,
+    "GenerateAnswer": 8898.5,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 28960.0
+  },
+  {
+    "slice": 7,
+    "n": 50,
+    "AssemblePrompt": 1030.5,
+    "ExtractGraphContext": 13819.0,
+    "GenerateAnswer": 8437.5,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 29266.5
+  },
+  {
+    "slice": 8,
+    "n": 50,
+    "AssemblePrompt": 252.0,
+    "ExtractGraphContext": 14825.5,
+    "GenerateAnswer": 4337.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 30814.0
+  },
+  {
+    "slice": 9,
+    "n": 50,
+    "AssemblePrompt": null,
+    "ExtractGraphContext": 19173.0,
+    "GenerateAnswer": null,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": null
+  },
+  {
+    "slice": 10,
+    "n": 50,
+    "AssemblePrompt": null,
+    "ExtractGraphContext": 18868.5,
+    "GenerateAnswer": null,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": null
+  },
+  {
+    "slice": 11,
+    "n": 50,
+    "AssemblePrompt": null,
+    "ExtractGraphContext": 21044.5,
+    "GenerateAnswer": null,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": null
+  },
+  {
+    "slice": 12,
+    "n": 50,
+    "AssemblePrompt": null,
+    "ExtractGraphContext": 21840.0,
+    "GenerateAnswer": null,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": null
+  },
+  {
+    "slice": 13,
+    "n": 8,
+    "AssemblePrompt": null,
+    "ExtractGraphContext": 23174.0,
+    "GenerateAnswer": null,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": null
+  }
+]

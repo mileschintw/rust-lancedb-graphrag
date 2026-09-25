@@ -1,0 +1,20 @@
+{
+  "query_window": {"start": "2026-09-09T21:15:00Z_lookback_wider_used_in_practice", "note": "queried 21:15:00Z..21:30:00Z UTC range around drive start via query_range ns timestamps"},
+  "engine_serving_lines": [
+    {"ts_ns": "1788987845268928000", "iso": "2026-09-09T21:04:05.268928Z", "line": "Rust RAG Engine serving"},
+    {"ts_ns": "1788987864795632600", "iso": "2026-09-09T21:04:24.795632Z", "line": "Rust RAG Engine serving"}
+  ],
+  "engine_bm25_snapshot_lines": [
+    {"ts_ns": "1788987845264949000", "iso": "2026-09-09T21:04:05.264949Z", "line": "BM25 snapshot built"},
+    {"ts_ns": "1788987864782706800", "iso": "2026-09-09T21:04:24.782706Z", "line": "BM25 snapshot built"}
+  ],
+  "collector_docker_logs_transport_closing": [
+    {"ts": "2026-09-09T21:01:59.806345781Z", "line": "grpc: Server.processUnaryRPC failed to write status: connection error: desc = \"transport is closing\""},
+    {"ts": "2026-09-09T21:04:11.244801739Z", "line": "grpc: Server.processUnaryRPC failed to write status: connection error: desc = \"transport is closing\""}
+  ],
+  "collector_memory_limiter_refusals": [],
+  "collector_queue_full_events": [],
+  "collector_loki_429s": [],
+  "record1_started_at_iso": "2026-09-09T21:05:40.364Z",
+  "interpretation": "Two full engine startups (BM25 snapshot + serving) at 21:04:05Z and 21:04:24Z, ~19.5s apart, both roughly 75-95s before record 1 (21:05:40.364Z). A gRPC transport-closing warning on the collector side at 21:04:11Z sits between the two startups, consistent with the first engine process disconnecting shortly before/during the second startup. No memory_limiter refusals, exporter queue-full events, or Loki 429s found in the collector's docker logs for this window -- collector was healthy and reachable, corroborating the Prometheus export's zero detected gaps for this window."
+}

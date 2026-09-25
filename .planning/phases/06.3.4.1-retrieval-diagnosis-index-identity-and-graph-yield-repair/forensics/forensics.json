@@ -1,0 +1,73 @@
+{
+  "_drive_era_commit_source": "earliest commit adding --retries to cli.py run command (-S search)",
+  "_last_commit_before_drive": "ff3188fb13d3da6a1e450ec5b5f7904e05abcac0",
+  "contrast_record_count": 320,
+  "drive_era_commit": "33e774bd71034b54ec14f8079e3cfac83aee56f1",
+  "fresh_process": true,
+  "fresh_process_evidence": {
+    "caveat": "The engine's own 'completed' counter's first post-reset sample is already 1 (not 0), so N could be interpreted as 0 or 1 depending on whether that first sample itself represents a genuine served query or an artifact of the exporter's first push after restart; read conservatively as 'N<=1', i.e. essentially fresh.",
+    "collector_docker_logs": "gRPC 'transport is closing' warning at 21:04:11.24Z, between the two Loki startup pairs -- consistent with the first engine process's OTLP connection closing during the second startup",
+    "loki_engine_startup_lines": "two independent 'BM25 snapshot built' + 'Rust RAG Engine serving' pairs at 2026-09-09T21:04:05.26Z and 21:04:24.78-.80Z (~19.5s apart) -- the engine process (re)started twice in the ~95s immediately before record 1",
+    "prometheus_engine_completed_counter": "resets 69->1 at 2026-09-09T21:05:09.632Z (30.7s before record 1 at 21:05:40.364Z); value_at_or_before_record1=2.0 at 21:05:39.635Z, so exactly 1 query completed on the engine between the fresh restart and record 1's start",
+    "prometheus_gateway_ping_ok_counter": "resets 2->1 at 2026-09-09T21:04:49.635Z, ~51s before the QueryRAG reset -- consistent with a post-restart health-check Ping preceding real traffic",
+    "prometheus_gateway_queryrag_ok_counter": "resets 444->1 at 2026-09-09T21:05:09.632Z, same instant as the engine reset -- corroborates a coordinated engine+gateway restart, not an isolated engine-only event",
+    "source_files": [
+      "forensics/prometheus_engine_counter.json",
+      "forensics/loki_findings.json"
+    ]
+  },
+  "journal_hidden_gaps_over_threshold": 647,
+  "journal_record_count": 658,
+  "m1_alt_reference_ms": null,
+  "m1_prod_ratio": {
+    "debug": 16.9538,
+    "debug_provenance": "4910.5 / 289.6 -- numerator is m1_reference_ms; denominator is 06.3.4.1-03's release-vs-debug soak-baseline table, arm W debug-build retrieve_ms median (289.6ms), both against the pre-reconcile lance-701 store (store-matched, per 06.3.4.1-STORE-BASELINE.md's D-88 non-comparability statement -- the drive and plan 03's soak both predate the 06.3.4.1-06 reconcile)",
+    "release": 65.913,
+    "release_provenance": "4910.5 / 74.5 -- same numerator, denominator is plan 03's release-build arm W median (74.5ms); recorded for completeness even though production_launch.build_profile is established as debug, not release, so the debug ratio is the one m1_prod_ratio decisions should use"
+  },
+  "m1_reference_ms": 4910.5,
+  "m1_reference_provenance": "06.3.4 journal RetrieveHybrid slice-0 (first 50 records in ordinal order) median, computed via oi02.journal_timeline+slice_table against eval/runs/2026-09-09-multihop_rag/journal.jsonl -- matches 06.3.4.1-OI02-PROFILE.md's independently-recorded 4,910ms to within rounding (4910.5 here vs 4910 there)",
+  "prior_query_count": 1,
+  "production_launch": {
+    "build_profile": "debug",
+    "build_profile_status": "established (source: PSReadLine ConsoleHost_history.txt -- every 'cargo run --manifest-path engine/Cargo.toml --bin engine' invocation in this session's PowerShell history omits --release; a grep for 'cargo (build|run).*--release.*engine' over the same history file returns zero matches)",
+    "collector_reachable": true,
+    "collector_reachable_status": "established (source: forensics/prometheus_engine_counter.json -- num_export_gaps_over_60s=0 across the full drive window for both engine outcome series; forensics/loki_findings.json -- continuous engine log presence including two startup pairs; docker collector logs for the drive window show no memory_limiter refusals, exporter queue-full events, or Loki 429s)",
+    "config_toml_at_drive_time": {
+      "generation_node_timeout_ms": 65000,
+      "graph_node_timeout_ms": 45674,
+      "graph_operation_timeout_ms": 38595,
+      "prompt_timeout_ms": 1070,
+      "query_embedding_timeout_ms": 645,
+      "retrieve_timeout_ms": 16647,
+      "status": "established (source: git show ff3188fb:config/config.toml -- ff3188fb is the last commit before the drive's 21:05:40Z start on main; commit 33e774bd, made roughly 50 minutes after the drive ended, replaced these six 06.3.3-derived production budgets with wider ones -- query_embedding 645->15000ms, retrieve 16647->30000ms, graph_operation 38595->40000ms, graph_node 45674->60000ms, prompt 1070->10000ms, generation_node unchanged at 65000ms -- so the drive itself ran under the NARROWER ff3188fb values, since the working tree was only edited to the wider values after the drive finished, immediately before committing 33e774bd",
+      "widened_after_drive_commit": "33e774bd71034b54ec14f8079e3cfac83aee56f1"
+    },
+    "cwd": "repository root (D:/Repos/lancet); gateway launched via 'cd gateway && go run .'",
+    "cwd_status": "established (source: PSReadLine history)",
+    "engine_launch_command": "cargo run --manifest-path engine/Cargo.toml --bin engine",
+    "engine_launch_command_status": "established (source: PSReadLine history, repeated pattern; matches 06.3.3-BUDGETS.md's own documented 'Engine startup proof' launch command exactly)",
+    "env_overrides": "unknown",
+    "env_overrides_status": "unknown (not established -- PSReadLine history shows bare launch commands with no visible env-var-assignment syntax; Claude Code session transcripts were not additionally searched for this pass, since three independent sources -- Prometheus counter resets, Loki startup lines, and PSReadLine's consistent debug-build pattern -- already cross-corroborate the load-bearing build_profile/fresh_process findings without needing the transcript search)",
+    "gateway_binary": "go run . (no separate compiled gateway.exe launch found in history for this window)",
+    "gateway_launch_command": "go run . (from gateway/)",
+    "gateway_launch_command_status": "established (source: PSReadLine history, repeated pattern 'cd gateway && go run .' / 'go run .')",
+    "invocation": "uv run --project eval lancet-eval run --corpus multihop_rag --out eval/runs/2026-09-09-multihop_rag/journal.jsonl --workers 1 --retries 2 --stage-cap 5.00",
+    "invocation_status": "established (source: 06.3.4-04-SUMMARY.md, committed verbatim)",
+    "retries": {
+      "mode": "fixed",
+      "value": 2
+    },
+    "retries_status": "established (source: 06.3.4-04-SUMMARY.md invocation string; the --retries flag itself only landed in commit 33e774bd, committed roughly 50 minutes AFTER the drive completed -- the drive ran uncommitted CLI code carrying this flag, per this plan's own objective text)",
+    "stdout_stderr_sink": "console (interactive terminal, not redirected)",
+    "stdout_stderr_sink_status": "established (source: PSReadLine history -- no redirection operator found alongside any engine/gateway launch command in the full session history)",
+    "workers": 1
+  },
+  "proto_changed_since_drive_era": false,
+  "stub_delay_defaults": {
+    "chat_ms": 6970.5,
+    "chat_ms_provenance": "GenerateAnswer slice-0 median (first 50 records overall, ordinal order, both arms) from the 06.3.4 journal",
+    "embedding_ms": 343.5,
+    "embedding_ms_provenance": "ExtractGraphContext slice-0 median (first 50 graph-off-arm records, ordinal order) from the 06.3.4 journal -- graph-off still runs ExtractGraphContext in embedding-only mode (no graph traversal), so this isolates the embedding-provider network call's typical cost early in the drive before any growth"
+  }
+}

@@ -1,0 +1,65 @@
+[
+  {
+    "slice": 0,
+    "n": 50,
+    "AssemblePrompt": 367.0,
+    "ExtractGraphContext": 1295.0,
+    "GenerateAnswer": 4597.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 3341.0
+  },
+  {
+    "slice": 1,
+    "n": 50,
+    "AssemblePrompt": 507.5,
+    "ExtractGraphContext": 2676.0,
+    "GenerateAnswer": 5794.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 6691.5
+  },
+  {
+    "slice": 2,
+    "n": 50,
+    "AssemblePrompt": 600.5,
+    "ExtractGraphContext": 3741.0,
+    "GenerateAnswer": 9414.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 9946.0
+  },
+  {
+    "slice": 3,
+    "n": 50,
+    "AssemblePrompt": 457.0,
+    "ExtractGraphContext": 745.0,
+    "GenerateAnswer": 6702.5,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 1801.5
+  },
+  {
+    "slice": 4,
+    "n": 50,
+    "AssemblePrompt": 417.0,
+    "ExtractGraphContext": 622.0,
+    "GenerateAnswer": 7295.5,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 1558.0
+  },
+  {
+    "slice": 5,
+    "n": 50,
+    "AssemblePrompt": 421.0,
+    "ExtractGraphContext": 868.0,
+    "GenerateAnswer": 6781.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 1620.5
+  },
+  {
+    "slice": 6,
+    "n": 20,
+    "AssemblePrompt": 406.0,
+    "ExtractGraphContext": 933.0,
+    "GenerateAnswer": 6162.5,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 1727.0
+  }
+]
