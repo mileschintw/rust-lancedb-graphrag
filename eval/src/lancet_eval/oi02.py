@@ -938,6 +938,166 @@ def check_arm(
     return CheckArmResult(ok=not failures, failures=failures)
 
 
+# --- Stub vector-map builder (Task 3 checkpoint resolution: rerun-primary with real vectors) --
+#
+# The first primary replay served 100% hash-fallback embedding vectors: `data/replay/
+# stub-vectors.jsonl` was never built. A random query vector suppresses graph traversal (no
+# real seeds to visit), so ExtractGraphContext never ran the work it does in production. This
+# builder closes that gap: for each replay question, it finds the top-ranked chunk production
+# actually retrieved for that same question, exports that chunk's own stored vector from the
+# store copy (via `retrieval_soak --export-embeddings`, run externally), and keys the stub's
+# vector map by the exact question text the engine embeds (`ctx.variants[0]`, which is
+# `ctx.original_query` unmodified whenever no query reformulation fires -- true for every
+# record in the first primary replay). A question with no resolvable chunk/embedding/text
+# falls back to the stub's deterministic hash vector, which is not a hard failure -- it is
+# counted and disclosed.
+
+
+def _ordered_question_ids(journal_path: str | Path) -> list[str]:
+    """Unique `question_id`s from a journal file, in first-seen line order (header skipped)."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for raw_line in Path(journal_path).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        record = json.loads(line)
+        if record.get("type") == "header":
+            continue
+        question_id = record.get("question_id")
+        if question_id and question_id not in seen:
+            seen.add(question_id)
+            ordered.append(question_id)
+    return ordered
+
+
+def extract_chunk_ids_for_replay(
+    replay_journal: str | Path,
+    prod_journal: str | Path,
+) -> tuple[dict[str, str], list[str]]:
+    """Builds `{question_id: top_ranked_chunk_id}` for every question_id appearing in
+    `replay_journal` (first-seen order), looked up from `prod_journal`'s per-question
+    `snapshot.retrieved_chunks` (`rank == 1`). Prefers the `graph-off` arm's record when a
+    question_id has both arms in production (graph-off isolates pure retrieval ranking from
+    graph traversal); falls back to whichever arm is present. A question_id absent from
+    `prod_journal`, or whose top record carries no chunks, is omitted from the returned map --
+    the caller then hash-falls-back it.
+
+    Returns `(question_id -> chunk_id map, ordered unique chunk_ids)`, the second element being
+    the exact input `retrieval_soak --export-embeddings` needs.
+    """
+    replay_question_ids = _ordered_question_ids(replay_journal)
+
+    prod_top_chunk: dict[str, dict[str, str | None]] = {}
+    for raw_line in Path(prod_journal).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        record = json.loads(line)
+        if record.get("type") == "header":
+            continue
+        question_id = record.get("question_id")
+        arm = record.get("graph_arm")
+        if not question_id or arm not in ("graph-off", "graph-on"):
+            continue
+        chunks = (record.get("snapshot") or {}).get("retrieved_chunks") or []
+        top_chunk_id = next((c.get("chunk_id") for c in chunks if c.get("rank") == 1), None)
+        prod_top_chunk.setdefault(question_id, {})[arm] = top_chunk_id
+
+    question_to_chunk: dict[str, str] = {}
+    for question_id in replay_question_ids:
+        arms = prod_top_chunk.get(question_id)
+        if not arms:
+            continue
+        chunk_id = arms.get("graph-off") or arms.get("graph-on")
+        if chunk_id:
+            question_to_chunk[question_id] = chunk_id
+
+    ordered_chunk_ids: list[str] = []
+    seen_chunks: set[str] = set()
+    for question_id in replay_question_ids:
+        chunk_id = question_to_chunk.get(question_id)
+        if chunk_id and chunk_id not in seen_chunks:
+            seen_chunks.add(chunk_id)
+            ordered_chunk_ids.append(chunk_id)
+
+    return question_to_chunk, ordered_chunk_ids
+
+
+def load_chunk_embeddings(embeddings_jsonl: str | Path) -> dict[str, list[float]]:
+    """Loads `retrieval_soak --export-embeddings`'s `{chunk_id, embedding}` JSONL output."""
+    out: dict[str, list[float]] = {}
+    for raw_line in Path(embeddings_jsonl).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        record = json.loads(line)
+        chunk_id = record.get("chunk_id")
+        embedding = record.get("embedding")
+        if isinstance(chunk_id, str) and isinstance(embedding, list):
+            out[chunk_id] = [float(x) for x in embedding]
+    return out
+
+
+def load_question_texts(questions_path: str | Path) -> dict[str, str]:
+    """Loads a corpus questions JSONL's `question_id -> query` text mapping (the exact string
+    the harness sends as `RunQueryRequest.query`, unmodified end to end through to the
+    embedding client whenever no reformulation fires)."""
+    out: dict[str, str] = {}
+    for raw_line in Path(questions_path).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        record = json.loads(line)
+        question_id = record.get("question_id")
+        query = record.get("query")
+        if isinstance(question_id, str) and isinstance(query, str):
+            out[question_id] = query
+    return out
+
+
+def build_stub_vectors(
+    question_to_chunk: dict[str, str],
+    chunk_embeddings: dict[str, list[float]],
+    question_texts: dict[str, str],
+    replay_question_ids: list[str],
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Assembles the stub vector-map rows (`{"text": ..., "embedding": [...]}`,
+    `provider_stub.load_vector_map`'s exact shape) for every replay question_id resolvable
+    end to end: replay -> production top chunk -> exported embedding -> corpus query text.
+
+    Returns `(rows, counts)`. `counts` breaks every replay question_id down by outcome --
+    `total`, `no_prod_chunk` (absent from `question_to_chunk`), `no_embedding` (chunk_id absent
+    from `chunk_embeddings`, e.g. not present in the reconciled store copy),
+    `no_question_text` (question_id absent from `question_texts`), and `matched` -- so the
+    caller can disclose the fallback count rather than bury it.
+    """
+    rows: list[dict[str, Any]] = []
+    counts = {
+        "total": len(replay_question_ids),
+        "no_prod_chunk": 0,
+        "no_embedding": 0,
+        "no_question_text": 0,
+        "matched": 0,
+    }
+    for question_id in replay_question_ids:
+        chunk_id = question_to_chunk.get(question_id)
+        if not chunk_id:
+            counts["no_prod_chunk"] += 1
+            continue
+        embedding = chunk_embeddings.get(chunk_id)
+        if embedding is None:
+            counts["no_embedding"] += 1
+            continue
+        text = question_texts.get(question_id)
+        if text is None:
+            counts["no_question_text"] += 1
+            continue
+        rows.append({"text": text, "embedding": embedding})
+        counts["matched"] += 1
+    return rows, counts
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m lancet_eval.oi02")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -966,6 +1126,25 @@ def main(argv: list[str] | None = None) -> int:
     check_parser.add_argument("--require-flat", action="store_true")
     check_parser.add_argument("--same-config-as", default=None)
     check_parser.add_argument("--production-journal", default=None)
+
+    extract_parser = subparsers.add_parser(
+        "extract-chunk-ids",
+        help="Build question->production-top-chunk map + chunk_ids.json for --export-embeddings (Task 3 checkpoint: rerun-primary).",
+    )
+    extract_parser.add_argument("--replay-journal", required=True)
+    extract_parser.add_argument("--prod-journal", required=True)
+    extract_parser.add_argument("--out-chunk-ids", required=True)
+    extract_parser.add_argument("--out-map", required=True)
+
+    vectors_parser = subparsers.add_parser(
+        "build-stub-vectors",
+        help="Assemble data/replay/stub-vectors.jsonl from the question->chunk map, retrieval_soak --export-embeddings output, and the corpus questions file.",
+    )
+    vectors_parser.add_argument("--replay-journal", required=True)
+    vectors_parser.add_argument("--map", required=True, dest="map_path")
+    vectors_parser.add_argument("--embeddings", required=True)
+    vectors_parser.add_argument("--questions", required=True)
+    vectors_parser.add_argument("--out", required=True)
 
     args = parser.parse_args(argv)
 
@@ -1000,6 +1179,44 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"FAIL: {failure}")
             return 1
         print("check-arm: ok")
+        return 0
+
+    if args.command == "extract-chunk-ids":
+        question_to_chunk, ordered_chunk_ids = extract_chunk_ids_for_replay(
+            args.replay_journal, args.prod_journal
+        )
+        replay_question_ids = _ordered_question_ids(args.replay_journal)
+        Path(args.out_chunk_ids).write_text(
+            json.dumps(ordered_chunk_ids, indent=2), encoding="utf-8"
+        )
+        Path(args.out_map).write_text(
+            json.dumps(question_to_chunk, indent=2, sort_keys=True), encoding="utf-8"
+        )
+        print(
+            json.dumps(
+                {
+                    "replay_questions": len(replay_question_ids),
+                    "matched_to_prod_top_chunk": len(question_to_chunk),
+                    "unique_chunk_ids": len(ordered_chunk_ids),
+                }
+            )
+        )
+        return 0
+
+    if args.command == "build-stub-vectors":
+        question_to_chunk = json.loads(Path(args.map_path).read_text(encoding="utf-8"))
+        chunk_embeddings = load_chunk_embeddings(args.embeddings)
+        question_texts = load_question_texts(args.questions)
+        replay_question_ids = _ordered_question_ids(args.replay_journal)
+        rows, counts = build_stub_vectors(
+            question_to_chunk, chunk_embeddings, question_texts, replay_question_ids
+        )
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(row) + "\n")
+        print(json.dumps(counts))
         return 0
 
     return 1
