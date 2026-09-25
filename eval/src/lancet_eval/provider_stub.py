@@ -98,6 +98,22 @@ def hash_vector(text: str, dimensions: int = EMBEDDING_DIMENSIONS) -> list[float
     return [v / norm for v in values]
 
 
+def delay_for_call(schedule_ms: list[int], call_index: int, slice_calls: int = 50) -> int:
+    """Looks up the delay (ms) for the `call_index`-th (0-indexed) call against a per-slice
+    delay schedule, one value per `slice_calls`-sized block of calls (06.3.4.1-07 Task 4 Route
+    B step 4: paces the stub's own response latency to production's growing per-slice medians,
+    instead of a flat delay for the whole run). Calls past the schedule's last slice hold that
+    slice's value rather than extrapolating or indexing out of range -- a run longer than the
+    schedule (e.g. 350 records against a 7-slice schedule covering only production's slices
+    0-6) is expected and not an error."""
+    if not schedule_ms:
+        return 0
+    if slice_calls <= 0:
+        slice_calls = 1
+    idx = min(call_index // slice_calls, len(schedule_ms) - 1)
+    return schedule_ms[idx]
+
+
 def embedding_for(
     text: str, vector_map: dict[str, list[float]], dimensions: int = EMBEDDING_DIMENSIONS
 ) -> tuple[list[float], bool]:
@@ -187,6 +203,15 @@ class StubStats:
         with self._lock:
             self._counts[endpoint] = self._counts.get(endpoint, 0) + 1
 
+    def increment_and_get(self, endpoint: str) -> int:
+        """Like `increment`, but returns the post-increment count (1-indexed) -- used to derive
+        a 0-indexed per-endpoint call ordinal for `delay_for_call` without a second counter
+        (06.3.4.1-07 Task 4 Route B step 4: stub pacing to production's growing per-slice
+        medians)."""
+        with self._lock:
+            self._counts[endpoint] = self._counts.get(endpoint, 0) + 1
+            return self._counts[endpoint]
+
     def add_fallback(self, n: int) -> None:
         with self._lock:
             self._fallback_count += n
@@ -203,6 +228,9 @@ def make_handler(
     embed_delay_ms: int,
     chat_delay_ms: int,
     stats: StubStats,
+    embed_delay_schedule_ms: list[int] | None = None,
+    chat_delay_schedule_ms: list[int] | None = None,
+    schedule_slice_calls: int = 50,
 ) -> type[BaseHTTPRequestHandler]:
     """Builds a `BaseHTTPRequestHandler` subclass closing over the stub's configuration --
     `http.server` handlers are classes, not instances, so configuration must be closed over
@@ -247,23 +275,38 @@ def make_handler(
             path = self.path.split("?", 1)[0]
             body = self._read_json_body()
             if path.endswith("/embeddings"):
-                if embed_delay_ms:
-                    time.sleep(embed_delay_ms / 1000.0)
+                # increment_and_get replaces the plain increment below it used to be -- same
+                # final count, but also gives the 0-indexed call ordinal a delay schedule needs.
+                # When no schedule is given, delay_ms == embed_delay_ms exactly as before (the
+                # flat-delay path is unchanged, byte-for-byte, when embed_delay_schedule_ms is
+                # None -- existing headers/tests never see a schedule field).
+                call_index = stats.increment_and_get("embeddings") - 1
+                delay_ms = (
+                    delay_for_call(embed_delay_schedule_ms, call_index, schedule_slice_calls)
+                    if embed_delay_schedule_ms
+                    else embed_delay_ms
+                )
+                if delay_ms:
+                    time.sleep(delay_ms / 1000.0)
                 raw_input = body.get("input", [])
                 inputs = raw_input if isinstance(raw_input, list) else [raw_input]
                 inputs = [str(x) for x in inputs]
                 resp, fallback = build_embeddings_response(inputs, vector_map)
-                stats.increment("embeddings")
                 stats.add_fallback(fallback)
                 self._write_json(200, resp)
                 return
             if path.endswith("/chat/completions"):
-                if chat_delay_ms:
-                    time.sleep(chat_delay_ms / 1000.0)
+                call_index = stats.increment_and_get("chat_completions") - 1
+                delay_ms = (
+                    delay_for_call(chat_delay_schedule_ms, call_index, schedule_slice_calls)
+                    if chat_delay_schedule_ms
+                    else chat_delay_ms
+                )
+                if delay_ms:
+                    time.sleep(delay_ms / 1000.0)
                 # Body length only, never content (T-06.3.4.1-07-04/09).
                 _ = len(json.dumps(body))
                 prompt_tokens_estimate = 2000
-                stats.increment("chat_completions")
                 self._write_json(200, build_chat_completion_response(prompt_tokens_estimate))
                 return
             self._write_json(404, {"error": "not found"})
@@ -279,6 +322,9 @@ def run_server(
     vectors_path: str | Path | None,
     embed_delay_ms: int,
     chat_delay_ms: int,
+    embed_delay_schedule_ms: list[int] | None = None,
+    chat_delay_schedule_ms: list[int] | None = None,
+    schedule_slice_calls: int = 50,
 ) -> ThreadingHTTPServer:
     """Builds and returns a bound (not yet `serve_forever`-running) `ThreadingHTTPServer`.
     Raises `HostNotAllowedError` before any socket is opened if `host` is not loopback."""
@@ -291,6 +337,9 @@ def run_server(
         embed_delay_ms=embed_delay_ms,
         chat_delay_ms=chat_delay_ms,
         stats=stats,
+        embed_delay_schedule_ms=embed_delay_schedule_ms,
+        chat_delay_schedule_ms=chat_delay_schedule_ms,
+        schedule_slice_calls=schedule_slice_calls,
     )
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     server = ThreadingHTTPServer((host, port), handler_cls)
@@ -308,7 +357,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vectors", default=None)
     parser.add_argument("--embed-delay-ms", type=int, default=0)
     parser.add_argument("--chat-delay-ms", type=int, default=0)
+    parser.add_argument(
+        "--embed-delay-schedule-ms",
+        default=None,
+        help="Comma-separated per-slice embed delays in ms (06.3.4.1-07 Task 4 Route B step 4 "
+        "stub pacing); overrides --embed-delay-ms when given.",
+    )
+    parser.add_argument(
+        "--chat-delay-schedule-ms",
+        default=None,
+        help="Comma-separated per-slice chat delays in ms; overrides --chat-delay-ms when given.",
+    )
+    parser.add_argument("--schedule-slice-calls", type=int, default=50)
     args = parser.parse_args(argv)
+
+    embed_schedule = (
+        [int(x) for x in args.embed_delay_schedule_ms.split(",")]
+        if args.embed_delay_schedule_ms
+        else None
+    )
+    chat_schedule = (
+        [int(x) for x in args.chat_delay_schedule_ms.split(",")]
+        if args.chat_delay_schedule_ms
+        else None
+    )
 
     try:
         server = run_server(
@@ -318,6 +390,9 @@ def main(argv: list[str] | None = None) -> int:
             vectors_path=args.vectors,
             embed_delay_ms=args.embed_delay_ms,
             chat_delay_ms=args.chat_delay_ms,
+            embed_delay_schedule_ms=embed_schedule,
+            chat_delay_schedule_ms=chat_schedule,
+            schedule_slice_calls=args.schedule_slice_calls,
         )
     except HostNotAllowedError as exc:
         print(str(exc))

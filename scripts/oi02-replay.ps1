@@ -36,6 +36,14 @@ param(
     [int]$Workers = 1,
     [int]$StubEmbedDelayMs = 0,
     [int]$StubChatDelayMs = 0,
+    # Comma-separated per-slice ms values (06.3.4.1-07 Task 4 Route B step 4: paces the
+    # stub's own response latency to production's growing per-slice medians, instead of the
+    # flat -StubEmbedDelayMs/-StubChatDelayMs for the whole run). Overrides the flat delay for
+    # that endpoint when given; empty string (the default) leaves the flat-delay path
+    # unchanged.
+    [string]$StubEmbedDelayScheduleMs = '',
+    [string]$StubChatDelayScheduleMs = '',
+    [int]$ScheduleSliceCalls = 50,
     [ValidateSet('reconciled', 'pre-reconcile')][string]$StoreSource = 'reconciled',
     [int]$SampleSeconds = 5,
     [switch]$Paid,
@@ -239,6 +247,9 @@ $StubVectorsPath = 'data/replay/stub-vectors.jsonl'
 $stubArgs = @('-m', 'lancet_eval.provider_stub', '--host', $StubHost, '--port', $StubPort, '--model', $GenerationModel,
     '--embed-delay-ms', $StubEmbedDelayMs, '--chat-delay-ms', $StubChatDelayMs)
 if (Test-Path $StubVectorsPath) { $stubArgs += @('--vectors', $StubVectorsPath) }
+if ($StubEmbedDelayScheduleMs -ne '') { $stubArgs += @('--embed-delay-schedule-ms', $StubEmbedDelayScheduleMs) }
+if ($StubChatDelayScheduleMs -ne '') { $stubArgs += @('--chat-delay-schedule-ms', $StubChatDelayScheduleMs) }
+if ($StubEmbedDelayScheduleMs -ne '' -or $StubChatDelayScheduleMs -ne '') { $stubArgs += @('--schedule-slice-calls', $ScheduleSliceCalls) }
 
 $stubProc = $null
 if (-not $Paid) {
@@ -563,7 +574,15 @@ try {
             LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT = if (-not $Paid) { "http://${StubHost}:${StubPort}/models" } else { '' }
             LANCET_OPENROUTER__CHAT_ENDPOINT = if (-not $Paid) { "http://${StubHost}:${StubPort}/chat/completions" } else { '' }
         }
-        stub_delays = @{ embed_ms = $StubEmbedDelayMs; chat_ms = $StubChatDelayMs }
+        # Schedule keys only present when a schedule was actually given -- keeps a non-paced
+        # arm's stub_delays shape identical to every prior arm's header (--same-config-as
+        # compares this field; a paced arm is EXPECTED to differ here and is never compared
+        # against a non-paced reference via --same-config-as).
+        stub_delays = if ($StubEmbedDelayScheduleMs -ne '' -or $StubChatDelayScheduleMs -ne '') {
+            @{ embed_ms = $StubEmbedDelayMs; chat_ms = $StubChatDelayMs; embed_schedule_ms = $StubEmbedDelayScheduleMs; chat_schedule_ms = $StubChatDelayScheduleMs; schedule_slice_calls = $ScheduleSliceCalls }
+        } else {
+            @{ embed_ms = $StubEmbedDelayMs; chat_ms = $StubChatDelayMs }
+        }
         stub_vector_source = if (Test-Path $StubVectorsPath) { $StubVectorsPath } else { 'hash-fallback-only' }
         warmup_n = $WarmupQuestions
         limit = $Questions
