@@ -80,6 +80,16 @@ def test_classify_m2_ambiguous_with_fewer_than_two_slices():
     assert classify_m2([100.0], window_delta_ms=0.0) == "ambiguous"
 
 
+def test_classify_m2_not_grows_reads_the_last_full_slice_not_a_fixed_slice_3():
+    """Task 2's primary/primary-r2 scale (7 slices, 350 records): the plan's "not grows" rule is
+    "the last full slice's median is under 1.2x the slice-0 median" -- for a 7-slice run that is
+    slice 6, not slice 3. slice-3 is flat (ratio 1.05, under both the 1.2 "not grows" ceiling and
+    the 1.5 "grows" floor) but slice 6 sits at 1.21x -- just over the "not grows" ceiling, so the
+    correct classification is "ambiguous", not "not grows" (06.3.4.1-07 primary-r2 self-review)."""
+    slices = [1441.5, 1483.5, 1311.0, 1405.5, 1304.5, 1569.0, 1747.5]  # slice3/0=0.975, slice6/0=1.212
+    assert classify_m2(slices, window_delta_ms=265.0) == "ambiguous"
+
+
 # --- classify_m1 -----------------------------------------------------------------------
 
 
