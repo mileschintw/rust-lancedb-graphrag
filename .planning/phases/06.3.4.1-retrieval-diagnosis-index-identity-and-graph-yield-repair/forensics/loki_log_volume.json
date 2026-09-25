@@ -1,0 +1,14 @@
+{
+  "query": "sum(count_over_time({service_name=\"lancet-engine\"}[15m]))",
+  "window": "2026-09-09T21:00:00Z..2026-09-10T22:03:20Z (drive window, 15m steps)",
+  "first_15_points": [
+    ["1788987600", "49988"], ["1788988500", "233181"], ["1788989400", "98410"],
+    ["1788990300", "62150"], ["1788991200", "49352"], ["1788992100", "41251"],
+    ["1788993000", "32075"], ["1788993900", "31046"], ["1788994800", "26984"],
+    ["1788995700", "24372"], ["1788996600", "22998"], ["1788997500", "23441"],
+    ["1788998400", "20891"], ["1788999300", "21391"], ["1789000200", "19852"]
+  ],
+  "warn_error_query": "sum(count_over_time({service_name=\"lancet-engine\", detected_level=~`warn|error`}[15m]))",
+  "warn_error_result": "zero series (no WARN/ERROR-level engine log line exists anywhere in the drive window)",
+  "interpretation": "Log volume per 15-minute window DECLINES over the drive (spike at window 2 from startup/warm-up noise, then 233K->98K->62K->...->~20K and roughly flat from there), tracking the drive's own declining query throughput as RetrieveHybrid grows (fewer completed queries per unit wall-time as each one takes longer). This does not show per-query log volume growing -- it is evidence AGAINST an unbounded per-query logging/allocation accumulator specifically, not evidence for one. It does not rule out a per-query cost that is constant-but-nonzero interacting with growing per-query latency elsewhere (e.g. exporter batching overhead), nor does it speak to the collector-reachable-vs-not or missing-level-filter structural differences from the soak, which remain untested until Task 2's Route A arms (observability off, stderr sink, console-only telemetry)."
+}

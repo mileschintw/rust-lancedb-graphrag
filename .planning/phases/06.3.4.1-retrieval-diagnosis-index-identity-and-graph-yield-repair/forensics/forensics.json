@@ -5,10 +5,10 @@
   "drive_era_commit": "33e774bd71034b54ec14f8079e3cfac83aee56f1",
   "fresh_process": true,
   "fresh_process_evidence": {
-    "caveat": "The engine's own 'completed' counter's first post-reset sample is already 1 (not 0), so N could be interpreted as 0 or 1 depending on whether that first sample itself represents a genuine served query or an artifact of the exporter's first push after restart; read conservatively as 'N<=1', i.e. essentially fresh.",
+    "caveat": "N=2 reads the counter literally: OTel Sum instruments are lazily created on first add() and the first exported point already reflects that first completion, so \"value=1\" at the earliest post-reset sample means 1 query already done, and \"value=2\" 30s later means 2 done -- both before record 1 started. Read as N=2 prior queries (likely gateway health-check Ping plus one warm-up QueryRAG), essentially fresh.",
     "collector_docker_logs": "gRPC 'transport is closing' warning at 21:04:11.24Z, between the two Loki startup pairs -- consistent with the first engine process's OTLP connection closing during the second startup",
     "loki_engine_startup_lines": "two independent 'BM25 snapshot built' + 'Rust RAG Engine serving' pairs at 2026-09-09T21:04:05.26Z and 21:04:24.78-.80Z (~19.5s apart) -- the engine process (re)started twice in the ~95s immediately before record 1",
-    "prometheus_engine_completed_counter": "resets 69->1 at 2026-09-09T21:05:09.632Z (30.7s before record 1 at 21:05:40.364Z); value_at_or_before_record1=2.0 at 21:05:39.635Z, so exactly 1 query completed on the engine between the fresh restart and record 1's start",
+    "prometheus_engine_completed_counter": "resets 69->1 at 2026-09-09T21:05:09.632Z (30.7s before record 1 at 21:05:40.364Z, i.e. the first post-reset export already shows 1 completed query); value_at_or_before_record1=2.0 at 21:05:39.635Z (0.7s before record 1 started) -- 2 queries completed on the fresh engine process before record 1 even started",
     "prometheus_gateway_ping_ok_counter": "resets 2->1 at 2026-09-09T21:04:49.635Z, ~51s before the QueryRAG reset -- consistent with a post-restart health-check Ping preceding real traffic",
     "prometheus_gateway_queryrag_ok_counter": "resets 444->1 at 2026-09-09T21:05:09.632Z, same instant as the engine reset -- corroborates a coordinated engine+gateway restart, not an isolated engine-only event",
     "source_files": [
@@ -27,21 +27,31 @@
   },
   "m1_reference_ms": 4910.5,
   "m1_reference_provenance": "06.3.4 journal RetrieveHybrid slice-0 (first 50 records in ordinal order) median, computed via oi02.journal_timeline+slice_table against eval/runs/2026-09-09-multihop_rag/journal.jsonl -- matches 06.3.4.1-OI02-PROFILE.md's independently-recorded 4,910ms to within rounding (4910.5 here vs 4910 there)",
-  "prior_query_count": 1,
+  "prior_query_count": 2,
   "production_launch": {
     "build_profile": "debug",
     "build_profile_status": "established (source: PSReadLine ConsoleHost_history.txt -- every 'cargo run --manifest-path engine/Cargo.toml --bin engine' invocation in this session's PowerShell history omits --release; a grep for 'cargo (build|run).*--release.*engine' over the same history file returns zero matches)",
     "collector_reachable": true,
     "collector_reachable_status": "established (source: forensics/prometheus_engine_counter.json -- num_export_gaps_over_60s=0 across the full drive window for both engine outcome series; forensics/loki_findings.json -- continuous engine log presence including two startup pairs; docker collector logs for the drive window show no memory_limiter refusals, exporter queue-full events, or Loki 429s)",
-    "config_toml_at_drive_time": {
+    "config_toml_at_drive_time": "unknown",
+    "config_toml_at_drive_time_status": "unknown -- CONTRADICTORY evidence between the narrow (ff3188fb-committed) and wide (33e774bd-committed) readings; see profile Launch and config diff (07) for the full discussion. Not resolved this pass: Loki has no startup line logging effective timeout/workflow settings (queried, zero matches for timeout|effective|workflow settings in the 21:04:00-21:04:30Z startup window).",
+    "config_toml_narrow_candidate": {
       "generation_node_timeout_ms": 65000,
       "graph_node_timeout_ms": 45674,
       "graph_operation_timeout_ms": 38595,
       "prompt_timeout_ms": 1070,
       "query_embedding_timeout_ms": 645,
       "retrieve_timeout_ms": 16647,
-      "status": "established (source: git show ff3188fb:config/config.toml -- ff3188fb is the last commit before the drive's 21:05:40Z start on main; commit 33e774bd, made roughly 50 minutes after the drive ended, replaced these six 06.3.3-derived production budgets with wider ones -- query_embedding 645->15000ms, retrieve 16647->30000ms, graph_operation 38595->40000ms, graph_node 45674->60000ms, prompt 1070->10000ms, generation_node unchanged at 65000ms -- so the drive itself ran under the NARROWER ff3188fb values, since the working tree was only edited to the wider values after the drive finished, immediately before committing 33e774bd",
-      "widened_after_drive_commit": "33e774bd71034b54ec14f8079e3cfac83aee56f1"
+      "source": "git show ff3188fb:config/config.toml (last commit before drive start)"
+    },
+    "config_toml_wide_candidate": {
+      "generation_node_timeout_ms": 65000,
+      "graph_node_timeout_ms": 60000,
+      "graph_operation_timeout_ms": 40000,
+      "prompt_timeout_ms": 10000,
+      "query_embedding_timeout_ms": 15000,
+      "retrieve_timeout_ms": 30000,
+      "source": "git show 33e774bd:config/config.toml (committed ~50min after drive ended, same commit as --retries and the journal)"
     },
     "cwd": "repository root (D:/Repos/lancet); gateway launched via 'cd gateway && go run .'",
     "cwd_status": "established (source: PSReadLine history)",
