@@ -24,6 +24,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Deliberate trade: configuration loading happens before telemetry init so configuration errors surface on stderr before any subscriber exists.
     let settings = load_settings()?;
     let telemetry_handle = engine::telemetry::init(&settings.engine.telemetry);
+    let _ = engine::service::PROCESS_START.set(std::time::Instant::now());
+    // `build_providers_and_layers` returns early and logs nothing for an empty OTLP endpoint
+    // (06.3.4.1-07 Task 2: without this line, console-only mode is invisible in the engine's
+    // own output -- there is no other line anywhere that records which mode was chosen).
+    let telemetry_mode = if settings.engine.telemetry.otlp_endpoint.trim().is_empty() {
+        "console-only"
+    } else {
+        "otlp"
+    };
+    tracing::info!(
+        telemetry_mode = telemetry_mode,
+        endpoint = %settings.engine.telemetry.otlp_endpoint,
+        "telemetry_mode"
+    );
     let effective_settings = EffectiveRagSettings::try_from_settings(&settings)
         .map_err(|err| format!("invalid RAG configuration: {err}"))?;
     let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;

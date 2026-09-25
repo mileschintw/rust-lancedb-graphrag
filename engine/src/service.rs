@@ -7,8 +7,11 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, OnceLock,
+    },
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use arrow_array::{Array, RecordBatch};
@@ -42,6 +45,66 @@ use crate::prompt;
 use crate::rerank;
 use crate::retrieval::{self, DenseRetriever, QueryRequest, RetrievalErrorKind, Retriever};
 use crate::workflow::{self, ports::Bm25RetrievalPort};
+
+/// Set once, as early as possible after `telemetry::init` in `main.rs`, so
+/// `request_process_state`'s `process_uptime_ms` reflects genuine process uptime rather than
+/// time-since-first-request (06.3.4.1-07 Task 2). A missed/late call (e.g. in a test harness
+/// that never calls `main`) degrades gracefully: `process_uptime_ms` reads 0 via
+/// `get_or_init` on first use, never panics.
+pub static PROCESS_START: OnceLock<Instant> = OnceLock::new();
+
+/// Process-lifetime count of completed `query_rag` requests, incremented once per request in
+/// the spawned workflow task (06.3.4.1-07 Task 2). Read by `request_process_state`'s
+/// `request_ordinal` field; not reset between requests, only between process restarts.
+static REQUEST_ORDINAL: AtomicU64 = AtomicU64::new(0);
+
+/// Emits `tracing::info!(request_process_state, ...)` once per completed `query_rag` request,
+/// outside every node's own timing span (06.3.4.1-07 Task 2, D-64 full-pipeline diagnosis).
+/// `session_size_bytes` is a full `deep_size_of` walk (see `db::lance_session_stats`'s own
+/// doc comment), so it is read only on every 50th request to keep this event cheap on the hot
+/// path (M-LOG-OVERHEAD); `session_approx_num_items` is read on every request since it is a
+/// plain field access, not a deep walk. Reads the session through a clone of the service's
+/// startup `nodes` handle via `dataset()`/`session()` -- never `checkout()` (06.1 CR-01: a
+/// `checkout()` on a shared `Table` handle races the pinned-version cell other holders of the
+/// same clone rely on; a read-only `dataset()`/`session()` walk takes no such lock).
+async fn emit_request_process_state(nodes: &Table, correlation_id: &str) {
+    let ordinal = REQUEST_ORDINAL.fetch_add(1, Ordering::Relaxed) + 1;
+    let uptime_ms = PROCESS_START
+        .get_or_init(Instant::now)
+        .elapsed()
+        .as_millis() as u64;
+    let metrics = tokio::runtime::Handle::current().metrics();
+    let alive_tasks = metrics.num_alive_tasks();
+    let global_queue_depth = metrics.global_queue_depth();
+
+    if ordinal % 50 == 0 {
+        let (session_size_bytes, session_approx_num_items) =
+            crate::db::lance_session_stats(nodes).await;
+        tracing::info!(
+            request_process_state = true,
+            request_ordinal = ordinal,
+            process_uptime_ms = uptime_ms,
+            correlation_id = %correlation_id,
+            alive_tasks = alive_tasks,
+            global_queue_depth = global_queue_depth,
+            session_approx_num_items = session_approx_num_items,
+            session_size_bytes = session_size_bytes,
+            "request_process_state"
+        );
+    } else {
+        let session_approx_num_items = crate::db::lance_session_approx_num_items(nodes).await;
+        tracing::info!(
+            request_process_state = true,
+            request_ordinal = ordinal,
+            process_uptime_ms = uptime_ms,
+            correlation_id = %correlation_id,
+            alive_tasks = alive_tasks,
+            global_queue_depth = global_queue_depth,
+            session_approx_num_items = session_approx_num_items,
+            "request_process_state"
+        );
+    }
+}
 
 /// Lancet gRPC service state holding database handles, background ingestion queue, and RAG components.
 #[derive(Clone)]
@@ -941,10 +1004,20 @@ impl LancetService for LancetServiceImpl {
         );
         let _ = tracing_opentelemetry::OpenTelemetrySpanExt::set_parent(&parent_span, parent_context);
 
+        let request_process_state_nodes = self.nodes.clone();
+        let request_process_state_correlation_id = correlation_id.clone();
         tokio::spawn(
             async move {
                 let _ = &deps;
                 runner.run_workflow(ctx, cancel, sink).await;
+                // Outside every node's own timing (after run_workflow returns), per
+                // 06.3.4.1-07 Task 2's spec -- this event's own cost is not attributed to any
+                // node's latency measurement.
+                emit_request_process_state(
+                    &request_process_state_nodes,
+                    &request_process_state_correlation_id,
+                )
+                .await;
             }
             .instrument(parent_span),
         );

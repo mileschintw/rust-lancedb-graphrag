@@ -540,22 +540,9 @@ struct IterationLine {
     session_approx_num_items: Option<usize>,
 }
 
-/// Reads the shared connection-scoped `lance::session::Session`'s size discriminators through
-/// any already-open table on that connection (06.3.4.1-03 long-duration soak, round 3). Returns
-/// `(None, None)` if the table is not a native table or its dataset handle can't be resolved —
-/// this is a best-effort diagnostic read, never a fatal soak condition.
-async fn lance_session_stats(table: &Table) -> (Option<u64>, Option<usize>) {
-    let Some(wrapper) = table.dataset() else {
-        return (None, None);
-    };
-    match wrapper.get().await {
-        Ok(dataset) => {
-            let session = dataset.session();
-            (Some(session.size_bytes()), Some(session.approx_num_items()))
-        }
-        Err(_) => (None, None),
-    }
-}
+// `lance_session_stats` moved to `engine::db::lance_session_stats` (06.3.4.1-07 Task 2) so
+// both this soak binary and the production service share one implementation. Call sites below
+// use `engine::db::lance_session_stats` directly.
 
 async fn probe_collector_reachable(endpoint: &str) -> bool {
     let stripped = endpoint
@@ -673,7 +660,7 @@ async fn run_r_rp_rg_rgt(
 
     let (alive_tasks, global_queue_depth) = runtime_counters();
     let (session_size_bytes, session_approx_num_items) =
-        lance_session_stats(session_stats_table).await;
+        engine::db::lance_session_stats(session_stats_table).await;
     let unix_ms = unix_millis_now();
 
     IterationLine {
@@ -777,7 +764,7 @@ async fn run_w(
     let report: RetrieveSubStageReport = *report_handle.lock().unwrap_or_else(|p| p.into_inner());
     let (alive_tasks, global_queue_depth) = runtime_counters();
     let (session_size_bytes, session_approx_num_items) =
-        lance_session_stats(session_stats_table).await;
+        engine::db::lance_session_stats(session_stats_table).await;
 
     // AssemblePrompt/ExtractGraphContext node-level durations are not separately instrumented
     // for arm W (out of this task's file scope: only retrieve.rs and service.rs carry new
@@ -812,9 +799,87 @@ async fn run_w(
     Ok(())
 }
 
+/// One output row of `--export-embeddings`: a chunk's own stored vector, JSONL to stdout.
+#[derive(Serialize)]
+struct ExportedEmbeddingRow {
+    chunk_id: String,
+    embedding: Vec<f32>,
+}
+
+/// `--export-embeddings <chunk_ids.json> --lancedb-path <path>`: read-only mode (06.3.4.1-07
+/// Task 2) that opens the store via `DatabaseManager::open_and_validate` (never
+/// `initialize`/`get_or_create_table`, so a missing table fails closed instead of silently
+/// recreating it over live data) and prints `{chunk_id, embedding}` JSONL, one line per input
+/// ID found in `nodes`. IDs absent from `nodes` are silently omitted from the output (the
+/// caller -- `oi02-replay.ps1`'s stub-vector-map builder -- is expected to treat a missing ID
+/// as a fallback-to-hash-vector case, not a hard error). No `#[cfg(test)]` module is added by
+/// this function, so `scripts/engine-test-targets.sh`'s test-count gate is unaffected.
+async fn run_export_embeddings(chunk_ids_path: &str, lancedb_path: Option<String>) -> Result<(), String> {
+    let ids_json = std::fs::read_to_string(chunk_ids_path)
+        .map_err(|error| format!("failed to read {chunk_ids_path}: {error}"))?;
+    let chunk_ids: Vec<String> = serde_json::from_str(&ids_json)
+        .map_err(|error| format!("failed to parse {chunk_ids_path} as a JSON array of strings: {error}"))?;
+    if chunk_ids.is_empty() {
+        return Ok(());
+    }
+
+    let settings = load_settings().map_err(|error| format!("failed to load settings: {error}"))?;
+    let path = lancedb_path.unwrap_or_else(|| settings.engine.lancedb_path.clone());
+    let database = DatabaseManager::open_and_validate(&path).await?;
+    let nodes_table = database.nodes_table().await?;
+
+    // Batch the IN-predicate lookup the same way select_seeded_* above does, rather than one
+    // query per ID -- chunk_ids.json can carry hundreds of IDs for a 175-question replay.
+    let predicate = build_in_predicate("chunk_id", &chunk_ids);
+    let batches: Vec<RecordBatch> = nodes_table
+        .query()
+        .only_if(predicate)
+        .select(Select::columns(&["chunk_id", "embedding"]))
+        .execute()
+        .await
+        .map_err(|error| format!("failed to query nodes for --export-embeddings: {error}"))?
+        .try_collect()
+        .await
+        .map_err(|error| format!("failed to collect nodes rows for --export-embeddings: {error}"))?;
+
+    let stdout = std::io::stdout();
+    let mut writer = stdout.lock();
+    use std::io::Write as _;
+    for batch in &batches {
+        let embeddings = batch
+            .column_by_name("embedding")
+            .ok_or_else(|| "missing embedding column".to_string())?
+            .as_any()
+            .downcast_ref::<FixedSizeListArray>()
+            .ok_or_else(|| "embedding column has unexpected type".to_string())?;
+        for row in 0..batch.num_rows() {
+            let chunk_id = string_at(batch, "chunk_id", row)?;
+            let embedding = embedding_at(embeddings, row)?;
+            let line = ExportedEmbeddingRow { chunk_id, embedding };
+            let json = serde_json::to_string(&line).map_err(|error| error.to_string())?;
+            writeln!(writer, "{json}").map_err(|error| format!("failed to write stdout: {error}"))?;
+        }
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), String> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(pos) = raw_args.iter().position(|a| a == "--export-embeddings") {
+        let chunk_ids_path = raw_args
+            .get(pos + 1)
+            .ok_or_else(|| format!("--export-embeddings requires a value\n{USAGE}"))?
+            .clone();
+        let lancedb_path = raw_args
+            .iter()
+            .position(|a| a == "--lancedb-path")
+            .and_then(|p| raw_args.get(p + 1))
+            .cloned();
+        return run_export_embeddings(&chunk_ids_path, lancedb_path).await;
+    }
+
+    let args: Vec<String> = raw_args;
     let parsed = parse_args(args)?;
 
     // Deliberate trade, mirroring `main.rs`: configuration loads before telemetry init so

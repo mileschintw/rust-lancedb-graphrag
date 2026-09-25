@@ -367,5 +367,41 @@ fn is_table_not_found(err: &lancedb::Error) -> bool {
     matches!(err, lancedb::Error::TableNotFound { .. })
 }
 
+/// Reads the given table's Lance session cache size (bytes) and approximate item count.
+///
+/// Moved here from `retrieval_soak` (06.3.4.1-07 Task 2) so both the soak binary and the
+/// production service can log the same counters. Returns `(None, None)` if the table's
+/// dataset handle or session is unavailable (e.g. a freshly-created, never-opened table) --
+/// never panics, since this is a diagnostic read, not a correctness-load-bearing path.
+///
+/// `size_bytes()` performs a full `deep_size_of` walk over the session's caches; per its own
+/// `lance` doc comment this is "not trivial to compute", so callers on a hot path should not
+/// call this on every single request (see `request_process_state`'s every-50th-request cadence
+/// in `service.rs`, M-LOG-OVERHEAD).
+pub async fn lance_session_stats(table: &Table) -> (Option<u64>, Option<usize>) {
+    let Some(wrapper) = table.dataset() else {
+        return (None, None);
+    };
+    match wrapper.get().await {
+        Ok(dataset) => {
+            let session = dataset.session();
+            (Some(session.size_bytes()), Some(session.approx_num_items()))
+        }
+        Err(_) => (None, None),
+    }
+}
+
+/// Cheap sibling of [`lance_session_stats`] that reads only `approx_num_items()` (a plain field
+/// access), skipping `size_bytes()`'s full `deep_size_of` walk. For hot-path callers that need
+/// only the item count on every call and the byte size on a sampled cadence (06.3.4.1-07 Task 2
+/// `request_process_state`, M-LOG-OVERHEAD).
+pub async fn lance_session_approx_num_items(table: &Table) -> Option<usize> {
+    let wrapper = table.dataset()?;
+    match wrapper.get().await {
+        Ok(dataset) => Some(dataset.session().approx_num_items()),
+        Err(_) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests;
