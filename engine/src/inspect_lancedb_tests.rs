@@ -12,8 +12,8 @@ use uuid::Uuid;
 use super::{
     inspect_document, inspect_document_ids, inspect_entity_name, inspect_entity_neighborhood,
     inspect_gold_chunks, inspect_graph_population, parse_args, DegreeDistribution,
-    DocumentIdsReport, EntityMatch, EntityNameReport, GraphPopulationReport, Inspection,
-    NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
+    DegreeHistogramBucket, DocumentIdsReport, EntityMatch, EntityNameReport, GraphPopulationReport,
+    Inspection, NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
 };
 use engine::db::DatabaseManager;
 
@@ -923,6 +923,96 @@ async fn isolated_entity_counted_in_isolated_total() {
 }
 
 #[tokio::test]
+async fn empty_store_has_no_degree_histogram() {
+    let (database, path) = graph_fixture("empty-store-histogram-test", &[], &[]).await;
+    let report = inspect_graph_population(&database).await.unwrap();
+
+    assert!(report.degree_histogram.is_none());
+    assert!(report.highest_degree_entity_name.is_none());
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// A hub-and-spoke fixture (one hub with 9 spokes, each spoke otherwise
+/// isolated) exercises the properties the plan's D-77 cap derivation and
+/// §4 histogram actually depend on: `p99 >= p95` (both must reflect the same
+/// heavy tail, not be independently miscomputed), the histogram partitions
+/// every entity exactly once, and the resolved highest-degree name matches
+/// the id `highest_degree_entity_id` itself already names.
+#[tokio::test]
+async fn hub_and_spoke_percentiles_and_histogram_partition_every_entity() {
+    let hub_id = Uuid::new_v4().to_string();
+    let spoke_ids: Vec<String> = (0..9).map(|_| Uuid::new_v4().to_string()).collect();
+
+    let mut entities = vec![EntityFixture {
+        entity_id: hub_id.clone(),
+        name: "Hub Entity".into(),
+        entity_type: "concept".into(),
+    }];
+    entities.extend(spoke_ids.iter().enumerate().map(|(i, id)| EntityFixture {
+        entity_id: id.clone(),
+        name: format!("Spoke {i}"),
+        entity_type: "concept".into(),
+    }));
+
+    let edges: Vec<EntityEdgeFixture> = spoke_ids
+        .iter()
+        .map(|spoke_id| EntityEdgeFixture {
+            edge_id: Uuid::new_v4().to_string(),
+            source_node_id: hub_id.clone(),
+            target_node_id: spoke_id.clone(),
+            relation_type: "relates_to".into(),
+        })
+        .collect();
+
+    let (database, path) = graph_fixture("hub-spoke-histogram-test", &entities, &edges).await;
+    let report = inspect_graph_population(&database).await.unwrap();
+
+    assert_eq!(report.entity_rows, 10);
+    let dist = report.degree_distribution.expect("populated store has a distribution");
+    assert_eq!(dist.max, 9, "hub touches all 9 spoke edges");
+    assert!(
+        dist.p99 >= dist.p95,
+        "p99 ({}) must be at least p95 ({}) on the same monotonically sorted degree vector",
+        dist.p99,
+        dist.p95
+    );
+    assert!(
+        dist.p95 >= dist.median,
+        "p95 ({}) must be at least median ({})",
+        dist.p95,
+        dist.median
+    );
+
+    let histogram = report
+        .degree_histogram
+        .expect("populated store has a histogram");
+    assert_eq!(histogram.len(), 10, "always exactly 10 decile buckets");
+    let total: usize = histogram.iter().map(|b| b.count).sum();
+    assert_eq!(
+        total, report.entity_rows,
+        "every entity accounted for exactly once across all buckets"
+    );
+    // The hub is the single highest-degree entity, so it must land in the
+    // last non-empty bucket, and that bucket's max must equal dist.max.
+    let last_nonempty = histogram
+        .iter()
+        .rev()
+        .find(|b| b.count > 0)
+        .expect("at least one non-empty bucket");
+    assert_eq!(last_nonempty.max_degree, dist.max);
+
+    assert_eq!(report.highest_degree_entity_id, Some(hub_id.clone()));
+    assert_eq!(
+        report.highest_degree_entity_name,
+        Some("Hub Entity".to_string()),
+        "resolved name must belong to the same entity highest_degree_entity_id names"
+    );
+
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
 async fn seed_absent_and_seed_isolated_are_distinguishable() {
     let present_id = Uuid::new_v4().to_string();
     let absent_id = Uuid::new_v4().to_string();
@@ -1109,10 +1199,18 @@ async fn no_content_or_vector_columns_in_serialized_output() {
             median: 1.0,
             upper_percentile: 1.0,
             p95: 1.0,
+            p99: 1.0,
             max: 1,
         }),
+        degree_histogram: Some(vec![DegreeHistogramBucket {
+            index: 0,
+            count: 2,
+            min_degree: 1,
+            max_degree: 1,
+        }]),
         isolated_entity_count: 0,
         highest_degree_entity_id: Some("00000000-0000-4000-8000-000000000001".into()),
+        highest_degree_entity_name: Some("Alice".into()),
         unpopulated: false,
     };
 

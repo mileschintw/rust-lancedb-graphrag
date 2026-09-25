@@ -32,6 +32,13 @@ fi
 #         lib/config_startup unchanged (460/22).
 #   538 — Phase 06.3.4.1 plan 04 Task 2: new bin `reconcile_eval_store` (18 tests) — cascade
 #         reconcile with dry-run-by-default and apply guards. All other counts unchanged (520+18).
+#   540 — Phase 06.3.4.1 plan 06 Task 3: `--graph-population`'s `DegreeDistribution` gained `p99`
+#         (D-77 cap derivation needs it, not estimable from p95/max alone) and
+#         `GraphPopulationReport` gained a 10-bucket decile `degree_histogram` plus
+#         `highest_degree_entity_name` (resolved for free from the existing entities read). Added 2
+#         inspect_lancedb tests (empty_store_has_no_degree_histogram,
+#         hub_and_spoke_percentiles_and_histogram_partition_every_entity), 38->40. lib/config_startup
+#         unchanged (460/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -71,8 +78,8 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 538 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 538, got $TOTAL" >&2
+if [ "$TOTAL" -ne 540 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 540, got $TOTAL" >&2
   exit 1
 fi
 
@@ -91,8 +98,8 @@ if [ "$BIN_MAIN_COUNT" -ne 0 ]; then
   exit 1
 fi
 
-if [ "$BIN_INSPECT_COUNT" -ne 38 ]; then
-  echo "FAIL: inspect_lancedb test count mismatch: expected 38, got $BIN_INSPECT_COUNT" >&2
+if [ "$BIN_INSPECT_COUNT" -ne 40 ]; then
+  echo "FAIL: inspect_lancedb test count mismatch: expected 40, got $BIN_INSPECT_COUNT" >&2
   exit 1
 fi
 

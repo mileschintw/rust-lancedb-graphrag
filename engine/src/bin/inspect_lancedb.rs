@@ -22,7 +22,27 @@ pub struct DegreeDistribution {
     pub median: f64,
     pub upper_percentile: f64,
     pub p95: f64,
+    /// 99th percentile entity degree, linear-interpolated the same way as `p95`
+    /// (RESEARCH's `(n-1)*q` rule): D-77 derives its production traversal caps
+    /// from this value, so it must reflect the real sorted-degree vector rather
+    /// than being estimated from `p95`/`max` alone.
+    pub p99: f64,
     pub max: usize,
+}
+
+/// One bucket of a 10-bucket, equal-count (decile) histogram over the sorted
+/// entity-degree vector. Equal-width buckets over a heavy-tailed degree
+/// distribution (most entities near-isolated, a few hub entities with
+/// hundreds of edges) would put nearly every entity in the first bucket;
+/// decile buckets instead guarantee a roughly even entity count per row,
+/// showing the shape of the tail via each bucket's own `min_degree`/`max_degree`.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct DegreeHistogramBucket {
+    /// 0-based decile index (0 = lowest-degree tenth of entities).
+    pub index: usize,
+    pub count: usize,
+    pub min_degree: usize,
+    pub max_degree: usize,
 }
 
 #[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
@@ -34,8 +54,14 @@ pub struct GraphPopulationReport {
     pub entity_rows: usize,
     pub entity_edge_rows: usize,
     pub degree_distribution: Option<DegreeDistribution>,
+    /// 10-bucket decile histogram over entity degree, `None` under the same
+    /// condition as `degree_distribution` (no entities).
+    pub degree_histogram: Option<Vec<DegreeHistogramBucket>>,
     pub isolated_entity_count: usize,
     pub highest_degree_entity_id: Option<String>,
+    /// `entities.name` of `highest_degree_entity_id`, resolved from the same
+    /// entities read that already fetches `entity_id` (no extra table scan).
+    pub highest_degree_entity_name: Option<String>,
     pub unpopulated: bool,
 }
 
@@ -427,10 +453,11 @@ pub async fn inspect_graph_population(
         .map_err(|error| error.to_string())?;
 
     let mut all_entity_ids = Vec::new();
+    let mut entity_names: HashMap<String, String> = HashMap::new();
     if entity_rows > 0 {
         let batches = entities
             .query()
-            .select(Select::columns(&["entity_id"]))
+            .select(Select::columns(&["entity_id", "name"]))
             .execute()
             .await
             .map_err(|error| error.to_string())?
@@ -438,9 +465,12 @@ pub async fn inspect_graph_population(
             .await
             .map_err(|error| error.to_string())?;
         for batch in &batches {
-            let col = string_column(batch, "entity_id")?;
+            let id_col = string_column(batch, "entity_id")?;
+            let name_col = string_column(batch, "name")?;
             for row in 0..batch.num_rows() {
-                all_entity_ids.push(col.value(row).to_string());
+                let id = id_col.value(row).to_string();
+                entity_names.insert(id.clone(), name_col.value(row).to_string());
+                all_entity_ids.push(id);
             }
         }
     }
@@ -468,8 +498,14 @@ pub async fn inspect_graph_population(
 
     let unpopulated = entity_rows == 0 || entity_edge_rows == 0;
 
-    let (degree_distribution, isolated_entity_count, highest_degree_entity_id) = if entity_rows == 0 {
-        (None, 0, None)
+    let (
+        degree_distribution,
+        degree_histogram,
+        isolated_entity_count,
+        highest_degree_entity_id,
+        highest_degree_entity_name,
+    ) = if entity_rows == 0 {
+        (None, None, 0, None, None)
     } else {
         let mut degrees = Vec::with_capacity(all_entity_ids.len());
         let mut isolated = 0;
@@ -489,20 +525,18 @@ pub async fn inspect_graph_population(
         } else {
             (degrees[n / 2 - 1] + degrees[n / 2]) as f64 / 2.0
         };
-        let p95 = if n == 1 {
-            degrees[0] as f64
-        } else {
-            let idx = (n - 1) as f64 * 0.95;
-            let lower = idx.floor() as usize;
-            let upper = idx.ceil() as usize;
-            let frac = idx - lower as f64;
-            degrees[lower] as f64 * (1.0 - frac) + degrees[upper] as f64 * frac
-        };
+        let p95 = linear_interpolated_percentile(&degrees, 0.95);
+        let p99 = linear_interpolated_percentile(&degrees, 0.99);
+        let histogram = decile_histogram(&degrees);
 
         all_entity_ids.sort();
         let highest = all_entity_ids
             .iter()
             .max_by_key(|id| (edge_counts.get(*id).copied().unwrap_or(0), std::cmp::Reverse(*id)))
+            .cloned();
+        let highest_name = highest
+            .as_ref()
+            .and_then(|id| entity_names.get(id))
             .cloned();
 
         (
@@ -511,10 +545,13 @@ pub async fn inspect_graph_population(
                 median,
                 upper_percentile: p95,
                 p95,
+                p99,
                 max,
             }),
+            Some(histogram),
             isolated,
             highest,
+            highest_name,
         )
     };
 
@@ -526,10 +563,63 @@ pub async fn inspect_graph_population(
         entity_rows,
         entity_edge_rows,
         degree_distribution,
+        degree_histogram,
         isolated_entity_count,
         highest_degree_entity_id,
+        highest_degree_entity_name,
         unpopulated,
     })
+}
+
+/// Linear-interpolated percentile over an already-sorted slice, using the
+/// same `(n-1)*q` rule `inspect_graph_population`'s `p95` has always used.
+/// `q` is a fraction in `[0.0, 1.0]` (`0.95` for p95, `0.99` for p99).
+fn linear_interpolated_percentile(sorted: &[usize], q: f64) -> f64 {
+    if sorted.len() == 1 {
+        return sorted[0] as f64;
+    }
+    let idx = (sorted.len() - 1) as f64 * q;
+    let lower = idx.floor() as usize;
+    let upper = idx.ceil() as usize;
+    let frac = idx - lower as f64;
+    sorted[lower] as f64 * (1.0 - frac) + sorted[upper] as f64 * frac
+}
+
+/// Splits an already-sorted degree vector into 10 equal-count (decile)
+/// buckets rather than 10 equal-width buckets: this codebase's degree
+/// distributions are heavy-tailed (thousands of near-isolated entities, a
+/// handful of hub entities with hundreds of edges), so equal-width buckets
+/// over `0..=max` would put nearly every entity in the first bucket and
+/// convey nothing about the tail's shape. Any remainder from `len() % 10` is
+/// distributed one-per-bucket to the first buckets, so bucket sizes differ by
+/// at most one entity.
+fn decile_histogram(sorted: &[usize]) -> Vec<DegreeHistogramBucket> {
+    let n = sorted.len();
+    let base = n / 10;
+    let remainder = n % 10;
+    let mut buckets = Vec::with_capacity(10);
+    let mut start = 0;
+    for index in 0..10 {
+        let size = base + usize::from(index < remainder);
+        if size == 0 {
+            buckets.push(DegreeHistogramBucket {
+                index,
+                count: 0,
+                min_degree: 0,
+                max_degree: 0,
+            });
+            continue;
+        }
+        let end = start + size;
+        buckets.push(DegreeHistogramBucket {
+            index,
+            count: size,
+            min_degree: sorted[start],
+            max_degree: sorted[end - 1],
+        });
+        start = end;
+    }
+    buckets
 }
 
 pub async fn inspect_entity_neighborhood(
