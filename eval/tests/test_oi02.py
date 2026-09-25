@@ -12,9 +12,13 @@ from pathlib import Path
 
 from lancet_eval.oi02 import (
     TimelineRow,
+    build_stub_vectors,
+    extract_chunk_ids_for_replay,
     hidden_gaps,
     idle_recovery,
     journal_timeline,
+    load_chunk_embeddings,
+    load_question_texts,
     load_timeline_records,
     run_forensics,
     slice_table,
@@ -446,3 +450,119 @@ def test_load_timeline_records_falls_back_to_run_record_when_no_ordinal(tmp_path
     assert len(loaded) == 1
     rec, is_measurement = loaded[0]
     assert is_measurement is False
+
+
+# --- stub vector-map builder (06.3.4.1-07 Task 3 checkpoint resolution: rerun-primary) --------
+
+
+def _prod_record_with_chunks(
+    question_id: str, *, graph_arm: str, chunks: list[tuple[str, int]]
+) -> dict:
+    """A production-journal-shaped record carrying `snapshot.retrieved_chunks` with the given
+    (chunk_id, rank) pairs -- the only fields `extract_chunk_ids_for_replay` reads."""
+    return {
+        "corpus": "multihop_rag",
+        "question_id": question_id,
+        "graph_arm": graph_arm,
+        "outcome": "success",
+        "snapshot": {
+            "retrieved_chunks": [
+                {"chunk_id": chunk_id, "rank": rank} for chunk_id, rank in chunks
+            ]
+        },
+    }
+
+
+def test_extract_chunk_ids_prefers_graph_off_arm_and_dedupes_in_replay_order(tmp_path: Path):
+    replay_journal = tmp_path / "replay.jsonl"
+    _write_jsonl(
+        replay_journal,
+        [
+            _header_line(),
+            _run_record_line("q2", started_at_ms=0, completed_at_ms=10, retrieve_ms=1.0),
+            _run_record_line("q1", started_at_ms=10, completed_at_ms=20, retrieve_ms=1.0),
+            _run_record_line("q2", started_at_ms=20, completed_at_ms=30, retrieve_ms=1.0),
+        ],
+    )
+    prod_journal = tmp_path / "prod.jsonl"
+    _write_jsonl(
+        prod_journal,
+        [
+            _header_line(),
+            # q1 has both arms; graph-off's rank-1 chunk must win over graph-on's.
+            _prod_record_with_chunks("q1", graph_arm="graph-on", chunks=[("chunk-on", 1)]),
+            _prod_record_with_chunks("q1", graph_arm="graph-off", chunks=[("chunk-off", 1)]),
+            # q2 has only graph-on -- falls back to it.
+            _prod_record_with_chunks("q2", graph_arm="graph-on", chunks=[("chunk-q2", 1)]),
+            # q3 is in production but never appears in the replay -- must not surface.
+            _prod_record_with_chunks("q3", graph_arm="graph-off", chunks=[("chunk-q3", 1)]),
+        ],
+    )
+
+    question_to_chunk, ordered_chunk_ids = extract_chunk_ids_for_replay(replay_journal, prod_journal)
+
+    assert question_to_chunk == {"q1": "chunk-off", "q2": "chunk-q2"}
+    # Replay order is q2 (first seen), q1 -- not production's q1-first order.
+    assert ordered_chunk_ids == ["chunk-q2", "chunk-off"]
+
+
+def test_extract_chunk_ids_omits_question_absent_from_production(tmp_path: Path):
+    replay_journal = tmp_path / "replay.jsonl"
+    _write_jsonl(
+        replay_journal,
+        [_header_line(), _run_record_line("q-unknown", started_at_ms=0, completed_at_ms=10, retrieve_ms=1.0)],
+    )
+    prod_journal = tmp_path / "prod.jsonl"
+    _write_jsonl(prod_journal, [_header_line()])
+
+    question_to_chunk, ordered_chunk_ids = extract_chunk_ids_for_replay(replay_journal, prod_journal)
+
+    assert question_to_chunk == {}
+    assert ordered_chunk_ids == []
+
+
+def test_load_chunk_embeddings_reads_export_embeddings_jsonl(tmp_path: Path):
+    path = tmp_path / "embeddings.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {"chunk_id": "chunk-a", "embedding": [0.1, 0.2]},
+            {"chunk_id": "chunk-b", "embedding": [0.3, 0.4]},
+        ],
+    )
+    loaded = load_chunk_embeddings(path)
+    assert loaded == {"chunk-a": [0.1, 0.2], "chunk-b": [0.3, 0.4]}
+
+
+def test_load_question_texts_reads_corpus_query_field(tmp_path: Path):
+    path = tmp_path / "questions.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {"question_id": "q1", "query": "What is X?", "answer": "ignored"},
+            {"question_id": "q2", "query": "What is Y?"},
+        ],
+    )
+    loaded = load_question_texts(path)
+    assert loaded == {"q1": "What is X?", "q2": "What is Y?"}
+
+
+def test_build_stub_vectors_classifies_every_miss_reason():
+    question_to_chunk = {"q1": "chunk-1", "q2": "chunk-2", "q3": "chunk-3"}
+    # chunk-2 missing (not in reconciled copy); chunk-3 present but q3's text is missing.
+    chunk_embeddings = {"chunk-1": [0.1, 0.2], "chunk-3": [0.5, 0.6]}
+    question_texts = {"q1": "text one"}  # q3's text missing
+    replay_question_ids = ["q1", "q2", "q3", "q4"]  # q4 never had a production top chunk
+
+    rows, counts = build_stub_vectors(
+        question_to_chunk, chunk_embeddings, question_texts, replay_question_ids
+    )
+
+    assert rows == [{"text": "text one", "embedding": [0.1, 0.2]}]
+    assert counts == {
+        "total": 4,
+        "no_prod_chunk": 1,
+        "no_embedding": 1,
+        "no_question_text": 1,
+        "matched": 1,
+    }
