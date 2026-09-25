@@ -1,0 +1,295 @@
+{
+  "arm_dir": ".planning\\phases\\06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair\\replay\\pre-fix\\primary-r2",
+  "fidelity_vs_production": [
+    {
+      "AssemblePrompt": {
+        "production": 453.0,
+        "replay": 313.0
+      },
+      "ExtractGraphContext": {
+        "production": 2564.0,
+        "replay": 645.5
+      },
+      "GenerateAnswer": {
+        "production": 6970.5,
+        "replay": 7295.0
+      },
+      "RetrieveHybrid": {
+        "production": 4910.5,
+        "replay": 1441.5
+      },
+      "slice": 0
+    },
+    {
+      "AssemblePrompt": {
+        "production": 574.0,
+        "replay": 289.5
+      },
+      "ExtractGraphContext": {
+        "production": 4711.5,
+        "replay": 602.0
+      },
+      "GenerateAnswer": {
+        "production": 5426.0,
+        "replay": 7282.5
+      },
+      "RetrieveHybrid": {
+        "production": 10441.0,
+        "replay": 1483.5
+      },
+      "slice": 1
+    },
+    {
+      "AssemblePrompt": {
+        "production": 725.5,
+        "replay": 290.5
+      },
+      "ExtractGraphContext": {
+        "production": 5925.0,
+        "replay": 710.0
+      },
+      "GenerateAnswer": {
+        "production": 3427.0,
+        "replay": 7281.0
+      },
+      "RetrieveHybrid": {
+        "production": 13947.0,
+        "replay": 1311.0
+      },
+      "slice": 2
+    },
+    {
+      "AssemblePrompt": {
+        "production": 786.0,
+        "replay": 283.5
+      },
+      "ExtractGraphContext": {
+        "production": 6629.5,
+        "replay": 858.5
+      },
+      "GenerateAnswer": {
+        "production": 6275.0,
+        "replay": 7274.5
+      },
+      "RetrieveHybrid": {
+        "production": 16785.5,
+        "replay": 1405.5
+      },
+      "slice": 3
+    },
+    {
+      "AssemblePrompt": {
+        "production": 957.5,
+        "replay": 281.0
+      },
+      "ExtractGraphContext": {
+        "production": 8519.0,
+        "replay": 771.5
+      },
+      "GenerateAnswer": {
+        "production": 4847.0,
+        "replay": 7272.0
+      },
+      "RetrieveHybrid": {
+        "production": 21254.0,
+        "replay": 1304.5
+      },
+      "slice": 4
+    },
+    {
+      "AssemblePrompt": {
+        "production": 1019.5,
+        "replay": 307.0
+      },
+      "ExtractGraphContext": {
+        "production": 10879.5,
+        "replay": 747.0
+      },
+      "GenerateAnswer": {
+        "production": 5419.0,
+        "replay": 7292.0
+      },
+      "RetrieveHybrid": {
+        "production": 24626.0,
+        "replay": 1569.0
+      },
+      "slice": 5
+    },
+    {
+      "AssemblePrompt": {
+        "production": 998.0,
+        "replay": 341.5
+      },
+      "ExtractGraphContext": {
+        "production": 12876.0,
+        "replay": 672.0
+      },
+      "GenerateAnswer": {
+        "production": 8898.5,
+        "replay": 7317.5
+      },
+      "RetrieveHybrid": {
+        "production": 28960.0,
+        "replay": 1747.5
+      },
+      "slice": 6
+    }
+  ],
+  "flatness_verdict_first_200": {
+    "censored_count": 0,
+    "decay_present": false,
+    "n": 200,
+    "passed": true,
+    "reason": "flat",
+    "slope_ms_per_query": -0.47058823529411764,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": -377.0
+  },
+  "flatness_verdict_full": {
+    "censored_count": 0,
+    "decay_present": true,
+    "n": 350,
+    "passed": false,
+    "reason": "decay_present",
+    "slope_ms_per_query": 0.6309523809523809,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": 265.0
+  },
+  "graph_notice_counts": {
+    "GRAPH_ABLATION": 175,
+    "GRAPH_DEGRADED": 1,
+    "GRAPH_UNAVAILABLE": 65
+  },
+  "m1": {
+    "denominator_ms": 270.06685,
+    "primary_slice0_ms": 1441.5,
+    "ratio": 5.33756734675137,
+    "status": "not met",
+    "target_ratio": 16.9538
+  },
+  "m2": {
+    "class": "not grows",
+    "committed_flatness_verdict_passed": false,
+    "later_slice_ms": 1405.5,
+    "slice0_ms": 1441.5,
+    "window_delta_ms": 265.0
+  },
+  "order_match_production": true,
+  "outcome_counts": {
+    "success": 350
+  },
+  "record_count": 350,
+  "slices_ordinal_50": [
+    {
+      "AssemblePrompt": 313.0,
+      "ExtractGraphContext": 645.5,
+      "GenerateAnswer": 7295.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1441.5,
+      "n": 50,
+      "slice": 0
+    },
+    {
+      "AssemblePrompt": 289.5,
+      "ExtractGraphContext": 602.0,
+      "GenerateAnswer": 7282.5,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1483.5,
+      "n": 50,
+      "slice": 1
+    },
+    {
+      "AssemblePrompt": 290.5,
+      "ExtractGraphContext": 710.0,
+      "GenerateAnswer": 7281.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1311.0,
+      "n": 50,
+      "slice": 2
+    },
+    {
+      "AssemblePrompt": 283.5,
+      "ExtractGraphContext": 858.5,
+      "GenerateAnswer": 7274.5,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1405.5,
+      "n": 50,
+      "slice": 3
+    },
+    {
+      "AssemblePrompt": 281.0,
+      "ExtractGraphContext": 771.5,
+      "GenerateAnswer": 7272.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1304.5,
+      "n": 50,
+      "slice": 4
+    },
+    {
+      "AssemblePrompt": 307.0,
+      "ExtractGraphContext": 747.0,
+      "GenerateAnswer": 7292.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1569.0,
+      "n": 50,
+      "slice": 5
+    },
+    {
+      "AssemblePrompt": 341.5,
+      "ExtractGraphContext": 672.0,
+      "GenerateAnswer": 7317.5,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1747.5,
+      "n": 50,
+      "slice": 6
+    }
+  ],
+  "slices_wallclock_15m": [
+    {
+      "AssemblePrompt": 302.0,
+      "ExtractGraphContext": 922.0,
+      "GenerateAnswer": 7287.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1468.0,
+      "n": 89,
+      "slice": 0
+    },
+    {
+      "AssemblePrompt": 287.0,
+      "ExtractGraphContext": 361.0,
+      "GenerateAnswer": 7279.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1341.0,
+      "n": 89,
+      "slice": 1
+    },
+    {
+      "AssemblePrompt": 283.5,
+      "ExtractGraphContext": 740.5,
+      "GenerateAnswer": 7277.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1349.0,
+      "n": 90,
+      "slice": 2
+    },
+    {
+      "AssemblePrompt": 333.0,
+      "ExtractGraphContext": 703.0,
+      "GenerateAnswer": 7308.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1709.5,
+      "n": 82,
+      "slice": 3
+    }
+  ],
+  "uncensored_prefix_n": 350,
+  "uncensored_prefix_verdict": {
+    "decay_present": true,
+    "slope_ms_per_query": 0.6309523809523809,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": 265.0
+  }
+}
