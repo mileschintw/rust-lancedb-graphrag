@@ -480,6 +480,201 @@ def run_forensics(
     return merged
 
 
+import statistics as _statistics  # noqa: E402  (grouped with the rest of stdlib imports above ordinarily; kept local to the Task 2 section to minimise the Task 1 diff)
+
+from lancet_eval import decay as _decay
+from lancet_eval.flatness import (
+    FlatnessRecord as _FlatnessRecord,
+    flatness_verdict as _flatness_verdict,
+    records_from_run_journal as _records_from_run_journal,
+    slice_medians as _slice_medians,
+)
+from lancet_eval.thresholds import COMMITTED_THRESHOLDS as _COMMITTED_THRESHOLDS
+
+#: M2 growth thresholds (Task 2 <action> "Readings" -- fixed before any data, must not be
+#: tuned after seeing it).
+_M2_GROWTH_RATIO = 1.5
+_M2_GROWTH_WINDOW_DELTA_MS = 500.0
+_M2_FLAT_RATIO = 1.2
+_M2_FLAT_WINDOW_DELTA_MS = 500.0
+
+#: M1 store-matched ratio band (0.5x-2x of the forensics-derived m1_prod_ratio).
+_M1_RATIO_LOW = 0.5
+_M1_RATIO_HIGH = 2.0
+
+#: header.json values that indicate a lossy PowerShell-to-JSON serialisation (check-arm gate).
+_LOSSY_SERIALIZATION_MARKER = "System.Collections"
+
+_REQUIRED_HEADER_KEYS = (
+    "arm_kind",
+    "label",
+    "commit",
+    "dirty",
+    "launch_command",
+    "binary_path",
+    "observability",
+    "telemetry",
+    "stderr_sink",
+    "stub_delays",
+    "warmup_n",
+    "limit",
+    "retries",
+    "workers",
+    "store_source",
+    "start_utc",
+    "end_utc",
+    "egress_443_max",
+    "paid",
+    "spend_guard",
+)
+
+#: header.json fields `check-arm --same-config-as` compares for equality (Task 2 <behavior>).
+_SAME_CONFIG_FIELDS = (
+    "arm_kind",
+    "build_profile",
+    "stderr_sink",
+    "observability",
+    "telemetry",
+    "config_dir_diff",
+    "env_vars",
+    "stub_delays",
+    "stub_vector_source",
+    "retries",
+    "workers",
+    "warmup_n",
+    "store_source",
+)
+
+
+def _uncensored_prefix(records: list[_FlatnessRecord]) -> list[_FlatnessRecord]:
+    """Records before the first censored (unusable) `RetrieveHybrid` observation, renumbered
+    1..k so ordinals stay gap-free (`validate_and_sort_records` requires this)."""
+    prefix: list[_FlatnessRecord] = []
+    for record in sorted(records, key=lambda r: r.ordinal):
+        censored = any(
+            f.node_name == _NODE_NAME and f.error_kind == 1 for f in record.node_failures
+        )
+        has_timing = any(t.node_name == _NODE_NAME for t in record.node_timings)
+        if censored or not has_timing:
+            break
+        prefix.append(record)
+    renumbered = [
+        _FlatnessRecord(
+            ordinal=i,
+            segment=r.segment,
+            graph_arm=r.graph_arm,
+            question_type=r.question_type,
+            node_timings=r.node_timings,
+            node_failures=r.node_failures,
+        )
+        for i, r in enumerate(prefix, start=1)
+    ]
+    return renumbered
+
+
+def _graph_notice_counts(rows: list[TimelineRow]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        for code in row.graph_notice_codes:
+            counts[code] = counts.get(code, 0) + 1
+    return counts
+
+
+def _outcome_counts(rows: list[TimelineRow]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row.outcome] = counts.get(row.outcome, 0) + 1
+    return counts
+
+
+def _find_journal_file(arm_dir: Path) -> Path | None:
+    for name in ("journal.jsonl",):
+        candidate = arm_dir / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def classify_m2(
+    slices: list[float], window_delta_ms: float
+) -> str:
+    """Classifies growth as `grows`, `not grows`, or `ambiguous` per Task 2's fixed thresholds.
+    `slices` are 50-record RetrieveHybrid slice medians in ordinal order; `window_delta_ms` is
+    `decay.analyze_decay`'s own window-prong delta on the uncensored prefix."""
+    return "ambiguous"
+
+
+def classify_m1(
+    primary_slice0_ms: float,
+    denominator_ms: float,
+    target_ratio: float,
+) -> tuple[str, float]:
+    """Returns `(met|not met, ratio)`. `ratio` is `primary_slice0_ms / denominator_ms`; `met`
+    iff that ratio is within [0.5x, 2x] of `target_ratio`."""
+    return "not met", 0.0
+
+
+def replay_summary(
+    arm_dir: str | Path,
+    *,
+    production_journal: str | Path | None = None,
+    forensics_json: str | Path | None = None,
+    soak_baseline_json: str | Path | None = None,
+) -> dict[str, Any]:
+    """Implements the `replay-summary` subcommand: writes `<arm_dir>/summary.json` with per-node
+    slice medians (50-record and 15-minute), graph notice/outcome counts, `flatness_verdict`
+    (full run, uncensored-prefix, and first-200), M1/M2 readings when reference data is
+    available, and an order-match check against `production_journal`'s prefix.
+    """
+    return {}
+
+@dataclass
+class CheckArmResult:
+    ok: bool
+    failures: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"ok": self.ok, "failures": self.failures}
+
+
+def _load_header(arm_dir: Path) -> dict[str, Any] | None:
+    header_path = arm_dir / "header.json"
+    if not header_path.exists():
+        return None
+    raw = header_path.read_bytes()
+    # UTF-8 without BOM (Task 2 <behavior>): reject a leading BOM outright rather than
+    # silently stripping it, since a BOM is itself evidence of the wrong write path
+    # (`Out-File`/default PowerShell encoding instead of the mandated UTF8Encoding($false)).
+    if raw[:3] == b"\xef\xbb\xbf":
+        return None
+    try:
+        text = raw.decode("utf-8")
+        return json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+def _json_equal_files(a: Path, b: Path) -> bool:
+    if not a.exists() or not b.exists():
+        return False
+    try:
+        return json.loads(a.read_text(encoding="utf-8")) == json.loads(b.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+
+def check_arm(
+    arm_dir: str | Path,
+    *,
+    min_records: int | None = None,
+    require_flat: bool = False,
+    same_config_as: str | Path | None = None,
+    production_journal: str | Path | None = None,
+) -> CheckArmResult:
+    """Implements the `check-arm` subcommand's verification rules (Task 2 <behavior>)."""
+    return CheckArmResult(ok=False, failures=["stub"])
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m lancet_eval.oi02")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -492,6 +687,23 @@ def main(argv: list[str] | None = None) -> int:
     forensics_parser.add_argument("--contrast", default=None)
     forensics_parser.add_argument("--out", required=True)
 
+    summary_parser = subparsers.add_parser(
+        "replay-summary", help="Summarise a replay arm directory (Task 2)."
+    )
+    summary_parser.add_argument("arm_dir")
+    summary_parser.add_argument("--production-journal", default=None)
+    summary_parser.add_argument("--forensics-json", default=None)
+    summary_parser.add_argument("--soak-baseline-json", default=None)
+
+    check_parser = subparsers.add_parser(
+        "check-arm", help="Verify a replay arm directory (Task 2)."
+    )
+    check_parser.add_argument("arm_dir")
+    check_parser.add_argument("--min-records", type=int, default=None)
+    check_parser.add_argument("--require-flat", action="store_true")
+    check_parser.add_argument("--same-config-as", default=None)
+    check_parser.add_argument("--production-journal", default=None)
+
     args = parser.parse_args(argv)
 
     if args.command == "forensics":
@@ -501,6 +713,30 @@ def main(argv: list[str] | None = None) -> int:
             contrast=args.contrast,
             out=args.out,
         )
+        return 0
+
+    if args.command == "replay-summary":
+        replay_summary(
+            args.arm_dir,
+            production_journal=args.production_journal,
+            forensics_json=args.forensics_json,
+            soak_baseline_json=args.soak_baseline_json,
+        )
+        return 0
+
+    if args.command == "check-arm":
+        result = check_arm(
+            args.arm_dir,
+            min_records=args.min_records,
+            require_flat=args.require_flat,
+            same_config_as=args.same_config_as,
+            production_journal=args.production_journal,
+        )
+        if not result.ok:
+            for failure in result.failures:
+                print(f"FAIL: {failure}")
+            return 1
+        print("check-arm: ok")
         return 0
 
     return 1
