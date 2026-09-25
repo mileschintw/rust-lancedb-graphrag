@@ -1,0 +1,6 @@
+{
+    "models":  1,
+    "embeddings":  150,
+    "chat_completions":  150,
+    "embedding_fallback_count":  2
+}

@@ -1,0 +1,34 @@
+{
+    "table_versions":  {
+                           "communities":  {
+                                               "manifest_count":  1,
+                                               "latest_manifest":  "18446744073709551614.manifest"
+                                           },
+                           "staged_documents_v2":  {
+                                                       "manifest_count":  734,
+                                                       "latest_manifest":  "18446744073709551583.manifest"
+                                                   },
+                           "documents":  {
+                                             "manifest_count":  701,
+                                             "latest_manifest":  "18446744073709551614.manifest"
+                                         },
+                           "edges":  {
+                                         "manifest_count":  701,
+                                         "latest_manifest":  "18446744073709551614.manifest"
+                                     },
+                           "nodes":  {
+                                         "manifest_count":  701,
+                                         "latest_manifest":  "18446744073709551614.manifest"
+                                     },
+                           "entities":  {
+                                            "manifest_count":  6266,
+                                            "latest_manifest":  "18446744073709551614.manifest"
+                                        },
+                           "entity_edges":  {
+                                                "manifest_count":  697,
+                                                "latest_manifest":  "18446744073709551614.manifest"
+                                            }
+                       },
+    "file_count":  30528,
+    "bytes":  674542891
+}

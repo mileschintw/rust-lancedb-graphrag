@@ -1,0 +1,167 @@
+{
+  "arm_dir": ".planning\\phases\\06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair\\replay\\pre-fix\\drive-era-prewarm",
+  "fidelity_vs_production": [
+    {
+      "AssemblePrompt": {
+        "production": 453.0,
+        "replay": 263.5
+      },
+      "ExtractGraphContext": {
+        "production": 2564.0,
+        "replay": 571.5
+      },
+      "GenerateAnswer": {
+        "production": 6970.5,
+        "replay": 7253.0
+      },
+      "RetrieveHybrid": {
+        "production": 4910.5,
+        "replay": 970.0
+      },
+      "slice": 0
+    },
+    {
+      "AssemblePrompt": {
+        "production": 574.0,
+        "replay": 262.0
+      },
+      "ExtractGraphContext": {
+        "production": 4711.5,
+        "replay": 557.0
+      },
+      "GenerateAnswer": {
+        "production": 5426.0,
+        "replay": 7248.5
+      },
+      "RetrieveHybrid": {
+        "production": 10441.0,
+        "replay": 1033.5
+      },
+      "slice": 1
+    },
+    {
+      "AssemblePrompt": {
+        "production": 725.5,
+        "replay": 272.5
+      },
+      "ExtractGraphContext": {
+        "production": 5925.0,
+        "replay": 560.0
+      },
+      "GenerateAnswer": {
+        "production": 3427.0,
+        "replay": 7255.5
+      },
+      "RetrieveHybrid": {
+        "production": 13947.0,
+        "replay": 962.0
+      },
+      "slice": 2
+    }
+  ],
+  "flatness_verdict_first_200": {
+    "censored_count": 0,
+    "decay_present": false,
+    "n": 150,
+    "passed": true,
+    "reason": "flat",
+    "slope_ms_per_query": 0.11764705882352941,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": 265.0
+  },
+  "flatness_verdict_full": {
+    "censored_count": 0,
+    "decay_present": false,
+    "n": 150,
+    "passed": true,
+    "reason": "flat",
+    "slope_ms_per_query": 0.11764705882352941,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": 265.0
+  },
+  "graph_notice_counts": {
+    "GRAPH_ABLATION": 75,
+    "GRAPH_DEGRADED": 1,
+    "GRAPH_UNAVAILABLE": 31
+  },
+  "m1": {
+    "denominator_ms": 4910.5,
+    "formula": "store_matched",
+    "primary_slice0_ms": 970.0,
+    "ratio": 0.197535892475308,
+    "status": "not met",
+    "target_ratio": 1.0
+  },
+  "m2": {
+    "class": "not grows",
+    "committed_flatness_verdict_passed": true,
+    "growth_check_slice_ms": 962.0,
+    "last_slice_ms": 962.0,
+    "slice0_ms": 970.0,
+    "window_delta_ms": 265.0
+  },
+  "order_match_production": true,
+  "outcome_counts": {
+    "success": 150
+  },
+  "record_count": 150,
+  "slices_ordinal_50": [
+    {
+      "AssemblePrompt": 263.5,
+      "ExtractGraphContext": 571.5,
+      "GenerateAnswer": 7253.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 970.0,
+      "n": 50,
+      "slice": 0
+    },
+    {
+      "AssemblePrompt": 262.0,
+      "ExtractGraphContext": 557.0,
+      "GenerateAnswer": 7248.5,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1033.5,
+      "n": 50,
+      "slice": 1
+    },
+    {
+      "AssemblePrompt": 272.5,
+      "ExtractGraphContext": 560.0,
+      "GenerateAnswer": 7255.5,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 962.0,
+      "n": 50,
+      "slice": 2
+    }
+  ],
+  "slices_wallclock_15m": [
+    {
+      "AssemblePrompt": 263.0,
+      "ExtractGraphContext": 765.0,
+      "GenerateAnswer": 7251.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 982.0,
+      "n": 97,
+      "slice": 0
+    },
+    {
+      "AssemblePrompt": 272.0,
+      "ExtractGraphContext": 353.0,
+      "GenerateAnswer": 7255.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 966.0,
+      "n": 53,
+      "slice": 1
+    }
+  ],
+  "uncensored_prefix_n": 150,
+  "uncensored_prefix_verdict": {
+    "decay_present": false,
+    "slope_ms_per_query": 0.11764705882352941,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": 265.0
+  }
+}
