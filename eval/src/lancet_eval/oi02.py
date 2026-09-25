@@ -601,6 +601,23 @@ def classify_m2(
     """Classifies growth as `grows`, `not grows`, or `ambiguous` per Task 2's fixed thresholds.
     `slices` are 50-record RetrieveHybrid slice medians in ordinal order; `window_delta_ms` is
     `decay.analyze_decay`'s own window-prong delta on the uncensored prefix."""
+    if len(slices) < 2:
+        return "ambiguous"
+    slice0 = slices[0]
+    # "slice-3"/"slice-2" per Task 2 vs Task 4 both read as "a later slice, index per that
+    # task's own record count" -- use the last available slice up to index 3 (Task 2's primary
+    # scale) so a shorter run (Task 4's 150-record arms) still classifies sensibly.
+    later_index = min(3, len(slices) - 1)
+    later = slices[later_index]
+    if slice0 <= 0:
+        return "ambiguous"
+    ratio = later / slice0
+    grows = ratio >= _M2_GROWTH_RATIO and window_delta_ms >= _M2_GROWTH_WINDOW_DELTA_MS
+    not_grows = ratio < _M2_FLAT_RATIO and window_delta_ms < _M2_FLAT_WINDOW_DELTA_MS
+    if grows:
+        return "grows"
+    if not_grows:
+        return "not grows"
     return "ambiguous"
 
 
@@ -611,7 +628,13 @@ def classify_m1(
 ) -> tuple[str, float]:
     """Returns `(met|not met, ratio)`. `ratio` is `primary_slice0_ms / denominator_ms`; `met`
     iff that ratio is within [0.5x, 2x] of `target_ratio`."""
-    return "not met", 0.0
+    if denominator_ms <= 0 or target_ratio <= 0:
+        return "not met", 0.0
+    ratio = primary_slice0_ms / denominator_ms
+    low = target_ratio * _M1_RATIO_LOW
+    high = target_ratio * _M1_RATIO_HIGH
+    met = low <= ratio <= high
+    return ("met" if met else "not met"), ratio
 
 
 def replay_summary(
@@ -626,7 +649,140 @@ def replay_summary(
     (full run, uncensored-prefix, and first-200), M1/M2 readings when reference data is
     available, and an order-match check against `production_journal`'s prefix.
     """
-    return {}
+    arm_path = Path(arm_dir)
+    journal_path = _find_journal_file(arm_path)
+    summary: dict[str, Any] = {"arm_dir": str(arm_path)}
+
+    if journal_path is None:
+        summary["error"] = "no journal.jsonl found in arm_dir"
+        (arm_path / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        return summary
+
+    rows = journal_timeline(journal_path)
+    flat_records = _records_from_run_journal(journal_path)
+
+    summary["record_count"] = len(rows)
+    summary["outcome_counts"] = _outcome_counts(rows)
+    summary["graph_notice_counts"] = _graph_notice_counts(rows)
+    summary["slices_ordinal_50"] = slice_table(rows, by="ordinal", size=50)
+    summary["slices_wallclock_15m"] = slice_table(rows, by="wallclock", minutes=15)
+
+    full_verdict = _flatness_verdict(flat_records)
+    summary["flatness_verdict_full"] = {
+        "passed": full_verdict.passed,
+        "reason": full_verdict.reason,
+        "trend_available": full_verdict.trend_available,
+        "window_available": full_verdict.window_available,
+        "decay_present": full_verdict.decay_present,
+        "slope_ms_per_query": full_verdict.slope_ms_per_query,
+        "window_delta_ms": full_verdict.window_delta_ms,
+        "censored_count": full_verdict.censored_count,
+        "n": full_verdict.n,
+    }
+
+    first200 = [r for r in sorted(flat_records, key=lambda r: r.ordinal) if r.ordinal <= 200]
+    first200_verdict = _flatness_verdict(first200) if first200 else None
+    if first200_verdict is not None:
+        summary["flatness_verdict_first_200"] = {
+            "passed": first200_verdict.passed,
+            "reason": first200_verdict.reason,
+            "trend_available": first200_verdict.trend_available,
+            "window_available": first200_verdict.window_available,
+            "decay_present": first200_verdict.decay_present,
+            "slope_ms_per_query": first200_verdict.slope_ms_per_query,
+            "window_delta_ms": first200_verdict.window_delta_ms,
+            "censored_count": first200_verdict.censored_count,
+            "n": first200_verdict.n,
+        }
+
+    uncensored = _uncensored_prefix(flat_records)
+    summary["uncensored_prefix_n"] = len(uncensored)
+    if uncensored:
+        uncensored_verdict = _decay.analyze_decay(
+            uncensored, _COMMITTED_THRESHOLDS, restart_ordinal=None, node_name=_NODE_NAME
+        )
+        summary["uncensored_prefix_verdict"] = {
+            "decay_present": uncensored_verdict.verdict_decay_present,
+            "slope_ms_per_query": uncensored_verdict.slope_statistic,
+            "window_delta_ms": uncensored_verdict.window_delta_ms,
+            "trend_available": uncensored_verdict.trend_result.is_available,
+            "window_available": uncensored_verdict.window_result.is_available,
+        }
+        window_delta = uncensored_verdict.window_delta_ms
+    else:
+        window_delta = 0.0
+
+    rh_slices = [
+        s["RetrieveHybrid"] for s in summary["slices_ordinal_50"] if s.get("RetrieveHybrid") is not None
+    ]
+    m2_class = classify_m2(rh_slices, window_delta)
+    summary["m2"] = {
+        "class": m2_class,
+        "slice0_ms": rh_slices[0] if rh_slices else None,
+        "later_slice_ms": rh_slices[min(3, len(rh_slices) - 1)] if len(rh_slices) >= 2 else None,
+        "window_delta_ms": window_delta,
+        "committed_flatness_verdict_passed": full_verdict.passed,
+    }
+
+    # M1: needs a reference ratio (forensics.json's m1_prod_ratio) and a denominator
+    # (soak-baseline.json's soak_w_ms_reconciled). Both optional -- M1 is "unavailable" if
+    # either input is missing, never fabricated.
+    m1_result: dict[str, Any] = {"status": "unavailable"}
+    if forensics_json is not None and rh_slices:
+        try:
+            forensics_data = json.loads(Path(forensics_json).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            forensics_data = {}
+        ratio_data = forensics_data.get("m1_prod_ratio")
+        target_ratio = None
+        if isinstance(ratio_data, dict):
+            target_ratio = ratio_data.get("debug") or ratio_data.get("release")
+        denominator = None
+        if soak_baseline_json is not None:
+            try:
+                soak_data = json.loads(Path(soak_baseline_json).read_text(encoding="utf-8"))
+                denominator = soak_data.get("soak_w_ms_reconciled")
+            except (OSError, json.JSONDecodeError):
+                denominator = None
+        if target_ratio and denominator:
+            status, ratio = classify_m1(rh_slices[0], denominator, target_ratio)
+            m1_result = {
+                "status": status,
+                "ratio": ratio,
+                "target_ratio": target_ratio,
+                "primary_slice0_ms": rh_slices[0],
+                "denominator_ms": denominator,
+            }
+    summary["m1"] = m1_result
+
+    # Order match against production's prefix, and a fidelity table (production slices 0-6
+    # vs this arm's own, per node) when a production journal is available.
+    if production_journal is not None and Path(production_journal).exists():
+        prod_rows = journal_timeline(production_journal)
+        prod_prefix = sorted(prod_rows, key=lambda r: r.ordinal)[: len(rows)]
+        this_sorted = sorted(rows, key=lambda r: r.ordinal)
+        order_match = [(r.question_id, r.graph_arm) for r in prod_prefix] == [
+            (r.question_id, r.graph_arm) for r in this_sorted
+        ]
+        summary["order_match_production"] = order_match
+
+        prod_slices = slice_table(prod_rows, by="ordinal", size=50)
+        fidelity = []
+        for i in range(min(7, len(summary["slices_ordinal_50"]), len(prod_slices))):
+            this_slice = summary["slices_ordinal_50"][i]
+            prod_slice = prod_slices[i]
+            row_entry = {"slice": i}
+            for node in ("RetrieveHybrid", "AssemblePrompt", "ExtractGraphContext", "GenerateAnswer"):
+                row_entry[node] = {
+                    "replay": this_slice.get(node),
+                    "production": prod_slice.get(node),
+                }
+            fidelity.append(row_entry)
+        summary["fidelity_vs_production"] = fidelity
+
+    (arm_path / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    return summary
+
 
 @dataclass
 class CheckArmResult:
@@ -672,7 +828,114 @@ def check_arm(
     production_journal: str | Path | None = None,
 ) -> CheckArmResult:
     """Implements the `check-arm` subcommand's verification rules (Task 2 <behavior>)."""
-    return CheckArmResult(ok=False, failures=["stub"])
+    arm_path = Path(arm_dir)
+    failures: list[str] = []
+
+    header = _load_header(arm_path)
+    if header is None:
+        return CheckArmResult(ok=False, failures=["header.json missing, not UTF-8, or has a BOM"])
+
+    arm_kind = header.get("arm_kind")
+    if arm_kind not in ("full-stack", "grpc-direct", "soak-inprocess"):
+        return CheckArmResult(ok=False, failures=[f"unknown arm_kind: {arm_kind!r}"])
+
+    missing_keys = [k for k in _REQUIRED_HEADER_KEYS if k not in header]
+    if missing_keys:
+        failures.append(f"header.json missing required keys: {missing_keys}")
+
+    header_text = json.dumps(header)
+    if _LOSSY_SERIALIZATION_MARKER in header_text:
+        failures.append("header.json contains a lossy-serialization marker (System.Collections)")
+
+    live_before = arm_path / "live-state.before.json"
+    live_after = arm_path / "live-state.after.json"
+    if not _json_equal_files(live_before, live_after):
+        failures.append("live-state.before.json != live-state.after.json")
+
+    copy_before = arm_path / "copy-state.before.json"
+    copy_after = arm_path / "copy-state.after.json"
+    if not _json_equal_files(copy_before, copy_after):
+        failures.append("copy-state.before.json != copy-state.after.json")
+
+    journal_path = _find_journal_file(arm_path)
+    record_count = 0
+    if journal_path is not None:
+        record_count = len(journal_timeline(journal_path))
+    elif arm_kind == "full-stack":
+        failures.append("full-stack arm has no journal.jsonl")
+
+    if min_records is not None and record_count < min_records:
+        failures.append(f"record count {record_count} < --min-records {min_records}")
+
+    paid = bool(header.get("paid", False))
+    if arm_kind in ("full-stack", "grpc-direct") and not paid:
+        egress_max = header.get("egress_443_max")
+        if egress_max != 0:
+            failures.append(f"egress_443_max is {egress_max!r}, expected 0 for a non-paid arm")
+        stub_stats_path = arm_path / "stub-stats.json"
+        if stub_stats_path.exists():
+            try:
+                stats = json.loads(stub_stats_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                stats = {}
+            if stats.get("embeddings", 0) == 0 or stats.get("chat_completions", 0) == 0:
+                failures.append("stub embeddings/chat_completions counts are zero")
+        else:
+            failures.append("stub-stats.json missing for a non-paid full-stack/grpc-direct arm")
+
+    telemetry = header.get("telemetry")
+    observability = header.get("observability")
+    if isinstance(telemetry, dict):
+        for process, mode in telemetry.items():
+            conns_key = f"otlp_4317_conns_max"
+            conns = header.get(conns_key, {})
+            process_conns = conns.get(process) if isinstance(conns, dict) else None
+            if mode == "console-only" and process_conns not in (0, None):
+                failures.append(f"{process} declares console-only telemetry but otlp_4317_conns_max={process_conns}")
+            if mode == "otlp" and observability == "on" and process_conns is not None and process_conns < 1:
+                failures.append(f"{process} declares otlp telemetry with observability on but otlp_4317_conns_max={process_conns}")
+
+    if production_journal is not None and Path(production_journal).exists() and journal_path is not None:
+        prod_rows = journal_timeline(production_journal)
+        this_rows = journal_timeline(journal_path)
+        prod_prefix = sorted(prod_rows, key=lambda r: r.ordinal)[: len(this_rows)]
+        this_sorted = sorted(this_rows, key=lambda r: r.ordinal)
+        if [(r.question_id, r.graph_arm) for r in prod_prefix] != [
+            (r.question_id, r.graph_arm) for r in this_sorted
+        ]:
+            failures.append("(question_id, graph_arm) order does not match production journal prefix")
+
+    if require_flat:
+        summary_path = arm_path / "summary.json"
+        if not summary_path.exists():
+            failures.append("--require-flat given but summary.json missing (run replay-summary first)")
+        else:
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                summary = {}
+            verdict = summary.get("flatness_verdict_full", {})
+            if not (
+                verdict.get("passed")
+                and verdict.get("trend_available")
+                and verdict.get("window_available")
+            ):
+                failures.append("--require-flat: flatness_verdict_full is not passed=True with both prongs available")
+
+    if same_config_as is not None:
+        other_header_path = Path(same_config_as) / "header.json"
+        other_header = _load_header(Path(same_config_as))
+        if other_header is None:
+            failures.append(f"--same-config-as header missing/invalid: {other_header_path}")
+        else:
+            for field_name in _SAME_CONFIG_FIELDS:
+                if header.get(field_name) != other_header.get(field_name):
+                    failures.append(
+                        f"--same-config-as mismatch on {field_name!r}: "
+                        f"{header.get(field_name)!r} != {other_header.get(field_name)!r}"
+                    )
+
+    return CheckArmResult(ok=not failures, failures=failures)
 
 
 def main(argv: list[str] | None = None) -> int:
