@@ -11,10 +11,12 @@ import pytest
 
 from lancet_eval.provider_stub import (
     HostNotAllowedError,
+    StubStats,
     assert_loopback_host,
     build_chat_completion_response,
     build_embeddings_response,
     build_models_response,
+    delay_for_call,
     embedding_for,
     hash_vector,
     load_vector_map,
@@ -182,6 +184,44 @@ def test_build_embeddings_response_zero_fallback_when_all_known():
     vmap = {"a": [0.1, 0.2], "b": [0.3, 0.4]}
     resp, fallback = build_embeddings_response(["a", "b"], vmap, dimensions=2)
     assert fallback == 0
+
+
+# --- delay_for_call: per-slice delay schedule (06.3.4.1-07 Task 4 Route B step 4, stub -------
+# pacing to production's growing per-slice medians -- the one step-4 factor with no existing
+# equivalent: pre-warm is covered by -WarmupQuestions, journaled variants are confirmed equal
+# via workflow_meta.reformulation_used, but nothing paces the stub's OWN response latency to
+# grow across the run the way production's real provider apparently did.
+
+
+def test_delay_for_call_first_slice():
+    assert delay_for_call([100, 200, 300], call_index=0, slice_calls=50) == 100
+    assert delay_for_call([100, 200, 300], call_index=49, slice_calls=50) == 100
+
+
+def test_delay_for_call_advances_to_next_slice_at_the_boundary():
+    assert delay_for_call([100, 200, 300], call_index=50, slice_calls=50) == 200
+    assert delay_for_call([100, 200, 300], call_index=99, slice_calls=50) == 200
+
+
+def test_delay_for_call_holds_the_last_slice_past_the_schedule_end():
+    # A run longer than the schedule (e.g. 350 records against a 7-slice schedule covering
+    # only production's slices 0-6) must not extrapolate or index out of range.
+    assert delay_for_call([100, 200, 300], call_index=1000, slice_calls=50) == 300
+
+
+def test_delay_for_call_empty_schedule_returns_zero():
+    assert delay_for_call([], call_index=0, slice_calls=50) == 0
+
+
+def test_stub_stats_increment_and_get_returns_post_increment_count():
+    stats = StubStats()
+    assert stats.increment_and_get("embeddings") == 1
+    assert stats.increment_and_get("embeddings") == 2
+    assert stats.increment_and_get("chat_completions") == 1
+    # Final snapshot counts are unaffected by using increment_and_get instead of increment.
+    snap = stats.snapshot()
+    assert snap["embeddings"] == 2
+    assert snap["chat_completions"] == 1
 
 
 # --- Live server integration (real socket, real HTTP) -----------------------------------
