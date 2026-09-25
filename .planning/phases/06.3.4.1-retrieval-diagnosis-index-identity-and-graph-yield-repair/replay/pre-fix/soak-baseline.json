@@ -1,0 +1,10 @@
+{
+  "soak_w_ms_reconciled": 270.06685,
+  "provenance": "retrieval_soak --arm W --iterations 50 --lancedb-path data/lancedb-replay, debug build, collector_reachable:false to match plan 03's original arm-W debug baseline condition (soak/debug/W.jsonl header: collector_reachable:false) -- the ratio this feeds (m1) is only store-matched, not collector-state-matched, if this condition is held equal.",
+  "collector_reachable": false,
+  "n": 50,
+  "superseded_measurement": {
+    "soak_w_ms_reconciled": 373.6628,
+    "reason": "first pass ran with collector_reachable:true (lancet-collector was already running as a persistent dev-stack container, unrelated to this replay); corrected because plan 03's arm-W debug reference (289.6ms, used in m1_prod_ratio) was measured with collector_reachable:false -- kept here for the record, not used by replay-summary"
+  }
+}
