@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 5/20 plans executed
+**Plans:** 6/20 plans executed
 
 Plans:
 
@@ -945,7 +945,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06.3.4.1-06-PLAN.md — Walk through the D-58 one-way door that 06.3.4.1-04 measured
+- [x] 06.3.4.1-06-PLAN.md — Walk through the D-58 one-way door that 06.3.4.1-04 measured
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

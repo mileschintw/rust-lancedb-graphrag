@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 06.3.4.1-05-PLAN.md
-last_updated: "2026-09-24T22:17:45.769Z"
+stopped_at: Completed 06.3.4.1-06-PLAN.md
+last_updated: "2026-09-25T01:57:52.179Z"
 last_activity: 2026-09-24
-state_head: 7d83c5ae1870630afd2814d63fe07c91455e7b32
+state_head: 01e6cf3057f77ae168957076efd13162c12eaecd
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 163
+  completed_plans: 164
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
@@ -21,7 +21,7 @@ current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 
 ## Current Position
 
-Current Plan: 6
+Current Plan: 7
 Total Plans in Phase: 20
 
 ## Current Status
@@ -373,6 +373,7 @@ Total Plans in Phase: 20
 | Phase 06.3.4.1 P03 | 13h 43min | 3 tasks | 26 files |
 | Phase 06.3.4.1 P04 | ~35min | 3 tasks | 11 files |
 | Phase 06.3.4.1 P05 | interactive | 2 tasks | 8 files |
+| Phase 06.3.4.1 P06 | ~65min | 3 tasks | 9 files |
 
 ## Decisions
 
@@ -432,12 +433,14 @@ Total Plans in Phase: 20
 - [Phase 06.3.4.1]: communities_table() accessor added to DatabaseManager (Rule 2) so reconcile's version record covers all 7 LanceDB tables, not just the 6 with prior accessors — RESEARCH §D flagged the gap; the plan's own report spec requires all seven table versions
 - [Phase 06.3.4.1]: 06.3.4.1-05: evaluate_sc3 takes a keyword-only corpus override because the real diag_selection.json (committed by 06.3.4.1-10) carries no corpus key -- main() derives it from the journal header instead.
 - [Phase 06.3.4.1]: 06.3.4.1-05: SC2_TIMEOUT_DOMINANCE_RULE and FINAL_ANSWER_MISSING_REVIEW_RATE are actually branched on / surfaced in unpark_gates.py, not just committed-and-unused literals -- an unrecognised dominance rule refuses (MISS) rather than silently reinterpreting D-73 policy.
+- [Phase 06.3.4.1]: Task 1 (checkpoint:decision) resolved pre-dispatch by the orchestrator: user chose apply-as-recorded against the committed 06.3.4.1-RECONCILE-DRYRUN.md numbers, authorising the single post-apply generation probe. No commit of its own.
+- [Phase 06.3.4.1]: Rule 2 deviation: added p99, a 10-bucket decile histogram, and highest_degree_entity_name to inspect_lancedb --graph-population (f99f2095) -- D-77 needs a real p99, not an estimate from p95/max.
 
 ## Session
 
-**Last session:** 2026-09-24T22:17:44.355Z
+**Last session:** 2026-09-25T01:57:51.080Z
 **Last activity:** 2026-09-24
-**Stopped at:** Completed 06.3.4.1-05-PLAN.md
+**Stopped at:** Completed 06.3.4.1-06-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
