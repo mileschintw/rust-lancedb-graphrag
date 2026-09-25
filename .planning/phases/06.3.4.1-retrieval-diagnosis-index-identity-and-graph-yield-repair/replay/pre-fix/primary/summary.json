@@ -169,9 +169,10 @@
     "target_ratio": 16.9538
   },
   "m2": {
-    "class": "not grows",
+    "class": "ambiguous",
     "committed_flatness_verdict_passed": false,
-    "later_slice_ms": 1296.5,
+    "growth_check_slice_ms": 1296.5,
+    "last_slice_ms": 1554.0,
     "slice0_ms": 1271.0,
     "window_delta_ms": 237.0
   },
