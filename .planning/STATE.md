@@ -2,8 +2,8 @@
 gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 7
-status: executing
-stopped_at: 06.3.4.1-07 Task 3 checkpoint (decision)
+status: paused
+stopped_at: "PAUSED — 06.3.4.1-07 Task 3 resolved (rerun-primary with real stub vectors; paid run pre-approved up to $0.25 if required); not yet executed. See 06.3.4.1-HANDOVER.md"
 last_updated: "2026-09-25T09:01:28.708Z"
 last_activity: 2026-09-24
 state_head: a1f9562d374c42f97008f7412d800ca60ed44e1f
