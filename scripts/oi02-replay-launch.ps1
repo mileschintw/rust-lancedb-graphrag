@@ -17,6 +17,18 @@ param(
     [Parameter(Mandatory = $true)][string]$ReplayArgsJoined
 )
 $ReplayArgs = $ReplayArgsJoined -split '\|'
+# Quote every VALUE token (anything not starting with '-') as a single-quoted PowerShell string
+# literal before splicing it into the generated inner-script source text below. Without this,
+# a value containing a comma (e.g. a -StubEmbedDelayScheduleMs schedule like
+# "308,399,442,481,462,859,2043") gets re-parsed by PowerShell's own tokenizer as an ARRAY
+# LITERAL when the unquoted source text is invoked, not as a single string -- binding then
+# fails with "Cannot convert the value ... to type System.String" (06.3.4.1-07 Task 4 Route B
+# step 4 self-review: found when the first paced-arm smoke failed before any file was written).
+# Single quotes are doubled to escape a literal single quote inside the value, per PowerShell's
+# own single-quoted-string escaping rule.
+$QuotedReplayArgs = $ReplayArgs | ForEach-Object {
+    if ($_ -match '^-') { $_ } else { "'" + ($_ -replace "'", "''") + "'" }
+}
 
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
@@ -32,7 +44,7 @@ $innerScript = @"
 Set-Location '$repoRoot'
 `$ErrorActionPreference = 'Continue'
 try {
-    & '$scriptPath' $($ReplayArgs -join ' ') *> '$outLog'
+    & '$scriptPath' $($QuotedReplayArgs -join ' ') *> '$outLog'
     "EXIT_CODE=`$LASTEXITCODE" | Out-File -FilePath '$doneMarker' -Encoding utf8
 } catch {
     # Plain-string fields only, never `\$_ | Out-String` on the whole ErrorRecord -- PowerShell
