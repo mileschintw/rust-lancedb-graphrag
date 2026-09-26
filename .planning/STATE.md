@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 7
 status: executing
-stopped_at: "06.3.4.1-07: Task 4 complete (drive-era, drive-era-prewarm, paced arms -- Route B growth not reproduced for free); stopped at Task 5 checkpoint:decision awaiting fix/extend-diagnosis/paid-replay/diagnose-in-drive-1 choice"
-last_updated: "2026-09-26T22:17:15.009Z"
+stopped_at: "06.3.4.1-07: Task 5 paid replay (paid-drive-era) complete -- no mechanism named, real-provider/embedding factors closed; re-presenting Task 5 checkpoint (fix/extend-diagnosis/diagnose-in-drive-1 choice)"
+last_updated: "2026-09-26T23:27:08.133Z"
 last_activity: 2026-09-24
-state_head: 43f07be689f40ab3e87ba30fafa25922146f8cbf
+state_head: 476a70d22b5ca1e358e6a884c8d5eeaaba58f7af
 progress:
   total_phases: 16
   completed_phases: 9
@@ -439,9 +439,9 @@ Total Plans in Phase: 20
 
 ## Session
 
-**Last session:** 2026-09-26T22:17:13.847Z
+**Last session:** 2026-09-26T23:27:06.928Z
 **Last activity:** 2026-09-24
-**Stopped at:** 06.3.4.1-07: Task 4 complete (drive-era, drive-era-prewarm, paced arms -- Route B growth not reproduced for free); stopped at Task 5 checkpoint:decision awaiting fix/extend-diagnosis/paid-replay/diagnose-in-drive-1 choice
+**Stopped at:** 06.3.4.1-07: Task 5 paid replay (paid-drive-era) complete -- no mechanism named, real-provider/embedding factors closed; re-presenting Task 5 checkpoint (fix/extend-diagnosis/diagnose-in-drive-1 choice)
 **Resume file:** .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-OI02-PROFILE.md
 
 ## Accumulated Context
