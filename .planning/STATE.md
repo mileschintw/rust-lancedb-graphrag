@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 7
+current_plan: 8
 status: executing
-stopped_at: "06.3.4.1-07: Task 5 paid replay (paid-drive-era) complete -- no mechanism named, real-provider/embedding factors closed; re-presenting Task 5 checkpoint (fix/extend-diagnosis/diagnose-in-drive-1 choice)"
-last_updated: "2026-09-26T23:46:56.663Z"
-last_activity: 2026-09-24
-state_head: 77952aac74e0ad2bf87403c6b7db775e2134ef72
+stopped_at: "Completed 06.3.4.1-07-PLAN.md: OI-02 not reproduced, diagnose-in-drive-1 chosen, phase execution stopped per user instruction"
+last_updated: "2026-09-26T23:58:25.639Z"
+last_activity: 2026-09-26
+state_head: 2cde134a56fb389d82f7fa868c076e177876281f
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 164
+  completed_plans: 165
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
@@ -21,7 +21,7 @@ current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 
 ## Current Position
 
-Current Plan: 7
+Current Plan: 8
 Total Plans in Phase: 20
 
 ## Current Status
@@ -374,6 +374,7 @@ Total Plans in Phase: 20
 | Phase 06.3.4.1 P04 | ~35min | 3 tasks | 11 files |
 | Phase 06.3.4.1 P05 | interactive | 2 tasks | 8 files |
 | Phase 06.3.4.1 P06 | ~65min | 3 tasks | 9 files |
+| Phase 06.3.4.1 P07 | 3h40min | 5 tasks | 493 files |
 
 ## Decisions
 
@@ -436,13 +437,15 @@ Total Plans in Phase: 20
 - [Phase 06.3.4.1]: 06.3.4.1-05: SC2_TIMEOUT_DOMINANCE_RULE and FINAL_ANSWER_MISSING_REVIEW_RATE are actually branched on / surfaced in unpark_gates.py, not just committed-and-unused literals -- an unrecognised dominance rule refuses (MISS) rather than silently reinterpreting D-73 policy.
 - [Phase 06.3.4.1]: Task 1 (checkpoint:decision) resolved pre-dispatch by the orchestrator: user chose apply-as-recorded against the committed 06.3.4.1-RECONCILE-DRYRUN.md numbers, authorising the single post-apply generation probe. No commit of its own.
 - [Phase 06.3.4.1]: Rule 2 deviation: added p99, a 10-bucket decile histogram, and highest_degree_entity_name to inspect_lancedb --graph-population (f99f2095) -- D-77 needs a real p99, not an estimate from p95/max.
+- [Phase 06.3.4.1]: Task 3 resolved rerun-primary: primary-r2 re-ran with real embedding vectors after the first primary served 100% hash-fallback vectors — The first primary replay's graph-path test was invalid (no real graph traversal ever ran); building the vector-map wiring and re-running before any bisection avoided building on an invalid reading
+- [Phase 06.3.4.1]: Task 5 resolved diagnose-in-drive-1 after a paid-replay 0.25 run also stayed flat — No mechanism was ever named across 3 free Route B arms plus one $0.25-capped paid arm (real provider, real embeddings); OI-02 diagnosis deferred to paid drive 1, recorded as an open blocker
 
 ## Session
 
-**Last session:** 2026-09-26T23:27:06.928Z
-**Last activity:** 2026-09-24
-**Stopped at:** 06.3.4.1-07: Task 5 paid replay (paid-drive-era) complete -- no mechanism named, real-provider/embedding factors closed; re-presenting Task 5 checkpoint (fix/extend-diagnosis/diagnose-in-drive-1 choice)
-**Resume file:** .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-OI02-PROFILE.md
+**Last session:** 2026-09-26T23:58:24.647Z
+**Last activity:** 2026-09-26
+**Stopped at:** Completed 06.3.4.1-07-PLAN.md: OI-02 not reproduced, diagnose-in-drive-1 chosen, phase execution stopped per user instruction
+**Resume file:** None
 
 ## Accumulated Context
 

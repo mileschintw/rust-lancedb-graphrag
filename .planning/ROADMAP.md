@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 6/20 plans executed
+**Plans:** 7/20 plans executed
 
 Plans:
 
@@ -949,7 +949,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 06.3.4.1-07-PLAN.md — (revised 2026-09-24) Diagnose the OI-02 decay cause across the whole pipeline — forensics, free full-stack replay reproducing production's starting latency and growth, bisection — then fix it at the root and prove it flat on the same replay (D-64), before paid drive 1
+- [x] 06.3.4.1-07-PLAN.md — (revised 2026-09-24) Diagnose the OI-02 decay cause across the whole pipeline — forensics, free full-stack replay reproducing production's starting latency and growth, bisection — then fix it at the root and prove it flat on the same replay (D-64), before paid drive 1
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
