@@ -1,0 +1,155 @@
+{
+  "arm_dir": ".planning\\phases\\06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair\\replay\\pre-fix\\paid-drive-era",
+  "flatness_verdict_first_200": {
+    "censored_count": 0,
+    "decay_present": true,
+    "n": 200,
+    "passed": false,
+    "reason": "decay_present",
+    "slope_ms_per_query": 0.7620499419279907,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": 390.0
+  },
+  "flatness_verdict_full": {
+    "censored_count": 0,
+    "decay_present": true,
+    "n": 350,
+    "passed": false,
+    "reason": "decay_present",
+    "slope_ms_per_query": 0.29515418502202645,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": 143.0
+  },
+  "graph_notice_counts": {
+    "CITATION_DROPPED": 1,
+    "GRAPH_ABLATION": 175,
+    "GRAPH_UNAVAILABLE": 125,
+    "MODEL_NOTICE": 203,
+    "MODEL_WARNING": 137
+  },
+  "m1": {
+    "denominator_ms": 4910.5,
+    "formula": "store_matched",
+    "primary_slice0_ms": 990.5,
+    "ratio": 0.20171062009978616,
+    "status": "not met",
+    "target_ratio": 1.0
+  },
+  "m2": {
+    "class": "not grows",
+    "committed_flatness_verdict_passed": false,
+    "growth_check_slice_ms": 1133.0,
+    "last_slice_ms": 1128.0,
+    "slice0_ms": 990.5,
+    "window_delta_ms": 143.0
+  },
+  "outcome_counts": {
+    "error": 66,
+    "success": 284
+  },
+  "record_count": 350,
+  "slices_ordinal_50": [
+    {
+      "AssemblePrompt": 269.5,
+      "ExtractGraphContext": 464.0,
+      "GenerateAnswer": 1934.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 990.5,
+      "n": 50,
+      "slice": 0
+    },
+    {
+      "AssemblePrompt": 278.5,
+      "ExtractGraphContext": 573.5,
+      "GenerateAnswer": 2125.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1065.0,
+      "n": 50,
+      "slice": 1
+    },
+    {
+      "AssemblePrompt": 276.5,
+      "ExtractGraphContext": 467.5,
+      "GenerateAnswer": 1996.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1006.0,
+      "n": 50,
+      "slice": 2
+    },
+    {
+      "AssemblePrompt": 278.0,
+      "ExtractGraphContext": 445.5,
+      "GenerateAnswer": 2125.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1133.0,
+      "n": 50,
+      "slice": 3
+    },
+    {
+      "AssemblePrompt": 275.5,
+      "ExtractGraphContext": 476.5,
+      "GenerateAnswer": 2081.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1002.5,
+      "n": 50,
+      "slice": 4
+    },
+    {
+      "AssemblePrompt": 273.0,
+      "ExtractGraphContext": 442.5,
+      "GenerateAnswer": 2223.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1098.5,
+      "n": 50,
+      "slice": 5
+    },
+    {
+      "AssemblePrompt": 284.0,
+      "ExtractGraphContext": 605.0,
+      "GenerateAnswer": 3256.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1128.0,
+      "n": 50,
+      "slice": 6
+    }
+  ],
+  "slices_wallclock_15m": [
+    {
+      "AssemblePrompt": 275.5,
+      "ExtractGraphContext": 527.0,
+      "GenerateAnswer": 1986.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1006.0,
+      "n": 132,
+      "slice": 0
+    },
+    {
+      "AssemblePrompt": 278.5,
+      "ExtractGraphContext": 464.5,
+      "GenerateAnswer": 2066.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1053.5,
+      "n": 126,
+      "slice": 1
+    },
+    {
+      "AssemblePrompt": 277.0,
+      "ExtractGraphContext": 578.5,
+      "GenerateAnswer": 2677.0,
+      "ReformulateQuery": 0.0,
+      "RetrieveHybrid": 1114.5,
+      "n": 92,
+      "slice": 2
+    }
+  ],
+  "uncensored_prefix_n": 350,
+  "uncensored_prefix_verdict": {
+    "decay_present": true,
+    "slope_ms_per_query": 0.29515418502202645,
+    "trend_available": true,
+    "window_available": true,
+    "window_delta_ms": 143.0
+  }
+}
