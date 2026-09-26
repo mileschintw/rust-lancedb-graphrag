@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 7
 status: executing
-stopped_at: "06.3.4.1-07: resumed after Task 3 checkpoint (rerun-primary); building stub-vectors.jsonl"
-last_updated: "2026-09-25T19:13:52.176Z"
+stopped_at: "06.3.4.1-07: Task 4 complete (drive-era, drive-era-prewarm, paced arms -- Route B growth not reproduced for free); stopped at Task 5 checkpoint:decision awaiting fix/extend-diagnosis/paid-replay/diagnose-in-drive-1 choice"
+last_updated: "2026-09-26T22:17:15.009Z"
 last_activity: 2026-09-24
-state_head: 0d339ae3e8f5d211404991b345758ce19f021ad4
+state_head: 43f07be689f40ab3e87ba30fafa25922146f8cbf
 progress:
   total_phases: 16
   completed_phases: 9
@@ -439,10 +439,10 @@ Total Plans in Phase: 20
 
 ## Session
 
-**Last session:** 2026-09-25T19:13:50.724Z
+**Last session:** 2026-09-26T22:17:13.847Z
 **Last activity:** 2026-09-24
-**Stopped at:** 06.3.4.1-07: resumed after Task 3 checkpoint (rerun-primary); building stub-vectors.jsonl
-**Resume file:** None
+**Stopped at:** 06.3.4.1-07: Task 4 complete (drive-era, drive-era-prewarm, paced arms -- Route B growth not reproduced for free); stopped at Task 5 checkpoint:decision awaiting fix/extend-diagnosis/paid-replay/diagnose-in-drive-1 choice
+**Resume file:** .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-OI02-PROFILE.md
 
 ## Accumulated Context
 
