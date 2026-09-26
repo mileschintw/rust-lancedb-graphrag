@@ -461,6 +461,24 @@ $journalPath = Join-Path $ArmDir 'journal.jsonl'
 $startUtc = (Get-Date).ToUniversalTime().ToString('o')
 
 try {
+    # The harness's own retry loop (run.py's drive_one) logs a benign logger.warning() line to
+    # stderr on every non-fatal per-record retry (e.g. "Query ...:graph-off early terminated or
+    # failed ...; retrying (attempt 1/2)..."), which is normal, expected behaviour, not a script
+    # failure (06.3.4.1-07 Task 5 paid replay self-review: found when a real -Paid run hit this
+    # exact path on 66/350 records and the launcher's done-marker read EXIT_CODE=ERROR despite
+    # the harness completing all 350 records and writing a valid journal). Under the OUTER
+    # launcher's `*> $outLog` redirection of this whole script's streams, PowerShell 5.1
+    # converts a nested native command's stderr TEXT into pipeline ErrorRecord objects, and
+    # `$ErrorActionPreference = 'Stop'` (set at the top of this script) then promotes each one
+    # into a script-terminating exception -- aborting the run before `$harnessExit` is even
+    # assigned, before header.json/summary.json get a chance to be written accurately, and
+    # before this script's OWN `exit $harnessExit` can report the harness's true exit code.
+    # Locally relax to 'Continue' around just these two native invocations (the ONLY place a
+    # harness subprocess's own log stream is nested under this script's redirection) and check
+    # `$LASTEXITCODE` explicitly instead of relying on PowerShell's automatic error-record
+    # promotion, restoring 'Stop' immediately after each call so no other command's real errors
+    # are silently swallowed.
+    $ErrorActionPreference = 'Continue'
     if ($WarmupQuestions -gt 0) {
         $warmupDir = Join-Path $ArmDir 'warmup'
         New-Item -ItemType Directory -Force -Path $warmupDir | Out-Null
@@ -468,12 +486,17 @@ try {
         Write-Host "Running warm-up: $WarmupQuestions questions"
         & uv run --project $harnessProject lancet-eval run --corpus multihop_rag --out $warmupJournal --no-resume `
             --limit $WarmupQuestions --workers $Workers --retries $Retries --stage-cap $StageCap
+        $warmupExit = $LASTEXITCODE
+        $ErrorActionPreference = 'Stop'
+        if ($warmupExit -ne 0) { throw "Warm-up harness run failed (exit $warmupExit)" }
+        $ErrorActionPreference = 'Continue'
     }
 
     Write-Host "Running primary harness: $Questions questions (project=$harnessProject)"
     & uv run --project $harnessProject lancet-eval run --corpus multihop_rag --out $journalPath --no-resume `
         --limit $Questions --workers $Workers --retries $Retries --stage-cap $StageCap
     $harnessExit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
 } finally {
     # --- 12. Tear-down ------------------------------------------------------------------
     if ($samplerProc) { try { Stop-Process -Id $samplerProc.Id -Force -ErrorAction SilentlyContinue } catch {} }
