@@ -4,9 +4,9 @@ milestone: v1.0
 current_plan: 7
 status: executing
 stopped_at: "06.3.4.1-07: Task 5 paid replay (paid-drive-era) complete -- no mechanism named, real-provider/embedding factors closed; re-presenting Task 5 checkpoint (fix/extend-diagnosis/diagnose-in-drive-1 choice)"
-last_updated: "2026-09-26T23:27:08.133Z"
+last_updated: "2026-09-26T23:46:56.663Z"
 last_activity: 2026-09-24
-state_head: 476a70d22b5ca1e358e6a884c8d5eeaaba58f7af
+state_head: 77952aac74e0ad2bf87403c6b7db775e2134ef72
 progress:
   total_phases: 16
   completed_phases: 9
@@ -515,3 +515,4 @@ Total Plans in Phase: 20
 ### Blockers
 
 - 06.3.4.1-07 REPLANNED (2026-09-24, user decision): revised to diagnose the OI-02 decay cause across the whole pipeline (forensics → full-stack replay → bisection), with checkpoints after the primary replay and before any fix, then fix and same-replay proof. Plan-checker passed (warning fixed); downstream 08/09/11/12 aligned to its `## Fix` section. Resume with /gsd-execute-phase 06.3.4.1 at wave 4. Note: the 06.3.4 drive's Prometheus export is preserved only in gitignored data/oi02-evidence/prometheus-06.3.4-drive/ (Task 1 input).
+- OI-02 (RetrieveHybrid 4.9s->29.0s growth, 06.3.4 drive) NOT reproduced or fixed in 06.3.4.1-07. Checkpoint resolved diagnose-in-drive-1 (2026-09-26) after every free Route B arm (drive-era, drive-era-prewarm, paced) and one paid arm (paid-drive-era, real provider+embeddings) stayed flat. D-64: no paid drive 1 (06.3.4.1-11/-12) should run without expecting to hit its own decay gate on an unfixed engine; full account and carry-forward instrumentation list in .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-OI02-MEMO.md.
