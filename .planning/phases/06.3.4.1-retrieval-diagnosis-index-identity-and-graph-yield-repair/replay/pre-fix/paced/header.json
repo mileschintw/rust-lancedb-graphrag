@@ -1,0 +1,62 @@
+{
+    "end_utc":  "2026-09-26T22:10:28.7928539Z",
+    "workers":  1,
+    "telemetry":  {
+                      "engine":  "otlp",
+                      "gateway":  "otlp"
+                  },
+    "commit":  "79406d2d3f76df3ad6649f20d5e11cc48564e83e",
+    "binary_path":  "D:\\Repos\\lancet-oi02-drive-era\\engine\\target\\debug\\engine.exe",
+    "stub_vector_source":  "data/replay/stub-vectors.jsonl",
+    "warmup_n":  0,
+    "phase":  "pre-fix",
+    "observability":  "on",
+    "env_vars":  {
+                     "LANCET_OPENROUTER__EMBEDDING_ENDPOINT":  "http://127.0.0.1:18284/embeddings",
+                     "LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT":  "http://127.0.0.1:18284/models",
+                     "LANCET_GATEWAY__DATABASE_URL":  "[dsn to lancet_replay_prereconcile, password redacted]",
+                     "LANCET_OPENROUTER__CHAT_ENDPOINT":  "http://127.0.0.1:18284/chat/completions",
+                     "LANCET_ENGINE__LANCEDB_PATH":  "[replay store copy path]",
+                     "LANCET_ENV":  "eval"
+                 },
+    "retries":  {
+                    "value":  2,
+                    "mode":  "fixed"
+                },
+    "harness_exit_code":  0,
+    "spend_guard":  "dummy key; egress sampling is supporting evidence only",
+    "start_utc":  "2026-09-26T21:17:47.7901576Z",
+    "launch_command":  "cargo run --manifest-path engine/Cargo.toml --locked --bin engine",
+    "harness_source":  "worktree:D:\\Repos\\lancet-oi02-drive-era",
+    "engine_commit":  "33e774bd71034b54ec14f8079e3cfac83aee56f1",
+    "gateway_commit":  "33e774bd71034b54ec14f8079e3cfac83aee56f1",
+    "scratch_db":  "lancet_replay_prereconcile",
+    "config_dir_diff":  "",
+    "label":  "paced",
+    "egress_443_max":  0,
+    "arm_kind":  "full-stack",
+    "dirty":  true,
+    "harness_commit":  "33e774bd71034b54ec14f8079e3cfac83aee56f1",
+    "limit":  175,
+    "pid":  37788,
+    "gateway_source":  "worktree:D:\\Repos\\lancet-oi02-drive-era",
+    "gateway_pid":  18108,
+    "engine_source":  "worktree:D:\\Repos\\lancet-oi02-drive-era",
+    "stderr_sink":  "console",
+    "nodes_version":  "18446744073709551614.manifest",
+    "store_source":  "pre-reconcile",
+    "otlp_4317_conns_max":  {
+                                "engine":  3,
+                                "gateway":  3
+                            },
+    "stub_delays":  {
+                        "embed_ms":  343,
+                        "chat_schedule_ms":  "6970,5426,3427,6275,4847,5419,8898",
+                        "schedule_slice_calls":  50,
+                        "embed_schedule_ms":  "308,399,442,481,462,859,2043",
+                        "chat_ms":  6970
+                    },
+    "actual_invocation":  "cargo build (same args, un-redirected) then exec D:\\Repos\\lancet-oi02-drive-era\\engine\\target\\debug\\engine.exe directly -- see this script\u0027s comment at the engine-build step for why cargo run itself is never used from this detached process tree",
+    "build_profile":  "debug",
+    "paid":  false
+}
