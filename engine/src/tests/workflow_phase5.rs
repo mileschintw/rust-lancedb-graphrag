@@ -7245,3 +7245,202 @@ async fn workflow_phase5_graph_facts_reaching_prompt_are_counted() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Plan 06.3.4.1-08, Task 1: D-71 final-answer line — validator/repair golden
+// tests. The repair-then-validate path is exercised only through
+// `GenerateAnswerNode` (workflow/nodes/generate.rs), so these live alongside
+// the existing Plan 06-11 citation-repair behavior-block tests above, per
+// this task's own read_first note that the repair path is reachable only
+// there.
+// ---------------------------------------------------------------------------
+
+/// Behavior: for a valid grounded answer A, appending an uncited D-71
+/// `Answer: <short>` line is accepted exactly when A alone is accepted, with
+/// an identical resolved citation set (RESEARCH.md §A.2: "an uncited `Answer:`
+/// line is neutral").
+#[tokio::test]
+async fn d71_answer_line_accepted_exactly_when_base_answer_accepted() {
+    let cancel = CancellationToken::new();
+
+    let req_base = test_query_request("D-71 base answer", "sess-d71-base");
+    let mut ctx_base = WorkflowContext::new("sess-d71-base".into(), "trace-d71-base".into(), &req_base);
+    ctx_base.evidence_blocks = vec![evidence_block_with_id("[1]")];
+    let fake_gen_base: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Grounded answer text [1].".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let limits_base = GroundingLimits::new(8192, 2048).unwrap();
+    let node_base = GenerateAnswerNode::new(Some(fake_gen_base))
+        .with_settings(limits_base, 200, 1.0)
+        .with_citation_repair_enabled(true);
+    let res_base = node_base.run(&mut ctx_base, &cancel).await;
+    assert!(
+        res_base.is_ok(),
+        "base grounded answer must be accepted: {res_base:?}"
+    );
+    let citations_base = ctx_base.citations.clone();
+
+    let req_line = test_query_request("D-71 answer with final line", "sess-d71-line");
+    let mut ctx_line = WorkflowContext::new("sess-d71-line".into(), "trace-d71-line".into(), &req_line);
+    ctx_line.evidence_blocks = vec![evidence_block_with_id("[1]")];
+    let fake_gen_line: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Grounded answer text [1].\nAnswer: Yes".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+    let limits_line = GroundingLimits::new(8192, 2048).unwrap();
+    let node_line = GenerateAnswerNode::new(Some(fake_gen_line))
+        .with_settings(limits_line, 200, 1.0)
+        .with_citation_repair_enabled(true);
+    let res_line = node_line.run(&mut ctx_line, &cancel).await;
+    assert!(
+        res_line.is_ok(),
+        "adding an uncited Answer line must not change acceptance: {res_line:?}"
+    );
+    assert_eq!(
+        ctx_line.citations, citations_base,
+        "an uncited Answer line must not change the resolved citation set"
+    );
+    assert!(ctx_line.answer.ends_with("Answer: Yes"));
+    assert!(!ctx_line.notices.iter().any(|n| n.code == "CITATION_DROPPED"));
+}
+
+/// Behavior: a resolvable `[n]` marker placed on the Answer line joins the
+/// resolved citation set and validation passes (RESEARCH.md §A.2: "a marker
+/// placed *on* the Answer line is ... added to the citation set (if it
+/// resolves)").
+#[tokio::test]
+async fn d71_answer_line_with_resolvable_marker_is_added_to_citation_set() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request(
+        "D-71 resolvable marker on Answer line",
+        "sess-d71-resolvable",
+    );
+    let mut ctx = WorkflowContext::new(
+        "sess-d71-resolvable".into(),
+        "trace-d71-resolvable".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]"), evidence_block_with_id("[2]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Explanation citing [2].\nAnswer: Yes [1]".into(),
+        cited_evidence_ids: vec!["[2]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(
+        res.is_ok(),
+        "a resolvable marker on the Answer line must pass validation: {res:?}"
+    );
+    assert_eq!(ctx.citations.len(), 2);
+    assert!(ctx.citations.contains(&"[1]".to_string()));
+    assert!(ctx.citations.contains(&"[2]".to_string()));
+    assert!(!ctx.notices.iter().any(|n| n.code == "CITATION_DROPPED"));
+}
+
+/// Behavior: a bracketed number on the Answer line (e.g. a year) matches the
+/// marker grammar, fails to resolve, and is stripped with a CITATION_DROPPED
+/// notice — documenting the exact hazard the D-71 prompt instruction forbids
+/// (RESEARCH.md Pitfall 5).
+#[tokio::test]
+async fn d71_unresolvable_marker_on_answer_line_is_dropped_and_documents_the_hazard() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request("D-71 bracketed year hazard", "sess-d71-hazard");
+    let mut ctx = WorkflowContext::new("sess-d71-hazard".into(), "trace-d71-hazard".into(), &req);
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Explanation citing [1].\nAnswer: [2023]".into(),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(
+        res.is_ok(),
+        "an unresolvable bracketed year on the Answer line must still validate: {res:?}"
+    );
+    assert!(
+        ctx.answer.ends_with("Answer: "),
+        "the stripped marker must leave the documented hazard -- an empty Answer line, got {:?}",
+        ctx.answer
+    );
+    assert_eq!(ctx.citations, vec!["[1]".to_string()]);
+    let dropped = ctx
+        .notices
+        .iter()
+        .find(|n| n.code == "CITATION_DROPPED")
+        .expect("unresolvable bracketed-year marker must be dropped with a notice");
+    assert!(dropped.message.contains("[2023]"));
+}
+
+/// Behavior: with `citation_repair_enabled = true`, none of the D-71 Answer-line
+/// cases above -- including a model that self-reports `cited_evidence_ids`
+/// disagreeing with the markers actually present in its answer text -- ever
+/// reach `citation_marker_mismatch`. Per RESEARCH.md §A.2, that error is
+/// structurally unreachable on the repair path because citations are rebuilt
+/// only from markers found in the text, never from the model's self-report.
+#[tokio::test]
+async fn d71_citation_repair_enabled_never_yields_marker_mismatch() {
+    let cancel = CancellationToken::new();
+    let req = test_query_request(
+        "D-71 self-reported ids disagree with markers",
+        "sess-d71-mismatch",
+    );
+    let mut ctx = WorkflowContext::new(
+        "sess-d71-mismatch".into(),
+        "trace-d71-mismatch".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: "Explanation citing [1].\nAnswer: Yes".into(),
+        // Deliberately disagrees with the [1] marker actually present in the
+        // answer text -- on the repair path this must never surface as
+        // "mismatch between cited_evidence_ids".
+        cited_evidence_ids: vec![],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let node = GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(true);
+
+    let res = node.run(&mut ctx, &cancel).await;
+    assert!(
+        res.is_ok(),
+        "the repair path must never surface citation_marker_mismatch: {res:?}"
+    );
+    assert_eq!(ctx.citations, vec!["[1]".to_string()]);
+}
+
