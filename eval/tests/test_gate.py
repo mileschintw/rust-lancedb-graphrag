@@ -580,8 +580,43 @@ def test_final_answer_missing_review_rate_committed() -> None:
     assert value == pytest.approx(0.10)
 
 
-def test_vector_baseline_usable_floor_not_yet_committed() -> None:
-    """D-73: VECTOR_BASELINE_USABLE_FLOOR must NOT exist yet -- 06.3.4.1-10 commits it
-    after G is fixed. unpark_gates.evaluate_sc3 must never default it."""
-    assert not hasattr(thresholds_module, "VECTOR_BASELINE_USABLE_FLOOR")
+def test_vector_baseline_usable_floor_committed_before_drive_1() -> None:
+    """D-73: VECTOR_BASELINE_USABLE_FLOOR is committed as
+    ceil(max(0.40, B_G + 0.10) * 1000) / 1000, where B_G is the share of the
+    drawn non-null diagnostic sample (questions.diag.jsonl, all in G by
+    construction) whose squad_normalize(gold answer) equals the modal
+    yes/no label. Recomputed here from the committed sample, not hardcoded,
+    so the literal can never silently drift from its own derivation."""
+    import json
+    import math
+    from collections import Counter
+
+    from lancet_eval.config import repo_root
+    from lancet_eval.metrics import squad_normalize
+
+    assert hasattr(thresholds_module, "VECTOR_BASELINE_USABLE_FLOOR")
+    floor = thresholds_module.VECTOR_BASELINE_USABLE_FLOOR
+    assert isinstance(floor, float)
+    assert 0.40 <= floor <= 1.0
+
+    diag_path = repo_root() / "eval" / "corpora" / "multihop_rag" / "questions.diag.jsonl"
+    drawn_non_null_labels: list[str] = []
+    with open(diag_path, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            raw = json.loads(stripped)
+            if raw.get("question_type") == "null_query":
+                continue
+            drawn_non_null_labels.append(squad_normalize(raw.get("answer", "")))
+
+    yes_no_counts = Counter(
+        label for label in drawn_non_null_labels if label in ("yes", "no")
+    )
+    modal_label = max(yes_no_counts, key=lambda label: yes_no_counts[label])
+    b_g = yes_no_counts[modal_label] / len(drawn_non_null_labels)
+    expected_floor = math.ceil(max(0.40, b_g + 0.10) * 1000) / 1000
+
+    assert floor == pytest.approx(expected_floor)
 
