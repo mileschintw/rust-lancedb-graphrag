@@ -61,6 +61,7 @@ data/lancedb-eval/
 # Evaluation run records (dated corpus runs tracked; scratch directories ignored)
 eval/runs/*
 !eval/runs/*-multihop_rag/
+!eval/runs/*-multihop_rag_diag/
 !eval/runs/*-graphrag_bench/
 data/lancedb-verify-02-06/
 data/.phase02-lancedb-preclean-*/
