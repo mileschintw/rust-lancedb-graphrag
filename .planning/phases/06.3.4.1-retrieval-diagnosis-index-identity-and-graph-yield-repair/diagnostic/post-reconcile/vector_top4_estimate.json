@@ -1,0 +1,1 @@
+{"estimate_only":true,"vector_top_k":4,"questions":500,"already_cached":0,"embedding_model":"voyageai/voyage-4-large","tokenizer":"cl100k_base","price_per_million_usd":0.12,"total_tokens_estimated":28866,"total_spend_usd_estimate":0.0034639199999999997,"uncached_tokens_estimated":28866,"uncached_spend_usd_estimate":0.0034639199999999997}

@@ -14,8 +14,12 @@ from lancet_eval.diagnostic import (
     DiagnosticError,
     DiagnosticRow,
     _compose_label,
+    _question_c,
+    build_gold_coverage_rows,
     build_rows,
     classify_record,
+    compute_populations,
+    write_gold_coverage,
     write_table,
 )
 from lancet_eval.journal import RunRecord
@@ -23,6 +27,7 @@ from lancet_eval.journal import RunRecord
 FIXTURES = Path(__file__).parent / "fixtures" / "diagnostic"
 GOLD_CHUNKS = FIXTURES / "gold_chunks.jsonl"
 JOURNAL_SLICE = FIXTURES / "journal_slice.jsonl"
+VECTOR_TOP4 = FIXTURES / "vector_top4.jsonl"
 CORPUS = "multihop_rag"
 
 
@@ -304,3 +309,189 @@ def test_classify_record_other_error_type_is_transport() -> None:
 def test_classify_record_no_node_failure_or_error_type_is_other() -> None:
     record = _base_record()
     assert classify_record(record) == "other"
+
+
+# --- (c) join: build_rows with vector_top4_path, and _question_c directly ---
+
+
+def test_build_rows_without_vector_top4_leaves_c_none() -> None:
+    """Default parameter: every existing caller of build_rows is unaffected."""
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS)
+    row = _row(rows, "mhr-0073ab564e55")
+    assert row.c_gold_in_vector_top4 is None
+
+
+def test_question_c_true_when_gold_in_chunk_id_is_in_top4() -> None:
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS, VECTOR_TOP4)
+    row = _row(rows, "mhr-0073ab564e55")
+    # Fixture's top4 for this question includes chunk 11111111...:0, one of its
+    # two in_chunk gold chunk_ids.
+    assert row.c_gold_in_vector_top4 is True
+
+
+def test_question_c_false_when_top4_present_but_no_intersection() -> None:
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS, VECTOR_TOP4)
+    row = _row(rows, "mhr-0085f76defbe")
+    # This question's only in_chunk gold chunk_id (33333333...:1) is absent from
+    # its fixture top4 list; its other item is split_across_chunks (no chunk_ids).
+    assert row.c_gold_in_vector_top4 is False
+
+
+def test_question_c_none_when_question_missing_from_vector_top4_file() -> None:
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS, VECTOR_TOP4)
+    row = _row(rows, "mhr-012f1f51ac88")
+    # Present in gold_chunks.jsonl but absent from the fixture vector_top4.jsonl,
+    # e.g. because a cap-stopped probe run never reached it.
+    assert row.c_gold_in_vector_top4 is None
+
+
+def test_question_c_none_for_null_question_even_with_vector_top4() -> None:
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS, VECTOR_TOP4)
+    row = _row(rows, "mhr-0279d4a349c3")
+    assert row.is_null is True
+    assert row.c_gold_in_vector_top4 is None
+
+
+def test_load_vector_top4_by_question_skips_trailing_summary_line() -> None:
+    """The summary line `{spend_usd, questions, cached, stopped_by_cap}` carries no
+    `question_id` and must not be misread as a question with an empty chunk_ids list."""
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS, VECTOR_TOP4)
+    ids = {row.question_id for row in rows}
+    assert "mhr-0073ab564e55" in ids  # sanity: the fixture's real rows still built
+
+
+def test_question_c_direct_true() -> None:
+    items = [{"state": "in_chunk", "chunk_ids": ["a:0", "a:1"]}]
+    assert _question_c(items, ["a:1", "z:9"]) is True
+
+
+def test_question_c_direct_false_no_in_chunk_items() -> None:
+    items = [{"state": "split_across_chunks", "chunk_ids": []}]
+    assert _question_c(items, ["a:1"]) is False
+
+
+def test_question_c_direct_none_when_top4_is_none() -> None:
+    items = [{"state": "in_chunk", "chunk_ids": ["a:1"]}]
+    assert _question_c(items, None) is None
+
+
+# --- compute_populations: G and V ---
+
+
+def test_compute_populations_g_excludes_null_and_b_no() -> None:
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS, VECTOR_TOP4)
+    populations = compute_populations(rows)
+
+    g_ids = set(populations["g_question_ids"])
+    # in_gold_in_index_subset True cases land in G.
+    assert "mhr-0073ab564e55" in g_ids
+    assert "mhr-012f1f51ac88" in g_ids
+    # Null question and the split-item question are excluded from G (D-63/D-72).
+    assert "mhr-0279d4a349c3" not in g_ids
+    assert "mhr-0085f76defbe" not in g_ids
+    assert populations["g_count"] == len(g_ids)
+
+
+def test_compute_populations_v_requires_g_and_c_true() -> None:
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS, VECTOR_TOP4)
+    populations = compute_populations(rows)
+
+    v_ids = set(populations["v_question_ids"])
+    # In G, and c is True.
+    assert "mhr-0073ab564e55" in v_ids
+    # In G, but c is None (missing from the vector file) -- must not count as V.
+    assert "mhr-012f1f51ac88" not in v_ids
+    assert populations["v_count"] == len(v_ids)
+    assert v_ids.issubset(set(populations["g_question_ids"]))
+
+
+def test_compute_populations_by_type_breakdown_sums_to_totals() -> None:
+    rows = build_rows(CORPUS, JOURNAL_SLICE, GOLD_CHUNKS, VECTOR_TOP4)
+    populations = compute_populations(rows)
+
+    assert sum(populations["g_by_type"].values()) == populations["g_count"]
+    assert sum(populations["v_by_type"].values()) == populations["v_count"]
+
+
+# --- gold coverage table (D-61): build_gold_coverage_rows / write_gold_coverage ---
+
+
+class _FakeEvalSettings:
+    lancedb_path = "./data/lancedb-eval"
+
+
+def test_build_gold_coverage_rows_marks_presence_from_live_probe(monkeypatch) -> None:
+    live_ids = {
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        # 33333333... intentionally absent from the live set.
+    }
+    monkeypatch.setattr(
+        "lancet_eval.config.load_settings", lambda *a, **kw: _FakeEvalSettings()
+    )
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_lancedb_document_ids",
+        lambda path: {"documents": sorted(live_ids)},
+    )
+
+    rows = build_gold_coverage_rows(CORPUS, GOLD_CHUNKS)
+
+    by_key = {(r["question_id"], r["evidence_index"]): r for r in rows}
+    present = by_key[("mhr-0073ab564e55", 0)]
+    assert present["document_id"] == "11111111-1111-4111-8111-111111111111"
+    assert present["document_present_in_lancedb"] is True
+    assert present["state"] == "in_chunk"
+
+    absent = by_key[("mhr-0085f76defbe", 0)]
+    assert absent["document_id"] == "33333333-3333-4333-8333-333333333333"
+    assert absent["document_present_in_lancedb"] is False
+
+
+def test_build_gold_coverage_rows_sorted_by_question_then_evidence_index(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "lancet_eval.config.load_settings", lambda *a, **kw: _FakeEvalSettings()
+    )
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_lancedb_document_ids",
+        lambda path: {"documents": []},
+    )
+    rows = build_gold_coverage_rows(CORPUS, GOLD_CHUNKS)
+    keys = [(r["question_id"], r["evidence_index"]) for r in rows]
+    assert keys == sorted(keys)
+
+
+def test_write_gold_coverage_emits_jsonl_and_markdown(tmp_path: Path) -> None:
+    rows = [
+        {
+            "question_id": "q-1",
+            "evidence_index": 0,
+            "title": "t",
+            "document_id": "d-1",
+            "document_present_in_lancedb": True,
+            "state": "in_chunk",
+        },
+        {
+            "question_id": "q-1",
+            "evidence_index": 1,
+            "title": "t2",
+            "document_id": None,
+            "document_present_in_lancedb": None,
+            "state": "unmapped_title",
+        },
+    ]
+    jsonl_dir = tmp_path / "post-reconcile"
+    md_path = tmp_path / "phase" / "06.3.4.1-GOLD-COVERAGE.md"
+
+    write_gold_coverage(rows, jsonl_dir, md_path)
+
+    jsonl_path = jsonl_dir / "gold_coverage.jsonl"
+    assert jsonl_path.is_file()
+    lines = jsonl_path.read_text(encoding="utf-8").strip("\n").split("\n")
+    assert len(lines) == 2
+    assert json.loads(lines[0])["question_id"] == "q-1"
+
+    assert md_path.is_file()
+    content = md_path.read_text(encoding="utf-8")
+    assert "Gold-doc / document_map.json Coverage Table" in content
+    assert "in_chunk" in content
+    assert "unmapped title (no document_id)" in content

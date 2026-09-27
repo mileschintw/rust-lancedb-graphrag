@@ -189,42 +189,130 @@ def _question_a(question: GoldQuestion, mapped_titles: set[str]) -> bool | None:
     return all(item.get("title") in mapped_titles for item in question.evidence_list)
 
 
-def _question_b(
-    question: GoldQuestion, gold_chunks_by_question: dict[str, list[dict]]
-) -> tuple[list[str], bool | None]:
+def _question_b(items: list[dict]) -> tuple[list[str], bool | None]:
     """Column (b): every evidence item's gold chunk is `in_chunk` (D-63).
 
-    None for null questions. b_items lists the raw per-item states in
-    evidence_index order.
+    `items` is the caller's pre-fetched per-question gold-chunks list (already
+    `[]` for a null question or a question absent from the probe file). Returns
+    `([], None)` when there are no items; b_items lists the raw per-item states
+    in evidence_index order.
     """
-    if question.is_null:
-        return [], None
-    items = gold_chunks_by_question.get(question.question_id, [])
     states = [item["state"] for item in items]
     if not states:
         return states, None
     return states, all(state == "in_chunk" for state in states)
 
 
+def _load_vector_top4_by_question(
+    vector_top4_path: str | Path,
+) -> dict[str, list[str]]:
+    """Reads the `--vector-top-k 4` probe JSONL, grouped by `question_id` -> chunk_ids.
+
+    Skips the trailing summary line (`{spend_usd, questions, cached,
+    stopped_by_cap}`, which carries no `question_id`) and defensively
+    truncates to the first 4 chunk_ids per question in case a caller ever
+    points this at a `k > 4` probe run.
+    """
+    by_question: dict[str, list[str]] = {}
+    path = Path(vector_top4_path)
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            record = json.loads(stripped)
+            question_id = record.get("question_id")
+            if question_id is None:
+                continue  # the trailing summary line
+            by_question[question_id] = record.get("chunk_ids", [])[:4]
+    return by_question
+
+
+def _question_c(
+    items: list[dict],
+    top4_chunk_ids: list[str] | None,
+) -> bool | None:
+    """Column (c): any `in_chunk` evidence item's gold chunk is in the vector top-4.
+
+    `None` when there is no vector-top4 file at all, or this question has no
+    entry in it — a cap-stopped probe run leaves later questions absent, which
+    must read as "not yet measured", never as "no". `False` when the question
+    has a top-4 result but no `in_chunk` gold chunk exists to compare it
+    against (e.g. every evidence item is `absent`/`split_across_chunks`).
+    """
+    if top4_chunk_ids is None:
+        return None
+    gold_chunk_ids: set[str] = set()
+    for item in items:
+        if item.get("state") == "in_chunk":
+            gold_chunk_ids.update(item.get("chunk_ids", []))
+    return any(chunk_id in gold_chunk_ids for chunk_id in top4_chunk_ids)
+
+
+def compute_populations(rows: list[DiagnosticRow]) -> dict:
+    """Computes G (gold-in-index subset, D-63) and V (G ∩ (c)=yes, D-82/D-63).
+
+    G reuses `row.in_gold_in_index_subset` directly rather than re-deriving
+    "non-null AND b" a second time, so G has exactly one definition across
+    this module. `row.c_gold_in_vector_top4 is True` is required for V
+    (not merely truthy) so a `None` — a question not yet measured by the (c)
+    probe (e.g. a cap-stopped run) — is excluded from V rather than silently
+    counted as a miss.
+    """
+    g_question_ids = {row.question_id for row in rows if row.in_gold_in_index_subset}
+    v_question_ids = {
+        row.question_id
+        for row in rows
+        if row.in_gold_in_index_subset and row.c_gold_in_vector_top4 is True
+    }
+
+    g_by_type: dict[str, int] = {}
+    v_by_type: dict[str, int] = {}
+    for row in rows:
+        if row.question_id in g_question_ids:
+            g_by_type[row.question_type] = g_by_type.get(row.question_type, 0) + 1
+        if row.question_id in v_question_ids:
+            v_by_type[row.question_type] = v_by_type.get(row.question_type, 0) + 1
+
+    return {
+        "g_question_ids": sorted(g_question_ids),
+        "v_question_ids": sorted(v_question_ids),
+        "g_count": len(g_question_ids),
+        "v_count": len(v_question_ids),
+        "g_by_type": g_by_type,
+        "v_by_type": v_by_type,
+    }
+
+
 def build_rows(
     corpus_name: str,
     journal_path: str | Path | None,
     gold_chunks_path: str | Path,
+    vector_top4_path: str | Path | None = None,
 ) -> list[DiagnosticRow]:
     """Builds one DiagnosticRow per question in `corpus_name`'s sample.
 
-    Columns (c)/(d)/seed_count/path_found are left `None` here; later tasks in
+    Columns (d)/seed_count/path_found are left `None` here; later tasks in
     this phase compute them from additional inputs this task does not yet
-    have. Per-arm `error_class` (via `classify_record`) and, for successful
-    records, `final_answer`/`final_answer_missing`/`answer_usable` (via
-    `lancet_eval.metrics`) are computed here. D-72: null questions never get
-    `answer_usable` populated — `final_answer`/`final_answer_missing` still
-    are, so a null question's abstention can still be read off the raw text.
+    have. Column (c) is computed here when `vector_top4_path` is given (the
+    (c) join, RESEARCH §E/§F); `vector_top4_path=None` (the default) leaves
+    (c) `None` for every row, so every existing caller of this function is
+    unaffected. Per-arm `error_class` (via `classify_record`) and, for
+    successful records, `final_answer`/`final_answer_missing`/`answer_usable`
+    (via `lancet_eval.metrics`) are computed here. D-72: null questions never
+    get `answer_usable` populated — `final_answer`/`final_answer_missing`
+    still are, so a null question's abstention can still be read off the raw
+    text.
     """
     questions = load_sample_questions(corpus_name)
     document_map = load_document_map(corpus_name)
     mapped_titles = {entry.title for entry in document_map.entries.values()}
     gold_chunks_by_question = _load_gold_chunks_by_question(gold_chunks_path)
+    vector_top4_by_question = (
+        _load_vector_top4_by_question(vector_top4_path)
+        if vector_top4_path is not None
+        else None
+    )
 
     if journal_path is not None:
         records = load_records(journal_path)
@@ -235,7 +323,19 @@ def build_rows(
     rows: list[DiagnosticRow] = []
     for question in questions:
         a = _question_a(question, mapped_titles)
-        b_items, b = _question_b(question, gold_chunks_by_question)
+        items: list[dict] = (
+            [] if question.is_null else gold_chunks_by_question.get(question.question_id, [])
+        )
+        b_items, b = _question_b(items)
+        if question.is_null:
+            c = None
+        else:
+            top4 = (
+                vector_top4_by_question.get(question.question_id)
+                if vector_top4_by_question is not None
+                else None
+            )
+            c = _question_c(items, top4)
 
         arms: dict[str, ArmResult] = {}
         for arm in all_arms:
@@ -279,6 +379,7 @@ def build_rows(
                 a_gold_doc_in_map=a,
                 b_items=b_items,
                 b_gold_chunk_in_lancedb=b,
+                c_gold_in_vector_top4=c,
                 e_answer_usable=e_answer_usable,
                 arms=arms,
                 in_gold_in_index_subset=in_gold_in_index_subset,
@@ -376,6 +477,116 @@ def write_table(
         f.write("\n")
 
 
+def build_gold_coverage_rows(
+    corpus_name: str,
+    gold_chunks_path: str | Path,
+) -> list[dict]:
+    """Builds the per-question, per-evidence-title gold-coverage rows (D-61).
+
+    Each row's `document_present_in_lancedb` comes from a live
+    `inspect_lancedb --document-ids` probe (via
+    `lancet_eval.identity.list_lancedb_document_ids` — the same probe the D-61
+    preflight identity gate uses), intersected against the mapped
+    `document_id`. It is deliberately NOT inferred from the (b) tri-state:
+    `classify_evidence_item`'s `absent` state conflates "the document has zero
+    matching chunks in the live store" with "the document exists but this
+    specific fact is missing from its chunks", and D-59's re-ingest-candidate
+    decision needs those two distinguished.
+    """
+    from lancet_eval.config import load_settings as load_eval_settings
+    from lancet_eval.identity import list_lancedb_document_ids
+
+    settings = load_eval_settings()
+    live_documents = set(
+        list_lancedb_document_ids(settings.lancedb_path).get("documents", [])
+    )
+    gold_chunks_by_question = _load_gold_chunks_by_question(gold_chunks_path)
+    _ = load_document_map(corpus_name)  # validates the corpus has a committed map
+
+    rows: list[dict] = []
+    for question_id, items in gold_chunks_by_question.items():
+        for item in items:
+            document_id = item.get("document_id")
+            rows.append(
+                {
+                    "question_id": question_id,
+                    "evidence_index": item["evidence_index"],
+                    "title": item["title"],
+                    "document_id": document_id,
+                    "document_present_in_lancedb": (
+                        document_id in live_documents
+                        if document_id is not None
+                        else None
+                    ),
+                    "state": item["state"],
+                }
+            )
+    rows.sort(key=lambda row: (row["question_id"], row["evidence_index"]))
+    return rows
+
+
+def write_gold_coverage(
+    rows: list[dict],
+    jsonl_dir: str | Path,
+    md_path: str | Path,
+) -> None:
+    """Writes `gold_coverage.jsonl` (under `jsonl_dir`) and the coverage markdown
+    summary (at `md_path`). Both are fully regenerated from `rows`; neither is
+    ever hand-edited (D-61).
+    """
+    jsonl_out = Path(jsonl_dir)
+    jsonl_out.mkdir(parents=True, exist_ok=True)
+    jsonl_path = jsonl_out / "gold_coverage.jsonl"
+    with open(jsonl_path, "w", encoding="utf-8", newline="\n") as f:
+        for row in rows:
+            f.write(json.dumps(row))
+            f.write("\n")
+
+    state_counts: dict[str, int] = {}
+    present_true = 0
+    present_false = 0
+    present_none = 0
+    for row in rows:
+        state_counts[row["state"]] = state_counts.get(row["state"], 0) + 1
+        presence = row["document_present_in_lancedb"]
+        if presence is True:
+            present_true += 1
+        elif presence is False:
+            present_false += 1
+        else:
+            present_none += 1
+
+    lines = [
+        "# Gold-doc / document_map.json Coverage Table (D-61)",
+        "",
+        "Regenerated by `python -m lancet_eval.diagnostic coverage` — never hand-edited.",
+        f"{len(rows)} evidence-item rows across all sample questions.",
+        "",
+        "## Per-item (b) tri-state counts",
+        "",
+        "| state | count |",
+        "|---|---|",
+    ]
+    for state, count in sorted(state_counts.items()):
+        lines.append(f"| {state} | {count} |")
+    lines += [
+        "",
+        "## Document presence in LanceDB (live `--document-ids` probe)",
+        "",
+        "| presence | count |",
+        "|---|---|",
+        f"| present | {present_true} |",
+        f"| absent | {present_false} |",
+        f"| unmapped title (no document_id) | {present_none} |",
+    ]
+
+    md_out = Path(md_path)
+    md_out.parent.mkdir(parents=True, exist_ok=True)
+    with open(md_out, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines))
+        f.write("\n")
+
+
 def _compose_label(label: str, journal_path: str | Path | None, row_count: int) -> str:
     """Builds the markdown line-1 label, enforcing the partial-run disclosure rule.
 
@@ -406,13 +617,23 @@ def main(argv: list[str] | None = None) -> int:
     table_parser.add_argument("--corpus", required=True)
     table_parser.add_argument("--journal", default=None)
     table_parser.add_argument("--gold-chunks", dest="gold_chunks", required=True)
+    table_parser.add_argument("--vector-top4", dest="vector_top4", default=None)
     table_parser.add_argument("--out-dir", dest="out_dir", required=True)
     table_parser.add_argument("--label", default="")
+
+    coverage_parser = subparsers.add_parser(
+        "coverage",
+        help="Regenerate the gold-doc vs document_map.json coverage table (D-61).",
+    )
+    coverage_parser.add_argument("--corpus", required=True)
+    coverage_parser.add_argument("--gold-chunks", dest="gold_chunks", required=True)
+    coverage_parser.add_argument("--out-dir", dest="out_dir", required=True)
+    coverage_parser.add_argument("--md-path", dest="md_path", required=True)
 
     args = parser.parse_args(argv)
 
     if args.command == "table":
-        rows = build_rows(args.corpus, args.journal, args.gold_chunks)
+        rows = build_rows(args.corpus, args.journal, args.gold_chunks, args.vector_top4)
         label = _compose_label(args.label, args.journal, len(rows))
         write_table(
             rows,
@@ -421,6 +642,11 @@ def main(argv: list[str] | None = None) -> int:
             journal_path=args.journal,
             gold_chunks_path=args.gold_chunks,
         )
+        return 0
+
+    if args.command == "coverage":
+        rows = build_gold_coverage_rows(args.corpus, args.gold_chunks)
+        write_gold_coverage(rows, args.out_dir, args.md_path)
         return 0
 
     return 1
