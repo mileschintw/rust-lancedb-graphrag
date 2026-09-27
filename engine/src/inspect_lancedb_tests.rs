@@ -1277,6 +1277,32 @@ fn normalize_ws_matches_python_rule() {
     assert_eq!(super::normalize_ws("MiXeD Case"), "mixed case");
 }
 
+#[test]
+fn merge_overlapping_chunks_removes_the_duplicated_overlap_once() {
+    // "golf hotel" is the shared (overlapping) suffix/prefix; a naive space-join would
+    // duplicate it and insert an artificial space that never existed in the source document.
+    let merged =
+        super::merge_overlapping_chunks("alpha bravo golf hotel", "golf hotel india juliet");
+    assert_eq!(merged, "alpha bravo golf hotel india juliet");
+}
+
+#[test]
+fn merge_overlapping_chunks_falls_back_to_space_join_without_overlap() {
+    let merged = super::merge_overlapping_chunks("alpha bravo", "charlie delta");
+    assert_eq!(merged, "alpha bravo charlie delta");
+}
+
+#[test]
+fn merge_overlapping_chunks_picks_the_longest_matching_overlap() {
+    // "b golf hotel" (12 chars) is a longer valid suffix/prefix match than "golf hotel" (10
+    // chars) alone; the longest match must win so the merge removes the true full overlap.
+    let merged = super::merge_overlapping_chunks(
+        "alpha b golf hotel",
+        "b golf hotel india juliet",
+    );
+    assert_eq!(merged, "alpha b golf hotel india juliet");
+}
+
 #[tokio::test]
 async fn gold_chunks_flags_parse_and_require_pairing() {
     let cfg = parse_args(vec![
@@ -1386,6 +1412,66 @@ async fn gold_chunks_probe_classifies_evidence_states() {
     assert_eq!(records[4].evidence_index, 4);
     assert_eq!(records[4].state, "in_chunk");
     assert_eq!(records[4].chunk_ids, vec![format!("{document_id}:2")]);
+
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_file(&questions_path);
+    let _ = std::fs::remove_file(&map_path);
+}
+
+#[tokio::test]
+async fn gold_chunks_probe_split_across_chunks_crossing_the_overlap_boundary() {
+    // Regression (06.3.4.1-09 Task 3): `classify_evidence_item`'s adjacent-window check used to
+    // naive-space-join two overlapping chunks (`format!("{a} {b}")`), duplicating the shared
+    // overlap region and inserting an artificial space that never existed in the source
+    // document. A fact whose true span starts before the overlap and ends after it could then
+    // never be found as a substring of that naive join, and was misclassified `absent` instead
+    // of `split_across_chunks` -- exactly the bug that produced 49 false `absent` states on the
+    // reconciled live store. These two synthetic chunks share the overlapping "golf hotel" span,
+    // mirroring production's `DEFAULT_CHUNK_OVERLAP`-sized shared text between adjacent chunks.
+    let document_id = Uuid::new_v4().to_string();
+    let contents = [
+        "alpha bravo charlie delta echo foxtrot golf hotel",
+        "golf hotel india juliet kilo lima mike november",
+    ];
+    let nodes = gold_chunk_nodes(&document_id, &contents);
+    let (database, path, stored_document_id) = fixture("gold-chunks-overlap", &nodes, &[]).await;
+
+    let questions_jsonl = serde_json::json!({
+        "question_id": "q-overlap",
+        "evidence_list": [
+            {"title": "Overlap Article", "fact": "delta echo foxtrot golf hotel india juliet"}
+        ]
+    })
+    .to_string();
+
+    let map = serde_json::json!({
+        "corpus": "test",
+        "entries": {
+            stored_document_id.clone(): {
+                "corpus_id": "overlap-article",
+                "document_id": stored_document_id.clone(),
+                "title": "Overlap Article",
+                "url": "https://example.com"
+            }
+        }
+    });
+
+    let dir = std::env::temp_dir();
+    let questions_path = dir.join(format!("gold-chunks-overlap-questions-{}.jsonl", Uuid::new_v4()));
+    let map_path = dir.join(format!("gold-chunks-overlap-map-{}.json", Uuid::new_v4()));
+    std::fs::write(&questions_path, &questions_jsonl).unwrap();
+    std::fs::write(&map_path, serde_json::to_string(&map).unwrap()).unwrap();
+
+    let records = inspect_gold_chunks(&database, &questions_path, &map_path)
+        .await
+        .unwrap();
+
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].state, "split_across_chunks",
+        "a fact crossing the overlap boundary must be split_across_chunks, not absent"
+    );
+    assert!(records[0].chunk_ids.is_empty());
 
     let _ = std::fs::remove_dir_all(path);
     let _ = std::fs::remove_file(&questions_path);

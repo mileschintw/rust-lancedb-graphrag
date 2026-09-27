@@ -822,12 +822,54 @@ fn document_id_in_predicate(ids: &[String]) -> String {
     format!("document_id IN ({list})")
 }
 
+/// Merges two adjacent, potentially-overlapping normalized chunk strings into the single
+/// contiguous span they represent in the original document.
+///
+/// Production chunking (`DEFAULT_CHUNK_OVERLAP`) makes adjacent chunks share a trailing/leading
+/// span of identical text. A naive `format!("{a} {b}")` join duplicates that shared span (and
+/// inserts an artificial space that was never in the source document), so a fact whose true
+/// span starts before the overlap and ends after it can never be found as a substring of the
+/// naive join — the duplicated overlap plus the inserted space breaks the match (06.3.4.1-09
+/// Task 3 regression: this produced 49 false `absent` classifications on the reconciled store,
+/// every one of them a genuine cross-chunk split).
+///
+/// Finds the longest suffix of `a` that equals a prefix of `b` (the duplicated overlap) and
+/// removes it from `a` before concatenating directly with the full `b` — no separator is
+/// inserted, since the removed suffix is presumed identical to the corresponding prefix of `b`
+/// it is being replaced by. Falls back to a single-space join when no such overlap exists (e.g.
+/// adjacent chunks with no configured overlap, or a paragraph/heading boundary reset).
+///
+/// Operates on `char` boundaries throughout, never on raw byte offsets, so a multi-byte UTF-8
+/// character in normalized chunk content is never split mid-codepoint.
+fn merge_overlapping_chunks(a: &str, b: &str) -> String {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let max_overlap = a_chars.len().min(b_chars.len());
+
+    let mut overlap_len = 0;
+    for candidate in (1..=max_overlap).rev() {
+        if a_chars[a_chars.len() - candidate..] == b_chars[..candidate] {
+            overlap_len = candidate;
+            break;
+        }
+    }
+
+    if overlap_len == 0 {
+        return format!("{a} {b}");
+    }
+
+    let mut merged: String = a_chars[..a_chars.len() - overlap_len].iter().collect();
+    merged.push_str(b);
+    merged
+}
+
 /// Classifies one evidence item's gold fact against a document's chunks.
 ///
 /// Tri-state per RESEARCH §E: `in_chunk` when the normalized fact is a substring
 /// of a single chunk's normalized content; else `split_across_chunks` when it is
-/// contained in the normalized concatenation of two adjacent `chunk_index`
-/// chunks; else `absent`. Returns `unmapped_title` when `document_id` is `None`.
+/// contained in the overlap-aware merge (`merge_overlapping_chunks`) of two
+/// adjacent `chunk_index` chunks; else `absent`. Returns `unmapped_title` when
+/// `document_id` is `None`.
 fn classify_evidence_item(
     fact: &str,
     document_id: Option<&str>,
@@ -858,8 +900,8 @@ fn classify_evidence_item(
         if index_b - index_a != 1 {
             continue;
         }
-        let concatenated = format!("{content_a} {content_b}");
-        if concatenated.contains(&normalized_fact) {
+        let merged = merge_overlapping_chunks(content_a, content_b);
+        if merged.contains(&normalized_fact) {
             return ("split_across_chunks", Vec::new());
         }
     }

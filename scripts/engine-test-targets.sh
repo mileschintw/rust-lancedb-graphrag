@@ -47,6 +47,19 @@ fi
 #         like the base answer, resolvable marker joins the citation set, unresolvable bracketed
 #         year dropped with a notice, repair path never yields citation_marker_mismatch),
 #         460->468. inspect_lancedb/reconcile_eval_store/config_startup unchanged (40/18/22).
+#   552 — Phase 06.3.4.1 plan 09 Task 3: fixed `classify_evidence_item`'s adjacent-window
+#         (b)/split-fact check, which naive-space-joined two overlapping chunks
+#         (`format!("{a} {b}")`) instead of merging their shared `DEFAULT_CHUNK_OVERLAP`-sized
+#         overlap once -- the duplicated overlap plus an inserted space that never existed in
+#         the source document broke the substring match for any fact crossing the boundary
+#         beyond the overlap, misclassifying it `absent` instead of `split_across_chunks` (this
+#         produced 49 false `absent` states on the reconciled live-store probe). Added the
+#         overlap-aware `merge_overlapping_chunks` helper and 4 inspect_lancedb tests
+#         (merge_overlapping_chunks_removes_the_duplicated_overlap_once,
+#         merge_overlapping_chunks_falls_back_to_space_join_without_overlap,
+#         merge_overlapping_chunks_picks_the_longest_matching_overlap,
+#         gold_chunks_probe_split_across_chunks_crossing_the_overlap_boundary), 40->44.
+#         lib/reconcile_eval_store/config_startup unchanged (468/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -86,8 +99,8 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 548 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 548, got $TOTAL" >&2
+if [ "$TOTAL" -ne 552 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 552, got $TOTAL" >&2
   exit 1
 fi
 
@@ -106,8 +119,8 @@ if [ "$BIN_MAIN_COUNT" -ne 0 ]; then
   exit 1
 fi
 
-if [ "$BIN_INSPECT_COUNT" -ne 40 ]; then
-  echo "FAIL: inspect_lancedb test count mismatch: expected 40, got $BIN_INSPECT_COUNT" >&2
+if [ "$BIN_INSPECT_COUNT" -ne 44 ]; then
+  echo "FAIL: inspect_lancedb test count mismatch: expected 44, got $BIN_INSPECT_COUNT" >&2
   exit 1
 fi
 
