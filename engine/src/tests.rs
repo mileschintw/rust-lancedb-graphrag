@@ -489,8 +489,9 @@ fn generation_node_timeout_below_retry_budget_is_rejected() {
 fn effective_settings_reject_provider_contract_violation_at_load() {
     let mut settings = Settings::default();
     settings.openrouter.generation_timeout_secs = 40;
-    let err = EffectiveRagSettings::try_from_settings(&settings)
-        .expect_err("must reject settings whose doubled provider budget exceeds generation_node_timeout_ms");
+    let err = EffectiveRagSettings::try_from_settings(&settings).expect_err(
+        "must reject settings whose doubled provider budget exceeds generation_node_timeout_ms",
+    );
     assert!(err.contains("generation_node_timeout_ms"));
     assert!(err.contains("80000"));
 }
@@ -499,8 +500,9 @@ fn effective_settings_reject_provider_contract_violation_at_load() {
 fn effective_settings_accept_provider_contract_at_boundary() {
     let mut accepted = Settings::default();
     accepted.openrouter.generation_timeout_secs = 32;
-    EffectiveRagSettings::try_from_settings(&accepted)
-        .expect("32s provider timeout requires 64000ms and must fit in the default 65000ms node budget");
+    EffectiveRagSettings::try_from_settings(&accepted).expect(
+        "32s provider timeout requires 64000ms and must fit in the default 65000ms node budget",
+    );
 
     let mut rejected = Settings::default();
     rejected.openrouter.generation_timeout_secs = 33;
@@ -1209,7 +1211,10 @@ fn configured_settings(lancedb_path: &str) -> Settings {
     }
 }
 
-pub(crate) async fn test_corpus_store(nodes: &lancedb::Table, bm25_index: Bm25Index) -> CorpusStore {
+pub(crate) async fn test_corpus_store(
+    nodes: &lancedb::Table,
+    bm25_index: Bm25Index,
+) -> CorpusStore {
     let nodes_version = nodes.version().await.unwrap_or(1);
     let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
         Arc::new(bm25_index),
@@ -3416,7 +3421,10 @@ async fn configured_rag_settings_drive_service() {
     assert_eq!(snap.bm25_weight, 0.2);
     assert_eq!(snap.rrf_k, 30);
     assert_eq!(snap.embedding_model, "custom/embed-v1");
-    assert_eq!(snap.index_generation, service.corpus_store.read().await.generation);
+    assert_eq!(
+        snap.index_generation,
+        service.corpus_store.read().await.generation
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -3571,7 +3579,9 @@ async fn service_index_generation_is_opaque_and_stable() {
         b"# Second Document in DB2\n\nContent 2b".to_vec(),
         HashMap::new(),
     );
-    process_job(&job2_b, &database2, &FakeEmbedder).await.unwrap();
+    process_job(&job2_b, &database2, &FakeEmbedder)
+        .await
+        .unwrap();
 
     let nodes2 = database2.nodes_table().await.unwrap();
     let bm25_index2 = Bm25Index::from_table(&nodes2, effective_settings2.retrieval.bm25.clone())
@@ -6508,7 +6518,12 @@ fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
         fact: GraphFact::new("Alice", "knows", "Bob", None, 0.9),
     }];
 
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 330, 32)
+    // D-71 (06.3.4.1-08) appended the final-answer instruction to the system policy,
+    // raising the fixed token overhead every packed prompt now reserves by ~95 tokens;
+    // the budget below is widened by that same delta so this test still exercises the
+    // boundary it was designed to (reserved block admitted, second chunk excluded), not
+    // a coincidentally tighter budget that would reject even the reserved block.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 425, 32)
         .expect("pack succeeds");
 
     assert_eq!(
@@ -6550,8 +6565,9 @@ fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
     // fixed token overhead every packed prompt now reserves; the budget below is widened
     // by that same delta so this tie-breaking test still exercises the boundary it was
     // designed to (2 evidence blocks admitted, the graph fact excluded), not just observing
-    // a coincidentally tighter budget.
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 380, 16)
+    // a coincidentally tighter budget. D-71 (06.3.4.1-08) then appended the final-answer
+    // instruction, raising the overhead again by ~95 tokens; widened by that same delta.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 475, 16)
         .expect("pack succeeds");
 
     assert_eq!(packed.evidence.len(), 2);
@@ -6766,8 +6782,10 @@ fn reserve_one_citable_chunk_holds_under_interleaving() {
 
     // Budget sized to fit only the reserved chunk block itself -- no room
     // left for the graph fact's header + body, even though the graph fact's
-    // raw score would dominate an unreserved competition.
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 300, 16)
+    // raw score would dominate an unreserved competition. D-71 (06.3.4.1-08)
+    // raised the system policy's fixed token overhead by ~95 tokens; widened
+    // by that same delta so the reserved block still fits.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 395, 16)
         .expect("the reserved chunk block always fits, regardless of graph fact score");
 
     assert_eq!(
@@ -6882,7 +6900,12 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
                 bm25_weight: 1.0,
                 graph_weight,
                 rrf_k: 60.0,
-                evidence_token_budget: 382,
+                // D-71 (06.3.4.1-08) raised the system policy's fixed token overhead by
+                // ~95 tokens (measured); widened from 382 by that same delta plus margin
+                // so both `capture_chat_request_body` callers below still exercise the
+                // reserved-block-fits / competing-block-excluded boundary they were
+                // designed to, not a coincidentally tighter real-request-body budget.
+                evidence_token_budget: 500,
                 excerpt_max_chars: 512,
                 bm25: Bm25ConfigSettings::default(),
             },
@@ -7804,9 +7827,7 @@ async fn shared_table_clone_checkout_mutates_sibling_pin() {
         b"# Doc1\n\nContent for version 1.".to_vec(),
         HashMap::new(),
     );
-    process_job(&job_1, &database, &FakeEmbedder)
-        .await
-        .unwrap();
+    process_job(&job_1, &database, &FakeEmbedder).await.unwrap();
 
     let doc_id_2 = Uuid::new_v4().to_string();
     let job_2 = IngestionJob::new(
@@ -7815,9 +7836,7 @@ async fn shared_table_clone_checkout_mutates_sibling_pin() {
         b"# Doc2\n\nContent for version 2.".to_vec(),
         HashMap::new(),
     );
-    process_job(&job_2, &database, &FakeEmbedder)
-        .await
-        .unwrap();
+    process_job(&job_2, &database, &FakeEmbedder).await.unwrap();
 
     let table = database.nodes_table().await.unwrap();
     let v_latest = table.version().await.unwrap();
@@ -7829,7 +7848,11 @@ async fn shared_table_clone_checkout_mutates_sibling_pin() {
     // Pin handle_a to version 1
     handle_a.checkout(1).await.unwrap();
     assert_eq!(handle_a.version().await.unwrap(), 1);
-    assert_eq!(handle_b.version().await.unwrap(), 1, "handle_b shares pinned_version cell");
+    assert_eq!(
+        handle_b.version().await.unwrap(),
+        1,
+        "handle_b shares pinned_version cell"
+    );
 
     // Checkout handle_b to latest version
     handle_b.checkout(v_latest).await.unwrap();
@@ -7857,9 +7880,7 @@ async fn independent_nodes_table_checkout_stays_isolated() {
         b"# Doc1\n\nContent for version 1.".to_vec(),
         HashMap::new(),
     );
-    process_job(&job_1, &database, &FakeEmbedder)
-        .await
-        .unwrap();
+    process_job(&job_1, &database, &FakeEmbedder).await.unwrap();
 
     let doc_id_2 = Uuid::new_v4().to_string();
     let job_2 = IngestionJob::new(
@@ -7868,9 +7889,7 @@ async fn independent_nodes_table_checkout_stays_isolated() {
         b"# Doc2\n\nContent for version 2.".to_vec(),
         HashMap::new(),
     );
-    process_job(&job_2, &database, &FakeEmbedder)
-        .await
-        .unwrap();
+    process_job(&job_2, &database, &FakeEmbedder).await.unwrap();
 
     let table_a = database.nodes_table().await.unwrap();
     let table_b = database.nodes_table().await.unwrap();
@@ -7907,9 +7926,7 @@ async fn test_checkout_clone_isolated_from_live_writes() {
         b"# Doc1\n\nContent for first snapshot version.".to_vec(),
         HashMap::new(),
     );
-    process_job(&job_1, &database, &FakeEmbedder)
-        .await
-        .unwrap();
+    process_job(&job_1, &database, &FakeEmbedder).await.unwrap();
 
     let nodes = database.nodes_table().await.unwrap();
     let v1 = nodes.version().await.unwrap();
@@ -7917,9 +7934,22 @@ async fn test_checkout_clone_isolated_from_live_writes() {
     nodes_pinned.checkout(v1).await.unwrap();
 
     // Query pinned table at v1
-    let query_req = QueryRequest::from_values("Content", vec![], vec![], &retrieval::RetrievalSettings::default()).unwrap();
+    let query_req = QueryRequest::from_values(
+        "Content",
+        vec![],
+        vec![],
+        &retrieval::RetrievalSettings::default(),
+    )
+    .unwrap();
     let retriever_pinned = DenseRetriever::new(nodes_pinned.clone());
-    let candidates_pinned_v1 = retriever_pinned.query(&[0.25; 2048], &query_req, &retrieval::RetrievalSettings::default()).await.unwrap();
+    let candidates_pinned_v1 = retriever_pinned
+        .query(
+            &[0.25; 2048],
+            &query_req,
+            &retrieval::RetrievalSettings::default(),
+        )
+        .await
+        .unwrap();
     assert_eq!(candidates_pinned_v1.len(), 2);
 
     // Now insert a second document to the live table, moving version to v2
@@ -7930,21 +7960,40 @@ async fn test_checkout_clone_isolated_from_live_writes() {
         b"# Doc2\n\nAdditional content written later.".to_vec(),
         HashMap::new(),
     );
-    process_job(&job_2, &database, &FakeEmbedder)
-        .await
-        .unwrap();
+    process_job(&job_2, &database, &FakeEmbedder).await.unwrap();
 
     let nodes_live = database.nodes_table().await.unwrap();
     let v2 = nodes_live.version().await.unwrap();
-    assert!(v2 > v1, "live table version must advance after second ingest");
+    assert!(
+        v2 > v1,
+        "live table version must advance after second ingest"
+    );
 
     // Re-query the pinned table instance at v1
-    let candidates_pinned_after = retriever_pinned.query(&[0.25; 2048], &query_req, &retrieval::RetrievalSettings::default()).await.unwrap();
-    assert_eq!(candidates_pinned_after.len(), 2, "pinned table must retain v1 row snapshot");
+    let candidates_pinned_after = retriever_pinned
+        .query(
+            &[0.25; 2048],
+            &query_req,
+            &retrieval::RetrievalSettings::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        candidates_pinned_after.len(),
+        2,
+        "pinned table must retain v1 row snapshot"
+    );
 
     // Query live table
     let live_retriever = DenseRetriever::new(nodes_live);
-    let candidates_live = live_retriever.query(&[0.25; 2048], &query_req, &retrieval::RetrievalSettings::default()).await.unwrap();
+    let candidates_live = live_retriever
+        .query(
+            &[0.25; 2048],
+            &query_req,
+            &retrieval::RetrievalSettings::default(),
+        )
+        .await
+        .unwrap();
     assert_eq!(candidates_live.len(), 4, "live table must reflect v2 rows");
 
     let _ = std::fs::remove_dir_all(path);
@@ -7963,9 +8012,7 @@ async fn test_rebuild_swap_updates_generation_label() {
         b"# Alpha\n\nAlpha document content.".to_vec(),
         HashMap::new(),
     );
-    process_job(&job_1, &database, &FakeEmbedder)
-        .await
-        .unwrap();
+    process_job(&job_1, &database, &FakeEmbedder).await.unwrap();
 
     let service = configured_service(
         &database,
@@ -7995,9 +8042,7 @@ async fn test_rebuild_swap_updates_generation_label() {
         b"# Beta\n\nBeta document content.".to_vec(),
         HashMap::new(),
     );
-    process_job(&job_2, &database, &FakeEmbedder)
-        .await
-        .unwrap();
+    process_job(&job_2, &database, &FakeEmbedder).await.unwrap();
 
     // Trigger rebuild_and_swap
     let new_snapshot = engine::ingest::rebuild_and_swap(
@@ -8009,8 +8054,14 @@ async fn test_rebuild_swap_updates_generation_label() {
     .unwrap();
 
     assert!(new_snapshot.nodes_version > initial_version);
-    assert_eq!(new_snapshot.generation, format!("lance-{}", new_snapshot.nodes_version));
-    assert_eq!(service.corpus_store.read().await.generation, new_snapshot.generation);
+    assert_eq!(
+        new_snapshot.generation,
+        format!("lance-{}", new_snapshot.nodes_version)
+    );
+    assert_eq!(
+        service.corpus_store.read().await.generation,
+        new_snapshot.generation
+    );
 
     // Execute query and check snapshot metadata
     let snapshot = service.corpus_store.read().await.clone();
@@ -8044,7 +8095,10 @@ async fn retrieve_dense_on_freshly_initialized_table_does_not_panic() {
 
     // Observed LanceDB table version on a fresh, empty table
     let version = nodes.version().await.unwrap();
-    assert_eq!(version, 1, "real LanceDB observed version on fresh table is 1");
+    assert_eq!(
+        version, 1,
+        "real LanceDB observed version on fresh table is 1"
+    );
 
     let dense_port = engine::service::ProductionDenseRetrievalPort {
         database: database.clone(),
@@ -8057,7 +8111,10 @@ async fn retrieve_dense_on_freshly_initialized_table_does_not_panic() {
         .retrieve_dense("fresh query", &[0.1; 2048], None, &cancel)
         .await;
 
-    assert!(result.is_ok(), "dense retrieval on freshly initialized table must succeed without panic");
+    assert!(
+        result.is_ok(),
+        "dense retrieval on freshly initialized table must succeed without panic"
+    );
     let candidates = result.unwrap();
     assert_eq!(candidates.len(), 0, "empty table yields 0 candidates");
 
@@ -8096,7 +8153,10 @@ async fn rebuild_failure_degrades_not_fails() {
     )
     .await;
     assert!(res.is_err(), "armed rebuild must return Err");
-    assert!(service.corpus_store.read().await.rebuild_degraded, "rebuild_degraded flag must be set");
+    assert!(
+        service.corpus_store.read().await.rebuild_degraded,
+        "rebuild_degraded flag must be set"
+    );
 
     // Execute query with degraded snapshot
     let snapshot = service.corpus_store.read().await.clone();
@@ -8123,7 +8183,10 @@ async fn rebuild_failure_degrades_not_fails() {
         .iter()
         .find(|n| n.code == "INDEX_REBUILD_FAILED")
         .expect("IndexRebuildFailed notice must be emitted");
-    assert_eq!(degrade_notice.severity, lancet::v1::NoticeSeverity::Warning as i32);
+    assert_eq!(
+        degrade_notice.severity,
+        lancet::v1::NoticeSeverity::Warning as i32
+    );
 
     // Subsequent successful rebuild clears degraded flag
     let res_ok = engine::ingest::rebuild_and_swap(
@@ -8133,7 +8196,10 @@ async fn rebuild_failure_degrades_not_fails() {
     )
     .await;
     assert!(res_ok.is_ok(), "unarmed rebuild must succeed");
-    assert!(!service.corpus_store.read().await.rebuild_degraded, "degraded flag must be cleared");
+    assert!(
+        !service.corpus_store.read().await.rebuild_degraded,
+        "degraded flag must be cleared"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -8172,13 +8238,19 @@ async fn rebuild_checkout_latest_failure_degrades_not_fails() {
         service.effective_settings.retrieval.bm25.clone(),
     )
     .await;
-    assert!(res.is_err(), "armed rebuild checkout failure must return Err");
+    assert!(
+        res.is_err(),
+        "armed rebuild checkout failure must return Err"
+    );
     assert!(
         service.corpus_store.read().await.rebuild_degraded,
         "rebuild_degraded flag must be set on checkout_latest failure"
     );
     assert_eq!(service.corpus_store.read().await.generation, prior_gen);
-    assert_eq!(service.corpus_store.read().await.nodes_version, prior_version);
+    assert_eq!(
+        service.corpus_store.read().await.nodes_version,
+        prior_version
+    );
     assert!(Arc::ptr_eq(
         &service.corpus_store.read().await.bm25,
         &prior_bm25
@@ -8209,7 +8281,10 @@ async fn rebuild_checkout_latest_failure_degrades_not_fails() {
         .iter()
         .find(|n| n.code == "INDEX_REBUILD_FAILED")
         .expect("IndexRebuildFailed notice must be emitted on checkout_latest degrade");
-    assert_eq!(degrade_notice.severity, lancet::v1::NoticeSeverity::Warning as i32);
+    assert_eq!(
+        degrade_notice.severity,
+        lancet::v1::NoticeSeverity::Warning as i32
+    );
 
     // Subsequent successful rebuild clears degraded flag
     let res_ok = engine::ingest::rebuild_and_swap(
@@ -8219,7 +8294,10 @@ async fn rebuild_checkout_latest_failure_degrades_not_fails() {
     )
     .await;
     assert!(res_ok.is_ok(), "unarmed rebuild must succeed");
-    assert!(!service.corpus_store.read().await.rebuild_degraded, "degraded flag must be cleared");
+    assert!(
+        !service.corpus_store.read().await.rebuild_degraded,
+        "degraded flag must be cleared"
+    );
 
     engine::ingest::clear_rebuild_checkout_fail_next();
     let _ = std::fs::remove_dir_all(path);
@@ -8316,8 +8394,12 @@ async fn debounce_task_terminates_on_shutdown_signal() {
 
     shutdown_tx.send(true).unwrap();
 
-    let timeout_res = tokio::time::timeout(std::time::Duration::from_millis(500), debounce_task).await;
-    assert!(timeout_res.is_ok(), "debounce task must exit promptly on shutdown signal");
+    let timeout_res =
+        tokio::time::timeout(std::time::Duration::from_millis(500), debounce_task).await;
+    assert!(
+        timeout_res.is_ok(),
+        "debounce task must exit promptly on shutdown signal"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -8326,27 +8408,32 @@ async fn debounce_task_terminates_on_shutdown_signal() {
 async fn rebuild_swap_generation_atomicity() {
     let path = database_path("rebuild-atomicity");
     let database = DatabaseManager::initialize(&path).await.unwrap();
-    let service = Arc::new(configured_service(
-        &database,
-        EffectiveRagSettings::default(),
-        Arc::new(FakeEmbedder),
-        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
-            answer: "Answer".into(),
-            cited_evidence_ids: vec![],
-            answer_basis: generation::AnswerBasis::ModelOnly,
-            notices: vec![],
-            warnings: vec![],
-            usage: None,
-        }))),
-        Arc::new(rerank::NoOpReranker::new()),
-    )
-    .await);
+    let service = Arc::new(
+        configured_service(
+            &database,
+            EffectiveRagSettings::default(),
+            Arc::new(FakeEmbedder),
+            Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+                answer: "Answer".into(),
+                cited_evidence_ids: vec![],
+                answer_basis: generation::AnswerBasis::ModelOnly,
+                notices: vec![],
+                warnings: vec![],
+                usage: None,
+            }))),
+            Arc::new(rerank::NoOpReranker::new()),
+        )
+        .await,
+    );
 
     let mut handles = Vec::new();
     for i in 0..10 {
         let s = Arc::clone(&service);
         handles.push(tokio::spawn(async move {
-            let req = test_query_request("atomicity test", &format!("00000000-0000-4000-8000-0000000000{:02}", i));
+            let req = test_query_request(
+                "atomicity test",
+                &format!("00000000-0000-4000-8000-0000000000{:02}", i),
+            );
             let snapshot = s.corpus_store.read().await.clone();
             let (_runner, deps) = s.build_production_workflow(snapshot.clone());
             let mut ctx = WorkflowContext::new(
@@ -8380,7 +8467,10 @@ async fn rebuild_swap_generation_atomicity() {
 
     for h in handles {
         let gen = h.await.unwrap();
-        assert!(gen.starts_with("lance-"), "every query must see a valid lance generation label");
+        assert!(
+            gen.starts_with("lance-"),
+            "every query must see a valid lance generation label"
+        );
     }
 
     let _ = std::fs::remove_dir_all(path);
@@ -8416,7 +8506,10 @@ async fn query_never_blocks_on_rebuild() {
 
     // Query completes in milliseconds without waiting on any lock
     let timeout_res = tokio::time::timeout(std::time::Duration::from_millis(500), fut).await;
-    assert!(timeout_res.is_ok(), "BM25 query must complete immediately off immutable snapshot");
+    assert!(
+        timeout_res.is_ok(),
+        "BM25 query must complete immediately off immutable snapshot"
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -8447,7 +8540,10 @@ async fn generation_agreement_dense_bm25() {
     // Both dense_port and bm25_port were constructed from the exact same snapshot
     assert_eq!(deps.dense_port.is_some(), true);
     assert_eq!(deps.bm25_port.is_some(), true);
-    assert_eq!(snapshot.generation, format!("lance-{}", snapshot.nodes_version));
+    assert_eq!(
+        snapshot.generation,
+        format!("lance-{}", snapshot.nodes_version)
+    );
 
     let _ = std::fs::remove_dir_all(path);
 }

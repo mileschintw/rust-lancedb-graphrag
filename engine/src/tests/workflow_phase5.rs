@@ -6575,8 +6575,7 @@ async fn citation_to_surviving_and_truncated_blocks_resolves_surviving_and_drops
     let cancel = CancellationToken::new();
     let mut req = test_query_request("Mixed surviving and truncated", "sess-mixed-trunc");
     req.allow_model_only = Some(false);
-    let mut ctx =
-        WorkflowContext::new("sess-mixed-trunc".into(), "trace-mixed-trunc".into(), &req);
+    let mut ctx = WorkflowContext::new("sess-mixed-trunc".into(), "trace-mixed-trunc".into(), &req);
     // Block [1] is in prompt; Block [2] was truncated out
     ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
 
@@ -6665,8 +6664,11 @@ async fn workflow_prompt_packing_truncation_drops_citation_to_truncated_block() 
         None,
         RetrievalSettings::default(),
     ));
-    // Budget tight enough to fit block 1 only (budget: 250 max_prompt_tokens, 20 answer_token_budget)
-    runner.add_node(AssemblePromptNode::with_settings(250, 20, 1.0));
+    // Budget tight enough to fit block 1 only (budget: 345 max_prompt_tokens, 20
+    // answer_token_budget). D-71 (06.3.4.1-08) raised the system policy's fixed
+    // token overhead by ~95 tokens; widened from 250 by that same delta so block 1
+    // still fits and block 2 is still excluded, not a coincidentally tighter budget.
+    runner.add_node(AssemblePromptNode::with_settings(345, 20, 1.0));
     let limits = GroundingLimits::new(8192, 2048).unwrap();
     runner.add_node(
         GenerateAnswerNode::new(Some(fake_gen))
@@ -6872,23 +6874,26 @@ fn derive_degraded_mode_includes_retrieval_failed_regardless_of_position() {
         "Retrieval failed",
         NoticeSeverity::Error,
     );
-    let other_notice = engine::workflow::notice(
-        NoticeCode::NoEvidence,
-        "No evidence",
-        NoticeSeverity::Info,
-    );
+    let other_notice =
+        engine::workflow::notice(NoticeCode::NoEvidence, "No evidence", NoticeSeverity::Info);
 
     // Index 0
     let notices_first = vec![failed_notice.clone(), other_notice.clone()];
     assert!(
-        engine::workflow::derive_degraded_mode(&notices_first, engine::pb::lancet::v1::AnswerBasis::Retrieval),
+        engine::workflow::derive_degraded_mode(
+            &notices_first,
+            engine::pb::lancet::v1::AnswerBasis::Retrieval
+        ),
         "derive_degraded_mode must be true with RetrievalFailed at index 0"
     );
 
     // Last index
     let notices_last = vec![other_notice, failed_notice];
     assert!(
-        engine::workflow::derive_degraded_mode(&notices_last, engine::pb::lancet::v1::AnswerBasis::Retrieval),
+        engine::workflow::derive_degraded_mode(
+            &notices_last,
+            engine::pb::lancet::v1::AnswerBasis::Retrieval
+        ),
         "derive_degraded_mode must be true with RetrievalFailed at last index"
     );
 }
@@ -6910,7 +6915,10 @@ async fn workflow_phase5_retrieve_timeout_emits_partial_snapshot_with_provenance
         "sess-partial-snap".to_string(),
     );
 
-    let req = test_query_request("Retrieve timeout partial snapshot test", "sess-partial-snap");
+    let req = test_query_request(
+        "Retrieve timeout partial snapshot test",
+        "sess-partial-snap",
+    );
     let ctx = WorkflowContext::new(
         "sess-partial-snap".to_string(),
         "trace-partial-snap".to_string(),
@@ -6962,7 +6970,10 @@ async fn workflow_phase5_retrieve_timeout_emits_partial_snapshot_with_provenance
 
     // All seven discriminators from Plan 04 Task 1:
     // (1) success == false
-    assert!(!completed_event.success, "Timed-out retrieval must have success == false");
+    assert!(
+        !completed_event.success,
+        "Timed-out retrieval must have success == false"
+    );
 
     // (2) retrieval-failure notice IS present
     assert!(
@@ -7036,7 +7047,9 @@ async fn workflow_phase5_graph_facts_reaching_prompt_are_counted() {
         );
 
         let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-        let fake_graph = Arc::new(FakeGraphQueryPort::success("Lancet -- uses -- LanceDB graph vector hybrid"));
+        let fake_graph = Arc::new(FakeGraphQueryPort::success(
+            "Lancet -- uses -- LanceDB graph vector hybrid",
+        ));
         let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
             "doc-graph-1",
             "chk-graph-1",
@@ -7117,7 +7130,9 @@ async fn workflow_phase5_graph_facts_reaching_prompt_are_counted() {
         );
 
         let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-        let fake_graph = Arc::new(FakeGraphQueryPort::success("Lancet -- uses -- LanceDB graph vector hybrid"));
+        let fake_graph = Arc::new(FakeGraphQueryPort::success(
+            "Lancet -- uses -- LanceDB graph vector hybrid",
+        ));
         let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
             "doc-graph-2",
             "chk-graph-2",
@@ -7198,11 +7213,11 @@ async fn workflow_phase5_graph_facts_reaching_prompt_are_counted() {
         );
 
         let fake_embedder = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]));
-        let fake_graph = Arc::new(FakeGraphQueryPort::success("Lancet -- uses -- LanceDB graph vector hybrid"));
+        let fake_graph = Arc::new(FakeGraphQueryPort::success(
+            "Lancet -- uses -- LanceDB graph vector hybrid",
+        ));
         let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
-            "doc-c-1",
-            "chk-c-1",
-            0.9,
+            "doc-c-1", "chk-c-1", 0.9,
         )]));
         let fake_reranker_fail = Arc::new(FakeReranker::failure());
 
@@ -7236,7 +7251,10 @@ async fn workflow_phase5_graph_facts_reaching_prompt_are_counted() {
             })
             .expect("WorkflowCompleted event");
 
-        assert!(!completed_event.success, "Case C: retrieval failure must report success == false");
+        assert!(
+            !completed_event.success,
+            "Case C: retrieval failure must report success == false"
+        );
         let meta = completed_event.metadata.expect("WorkflowMetadata present");
         assert_eq!(
             meta.graph_prompt_fact_count, 0,
@@ -7263,7 +7281,8 @@ async fn d71_answer_line_accepted_exactly_when_base_answer_accepted() {
     let cancel = CancellationToken::new();
 
     let req_base = test_query_request("D-71 base answer", "sess-d71-base");
-    let mut ctx_base = WorkflowContext::new("sess-d71-base".into(), "trace-d71-base".into(), &req_base);
+    let mut ctx_base =
+        WorkflowContext::new("sess-d71-base".into(), "trace-d71-base".into(), &req_base);
     ctx_base.evidence_blocks = vec![evidence_block_with_id("[1]")];
     let fake_gen_base: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
         answer: "Grounded answer text [1].".into(),
@@ -7285,7 +7304,8 @@ async fn d71_answer_line_accepted_exactly_when_base_answer_accepted() {
     let citations_base = ctx_base.citations.clone();
 
     let req_line = test_query_request("D-71 answer with final line", "sess-d71-line");
-    let mut ctx_line = WorkflowContext::new("sess-d71-line".into(), "trace-d71-line".into(), &req_line);
+    let mut ctx_line =
+        WorkflowContext::new("sess-d71-line".into(), "trace-d71-line".into(), &req_line);
     ctx_line.evidence_blocks = vec![evidence_block_with_id("[1]")];
     let fake_gen_line: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
         answer: "Grounded answer text [1].\nAnswer: Yes".into(),
@@ -7309,7 +7329,10 @@ async fn d71_answer_line_accepted_exactly_when_base_answer_accepted() {
         "an uncited Answer line must not change the resolved citation set"
     );
     assert!(ctx_line.answer.ends_with("Answer: Yes"));
-    assert!(!ctx_line.notices.iter().any(|n| n.code == "CITATION_DROPPED"));
+    assert!(!ctx_line
+        .notices
+        .iter()
+        .any(|n| n.code == "CITATION_DROPPED"));
 }
 
 /// Behavior: a resolvable `[n]` marker placed on the Answer line joins the
@@ -7443,4 +7466,3 @@ async fn d71_citation_repair_enabled_never_yields_marker_mismatch() {
     );
     assert_eq!(ctx.citations, vec!["[1]".to_string()]);
 }
-

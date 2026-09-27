@@ -169,8 +169,12 @@ fn prompt_evidence_budget_and_boundary() {
     assert_eq!(packed.evidence[0].id, "[1]");
     assert_eq!(packed.evidence[1].id, "[2]");
 
-    // Test token limit cutoff: allow first block (~115 tokens) to fit, but cut off second block
-    let small_packed = pack_evidence_prompt_sync("What is the architecture?", &evidence, 300, 50)
+    // Test token limit cutoff: allow first block (~115 tokens) to fit, but cut off second block.
+    // The budget floor accounts for the D-71 final-answer instruction lengthening
+    // `base_system_policy()` (~199 base tokens as of that change, up from the
+    // pre-D-71 policy) -- 450 - 50 answer budget - ~199 base leaves ~201 tokens for
+    // evidence, enough for the first ~115-token block but not both.
+    let small_packed = pack_evidence_prompt_sync("What is the architecture?", &evidence, 450, 50)
         .expect("pack succeeds with limited budget");
     assert_eq!(small_packed.evidence.len(), 1);
     assert!(small_packed
@@ -1886,7 +1890,10 @@ fn shipped_generation_model_pin_matches_preflight_test_model() {
         loaded, SHIPPED_GENERATION_MODEL,
         "shipped generation_model in config/config.toml must match test constant"
     );
-    assert!(!loaded.trim().is_empty(), "shipped model pin cannot be empty");
+    assert!(
+        !loaded.trim().is_empty(),
+        "shipped model pin cannot be empty"
+    );
     assert_ne!(
         loaded, "openai/gpt-4o-mini",
         "shipped model pin cannot be openai/gpt-4o-mini"
