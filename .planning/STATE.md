@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 9
+current_plan: 10
 status: executing
-stopped_at: "Completed 06.3.4.1-08-PLAN.md: D-71 final-answer instruction + cl100k_base_singleton, verified"
-last_updated: "2026-09-27T01:24:16.075Z"
+stopped_at: "Completed 06.3.4.1-09-PLAN.md: diag_probe bin, overlap-merge Rule-1 fix, G/V frozen at 398/291"
+last_updated: "2026-09-27T03:08:20.179Z"
 last_activity: 2026-09-26
-state_head: af23ab97d6b53073b9fc7f03a18091df6f46d69c
+state_head: 2eef988e93b17db03909ade1355ee541c743350a
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 166
+  completed_plans: 167
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
@@ -21,7 +21,7 @@ current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 
 ## Current Position
 
-Current Plan: 9
+Current Plan: 10
 Total Plans in Phase: 20
 
 ## Current Status
@@ -376,6 +376,7 @@ Total Plans in Phase: 20
 | Phase 06.3.4.1 P06 | ~65min | 3 tasks | 9 files |
 | Phase 06.3.4.1 P07 | 3h40min | 5 tasks | 493 files |
 | Phase 06.3.4.1 P08 | 80min | 2 tasks | 5 files |
+| Phase 06.3.4.1 P09 | ~40min | 3 tasks | 17 files |
 
 ## Decisions
 
@@ -443,12 +444,15 @@ Total Plans in Phase: 20
 - [Phase 06.3.4.1]: D-71 final-answer instruction appended additively to base_system_policy(); all existing guard sentences byte-identical, verified by per-sentence tests — OBS-05 requires eval and production to run the same prompt; no proto change
 - [Phase 06.3.4.1]: pack_evidence_and_graph_prompt now reads cl100k_base_singleton() instead of rebuilding the BPE per call — Allocation-removal refactor (D-64), proven behavior-preserving via a singleton-vs-fresh-build token-count equality test
 - [Phase 06.3.4.1]: Widened six pre-existing token-budget-boundary tests by the ~95-token delta D-71's sentences add to base_system_policy() — Rule 1 in-scope fix for a regression this task's own prompt-length increase caused; values widened by the measured delta, not loosened blindly
+- [Phase 06.3.4.1]: D-59 (2026-09-26): no re-ingest, no chunker change; the 18 candidate documents' rechunk-check identical=true proves re-ingestion cannot close the split-fact gap; split-fact questions stay outside G per D-63.
+- [Phase 06.3.4.1]: Rule-1 fix (06.3.4.1-09): classify_evidence_item's adjacent-window check naive-space-joined overlapping chunks, misclassifying 49 genuine cross-chunk split facts as absent; fixed via merge_overlapping_chunks.
+- [Phase 06.3.4.1]: (c) probe cap USD 0.05 authorised (2026-09-26); nulls-include-10 (90 non-null + 10 null = 100) recorded for the later ~100-question diagnostic sample (D-68).
 
 ## Session
 
-**Last session:** 2026-09-27T01:23:59.544Z
+**Last session:** 2026-09-27T03:08:18.984Z
 **Last activity:** 2026-09-26
-**Stopped at:** Completed 06.3.4.1-08-PLAN.md: D-71 final-answer instruction + cl100k_base_singleton, verified
+**Stopped at:** Completed 06.3.4.1-09-PLAN.md: diag_probe bin, overlap-merge Rule-1 fix, G/V frozen at 398/291
 **Resume file:** None
 
 ## Accumulated Context
