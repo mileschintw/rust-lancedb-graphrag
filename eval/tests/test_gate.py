@@ -599,7 +599,9 @@ def test_vector_baseline_usable_floor_committed_before_drive_1() -> None:
     assert isinstance(floor, float)
     assert 0.40 <= floor <= 1.0
 
-    diag_path = repo_root() / "eval" / "corpora" / "multihop_rag" / "questions.diag.jsonl"
+    diag_path = (
+        repo_root() / "eval" / "corpora" / "multihop_rag" / "questions.diag.jsonl"
+    )
     drawn_non_null_labels: list[str] = []
     with open(diag_path, encoding="utf-8") as f:
         for line in f:

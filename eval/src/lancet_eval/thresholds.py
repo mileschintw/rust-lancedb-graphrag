@@ -122,8 +122,9 @@ SC2_TIMEOUT_DOMINANCE_RULE: str = "plurality_tie_is_dominant"
 # 06.3.4.1 D-69/D-73: committed before paid drive 1 (AI-SPEC §5 #2/#4/#6).
 FINAL_ANSWER_MISSING_REVIEW_RATE: float = 0.10
 
-# NOTE: VECTOR_BASELINE_USABLE_FLOOR (D-73 SC-3 floor) is deliberately NOT
-# committed here. 06.3.4.1-10 commits it after G is fixed. unpark_gates.py's
-# evaluate_sc3 reads it via getattr(thresholds, "VECTOR_BASELINE_USABLE_FLOOR",
-# None) and returns MISS "floor not committed" when absent -- it must never
-# supply a default.
+# 06.3.4.1 D-73: max(0.40, B_G + 0.10), ceil to 3 decimals; B_G = 37/90 (modal
+# label 'yes') over the drawn non-null diagnostic sample in questions.diag.jsonl
+# (eval/corpora/multihop_rag/, seed 42, all in G by construction); evaluated
+# 2026-09-26; committed before paid drive 1. A miss triggers investigation
+# (D-84), not suppression.
+VECTOR_BASELINE_USABLE_FLOOR: float = 0.512
