@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 9/20 plans executed
+**Plans:** 10/20 plans executed
 
 Plans:
 
@@ -958,7 +958,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06.3.4.1-10-PLAN.md — Close layer 4's setup
+- [x] 06.3.4.1-10-PLAN.md — Close layer 4's setup
 
 **Wave 7** *(blocked on Wave 6 completion)*
 

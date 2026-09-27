@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 10
+current_plan: 11
 status: executing
-stopped_at: "Completed 06.3.4.1-09-PLAN.md: diag_probe bin, overlap-merge Rule-1 fix, G/V frozen at 398/291"
-last_updated: "2026-09-27T03:08:20.179Z"
+stopped_at: "Completed 06.3.4.1-10-PLAN.md: D-59 no-op, G/V re-verified (398/291), diagnostic sample + multihop_rag_diag corpus drawn, SC-3 floor 0.512 committed"
+last_updated: "2026-09-27T04:05:21.652Z"
 last_activity: 2026-09-26
-state_head: 2eef988e93b17db03909ade1355ee541c743350a
+state_head: 2789dd641f13e388f81b581e07ff3714b89ea1fd
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 167
+  completed_plans: 168
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
@@ -21,7 +21,7 @@ current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 
 ## Current Position
 
-Current Plan: 10
+Current Plan: 11
 Total Plans in Phase: 20
 
 ## Current Status
@@ -377,6 +377,7 @@ Total Plans in Phase: 20
 | Phase 06.3.4.1 P07 | 3h40min | 5 tasks | 493 files |
 | Phase 06.3.4.1 P08 | 80min | 2 tasks | 5 files |
 | Phase 06.3.4.1 P09 | ~40min | 3 tasks | 17 files |
+| Phase 06.3.4.1 P10 | ~50 min | 3 tasks | 9 files |
 
 ## Decisions
 
@@ -447,12 +448,15 @@ Total Plans in Phase: 20
 - [Phase 06.3.4.1]: D-59 (2026-09-26): no re-ingest, no chunker change; the 18 candidate documents' rechunk-check identical=true proves re-ingestion cannot close the split-fact gap; split-fact questions stay outside G per D-63.
 - [Phase 06.3.4.1]: Rule-1 fix (06.3.4.1-09): classify_evidence_item's adjacent-window check naive-space-joined overlapping chunks, misclassifying 49 genuine cross-chunk split facts as absent; fixed via merge_overlapping_chunks.
 - [Phase 06.3.4.1]: (c) probe cap USD 0.05 authorised (2026-09-26); nulls-include-10 (90 non-null + 10 null = 100) recorded for the later ~100-question diagnostic sample (D-68).
+- [Phase 06.3.4.1]: D-59 executed as branch d59-none (no re-ingest); DATA-03 stays unchecked — 06.3.4.1-09's rechunk_check proved identical=true for all 18 candidates, so re-ingestion cannot close the gap
+- [Phase 06.3.4.1]: G/V re-verified against plan 10's own definition using diagnostic/post-reconcile probes: |G|=398, |V|=291, matching plan 09's frozen candidates exactly — No discrepancy between plan 09's and plan 10's G/V definitions
+- [Phase 06.3.4.1]: VECTOR_BASELINE_USABLE_FLOOR committed at 0.512 (B_G=37/90 over the drawn diagnostic sample), higher than AI-SPEC's pre-draw illustrative estimate — Real drawn G-restricted sample skews more toward yes than the full sample AI-SPEC estimated from
 
 ## Session
 
-**Last session:** 2026-09-27T03:08:18.984Z
+**Last session:** 2026-09-27T04:05:20.485Z
 **Last activity:** 2026-09-26
-**Stopped at:** Completed 06.3.4.1-09-PLAN.md: diag_probe bin, overlap-merge Rule-1 fix, G/V frozen at 398/291
+**Stopped at:** Completed 06.3.4.1-10-PLAN.md: D-59 no-op, G/V re-verified (398/291), diagnostic sample + multihop_rag_diag corpus drawn, SC-3 floor 0.512 committed
 **Resume file:** None
 
 ## Accumulated Context
