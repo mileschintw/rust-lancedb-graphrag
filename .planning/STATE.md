@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 8
+current_plan: 9
 status: executing
-stopped_at: "Completed 06.3.4.1-07-PLAN.md: OI-02 not reproduced, diagnose-in-drive-1 chosen, phase execution stopped per user instruction"
-last_updated: "2026-09-26T23:58:25.639Z"
+stopped_at: "Completed 06.3.4.1-08-PLAN.md: D-71 final-answer instruction + cl100k_base_singleton, verified"
+last_updated: "2026-09-27T01:24:16.075Z"
 last_activity: 2026-09-26
-state_head: 2cde134a56fb389d82f7fa868c076e177876281f
+state_head: af23ab97d6b53073b9fc7f03a18091df6f46d69c
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 178
-  completed_plans: 165
+  completed_plans: 166
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
@@ -21,7 +21,7 @@ current_phase_name: retrieval-diagnosis-index-identity-and-graph-yield-repair
 
 ## Current Position
 
-Current Plan: 8
+Current Plan: 9
 Total Plans in Phase: 20
 
 ## Current Status
@@ -375,6 +375,7 @@ Total Plans in Phase: 20
 | Phase 06.3.4.1 P05 | interactive | 2 tasks | 8 files |
 | Phase 06.3.4.1 P06 | ~65min | 3 tasks | 9 files |
 | Phase 06.3.4.1 P07 | 3h40min | 5 tasks | 493 files |
+| Phase 06.3.4.1 P08 | 80min | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -439,12 +440,15 @@ Total Plans in Phase: 20
 - [Phase 06.3.4.1]: Rule 2 deviation: added p99, a 10-bucket decile histogram, and highest_degree_entity_name to inspect_lancedb --graph-population (f99f2095) -- D-77 needs a real p99, not an estimate from p95/max.
 - [Phase 06.3.4.1]: Task 3 resolved rerun-primary: primary-r2 re-ran with real embedding vectors after the first primary served 100% hash-fallback vectors — The first primary replay's graph-path test was invalid (no real graph traversal ever ran); building the vector-map wiring and re-running before any bisection avoided building on an invalid reading
 - [Phase 06.3.4.1]: Task 5 resolved diagnose-in-drive-1 after a paid-replay 0.25 run also stayed flat — No mechanism was ever named across 3 free Route B arms plus one $0.25-capped paid arm (real provider, real embeddings); OI-02 diagnosis deferred to paid drive 1, recorded as an open blocker
+- [Phase 06.3.4.1]: D-71 final-answer instruction appended additively to base_system_policy(); all existing guard sentences byte-identical, verified by per-sentence tests — OBS-05 requires eval and production to run the same prompt; no proto change
+- [Phase 06.3.4.1]: pack_evidence_and_graph_prompt now reads cl100k_base_singleton() instead of rebuilding the BPE per call — Allocation-removal refactor (D-64), proven behavior-preserving via a singleton-vs-fresh-build token-count equality test
+- [Phase 06.3.4.1]: Widened six pre-existing token-budget-boundary tests by the ~95-token delta D-71's sentences add to base_system_policy() — Rule 1 in-scope fix for a regression this task's own prompt-length increase caused; values widened by the measured delta, not loosened blindly
 
 ## Session
 
-**Last session:** 2026-09-26T23:58:24.647Z
+**Last session:** 2026-09-27T01:23:59.544Z
 **Last activity:** 2026-09-26
-**Stopped at:** Completed 06.3.4.1-07-PLAN.md: OI-02 not reproduced, diagnose-in-drive-1 chosen, phase execution stopped per user instruction
+**Stopped at:** Completed 06.3.4.1-08-PLAN.md: D-71 final-answer instruction + cl100k_base_singleton, verified
 **Resume file:** None
 
 ## Accumulated Context

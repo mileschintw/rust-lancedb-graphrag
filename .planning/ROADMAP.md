@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 7/20 plans executed
+**Plans:** 8/20 plans executed
 
 Plans:
 
@@ -953,7 +953,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 06.3.4.1-08-PLAN.md — Add D-71's final-answer line to the production prompt so the vector baseline's answers can be scored on a short extracted answer (SC-3, column e), without weakening the…
+- [x] 06.3.4.1-08-PLAN.md — Add D-71's final-answer line to the production prompt so the vector baseline's answers can be scored on a short extracted answer (SC-3, column e), without weakening the…
 - [ ] 06.3.4.1-09-PLAN.md — Layer 4, first half
 
 **Wave 6** *(blocked on Wave 5 completion)*
