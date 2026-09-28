@@ -783,3 +783,36 @@ def test_run_measurement_pass_calibration_note_matches_derivation_contract():
     assert "is not an input to any derived budget" not in src
     assert "derives proposed timeout budgets" in src
 
+
+
+def test_run_measurement_pass_allowance_check_reads_env_api_key(monkeypatch, tmp_path):
+    """The live allowance check must read OPENROUTER_API_KEY from the environment.
+
+    `EvalSettings` has no `openrouter_api_key` field (it is `extra="forbid"` and the key is
+    supplied out-of-band, as `preflight` and `score` already read it), so reaching for a
+    settings attribute crashed every live `measure` pass before its first query
+    (06.3.4.1-11 pass A).
+    """
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-env-key")
+    seen: list[str | None] = []
+
+    class _Stop(RuntimeError):
+        pass
+
+    def _capture(api_key, client=None):
+        seen.append(api_key)
+        raise _Stop()
+
+    with patch("lancet_eval.measure.require_index_identity"), patch(
+        "lancet_eval.measure.load_corpus"
+    ) as mock_lc, patch("lancet_eval.measure.check_provider_allowance", _capture):
+        mock_lc.return_value = MagicMock(questions=[])
+        with pytest.raises(_Stop):
+            run_measurement_pass(
+                corpus_name="multihop_rag",
+                sample_size_questions=1,
+                output_dir=tmp_path / "run",
+                client=MagicMock(),
+                check_allowance=True,
+            )
+    assert seen == ["sk-test-env-key"]
