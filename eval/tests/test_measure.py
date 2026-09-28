@@ -784,14 +784,13 @@ def test_run_measurement_pass_calibration_note_matches_derivation_contract():
     assert "derives proposed timeout budgets" in src
 
 
-
 def test_run_measurement_pass_allowance_check_reads_env_api_key(monkeypatch, tmp_path):
     """The live allowance check must read OPENROUTER_API_KEY from the environment.
 
-    `EvalSettings` has no `openrouter_api_key` field (it is `extra="forbid"` and the key is
-    supplied out-of-band, as `preflight` and `score` already read it), so reaching for a
-    settings attribute crashed every live `measure` pass before its first query
-    (06.3.4.1-11 pass A).
+    `EvalSettings` has no `openrouter_api_key` field (it is `extra="forbid"` and the
+    key is supplied out-of-band, as `preflight` and `score` already read it), so
+    reaching for a settings attribute crashed every live `measure` pass before its
+    first query (06.3.4.1-11 pass A).
     """
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-env-key")
     seen: list[str | None] = []

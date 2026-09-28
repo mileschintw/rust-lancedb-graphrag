@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import logging
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -468,7 +469,9 @@ def run_measurement_pass(
 
     # Preflight allowance check
     if check_allowance:
-        check_provider_allowance(settings.openrouter_api_key)
+        # The key is supplied out-of-band via the environment (as preflight and
+        # score read it); EvalSettings deliberately carries no API-key field.
+        check_provider_allowance(os.environ.get("OPENROUTER_API_KEY"))
 
     # State isolation check: verify target does not collide with eval schema
     eval_dsn = settings.database_url
