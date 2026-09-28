@@ -1,0 +1,18 @@
+{
+  "purpose": "raw samples for 06.3.4.1-11 budget pass A window",
+  "selector": "{job=\"otel-collector\"}",
+  "window_start": "2026-09-28T13:50:00+00:00",
+  "window_end": "2026-09-28T14:31:00+00:00",
+  "exported_at": "2026-09-28T14:29:40.977180+00:00",
+  "chunks": [
+    {
+      "file": "chunk_00_20260928T1350Z_20260928T1431Z.json",
+      "query": "{job=\"otel-collector\"}[2460s]",
+      "eval_time": "2026-09-28T14:31:00+00:00",
+      "range_start_exclusive": "2026-09-28T13:50:00+00:00",
+      "status": "success",
+      "series": 203,
+      "samples": 67181
+    }
+  ]
+}

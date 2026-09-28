@@ -1,0 +1,25 @@
+﻿{
+    "started_utc":  "2026-09-28T13:51:34.1700444Z",
+    "engine_pid":  22320,
+    "engine_start_time_utc":  "2026-09-28T13:51:34.5478173Z",
+    "engine_binary":  "D:\\Repos\\lancet\\engine\\target\\release\\engine.exe",
+    "engine_binary_mtime_utc":  "2026-09-28T13:48:02.0141857Z",
+    "engine_binary_size":  303769600,
+    "engine_build_profile":  "release",
+    "engine_stdio_sink":  "console (hidden window, not redirected); logs to collector via OTLP",
+    "gateway_pid":  1648,
+    "gateway_binary":  "D:\\Repos\\lancet\\gateway\\gateway.exe",
+    "gateway_binary_mtime_utc":  "2026-09-25T01:38:36.8632078Z",
+    "sampler_pid":  33568,
+    "head":  "17f20e4ceba568a65b0e8aaf33b73c8b059c14d9",
+    "env_overrides":  {
+                          "LANCET_ENV":  "eval",
+                          "LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS":  120000,
+                          "LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS":  120000,
+                          "LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS":  150500,
+                          "LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS":  120000,
+                          "LANCET_ENGINE__WORKFLOW__QUERY_EMBEDDING_TIMEOUT_MS":  30000,
+                          "LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS":  65000,
+                          "LANCET_GATEWAY__DATABASE_URL":  "postgres://postgres:***@127.0.0.1:5432/lancet?sslmode=disable\u0026search_path=lancet_eval (gateway only)"
+                      }
+}

@@ -21,3 +21,27 @@
   `ruff check --preview --fix` across `eval/src eval/tests` plus manual review of the
   non-autofixable `line-too-long` violations, scoped as its own change so it doesn't get
   entangled with feature work's diff review.
+
+- `flatness.records_from_run_journal` returns n=0 on every `measure` journal (06.3.4.1-11)
+  status: open
+  **What:** it loads lines via `journal.load_records`, which validates as `RunRecord`
+  (`extra="forbid"`) and silently skips `MeasurementRecord` lines (`ordinal`, `segment`,
+  `warm_up`, ...). `flatness_verdict` then reports `reason="n=0"`. Reproduced on pass A's
+  journal and on 06.3.3's `2026-09-06-measure-multihop_rag`. `oi02.load_timeline_records`
+  already falls back across both shapes; the flatness loader does not.
+  **Evidence:** `06.3.4.1-BUDGETS.md` "flatness.py" table.
+
+- OI-02 instrumentation reaches Loki lossily under the engine's unfiltered log volume (06.3.4.1-11)
+  status: open
+  **What:** pass A delivered `request_process_state` for 287/324 requests and
+  `retrieve_hybrid_substages` for 236/324 executions while the engine emitted ~12.7M
+  trace/debug lines in 41 minutes. Cause unverified (exporter/batch queue, collector or
+  Loki ingestion). Drive 1's live OI-02 diagnosis depends on these events arriving.
+  **Evidence:** `data/oi02-evidence/passA-2026-09-28/loki/manifest.json`, `06.3.4.1-BUDGETS.md`.
+
+- `measure.compute_spend` undercounts real provider spend (06.3.4.1-11)
+  status: open
+  **What:** pass A's estimate was $0.0748 against an OpenRouter usage delta of $0.2178.
+  Records whose `GenerateAnswer` failed carry zero wire tokens but were billed, so the
+  `--stage-cap` stop-rule runs on a low estimate.
+  **Evidence:** `06.3.4.1-BUDGETS.md` "Stage caps (D-86)".

@@ -1,0 +1,146 @@
+{
+  "records_total": 324,
+  "warm_up": 4,
+  "measured": 320,
+  "outcomes": {
+    "success": 189,
+    "error": 135
+  },
+  "node_failures": {
+    "GenerateAnswer:3": 135
+  },
+  "decay_verdict_measured_records": {
+    "verdict_decay_present": true,
+    "prong_slope_fired": true,
+    "prong_window_fired": false,
+    "slope_statistic": 0.032992950445780635,
+    "slope_threshold": 0.05,
+    "window_delta_ms": -6.0,
+    "window_threshold_ms": 500.0,
+    "trend_result": {
+      "slope": 0.032992950445780635,
+      "p_value": 0.001435782938732608,
+      "is_significant": true,
+      "is_censored": false,
+      "censored_count": 0,
+      "is_available": true,
+      "reason": "Theil-Sen slope = 0.0330 ms/query, p-value = 0.0014 (alpha = 0.05)"
+    },
+    "window_result": {
+      "early_window_size": 80,
+      "early_percentile_ms": 199.0,
+      "late_window_size": 80,
+      "late_percentile_ms": 193.0,
+      "delta_ms": -6.0,
+      "materiality_threshold_ms": 500.0,
+      "is_materially_elevated": false,
+      "is_censored": false,
+      "censored_count": 0,
+      "is_available": true,
+      "reason": "Early p95 = 199.0ms (n=80), Late p95 = 193.0ms (n=80), Delta = -6.0ms (threshold = 500.0ms)"
+    },
+    "restart_result": null,
+    "provenance": "Committed decision inputs per Phase 06.3.3: D-14 (multiplier=1.5, p95), D-18/D-19 (decay alpha=0.05, delta=500ms, window fractions 25%/25%), D-21 (segment boundary sizes 30/30), AI-SPEC bootstrap seed=42, min stratum cell size=10, max tolerated graph timeout rate=0.10, nesting invariant slack=500ms.",
+    "unusable_dropped_count": 0
+  },
+  "decay_gate": {
+    "trend_available": true,
+    "window_available": true,
+    "decay_present": true,
+    "passes": false
+  },
+  "flatness_literal_records_from_run_journal": {
+    "n": 0,
+    "verdict": {
+      "passed": false,
+      "reason": "n=0",
+      "trend_available": false,
+      "window_available": false,
+      "decay_present": false,
+      "slope_ms_per_query": 0.0,
+      "window_delta_ms": 0.0,
+      "censored_count": 0,
+      "unusable_dropped_count": 0,
+      "slice_medians_ms": [],
+      "n": 0
+    }
+  },
+  "flatness_adapted_all_records": {
+    "passed": false,
+    "reason": "decay_present",
+    "trend_available": true,
+    "window_available": true,
+    "decay_present": true,
+    "slope_ms_per_query": 0.03225806451612903,
+    "window_delta_ms": -6.0,
+    "censored_count": 0,
+    "unusable_dropped_count": 0,
+    "slice_medians_ms": [
+      158.5,
+      159.5,
+      157.5,
+      166.0,
+      163.0,
+      162.5,
+      181.0
+    ],
+    "n": 324
+  },
+  "flatness_adapted_measured_records": {
+    "passed": false,
+    "reason": "decay_present",
+    "trend_available": true,
+    "window_available": true,
+    "decay_present": true,
+    "slope_ms_per_query": 0.032992950445780635,
+    "window_delta_ms": -6.0,
+    "censored_count": 0,
+    "unusable_dropped_count": 0,
+    "slice_medians_ms": [
+      158.5,
+      160.5,
+      158.0,
+      165.5,
+      163.0,
+      166.0,
+      178.5
+    ],
+    "n": 320
+  },
+  "node_stats_measured": {
+    "ReformulateQuery": {
+      "n": 320,
+      "median": 0.0,
+      "p95_nearest": 0.0,
+      "max": 0.0
+    },
+    "ExtractGraphContext": {
+      "n": 320,
+      "median": 334.0,
+      "p95_nearest": 708.0,
+      "max": 1438.0
+    },
+    "RetrieveHybrid": {
+      "n": 320,
+      "median": 162.0,
+      "p95_nearest": 199.0,
+      "max": 403.0
+    },
+    "AssemblePrompt": {
+      "n": 320,
+      "median": 6.0,
+      "p95_nearest": 7.0,
+      "max": 43.0
+    },
+    "GenerateAnswer": {
+      "n": 186,
+      "median": 3624.5,
+      "p95_nearest": 6087.0,
+      "max": 33765.0
+    }
+  },
+  "retrieve_hybrid_median_by_arm": {
+    "graph-off": 164.0,
+    "graph-on": 159.0
+  }
+}

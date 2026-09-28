@@ -1,0 +1,20 @@
+[
+  {
+    "slice": 0,
+    "n": 214,
+    "AssemblePrompt": 6.0,
+    "ExtractGraphContext": 337.0,
+    "GenerateAnswer": 3644.0,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 160.0
+  },
+  {
+    "slice": 1,
+    "n": 110,
+    "AssemblePrompt": 6.0,
+    "ExtractGraphContext": 333.0,
+    "GenerateAnswer": 3556.5,
+    "ReformulateQuery": 0.0,
+    "RetrieveHybrid": 166.0
+  }
+]

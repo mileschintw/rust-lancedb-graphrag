@@ -1,0 +1,44 @@
+{
+  "window_start": "2026-09-28T13:50:00+00:00",
+  "window_end": "2026-09-28T14:31:00+00:00",
+  "exported_at": "2026-09-28T14:41:50.196630+00:00",
+  "exports": {
+    "engine_request_process_state.jsonl": {
+      "query": "{service_name=\"lancet-engine\"} |= \"request_process_state\"",
+      "lines": 287,
+      "note": "287 distinct request_ordinal values of 1..324; 37 ordinals absent (scattered, uncorrelated with outcome)"
+    },
+    "engine_retrieve_hybrid_substages.jsonl": {
+      "query": "{service_name=\"lancet-engine\"} |= \"retrieve_hybrid_substages\"",
+      "lines": 236,
+      "note": "236 of 324 RetrieveHybrid executions"
+    },
+    "engine_warn_error.jsonl": {
+      "query": "{service_name=\"lancet-engine\", severity_text=~\"WARN|ERROR\"}",
+      "lines": 0
+    },
+    "gateway_all.jsonl": {
+      "query": "{service_name=\"lancet-gateway\"}",
+      "lines": 325
+    },
+    "engine_volume_by_level_per_min.json": {
+      "query": "sum by (detected_level) (count_over_time({service_name=\"lancet-engine\"}[1m]))",
+      "totals": {
+        "trace": 11905251,
+        "debug": 792577,
+        "info": 1372
+      }
+    },
+    "gateway_volume_by_level_per_min.json": {
+      "query": "sum by (detected_level) (count_over_time({service_name=\"lancet-gateway\"}[1m]))",
+      "totals": {
+        "info": 325
+      }
+    },
+    "engine_serving_lines.json": {
+      "query": "{service_name=\"lancet-engine\"} |= \"Rust RAG Engine serving\"",
+      "lines": 1
+    }
+  },
+  "not_exported": "full engine stream ({service_name=\"lancet-engine\"}): ~12.7M lines in the window (99.9% trace/debug); a paginated export ran away past 5 GB and was deleted; per-minute volume by level is exported instead"
+}

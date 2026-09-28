@@ -1,0 +1,17 @@
+{
+  "_drive_era_commit_source": "earliest commit adding --retries to cli.py run command (-S search)",
+  "_last_commit_before_drive": "ff3188fb13d3da6a1e450ec5b5f7904e05abcac0",
+  "contrast_record_count": 658,
+  "drive_era_commit": "33e774bd71034b54ec14f8079e3cfac83aee56f1",
+  "fresh_process": "unknown",
+  "journal_hidden_gaps_over_threshold": 0,
+  "journal_record_count": 324,
+  "m1_alt_reference_ms": "unknown",
+  "m1_prod_ratio": "unknown",
+  "m1_reference_ms": "unknown",
+  "m1_reference_provenance": "unknown",
+  "prior_query_count": "unknown",
+  "production_launch": "unknown",
+  "proto_changed_since_drive_era": false,
+  "stub_delay_defaults": "unknown"
+}
