@@ -485,7 +485,21 @@ def test_measurement_pass_evidence_post_hoc_invariants():
     from lancet_eval.config import repo_root
 
     root = repo_root() / "eval" / "runs"
-    matching = list(root.glob("*-measure-multihop_rag"))
+
+    def _is_restart_evidence_run(run: Path) -> bool:
+        # These invariants describe 06.3.3's two-segment restart pass, whose
+        # measurement.json carries restart_ordinal. Later single-segment passes
+        # (e.g. 06.3.4.1-11 pass A, with warm-up records) share the glob but not
+        # the shape, so they are not what this test validates.
+        meta_path = run / "measurement.json"
+        if not meta_path.is_file():
+            return False
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        return "restart_ordinal" in meta
+
+    matching = [
+        p for p in root.glob("*-measure-multihop_rag") if _is_restart_evidence_run(p)
+    ]
     if not matching:
         pytest.skip("No measurement run directory found.")
 
