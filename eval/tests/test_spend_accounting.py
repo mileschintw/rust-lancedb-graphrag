@@ -20,7 +20,13 @@ from lancet_eval.journal import NodeTiming, RunRecord, WorkflowWireMeta
 from lancet_eval.measure import MeasurementRecord, compute_spend
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PASS_A_JOURNAL = REPO_ROOT / "eval" / "runs" / "2026-09-28-passA-measure-multihop_rag" / "journal.jsonl"
+PASS_A_JOURNAL = (
+    REPO_ROOT
+    / "eval"
+    / "runs"
+    / "2026-09-28-passA-measure-multihop_rag"
+    / "journal.jsonl"
+)
 BILLED_PASS_A_USD = 0.2178
 OLD_PASS_A_ESTIMATE_USD = 0.0748
 
@@ -67,15 +73,17 @@ def _ceiling_usd() -> float:
 def _old_spend(records: list[RunRecord], include_embeddings: bool = True) -> float:
     """The pre-06.3.4.1-23 estimator, verbatim, at the current price constants."""
     prompt = sum(r.workflow_meta.prompt_tokens for r in records if r.workflow_meta)
-    completion = sum(r.workflow_meta.completion_tokens for r in records if r.workflow_meta)
+    completion = sum(
+        r.workflow_meta.completion_tokens for r in records if r.workflow_meta
+    )
     gen = (prompt / 1_000_000.0) * measure.GENERATION_INPUT_PRICE_PER_1M + (
         completion / 1_000_000.0
     ) * measure.GENERATION_OUTPUT_PRICE_PER_1M
     if not include_embeddings:
         return gen
-    emb = (len(records) * measure.ESTIMATED_EMBEDDING_TOKENS_PER_QUERY / 1_000_000.0) * (
-        measure.EMBEDDING_PRICE_PER_1M
-    )
+    emb = (
+        len(records) * measure.ESTIMATED_EMBEDDING_TOKENS_PER_QUERY / 1_000_000.0
+    ) * (measure.EMBEDDING_PRICE_PER_1M)
     return gen + emb
 
 
@@ -87,7 +95,12 @@ def _failed_generation_record(message: str, qid: str = "q") -> RunRecord:
         graph_arm="graph-on",
         outcome="error",
         node_failures=[
-            NodeFailed(node_name="GenerateAnswer", error_kind=3, error_message=message, retryable=False)
+            NodeFailed(
+                node_name="GenerateAnswer",
+                error_kind=3,
+                error_message=message,
+                retryable=False,
+            )
         ],
         node_timings=[NodeTiming(node_name="AssemblePrompt", duration_ms=12.0)],
         workflow_meta=WorkflowWireMeta(prompt_tokens=0, completion_tokens=0),
@@ -104,13 +117,17 @@ def _success_record(prompt: int, completion: int, qid: str = "s") -> RunRecord:
             NodeTiming(node_name="AssemblePrompt", duration_ms=12.0),
             NodeTiming(node_name="GenerateAnswer", duration_ms=900.0),
         ],
-        workflow_meta=WorkflowWireMeta(prompt_tokens=prompt, completion_tokens=completion),
+        workflow_meta=WorkflowWireMeta(
+            prompt_tokens=prompt, completion_tokens=completion
+        ),
     )
 
 
 def _load_pass_a() -> list[MeasurementRecord]:
     with open(PASS_A_JOURNAL, encoding="utf-8") as f:
-        return [MeasurementRecord.model_validate_json(line) for line in f if line.strip()]
+        return [
+            MeasurementRecord.model_validate_json(line) for line in f if line.strip()
+        ]
 
 
 # --- charge rules through the public compute_spend API ------------------------------------
@@ -127,13 +144,17 @@ def test_failed_generation_record_is_charged_one_ceiling() -> None:
 @pytest.mark.parametrize("message", RETRIED_MESSAGES)
 def test_retried_failure_classes_are_charged_two_ceilings(message: str) -> None:
     """The node retries Timeout and ProviderError once, so two attempts may be billed."""
-    spend, _ = compute_spend([_failed_generation_record(message)], include_embeddings=False)
+    spend, _ = compute_spend(
+        [_failed_generation_record(message)], include_embeddings=False
+    )
     assert spend == pytest.approx(2 * _ceiling_usd())
 
 
 @pytest.mark.parametrize("message", NOT_RETRIED_MESSAGES)
 def test_non_retried_failure_classes_are_charged_one_ceiling(message: str) -> None:
-    spend, _ = compute_spend([_failed_generation_record(message)], include_embeddings=False)
+    spend, _ = compute_spend(
+        [_failed_generation_record(message)], include_embeddings=False
+    )
     assert spend == pytest.approx(_ceiling_usd())
 
 
@@ -201,30 +222,42 @@ def test_embedding_estimate_still_added_per_record() -> None:
     without_emb, _ = compute_spend([rec], include_embeddings=False)
     assert is_lower is False
     assert with_emb - without_emb == pytest.approx(
-        measure.ESTIMATED_EMBEDDING_TOKENS_PER_QUERY * measure.EMBEDDING_PRICE_PER_1M / 1_000_000.0
+        measure.ESTIMATED_EMBEDDING_TOKENS_PER_QUERY
+        * measure.EMBEDDING_PRICE_PER_1M
+        / 1_000_000.0
     )
 
 
 # --- successful records are charged exactly as before ----------------------------------------
 
 
-def test_successful_records_charge_equals_old_formula(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_successful_records_charge_equals_old_formula(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Old versus new, identical to the cent, even with a failed-generation multiplier set."""
-    records = [_success_record(1500 + 37 * i, 200 + 11 * i, qid=f"s{i}") for i in range(40)]
+    records = [
+        _success_record(1500 + 37 * i, 200 + 11 * i, qid=f"s{i}") for i in range(40)
+    ]
     for with_emb in (True, False):
         assert compute_spend(records, include_embeddings=with_emb)[0] == pytest.approx(
             _old_spend(records, with_emb), abs=1e-12
         )
-    monkeypatch.setattr(measure, "FAILED_GENERATION_CHARGE_MULTIPLIER", 5.0, raising=False)
+    monkeypatch.setattr(
+        measure, "FAILED_GENERATION_CHARGE_MULTIPLIER", 5.0, raising=False
+    )
     assert compute_spend(records)[0] == pytest.approx(_old_spend(records), abs=1e-12)
 
 
-def test_multiplier_scales_only_the_failed_generation_charge(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_multiplier_scales_only_the_failed_generation_charge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     ok = _success_record(4000, 300)
     bad = _failed_generation_record(RETRIED_MESSAGES[0])
     mixed = [ok, bad]
     base, _ = compute_spend(mixed, include_embeddings=False)
-    monkeypatch.setattr(measure, "FAILED_GENERATION_CHARGE_MULTIPLIER", 2.0, raising=False)
+    monkeypatch.setattr(
+        measure, "FAILED_GENERATION_CHARGE_MULTIPLIER", 2.0, raising=False
+    )
     scaled, _ = compute_spend(mixed, include_embeddings=False)
     success_part = _old_spend([ok], include_embeddings=False)
     failed_part = 2 * _ceiling_usd()
@@ -234,7 +267,10 @@ def test_multiplier_scales_only_the_failed_generation_charge(monkeypatch: pytest
     # embeddings are never scaled
     with_emb, _ = compute_spend(mixed, include_embeddings=True)
     assert with_emb - scaled == pytest.approx(
-        2 * measure.ESTIMATED_EMBEDDING_TOKENS_PER_QUERY * measure.EMBEDDING_PRICE_PER_1M / 1_000_000.0
+        2
+        * measure.ESTIMATED_EMBEDDING_TOKENS_PER_QUERY
+        * measure.EMBEDDING_PRICE_PER_1M
+        / 1_000_000.0
     )
 
 
@@ -250,9 +286,10 @@ def test_new_estimate_never_below_old_for_any_mix() -> None:
     for size in range(len(pool) + 1):
         subset = pool[:size]
         for with_emb in (True, False):
-            assert compute_spend(subset, include_embeddings=with_emb)[0] >= _old_spend(
-                subset, with_emb
-            ) - 1e-15
+            assert (
+                compute_spend(subset, include_embeddings=with_emb)[0]
+                >= _old_spend(subset, with_emb) - 1e-15
+            )
     assert compute_spend(_load_pass_a())[0] >= _old_spend(list(_load_pass_a()))
 
 
@@ -265,13 +302,19 @@ def test_pass_a_corrected_estimate_covers_the_provider_bill() -> None:
     assert len(records) == 324
     spend, is_lower = compute_spend(records, include_embeddings=True)
     assert is_lower is False
-    assert spend >= BILLED_PASS_A_USD, f"corrected estimate {spend:.4f} is below the {BILLED_PASS_A_USD} bill"
+    assert spend >= BILLED_PASS_A_USD, (
+        f"corrected estimate {spend:.4f} is below the {BILLED_PASS_A_USD} bill"
+    )
     assert spend > OLD_PASS_A_ESTIMATE_USD * 2
 
 
 def test_pass_a_failed_generation_count_is_the_135_journal_failures() -> None:
     records = _load_pass_a()
-    failed = [r for r in records if any(f.node_name == "GenerateAnswer" for f in r.node_failures)]
+    failed = [
+        r
+        for r in records
+        if any(f.node_name == "GenerateAnswer" for f in r.node_failures)
+    ]
     assert len(failed) == 135
     # all seven classes are SchemaValidation: one attempt each, so 135 attempts in total
     assert measure.count_failed_generation_attempts(records) == 135
@@ -284,8 +327,14 @@ def test_ceiling_constants_agree_with_config_toml() -> None:
     """The ceiling is the engine's own bound: evidence_token_budget and max_output_tokens."""
     with open(REPO_ROOT / "config" / "config.toml", "rb") as f:
         cfg = tomllib.load(f)
-    assert measure.FAILED_GENERATION_PROMPT_TOKENS == cfg["engine"]["retrieval"]["evidence_token_budget"]
-    assert measure.FAILED_GENERATION_COMPLETION_TOKENS == cfg["openrouter"]["max_output_tokens"]
+    assert (
+        measure.FAILED_GENERATION_PROMPT_TOKENS
+        == cfg["engine"]["retrieval"]["evidence_token_budget"]
+    )
+    assert (
+        measure.FAILED_GENERATION_COMPLETION_TOKENS
+        == cfg["openrouter"]["max_output_tokens"]
+    )
     assert measure.FAILED_GENERATION_PROMPT_TOKENS == CEILING_PROMPT_TOKENS
     assert measure.FAILED_GENERATION_COMPLETION_TOKENS == CEILING_COMPLETION_TOKENS
 
@@ -304,11 +353,22 @@ def test_generation_prices_are_not_below_the_recorded_listing() -> None:
 def test_count_failed_generation_attempts_rules() -> None:
     assert measure.count_failed_generation_attempts([]) == 0
     assert measure.count_failed_generation_attempts([_success_record(10, 5)]) == 0
-    assert measure.count_failed_generation_attempts([_failed_generation_record(SCHEMA_CLASSES[0])]) == 1
-    assert measure.count_failed_generation_attempts([_failed_generation_record(RETRIED_MESSAGES[0])]) == 2
     assert (
-        measure.count_failed_generation_attempts(
-            [_failed_generation_record(SCHEMA_CLASSES[0]), _failed_generation_record(RETRIED_MESSAGES[4])]
-        )
+        measure.count_failed_generation_attempts([
+            _failed_generation_record(SCHEMA_CLASSES[0])
+        ])
+        == 1
+    )
+    assert (
+        measure.count_failed_generation_attempts([
+            _failed_generation_record(RETRIED_MESSAGES[0])
+        ])
+        == 2
+    )
+    assert (
+        measure.count_failed_generation_attempts([
+            _failed_generation_record(SCHEMA_CLASSES[0]),
+            _failed_generation_record(RETRIED_MESSAGES[4]),
+        ])
         == 3
     )
