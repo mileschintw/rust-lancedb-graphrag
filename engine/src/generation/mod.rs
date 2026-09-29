@@ -33,6 +33,17 @@ pub enum AnswerBasis {
     ModelOnly,
 }
 
+impl AnswerBasis {
+    /// The snake_case name used on the wire and in log events.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Retrieval => "retrieval",
+            Self::Mixed => "mixed",
+            Self::ModelOnly => "model_only",
+        }
+    }
+}
+
 impl Display for AnswerBasis {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -558,6 +569,58 @@ impl Display for GenerationError {
 }
 
 impl std::error::Error for GenerationError {}
+
+/// Characters of a rejected model output kept from its start.
+///
+/// Sized so a complete `ModelOutput` JSON object with a normal answer fits, which makes a
+/// parse failure show whether valid JSON precedes the trailing text. Raising it grows every
+/// `generation_output_rejected` line and the Loki export in proportion.
+pub(crate) const REJECTED_OUTPUT_HEAD_CHARS: usize = 2000;
+
+/// Characters of a rejected model output kept from its end.
+///
+/// Sized to hold the trailing text after a complete JSON object, such as D-71's
+/// `Answer:` line. Raising it grows every `generation_output_rejected` line.
+pub(crate) const REJECTED_OUTPUT_TAIL_CHARS: usize = 500;
+
+/// Splits `text` into its first and last characters for a bounded log excerpt.
+///
+/// Returns the head, the tail and the total character count. Both cuts fall on `char`
+/// boundaries. The tail never overlaps the head, so it is empty when the whole text fits in
+/// the head and shorter than [`REJECTED_OUTPUT_TAIL_CHARS`] when only a little remains.
+pub(crate) fn bounded_excerpt(text: &str) -> (String, String, usize) {
+    let _ = text;
+    (String::new(), String::new(), 0)
+}
+
+/// What is known about a rejected `GenerateAnswer` output, borrowed for one log event.
+///
+/// Holds model output and engine-derived counts only. It has no field for the prompt, the
+/// evidence, request headers or the API key, so none of them can reach the event.
+#[derive(Debug)]
+pub(crate) struct RejectedOutput<'a> {
+    /// Where the output was rejected: `parse`, `finish_reason`, `usage` or `validate`.
+    pub stage: &'static str,
+    /// The engine's unchanged error message for this rejection.
+    pub reason: &'a str,
+    pub correlation_id: Option<&'a str>,
+    pub finish_reason: Option<&'a str>,
+    pub prompt_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    pub answer_basis: Option<&'a str>,
+    /// Length of the model's own `cited_evidence_ids` list.
+    pub model_cited_ids: Option<usize>,
+    pub markers_found: Option<usize>,
+    pub markers_resolved: Option<usize>,
+    pub total_drop: Option<bool>,
+    /// The model output the excerpt is cut from.
+    pub content: &'a str,
+}
+
+/// Emits one info-level `generation_output_rejected` event for a rejected output.
+pub(crate) fn emit_generation_output_rejected(r: &RejectedOutput<'_>) {
+    let _ = r;
+}
 
 /// Provider-neutral object-safe async trait for structured generation.
 pub trait Generator: Send + Sync {

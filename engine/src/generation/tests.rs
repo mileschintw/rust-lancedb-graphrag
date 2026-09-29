@@ -10,9 +10,10 @@ use serde_json::json;
 
 use crate::{
     generation::{
+        bounded_excerpt, emit_generation_output_rejected,
         openrouter::{OpenRouterGenerationConfig, OpenRouterGenerator},
         AnswerBasis, FakeGenerator, GenerationErrorKind, GenerationRequest, Generator, ModelOutput,
-        ModelUsage,
+        ModelUsage, RejectedOutput,
     },
     prompt::{assemble_evidence_blocks, pack_evidence_prompt_sync, resolve_citations},
     retrieval::{fusion::FusedCandidate, Candidate},
@@ -2019,4 +2020,477 @@ async fn shipped_generation_model_absent_from_models_list_fails_preflight() {
     );
 
     server_handle.join().expect("mock server completed");
+}
+
+// ---------------------------------------------------------------------------
+// generation_output_rejected: bounded capture of rejected provider outputs (D-91)
+// ---------------------------------------------------------------------------
+
+type CapturedEvent = std::collections::BTreeMap<String, String>;
+
+/// Collects every `generation_output_rejected` event as `field name -> rendered value`.
+///
+/// Free-text fields are recorded with the `?` sigil, so their rendered value is the escaped,
+/// double-quoted `Debug` form. Use [`unquoted`] to compare them with plain text.
+#[derive(Clone, Default)]
+struct RejectionRecorder {
+    events: Arc<Mutex<Vec<CapturedEvent>>>,
+}
+
+#[derive(Default)]
+struct FieldMap(CapturedEvent);
+
+impl tracing::field::Visit for FieldMap {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0.insert(field.name().to_string(), format!("{value:?}"));
+    }
+
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.0.insert(field.name().to_string(), value.to_string());
+    }
+
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        self.0.insert(field.name().to_string(), value.to_string());
+    }
+
+    fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+        self.0.insert(field.name().to_string(), value.to_string());
+    }
+
+    fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+        self.0.insert(field.name().to_string(), value.to_string());
+    }
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RejectionRecorder {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut fields = FieldMap::default();
+        event.record(&mut fields);
+        if fields.0.get("message").map(String::as_str) == Some("generation_output_rejected") {
+            self.events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(fields.0);
+        }
+    }
+}
+
+impl RejectionRecorder {
+    fn captured(&self) -> Vec<CapturedEvent> {
+        self.events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+/// Reverses the `Debug` rendering of a `str`: strips the quotes and unescapes.
+fn unquoted(debug_repr: &str) -> String {
+    let inner = debug_repr
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or_else(|| panic!("not a quoted Debug string: {debug_repr}"));
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some(other) => out.push(other),
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+const REJECTION_CORRELATION_ID: &str = "corr-rejected-1234";
+const SECRET_API_KEY: &str = "sk-sentinel-secret-key-7d20";
+
+fn model_output_json(answer: &str, cited: &[&str], basis: &str) -> String {
+    json!({
+        "answer": answer,
+        "cited_evidence_ids": cited,
+        "answer_basis": basis,
+        "notices": [],
+        "warnings": []
+    })
+    .to_string()
+}
+
+/// Serves the models preflight and one chat completion from a local mock provider, runs one
+/// `generate` call under a recording subscriber, and returns the result plus every captured
+/// `generation_output_rejected` event.
+async fn generate_against_mock(
+    question: &str,
+    evidence_text: &str,
+    content: &str,
+    finish_reason: Option<&str>,
+    usage: Option<(u32, u32, u32)>,
+) -> (
+    Result<ModelOutput, crate::generation::GenerationError>,
+    Vec<CapturedEvent>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+
+    let mut body = json!({
+        "choices": [{
+            "message": { "role": "assistant", "content": content },
+            "finish_reason": finish_reason
+        }]
+    });
+    if let Some((prompt, completion, total)) = usage {
+        body["usage"] = json!({
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": total
+        });
+    }
+
+    let server_handle = thread::spawn(move || {
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept models request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "data": [{
+                    "id": "mock/rejection-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            }),
+        );
+
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept chat request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(&mut stream, body);
+    });
+
+    let adapter = OpenRouterGenerator::new(SECRET_API_KEY, "mock/rejection-model")
+        .expect("adapter created")
+        .with_endpoints(
+            format!("http://{addr}/chat"),
+            format!("http://{addr}/models"),
+        );
+
+    let recorder = RejectionRecorder::default();
+    let subscriber = tracing_subscriber::layer::SubscriberExt::with(
+        tracing_subscriber::registry(),
+        recorder.clone(),
+    );
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    adapter
+        .check_supported_parameters()
+        .await
+        .expect("prepare succeeds");
+
+    let evidence = assemble_evidence_blocks(&[sample_candidate("1", evidence_text)]);
+    let mut request = GenerationRequest::new(question, evidence);
+    request.correlation_id = Some(REJECTION_CORRELATION_ID.to_string());
+    let result = adapter.generate(request).await;
+
+    server_handle.join().expect("server completed");
+    (result, recorder.captured())
+}
+
+#[tokio::test]
+async fn generation_output_rejected_parse_failure_keeps_head_and_trailing_answer_line() {
+    // Valid ModelOutput JSON followed by D-71's `Answer:` line, long enough that the tail
+    // is distinct from the head.
+    let json_part = model_output_json(&"Long answer sentence. ".repeat(140), &["[1]"], "retrieval");
+    let content = format!("{json_part}\nAnswer: Yes");
+
+    let (result, events) = generate_against_mock(
+        "Question?",
+        "Text.",
+        &content,
+        Some("stop"),
+        Some((1200, 300, 1500)),
+    )
+    .await;
+
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert!(
+        err.message()
+            .starts_with("failed to deserialize ModelOutput schema: trailing characters"),
+        "error message unchanged: {}",
+        err.message()
+    );
+
+    assert_eq!(events.len(), 1, "exactly one event: {events:?}");
+    let event = &events[0];
+    assert_eq!(event["stage"], "parse");
+    assert_eq!(unquoted(&event["reason"]), err.message());
+    assert_eq!(unquoted(&event["correlation_id"]), REJECTION_CORRELATION_ID);
+    assert_eq!(event["prompt_tokens"], "1200");
+    assert_eq!(event["completion_tokens"], "300");
+    assert_eq!(event["raw_chars"], content.chars().count().to_string());
+
+    let raw_head = unquoted(&event["raw_head"]);
+    assert!(raw_head.starts_with("{\"answer\":\"Long answer sentence."));
+    assert_eq!(raw_head, content.chars().take(2000).collect::<String>());
+    let raw_tail = unquoted(&event["raw_tail"]);
+    assert!(raw_tail.ends_with("Answer: Yes"), "tail: {raw_tail:?}");
+    assert_eq!(raw_tail.chars().count(), 500);
+}
+
+#[tokio::test]
+async fn generation_output_rejected_short_parse_failure_has_empty_tail() {
+    let content = format!(
+        "{}\nAnswer: Yes",
+        model_output_json("Short answer [1].", &["[1]"], "retrieval")
+    );
+    let (result, events) =
+        generate_against_mock("Question?", "Text.", &content, Some("stop"), None).await;
+
+    assert!(result.is_err());
+    assert_eq!(events.len(), 1, "{events:?}");
+    let event = &events[0];
+    assert_eq!(unquoted(&event["raw_head"]), content);
+    assert_eq!(unquoted(&event["raw_tail"]), "");
+    assert!(!event.contains_key("prompt_tokens"), "no usage was reported");
+}
+
+#[tokio::test]
+async fn generation_output_rejected_finish_reason_length_keeps_the_error_and_records_stage() {
+    let (result, events) = generate_against_mock(
+        "Question?",
+        "Text.",
+        "partial output",
+        Some("length"),
+        Some((1000, 2000, 3000)),
+    )
+    .await;
+
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert_eq!(
+        err.message(),
+        "OpenRouter completion incomplete: finish_reason 'length'"
+    );
+
+    assert_eq!(events.len(), 1, "{events:?}");
+    let event = &events[0];
+    assert_eq!(event["stage"], "finish_reason");
+    assert_eq!(unquoted(&event["finish_reason"]), "length");
+    assert_eq!(event["completion_tokens"], "2000");
+    assert_eq!(event["raw_chars"], "14");
+    assert_eq!(unquoted(&event["raw_head"]), "partial output");
+}
+
+#[tokio::test]
+async fn generation_output_rejected_missing_finish_reason_keeps_the_error() {
+    let (result, events) =
+        generate_against_mock("Question?", "Text.", "partial output", None, None).await;
+
+    let err = result.unwrap_err();
+    assert_eq!(err.message(), "OpenRouter choice missing finish_reason");
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0]["stage"], "finish_reason");
+    assert!(!events[0].contains_key("finish_reason"));
+}
+
+#[tokio::test]
+async fn generation_output_rejected_shape_validation_captures_mixed_without_citations() {
+    let content = model_output_json("Short answer without markers.", &[], "mixed");
+    let (result, events) = generate_against_mock(
+        "Question?",
+        "Text.",
+        &content,
+        Some("stop"),
+        Some((500, 100, 600)),
+    )
+    .await;
+
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert_eq!(
+        err.message(),
+        "answer basis 'mixed' requires at least one cited evidence ID"
+    );
+
+    assert_eq!(events.len(), 1, "{events:?}");
+    let event = &events[0];
+    assert_eq!(event["stage"], "validate");
+    assert_eq!(unquoted(&event["reason"]), err.message());
+    assert_eq!(unquoted(&event["answer_basis"]), "mixed");
+    assert_eq!(event["model_cited_ids"], "0");
+    assert!(
+        !event.contains_key("markers_found"),
+        "the provider site does not extract inline markers"
+    );
+    assert_eq!(event["prompt_tokens"], "500");
+    assert_eq!(unquoted(&event["raw_head"]), content);
+}
+
+#[tokio::test]
+async fn generation_output_rejected_usage_over_budget_keeps_the_error() {
+    let content = model_output_json("Answer [1]", &["[1]"], "retrieval");
+    let (result, events) = generate_against_mock(
+        "Question?",
+        "Text.",
+        &content,
+        Some("stop"),
+        Some((9000, 100, 9100)),
+    )
+    .await;
+
+    let err = result.unwrap_err();
+    assert!(
+        err.message()
+            .starts_with("OpenRouter prompt_tokens 9000 exceeds budget"),
+        "{}",
+        err.message()
+    );
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0]["stage"], "usage");
+    assert_eq!(events[0]["prompt_tokens"], "9000");
+}
+
+#[tokio::test]
+async fn generation_output_rejected_never_carries_prompt_evidence_or_credentials() {
+    const QUESTION_SENTINEL: &str = "SENTINEL-QUESTION-9c1e";
+    const EVIDENCE_SENTINEL: &str = "SENTINEL-EVIDENCE-44b7";
+    let question = format!("{QUESTION_SENTINEL} which framework?");
+    let evidence = format!("{EVIDENCE_SENTINEL} is quoted only in the evidence block.");
+
+    let parse_failure = format!(
+        "{}\nAnswer: Yes",
+        model_output_json("Answer [1].", &["[1]"], "retrieval")
+    );
+    let shape_failure = model_output_json("Answer without markers.", &[], "mixed");
+    let mut all_events = Vec::new();
+    for content in [parse_failure, shape_failure] {
+        let (result, events) = generate_against_mock(
+            &question,
+            &evidence,
+            &content,
+            Some("stop"),
+            Some((500, 100, 600)),
+        )
+        .await;
+        assert!(result.is_err());
+        all_events.extend(events);
+    }
+
+    assert_eq!(all_events.len(), 2);
+    for event in &all_events {
+        for (field, value) in event {
+            for secret in [QUESTION_SENTINEL, EVIDENCE_SENTINEL, SECRET_API_KEY, "Bearer"] {
+                assert!(
+                    !value.contains(secret),
+                    "field {field} leaks {secret}: {value}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn generation_output_rejected_is_silent_for_a_successful_completion() {
+    let content = model_output_json("Valid answer with citation [1].", &["[1]"], "retrieval");
+    let (result, events) = generate_against_mock(
+        "Question?",
+        "Text.",
+        &content,
+        Some("stop"),
+        Some((500, 100, 600)),
+    )
+    .await;
+
+    assert_eq!(result.unwrap().answer_basis, AnswerBasis::Retrieval);
+    assert!(events.is_empty(), "{events:?}");
+}
+
+#[test]
+fn generation_output_rejected_excerpt_cuts_on_char_boundaries() {
+    // Multibyte text: byte-index slicing at 2000 or 500 would split a code point and panic.
+    let text: String = "日本語é".chars().cycle().take(5000).collect();
+    let (head, tail, total) = bounded_excerpt(&text);
+    assert_eq!(total, 5000);
+    assert_eq!(head.chars().count(), 2000);
+    assert_eq!(tail.chars().count(), 500);
+    assert!(text.starts_with(&head));
+    assert!(text.ends_with(&tail));
+
+    let fits: String = "é".repeat(2000);
+    let (head, tail, total) = bounded_excerpt(&fits);
+    assert_eq!((head, tail, total), (fits, String::new(), 2000));
+
+    // Between the head and head+tail sizes the tail holds only the remainder, so head and
+    // tail together are the whole text with no overlap.
+    let between: String = "ü".repeat(2300);
+    let (head, tail, total) = bounded_excerpt(&between);
+    assert_eq!(total, 2300);
+    assert_eq!(head.chars().count(), 2000);
+    assert_eq!(tail.chars().count(), 300);
+    assert_eq!(format!("{head}{tail}"), between);
+
+    assert_eq!(bounded_excerpt(""), (String::new(), String::new(), 0));
+}
+
+#[test]
+fn generation_output_rejected_renders_as_one_fmt_line_with_escaped_free_text() {
+    #[derive(Clone)]
+    struct BufWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for BufWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let sink = Arc::new(Mutex::new(Vec::new()));
+    let writer = BufWriter(Arc::clone(&sink));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    {
+        let _guard = tracing::subscriber::set_default(subscriber);
+        emit_generation_output_rejected(&RejectedOutput {
+            stage: "parse",
+            reason: "bad \"quote\"\nsecond line",
+            correlation_id: Some("corr\"1"),
+            finish_reason: Some("stop"),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(20),
+            answer_basis: Some("mixed"),
+            model_cited_ids: Some(0),
+            markers_found: Some(2),
+            markers_resolved: Some(1),
+            total_drop: Some(false),
+            content: "line one\nline \"two\"\r\nlast line\n",
+        });
+    }
+
+    let rendered = String::from_utf8(
+        sink.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone(),
+    )
+    .expect("fmt output is UTF-8");
+    assert_eq!(rendered.lines().count(), 1, "one line only: {rendered:?}");
+    assert!(rendered.ends_with('\n'));
+    assert!(rendered.contains("generation_output_rejected"));
+    assert!(rendered.contains(r#"raw_head="line one\nline \"two\"\r\nlast line\n""#));
+    assert!(rendered.contains(r#"reason="bad \"quote\"\nsecond line""#));
 }
