@@ -41,7 +41,8 @@ SCHEMA_CLASSES = [
     "notice length exceeds limit 1024",
 ]
 # Engine literals (generation/openrouter.rs) for the classes the node retries: the node
-# retries only GenerationErrorKind::Timeout and ::ProviderError (generate.rs is_retryable).
+# retries only GenerationErrorKind::Timeout and ::ProviderError (generate.rs
+# is_retryable).
 RETRIED_MESSAGES = [
     "OpenRouter chat completion timed out",
     "OpenRouter request timed out at boundary limit",
@@ -88,7 +89,7 @@ def _old_spend(records: list[RunRecord], include_embeddings: bool = True) -> flo
 
 
 def _failed_generation_record(message: str, qid: str = "q") -> RunRecord:
-    """A record shaped like pass A's 135: AssemblePrompt completed, GenerateAnswer failed."""
+    """A record shaped like pass A's 135: AssemblePrompt done, GenerateAnswer failed."""
     return RunRecord(
         corpus="multihop_rag",
         question_id=qid,
@@ -130,11 +131,11 @@ def _load_pass_a() -> list[MeasurementRecord]:
         ]
 
 
-# --- charge rules through the public compute_spend API ------------------------------------
+# --- charge rules through the public compute_spend API -------------------------
 
 
 def test_failed_generation_record_is_charged_one_ceiling() -> None:
-    """A GenerateAnswer failure with zero wire tokens is billed one per-attempt ceiling."""
+    """A GenerateAnswer failure with zero wire tokens is billed one ceiling."""
     rec = _failed_generation_record(SCHEMA_CLASSES[0])
     spend, is_lower = compute_spend([rec], include_embeddings=False)
     assert is_lower is True
@@ -143,7 +144,7 @@ def test_failed_generation_record_is_charged_one_ceiling() -> None:
 
 @pytest.mark.parametrize("message", RETRIED_MESSAGES)
 def test_retried_failure_classes_are_charged_two_ceilings(message: str) -> None:
-    """The node retries Timeout and ProviderError once, so two attempts may be billed."""
+    """The node retries Timeout and ProviderError once: two attempts may be billed."""
     spend, _ = compute_spend(
         [_failed_generation_record(message)], include_embeddings=False
     )
@@ -167,8 +168,11 @@ def test_node_timeout_kind_is_charged_two_ceilings() -> None:
 
 
 def test_assembled_prompt_with_no_generation_outcome_is_charged_one_ceiling() -> None:
-    """Harness deadline or read timeout during generation: AssemblePrompt done, no GenerateAnswer
-    failure and no completed GenerateAnswer timing, zero wire tokens. May still be billed."""
+    """Harness deadline or read timeout during generation.
+
+    AssemblePrompt done, no GenerateAnswer failure and no completed GenerateAnswer
+    timing, zero wire tokens. May still be billed.
+    """
     rec = RunRecord(
         corpus="multihop_rag",
         question_id="q",
@@ -228,13 +232,13 @@ def test_embedding_estimate_still_added_per_record() -> None:
     )
 
 
-# --- successful records are charged exactly as before ----------------------------------------
+# --- successful records are charged exactly as before --------------------------
 
 
 def test_successful_records_charge_equals_old_formula(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Old versus new, identical to the cent, even with a failed-generation multiplier set."""
+    """Old versus new, identical to the cent, even with a multiplier set."""
     records = [
         _success_record(1500 + 37 * i, 200 + 11 * i, qid=f"s{i}") for i in range(40)
     ]
@@ -262,7 +266,7 @@ def test_multiplier_scales_only_the_failed_generation_charge(
     success_part = _old_spend([ok], include_embeddings=False)
     failed_part = 2 * _ceiling_usd()
     assert base == pytest.approx(success_part + failed_part)
-    # measure reads the constant at call time, so a multiplier of 2 doubles only failures.
+    # measure reads the constant at call time: a multiplier of 2 doubles only failures.
     assert scaled == pytest.approx(success_part + 2.0 * failed_part)
     # embeddings are never scaled
     with_emb, _ = compute_spend(mixed, include_embeddings=True)
@@ -275,7 +279,7 @@ def test_multiplier_scales_only_the_failed_generation_charge(
 
 
 def test_new_estimate_never_below_old_for_any_mix() -> None:
-    """Monotonicity: the corrected estimate can only grow relative to the old formula."""
+    """Monotonicity: the corrected estimate can only grow against the old formula."""
     pool: list[RunRecord] = [
         _success_record(3000, 250, "a"),
         _success_record(0, 0, "zero-success"),
@@ -293,11 +297,11 @@ def test_new_estimate_never_below_old_for_any_mix() -> None:
     assert compute_spend(_load_pass_a())[0] >= _old_spend(list(_load_pass_a()))
 
 
-# --- pass A calibration -------------------------------------------------------------------
+# --- pass A calibration --------------------------------------------------------
 
 
 def test_pass_a_corrected_estimate_covers_the_provider_bill() -> None:
-    """Pass A: 324 records, 135 failed generations, $0.2178 billed, $0.0748 old estimate."""
+    """Pass A: 324 records, 135 failed generations, $0.2178 billed, $0.0748 old."""
     records = _load_pass_a()
     assert len(records) == 324
     spend, is_lower = compute_spend(records, include_embeddings=True)
@@ -320,11 +324,11 @@ def test_pass_a_failed_generation_count_is_the_135_journal_failures() -> None:
     assert measure.count_failed_generation_attempts(records) == 135
 
 
-# --- constants and the new API surface ---------------------------------------------------
+# --- constants and the new API surface -----------------------------------------
 
 
 def test_ceiling_constants_agree_with_config_toml() -> None:
-    """The ceiling is the engine's own bound: evidence_token_budget and max_output_tokens."""
+    """The ceiling is the engine's own bound (evidence budget, max output tokens)."""
     with open(REPO_ROOT / "config" / "config.toml", "rb") as f:
         cfg = tomllib.load(f)
     assert (

@@ -200,12 +200,14 @@ def test_cli_run_without_stage_cap_exits_nonzero() -> None:
 def test_cap_counts_failed_generations_and_stops_earlier_than_the_old_estimator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """06.3.4.1-23 (G4 cost item, D-86): records whose GenerateAnswer failed carry zero wire tokens
-    but were billed. The cap must be reached on the corrected estimate, not on embeddings alone.
+    """06.3.4.1-23 (G4 cost item, D-86): failed generations were billed.
 
-    Each mocked record charges one per-attempt ceiling (~$0.0018), so a $0.005 cap is crossed at
-    the third record. The old estimator charged only ~$0.0000144 of embeddings per record and
-    would have dispatched every unit.
+    Records whose GenerateAnswer failed carry zero wire tokens but were billed. The cap
+    must be reached on the corrected estimate, not on embeddings alone.
+
+    Each mocked record charges one per-attempt ceiling (~$0.0018), so a $0.005 cap is
+    crossed at the third record. The old estimator charged only ~$0.0000144 of
+    embeddings per record and would have dispatched every unit.
     """
     from lancet_eval.client import NodeFailed
     from lancet_eval.journal import NodeTiming
@@ -227,7 +229,9 @@ def test_cap_counts_failed_generations_and_stops_earlier_than_the_old_estimator(
                 NodeFailed(
                     node_name="GenerateAnswer",
                     error_kind=3,
-                    error_message="answer basis 'mixed' requires at least one cited evidence ID",
+                    error_message=(
+                        "answer basis 'mixed' requires at least one cited evidence ID"
+                    ),
                     retryable=False,
                 )
             ],
@@ -253,8 +257,11 @@ def test_cap_counts_failed_generations_and_stops_earlier_than_the_old_estimator(
     assert len(journaled) == 3, "cap must be crossed at the third failed generation"
     assert res.executed_count == 3
 
-    # Counterfactual: the old estimator (embeddings only for token-less records) never reaches the cap.
-    old_per_record = ESTIMATED_EMBEDDING_TOKENS_PER_QUERY * EMBEDDING_PRICE_PER_1M / 1_000_000.0
+    # Counterfactual: the old estimator (embeddings only for token-less records)
+    # never reaches the cap.
+    old_per_record = (
+        ESTIMATED_EMBEDDING_TOKENS_PER_QUERY * EMBEDDING_PRICE_PER_1M / 1_000_000.0
+    )
     assert 20 * old_per_record < cap
     assert compute_spend(journaled)[0] >= cap
     assert compute_spend(journaled[:2])[0] < cap

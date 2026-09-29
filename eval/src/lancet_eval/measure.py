@@ -189,10 +189,10 @@ def compute_spend(
     Returns (spend_usd, is_lower_bound).
     If include_embeddings is False, returns generation-only spend marked as lower bound.
 
-    Records that reached generation but carry zero wire tokens (failed generations) are
-    charged at the per-attempt ceiling, so a stage cap cannot be overshot by failures the
-    provider billed (06.3.4.1-23, G4 cost item). Metered records are priced exactly as
-    before and embeddings are never scaled.
+    Records that reached generation but carry zero wire tokens (failed generations)
+    are charged at the per-attempt ceiling, so a stage cap cannot be overshot by
+    failures the provider billed (06.3.4.1-23, G4 cost item). Metered records are
+    priced exactly as before and embeddings are never scaled.
     """
     total_prompt_tokens = 0
     total_completion_tokens = 0
