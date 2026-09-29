@@ -7466,3 +7466,277 @@ async fn d71_citation_repair_enabled_never_yields_marker_mismatch() {
     );
     assert_eq!(ctx.citations, vec!["[1]".to_string()]);
 }
+
+// ---------------------------------------------------------------------------
+// Plan 06.3.4.1-22, Task 3 (D-91): grounding-validation rejections in the
+// GenerateAnswer node leave one bounded `generation_output_rejected` event.
+// ---------------------------------------------------------------------------
+
+type RejectionEvent = std::collections::BTreeMap<String, String>;
+
+/// Collects every `generation_output_rejected` event as `field name -> rendered value`.
+///
+/// Free-text fields arrive escaped and double-quoted (recorded with the `?` sigil), so
+/// assertions on them compare against the quoted `Debug` form.
+#[derive(Clone, Default)]
+struct RejectionCapture {
+    events: Arc<Mutex<Vec<RejectionEvent>>>,
+}
+
+#[derive(Default)]
+struct RejectionFields(RejectionEvent);
+
+impl tracing::field::Visit for RejectionFields {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0.insert(field.name().to_string(), format!("{value:?}"));
+    }
+
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.0.insert(field.name().to_string(), value.to_string());
+    }
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RejectionCapture {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut fields = RejectionFields::default();
+        event.record(&mut fields);
+        if fields.0.get("message").map(String::as_str) == Some("generation_output_rejected") {
+            self.events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(fields.0);
+        }
+    }
+}
+
+impl RejectionCapture {
+    fn captured(&self) -> Vec<RejectionEvent> {
+        self.events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+/// Runs the node once under a subscriber that only records rejection events, gated by the
+/// D-90 default filter so an event the default drops would not be seen.
+async fn run_node_capturing_rejections(
+    node: &GenerateAnswerNode,
+    ctx: &mut WorkflowContext,
+) -> (Result<(), NodeError>, Vec<RejectionEvent>) {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::Layer;
+
+    let capture = RejectionCapture::default();
+    let filter = engine::telemetry::resolve_log_filter(None).targets;
+    let subscriber = tracing_subscriber::registry().with(capture.clone().with_filter(filter));
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let cancel = CancellationToken::new();
+    let result = node.run(ctx, &cancel).await;
+    (result, capture.captured())
+}
+
+fn rejection_node_returning(output: ModelOutput, repair: bool) -> GenerateAnswerNode {
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(output)));
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    GenerateAnswerNode::new(Some(fake_gen))
+        .with_settings(limits, 200, 1.0)
+        .with_citation_repair_enabled(repair)
+}
+
+fn rejection_output(answer: &str, cited: &[&str], basis: AnswerBasis) -> ModelOutput {
+    ModelOutput {
+        answer: answer.into(),
+        cited_evidence_ids: cited.iter().map(|id| (*id).to_string()).collect(),
+        answer_basis: basis,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    }
+}
+
+#[tokio::test]
+async fn generation_output_rejected_mixed_answer_without_markers_is_captured() {
+    let mut req = test_query_request("Mixed without markers", "sess-rej-mixed");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new("sess-rej-mixed".into(), "trace-rej-mixed".into(), &req);
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let answer = "A plain answer that never cites a source.";
+    let mut output = rejection_output(
+        answer,
+        // The model claims one citation, but the answer text holds no marker.
+        &["[1]"],
+        AnswerBasis::Mixed,
+    );
+    output.usage = Some(engine::generation::ModelUsage {
+        prompt_tokens: 111,
+        completion_tokens: 22,
+        total_tokens: 133,
+    });
+    let node = rejection_node_returning(output, true);
+
+    let (result, events) = run_node_capturing_rejections(&node, &mut ctx).await;
+
+    let err = result.expect_err("a mixed answer without a marker must still be rejected");
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+    assert_eq!(
+        err.message,
+        "answer basis 'mixed' requires at least one cited evidence ID"
+    );
+    assert_eq!(events.len(), 1, "exactly one rejection event: {events:?}");
+    let event = &events[0];
+    assert_eq!(event["stage"], "validate");
+    assert_eq!(event["markers_found"], "0");
+    assert_eq!(event["markers_resolved"], "0");
+    assert_eq!(event["answer_basis"], "\"mixed\"");
+    assert_eq!(event["model_cited_ids"], "1");
+    assert_eq!(event["prompt_tokens"], "111");
+    assert_eq!(event["completion_tokens"], "22");
+    assert_eq!(event["correlation_id"], "\"trace-rej-mixed\"");
+    assert_eq!(event["raw_head"], format!("{answer:?}"));
+    assert_eq!(
+        event["reason"],
+        "\"answer basis 'mixed' requires at least one cited evidence ID\""
+    );
+}
+
+#[tokio::test]
+async fn generation_output_rejected_total_drop_records_the_marker_counts() {
+    let mut req = test_query_request("Total drop", "sess-rej-total-drop");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new(
+        "sess-rej-total-drop".into(),
+        "trace-rej-total-drop".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let node = rejection_node_returning(
+        rejection_output(
+            "Grounded-sounding answer [9999].",
+            &["[9999]"],
+            AnswerBasis::Retrieval,
+        ),
+        true,
+    );
+
+    let (result, events) = run_node_capturing_rejections(&node, &mut ctx).await;
+
+    let err = result.expect_err("total citation loss with allow_model_only=false fails closed");
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+    assert_eq!(
+        err.message,
+        "ModelOnly answer basis is not supported on Phase 03 QueryRAG path"
+    );
+    assert_eq!(events.len(), 1, "exactly one rejection event: {events:?}");
+    let event = &events[0];
+    assert_eq!(event["stage"], "validate");
+    assert_eq!(event["total_drop"], "true");
+    assert_eq!(event["markers_found"], "1");
+    assert_eq!(event["markers_resolved"], "0");
+    assert_eq!(event["answer_basis"], "\"retrieval\"");
+    // The excerpt is the pre-repair answer, marker included.
+    assert_eq!(event["raw_head"], "\"Grounded-sounding answer [9999].\"");
+}
+
+#[tokio::test]
+async fn generation_output_rejected_model_only_branch_is_captured() {
+    let mut req = test_query_request("Model only blank", "sess-rej-model-only");
+    req.allow_model_only = Some(true);
+    let mut ctx = WorkflowContext::new(
+        "sess-rej-model-only".into(),
+        "trace-rej-model-only".into(),
+        &req,
+    );
+
+    let node = rejection_node_returning(rejection_output("   ", &[], AnswerBasis::ModelOnly), true);
+
+    let (result, events) = run_node_capturing_rejections(&node, &mut ctx).await;
+
+    let err = result.expect_err("a blank model-only answer is rejected");
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+    assert_eq!(err.message, "Model answer text must not be empty or blank");
+    assert_eq!(events.len(), 1, "exactly one rejection event: {events:?}");
+    let event = &events[0];
+    assert_eq!(event["stage"], "validate");
+    assert_eq!(event["answer_basis"], "\"model_only\"");
+    assert_eq!(event["model_cited_ids"], "0");
+    assert!(
+        !event.contains_key("markers_found"),
+        "the model-only branch extracts no markers: {event:?}"
+    );
+    assert_eq!(event["raw_head"], "\"   \"");
+}
+
+#[tokio::test]
+async fn generation_output_rejected_repair_disabled_branch_is_captured_without_marker_counts() {
+    let mut req = test_query_request("Repair off", "sess-rej-repair-off");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new(
+        "sess-rej-repair-off".into(),
+        "trace-rej-repair-off".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let node = rejection_node_returning(
+        rejection_output("Uncited mixed answer.", &[], AnswerBasis::Mixed),
+        false,
+    );
+
+    let (result, events) = run_node_capturing_rejections(&node, &mut ctx).await;
+
+    let err = result.expect_err("repair disabled keeps the fail-closed behaviour");
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+    assert_eq!(events.len(), 1, "exactly one rejection event: {events:?}");
+    let event = &events[0];
+    assert_eq!(event["stage"], "validate");
+    assert_eq!(event["model_cited_ids"], "0");
+    assert!(!event.contains_key("markers_found"));
+    assert!(!event.contains_key("total_drop"));
+}
+
+#[tokio::test]
+async fn generation_output_rejected_is_silent_for_a_valid_cited_answer() {
+    let mut req = test_query_request("Valid cited", "sess-rej-valid");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new("sess-rej-valid".into(), "trace-rej-valid".into(), &req);
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let node = rejection_node_returning(
+        rejection_output("Grounded answer citing [1].", &["[1]"], AnswerBasis::Retrieval),
+        true,
+    );
+
+    let (result, events) = run_node_capturing_rejections(&node, &mut ctx).await;
+
+    assert!(result.is_ok(), "a valid cited answer must pass: {result:?}");
+    assert!(events.is_empty(), "no rejection event on success: {events:?}");
+    assert_eq!(ctx.answer, "Grounded answer citing [1].");
+    assert_eq!(ctx.citations, vec!["[1]".to_string()]);
+}
+
+#[tokio::test]
+async fn generation_output_rejected_passes_the_default_log_filter() {
+    // `run_node_capturing_rejections` installs `resolve_log_filter(None).targets` in front
+    // of the recorder, so a captured event proves the D-90 default lets the event through.
+    let mut req = test_query_request("Default filter", "sess-rej-filter");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new("sess-rej-filter".into(), "trace-rej-filter".into(), &req);
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let node = rejection_node_returning(
+        rejection_output("Uncited mixed answer.", &[], AnswerBasis::Mixed),
+        true,
+    );
+    let (result, events) = run_node_capturing_rejections(&node, &mut ctx).await;
+
+    assert!(result.is_err(), "the uncited mixed answer is rejected");
+    assert_eq!(events.len(), 1, "the default filter keeps the event: {events:?}");
+}
