@@ -47,11 +47,48 @@ logger = logging.getLogger(__name__)
 MEASUREMENT_ARMS: tuple[str, str] = ("graph-off", "graph-on")
 
 # Pricing per million tokens (OpenRouter estimates)
+# Price check 2026-09-29 (06.3.4.1-23): unauthenticated GET
+# https://openrouter.ai/api/v1/models lists deepseek/deepseek-v4-flash-0731 at
+# $0.018 prompt / $0.32 completion per 1M tokens.
+#   - input: the committed 0.14 is above the listing, so it stays (a price constant is
+#     never lowered);
+#   - output: the committed 0.28 was below the listing, so it is raised to 0.32.
+# This applies to every token; it is a price correction, never a multiplier.
 GENERATION_INPUT_PRICE_PER_1M = 0.14
-GENERATION_OUTPUT_PRICE_PER_1M = 0.28
-# Voyage 4 large pricing per million tokens
+GENERATION_OUTPUT_PRICE_PER_1M = 0.32
+# Voyage 4 large pricing per million tokens (not in the /models listing, which carries
+# no embedding models; the committed figure was kept on 2026-09-29).
 EMBEDDING_PRICE_PER_1M = 0.12
 ESTIMATED_EMBEDDING_TOKENS_PER_QUERY = 120
+
+# One billed generation attempt is bounded by the engine's own limits: it rejects
+# `prompt_tokens > [engine.retrieval] evidence_token_budget` (config/config.toml, 8192)
+# and a completion past `[openrouter] max_output_tokens` (2048) ends in
+# finish_reason 'length'. A record that reached generation but carries zero wire tokens
+# (every GenerateAnswer validation/parse failure) was still billed by the provider, so
+# the stage-cap estimate charges it this ceiling. Pinned to config.toml by a test.
+FAILED_GENERATION_PROMPT_TOKENS = 8192
+FAILED_GENERATION_COMPLETION_TOKENS = 2048
+# Calibration factor applied to the failed-generation charge ONLY (never to successful
+# records or embeddings). Pass A: the corrected estimate at the ceiling already covers
+# the $0.2178 billed (see 06.3.4.1-GENANSWER-DIAG.md), so no multiplier is needed.
+FAILED_GENERATION_CHARGE_MULTIPLIER = 1.0
+
+_GENERATE_NODE = "GenerateAnswer"
+_ASSEMBLE_NODE = "AssemblePrompt"
+_NODE_ERROR_KIND_TIMEOUT = 1  # proto NodeErrorKind.NODE_ERROR_KIND_TIMEOUT
+# Engine literals (engine/src/generation/openrouter.rs) for the generation errors the
+# GenerateAnswer node retries once: GenerationErrorKind::Timeout and ::ProviderError
+# (engine/src/workflow/nodes/generate.rs is_retryable). The node reports every provider
+# error as kind LLM_GENERATION_FAILED (3) with retryable=False, the same kind as
+# SchemaValidation, so the retried classes can only be told apart by message.
+_RETRIED_MESSAGE_PREFIXES: tuple[str, ...] = (
+    "OpenRouter chat completion timed out",
+    "OpenRouter request timed out at boundary limit",
+    "OpenRouter request failed:",
+    "failed to read OpenRouter response body:",
+)
+_RETRIED_HTTP_PREFIX = "OpenRouter chat completion returned HTTP "
 
 # meta-llama/llama-3.3-70b-instruct judge pricing per million tokens via OpenRouter
 # Recorded on 2026-09-10 ($0.12 / 1M prompt, $0.30 / 1M completion)
@@ -91,6 +128,58 @@ def resolve_measurement_run_dir(corpus_name: str, root: Path | None = None) -> P
     return base / f"{date_str}-measure-{corpus_name}"
 
 
+def failed_generation_attempt_usd() -> float:
+    """USD for one billed generation attempt at the per-attempt ceiling."""
+    return (
+        (FAILED_GENERATION_PROMPT_TOKENS / 1_000_000.0) * GENERATION_INPUT_PRICE_PER_1M
+        + (FAILED_GENERATION_COMPLETION_TOKENS / 1_000_000.0)
+        * GENERATION_OUTPUT_PRICE_PER_1M
+    )
+
+
+def _generation_error_is_retried(kind: int, message: str) -> bool:
+    """Whether the GenerateAnswer node gives this failure a second attempt."""
+    if kind == _NODE_ERROR_KIND_TIMEOUT:
+        return True
+    if message.startswith(_RETRIED_MESSAGE_PREFIXES):
+        return True
+    if message.startswith(_RETRIED_HTTP_PREFIX):
+        status = message[len(_RETRIED_HTTP_PREFIX) :].split(maxsplit=1)[:1]
+        # 5xx and 429 are ProviderError (retried); other 4xx are InvalidRequest.
+        if status and status[0].isdigit():
+            code = int(status[0])
+            return code >= 500 or code == 429
+    return False
+
+
+def _failed_generation_attempts(rec: RunRecord) -> int:
+    """Billed-but-unmetered generation attempts for one record.
+
+    Zero when the record is metered by wire tokens or never reached generation.
+    """
+    meta = rec.workflow_meta
+    if meta is not None and (meta.prompt_tokens > 0 or meta.completion_tokens > 0):
+        return 0  # the wire-token formula already prices this record
+    failures = [f for f in rec.node_failures if f.node_name == _GENERATE_NODE]
+    if failures:
+        retried = any(
+            _generation_error_is_retried(f.error_kind, f.error_message)
+            for f in failures
+        )
+        return 2 if retried else 1
+    timed = {t.node_name for t in rec.node_timings}
+    if _ASSEMBLE_NODE in timed and _GENERATE_NODE not in timed:
+        # Reached generation, no GenerateAnswer outcome and no tokens: a harness
+        # deadline or read timeout mid-generation, which may still have been billed.
+        return 1
+    return 0
+
+
+def count_failed_generation_attempts(records: Sequence[RunRecord]) -> int:
+    """Count generation attempts that reached the provider but carry no wire tokens."""
+    return sum(_failed_generation_attempts(rec) for rec in records)
+
+
 def compute_spend(
     records: Sequence[RunRecord],
     include_embeddings: bool = True,
@@ -99,6 +188,11 @@ def compute_spend(
 
     Returns (spend_usd, is_lower_bound).
     If include_embeddings is False, returns generation-only spend marked as lower bound.
+
+    Records that reached generation but carry zero wire tokens (failed generations) are
+    charged at the per-attempt ceiling, so a stage cap cannot be overshot by failures the
+    provider billed (06.3.4.1-23, G4 cost item). Metered records are priced exactly as
+    before and embeddings are never scaled.
     """
     total_prompt_tokens = 0
     total_completion_tokens = 0
@@ -112,6 +206,11 @@ def compute_spend(
     gen_spend = (total_prompt_tokens / 1_000_000.0) * GENERATION_INPUT_PRICE_PER_1M + (
         total_completion_tokens / 1_000_000.0
     ) * GENERATION_OUTPUT_PRICE_PER_1M
+    gen_spend += (
+        count_failed_generation_attempts(records)
+        * failed_generation_attempt_usd()
+        * FAILED_GENERATION_CHARGE_MULTIPLIER
+    )
 
     if not include_embeddings:
         return gen_spend, True
