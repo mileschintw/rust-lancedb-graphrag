@@ -1,0 +1,190 @@
+{
+  "calibration_note": "This micro-pass derives proposed timeout budgets from measured node latencies. Inner query_embedding and graph_operation timeouts are carried forward unmeasured. Generation uses the provider attempt contract, not this pass's generation p95.",
+  "corpus": "multihop_rag",
+  "sample_size_questions": 80,
+  "total_records_emitted": 164,
+  "measured_records": 160,
+  "raised_budgets": {
+    "reformulate_timeout_ms": 5000,
+    "query_embedding_timeout_ms": 15000,
+    "retrieve_timeout_ms": 30000,
+    "graph_operation_timeout_ms": 40000,
+    "graph_node_timeout_ms": 60000,
+    "prompt_timeout_ms": 10000,
+    "generation_node_timeout_ms": 65000
+  },
+  "sse_read_timeout_s": 300.0,
+  "question_deadline_s": 600.0,
+  "spend_summary": {
+    "spend_usd": 0.17135825999999998,
+    "includes_embeddings": true,
+    "stage_spend_cap": 0.75
+  },
+  "censoring_census": {
+    "total_records": 160,
+    "node_counts": {
+      "ReformulateQuery": {
+        "OBSERVED": 160,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      },
+      "ExtractGraphContext": {
+        "OBSERVED": 160,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      },
+      "RetrieveHybrid": {
+        "OBSERVED": 160,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      },
+      "AssemblePrompt": {
+        "OBSERVED": 160,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      },
+      "GenerateAnswer": {
+        "OBSERVED": 160,
+        "CENSORED_AT_CEILING": 0,
+        "CENSORED_NODE_TIMEOUT": 0,
+        "NOT_REACHED": 0,
+        "INSTRUMENT_GAP": 0
+      }
+    },
+    "inner_labels": {}
+  },
+  "proposed_budgets": {
+    "graph_node_timeout_ms": 55500,
+    "retrieve_timeout_ms": 15500,
+    "prompt_timeout_ms": 3,
+    "generation_node_timeout_ms": 65000,
+    "query_embedding_timeout_ms": 15000,
+    "graph_operation_timeout_ms": 40000
+  },
+  "proposed_records": [
+    {
+      "node_or_budget": "graph_node_timeout_ms",
+      "proposed_ms": 621,
+      "percentile_value_ms": 414.0,
+      "multiplier": 1.5,
+      "rule": "p95_multiplier_rule",
+      "sample_size": 160,
+      "censored_status": "clean",
+      "provenance": "Committed decision inputs per Phase 06.3.3: D-14 (multiplier=1.5, p95), D-18/D-19 (decay alpha=0.05, delta=500ms, window fractions 25%/25%), D-21 (segment boundary sizes 30/30), AI-SPEC bootstrap seed=42, min stratum cell size=10, max tolerated graph timeout rate=0.10, nesting invariant slack=500ms.",
+      "is_invariant_driven": false
+    },
+    {
+      "node_or_budget": "retrieve_timeout_ms",
+      "proposed_ms": 173,
+      "percentile_value_ms": 115.0,
+      "multiplier": 1.5,
+      "rule": "p95_multiplier_rule",
+      "sample_size": 160,
+      "censored_status": "clean",
+      "provenance": "Committed decision inputs per Phase 06.3.3: D-14 (multiplier=1.5, p95), D-18/D-19 (decay alpha=0.05, delta=500ms, window fractions 25%/25%), D-21 (segment boundary sizes 30/30), AI-SPEC bootstrap seed=42, min stratum cell size=10, max tolerated graph timeout rate=0.10, nesting invariant slack=500ms.",
+      "is_invariant_driven": false
+    },
+    {
+      "node_or_budget": "prompt_timeout_ms",
+      "proposed_ms": 3,
+      "percentile_value_ms": 2.0,
+      "multiplier": 1.5,
+      "rule": "p95_multiplier_rule",
+      "sample_size": 160,
+      "censored_status": "clean",
+      "provenance": "Committed decision inputs per Phase 06.3.3: D-14 (multiplier=1.5, p95), D-18/D-19 (decay alpha=0.05, delta=500ms, window fractions 25%/25%), D-21 (segment boundary sizes 30/30), AI-SPEC bootstrap seed=42, min stratum cell size=10, max tolerated graph timeout rate=0.10, nesting invariant slack=500ms.",
+      "is_invariant_driven": false
+    },
+    {
+      "node_or_budget": "generation_node_timeout_ms",
+      "proposed_ms": 65000,
+      "percentile_value_ms": 0.0,
+      "multiplier": 2.0,
+      "rule": "provider_contract (attempt_count * per_attempt_timeout + slack)",
+      "sample_size": 0,
+      "censored_status": "not_applicable_provider_contract",
+      "provenance": "Provider contract per engine/src/config.rs:333-344 (not from measured generation latency)",
+      "is_invariant_driven": false
+    },
+    {
+      "node_or_budget": "query_embedding_timeout_ms",
+      "proposed_ms": 15000,
+      "percentile_value_ms": null,
+      "multiplier": null,
+      "rule": "carried_forward_unmeasured",
+      "sample_size": 0,
+      "censored_status": "not_applicable_unmeasured_inner",
+      "provenance": "effective workflow config (not derived from this pass)",
+      "is_invariant_driven": false
+    },
+    {
+      "node_or_budget": "graph_operation_timeout_ms",
+      "proposed_ms": 40000,
+      "percentile_value_ms": null,
+      "multiplier": null,
+      "rule": "carried_forward_unmeasured",
+      "sample_size": 0,
+      "censored_status": "not_applicable_unmeasured_inner",
+      "provenance": "effective workflow config (not derived from this pass)",
+      "is_invariant_driven": false
+    }
+  ],
+  "censored_by_node": {
+    "ReformulateQuery": 0,
+    "ExtractGraphContext": 0,
+    "RetrieveHybrid": 0,
+    "AssemblePrompt": 0,
+    "GenerateAnswer": 0
+  },
+  "nesting_report": {
+    "has_violations": true,
+    "groups": [
+      {
+        "outer_name": "graph_node_timeout_ms",
+        "outer_budget_ms": 621,
+        "inner_budgets": {
+          "query_embedding_timeout_ms": 15000,
+          "graph_operation_timeout_ms": 40000
+        },
+        "inner_sum_ms": 55000,
+        "slack_ms": -54379,
+        "fires_first": "graph_node_timeout_ms",
+        "is_violation": true,
+        "adjusted_outer_ms": 55500,
+        "is_invariant_driven": true
+      },
+      {
+        "outer_name": "retrieve_timeout_ms",
+        "outer_budget_ms": 173,
+        "inner_budgets": {
+          "query_embedding_timeout_ms": 15000
+        },
+        "inner_sum_ms": 15000,
+        "slack_ms": -14827,
+        "fires_first": "retrieve_timeout_ms",
+        "is_violation": true,
+        "adjusted_outer_ms": 15500,
+        "is_invariant_driven": true
+      }
+    ]
+  },
+  "ceiling_report": {
+    "largest_single_node_budget_ms": 65000,
+    "largest_single_node_name": "generation_node_timeout_ms",
+    "sse_read_timeout_ms": 300000,
+    "single_exceeds_read_timeout": false,
+    "worst_case_sum_ms": 136003,
+    "question_deadline_ms": 600000,
+    "sum_exceeds_deadline": false,
+    "summary_message": "PASS: Proposed budgets satisfy both harness ceilings independently."
+  },
+  "run_timestamp": "2026-09-29T15:35:04.554492+00:00"
+}
