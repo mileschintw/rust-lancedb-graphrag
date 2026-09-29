@@ -306,6 +306,7 @@ fn test_telemetry_handle_shutdown_is_bounded() {
         tracer_provider: None,
         meter_provider: None,
         logger_provider: None,
+        ..Default::default()
     };
     handle.shutdown();
 }
@@ -995,6 +996,7 @@ async fn engine_log_records_survive_bounded_shutdown() {
         tracer_provider: None,
         meter_provider: None,
         logger_provider: Some(logger_provider),
+        ..Default::default()
     };
 
     tracing::info!("event emitted immediately before shutdown");
