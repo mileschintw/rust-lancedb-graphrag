@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 11/27 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A; see `06.3.4.1-PASSA-GAPS.md`)
+**Plans:** 12/27 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A; see `06.3.4.1-PASSA-GAPS.md`)
 
 Plans:
 
@@ -964,7 +964,7 @@ Plans:
 
 - [ ] 06.3.4.1-11-PLAN.md — Re-derive the six workflow budgets on the fixed engine (D-66) from a capped, authorised measurement pass, and write production config and code defaults together with a… *(Task 2's pass A stopped at the decay gate; Tasks 2–3 are completed through gap plans 21–27, and 06.3.4.1-27 writes this plan's SUMMARY. Run the gap plans with `--gaps-only` so plan 11 is not re-dispatched.)*
 - [x] 06.3.4.1-21-PLAN.md — `gap_closure: true`. Commit D-89's decay materiality rule as its own threshold set (`COMMITTED_DECAY_THRESHOLDS_06341`: slope × 658 or late − early p95 ≥ max(25% of early p95, 25 ms)), switch every 06.3.4.1 decay/flatness reading to it, make `flatness.py` read `measure` journals, and re-gate pass A plus a 200-record noise check and plan 07's replay arms (G1, G5 loader; D-89, D-92)
-- [ ] 06.3.4.1-22-PLAN.md — `gap_closure: true`. Engine observability: a default `info,engine=debug` level filter on every tracing layer with `RUST_LOG` override, `build_profile` and `log_filter` on the startup line, and a bounded `generation_output_rejected` capture of every rejected GenerateAnswer output (G3, G5 release check, G4 capture; D-90, D-92, D-91)
+- [x] 06.3.4.1-22-PLAN.md — `gap_closure: true`. Engine observability: a default `info,engine=debug` level filter on every tracing layer with `RUST_LOG` override, `build_profile` and `log_filter` on the startup line, and a bounded `generation_output_rejected` capture of every rejected GenerateAnswer output (G3, G5 release check, G4 capture; D-90, D-92, D-91)
 - [ ] 06.3.4.1-23-PLAN.md — `gap_closure: true`. Make stage caps count failed generations (per-attempt ceiling in `compute_spend`, pass A ≥ $0.2178 billed), and diagnose pass A's seven GenerateAnswer failure classes for free, with a probe design (G4; D-91, D-86)
 
 **Wave 8** *(blocked on Wave 7 completion)*

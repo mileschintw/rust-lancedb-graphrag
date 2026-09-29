@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 6
+open_count: 8
 waived_count: 0
 fixed_count: 0
-total_count: 6
-last_updated: 2026-09-29T01:50:09.858Z
+total_count: 8
+last_updated: 2026-09-29T14:31:32.640Z
 ---
 
 # Broken Windows Ledger
@@ -21,6 +21,8 @@ last_updated: 2026-09-29T01:50:09.858Z
 | 4 | 06.3.4.1 | lint-warning | eval/src eval/tests |  | Pre-existing ruff debt (~250-300 errors), out of scope for 06.3.4.1-05; see phase deferred-items.md | open |  | 2026-09-24T22:15:20.670Z |  |
 | 5 | 06.3.4.1 | deviation | engine/src/generation/mod.rs | 184 | ModelOnly answer_basis validation (lines 184-193) rejects ~19% of real-provider queries on the Phase 03 QueryRAG path (identical at HEAD and drive-era commit 33e774bd); discovered incidentally during 06.3.4.1-07's Task 5 paid replay, out of scope for the OI-02 latency fix (D-64). | open |  | 2026-09-26T23:20:48.241Z |  |
 | 6 | 06.3.4.1 | deviation | .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/deferred-items.md |  | 06.3.4.1-21: plan's literal 'pytest -q exits 0' fails on one pre-existing Phase 02 -O test; ruff verify cannot read zero (older line-too-long findings in flatness.py/oi02.py) | open |  | 2026-09-29T01:50:09.858Z |  |
+| 7 | 06.3.4.1 | deviation | engine/src/generation/openrouter.rs |  | 22: provider generation_output_rejected capture also wraps the usage-budget and shape-validation rejections (stages usage, validate) beyond the plan's parse/finish_reason sites; errors unchanged | open |  | 2026-09-29T14:31:32.190Z |  |
+| 8 | 06.3.4.1 | deviation | engine/src/workflow/nodes/generate.rs |  | 22: literal criterion grep -c emit_generation_output_rejected equals validation sites reads 2, not 3, because the three sites share the emit_validation_rejection helper (3 call sites, all covered by tests) | open |  | 2026-09-29T14:31:32.640Z |  |
 
 ````json
 [
@@ -97,6 +99,32 @@ last_updated: 2026-09-29T01:50:09.858Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T01:50:09.858Z",
+    "resolved_at": null,
+    "milestone": "v1.0"
+  },
+  {
+    "id": 7,
+    "kind": "deviation",
+    "phase": "06.3.4.1",
+    "file": "engine/src/generation/openrouter.rs",
+    "line": null,
+    "description": "22: provider generation_output_rejected capture also wraps the usage-budget and shape-validation rejections (stages usage, validate) beyond the plan's parse/finish_reason sites; errors unchanged",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T14:31:32.190Z",
+    "resolved_at": null,
+    "milestone": "v1.0"
+  },
+  {
+    "id": 8,
+    "kind": "deviation",
+    "phase": "06.3.4.1",
+    "file": "engine/src/workflow/nodes/generate.rs",
+    "line": null,
+    "description": "22: literal criterion grep -c emit_generation_output_rejected equals validation sites reads 2, not 3, because the three sites share the emit_validation_rejection helper (3 call sites, all covered by tests)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-29T14:31:32.640Z",
     "resolved_at": null,
     "milestone": "v1.0"
   }

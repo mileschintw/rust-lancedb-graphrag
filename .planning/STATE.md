@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 22
+current_plan: 23
 status: executing
-stopped_at: "Completed 06.3.4.1-21-PLAN.md: D-89 set committed, flatness reads measure journals, pass A re-gated (not present), noise 0/121"
-last_updated: "2026-09-29T01:48:57.738Z"
-last_activity: 2026-09-28
-state_head: 3d27cabb05a13bb40a1e94e52e6e3582c7ce6d8b
+stopped_at: "Completed 06.3.4.1-22-PLAN.md: info,engine=debug filter on every layer, startup build_profile/log_filter, generation_output_rejected capture; next gap plan 23"
+last_updated: "2026-09-29T14:31:22.190Z"
+last_activity: 2026-09-29
+state_head: dabb50a4d0bc1b40baf402a44e679d5bbcc65a39
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 185
-  completed_plans: 169
+  completed_plans: 170
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -21,7 +21,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 22
+Current Plan: 23
 Total Plans in Phase: 27
 
 ## Current Status
@@ -379,6 +379,7 @@ Total Plans in Phase: 27
 | Phase 06.3.4.1 P09 | ~40min | 3 tasks | 17 files |
 | Phase 06.3.4.1 P10 | ~50 min | 3 tasks | 9 files |
 | Phase 06.3.4.1 P21 | 15 min | 3 tasks | 13 files |
+| Phase 06.3.4.1 P22 | 45 min | 3 tasks | 9 files |
 
 ## Decisions
 
@@ -453,12 +454,14 @@ Total Plans in Phase: 27
 - [Phase 06.3.4.1]: G/V re-verified against plan 10's own definition using diagnostic/post-reconcile probes: |G|=398, |V|=291, matching plan 09's frozen candidates exactly — No discrepancy between plan 09's and plan 10's G/V definitions
 - [Phase 06.3.4.1]: VECTOR_BASELINE_USABLE_FLOOR committed at 0.512 (B_G=37/90 over the drawn diagnostic sample), higher than AI-SPEC's pre-draw illustrative estimate — Real drawn G-restricted sample skews more toward yes than the full sample AI-SPEC estimated from
 - [Phase 06.3.4.1]: 06.3.4.1-21: D-89 committed as COMMITTED_DECAY_THRESHOLDS_06341 (658 / 0.25 / 25 ms) beside 06.3.3's untouched COMMITTED_THRESHOLDS; flatness_verdict and oi02 read it; an unavailable window makes both prongs unavailable — Pass A re-gates available and not present (21.7 ms projected vs 49.75 ms); 0 of 121 contiguous 200-record windows fire (escalate False); two replay arms flip to flat. 06.3.4.1-24 presents the noise and flip readings to the user.
+- [Phase 06.3.4.1]: 22: default log filter uses tracing_subscriber Targets (not EnvFilter): no Cargo.lock change; RUST_LOG span-field directives fall back to info,engine=debug with a stderr warning — Keeps --locked builds and the dependency surface unchanged
+- [Phase 06.3.4.1]: 22: generation_output_rejected node events use ctx.trace_id as correlation_id (service seeds it with the journaled correlation UUID); provider capture also covers usage-budget and shape-validation stages — Same value the journal records; extra stages add evidence without changing any error
 
 ## Session
 
-**Last session:** 2026-09-29T01:48:56.243Z
-**Last activity:** 2026-09-28
-**Stopped at:** Completed 06.3.4.1-21-PLAN.md: D-89 set committed, flatness reads measure journals, pass A re-gated (not present), noise 0/121
+**Last session:** 2026-09-29T14:31:21.148Z
+**Last activity:** 2026-09-29
+**Stopped at:** Completed 06.3.4.1-22-PLAN.md: info,engine=debug filter on every layer, startup build_profile/log_filter, generation_output_rejected capture; next gap plan 23
 **Resume file:** None
 
 ## Accumulated Context
