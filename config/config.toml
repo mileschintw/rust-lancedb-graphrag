@@ -29,9 +29,10 @@ service_name = "lancet-engine"
 deployment_environment = "dev"
 
 [engine.workflow]
-# Budget nesting and timeout hierarchy (D-17, values re-derived 06.3.3-04):
+# Budget nesting and timeout hierarchy (D-17, D-66; written together with the engine/src/config.rs
+# defaults at 06.3.4.1-27; derivation trail in 06.3.4.1-BUDGETS.md):
 # Runner-level (top-level) node budgets enforced by WorkflowRunner around a whole node:
-# - reformulate_timeout_ms (ReformulateQuery) — retained at 5000; not one of the six derived budgets
+# - reformulate_timeout_ms (ReformulateQuery) — carried at 5000; never derived
 # - graph_node_timeout_ms (ExtractGraphContext outer envelope)
 # - retrieve_timeout_ms (RetrieveHybrid)
 # - prompt_timeout_ms (AssemblePrompt)
@@ -41,20 +42,32 @@ deployment_environment = "dev"
 # - query_embedding_timeout_ms (inner embedding generation)
 # - graph_operation_timeout_ms (inner graph Cypher traversal / augmentation)
 #
-# Nesting after 06.3.3-04 (strict inequality, slack ≥ 500ms; engine startup only requires ≥):
-# query_embedding (645) + graph_operation (38595) = 39240 nests inside graph_node (45674)
-# with slack 6434ms. graph_operation fires first on traversal overrun (non-fatal GRAPH_TIMEOUT);
-# the outer graph_node budget can still fire if the envelope exceeds 45674ms.
-# retrieve (16647) contains query_embedding (645) with slack 16002ms; query_embedding fires first
-# if the inner embedding call overruns.
-# Nesting is documented for operator visibility and is NOT enforced at startup (D-17).
-# Six derived values: p95 × 1.5 (ceil) except generation_node (provider contract: 2×30s + 5s slack).
+# Nesting (slack 500ms is the committed rule's margin; engine startup requires only >=):
+# query_embedding (2000) + graph_operation (10000) = 12000 nests inside graph_node (12500), slack 500ms.
+# retrieve (2500) is lifted to query_embedding (2000) + 500ms, slack 500ms.
+# Which fires first: the embedding call runs inside ExtractGraphContext, so query_embedding (2000)
+# fires first on an embedding overrun and fails the node, which cancels the query. graph_operation
+# (10000) fires first on a traversal overrun and degrades to chunk-only context (non-fatal
+# GRAPH_TIMEOUT). The outer graph_node (12500) fires only if the whole envelope exceeds 12500ms.
+# RetrieveHybrid reads the precomputed embedding, so retrieve (2500) bounds its own search alone.
+#
+# Provenance (06.3.4.1-BUDGETS.md): 06.3.3's committed rule (p95 x 1.5, ceil, lifted by nesting)
+# run on pass A of 2026-09-28 (320 measured records) with the two inner budgets and the prompt floor
+# taken from the user's 2026-09-29 decision at 06.3.4.1-24:
+# - query_embedding 2000 and graph_operation 10000 are user-stated ("tight embedding, loose graph"),
+#   not derived from a non-decaying engine.
+# - retrieve 2500 (rule 294) and graph_node 12500 (rule 1062) are the rule values raised by nesting.
+# - prompt 65 is the user's floor (1.5 x pass A's 43ms maximum); the rule alone writes 11ms.
+# - generation_node 65000 is the provider contract: 2 x 30s attempts + 5s slack.
+# Pass A ran with unfiltered logging, so the measured maxima are slightly generous, which is
+# acceptable for timeout ceilings. The defaults in engine/src/config.rs must equal these values
+# (unit test workflow_budget_defaults_agree_with_config_files).
 reformulate_timeout_ms = 5000
-query_embedding_timeout_ms = 15000
-retrieve_timeout_ms = 30000
-graph_operation_timeout_ms = 40000
-graph_node_timeout_ms = 60000
-prompt_timeout_ms = 10000
+query_embedding_timeout_ms = 2000
+retrieve_timeout_ms = 2500
+graph_operation_timeout_ms = 10000
+graph_node_timeout_ms = 12500
+prompt_timeout_ms = 65
 generation_node_timeout_ms = 65000
 allow_model_only_answers = false # D-10/D-12
 citation_repair_enabled = true # D-14/D-84

@@ -122,24 +122,57 @@ pub struct GraphSettings {
     pub max_hop_cap: u32,
 }
 
+/// Budget for `ReformulateQuery`, in milliseconds.
+///
+/// Carried forward and never derived from a measurement, so it is left out of the pass-A
+/// derivation. See `06.3.4.1-BUDGETS.md`.
 pub fn default_reformulate_timeout_ms() -> u64 {
     5000
 }
+/// Budget for the query embedding call inside `ExtractGraphContext`, in milliseconds.
+///
+/// A user-stated value (06.3.4.1-24, "tight embedding, loose graph"): an embedding timeout
+/// fails the node and cancels the query, which is cheap to retry because generation has not
+/// started. Raising it loosens the bound on that failure; `graph_node_timeout_ms` and
+/// `retrieve_timeout_ms` must keep 500 ms of slack over it. See `06.3.4.1-BUDGETS.md`.
 pub fn default_query_embedding_timeout_ms() -> u64 {
-    645
+    2000
 }
+/// Budget for the `RetrieveHybrid` node, in milliseconds.
+///
+/// The committed rule (p95 x 1.5 over pass A) writes 294 ms, which nesting lifts to
+/// `query_embedding_timeout_ms` + 500. See `06.3.4.1-BUDGETS.md`.
 pub fn default_retrieve_timeout_ms() -> u64 {
-    16647
+    2500
 }
+/// Budget for the graph traversal inside `ExtractGraphContext`, in milliseconds.
+///
+/// A user-stated value (06.3.4.1-24). A graph-operation timeout degrades silently to
+/// chunk-only context and records a success, so a tight value would hide lost graph yield.
+/// See `06.3.4.1-BUDGETS.md`.
 pub fn default_graph_operation_timeout_ms() -> u64 {
-    38595
+    10000
 }
+/// Budget for the whole `ExtractGraphContext` node, in milliseconds.
+///
+/// The committed rule writes 1062 ms, which nesting lifts to `query_embedding_timeout_ms` +
+/// `graph_operation_timeout_ms` + 500. Engine startup rejects a value below that sum. See
+/// `06.3.4.1-BUDGETS.md`.
 pub fn default_graph_node_timeout_ms() -> u64 {
-    45674
+    12500
 }
+/// Budget for the `AssemblePrompt` node, in milliseconds.
+///
+/// A user-decided floor (06.3.4.1-24): 1.5 x pass A's 43 ms maximum, where the committed rule
+/// alone writes 11 ms, close to the Windows timer granularity of about 15.6 ms. See
+/// `06.3.4.1-BUDGETS.md`.
 pub fn default_prompt_timeout_ms() -> u64 {
-    1070
+    65
 }
+/// Budget for the `GenerateAnswer` node, in milliseconds.
+///
+/// The provider contract: two attempts at the 30 s provider timeout plus 5 s of slack. Engine
+/// startup rejects a value below the two attempts. See `06.3.4.1-BUDGETS.md`.
 pub fn default_generation_node_timeout_ms() -> u64 {
     65000
 }

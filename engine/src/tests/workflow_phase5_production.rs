@@ -42,10 +42,10 @@ async fn workflow_phase5_production_five_node() {
     );
     assert_eq!(
         runner.timeout_for_node("ExtractGraphContext").as_millis(),
-        45674
+        12500
     );
-    assert_eq!(runner.timeout_for_node("RetrieveHybrid").as_millis(), 16647);
-    assert_eq!(runner.timeout_for_node("AssemblePrompt").as_millis(), 1070);
+    assert_eq!(runner.timeout_for_node("RetrieveHybrid").as_millis(), 2500);
+    assert_eq!(runner.timeout_for_node("AssemblePrompt").as_millis(), 65);
     assert_eq!(runner.timeout_for_node("GenerateAnswer").as_millis(), 65000);
 
     let req = test_query_request(
