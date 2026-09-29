@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 21
+current_plan: 22
 status: executing
-stopped_at: "Completed 06.3.4.1-10-PLAN.md: D-59 no-op, G/V re-verified (398/291), diagnostic sample + multihop_rag_diag corpus drawn, SC-3 floor 0.512 committed"
-last_updated: "2026-09-29T01:21:07.478Z"
+stopped_at: "Completed 06.3.4.1-21-PLAN.md: D-89 set committed, flatness reads measure journals, pass A re-gated (not present), noise 0/121"
+last_updated: "2026-09-29T01:48:57.738Z"
 last_activity: 2026-09-28
-state_head: ad3a8a003e6bd22c459f3889064344e652c67506
+state_head: 3d27cabb05a13bb40a1e94e52e6e3582c7ce6d8b
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 185
-  completed_plans: 168
+  completed_plans: 169
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -21,7 +21,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 21
+Current Plan: 22
 Total Plans in Phase: 27
 
 ## Current Status
@@ -378,6 +378,7 @@ Total Plans in Phase: 27
 | Phase 06.3.4.1 P08 | 80min | 2 tasks | 5 files |
 | Phase 06.3.4.1 P09 | ~40min | 3 tasks | 17 files |
 | Phase 06.3.4.1 P10 | ~50 min | 3 tasks | 9 files |
+| Phase 06.3.4.1 P21 | 15 min | 3 tasks | 13 files |
 
 ## Decisions
 
@@ -451,12 +452,13 @@ Total Plans in Phase: 27
 - [Phase 06.3.4.1]: D-59 executed as branch d59-none (no re-ingest); DATA-03 stays unchecked — 06.3.4.1-09's rechunk_check proved identical=true for all 18 candidates, so re-ingestion cannot close the gap
 - [Phase 06.3.4.1]: G/V re-verified against plan 10's own definition using diagnostic/post-reconcile probes: |G|=398, |V|=291, matching plan 09's frozen candidates exactly — No discrepancy between plan 09's and plan 10's G/V definitions
 - [Phase 06.3.4.1]: VECTOR_BASELINE_USABLE_FLOOR committed at 0.512 (B_G=37/90 over the drawn diagnostic sample), higher than AI-SPEC's pre-draw illustrative estimate — Real drawn G-restricted sample skews more toward yes than the full sample AI-SPEC estimated from
+- [Phase 06.3.4.1]: 06.3.4.1-21: D-89 committed as COMMITTED_DECAY_THRESHOLDS_06341 (658 / 0.25 / 25 ms) beside 06.3.3's untouched COMMITTED_THRESHOLDS; flatness_verdict and oi02 read it; an unavailable window makes both prongs unavailable — Pass A re-gates available and not present (21.7 ms projected vs 49.75 ms); 0 of 121 contiguous 200-record windows fire (escalate False); two replay arms flip to flat. 06.3.4.1-24 presents the noise and flip readings to the user.
 
 ## Session
 
-**Last session:** 2026-09-27T04:05:20.485Z
+**Last session:** 2026-09-29T01:48:56.243Z
 **Last activity:** 2026-09-28
-**Stopped at:** Completed 06.3.4.1-10-PLAN.md: D-59 no-op, G/V re-verified (398/291), diagnostic sample + multihop_rag_diag corpus drawn, SC-3 floor 0.512 committed
+**Stopped at:** Completed 06.3.4.1-21-PLAN.md: D-89 set committed, flatness reads measure journals, pass A re-gated (not present), noise 0/121
 **Resume file:** None
 
 ## Accumulated Context
