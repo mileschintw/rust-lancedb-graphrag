@@ -45,3 +45,20 @@
   Records whose `GenerateAnswer` failed carry zero wire tokens but were billed, so the
   `--stage-cap` stop-rule runs on a low estimate.
   **Evidence:** `06.3.4.1-BUDGETS.md` "Stage caps (D-86)".
+
+- `uv run --project eval pytest -q` from the repo root fails one Phase 02 test under plain pytest (06.3.4.1-21)
+  status: open
+  **What:** `scripts/test_phase02_live_evidence.py::Phase02LiveEvidenceTests::test_wrong_model_is_rejected_in_optimized_isolated_subprocess`
+  asserts `sys.flags.optimize == 1`, so it needs an `-O` interpreter. Plain `pytest -q` collects `scripts/` and
+  reports 1 failed / 746 passed; `python -O -m pytest scripts/test_phase02_live_evidence.py` passes 26/26.
+  It is an interpreter-flag artifact, unchanged by 06.3.4.1-21 (`pytest eval/tests` alone is 721/721). Any plan
+  criterion that reads "`pytest -q` exits 0" from the repo root cannot pass literally until that test is
+  scoped, skipped without `-O`, or the invocation is fixed.
+  **Evidence:** baseline run before any 06.3.4.1-21 edit, and the STATE.md 2026-09-13 note on the same test.
+
+- Ruff totals after 06.3.4.1-21 (context for the entry above)
+  status: resolved
+  **What:** `ruff check --preview eval/src eval/tests` reported 565 findings before this plan and 550 after (new
+  files `decay_materiality.py` and `test_decay_materiality.py` are clean; the drop is docstring reflow in
+  `flatness.py`). The plan's verify line over `flatness.py`/`oi02.py`/`thresholds.py` cannot read zero because
+  `flatness.py` (15) and `oi02.py` (109) carry older `line-too-long` findings.
