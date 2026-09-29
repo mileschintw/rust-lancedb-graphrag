@@ -6523,7 +6523,9 @@ fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
     // the budget below is widened by that same delta so this test still exercises the
     // boundary it was designed to (reserved block admitted, second chunk excluded), not
     // a coincidentally tighter budget that would reject even the reserved block.
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 425, 32)
+    // F-1 (06.3.4.1-26) appended the JSON-`answer`-field clause, raising the overhead by
+    // ~35 tokens more; widened from 425 by that same delta.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 460, 32)
         .expect("pack succeeds");
 
     assert_eq!(
@@ -6567,7 +6569,9 @@ fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
     // designed to (2 evidence blocks admitted, the graph fact excluded), not just observing
     // a coincidentally tighter budget. D-71 (06.3.4.1-08) then appended the final-answer
     // instruction, raising the overhead again by ~95 tokens; widened by that same delta.
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 475, 16)
+    // F-1 (06.3.4.1-26) appended the JSON-`answer`-field clause (~35 tokens more); widened
+    // from 475 by that same delta.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 510, 16)
         .expect("pack succeeds");
 
     assert_eq!(packed.evidence.len(), 2);
@@ -6905,7 +6909,9 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
                 // so both `capture_chat_request_body` callers below still exercise the
                 // reserved-block-fits / competing-block-excluded boundary they were
                 // designed to, not a coincidentally tighter real-request-body budget.
-                evidence_token_budget: 500,
+                // F-1 (06.3.4.1-26) appended the JSON-`answer`-field clause (~35 tokens
+                // more); widened from 500 by that same delta.
+                evidence_token_budget: 535,
                 excerpt_max_chars: 512,
                 bm25: Bm25ConfigSettings::default(),
             },

@@ -6668,7 +6668,9 @@ async fn workflow_prompt_packing_truncation_drops_citation_to_truncated_block() 
     // answer_token_budget). D-71 (06.3.4.1-08) raised the system policy's fixed
     // token overhead by ~95 tokens; widened from 250 by that same delta so block 1
     // still fits and block 2 is still excluded, not a coincidentally tighter budget.
-    runner.add_node(AssemblePromptNode::with_settings(345, 20, 1.0));
+    // F-1 (06.3.4.1-26) appended the JSON-`answer`-field clause (~35 tokens more); widened
+    // from 345 by that same delta.
+    runner.add_node(AssemblePromptNode::with_settings(380, 20, 1.0));
     let limits = GroundingLimits::new(8192, 2048).unwrap();
     runner.add_node(
         GenerateAnswerNode::new(Some(fake_gen))
