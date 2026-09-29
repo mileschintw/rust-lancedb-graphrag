@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 27
 status: executing
-stopped_at: "Completed 06.3.4.1-26-PLAN.md: F-1 landed (126a8a4b), one capped confirmation probe run and reported; next gap plan 27; plan 11 intentionally open until 27"
-last_updated: "2026-09-29T16:23:24.763Z"
+stopped_at: "Halted 06.3.4.1-27 at the preflight gate: budgets written (1ecf4877), engine restarted clean, preflight failed once (first query Node AssemblePrompt timed out, 78.6 ms vs 65 ms; canary graph floor also missed); plan 11 stays open, current plan stays 27, plan 12 not started; route /gsd-plan-phase 06.3.4.1 --gaps"
+last_updated: "2026-09-29T16:44:43.738Z"
 last_activity: 2026-09-29
-state_head: 4d91851678f36570ebba238b084c8cc600018b61
+state_head: 1c8a345bdb9a4e061b5e285608d0396ea1de5042
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 185
-  completed_plans: 174
+  completed_plans: 175
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -469,9 +469,9 @@ Total Plans in Phase: 27
 
 ## Session
 
-**Last session:** 2026-09-29T16:23:23.668Z
+**Last session:** 2026-09-29T16:44:40.736Z
 **Last activity:** 2026-09-29
-**Stopped at:** Completed 06.3.4.1-26-PLAN.md: F-1 landed (126a8a4b), one capped confirmation probe run and reported; next gap plan 27; plan 11 intentionally open until 27
+**Stopped at:** Halted 06.3.4.1-27 at the preflight gate: budgets written (1ecf4877), engine restarted clean, preflight failed once (first query Node AssemblePrompt timed out, 78.6 ms vs 65 ms; canary graph floor also missed); plan 11 stays open, current plan stays 27, plan 12 not started; route /gsd-plan-phase 06.3.4.1 --gaps
 **Resume file:** None
 
 ## Accumulated Context
@@ -546,3 +546,4 @@ Total Plans in Phase: 27
 
 - 06.3.4.1-07 REPLANNED (2026-09-24, user decision): revised to diagnose the OI-02 decay cause across the whole pipeline (forensics → full-stack replay → bisection), with checkpoints after the primary replay and before any fix, then fix and same-replay proof. Plan-checker passed (warning fixed); downstream 08/09/11/12 aligned to its `## Fix` section. Resume with /gsd-execute-phase 06.3.4.1 at wave 4. Note: the 06.3.4 drive's Prometheus export is preserved only in gitignored data/oi02-evidence/prometheus-06.3.4-drive/ (Task 1 input).
 - OI-02 (RetrieveHybrid 4.9s->29.0s growth, 06.3.4 drive) NOT reproduced or fixed in 06.3.4.1-07. Checkpoint resolved diagnose-in-drive-1 (2026-09-26) after every free Route B arm (drive-era, drive-era-prewarm, paced) and one paid arm (paid-drive-era, real provider+embeddings) stayed flat. D-64: no paid drive 1 (06.3.4.1-11/-12) should run without expecting to hit its own decay gate on an unfixed engine; full account and carry-forward instrumentation list in .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-OI02-MEMO.md.
+- 06.3.4.1-27 preflight FAILED (2026-09-29): first query on a fresh engine timed out at AssemblePrompt (78.6 ms vs the 65 ms prompt floor); canary mhr-0d5e238015ef graph floor also missed (0 graph nodes, GRAPH_UNAVAILABLE, no timeout). Plan 11 not closed; drive 1 (06.3.4.1-12) waits on a gap plan and a passing preflight. See 06.3.4.1-BUDGETS.md 'Budgets written (06.3.4.1-27)'.
