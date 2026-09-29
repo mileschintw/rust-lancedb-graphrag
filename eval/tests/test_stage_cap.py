@@ -195,3 +195,66 @@ def test_cli_run_without_stage_cap_exits_nonzero() -> None:
     res = runner.invoke(app, ["run", "--corpus", "multihop_rag"])
     assert res.exit_code != 0
     assert "Missing option" in res.output or "--stage-cap" in res.output
+
+
+def test_cap_counts_failed_generations_and_stops_earlier_than_the_old_estimator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """06.3.4.1-23 (G4 cost item, D-86): records whose GenerateAnswer failed carry zero wire tokens
+    but were billed. The cap must be reached on the corrected estimate, not on embeddings alone.
+
+    Each mocked record charges one per-attempt ceiling (~$0.0018), so a $0.005 cap is crossed at
+    the third record. The old estimator charged only ~$0.0000144 of embeddings per record and
+    would have dispatched every unit.
+    """
+    from lancet_eval.client import NodeFailed
+    from lancet_eval.journal import NodeTiming
+    from lancet_eval.measure import (
+        EMBEDDING_PRICE_PER_1M,
+        ESTIMATED_EMBEDDING_TOKENS_PER_QUERY,
+        compute_spend,
+    )
+
+    j_path = tmp_path / "journal.jsonl"
+
+    def mock_drive_one(*args: object, **kwargs: object) -> RunRecord:
+        return RunRecord(
+            corpus="graphrag_bench",
+            question_id=str(kwargs.get("question", MagicMock()).id),
+            graph_arm=str(kwargs.get("arm")),
+            outcome="error",
+            node_failures=[
+                NodeFailed(
+                    node_name="GenerateAnswer",
+                    error_kind=3,
+                    error_message="answer basis 'mixed' requires at least one cited evidence ID",
+                    retryable=False,
+                )
+            ],
+            node_timings=[NodeTiming(node_name="AssemblePrompt", duration_ms=12.0)],
+            workflow_meta=WorkflowWireMeta(prompt_tokens=0, completion_tokens=0),
+        )
+
+    monkeypatch.setattr("lancet_eval.run.drive_one", mock_drive_one)
+
+    cap = 0.005
+    client = httpx.Client(base_url="http://testserver")
+    res = drive(
+        corpus="graphrag_bench",
+        journal_path=j_path,
+        stage_spend_cap=cap,
+        limit=10,  # 20 work units
+        workers=1,
+        client=client,
+    )
+
+    journaled = load_records(j_path)
+    assert res.stopped_by_cap is True
+    assert len(journaled) == 3, "cap must be crossed at the third failed generation"
+    assert res.executed_count == 3
+
+    # Counterfactual: the old estimator (embeddings only for token-less records) never reaches the cap.
+    old_per_record = ESTIMATED_EMBEDDING_TOKENS_PER_QUERY * EMBEDDING_PRICE_PER_1M / 1_000_000.0
+    assert 20 * old_per_record < cap
+    assert compute_spend(journaled)[0] >= cap
+    assert compute_spend(journaled[:2])[0] < cap
