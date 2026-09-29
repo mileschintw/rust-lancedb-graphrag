@@ -8,14 +8,30 @@ fires.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from lancet_eval import decay
 from lancet_eval.decay_materiality import (
+    NOISE_ESCALATION_FRACTION,
+    NOISE_WINDOW_RECORDS,
     analyze_material_decay,
+    contiguous_window_noise,
     evaluate_material_decay,
+    first_uncensored,
+    main,
+    noise_escalation,
+    replay_arm_flips,
 )
-from lancet_eval.flatness import FlatnessRecord, SoakNodeFailure, SoakNodeTiming
+from lancet_eval.flatness import (
+    FlatnessRecord,
+    SoakNodeFailure,
+    SoakNodeTiming,
+    flatness_verdict,
+    records_from_run_journal,
+)
 from lancet_eval.thresholds import (
     COMMITTED_DECAY_THRESHOLDS_06341,
     COMMITTED_THRESHOLDS,
@@ -310,3 +326,463 @@ def test_analyze_material_decay_empty_and_tiny_sets_are_unavailable():
         assert verdict.slope_prong_available is False
         assert verdict.decay_present is False
         assert verdict.reason == "unavailable"
+
+
+# --- historical series, pinned from the committed journals (read in place) -----------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_PASS_A_JOURNAL = (
+    _REPO_ROOT
+    / "eval"
+    / "runs"
+    / "2026-09-28-passA-measure-multihop_rag"
+    / "journal.jsonl"
+)
+_DRIVE_0634_JOURNAL = (
+    _REPO_ROOT / "eval" / "runs" / "2026-09-09-multihop_rag" / "journal.jsonl"
+)
+
+
+def test_06_3_4_first_350_uncensored_records_read_decay_present():
+    records = records_from_run_journal(_DRIVE_0634_JOURNAL)
+
+    first350 = first_uncensored(records, 350)
+
+    assert len(first350) == 350
+    assert [r.ordinal for r in first350] == list(range(1, 351))
+    verdict = analyze_material_decay(first350)
+    assert verdict.slope_prong_available is True
+    assert verdict.window_prong_available is True
+    assert verdict.decay_present is True
+
+
+def test_06_3_4_full_journal_is_censored_so_unavailable_never_flat():
+    # The full 658-record drive contains harness timeouts: both prongs unavailable.
+    records = records_from_run_journal(_DRIVE_0634_JOURNAL)
+
+    verdict = analyze_material_decay(records)
+    result = flatness_verdict(records)
+
+    assert verdict.slope_prong_available is False
+    assert verdict.window_prong_available is False
+    assert verdict.decay_present is False
+    assert result.reason == "unavailable"
+    assert result.passed is False
+
+
+def test_pass_a_measured_records_are_not_decay_present_under_d89():
+    records = records_from_run_journal(_PASS_A_JOURNAL)
+
+    verdict = analyze_material_decay(records)
+
+    assert verdict.slope_prong_available is True
+    assert verdict.window_prong_available is True
+    assert verdict.decay_present is False
+    assert verdict.early_p95_ms == 199.0
+    assert verdict.late_p95_ms == 193.0
+    assert verdict.materiality_threshold_ms == 49.75
+
+
+def test_first_uncensored_skips_censored_records_and_renumbers_from_one():
+    records = _flat(10, 100.0)
+    records[2] = FlatnessRecord(
+        ordinal=3,
+        node_failures=[SoakNodeFailure(node_name="RetrieveHybrid", error_kind=1)],
+    )
+    records[4] = FlatnessRecord(ordinal=5, node_timings=[])  # no RetrieveHybrid timing
+
+    kept = first_uncensored(records, 5)
+
+    assert [r.ordinal for r in kept] == [1, 2, 3, 4, 5]
+    assert all(r.node_failures == [] for r in kept)
+    assert all(len(r.node_timings) == 1 for r in kept)
+
+
+def test_first_uncensored_returns_fewer_when_the_series_is_short():
+    assert len(first_uncensored(_flat(6, 100.0), 10)) == 6
+
+
+def test_a_censored_record_in_the_set_reads_unavailable_via_flatness_verdict():
+    records = _flat(40, 100.0)
+    records[3] = FlatnessRecord(
+        ordinal=4,
+        node_failures=[SoakNodeFailure(node_name="RetrieveHybrid", error_kind=1)],
+    )
+
+    assert analyze_material_decay(records).decay_present is False
+    assert flatness_verdict(records).reason == "unavailable"
+
+
+# --- consumer invariant (assumption-delta companion) ---------------------------------
+
+
+def test_flatness_verdict_agrees_with_analyze_material_decay_on_every_fixture():
+    censored = _flat(40, 100.0)
+    censored[7] = FlatnessRecord(
+        ordinal=8,
+        node_failures=[SoakNodeFailure(node_name="RetrieveHybrid", error_kind=1)],
+    )
+    growing = [
+        FlatnessRecord(
+            ordinal=i,
+            node_timings=[
+                SoakNodeTiming(node_name="RetrieveHybrid", duration_ms=100.0 + i * 5.0)
+            ],
+        )
+        for i in range(1, 41)
+    ]
+    fixtures = [
+        records_from_run_journal(_PASS_A_JOURNAL),
+        first_uncensored(records_from_run_journal(_DRIVE_0634_JOURNAL), 350),
+        censored,
+        growing,
+        _flat(40, 100.0),
+    ]
+
+    for records in fixtures:
+        assert (
+            flatness_verdict(records).decay_present
+            == analyze_material_decay(records).decay_present
+        )
+
+
+# --- the 200-record noise check ------------------------------------------------------
+
+
+def test_noise_constants_are_the_committed_escalation_rule():
+    assert NOISE_WINDOW_RECORDS == 200
+    assert NOISE_ESCALATION_FRACTION == 0.05
+
+
+def test_noise_escalation_rule_boundaries():
+    # first-200 or last-200 window fires, or at least 5% of windows fire.
+    assert noise_escalation(121, 0, False, False) is False
+    assert noise_escalation(121, 6, False, False) is False  # 4.96%
+    assert noise_escalation(121, 7, False, False) is True  # 5.79%
+    assert noise_escalation(20, 1, False, False) is True  # exactly 5%
+    assert noise_escalation(21, 1, False, False) is False  # 4.76%
+    assert noise_escalation(121, 1, True, False) is True
+    assert noise_escalation(121, 1, False, True) is True
+
+
+def test_contiguous_window_noise_flat_320_records_has_121_windows_and_no_fires():
+    result = contiguous_window_noise(_flat(320, 160.0))
+
+    assert result["windows"] == 121
+    assert len(result["rows"]) == 121
+    assert result["fired_either"] == 0
+    assert result["fired_fraction"] == 0.0
+    assert result["first_window_fired"] is False
+    assert result["last_window_fired"] is False
+    assert result["escalate"] is False
+    assert result["unavailable"] == 0
+
+
+def test_contiguous_window_noise_counts_fires_per_prong_and_escalates_on_fraction():
+    # 40 flat records with one 200 ms spike at 0-based index 24. With a 20-record window
+    # the late window holds the spike for offsets 5..9 (window prong fires), the first
+    # (offset 0) and last (offset 20) windows stay quiet.
+    records = _flat(40, 100.0)
+    records[24] = FlatnessRecord(
+        ordinal=25,
+        node_timings=[SoakNodeTiming(node_name="RetrieveHybrid", duration_ms=200.0)],
+    )
+
+    result = contiguous_window_noise(records, window=20)
+
+    assert result["windows"] == 21
+    assert result["fired_window"] == 5
+    assert result["fired_either"] == 5
+    assert result["fired_slope"] == 0
+    assert result["first_window_fired"] is False
+    assert result["last_window_fired"] is False
+    assert result["fired_fraction"] == pytest.approx(5 / 21)
+    assert result["escalate"] is True
+    fired_offsets = [row["offset"] for row in result["rows"] if row["decay_present"]]
+    assert fired_offsets == [5, 6, 7, 8, 9]
+
+
+def test_contiguous_window_noise_flags_a_fired_last_window():
+    records = [
+        FlatnessRecord(
+            ordinal=i,
+            node_timings=[
+                SoakNodeTiming(
+                    node_name="RetrieveHybrid",
+                    duration_ms=100.0 if i <= 30 else 400.0,
+                )
+            ],
+        )
+        for i in range(1, 41)
+    ]
+
+    result = contiguous_window_noise(records, window=20)
+
+    assert result["last_window_fired"] is True
+    assert result["escalate"] is True
+
+
+def test_contiguous_window_noise_refuses_a_series_shorter_than_the_window():
+    with pytest.raises(ValueError, match="window"):
+        contiguous_window_noise(_flat(10, 100.0), window=20)
+
+
+def test_contiguous_window_noise_reports_unavailable_windows_as_inconclusive():
+    records = _flat(40, 100.0)
+    records[10] = FlatnessRecord(
+        ordinal=11,
+        node_failures=[SoakNodeFailure(node_name="RetrieveHybrid", error_kind=1)],
+    )
+
+    result = contiguous_window_noise(records, window=20)
+
+    assert result["unavailable"] > 0
+    assert result["conclusive"] is False
+    assert result["fired_either"] == 0
+
+
+# --- the replay-arm flip reporter -----------------------------------------------------
+
+
+def _drive_line(question_id: str, retrieve_ms: float) -> dict:
+    return {
+        "corpus": "multihop_rag",
+        "question_id": question_id,
+        "graph_arm": "graph-on",
+        "outcome": "success",
+        "node_timings": [{"node_name": "RetrieveHybrid", "duration_ms": retrieve_ms}],
+        "node_failures": [],
+    }
+
+
+def _write_journal(path: Path, durations: list[float]) -> None:
+    lines = [{"type": "header", "corpus": "multihop_rag", "partial": False}]
+    lines += [_drive_line(f"q{i}", d) for i, d in enumerate(durations, start=1)]
+    path.write_text(
+        "\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8"
+    )
+
+
+def _old_verdict(passed: bool, decay_present: bool) -> dict:
+    return {
+        "flatness_verdict_full": {
+            "passed": passed,
+            "reason": "flat" if passed else "decay_present",
+            "decay_present": decay_present,
+            "trend_available": True,
+            "window_available": True,
+            "slope_ms_per_query": 0.0,
+            "window_delta_ms": 0.0,
+            "censored_count": 0,
+            "n": 20,
+        }
+    }
+
+
+def _snapshot(root: Path) -> dict[str, tuple[int, float]]:
+    return {
+        str(p.relative_to(root)): (p.stat().st_size, p.stat().st_mtime)
+        for p in sorted(root.rglob("*"))
+        if p.is_file()
+    }
+
+
+def test_replay_arm_flips_reports_old_new_and_flipped_without_writing(tmp_path: Path):
+    root = tmp_path / "pre-fix"
+    flat_arm = root / "flat-arm"
+    same_arm = root / "same-arm"
+    for arm in (flat_arm, same_arm):
+        arm.mkdir(parents=True)
+        _write_journal(arm / "journal.jsonl", [100.0] * 20)
+    (flat_arm / "summary.json").write_text(
+        json.dumps(_old_verdict(passed=False, decay_present=True)), encoding="utf-8"
+    )
+    (same_arm / "summary.json").write_text(
+        json.dumps(_old_verdict(passed=True, decay_present=False)), encoding="utf-8"
+    )
+    nested = flat_arm / "warmup"
+    nested.mkdir()
+    _write_journal(nested / "journal.jsonl", [100.0] * 20)
+    before = _snapshot(root)
+
+    report = replay_arm_flips(root)
+
+    assert _snapshot(root) == before
+    by_arm = {row["arm"]: row for row in report["arms"]}
+    assert sorted(by_arm) == ["flat-arm", "same-arm"]
+    assert by_arm["flat-arm"]["flipped"] is True
+    assert by_arm["flat-arm"]["old"]["decay_present"] is True
+    assert by_arm["flat-arm"]["new"]["decay_present"] is False
+    assert by_arm["flat-arm"]["new"]["passed"] is True
+    assert by_arm["same-arm"]["flipped"] is False
+    assert report["flipped_arms"] == ["flat-arm"]
+
+
+def test_replay_arm_flips_records_a_missing_summary_without_asserting_a_flip(
+    tmp_path: Path,
+):
+    root = tmp_path / "pre-fix"
+    arm = root / "no-summary"
+    arm.mkdir(parents=True)
+    _write_journal(arm / "journal.jsonl", [100.0] * 20)
+
+    report = replay_arm_flips(root)
+
+    row = report["arms"][0]
+    assert row["old"] is None
+    assert row["flipped"] is None
+    assert row["new"]["passed"] is True
+
+
+def test_replay_arm_flips_adds_the_contrast_first_n_reading(tmp_path: Path):
+    root = tmp_path / "pre-fix"
+    arm = root / "a"
+    arm.mkdir(parents=True)
+    _write_journal(arm / "journal.jsonl", [100.0] * 20)
+    contrast = tmp_path / "contrast.jsonl"
+    _write_journal(contrast, [100.0 + 10.0 * i for i in range(20)])
+
+    report = replay_arm_flips(root, contrast_journal=contrast, contrast_first_n=12)
+
+    reading = report["contrast_first_n"]
+    assert reading["n"] == 12
+    assert reading["requested_n"] == 12
+    assert reading["decay_present"] is True
+    assert reading["slope_prong_available"] is True
+
+
+# --- the CLI -------------------------------------------------------------------------
+
+
+def _measure_journal(path: Path, durations: list[float]) -> None:
+    lines = []
+    for i, d in enumerate(durations, start=1):
+        line = _drive_line(f"q{i}", d)
+        line.update({"ordinal": i, "segment": "segment-1", "warm_up": False})
+        lines.append(line)
+    path.write_text(
+        "\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8"
+    )
+
+
+def test_cli_help_lists_the_three_subcommands(capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--help"])
+
+    assert exit_info.value.code == 0
+    out = capsys.readouterr().out
+    for name in ("regate", "noise", "arms"):
+        assert name in out
+
+
+def test_cli_regate_writes_the_verdict_json(tmp_path: Path):
+    journal = tmp_path / "journal.jsonl"
+    _measure_journal(journal, [100.0] * 20)
+    out = tmp_path / "out" / "regate.json"
+
+    code = main(["regate", "--journal", str(journal), "--out", str(out)])
+
+    assert code == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["n"] == 20
+    assert data["slope_prong_available"] is True
+    assert data["window_prong_available"] is True
+    assert data["decay_present"] is False
+    assert data["passed"] is True
+    assert data["materiality_threshold_ms"] == 25.0
+    assert data["may_derive_budgets"] is True
+    assert data["rule"] == "D-89"
+    assert data["thresholds"]["projection_horizon_records"] == 658
+
+
+def test_cli_regate_on_a_censored_journal_may_not_derive(tmp_path: Path):
+    journal = tmp_path / "journal.jsonl"
+    _measure_journal(journal, [100.0] * 20)
+    lines = journal.read_text(encoding="utf-8").splitlines()
+    censored = json.loads(lines[5])
+    censored["node_timings"] = []
+    censored["node_failures"] = [
+        {
+            "node_name": "RetrieveHybrid",
+            "error_kind": 1,
+            "error_message": "timeout",
+            "retryable": False,
+        }
+    ]
+    lines[5] = json.dumps(censored)
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out = tmp_path / "regate.json"
+
+    assert main(["regate", "--journal", str(journal), "--out", str(out)]) == 0
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["window_prong_available"] is False
+    assert data["may_derive_budgets"] is False
+    assert data["reason"] == "unavailable"
+
+
+def test_cli_noise_writes_the_window_check(tmp_path: Path):
+    journal = tmp_path / "journal.jsonl"
+    _measure_journal(journal, [100.0] * 40)
+    out = tmp_path / "noise.json"
+
+    code = main(
+        ["noise", "--journal", str(journal), "--window", "20", "--out", str(out)]
+    )
+
+    assert code == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["windows"] == 21
+    assert data["escalate"] is False
+    assert data["escalation_rule"]
+
+
+def test_cli_arms_writes_the_flip_report(tmp_path: Path):
+    root = tmp_path / "pre-fix"
+    (root / "a").mkdir(parents=True)
+    _write_journal(root / "a" / "journal.jsonl", [100.0] * 20)
+    out = tmp_path / "arms.json"
+
+    code = main(["arms", "--replay-root", str(root), "--out", str(out)])
+
+    assert code == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert [row["arm"] for row in data["arms"]] == ["a"]
+
+
+def test_cli_refuses_an_out_path_under_eval_runs(tmp_path: Path, capsys):
+    journal = tmp_path / "journal.jsonl"
+    _measure_journal(journal, [100.0] * 20)
+    target = _REPO_ROOT / "eval" / "runs" / "zz-d89-refusal-test" / "out.json"
+
+    code = main(["regate", "--journal", str(journal), "--out", str(target)])
+
+    assert code == 2
+    assert "refusing" in capsys.readouterr().err
+    assert not target.exists()
+    assert not target.parent.exists()
+
+
+def test_cli_refuses_an_out_path_under_the_replay_root(tmp_path: Path, capsys):
+    root = tmp_path / "pre-fix"
+    (root / "a").mkdir(parents=True)
+    _write_journal(root / "a" / "journal.jsonl", [100.0] * 20)
+    target = root / "a" / "d89.json"
+
+    code = main(["arms", "--replay-root", str(root), "--out", str(target)])
+
+    assert code == 2
+    assert "refusing" in capsys.readouterr().err
+    assert not target.exists()
+
+
+def test_cli_refuses_an_out_path_equal_to_the_input_journal(tmp_path: Path, capsys):
+    journal = tmp_path / "journal.jsonl"
+    _measure_journal(journal, [100.0] * 20)
+    before = journal.read_text(encoding="utf-8")
+
+    code = main(["regate", "--journal", str(journal), "--out", str(journal)])
+
+    assert code == 2
+    assert "refusing" in capsys.readouterr().err
+    assert journal.read_text(encoding="utf-8") == before

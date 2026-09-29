@@ -566,3 +566,35 @@ def test_build_stub_vectors_classifies_every_miss_reason():
         "no_question_text": 1,
         "matched": 1,
     }
+
+
+# --- replay_summary: uncensored-prefix verdict on the D-89 rule (06.3.4.1-21) ---------------
+
+
+def test_replay_summary_uncensored_prefix_verdict_carries_the_d89_fields(tmp_path: Path):
+    from lancet_eval.oi02 import replay_summary
+
+    arm_dir = tmp_path / "arm"
+    arm_dir.mkdir()
+    lines = [
+        _run_record_line(
+            f"q{i}",
+            started_at_ms=1_000 + i * 100,
+            completed_at_ms=1_050 + i * 100,
+            retrieve_ms=100.0,
+        )
+        for i in range(1, 21)
+    ]
+    _write_jsonl(arm_dir / "journal.jsonl", lines)
+
+    summary = replay_summary(arm_dir)
+
+    verdict = summary["uncensored_prefix_verdict"]
+    assert verdict["decay_present"] is False
+    assert verdict["trend_available"] is True
+    assert verdict["window_available"] is True
+    assert verdict["projected_growth_ms"] == 0.0
+    # D-89: a flat 100 ms series sits on the 25 ms floor, not the fixed 500 ms.
+    assert verdict["materiality_threshold_ms"] == 25.0
+    assert verdict["window_delta_ms"] == 0.0
+    assert summary["m2"]["window_delta_ms"] == 0.0

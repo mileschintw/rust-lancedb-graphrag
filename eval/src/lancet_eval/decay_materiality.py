@@ -152,3 +152,40 @@ def analyze_material_decay(
         records, rule.base, restart_ordinal=None, node_name=node_name
     )
     return evaluate_material_decay(base, rule)
+
+
+# 06.3.4.1 D-89 noise check: escalation rule committed before the check runs
+# (06.3.4.1-21).
+NOISE_WINDOW_RECORDS = 200
+NOISE_ESCALATION_FRACTION = 0.05
+
+
+# RED stubs (06.3.4.1-21 Task 2): trivial returns so the tests fail on assertions.
+def first_uncensored(
+    records: Sequence[Any], n: int, node_name: str = "RetrieveHybrid"
+) -> list[Any]:
+    return []
+
+
+def noise_escalation(
+    windows: int, fired_either: int, first_fired: bool, last_fired: bool
+) -> bool:
+    return False
+
+
+def contiguous_window_noise(
+    records: Sequence[Any],
+    window: int = NOISE_WINDOW_RECORDS,
+    rule: MaterialDecayThresholds = COMMITTED_DECAY_THRESHOLDS_06341,
+) -> dict[str, Any]:
+    return {}
+
+
+def replay_arm_flips(
+    replay_root: Any, contrast_journal: Any = None, contrast_first_n: int = 350
+) -> dict[str, Any]:
+    return {}
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    return 1
