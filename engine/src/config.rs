@@ -861,3 +861,110 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
     }
     Ok(settings)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CONFIG_TOML: &str = include_str!("../../config/config.toml");
+    const CONFIG_EXAMPLE_TOML: &str = include_str!("../../config/config.example.toml");
+
+    /// Minimum gap, in milliseconds, that the operator configuration comments promise between
+    /// an outer budget and the inner budgets it contains.
+    const NESTING_SLACK_MS: u64 = 500;
+
+    /// The seven `[engine.workflow]` timeout keys paired with the compiled-in default of each.
+    fn default_budgets() -> [(&'static str, u64); 7] {
+        [
+            ("reformulate_timeout_ms", default_reformulate_timeout_ms()),
+            (
+                "query_embedding_timeout_ms",
+                default_query_embedding_timeout_ms(),
+            ),
+            ("retrieve_timeout_ms", default_retrieve_timeout_ms()),
+            (
+                "graph_operation_timeout_ms",
+                default_graph_operation_timeout_ms(),
+            ),
+            ("graph_node_timeout_ms", default_graph_node_timeout_ms()),
+            ("prompt_timeout_ms", default_prompt_timeout_ms()),
+            (
+                "generation_node_timeout_ms",
+                default_generation_node_timeout_ms(),
+            ),
+        ]
+    }
+
+    /// Reads `engine.workflow.<key>` from a TOML document, failing when the key is absent.
+    ///
+    /// Reading the raw key, rather than deserializing into `Settings`, keeps a key that a
+    /// file dropped from silently agreeing through its serde default.
+    fn file_budget(raw: &str, key: &str) -> u64 {
+        ::config::Config::builder()
+            .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+            .build()
+            .expect("configuration file must parse as TOML")
+            .get::<u64>(&format!("engine.workflow.{key}"))
+            .unwrap_or_else(|error| {
+                panic!("engine.workflow.{key} must be present and numeric: {error}")
+            })
+    }
+
+    /// D-66: the committed configuration files and the compiled-in defaults are one budget set.
+    #[test]
+    fn workflow_budget_defaults_agree_with_config_files() {
+        for (file_name, raw) in [
+            ("config/config.toml", CONFIG_TOML),
+            ("config/config.example.toml", CONFIG_EXAMPLE_TOML),
+        ] {
+            for (key, default) in default_budgets() {
+                assert_eq!(
+                    file_budget(raw, key),
+                    default,
+                    "{file_name} engine.workflow.{key} must equal the config.rs default"
+                );
+            }
+        }
+    }
+
+    /// Pins the set the user decided at 06.3.4.1-24 (recorded in `06.3.4.1-BUDGETS.md`), so a
+    /// coordinated edit of the files and the defaults cannot move a budget unnoticed.
+    #[test]
+    fn workflow_budget_defaults_carry_the_decided_values() {
+        assert_eq!(
+            default_budgets(),
+            [
+                ("reformulate_timeout_ms", 5000),
+                ("query_embedding_timeout_ms", 2000),
+                ("retrieve_timeout_ms", 2500),
+                ("graph_operation_timeout_ms", 10000),
+                ("graph_node_timeout_ms", 12500),
+                ("prompt_timeout_ms", 65),
+                ("generation_node_timeout_ms", 65000),
+            ]
+        );
+    }
+
+    /// The defaults nest with the promised slack and pass the engine's own startup checks.
+    #[test]
+    fn workflow_budget_defaults_nest_and_pass_startup_validation() {
+        let settings = WorkflowSettings::default();
+        settings
+            .validate()
+            .expect("default budgets must satisfy graph_node >= query_embedding + graph_operation");
+        settings
+            .validate_against_provider(30)
+            .expect("default generation budget must cover two attempts at the 30s provider timeout");
+        assert!(
+            settings.graph_node_timeout_ms
+                >= settings.query_embedding_timeout_ms
+                    + settings.graph_operation_timeout_ms
+                    + NESTING_SLACK_MS,
+            "graph_node must contain query_embedding + graph_operation with {NESTING_SLACK_MS} ms slack"
+        );
+        assert!(
+            settings.retrieve_timeout_ms >= settings.query_embedding_timeout_ms + NESTING_SLACK_MS,
+            "retrieve must contain query_embedding with {NESTING_SLACK_MS} ms slack"
+        );
+    }
+}
