@@ -568,10 +568,12 @@ def test_build_stub_vectors_classifies_every_miss_reason():
     }
 
 
-# --- replay_summary: uncensored-prefix verdict on the D-89 rule (06.3.4.1-21) ---------------
+# --- replay_summary: uncensored-prefix verdict on the D-89 rule (06.3.4.1-21) ---
 
 
-def test_replay_summary_uncensored_prefix_verdict_carries_the_d89_fields(tmp_path: Path):
+def test_replay_summary_uncensored_prefix_verdict_carries_d89_fields(
+    tmp_path: Path,
+):
     from lancet_eval.oi02 import replay_summary
 
     arm_dir = tmp_path / "arm"

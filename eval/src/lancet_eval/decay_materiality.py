@@ -15,8 +15,13 @@ prong unavailable.
 
 from __future__ import annotations
 
+import argparse
+import dataclasses
+import json
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from lancet_eval import decay
@@ -160,17 +165,73 @@ NOISE_WINDOW_RECORDS = 200
 NOISE_ESCALATION_FRACTION = 0.05
 
 
-# RED stubs (06.3.4.1-21 Task 2): trivial returns so the tests fail on assertions.
+NOISE_ESCALATION_RULE = (
+    "escalate when the first-200 window fires, or the last-200 window fires, or at "
+    f"least {NOISE_ESCALATION_FRACTION:.0%} of the contiguous {NOISE_WINDOW_RECORDS}-"
+    "record windows fire (either prong)"
+)
+
+#: Records fed to the 06.3.4 drive's historical reading (D-89 fixtures).
+HISTORICAL_FIRST_N = 350
+
+
+def _has_retrieve_timing(record: Any, node_name: str) -> bool:
+    timings = getattr(record, "node_timings", []) or []
+    return any(
+        getattr(t, "node_name", "") == node_name
+        and getattr(t, "duration_ms", None) is not None
+        for t in timings
+    )
+
+
+def _is_censored(record: Any, node_name: str) -> bool:
+    failures = getattr(record, "node_failures", []) or []
+    return any(
+        getattr(f, "node_name", "") == node_name
+        and getattr(f, "error_kind", None) == 1
+        for f in failures
+    )
+
+
+def _renumbered(records: Sequence[Any]) -> list[Any]:
+    """Fresh copies with ordinals 1..n in the given order (`FlatnessRecord`-shaped)."""
+    return [
+        dataclasses.replace(record, ordinal=index)
+        for index, record in enumerate(records, start=1)
+    ]
+
+
 def first_uncensored(
     records: Sequence[Any], n: int, node_name: str = "RetrieveHybrid"
 ) -> list[Any]:
-    return []
+    """The first `n` records with a `node_name` timing and no censoring failure.
+
+    Records are taken in ordinal order; censored records and records without a timing
+    for the node are skipped, not stopped at. The result is fresh copies renumbered
+    1..n, so the series is gap-free for `decay.analyze_decay`. Fewer than `n` are
+    returned when the series is shorter.
+    """
+    ordered = sorted(records, key=lambda record: int(record.ordinal))
+    kept = [
+        record
+        for record in ordered
+        if _has_retrieve_timing(record, node_name)
+        and not _is_censored(record, node_name)
+    ]
+    return _renumbered(kept[:n])
 
 
 def noise_escalation(
     windows: int, fired_either: int, first_fired: bool, last_fired: bool
 ) -> bool:
-    return False
+    """The committed escalation rule for the noise check (D-89)."""
+    if windows <= 0:
+        return False
+    return (
+        first_fired
+        or last_fired
+        or fired_either / windows >= NOISE_ESCALATION_FRACTION
+    )
 
 
 def contiguous_window_noise(
@@ -178,14 +239,307 @@ def contiguous_window_noise(
     window: int = NOISE_WINDOW_RECORDS,
     rule: MaterialDecayThresholds = COMMITTED_DECAY_THRESHOLDS_06341,
 ) -> dict[str, Any]:
-    return {}
+    """D-89 on every contiguous `window`-record slice of `records`.
+
+    Each slice is renumbered 1..window and read by `analyze_material_decay`. The
+    result carries one row per offset and the counts that feed `noise_escalation`. A
+    window that reads unavailable is counted in `unavailable` and makes the check
+    inconclusive (`conclusive` False); it is never counted as quiet.
+    """
+    ordered = sorted(records, key=lambda record: int(record.ordinal))
+    total = len(ordered)
+    if window <= 0 or total < window:
+        raise ValueError(
+            f"noise check needs at least one full window: {total} records, "
+            f"window {window}"
+        )
+
+    rows: list[dict[str, Any]] = []
+    for offset in range(total - window + 1):
+        verdict = analyze_material_decay(
+            _renumbered(ordered[offset : offset + window]), rule
+        )
+        rows.append(
+            {
+                "offset": offset,
+                "decay_present": verdict.decay_present,
+                "slope_prong_available": verdict.slope_prong_available,
+                "slope_prong_fired": verdict.slope_prong_fired,
+                "window_prong_available": verdict.window_prong_available,
+                "window_prong_fired": verdict.window_prong_fired,
+                "slope_ms_per_query": verdict.slope_ms_per_query,
+                "slope_p_value": verdict.slope_p_value,
+                "projected_growth_ms": verdict.projected_growth_ms,
+                "early_p95_ms": verdict.early_p95_ms,
+                "late_p95_ms": verdict.late_p95_ms,
+                "window_delta_ms": verdict.window_delta_ms,
+                "materiality_threshold_ms": verdict.materiality_threshold_ms,
+            }
+        )
+
+    windows = len(rows)
+    fired_either = sum(1 for row in rows if row["decay_present"])
+    first_fired = bool(rows[0]["decay_present"])
+    last_fired = bool(rows[-1]["decay_present"])
+    unavailable = sum(
+        1
+        for row in rows
+        if not (row["slope_prong_available"] and row["window_prong_available"])
+    )
+    return {
+        "rule": "D-89",
+        "rule_thresholds": rule.to_dict(),
+        "records": total,
+        "window": window,
+        "windows": windows,
+        "rows": rows,
+        "fired_either": fired_either,
+        "fired_slope": sum(1 for row in rows if row["slope_prong_fired"]),
+        "fired_window": sum(1 for row in rows if row["window_prong_fired"]),
+        "unavailable": unavailable,
+        "conclusive": unavailable == 0,
+        "fired_fraction": fired_either / windows,
+        "first_window_fired": first_fired,
+        "last_window_fired": last_fired,
+        "escalation_fraction": NOISE_ESCALATION_FRACTION,
+        "escalation_rule": NOISE_ESCALATION_RULE,
+        "escalate": noise_escalation(windows, fired_either, first_fired, last_fired),
+    }
+
+
+# --- readings shared by the report writers --------------------------------------------
+
+
+def _flatness_summary(result: Any) -> dict[str, Any]:
+    """The `FlatnessResult` fields a verdict comparison needs."""
+    return {
+        "passed": result.passed,
+        "reason": result.reason,
+        "trend_available": result.trend_available,
+        "window_available": result.window_available,
+        "decay_present": result.decay_present,
+        "slope_ms_per_query": result.slope_ms_per_query,
+        "window_delta_ms": result.window_delta_ms,
+        "projected_growth_ms": result.projected_growth_ms,
+        "materiality_threshold_ms": result.materiality_threshold_ms,
+        "censored_count": result.censored_count,
+        "n": result.n,
+    }
+
+
+def _load_old_verdict(arm_dir: Path) -> dict[str, Any] | None:
+    """The `flatness_verdict_full` an arm's committed `summary.json` recorded."""
+    summary_path = arm_dir / "summary.json"
+    if not summary_path.is_file():
+        return None
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    old = summary.get("flatness_verdict_full") if isinstance(summary, dict) else None
+    return old if isinstance(old, dict) else None
+
+
+def _first_n_reading(
+    journal_path: Path, first_n: int, rule: MaterialDecayThresholds
+) -> dict[str, Any]:
+    from lancet_eval.flatness import records_from_run_journal
+
+    kept = first_uncensored(records_from_run_journal(journal_path), first_n)
+    verdict = analyze_material_decay(kept, rule)
+    reading = verdict.to_dict()
+    reading.update(
+        {
+            "journal": str(journal_path),
+            "requested_n": first_n,
+            "n": len(kept),
+            "rule": "D-89",
+        }
+    )
+    return reading
 
 
 def replay_arm_flips(
-    replay_root: Any, contrast_journal: Any = None, contrast_first_n: int = 350
+    replay_root: Path | str,
+    contrast_journal: Path | str | None = None,
+    contrast_first_n: int = HISTORICAL_FIRST_N,
+    rule: MaterialDecayThresholds = COMMITTED_DECAY_THRESHOLDS_06341,
 ) -> dict[str, Any]:
-    return {}
+    """Re-read each replay arm under D-89 and compare with its committed summary.
+
+    Only top-level `<arm>/journal.jsonl` files are read (not nested `warmup/`). Each
+    arm's old reading is the `flatness_verdict_full` in its committed `summary.json`.
+    A flip is any change in `passed` or `decay_present`; no direction is asserted.
+    Nothing is written.
+    """
+    from lancet_eval.flatness import flatness_verdict, records_from_run_journal
+
+    root = Path(replay_root)
+    arms: list[dict[str, Any]] = []
+    for arm_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        journal = arm_dir / "journal.jsonl"
+        if not journal.is_file():
+            continue
+        new = _flatness_summary(flatness_verdict(records_from_run_journal(journal)))
+        old = _load_old_verdict(arm_dir)
+        if old is None:
+            flipped: bool | None = None
+            flip_fields: list[str] = []
+        else:
+            flip_fields = [
+                name
+                for name in ("passed", "decay_present")
+                if old.get(name) != new[name]
+            ]
+            flipped = bool(flip_fields)
+        arms.append(
+            {
+                "arm": arm_dir.name,
+                "journal": str(journal),
+                "n": new["n"],
+                "old": old,
+                "new": new,
+                "flipped": flipped,
+                "flip_fields": flip_fields,
+            }
+        )
+
+    report: dict[str, Any] = {
+        "rule": "D-89",
+        "rule_thresholds": rule.to_dict(),
+        "replay_root": str(root),
+        "arms": arms,
+        "flipped_arms": [row["arm"] for row in arms if row["flipped"]],
+        "direction_asserted": False,
+    }
+    if contrast_journal is not None:
+        report["contrast_first_n"] = _first_n_reading(
+            Path(contrast_journal), contrast_first_n, rule
+        )
+    return report
+
+
+# --- CLI ------------------------------------------------------------------------------
+
+
+class _RefusedOutputError(ValueError):
+    """Raised when a report would be written where evidence lives."""
+
+
+def _check_out_path(
+    out: Path, protected_roots: Sequence[Path], protected_files: Sequence[Path]
+) -> None:
+    """Refuse an `--out` under a protected root or equal to an input file."""
+    from lancet_eval.config import repo_root
+
+    resolved = out.resolve()
+    roots = [(repo_root() / "eval" / "runs").resolve()]
+    roots += [root.resolve() for root in protected_roots]
+    for root in roots:
+        if resolved == root or resolved.is_relative_to(root):
+            raise _RefusedOutputError(f"--out {out} is under protected root {root}")
+    for path in protected_files:
+        if resolved == path.resolve():
+            raise _RefusedOutputError(f"--out {out} is an input file")
+
+
+def _write_json(out: Path, payload: dict[str, Any]) -> None:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def _regate_payload(journal: Path) -> dict[str, Any]:
+    from lancet_eval.flatness import (
+        flatness_verdict,
+        records_from_run_journal,
+        slice_medians,
+    )
+
+    records = records_from_run_journal(journal)
+    result = flatness_verdict(records)
+    material = analyze_material_decay(records)
+    available = material.slope_prong_available and material.window_prong_available
+    payload = material.to_dict()
+    payload.update(
+        {
+            "rule": "D-89",
+            "thresholds": COMMITTED_DECAY_THRESHOLDS_06341.to_dict(),
+            "rule_provenance": COMMITTED_DECAY_THRESHOLDS_06341.provenance,
+            "journal": str(journal),
+            "node": "RetrieveHybrid",
+            "n": result.n,
+            "passed": result.passed,
+            "flatness_reason": result.reason,
+            "slice_medians_ms": slice_medians(records) if records else [],
+            "may_derive_budgets": available and not material.decay_present,
+        }
+    )
+    return payload
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m lancet_eval.decay_materiality",
+        description="D-89 decay readings for 06.3.4.1 (read-only over run evidence).",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    regate = subparsers.add_parser(
+        "regate", help="D-89 verdict for one journal (pass A re-gate)."
+    )
+    regate.add_argument("--journal", required=True)
+    regate.add_argument("--out", required=True)
+
+    noise = subparsers.add_parser(
+        "noise", help="D-89 on every contiguous window of one journal."
+    )
+    noise.add_argument("--journal", required=True)
+    noise.add_argument("--window", type=int, default=NOISE_WINDOW_RECORDS)
+    noise.add_argument("--out", required=True)
+
+    arms = subparsers.add_parser(
+        "arms", help="Re-read replay arms under D-89 and report verdict flips."
+    )
+    arms.add_argument("--replay-root", required=True)
+    arms.add_argument("--contrast")
+    arms.add_argument("--contrast-first-n", type=int, default=HISTORICAL_FIRST_N)
+    arms.add_argument("--out", required=True)
+    return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    return 1
+    """CLI entry point. Every subcommand writes only its `--out` file."""
+    args = _build_parser().parse_args(argv)
+    out = Path(args.out)
+    try:
+        if args.command == "arms":
+            root = Path(args.replay_root)
+            _check_out_path(out, [root], [])
+            payload = replay_arm_flips(
+                root,
+                Path(args.contrast) if args.contrast else None,
+                args.contrast_first_n,
+            )
+        else:
+            journal = Path(args.journal)
+            _check_out_path(out, [], [journal])
+            if args.command == "regate":
+                payload = _regate_payload(journal)
+            else:
+                from lancet_eval.flatness import records_from_run_journal
+
+                payload = contiguous_window_noise(
+                    records_from_run_journal(journal), window=args.window
+                )
+                payload["journal"] = str(journal)
+    except _RefusedOutputError as error:
+        print(f"refusing to write: {error}", file=sys.stderr)
+        return 2
+    _write_json(out, payload)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

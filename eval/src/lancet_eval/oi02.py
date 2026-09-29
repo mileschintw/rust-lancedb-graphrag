@@ -482,14 +482,18 @@ def run_forensics(
 
 import statistics as _statistics  # noqa: E402  (grouped with the rest of stdlib imports above ordinarily; kept local to the Task 2 section to minimise the Task 1 diff)
 
-from lancet_eval import decay as _decay
+from lancet_eval.decay_materiality import (
+    analyze_material_decay as _analyze_material_decay,
+)
 from lancet_eval.flatness import (
     FlatnessRecord as _FlatnessRecord,
     flatness_verdict as _flatness_verdict,
     records_from_run_journal as _records_from_run_journal,
     slice_medians as _slice_medians,
 )
-from lancet_eval.thresholds import COMMITTED_THRESHOLDS as _COMMITTED_THRESHOLDS
+from lancet_eval.thresholds import (
+    COMMITTED_DECAY_THRESHOLDS_06341 as _COMMITTED_DECAY_THRESHOLDS_06341,
+)
 
 #: M2 growth thresholds (Task 2 <action> "Readings" -- fixed before any data, must not be
 #: tuned after seeing it).
@@ -708,15 +712,17 @@ def replay_summary(
     uncensored = _uncensored_prefix(flat_records)
     summary["uncensored_prefix_n"] = len(uncensored)
     if uncensored:
-        uncensored_verdict = _decay.analyze_decay(
-            uncensored, _COMMITTED_THRESHOLDS, restart_ordinal=None, node_name=_NODE_NAME
+        uncensored_verdict = _analyze_material_decay(
+            uncensored, _COMMITTED_DECAY_THRESHOLDS_06341, node_name=_NODE_NAME
         )
         summary["uncensored_prefix_verdict"] = {
-            "decay_present": uncensored_verdict.verdict_decay_present,
-            "slope_ms_per_query": uncensored_verdict.slope_statistic,
+            "decay_present": uncensored_verdict.decay_present,
+            "slope_ms_per_query": uncensored_verdict.slope_ms_per_query,
             "window_delta_ms": uncensored_verdict.window_delta_ms,
-            "trend_available": uncensored_verdict.trend_result.is_available,
-            "window_available": uncensored_verdict.window_result.is_available,
+            "trend_available": uncensored_verdict.slope_prong_available,
+            "window_available": uncensored_verdict.window_prong_available,
+            "projected_growth_ms": uncensored_verdict.projected_growth_ms,
+            "materiality_threshold_ms": uncensored_verdict.materiality_threshold_ms,
         }
         window_delta = uncensored_verdict.window_delta_ms
     else:
