@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from lancet_eval.flatness import (
     FlatnessRecord,
     SoakNodeFailure,
@@ -365,3 +367,32 @@ def test_slice_medians_excludes_censored_and_unusable_records():
     medians = slice_medians(records, size=50)
 
     assert medians == [20.0]
+
+
+# --- D-89 / D-92: measure journals and the materiality rule (06.3.4.1-21) ------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_PASS_A_JOURNAL = (
+    _REPO_ROOT / "eval" / "runs" / "2026-09-28-passA-measure-multihop_rag" / "journal.jsonl"
+)
+
+
+def test_pass_a_journal_reads_320_measured_records_and_flat_under_d89():
+    # Tracer: pass A's own measure journal, read in place, end to end through flatness.py.
+    records = records_from_run_journal(_PASS_A_JOURNAL)
+
+    assert len(records) == 320
+    assert [r.ordinal for r in records] == list(range(1, 321))
+
+    result = flatness_verdict(records)
+
+    assert result.n == 320
+    assert result.trend_available is True
+    assert result.window_available is True
+    assert result.decay_present is False
+    assert result.passed is True
+    assert result.reason == "flat"
+    assert 0.0325 <= result.slope_ms_per_query <= 0.0335
+    assert result.projected_growth_ms < 25.0
+    assert result.materiality_threshold_ms == pytest.approx(49.75)
+    assert result.rule == "D-89"
