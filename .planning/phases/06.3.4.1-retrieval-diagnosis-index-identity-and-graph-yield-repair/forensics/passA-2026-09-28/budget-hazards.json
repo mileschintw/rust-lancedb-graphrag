@@ -1,0 +1,813 @@
+{
+  "rule": "06.3.3 committed derivation, unchanged: p95 x 1.5 (nearest-rank, ceil), nesting slack 500 ms, harness ceilings; only the two inner budgets are swapped per option",
+  "journal": "eval/runs/2026-09-28-passA-measure-multihop_rag/journal.jsonl",
+  "measurement": "eval/runs/2026-09-28-passA-measure-multihop_rag/measurement.json",
+  "regate": {
+    "rule": "D-89",
+    "node": "RetrieveHybrid",
+    "n": 320,
+    "passed": true,
+    "decay_present": false,
+    "may_derive_budgets": true,
+    "slope_prong_available": true,
+    "slope_prong_fired": false,
+    "window_prong_available": true,
+    "window_prong_fired": false,
+    "slope_ms_per_query": 0.032992950445780635,
+    "slope_p_value": 0.001435782938732608,
+    "projected_growth_ms": 21.709361393323658,
+    "materiality_threshold_ms": 49.75,
+    "early_p95_ms": 199.0,
+    "late_p95_ms": 193.0,
+    "window_delta_ms": -6.0
+  },
+  "n_measured": 320,
+  "n_records_incl_warm_up": 324,
+  "raised_budgets": {
+    "reformulate_timeout_ms": 5000,
+    "query_embedding_timeout_ms": 30000,
+    "retrieve_timeout_ms": 120000,
+    "graph_operation_timeout_ms": 120000,
+    "graph_node_timeout_ms": 150500,
+    "prompt_timeout_ms": 120000,
+    "generation_node_timeout_ms": 65000
+  },
+  "carried_reformulate_timeout_ms": 5000,
+  "options": {
+    "config_rs_0633": {
+      "inner": {
+        "query_embedding_timeout_ms": 645,
+        "graph_operation_timeout_ms": 38595
+      },
+      "eligible": true,
+      "provenance": "06.3.3-04 derivation (engine/src/config.rs defaults), measured on the leaking engine (D-66)",
+      "rule": {
+        "reformulate_timeout_ms": 5000,
+        "query_embedding_timeout_ms": 645,
+        "retrieve_timeout_ms": 294,
+        "graph_operation_timeout_ms": 38595,
+        "graph_node_timeout_ms": 1062,
+        "prompt_timeout_ms": 11,
+        "generation_node_timeout_ms": 65000
+      },
+      "resolved": {
+        "reformulate_timeout_ms": 5000,
+        "query_embedding_timeout_ms": 645,
+        "retrieve_timeout_ms": 1145,
+        "graph_operation_timeout_ms": 38595,
+        "graph_node_timeout_ms": 39740,
+        "prompt_timeout_ms": 11,
+        "generation_node_timeout_ms": 65000
+      },
+      "exceedances_rule": {
+        "ReformulateQuery": {
+          "budget_key": "reformulate_timeout_ms",
+          "budget_ms": 5000,
+          "n": 320,
+          "above": 0,
+          "max_ms": 0.0
+        },
+        "RetrieveHybrid": {
+          "budget_key": "retrieve_timeout_ms",
+          "budget_ms": 294,
+          "n": 320,
+          "above": 8,
+          "max_ms": 403.0
+        },
+        "ExtractGraphContext": {
+          "budget_key": "graph_node_timeout_ms",
+          "budget_ms": 1062,
+          "n": 320,
+          "above": 3,
+          "max_ms": 1438.0
+        },
+        "AssemblePrompt": {
+          "budget_key": "prompt_timeout_ms",
+          "budget_ms": 11,
+          "n": 320,
+          "above": 7,
+          "max_ms": 43.0
+        },
+        "GenerateAnswer": {
+          "budget_key": "generation_node_timeout_ms",
+          "budget_ms": 65000,
+          "n": 186,
+          "above": 0,
+          "max_ms": 33765.0
+        }
+      },
+      "exceedances_resolved": {
+        "ReformulateQuery": {
+          "budget_key": "reformulate_timeout_ms",
+          "budget_ms": 5000,
+          "n": 320,
+          "above": 0,
+          "max_ms": 0.0
+        },
+        "RetrieveHybrid": {
+          "budget_key": "retrieve_timeout_ms",
+          "budget_ms": 1145,
+          "n": 320,
+          "above": 0,
+          "max_ms": 403.0
+        },
+        "ExtractGraphContext": {
+          "budget_key": "graph_node_timeout_ms",
+          "budget_ms": 39740,
+          "n": 320,
+          "above": 0,
+          "max_ms": 1438.0
+        },
+        "AssemblePrompt": {
+          "budget_key": "prompt_timeout_ms",
+          "budget_ms": 11,
+          "n": 320,
+          "above": 7,
+          "max_ms": 43.0
+        },
+        "GenerateAnswer": {
+          "budget_key": "generation_node_timeout_ms",
+          "budget_ms": 65000,
+          "n": 186,
+          "above": 0,
+          "max_ms": 33765.0
+        }
+      },
+      "nesting": {
+        "has_violations": true,
+        "groups": [
+          {
+            "outer_name": "graph_node_timeout_ms",
+            "outer_budget_ms": 1062,
+            "inner_budgets": {
+              "query_embedding_timeout_ms": 645,
+              "graph_operation_timeout_ms": 38595
+            },
+            "inner_sum_ms": 39240,
+            "slack_ms": -38178,
+            "fires_first": "graph_node_timeout_ms",
+            "is_violation": true,
+            "adjusted_outer_ms": 39740,
+            "is_invariant_driven": true
+          },
+          {
+            "outer_name": "retrieve_timeout_ms",
+            "outer_budget_ms": 294,
+            "inner_budgets": {
+              "query_embedding_timeout_ms": 645
+            },
+            "inner_sum_ms": 645,
+            "slack_ms": -351,
+            "fires_first": "retrieve_timeout_ms",
+            "is_violation": true,
+            "adjusted_outer_ms": 1145,
+            "is_invariant_driven": true
+          }
+        ]
+      },
+      "ceiling_report": {
+        "largest_single_node_budget_ms": 65000,
+        "largest_single_node_name": "generation_node_timeout_ms",
+        "sse_read_timeout_ms": 300000,
+        "single_exceeds_read_timeout": false,
+        "worst_case_sum_ms": 105896,
+        "question_deadline_ms": 600000,
+        "sum_exceeds_deadline": false,
+        "summary_message": "PASS: Proposed budgets satisfy both harness ceilings independently.",
+        "worst_case_sum_incl_reformulate_ms": 110896,
+        "sum_incl_reformulate_exceeds_deadline": false
+      },
+      "census": {
+        "node_counts": {
+          "ReformulateQuery": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "ExtractGraphContext": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "RetrieveHybrid": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "AssemblePrompt": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "GenerateAnswer": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          }
+        },
+        "dropped_at_ceiling": {
+          "ReformulateQuery": 0,
+          "ExtractGraphContext": 0,
+          "RetrieveHybrid": 0,
+          "AssemblePrompt": 0,
+          "GenerateAnswer": 0
+        },
+        "censored_by_node": {
+          "ReformulateQuery": 0,
+          "ExtractGraphContext": 0,
+          "RetrieveHybrid": 0,
+          "AssemblePrompt": 0,
+          "GenerateAnswer": 0
+        }
+      }
+    },
+    "toml_33e774b": {
+      "inner": {
+        "query_embedding_timeout_ms": 15000,
+        "graph_operation_timeout_ms": 40000
+      },
+      "eligible": true,
+      "provenance": "33e774b overwrite of config/config.toml, config.example.toml and config.eval.toml, no derivation",
+      "rule": {
+        "reformulate_timeout_ms": 5000,
+        "query_embedding_timeout_ms": 15000,
+        "retrieve_timeout_ms": 294,
+        "graph_operation_timeout_ms": 40000,
+        "graph_node_timeout_ms": 1062,
+        "prompt_timeout_ms": 11,
+        "generation_node_timeout_ms": 65000
+      },
+      "resolved": {
+        "reformulate_timeout_ms": 5000,
+        "query_embedding_timeout_ms": 15000,
+        "retrieve_timeout_ms": 15500,
+        "graph_operation_timeout_ms": 40000,
+        "graph_node_timeout_ms": 55500,
+        "prompt_timeout_ms": 11,
+        "generation_node_timeout_ms": 65000
+      },
+      "exceedances_rule": {
+        "ReformulateQuery": {
+          "budget_key": "reformulate_timeout_ms",
+          "budget_ms": 5000,
+          "n": 320,
+          "above": 0,
+          "max_ms": 0.0
+        },
+        "RetrieveHybrid": {
+          "budget_key": "retrieve_timeout_ms",
+          "budget_ms": 294,
+          "n": 320,
+          "above": 8,
+          "max_ms": 403.0
+        },
+        "ExtractGraphContext": {
+          "budget_key": "graph_node_timeout_ms",
+          "budget_ms": 1062,
+          "n": 320,
+          "above": 3,
+          "max_ms": 1438.0
+        },
+        "AssemblePrompt": {
+          "budget_key": "prompt_timeout_ms",
+          "budget_ms": 11,
+          "n": 320,
+          "above": 7,
+          "max_ms": 43.0
+        },
+        "GenerateAnswer": {
+          "budget_key": "generation_node_timeout_ms",
+          "budget_ms": 65000,
+          "n": 186,
+          "above": 0,
+          "max_ms": 33765.0
+        }
+      },
+      "exceedances_resolved": {
+        "ReformulateQuery": {
+          "budget_key": "reformulate_timeout_ms",
+          "budget_ms": 5000,
+          "n": 320,
+          "above": 0,
+          "max_ms": 0.0
+        },
+        "RetrieveHybrid": {
+          "budget_key": "retrieve_timeout_ms",
+          "budget_ms": 15500,
+          "n": 320,
+          "above": 0,
+          "max_ms": 403.0
+        },
+        "ExtractGraphContext": {
+          "budget_key": "graph_node_timeout_ms",
+          "budget_ms": 55500,
+          "n": 320,
+          "above": 0,
+          "max_ms": 1438.0
+        },
+        "AssemblePrompt": {
+          "budget_key": "prompt_timeout_ms",
+          "budget_ms": 11,
+          "n": 320,
+          "above": 7,
+          "max_ms": 43.0
+        },
+        "GenerateAnswer": {
+          "budget_key": "generation_node_timeout_ms",
+          "budget_ms": 65000,
+          "n": 186,
+          "above": 0,
+          "max_ms": 33765.0
+        }
+      },
+      "nesting": {
+        "has_violations": true,
+        "groups": [
+          {
+            "outer_name": "graph_node_timeout_ms",
+            "outer_budget_ms": 1062,
+            "inner_budgets": {
+              "query_embedding_timeout_ms": 15000,
+              "graph_operation_timeout_ms": 40000
+            },
+            "inner_sum_ms": 55000,
+            "slack_ms": -53938,
+            "fires_first": "graph_node_timeout_ms",
+            "is_violation": true,
+            "adjusted_outer_ms": 55500,
+            "is_invariant_driven": true
+          },
+          {
+            "outer_name": "retrieve_timeout_ms",
+            "outer_budget_ms": 294,
+            "inner_budgets": {
+              "query_embedding_timeout_ms": 15000
+            },
+            "inner_sum_ms": 15000,
+            "slack_ms": -14706,
+            "fires_first": "retrieve_timeout_ms",
+            "is_violation": true,
+            "adjusted_outer_ms": 15500,
+            "is_invariant_driven": true
+          }
+        ]
+      },
+      "ceiling_report": {
+        "largest_single_node_budget_ms": 65000,
+        "largest_single_node_name": "generation_node_timeout_ms",
+        "sse_read_timeout_ms": 300000,
+        "single_exceeds_read_timeout": false,
+        "worst_case_sum_ms": 136011,
+        "question_deadline_ms": 600000,
+        "sum_exceeds_deadline": false,
+        "summary_message": "PASS: Proposed budgets satisfy both harness ceilings independently.",
+        "worst_case_sum_incl_reformulate_ms": 141011,
+        "sum_incl_reformulate_exceeds_deadline": false
+      },
+      "census": {
+        "node_counts": {
+          "ReformulateQuery": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "ExtractGraphContext": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "RetrieveHybrid": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "AssemblePrompt": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "GenerateAnswer": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          }
+        },
+        "dropped_at_ceiling": {
+          "ReformulateQuery": 0,
+          "ExtractGraphContext": 0,
+          "RetrieveHybrid": 0,
+          "AssemblePrompt": 0,
+          "GenerateAnswer": 0
+        },
+        "censored_by_node": {
+          "ReformulateQuery": 0,
+          "ExtractGraphContext": 0,
+          "RetrieveHybrid": 0,
+          "AssemblePrompt": 0,
+          "GenerateAnswer": 0
+        }
+      }
+    },
+    "measurement_ceiling_passA": {
+      "inner": {
+        "query_embedding_timeout_ms": 30000,
+        "graph_operation_timeout_ms": 120000
+      },
+      "eligible": false,
+      "provenance": "pass A's temporary raised measurement ceilings (process-scope LANCET_ENGINE__WORKFLOW__* overrides for that pass only); never production",
+      "rule": {
+        "reformulate_timeout_ms": 5000,
+        "query_embedding_timeout_ms": 30000,
+        "retrieve_timeout_ms": 294,
+        "graph_operation_timeout_ms": 120000,
+        "graph_node_timeout_ms": 1062,
+        "prompt_timeout_ms": 11,
+        "generation_node_timeout_ms": 65000
+      },
+      "resolved": {
+        "reformulate_timeout_ms": 5000,
+        "query_embedding_timeout_ms": 30000,
+        "retrieve_timeout_ms": 30500,
+        "graph_operation_timeout_ms": 120000,
+        "graph_node_timeout_ms": 150500,
+        "prompt_timeout_ms": 11,
+        "generation_node_timeout_ms": 65000
+      },
+      "exceedances_rule": {
+        "ReformulateQuery": {
+          "budget_key": "reformulate_timeout_ms",
+          "budget_ms": 5000,
+          "n": 320,
+          "above": 0,
+          "max_ms": 0.0
+        },
+        "RetrieveHybrid": {
+          "budget_key": "retrieve_timeout_ms",
+          "budget_ms": 294,
+          "n": 320,
+          "above": 8,
+          "max_ms": 403.0
+        },
+        "ExtractGraphContext": {
+          "budget_key": "graph_node_timeout_ms",
+          "budget_ms": 1062,
+          "n": 320,
+          "above": 3,
+          "max_ms": 1438.0
+        },
+        "AssemblePrompt": {
+          "budget_key": "prompt_timeout_ms",
+          "budget_ms": 11,
+          "n": 320,
+          "above": 7,
+          "max_ms": 43.0
+        },
+        "GenerateAnswer": {
+          "budget_key": "generation_node_timeout_ms",
+          "budget_ms": 65000,
+          "n": 186,
+          "above": 0,
+          "max_ms": 33765.0
+        }
+      },
+      "exceedances_resolved": {
+        "ReformulateQuery": {
+          "budget_key": "reformulate_timeout_ms",
+          "budget_ms": 5000,
+          "n": 320,
+          "above": 0,
+          "max_ms": 0.0
+        },
+        "RetrieveHybrid": {
+          "budget_key": "retrieve_timeout_ms",
+          "budget_ms": 30500,
+          "n": 320,
+          "above": 0,
+          "max_ms": 403.0
+        },
+        "ExtractGraphContext": {
+          "budget_key": "graph_node_timeout_ms",
+          "budget_ms": 150500,
+          "n": 320,
+          "above": 0,
+          "max_ms": 1438.0
+        },
+        "AssemblePrompt": {
+          "budget_key": "prompt_timeout_ms",
+          "budget_ms": 11,
+          "n": 320,
+          "above": 7,
+          "max_ms": 43.0
+        },
+        "GenerateAnswer": {
+          "budget_key": "generation_node_timeout_ms",
+          "budget_ms": 65000,
+          "n": 186,
+          "above": 0,
+          "max_ms": 33765.0
+        }
+      },
+      "nesting": {
+        "has_violations": true,
+        "groups": [
+          {
+            "outer_name": "graph_node_timeout_ms",
+            "outer_budget_ms": 1062,
+            "inner_budgets": {
+              "query_embedding_timeout_ms": 30000,
+              "graph_operation_timeout_ms": 120000
+            },
+            "inner_sum_ms": 150000,
+            "slack_ms": -148938,
+            "fires_first": "graph_node_timeout_ms",
+            "is_violation": true,
+            "adjusted_outer_ms": 150500,
+            "is_invariant_driven": true
+          },
+          {
+            "outer_name": "retrieve_timeout_ms",
+            "outer_budget_ms": 294,
+            "inner_budgets": {
+              "query_embedding_timeout_ms": 30000
+            },
+            "inner_sum_ms": 30000,
+            "slack_ms": -29706,
+            "fires_first": "retrieve_timeout_ms",
+            "is_violation": true,
+            "adjusted_outer_ms": 30500,
+            "is_invariant_driven": true
+          }
+        ]
+      },
+      "ceiling_report": {
+        "largest_single_node_budget_ms": 150500,
+        "largest_single_node_name": "graph_node_timeout_ms",
+        "sse_read_timeout_ms": 300000,
+        "single_exceeds_read_timeout": false,
+        "worst_case_sum_ms": 246011,
+        "question_deadline_ms": 600000,
+        "sum_exceeds_deadline": false,
+        "summary_message": "PASS: Proposed budgets satisfy both harness ceilings independently.",
+        "worst_case_sum_incl_reformulate_ms": 251011,
+        "sum_incl_reformulate_exceeds_deadline": false
+      },
+      "census": {
+        "node_counts": {
+          "ReformulateQuery": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "ExtractGraphContext": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "RetrieveHybrid": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "AssemblePrompt": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          },
+          "GenerateAnswer": {
+            "OBSERVED": 320,
+            "CENSORED_AT_CEILING": 0,
+            "CENSORED_NODE_TIMEOUT": 0,
+            "NOT_REACHED": 0,
+            "INSTRUMENT_GAP": 0
+          }
+        },
+        "dropped_at_ceiling": {
+          "ReformulateQuery": 0,
+          "ExtractGraphContext": 0,
+          "RetrieveHybrid": 0,
+          "AssemblePrompt": 0,
+          "GenerateAnswer": 0
+        },
+        "censored_by_node": {
+          "ReformulateQuery": 0,
+          "ExtractGraphContext": 0,
+          "RetrieveHybrid": 0,
+          "AssemblePrompt": 0,
+          "GenerateAnswer": 0
+        }
+      }
+    },
+    "substage_measured": {
+      "inner": null,
+      "eligible": false,
+      "provenance": "Sub-stage telemetry times neither inner operation: retrieve_hybrid_substages carries open_table, checkout, dense, bm25 and fusion only, the query embedding is computed before the RetrieveHybrid node, and no event times the graph operation. Pass A: events arrived for 236 of 324 executions; no timing for query_embedding and graph_operation.",
+      "rule": null,
+      "resolved": null,
+      "exceedances_rule": null,
+      "exceedances_resolved": null,
+      "nesting": null,
+      "ceiling_report": null,
+      "census": null,
+      "reason": "Sub-stage telemetry times neither inner operation: retrieve_hybrid_substages carries open_table, checkout, dense, bm25 and fusion only, the query embedding is computed before the RetrieveHybrid node, and no event times the graph operation. Pass A: events arrived for 236 of 324 executions; no timing for query_embedding and graph_operation."
+    }
+  },
+  "p95_by_node": {
+    "ExtractGraphContext": 708.0,
+    "RetrieveHybrid": 196.0,
+    "AssemblePrompt": 7.0
+  },
+  "brief_mismatch": [
+    {
+      "node": "RetrieveHybrid",
+      "brief_rule_ms": 294,
+      "rule_ms": 294,
+      "agrees": true,
+      "brief_above": 8,
+      "computed_above": 8,
+      "above_agrees": true,
+      "brief_max_ms": 403.0,
+      "observed_max_ms": 403.0,
+      "max_agrees": true,
+      "plan_text_p95_ms": 199.0,
+      "plan_text_rule_ms": 299,
+      "rule_p95_ms": 196.0,
+      "early_window_p95_ms": 199.0,
+      "explanation": "The committed rule's nearest-rank p95 over all 320 measured records is 196 ms, so it writes 294 ms. The plan text's p95 199 ms (299 ms) is not what the rule produces; 199 ms is the early-window p95 (n = 80) of the D-89 reading. The rule's output governs (G2)."
+    },
+    {
+      "node": "ExtractGraphContext",
+      "brief_rule_ms": 1062,
+      "rule_ms": 1062,
+      "agrees": true,
+      "brief_above": 3,
+      "computed_above": 3,
+      "above_agrees": true,
+      "brief_max_ms": 1438.0,
+      "observed_max_ms": 1438.0,
+      "max_agrees": true
+    },
+    {
+      "node": "AssemblePrompt",
+      "brief_rule_ms": 11,
+      "rule_ms": 11,
+      "agrees": true,
+      "brief_above": 7,
+      "computed_above": 7,
+      "above_agrees": true,
+      "brief_max_ms": 43.0,
+      "observed_max_ms": 43.0,
+      "max_agrees": true
+    }
+  ],
+  "assemble_prompt": {
+    "rule_ms": 11,
+    "n": 320,
+    "durations_above_rule_ms": [
+      14.0,
+      17.0,
+      24.0,
+      24.0,
+      25.0,
+      38.0,
+      43.0
+    ],
+    "floor_table": [
+      {
+        "floor_ms": 11,
+        "above": 7,
+        "n": 320
+      },
+      {
+        "floor_ms": 16,
+        "above": 6,
+        "n": 320
+      },
+      {
+        "floor_ms": 20,
+        "above": 5,
+        "n": 320
+      },
+      {
+        "floor_ms": 25,
+        "above": 2,
+        "n": 320
+      },
+      {
+        "floor_ms": 30,
+        "above": 2,
+        "n": 320
+      },
+      {
+        "floor_ms": 43,
+        "above": 0,
+        "n": 320
+      },
+      {
+        "floor_ms": 50,
+        "above": 0,
+        "n": 320
+      },
+      {
+        "floor_ms": 65,
+        "above": 0,
+        "n": 320
+      }
+    ]
+  },
+  "noise": {
+    "records": 320,
+    "window": 200,
+    "windows": 121,
+    "fired_either": 0,
+    "fired_slope": 0,
+    "fired_window": 0,
+    "fired_fraction": 0.0,
+    "unavailable": 0,
+    "conclusive": true,
+    "escalate": false,
+    "escalation_rule": "escalate when the first-200 window fires, or the last-200 window fires, or at least 5% of the contiguous 200-record windows fire (either prong)",
+    "first_window_fired": false,
+    "last_window_fired": false,
+    "first_window": {
+      "offset": 0,
+      "decay_present": false,
+      "slope_ms_per_query": 0.03007518796992481,
+      "slope_p_value": 0.1110345155953818,
+      "projected_growth_ms": 19.789473684210524,
+      "early_p95_ms": 194.0,
+      "late_p95_ms": 190.0,
+      "window_delta_ms": -4.0,
+      "materiality_threshold_ms": 48.5
+    },
+    "last_window": {
+      "offset": 120,
+      "decay_present": false,
+      "slope_ms_per_query": 0.06349206349206349,
+      "slope_p_value": 0.0030144283929076188,
+      "projected_growth_ms": 41.77777777777778,
+      "early_p95_ms": 187.0,
+      "late_p95_ms": 205.0,
+      "window_delta_ms": 18.0,
+      "materiality_threshold_ms": 46.75
+    },
+    "significant_slope_windows": 27,
+    "nearest_slope_miss": {
+      "offset": 120,
+      "decay_present": false,
+      "slope_ms_per_query": 0.06349206349206349,
+      "slope_p_value": 0.0030144283929076188,
+      "projected_growth_ms": 41.77777777777778,
+      "early_p95_ms": 187.0,
+      "late_p95_ms": 205.0,
+      "window_delta_ms": 18.0,
+      "materiality_threshold_ms": 46.75,
+      "percent_of_threshold": 89.36423054070114
+    },
+    "nearest_window_miss": {
+      "offset": 51,
+      "decay_present": false,
+      "slope_ms_per_query": 0.02127659574468085,
+      "slope_p_value": 0.26992548711922115,
+      "projected_growth_ms": 14.0,
+      "early_p95_ms": 194.0,
+      "late_p95_ms": 229.0,
+      "window_delta_ms": 35.0,
+      "materiality_threshold_ms": 48.5,
+      "percent_of_threshold": 72.16494845360825
+    }
+  },
+  "notes": [
+    "No inner option is rule-derived from a non-decaying engine: 645/38595 were measured on the leaking engine (D-66), 15000/40000 are the 33e774b overwrite, and 30000/120000 are temporary measurement ceilings.",
+    "Pass A ran with unfiltered logging (G3), so these values are slightly generous, which is acceptable for timeout ceilings.",
+    "An 11 ms AssemblePrompt budget is near Windows timer granularity (about 15.6 ms).",
+    "check_harness_ceilings sums only the six keys the rule derives; the 5000 ms reformulate budget is added separately as worst_case_sum_incl_reformulate_ms."
+  ]
+}
