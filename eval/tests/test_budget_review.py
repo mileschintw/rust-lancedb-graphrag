@@ -21,6 +21,7 @@ from lancet_eval.budget_review import (
     main,
     node_exceedances,
     noise_summary,
+    prompt_floor_table,
 )
 from lancet_eval.client import NodeFailed
 from lancet_eval.journal import NodeTiming
@@ -323,6 +324,36 @@ def test_substage_eligibility_needs_full_coverage_and_both_operations_timed() ->
     assert "236" in reason and "324" in reason
 
 
+# --- prompt floor table ------------------------------------------------------
+
+
+def test_prompt_floor_table_counts_assemble_prompt_durations_above_each_floor() -> None:
+    records = [
+        _record(i + 1, {"AssemblePrompt": ms})
+        for i, ms in enumerate([5.0, 10.0, 12.0, 20.0, 44.0])
+    ]
+    table = prompt_floor_table(records, floors=(11, 20, 44))
+    assert [(row["floor_ms"], row["above"], row["n"]) for row in table] == [
+        (11, 3, 5),  # 12, 20, 44
+        (20, 1, 5),  # 44 only: 20 is not strictly above 20
+        (44, 0, 5),
+    ]
+
+
+@pass_a_only
+def test_pass_a_report_lists_the_assemble_prompt_durations_above_the_rule_value(
+    pass_a_report: dict,
+) -> None:
+    prompt = pass_a_report["assemble_prompt"]
+    assert prompt["rule_ms"] == 11
+    assert prompt["n"] == 320
+    assert len(prompt["durations_above_rule_ms"]) == 7
+    assert max(prompt["durations_above_rule_ms"]) == 43.0
+    floors = {row["floor_ms"]: row["above"] for row in prompt["floor_table"]}
+    assert floors[11] == 7
+    assert floors[43] == 0
+
+
 # --- noise summary -----------------------------------------------------------
 
 
@@ -345,7 +376,7 @@ def _noise_row(
         "materiality_threshold_ms": slope_threshold,
         "window_delta_ms": delta,
         "slope_ms_per_query": projected / 658.0,
-        "slope_p_value": 0.5,
+        "slope_p_value": 0.01,
         "early_p95_ms": slope_threshold * 4.0,
         "late_p95_ms": slope_threshold * 4.0 + delta,
     }
