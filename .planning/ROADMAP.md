@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 10/20 plans executed
+**Plans:** 10/27 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A; see `06.3.4.1-PASSA-GAPS.md`)
 
 Plans:
 
@@ -962,41 +962,57 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 06.3.4.1-11-PLAN.md — Re-derive the six workflow budgets on the fixed engine (D-66) from a capped, authorised measurement pass, and write production config and code defaults together with a…
+- [ ] 06.3.4.1-11-PLAN.md — Re-derive the six workflow budgets on the fixed engine (D-66) from a capped, authorised measurement pass, and write production config and code defaults together with a… *(Task 2's pass A stopped at the decay gate; Tasks 2–3 are completed through gap plans 21–27, and 06.3.4.1-27 writes this plan's SUMMARY. Run the gap plans with `--gaps-only` so plan 11 is not re-dispatched.)*
+- [ ] 06.3.4.1-21-PLAN.md — `gap_closure: true`. Commit D-89's decay materiality rule as its own threshold set (`COMMITTED_DECAY_THRESHOLDS_06341`: slope × 658 or late − early p95 ≥ max(25% of early p95, 25 ms)), switch every 06.3.4.1 decay/flatness reading to it, make `flatness.py` read `measure` journals, and re-gate pass A plus a 200-record noise check and plan 07's replay arms (G1, G5 loader; D-89, D-92)
+- [ ] 06.3.4.1-22-PLAN.md — `gap_closure: true`. Engine observability: a default `info,engine=debug` level filter on every tracing layer with `RUST_LOG` override, `build_profile` and `log_filter` on the startup line, and a bounded `generation_output_rejected` capture of every rejected GenerateAnswer output (G3, G5 release check, G4 capture; D-90, D-92, D-91)
+- [ ] 06.3.4.1-23-PLAN.md — `gap_closure: true`. Make stage caps count failed generations (per-attempt ceiling in `compute_spend`, pass A ≥ $0.2178 billed), and diagnose pass A's seven GenerateAnswer failure classes for free, with a probe design (G4; D-91, D-86)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 06.3.4.1-12-PLAN.md — Run paid drive 1 on the fixed index, engine and prompt, and read SC-2 (timeout not dominant, flatness) and SC-3 (the vector baseline answers some questions) as computed gates
+- [ ] 06.3.4.1-24-PLAN.md — `gap_closure: true`. Derive candidate budgets from pass A by the committed rule for every inner-budget source, count pass-A exceedances, and stop at a blocking decision on the inner source, any prompt floor, the preflight cap and the D-89 noise result (G2; D-66, D-86, D-89)
+- [ ] 06.3.4.1-25-PLAN.md — `gap_closure: true`. Capped, authorised GenerateAnswer probe replaying pass A's first N questions with raw-output capture; confirm or refute each failure hypothesis and propose labelled fixes (G4; D-91, D-86)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 06.3.4.1-13-PLAN.md — Build OI-01's seeding and path search as library code, prove it end to end on the real reconciled graph with an offline probe (store → mention seeds → seed-to-seed paths →…
+- [ ] 06.3.4.1-26-PLAN.md — `gap_closure: true`. Blocking decision on the proposed GenerateAnswer fixes, test-first implementation of the approved ones, and a capped confirmation on the same questions (G4; D-91, D-71, D-86)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 06.3.4.1-14-PLAN.md — Cut production graph augmentation over to 06.3.4.1-13's mention seeding and path search as the only seeding path (D-75, D-78), with the per-generation `GraphIndex` in the…
+- [ ] 06.3.4.1-27-PLAN.md — `gap_closure: true`. Write the decided budgets to the config trio with an agreement test, restart the release engine with no overrides, pass preflight on `multihop_rag_diag`, and close plan 11 (G2; D-66, D-90, D-92)
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [ ] 06.3.4.1-15-PLAN.md — Make graph-on change what is retrieved, not only what is appended to the prompt (D-76, D-81)
+- [ ] 06.3.4.1-12-PLAN.md — Run paid drive 1 on the fixed index, engine and prompt, and read SC-2 (timeout not dominant, flatness) and SC-3 (the vector baseline answers some questions) as computed gates
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 06.3.4.1-16-PLAN.md — Carry the new graph diagnostics from the engine to the journal so SC-4 and SC-5 can be computed per record
+- [ ] 06.3.4.1-13-PLAN.md — Build OI-01's seeding and path search as library code, prove it end to end on the real reconciled graph with an offline probe (store → mention seeds → seed-to-seed paths →…
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [ ] 06.3.4.1-17-PLAN.md — Commit the drive-2 gate rules and make SC-4 and SC-5 computed readings, and extend the canaries with a seed-to-seed path canary
+- [ ] 06.3.4.1-14-PLAN.md — Cut production graph augmentation over to 06.3.4.1-13's mention seeding and path search as the only seeding path (D-75, D-78), with the per-generation `GraphIndex` in the…
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
-- [ ] 06.3.4.1-18-PLAN.md — Re-derive the graph operation budget on the new seeding (D-77), then prove the canaries hold live on the engine that drive 2 will use (D-80)
+- [ ] 06.3.4.1-15-PLAN.md — Make graph-on change what is retrieved, not only what is appended to the prompt (D-76, D-81)
 
 **Wave 15** *(blocked on Wave 14 completion)*
 
-- [ ] 06.3.4.1-19-PLAN.md — Run paid drive 2, the run of record, on the repaired graph path, and read SC-1, SC-4 and SC-5 as computed gates, with SC-2/SC-3 re-reported
+- [ ] 06.3.4.1-16-PLAN.md — Carry the new graph diagnostics from the engine to the journal so SC-4 and SC-5 can be computed per record
 
 **Wave 16** *(blocked on Wave 15 completion)*
+
+- [ ] 06.3.4.1-17-PLAN.md — Commit the drive-2 gate rules and make SC-4 and SC-5 computed readings, and extend the canaries with a seed-to-seed path canary
+
+**Wave 17** *(blocked on Wave 16 completion)*
+
+- [ ] 06.3.4.1-18-PLAN.md — Re-derive the graph operation budget on the new seeding (D-77), then prove the canaries hold live on the engine that drive 2 will use (D-80)
+
+**Wave 18** *(blocked on Wave 17 completion)*
+
+- [ ] 06.3.4.1-19-PLAN.md — Run paid drive 2, the run of record, on the repaired graph path, and read SC-1, SC-4 and SC-5 as computed gates, with SC-2/SC-3 re-reported
+
+**Wave 19** *(blocked on Wave 18 completion)*
 
 - [ ] 06.3.4.1-20-PLAN.md — Record non-comparability publicly (D-88)
 
