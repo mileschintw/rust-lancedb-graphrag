@@ -128,3 +128,77 @@ FINAL_ANSWER_MISSING_REVIEW_RATE: float = 0.10
 # 2026-09-26; committed before paid drive 1. A miss triggers investigation
 # (D-84), not suppression.
 VECTOR_BASELINE_USABLE_FLOOR: float = 0.512
+
+
+@dataclass(frozen=True)
+class MaterialDecayThresholds:
+    """06.3.4.1 D-89: decay materiality relative to the node's own speed.
+
+    Decay is present when either the significant slope, projected over
+    `projection_horizon_records`, or the late-minus-early p95 delta reaches
+    `materiality_threshold_ms(early_p95)`. Kept as a separate set so 06.3.3's
+    `DecisionThresholds` (and the run records that serialize it) do not change shape.
+    """
+
+    base: DecisionThresholds
+    projection_horizon_records: int
+    relative_materiality_fraction: float
+    materiality_floor_ms: float
+    provenance: str
+
+    def validate(self) -> None:
+        """Assert the D-89 inputs are usable, then the base set's decay inputs."""
+        if self.projection_horizon_records <= 0:
+            raise ThresholdError(
+                "D-89 requires a positive projection horizon, "
+                f"got {self.projection_horizon_records!r}"
+            )
+        if not (0.0 < self.relative_materiality_fraction < 1.0):
+            raise ThresholdError(
+                "D-89 requires a relative materiality fraction in (0, 1), "
+                f"got {self.relative_materiality_fraction!r}"
+            )
+        if self.materiality_floor_ms < 0:
+            raise ThresholdError(
+                "D-89 requires a non-negative materiality floor, "
+                f"got {self.materiality_floor_ms!r}"
+            )
+        self.base.validate_for_decay()
+
+    def materiality_threshold_ms(self, early_p95_ms: float) -> float:
+        """The size a decay reading must reach: max(fraction x early p95, floor)."""
+        return max(
+            self.relative_materiality_fraction * early_p95_ms,
+            self.materiality_floor_ms,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to a JSON-serializable dictionary for forensics records."""
+        return {
+            "projection_horizon_records": self.projection_horizon_records,
+            "relative_materiality_fraction": self.relative_materiality_fraction,
+            "materiality_floor_ms": self.materiality_floor_ms,
+            "base": self.base.to_dict(),
+            "provenance": self.provenance,
+        }
+
+
+# 06.3.4.1 D-89: committed before its first application beyond pass A (06.3.4.1-21).
+COMMITTED_DECAY_THRESHOLDS_06341 = MaterialDecayThresholds(
+    base=COMMITTED_THRESHOLDS,
+    projection_horizon_records=658,
+    relative_materiality_fraction=0.25,
+    materiality_floor_ms=25.0,
+    provenance=(
+        "06.3.4.1 D-89 (user decision, 2026-09-28): amends D-64 for every decay and "
+        "flatness reading in 06.3.4.1 (pass A re-gate, pass B, drive 1, drive 2). "
+        "Decay is present when either the significant positive Theil-Sen slope "
+        "projected over 658 records (the 06.3.4 drive's length) or the late-window p95 "
+        "minus the early-window p95 reaches max(25% of the early-window p95, 25 ms); "
+        "equality fires. Rationale: budgets are p95 x 1.5, i.e. 50% headroom, and "
+        "decay is material once it would use half of that headroom. Base inputs "
+        "(alpha 0.05, window fractions 25%/25%, p95, seed 42) are 06.3.3's "
+        "COMMITTED_THRESHOLDS; its fixed 500 ms delta is not consulted. Censoring is "
+        "unchanged: a censored or too-small set reads unavailable, never flat."
+    ),
+)

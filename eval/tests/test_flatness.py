@@ -14,6 +14,7 @@ from lancet_eval.flatness import (
     SoakNodeFailure,
     SoakNodeTiming,
     flatness_verdict,
+    load_measurement_records,
     records_from_run_journal,
     records_from_soak_jsonl,
     slice_medians,
@@ -369,16 +370,20 @@ def test_slice_medians_excludes_censored_and_unusable_records():
     assert medians == [20.0]
 
 
-# --- D-89 / D-92: measure journals and the materiality rule (06.3.4.1-21) ------------------
+# --- D-89 / D-92: measure journals and the materiality rule (06.3.4.1-21) ------
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PASS_A_JOURNAL = (
-    _REPO_ROOT / "eval" / "runs" / "2026-09-28-passA-measure-multihop_rag" / "journal.jsonl"
+    _REPO_ROOT
+    / "eval"
+    / "runs"
+    / "2026-09-28-passA-measure-multihop_rag"
+    / "journal.jsonl"
 )
 
 
 def test_pass_a_journal_reads_320_measured_records_and_flat_under_d89():
-    # Tracer: pass A's own measure journal, read in place, end to end through flatness.py.
+    # Tracer: pass A's own measure journal, read in place, through flatness.py.
     records = records_from_run_journal(_PASS_A_JOURNAL)
 
     assert len(records) == 320
@@ -396,3 +401,183 @@ def test_pass_a_journal_reads_320_measured_records_and_flat_under_d89():
     assert result.projected_growth_ms < 25.0
     assert result.materiality_threshold_ms == pytest.approx(49.75)
     assert result.rule == "D-89"
+
+
+def _measure_record(
+    ordinal: int,
+    *,
+    duration_ms: float = 150.0,
+    warm_up: bool = False,
+    segment: str = "segment-1",
+    **overrides,
+) -> dict:
+    line = _journal_record(
+        question_id=f"q{ordinal}",
+        node_timings=[{"node_name": "RetrieveHybrid", "duration_ms": duration_ms}],
+    )
+    line.update(
+        {
+            "ordinal": ordinal,
+            "segment": "warm-up" if warm_up else segment,
+            "warm_up": warm_up,
+        }
+    )
+    line.update(overrides)
+    return line
+
+
+def test_load_measurement_records_drops_warm_up_and_sorts_by_native_ordinal(
+    tmp_path: Path,
+):
+    path = tmp_path / "journal.jsonl"
+    _write_jsonl(
+        path,
+        [
+            _measure_record(3, duration_ms=103.0),
+            _measure_record(1, warm_up=True),
+            _measure_record(2, duration_ms=102.0),
+            _measure_record(4, duration_ms=104.0),
+        ],
+    )
+
+    measured = load_measurement_records(path)
+    everything = load_measurement_records(path, include_warm_up=True)
+
+    assert [r.ordinal for r in measured] == [2, 3, 4]
+    assert [r.ordinal for r in everything] == [1, 2, 3, 4]
+
+
+def test_load_measurement_records_skips_header_blank_and_half_written_lines(
+    tmp_path: Path,
+):
+    path = tmp_path / "journal.jsonl"
+    lines = [
+        json.dumps({"type": "header", "corpus": "multihop_rag", "partial": False}),
+        "",
+        json.dumps(_measure_record(1)),
+        json.dumps(_measure_record(2))[:40],  # half-written trailing line
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    assert [r.ordinal for r in load_measurement_records(path)] == [1]
+
+
+def test_load_measurement_records_rejects_duplicate_native_ordinal(tmp_path: Path):
+    path = tmp_path / "journal.jsonl"
+    _write_jsonl(path, [_measure_record(1), _measure_record(2), _measure_record(2)])
+
+    with pytest.raises(ValueError, match="duplicate"):
+        load_measurement_records(path)
+
+
+def test_load_measurement_records_raises_on_a_record_that_fails_validation(
+    tmp_path: Path,
+):
+    # A wrong-shape record line must fail loudly, not be dropped (the n = 0 bug, D-92).
+    path = tmp_path / "journal.jsonl"
+    _write_jsonl(path, [_measure_record(1), _measure_record(2, warm_up="not-a-bool")])
+
+    with pytest.raises(ValueError):
+        load_measurement_records(path)
+
+
+def test_records_from_run_journal_measure_shape_renumbers_by_native_ordinal(
+    tmp_path: Path,
+):
+    path = tmp_path / "journal.jsonl"
+    _write_jsonl(
+        path,
+        [
+            _measure_record(1, warm_up=True, duration_ms=999.0),
+            _measure_record(7, duration_ms=107.0),
+            _measure_record(5, duration_ms=105.0),
+            _measure_record(6, duration_ms=106.0),
+        ],
+    )
+
+    records = records_from_run_journal(path)
+
+    assert [r.ordinal for r in records] == [1, 2, 3]
+    assert [r.node_timings[0].duration_ms for r in records] == [105.0, 106.0, 107.0]
+
+
+def test_records_from_run_journal_measure_shape_applies_harness_timeout_censoring(
+    tmp_path: Path,
+):
+    path = tmp_path / "journal.jsonl"
+    _write_jsonl(
+        path,
+        [
+            _measure_record(1),
+            _measure_record(
+                2,
+                node_timings=[],
+                outcome="error",
+                error_type="ReadTimeout",
+                error="read timed out",
+            ),
+        ],
+    )
+
+    records = records_from_run_journal(path)
+
+    assert records[0].node_failures == []
+    assert records[1].node_failures == [
+        SoakNodeFailure(node_name="RetrieveHybrid", error_kind=1)
+    ]
+
+
+def test_records_from_run_journal_mixed_shapes_raise(tmp_path: Path):
+    path = tmp_path / "journal.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {"type": "header", "partial": False},
+            _journal_record(question_id="drive-shaped"),
+            _measure_record(2),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="mixes"):
+        records_from_run_journal(path)
+
+
+def test_records_from_run_journal_header_never_counts_as_a_shape(tmp_path: Path):
+    # A header line carries `corpus` but no `question_id`, so it is not a record line.
+    path = tmp_path / "journal.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {"type": "header", "corpus": "multihop_rag", "partial": True},
+            _measure_record(1),
+        ],
+    )
+
+    assert len(records_from_run_journal(path)) == 1
+
+
+def test_records_from_run_journal_missing_file_reads_empty(tmp_path: Path):
+    assert records_from_run_journal(tmp_path / "absent.jsonl") == []
+
+
+def test_flatness_verdict_censored_set_carries_d89_fields_unavailable():
+    records = _flat_records(20, 100.0)
+    records[5] = FlatnessRecord(
+        ordinal=6,
+        node_failures=[SoakNodeFailure(node_name="RetrieveHybrid", error_kind=1)],
+    )
+
+    result = flatness_verdict(records)
+
+    assert result.reason == "unavailable"
+    assert result.materiality_threshold_ms is None
+    assert result.decay_present is False
+    assert result.projected_growth_ms == 0.0
+    assert result.rule == "D-89"
+
+
+def test_flatness_verdict_flat_series_reports_the_floor_threshold():
+    result = flatness_verdict(_flat_records(20, 100.0))
+
+    assert result.materiality_threshold_ms == 25.0
+    assert result.projected_growth_ms == 0.0

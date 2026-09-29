@@ -1,24 +1,31 @@
-"""OI-02 flatness adapters (06.3.4.1-03, D-64/D-65).
+"""OI-02 flatness adapters (06.3.4.1-03, D-64/D-65; D-89/D-92 in 06.3.4.1-21).
 
-Thin shims onto the unmodified `lancet_eval.decay.analyze_decay` — this module never edits
-`decay.py` or `thresholds.py` (a plan prohibition, enforced by a `git diff --quiet` check).
+Thin shims onto the unmodified `lancet_eval.decay.analyze_decay`. This module never
+edits `decay.py`. Plan 03 also promised never to edit `thresholds.py`; D-89 superseded
+that note, and the verdict now reads `COMMITTED_DECAY_THRESHOLDS_06341` through
+`decay_materiality.analyze_material_decay`. 06.3.3's `COMMITTED_THRESHOLDS` is
+unchanged.
 
 Two record sources feed the same verdict function:
 
-- `records_from_soak_jsonl` reads a `retrieval_soak` (P0, `engine/src/bin/retrieval_soak.rs`)
-  JSONL file — one arm, gap-free ordinals in line order.
-- `records_from_run_journal` reads a paid-drive run journal (P2) via the canonical
-  `lancet_eval.journal.load_records` loader — ordinals assigned in journal line order (the
-  loader itself skips the header and any half-written trailing line).
+- `records_from_soak_jsonl` reads a `retrieval_soak` (P0,
+  `engine/src/bin/retrieval_soak.rs`) JSONL file: one arm, gap-free ordinals in line
+  order.
+- `records_from_run_journal` reads a run journal (P2). A drive journal (`RunRecord`
+  lines) goes through the canonical `lancet_eval.journal.load_records` loader, with
+  ordinals assigned in journal line order (the loader itself skips the header and any
+  half-written trailing line). A `measure` journal (`MeasurementRecord` lines, D-92)
+  goes through `load_measurement_records`: warm-up records are excluded and ordinals
+  are renumbered 1..n in the native dispatch-ordinal order.
 
 Both produce lightweight, duck-typed record objects carrying exactly the attributes
-`lancet_eval.decay.validate_and_sort_records`/`analyze_decay` read (`ordinal`, `segment`,
-`graph_arm`, `question_type`, `node_timings`, `node_failures`) — they are not `RunRecord` or
-`MeasurementRecord` subclasses, just plain dataclasses with those fields.
+`lancet_eval.decay.validate_and_sort_records`/`analyze_decay` read (`ordinal`,
+`segment`, `graph_arm`, `question_type`, `node_timings`, `node_failures`). They are not
+`RunRecord` or `MeasurementRecord` subclasses, just plain dataclasses with those fields.
 
-See Pitfall 6 (RESEARCH): a censored set must read `unavailable`, never `flat`. `flatness_verdict`
-enforces this by requiring both `analyze_decay` prongs `is_available` before ever reading
-`verdict_decay_present`.
+See Pitfall 6 (RESEARCH): a censored set must read `unavailable`, never `flat`.
+`flatness_verdict` enforces this by requiring both D-89 prongs available before ever
+reading `decay_present`.
 """
 
 from __future__ import annotations
@@ -31,8 +38,9 @@ from pathlib import Path
 from typing import Any
 
 from lancet_eval import decay
+from lancet_eval.decay_materiality import analyze_material_decay
 from lancet_eval.journal import load_records
-from lancet_eval.thresholds import COMMITTED_THRESHOLDS
+from lancet_eval.measure import MeasurementRecord
 
 #: RetrieveHybrid is the only node this OI-02 investigation profiles (D-64/D-65).
 _NODE_NAME = "RetrieveHybrid"
@@ -92,6 +100,11 @@ class FlatnessResult:
     unusable_dropped_count: int
     slice_medians_ms: list[float]
     n: int
+    #: D-89 additions. `decay_present` carries the D-89 verdict; `window_delta_ms` and
+    #: `slope_ms_per_query` stay the base statistics.
+    projected_growth_ms: float = 0.0
+    materiality_threshold_ms: float | None = None
+    rule: str = "D-89"
 
 
 def records_from_soak_jsonl(path: str | Path, arm: str) -> list[FlatnessRecord]:
@@ -146,20 +159,119 @@ def records_from_soak_jsonl(path: str | Path, arm: str) -> list[FlatnessRecord]:
     return records
 
 
-def records_from_run_journal(journal_path: str | Path) -> list[FlatnessRecord]:
-    """Reads a paid-drive run journal into gap-free-ordinal records via `journal.load_records`.
+def _iter_record_lines(journal_path: Path) -> list[dict[str, Any]]:
+    """The record-shaped JSON objects of a journal, in file order.
 
-    `load_records` already skips the header line and any half-written trailing line, and
-    preserves file order, so ordinals are assigned 1..n in that same journal line order.
-
-    A `RetrieveHybrid` node failure with `error_kind == 1` censors the observation (handled by
-    `decay.analyze_decay` itself, since `node_failures` passes through unchanged). A record
-    whose top-level `error_type` is a harness deadline or read timeout
-    (`_HARNESS_TIMEOUT_ERROR_TYPES`) has no RetrieveHybrid-specific failure entry to censor on —
-    the harness gave up before or during the node, so this adapter synthesizes one, conservatively
-    treating "unknown" as censored rather than silently dropping the record (Pitfall 6).
+    A record line is a JSON object carrying `corpus`, `question_id` and `graph_arm`: the
+    same predicate `journal.load_records` uses. Blank lines, unparseable or half-written
+    lines, headers and other non-record lines are skipped.
     """
-    raw_records = load_records(journal_path)
+    if not journal_path.exists():
+        return []
+    lines: list[dict[str, Any]] = []
+    with open(journal_path, encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                isinstance(data, dict)
+                and "corpus" in data
+                and "question_id" in data
+                and "graph_arm" in data
+            ):
+                lines.append(data)
+    return lines
+
+
+def _journal_shape(record_lines: Sequence[dict[str, Any]], path: Path) -> str:
+    """The journal shape: `"measure"`, `"drive"` or `"empty"`.
+
+    Raises `ValueError` on a mixed or ambiguous file. Detected from the raw keys before
+    any validation, so a journal mixing both shapes cannot be half-skipped by a
+    validator that rejects the other shape's lines.
+    """
+    measure = 0
+    drive = 0
+    for data in record_lines:
+        has_ordinal = "ordinal" in data
+        has_segment = "segment" in data
+        if has_ordinal and has_segment:
+            measure += 1
+        elif not has_ordinal and not has_segment:
+            drive += 1
+        else:
+            raise ValueError(
+                f"{path}: record line carries only one of `ordinal`/`segment`; "
+                "neither a measure nor a drive record"
+            )
+    if measure and drive:
+        raise ValueError(
+            f"{path}: journal mixes {measure} measure-shaped and {drive} drive-shaped "
+            "record lines"
+        )
+    if measure:
+        return "measure"
+    if drive:
+        return "drive"
+    return "empty"
+
+
+def load_measurement_records(
+    journal_path: str | Path, include_warm_up: bool = False
+) -> list[MeasurementRecord]:
+    """Reads a `measure` journal (D-92) as `MeasurementRecord`s by native ordinal.
+
+    Blank, unparseable and half-written lines and non-record lines (headers) are skipped
+    exactly as `journal.load_records` skips them. Every remaining record line is
+    validated as `MeasurementRecord`; a line that fails validation raises rather than
+    being dropped, so a wrong-shape journal can never read as n = 0 again. Warm-up
+    records are dropped unless `include_warm_up`. A duplicate native ordinal raises
+    `ValueError`.
+    """
+    path = Path(journal_path)
+    records = [
+        MeasurementRecord.model_validate(data) for data in _iter_record_lines(path)
+    ]
+    seen: set[int] = set()
+    for record in records:
+        if record.ordinal in seen:
+            raise ValueError(f"{path}: duplicate measurement ordinal {record.ordinal}")
+        seen.add(record.ordinal)
+    if not include_warm_up:
+        records = [record for record in records if not record.warm_up]
+    return sorted(records, key=lambda record: record.ordinal)
+
+
+def records_from_run_journal(journal_path: str | Path) -> list[FlatnessRecord]:
+    """Reads a run journal into gap-free-ordinal records.
+
+    A drive journal loads via `journal.load_records`, which already skips the header
+    line and any half-written trailing line and preserves file order, so ordinals are
+    assigned 1..n in that same journal line order. A `measure` journal (lines carrying
+    `ordinal` and `segment`, D-92) loads via `load_measurement_records`: warm-up
+    records are excluded and ordinals are renumbered 1..n in native-ordinal order. A
+    file mixing both shapes raises `ValueError`.
+
+    A `RetrieveHybrid` node failure with `error_kind == 1` censors the observation
+    (handled by `decay.analyze_decay` itself, since `node_failures` passes through
+    unchanged). A record whose top-level `error_type` is a harness deadline or read
+    timeout (`_HARNESS_TIMEOUT_ERROR_TYPES`) has no RetrieveHybrid-specific failure
+    entry to censor on: the harness gave up before or during the node, so this adapter
+    synthesizes one, conservatively treating "unknown" as censored rather than silently
+    dropping the record (Pitfall 6).
+    """
+    path = Path(journal_path)
+    shape = _journal_shape(_iter_record_lines(path), path)
+    raw_records: Sequence[Any]
+    if shape == "measure":
+        raw_records = load_measurement_records(path)
+    else:
+        raw_records = load_records(path)
     out: list[FlatnessRecord] = []
     for index, record in enumerate(raw_records, start=1):
         node_timings = [
@@ -220,10 +332,13 @@ def slice_medians(records: Sequence[Any], size: int = 50) -> list[float]:
 
 
 def flatness_verdict(records: Sequence[Any]) -> FlatnessResult:
-    """The OI-02 flatness verdict: `passed=True` only when both prongs are available and
+    """The OI-02 flatness verdict under D-89.
 
-    neither fired. A censored or too-small set is `passed=False, reason="unavailable"` — never
-    read as flat (Pitfall 6). An empty input is `passed=False, reason="n=0"`.
+    `passed=True` only when both D-89 prongs are available and neither fired. A censored
+    or too-small set is `passed=False, reason="unavailable"`, never read as flat
+    (Pitfall 6). An empty input is `passed=False, reason="n=0"`. The rule is
+    `COMMITTED_DECAY_THRESHOLDS_06341`: materiality max(25% of the early-window p95,
+    25 ms) on both prongs, with the slope projected over 658 records.
     """
     n = len(records)
     if n == 0:
@@ -241,18 +356,13 @@ def flatness_verdict(records: Sequence[Any]) -> FlatnessResult:
             n=0,
         )
 
-    verdict = decay.analyze_decay(
-        records, COMMITTED_THRESHOLDS, restart_ordinal=None, node_name=_NODE_NAME
-    )
-    trend_available = verdict.trend_result.is_available
-    window_available = verdict.window_result.is_available
-    censored_count = max(
-        verdict.trend_result.censored_count, verdict.window_result.censored_count
-    )
+    material = analyze_material_decay(records, node_name=_NODE_NAME)
+    trend_available = material.slope_prong_available
+    window_available = material.window_prong_available
 
     if not trend_available or not window_available:
         passed, reason = False, "unavailable"
-    elif verdict.verdict_decay_present:
+    elif material.decay_present:
         passed, reason = False, "decay_present"
     else:
         passed, reason = True, "flat"
@@ -262,11 +372,13 @@ def flatness_verdict(records: Sequence[Any]) -> FlatnessResult:
         reason=reason,
         trend_available=trend_available,
         window_available=window_available,
-        decay_present=verdict.verdict_decay_present,
-        slope_ms_per_query=verdict.slope_statistic,
-        window_delta_ms=verdict.window_delta_ms,
-        censored_count=censored_count,
-        unusable_dropped_count=verdict.unusable_dropped_count,
+        decay_present=material.decay_present,
+        slope_ms_per_query=material.slope_ms_per_query,
+        window_delta_ms=material.window_delta_ms,
+        censored_count=material.censored_count,
+        unusable_dropped_count=material.unusable_dropped_count,
         slice_medians_ms=slice_medians(records),
         n=n,
+        projected_growth_ms=material.projected_growth_ms,
+        materiality_threshold_ms=material.materiality_threshold_ms,
     )

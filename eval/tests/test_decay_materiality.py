@@ -1,8 +1,9 @@
 """Tests for the D-89 materiality rule (06.3.4.1-21).
 
-Boundary cases run on hand-constructed `decay.TrendResult` / `WindowComparisonResult` /
-`DecayVerdict` objects, not synthetic series: float products of a fitted slope rarely land
-exactly on a threshold, and D-89 says equality fires.
+Boundary cases run on hand-constructed `decay.TrendResult`,
+`WindowComparisonResult` and `DecayVerdict` objects, not synthetic series: float
+products of a fitted slope rarely land exactly on a threshold, and D-89 says equality
+fires.
 """
 
 from __future__ import annotations
@@ -69,7 +70,7 @@ def _verdict(
     )
 
 
-# --- the committed D-89 set ---------------------------------------------------------------
+# --- the committed D-89 set ----------------------------------------------------
 
 
 def test_d89_set_carries_the_user_decided_numbers():
@@ -120,7 +121,9 @@ def test_materiality_threshold_is_max_of_fraction_and_floor():
     ("horizon", "fraction", "floor"),
     [(0, 0.25, 25.0), (658, 0.0, 25.0), (658, 1.0, 25.0), (658, 0.25, -1.0)],
 )
-def test_material_decay_thresholds_validate_rejects_bad_inputs(horizon, fraction, floor):
+def test_material_decay_thresholds_validate_rejects_bad_inputs(
+    horizon, fraction, floor
+):
     bad = MaterialDecayThresholds(
         base=COMMITTED_THRESHOLDS,
         projection_horizon_records=horizon,
@@ -133,7 +136,7 @@ def test_material_decay_thresholds_validate_rejects_bad_inputs(horizon, fraction
         bad.validate()
 
 
-# --- boundary cases on hand-built verdicts -----------------------------------------------
+# --- boundary cases on hand-built verdicts --------------------------------------
 
 
 def test_window_prong_fires_at_exact_equality_and_not_below():
@@ -207,8 +210,8 @@ def test_pass_a_shaped_slope_is_below_threshold():
 
 
 def test_unavailable_window_makes_both_prongs_unavailable_never_flat():
-    # A huge significant slope must not leak through when the window prong is unavailable:
-    # the threshold cannot be computed without the early-window p95.
+    # A huge significant slope must not leak through when the window prong is
+    # unavailable: the threshold cannot be computed without the early-window p95.
     verdict = evaluate_material_decay(
         _verdict(
             slope=50.0,
@@ -238,14 +241,16 @@ def test_window_unavailable_with_trend_available_still_reads_unavailable():
     assert verdict.slope_prong_fired is False
 
 
-# --- analyze_material_decay on record sets ------------------------------------------------
+# --- analyze_material_decay on record sets --------------------------------------
 
 
 def _flat(n: int = 40, duration_ms: float = 100.0) -> list[FlatnessRecord]:
     return [
         FlatnessRecord(
             ordinal=i,
-            node_timings=[SoakNodeTiming(node_name="RetrieveHybrid", duration_ms=duration_ms)],
+            node_timings=[
+                SoakNodeTiming(node_name="RetrieveHybrid", duration_ms=duration_ms)
+            ],
         )
         for i in range(1, n + 1)
     ]
