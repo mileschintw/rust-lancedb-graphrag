@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 23
+current_plan: 24
 status: executing
-stopped_at: "Completed 06.3.4.1-22-PLAN.md: info,engine=debug filter on every layer, startup build_profile/log_filter, generation_output_rejected capture; next gap plan 23"
-last_updated: "2026-09-29T14:31:22.190Z"
+stopped_at: "Completed 06.3.4.1-23-PLAN.md: failed-generation stage-cap accounting and free GenerateAnswer diagnosis; next gap plan 24"
+last_updated: "2026-09-29T14:55:15.717Z"
 last_activity: 2026-09-29
-state_head: dabb50a4d0bc1b40baf402a44e679d5bbcc65a39
+state_head: d3a23eb82b692d21e962e4037180a9316bb6a22d
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 185
-  completed_plans: 170
+  completed_plans: 171
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -21,7 +21,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 23
+Current Plan: 24
 Total Plans in Phase: 27
 
 ## Current Status
@@ -380,6 +380,7 @@ Total Plans in Phase: 27
 | Phase 06.3.4.1 P10 | ~50 min | 3 tasks | 9 files |
 | Phase 06.3.4.1 P21 | 15 min | 3 tasks | 13 files |
 | Phase 06.3.4.1 P22 | 45 min | 3 tasks | 9 files |
+| Phase 06.3.4.1 P23 | 23 min | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -456,12 +457,14 @@ Total Plans in Phase: 27
 - [Phase 06.3.4.1]: 06.3.4.1-21: D-89 committed as COMMITTED_DECAY_THRESHOLDS_06341 (658 / 0.25 / 25 ms) beside 06.3.3's untouched COMMITTED_THRESHOLDS; flatness_verdict and oi02 read it; an unavailable window makes both prongs unavailable — Pass A re-gates available and not present (21.7 ms projected vs 49.75 ms); 0 of 121 contiguous 200-record windows fire (escalate False); two replay arms flip to flat. 06.3.4.1-24 presents the noise and flip readings to the user.
 - [Phase 06.3.4.1]: 22: default log filter uses tracing_subscriber Targets (not EnvFilter): no Cargo.lock change; RUST_LOG span-field directives fall back to info,engine=debug with a stderr warning — Keeps --locked builds and the dependency surface unchanged
 - [Phase 06.3.4.1]: 22: generation_output_rejected node events use ctx.trace_id as correlation_id (service seeds it with the journaled correlation UUID); provider capture also covers usage-budget and shape-validation stages — Same value the journal records; extra stages add evidence without changing any error
+- [Phase 06.3.4.1]: 06.3.4.1-23: stage-cap estimator charges failed generations at the per-attempt ceiling (8192/2048 tokens, retried classes twice); pass A corrected estimate 0.3199 vs 0.2178 billed; FAILED_GENERATION_CHARGE_MULTIPLIER stays 1.0 (user-approved conditional, not needed); output price raised 0.28 to the listed 0.32 — Computed from pass A: successes unchanged, 135 failed generations x 0.00180224 added; monotonic vs the old formula; run.py unchanged
+- [Phase 06.3.4.1]: 06.3.4.1-23 probe proposal for the 06.3.4.1-25 checkpoint (not settled): N=60, 124 records, all-at-max 0.2253, cap 0.5632; N=80 (164 records, cap 0.7448) is the safer alternative because the retrieval class sits exactly on the threshold at N=60 — Plan rule: smallest N whose first-N prefix holds at least 3 failures of every class with 10 or more in pass A; the user authorises the cap under D-86
 
 ## Session
 
-**Last session:** 2026-09-29T14:31:21.148Z
+**Last session:** 2026-09-29T14:55:05.767Z
 **Last activity:** 2026-09-29
-**Stopped at:** Completed 06.3.4.1-22-PLAN.md: info,engine=debug filter on every layer, startup build_profile/log_filter, generation_output_rejected capture; next gap plan 23
+**Stopped at:** Completed 06.3.4.1-23-PLAN.md: failed-generation stage-cap accounting and free GenerateAnswer diagnosis; next gap plan 24
 **Resume file:** None
 
 ## Accumulated Context
