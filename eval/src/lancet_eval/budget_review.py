@@ -25,6 +25,7 @@ from typing import Any
 
 from lancet_eval.config import repo_root
 from lancet_eval.flatness import load_measurement_records
+from lancet_eval.latency import check_harness_ceilings, check_nesting_invariants
 from lancet_eval.measure import derive_budgets_from_records
 from lancet_eval.thresholds import COMMITTED_THRESHOLDS
 
@@ -77,6 +78,14 @@ INNER_SOURCE_OPTIONS: dict[str, tuple[int | None, int | None, bool, str]] = {
         True,
         "33e774b overwrite of config/config.toml, config.example.toml and "
         "config.eval.toml, no derivation",
+    ),
+    "user_stated_20260929": (
+        2000,
+        10000,
+        True,
+        "user-stated 2026-09-29 (06.3.4.1-24 Task 2), no derivation: tight embedding "
+        "(a timeout fails the node and the runner cancels the query), loose graph "
+        "operation (a timeout silently degrades to chunk-only context)",
     ),
     "measurement_ceiling_passA": (
         30000,
@@ -210,6 +219,17 @@ def prompt_floor_table(
     ]
 
 
+def _ceiling_dict(report: Any, budgets: dict[str, int]) -> dict[str, Any]:
+    """A harness-ceiling report as a dict, plus the sum including reformulate."""
+    ceiling = dataclasses.asdict(report)
+    incl_reformulate = sum(budgets[key] for key in NODE_TO_KEY.values())
+    ceiling["worst_case_sum_incl_reformulate_ms"] = incl_reformulate
+    ceiling["sum_incl_reformulate_exceeds_deadline"] = (
+        incl_reformulate >= ceiling["question_deadline_ms"]
+    )
+    return ceiling
+
+
 def decision_report(
     option: dict[str, Any],
     records: Sequence[Any],
@@ -217,11 +237,32 @@ def decision_report(
     *,
     prompt_floor_ms: int,
 ) -> dict[str, Any]:
+    """The values a recorded decision writes: nesting-resolved plus a prompt floor.
+
+    The floor is a user amendment for `prompt_timeout_ms` only. It is applied after
+    nesting (the node has no inner budget) and never lowers the rule value. Nesting,
+    the harness ceilings and pass-A exceedances are re-read on the final values.
+    """
+    final = dict(option["resolved"])
+    final["prompt_timeout_ms"] = max(final["prompt_timeout_ms"], prompt_floor_ms)
+    nesting = check_nesting_invariants(
+        final, required_slack_ms=COMMITTED_THRESHOLDS.slack_ms
+    )
+    ceiling = check_harness_ceilings(
+        final,
+        sse_read_timeout_s=float(measurement["sse_read_timeout_s"]),
+        question_deadline_s=float(measurement["question_deadline_s"]),
+    )
     return {
-        "final": dict.fromkeys(BUDGET_KEYS, 0),
-        "prompt_floor_ms": 0,
-        "nesting_final": {"has_violations": True},
-        "exceedances_final": {"AssemblePrompt": {"budget_ms": 0}},
+        "inner": option["inner"],
+        "prompt_floor_ms": prompt_floor_ms,
+        "final": {key: final[key] for key in BUDGET_KEYS},
+        "nesting_final": {
+            "has_violations": nesting.has_violations,
+            "groups": [dataclasses.asdict(group) for group in nesting.groups],
+        },
+        "exceedances_final": node_exceedances(records, final),
+        "ceiling_report_final": _ceiling_dict(ceiling, final),
     }
 
 
@@ -260,13 +301,7 @@ def derive_option(
     resolved = dict(derivation.proposed_budgets)
     resolved["reformulate_timeout_ms"] = reformulate_ms
 
-    node_keys = tuple(NODE_TO_KEY.values())
-    ceiling = dataclasses.asdict(derivation.ceiling_report)
-    incl_reformulate = sum(resolved[key] for key in node_keys)
-    ceiling["worst_case_sum_incl_reformulate_ms"] = incl_reformulate
-    ceiling["sum_incl_reformulate_exceeds_deadline"] = (
-        incl_reformulate >= ceiling["question_deadline_ms"]
-    )
+    ceiling = _ceiling_dict(derivation.ceiling_report, resolved)
     return {
         "inner": {
             "query_embedding_timeout_ms": query_embedding_ms,
@@ -463,6 +498,14 @@ def hazards_report(
     records = load_measurement_records(journal)
     all_records = load_measurement_records(journal, include_warm_up=True)
 
+    if chosen_option is not None:
+        if chosen_option not in INNER_SOURCE_OPTIONS:
+            raise ValueError(f"unknown option {chosen_option!r}")
+        if not INNER_SOURCE_OPTIONS[chosen_option][2]:
+            raise ValueError(f"option {chosen_option!r} is not eligible")
+        if prompt_floor_ms is None:
+            raise ValueError("--chosen-option needs --prompt-floor-ms")
+
     options: dict[str, dict[str, Any]] = {}
     first_derived: dict[str, Any] | None = None
     for name, (
@@ -506,6 +549,19 @@ def hazards_report(
         raise RuntimeError("no inner-source option could be derived")
 
     rule_entry = first_derived["entry"]
+    decision = None
+    if chosen_option is not None and prompt_floor_ms is not None:
+        query_embedding, graph_operation, _, _ = INNER_SOURCE_OPTIONS[chosen_option]
+        assert query_embedding is not None and graph_operation is not None
+        decision = {
+            "option": chosen_option,
+            **decision_report(
+                derive_option(records, measurement, (query_embedding, graph_operation)),
+                records,
+                measurement,
+                prompt_floor_ms=prompt_floor_ms,
+            ),
+        }
     return {
         "rule": (
             "06.3.3 committed derivation, unchanged: p95 x 1.5 (nearest-rank, ceil), "
@@ -540,6 +596,7 @@ def hazards_report(
             "floor_table": prompt_floor_table(records),
         },
         "noise": noise_summary(_load_json(noise_path)),
+        "decision": decision,
         "notes": list(NOTES),
     }
 
@@ -585,6 +642,8 @@ def _build_parser() -> argparse.ArgumentParser:
     hazards.add_argument("--regate", required=True)
     hazards.add_argument("--noise")
     hazards.add_argument("--loki-manifest")
+    hazards.add_argument("--chosen-option")
+    hazards.add_argument("--prompt-floor-ms", type=int)
     hazards.add_argument("--out", required=True)
     return parser
 
@@ -606,8 +665,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(args.regate),
             noise_path=Path(args.noise) if args.noise else None,
             loki_manifest_path=Path(args.loki_manifest) if args.loki_manifest else None,
+            chosen_option=args.chosen_option,
+            prompt_floor_ms=args.prompt_floor_ms,
         )
-    except (RegateRefusedError, FileNotFoundError) as error:
+    except (RegateRefusedError, FileNotFoundError, ValueError) as error:
         print(f"refusing to write: {error}", file=sys.stderr)
         return 2
     out.parent.mkdir(parents=True, exist_ok=True)
