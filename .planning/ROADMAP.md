@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 13/27 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A; see `06.3.4.1-PASSA-GAPS.md`)
+**Plans:** 14/27 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A; see `06.3.4.1-PASSA-GAPS.md`)
 
 Plans:
 
@@ -969,7 +969,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 06.3.4.1-24-PLAN.md — `gap_closure: true`. Derive candidate budgets from pass A by the committed rule for every inner-budget source, count pass-A exceedances, and stop at a blocking decision on the inner source, any prompt floor, the preflight cap and the D-89 noise result (G2; D-66, D-86, D-89)
+- [x] 06.3.4.1-24-PLAN.md — `gap_closure: true`. Derive candidate budgets from pass A by the committed rule for every inner-budget source, count pass-A exceedances, and stop at a blocking decision on the inner source, any prompt floor, the preflight cap and the D-89 noise result (G2; D-66, D-86, D-89)
 - [ ] 06.3.4.1-25-PLAN.md — `gap_closure: true`. Capped, authorised GenerateAnswer probe replaying pass A's first N questions with raw-output capture; confirm or refute each failure hypothesis and propose labelled fixes (G4; D-91, D-86)
 
 **Wave 9** *(blocked on Wave 8 completion)*
