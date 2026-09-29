@@ -12,8 +12,8 @@ use tokio::time::timeout;
 
 use crate::{
     generation::{
-        BoxFuture, GenerationError, GenerationErrorKind, GenerationRequest, Generator,
-        GroundingLimits, ModelOutput,
+        emit_generation_output_rejected, BoxFuture, GenerationError, GenerationErrorKind,
+        GenerationRequest, Generator, GroundingLimits, ModelOutput, RejectedOutput,
     },
     prompt::pack_evidence_and_graph_prompt,
 };
@@ -711,72 +711,107 @@ impl OpenRouterGenerator {
         }
 
         let choice = &chat_resp.choices[0];
+        let rejection = RejectionContext {
+            content: &choice.message.content,
+            finish_reason: choice.finish_reason.as_deref(),
+            prompt_tokens: chat_resp.usage.as_ref().map(|usage| usage.prompt_tokens),
+            completion_tokens: chat_resp.usage.as_ref().map(|usage| usage.completion_tokens),
+            correlation_id: request.correlation_id.as_deref(),
+        };
 
         match choice.finish_reason.as_deref() {
             Some("stop") => {}
             Some(other) => {
-                return Err(GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!("OpenRouter completion incomplete: finish_reason '{other}'"),
+                return Err(rejection.reject(
+                    "finish_reason",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!("OpenRouter completion incomplete: finish_reason '{other}'"),
+                    ),
+                    None,
                 ));
             }
             None => {
-                return Err(GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    "OpenRouter choice missing finish_reason",
+                return Err(rejection.reject(
+                    "finish_reason",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        "OpenRouter choice missing finish_reason",
+                    ),
+                    None,
                 ));
             }
         }
 
         let content_str = &choice.message.content;
         let mut model_output: ModelOutput = serde_json::from_str(content_str).map_err(|err| {
-            GenerationError::new(
-                GenerationErrorKind::SchemaValidation,
-                format!("failed to deserialize ModelOutput schema: {err}"),
+            rejection.reject(
+                "parse",
+                GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("failed to deserialize ModelOutput schema: {err}"),
+                ),
+                None,
             )
         })?;
 
         if let Some(usage) = chat_resp.usage {
             let limits = &self.config.grounding_limits;
             if usage.prompt_tokens > limits.evidence_token_budget() {
-                return Err(GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!(
-                        "OpenRouter prompt_tokens {} exceeds budget {}",
-                        usage.prompt_tokens,
-                        limits.evidence_token_budget()
+                return Err(rejection.reject(
+                    "usage",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!(
+                            "OpenRouter prompt_tokens {} exceeds budget {}",
+                            usage.prompt_tokens,
+                            limits.evidence_token_budget()
+                        ),
                     ),
+                    Some(&model_output),
                 ));
             }
             if usage.completion_tokens > limits.max_output_tokens() {
-                return Err(GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!(
-                        "OpenRouter completion_tokens {} exceeds budget {}",
-                        usage.completion_tokens,
-                        limits.max_output_tokens()
+                return Err(rejection.reject(
+                    "usage",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!(
+                            "OpenRouter completion_tokens {} exceeds budget {}",
+                            usage.completion_tokens,
+                            limits.max_output_tokens()
+                        ),
                     ),
+                    Some(&model_output),
                 ));
             }
             let checked_total = usage
                 .prompt_tokens
                 .checked_add(usage.completion_tokens)
                 .ok_or_else(|| {
-                    GenerationError::new(
-                        GenerationErrorKind::SchemaValidation,
-                        "OpenRouter token usage addition overflowed",
+                    rejection.reject(
+                        "usage",
+                        GenerationError::new(
+                            GenerationErrorKind::SchemaValidation,
+                            "OpenRouter token usage addition overflowed",
+                        ),
+                        Some(&model_output),
                     )
                 })?;
             if usage.total_tokens > limits.total_tokens_ceiling()
                 || usage.total_tokens < checked_total
             {
-                return Err(GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!(
-                        "OpenRouter total_tokens {} exceeds budget limit {}",
-                        usage.total_tokens,
-                        limits.total_tokens_ceiling()
+                return Err(rejection.reject(
+                    "usage",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!(
+                            "OpenRouter total_tokens {} exceeds budget limit {}",
+                            usage.total_tokens,
+                            limits.total_tokens_ceiling()
+                        ),
                     ),
+                    Some(&model_output),
                 ));
             }
 
@@ -797,7 +832,9 @@ impl OpenRouterGenerator {
         } else {
             model_output.clone()
         };
-        validation_view.validate_output_shape_with_limits(limits)?;
+        validation_view
+            .validate_output_shape_with_limits(limits)
+            .map_err(|err| rejection.reject("validate", err, Some(&model_output)))?;
 
         Ok(model_output)
     }
@@ -878,6 +915,48 @@ struct OpenRouterModelsResponse {
 struct OpenRouterModelMeta {
     id: String,
     supported_parameters: Option<Vec<String>>,
+}
+
+/// What a provider-side `generation_output_rejected` event may carry (D-91).
+///
+/// It holds the provider's choice content, its finish reason and token usage, plus the
+/// request's correlation ID. It never borrows the request body, prompt, headers or API key.
+struct RejectionContext<'a> {
+    content: &'a str,
+    finish_reason: Option<&'a str>,
+    prompt_tokens: Option<u32>,
+    completion_tokens: Option<u32>,
+    correlation_id: Option<&'a str>,
+}
+
+impl RejectionContext<'_> {
+    /// Emits one `generation_output_rejected` event for `err` and returns `err` untouched.
+    ///
+    /// The caller builds the error exactly as before, so the error kind and message cannot
+    /// differ from the unobserved code path. `parsed` is the deserialized output when the
+    /// rejection happens after parsing.
+    fn reject(
+        &self,
+        stage: &'static str,
+        err: GenerationError,
+        parsed: Option<&ModelOutput>,
+    ) -> GenerationError {
+        emit_generation_output_rejected(&RejectedOutput {
+            stage,
+            reason: err.message(),
+            correlation_id: self.correlation_id,
+            finish_reason: self.finish_reason,
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
+            answer_basis: parsed.map(|output| output.answer_basis.as_str()),
+            model_cited_ids: parsed.map(|output| output.cited_evidence_ids.len()),
+            markers_found: None,
+            markers_resolved: None,
+            total_drop: None,
+            content: self.content,
+        });
+        err
+    }
 }
 
 #[derive(Deserialize)]

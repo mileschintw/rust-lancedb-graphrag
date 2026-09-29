@@ -589,8 +589,13 @@ pub(crate) const REJECTED_OUTPUT_TAIL_CHARS: usize = 500;
 /// boundaries. The tail never overlaps the head, so it is empty when the whole text fits in
 /// the head and shorter than [`REJECTED_OUTPUT_TAIL_CHARS`] when only a little remains.
 pub(crate) fn bounded_excerpt(text: &str) -> (String, String, usize) {
-    let _ = text;
-    (String::new(), String::new(), 0)
+    let total = text.chars().count();
+    let head: String = text.chars().take(REJECTED_OUTPUT_HEAD_CHARS).collect();
+    let tail_chars = total
+        .saturating_sub(REJECTED_OUTPUT_HEAD_CHARS)
+        .min(REJECTED_OUTPUT_TAIL_CHARS);
+    let tail: String = text.chars().skip(total - tail_chars).collect();
+    (head, tail, total)
 }
 
 /// What is known about a rejected `GenerateAnswer` output, borrowed for one log event.
@@ -618,8 +623,32 @@ pub(crate) struct RejectedOutput<'a> {
 }
 
 /// Emits one info-level `generation_output_rejected` event for a rejected output.
+///
+/// Every free-text field (`reason`, `correlation_id`, `finish_reason`, `answer_basis`,
+/// `raw_head`, `raw_tail`) is recorded with the `Debug` sigil, so newlines and quotes in
+/// model output are escaped and the rendered line stays one line. The event is INFO under the
+/// `engine::` target, so it passes the D-90 default filter. It only observes: it never
+/// alters the error the caller returns.
 pub(crate) fn emit_generation_output_rejected(r: &RejectedOutput<'_>) {
-    let _ = r;
+    let (raw_head, raw_tail, raw_chars) = bounded_excerpt(r.content);
+    tracing::info!(
+        generation_output_rejected = true,
+        stage = r.stage,
+        reason = ?r.reason,
+        correlation_id = r.correlation_id.map(tracing::field::debug),
+        finish_reason = r.finish_reason.map(tracing::field::debug),
+        prompt_tokens = r.prompt_tokens,
+        completion_tokens = r.completion_tokens,
+        answer_basis = r.answer_basis.map(tracing::field::debug),
+        model_cited_ids = r.model_cited_ids,
+        markers_found = r.markers_found,
+        markers_resolved = r.markers_resolved,
+        total_drop = r.total_drop,
+        raw_chars = raw_chars,
+        raw_head = ?raw_head,
+        raw_tail = ?raw_tail,
+        "generation_output_rejected"
+    );
 }
 
 /// Provider-neutral object-safe async trait for structured generation.

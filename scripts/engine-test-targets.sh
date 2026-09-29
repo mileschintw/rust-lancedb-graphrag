@@ -67,6 +67,13 @@ fi
 #         console-only real stack on in-memory exporters, the override reaching every layer,
 #         the console-only branch of `build_providers_and_layers`, `build_profile`),
 #         468->477. inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
+#   571 -- Phase 06.3.4.1 plan 22 Task 2: D-91 `generation_output_rejected` capture in
+#         `generation/mod.rs` (`bounded_excerpt`, `emit_generation_output_rejected`) and the
+#         provider rejection sites in `generation/openrouter.rs`, with 10 `generation::tests`
+#         (parse failure with a trailing Answer line, short parse failure, finish_reason length
+#         and missing, provider shape validation, usage over budget, prompt/evidence/key
+#         sentinel, char-boundary excerpt, one-line fmt rendering, silent on success),
+#         477->487. inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -106,18 +113,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 561 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 561, got $TOTAL" >&2
+if [ "$TOTAL" -ne 571 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 571, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 477 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 477, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 487 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 487, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 477 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 477, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 487 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 487, got $LIB_COUNT" >&2
   exit 1
 fi
 
