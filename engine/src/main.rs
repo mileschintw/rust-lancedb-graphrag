@@ -162,7 +162,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let addr = settings.engine.grpc_addr.parse()?;
-    tracing::info!(%addr, "Rust RAG Engine serving");
+    // `build_profile` and `log_filter` make drive 1's release-build and level-filter
+    // preconditions checkable from the log (D-92, D-90).
+    tracing::info!(
+        %addr,
+        build_profile = engine::telemetry::build_profile(),
+        log_filter = %telemetry_handle.log_filter,
+        "Rust RAG Engine serving"
+    );
     Server::builder()
         .add_service(LancetServiceServer::new(service))
         .serve_with_shutdown(addr, async {

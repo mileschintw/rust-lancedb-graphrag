@@ -60,6 +60,13 @@ fi
 #         merge_overlapping_chunks_picks_the_longest_matching_overlap,
 #         gold_chunks_probe_split_across_chunks_crossing_the_overlap_boundary), 40->44.
 #         lib/reconcile_eval_store/config_startup unchanged (468/18/22).
+#   561 -- Phase 06.3.4.1 plan 22 Task 1: D-90 default level filter. `resolve_log_filter`,
+#         `assemble_subscriber` (the one stack both `build_providers_and_layers` branches use)
+#         and `build_profile` in `telemetry/mod.rs`, with 9 `telemetry::log_filter_tests`
+#         (default and override resolution, blank and malformed values, the OTLP-shaped and
+#         console-only real stack on in-memory exporters, the override reaching every layer,
+#         the console-only branch of `build_providers_and_layers`, `build_profile`),
+#         468->477. inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -99,18 +106,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 552 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 552, got $TOTAL" >&2
+if [ "$TOTAL" -ne 561 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 561, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 468 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 468, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 477 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 477, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 468 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 468, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 477 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 477, got $LIB_COUNT" >&2
   exit 1
 fi
 

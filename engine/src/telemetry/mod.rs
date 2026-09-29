@@ -21,7 +21,7 @@ use opentelemetry_sdk::trace::{
     Sampler, SamplingDecision, SamplingResult, SdkTracerProvider, ShouldSample,
 };
 use opentelemetry_sdk::Resource;
-use tracing_subscriber::filter::{LevelFilter, Targets};
+use tracing_subscriber::filter::Targets;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Layer as _;
 use tracing_subscriber::Registry;
@@ -236,17 +236,37 @@ pub struct LogFilterResolution {
 /// as `target=level` directives gives the default plus a warning that names the rejected
 /// value. Unfiltered output is never the fallback.
 pub fn resolve_log_filter(rust_log: Option<&str>) -> LogFilterResolution {
-    let _ = rust_log;
-    LogFilterResolution {
-        targets: Targets::new().with_default(LevelFilter::TRACE),
-        effective: String::new(),
-        warning: None,
+    let default_resolution = |warning: Option<String>| LogFilterResolution {
+        targets: DEFAULT_LOG_FILTER
+            .parse::<Targets>()
+            .expect("DEFAULT_LOG_FILTER is a valid target=level directive list"),
+        effective: DEFAULT_LOG_FILTER.to_owned(),
+        warning,
+    };
+
+    let Some(value) = rust_log.map(str::trim).filter(|value| !value.is_empty()) else {
+        return default_resolution(None);
+    };
+    match value.parse::<Targets>() {
+        Ok(targets) => LogFilterResolution {
+            targets,
+            effective: value.to_owned(),
+            warning: None,
+        },
+        Err(error) => default_resolution(Some(format!(
+            "WARNING: RUST_LOG value {value:?} is not a valid target=level directive list \
+             ({error}); using the default filter {DEFAULT_LOG_FILTER:?}"
+        ))),
     }
 }
 
 /// Reports whether this build carries debug assertions (`debug`) or not (`release`).
 pub const fn build_profile() -> &'static str {
-    "release"
+    if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    }
 }
 
 /// Composes the one tracing stack both `build_providers_and_layers` branches use.
@@ -264,7 +284,6 @@ pub(crate) fn assemble_subscriber<W>(
 where
     W: for<'w> tracing_subscriber::fmt::MakeWriter<'w> + Send + Sync + 'static,
 {
-    let _ = resolution;
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_writer(fmt_writer)
         .with_filter(OtelDiagnosticsFilter::new(std::sync::Arc::new(
@@ -283,6 +302,7 @@ where
 
     Box::new(
         Registry::default()
+            .with(resolution.targets.clone())
             .with(fmt_layer)
             .with(otel_trace_layer)
             .with(otel_log_layer),
@@ -323,9 +343,16 @@ pub fn build_providers_and_layers(
     ensure_propagators();
     let resource = build_resource(settings);
 
+    // RUST_LOG is read exactly once, here, and resolved by the pure `resolve_log_filter` so
+    // tests never mutate the process environment (D-90).
+    let log_filter = resolve_log_filter(std::env::var("RUST_LOG").ok().as_deref());
+    if let Some(warning) = &log_filter.warning {
+        eprintln!("{warning}");
+    }
+
     let endpoint = settings.otlp_endpoint.trim();
     if endpoint.is_empty() {
-        // Console-only mode: only fmt layer.
+        // Console-only mode: the fmt layer behind the shared level filter.
         //
         // Writes to stderr, not stdout (06.3.4.1-03 Task 1 deviation, Rule 3): stdout is
         // reserved for CLI/inspection binaries that intentionally use it as their user
@@ -334,9 +361,15 @@ pub fn build_providers_and_layers(
         // would interleave unrelated tracing output into any such binary's structured output.
         // `main.rs`'s own stdout is not consumed by anything today, so this is behavior-neutral
         // for production.
-        let fmt_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
-        let subscriber = Registry::default().with(fmt_layer);
-        return (TelemetryHandle::default(), Box::new(subscriber));
+        let subscriber =
+            assemble_subscriber(&log_filter, std::io::stderr, None, None, &settings.service_name);
+        return (
+            TelemetryHandle {
+                log_filter: log_filter.effective,
+                ..TelemetryHandle::default()
+            },
+            subscriber,
+        );
     }
 
     let sampler = if settings.sampler_ratio >= 1.0 {
@@ -415,35 +448,22 @@ pub fn build_providers_and_layers(
     };
 
     // Stderr, not stdout — see the console-only branch above for why (06.3.4.1-03 Task 1).
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::io::stderr)
-        .with_filter(OtelDiagnosticsFilter::new(std::sync::Arc::new(
-            BoundedOtelDiagnostics::new(1, std::time::Duration::from_secs(300)),
-        )));
-
-    let otel_trace_layer = tracer_provider.as_ref().map(|tp| {
-        let tracer = tp.tracer(settings.service_name.clone());
-        tracing_opentelemetry::layer().with_tracer(tracer)
-    });
-
-    let otel_log_layer = logger_provider.as_ref().map(|lp| {
-        opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(lp)
-            .with_filter(DropOtelDiagnosticsFilter)
-    });
-
-    let subscriber = Registry::default()
-        .with(fmt_layer)
-        .with(otel_trace_layer)
-        .with(otel_log_layer);
+    let subscriber = assemble_subscriber(
+        &log_filter,
+        std::io::stderr,
+        tracer_provider.as_ref(),
+        logger_provider.as_ref(),
+        &settings.service_name,
+    );
 
     (
         TelemetryHandle {
             tracer_provider,
             meter_provider,
             logger_provider,
-            log_filter: String::new(),
+            log_filter: log_filter.effective,
         },
-        Box::new(subscriber),
+        subscriber,
     )
 }
 
