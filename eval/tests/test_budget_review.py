@@ -16,6 +16,7 @@ import pytest
 from lancet_eval import budget_review
 from lancet_eval.budget_review import (
     INNER_SOURCE_OPTIONS,
+    decision_report,
     derive_option,
     hazards_report,
     main,
@@ -459,7 +460,7 @@ def test_pass_a_eligible_options_nest_by_the_committed_rule(
 def test_pass_a_rule_values_are_identical_across_options(pass_a_report: dict) -> None:
     options = pass_a_report["options"]
     derived = [o for o in options.values() if o["rule"] is not None]
-    assert len(derived) == 3
+    assert len(derived) == 4
     for key in ("retrieve_timeout_ms", "graph_node_timeout_ms", "prompt_timeout_ms"):
         assert len({o["rule"][key] for o in derived}) == 1, key
 
@@ -600,3 +601,106 @@ def test_cli_writes_the_hazards_file_for_pass_a(tmp_path: Path) -> None:
     assert {"config_rs_0633", "toml_33e774b"} <= set(data["options"])
     assert data["n_measured"] == 320
     assert "p95_by_node" in data
+
+
+# --- the user-stated option and the recorded decision (Task 2) -------------------
+
+CHOSEN = "user_stated_20260929"
+
+
+def test_the_user_stated_option_is_eligible_and_carries_its_provenance() -> None:
+    query_embedding, graph_operation, eligible, provenance = INNER_SOURCE_OPTIONS[
+        CHOSEN
+    ]
+    assert (query_embedding, graph_operation) == (2000, 10000)
+    assert eligible is True
+    assert "user-stated" in provenance
+    assert "2026-09-29" in provenance
+
+
+def test_decision_report_applies_the_prompt_floor_after_nesting() -> None:
+    records = _series()
+    option = derive_option(records, MEASUREMENT, (2000, 10000))
+    report = decision_report(option, records, MEASUREMENT, prompt_floor_ms=65)
+    # Rule value is ceil(23 * 1.5) = 35; the floor lifts it, nesting is untouched.
+    assert option["resolved"]["prompt_timeout_ms"] == 35
+    assert report["final"]["prompt_timeout_ms"] == 65
+    assert (
+        report["final"]["retrieve_timeout_ms"]
+        == option["resolved"]["retrieve_timeout_ms"]
+    )
+    assert report["prompt_floor_ms"] == 65
+    assert report["nesting_final"]["has_violations"] is False
+    assert report["exceedances_final"]["AssemblePrompt"]["budget_ms"] == 65
+
+
+def test_a_floor_below_the_rule_value_does_not_lower_the_budget() -> None:
+    records = _series()
+    option = derive_option(records, MEASUREMENT, (2000, 10000))
+    report = decision_report(option, records, MEASUREMENT, prompt_floor_ms=10)
+    assert report["final"]["prompt_timeout_ms"] == 35
+
+
+@pass_a_only
+def test_pass_a_chosen_option_resolves_to_the_recorded_values() -> None:
+    report = hazards_report(
+        PASS_A_JOURNAL,
+        PASS_A_MEASUREMENT,
+        REGATE,
+        chosen_option=CHOSEN,
+        prompt_floor_ms=65,
+    )
+    decision = report["decision"]
+    assert decision["option"] == CHOSEN
+    assert decision["final"] == {
+        "reformulate_timeout_ms": 5000,
+        "query_embedding_timeout_ms": 2000,
+        "retrieve_timeout_ms": 2500,
+        "graph_operation_timeout_ms": 10000,
+        "graph_node_timeout_ms": 12500,
+        "prompt_timeout_ms": 65,
+        "generation_node_timeout_ms": 65000,
+    }
+    assert all(v["above"] == 0 for v in decision["exceedances_final"].values())
+    assert decision["exceedances_final"]["AssemblePrompt"]["n"] == 320
+    assert decision["ceiling_report_final"]["single_exceeds_read_timeout"] is False
+    assert decision["ceiling_report_final"]["sum_exceeds_deadline"] is False
+    assert decision["nesting_final"]["has_violations"] is False
+
+
+@pass_a_only
+def test_an_ineligible_option_cannot_be_chosen() -> None:
+    with pytest.raises(ValueError, match="not eligible"):
+        hazards_report(
+            PASS_A_JOURNAL,
+            PASS_A_MEASUREMENT,
+            REGATE,
+            chosen_option="measurement_ceiling_passA",
+            prompt_floor_ms=65,
+        )
+
+
+@pass_a_only
+def test_cli_writes_the_decision_block_when_an_option_is_chosen(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "hazards.json"
+    rc = main([
+        "hazards",
+        "--journal",
+        str(PASS_A_JOURNAL),
+        "--measurement",
+        str(PASS_A_MEASUREMENT),
+        "--regate",
+        str(REGATE),
+        "--chosen-option",
+        CHOSEN,
+        "--prompt-floor-ms",
+        "65",
+        "--out",
+        str(out),
+    ])
+    assert rc == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["decision"]["final"]["graph_node_timeout_ms"] == 12500
+    assert CHOSEN in data["options"]

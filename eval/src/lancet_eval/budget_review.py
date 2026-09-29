@@ -210,6 +210,21 @@ def prompt_floor_table(
     ]
 
 
+def decision_report(
+    option: dict[str, Any],
+    records: Sequence[Any],
+    measurement: dict[str, Any],
+    *,
+    prompt_floor_ms: int,
+) -> dict[str, Any]:
+    return {
+        "final": dict.fromkeys(BUDGET_KEYS, 0),
+        "prompt_floor_ms": 0,
+        "nesting_final": {"has_violations": True},
+        "exceedances_final": {"AssemblePrompt": {"budget_ms": 0}},
+    }
+
+
 def derive_option(
     records: Sequence[Any], measurement: dict[str, Any], inner: tuple[int, int]
 ) -> dict[str, Any]:
@@ -432,6 +447,8 @@ def hazards_report(
     *,
     noise_path: Path | None = None,
     loki_manifest_path: Path | None = None,
+    chosen_option: str | None = None,
+    prompt_floor_ms: int | None = None,
 ) -> dict[str, Any]:
     """Every option's rule values, nesting-resolved values and pass-A exceedances."""
     journal = Path(journal)
