@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 25
+current_plan: 26
 status: executing
-stopped_at: "Completed 06.3.4.1-24-PLAN.md: budget options, hazards and the user's decision (inner 2000/10000, prompt floor 65, preflight 0.05); next gap plan 25; plan 11 intentionally open until 27"
-last_updated: "2026-09-29T15:20:44.819Z"
+stopped_at: "Completed 06.3.4.1-25-PLAN.md: capped probe run, 74/74 failures matched and classified, fixes F-1..F-6 proposed; next gap plan 26; plan 11 intentionally open until 27"
+last_updated: "2026-09-29T15:46:14.881Z"
 last_activity: 2026-09-29
-state_head: 0a7389310f214b9b82bcf418878be35d1f7627ac
+state_head: b377442afd8d1f9cc065e0dedb72a1cb30853985
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 185
-  completed_plans: 172
+  completed_plans: 173
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -21,7 +21,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 25
+Current Plan: 26
 Total Plans in Phase: 27
 
 ## Current Status
@@ -382,6 +382,7 @@ Total Plans in Phase: 27
 | Phase 06.3.4.1 P22 | 45 min | 3 tasks | 9 files |
 | Phase 06.3.4.1 P23 | 23 min | 2 tasks | 5 files |
 | Phase 06.3.4.1 P24 | 25min | 2 tasks | 4 files |
+| Phase 06.3.4.1 P25 | 22 min | 2 tasks | 5 files |
 
 ## Decisions
 
@@ -462,12 +463,13 @@ Total Plans in Phase: 27
 - [Phase 06.3.4.1]: 06.3.4.1-23 probe proposal for the 06.3.4.1-25 checkpoint (not settled): N=60, 124 records, all-at-max 0.2253, cap 0.5632; N=80 (164 records, cap 0.7448) is the safer alternative because the retrieval class sits exactly on the threshold at N=60 — Plan rule: smallest N whose first-N prefix holds at least 3 failures of every class with 10 or more in pass A; the user authorises the cap under D-86
 - [Phase 06.3.4.1]: 24: inner budgets 2000 / 10000 (user-stated, 2026-09-29): tight embedding, loose graph. An embedding timeout fails the node and cancels the query (cheap to retry); a graph-operation timeout silently degrades to chunk-only context. — User declined toml 15000/40000, config-rs 645/38595 and tight-both 2000/4000. Resolved: retrieve 2500, graph_node 12500, zero pass-A exceedances.
 - [Phase 06.3.4.1]: 24: prompt_timeout_ms floor 65 ms (user amendment for this node only, 2026-09-29); the committed p95 x 1.5 rule (11 ms, 7 of 320 pass-A records above) is unchanged. Preflight authorised at 0.05 USD (D-86); D-89 noise check accepted, numbers unchanged. — 65 ms is 1.5x pass A's 43 ms max. Preflight is 8 queries, all-at-max about 0.0145 USD.
+- [Phase 06.3.4.1]: 06.3.4.1-25: GenerateAnswer probe ran once at user authorisation N=80 cap 0.75; trailing = valid object plus Answer: line outside JSON (32/32), ModelOnly = self-reported abstention (42/42), mixed/retrieval did not reproduce; fixes F-1..F-6 proposed, none applied — Evidence in 06.3.4.1-GENANSWER-DIAG.md Probe results and Proposed fixes
 
 ## Session
 
-**Last session:** 2026-09-29T15:20:43.710Z
+**Last session:** 2026-09-29T15:46:13.784Z
 **Last activity:** 2026-09-29
-**Stopped at:** Completed 06.3.4.1-24-PLAN.md: budget options, hazards and the user's decision (inner 2000/10000, prompt floor 65, preflight 0.05); next gap plan 25; plan 11 intentionally open until 27
+**Stopped at:** Completed 06.3.4.1-25-PLAN.md: capped probe run, 74/74 failures matched and classified, fixes F-1..F-6 proposed; next gap plan 26; plan 11 intentionally open until 27
 **Resume file:** None
 
 ## Accumulated Context
