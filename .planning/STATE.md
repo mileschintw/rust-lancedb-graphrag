@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 26
+current_plan: 27
 status: executing
-stopped_at: "Completed 06.3.4.1-25-PLAN.md: capped probe run, 74/74 failures matched and classified, fixes F-1..F-6 proposed; next gap plan 26; plan 11 intentionally open until 27"
-last_updated: "2026-09-29T15:46:14.881Z"
+stopped_at: "Completed 06.3.4.1-26-PLAN.md: F-1 landed (126a8a4b), one capped confirmation probe run and reported; next gap plan 27; plan 11 intentionally open until 27"
+last_updated: "2026-09-29T16:23:24.763Z"
 last_activity: 2026-09-29
-state_head: b377442afd8d1f9cc065e0dedb72a1cb30853985
+state_head: 4d91851678f36570ebba238b084c8cc600018b61
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 185
-  completed_plans: 173
+  completed_plans: 174
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -21,7 +21,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 26
+Current Plan: 27
 Total Plans in Phase: 27
 
 ## Current Status
@@ -383,6 +383,7 @@ Total Plans in Phase: 27
 | Phase 06.3.4.1 P23 | 23 min | 2 tasks | 5 files |
 | Phase 06.3.4.1 P24 | 25min | 2 tasks | 4 files |
 | Phase 06.3.4.1 P25 | 22 min | 2 tasks | 5 files |
+| Phase 06.3.4.1 P26 | 32 min | 3 tasks | 9 files |
 
 ## Decisions
 
@@ -464,12 +465,13 @@ Total Plans in Phase: 27
 - [Phase 06.3.4.1]: 24: inner budgets 2000 / 10000 (user-stated, 2026-09-29): tight embedding, loose graph. An embedding timeout fails the node and cancels the query (cheap to retry); a graph-operation timeout silently degrades to chunk-only context. — User declined toml 15000/40000, config-rs 645/38595 and tight-both 2000/4000. Resolved: retrieve 2500, graph_node 12500, zero pass-A exceedances.
 - [Phase 06.3.4.1]: 24: prompt_timeout_ms floor 65 ms (user amendment for this node only, 2026-09-29); the committed p95 x 1.5 rule (11 ms, 7 of 320 pass-A records above) is unchanged. Preflight authorised at 0.05 USD (D-86); D-89 noise check accepted, numbers unchanged. — 65 ms is 1.5x pass A's 43 ms max. Preflight is 8 queries, all-at-max about 0.0145 USD.
 - [Phase 06.3.4.1]: 06.3.4.1-25: GenerateAnswer probe ran once at user authorisation N=80 cap 0.75; trailing = valid object plus Answer: line outside JSON (32/32), ModelOnly = self-reported abstention (42/42), mixed/retrieval did not reproduce; fixes F-1..F-6 proposed, none applied — Evidence in 06.3.4.1-GENANSWER-DIAG.md Probe results and Proposed fixes
+- [Phase 06.3.4.1]: 06.3.4.1-26: only F-1 landed at the user's approve-subset: F-1; confirmation cap $0.75. The clause is appended after every existing policy sentence; F-1 is costly (D-71): scored runs before 126a8a4b are not comparable with runs after it. F-2, F-3a and F-6 were not approved; F-3, F-4 and F-5 stay reported error modes (D-69). — D-91: a fix removes a cause and never suppresses a class. Confirmation (N=80, cap 0.75, run once): trailing 32 to 0, ModelOnly 42 to 46 unaddressed, two new parse shapes (5 records) unattributed and routed to drive 1's D-69 disclosure.
 
 ## Session
 
-**Last session:** 2026-09-29T15:46:13.784Z
+**Last session:** 2026-09-29T16:23:23.668Z
 **Last activity:** 2026-09-29
-**Stopped at:** Completed 06.3.4.1-25-PLAN.md: capped probe run, 74/74 failures matched and classified, fixes F-1..F-6 proposed; next gap plan 26; plan 11 intentionally open until 27
+**Stopped at:** Completed 06.3.4.1-26-PLAN.md: F-1 landed (126a8a4b), one capped confirmation probe run and reported; next gap plan 27; plan 11 intentionally open until 27
 **Resume file:** None
 
 ## Accumulated Context

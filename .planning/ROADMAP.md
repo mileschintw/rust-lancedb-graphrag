@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 15/27 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A; see `06.3.4.1-PASSA-GAPS.md`)
+**Plans:** 16/27 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A; see `06.3.4.1-PASSA-GAPS.md`)
 
 Plans:
 
@@ -974,7 +974,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 06.3.4.1-26-PLAN.md — `gap_closure: true`. Blocking decision on the proposed GenerateAnswer fixes, test-first implementation of the approved ones, and a capped confirmation on the same questions (G4; D-91, D-71, D-86)
+- [x] 06.3.4.1-26-PLAN.md — `gap_closure: true`. Blocking decision on the proposed GenerateAnswer fixes, test-first implementation of the approved ones, and a capped confirmation on the same questions (G4; D-91, D-71, D-86)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
