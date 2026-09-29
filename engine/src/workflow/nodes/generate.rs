@@ -7,9 +7,47 @@ use super::super::{
     WorkflowContext,
 };
 use crate::generation::citations::{self, Resolution};
-use crate::generation::{GenerationErrorKind, GenerationRequest, Generator, GroundingLimits};
+use crate::generation::{
+    emit_generation_output_rejected, GenerationErrorKind, GenerationRequest, Generator,
+    GroundingLimits, ModelOutput, RejectedOutput,
+};
 use crate::pb::lancet::v1::NodeErrorKind;
 use crate::prompt::{resolve_citations, resolve_citations_with_max_chars};
+
+/// Marker bookkeeping that only the citation-repair branch has.
+struct RepairCounts {
+    markers_found: usize,
+    markers_resolved: usize,
+    total_drop: bool,
+}
+
+/// Emits the D-91 `generation_output_rejected` event for a grounding-validation failure.
+///
+/// `output` is the model's own output before any repair, so the excerpt shows what the model
+/// wrote rather than the engine's rewrite of it. `correlation_id` is the workflow trace ID,
+/// which the service seeds with the same UUID it journals as the run's correlation ID. The
+/// event only observes: the caller builds and returns its error unchanged.
+fn emit_validation_rejection(
+    correlation_id: &str,
+    output: &ModelOutput,
+    reason: &str,
+    repair: Option<&RepairCounts>,
+) {
+    emit_generation_output_rejected(&RejectedOutput {
+        stage: "validate",
+        reason,
+        correlation_id: Some(correlation_id),
+        finish_reason: None,
+        prompt_tokens: output.usage.as_ref().map(|usage| usage.prompt_tokens),
+        completion_tokens: output.usage.as_ref().map(|usage| usage.completion_tokens),
+        answer_basis: Some(output.answer_basis.as_str()),
+        model_cited_ids: Some(output.cited_evidence_ids.len()),
+        markers_found: repair.map(|counts| counts.markers_found),
+        markers_resolved: repair.map(|counts| counts.markers_resolved),
+        total_drop: repair.map(|counts| counts.total_drop),
+        content: &output.answer,
+    });
+}
 
 pub struct GenerateAnswerNode {
     generator: Option<Arc<dyn Generator>>,
@@ -224,6 +262,12 @@ impl Node for GenerateAnswerNode {
                             for_validation
                                 .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
                                 .map_err(|err| {
+                                    emit_validation_rejection(
+                                        &ctx.trace_id,
+                                        &output,
+                                        err.message(),
+                                        None,
+                                    );
                                     NodeError::new(
                                         NodeErrorKind::LlmGenerationFailed,
                                         err.message(),
@@ -337,6 +381,16 @@ impl Node for GenerateAnswerNode {
                             for_validation
                                 .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
                                 .map_err(|err| {
+                                    emit_validation_rejection(
+                                        &ctx.trace_id,
+                                        &output,
+                                        err.message(),
+                                        Some(&RepairCounts {
+                                            markers_found: markers.len(),
+                                            markers_resolved: repaired_citations.len(),
+                                            total_drop,
+                                        }),
+                                    );
                                     NodeError::new(
                                         NodeErrorKind::LlmGenerationFailed,
                                         err.message(),
@@ -398,6 +452,12 @@ impl Node for GenerateAnswerNode {
                             output
                                 .validate_grounding_with_limits(&ctx.evidence_blocks, limits)
                                 .map_err(|err| {
+                                    emit_validation_rejection(
+                                        &ctx.trace_id,
+                                        &output,
+                                        err.message(),
+                                        None,
+                                    );
                                     NodeError::new(
                                         NodeErrorKind::LlmGenerationFailed,
                                         err.message(),
