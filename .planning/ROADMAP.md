@@ -962,7 +962,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 06.3.4.1-11-PLAN.md — Re-derive the six workflow budgets on the fixed engine (D-66) from a capped, authorised measurement pass, and write production config and code defaults together with a… *(Task 2's pass A stopped at the decay gate; Tasks 2–3 are completed through gap plans 21–28. 06.3.4.1-27 halted at its preflight, so 06.3.4.1-28 writes this plan's SUMMARY. Run the gap plans with `--gaps-only` so plan 11 is not re-dispatched.)*
+- [x] 06.3.4.1-11-PLAN.md — Re-derive the six workflow budgets on the fixed engine (D-66) from a capped, authorised measurement pass, and write production config and code defaults together with a… *(Task 2's pass A stopped at the decay gate; Tasks 2–3 are completed through gap plans 21–28. 06.3.4.1-27 halted at its preflight, so 06.3.4.1-28 writes this plan's SUMMARY. Run the gap plans with `--gaps-only` so plan 11 is not re-dispatched.)* *(Closed 2026-09-30 by 06.3.4.1-28: `06.3.4.1-11-SUMMARY.md` written after the passing preflight.)*
 - [x] 06.3.4.1-21-PLAN.md — `gap_closure: true`. Commit D-89's decay materiality rule as its own threshold set (`COMMITTED_DECAY_THRESHOLDS_06341`: slope × 658 or late − early p95 ≥ max(25% of early p95, 25 ms)), switch every 06.3.4.1 decay/flatness reading to it, make `flatness.py` read `measure` journals, and re-gate pass A plus a 200-record noise check and plan 07's replay arms (G1, G5 loader; D-89, D-92)
 - [x] 06.3.4.1-22-PLAN.md — `gap_closure: true`. Engine observability: a default `info,engine=debug` level filter on every tracing layer with `RUST_LOG` override, `build_profile` and `log_filter` on the startup line, and a bounded `generation_output_rejected` capture of every rejected GenerateAnswer output (G3, G5 release check, G4 capture; D-90, D-92, D-91)
 - [x] 06.3.4.1-23-PLAN.md — `gap_closure: true`. Make stage caps count failed generations (per-attempt ceiling in `compute_spend`, pass A ≥ $0.2178 billed), and diagnose pass A's seven GenerateAnswer failure classes for free, with a probe design (G4; D-91, D-86)
@@ -978,7 +978,7 @@ Plans:
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 06.3.4.1-27-PLAN.md — `gap_closure: true`. Write the decided budgets to the config trio with an agreement test, restart the release engine with no overrides, pass preflight on `multihop_rag_diag`, and close plan 11 (G2; D-66, D-90, D-92) *(halted at its preflight 2026-09-29; its unmet must-haves are completed by 06.3.4.1-28)*
+- [x] 06.3.4.1-27-PLAN.md — `gap_closure: true`. Write the decided budgets to the config trio with an agreement test, restart the release engine with no overrides, pass preflight on `multihop_rag_diag`, and close plan 11 (G2; D-66, D-90, D-92) *(halted at its preflight 2026-09-29; its unmet must-haves were completed by 06.3.4.1-28 on 2026-09-30 and its SUMMARY is re-summarized `complete`)*
 - [ ] 06.3.4.1-28-PLAN.md — `gap_closure: true`. Build the prompt tokenizer at engine start and raise `prompt_timeout_ms` to 120 (D-93); add an opt-in, scoped `--accept-known-miss` for canary `mhr-0d5e238015ef`'s graph floor (D-94); gate plan 12 on it; then, after a blocking cap decision, re-run preflight once and close plans 27 and 11 (G6–G8; D-93, D-94, D-86)
 
 **Wave 11** *(blocked on Wave 10 completion)*
