@@ -573,6 +573,32 @@ fn count_tokens(text: &str, bpe: Option<&tiktoken_rs::CoreBPE>) -> usize {
     }
 }
 
+/// Fixed text the startup warm-up encodes to force the tokenizer to exist (D-93).
+///
+/// Its content only exercises encoding: it is never sent to a provider and never
+/// enters a prompt. It is short on purpose, so the warm-up time is the one-off
+/// tokenizer build and not the encoding work.
+pub const PROMPT_TOKENIZER_WARMUP_SAMPLE: &str =
+    "Warm the prompt tokenizer before the first query arrives.";
+
+/// What [`warm_prompt_tokenizer`] measured while building the tokenizer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PromptTokenizerWarmup {
+    /// Wall time the warm-up took; on a fresh process this is the one-off build cost.
+    pub elapsed: std::time::Duration,
+    /// Token count of [`PROMPT_TOKENIZER_WARMUP_SAMPLE`]; always above zero once built.
+    pub sample_token_count: usize,
+}
+
+/// Builds the prompt tokenizer now instead of on the first query (D-93).
+pub fn warm_prompt_tokenizer() -> PromptTokenizerWarmup {
+    let started = std::time::Instant::now();
+    PromptTokenizerWarmup {
+        elapsed: started.elapsed(),
+        sample_token_count: 0,
+    }
+}
+
 /// Truncates text to at most `max_chars` Unicode code points, returning the excerpt and a boolean indicating whether truncation occurred.
 pub fn bounded_unicode_excerpt(text: &str, max_chars: usize) -> (String, bool) {
     let char_count = text.chars().count();
@@ -827,5 +853,83 @@ If the evidence is insufficient, still name the evidence blocks you checked with
             "cl100k_base_singleton() must produce token counts identical to a freshly built cl100k_base() tokenizer"
         );
         assert!(count_via_singleton > 0);
+    }
+
+    /// Behavior (D-93): the warm-up counts its sample through the singleton the
+    /// prompt path reads, and a second call sees the same count.
+    #[test]
+    fn prompt_tokenizer_warmup_counts_the_sample_with_the_singleton() {
+        let expected = count_tokens(
+            PROMPT_TOKENIZER_WARMUP_SAMPLE,
+            Some(tiktoken_rs::cl100k_base_singleton()),
+        );
+        let first = warm_prompt_tokenizer();
+        assert!(first.sample_token_count > 0, "the sample must encode to tokens");
+        assert_eq!(first.sample_token_count, expected);
+        assert_eq!(warm_prompt_tokenizer().sample_token_count, expected);
+    }
+
+    /// Behavior (D-93): the warm-up body reads the process-wide singleton and never a
+    /// fresh `cl100k_base()`, so it warms the handle `pack_evidence_and_graph_prompt`
+    /// reads. Source-inspected and scoped to the function's own body.
+    #[test]
+    fn prompt_tokenizer_warmup_reads_the_singleton() {
+        let source = include_str!("prompt.rs");
+        let fn_start = source
+            .find("pub fn warm_prompt_tokenizer(")
+            .expect("warm_prompt_tokenizer must exist");
+        let fn_end = ["
+fn ", "
+pub fn ", "
+#[cfg(test)]"]
+            .iter()
+            .filter_map(|stop| source[fn_start + 1..].find(stop))
+            .min()
+            .map(|offset| fn_start + 1 + offset)
+            .expect("an item must follow warm_prompt_tokenizer");
+        let fn_body = &source[fn_start..fn_end];
+        assert!(
+            fn_body.contains("tiktoken_rs::cl100k_base_singleton()"),
+            "the warm-up must read the singleton the prompt path reads"
+        );
+        assert!(
+            !fn_body.contains("tiktoken_rs::cl100k_base()"),
+            "the warm-up must not build a fresh tokenizer"
+        );
+    }
+
+    /// Behavior (D-93): `main.rs` calls the warm-up exactly once, and it precedes the
+    /// ready line, the serving line and `Server::builder()`, so no request can reach
+    /// AssemblePrompt before the singleton exists.
+    #[test]
+    fn prompt_tokenizer_warmup_precedes_the_serving_line_in_main() {
+        let main_source = include_str!("main.rs");
+        assert_eq!(
+            main_source.matches("warm_prompt_tokenizer").count(),
+            1,
+            "main.rs must call the warm-up exactly once"
+        );
+        let warm = main_source.find("warm_prompt_tokenizer").expect("warm-up call");
+        let ready = main_source
+            .find("Prompt tokenizer ready")
+            .expect("ready line message");
+        let serving = main_source
+            .find("Rust RAG Engine serving")
+            .expect("serving line message");
+        let builder = main_source.find("Server::builder()").expect("server builder");
+        assert!(
+            warm < ready && ready < serving && serving < builder,
+            "order must be warm-up call ({warm}), ready line ({ready}), serving line ({serving}), Server::builder() ({builder})"
+        );
+    }
+
+    /// Behavior (D-93, D-90): the binary's own target at INFO passes the default level
+    /// filter, so the ready line reaches the console and the export.
+    #[test]
+    fn prompt_tokenizer_ready_line_passes_the_default_filter() {
+        let resolution = crate::telemetry::resolve_log_filter(None);
+        assert!(resolution
+            .targets
+            .would_enable("engine", &tracing::Level::INFO));
     }
 }
