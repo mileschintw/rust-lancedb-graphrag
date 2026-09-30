@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 12
 status: executing
-stopped_at: "Completed 06.3.4.1-28-PLAN.md: tokenizer warm-up (D-93), prompt 120, D-94 accepted-known-miss preflight option; one preflight passed with only the D-94 miss; plans 27, 11, 28 closed; plan 12 (drive 1) not started, needs its own D-86 cap checkpoint"
-last_updated: "2026-09-30T06:24:13.939Z"
-last_activity: 2026-09-29
+stopped_at: "Completed 06.3.4.1-12-PLAN.md: drive 1 SC-2 PASS, SC-3 MISS (15/88 vs 0.512; answers lost line breaks from record 53); D-84 decision iterate-once; next: DRIVE1-GAPS brief, gap plan 29, drive 2 with its own D-86 cap"
+last_updated: "2026-09-30T21:10:00.000Z"
+last_activity: 2026-09-30
 state_head: 874ea5499ba0370464ca54caa9a6ba30265e00e1
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 186
-  completed_plans: 177
+  completed_plans: 178
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -475,7 +475,7 @@ Total Plans in Phase: 28
 
 **Last session:** 2026-09-30T06:24:06.968Z
 **Last activity:** 2026-09-29
-**Stopped at:** Completed 06.3.4.1-28-PLAN.md: tokenizer warm-up (D-93), prompt 120, D-94 accepted-known-miss preflight option; one preflight passed with only the D-94 miss; plans 27, 11, 28 closed; plan 12 (drive 1) not started, needs its own D-86 cap checkpoint
+**Stopped at:** Completed 06.3.4.1-12-PLAN.md: drive 1 SC-2 PASS, SC-3 MISS (15/88 vs 0.512); D-84 decision iterate-once; resume from 06.3.4.1-HANDOVER-D84.md section 4 step 2 (DRIVE1-GAPS brief, gap plan 29, drive 2)
 **Resume file:** None
 
 ## Accumulated Context

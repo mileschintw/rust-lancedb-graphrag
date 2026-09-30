@@ -983,7 +983,7 @@ Plans:
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [ ] 06.3.4.1-12-PLAN.md — Run paid drive 1 on the fixed index, engine and prompt, and read SC-2 (timeout not dominant, flatness) and SC-3 (the vector baseline answers some questions) as computed gates
+- [x] 06.3.4.1-12-PLAN.md — Run paid drive 1 on the fixed index, engine and prompt, and read SC-2 (timeout not dominant, flatness) and SC-3 (the vector baseline answers some questions) as computed gates *(Closed 2026-09-30: SC-2 PASS, SC-3 MISS 15/88 against 0.512; D-84 decision `iterate-once`. OI-01 plans 13-15 wait on a drive-2 PASS from gap plan 29.)*
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
