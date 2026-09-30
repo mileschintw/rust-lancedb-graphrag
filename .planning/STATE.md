@@ -4,17 +4,17 @@ milestone: v1.0
 current_plan: 27
 status: executing
 stopped_at: "Halted 06.3.4.1-27 at the preflight gate: budgets written (1ecf4877), engine restarted clean, preflight failed once (first query Node AssemblePrompt timed out, 78.6 ms vs 65 ms; canary graph floor also missed); plan 11 stays open, current plan stays 27, plan 12 not started; route /gsd-plan-phase 06.3.4.1 --gaps"
-last_updated: "2026-09-29T16:44:43.738Z"
+last_updated: "2026-09-30T05:33:15.886Z"
 last_activity: 2026-09-29
-state_head: 1c8a345bdb9a4e061b5e285608d0396ea1de5042
+state_head: a58c6ae2d7e8441dedc1496560a8763d724bc310
 progress:
   total_phases: 16
   completed_phases: 9
-  total_plans: 185
+  total_plans: 186
   completed_plans: 175
 milestone_name: milestone
-current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
+current_phase: 06.3.4.1
 ---
 
 # Project State
@@ -22,7 +22,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 ## Current Position
 
 Current Plan: 27
-Total Plans in Phase: 27
+Total Plans in Phase: 28
 
 ## Current Status
 
