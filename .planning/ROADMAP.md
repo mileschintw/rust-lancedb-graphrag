@@ -1145,3 +1145,12 @@ Plans:
 Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.12: Add pageindex concept implementation as third option of source retrieval (BACKLOG)
+
+**Goal:** Add pageindex concept implementation as third option of source retrieval.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd-review-backlog when ready)
