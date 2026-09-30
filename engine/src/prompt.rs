@@ -874,7 +874,10 @@ If the evidence is insufficient, still name the evidence blocks you checked with
             Some(tiktoken_rs::cl100k_base_singleton()),
         );
         let first = warm_prompt_tokenizer();
-        assert!(first.sample_token_count > 0, "the sample must encode to tokens");
+        assert!(
+            first.sample_token_count > 0,
+            "the sample must encode to tokens"
+        );
         assert_eq!(first.sample_token_count, expected);
         assert_eq!(warm_prompt_tokenizer().sample_token_count, expected);
     }
@@ -888,10 +891,7 @@ If the evidence is insufficient, still name the evidence blocks you checked with
         let fn_start = source
             .find("pub fn warm_prompt_tokenizer(")
             .expect("warm_prompt_tokenizer must exist");
-        let fn_end = ["
-fn ", "
-pub fn ", "
-#[cfg(test)]"]
+        let fn_end = ["\nfn ", "\npub fn ", "\n#[cfg(test)]"]
             .iter()
             .filter_map(|stop| source[fn_start + 1..].find(stop))
             .min()
@@ -919,14 +919,18 @@ pub fn ", "
             1,
             "main.rs must call the warm-up exactly once"
         );
-        let warm = main_source.find("warm_prompt_tokenizer").expect("warm-up call");
+        let warm = main_source
+            .find("warm_prompt_tokenizer")
+            .expect("warm-up call");
         let ready = main_source
             .find("Prompt tokenizer ready")
             .expect("ready line message");
         let serving = main_source
             .find("Rust RAG Engine serving")
             .expect("serving line message");
-        let builder = main_source.find("Server::builder()").expect("server builder");
+        let builder = main_source
+            .find("Server::builder()")
+            .expect("server builder");
         assert!(
             warm < ready && ready < serving && serving < builder,
             "order must be warm-up call ({warm}), ready line ({ready}), serving line ({serving}), Server::builder() ({builder})"
