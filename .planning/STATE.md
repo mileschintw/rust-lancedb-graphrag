@@ -1,28 +1,28 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 12
+current_plan: 29
 status: executing
-stopped_at: "Completed 06.3.4.1-12-PLAN.md: drive 1 SC-2 PASS, SC-3 MISS (15/88 vs 0.512; answers lost line breaks from record 53); D-84 decision iterate-once; next: DRIVE1-GAPS brief, gap plan 29, drive 2 with its own D-86 cap"
-last_updated: "2026-09-30T21:10:00.000Z"
+stopped_at: "Planned 06.3.4.1 gap plans 29 (D-95 final_answer field, D-96 require_parameters + served-by logging, free) and 30 (drive 1b under its own D-86 cap and D-94-scope answer, then the final D-84 decision); plans 13-20 now wait on 30 (waves 14-21)"
+last_updated: "2026-09-30T22:11:43.473Z"
 last_activity: 2026-09-30
-state_head: 874ea5499ba0370464ca54caa9a6ba30265e00e1
+state_head: a66d436f1166bd950eba3da35d59cc58f6832e52
 progress:
   total_phases: 16
   completed_phases: 9
-  total_plans: 186
+  total_plans: 188
   completed_plans: 178
 milestone_name: milestone
-current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
+current_phase: 06.3.4.1
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 12
-Total Plans in Phase: 28
+Current Plan: 29
+Total Plans in Phase: 30
 
 ## Current Status
 
@@ -474,8 +474,8 @@ Total Plans in Phase: 28
 ## Session
 
 **Last session:** 2026-09-30T06:24:06.968Z
-**Last activity:** 2026-09-29
-**Stopped at:** Completed 06.3.4.1-12-PLAN.md: drive 1 SC-2 PASS, SC-3 MISS (15/88 vs 0.512); D-84 decision iterate-once; resume from 06.3.4.1-HANDOVER-D84.md section 4 step 2 (DRIVE1-GAPS brief, gap plan 29, drive 2)
+**Last activity:** 2026-09-30
+**Stopped at:** Planned gap plans 29 and 30 for the D-84 iterate-once round (decisions D-95, D-96 in CONTEXT); next: /gsd-execute-phase 06.3.4.1 --gaps-only
 **Resume file:** None
 
 ## Accumulated Context

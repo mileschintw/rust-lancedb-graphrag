@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 19/28 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`)
+**Plans:** 20/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
 
 Plans:
 
@@ -983,37 +983,45 @@ Plans:
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [x] 06.3.4.1-12-PLAN.md — Run paid drive 1 on the fixed index, engine and prompt, and read SC-2 (timeout not dominant, flatness) and SC-3 (the vector baseline answers some questions) as computed gates *(Closed 2026-09-30: SC-2 PASS, SC-3 MISS 15/88 against 0.512; D-84 decision `iterate-once`. OI-01 plans 13-15 wait on a drive-2 PASS from gap plan 29.)*
+- [x] 06.3.4.1-12-PLAN.md — Run paid drive 1 on the fixed index, engine and prompt, and read SC-2 (timeout not dominant, flatness) and SC-3 (the vector baseline answers some questions) as computed gates *(Closed 2026-09-30: SC-2 PASS, SC-3 MISS 15/88 against 0.512; D-84 decision `iterate-once`. OI-01 plans 13-15 wait on a drive-1b PASS of SC-2 and SC-3 from gap plans 29-30.)*
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 06.3.4.1-13-PLAN.md — Build OI-01's seeding and path search as library code, prove it end to end on the real reconciled graph with an offline probe (store → mention seeds → seed-to-seed paths →…
+- [ ] 06.3.4.1-29-PLAN.md — `gap_closure: true`. Make the final answer survive lost line breaks: the strict schema requires a `final_answer` field that the engine renders as the last `Answer:` line after validation, identically in `answer_chunk` and `final_answer` (D-95); send OpenRouter `require_parameters: true` and log each response's generation ID, served model and provider with the correlation ID (D-96); read drive 1's cause for free from the activity API; test-first, raised counts, a release build, no paid call (G9–G11; D-95, D-96)
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [ ] 06.3.4.1-14-PLAN.md — Cut production graph augmentation over to 06.3.4.1-13's mention seeding and path search as the only seeding path (D-75, D-78), with the per-generation `GraphIndex` in the…
+- [ ] 06.3.4.1-30-PLAN.md — `gap_closure: true`. Paid drive 1b, D-83's one iteration after drive 1: a blocking D-86 cap decision, one preflight with the D-94 option and a served-by check, the drive, fail-closed scoring and `gates-drive1b`, the provider and format map, `06.3.4.1-DRIVE1B.md`, then a blocking D-84 decision, `pass-proceed` or `halt-disclose` (G12; D-84, D-86, D-87a, D-94)
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
-- [ ] 06.3.4.1-15-PLAN.md — Make graph-on change what is retrieved, not only what is appended to the prompt (D-76, D-81)
+- [ ] 06.3.4.1-13-PLAN.md — Build OI-01's seeding and path search as library code, prove it end to end on the real reconciled graph with an offline probe (store → mention seeds → seed-to-seed paths →…
 
 **Wave 15** *(blocked on Wave 14 completion)*
 
-- [ ] 06.3.4.1-16-PLAN.md — Carry the new graph diagnostics from the engine to the journal so SC-4 and SC-5 can be computed per record
+- [ ] 06.3.4.1-14-PLAN.md — Cut production graph augmentation over to 06.3.4.1-13's mention seeding and path search as the only seeding path (D-75, D-78), with the per-generation `GraphIndex` in the…
 
 **Wave 16** *(blocked on Wave 15 completion)*
 
-- [ ] 06.3.4.1-17-PLAN.md — Commit the drive-2 gate rules and make SC-4 and SC-5 computed readings, and extend the canaries with a seed-to-seed path canary
+- [ ] 06.3.4.1-15-PLAN.md — Make graph-on change what is retrieved, not only what is appended to the prompt (D-76, D-81)
 
 **Wave 17** *(blocked on Wave 16 completion)*
 
-- [ ] 06.3.4.1-18-PLAN.md — Re-derive the graph operation budget on the new seeding (D-77), then prove the canaries hold live on the engine that drive 2 will use (D-80)
+- [ ] 06.3.4.1-16-PLAN.md — Carry the new graph diagnostics from the engine to the journal so SC-4 and SC-5 can be computed per record
 
 **Wave 18** *(blocked on Wave 17 completion)*
 
-- [ ] 06.3.4.1-19-PLAN.md — Run paid drive 2, the run of record, on the repaired graph path, and read SC-1, SC-4 and SC-5 as computed gates, with SC-2/SC-3 re-reported
+- [ ] 06.3.4.1-17-PLAN.md — Commit the drive-2 gate rules and make SC-4 and SC-5 computed readings, and extend the canaries with a seed-to-seed path canary
 
 **Wave 19** *(blocked on Wave 18 completion)*
+
+- [ ] 06.3.4.1-18-PLAN.md — Re-derive the graph operation budget on the new seeding (D-77), then prove the canaries hold live on the engine that drive 2 will use (D-80)
+
+**Wave 20** *(blocked on Wave 19 completion)*
+
+- [ ] 06.3.4.1-19-PLAN.md — Run paid drive 2, the run of record, on the repaired graph path, and read SC-1, SC-4 and SC-5 as computed gates, with SC-2/SC-3 re-reported
+
+**Wave 21** *(blocked on Wave 20 completion)*
 
 - [ ] 06.3.4.1-20-PLAN.md — Record non-comparability publicly (D-88)
 
