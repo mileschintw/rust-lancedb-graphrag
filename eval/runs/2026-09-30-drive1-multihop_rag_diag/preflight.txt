@@ -1,0 +1,28 @@
+                  Preflight Health Checks ¡X multihop_rag_diag                  
++-----------------------------------------------------------------------------+
+| Check             |       Status        | Details                           |
+|-------------------+---------------------+-----------------------------------|
+| store_isolation   |        PASS         | Eval LanceDB and PostgreSQL       |
+|                   |                     | schema are fully isolated from    |
+|                   |                     | dev.                              |
+| index_identity    |        PASS         | PostgreSQL, LanceDB, and document |
+|                   |                     | map document IDs agree.           |
+| canary_manifest   |        PASS         | Canary manifest verified against  |
+|                   |                     | corpus sample.                    |
+| gateway_reachable |        PASS         | Gateway is reachable (HTTP 200).  |
+| engine_reachable  |        PASS         | Engine is reachable and healthy.  |
+| corpus_generation |        PASS         | Index generation matched          |
+|                   |                     | ('lance-702') and excerpt budget  |
+|                   |                     | verified.                         |
+| canary_floors     | ACCEPTED KNOWN MISS | ACCEPTED KNOWN MISS [D-94]:       |
+|                   |                     | canary mhr-0d5e238015ef           |
+|                   |                     | (graph-on) require_graph_node     |
+|                   |                     | observed 0 graph nodes; 6 of 7    |
+|                   |                     | canary rows met every floor       |
+|                   |                     | against live engine budgets.      |
+| openrouter_api    |        PASS         | Deterministic evaluation path     |
+|                   |                     | requires no OpenRouter API key.   |
++-----------------------------------------------------------------------------+
+Accepted known miss (D-94): canary mhr-0d5e238015ef (graph-on) require_graph_node observed 0 graph nodes. Reported, not passed.
+Preflight cleared with accepted known misses (not passes): 1. Every other check
+passed.

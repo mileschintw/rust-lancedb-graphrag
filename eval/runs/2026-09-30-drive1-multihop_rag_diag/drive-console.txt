@@ -1,0 +1,6 @@
+Resolved run directory: eval\runs\2026-09-30-drive1-multihop_rag_diag
+Driving corpus 'multihop_rag_diag' (limit=None, resume=False, workers=1, 
+retries=0, stage_cap=$0.90)...
+Successfully recorded 200 new work units to 
+eval\runs\2026-09-30-drive1-multihop_rag_diag\journal.jsonl (observed spend: 
+$0.0902)

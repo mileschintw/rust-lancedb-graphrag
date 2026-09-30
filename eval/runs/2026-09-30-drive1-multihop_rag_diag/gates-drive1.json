@@ -1,0 +1,126 @@
+{
+  "SC-1": {
+    "gate": "SC-1",
+    "status": "PASS",
+    "reason": "header partial matches completeness_comparison() and report.json state is consistent",
+    "value": null,
+    "ci": null,
+    "n": 200,
+    "detail": {
+      "header_partial": false,
+      "expected_partial": false,
+      "missing_units": 0.0,
+      "report_json_exists": true
+    }
+  },
+  "SC-2": {
+    "gate": "SC-2",
+    "status": "PASS",
+    "reason": "error mode and RetrieveHybrid flatness both pass",
+    "value": null,
+    "ci": null,
+    "n": 200,
+    "detail": {
+      "class_counts": {
+        "citation_basis_mixed": 4.0,
+        "other": 5.0
+      },
+      "dominant_classes": [
+        "other"
+      ],
+      "timeout_dominant": false,
+      "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+      "both_arm_error_question_count": 0.0,
+      "both_arm_error_class_pairs": [],
+      "flatness_reason": "flat",
+      "flatness_trend_available": true,
+      "flatness_window_available": true,
+      "flatness_decay_present": false,
+      "flatness_slope_ms_per_query": 0.02373908143138912,
+      "flatness_window_delta_ms": 0.0
+    }
+  },
+  "D-69 companion": {
+    "gate": "citation_rejection_rate",
+    "status": "PASS",
+    "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+    "value": 0.02,
+    "ci": [
+      0.007804300176394188,
+      0.050287865505193874
+    ],
+    "n": 200,
+    "detail": {
+      "class_counts": {
+        "citation_basis_mixed": 4.0,
+        "other": 5.0
+      },
+      "marker_mismatch_count": 0.0,
+      "total": 200.0,
+      "total_rejections": 4.0,
+      "total_rate": 0.02,
+      "null_total": 20.0,
+      "null_rejections": 2.0,
+      "null_rate": 0.1,
+      "nonnull_total": 180.0,
+      "nonnull_rejections": 2.0,
+      "nonnull_rate": 0.011111111111111112,
+      "ci_lower": 0.007804300176394188,
+      "ci_upper": 0.050287865505193874
+    }
+  },
+  "SC-3": {
+    "gate": "SC-3",
+    "status": "MISS",
+    "reason": "usable rate 0.1705 < floor 0.5120",
+    "value": 0.17045454545454544,
+    "ci": [
+      0.10610728809302103,
+      0.2623706129888417
+    ],
+    "n": 88,
+    "detail": {
+      "usable_n": 15.0,
+      "n": 88.0,
+      "floor": 0.512,
+      "ci_lower": 0.10610728809302103,
+      "ci_upper": 0.2623706129888417,
+      "excluded_generate_answer_failures": 1.0,
+      "final_answer_missing_rate": 0.7727272727272727,
+      "final_answer_missing_review_rate_threshold": 0.1,
+      "final_answer_missing_review_triggered": true,
+      "strata": {
+        "type_comparison_query": {
+          "n": 36.0,
+          "usable_n": 7.0,
+          "rate": 0.19444444444444445,
+          "constant_yes_baseline": 0.6666666666666666
+        },
+        "type_inference_query": {
+          "n": 29.0,
+          "usable_n": 6.0,
+          "rate": 0.20689655172413793,
+          "constant_yes_baseline": 0.0
+        },
+        "type_temporal_query": {
+          "n": 23.0,
+          "usable_n": 2.0,
+          "rate": 0.08695652173913043,
+          "constant_yes_baseline": 0.5652173913043478
+        },
+        "gold_binary": {
+          "n": 56.0,
+          "usable_n": 9.0,
+          "rate": 0.16071428571428573,
+          "constant_yes_baseline": 0.6607142857142857
+        },
+        "gold_entity": {
+          "n": 32.0,
+          "usable_n": 6.0,
+          "rate": 0.1875,
+          "constant_yes_baseline": 0.0
+        }
+      }
+    }
+  }
+}
