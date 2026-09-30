@@ -162,6 +162,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let addr = settings.engine.grpc_addr.parse()?;
+    // D-93: build the prompt tokenizer before the server accepts requests, so the first
+    // query's AssemblePrompt does not pay for it. It is blocking CPU work, so it runs off
+    // the async runtime; the ready line below precedes the serving line.
+    let tokenizer_warmup = tokio::task::spawn_blocking(engine::prompt::warm_prompt_tokenizer)
+        .await
+        .map_err(|error| format!("prompt tokenizer warm-up task failed: {error}"))?;
+    tracing::info!(
+        tokenizer = "cl100k_base",
+        build_ms = tokenizer_warmup.elapsed.as_secs_f64() * 1000.0,
+        sample_tokens = tokenizer_warmup.sample_token_count,
+        "Prompt tokenizer ready"
+    );
     // `build_profile` and `log_filter` make drive 1's release-build and level-filter
     // preconditions checkable from the log (D-92, D-90).
     tracing::info!(

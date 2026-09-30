@@ -591,11 +591,21 @@ pub struct PromptTokenizerWarmup {
 }
 
 /// Builds the prompt tokenizer now instead of on the first query (D-93).
+///
+/// The `cl100k_base` singleton is built lazily on first read. On a fresh engine that cost
+/// the first `AssemblePrompt` 78.6 ms against a 65 ms budget, so the first query timed out.
+/// Reading the same singleton that [`pack_evidence_and_graph_prompt`] reads, before the
+/// server accepts requests, moves that one-off cost out of every query.
+///
+/// This is blocking CPU work: callers run it off the async runtime, for example through
+/// `tokio::task::spawn_blocking`.
 pub fn warm_prompt_tokenizer() -> PromptTokenizerWarmup {
     let started = std::time::Instant::now();
+    let bpe = Some(tiktoken_rs::cl100k_base_singleton());
+    let sample_token_count = count_tokens(PROMPT_TOKENIZER_WARMUP_SAMPLE, bpe);
     PromptTokenizerWarmup {
         elapsed: started.elapsed(),
-        sample_token_count: 0,
+        sample_token_count,
     }
 }
 
