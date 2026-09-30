@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 28
+current_plan: 12
 status: executing
-stopped_at: "Halted 06.3.4.1-27 at the preflight gate: budgets written (1ecf4877), engine restarted clean, preflight failed once (first query Node AssemblePrompt timed out, 78.6 ms vs 65 ms; canary graph floor also missed); plan 11 stays open, current plan stays 27, plan 12 not started; route /gsd-plan-phase 06.3.4.1 --gaps"
-last_updated: "2026-09-30T05:33:55.931Z"
+stopped_at: "Completed 06.3.4.1-28-PLAN.md: tokenizer warm-up (D-93), prompt 120, D-94 accepted-known-miss preflight option; one preflight passed with only the D-94 miss; plans 27, 11, 28 closed; plan 12 (drive 1) not started, needs its own D-86 cap checkpoint"
+last_updated: "2026-09-30T06:24:13.939Z"
 last_activity: 2026-09-29
-state_head: 9fc36876ea26f2288943fe77a59813037c377384
+state_head: 874ea5499ba0370464ca54caa9a6ba30265e00e1
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 186
-  completed_plans: 175
+  completed_plans: 177
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -21,7 +21,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 28
+Current Plan: 12
 Total Plans in Phase: 28
 
 ## Current Status
@@ -384,6 +384,8 @@ Total Plans in Phase: 28
 | Phase 06.3.4.1 P24 | 25min | 2 tasks | 4 files |
 | Phase 06.3.4.1 P25 | 22 min | 2 tasks | 5 files |
 | Phase 06.3.4.1 P26 | 32 min | 3 tasks | 9 files |
+| Phase 06.3.4.1 P28 | 45 min | 6 tasks | 24 files |
+| Phase 06.3.4.1 P11 | 2 days elapsed (completed through gap plans 21-28) | 3 tasks | 6 files |
 
 ## Decisions
 
@@ -466,12 +468,14 @@ Total Plans in Phase: 28
 - [Phase 06.3.4.1]: 24: prompt_timeout_ms floor 65 ms (user amendment for this node only, 2026-09-29); the committed p95 x 1.5 rule (11 ms, 7 of 320 pass-A records above) is unchanged. Preflight authorised at 0.05 USD (D-86); D-89 noise check accepted, numbers unchanged. — 65 ms is 1.5x pass A's 43 ms max. Preflight is 8 queries, all-at-max about 0.0145 USD.
 - [Phase 06.3.4.1]: 06.3.4.1-25: GenerateAnswer probe ran once at user authorisation N=80 cap 0.75; trailing = valid object plus Answer: line outside JSON (32/32), ModelOnly = self-reported abstention (42/42), mixed/retrieval did not reproduce; fixes F-1..F-6 proposed, none applied — Evidence in 06.3.4.1-GENANSWER-DIAG.md Probe results and Proposed fixes
 - [Phase 06.3.4.1]: 06.3.4.1-26: only F-1 landed at the user's approve-subset: F-1; confirmation cap $0.75. The clause is appended after every existing policy sentence; F-1 is costly (D-71): scored runs before 126a8a4b are not comparable with runs after it. F-2, F-3a and F-6 were not approved; F-3, F-4 and F-5 stay reported error modes (D-69). — D-91: a fix removes a cause and never suppresses a class. Confirmation (N=80, cap 0.75, run once): trailing 32 to 0, ModelOnly 42 to 46 unaddressed, two new parse shapes (5 records) unattributed and routed to drive 1's D-69 disclosure.
+- [Phase 06.3.4.1]: D-93/D-94 (06.3.4.1-28): prompt tokenizer warmed before serving and prompt_timeout_ms 120; preflight --accept-known-miss is a one-entry registry, reported (accepted_known_miss), never a pass; expires at 06.3.4.1-18 — First fresh-engine query took 78.6 ms against 65 ms; the mhr-0d5e238015ef graph floor is the phase's graph-yield gap that plans 13-15 fix. The single preflight re-run passed with only the D-94 miss (first query 1.107 ms, spend 0.00258 of 0.05).
+- [Phase 06.3.4.1]: 06.3.4.1-27 re-summarized complete and 06.3.4.1-11 closed by 06.3.4.1-28 (status line only; halt record kept) — Summary template #2830: a resolved halt is re-summarized complete, otherwise plan 12 stays blocked
 
 ## Session
 
-**Last session:** 2026-09-29T16:44:40.736Z
+**Last session:** 2026-09-30T06:24:06.968Z
 **Last activity:** 2026-09-29
-**Stopped at:** Halted 06.3.4.1-27 at the preflight gate: budgets written (1ecf4877), engine restarted clean, preflight failed once (first query Node AssemblePrompt timed out, 78.6 ms vs 65 ms; canary graph floor also missed); plan 11 stays open, current plan stays 27, plan 12 not started; route /gsd-plan-phase 06.3.4.1 --gaps
+**Stopped at:** Completed 06.3.4.1-28-PLAN.md: tokenizer warm-up (D-93), prompt 120, D-94 accepted-known-miss preflight option; one preflight passed with only the D-94 miss; plans 27, 11, 28 closed; plan 12 (drive 1) not started, needs its own D-86 cap checkpoint
 **Resume file:** None
 
 ## Accumulated Context

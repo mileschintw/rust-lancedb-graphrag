@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 16/28 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`)
+**Plans:** 19/28 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`)
 
 Plans:
 
@@ -979,7 +979,7 @@ Plans:
 **Wave 10** *(blocked on Wave 9 completion)*
 
 - [x] 06.3.4.1-27-PLAN.md — `gap_closure: true`. Write the decided budgets to the config trio with an agreement test, restart the release engine with no overrides, pass preflight on `multihop_rag_diag`, and close plan 11 (G2; D-66, D-90, D-92) *(halted at its preflight 2026-09-29; its unmet must-haves were completed by 06.3.4.1-28 on 2026-09-30 and its SUMMARY is re-summarized `complete`)*
-- [ ] 06.3.4.1-28-PLAN.md — `gap_closure: true`. Build the prompt tokenizer at engine start and raise `prompt_timeout_ms` to 120 (D-93); add an opt-in, scoped `--accept-known-miss` for canary `mhr-0d5e238015ef`'s graph floor (D-94); gate plan 12 on it; then, after a blocking cap decision, re-run preflight once and close plans 27 and 11 (G6–G8; D-93, D-94, D-86)
+- [x] 06.3.4.1-28-PLAN.md — `gap_closure: true`. Build the prompt tokenizer at engine start and raise `prompt_timeout_ms` to 120 (D-93); add an opt-in, scoped `--accept-known-miss` for canary `mhr-0d5e238015ef`'s graph floor (D-94); gate plan 12 on it; then, after a blocking cap decision, re-run preflight once and close plans 27 and 11 (G6–G8; D-93, D-94, D-86)
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
