@@ -62,3 +62,8 @@
   files `decay_materiality.py` and `test_decay_materiality.py` are clean; the drop is docstring reflow in
   `flatness.py`). The plan's verify line over `flatness.py`/`oi02.py`/`thresholds.py` cannot read zero because
   `flatness.py` (15) and `oi02.py` (109) carry older `line-too-long` findings.
+
+- Ruff findings already in `eval/src/lancet_eval/cli.py` make 06.3.4.1-28 Task 3's ruff verify unreadable as zero (06.3.4.1-28)
+  status: open
+  **What:** `ruff check --preview eval/src/lancet_eval/cli.py` reports 10 findings (9 `line-too-long` and 1 `too-many-blank-lines`, lines 445-694 after this plan) in the `reconcile`, `score` and `run` commands. The same 10 are present at the planning base `a58c6ae2`, so they predate 06.3.4.1-28. The plan's verify line lists `cli.py` among three files and reads exit 0, which cannot hold until those lines are fixed. `preflight.py` and `test_preflight_accepted_miss.py` are clean, and 06.3.4.1-28 added no finding to `cli.py`. Not fixed here: unrelated code outside the task.
+  **Evidence:** `ruff check --preview --output-format concise` on `git show a58c6ae2:eval/src/lancet_eval/cli.py` (10 errors) and on the committed file (the same 10).
