@@ -84,25 +84,25 @@ def _canary_events(arm: str, behaviour: Behaviour) -> list[tuple[str, dict[str, 
     graph_off = arm == "graph-off"
     notices: list[dict[str, Any]] = []
     if graph_off and behaviour.ablation_notice:
-        notices.append(
-            {"code": "GRAPH_ABLATION", "typed_code": 18, "message": "Graph disabled"}
-        )
+        notices.append({
+            "code": "GRAPH_ABLATION",
+            "typed_code": 18,
+            "message": "Graph disabled",
+        })
     chunks = [
         {"chunk_id": f"c{i}", "document_id": "doc1", "is_truncated": False}
         for i in range(behaviour.chunk_count)
     ]
     events: list[tuple[str, dict[str, Any]]] = []
     if behaviour.success:
-        events.append(
-            (
-                "final_answer",
-                {
-                    "answer": "Test answer",
-                    "notices": notices,
-                    "snapshot": {"retrieved_chunks": chunks},
-                },
-            )
-        )
+        events.append((
+            "final_answer",
+            {
+                "answer": "Test answer",
+                "notices": notices,
+                "snapshot": {"retrieved_chunks": chunks},
+            },
+        ))
     for node, duration in (behaviour.durations or DEFAULT_DURATIONS).items():
         events.append(("node_completed", {"node_name": node, "duration_ms": duration}))
     completed: dict[str, Any] = {
@@ -151,7 +151,9 @@ def _mock_queries(
             text=text,
         )
 
-    httpx_mock.add_callback(callback, url="http://testserver/rag/query", is_reusable=True)
+    httpx_mock.add_callback(
+        callback, url="http://testserver/rag/query", is_reusable=True
+    )
 
 
 def _client() -> httpx.Client:
@@ -264,9 +266,7 @@ def test_registered_key_is_rejected_when_the_manifest_row_does_not_require_it(
         if (row["question_id"], row["graph_arm"]) == TARGET:
             row["require_graph_node"] = False
     edited = tmp_path / "canary.jsonl"
-    edited.write_text(
-        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
-    )
+    edited.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     with pytest.raises(PreflightError, match="require_graph_node"):
         validate_accepted_known_misses([_accepted()], canary_path=edited)
 
@@ -336,7 +336,10 @@ def test_option_reports_a_met_floor_as_pass_and_floor_met(
 def test_option_does_not_excuse_the_other_graph_canary(httpx_mock: HTTPXMock) -> None:
     _mock_queries(
         httpx_mock,
-        {TARGET: Behaviour(graph_nodes=0), OTHER_GRAPH_CANARY: Behaviour(graph_nodes=0)},
+        {
+            TARGET: Behaviour(graph_nodes=0),
+            OTHER_GRAPH_CANARY: Behaviour(graph_nodes=0),
+        },
     )
     res = check_canary_floors(_client(), accepted_known_misses=[_accepted()])
     assert res.passed is False
@@ -575,7 +578,9 @@ def test_cli_rejects_a_bad_option_with_exit_2_and_never_runs_preflight(
         "lancet_eval.preflight.run_preflight_checks",
         lambda *a, **k: calls.append((a, k)) or [],
     )
-    result = _invoke("--accept-known-miss", "mhr-12912d800c0c:graph-on:require_graph_node:D-94")
+    result = _invoke(
+        "--accept-known-miss", "mhr-12912d800c0c:graph-on:require_graph_node:D-94"
+    )
     assert result.exit_code == 2
     assert calls == []
     assert "mhr-0d5e238015ef:graph-on:require_graph_node:D-94" in _flat(result.output)

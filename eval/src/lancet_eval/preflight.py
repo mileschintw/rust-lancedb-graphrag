@@ -7,9 +7,9 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
 from lancet_eval.seed import load_document_map
@@ -32,6 +32,15 @@ class PreflightCheckResult(BaseModel):
     status: Literal["pass", "fail", "accepted_known_miss"] | None = None
     message: str = ""
     detail: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _derive_status(self) -> Self:
+        """Fill ``status`` from ``passed``; reject a status that contradicts it."""
+        if self.status is None:
+            self.status = "pass" if self.passed else "fail"
+        elif self.passed != (self.status != "fail"):
+            raise ValueError(f"status {self.status!r} contradicts passed={self.passed}")
+        return self
 
 
 class AcceptedKnownMiss(BaseModel):
@@ -58,19 +67,121 @@ class CanaryKnownMissOutcome(BaseModel):
     outcome: Literal["accepted_known_miss", "floor_met"]
 
 
+# D-94 (06.3.4.1-CONTEXT, 2026-09-29): the graph floor of canary mhr-0d5e238015ef
+# (graph-on) is an accepted, reported miss for drive 1's preflight only. Keys are
+# (question_id, graph_arm, check); values are the decision ID that grants the exception.
+# This registry is the only source of accepted misses: the command line can select an
+# entry but can never add one. It expires at 06.3.4.1-18, which re-validates every
+# canary live without the option.
 ACCEPTED_KNOWN_MISS_REGISTRY: MappingProxyType[tuple[str, str, str], str] = (
-    MappingProxyType({})
+    MappingProxyType({("mhr-0d5e238015ef", "graph-on", "require_graph_node"): "D-94"})
 )
+
+_ACCEPTED_KNOWN_MISS_SHAPE = "<question_id>:<graph_arm>:<check>:<decision_id>"
+
+
+def registered_accepted_known_miss_values() -> list[str]:
+    """Return the command-line value of every registry entry."""
+    return [
+        f"{question_id}:{arm}:{check}:{decision_id}"
+        for (question_id, arm, check), decision_id in (
+            ACCEPTED_KNOWN_MISS_REGISTRY.items()
+        )
+    ]
 
 
 def parse_accepted_known_miss(raw: str) -> AcceptedKnownMiss:
-    raise NotImplementedError
+    """Parse ``<question_id>:<graph_arm>:<check>:<decision_id>``.
+
+    Raises ``ValueError`` unless there are exactly four non-empty fields and the arm
+    is ``graph-on`` or ``graph-off``. Parsing does not consult the registry.
+    """
+    fields = [part.strip() for part in raw.split(":")]
+    if len(fields) != 4 or not all(fields):
+        raise ValueError(
+            f"accepted known miss {raw!r} must have the shape "
+            f"{_ACCEPTED_KNOWN_MISS_SHAPE} with four non-empty fields"
+        )
+    question_id, graph_arm, check, decision_id = fields
+    try:
+        return AcceptedKnownMiss(
+            question_id=question_id,
+            graph_arm=graph_arm,  # type: ignore[arg-type]
+            check=check,
+            decision_id=decision_id,
+        )
+    except ValidationError as exc:
+        raise ValueError(
+            f"accepted known miss {raw!r} must have the shape "
+            f"{_ACCEPTED_KNOWN_MISS_SHAPE} with graph_arm graph-on or graph-off"
+        ) from exc
 
 
 def validate_accepted_known_misses(
     misses: Sequence[AcceptedKnownMiss],
     canary_path: Path | str | None = None,
 ) -> tuple[AcceptedKnownMiss, ...]:
+    """Check each miss against the registry and the committed canary manifest.
+
+    Raises ``PreflightError`` for a duplicate, a key that is not in
+    ``ACCEPTED_KNOWN_MISS_REGISTRY``, a decision ID other than the registry's, a
+    (question, arm) with no manifest row, or a row that does not set the named check
+    true. It reads the manifest only and sends no request.
+    """
+    hint = "; ".join(registered_accepted_known_miss_values())
+    canary_p = (
+        Path(canary_path)
+        if canary_path is not None
+        else repo_root() / "eval" / "corpora" / "multihop_rag" / "canary.jsonl"
+    )
+    seen: set[tuple[str, str, str]] = set()
+    rows: list[dict[str, Any]] | None = None
+    for miss in misses:
+        key = (miss.question_id, miss.graph_arm, miss.check)
+        label = f"{miss.question_id}:{miss.graph_arm}:{miss.check}:{miss.decision_id}"
+        if key in seen:
+            raise PreflightError(f"duplicate accepted known miss {label!r}")
+        seen.add(key)
+        registered_decision = ACCEPTED_KNOWN_MISS_REGISTRY.get(key)
+        if registered_decision is None:
+            raise PreflightError(
+                f"accepted known miss {label!r} is not registered; "
+                f"the only accepted value is {hint}"
+            )
+        if miss.decision_id != registered_decision:
+            raise PreflightError(
+                f"accepted known miss {label!r} names decision {miss.decision_id!r}, "
+                f"but the registry grants it under {registered_decision!r}"
+            )
+        if rows is None:
+            try:
+                rows = [
+                    json.loads(line)
+                    for line in canary_p.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+            except Exception as exc:
+                raise PreflightError(
+                    f"cannot read the canary manifest at {canary_p}: {exc}"
+                ) from exc
+        row = next(
+            (
+                r
+                for r in rows
+                if r.get("question_id") == miss.question_id
+                and r.get("graph_arm") == miss.graph_arm
+            ),
+            None,
+        )
+        if row is None:
+            raise PreflightError(
+                f"accepted known miss {label!r} has no canary manifest row"
+            )
+        if row.get(miss.check) is not True:
+            raise PreflightError(
+                f"accepted known miss {label!r}: the manifest row does not set "
+                f"{miss.check} true"
+            )
     return tuple(misses)
 
 
@@ -543,7 +654,12 @@ def check_canary_floors(
     config_path: Path | str | None = None,
     accepted_known_misses: Sequence[AcceptedKnownMiss] = (),
 ) -> PreflightCheckResult:
-    """Probe query path against committed canaries and live configured timeouts."""
+    """Probe query path against committed canaries and live configured timeouts.
+
+    ``accepted_known_misses`` (D-94) names registry entries whose graph-floor miss
+    is reported as ``accepted_known_miss`` instead of failing. Every other floor
+    still gates.
+    """
     from lancet_eval.client import run_query
     from lancet_eval.dimensions import NOTICE_CODE_GRAPH_ABLATION
 
@@ -552,6 +668,18 @@ def check_canary_floors(
         if canary_path is not None
         else repo_root() / "eval" / "corpora" / "multihop_rag" / "canary.jsonl"
     )
+    accepted_by_key: dict[tuple[str, str, str], AcceptedKnownMiss] = {}
+    if accepted_known_misses:
+        try:
+            validated = validate_accepted_known_misses(accepted_known_misses, canary_p)
+        except PreflightError as exc:
+            return PreflightCheckResult(
+                name="canary_floors",
+                passed=False,
+                message=f"Accepted known miss rejected before any query: {exc}",
+            )
+        accepted_by_key = {(m.question_id, m.graph_arm, m.check): m for m in validated}
+    known_miss_outcomes: list[CanaryKnownMissOutcome] = []
     if not canary_p.exists():
         return PreflightCheckResult(
             name="canary_floors",
@@ -646,11 +774,41 @@ def check_canary_floors(
                 if outcome.workflow_meta is not None
                 else 0
             )
+            accepted = accepted_by_key.get((qid, arm, "require_graph_node"))
             if graph_nodes < 1:
-                failures.append(
+                miss_text = (
                     f"Canary {qid} ({arm}) graph floor missed: observed {graph_nodes} "
                     "graph nodes (cause: either a graph defect or canary entities "
                     "not in store pending 06.3.3 D-05 inspection)"
+                )
+                if accepted is None:
+                    failures.append(miss_text)
+                elif outcome.status != "failed" and outcome.workflow_meta is not None:
+                    known_miss_outcomes.append(
+                        CanaryKnownMissOutcome(
+                            question_id=qid,
+                            graph_arm=arm,
+                            check="require_graph_node",
+                            decision_id=accepted.decision_id,
+                            observed_graph_node_count=graph_nodes,
+                            outcome="accepted_known_miss",
+                        )
+                    )
+                else:
+                    failures.append(
+                        f"{miss_text}; not accepted under {accepted.decision_id}: "
+                        "the query did not complete with graph metadata"
+                    )
+            elif accepted is not None:
+                known_miss_outcomes.append(
+                    CanaryKnownMissOutcome(
+                        question_id=qid,
+                        graph_arm=arm,
+                        check="require_graph_node",
+                        decision_id=accepted.decision_id,
+                        observed_graph_node_count=graph_nodes,
+                        outcome="floor_met",
+                    )
                 )
 
         # 3. Ablation notice check
@@ -680,19 +838,54 @@ def check_canary_floors(
                         f"exceeded configured budget {budget_ms}ms ({cfg_key})"
                     )
 
+    outcome_detail = [o.model_dump() for o in known_miss_outcomes]
     if failures:
+        failure_detail: dict[str, Any] = {"failure_count": len(failures)}
+        if outcome_detail:
+            failure_detail["accepted_known_misses"] = outcome_detail
         return PreflightCheckResult(
             name="canary_floors",
             passed=False,
             message="; ".join(failures),
-            detail={"failure_count": len(failures)},
+            detail=failure_detail,
         )
 
+    accepted_misses = [
+        o for o in known_miss_outcomes if o.outcome == "accepted_known_miss"
+    ]
+    if accepted_misses:
+        miss_lines = "; ".join(
+            f"ACCEPTED KNOWN MISS [{o.decision_id}]: canary {o.question_id} "
+            f"({o.graph_arm}) {o.check} observed {o.observed_graph_node_count} "
+            "graph nodes"
+            for o in accepted_misses
+        )
+        return PreflightCheckResult(
+            name="canary_floors",
+            passed=True,
+            status="accepted_known_miss",
+            message=(
+                f"{miss_lines}; {len(rows) - len(accepted_misses)} of {len(rows)} "
+                "canary rows met every floor against live engine budgets."
+            ),
+            detail={"canary_count": len(rows), "accepted_known_misses": outcome_detail},
+        )
+
+    message = f"All {len(rows)} canaries passed floors against live engine budgets."
+    detail: dict[str, Any] = {"canary_count": len(rows)}
+    if known_miss_outcomes:
+        message += " " + " ".join(
+            f"Canary {o.question_id} ({o.graph_arm}) met its {o.check} floor: "
+            f"observed {o.observed_graph_node_count} graph nodes; "
+            f"{o.decision_id} exception not used."
+            for o in known_miss_outcomes
+        )
+        detail["accepted_known_misses"] = outcome_detail
     return PreflightCheckResult(
         name="canary_floors",
         passed=True,
-        message=f"All {len(rows)} canaries passed floors against live engine budgets.",
-        detail={"canary_count": len(rows)},
+        message=message,
+        detail=detail,
     )
 
 
@@ -743,9 +936,14 @@ def run_preflight_checks(
     generation_model: str = "deepseek/deepseek-v4-flash-0731",
     accepted_known_misses: Sequence[AcceptedKnownMiss] = (),
 ) -> list[PreflightCheckResult]:
-    """Execute the full preflight checklist and return all results."""
+    """Execute the full preflight checklist and return all results.
+
+    Raises ``PreflightError`` before any check or request when an accepted known miss
+    (D-94) is not the registered one.
+    """
     import httpx
 
+    validate_accepted_known_misses(accepted_known_misses)
     settings = settings or load_settings()
     results: list[PreflightCheckResult] = []
 
@@ -775,7 +973,9 @@ def run_preflight_checks(
         # 5. Gated live checks: corpus generation and canary floors
         if gw_check.passed and eng_check.passed:
             results.append(check_corpus_generation(client, corpus_name))
-            results.append(check_canary_floors(client))
+            results.append(
+                check_canary_floors(client, accepted_known_misses=accepted_known_misses)
+            )
     finally:
         if should_close_client:
             client.close()

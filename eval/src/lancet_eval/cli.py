@@ -5,7 +5,7 @@ from __future__ import annotations
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx
 import typer
@@ -141,25 +141,48 @@ def preflight_command(
     ] = None,
 ) -> None:
     """Run preflight health, isolation, and model checks."""
+    from rich.markup import escape
     from rich.table import Table
 
-    from lancet_eval.preflight import run_preflight_checks
+    from lancet_eval import preflight as preflight_module
 
-    results = run_preflight_checks(corpus_name=corpus, judged=judged)
+    accepted = _parse_accepted_known_misses(accept_known_miss or [], preflight_module)
+    if accepted:
+        results = preflight_module.run_preflight_checks(
+            corpus_name=corpus, judged=judged, accepted_known_misses=accepted
+        )
+    else:
+        results = preflight_module.run_preflight_checks(
+            corpus_name=corpus, judged=judged
+        )
 
     table = Table(title=f"Preflight Health Checks — {corpus}")
     table.add_column("Check", style="bold")
     table.add_column("Status", justify="center")
     table.add_column("Details")
 
+    status_labels = {
+        "pass": "[green]PASS[/green]",
+        "fail": "[bold red]FAIL[/bold red]",
+        "accepted_known_miss": "[bold yellow]ACCEPTED KNOWN MISS[/bold yellow]",
+    }
     all_passed = True
+    accepted_count = 0
     for r in results:
-        status_str = "[green]PASS[/green]" if r.passed else "[bold red]FAIL[/bold red]"
+        status_str = status_labels[r.status or ("pass" if r.passed else "fail")]
         if not r.passed:
             all_passed = False
-        table.add_row(r.name, status_str, r.message)
+        # The accepted-miss message holds a literal "[D-94]" that Rich would drop.
+        message = escape(r.message) if r.status == "accepted_known_miss" else r.message
+        if r.status == "accepted_known_miss":
+            accepted_count += 1
+        table.add_row(r.name, status_str, message)
 
     console.print(table)
+
+    for r in results:
+        for entry in r.detail.get("accepted_known_misses", []):
+            console.print(_known_miss_line(entry), soft_wrap=True)
 
     if not all_passed:
         console.print(
@@ -168,7 +191,50 @@ def preflight_command(
         )
         raise typer.Exit(code=1)
 
+    if accepted_count:
+        console.print(
+            "[bold yellow]Preflight cleared with accepted known misses "
+            f"(not passes): {accepted_count}. Every other check passed.[/bold yellow]"
+        )
+        return
+
     console.print("[green]All preflight checks passed successfully.[/green]")
+
+
+def _parse_accepted_known_misses(values: list[str], preflight_module: Any) -> list[Any]:
+    """Parse and validate every --accept-known-miss value; exit 2 on any rejection."""
+    from rich.markup import escape
+
+    if not values:
+        return []
+    try:
+        parsed = [preflight_module.parse_accepted_known_miss(v) for v in values]
+        return list(preflight_module.validate_accepted_known_misses(parsed))
+    except (ValueError, preflight_module.PreflightError) as exc:
+        registered = ", ".join(preflight_module.registered_accepted_known_miss_values())
+        console.print(
+            "[bold red]Rejected --accept-known-miss:[/bold red] "
+            f"{escape(str(exc))}. The only accepted value is {escape(registered)}."
+        )
+        raise typer.Exit(code=2) from exc
+
+
+def _known_miss_line(entry: dict[str, Any]) -> str:
+    """One console line for a D-94 accepted-known-miss outcome."""
+    from rich.markup import escape
+
+    who = f"canary {entry['question_id']} ({entry['graph_arm']})"
+    count = entry["observed_graph_node_count"]
+    if entry["outcome"] == "accepted_known_miss":
+        return escape(
+            f"Accepted known miss ({entry['decision_id']}): {who} {entry['check']} "
+            f"observed {count} graph nodes. Reported, not passed."
+        )
+    return escape(
+        f"Canary {entry['question_id']} ({entry['graph_arm']}) met its "
+        f"{entry['check']} floor: observed {count} graph nodes; "
+        f"{entry['decision_id']} exception not used."
+    )
 
 
 @app.command("seed")
