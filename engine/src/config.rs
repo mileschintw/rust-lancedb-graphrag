@@ -163,11 +163,13 @@ pub fn default_graph_node_timeout_ms() -> u64 {
 }
 /// Budget for the `AssemblePrompt` node, in milliseconds.
 ///
-/// A user-decided floor (06.3.4.1-24): 1.5 x pass A's 43 ms maximum, where the committed rule
-/// alone writes 11 ms, close to the Windows timer granularity of about 15.6 ms. See
-/// `06.3.4.1-BUDGETS.md`.
+/// A user-decided floor (06.3.4.1-24: 1.5 x pass A's 43 ms maximum, where the committed rule
+/// alone writes 11 ms, close to the Windows timer granularity of about 15.6 ms), amended to
+/// 120 by D-93 (2026-09-29). A fresh engine's first `AssemblePrompt` took 78.6 ms against
+/// 65 ms, and 120 keeps headroom over that even if the startup tokenizer warm-up does not
+/// remove all of it. See `06.3.4.1-BUDGETS.md`.
 pub fn default_prompt_timeout_ms() -> u64 {
-    65
+    120
 }
 /// Budget for the `GenerateAnswer` node, in milliseconds.
 ///

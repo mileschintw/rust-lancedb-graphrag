@@ -61,7 +61,7 @@ deployment_environment = "dev"
 # - query_embedding 2000 and graph_operation 10000 are user-stated ("tight embedding, loose graph"),
 #   not derived from a non-decaying engine.
 # - retrieve 2500 (rule 294) and graph_node 12500 (rule 1062) are the rule values raised by nesting.
-# - prompt 65 is the user's floor (1.5 x pass A's 43ms maximum); the rule alone writes 11ms.
+# - prompt 120 is the user's floor as amended by D-93 (was 65, 1.5 x pass A's 43ms maximum): a fresh engine's first query took 78.6ms; the rule alone writes 11ms.
 # - generation_node 65000 is the provider contract: 2 x 30s attempts + 5s slack.
 # Pass A ran with unfiltered logging, so the measured maxima are slightly generous, which is
 # acceptable for timeout ceilings. The defaults in engine/src/config.rs must equal these values
@@ -77,7 +77,7 @@ graph_operation_timeout_ms = 10000
 # unit=milliseconds; range=>0
 graph_node_timeout_ms = 12500
 # unit=milliseconds; range=>0
-prompt_timeout_ms = 65
+prompt_timeout_ms = 120
 # unit=milliseconds; range=>0
 generation_node_timeout_ms = 65000
 
