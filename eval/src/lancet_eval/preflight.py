@@ -17,6 +17,8 @@ from lancet_eval.seed import load_document_map
 if TYPE_CHECKING:
     import httpx
 
+    from lancet_eval.client import RetrievalSnapshot
+
 
 class PreflightError(Exception):
     """Raised when one or more preflight checks fail."""
@@ -369,6 +371,7 @@ def check_corpus_generation(
             name="corpus_generation",
             passed=False,
             message="No index_generation observed in preflight query snapshot.",
+            detail={"probe_snapshot_missing": True},
         )
 
     if doc_map.index_generation and doc_map.index_generation != live_gen:
@@ -389,6 +392,89 @@ def check_corpus_generation(
             f"Index generation matched ('{live_gen}') and excerpt budget verified."
         ),
         detail={"index_generation": live_gen},
+    )
+
+
+def corpus_generation_from_canaries(
+    corpus_name: str,
+    snapshots: Sequence[tuple[str, RetrievalSnapshot]],
+) -> PreflightCheckResult:
+    """Read the index generation from successful canary answers.
+
+    Used only when the corpus probe's answer carried no snapshot: a single
+    generation is rejected about 31% of the time after F-1 (06.3.4.1-26), so the
+    probe alone cannot gate a healthy stack. Every generation observed must agree
+    and match the document map, and the excerpt budget is checked on each snapshot.
+    """
+    try:
+        doc_map = load_document_map(corpus_name)
+    except Exception as exc:
+        return PreflightCheckResult(
+            name="corpus_generation",
+            passed=False,
+            message=(
+                f"Missing document map for corpus '{corpus_name}': {exc}. "
+                "Run 'seed' first."
+            ),
+        )
+
+    observed = [(label, snap) for label, snap in snapshots if snap.index_generation]
+    if not observed:
+        return PreflightCheckResult(
+            name="corpus_generation",
+            passed=False,
+            message=(
+                "No index_generation observed in preflight query snapshot or in "
+                "any successful canary answer."
+            ),
+        )
+
+    for label, snap in observed:
+        if any(chunk.is_truncated for chunk in snap.retrieved_chunks):
+            return PreflightCheckResult(
+                name="corpus_generation",
+                passed=False,
+                message=(
+                    f"Retrieved chunk excerpt arrived truncated (is_truncated=true) "
+                    f"in {label}"
+                ),
+            )
+
+    generations = sorted({snap.index_generation for _, snap in observed})
+    if len(generations) > 1:
+        return PreflightCheckResult(
+            name="corpus_generation",
+            passed=False,
+            message=(f"Canary answers disagree on index_generation: {generations}"),
+            detail={"index_generations": generations},
+        )
+
+    live_gen = generations[0]
+    source = observed[0][0]
+    if doc_map.index_generation and doc_map.index_generation != live_gen:
+        return PreflightCheckResult(
+            name="corpus_generation",
+            passed=False,
+            message=(
+                f"Index generation mismatch: store has '{live_gen}' but "
+                f"document map was seeded at '{doc_map.index_generation}'. "
+                "Reseed required."
+            ),
+        )
+
+    return PreflightCheckResult(
+        name="corpus_generation",
+        passed=True,
+        message=(
+            f"Index generation matched ('{live_gen}') and excerpt budget verified; "
+            f"the probe answer carried no snapshot, so it was read from "
+            f"{len(observed)} successful canary answer(s), first {source}."
+        ),
+        detail={
+            "index_generation": live_gen,
+            "source": source,
+            "canary_answers_read": len(observed),
+        },
     )
 
 
@@ -653,12 +739,14 @@ def check_canary_floors(
     canary_path: Path | str | None = None,
     config_path: Path | str | None = None,
     accepted_known_misses: Sequence[AcceptedKnownMiss] = (),
+    answered_snapshots: list[tuple[str, RetrievalSnapshot]] | None = None,
 ) -> PreflightCheckResult:
     """Probe query path against committed canaries and live configured timeouts.
 
     ``accepted_known_misses`` (D-94) names registry entries whose graph-floor miss
     is reported as ``accepted_known_miss`` instead of failing. Every other floor
-    still gates.
+    still gates. When ``answered_snapshots`` is given, the snapshot of each canary
+    whose answer succeeded is appended to it, labelled by question and arm.
     """
     from lancet_eval.client import run_query
     from lancet_eval.dimensions import NOTICE_CODE_GRAPH_ABLATION
@@ -741,6 +829,12 @@ def check_canary_floors(
         except Exception as exc:
             failures.append(f"Canary {qid} ({arm}) query failed with exception: {exc}")
             continue
+
+        if answered_snapshots is not None and outcome.answer is not None:
+            answered_snapshots.append((
+                f"canary {qid} ({arm})",
+                outcome.answer.snapshot,
+            ))
 
         # 1. Retrieval floor check
         snapshot = (
@@ -972,10 +1066,19 @@ def run_preflight_checks(
 
         # 5. Gated live checks: corpus generation and canary floors
         if gw_check.passed and eng_check.passed:
-            results.append(check_corpus_generation(client, corpus_name))
-            results.append(
-                check_canary_floors(client, accepted_known_misses=accepted_known_misses)
+            generation_check = check_corpus_generation(client, corpus_name)
+            answered: list[tuple[str, RetrievalSnapshot]] = []
+            canary_check = check_canary_floors(
+                client,
+                accepted_known_misses=accepted_known_misses,
+                answered_snapshots=answered,
             )
+            if generation_check.detail.get("probe_snapshot_missing"):
+                generation_check = corpus_generation_from_canaries(
+                    corpus_name, answered
+                )
+            results.append(generation_check)
+            results.append(canary_check)
     finally:
         if should_close_client:
             client.close()

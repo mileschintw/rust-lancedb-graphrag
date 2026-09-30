@@ -64,6 +64,7 @@ class Behaviour:
     ablation_notice: bool = True
     success: bool = True
     durations: dict[str, float] | None = None
+    index_generation: str | None = None
 
 
 DEFAULT_DURATIONS = {
@@ -93,6 +94,9 @@ def _canary_events(arm: str, behaviour: Behaviour) -> list[tuple[str, dict[str, 
         {"chunk_id": f"c{i}", "document_id": "doc1", "is_truncated": False}
         for i in range(behaviour.chunk_count)
     ]
+    snapshot: dict[str, Any] = {"retrieved_chunks": chunks}
+    if behaviour.index_generation is not None:
+        snapshot["index_generation"] = behaviour.index_generation
     events: list[tuple[str, dict[str, Any]]] = []
     if behaviour.success:
         events.append((
@@ -100,7 +104,7 @@ def _canary_events(arm: str, behaviour: Behaviour) -> list[tuple[str, dict[str, 
             {
                 "answer": "Test answer",
                 "notices": notices,
-                "snapshot": {"retrieved_chunks": chunks},
+                "snapshot": snapshot,
             },
         ))
     for node, duration in (behaviour.durations or DEFAULT_DURATIONS).items():
@@ -118,7 +122,7 @@ def _canary_events(arm: str, behaviour: Behaviour) -> list[tuple[str, dict[str, 
     if not behaviour.success:
         completed["error_kind"] = 1
         completed["error_message"] = "stubbed workflow failure"
-        completed["partial_snapshot"] = {"retrieved_chunks": chunks}
+        completed["partial_snapshot"] = snapshot
     events.append(("workflow_completed", completed))
     return events
 
@@ -659,3 +663,145 @@ def test_cli_reports_a_met_floor_without_using_the_exception(
     assert "observed 3 graph nodes" in output
     assert "D-94 exception not used" in output
     assert "All preflight checks passed successfully." in output
+
+
+# --- corpus_generation fallback to canary answers ---------------------------------
+#
+# The corpus probe is one generation; a rejected answer (about 31% after F-1) carries
+# no snapshot. The check then reads the index generation from the canary answers that
+# did succeed. The probe stays authoritative when it answers.
+
+
+def _patch_document_map_generation(
+    monkeypatch: pytest.MonkeyPatch, index_generation: str
+) -> None:
+    from lancet_eval.seed import DocumentMap
+
+    monkeypatch.setattr(
+        "lancet_eval.preflight.load_document_map",
+        lambda corpus_name: DocumentMap(
+            corpus=corpus_name, entries={}, index_generation=index_generation
+        ),
+    )
+
+
+def _all_canaries(behaviour: Behaviour) -> dict[tuple[str, str], Behaviour]:
+    rows = [
+        json.loads(line)
+        for line in CANARY_PATH.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    return {(row["question_id"], row["graph_arm"]): behaviour for row in rows}
+
+
+def _run_with(
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
+    overrides: dict[tuple[str, str], Behaviour],
+    *,
+    probe_index_generation: str | None,
+    map_generation: str = "gen1",
+) -> dict[str, PreflightCheckResult]:
+    _patch_run_preflight(monkeypatch, identity_passes=True)
+    _patch_document_map_generation(monkeypatch, map_generation)
+    _mock_health(httpx_mock)
+    _mock_queries(httpx_mock, overrides, probe_index_generation=probe_index_generation)
+    results = run_preflight_checks(
+        "multihop_rag_diag",
+        settings=_settings(tmp_path),
+        client=_client(),
+        accepted_known_misses=[_accepted()],
+    )
+    return {r.name: r for r in results}
+
+
+def test_corpus_generation_falls_back_to_a_successful_canary_answer(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    overrides = _all_canaries(Behaviour(index_generation="gen1"))
+    overrides[TARGET] = Behaviour(graph_nodes=0, index_generation="gen1")
+    by_name = _run_with(
+        tmp_path, httpx_mock, monkeypatch, overrides, probe_index_generation=None
+    )
+    check = by_name["corpus_generation"]
+    assert check.passed is True
+    assert check.detail["index_generation"] == "gen1"
+    assert check.detail["source"].startswith("canary ")
+    assert "probe answer carried no snapshot" in check.message
+    assert by_name["canary_floors"].status == "accepted_known_miss"
+
+
+def test_corpus_generation_fallback_still_fails_a_generation_mismatch(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    overrides = _all_canaries(Behaviour(index_generation="gen2"))
+    overrides[TARGET] = Behaviour(graph_nodes=0, index_generation="gen2")
+    by_name = _run_with(
+        tmp_path, httpx_mock, monkeypatch, overrides, probe_index_generation=None
+    )
+    check = by_name["corpus_generation"]
+    assert check.passed is False
+    assert "Index generation mismatch" in check.message
+
+
+def test_corpus_generation_fallback_fails_when_canary_generations_disagree(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    overrides = _all_canaries(Behaviour(index_generation="gen1"))
+    overrides[TARGET] = Behaviour(graph_nodes=0, index_generation="gen1")
+    overrides[TWIN] = Behaviour(index_generation="gen2")
+    by_name = _run_with(
+        tmp_path, httpx_mock, monkeypatch, overrides, probe_index_generation=None
+    )
+    check = by_name["corpus_generation"]
+    assert check.passed is False
+    assert "disagree" in check.message
+
+
+def test_corpus_generation_fallback_ignores_failed_canary_answers(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A failed workflow's partial snapshot carries the generation, but only an
+    # answer that succeeded may stand in for the probe.
+    overrides = _all_canaries(Behaviour(success=False, index_generation="gen1"))
+    by_name = _run_with(
+        tmp_path, httpx_mock, monkeypatch, overrides, probe_index_generation=None
+    )
+    check = by_name["corpus_generation"]
+    assert check.passed is False
+    assert "No index_generation observed" in check.message
+
+
+def test_corpus_generation_fallback_fails_a_truncated_canary_excerpt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval.client import RetrievalSnapshot
+    from lancet_eval.preflight import corpus_generation_from_canaries
+
+    snapshot = RetrievalSnapshot.model_validate({
+        "index_generation": "gen1",
+        "retrieved_chunks": [
+            {"chunk_id": "c0", "document_id": "doc1", "is_truncated": True}
+        ],
+    })
+    _patch_document_map_generation(monkeypatch, "gen1")
+    check = corpus_generation_from_canaries(
+        "multihop_rag_diag", [("canary q (graph-off)", snapshot)]
+    )
+    assert check.passed is False
+    assert "truncated" in check.message
+
+
+def test_corpus_generation_probe_stays_authoritative_when_it_answers(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    overrides = _all_canaries(Behaviour(index_generation="gen2"))
+    overrides[TARGET] = Behaviour(graph_nodes=0, index_generation="gen2")
+    by_name = _run_with(
+        tmp_path, httpx_mock, monkeypatch, overrides, probe_index_generation="gen1"
+    )
+    check = by_name["corpus_generation"]
+    assert check.passed is True
+    assert check.detail["index_generation"] == "gen1"
+    assert check.detail.get("source", "probe") == "probe"
