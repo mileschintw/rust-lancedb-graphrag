@@ -129,6 +129,16 @@ def preflight_command(
             help="Include judge checks and OpenRouter API key validation",
         ),
     ] = False,
+    accept_known_miss: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--accept-known-miss",
+            help=(
+                "D-94: report one named floor miss instead of failing. Format "
+                "<question_id>:<graph_arm>:<check>:<decision_id>."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Run preflight health, isolation, and model checks."""
     from rich.table import Table

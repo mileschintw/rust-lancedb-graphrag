@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,8 +29,49 @@ class PreflightCheckResult(BaseModel):
 
     name: str
     passed: bool
+    status: Literal["pass", "fail", "accepted_known_miss"] | None = None
     message: str = ""
     detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class AcceptedKnownMiss(BaseModel):
+    """One operator-named floor miss to report instead of failing (D-94)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    question_id: str
+    graph_arm: Literal["graph-on", "graph-off"]
+    check: str
+    decision_id: str
+
+
+class CanaryKnownMissOutcome(BaseModel):
+    """What a canary run observed for a named accepted known miss (D-94)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str
+    graph_arm: Literal["graph-on", "graph-off"]
+    check: str
+    decision_id: str
+    observed_graph_node_count: int
+    outcome: Literal["accepted_known_miss", "floor_met"]
+
+
+ACCEPTED_KNOWN_MISS_REGISTRY: MappingProxyType[tuple[str, str, str], str] = (
+    MappingProxyType({})
+)
+
+
+def parse_accepted_known_miss(raw: str) -> AcceptedKnownMiss:
+    raise NotImplementedError
+
+
+def validate_accepted_known_misses(
+    misses: Sequence[AcceptedKnownMiss],
+    canary_path: Path | str | None = None,
+) -> tuple[AcceptedKnownMiss, ...]:
+    return tuple(misses)
 
 
 def check_store_isolation(settings: EvalSettings) -> PreflightCheckResult:
@@ -498,6 +541,7 @@ def check_canary_floors(
     client: httpx.Client,
     canary_path: Path | str | None = None,
     config_path: Path | str | None = None,
+    accepted_known_misses: Sequence[AcceptedKnownMiss] = (),
 ) -> PreflightCheckResult:
     """Probe query path against committed canaries and live configured timeouts."""
     from lancet_eval.client import run_query
@@ -697,6 +741,7 @@ def run_preflight_checks(
     settings: EvalSettings | None = None,
     client: httpx.Client | None = None,
     generation_model: str = "deepseek/deepseek-v4-flash-0731",
+    accepted_known_misses: Sequence[AcceptedKnownMiss] = (),
 ) -> list[PreflightCheckResult]:
     """Execute the full preflight checklist and return all results."""
     import httpx
