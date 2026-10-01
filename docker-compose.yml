@@ -72,7 +72,7 @@ services:
       - "127.0.0.1:4318:4318"     # OTLP HTTP receiver
       - "127.0.0.1:8889:8889"     # Prometheus metrics exporter
       - "127.0.0.1:13133:13133"   # Health check
-      - "127.0.0.1:55679:55679"   # zPages
+      - "127.0.0.1:15679:55679"   # zPages; host port kept below 49152 because Windows reserves random TCP ranges >= 49152 at boot
     depends_on:
       - jaeger
       - loki
