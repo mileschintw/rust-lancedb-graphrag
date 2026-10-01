@@ -130,6 +130,7 @@ async fn generation_bounded_evidence_valid_marker() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: Some(ModelUsage {
             prompt_tokens: 120,
             completion_tokens: 45,
@@ -287,6 +288,7 @@ fn model_output_marker_identity_validation() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     assert!(empty_answer.validate_grounding(&evidence).is_err());
@@ -297,6 +299,7 @@ fn model_output_marker_identity_validation() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     assert!(unknown_id.validate_grounding(&evidence).is_err());
@@ -307,6 +310,7 @@ fn model_output_marker_identity_validation() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     assert!(dup_id.validate_grounding(&evidence).is_err());
@@ -317,6 +321,7 @@ fn model_output_marker_identity_validation() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     assert!(mismatch_marker.validate_grounding(&evidence).is_err());
@@ -431,6 +436,7 @@ async fn corpus_conflict_returns_mixed_basis_with_disclosure() {
         answer_basis: AnswerBasis::Mixed,
         notices: vec!["DISCLOSURE: Corpus evidence conflicts with external knowledge; response provides a mixed answer basis.".into()],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
 
@@ -740,6 +746,7 @@ fn model_output_requires_retrieval_citation() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let err = output.validate_grounding(&evidence).unwrap_err();
@@ -759,6 +766,7 @@ fn model_output_requires_mixed_citation() {
         answer_basis: AnswerBasis::Mixed,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let err = output.validate_grounding(&evidence).unwrap_err();
@@ -778,6 +786,7 @@ fn model_output_rejects_model_only() {
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let err = output.validate_grounding(&evidence).unwrap_err();
@@ -797,6 +806,7 @@ fn model_output_accepts_cited_mixed_basis() {
         answer_basis: AnswerBasis::Mixed,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     assert!(output.validate_grounding(&evidence).is_ok());

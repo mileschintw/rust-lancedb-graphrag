@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use crate::prompt::EvidenceBlock;
 
 pub mod citations;
+pub mod final_answer;
 pub mod openrouter;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -70,6 +71,12 @@ pub struct ModelUsage {
 #[serde(deny_unknown_fields)]
 pub struct ModelOutput {
     pub answer: String,
+    /// The model's shortest answer, which the engine renders as the last `Answer:` line (D-95).
+    ///
+    /// `None` when the provider sent no value, and then skipped on serialization so an
+    /// output without it serializes exactly as before D-95.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_answer: Option<String>,
     #[serde(default)]
     pub cited_evidence_ids: Vec<String>,
     pub answer_basis: AnswerBasis,
@@ -185,6 +192,15 @@ impl GroundingLimits {
 }
 
 impl ModelOutput {
+    /// The answer text the engine publishes: the answer plus the rendered final `Answer:` line.
+    ///
+    /// Call this only after validation (D-95): validation reads the model's own `answer`, and
+    /// the rendered line is added afterwards at the single publication seam. Without a usable
+    /// `final_answer` the result is `answer` byte-identical.
+    pub fn rendered_answer(&self) -> String {
+        final_answer::render_final_answer_line(&self.answer, self.final_answer.as_deref())
+    }
+
     pub fn validate_grounding(
         &self,
         packed_evidence: &[EvidenceBlock],
@@ -716,6 +732,7 @@ impl FakeGenerator {
             answer_basis: AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))
     }
@@ -727,6 +744,7 @@ impl FakeGenerator {
             answer_basis: AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))
     }

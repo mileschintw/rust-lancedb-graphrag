@@ -179,8 +179,15 @@ impl WorkflowContext {
         }
     }
 
+    /// Publishes a validated model output into the context.
+    ///
+    /// This is the single D-95 render seam: `ctx.answer` becomes the answer plus the engine's
+    /// own final `Answer:` line. Every caller validates first: the model-only, repair and
+    /// repair-disabled branches of `GenerateAnswerNode`, and the inline generation remainder.
+    /// So the rendered line never reaches validation, and both the streamed `answer_chunk` and
+    /// the `final_answer` event read the same rendered `ctx.answer`.
     pub fn update_from_model_output(&mut self, output: &ModelOutput) {
-        self.answer = output.answer.clone();
+        self.answer = output.rendered_answer();
         self.citations = output.cited_evidence_ids.clone();
 
         if let Some(usage) = &output.usage {

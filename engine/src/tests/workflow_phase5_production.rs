@@ -26,6 +26,7 @@ async fn workflow_phase5_production_five_node() {
             answer_basis: AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -108,6 +109,7 @@ async fn workflow_phase5_production_dependencies_are_real() {
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker: Arc<dyn rerank::Reranker> = Arc::new(rerank::NoOpReranker::new());
@@ -177,6 +179,7 @@ async fn workflow_phase5_production_context_population() {
                     answer_basis: AnswerBasis::Retrieval,
                     notices: vec![],
                     warnings: vec![],
+                    final_answer: None,
                     usage: None,
                 })
             })
@@ -315,6 +318,7 @@ async fn workflow_phase5_production_reachability() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -602,6 +606,7 @@ async fn workflow_phase5_settings_applied_to_production() {
             answer_basis: AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -1614,6 +1619,7 @@ async fn workflow_phase5_retrieval_snapshot_variants() {
             answer_basis: AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -1669,6 +1675,7 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
             answer_basis: AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),

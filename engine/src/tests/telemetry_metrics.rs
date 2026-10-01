@@ -493,6 +493,7 @@ async fn metrics_citation_repair_and_drop_counted_separately() {
         answer_basis: crate::generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let gen = Arc::new(crate::generation::FakeGenerator::new(Ok(output)));
@@ -529,6 +530,7 @@ async fn metrics_generation_retry_recorded_with_outcome() {
         answer_basis: crate::generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let gen1 = Arc::new(crate::generation::FakeGenerator::with_responses(vec![

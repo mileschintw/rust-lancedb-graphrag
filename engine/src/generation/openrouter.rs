@@ -584,9 +584,20 @@ impl OpenRouterGenerator {
                         "maxLength": crate::generation::MAX_NOTICE_WARNING_CHARS
                     },
                     "maxItems": crate::generation::MAX_NOTICES_WARNINGS_ITEMS
+                },
+                "final_answer": {
+                    "type": "string",
+                    "maxLength": crate::generation::final_answer::MAX_FINAL_ANSWER_CHARS
                 }
             },
-            "required": ["answer", "cited_evidence_ids", "answer_basis", "notices", "warnings"],
+            "required": [
+                "answer",
+                "cited_evidence_ids",
+                "answer_basis",
+                "notices",
+                "warnings",
+                "final_answer"
+            ],
             "additionalProperties": false
         });
 

@@ -475,6 +475,7 @@ impl Generator for FixedGenerator {
                 answer_basis: AnswerBasis::Retrieval,
                 notices: vec![],
                 warnings: vec![],
+                final_answer: None,
                 usage: Some(ModelUsage::default()),
             })
         })

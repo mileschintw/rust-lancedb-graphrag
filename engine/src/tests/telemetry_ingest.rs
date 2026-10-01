@@ -78,6 +78,7 @@ fn test_fake_generator() -> Arc<dyn crate::generation::Generator> {
         answer_basis: crate::generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })))
 }

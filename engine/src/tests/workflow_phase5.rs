@@ -152,6 +152,7 @@ impl Generator for WorstCaseGeneration {
                     answer_basis: AnswerBasis::Retrieval,
                     notices: vec![],
                     warnings: vec![],
+                    final_answer: None,
                     usage: None,
                 })
             }
@@ -223,6 +224,7 @@ impl Generator for PreparationOrderGenerator {
                 answer_basis: AnswerBasis::Retrieval,
                 notices: vec![],
                 warnings: vec![],
+                final_answer: None,
                 usage: None,
             })
         })
@@ -342,6 +344,7 @@ async fn run_happy_path_test() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -1163,6 +1166,7 @@ async fn workflow_phase5_full_snapshot() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -1337,6 +1341,7 @@ async fn workflow_phase5_concurrency_isolation() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let fake_gen2: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
@@ -1345,6 +1350,7 @@ async fn workflow_phase5_concurrency_isolation() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -1978,6 +1984,7 @@ async fn workflow_generation_tracer() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let fake_generator: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(model_out)));
@@ -2080,6 +2087,7 @@ async fn generation_retry_request_is_byte_identical() {
                         answer_basis: AnswerBasis::Retrieval,
                         notices: vec![],
                         warnings: vec![],
+                        final_answer: None,
                         usage: None,
                     })
                 }
@@ -2180,6 +2188,7 @@ async fn generation_outer_timeout_allows_retry() {
                         answer_basis: AnswerBasis::Retrieval,
                         notices: vec![],
                         warnings: vec![],
+                        final_answer: None,
                         usage: None,
                     })
                 }
@@ -2256,6 +2265,7 @@ async fn generation_cancellation_between_attempts() {
                         answer_basis: AnswerBasis::Retrieval,
                         notices: vec![],
                         warnings: vec![],
+                        final_answer: None,
                         usage: None,
                     })
                 }
@@ -2348,6 +2358,7 @@ async fn answer_events_have_exact_cardinality() {
             answer_basis: AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         })));
 
@@ -2543,6 +2554,7 @@ async fn workflow_answer_contract_preserves_all_fields() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec!["Notice 1".into()],
         warnings: vec!["Warning 1".into()],
+        final_answer: None,
         usage: None,
     };
     let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(model_out)));
@@ -2874,6 +2886,7 @@ fn workflow_phase5_fake_ports_test_only() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     }));
 }
@@ -3598,6 +3611,7 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
             answer_basis: AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         })));
 
@@ -3858,6 +3872,7 @@ async fn graph_ablation_flag_true_e2e_service() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -4210,6 +4225,7 @@ async fn run_source_chunk_proof_pipeline(
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -4392,6 +4408,7 @@ async fn run_retrieval_degraded_proof_pipeline(
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -4686,6 +4703,7 @@ async fn run_retrieval_degraded_multivariant_pipeline(
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -5013,6 +5031,7 @@ fn grounding_validation_rejects_model_only_when_opt_in_false() {
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(false);
@@ -5037,6 +5056,7 @@ fn grounding_validation_accepts_model_only_when_opt_in_true() {
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(true);
@@ -5052,6 +5072,7 @@ fn grounding_validation_rejects_empty_citations_when_opt_in_false() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(false);
@@ -5076,6 +5097,7 @@ fn grounding_validation_accepts_empty_citations_when_opt_in_true_and_model_only(
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let limits = engine::generation::GroundingLimits::default_limits().with_allow_model_only(true);
@@ -5096,6 +5118,7 @@ fn grounding_validation_rejects_empty_citations_when_opt_in_true_and_retrieval_o
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let err_retrieval = output_retrieval
@@ -5116,6 +5139,7 @@ fn grounding_validation_rejects_empty_citations_when_opt_in_true_and_retrieval_o
         answer_basis: AnswerBasis::Mixed,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let err_mixed = output_mixed
@@ -5139,6 +5163,7 @@ fn grounding_validation_convenience_wrapper_preserves_default_limits_policy() {
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let err_mo = output_mo
@@ -5159,6 +5184,7 @@ fn grounding_validation_convenience_wrapper_preserves_default_limits_policy() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let err_cite = output_no_cite
@@ -5202,6 +5228,7 @@ async fn model_only_opt_in_true_zero_evidence_runs_generation_and_emits_notice()
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -5300,6 +5327,7 @@ async fn model_only_opt_in_true_zero_evidence_tracer_path() {
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -5390,6 +5418,7 @@ async fn model_only_opt_in_true_zero_candidates_no_notice_proceeds() {
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -5454,6 +5483,7 @@ async fn model_only_opt_in_false_zero_evidence_short_circuits_unchanged() {
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -5544,6 +5574,7 @@ async fn model_only_opt_in_true_with_evidence_produces_grounded_answer() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -5680,6 +5711,7 @@ impl engine::generation::Generator for PackingTestGenerator {
                 answer_basis: engine::generation::AnswerBasis::ModelOnly,
                 notices: vec![],
                 warnings: vec![],
+                final_answer: None,
                 usage: None,
             })
         })
@@ -5854,6 +5886,7 @@ fn basis_reconciliation_retrieval_self_report_with_resolving_citations_stays_ret
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     });
     assert_eq!(
@@ -5874,6 +5907,7 @@ fn basis_reconciliation_retrieval_self_report_with_no_citations_weakens_and_note
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     });
     assert_eq!(
@@ -5900,6 +5934,7 @@ fn basis_reconciliation_mixed_self_report_with_no_citations_weakens_and_notes() 
         answer_basis: AnswerBasis::Mixed,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     });
     assert_eq!(
@@ -5921,6 +5956,7 @@ fn basis_reconciliation_model_only_self_report_with_resolving_citations_stays_mo
         answer_basis: AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     });
     assert_eq!(
@@ -5941,6 +5977,7 @@ fn basis_reconciliation_agreement_stays_silent() {
         answer_basis: AnswerBasis::Mixed,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     });
     assert_eq!(ctx.answer_basis, engine::pb::lancet::v1::AnswerBasis::Mixed);
@@ -6009,6 +6046,7 @@ async fn citation_repair_enabled_repairs_near_miss_marker_and_emits_notice() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6044,6 +6082,7 @@ async fn citation_repair_enabled_drops_unresolvable_marker_and_emits_notice() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6084,6 +6123,7 @@ async fn citation_repair_enabled_drops_internal_whitespace_marker_when_unresolva
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6126,6 +6166,7 @@ async fn citation_repair_enabled_two_dropped_markers_produce_two_distinct_notice
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6167,6 +6208,7 @@ async fn citation_repair_makes_no_additional_provider_call() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let limits_a = GroundingLimits::new(8192, 2048).unwrap();
@@ -6187,6 +6229,7 @@ async fn citation_repair_makes_no_additional_provider_call() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let limits_b = GroundingLimits::new(8192, 2048).unwrap();
@@ -6217,6 +6260,7 @@ async fn citation_repair_total_drop_downgrades_basis_and_succeeds() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6261,6 +6305,7 @@ async fn citation_repair_disabled_fails_exactly_as_before() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6299,6 +6344,7 @@ async fn citation_repair_healthy_path_emits_no_repair_or_drop_notices() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6330,6 +6376,7 @@ async fn citation_repair_enabled_repeated_marker_succeeds() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6362,6 +6409,7 @@ async fn citation_repair_enabled_mixed_spelling_same_id_succeeds() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6432,6 +6480,7 @@ async fn inline_remainder_rejects_ungrounded_model_output() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6481,6 +6530,7 @@ async fn citation_repair_total_drop_flag_off_fails_closed() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6510,6 +6560,7 @@ async fn citation_to_truncated_block_is_dropped_and_ships_no_excerpt_flag_off_fa
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6540,6 +6591,7 @@ async fn citation_to_truncated_block_is_dropped_and_ships_no_excerpt_flag_on_suc
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6585,6 +6637,7 @@ async fn citation_to_surviving_and_truncated_blocks_resolves_surviving_and_drops
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -6652,6 +6705,7 @@ async fn workflow_prompt_packing_truncation_drops_citation_to_truncated_block() 
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -7063,6 +7117,7 @@ async fn workflow_phase5_graph_facts_reaching_prompt_are_counted() {
             answer_basis: AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         })));
 
@@ -7146,6 +7201,7 @@ async fn workflow_phase5_graph_facts_reaching_prompt_are_counted() {
             answer_basis: AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         })));
 
@@ -7292,6 +7348,7 @@ async fn d71_answer_line_accepted_exactly_when_base_answer_accepted() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let limits_base = GroundingLimits::new(8192, 2048).unwrap();
@@ -7315,6 +7372,7 @@ async fn d71_answer_line_accepted_exactly_when_base_answer_accepted() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let limits_line = GroundingLimits::new(8192, 2048).unwrap();
@@ -7361,6 +7419,7 @@ async fn d71_answer_line_with_resolvable_marker_is_added_to_citation_set() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -7397,6 +7456,7 @@ async fn d71_unresolvable_marker_on_answer_line_is_dropped_and_documents_the_haz
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -7453,6 +7513,7 @@ async fn d71_citation_repair_enabled_never_yields_marker_mismatch() {
         answer_basis: AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -7558,6 +7619,7 @@ fn rejection_output(answer: &str, cited: &[&str], basis: AnswerBasis) -> ModelOu
         answer_basis: basis,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     }
 }

@@ -106,6 +106,7 @@ impl Generator for RetryableGenerator {
                     answer_basis: AnswerBasis::Retrieval,
                     notices: vec![],
                     warnings: vec![],
+                    final_answer: None,
                     usage: Some(ModelUsage {
                         prompt_tokens: 42,
                         completion_tokens: 18,
@@ -135,6 +136,7 @@ impl Generator for SingleSuccessGenerator {
                 answer_basis: AnswerBasis::Retrieval,
                 notices: vec![],
                 warnings: vec![],
+                final_answer: None,
                 usage: Some(ModelUsage {
                     prompt_tokens: 25,
                     completion_tokens: 10,
@@ -1073,6 +1075,7 @@ async fn engine_logs_carry_no_user_content() {
                     answer_basis: AnswerBasis::Retrieval,
                     notices: vec![],
                     warnings: vec![],
+                    final_answer: None,
                     usage: None,
                 })
             })

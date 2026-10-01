@@ -126,6 +126,7 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());

@@ -598,6 +598,7 @@ async fn query_rag_stream() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -884,6 +885,7 @@ impl RecordingGenerator {
                 answer_basis: generation::AnswerBasis::Retrieval,
                 notices: vec![],
                 warnings: vec![],
+                final_answer: None,
                 usage: None,
             },
         })
@@ -2259,6 +2261,7 @@ async fn staging_read_error_is_unavailable() {
             answer_basis: generation::AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         embedder: Arc::new(FakeEmbedder),
@@ -2349,6 +2352,7 @@ async fn staging_delete_failure_remains_replayable() {
             answer_basis: generation::AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         embedder: Arc::new(FakeEmbedder),
@@ -2602,6 +2606,7 @@ async fn d04_cross_runtime_grpc_fixture() {
             answer_basis: generation::AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         embedder: Arc::new(FakeEmbedder),
@@ -2665,6 +2670,7 @@ async fn status_falls_back_to_staged_document() {
             answer_basis: generation::AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         embedder: Arc::new(FakeEmbedder),
@@ -2833,6 +2839,7 @@ async fn query_rag_tracer() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -3048,6 +3055,7 @@ async fn query_rag_happy_path_service() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -3390,6 +3398,7 @@ async fn configured_rag_settings_drive_service() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -3466,6 +3475,7 @@ async fn configured_evidence_token_budget_is_exact() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -3524,6 +3534,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     };
     let fake_gen1 = Arc::new(FakeGenerator::with_responses(vec![
@@ -3603,6 +3614,7 @@ async fn service_index_generation_is_opaque_and_stable() {
             answer_basis: generation::AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         embedder: Arc::new(FakeEmbedder),
@@ -3685,6 +3697,7 @@ async fn query_rag_citation_identity_and_notices() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec!["Notice msg A".into()],
         warnings: vec!["Warning msg B".into()],
+        final_answer: None,
         usage: None,
     })));
 
@@ -3775,6 +3788,7 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -3846,6 +3860,7 @@ async fn query_rag_rejects_invalid_provider_grounding() {
         answer_basis: generation::AnswerBasis::ModelOnly,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
 
@@ -4117,6 +4132,7 @@ async fn query_rag_reranker_failure_skips_generation() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let (path, service) = reranker_query_fixture(
@@ -4176,6 +4192,7 @@ async fn query_rag_fail_closed_embedding_transport() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
@@ -4223,6 +4240,7 @@ async fn query_rag_fail_closed_embedding_empty_payload() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
@@ -4260,6 +4278,7 @@ async fn query_rag_fail_closed_embedding_multi_vector() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
@@ -4297,6 +4316,7 @@ async fn query_rag_fail_closed_embedding_wrong_dimension() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
@@ -4336,6 +4356,7 @@ async fn query_rag_fail_closed_embedding_non_finite() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
@@ -4373,6 +4394,7 @@ async fn query_rag_fail_closed_dense_snapshot() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
@@ -4431,6 +4453,7 @@ async fn query_rag_valid_zero_match() {
         answer_basis: generation::AnswerBasis::Retrieval,
         notices: vec![],
         warnings: vec![],
+        final_answer: None,
         usage: None,
     })));
     let reranker = Arc::new(rerank::NoOpReranker::new());
@@ -4988,6 +5011,7 @@ async fn query_rag_span_and_request_threading() {
             answer_basis: generation::AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -5886,6 +5910,7 @@ async fn query_graph_service_with_db(database: DatabaseManager) -> LancetService
             answer_basis: generation::AnswerBasis::Retrieval,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         embedder: Arc::new(FakeEmbedder),
@@ -8030,6 +8055,7 @@ async fn test_rebuild_swap_updates_generation_label() {
             answer_basis: generation::AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -8141,6 +8167,7 @@ async fn rebuild_failure_degrades_not_fails() {
             answer_basis: generation::AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -8224,6 +8251,7 @@ async fn rebuild_checkout_latest_failure_degrades_not_fails() {
             answer_basis: generation::AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -8324,6 +8352,7 @@ async fn debounce_coalesces_burst() {
             answer_basis: generation::AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -8379,6 +8408,7 @@ async fn debounce_task_terminates_on_shutdown_signal() {
             answer_basis: generation::AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -8425,6 +8455,7 @@ async fn rebuild_swap_generation_atomicity() {
                 answer_basis: generation::AnswerBasis::ModelOnly,
                 notices: vec![],
                 warnings: vec![],
+                final_answer: None,
                 usage: None,
             }))),
             Arc::new(rerank::NoOpReranker::new()),
@@ -8496,6 +8527,7 @@ async fn query_never_blocks_on_rebuild() {
             answer_basis: generation::AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -8534,6 +8566,7 @@ async fn generation_agreement_dense_bm25() {
             answer_basis: generation::AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
@@ -8571,6 +8604,7 @@ async fn startup_generation_derived_from_lancedb() {
             answer_basis: generation::AnswerBasis::ModelOnly,
             notices: vec![],
             warnings: vec![],
+            final_answer: None,
             usage: None,
         }))),
         Arc::new(rerank::NoOpReranker::new()),
