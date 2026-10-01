@@ -7742,3 +7742,122 @@ async fn generation_output_rejected_passes_the_default_log_filter() {
     assert!(result.is_err(), "the uncited mixed answer is rejected");
     assert_eq!(events.len(), 1, "the default filter keeps the event: {events:?}");
 }
+
+// ---------------------------------------------------------------------------
+// Plan 06.3.4.1-29, Task 1 (D-95): the engine renders the final `Answer:` line from the
+// strict-schema `final_answer` field, and both answer events carry the same rendered text.
+// ---------------------------------------------------------------------------
+
+/// Runner level: the single `AnswerChunk` and the single `FinalAnswer` carry identical text
+/// ending in the engine-written line-start `Answer:` line.
+#[tokio::test]
+async fn d95_answer_events_carry_the_rendered_text() {
+    const PROSE: &str = "The articles name ChatGPT as the chatbot they compare [1].";
+    const RENDERED: &str =
+        "The articles name ChatGPT as the chatbot they compare [1].\nAnswer: ChatGPT";
+
+    let (tx, mut rx) = mpsc::channel(100);
+    let cancel = CancellationToken::new();
+    let trace_id = "trace-d95-events".to_string();
+    let session_id = "sess-d95-events".to_string();
+
+    let sink = WorkflowEventSink::new(
+        tx,
+        Arc::new(EventSequence::new()),
+        trace_id.clone(),
+        session_id.clone(),
+    );
+    let req = test_query_request("Which chatbot do the articles name?", &session_id);
+    let ctx = WorkflowContext::new(session_id.clone(), trace_id.clone(), &req);
+
+    let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
+        answer: PROSE.to_string(),
+        final_answer: Some("ChatGPT".to_string()),
+        cited_evidence_ids: vec!["[1]".to_string()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    })));
+
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ReformulateQueryNode::with_reformulator(Some(Arc::new(
+        FakeQueryReformulator::new(vec!["Which chatbot do the articles name?".to_string()]),
+    ))));
+    runner.add_node(ExtractGraphContextNode::new(
+        Some(Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]))),
+        Some(Arc::new(FakeGraphQueryPort::success(
+            "Lancet -- uses -- LanceDB graph vector hybrid",
+        ))),
+    ));
+    runner.add_node(RetrieveHybridNode::new(
+        Some(Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+            "doc-d95-1",
+            "chk-d95-1",
+            0.95,
+        )]))),
+        Some(Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+            "doc-d95-1",
+            "chk-d95-2",
+            0.85,
+        )]))),
+        Some(Arc::new(FakeReranker::success())),
+        RetrievalSettings::default(),
+    ));
+    runner.add_node(AssemblePromptNode::new());
+    runner.add_node(
+        GenerateAnswerNode::new(Some(fake_gen)).with_settings(
+            GroundingLimits::new(8192, 2048).unwrap(),
+            200,
+            1.0,
+        ),
+    );
+
+    let handle = tokio::spawn(async move {
+        runner.run_workflow(ctx, cancel, sink).await;
+    });
+    let _guard = AbortOnDrop(Some(handle));
+
+    let events = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            if let Ok(wf_event) = event {
+                events.push(wf_event);
+            }
+        }
+        events
+    })
+    .await
+    .expect("event receiver must close within five seconds");
+
+    let chunks: Vec<_> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(Event::AnswerChunk(chunk)) => Some(chunk.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(chunks.len(), 1, "exactly one AnswerChunk");
+    assert!(chunks[0].is_final, "the single chunk is the final one");
+    assert_eq!(chunks[0].chunk, RENDERED);
+
+    let finals: Vec<_> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(Event::FinalAnswer(fa)) => fa.response.clone(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(finals.len(), 1, "exactly one FinalAnswer");
+    assert_eq!(finals[0].answer, RENDERED);
+
+    let completed: Vec<_> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            Some(Event::WorkflowCompleted(wc)) => Some(wc.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(completed.len(), 1, "exactly one WorkflowCompleted");
+    assert!(completed[0].success, "the workflow completes successfully");
+}

@@ -557,3 +557,16 @@ def test_em_f1_and_abstention_rate_unchanged_by_d70() -> None:
     q = _null_question()
     outcome = abstention_rate(q, "Insufficient information here.")
     assert outcome.score == 1.0
+
+
+# D-95 (06.3.4.1-29): the engine writes `Answer: <final_answer>` as the last line of the
+# answer text. The literal below is shared with the Rust test
+# `d95_rendered_answer_ends_with_a_line_start_answer_line`; `extract_final_answer` is
+# unchanged and reads it.
+_D95_PROSE = "The articles name ChatGPT as the chatbot they compare [1]."
+_D95_RENDERED = _D95_PROSE + "\nAnswer: ChatGPT"
+
+
+def test_extract_final_answer_reads_the_d95_rendered_line() -> None:
+    assert extract_final_answer(_D95_RENDERED) == "chatgpt"
+    assert extract_final_answer(_D95_PROSE) is None

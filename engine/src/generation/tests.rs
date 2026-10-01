@@ -2494,3 +2494,184 @@ fn generation_output_rejected_renders_as_one_fmt_line_with_escaped_free_text() {
     assert!(rendered.contains(r#"raw_head="line one\nline \"two\"\r\nlast line\n""#));
     assert!(rendered.contains(r#"reason="bad \"quote\"\nsecond line""#));
 }
+
+// ---------------------------------------------------------------------------
+// D-95: the engine writes the final Answer line from the strict-schema `final_answer`
+// field (06.3.4.1-29 Task 1).
+// ---------------------------------------------------------------------------
+
+/// The shared literal: the same prose, field and rendered text appear in
+/// `eval/tests/test_metrics.py`, so the engine's output and the committed extractor agree.
+const D95_PROSE: &str = "The articles name ChatGPT as the chatbot they compare [1].";
+const D95_RENDERED: &str =
+    "The articles name ChatGPT as the chatbot they compare [1].\nAnswer: ChatGPT";
+
+/// Provider message content in the strict `model_output` shape, with an optional field.
+fn d95_content(final_answer: Option<&str>) -> String {
+    let mut content = json!({
+        "answer": D95_PROSE,
+        "cited_evidence_ids": ["[1]"],
+        "answer_basis": "retrieval",
+        "notices": [],
+        "warnings": []
+    });
+    if let Some(field) = final_answer {
+        content["final_answer"] = json!(field);
+    }
+    content.to_string()
+}
+
+/// Serves exactly one chat completion on a local port and hands back the parsed request body.
+fn d95_serve_one_chat(
+    content: String,
+) -> (std::net::SocketAddr, thread::JoinHandle<serde_json::Value>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept chat request");
+        let request = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "choices": [{
+                    "message": { "role": "assistant", "content": content },
+                    "finish_reason": "stop"
+                }]
+            }),
+        );
+        let body = request.split_once("\r\n\r\n").expect("request body").1;
+        serde_json::from_str(body).expect("chat request body is JSON")
+    });
+    (addr, handle)
+}
+
+fn d95_adapter(addr: std::net::SocketAddr) -> OpenRouterGenerator {
+    OpenRouterGenerator::new("test-key", "mock/d95-model")
+        .expect("adapter created")
+        .with_endpoints(
+            format!("http://{addr}/chat"),
+            format!("http://{addr}/models"),
+        )
+}
+
+fn d95_output(answer: &str, final_answer: Option<&str>) -> ModelOutput {
+    ModelOutput {
+        answer: answer.into(),
+        final_answer: final_answer.map(String::from),
+        cited_evidence_ids: vec!["[1]".into()],
+        answer_basis: AnswerBasis::Retrieval,
+        notices: vec![],
+        warnings: vec![],
+        usage: None,
+    }
+}
+
+#[tokio::test]
+async fn d95_openrouter_schema_requires_final_answer_and_the_adapter_returns_it() {
+    let (addr, server) = d95_serve_one_chat(d95_content(Some("ChatGPT")));
+    let adapter = d95_adapter(addr);
+
+    let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Text.")]);
+    let output = adapter
+        .generate(GenerationRequest::new("Question?", evidence))
+        .await
+        .expect("generation succeeds");
+
+    let body = server.join().expect("server completed");
+    let format = &body["response_format"]["json_schema"];
+    let schema = &format["schema"];
+    let required: Vec<&str> = schema["required"]
+        .as_array()
+        .expect("required is an array")
+        .iter()
+        .map(|name| name.as_str().expect("required names are strings"))
+        .collect();
+    for name in [
+        "answer",
+        "cited_evidence_ids",
+        "answer_basis",
+        "notices",
+        "warnings",
+        "final_answer",
+    ] {
+        assert!(required.contains(&name), "required lacks {name}: {required:?}");
+    }
+    assert_eq!(required.len(), 6, "exactly the five old names plus one: {required:?}");
+    assert_eq!(
+        schema["properties"]["final_answer"],
+        json!({"type": "string", "maxLength": 256})
+    );
+    assert_eq!(schema["additionalProperties"], json!(false));
+    assert_eq!(format["strict"], json!(true));
+
+    assert_eq!(output.final_answer.as_deref(), Some("ChatGPT"));
+    assert_eq!(output.answer, D95_PROSE, "the adapter does not render");
+}
+
+#[tokio::test]
+async fn d95_mock_provider_final_answer_is_rendered_by_the_generate_node() {
+    use crate::{
+        generation::GroundingLimits,
+        workflow::{node::Node, nodes::GenerateAnswerNode, WorkflowContext},
+    };
+
+    let (addr, server) = d95_serve_one_chat(d95_content(Some("ChatGPT")));
+    let generator: Arc<dyn Generator> = Arc::new(d95_adapter(addr));
+
+    let request = crate::testkit::test_query_request("Which chatbot do the articles name?", "sess-d95");
+    let mut ctx = WorkflowContext::new("sess-d95".into(), "trace-d95".into(), &request);
+    ctx.evidence_blocks = assemble_evidence_blocks(&[sample_candidate("1", "Text.")]);
+
+    let node = GenerateAnswerNode::new(Some(generator)).with_settings(
+        GroundingLimits::new(8192, 2048).unwrap(),
+        200,
+        1.0,
+    );
+    let result = node
+        .run(&mut ctx, &tokio_util::sync::CancellationToken::new())
+        .await;
+    server.join().expect("server completed");
+
+    assert!(result.is_ok(), "the node accepts the mock output: {result:?}");
+    assert_eq!(ctx.answer, D95_RENDERED);
+    assert_eq!(ctx.citations, vec!["[1]".to_string()]);
+}
+
+#[test]
+fn d95_model_output_without_final_answer_parses_and_serializes_as_before() {
+    let five_keys = model_output_json(D95_PROSE, &["[1]"], "retrieval");
+    let parsed: ModelOutput = serde_json::from_str(&five_keys).expect("five-key content parses");
+    assert_eq!(parsed.final_answer, None);
+
+    let value = serde_json::to_value(&parsed).expect("serializes");
+    assert!(
+        value.get("final_answer").is_none(),
+        "a None field is skipped: {value}"
+    );
+
+    let mut with_unknown: serde_json::Value = serde_json::from_str(&five_keys).unwrap();
+    with_unknown["surprise"] = json!(true);
+    assert!(
+        serde_json::from_value::<ModelOutput>(with_unknown).is_err(),
+        "deny_unknown_fields still rejects an unknown key"
+    );
+}
+
+#[test]
+fn d95_rendered_answer_ends_with_a_line_start_answer_line() {
+    let output = d95_output(D95_PROSE, Some("ChatGPT"));
+    assert_eq!(output.rendered_answer(), D95_RENDERED);
+}
+
+#[test]
+fn d95_absent_or_blank_final_answer_leaves_the_answer_byte_identical() {
+    for answer in [D95_PROSE, "Trailing whitespace answer [1].  \n", "Answer: Yes"] {
+        for field in [None, Some(""), Some("  \n\t")] {
+            assert_eq!(
+                d95_output(answer, field).rendered_answer(),
+                answer,
+                "field {field:?} must leave {answer:?} untouched"
+            );
+        }
+    }
+}
