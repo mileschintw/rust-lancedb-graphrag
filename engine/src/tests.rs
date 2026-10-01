@@ -6550,7 +6550,9 @@ fn graph_fact_competes_for_shared_budget_beyond_reserved_slot() {
     // a coincidentally tighter budget that would reject even the reserved block.
     // F-1 (06.3.4.1-26) appended the JSON-`answer`-field clause, raising the overhead by
     // ~35 tokens more; widened from 425 by that same delta.
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 460, 32)
+    // D-95 (06.3.4.1-29) appended the `final_answer` sentence (31 cl100k tokens); widened
+    // from 460 by that same delta.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 491, 32)
         .expect("pack succeeds");
 
     assert_eq!(
@@ -6596,7 +6598,9 @@ fn pack_evidence_and_graph_prompt_breaks_exact_ties_in_evidence_favor() {
     // instruction, raising the overhead again by ~95 tokens; widened by that same delta.
     // F-1 (06.3.4.1-26) appended the JSON-`answer`-field clause (~35 tokens more); widened
     // from 475 by that same delta.
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 510, 16)
+    // D-95 (06.3.4.1-29) appended the `final_answer` sentence (31 cl100k tokens); widened
+    // from 510 by that same delta.
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 541, 16)
         .expect("pack succeeds");
 
     assert_eq!(packed.evidence.len(), 2);
@@ -6936,7 +6940,9 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
                 // designed to, not a coincidentally tighter real-request-body budget.
                 // F-1 (06.3.4.1-26) appended the JSON-`answer`-field clause (~35 tokens
                 // more); widened from 500 by that same delta.
-                evidence_token_budget: 535,
+                // D-95 (06.3.4.1-29) appended the `final_answer` sentence (31 cl100k
+                // tokens); widened from 535 by that same delta.
+                evidence_token_budget: 566,
                 excerpt_max_chars: 512,
                 bm25: Bm25ConfigSettings::default(),
             },

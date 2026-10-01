@@ -111,6 +111,15 @@ fi
 #         d95_absent_or_blank_final_answer_leaves_the_answer_byte_identical,
 #         d95_answer_events_carry_the_rendered_text), 502->508. `engine (bin)` stays 0;
 #         inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
+#   594 -- Phase 06.3.4.1 plan 29 Task 2: D-95 appended one sentence (31 cl100k tokens) to
+#         `base_system_policy()` (the JSON `final_answer` field), with 2 `prompt::tests` goldens
+#         (d95_policy_states_the_final_answer_field,
+#         d95_policy_keeps_the_pre_d95_text_as_a_byte_identical_prefix), 508->510. The four
+#         budget-boundary tests (three in `tests.rs`, one in `workflow_phase5`) failed on the longer
+#         policy and had their token budgets widened by the sentence's 31 tokens (460->491,
+#         510->541, 535->566, 380->411); no test was added or removed for that.
+#         `engine (bin)` stays 0; inspect_lancedb/reconcile_eval_store/config_startup unchanged
+#         (44/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -150,18 +159,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 592 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 592, got $TOTAL" >&2
+if [ "$TOTAL" -ne 594 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 594, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 508 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 508, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 510 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 510, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 508 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 508, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 510 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 510, got $LIB_COUNT" >&2
   exit 1
 fi
 

@@ -6724,7 +6724,9 @@ async fn workflow_prompt_packing_truncation_drops_citation_to_truncated_block() 
     // still fits and block 2 is still excluded, not a coincidentally tighter budget.
     // F-1 (06.3.4.1-26) appended the JSON-`answer`-field clause (~35 tokens more); widened
     // from 345 by that same delta.
-    runner.add_node(AssemblePromptNode::with_settings(380, 20, 1.0));
+    // D-95 (06.3.4.1-29) appended the `final_answer` sentence (31 cl100k tokens); widened
+    // from 380 by that same delta.
+    runner.add_node(AssemblePromptNode::with_settings(411, 20, 1.0));
     let limits = GroundingLimits::new(8192, 2048).unwrap();
     runner.add_node(
         GenerateAnswerNode::new(Some(fake_gen))

@@ -213,7 +213,7 @@ After your full cited answer, end with exactly one final line in this form: Answ
 Keep citing evidence with [n] markers in the explanation above that line. \
 Do not put citation markers or any square brackets on the Answer line. \
 If the evidence is insufficient, still name the evidence blocks you checked with their [n] markers, then end with: Answer: Insufficient information. \
-Put that final Answer line inside the JSON `answer` field, as the last line of the answer string; write no text, including that line, outside the JSON object."
+Put that final Answer line inside the JSON `answer` field, as the last line of the answer string; write no text, including that line, outside the JSON object. Also put that same shortest answer in the JSON `final_answer` field, on its own, with no Answer: prefix, citation markers or square brackets."
 }
 
 /// Returns the system policy string for model-only answer generation.
