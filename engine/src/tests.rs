@@ -6818,7 +6818,10 @@ fn reserve_one_citable_chunk_holds_under_interleaving() {
     // raw score would dominate an unreserved competition. D-71 (06.3.4.1-08)
     // raised the system policy's fixed token overhead by ~95 tokens; widened
     // by that same delta so the reserved block still fits.
-    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 395, 16)
+    // D-95 (06.3.4.1-29) appended the `final_answer` sentence (31 cl100k tokens); widened
+    // from 395 by that same delta. The plan named four budget tests; this fifth one has less
+    // slack than F-1's clause left it, so the longer policy broke it too (found by the full run).
+    let packed = pack_evidence_and_graph_prompt_sync("Question?", &evidence, &facts, 1.0, 426, 16)
         .expect("the reserved chunk block always fits, regardless of graph fact score");
 
     assert_eq!(
