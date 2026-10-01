@@ -1,0 +1,118 @@
+{
+  "SC-1": {
+    "gate": "SC-1",
+    "status": "PASS",
+    "reason": "header partial matches completeness_comparison() and report.json state is consistent",
+    "value": null,
+    "ci": null,
+    "n": 200,
+    "detail": {
+      "header_partial": false,
+      "expected_partial": false,
+      "missing_units": 0.0,
+      "report_json_exists": true
+    }
+  },
+  "SC-2": {
+    "gate": "SC-2",
+    "status": "PASS",
+    "reason": "error mode and RetrieveHybrid flatness both pass",
+    "value": null,
+    "ci": null,
+    "n": 200,
+    "detail": {
+      "class_counts": {},
+      "dominant_classes": [],
+      "timeout_dominant": false,
+      "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+      "both_arm_error_question_count": 0.0,
+      "both_arm_error_class_pairs": [],
+      "flatness_reason": "flat",
+      "flatness_trend_available": true,
+      "flatness_window_available": true,
+      "flatness_decay_present": false,
+      "flatness_slope_ms_per_query": 0.03125,
+      "flatness_window_delta_ms": 12.0
+    }
+  },
+  "D-69 companion": {
+    "gate": "citation_rejection_rate",
+    "status": "PASS",
+    "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+    "value": 0.0,
+    "ci": [
+      0.0,
+      0.018846005918320894
+    ],
+    "n": 200,
+    "detail": {
+      "class_counts": {},
+      "marker_mismatch_count": 0.0,
+      "total": 200.0,
+      "total_rejections": 0.0,
+      "total_rate": 0.0,
+      "null_total": 20.0,
+      "null_rejections": 0.0,
+      "null_rate": 0.0,
+      "nonnull_total": 180.0,
+      "nonnull_rejections": 0.0,
+      "nonnull_rate": 0.0,
+      "ci_lower": 0.0,
+      "ci_upper": 0.018846005918320894
+    }
+  },
+  "SC-3": {
+    "gate": "SC-3",
+    "status": "PASS",
+    "reason": "usable rate 0.5778 >= floor 0.5120",
+    "value": 0.5777777777777777,
+    "ci": [
+      0.4746099802268749,
+      0.6745775869075303
+    ],
+    "n": 90,
+    "detail": {
+      "usable_n": 52.0,
+      "n": 90.0,
+      "floor": 0.512,
+      "ci_lower": 0.4746099802268749,
+      "ci_upper": 0.6745775869075303,
+      "excluded_generate_answer_failures": 0.0,
+      "final_answer_missing_rate": 0.0,
+      "final_answer_missing_review_rate_threshold": 0.1,
+      "final_answer_missing_review_triggered": false,
+      "strata": {
+        "type_comparison_query": {
+          "n": 36.0,
+          "usable_n": 19.0,
+          "rate": 0.5277777777777778,
+          "constant_yes_baseline": 0.6666666666666666
+        },
+        "type_inference_query": {
+          "n": 31.0,
+          "usable_n": 29.0,
+          "rate": 0.9354838709677419,
+          "constant_yes_baseline": 0.0
+        },
+        "type_temporal_query": {
+          "n": 23.0,
+          "usable_n": 4.0,
+          "rate": 0.17391304347826086,
+          "constant_yes_baseline": 0.5652173913043478
+        },
+        "gold_binary": {
+          "n": 56.0,
+          "usable_n": 23.0,
+          "rate": 0.4107142857142857,
+          "constant_yes_baseline": 0.6607142857142857
+        },
+        "gold_entity": {
+          "n": 34.0,
+          "usable_n": 29.0,
+          "rate": 0.8529411764705882,
+          "constant_yes_baseline": 0.0
+        }
+      }
+    }
+  }
+}
