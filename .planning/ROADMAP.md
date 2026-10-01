@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 20/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
+**Plans:** 21/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
 
 Plans:
 
@@ -987,7 +987,7 @@ Plans:
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 06.3.4.1-29-PLAN.md — `gap_closure: true`. Make the final answer survive lost line breaks: the strict schema requires a `final_answer` field that the engine renders as the last `Answer:` line after validation, identically in `answer_chunk` and `final_answer` (D-95); send OpenRouter `require_parameters: true` and log each response's generation ID, served model and provider with the correlation ID (D-96); read drive 1's cause for free from the activity API; test-first, raised counts, a release build, no paid call (G9–G11; D-95, D-96)
+- [x] 06.3.4.1-29-PLAN.md — `gap_closure: true`. Make the final answer survive lost line breaks: the strict schema requires a `final_answer` field that the engine renders as the last `Answer:` line after validation, identically in `answer_chunk` and `final_answer` (D-95); send OpenRouter `require_parameters: true` and log each response's generation ID, served model and provider with the correlation ID (D-96); read drive 1's cause for free from the activity API; test-first, raised counts, a release build, no paid call (G9–G11; D-95, D-96)
 
 **Wave 13** *(blocked on Wave 12 completion)*
 

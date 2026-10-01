@@ -1,27 +1,27 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 29
+current_plan: 30
 status: executing
-stopped_at: Planned 06.3.4.1 gap plans 29 (D-95 final_answer field, D-96 require_parameters + served-by logging, free) and 30 (drive 1b under its own D-86 cap and D-94-scope answer, then the final D-84 decision); plans 13-20 now wait on 30 (waves 14-21)
-last_updated: "2026-10-01T20:45:29.108Z"
+stopped_at: "Completed 06.3.4.1-29-PLAN.md: D-95 rendered final Answer line, D-96 require_parameters and generation_served, release engine built, G11 cause unknown (HTTP 403); plan 30 (drive 1b) opens on a blocking cap and D-94-scope decision and was not started"
+last_updated: "2026-10-01T21:33:37.141Z"
 last_activity: 2026-10-01
-state_head: 3a2286e22764117c2797edbefa9b0412d4368ef5
+state_head: 995eba6915ffa42da1b53f5ab998c4a636337ddd
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 178
+  completed_plans: 179
 milestone_name: milestone
-current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
 current_phase: 06.3.4.1
+current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 29
+Current Plan: 30
 Total Plans in Phase: 30
 
 ## Current Status
@@ -387,6 +387,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P26 | 32 min | 3 tasks | 9 files |
 | Phase 06.3.4.1 P28 | 45 min | 6 tasks | 24 files |
 | Phase 06.3.4.1 P11 | 2 days elapsed (completed through gap plans 21-28) | 3 tasks | 6 files |
+| Phase 06.3.4.1 P29 | 45 min | 5 tasks | 18 files |
 
 ## Decisions
 
@@ -471,12 +472,14 @@ Total Plans in Phase: 30
 - [Phase 06.3.4.1]: 06.3.4.1-26: only F-1 landed at the user's approve-subset: F-1; confirmation cap $0.75. The clause is appended after every existing policy sentence; F-1 is costly (D-71): scored runs before 126a8a4b are not comparable with runs after it. F-2, F-3a and F-6 were not approved; F-3, F-4 and F-5 stay reported error modes (D-69). — D-91: a fix removes a cause and never suppresses a class. Confirmation (N=80, cap 0.75, run once): trailing 32 to 0, ModelOnly 42 to 46 unaddressed, two new parse shapes (5 records) unattributed and routed to drive 1's D-69 disclosure.
 - [Phase 06.3.4.1]: D-93/D-94 (06.3.4.1-28): prompt tokenizer warmed before serving and prompt_timeout_ms 120; preflight --accept-known-miss is a one-entry registry, reported (accepted_known_miss), never a pass; expires at 06.3.4.1-18 — First fresh-engine query took 78.6 ms against 65 ms; the mhr-0d5e238015ef graph floor is the phase's graph-yield gap that plans 13-15 fix. The single preflight re-run passed with only the D-94 miss (first query 1.107 ms, spend 0.00258 of 0.05).
 - [Phase 06.3.4.1]: 06.3.4.1-27 re-summarized complete and 06.3.4.1-11 closed by 06.3.4.1-28 (status line only; halt record kept) — Summary template #2830: a resolved halt is re-summarized complete, otherwise plan 12 stays blocked
+- [Phase 06.3.4.1]: 06.3.4.1-29 D-95: the engine renders Answer: <final_answer> as the last answer line at WorkflowContext::update_from_model_output, after validation; a trailing model Answer segment is stripped only when it has no bracket and leaves prose, and a field that does not fit within MAX_ANSWER_CHARS renders no line — Rendering after validation on every path keeps generate.rs, metrics.py and thresholds.py untouched, so drive 1's reading stands (D-87a) and D-69 cannot move
+- [Phase 06.3.4.1]: 06.3.4.1-29 D-96: every OpenRouter chat payload carries provider {require_parameters: true} (hard-coded, no config key), and each provider response logs one INFO generation_served event keyed by correlation_id — Routes only to endpoints honouring the strict-schema parameters and lets drive 1b map who served each record; a missing or non-string id, model or provider never fails a generation
 
 ## Session
 
-**Last session:** 2026-09-30T06:24:06.968Z
+**Last session:** 2026-10-01T21:33:28.218Z
 **Last activity:** 2026-10-01
-**Stopped at:** Planned gap plans 29 and 30 for the D-84 iterate-once round (decisions D-95, D-96 in CONTEXT); next: /gsd-execute-phase 06.3.4.1 --gaps-only
+**Stopped at:** Completed 06.3.4.1-29-PLAN.md: D-95 rendered final Answer line, D-96 require_parameters and generation_served, release engine built, G11 cause unknown (HTTP 403); plan 30 (drive 1b) opens on a blocking cap and D-94-scope decision and was not started
 **Resume file:** None
 
 ## Accumulated Context
