@@ -570,3 +570,16 @@ _D95_RENDERED = _D95_PROSE + "\nAnswer: ChatGPT"
 def test_extract_final_answer_reads_the_d95_rendered_line() -> None:
     assert extract_final_answer(_D95_RENDERED) == "chatgpt"
     assert extract_final_answer(_D95_PROSE) is None
+
+
+def test_extract_final_answer_reads_the_d95_line_after_a_kept_bracketed_answer() -> None:
+    # The engine keeps a model-written Answer segment that carries a marker and still renders
+    # its own line; the last line-start match wins.
+    text = "The source says so [1]. Answer: ChatGPT [1]\nAnswer: ChatGPT"
+    assert extract_final_answer(text) == "chatgpt"
+
+
+def test_extract_final_answer_still_misses_an_inline_only_answer() -> None:
+    # The committed rule is unchanged (drive 1's reading stands, D-87a): an inline
+    # `... Answer: X` with no line start is a miss.
+    assert extract_final_answer("The source says so [1]. Answer: ChatGPT") is None

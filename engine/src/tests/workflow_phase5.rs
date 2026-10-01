@@ -7925,3 +7925,114 @@ async fn d95_answer_events_carry_the_rendered_text() {
     assert_eq!(completed.len(), 1, "exactly one WorkflowCompleted");
     assert!(completed[0].success, "the workflow completes successfully");
 }
+
+// ---------------------------------------------------------------------------
+// Plan 06.3.4.1-29, Task 3 (D-95): the rendered final line cannot change validation,
+// citations or rejections.
+// ---------------------------------------------------------------------------
+
+fn d95_output_with_field(
+    answer: &str,
+    cited: &[&str],
+    basis: AnswerBasis,
+    final_answer: &str,
+) -> ModelOutput {
+    ModelOutput {
+        final_answer: Some(final_answer.to_string()),
+        ..rejection_output(answer, cited, basis)
+    }
+}
+
+/// A bracketed `final_answer` is sanitised and rendered after validation: acceptance, the
+/// citation set and the notices equal those of the same output without the field, and no
+/// rejection event is emitted, with citation repair both on and off.
+#[tokio::test]
+async fn d95_bracketed_final_answer_never_reaches_validation() {
+    for repair in [true, false] {
+        let req = test_query_request("D-95 bracketed field", "sess-d95-bracket");
+        let mut ctx =
+            WorkflowContext::new("sess-d95-bracket".into(), "trace-d95-bracket".into(), &req);
+        ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+        let node = rejection_node_returning(
+            d95_output_with_field(
+                "Grounded answer text [1].",
+                &["[1]"],
+                AnswerBasis::Retrieval,
+                "Yes [2]",
+            ),
+            repair,
+        );
+
+        let (result, events) = run_node_capturing_rejections(&node, &mut ctx).await;
+
+        assert!(result.is_ok(), "repair={repair}: must be accepted: {result:?}");
+        assert_eq!(ctx.citations, vec!["[1]".to_string()], "repair={repair}");
+        assert_eq!(
+            ctx.answer, "Grounded answer text [1].\nAnswer: Yes",
+            "repair={repair}"
+        );
+        assert!(
+            !ctx.notices.iter().any(|n| n.code == "CITATION_DROPPED"),
+            "repair={repair}: no citation may be dropped"
+        );
+        assert!(
+            events.is_empty(),
+            "repair={repair}: no generation_output_rejected event: {events:?}"
+        );
+    }
+}
+
+async fn d95_run_uncited_mixed(
+    final_answer: Option<&str>,
+) -> (Result<(), NodeError>, Vec<RejectionEvent>) {
+    let mut req = test_query_request("D-95 rejection", "sess-d95-reject");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new("sess-d95-reject".into(), "trace-d95-reject".into(), &req);
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+    let mut output = rejection_output("Uncited mixed answer.", &[], AnswerBasis::Mixed);
+    output.final_answer = final_answer.map(String::from);
+    let node = rejection_node_returning(output, true);
+    run_node_capturing_rejections(&node, &mut ctx).await
+}
+
+/// The field changes neither the error a rejection returns nor what the rejection event
+/// shows: `raw_head` is the model's own answer, never the rendered text.
+#[tokio::test]
+async fn d95_final_answer_does_not_change_a_rejection() {
+    let (without_field, _) = d95_run_uncited_mixed(None).await;
+    let (with_field, events) = d95_run_uncited_mixed(Some("Yes")).await;
+
+    let base_err = without_field.expect_err("an uncited mixed answer is rejected");
+    let field_err = with_field.expect_err("the field cannot rescue a rejected answer");
+    assert_eq!(field_err.kind, base_err.kind);
+    assert_eq!(field_err.message, base_err.message);
+
+    assert_eq!(events.len(), 1, "exactly one rejection event: {events:?}");
+    assert_eq!(events[0]["raw_head"], format!("{:?}", "Uncited mixed answer."));
+}
+
+/// Revalidating the rendered answer passes whenever the original passes, so the rendered
+/// line adds no marker validation could trip on.
+#[test]
+fn d95_rendered_answer_revalidates_like_the_original() {
+    let evidence = vec![evidence_block_with_id("[1]")];
+    let limits = GroundingLimits::new(8192, 2048).unwrap();
+    let original = d95_output_with_field(
+        "Grounded answer text [1].",
+        &["[1]"],
+        AnswerBasis::Retrieval,
+        "Yes [2]",
+    );
+    assert!(original
+        .validate_grounding_with_limits(&evidence, limits)
+        .is_ok());
+
+    let rendered = ModelOutput {
+        answer: original.rendered_answer(),
+        ..original.clone()
+    };
+    assert_eq!(rendered.answer, "Grounded answer text [1].\nAnswer: Yes");
+    assert!(rendered
+        .validate_grounding_with_limits(&evidence, limits)
+        .is_ok());
+}
