@@ -4,17 +4,17 @@ milestone: v1.0
 current_plan: 29
 status: executing
 stopped_at: Planned 06.3.4.1 gap plans 29 (D-95 final_answer field, D-96 require_parameters + served-by logging, free) and 30 (drive 1b under its own D-86 cap and D-94-scope answer, then the final D-84 decision); plans 13-20 now wait on 30 (waves 14-21)
-last_updated: "2026-10-01T01:19:15.238Z"
-last_activity: 2026-09-30
-state_head: aba34980daf3f4c556c0f5b1da8edb99cae545ef
+last_updated: "2026-10-01T20:45:29.108Z"
+last_activity: 2026-10-01
+state_head: 3a2286e22764117c2797edbefa9b0412d4368ef5
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
   completed_plans: 178
 milestone_name: milestone
-current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
+current_phase: 06.3.4.1
 ---
 
 # Project State
@@ -242,8 +242,8 @@ Total Plans in Phase: 30
 ## Active Phase
 
 - **Phase:** 06.3.4.1 — Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
-- **Status:** executing (started 2026-09-23 via `/gsd-execute-phase 06.3.4.1`; 20 plans across 16 waves, run sequentially on main — see note below)
-- **Current Plan (compound ID):** 06.3.4.1-01 (Wave 1) — see `## Current Position` above for the machine-readable `Current Plan`/`Total Plans in Phase` counters
+- **Status:** executing (started 2026-09-23 via `/gsd-execute-phase 06.3.4.1`; now 30 plans across 21 waves, run sequentially on main — see note below). Gap-closure run started 2026-10-01 via `/gsd-execute-phase 06.3.4.1 --gaps-only` (plans 29 and 30 only; the user asked to stop after the gap closes, before plans 13-20)
+- **Current Plan (compound ID):** 06.3.4.1-29 (Wave 12, gap closure; 06.3.4.1-30 follows in wave 13) — see `## Current Position` above for the machine-readable `Current Plan`/`Total Plans in Phase` counters
 - **Execution mode note:** worktree isolation deliberately not used for this run. Plan 01's precondition reads the gitignored live eval store (`data/lancedb-eval/nodes.lance`), which does not exist inside a harness worktree, and plan 03 is a release-build latency/working-set soak whose slopes select the class plan 07 must fix (D-64), so it needs a quiet machine rather than sibling executors' parallel cargo builds. Waves 2+ would have degraded to sequential anyway once wave 1 merges past `origin/HEAD` (#1369).
 - **Previous phase:** 06.3.4 remains `gaps_found` (7/8; SC-3 D-48 fresh human calibration parked, see Current Status). Phase 6.4 stays **parked** until Phase 06.3.4.1 clears its unpark gates (a demonstrable graph-on vs graph-off effect on a gold-in-index subset; both arms failing to answer is not a v1 story).
 
@@ -475,7 +475,7 @@ Total Plans in Phase: 30
 ## Session
 
 **Last session:** 2026-09-30T06:24:06.968Z
-**Last activity:** 2026-09-30
+**Last activity:** 2026-10-01
 **Stopped at:** Planned gap plans 29 and 30 for the D-84 iterate-once round (decisions D-95, D-96 in CONTEXT); next: /gsd-execute-phase 06.3.4.1 --gaps-only
 **Resume file:** None
 
