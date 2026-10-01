@@ -1,0 +1,26 @@
+{
+  "corpus": "multihop_rag_diag",
+  "run_date": "2026-10-01T22:39:04.282703+00:00",
+  "commit_sha": "75433e423e6445f7fba3872a5d25463ec6ad1b79",
+  "generation_model": "deepseek/deepseek-v4-flash-0731",
+  "embedding_model": "voyageai/voyage-4-large",
+  "judge_model": "meta-llama/llama-3.3-70b-instruct",
+  "judge_temperature": 0.0,
+  "judge_prompt_version": "v1",
+  "sampling_seed": 42,
+  "sample_size_deterministic": 100,
+  "sample_size_judged": 0,
+  "calibration_completed_n": 0,
+  "index_generation": "lance-702",
+  "result_hash": "bf3c3285d9f124dc",
+  "arm_labels": [
+    "graph-on",
+    "graph-off"
+  ],
+  "dependency_lock_hash": "8e71ea9ce7a3532b",
+  "partial": false,
+  "notes": "No judge-versus-human calibration was performed; judged dimensions are uncalibrated.",
+  "judged_slice_committed": 0,
+  "verdicts_obtained": 0,
+  "judged_slice_state": "not_judged"
+}
