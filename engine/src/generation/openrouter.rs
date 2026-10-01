@@ -627,6 +627,9 @@ impl OpenRouterGenerator {
                     schema: schema_json,
                 },
             },
+            provider: ProviderPreferences {
+                require_parameters: true,
+            },
         };
 
         let send_fut = self
@@ -710,6 +713,13 @@ impl OpenRouterGenerator {
                     format!("failed to parse OpenRouter response wrapper JSON: {err}"),
                 )
             })?;
+
+        emit_generation_served(
+            request.correlation_id.as_deref(),
+            served_field(chat_resp.id.as_ref()).as_deref(),
+            served_field(chat_resp.model.as_ref()).as_deref(),
+            served_field(chat_resp.provider.as_ref()).as_deref(),
+        );
 
         if chat_resp.choices.len() != 1 {
             return Err(GenerationError::new(
@@ -880,6 +890,48 @@ impl Generator for OpenRouterGenerator {
     }
 }
 
+/// Characters of a provider-supplied generation ID, model slug or provider name kept in the
+/// `generation_served` event.
+///
+/// OpenRouter generation IDs, model slugs and provider names are short, so the bound only
+/// matters when a provider sends something unexpected: it caps one log line. Raising it grows
+/// every `generation_served` line in proportion.
+const MAX_SERVED_FIELD_CHARS: usize = 128;
+
+/// Returns the bounded text of a JSON string value, or `None` for an absent or non-string value.
+///
+/// The cut falls on a `char` boundary. A non-string value is dropped, never parsed, so it
+/// cannot fail a generation.
+fn served_field(value: Option<&serde_json::Value>) -> Option<String> {
+    value
+        .and_then(serde_json::Value::as_str)
+        .map(|text| text.chars().take(MAX_SERVED_FIELD_CHARS).collect())
+}
+
+/// Emits one info-level `generation_served` event naming who served a provider response (D-96).
+///
+/// Drive 1b's provider map joins it to the journal by `correlation_id`. Every field is recorded
+/// with the `Debug` sigil, so line breaks and quotes in provider text are escaped and the
+/// rendered line stays one line; an absent value is not recorded. The event is INFO under the
+/// `engine::` target, so it passes the D-90 default filter. It carries response metadata only,
+/// never the prompt, the choice content, headers or the API key, and it only observes: it never
+/// alters what the caller returns.
+fn emit_generation_served(
+    correlation_id: Option<&str>,
+    generation_id: Option<&str>,
+    response_model: Option<&str>,
+    provider: Option<&str>,
+) {
+    tracing::info!(
+        generation_served = true,
+        correlation_id = correlation_id.map(tracing::field::debug),
+        generation_id = generation_id.map(tracing::field::debug),
+        gen_ai.response.model = response_model.map(tracing::field::debug),
+        provider = provider.map(tracing::field::debug),
+        "generation_served"
+    );
+}
+
 #[derive(Serialize)]
 struct ReasoningConfig {
     effort: String,
@@ -895,6 +947,20 @@ struct OpenRouterChatPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning: Option<ReasoningConfig>,
     response_format: ResponseFormat,
+    provider: ProviderPreferences,
+}
+
+/// OpenRouter provider-routing preferences sent with every chat request (D-96).
+///
+/// `require_parameters` makes OpenRouter route only to endpoints that support every parameter
+/// the request sends: structured outputs, `reasoning`, `temperature`, `top_p` and max tokens.
+/// Fallback among the qualifying endpoints stays on. A 2026-09-30 (about 21:15Z) snapshot showed
+/// 22 of 29 endpoints qualifying for `deepseek/deepseek-v4-flash-0731`; pinning one provider
+/// was not chosen. It is hard-coded because it is a routing invariant of the strict-schema
+/// contract, not a tunable. The routing preference is the only key under `provider`.
+#[derive(Serialize)]
+struct ProviderPreferences {
+    require_parameters: bool,
 }
 
 #[derive(Serialize)]
@@ -974,6 +1040,15 @@ impl RejectionContext<'_> {
 struct OpenRouterChatResponse {
     choices: Vec<ChatChoice>,
     usage: Option<UsageMeta>,
+    /// OpenRouter generation ID, read as a raw `Value` so a non-string never fails the parse.
+    #[serde(default)]
+    id: Option<serde_json::Value>,
+    /// The model slug that served the request, read like `id`.
+    #[serde(default)]
+    model: Option<serde_json::Value>,
+    /// The provider that served the request, read like `id`.
+    #[serde(default)]
+    provider: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
