@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 29
 status: executing
-stopped_at: "Planned 06.3.4.1 gap plans 29 (D-95 final_answer field, D-96 require_parameters + served-by logging, free) and 30 (drive 1b under its own D-86 cap and D-94-scope answer, then the final D-84 decision); plans 13-20 now wait on 30 (waves 14-21)"
-last_updated: "2026-09-30T22:11:43.473Z"
+stopped_at: Planned 06.3.4.1 gap plans 29 (D-95 final_answer field, D-96 require_parameters + served-by logging, free) and 30 (drive 1b under its own D-86 cap and D-94-scope answer, then the final D-84 decision); plans 13-20 now wait on 30 (waves 14-21)
+last_updated: "2026-10-01T01:19:15.238Z"
 last_activity: 2026-09-30
-state_head: a66d436f1166bd950eba3da35d59cc58f6832e52
+state_head: aba34980daf3f4c556c0f5b1da8edb99cae545ef
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
   completed_plans: 178
 milestone_name: milestone
-current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
 current_phase: 06.3.4.1
+current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
 ---
 
 # Project State
@@ -324,20 +324,21 @@ Total Plans in Phase: 30
 
 ## Quick Tasks Completed
 
-| Slug | Date | Description | Status |
-|------|------|-------------|--------|
-| update-readme-blueprint | 2026-06-19 | Update README.md with GSD planning documents and backlog details | Complete |
-| check-backlog-ports | 2026-06-19 | Verify and add missing Port annotations for Phase 999.1, 999.2, and 999.3 in REQUIREMENTS.md and ROADMAP.md | Complete |
-| setup-gitignore | 2026-07-12 | Check and make/update a proper git.ignore based on the designed stack | Complete |
-| check-dep-updates | 2026-07-14 | Check if dependencies of this project is able to update and keep working, like rust cargo and jaeger image | Complete |
-| buf-rust-codegen | 2026-07-14 | Migrate Rust protobuf code generation to Buf v2 with prost and tonic plugins | Complete |
-| update-readme-with-all-the-decision-and- | 2026-08-19 | Update README with all decisions and progress to date, preserving personal-side-project/showcase framing and adding AI-collaboration angle | Complete |
-| review-06-01-summary-accuracy | 2026-08-20 | Review commit 35b5854 (plan 06-01) for behavior regressions and plan sufficiency; update 06-01-SUMMARY.md frontmatter with 5 out-of-scope lint-edited files, record cargo fmt --check as pre-existing failing gate, annotate RAG-03 as structural-only | Complete |
-| review-06-04-refactor-fidelity | 2026-08-20 | Review commit c7e107ec (plan 06-04) as behavior-preserving refactor; confirmed checkpoint dispatch preserved and DTO/event contract byte-identical; found and FIXED in bfec94b: truncated config fail-closed error string (REG-06-04-01, root cause = Task 2 criterion contradicting its own action text), source-grep test gate rewritten on `go test -list` with per-package named failures (closes T-06-04-05), 8 package-local sse wire-contract tests added (total 67 -> 75), plus export-decision table added to 06-04-SUMMARY per the plan output block. Two criteria await sign-off: invariant 67->75 and Task 2 "exactly once". | Complete |
-| ignore-gsd-runtime-dir | 2026-08-21 | Ignore .gsd runtime directory in .gitignore | Complete |
-| 260824-ipd | 2026-08-24 | Fix the shared Phase 6 CONTEXT tag-extractor landmine. Do not add any per-phase CONTEXT.md. | Verified |
-| commit-cross-ai-review | 2026-08-27 | Commit cross-AI review for plans 10-12 in 06.2-REVIEWS.md | Complete |
-| 260831-az7 | 2026-08-31 / 2026-09-02 | Migrate engine/eval from free-tier OpenRouter models (embedding, generation, judge) to paid-tier pins with an explicit embedding `dimensions` field, and complete the stalled 346-document multihop_rag reseed | Complete |
+| # | Description | Date | Commit | Status | Directory |
+| --- | ------------- | ------ | -------- | -------- | ----------- |
+| 1 | update-readme-blueprint · Update README.md with GSD planning documents and backlog details | 2026-06-19 | — | Complete | — |
+| 2 | check-backlog-ports · Verify and add missing Port annotations for Phase 999.1, 999.2, and 999.3 in REQUIREMENTS.md and ROADMAP.md | 2026-06-19 | — | Complete | — |
+| 3 | setup-gitignore · Check and make/update a proper git.ignore based on the designed stack | 2026-07-12 | — | Complete | — |
+| 4 | check-dep-updates · Check if dependencies of this project is able to update and keep working, like rust cargo and jaeger image | 2026-07-14 | — | Complete | — |
+| 5 | buf-rust-codegen · Migrate Rust protobuf code generation to Buf v2 with prost and tonic plugins | 2026-07-14 | — | Complete | — |
+| 6 | update-readme-with-all-the-decision-and- · Update README with all decisions and progress to date, preserving personal-side-project/showcase framing and adding AI-collaboration angle | 2026-08-19 | — | Complete | — |
+| 7 | review-06-01-summary-accuracy · Review commit 35b5854 (plan 06-01) for behavior regressions and plan sufficiency; update 06-01-SUMMARY.md frontmatter with 5 out-of-scope lint-edited files, record cargo fmt --check as pre-existing failing gate, annotate RAG-03 as structural-only | 2026-08-20 | — | Complete | — |
+| 8 | review-06-04-refactor-fidelity · Review commit c7e107ec (plan 06-04) as behavior-preserving refactor; confirmed checkpoint dispatch preserved and DTO/event contract byte-identical; found and FIXED in bfec94b: truncated config fail-closed error string (REG-06-04-01, root cause = Task 2 criterion contradicting its own action text), source-grep test gate rewritten on `go test -list` with per-package named failures (closes T-06-04-05), 8 package-local sse wire-contract tests added (total 67 -> 75), plus export-decision table added to 06-04-SUMMARY per the plan output block. Two criteria await sign-off: invariant 67->75 and Task 2 "exactly once". | 2026-08-20 | — | Complete | — |
+| 9 | ignore-gsd-runtime-dir · Ignore .gsd runtime directory in .gitignore | 2026-08-21 | — | Complete | — |
+| 10 | 260824-ipd · Fix the shared Phase 6 CONTEXT tag-extractor landmine. Do not add any per-phase CONTEXT.md. | 2026-08-24 | — | Verified | — |
+| 11 | commit-cross-ai-review · Commit cross-AI review for plans 10-12 in 06.2-REVIEWS.md | 2026-08-27 | — | Complete | — |
+| 12 | 260831-az7 · Migrate engine/eval from free-tier OpenRouter models (embedding, generation, judge) to paid-tier pins with an explicit embedding `dimensions` field, and complete the stalled 346-document multihop_rag reseed | 2026-08-31 / 2026-09-02 | — | Complete | — |
+| 13 | Clean up outdated temporary directories, caches, and stale lock files | 2026-10-01 | aba34980 | — | — |
 
 ## Performance Metrics
 
