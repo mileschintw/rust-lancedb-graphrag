@@ -2685,3 +2685,320 @@ fn d95_absent_or_blank_final_answer_leaves_the_answer_byte_identical() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// D-96: require_parameters routing on every chat request, and one `generation_served`
+// event per provider response naming its generation ID, served model and provider
+// (06.3.4.1-29 Task 4).
+// ---------------------------------------------------------------------------
+
+const D96_CORRELATION_ID: &str = "corr-d96-0001";
+
+/// Collects `generation_served` and `generation_output_rejected` events as
+/// `field name -> rendered value`, so a test can see both and their order.
+///
+/// It is installed behind the D-90 default filter, so an event the default filter drops is
+/// never captured.
+#[derive(Clone, Default)]
+struct ServedRecorder {
+    events: Arc<Mutex<Vec<CapturedEvent>>>,
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for ServedRecorder {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut fields = FieldMap::default();
+        event.record(&mut fields);
+        let message = fields.0.get("message").map(String::as_str);
+        if matches!(
+            message,
+            Some("generation_served") | Some("generation_output_rejected")
+        ) {
+            self.events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(fields.0);
+        }
+    }
+}
+
+#[derive(Clone)]
+struct D96LogBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for D96LogBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct D96Run {
+    result: Result<ModelOutput, crate::generation::GenerationError>,
+    request_body: serde_json::Value,
+    events: Vec<CapturedEvent>,
+    /// The `fmt` rendering of every event, one line per event.
+    log_lines: String,
+}
+
+impl D96Run {
+    fn served(&self) -> Vec<&CapturedEvent> {
+        self.events
+            .iter()
+            .filter(|event| event.get("message").map(String::as_str) == Some("generation_served"))
+            .collect()
+    }
+}
+
+/// A provider response body with a valid `stop` completion, usage and the given extra
+/// top-level keys (`id`, `model`, `provider`).
+fn d96_response(extra: serde_json::Value) -> serde_json::Value {
+    let mut body = json!({
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": model_output_json(D95_PROSE, &["[1]"], "retrieval")
+            },
+            "finish_reason": "stop"
+        }],
+        "usage": { "prompt_tokens": 1200, "completion_tokens": 300, "total_tokens": 1500 }
+    });
+    for (key, value) in extra.as_object().expect("extra keys are an object") {
+        body[key] = value.clone();
+    }
+    body
+}
+
+/// Serves one chat completion with `response` from a local mock and runs one `generate`
+/// call under a recorder (behind the default log filter) and a one-line-per-event `fmt` layer.
+async fn d96_generate_against_mock(response: serde_json::Value) -> D96Run {
+    use tracing_subscriber::{layer::SubscriberExt, Layer};
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept chat request");
+        let request = read_http_request(&mut stream);
+        write_json_response(&mut stream, response);
+        let body = request.split_once("\r\n\r\n").expect("request body").1;
+        serde_json::from_str::<serde_json::Value>(body).expect("chat request body is JSON")
+    });
+    let adapter = d95_adapter(addr);
+
+    let recorder = ServedRecorder::default();
+    let sink = Arc::new(Mutex::new(Vec::new()));
+    let writer = D96LogBuffer(Arc::clone(&sink));
+    let subscriber = tracing_subscriber::registry()
+        .with(
+            recorder
+                .clone()
+                .with_filter(crate::telemetry::resolve_log_filter(None).targets),
+        )
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(move || writer.clone()),
+        );
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Text.")]);
+    let mut request = GenerationRequest::new("Question?", evidence);
+    request.correlation_id = Some(D96_CORRELATION_ID.to_string());
+    let result = adapter.generate(request).await;
+
+    let request_body = server.join().expect("server completed");
+    let events = recorder
+        .events
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let log_lines = String::from_utf8(
+        sink.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone(),
+    )
+    .expect("fmt output is UTF-8");
+    D96Run {
+        result,
+        request_body,
+        events,
+        log_lines,
+    }
+}
+
+#[tokio::test]
+async fn d96_chat_payload_requires_parameters() {
+    let run = d96_generate_against_mock(d96_response(json!({}))).await;
+    run.result.as_ref().expect("generation succeeds");
+
+    assert_eq!(
+        run.request_body["provider"],
+        json!({"require_parameters": true}),
+        "the whole provider object is pinned"
+    );
+    let mut keys: Vec<&str> = run
+        .request_body
+        .as_object()
+        .expect("the body is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "max_completion_tokens",
+            "messages",
+            "model",
+            "provider",
+            "reasoning",
+            "response_format",
+            "temperature",
+            "top_p"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn d96_generation_served_logs_the_response_id_model_and_provider() {
+    let run = d96_generate_against_mock(d96_response(json!({
+        "id": "gen-d96-0001",
+        "model": "mock/served-model",
+        "provider": "MockProvider"
+    })))
+    .await;
+    run.result.as_ref().expect("generation succeeds");
+
+    let served = run.served();
+    assert_eq!(served.len(), 1, "exactly one generation_served: {:?}", run.events);
+    let event = served[0];
+    assert_eq!(unquoted(&event["generation_id"]), "gen-d96-0001");
+    assert_eq!(unquoted(&event["gen_ai.response.model"]), "mock/served-model");
+    assert_eq!(unquoted(&event["provider"]), "MockProvider");
+    assert_eq!(unquoted(&event["correlation_id"]), D96_CORRELATION_ID);
+}
+
+#[tokio::test]
+async fn d96_generation_served_without_response_fields_never_fails() {
+    let with_fields = d96_generate_against_mock(d96_response(json!({
+        "id": "gen-d96-0002",
+        "model": "mock/served-model",
+        "provider": "MockProvider"
+    })))
+    .await;
+    let without_fields = d96_generate_against_mock(d96_response(json!({}))).await;
+
+    let expected = with_fields.result.as_ref().expect("generation succeeds");
+    let actual = without_fields
+        .result
+        .as_ref()
+        .expect("missing id, model and provider never fail a generation");
+    assert_eq!(actual, expected, "the output does not depend on the metadata");
+
+    let served = without_fields.served();
+    assert_eq!(served.len(), 1, "exactly one generation_served: {:?}", without_fields.events);
+    let event = served[0];
+    assert_eq!(unquoted(&event["correlation_id"]), D96_CORRELATION_ID);
+    for absent in ["generation_id", "gen_ai.response.model", "provider"] {
+        assert!(!event.contains_key(absent), "{absent} must be absent: {event:?}");
+    }
+}
+
+#[tokio::test]
+async fn d96_generation_served_tolerates_non_string_fields() {
+    let run = d96_generate_against_mock(d96_response(json!({
+        "id": "gen-d96-0003",
+        "model": 42,
+        "provider": {"name": "x"}
+    })))
+    .await;
+    run.result
+        .as_ref()
+        .expect("non-string model and provider never fail a generation");
+
+    let served = run.served();
+    assert_eq!(served.len(), 1, "exactly one generation_served: {:?}", run.events);
+    let event = served[0];
+    assert_eq!(unquoted(&event["generation_id"]), "gen-d96-0003");
+    assert!(!event.contains_key("gen_ai.response.model"), "{event:?}");
+    assert!(!event.contains_key("provider"), "{event:?}");
+}
+
+#[tokio::test]
+async fn d96_generation_served_is_logged_for_a_rejected_output() {
+    let mut response = d96_response(json!({
+        "id": "gen-d96-0004",
+        "provider": "MockProvider"
+    }));
+    response["choices"][0]["finish_reason"] = json!("length");
+    let run = d96_generate_against_mock(response).await;
+
+    let err = run.result.as_ref().expect_err("a length completion is rejected");
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert_eq!(
+        err.message(),
+        "OpenRouter completion incomplete: finish_reason 'length'",
+        "the error message is unchanged"
+    );
+
+    let messages: Vec<&str> = run
+        .events
+        .iter()
+        .map(|event| event["message"].as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        ["generation_served", "generation_output_rejected"],
+        "one served event, then one rejection: {:?}",
+        run.events
+    );
+    for event in &run.events {
+        assert_eq!(unquoted(&event["correlation_id"]), D96_CORRELATION_ID);
+    }
+}
+
+#[tokio::test]
+async fn d96_generation_served_bounds_and_escapes_provider_text() {
+    let long_provider = format!("a\n{}", "b".repeat(498));
+    let run = d96_generate_against_mock(d96_response(json!({
+        "id": "gen-d96-0005",
+        "provider": long_provider
+    })))
+    .await;
+    run.result.as_ref().expect("generation succeeds");
+
+    let served = run.served();
+    assert_eq!(served.len(), 1, "exactly one generation_served: {:?}", run.events);
+    let logged = unquoted(&served[0]["provider"]);
+    assert_eq!(logged.chars().count(), 128, "bounded to 128 chars");
+    assert!(
+        long_provider.starts_with(&logged),
+        "the log keeps the start of the provider text"
+    );
+
+    let served_lines: Vec<&str> = run
+        .log_lines
+        .lines()
+        .filter(|line| line.contains("generation_served"))
+        .collect();
+    assert_eq!(
+        served_lines.len(),
+        1,
+        "the event renders as one fmt line: {:?}",
+        run.log_lines
+    );
+    assert!(
+        served_lines[0].contains("a\\nbbb"),
+        "the line feed is escaped: {}",
+        served_lines[0]
+    );
+}
