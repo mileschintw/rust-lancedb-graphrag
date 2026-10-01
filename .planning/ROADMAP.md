@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 21/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
+**Plans:** 22/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
 
 Plans:
 
@@ -991,7 +991,7 @@ Plans:
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [ ] 06.3.4.1-30-PLAN.md — `gap_closure: true`. Paid drive 1b, D-83's one iteration after drive 1: a blocking D-86 cap decision, one preflight with the D-94 option and a served-by check, the drive, fail-closed scoring and `gates-drive1b`, the provider and format map, `06.3.4.1-DRIVE1B.md`, then a blocking D-84 decision, `pass-proceed` or `halt-disclose` (G12; D-84, D-86, D-87a, D-94)
+- [x] 06.3.4.1-30-PLAN.md — `gap_closure: true`. Paid drive 1b, D-83's one iteration after drive 1: a blocking D-86 cap decision, one preflight with the D-94 option and a served-by check, the drive, fail-closed scoring and `gates-drive1b`, the provider and format map, `06.3.4.1-DRIVE1B.md`, then a blocking D-84 decision, `pass-proceed` or `halt-disclose` (G12; D-84, D-86, D-87a, D-94)
 
 **Wave 14** *(blocked on Wave 13 completion)*
 

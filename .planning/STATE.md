@@ -1,17 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 30
+current_plan: 13
 status: executing
-stopped_at: "Completed 06.3.4.1-29-PLAN.md: D-95 rendered final Answer line, D-96 require_parameters and generation_served, release engine built, G11 cause unknown (HTTP 403); plan 30 (drive 1b) opens on a blocking cap and D-94-scope decision and was not started"
-last_updated: "2026-10-01T21:33:37.141Z"
+stopped_at: Gap plans 29 and 30 complete; drive 1b PASS (SC-3 0.578), D-84 pass-proceed. The user stopped the run before plan 13; next run starts OI-01 at 06.3.4.1-13 (probe cap $0.05 authorised)
+last_updated: "2026-10-01T22:55:09.752Z"
 last_activity: 2026-10-01
-state_head: 995eba6915ffa42da1b53f5ab998c4a636337ddd
+last_activity_desc: "Completed 06.3.4.1-30: drive 1b PASS, D-84 pass-proceed"
+state_head: b6c6de34444edd3ae1860a7dd31f91f3f370ba93
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 179
+  completed_plans: 180
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -21,7 +22,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 30
+Current Plan: 13
 Total Plans in Phase: 30
 
 ## Current Status
@@ -243,7 +244,7 @@ Total Plans in Phase: 30
 
 - **Phase:** 06.3.4.1 — Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
 - **Status:** executing (started 2026-09-23 via `/gsd-execute-phase 06.3.4.1`; now 30 plans across 21 waves, run sequentially on main — see note below). Gap-closure run started 2026-10-01 via `/gsd-execute-phase 06.3.4.1 --gaps-only` (plans 29 and 30 only; the user asked to stop after the gap closes, before plans 13-20)
-- **Current Plan (compound ID):** 06.3.4.1-29 (Wave 12, gap closure; 06.3.4.1-30 follows in wave 13) — see `## Current Position` above for the machine-readable `Current Plan`/`Total Plans in Phase` counters
+- **Current Plan (compound ID):** 06.3.4.1-13 (OI-01 mention-embedding probe, cap $0.05 authorised at 06.3.4.1-30 Task 4; not started: gap plans 29 and 30 are complete and the user stopped the run before plan 13) — see `## Current Position` above for the machine-readable `Current Plan`/`Total Plans in Phase` counters
 - **Execution mode note:** worktree isolation deliberately not used for this run. Plan 01's precondition reads the gitignored live eval store (`data/lancedb-eval/nodes.lance`), which does not exist inside a harness worktree, and plan 03 is a release-build latency/working-set soak whose slopes select the class plan 07 must fix (D-64), so it needs a quiet machine rather than sibling executors' parallel cargo builds. Waves 2+ would have degraded to sequential anyway once wave 1 merges past `origin/HEAD` (#1369).
 - **Previous phase:** 06.3.4 remains `gaps_found` (7/8; SC-3 D-48 fresh human calibration parked, see Current Status). Phase 6.4 stays **parked** until Phase 06.3.4.1 clears its unpark gates (a demonstrable graph-on vs graph-off effect on a gold-in-index subset; both arms failing to answer is not a v1 story).
 
@@ -389,6 +390,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P28 | 45 min | 6 tasks | 24 files |
 | Phase 06.3.4.1 P11 | 2 days elapsed (completed through gap plans 21-28) | 3 tasks | 6 files |
 | Phase 06.3.4.1 P29 | 45 min | 5 tasks | 18 files |
+| Phase 06.3.4.1 P30 | 65 min | 4 tasks | 64 files |
 
 ## Decisions
 
@@ -478,9 +480,9 @@ Total Plans in Phase: 30
 
 ## Session
 
-**Last session:** 2026-10-01T21:33:28.218Z
-**Last activity:** 2026-10-01 - Completed quick task 261001-ked: collector zPages host port moved below 49152
-**Stopped at:** Completed 06.3.4.1-29-PLAN.md: D-95 rendered final Answer line, D-96 require_parameters and generation_served, release engine built, G11 cause unknown (HTTP 403); plan 30 (drive 1b) opens on a blocking cap and D-94-scope decision and was not started
+**Last session:** 2026-10-01T22:55:08.438Z
+**Last activity:** 2026-10-01 - Completed 06.3.4.1-30: drive 1b PASS, D-84 pass-proceed
+**Stopped at:** Gap plans 29 and 30 complete; drive 1b PASS (SC-3 0.578), D-84 pass-proceed. The user stopped the run before plan 13; next run starts OI-01 at 06.3.4.1-13 (probe cap $0.05 authorised)
 **Resume file:** None
 
 ## Accumulated Context
