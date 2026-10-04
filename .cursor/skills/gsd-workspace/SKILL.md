@@ -47,10 +47,10 @@ Mode routing:
 </routing>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/new-workspace.md
-@D:/Repos/lancet/.cursor/gsd-core/workflows/list-workspaces.md
-@D:/Repos/lancet/.cursor/gsd-core/workflows/remove-workspace.md
-@D:/Repos/lancet/.cursor/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/new-workspace.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/list-workspaces.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/remove-workspace.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

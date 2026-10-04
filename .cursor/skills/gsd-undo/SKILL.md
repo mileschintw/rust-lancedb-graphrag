@@ -37,9 +37,9 @@ Three modes:
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/undo.md
-@D:/Repos/lancet/.cursor/gsd-core/references/ui-brand.md
-@D:/Repos/lancet/.cursor/gsd-core/references/gate-prompts.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/undo.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/gate-prompts.md
 </execution_context>
 
 <context>

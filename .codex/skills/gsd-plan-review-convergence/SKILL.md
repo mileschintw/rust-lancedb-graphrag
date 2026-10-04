@@ -77,6 +77,22 @@ Typed mapping (agent_type-capable schema only):
   never fabricate a manual worktree protocol — route through the negotiated
   isolation adapter, which still fails closed for hosts declaring `none` (#3360).
 
+Foreground handoffs:
+- spawn_agent is asynchronous. When the source Agent(...) or Task(...) declares
+  run_in_background=false, call collaboration.wait_agent(timeout_ms=...) immediately after
+  spawn and keep the parent turn active until that child returns a terminal result.
+- collaboration.wait_agent is a mailbox wakeup, NOT a completion oracle: "Wait completed"
+  can mean only that a child sent an interim MESSAGE or status update. After every wakeup,
+  inspect the named child's update/status. Only a FINAL_ANSWER or a terminal agent status
+  (completed, failed, or cancelled) ends the foreground handoff.
+- On an interim MESSAGE or any non-terminal status, do not report an outcome, send a
+  continuation, start parent work, or end the parent turn. Call collaboration.wait_agent
+  again for the same child. If a terminal response is absent after an abnormal end, reconcile
+  the workflow's durable artifacts before classifying the child.
+- This applies to one foreground child as well as fan-out. The child retains its workflow's
+  own checkpoint loop; do not report an outcome or start any further parent work before its
+  terminal result is available.
+
 Generic-agent workaround (multi_agent_v1 schema — NO agent_type field):
 When only the generic `multi_agent_v1` schema is available, typed GSD agent dispatch
 (`gsd-planner`, `gsd-executor`, etc.) is NOT possible. This is a known Codex limitation
@@ -104,6 +120,9 @@ Spawn restriction:
   defaulting to inline execution.
 
 Parallel fan-out:
+- For each child, loop on collaboration.wait_agent(timeout_ms=...) until its own terminal
+  result is observed. A mailbox update from one child never completes another child, and an
+  interim MESSAGE never completes its sender.
 - Spawn multiple agents → collect agent IDs → `collaboration.wait_agent(timeout_ms=...)` for each to complete
 - Do NOT use `functions.wait(cell_id=...)` — that is an unrelated exec-cell tool, not the collaboration wait
 
@@ -119,7 +138,7 @@ Repeatedly: review plans with external AI CLIs → if HIGH or actionable non-HIG
 
 **Flow:** Skill("gsd-plan-phase") → Agent→Skill("gsd-review") → check unresolved HIGH + actionable non-HIGH → Skill("gsd-plan-phase --reviews") → Agent→Skill("gsd-review") → ... → Converge or escalate
 
-Replaces gsd-plan-phase's internal gsd-plan-checker with external AI reviewers (codex, gemini, etc.). Plan-phase runs **inline** (bare Skill at depth 0) so it can spawn gsd-planner/gsd-plan-checker at depth 1. Review runs inside an isolated Agent (gsd-review is a Bash leaf — no sub-agents needed). Orchestrator only does loop control.
+Replaces gsd-plan-phase's internal gsd-plan-checker with external AI reviewers (codex, claude, etc.). Plan-phase runs **inline** (bare Skill at depth 0) so it can spawn gsd-planner/gsd-plan-checker at depth 1. Review runs inside an isolated Agent (gsd-review is a Bash leaf — no sub-agents needed). Orchestrator only does loop control.
 
 **Orchestrator role:** Parse arguments, validate phase, run plan-phase inline (Skill at depth 0), spawn an Agent for gsd-review, check unresolved HIGH and actionable non-HIGH counts, stall detection, escalation gate.
 </objective>
@@ -138,8 +157,7 @@ Phase number: extracted from {{GSD_ARGS}} (required)
 
 **Flags:**
 - `--codex` — Use Codex CLI as reviewer (default if no reviewer flag given AND `review.default_reviewers` is unset; otherwise `review.default_reviewers` wins per ADR-0011 — #2315)
-- `--gemini` — Use Gemini CLI as reviewer
-- `--agy` / `--antigravity` — Use Antigravity CLI as reviewer (successor to the discontinued Gemini CLI)
+- `--agy` / `--antigravity` — Use Antigravity CLI as reviewer
 - `--claude` — Use the agent CLI as reviewer (separate session)
 - `--coderabbit` — Use CodeRabbit as reviewer (reviews the working-tree diff, not the source tree)
 - `--opencode` — Use OpenCode as reviewer
@@ -153,7 +171,8 @@ Phase number: extracted from {{GSD_ARGS}} (required)
 - `--max-cycles N` — Maximum replan→review cycles (default: 3)
 
 **Feature gate:** This command requires `workflow.plan_review_convergence=true`. Enable with:
-`gsd config-set workflow.plan_review_convergence true`
+`gsd config-set workflow.plan_review_convergence true`. A dispatch carrying `--override-gate` —
+how `$gsd-autonomous --converge` invokes this workflow (#4600) — bypasses the gate for that run.
 </context>
 
 <process>

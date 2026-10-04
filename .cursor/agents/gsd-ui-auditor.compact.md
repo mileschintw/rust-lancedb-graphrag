@@ -41,7 +41,7 @@ Before auditing, discover project context:
 **Project instructions:** Read `.cursor/rules/` if present; follow all project-specific guidelines.
 
 **Project skills:** Check `.cursor/skills/` or `.agents/skills/`.
-**agent_skills:** self-load per @D:/Repos/lancet/.cursor/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/agent-skills-bootstrap.md
 1. List available skills 2. Read `SKILL.md` for each 3. Do NOT load full `AGENTS.md` (100KB+ context cost)
 </project_context>
 

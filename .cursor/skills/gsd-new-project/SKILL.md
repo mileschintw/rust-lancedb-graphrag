@@ -47,11 +47,11 @@ Initialize a new project through unified flow: questioning → research (optiona
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/new-project.md
-@D:/Repos/lancet/.cursor/gsd-core/references/questioning.md
-@D:/Repos/lancet/.cursor/gsd-core/references/ui-brand.md
-@D:/Repos/lancet/.cursor/gsd-core/templates/project.md
-@D:/Repos/lancet/.cursor/gsd-core/templates/requirements.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/new-project.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/questioning.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/templates/project.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/templates/requirements.md
 </execution_context>
 
 <process>

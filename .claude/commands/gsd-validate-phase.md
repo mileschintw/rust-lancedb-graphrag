@@ -23,7 +23,7 @@ Output: updated VALIDATION.md + generated test files.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/validate-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/validate-phase.md
 </execution_context>
 
 <context>

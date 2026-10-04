@@ -1,6 +1,6 @@
 name = "gsd-dom-verifier"
 description = "Verifies live-DOM acceptance criteria for a completed execution wave using a browser MCP server. Writes DOM-VERIFY.md. Additive — never blocks a wave. Spawned by the live-dom-uat capability at execute:wave:post."
-sandbox_mode = "read-only"
+sandbox_mode = "workspace-write"
 service_tier = "flex"
 model_verbosity = "low"
 developer_instructions = '''

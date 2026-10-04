@@ -18,7 +18,7 @@ Turn domain rubric ingredients into measurable, tooled evaluation criteria. Writ
 </role>
 
 <required_reading>
-Read `D:/Repos/lancet/.claude/gsd-core/references/ai-evals.md` before planning. This is your evaluation framework.
+Read `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/ai-evals.md` before planning. This is your evaluation framework.
 </required_reading>
 
 <input>

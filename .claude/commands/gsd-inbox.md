@@ -21,7 +21,7 @@ and optionally applies labels or closes non-compliant submissions.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/inbox.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/inbox.md
 </execution_context>
 
 <context>

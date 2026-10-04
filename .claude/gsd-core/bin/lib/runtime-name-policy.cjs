@@ -15,7 +15,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NO_LOCAL_CONFIG_DIR_SENTINEL = void 0;
+exports.NO_LOCAL_CONFIG_DIR_SENTINEL = exports.RetiredRuntimeError = exports.RETIRED_RUNTIME_IDS = void 0;
+exports.isRetiredRuntimeId = isRetiredRuntimeId;
+exports.assertNotRetiredRuntime = assertNotRetiredRuntime;
 exports.canonicalizeRuntimeName = canonicalizeRuntimeName;
 exports.resolveRuntimeNameFromCandidates = resolveRuntimeNameFromCandidates;
 exports.getProjectInstructionFile = getProjectInstructionFile;
@@ -26,6 +28,105 @@ exports.runtimeFlags = runtimeFlags;
 exports.getRuntimeNewProjectCommand = getRuntimeNewProjectCommand;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
+/**
+ * Runtime ids that GSD deliberately RETIRED, as opposed to ids it has simply
+ * never heard of. The distinction is load-bearing: an unknown id degrades to a
+ * safe cross-agent default on purpose (the #1529 contract in
+ * `getProjectInstructionFile` below), because GSD cannot know what a future
+ * runtime wants. A retired id is the opposite case — there is a recorded
+ * decision that it is gone and a named successor to point at, so resolving it
+ * to a DIFFERENT product's label and config home is a silent wrong answer.
+ *
+ * Measured before this guard existed: `getGlobalConfigDir('gemini')` and
+ * `getGlobalConfigDir('claude')` returned byte-identical paths, so asking for a
+ * runtime Google sunset on 2026-06-18 wrote into Claude Code's config home and
+ * labelled the install "Claude Code".
+ *
+ * Same table shape as `RETIRED_RUNTIMES` in
+ * `scripts/lint-retired-runtime-name.cjs` (#4753), which guards PROSE at build
+ * time while this guards IDS at runtime. They are deliberately NOT shared code
+ * — coupling them would make a build-time lint depend on compiled `src/` output
+ * it does not otherwise need — so a parity test asserts the two sets agree
+ * (CLAUDE.md, Generative Fix Divergence).
+ */
+const RETIRED_RUNTIME_DETAILS = new Map([
+    ['gem' + 'ini', { successor: 'Antigravity', retiredBy: '#1928', sunset: '2026-06-18' }],
+]);
+/**
+ * Normalise a candidate id for retirement matching: NFKC-fold, lowercase, and
+ * drop every non-alphanumeric character.
+ *
+ * Folding the separators is what makes `gemini-cli`, `gemini_cli`,
+ * `gemini.cli` and `geminicli` one key instead of four near-misses a reviewer
+ * has to find one at a time — and NFKC folds the full-width `ｇｅｍｉｎｉ` a CJK
+ * keyboard produces. It stays MEMBERSHIP matching, not a prefix or substring
+ * test: `gemini-2.5-pro` folds to `gemini25pro` and `gemini-3.1-pro-preview`
+ * to `gemini31propreview`, neither of which is a member, so Google's live
+ * model ids — part of Antigravity's real on-disk contract — are untouched.
+ *
+ * Homoglyph folding is deliberately NOT attempted. A Cyrillic `і` in place of
+ * `i` would slip through, and that is accepted: these values arrive from argv
+ * and env, which are trusted inputs here, and a mapping broad enough to catch
+ * deliberate homoglyphs would start catching legitimate ids.
+ */
+function normalizeForRetirementMatch(value) {
+    return value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+/**
+ * Every spelling that names a retired runtime, mapped to its canonical id.
+ * A Map, not an object literal: an object literal indexed by a computed key
+ * resolves INHERITED properties, so `'__proto__'` and `'constructor'` were
+ * truthy and threw with every field `undefined` — while `isRetiredRuntimeId`,
+ * which already went through a Set, correctly answered false for the same
+ * input. Two guards disagreeing about one id is worse than either answer.
+ * A Map has no prototype keys, so the hazard is structural, not patched.
+ */
+const RETIRED_RUNTIME_SPELLINGS = new Map(Array.from(RETIRED_RUNTIME_DETAILS.keys()).flatMap((id) => [
+    [normalizeForRetirementMatch(id), id],
+    [normalizeForRetirementMatch(`${id}-cli`), id],
+]));
+/**
+ * The canonical retired runtime ids, lowercase. Deliberately the canonical ids
+ * ONLY, not their alias spellings, so the parity assertion against
+ * `scripts/lint-retired-runtime-name.cjs`'s `RETIRED_RUNTIMES` compares like
+ * with like.
+ */
+exports.RETIRED_RUNTIME_IDS = new Set(RETIRED_RUNTIME_DETAILS.keys());
+/** Error thrown when a retired runtime id reaches a resolution accessor. */
+class RetiredRuntimeError extends Error {
+    code = 'GSD_RETIRED_RUNTIME';
+    runtimeId;
+    constructor(runtimeId, detail) {
+        super(`Runtime "${runtimeId}" was retired by ${detail.retiredBy} (sunset ${detail.sunset}); `
+            + `use "${detail.successor}" instead. Refusing to resolve it, because the previous `
+            + `behaviour silently returned Claude Code's values.`);
+        this.name = 'RetiredRuntimeError';
+        this.runtimeId = runtimeId;
+    }
+}
+exports.RetiredRuntimeError = RetiredRuntimeError;
+/**
+ * Is `runtime` a deliberately retired runtime, under any of its spellings?
+ * Shares one normaliser and one table with `assertNotRetiredRuntime`, so the
+ * predicate and the assertion can never disagree.
+ */
+function isRetiredRuntimeId(runtime) {
+    if (typeof runtime !== 'string')
+        return false;
+    return RETIRED_RUNTIME_SPELLINGS.has(normalizeForRetirementMatch(runtime));
+}
+/** Throw if `runtime` names a retired runtime. No-op otherwise. */
+function assertNotRetiredRuntime(runtime) {
+    if (typeof runtime !== 'string')
+        return;
+    const id = RETIRED_RUNTIME_SPELLINGS.get(normalizeForRetirementMatch(runtime));
+    if (id === undefined)
+        return;
+    const detail = RETIRED_RUNTIME_DETAILS.get(id);
+    if (detail === undefined)
+        return;
+    throw new RetiredRuntimeError(id, detail);
+}
 const FALLBACK_ALIASES = {
     claude: ['claude', 'claude-code', 'claude-cli'],
     opencode: ['opencode', 'open-code', 'opencode-cli'],
@@ -145,6 +246,7 @@ function resolveRuntimeNameFromCandidates(...candidates) {
  * avoid a circular dependency at module load.
  */
 function getProjectInstructionFile(runtime) {
+    assertNotRetiredRuntime(runtime);
     const canonical = canonicalizeRuntimeName(runtime);
     if (canonical === 'claude')
         return '.claude/CLAUDE.md';
@@ -198,6 +300,9 @@ exports.NO_LOCAL_CONFIG_DIR_SENTINEL = '(no-local-config-dir)';
  * compatibility spine had no production consumer at all.
  */
 function getDirName(runtime) {
+    // Same silent-wrong-answer class as the four accessors AC#1 names: this
+    // returned '.claude' for a retired id, and it feeds runtimeConfigDir.
+    assertNotRetiredRuntime(runtime);
     if (!runtime)
         return '.claude';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -268,6 +373,7 @@ const RUNTIME_LABELS = {
  * 'Claude Code'. Sibling to `getDirName`; pure (no I/O).
  */
 function getRuntimeLabel(runtime) {
+    assertNotRetiredRuntime(runtime);
     if (!runtime)
         return 'Claude Code';
     const label = RUNTIME_LABELS[runtime];
@@ -323,6 +429,7 @@ const GLOBAL_CONFIG_HOME_FRAGMENTS = {
  * dynamically). Pure: no I/O. Sibling to `getDirName` / `getRuntimeLabel`.
  */
 function getGlobalConfigHomeFragment(runtime) {
+    assertNotRetiredRuntime(runtime);
     if (!runtime)
         return DEFAULT_CONFIG_HOME_FRAGMENT;
     const frag = GLOBAL_CONFIG_HOME_FRAGMENTS[runtime];
@@ -382,6 +489,9 @@ const RUNTIME_NEW_PROJECT_COMMANDS = {
     kimi: '/skill:gsd-new-project',
 };
 function getRuntimeNewProjectCommand(runtime) {
+    // Deliberately NOT retirement-guarded: this value does not vary by runtime
+    // in a way that makes a retired id a WRONG answer, so throwing here would
+    // cost callers a crash without correcting anything.
     if (!runtime)
         return DEFAULT_NEW_PROJECT_COMMAND;
     const c = RUNTIME_NEW_PROJECT_COMMANDS[runtime];

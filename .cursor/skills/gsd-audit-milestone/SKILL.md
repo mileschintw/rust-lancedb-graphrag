@@ -34,7 +34,7 @@ Verify milestone achieved its definition of done. Check requirements coverage, c
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/audit-milestone.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/audit-milestone.md
 </execution_context>
 
 <context>

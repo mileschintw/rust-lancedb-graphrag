@@ -38,8 +38,8 @@ Requirements: Cursor v2.1.91+, claude.ai account, GitHub repository.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/ultraplan-phase.md
-@D:/Repos/lancet/.cursor/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/ultraplan-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

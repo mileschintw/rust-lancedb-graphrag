@@ -40,7 +40,7 @@ Granular flags are composable: `--discuss --research --validate` gives the same 
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/quick.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/quick.md
 </execution_context>
 
 <context>

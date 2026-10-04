@@ -21,8 +21,8 @@ Requirements: Claude Code v2.1.91+, claude.ai account, GitHub repository.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/ultraplan-phase.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/ultraplan-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

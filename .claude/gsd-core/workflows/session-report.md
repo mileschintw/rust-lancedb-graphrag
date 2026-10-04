@@ -1,4 +1,4 @@
-@D:/Repos/lancet/.claude/gsd-core/references/response-language-directive.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/response-language-directive.md
 
 <purpose>
 Generate a post-session summary document capturing work performed, outcomes achieved, and estimated resource usage. Writes SESSION_REPORT.md to .planning/reports/ for human review and stakeholder sharing.

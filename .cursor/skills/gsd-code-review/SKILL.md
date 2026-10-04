@@ -48,7 +48,7 @@ Output: {padded_phase}-REVIEW.md in phase directory + inline summary of findings
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/code-review.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/code-review.md
 </execution_context>
 
 <context>

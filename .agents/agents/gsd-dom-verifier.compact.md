@@ -1,7 +1,11 @@
 ---
 name: gsd-dom-verifier
 description: "Verifies live-DOM acceptance criteria for a completed execution wave using a browser MCP server. Writes DOM-VERIFY.md. Additive — never blocks a wave. Spawned by the live-dom-uat capability at execute:wave:post."
-tools: read_file, write_file, glob, search_file_content
+tools:
+- view_file
+- write_file
+- glob
+- grep_search
 color: cyan
 ---
 

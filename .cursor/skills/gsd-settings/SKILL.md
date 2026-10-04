@@ -39,7 +39,7 @@ Routes to the settings workflow which handles:
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/settings.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/settings.md
 </execution_context>
 
 <process>

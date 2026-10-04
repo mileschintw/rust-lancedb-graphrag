@@ -20,11 +20,11 @@ const cliExitMod = require("./cli-exit.cjs");
 const { ExitError } = cliExitMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const configLoader = require("./config-loader.cjs");
-const { CONFIG_DEFAULTS } = configLoader;
+const { CONFIG_DEFAULTS, resolvePlannerStallDetectionEnabled } = configLoader;
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
-const { planningDir, planningRoot, withPlanningLock } = planningWorkspace;
+const { planningDir, planningRoot, resolveEnvWorkstream, withPlanningLock } = planningWorkspace;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const modelProfiles = require("./model-profiles.cjs");
 const { VALID_PROFILES, getAgentToModelMapForProfile, formatAgentToModelMapAsTable } = modelProfiles;
@@ -66,6 +66,14 @@ const SHIP_PR_BODY_TEMPLATE_TOKENS = new Set([
     'padded_phase',
 ]);
 const SHIP_PR_BODY_SOURCE_RE = /^(ROADMAP|PLAN|SUMMARY|VERIFICATION|STATE|REQUIREMENTS|CONTEXT)\.md\s+##\s+[^\r\n#][^\r\n]*$/;
+// ADR-612 PR-5: configuration accepts every convention the runtime can read.
+// Keep this distinct from roadmap-upgrade's supported target set: sequential
+// is valid project configuration but is not a migration destination.
+const VALID_PHASE_ID_CONVENTIONS = Object.freeze([
+    'sequential',
+    'milestone-prefixed',
+    'bracket',
+]);
 /**
  * Schema-level defaults for well-known config keys.
  * When a key is absent from config.json and no --default flag was supplied,
@@ -75,6 +83,7 @@ const SCHEMA_DEFAULTS = {
     'context_window': 200000,
     'executor.stall_detect_interval_minutes': 5,
     'executor.stall_threshold_minutes': 10,
+    'planner.stall_detection_enabled': CONFIG_DEFAULTS.planner_stall_detection_enabled,
     'planner.stall_detect_interval_minutes': 5,
     'planner.stall_threshold_minutes': 10,
     'git.create_tag': true,
@@ -152,12 +161,15 @@ function resolveSchemaDefault(cwd, kp) {
  * Centralizing emission here means masking can't be missed at a call site.
  */
 function emitResolvedDefault(kp, value, raw) {
+    const resolvedValue = kp === 'planner.stall_detection_enabled'
+        ? resolvePlannerStallDetectionEnabled(value)
+        : value;
     if ((0, secrets_cjs_1.isSecretKey)(kp)) {
-        const masked = (0, secrets_cjs_1.maskSecret)(value);
+        const masked = (0, secrets_cjs_1.maskSecret)(resolvedValue);
         output(masked, raw, masked);
         return;
     }
-    output(value, raw, String(value));
+    output(resolvedValue, raw, String(resolvedValue));
 }
 // ─── Validation helpers ───────────────────────────────────────────────────────
 function validateKnownConfigKeyPath(keyPath) {
@@ -542,7 +554,7 @@ function _setNestedValue(config, keyPath, parsedValue) {
 }
 /**
  * Deletes a value from the config object, allowing nested values via dot
- * notation (e.g., "review.models.gemini"). Mirrors `_setNestedValue`'s
+ * notation (e.g., "review.models.codex"). Mirrors `_setNestedValue`'s
  * prototype-pollution guard on every path segment (including intermediates).
  *
  * Unlike `_setNestedValue`, this NEVER creates missing intermediate objects —
@@ -806,6 +818,9 @@ function cmdConfigSet(cwd, keyPath, value, raw, options = {}) {
     const VALID_CONTEXT_VALUES = ['dev', 'research', 'review'];
     if (kp === 'context')
         assertEnumValue(parsedValue, val, VALID_CONTEXT_VALUES, 'context value');
+    if (kp === 'phase_id_convention') {
+        assertEnumValue(parsedValue, val, VALID_PHASE_ID_CONVENTIONS, 'phase_id_convention');
+    }
     // Codebase drift detector (#2003)
     const VALID_DRIFT_ACTIONS = ['warn', 'auto-remap'];
     if (kp === 'workflow.drift_action')
@@ -851,6 +866,13 @@ function cmdConfigSet(cwd, keyPath, value, raw, options = {}) {
     if (kp === 'workflow.agent_hint_routing') {
         if (typeof parsedValue !== 'boolean') {
             error(`Invalid workflow.agent_hint_routing '${val}'. Must be a boolean (true or false).`);
+        }
+    }
+    // Planner watchdog opt-out (#4570) — only a real boolean may change the
+    // default-on policy. In particular, string "false" must not disable it.
+    if (kp === 'planner.stall_detection_enabled') {
+        if (typeof parsedValue !== 'boolean') {
+            error(`Invalid planner.stall_detection_enabled '${val}'. Must be a boolean (true or false).`);
         }
     }
     // #3086 — git.create_tag: boolean only
@@ -1161,6 +1183,9 @@ function cmdConfigGet(cwd, keyPath, raw, defaultValue) {
         }
         error(`Key not found: ${kp}`, ERROR_REASON.CONFIG_KEY_NOT_FOUND);
     }
+    if (kp === 'planner.stall_detection_enabled') {
+        current = resolvePlannerStallDetectionEnabled(current);
+    }
     // Never echo plaintext for sensitive keys via config-get. Plaintext lives
     // in config.json on disk; the CLI surface always shows the masked form.
     if ((0, secrets_cjs_1.isSecretKey)(kp)) {
@@ -1190,7 +1215,7 @@ function resolveFromRootConfig(cwd, kp) {
     // diverges from planningRoot without a workstream and loadConfigResolved does NOT
     // inherit root — matching the runtime's own `if (ws)` gate keeps the two surfaces
     // from diverging on the project-scoped (non-workstream) case.
-    if (!process.env['GSD_WORKSTREAM'])
+    if (!resolveEnvWorkstream())
         return { found: false, value: undefined };
     const root = planningRoot(cwd);
     const rootConfigPath = node_path_1.default.join(root, 'config.json');
@@ -1297,7 +1322,7 @@ function cmdConfigPath(cwd, _raw, workstreamContext = null) {
  * (caller uses `await` which is safe on a sync return value).
  */
 function cmdMigrateConfig(cwd, raw) {
-    const ws = process.env['GSD_WORKSTREAM'] || null;
+    const ws = resolveEnvWorkstream();
     // #3749: resolve the migration target through the project-aware resolver so
     // GSD_PROJECT scopes the write; migrateOnDisk itself cannot (see its
     // configPathOverride note).
@@ -1345,6 +1370,7 @@ function cmdMigrateConfig(cwd, raw) {
 }
 module.exports = {
     VALID_CONFIG_KEYS,
+    VALID_PHASE_ID_CONVENTIONS,
     cmdConfigEnsureSection,
     cmdConfigSet,
     cmdConfigGet,

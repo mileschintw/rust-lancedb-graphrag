@@ -41,13 +41,13 @@ Does not require prior new-project setup — auto-creates `.planning/sketches/` 
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/sketch.md
-@D:/Repos/lancet/.cursor/gsd-core/workflows/sketch-wrap-up.md
-@D:/Repos/lancet/.cursor/gsd-core/references/ui-brand.md
-@D:/Repos/lancet/.cursor/gsd-core/references/sketch-theme-system.md
-@D:/Repos/lancet/.cursor/gsd-core/references/sketch-interactivity.md
-@D:/Repos/lancet/.cursor/gsd-core/references/sketch-tooling.md
-@D:/Repos/lancet/.cursor/gsd-core/references/sketch-variant-patterns.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/sketch.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/sketch-wrap-up.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/sketch-theme-system.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/sketch-interactivity.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/sketch-tooling.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/sketch-variant-patterns.md
 </execution_context>
 
 

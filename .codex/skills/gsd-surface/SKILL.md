@@ -77,6 +77,22 @@ Typed mapping (agent_type-capable schema only):
   never fabricate a manual worktree protocol — route through the negotiated
   isolation adapter, which still fails closed for hosts declaring `none` (#3360).
 
+Foreground handoffs:
+- spawn_agent is asynchronous. When the source Agent(...) or Task(...) declares
+  run_in_background=false, call collaboration.wait_agent(timeout_ms=...) immediately after
+  spawn and keep the parent turn active until that child returns a terminal result.
+- collaboration.wait_agent is a mailbox wakeup, NOT a completion oracle: "Wait completed"
+  can mean only that a child sent an interim MESSAGE or status update. After every wakeup,
+  inspect the named child's update/status. Only a FINAL_ANSWER or a terminal agent status
+  (completed, failed, or cancelled) ends the foreground handoff.
+- On an interim MESSAGE or any non-terminal status, do not report an outcome, send a
+  continuation, start parent work, or end the parent turn. Call collaboration.wait_agent
+  again for the same child. If a terminal response is absent after an abnormal end, reconcile
+  the workflow's durable artifacts before classifying the child.
+- This applies to one foreground child as well as fan-out. The child retains its workflow's
+  own checkpoint loop; do not report an outcome or start any further parent work before its
+  terminal result is available.
+
 Generic-agent workaround (multi_agent_v1 schema — NO agent_type field):
 When only the generic `multi_agent_v1` schema is available, typed GSD agent dispatch
 (`gsd-planner`, `gsd-executor`, etc.) is NOT possible. This is a known Codex limitation
@@ -104,6 +120,9 @@ Spawn restriction:
   defaulting to inline execution.
 
 Parallel fan-out:
+- For each child, loop on collaboration.wait_agent(timeout_ms=...) until its own terminal
+  result is observed. A mailbox update from one child never completes another child, and an
+  interim MESSAGE never completes its sender.
 - Spawn multiple agents → collect agent IDs → `collaboration.wait_agent(timeout_ms=...)` for each to complete
 - Do NOT use `functions.wait(cell_id=...)` — that is an unrelated exec-cell tool, not the collaboration wait
 
@@ -114,9 +133,9 @@ Result parsing:
 </codex_skill_adapter>
 
 <objective>
-Manage the runtime skill surface without reinstall. Reads/writes `D:/Repos/lancet/.codex/.gsd-surface.json`
-(sibling to `D:/Repos/lancet/.codex/.gsd-profile`) and re-stages the active skills directory in place.
-Skill dirs live at `D:/Repos/lancet/.codex/skills/gsd-*/`.
+Manage the runtime skill surface without reinstall. Reads/writes `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/.gsd-surface.json`
+(sibling to `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/.gsd-profile`) and re-stages the active skills directory in place.
+Skill dirs live at `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/skills/gsd-*/`.
 
 Sub-commands: list · status · profile · disable · enable · reset
 </objective>
@@ -237,11 +256,11 @@ Valid cluster names: `core_loop`, `audit_review`, `milestone`, `research_ideate`
 ## runtimeConfigDir resolution
 
 The `runtimeConfigDir` for `applySurface` is the **base the agent config directory**
-(`~/.codex`), NOT the skills sub-directory (`D:/Repos/lancet/.codex/skills`).
+(`~/.codex`), NOT the skills sub-directory (`/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/skills`).
 
 This matches `installRuntimeArtifacts` and `uninstallRuntimeArtifacts`, which also
 receive `~/.codex` as `configDir`. The skill dirs themselves live at
-`D:/Repos/lancet/.codex/skills/gsd-*/` because the `claude global` layout has `destSubpath =
+`/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/skills/gsd-*/` because the `claude global` layout has `destSubpath =
 'skills'` — they are derived from `configDir`, not the root for it.
 
 ```bash
@@ -255,7 +274,7 @@ SCOPE="global"
 ```
 
 Surface state is stored at `${RUNTIME_CONFIG_DIR}/.gsd-surface.json`
-(i.e. `D:/Repos/lancet/.codex/.gsd-surface.json`).
+(i.e. `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/.gsd-surface.json`).
 
 All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 
@@ -268,9 +287,9 @@ All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 - Missing `surface.cjs` → prompt: "Run `npm i -g @opengsd/gsd-core` to reinstall GSD."
 
 <execution_context>
-Surface state file: `D:/Repos/lancet/.codex/.gsd-surface.json`
-Install profile marker: `D:/Repos/lancet/.codex/.gsd-profile`
-Skill dirs: `D:/Repos/lancet/.codex/skills/gsd-*/`
-Engine module: `D:/Repos/lancet/.codex/gsd-core/bin/lib/surface.cjs`
-Cluster definitions: `D:/Repos/lancet/.codex/gsd-core/bin/lib/clusters.cjs`
+Surface state file: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/.gsd-surface.json`
+Install profile marker: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/.gsd-profile`
+Skill dirs: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/skills/gsd-*/`
+Engine module: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/bin/lib/surface.cjs`
+Cluster definitions: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/bin/lib/clusters.cjs`
 </execution_context>

@@ -22,9 +22,9 @@ Flow: Select Framework → Research Docs → Research Domain → Design Eval Str
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/ai-integration-phase.md
-@D:/Repos/lancet/.claude/gsd-core/references/ai-frameworks.md
-@D:/Repos/lancet/.claude/gsd-core/references/ai-evals.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/ai-integration-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/ai-frameworks.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/ai-evals.md
 </execution_context>
 
 <context>

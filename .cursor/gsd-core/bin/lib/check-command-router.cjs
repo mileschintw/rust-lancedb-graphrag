@@ -281,6 +281,7 @@ function loadDecisionExtraction(contextPath) {
     return {
         trackable: extraction.decisions.filter((d) => d.trackable),
         outcome: extraction.outcome,
+        unreadableIds: extraction.unreadableIds ?? [],
     };
 }
 /**
@@ -329,21 +330,48 @@ function cmdDecisionCoveragePlan(projectDir, args, raw) {
         output({ passed: true, skipped: true, reason: 'CONTEXT.md missing', total: 0, covered: 0, uncovered: [], message: 'No CONTEXT.md - nothing to check.' }, raw, undefined);
         return;
     }
-    const { trackable: decisions, outcome } = loadDecisionExtraction(contextPath);
+    // #4794: a NON-FILE path (a directory — the adjacent same-looking positional
+    // swapped, the issue's repro 2) is a caller error like #2770's empty argument:
+    // fs.existsSync is true, the read yields nothing, and the gate used to
+    // certify passed:true on a phase full of decisions. Fail closed, naming it.
+    // The stat is wrapped: a path that vanishes between existsSync and statSync
+    // (or any stat failure) must answer the SAME fail-closed JSON, never a throw.
+    let contextIsFile = false;
+    let contextKind = 'non-file entry';
+    try {
+        const st = node_fs_1.default.statSync(contextPath);
+        contextIsFile = st.isFile();
+        if (st.isDirectory())
+            contextKind = 'directory';
+    }
+    catch {
+        contextIsFile = false;
+        contextKind = 'unreadable path';
+    }
+    if (!contextIsFile) {
+        output({ passed: false, skipped: false, reason: 'context path is not a file', total: null, covered: null, message: `Decision coverage gate: the context path "${contextArg}" is not a readable file (${contextKind}). Swap the adjacent positionals or pass --context <path-to-CONTEXT.md>.` }, raw, undefined);
+        return;
+    }
+    const { trackable: decisions, outcome, unreadableIds } = loadDecisionExtraction(contextPath);
     // #1365 fail-loud gate: any could-not-parse outcome must NOT silently pass —
     // even when some decisions were extracted (e.g. D-01 valid but D-02 malformed).
     // A parse-miss on ANY bullet means the gate cannot certify full coverage.
     // Fire independent of decisions.length so a partial-parse still blocks.
     if (outcome === 'could-not-parse') {
+        // #4794: nothing was measured — the answer must not carry the fields of a
+        // gate that did. total/covered are null (a type change is the point:
+        // 0 reads as data, null does not), `uncovered` is OMITTED (the list was
+        // never built), and the ids that failed to parse are carried so a caller
+        // capturing stdout knows which decision to fix.
         const partialParse = decisions.length > 0;
         output({
             passed: false,
             skipped: false,
             reason: 'could-not-parse',
-            total: decisions.length,
-            covered: 0,
-            uncovered: [],
-            message: partialParse
+            total: null,
+            covered: null,
+            unreadable: unreadableIds,
+            message: (partialParse
                 ? 'Decision coverage gate: decisions could not be fully parsed — one or more ' +
                     '`- **D-NN ...**` bullets appear malformed (missing `:` or ` — ` separator, or a phase ' +
                     'prefix that is not a digit run, e.g. `D4x-01`). Fix the bullet format so all decisions ' +
@@ -353,7 +381,8 @@ function cmdDecisionCoveragePlan(projectDir, args, raw) {
                     'or D- tokens) but no decision bullets could be extracted. Check the formatting of the decisions ' +
                     'block and ensure bullets follow the `- **D-NN:** text`, `- **D4-NN:** text` (phase-prefixed), ' +
                     'or `- **D-NN — title** body` form. An ID grammar the parser does not support (e.g. `DEC-01`) ' +
-                    'also lands here.',
+                    'also lands here.')
+                + (unreadableIds.length > 0 ? ' Unreadable ids: ' + unreadableIds.join(', ') + '.' : ''),
         }, raw, undefined);
         return;
     }
@@ -546,8 +575,10 @@ function findUiSpecInDir(phaseDir) {
  * matches the token `dashboard` exactly like the real compound `micro-frontend`
  * (the boundary rule of #3718 is intentional and untouched). The gate therefore
  * blocks only when the token match is corroborated by static frontend evidence
- * in the repo tree (hasStaticFrontendEvidence: package.json UI-framework dep or
- * a component-framework file). This mirrors the sibling post-wave gate
+ * in the repo tree (hasStaticFrontendEvidence: package.json UI-framework dep, a
+ * component-framework file, or native UI evidence — a `.xaml` file or a
+ * `.swift`/`.kt`/`.dart` file carrying its ecosystem's UI import marker,
+ * #4658). This mirrors the sibling post-wave gate
  * computeUiSafetyGate, which requires `hasUiFiles` (git diff) before blocking.
  * matchedToken/matchedLine surface what tripped the sniffer so an operator can
  * judge the flag in one second instead of reaching for --skip-ui.
@@ -969,8 +1000,22 @@ function resolvePhaseDirOrEmpty(projectDir, phase) {
  * phase's `-PLAN.md` files against the filesystem WITHOUT executing anything —
  * see verify-command-grounding.cjs for the recognizer contract.
  *
- * Args: check verify-command-paths <phase>
+ * Args: check verify-command-paths <phase> | check verify-command-paths --dir <plan-dir>
  * Invocable as: gsd_run check verify-command-paths <phase>
+ *               gsd_run check verify-command-paths --dir <plan-dir>
+ *
+ * `--dir` (#4767) names a directory holding `-PLAN.md` files directly, for
+ * plans that live outside `.planning/phases/` — quick mode's
+ * `.planning/quick/<id>/` is the motivating caller, which until #4767 never ran
+ * this probe at all. The directory is resolved against the project root AND
+ * CONTAINED WITHIN IT — an absolute or climbing `--dir` that lands outside the
+ * root is `unresolvable`, never read — then probed exactly as a phase directory
+ * is; `projectRoot` stays the project root in both forms. `--dir <value>` is the
+ * only accepted spelling: `--dir=<value>` yields no `dir` flag and falls through to
+ * the no-argument arm, as does an empty value. Both are `partitionPredicateArgs`
+ * behaviour, inherited and unchanged. (How that parser resolves a REPEATED `--dir`
+ * is deliberately not characterised here — a malformed later occurrence does not
+ * displace an earlier valid one, so the obvious "last one wins" gloss is wrong.)
  *
  * When the phase cannot be resolved to a directory, this emits a non-throwing
  * degraded JSON payload (status/commands/counts all zeroed, `readError`
@@ -979,18 +1024,60 @@ function resolvePhaseDirOrEmpty(projectDir, phase) {
  * look", which a non-zero exit / thrown error would collapse.
  */
 function cmdVerifyCommandPaths(projectDir, args, raw) {
-    // args[0] = 'check', args[1] = 'verify-command-paths', args[2] = phase
-    const phase = args[2] || '';
-    if (!phase) {
+    // args[0] = 'check', args[1] = 'verify-command-paths', then either a phase
+    // positional or `--dir <plan-dir>` (#4767).
+    const { flags, positionals } = partitionPredicateArgs(args.slice(2));
+    const dirFlag = typeof flags['dir'] === 'string' ? flags['dir'] : '';
+    // First non-flag positional: `--raw` (valueless) lands in positionals too, and its position
+    // relative to the phase argument is the caller's choice.
+    const phase = positionals.find(p => !p.startsWith('--')) ?? '';
+    if (!phase && !dirFlag) {
         output({
             status: 'unresolvable',
             commands: [],
             counts: { blocker: 0, warning: 0, total: 0 },
-            readError: 'verify-command-paths requires a phase argument: check verify-command-paths <phase>',
+            readError: 'verify-command-paths requires a phase argument or --dir: check verify-command-paths <phase> | --dir <plan-dir>',
         }, raw, undefined);
         return;
     }
-    const phaseDir = resolvePhaseDirOrEmpty(projectDir, phase);
+    // `--dir` is CALLER-SUPPLIED, so it is contained before it reaches the
+    // `readdirSync`/`readFileSync` calls in probePhaseVerifyCommands (#4785 review).
+    // Same predicate and policy as `resolvePath` above, and for the reason ADR-4650
+    // gives at the other read site: the reads below FOLLOW SYMLINKS, so containment
+    // must be decided on the resolved target, not a lexical prefix — a link inside
+    // the root pointing outside it passes `tryWithinRootLexical` and is then read.
+    // Read the value the predicate RETURNED; never re-derive the path. An escape
+    // degrades to the same non-throwing payload the unresolvable-phase arm emits,
+    // because a consumer must be able to tell "could not look" from "nothing to
+    // report" (and `error()` would collapse them).
+    //
+    // RESIDUAL, stated rather than left to be rediscovered: this is check-then-use, so
+    // a symlink planted at the resolved path BETWEEN this call and the reads inside
+    // probePhaseVerifyCommands would be followed. A link already in place when the
+    // command runs IS refused — the predicate resolves it and returns null (driven) —
+    // so the window is the in-process gap, not the ordinary case. It is a property of
+    // every `tryWithinRoot` call site in this repo, including `resolvePath` above and
+    // the artifact scan below, not of this arm; closing it needs O_NOFOLLOW/dirfd
+    // semantics inside the ADR-4650 predicate, which is a wider change than the bug
+    // this fixes.
+    let phaseDir;
+    if (dirFlag) {
+        const candidate = node_path_1.default.isAbsolute(dirFlag) ? dirFlag : node_path_1.default.join(projectDir, dirFlag);
+        const contained = (0, security_cjs_1.tryWithinRoot)(candidate, projectDir, security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
+        if (contained === null) {
+            output({
+                status: 'unresolvable',
+                commands: [],
+                counts: { blocker: 0, warning: 0, total: 0 },
+                readError: `--dir resolves outside the project root: ${dirFlag}`,
+            }, raw, undefined);
+            return;
+        }
+        phaseDir = contained;
+    }
+    else {
+        phaseDir = resolvePhaseDirOrEmpty(projectDir, phase);
+    }
     if (!phaseDir) {
         output({
             status: 'unresolvable',

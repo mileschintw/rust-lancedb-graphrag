@@ -40,7 +40,7 @@ Flag handling rule:
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/docs-update.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/docs-update.md
 </execution_context>
 
 <context>

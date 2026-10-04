@@ -12,7 +12,7 @@ Scan all phases for pending, skipped, blocked, and human_needed UAT items. Cross
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/audit-uat.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/audit-uat.md
 </execution_context>
 
 <context>

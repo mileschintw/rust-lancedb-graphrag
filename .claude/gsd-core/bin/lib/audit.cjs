@@ -28,7 +28,12 @@ const planningWorkspace = require("./planning-workspace.cjs");
 const { planningDir, quickDirFrom, todosDir } = planningWorkspace;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const frontmatter = require("./frontmatter.cjs");
-const { extractFrontmatter, spliceFrontmatter } = frontmatter;
+// #4378 (roll-in): scanSeeds publishes the SAME canonical seed identity the
+// list-seeds gate derives — one grammar, two surfaces, no drift. commands.cjs
+// does not require this module, so the edge is acyclic.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const commandsModule = require("./commands.cjs");
+const { extractFrontmatter, FRONTMATTER_UNPARSEABLE, spliceFrontmatter } = frontmatter;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const phaseIdMod = require("./phase-id.cjs");
 const { PHASE_NUMBER_TOKEN_SOURCE, scopeToPhase } = phaseIdMod;
@@ -602,6 +607,14 @@ function scanTodos(todosBase) {
     }
     return { items: results, acknowledged };
 }
+// #4378 (roll-in): true when the filename is a well-formed seed name —
+// `SEED-` prefix, `.md` suffix, and no control bytes anywhere in between (the
+// scanSeeds admission filter passes such names through to the identity
+// derivation; a name with an embedded control byte falls back to its raw
+// stem exactly as the pre-canonical code did).
+function seedIdMatchRawName(name) {
+    return !/[\u0000-\u001f\u007f]/.test(name);
+}
 // ─── scanSeeds ────────────────────────────────────────────────────────────────
 /**
  * Scan .planning/seeds/SEED-*.md for unimplemented seeds.
@@ -653,16 +666,18 @@ function scanSeeds(planDir) {
             acknowledged++;
             continue;
         }
-        // Extract seed_id from filename or frontmatter. The regex match is
-        // `\w`/hyphen-constrained (safe by construction, like `archived_milestone`)
-        // but the fallback taken when a filename doesn't fully match — e.g. a
-        // `SEED-`-prefixed, `.md`-suffixed name with a control byte SOMEWHERE in
-        // the middle, which still passes the `startsWith`/`endsWith` filter above
-        // — is the raw, unconstrained basename. Both branches are routed through
-        // sanitizeLabel below.
-        const seedIdMatch = entry.name.match(/^(SEED-[\w-]+)\.md$/);
-        const seed_id = seedIdMatch ? seedIdMatch[1] : node_path_1.default.basename(entry.name, '.md');
-        const slug = (0, security_cjs_1.sanitizeLabel)(seed_id.replace(/^SEED-/, ''));
+        // #4378 (roll-in): the canonical identity comes from the SAME derivation
+        // the list-seeds surface uses — frontmatter `id:` when it matches a seed
+        // grammar (legacy `SEED-NNN` or date-suffixed `SEED-YYMMDD-xxx`), else the
+        // filename's id prefix, else the whole stem. The old fused
+        // filename-stem id (e.g. `SEED-081-region` for `SEED-081-region.md`)
+        // disagreed with list-seeds and misfiled deferrals; publishing the
+        // canonical id keeps the two surfaces answering identically. The raw-
+        // basename fallback for control-byte-bearing names is preserved.
+        const stem = node_path_1.default.basename(entry.name, '.md');
+        const derived = commandsModule.deriveSeedIdentity(stem, fm.id);
+        const seed_id = seedIdMatchRawName(entry.name) ? derived.seed_id : stem;
+        const slug = (0, security_cjs_1.sanitizeLabel)(derived.slug);
         let title = (0, security_cjs_1.sanitizeForDisplay)(fm.title || '');
         if (!title) {
             const headingMatch = content.match(/^#\s*(.+)$/m);
@@ -1464,6 +1479,13 @@ function cmdAuditAcknowledge(cwd, args, raw) {
         }
         const content = node_fs_1.default.readFileSync(safeFilePath, 'utf-8');
         const fm = extractFrontmatter(content, safeFilePath);
+        // #4802: an unparseable frontmatter block is NOT an empty one — splicing
+        // the marker-marked object over the file would discard every field the
+        // author actually wrote. Refuse and name the file (the write-path
+        // counterpart of the read-side FRONTMATTER_UNPARSEABLE contract).
+        if (fm[FRONTMATTER_UNPARSEABLE] === true) {
+            ioError(`refusing to acknowledge — the frontmatter of "${file}" is not parseable YAML (splicing would discard every other frontmatter field); fix the YAML syntax error first, then re-run`);
+        }
         // Mixed-frame fix (security review, 4th instance on this branch): the
         // splice above and below stays keyed to RAW `content` (raw byte offsets
         // must not shift), but `scanUatGaps`/`scanContextQuestions` now derive
@@ -1533,9 +1555,48 @@ function cmdAuditAcknowledge(cwd, args, raw) {
     else if (category === 'seeds') {
         if (!seedId)
             ioError('--seed-id is required for --category seeds');
-        safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(planDir, 'seeds', `${seedId}.md`), planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
-        if (!node_fs_1.default.existsSync(safeFilePath))
+        // #4378 (roll-in): `--seed-id` arrives as whichever id an audit/list
+        // surface published — the canonical identity (frontmatter `id:` or the
+        // derived prefix, e.g. `SEED-081`, `SEED-260914-k3x`) or, for callers
+        // scripted against pre-canonical output, the full filename stem. Resolve
+        // by scanning the seeds directory and matching each candidate's derived
+        // identity (falling back to the literal stem), then prove the winner with
+        // requireSafePath exactly like every other acknowledge target. The direct
+        // `seeds/<seedId>.md` build stays as the final fallback so a genuine
+        // miss still reports the same "file not found" error as before.
+        const seedsAckDir = node_path_1.default.join(planDir, 'seeds');
+        let ackCandidate = null;
+        let ackEntries = [];
+        try {
+            ackEntries = node_fs_1.default.readdirSync(seedsAckDir).filter((n) => n.startsWith('SEED-') && n.endsWith('.md'));
+        }
+        catch {
+            ackEntries = [];
+        }
+        for (const name of ackEntries) {
+            const stem = node_path_1.default.basename(name, '.md');
+            let fmId;
+            try {
+                const rawAck = (0, shell_command_projection_cjs_1.platformReadSync)(node_path_1.default.join(seedsAckDir, name));
+                if (rawAck !== null)
+                    fmId = extractFrontmatter(normalizeLineEndings(rawAck), node_path_1.default.join(seedsAckDir, name)).id;
+            }
+            catch {
+                fmId = undefined;
+            }
+            const { seed_id: derivedAckId } = commandsModule.deriveSeedIdentity(stem, fmId);
+            if (derivedAckId === seedId || stem === seedId) {
+                ackCandidate = name;
+                break;
+            }
+        }
+        if (ackCandidate !== null) {
+            safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(seedsAckDir, ackCandidate), planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
+        }
+        else {
+            safeFilePath = (0, security_cjs_1.requireSafePath)(node_path_1.default.join(seedsAckDir, `${seedId}.md`), planDir, 'audit acknowledge target', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
             ioError(`file not found: seeds/${seedId}.md`);
+        }
         const content = node_fs_1.default.readFileSync(safeFilePath, 'utf-8');
         currentValue = (extractFrontmatter(content, safeFilePath).status || 'dormant').toLowerCase();
     }
@@ -1585,6 +1646,13 @@ function cmdAuditAcknowledge(cwd, args, raw) {
     }
     const presenceOnly = category === 'todos';
     const fm = createIfMissing ? fmForCreate : extractFrontmatter(node_fs_1.default.readFileSync(safeFilePath, 'utf-8'), safeFilePath);
+    // #4802: same unparseable-frontmatter refusal as the phase-scoped branch —
+    // createIfMissing never reaches this extract (it only fires when the file is
+    // absent), so an existing file with broken YAML refuses instead of splicing
+    // a near-empty object over every field the author wrote.
+    if (!createIfMissing && fm[FRONTMATTER_UNPARSEABLE] === true) {
+        ioError(`refusing to acknowledge — the frontmatter of "${safeFilePath}" is not parseable YAML (splicing would discard every other frontmatter field); fix the YAML syntax error first, then re-run`);
+    }
     fm.audit_acknowledged = presenceOnly ? { ...markerBase } : { ...markerBase, [snapshotKey]: currentValue };
     const newContent = createIfMissing
         ? spliceFrontmatter('', fm)

@@ -38,7 +38,7 @@ Output ONLY the reference content of the chosen tier. Do NOT add:
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/help.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/help.md
 </execution_context>
 
 <context>
@@ -46,5 +46,5 @@ Arguments: {{GSD_ARGS}}
 </context>
 
 <process>
-Follow D:/Repos/lancet/.cursor/gsd-core/workflows/help.md with {{GSD_ARGS}}.
+Follow /Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/help.md with {{GSD_ARGS}}.
 </process>

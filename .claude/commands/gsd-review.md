@@ -1,7 +1,7 @@
 ---
 name: gsd-review
 description: Request cross-AI peer review of phase plans from external AI CLIs
-argument-hint: "--phase N [--gemini] [--claude] [--codex] [--opencode] [--qwen] [--cursor] [--agy] [--all]"
+argument-hint: "--phase N [--claude] [--codex] [--opencode] [--qwen] [--cursor] [--agy] [--all]"
 allowed-tools:
   - Read
   - Write
@@ -12,7 +12,7 @@ requires: [config, phase, plan-phase]
 ---
 
 <objective>
-Invoke external AI CLIs (Gemini, Claude, Codex, OpenCode, Qwen Code, Cursor) to independently review phase plans.
+Invoke external AI CLIs (Claude, Codex, OpenCode, Qwen Code, Cursor, Antigravity) to independently review phase plans.
 Produces a structured REVIEWS.md with per-reviewer feedback that can be fed back into
 planning via /gsd-plan-phase --reviews.
 
@@ -20,14 +20,13 @@ planning via /gsd-plan-phase --reviews.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/review.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/review.md
 </execution_context>
 
 <context>
 Phase number: extracted from $ARGUMENTS (required)
 
 **Flags:**
-- `--gemini` — Include Gemini CLI review
 - `--claude` — Include Claude CLI review (uses separate session)
 - `--codex` — Include Codex CLI review
 - `--opencode` — Include OpenCode review (uses model from user's OpenCode config)

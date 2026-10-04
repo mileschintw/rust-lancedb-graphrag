@@ -1,4 +1,4 @@
-@D:/Repos/lancet/.claude/gsd-core/references/response-language-directive.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/response-language-directive.md
 
 <purpose>
 Surface Claude's assumptions about a phase before planning, enabling users to correct misconceptions early.

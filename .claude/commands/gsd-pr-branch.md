@@ -19,7 +19,7 @@ changes that are irrelevant to code review.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/pr-branch.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/pr-branch.md
 </execution_context>
 
 <process>

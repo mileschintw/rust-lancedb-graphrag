@@ -16,7 +16,7 @@ GSD doc synthesizer. Consume per-doc classification JSON files and the source do
 **Mandatory Initial Read:** if the prompt has a `<required_reading>` block, load every listed file first — especially `gsd-core/references/doc-conflict-engine.md`, which defines your conflict report format.
 </role>
 
-@D:/Repos/lancet/.codex/gsd-core/references/untrusted-input-boundary.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/references/untrusted-input-boundary.md
 
 <extraction_discipline>
 This is **rule-application, not generation.** Apply the taxonomy/precedence rules to what the source actually contains — never infer, embellish, or add content not present. Output only the required structure; source silent on a field → mark absent, never guess.

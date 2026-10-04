@@ -35,7 +35,7 @@ const frontmatterModule = require("./frontmatter.cjs");
 const { extractFrontmatter } = frontmatterModule;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planDependencyGraphModule = require("./plan-dependency-graph.cjs");
-const { computeHaltPropagation, buildSummaryFileIndex, isSummaryFileHalted } = planDependencyGraphModule;
+const { computeHaltPropagation, buildSummaryFileIndex, isSummaryFileHalted, isSummaryFileBlocked } = planDependencyGraphModule;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const roadmapParserModule = require("./roadmap-parser.cjs");
 const { getMilestonePhaseFilter } = roadmapParserModule;
@@ -146,13 +146,15 @@ function listArchiveVersionDirs(cwd, wsOverride) {
     }
     return out;
 }
-function searchPhaseInDir(baseDir, relBase, normalized) {
+function searchPhaseInDir(baseDir, relBase, normalized, convention) {
     try {
         const dirs = readSubdirectories(baseDir, true);
         // #2528: canonical two-pass selection (exact token match, then the
         // bare-integer leading-digit-run fallback) shared with the find-phase and
         // phase-plan-index scans — see phase-id.cts::matchPhaseDirs.
-        const { matches, usedBareFallback } = matchPhaseDirs(dirs, normalized);
+        // #4801: the convention is threaded (optional) so bracket-convention
+        // consumers get exact token matching here too.
+        const { matches, usedBareFallback } = matchPhaseDirs(dirs, normalized, convention);
         if (matches.length === 0)
             return null;
         // #2237: fail loud when multiple directories match the same bare phase
@@ -176,6 +178,7 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
                 halted_plans: [],
                 blocked_by: {},
                 runnable_plans: [],
+                ready_plans: [],
             };
         }
         const match = matches[0];
@@ -208,12 +211,19 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
         const planIds = plans.map(p => p.replace('-PLAN.md', '').replace('PLAN.md', ''));
         const planIdByLower = new Map(planIds.map(id => [id.toLowerCase(), id]));
         const canonicalToPlanId = new Map(plans.map((p, i) => [extractCanonicalPlanId(p).toLowerCase(), planIds[i]]));
+        // #4628: raw depends_on per plan, so readiness can fail closed on a
+        // DROPPED edge (a dep token that resolves to nothing carries no evidence)
+        // instead of the resolution silently shrinking the dependency list.
+        const rawDeps = plans.map((p) => parsePlanDependsOn(phaseDir, p));
+        // #4628: completion evidence excludes status:blocked summaries (#3345) —
+        // a failure record is not completion, matching cmdPhasePlanIndex's count.
+        const completionEvidence = buildSummaryFileIndex(summaries.filter((f) => !isSummaryFileBlocked(node_path_1.default.join(phaseDir, f))), extractCanonicalPlanId);
         const haltNodes = plans.map((p, i) => {
             const planId = planIds[i];
             const canonical = extractCanonicalPlanId(p);
             const summaryFile = summaryFileByPlanId.get(planId) ?? summaryFileByPlanId.get(canonical);
             const halted = summaryFile !== undefined && isSummaryFileHalted(node_path_1.default.join(phaseDir, summaryFile));
-            const resolvedDependsOn = parsePlanDependsOn(phaseDir, p)
+            const resolvedDependsOn = rawDeps[i]
                 .map((dep) => {
                 const lower = dep.toLowerCase();
                 return planIdByLower.get(lower) ?? canonicalToPlanId.get(lower) ?? null;
@@ -226,6 +236,7 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
         const incompletePlanSet = new Set(incompletePlans);
         const blockedByFiles = {};
         const runnablePlans = [];
+        const readyPlans = [];
         for (let i = 0; i < plans.length; i++) {
             const p = plans[i];
             if (!incompletePlanSet.has(p))
@@ -233,10 +244,16 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
             const causes = blockedBy.get(planIds[i]) ?? [];
             if (causes.length > 0) {
                 blockedByFiles[p] = causes;
+                continue;
             }
-            else {
-                runnablePlans.push(p);
-            }
+            runnablePlans.push(p);
+            // #4628: DAG-ready on top of runnable — every dependency must have
+            // completion evidence (a matching, non-blocked SUMMARY) and no dropped
+            // edge: both readers of this contract fail closed identically.
+            const depsComplete = rawDeps[i].length === haltNodes[i].resolvedDependsOn.length &&
+                haltNodes[i].resolvedDependsOn.every((dep) => completionEvidence.has(dep));
+            if (depsComplete)
+                readyPlans.push(p);
         }
         return {
             found: true,
@@ -259,19 +276,21 @@ function searchPhaseInDir(baseDir, relBase, normalized) {
             halted_plans: haltedPlans,
             blocked_by: blockedByFiles,
             runnable_plans: runnablePlans,
+            ready_plans: readyPlans,
         };
     }
     catch {
         return null;
     }
 }
-function findPhaseInternal(cwd, phase) {
+function findPhaseInternal(cwd, phase, convention) {
     if (!phase)
         return null;
     const phasesDir = node_path_1.default.join(planningDir(cwd), 'phases');
     const normalized = normalizePhaseName(phase);
     const relPhasesDir = toPosixPath(node_path_1.default.relative(cwd, phasesDir));
-    const current = searchPhaseInDir(phasesDir, relPhasesDir, normalized);
+    // #4801: convention threaded through to the matcher (see searchPhaseInDir).
+    const current = searchPhaseInDir(phasesDir, relPhasesDir, normalized, convention);
     if (current)
         return current;
     // #2855: scope the archived-milestone fallback to the SAME workstream as the
@@ -285,7 +304,7 @@ function findPhaseInternal(cwd, phase) {
     // getArchivedPhaseDirs via listArchiveVersionDirs (see its doc comment).
     for (const { version, archivePath } of listArchiveVersionDirs(cwd)) {
         const relBase = toPosixPath(node_path_1.default.relative(cwd, archivePath));
-        const result = searchPhaseInDir(archivePath, relBase, normalized);
+        const result = searchPhaseInDir(archivePath, relBase, normalized, convention);
         if (result) {
             result.archived = version;
             return result;

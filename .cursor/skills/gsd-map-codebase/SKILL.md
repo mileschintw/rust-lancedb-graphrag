@@ -36,7 +36,7 @@ Output: .planning/codebase/ folder with 7 structured documents about the codebas
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/map-codebase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/map-codebase.md
 </execution_context>
 
 <flags>
@@ -49,7 +49,7 @@ Output: .planning/codebase/ folder with 7 structured documents about the codebas
 Arguments: {{GSD_ARGS}}
 
 Parse the first token of {{GSD_ARGS}}:
-- If it is `--fast`: strip the flag, then read and execute `D:/Repos/lancet/.cursor/gsd-core/workflows/scan.md` (passing remaining args including optional --focus). Load it on demand here — it is deliberately not in `<execution_context>`, so the common full-map path does not pay for it.
+- If it is `--fast`: strip the flag, then read and execute `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/scan.md` (passing remaining args including optional --focus). Load it on demand here — it is deliberately not in `<execution_context>`, so the common full-map path does not pay for it.
 - If it is `--query`: strip the flag, run the intel workflow (passing remaining args as the subcommand).
 - Otherwise: pass all of {{GSD_ARGS}} as focus area to the map-codebase workflow.
 

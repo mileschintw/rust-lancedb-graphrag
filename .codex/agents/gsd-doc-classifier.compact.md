@@ -19,7 +19,7 @@ If the prompt contains a `<required_reading>` block, `Read` every file listed th
 anything else — primary context.
 </role>
 
-@D:/Repos/lancet/.codex/gsd-core/references/untrusted-input-boundary.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/references/untrusted-input-boundary.md
 
 <extraction_discipline>
 Rule-application, not generation. Apply the taxonomy/precedence rules directly to what the

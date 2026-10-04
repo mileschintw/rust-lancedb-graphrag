@@ -31,20 +31,20 @@ Mode routing:
 | (none) | Structured todo in .planning/todos/ | add-todo |
 | --note | Timestamped note file, list, or promote | note |
 | --backlog | ROADMAP.md backlog section (999.x) | add-backlog |
-| --seed | .planning/seeds/SEED-NNN-slug.md | plant-seed |
+| --seed | .planning/seeds/SEED-YYMMDD-xxx-slug.md | plant-seed |
 | --list | Interactive todo browser + action router | check-todos |
 | --list-seeds | Read-only seed list/audit (optional status filter) | list-seeds |
 
 </routing>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/add-todo.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/note.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/add-backlog.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/plant-seed.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/check-todos.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/list-seeds.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/add-todo.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/note.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/add-backlog.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/plant-seed.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/check-todos.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/list-seeds.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

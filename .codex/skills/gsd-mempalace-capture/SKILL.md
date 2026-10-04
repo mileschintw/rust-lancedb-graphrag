@@ -77,6 +77,22 @@ Typed mapping (agent_type-capable schema only):
   never fabricate a manual worktree protocol — route through the negotiated
   isolation adapter, which still fails closed for hosts declaring `none` (#3360).
 
+Foreground handoffs:
+- spawn_agent is asynchronous. When the source Agent(...) or Task(...) declares
+  run_in_background=false, call collaboration.wait_agent(timeout_ms=...) immediately after
+  spawn and keep the parent turn active until that child returns a terminal result.
+- collaboration.wait_agent is a mailbox wakeup, NOT a completion oracle: "Wait completed"
+  can mean only that a child sent an interim MESSAGE or status update. After every wakeup,
+  inspect the named child's update/status. Only a FINAL_ANSWER or a terminal agent status
+  (completed, failed, or cancelled) ends the foreground handoff.
+- On an interim MESSAGE or any non-terminal status, do not report an outcome, send a
+  continuation, start parent work, or end the parent turn. Call collaboration.wait_agent
+  again for the same child. If a terminal response is absent after an abnormal end, reconcile
+  the workflow's durable artifacts before classifying the child.
+- This applies to one foreground child as well as fan-out. The child retains its workflow's
+  own checkpoint loop; do not report an outcome or start any further parent work before its
+  terminal result is available.
+
 Generic-agent workaround (multi_agent_v1 schema — NO agent_type field):
 When only the generic `multi_agent_v1` schema is available, typed GSD agent dispatch
 (`gsd-planner`, `gsd-executor`, etc.) is NOT possible. This is a known Codex limitation
@@ -104,6 +120,9 @@ Spawn restriction:
   defaulting to inline execution.
 
 Parallel fan-out:
+- For each child, loop on collaboration.wait_agent(timeout_ms=...) until its own terminal
+  result is observed. A mailbox update from one child never completes another child, and an
+  interim MESSAGE never completes its sender.
 - Spawn multiple agents → collect agent IDs → `collaboration.wait_agent(timeout_ms=...)` for each to complete
 - Do NOT use `functions.wait(cell_id=...)` — that is an unrelated exec-cell tool, not the collaboration wait
 
@@ -188,15 +207,19 @@ On any error or timeout, stop and let the phase continue -- capture is best-effo
    ROOM_DIR="$STAGE/<room>/<phase-id>"
    mkdir -p "$ROOM_DIR"
    cp "<artifact-path>" "$ROOM_DIR/<basename>"
-   # Mine with --wing only — no --room flag; detect_room() assigns from the folder path
-   mempalace mine "$STAGE" --wing <wing>
+   # Mine with --wing only — no --room flag; detect_room() assigns from the folder path.
+   # --daemon --background (#4700): MemPalace wraps every mine in a per-palace
+   # lock; a concurrent writer would make a foreground mine exit 1
+   # (MineAlreadyRunning) and this onError: skip step would silently drop the
+   # capture. The background queue defers the job until the lock frees.
+   mempalace mine "$STAGE" --wing <wing> --daemon --background
    ```
 3. **Mirror KG facts** unless `config.mempalace.mirror_kg === false` (registry default is true — an absent key means enabled): extract decision/delivery facts and `mempalace_kg_add` them with `valid_from` = the phase date (e.g. `(<project>, decided, <decision>)` from CONTEXT; `(<phase>, delivered, <capability>)` from SUMMARY). Under `augment` these are an *additive* mirror of GSD's native `.planning/graphs/`. Under `kg_backend`/`replace` the palace KG is the *authoritative* fact store — GSD still produces `.planning/graphs/` through its normal graphify, so an unreachable palace never loses a fact.
 4. Re-running a phase MUST NOT create duplicate drawers (deterministic ids + `check_duplicate`).
 
 ## Step 4 -- Report
 
-Print a one-line summary: `Filed <artifact> → <wing>/<room> (<n> KG facts)` or `MemPalace unavailable — capture skipped`.
+Print a one-line summary: `Filed <artifact> → <wing>/<room> (<n> KG facts)`, `Capture queued — palace busy; MemPalace will file it when the lock frees` (the background mine was deferred behind another writer), or `MemPalace capture skipped — <reason>` (#4700: a skipped capture is never silent).
 
 ## Anti-Patterns
 

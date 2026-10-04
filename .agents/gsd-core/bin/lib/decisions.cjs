@@ -85,14 +85,14 @@ const DECISION_ID_SOURCE = 'D[0-9]*-[A-Za-z0-9][A-Za-z0-9_-]*';
 const ID_ATTEMPT_SOURCE = 'D(?:[0-9][A-Za-z0-9]*)?-';
 /**
  * Colon form: `- **D[phase]-NN[ [tags]]:** text`
- * (#1343: `[^:*]*` subsumes any pre-colon prose, stops at `:**`)
+ * (#1343: the pre-colon run subsumes any pre-colon prose, stops at `:**`; #4788: the run is code-span-aware — a backticked span is consumed whole, so a `:` or `*` INSIDE it is data, never grammar)
  * Group 1 captures the FULL id including any phase prefix (#4130).
  * The ID is consumed atomically `(?=(…))\1` — see the hardening note above
  * the constants (#4130 follow-up); with the tail unable to give back, the
  * remaining `[^:*]*:` scan has a single viable split and the whole match is
  * linear in line length.
  */
-const bulletColonRe = new RegExp(`^\\s*-\\s+\\*\\*(?=(${DECISION_ID_SOURCE}))\\1(?:\\s*\\[([^\\]]+)\\])?[^:*]*:\\*\\*\\s*(.*)$`);
+const bulletColonRe = new RegExp(`^\\s*-\\s+\\*\\*(?=(${DECISION_ID_SOURCE}))\\1(?:\\s*\\[([^\\]]+)\\])?(?:\\u0060[^\\u0060]*\\u0060|[^:*\\u0060])*:\\*\\*\\s*(.*)$`);
 /**
  * Em-dash form: `- **D[phase]-NN[ [tags]] — title** body`
  * The em-dash (U+2014) or its lookalike separates the ID+tags group from a title
@@ -112,22 +112,32 @@ const bulletColonRe = new RegExp(`^\\s*-\\s+\\*\\*(?=(${DECISION_ID_SOURCE}))\\1
  * candidate and `**` succeeds or fails identically; no capture involves the
  * dash position. The ID is atomic like the other forms (driver #1).
  */
-const bulletEmDashRe = new RegExp(`^\\s*-\\s+\\*\\*(?=(${DECISION_ID_SOURCE}))\\1(?:\\s*\\[([^\\]]+)\\])?[^*—–]*[—–][^*]*\\*\\*\\s*(.*)$`);
+const bulletEmDashRe = new RegExp(`^\\s*-\\s+\\*\\*(?=(${DECISION_ID_SOURCE}))\\1(?:\\s*\\[([^\\]]+)\\])?(?:\\u0060[^\\u0060]*\\u0060|[^*—–\\u0060])*[—–](?:\\u0060[^\\u0060]*\\u0060|[^*\\u0060])*\\*\\*\\s*(.*)$`);
 /**
  * Titled-colon form: `- **D[phase]-NN[ [tags]]: Title.** body`
  * A title sits between the colon and the closing `**` (so the `:**` anchor of
  * bulletColonRe fails, and there is no em-dash for bulletEmDashRe). This is a strict
  * superset of the colon-immediate form, so it MUST be checked AFTER bulletColonRe and
- * bulletEmDashRe — it only catches bullets those two miss. The title run is `[^:*]*` (no
- * colon, no `*`) so a genuinely-malformed bullet with a colon in the pre-separator run
- * (e.g. `D-07 ratio 3:1:**`) still fails the anchor and falls through to the parse-miss
- * guard — matching bulletColonRe's `[^:*]*` discipline that the separator colon is the
- * only colon permitted before `**`. (#1639)
+ * bulletEmDashRe — it only catches bullets those two miss. The title runs are code-span-aware
+ * (#4788) but still exclude `*`, so a genuinely-malformed bullet with no bare colon at all
+ * before `**` still fails the anchor and falls through to the parse-miss guard — the #1639
+ * fail-loud discipline: the separator must be a BARE colon before `**`. A code span's
+ * `:`/`*` is data, never grammar; an UNTERMINATED backtick now fails loud (previously it was
+ * an ordinary character) — the deliberate cost of span opacity.
+ *
+ * #4793/#4958: the pre-separator run tolerates a bare colon as prose ONLY when it is
+ * immediately followed by whitespace (`:(?=\s)`), e.g. a natural sentence colon in
+ * `D-02: Two managers … same pair: the second is rejected.`. A colon with no following
+ * whitespace (a compact/ratio-style colon like `3:1`) is never consumed by this branch, so
+ * it still hard-caps the pre-separator run and the #1639/#4130/#1343 negative-space fixtures
+ * (e.g. `D-07 ratio 3:1:**`) still fail loud. The post-separator branch is unchanged and
+ * still excludes colons, so normal greedy backtracking selects the LAST valid split (a bare
+ * colon followed by whitespace, or the anchor colon itself) before the closing `**`.
  *
  * The ID is consumed atomically `(?=(…))\1` like the other forms — the
  * hardening note above the constants explains why (#4130 follow-up).
  */
-const bulletTitledColonRe = new RegExp(`^\\s*-\\s+\\*\\*(?=(${DECISION_ID_SOURCE}))\\1(?:\\s*\\[([^\\]]+)\\])?[^:*]*:[^:*]*\\*\\*\\s*(.*)$`);
+const bulletTitledColonRe = new RegExp(`^\\s*-\\s+\\*\\*(?=(${DECISION_ID_SOURCE}))\\1(?:\\s*\\[([^\\]]+)\\])?(?:\\u0060[^\\u0060]*\\u0060|:(?=\\s)|[^:*\\u0060])*:(?:\\u0060[^\\u0060]*\\u0060|[^:*\\u0060])*\\*\\*\\s*(.*)$`);
 /**
  * #4130: the parse-miss guard's probe — a line whose bold lead-in ATTEMPTS the
  * ID grammar (see `ID_ATTEMPT_SOURCE`) but failed all three bullet patterns
@@ -403,6 +413,7 @@ function parseDecisionLines(block) {
     let current = null;
     let openIndent = null;
     let parseMisses = 0;
+    const unreadableIds = [];
     const flush = () => {
         if (current) {
             current.text = current.text.trim();
@@ -501,6 +512,11 @@ function parseDecisionLines(block) {
         if (parseMissGuardRe.test(line)) {
             flush();
             parseMisses += 1;
+            // #4794: carry the attempted id so a caller capturing stdout (a JSON gate)
+            // can name the decision to fix — today it exists only in this stderr warn.
+            const attempted = line.match(/\*\*\s*(D(?:[0-9][A-Za-z0-9]*)?-[A-Za-z0-9_-]*)/);
+            if (attempted && !unreadableIds.includes(attempted[1]))
+                unreadableIds.push(attempted[1]);
             console.warn(`parseDecisions: ignored unparseable decision bullet: ${trimmed}`);
             continue;
         }
@@ -516,7 +532,7 @@ function parseDecisionLines(block) {
         }
     }
     flush();
-    return { decisions: out, parseMisses };
+    return { decisions: out, parseMisses, unreadableIds };
 }
 // ─── Primary entry point: extractDecisions ────────────────────────────────────
 /**
@@ -541,13 +557,13 @@ function extractDecisions(content) {
     const taggedBlocks = (0, markdown_sectionizer_cjs_1.extractTaggedBlocks)(stripped, 'decisions');
     if (taggedBlocks.length > 0) {
         const combined = taggedBlocks.join('\n\n');
-        const { decisions, parseMisses } = parseDecisionLines(combined);
+        const { decisions, parseMisses, unreadableIds } = parseDecisionLines(combined);
         if (decisions.length > 0 && parseMisses === 0) {
             return { decisions, outcome: 'parsed' };
         }
         // FIX B: parse-misses present — could-not-parse even if some decisions extracted.
         if (parseMisses > 0) {
-            return { decisions, outcome: 'could-not-parse' };
+            return { decisions, outcome: 'could-not-parse', unreadableIds };
         }
         // FIX A: Block present but 0 extracted and no parse-misses.
         // Only report could-not-parse when there is genuine evidence of real decisions
@@ -568,13 +584,13 @@ function extractDecisions(content) {
     // stripFences:true → inner fences inside the section body are stripped.
     const section = (0, markdown_sectionizer_cjs_1.collectSection)(content, (h) => /decisions?\b/i.test(h.text), { levelBounded: true, stripFences: true });
     if (section !== null) {
-        const { decisions, parseMisses } = parseDecisionLines(section.body);
+        const { decisions, parseMisses, unreadableIds } = parseDecisionLines(section.body);
         if (decisions.length > 0 && parseMisses === 0) {
             return { decisions, outcome: 'parsed' };
         }
         // FIX B: parse-misses present — could-not-parse even if some decisions extracted.
         if (parseMisses > 0) {
-            return { decisions, outcome: 'could-not-parse' };
+            return { decisions, outcome: 'could-not-parse', unreadableIds };
         }
         // FIX A: Heading found but 0 extracted and no parse-misses.
         // Report could-not-parse when the section body holds a decision-entry-shaped

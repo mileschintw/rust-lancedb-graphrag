@@ -1609,10 +1609,31 @@ function cmdStateRecordSession(cwd, options, raw) {
     const updated = [];
     let sessionCreated = false;
     const divergedFields = [];
+    // #4763 (1): last-writer-wins stays (the recorded single-slot handoff design),
+    // but a displaced record is no longer silent. The pre-write session record is
+    // captured below and surfaced in the payload under `replacedRecord` whenever a
+    // replacement actually changes a non-empty prior value.
+    const priorRecord = {};
     // ADR-3473 §8.7 (#3872): caller-allocated out-param, filled with the
     // transaction's own pre-write snapshot + body by `applyPostSyncPreservation`.
     const preWriteState = {};
     readModifyWriteStateMd(statePath, (content) => {
+        // #4763 (1): read the pre-write session record. The capture mirrors the
+        // WRITER, not the snapshot reader: stateReplaceField replaces the FIRST
+        // case-insensitive label match anywhere in the document, so the capture is
+        // document-wide too — scoping it to ## Session would miss an archive-section
+        // line the writer actually displaced. Continuation lines join via
+        // stateFieldContinuation (the sanctioned joiner — stateExtractField alone is
+        // first-line-only), so a wrapped multi-line handoff is surfaced whole.
+        const capturePrior = (fieldName) => {
+            const first = (0, state_document_cjs_1.stateExtractField)(content, fieldName);
+            if (first === null)
+                return undefined;
+            const cont = (0, state_document_cjs_1.stateFieldContinuation)(content, fieldName);
+            return cont ? `${first}\n${cont}` : first;
+        };
+        priorRecord.stoppedAt = capturePrior('Stopped At');
+        priorRecord.resumeFile = capturePrior('Resume File');
         // Update Last session / Last Date
         let result = (0, state_document_cjs_1.stateReplaceField)(content, 'Last session', now);
         if (result) {
@@ -1836,6 +1857,27 @@ function cmdStateRecordSession(cwd, options, raw) {
         const result = { recorded: true, updated: reconciledUpdated };
         if (sessionCreated)
             result['created'] = true;
+        // #4763 (1): surface any non-empty prior record the write displaced. Gated
+        // on reconciledUpdated (the fields that actually persisted, post-#3957
+        // reconcile) rather than the pre-reconciliation updated[]. Only fields with
+        // real prior content differing from the caller's value count — same-value
+        // rewrites, the insert path (no prior label), and the #944 template-default
+        // DWIM (defaults match case-insensitively, so a case-variant 'none' →
+        // 'None' rewrite is normalization, not displacement) are excluded.
+        const isResumeTemplateDefault = priorRecord.resumeFile !== undefined
+            && state_document_cjs_1.KNOWN_TEMPLATE_DEFAULTS['Resume File'].some((d) => d.toLowerCase() === priorRecord.resumeFile?.toLowerCase());
+        const replacedRecord = {};
+        if (reconciledUpdated.includes('Stopped At') && priorRecord.stoppedAt
+            && priorRecord.stoppedAt !== options.stopped_at) {
+            replacedRecord['Stopped At'] = priorRecord.stoppedAt;
+        }
+        if (reconciledUpdated.includes('Resume File') && priorRecord.resumeFile
+            && !isResumeTemplateDefault
+            && priorRecord.resumeFile !== (options.resume_file ?? undefined)) {
+            replacedRecord['Resume File'] = priorRecord.resumeFile;
+        }
+        if (Object.keys(replacedRecord).length > 0)
+            result['replacedRecord'] = replacedRecord;
         output(result, raw, 'true');
     }
     else if (updated.length === 0) {

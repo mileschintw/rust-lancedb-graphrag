@@ -9,6 +9,14 @@
             "commandWindows": "\"D:/Repos/lancet/.codex/hooks/gsd-check-update.cmd\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/opt/homebrew/bin/node\" \"/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/hooks/gsd-check-update.js\""
+          }
+        ]
       }
     ]
   }

@@ -42,7 +42,7 @@ incrementally — only what each check requires, not the full codebase upfront.
 
 **Project skills:** check `.codex/skills/` or `.agents/skills/` if either exists.
 
-**agent_skills:** self-load per @D:/Repos/lancet/.codex/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/references/agent-skills-bootstrap.md
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each (lightweight index ~130 lines)
 3. Load specific `rules/*.md` as needed during implementation

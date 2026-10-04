@@ -37,8 +37,8 @@ Output: Milestone archived (roadmap + requirements), PROJECT.md evolved, git tag
 <execution_context>
 **Load these files NOW (before proceeding):**
 
-- @D:/Repos/lancet/.cursor/gsd-core/workflows/complete-milestone.md (main workflow)
-- @D:/Repos/lancet/.cursor/gsd-core/templates/milestone-archive.md (archive template)
+- @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/complete-milestone.md (main workflow)
+- @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/templates/milestone-archive.md (archive template)
   </execution_context>
 
 <context>

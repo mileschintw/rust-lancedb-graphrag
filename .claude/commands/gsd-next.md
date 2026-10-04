@@ -17,8 +17,8 @@ This is a launcher/router only. It never does the work itself. It reads project 
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/smart-entry.md
-@D:/Repos/lancet/.claude/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/smart-entry.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>
@@ -26,5 +26,5 @@ Arguments: $ARGUMENTS
 </context>
 
 <process>
-Follow D:/Repos/lancet/.claude/gsd-core/workflows/smart-entry.md. Detect the situation, present the menu, and dispatch exactly one command. Then stop.
+Follow /Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/smart-entry.md. Detect the situation, present the menu, and dispatch exactly one command. Then stop.
 </process>

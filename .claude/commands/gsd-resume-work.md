@@ -23,7 +23,7 @@ Routes to the resume-project workflow which handles:
   </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/resume-project.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/resume-project.md
 </execution_context>
 
 <process>

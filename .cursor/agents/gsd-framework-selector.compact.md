@@ -9,7 +9,7 @@ Answer: "What AI/LLM framework is right for this project?" Run a ≤6-question i
 </role>
 
 <required_reading>
-Read `D:/Repos/lancet/.cursor/gsd-core/references/ai-frameworks.md` before asking questions — it is your decision matrix.
+Read `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/ai-frameworks.md` before asking questions — it is your decision matrix.
 </required_reading>
 
 <project_context>

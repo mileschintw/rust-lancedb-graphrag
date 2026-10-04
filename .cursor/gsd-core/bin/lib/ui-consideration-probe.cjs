@@ -117,6 +117,15 @@ function validateRequirement(element) {
     if (r.elements == null && !(typeof r.text === 'string' && r.text.trim())) {
         throw new Error(`element ${element.id} text must be a non-empty string when no elements override is provided`);
     }
+    // text_en (#4657) is optional, but when present it must be a non-empty string. An empty
+    // string is NOT caught by `??` (only null/undefined are), so an unvalidated `text_en: ''`
+    // would silently win `text_en ?? text` and classify against '' — the same fail-open shape
+    // #1110/#2773 already exist to eliminate, just moved one field over. Validated
+    // unconditionally (not gated on whether `elements` will make it unused) so bad data fails
+    // closed even when it happens to be dead for this particular call.
+    if (r.text_en != null && !(typeof r.text_en === 'string' && r.text_en.trim())) {
+        throw new Error(`element ${element.id} text_en must be a non-empty string when present`);
+    }
 }
 /** Validate a UI-consideration resolution against the UI verification vocabulary (delegated, D-06). */
 function validateResolution(resolution) {
@@ -143,7 +152,11 @@ function proposeConsiderations(element) {
         kinds = element.elements;
     }
     else {
-        kinds = classifyElement(element.text);
+        // #4657: prefer the English translation when present — UI_CUES are English-only
+        // word-boundary patterns, so a non-English `text` (e.g. response_language projects)
+        // would otherwise classify to zero kinds. validateRequirement (called above) has
+        // already guaranteed text_en, if present, is a non-empty string.
+        kinds = classifyElement((element.text_en ?? element.text));
         if (kinds.length === 0) {
             // Prose present but no element cue matched. Do NOT silently drop it (#1110): a UI element
             // whose phrasing missed every cue would otherwise vanish from coverage with no signal — the
@@ -210,7 +223,7 @@ function proposeElements(elements) {
         const considerations = proposeConsiderations(el);
         const kinds = Array.isArray(el.elements)
             ? el.elements // already validated inside proposeConsiderations
-            : classifyElement(el.text);
+            : classifyElement((el.text_en ?? el.text)); // #4657: text_en ?? text
         const unclassified = !Array.isArray(el.elements) && kinds.length === 0;
         const categories = unclassified ? [] : applicableCategories(kinds);
         return { id: el.id, kinds, categories, considerations, unclassified };

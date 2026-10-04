@@ -77,6 +77,22 @@ Typed mapping (agent_type-capable schema only):
   never fabricate a manual worktree protocol — route through the negotiated
   isolation adapter, which still fails closed for hosts declaring `none` (#3360).
 
+Foreground handoffs:
+- spawn_agent is asynchronous. When the source Agent(...) or Task(...) declares
+  run_in_background=false, call collaboration.wait_agent(timeout_ms=...) immediately after
+  spawn and keep the parent turn active until that child returns a terminal result.
+- collaboration.wait_agent is a mailbox wakeup, NOT a completion oracle: "Wait completed"
+  can mean only that a child sent an interim MESSAGE or status update. After every wakeup,
+  inspect the named child's update/status. Only a FINAL_ANSWER or a terminal agent status
+  (completed, failed, or cancelled) ends the foreground handoff.
+- On an interim MESSAGE or any non-terminal status, do not report an outcome, send a
+  continuation, start parent work, or end the parent turn. Call collaboration.wait_agent
+  again for the same child. If a terminal response is absent after an abnormal end, reconcile
+  the workflow's durable artifacts before classifying the child.
+- This applies to one foreground child as well as fan-out. The child retains its workflow's
+  own checkpoint loop; do not report an outcome or start any further parent work before its
+  terminal result is available.
+
 Generic-agent workaround (multi_agent_v1 schema — NO agent_type field):
 When only the generic `multi_agent_v1` schema is available, typed GSD agent dispatch
 (`gsd-planner`, `gsd-executor`, etc.) is NOT possible. This is a known Codex limitation
@@ -104,6 +120,9 @@ Spawn restriction:
   defaulting to inline execution.
 
 Parallel fan-out:
+- For each child, loop on collaboration.wait_agent(timeout_ms=...) until its own terminal
+  result is observed. A mailbox update from one child never completes another child, and an
+  interim MESSAGE never completes its sender.
 - Spawn multiple agents → collect agent IDs → `collaboration.wait_agent(timeout_ms=...)` for each to complete
 - Do NOT use `functions.wait(cell_id=...)` — that is an unrelated exec-cell tool, not the collaboration wait
 
@@ -126,17 +145,17 @@ Three modes:
 <flags>
 - **--next**: Detect current project state and automatically invoke the next logical GSD workflow step. Scans all prior phases for incomplete work before routing. `--next --force` bypasses safety gates.
 - **--next --auto**: Like `--next`, but after the determined step completes, automatically re-invokes `$gsd-progress --next --auto` to continue chaining steps until completion or a blocking decision. Enables hands-free plan→execute→verify→complete progression.
-- **--next --converge**: When the next action is planning (Route 3), route it through the plan-review **convergence** loop instead of the standard planner. Requires `workflow.plan_review_convergence=true` (enable with `gsd config-set workflow.plan_review_convergence true`). `--cross-ai` is an alias. Reviewer flags (`--codex`, `--gemini`, `--claude`, `--opencode`, `--ollama`, `--lm-studio`, `--llama-cpp`, `--all`) and `--max-cycles N` are forwarded to the convergence loop.
+- **--next --converge**: When the next action is planning (Route 3), route it through the plan-review **convergence** loop instead of the standard planner. Requires `workflow.plan_review_convergence=true` (enable with `gsd config-set workflow.plan_review_convergence true`). `--cross-ai` is an alias. Reviewer flags (`--codex`, `--claude`, `--opencode`, `--ollama`, `--lm-studio`, `--llama-cpp`, `--all`) and `--max-cycles N` are forwarded to the convergence loop.
 - **--do "..."**: Smart dispatcher — match freeform intent to the best GSD command using routing rules, confirm the match, then hand off.
 - **--forensic**: Run 6-check integrity audit after the standard progress report.
 - **(no flag)**: Standard progress check + intelligent routing (Routes A through F).
 </flags>
 
 <execution_context>
-@D:/Repos/lancet/.codex/gsd-core/workflows/progress.md
-@D:/Repos/lancet/.codex/gsd-core/workflows/next.md
-@D:/Repos/lancet/.codex/gsd-core/workflows/do.md
-@D:/Repos/lancet/.codex/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/workflows/progress.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/workflows/next.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/workflows/do.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/references/ui-brand.md
 </execution_context>
 
 <process>

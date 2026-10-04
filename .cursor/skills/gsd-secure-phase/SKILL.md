@@ -37,7 +37,7 @@ Output: updated SECURITY.md.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/secure-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/secure-phase.md
 </execution_context>
 
 <context>

@@ -28,9 +28,9 @@ When the workflow needs to spawn a subagent:
 </cursor_skill_adapter>
 
 <objective>
-Manage the runtime skill surface without reinstall. Reads/writes `D:/Repos/lancet/.cursor/.gsd-surface.json`
-(sibling to `D:/Repos/lancet/.cursor/.gsd-profile`) and re-stages the active skills directory in place.
-Skill dirs live at `D:/Repos/lancet/.cursor/skills/gsd-*/`.
+Manage the runtime skill surface without reinstall. Reads/writes `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/.gsd-surface.json`
+(sibling to `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/.gsd-profile`) and re-stages the active skills directory in place.
+Skill dirs live at `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/skills/gsd-*/`.
 
 Sub-commands: list · status · profile · disable · enable · reset
 </objective>
@@ -151,16 +151,16 @@ Valid cluster names: `core_loop`, `audit_review`, `milestone`, `research_ideate`
 ## runtimeConfigDir resolution
 
 The `runtimeConfigDir` for `applySurface` is the **base Claude config directory**
-(`D:/Repos/lancet/.cursor`), NOT the skills sub-directory (`D:/Repos/lancet/.cursor/skills`).
+(`/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor`), NOT the skills sub-directory (`/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/skills`).
 
 This matches `installRuntimeArtifacts` and `uninstallRuntimeArtifacts`, which also
-receive `D:/Repos/lancet/.cursor` as `configDir`. The skill dirs themselves live at
-`D:/Repos/lancet/.cursor/skills/gsd-*/` because the `claude global` layout has `destSubpath =
+receive `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor` as `configDir`. The skill dirs themselves live at
+`/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/skills/gsd-*/` because the `claude global` layout has `destSubpath =
 'skills'` — they are derived from `configDir`, not the root for it.
 
 ```bash
 # Cursor — global install
-RUNTIME_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-D:/Repos/lancet/.cursor}"
+RUNTIME_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor}"
 SCOPE="global"
 
 # Artifact destinations are derived from runtime layout
@@ -169,7 +169,7 @@ SCOPE="global"
 ```
 
 Surface state is stored at `${RUNTIME_CONFIG_DIR}/.gsd-surface.json`
-(i.e. `D:/Repos/lancet/.cursor/.gsd-surface.json`).
+(i.e. `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/.gsd-surface.json`).
 
 All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 
@@ -182,9 +182,9 @@ All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 - Missing `surface.cjs` → prompt: "Run `npm i -g @opengsd/gsd-core` to reinstall GSD."
 
 <execution_context>
-Surface state file: `D:/Repos/lancet/.cursor/.gsd-surface.json`
-Install profile marker: `D:/Repos/lancet/.cursor/.gsd-profile`
-Skill dirs: `D:/Repos/lancet/.cursor/skills/gsd-*/`
-Engine module: `D:/Repos/lancet/.cursor/gsd-core/bin/lib/surface.cjs`
-Cluster definitions: `D:/Repos/lancet/.cursor/gsd-core/bin/lib/clusters.cjs`
+Surface state file: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/.gsd-surface.json`
+Install profile marker: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/.gsd-profile`
+Skill dirs: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/skills/gsd-*/`
+Engine module: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/bin/lib/surface.cjs`
+Cluster definitions: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/bin/lib/clusters.cjs`
 </execution_context>

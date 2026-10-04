@@ -52,6 +52,7 @@ const CANONICAL_HEADERS = {
         'recommendation',
         'strategy',
         'decision outcome',
+        'locked decisions',
     ],
     considered_options: [
         'considered options',
@@ -190,7 +191,8 @@ function normalizeAdrHeader(raw) {
         .toLowerCase()
         .replace(/[\s:._-]+/g, ' ')
         .replace(/[^\w\s]/g, '')
-        .trim();
+        .trim()
+        .replace(/^\d+(?:\s+\d+)*\s+/, '');
 }
 // Normalized synonym index (audit M7). classifyHeader receives an ALREADY-normalized
 // header (via normalizeAdrHeader), but historically compared it against the RAW synonym

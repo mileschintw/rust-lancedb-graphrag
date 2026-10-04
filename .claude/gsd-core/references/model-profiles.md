@@ -100,7 +100,7 @@ The three layers compose: `models` defaults a phase, `model_overrides` carves an
 - **Required when using non-Anthropic providers** (OpenRouter, local models, etc.) — otherwise GSD may call Anthropic models directly, incurring unexpected costs
 - Use when: you want GSD to follow your currently selected runtime model
 
-## Using Non-Claude Runtimes (Codex, OpenCode, Gemini CLI, Kilo)
+## Using Non-Claude Runtimes (Codex, OpenCode, Antigravity CLI, Kilo)
 
 When installed for a non-Claude runtime, the GSD installer sets `resolve_model_ids: "omit"` in `~/.gsd/defaults.json`. This returns an empty model parameter for all agents, so each agent uses the runtime's default model. No manual setup is needed.
 
@@ -233,7 +233,7 @@ the next spawn. `effort` (claude runtime) has its own cascade
 (`agent_overrides` → `routing_tier_defaults` → `default`; see
 `docs/CONFIGURATION.md` § "Where effort actually reaches") and is baked at
 install time into the `effort:` frontmatter key of
-`D:/Repos/lancet/.claude/agents/gsd-*.md` — Claude Code's Agent tool has no per-spawn
+`/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/agents/gsd-*.md` — Claude Code's Agent tool has no per-spawn
 effort parameter, so per-agent frontmatter is the only channel. An effort
 config change has no effect until `gsd_run effort sync --apply`
 re-syncs the agent files. Codex agents instead pin

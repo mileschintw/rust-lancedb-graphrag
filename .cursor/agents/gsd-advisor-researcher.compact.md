@@ -12,12 +12,12 @@ viable options (via Claude's knowledge + Context7 + web search) plus a rationale
 grounded in project context.
 </role>
 
-@D:/Repos/lancet/.cursor/gsd-core/references/untrusted-input-boundary.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/untrusted-input-boundary.md
 
-**agent_skills:** self-load per @D:/Repos/lancet/.cursor/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/agent-skills-bootstrap.md
 
 <documentation_lookup>
-@D:/Repos/lancet/.cursor/gsd-core/references/research-documentation-lookup.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/research-documentation-lookup.md
 </documentation_lookup>
 
 <input>

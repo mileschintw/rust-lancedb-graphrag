@@ -114,13 +114,18 @@ const PLANNING_LOCK_RETRY_ERRNOS = new Set([
  * two-readers-two-bases lesson).
  */
 function resolveEnvWorkstream() {
-    return process.env['GSD_WORKSTREAM'] ?? null;
+    const value = process.env['GSD_WORKSTREAM']?.trim();
+    return value || null;
 }
 function planningDir(cwd, ws, project) {
     if (project === undefined)
-        project = process.env['GSD_PROJECT'] ?? null;
+        project = process.env['GSD_PROJECT']?.trim() || null;
+    else if (typeof project === 'string')
+        project = project.trim() || null;
     if (ws === undefined)
         ws = resolveEnvWorkstream();
+    else if (typeof ws === 'string')
+        ws = ws.trim() || null;
     // Reject path separators and traversal components in project/workstream names
     const BAD_SEGMENT = /[/\\]|\.\./;
     if (project && BAD_SEGMENT.test(project)) {
@@ -187,7 +192,7 @@ function worktreesOptedOutUnguarded(cwd) {
     const scoped = ownKey(readCfg(node_path_1.default.join(planningDir(cwd), 'config.json')));
     if (scoped.present)
         return scoped.value === false;
-    if (process.env['GSD_WORKSTREAM']) {
+    if (resolveEnvWorkstream() !== null) {
         const root = ownKey(readCfg(node_path_1.default.join(planningRoot(cwd), 'config.json')));
         if (root.present)
             return root.value === false;

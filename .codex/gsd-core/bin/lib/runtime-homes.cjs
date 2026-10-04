@@ -49,6 +49,7 @@ exports.getGlobalSkillDisplayPath = getGlobalSkillDisplayPath;
 const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_fs_1 = __importDefault(require("node:fs"));
+const runtime_name_policy_cjs_1 = require("./runtime-name-policy.cjs");
 /**
  * Expand a leading ~ to the given home directory (defaults to os.homedir()).
  * Every call site inside resolveConfigHomeFromDescriptor threads its
@@ -455,6 +456,9 @@ function resolveKimiHooksTomlDir(opts = {}) {
  *   the behaviour of bin/install.js getGlobalDir(runtime, explicitDir).
  */
 function getGlobalConfigDir(runtime, explicitDir) {
+    // A retired runtime id must never resolve — checked before `explicitDir` so
+    // an explicit directory cannot mask the fact that the runtime itself is gone.
+    (0, runtime_name_policy_cjs_1.assertNotRetiredRuntime)(runtime);
     if (explicitDir)
         return expandTilde(explicitDir);
     // ── Grok: not in the registry — hardcoded branch ─────────────────────────

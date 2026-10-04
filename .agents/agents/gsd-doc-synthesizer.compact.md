@@ -1,7 +1,12 @@
 ---
 name: gsd-doc-synthesizer
 description: "Synthesizes classified planning docs into a single consolidated context. Applies precedence rules, detects cross-ref cycles, enforces LOCKED-vs-LOCKED hard-blocks, and writes INGEST-CONFLICTS.md with three buckets (auto-resolved, competing-variants, unresolved-blockers). Spawned by /gsd-ingest-docs."
-tools: read_file, write_file, search_file_content, glob, run_shell_command
+tools:
+- view_file
+- write_file
+- grep_search
+- glob
+- run_command
 color: orange
 ---
 

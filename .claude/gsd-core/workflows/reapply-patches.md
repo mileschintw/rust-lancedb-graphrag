@@ -1,4 +1,4 @@
-@D:/Repos/lancet/.claude/gsd-core/references/response-language-directive.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/references/response-language-directive.md
 
 # Reapply Local Patches Workflow
 
@@ -59,8 +59,8 @@ elif [ -z "$PATCHES_DIR" ] && [ -n "$XDG_CONFIG_HOME" ]; then
   fi
 fi
 
-if [ -z "$PATCHES_DIR" ] && [ -n "$GEMINI_CONFIG_DIR" ]; then
-  candidate="$(expand_home "$GEMINI_CONFIG_DIR")/gsd-local-patches"
+if [ -z "$PATCHES_DIR" ] && [ -n "$ANTIGRAVITY_CONFIG_DIR" ]; then
+  candidate="$(expand_home "$ANTIGRAVITY_CONFIG_DIR")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
@@ -88,17 +88,23 @@ if [ -z "$PATCHES_DIR" ]; then
     PATCHES_DIR="$HOME/.config/opencode/gsd-local-patches"
   elif [ -d "$HOME/.opencode/gsd-local-patches" ]; then
     PATCHES_DIR="$HOME/.opencode/gsd-local-patches"
+  elif [ -d "$HOME/.gemini/antigravity/gsd-local-patches" ]; then
+    PATCHES_DIR="$HOME/.gemini/antigravity/gsd-local-patches"
+  # Legacy: a pre-#1928 Gemini CLI install put patches at ~/.gemini/gsd-local-patches.
+  # That runtime is retired, but a stranded patches dir is still the user's work — probed
+  # AFTER Antigravity so a live install always wins. This is a directory probe, not a
+  # runtime home: nothing here assigns the retired runtime id.
   elif [ -d "$HOME/.gemini/gsd-local-patches" ]; then
     PATCHES_DIR="$HOME/.gemini/gsd-local-patches"
   elif [ -d "$HOME/.codex/gsd-local-patches" ]; then
     PATCHES_DIR="$HOME/.codex/gsd-local-patches"
   else
-    PATCHES_DIR="D:/Repos/lancet/.claude/gsd-local-patches"
+    PATCHES_DIR="/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-local-patches"
   fi
 fi
 # Local install fallback — check all runtime directories
 if [ ! -d "$PATCHES_DIR" ]; then
-  for dir in .config/kilo .kilo .config/opencode .opencode .gemini .codex .claude; do
+  for dir in .config/kilo .kilo .config/opencode .opencode .agents .codex .claude; do
     if [ -d "./$dir/gsd-local-patches" ]; then
       PATCHES_DIR="./$dir/gsd-local-patches"
       break
@@ -274,7 +280,7 @@ When no pristine baseline is available, use these **strengthened heuristics**:
 For each file:
 a. Read both versions completely
 b. Identify ALL differences, then classify each as:
-   - **Mechanical drift** — path substitutions (e.g. `/Users/xxx/.claude/` → `D:/Repos/lancet/.claude/`), variable additions (`${GSD_WS}`, `${AGENT_SKILLS_*}`), error handling additions (`|| true`)
+   - **Mechanical drift** — path substitutions (e.g. `/Users/xxx/.claude/` → `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/`), variable additions (`${GSD_WS}`, `${AGENT_SKILLS_*}`), error handling additions (`|| true`)
    - **User customization** — added steps/sections, removed sections, reordered content, changed behavior, added frontmatter fields, modified instructions
 
 c. **If ANY differences remain after filtering out mechanical drift → those are user customizations. Merge them.**

@@ -61,6 +61,18 @@ const runtimeArtifactInstallPlan = require("./runtime-artifact-install-plan.cjs"
 const retiredArtifactCleanup = require("./retired-artifact-cleanup.cjs");
 const { assertDestWithinConfigHome } = runtimeArtifactInstallPlan;
 const SURFACE_FILE_NAME = '.gsd-surface.json';
+const INSTALL_MANIFEST_FILE_NAME = 'gsd-file-manifest.json';
+/** Read only the installer-owned relative-include style, failing closed. */
+function readRelativeIncludePrefix(runtimeConfigDir) {
+    try {
+        const parsed = JSON.parse(node_fs_1.default.readFileSync(node_path_1.default.join(runtimeConfigDir, INSTALL_MANIFEST_FILE_NAME), 'utf8'));
+        const prefix = parsed?.['relativeIncludePrefix'];
+        return typeof prefix === 'string' ? prefix : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 /**
  * Read the surface state from a runtime config directory.
  *
@@ -341,7 +353,11 @@ function applySurface(runtimeConfigDir, layout, manifest, clusterMap, registry, 
     const _isGlobal = (0, install_scope_cjs_1.isGlobalScope)(layout.scope ?? 'global');
     const _isOpencode = layout.runtime === 'opencode';
     const _isWindowsHost = (opts?.platform ?? process.platform) === 'win32';
-    const _pathPrefix = runtimeArtifactConversion._computePathPrefix({ isGlobal: _isGlobal, isOpencode: _isOpencode, isWindowsHost: _isWindowsHost, resolvedTarget: _resolvedTarget, homeDir: _homeDir });
+    // #4377: style is an install-time fact, not a process environment setting.
+    // A later gsd-tools surface apply runs in another process, so it must reuse
+    // the persisted, root-relative prefix the installer actually emitted.
+    const _relativeIncludePrefix = readRelativeIncludePrefix(runtimeConfigDir);
+    const _pathPrefix = runtimeArtifactConversion._computePathPrefix({ isGlobal: _isGlobal, isOpencode: _isOpencode, isWindowsHost: _isWindowsHost, resolvedTarget: _resolvedTarget, homeDir: _homeDir, projectRelative: !_isGlobal && typeof _relativeIncludePrefix === 'string', projectRelativePath: _relativeIncludePrefix, localDirName: runtimeArtifactConversion._localIncludeDirName(layout.runtime) });
     const _attribution = opts?.resolveAttribution ? opts.resolveAttribution(layout.runtime) : undefined;
     // #2875 Part 2 (row I1): layout.configDir is this call's install root.
     const agentCtx = { runtime: layout.runtime, pathPrefix: _pathPrefix, attribution: _attribution, targetDir: layout.configDir };

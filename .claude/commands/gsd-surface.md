@@ -10,9 +10,9 @@ requires: [config, update]
 ---
 
 <objective>
-Manage the runtime skill surface without reinstall. Reads/writes `D:/Repos/lancet/.claude/.gsd-surface.json`
-(sibling to `D:/Repos/lancet/.claude/.gsd-profile`) and re-stages the active skills directory in place.
-Skill dirs live at `D:/Repos/lancet/.claude/skills/gsd-*/`.
+Manage the runtime skill surface without reinstall. Reads/writes `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/.gsd-surface.json`
+(sibling to `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/.gsd-profile`) and re-stages the active skills directory in place.
+Skill dirs live at `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/skills/gsd-*/`.
 
 Sub-commands: list · status · profile · disable · enable · reset
 </objective>
@@ -133,11 +133,11 @@ Valid cluster names: `core_loop`, `audit_review`, `milestone`, `research_ideate`
 ## runtimeConfigDir resolution
 
 The `runtimeConfigDir` for `applySurface` is the **base Claude config directory**
-(`~/.claude`), NOT the skills sub-directory (`D:/Repos/lancet/.claude/skills`).
+(`~/.claude`), NOT the skills sub-directory (`/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/skills`).
 
 This matches `installRuntimeArtifacts` and `uninstallRuntimeArtifacts`, which also
 receive `~/.claude` as `configDir`. The skill dirs themselves live at
-`D:/Repos/lancet/.claude/skills/gsd-*/` because the `claude global` layout has `destSubpath =
+`/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/skills/gsd-*/` because the `claude global` layout has `destSubpath =
 'skills'` — they are derived from `configDir`, not the root for it.
 
 ```bash
@@ -151,7 +151,7 @@ SCOPE="global"
 ```
 
 Surface state is stored at `${RUNTIME_CONFIG_DIR}/.gsd-surface.json`
-(i.e. `D:/Repos/lancet/.claude/.gsd-surface.json`).
+(i.e. `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/.gsd-surface.json`).
 
 All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 
@@ -164,9 +164,9 @@ All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 - Missing `surface.cjs` → prompt: "Run `npm i -g @opengsd/gsd-core` to reinstall GSD."
 
 <execution_context>
-Surface state file: `D:/Repos/lancet/.claude/.gsd-surface.json`
-Install profile marker: `D:/Repos/lancet/.claude/.gsd-profile`
-Skill dirs: `D:/Repos/lancet/.claude/skills/gsd-*/`
-Engine module: `D:/Repos/lancet/.claude/gsd-core/bin/lib/surface.cjs`
-Cluster definitions: `D:/Repos/lancet/.claude/gsd-core/bin/lib/clusters.cjs`
+Surface state file: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/.gsd-surface.json`
+Install profile marker: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/.gsd-profile`
+Skill dirs: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/skills/gsd-*/`
+Engine module: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/bin/lib/surface.cjs`
+Cluster definitions: `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/bin/lib/clusters.cjs`
 </execution_context>

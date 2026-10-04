@@ -24,6 +24,7 @@ exports.resolveReportedRuntime = resolveReportedRuntime;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
+const runtime_name_policy_cjs_1 = require("./runtime-name-policy.cjs");
 const update_context_cjs_1 = require("./update-context.cjs");
 Object.defineProperty(exports, "CODEX_CONFIG_MARKER", { enumerable: true, get: function () { return update_context_cjs_1.CODEX_CONFIG_MARKER; } });
 // Codex sandbox env vars set by the shell tool / Seatbelt child-process spawn.
@@ -127,6 +128,14 @@ function resolveReportedRuntimeUnsafe(projectDir, deps) {
     const explicit = (0, runtime_slash_cjs_1.resolveExplicitRuntime)(projectDir, deps?.env ?? process.env);
     if (explicit)
         return explicit;
+    // #4717: the per-install marker names the runtime that owns THIS tree — a
+    // stronger signal than host sniffing, which misreports every session on a
+    // multi-runtime machine (e.g. a globally exported CODEX_HOME makes a Claude
+    // Code session read as codex). Marker-less trees (dev/source, pre-#2297
+    // installs) fall through to host detection unchanged.
+    const marker = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)((0, runtime_slash_cjs_1.readInstallRuntimeMarker)());
+    if (marker)
+        return marker;
     const detected = detectHostRuntime(deps);
     if (detected.runtime)
         return detected.runtime;

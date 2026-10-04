@@ -61,14 +61,14 @@ is allowed; capitulation to pressure is not. "We'll handle it in implementation"
 are not concrete fixes.
 </objective_persona>
 
-@D:/Repos/lancet/.codex/gsd-core/references/ui-consideration-probe.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/references/ui-consideration-probe.md
 
 <project_context>
 Before verifying: read `./AGENTS.md` if present, follow project-specific guidelines.
 
 Check `.codex/skills/` or `.agents/skills/` if either exists.
 
-**agent_skills:** self-load per @D:/Repos/lancet/.codex/gsd-core/references/agent-skills-bootstrap.md — list
+**agent_skills:** self-load per @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/references/agent-skills-bootstrap.md — list
 skills, read each `SKILL.md` (~130 lines), load `rules/*.md` as needed during verification. Do
 NOT load full `AGENTS.md` (100KB+ cost). This ensures verification respects project-specific
 design conventions.

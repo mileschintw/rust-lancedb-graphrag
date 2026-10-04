@@ -34,7 +34,7 @@ Closes the plan → execute → verify → ship loop.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/ship.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/ship.md
 </execution_context>
 
-Execute the ship workflow from @D:/Repos/lancet/.cursor/gsd-core/workflows/ship.md end-to-end.
+Execute the ship workflow from @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/ship.md end-to-end.

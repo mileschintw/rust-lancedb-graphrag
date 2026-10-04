@@ -854,8 +854,15 @@ function scanQuantitativeCriteria(content) {
             // Not a markdown table: the negated-pipe class matches a SHELL pipeline
             // stage boundary (git before the next `|`), the same shape the
             // #429/#968 scanners use; there is no table row to parse.
+            // #4774: the lookahead keeps `||` — a logical OR, the construct that
+            // HANDLES the failure (e.g. the `git cat-file -e <sha> || echo missing`
+            // ghost-control idiom, reachable here when prose apostrophes leave the
+            // segment's quote state unclosed) — quiet, while `|` and `|&` (a real
+            // pipeline stage, stderr-merged or not) still warn. Accepted trade-off:
+            // a QUOTED `||` literal ahead of a real pipe (``git grep 'a||b' f | wc -l``)
+            // also goes quiet — the lookahead cannot reach past the doubled pipe.
             // allow-adhoc-markdown: shell pipeline stage boundary, not a table cell (#4024)
-            if (/\bgit\s+[a-z][^\n|]*\|/.test(seg)) {
+            if (/\bgit\s+[a-z][^\n|]*\|(?!\|)/.test(seg)) {
                 record(warnings, 'R4', '[plan-criteria R4] A fallible `git` in a non-final pipeline stage is swallowed — the pipeline reports ' +
                     'the last stage\'s status, so a broken command reads as clean. Capture the status first.', seenWarn);
             }
@@ -926,6 +933,13 @@ function extractPlanTaskInfos(content) {
         const nameArr = (0, markdown_sectionizer_cjs_1.extractTaggedBlocks)(body, 'name');
         const hasName = nameArr.length > 0;
         const name = hasName ? nameArr[0].trim() : '';
+        // `(?:^|\s)` (not `\b`) so a hyphenated attribute ending in `auto_select`
+        // can never be mistaken for the real attribute — the same defensive
+        // anchor as extractOptionIds' `id` match below (#4095).
+        const autoSelectMatch = attrs.match(/(?:^|\s)auto_select\s*=\s*["']([^"']*)["']/);
+        const autoSelect = autoSelectMatch ? autoSelectMatch[1] : null;
+        const optionsArr = (0, markdown_sectionizer_cjs_1.extractTaggedBlocks)(body, 'options');
+        const optionIds = optionsArr.length > 0 ? extractOptionIds(optionsArr[0]) : [];
         infos.push({
             name,
             type,
@@ -943,6 +957,8 @@ function extractPlanTaskInfos(content) {
             hasHowToVerify: /<how-to-verify[\s>]/.test(body),
             hasDecision: /<decision[\s>]/.test(body),
             hasOptions: /<options[\s>]/.test(body),
+            autoSelect,
+            optionIds,
             hasInstructions: /<instructions[\s>]/.test(body),
             hasVerification: /<verification[\s>]/.test(body),
             hasResumeSignal: /<resume-signal[\s>]/.test(body),
@@ -953,6 +969,35 @@ function extractPlanTaskInfos(content) {
         }
     }
     return infos;
+}
+/**
+ * Extract the `id` attribute of every `<option id="…">` opening tag found in
+ * `optionsBody` (the inner text of one `<options>…</options>` block), in
+ * document order. Bounded attribute scan (`[^>]{0,500}`), mirroring the same
+ * ReDoS-safe idiom `extractPlanTaskInfos` uses for the `<task type="…">`
+ * attribute string — this file's established pattern for reading an
+ * attribute value without a general XML parser (#4095).
+ */
+function extractOptionIds(optionsBody) {
+    const ids = [];
+    if (typeof optionsBody !== 'string' || optionsBody.length === 0)
+        return ids;
+    const OPTION_OPEN_RE = /<option(\s[^>]{0,500})?>/g;
+    let match;
+    while ((match = OPTION_OPEN_RE.exec(optionsBody)) !== null) {
+        const attrs = match[1] ?? '';
+        // `(?:^|\s)` (not `\b`) so a decoy attribute like `data-id="…"` inside
+        // the same opening tag cannot be mistaken for the real `id` — `\b`
+        // matches at the `-`→`i` boundary too, which `.match()`'s
+        // first-hit-wins semantics would then silently prefer (#4095).
+        const idMatch = attrs.match(/(?:^|\s)id\s*=\s*["']([^"']{1,200})["']/);
+        if (idMatch)
+            ids.push(idMatch[1]);
+        if (match.index === OPTION_OPEN_RE.lastIndex) {
+            OPTION_OPEN_RE.lastIndex++;
+        }
+    }
+    return ids;
 }
 function isCheckpointType(type) {
     return type.startsWith('checkpoint:');
@@ -996,6 +1041,15 @@ function validatePlanTaskStructure(task) {
                     errors.push(`Task '${taskName}' missing <decision>`);
                 if (!task.hasOptions)
                     errors.push(`Task '${taskName}' missing <options>`);
+                if (task.autoSelect !== null) {
+                    if (task.autoSelect.length === 0) {
+                        errors.push(`Task '${taskName}' auto_select is empty — name an <option id="…">`);
+                    }
+                    else if (task.hasOptions && !task.optionIds.includes(task.autoSelect)) {
+                        errors.push(`Task '${taskName}' auto_select="${task.autoSelect}" does not match any `
+                            + `<option id="…"> (available: ${task.optionIds.join(', ') || 'none'})`);
+                    }
+                }
                 break;
             case 'checkpoint:human-action':
                 if (!task.hasAction)
@@ -1165,6 +1219,11 @@ function cmdVerifyPhaseCompleteness(cwd, phase, raw) {
         warnings,
     }, raw, errors.length === 0 ? 'complete' : 'incomplete');
 }
+// #4678: citations may carry a trailing line suffix (":42", ":1-20") that
+// describes a location inside the file, not part of the path itself.
+function stripLineSuffix(ref) {
+    return ref.replace(/:\d+(?:-\d+)?$/, '');
+}
 function cmdVerifyReferences(cwd, filePath, raw) {
     if (!filePath) {
         error('file path required');
@@ -1180,9 +1239,10 @@ function cmdVerifyReferences(cwd, filePath, raw) {
     const atRefs = content.match(/@([^\s\n,)]+\/[^\s\n,)]+)/g) || [];
     for (const ref of atRefs) {
         const cleanRef = ref.slice(1);
-        const resolved = cleanRef.startsWith('~/')
-            ? node_path_1.default.join(process.env['HOME'] || '', cleanRef.slice(2))
-            : node_path_1.default.join(cwd, cleanRef);
+        const fsRef = stripLineSuffix(cleanRef);
+        const resolved = fsRef.startsWith('~/')
+            ? node_path_1.default.join(process.env['HOME'] || '', fsRef.slice(2))
+            : node_path_1.default.join(cwd, fsRef);
         if (node_fs_1.default.existsSync(resolved)) {
             found.push(cleanRef);
         }
@@ -1190,14 +1250,14 @@ function cmdVerifyReferences(cwd, filePath, raw) {
             missing.push(cleanRef);
         }
     }
-    const backtickRefs = content.match(/`([^`]+\/[^`]+\.[a-zA-Z]{1,10})`/g) || [];
+    const backtickRefs = content.match(/`([^`]+\/[^`]+\.[a-zA-Z]{1,10}(?::\d+(?:-\d+)?)?)`/g) || [];
     for (const ref of backtickRefs) {
         const cleanRef = ref.slice(1, -1);
         if (cleanRef.startsWith('http') || cleanRef.includes('${') || cleanRef.includes('{{'))
             continue;
         if (found.includes(cleanRef) || missing.includes(cleanRef))
             continue;
-        const resolved = node_path_1.default.join(cwd, cleanRef);
+        const resolved = node_path_1.default.join(cwd, stripLineSuffix(cleanRef));
         if (node_fs_1.default.existsSync(resolved)) {
             found.push(cleanRef);
         }
@@ -1259,28 +1319,75 @@ function cmdVerifyArtifacts(cwd, planFilePath, raw) {
         const artFullPath = node_path_1.default.join(cwd, artPath);
         const exists = node_fs_1.default.existsSync(artFullPath);
         const check = { path: artPath, exists, issues: [], passed: false };
-        if (exists) {
-            const fileContent = (0, shell_command_projection_cjs_1.platformReadSync)(artFullPath) || '';
-            const lineCount = fileContent.split('\n').length;
-            if (artifact['min_lines'] && lineCount < artifact['min_lines']) {
-                check['issues'].push(`Only ${lineCount} lines, need ${artifact['min_lines']}`);
-            }
-            if (artifact['contains'] && !fileContent.includes(artifact['contains'])) {
-                check['issues'].push(`Missing pattern: ${artifact['contains']}`);
-            }
-            if (artifact['exports']) {
-                const exports = Array.isArray(artifact['exports'])
-                    ? artifact['exports']
-                    : [artifact['exports']];
-                for (const exp of exports) {
-                    if (!fileContent.includes(exp))
-                        check['issues'].push(`Missing export: ${exp}`);
+        // #4685: one artifact's I/O problem is that artifact's failure, never the
+        // whole plan's. `safeReadFile` rethrows every errno except ENOENT, so before
+        // this an unreadable entry — a directory most commonly, but equally an EACCES
+        // file or a dangling mount — threw out of the loop and the command reported
+        // NOTHING: not the offending entry, and not the plan's other, perfectly good
+        // artifacts either. A check that disappears is worse than a check that fails,
+        // because a failure is visible.
+        //
+        // Scope of this guard, stated precisely (review nit): the `try` encloses the
+        // whole per-artifact body, but the only statements in it that can throw are the
+        // `statSync` and the read — the `min_lines`/`contains`/`exports` checks below
+        // are pure string operations. So this catches I/O, and nothing here is a
+        // deliberate guard around those criteria checks. A path `fs.existsSync` already
+        // rejected never reaches here either (that is the `File not found` branch), so
+        // this is not a claim to catch every way a path can be unusable.
+        try {
+            if (exists) {
+                // A directory is reported as its own kind of failure, distinct from
+                // `File not found`: the path resolved, it simply is not the thing an
+                // artifact entry can be checked against. Verifying a directory (matching
+                // `contains:`/`min_lines:`/`exports:` across the files inside it) is a
+                // feature decision, deliberately not made here.
+                if (node_fs_1.default.statSync(artFullPath).isDirectory()) {
+                    check['issues'].push('Not a file: path is a directory');
+                }
+                else {
+                    // `safeReadFile` returns null on ENOENT, and `|| ''` would turn that
+                    // into an empty file — which an entry carrying only `path`/`provides`
+                    // would then PASS, having checked nothing. `statSync` just succeeded, so
+                    // a null here means the artifact went away mid-check. Report that rather
+                    // than inheriting a pass from it. (Pre-existing above this fix, reachable
+                    // through the same race after `existsSync`; found in review.)
+                    const rawContent = (0, shell_command_projection_cjs_1.platformReadSync)(artFullPath);
+                    if (rawContent === null) {
+                        check['issues'].push('Unreadable: disappeared during check');
+                        results.push(check);
+                        continue;
+                    }
+                    const fileContent = rawContent;
+                    const lineCount = fileContent.split('\n').length;
+                    if (artifact['min_lines'] && lineCount < artifact['min_lines']) {
+                        check['issues'].push(`Only ${lineCount} lines, need ${artifact['min_lines']}`);
+                    }
+                    if (artifact['contains'] && !fileContent.includes(artifact['contains'])) {
+                        check['issues'].push(`Missing pattern: ${artifact['contains']}`);
+                    }
+                    if (artifact['exports']) {
+                        const exports = Array.isArray(artifact['exports'])
+                            ? artifact['exports']
+                            : [artifact['exports']];
+                        for (const exp of exports) {
+                            if (!fileContent.includes(exp))
+                                check['issues'].push(`Missing export: ${exp}`);
+                        }
+                    }
+                    check['passed'] = check['issues'].length === 0;
                 }
             }
-            check['passed'] = check['issues'].length === 0;
+            else {
+                check['issues'].push('File not found');
+            }
         }
-        else {
-            check['issues'].push('File not found');
+        catch (err) {
+            // Unreadable for some other reason. Record the errno rather than a generic
+            // message — an operator seeing EACCES acts differently from one seeing EIO —
+            // and leave `passed` false.
+            const e = err;
+            check['issues'].push(`Unreadable: ${e.code || (e.message ?? String(err))}`);
+            check['passed'] = false;
         }
         results.push(check);
     }

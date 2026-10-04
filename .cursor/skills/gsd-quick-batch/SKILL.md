@@ -1,6 +1,6 @@
 ---
 name: gsd-quick-batch
-description: "Batch several /gsd-quick-shaped tasks together — planned, dispatched, and merged as one run"
+description: "Batch several `/gsd-quick`-shaped tasks together — planned, dispatched, and merged as one run"
 ---
 
 <cursor_skill_adapter>
@@ -59,7 +59,7 @@ instead, or file the tasks individually.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/quick-batch.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/quick-batch.md
 </execution_context>
 
 <context>

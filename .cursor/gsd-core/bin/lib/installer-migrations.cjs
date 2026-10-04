@@ -280,7 +280,14 @@ function readInstallManifest(configDir) {
         version: typeof m.version === 'string' ? m.version : null,
         timestamp: typeof m.timestamp === 'string' ? m.timestamp : null,
         mode: typeof m.mode === 'string' ? m.mode : null,
-        files: m.files && typeof m.files === 'object' ? m.files : {},
+        // #4544 (review): `typeof [] === 'object'` — a manifest whose `files` is a
+        // JSON array passed the object-shape guard, and Object.keys() then yielded
+        // "0","1",... as install-relative file paths. Consumers iterate these keys,
+        // so an array shape must degrade to the empty set exactly like a
+        // non-object shape does.
+        files: m.files && typeof m.files === 'object' && !Array.isArray(m.files)
+            ? m.files
+            : {},
         manifestVersion: normalizeManifestVersion(m.manifestVersion),
         runtime: normalizeReportedRuntime(rawRuntime),
         scope: (0, install_scope_cjs_1.isInstallScopeId)(m.scope) ? m.scope : null,

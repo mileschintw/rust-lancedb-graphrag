@@ -41,7 +41,7 @@ Read `./AGENTS.md` if present — follow project guidelines, security requiremen
 
 **Project skills:** check `.codex/skills/` or `.agents/skills/`: list skill subdirectories, read each `SKILL.md` (lightweight index ~130 lines), load specific `rules/*.md` as needed. 
 
-**agent_skills:** self-load per @D:/Repos/lancet/.codex/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.codex/gsd-core/references/agent-skills-bootstrap.md
 </project_context>
 
 <review_scope>

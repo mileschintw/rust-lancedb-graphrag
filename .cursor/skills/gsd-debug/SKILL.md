@@ -45,7 +45,7 @@ Valid GSD subagent types (use exact names — do not fall back to 'general-purpo
 </available_agent_types>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/debug.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/debug.md
 </execution_context>
 
 <context>

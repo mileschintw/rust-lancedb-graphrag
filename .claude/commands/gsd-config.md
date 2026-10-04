@@ -33,9 +33,9 @@ Mode routing:
 </routing>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/settings.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/settings-advanced.md
-@D:/Repos/lancet/.claude/gsd-core/workflows/settings-integrations.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/settings.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/settings-advanced.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/settings-integrations.md
 </execution_context>
 
 <context>

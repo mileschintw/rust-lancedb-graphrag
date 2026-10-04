@@ -29,8 +29,8 @@ Clarify phase requirements through structured Socratic questioning with quantita
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/spec-phase.md
-@D:/Repos/lancet/.claude/gsd-core/templates/spec.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/spec-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/templates/spec.md
 </execution_context>
 
 

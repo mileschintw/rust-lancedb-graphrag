@@ -35,7 +35,7 @@ Every expected cross-phase connection must resolve to WIRED (verified end-to-end
 
 **Project skills:** Check `.cursor/skills/` or `.agents/skills/` directory if either exists:
 
-**agent_skills:** self-load per @D:/Repos/lancet/.cursor/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/agent-skills-bootstrap.md
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation

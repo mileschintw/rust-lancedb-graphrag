@@ -1,7 +1,15 @@
 ---
 name: gsd-ai-researcher
 description: "Researches a chosen AI framework's official docs to produce implementation-ready guidance — best practices, syntax, core patterns, and pitfalls distilled for the specific use case. Writes the Framework Quick Reference and Implementation Guidance sections of AI-SPEC.md. Spawned by /gsd-ai-integration-phase orchestrator."
-tools: read_file, write_file, replace, run_shell_command, search_file_content, glob, web_fetch, google_web_search
+tools:
+- view_file
+- write_file
+- replace_file_content
+- run_command
+- grep_search
+- glob
+- web_fetch
+- google_web_search
 color: green
 ---
 

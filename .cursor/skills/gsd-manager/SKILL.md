@@ -40,8 +40,8 @@ Designed for power users who want to parallelize work across phases from one ter
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/manager.md
-@D:/Repos/lancet/.cursor/gsd-core/references/ui-brand.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/manager.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>
@@ -52,7 +52,7 @@ Project context, phase list, dependencies, and recommendations are resolved insi
 
 <process>
 If `--analyze-deps` is in {{GSD_ARGS}}:
-Read and execute `D:/Repos/lancet/.cursor/gsd-core/workflows/analyze-dependencies.md` end-to-end.
+Read and execute `/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/analyze-dependencies.md` end-to-end.
 
 Execute end-to-end.
 Maintain the dashboard refresh loop until the user exits or all phases complete.

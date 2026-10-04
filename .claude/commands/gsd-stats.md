@@ -13,7 +13,7 @@ Display comprehensive project statistics including phase progress, plan executio
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.claude/gsd-core/workflows/stats.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.claude/gsd-core/workflows/stats.md
 </execution_context>
 
 <process>

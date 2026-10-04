@@ -49,10 +49,10 @@ Mode routing:
 </routing>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/add-phase.md
-@D:/Repos/lancet/.cursor/gsd-core/workflows/insert-phase.md
-@D:/Repos/lancet/.cursor/gsd-core/workflows/remove-phase.md
-@D:/Repos/lancet/.cursor/gsd-core/workflows/edit-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/add-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/insert-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/remove-phase.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/edit-phase.md
 </execution_context>
 
 <context>

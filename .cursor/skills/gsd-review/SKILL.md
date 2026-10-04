@@ -28,7 +28,7 @@ When the workflow needs to spawn a subagent:
 </cursor_skill_adapter>
 
 <objective>
-Invoke external AI CLIs (Gemini, Claude, Codex, OpenCode, Qwen Code, Cursor) to independently review phase plans.
+Invoke external AI CLIs (Claude, Codex, OpenCode, Qwen Code, Cursor, Antigravity) to independently review phase plans.
 Produces a structured REVIEWS.md with per-reviewer feedback that can be fed back into
 planning via /gsd-plan-phase --reviews.
 
@@ -36,14 +36,13 @@ planning via /gsd-plan-phase --reviews.
 </objective>
 
 <execution_context>
-@D:/Repos/lancet/.cursor/gsd-core/workflows/review.md
+@/Users/mileschintw/Desktop/repos/rust-lancedb-graphrag/.cursor/gsd-core/workflows/review.md
 </execution_context>
 
 <context>
 Phase number: extracted from {{GSD_ARGS}} (required)
 
 **Flags:**
-- `--gemini` — Include Gemini CLI review
 - `--claude` — Include Claude CLI review (uses separate session)
 - `--codex` — Include Codex CLI review
 - `--opencode` — Include OpenCode review (uses model from user's OpenCode config)
