@@ -315,7 +315,7 @@ def test_drive_complete_run_is_not_labelled_capped_when_last_record_crosses_cap(
 def test_drive_is_labelled_capped_when_cap_reached_with_units_still_waiting(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """WR-01 companion: the cap reached after the 2nd of 6 records leaves work undone."""
+    """WR-01 companion: cap reached after the 2nd of 6 records leaves work undone."""
     dispatched = 0
 
     def counting_drive_one(*args: object, **kwargs: object) -> RunRecord:
@@ -353,7 +353,14 @@ _BAD_CAPS = ["nan", "inf", "-inf", "0", "-1"]
 def _invoke_run(tmp_path: Path, cap_args: list[str]) -> object:
     return CliRunner().invoke(
         app,
-        ["run", "--corpus", "multihop_rag", *cap_args, "--out", str(tmp_path / "j.jsonl")],
+        [
+            "run",
+            "--corpus",
+            "multihop_rag",
+            *cap_args,
+            "--out",
+            str(tmp_path / "j.jsonl"),
+        ],
     )
 
 

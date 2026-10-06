@@ -1045,7 +1045,7 @@ def test_measure_workers_one_journal_order_equals_ordinal_order(tmp_path):
 
 
 def _invoke_measure_with_summary(summary):
-    """Run `measure --stage-cap 0.005` with run_measurement_pass stubbed to `summary`."""
+    """Run `measure --stage-cap 0.005` with the pass stubbed to return `summary`."""
     runner = CliRunner()
     with patch(
         "lancet_eval.measure.run_measurement_pass",
@@ -1055,7 +1055,7 @@ def _invoke_measure_with_summary(summary):
 
 
 def test_measure_command_prints_cap_notice_when_pass_stopped_by_cap():
-    """A capped measurement pass is reported as capped, with measured-of-planned counts."""
+    """A capped measurement pass is reported as capped, with measured-of-planned."""
     res = _invoke_measure_with_summary(
         {
             "total_records_emitted": 4,

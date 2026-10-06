@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -389,6 +390,24 @@ def resolve_run_dir(corpus: str, resume: bool, runs_root: Path | None = None) ->
     return root / f"{today}-{corpus}"
 
 
+def _validate_stage_cap(value: float | None) -> float | None:
+    """Reject a --stage-cap that cannot fire (WR-02, D-86).
+
+    A NaN makes every ``spend >= cap`` comparison false, infinity is never reached,
+    and a non-positive cap is meaningless as a spend ceiling, so each would silently
+    disable the stop rule. ``None`` passes through for commands where the cap is
+    optional (``score``). Runs during parameter parsing, before any command body.
+    """
+    if value is None:
+        return None
+    if not (math.isfinite(value) and value > 0):
+        raise typer.BadParameter(
+            "the stage spend cap must be a finite positive USD amount "
+            f"(got {value!r})"
+        )
+    return value
+
+
 @app.command("run")
 def run_benchmark(
     corpus: Annotated[
@@ -443,6 +462,7 @@ def run_benchmark(
         typer.Option(
             "--stage-cap",
             help="Stage spend cap in USD (fail-closed, required with no silent default)",
+            callback=_validate_stage_cap,
         ),
     ] = ...,
 ) -> None:
@@ -623,6 +643,7 @@ def score_benchmark(
         typer.Option(
             "--stage-cap",
             help="Stage spend cap in USD. Required when --judge is enabled to bound accumulated judged spend.",
+            callback=_validate_stage_cap,
         ),
     ] = None,
 ) -> None:
@@ -1035,9 +1056,13 @@ def measure_latency(
         float,
         typer.Option(
             "--stage-cap",
-            help="Maximum spend cap in USD for this measurement stage",
+            help=(
+                "Maximum spend cap in USD for this measurement stage "
+                "(required, no default; a finite positive amount)"
+            ),
+            callback=_validate_stage_cap,
         ),
-    ] = 5.0,
+    ] = ...,
     out: Annotated[
         Path | None,
         typer.Option(
@@ -1073,6 +1098,13 @@ def measure_latency(
         console.print(f"Total queries: {summary.get('total_records_emitted')}")
         spend_usd = summary.get("spend_summary", {}).get("spend_usd", 0.0)
         console.print(f"Observed spend: ${spend_usd:.4f}")
+        if summary.get("stopped_by_cap"):
+            console.print(
+                "[yellow]Measurement pass stopped early at the stage spend cap "
+                f"(${stage_cap:.4f}): measured "
+                f"{summary.get('total_records_emitted')} of "
+                f"{summary.get('work_units_planned')} planned work units.[/yellow]"
+            )
     except Exception as exc:
         console.print(f"[red]Measurement pass failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
