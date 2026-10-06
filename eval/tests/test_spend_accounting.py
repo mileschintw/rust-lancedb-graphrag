@@ -398,7 +398,7 @@ def _attempt(
     error_type: str | None = None,
     attempt: int = 1,
 ) -> AttemptRecord:
-    """An attempt a retry superseded, shaped like the record kinds the charge rules read."""
+    """An attempt a retry superseded, shaped like the records the charge reads."""
     timings = (
         [NodeTiming(node_name="AssemblePrompt", duration_ms=12.0)]
         if reached_generation
@@ -421,7 +421,9 @@ def _attempt(
         outcome=outcome,
         node_failures=failures,
         node_timings=timings,
-        workflow_meta=WorkflowWireMeta(prompt_tokens=prompt, completion_tokens=completion),
+        workflow_meta=WorkflowWireMeta(
+            prompt_tokens=prompt, completion_tokens=completion
+        ),
         error_type=error_type,
     )
 
@@ -467,13 +469,10 @@ def test_prior_attempt_wire_tokens_are_priced_like_a_record_with_those_tokens() 
     assert spend == pytest.approx(expected)
 
 
-def test_prior_attempt_zero_token_failure_charges_one_ceiling_and_a_retried_class_two() -> (
-    None
-):
+def test_prior_attempt_failure_charges_one_ceiling_or_two_for_a_retried_class() -> None:
     base = _success_record(0, 0)
-    one = base.model_copy(
-        update={"prior_attempts": [_PRIOR_ATTEMPT_KINDS["zero_token_failure_one_ceiling"]()]}
-    )
+    one_ceiling = _PRIOR_ATTEMPT_KINDS["zero_token_failure_one_ceiling"]()
+    one = base.model_copy(update={"prior_attempts": [one_ceiling]})
     two = base.model_copy(
         update={
             "prior_attempts": [
@@ -489,9 +488,7 @@ def test_prior_attempt_zero_token_failure_charges_one_ceiling_and_a_retried_clas
     )
 
 
-def test_count_failed_generation_attempts_covers_prior_attempts_and_the_final_record() -> (
-    None
-):
+def test_count_failed_generation_attempts_covers_every_attempt() -> None:
     prior = _attempt(failure=RETRIED_MESSAGES[0], reached_generation=True)  # 2
     final = _failed_generation_record(SCHEMA_CLASSES[0])  # 1
     retried = final.model_copy(update={"prior_attempts": [prior]})
@@ -528,5 +525,7 @@ def test_records_without_prior_attempts_price_exactly_as_before() -> None:
     assert all(r.prior_attempts == [] for r in recs)
     with_emb, _ = compute_spend(recs)
     without_emb, _ = compute_spend(recs, include_embeddings=False)
-    assert without_emb == pytest.approx(_old_spend(recs, include_embeddings=False) + 3 * _ceiling_usd())
+    assert without_emb == pytest.approx(
+        _old_spend(recs, include_embeddings=False) + 3 * _ceiling_usd()
+    )
     assert with_emb == pytest.approx(_old_spend(recs) + 3 * _ceiling_usd())

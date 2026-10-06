@@ -532,7 +532,7 @@ def _drive_with_stubbed_records(
 def test_cap_sees_retried_spend_and_stops_earlier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CR-03 (D-86): a billed attempt a later attempt replaced still counts toward the cap.
+    """CR-03 (D-86): a billed attempt a retry replaced still counts toward the cap.
 
     Each stub record costs about $0.0044 of wire tokens. With a $0.01 cap the drive
     crosses it at the third record; when every record also carries one prior attempt

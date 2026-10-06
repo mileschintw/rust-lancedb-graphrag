@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -104,8 +104,8 @@ class RunRecord(BaseModel):
     prior_attempts: list[AttemptRecord] = Field(
         default_factory=list,
         description=(
-            "The attempts a harness retry superseded, in order. The record's own fields "
-            "are the final attempt. Empty when the work unit ran once."
+            "The attempts a harness retry superseded, in order. The record's own "
+            "fields are the final attempt. Empty when the work unit ran once."
         ),
     )
 
@@ -136,6 +136,30 @@ def first_attempt_view(record: RunRecord) -> RunRecord:
         correlation_id=first.correlation_id,
         session_id=first.session_id,
     )
+
+
+def read_journal_header(journal_path: Path | str) -> dict[str, Any] | None:
+    """The journal's header line as a dict, or None.
+
+    None when the file is absent or empty, when its first non-empty line does not
+    parse as JSON, or when that line is not a ``type == "header"`` object.
+    """
+    path = Path(journal_path)
+    if not path.is_file():
+        return None
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            try:
+                data = json.loads(line_str)
+            except ValueError:
+                return None
+            if isinstance(data, dict) and data.get("type") == "header":
+                return data
+            return None
+    return None
 
 
 def journal_key(corpus: str, question_id: str, graph_arm: str) -> str:
@@ -311,15 +335,34 @@ class Journal:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def write_header(self, *, corpus: str, partial: bool) -> None:
-        """Write journal metadata header if file is empty or new."""
+    def write_header(
+        self,
+        *,
+        corpus: str,
+        partial: bool,
+        gate_stage: str | None = None,
+        max_retries: int | None = None,
+    ) -> None:
+        """Write journal metadata header if file is empty or new.
+
+        When ``max_retries`` is given the header also carries ``gate_stage`` (the
+        label, or null for a non-gate drive) and ``max_retries``, so it describes every
+        record written under it (06.3.4.1-33, D-67). Without ``max_retries`` the
+        header keeps its four original keys. This is a provenance marker, distinct from
+        the ``partial`` completeness flag.
+        """
+        if gate_stage is not None and max_retries is None:
+            raise ValueError("gate_stage requires max_retries (D-67)")
         if not self.path.exists() or self.path.stat().st_size == 0:
-            header = {
+            header: dict[str, Any] = {
                 "type": "header",
                 "corpus": corpus,
                 "partial": partial,
                 "created_at": time.time(),
             }
+            if max_retries is not None:
+                header["gate_stage"] = gate_stage
+                header["max_retries"] = max_retries
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(header, ensure_ascii=False) + "\n")
                 f.flush()

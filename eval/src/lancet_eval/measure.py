@@ -179,7 +179,7 @@ def _failed_generation_attempts(rec: RunRecord | AttemptRecord) -> int:
 
 
 def _every_attempt(rec: RunRecord) -> list[RunRecord | AttemptRecord]:
-    """The attempts a harness retry superseded, then the record's own (final) attempt."""
+    """Superseded attempts first, then the record's own (final) attempt."""
     return [*rec.prior_attempts, rec]
 
 

@@ -553,7 +553,6 @@ def test_score_run_zero_records_raises_score_error(tmp_path: Path) -> None:
         score_run(run_dir=run_dir, no_judge=True)
 
 
-
 def test_reconcile_header_preserves_the_gate_stage_marker(tmp_path: Path) -> None:
     """reconcile_header rewrites only `partial`; gate_stage and max_retries survive."""
     from lancet_eval.journal import Journal, read_journal_header
@@ -563,7 +562,9 @@ def test_reconcile_header_preserves_the_gate_stage_marker(tmp_path: Path) -> Non
     arms = load_corpus_config(corpus).arms
     path = tmp_path / "journal.jsonl"
     journal = Journal(path)
-    journal.write_header(corpus=corpus, partial=True, gate_stage="drive3", max_retries=0)
+    journal.write_header(
+        corpus=corpus, partial=True, gate_stage="drive3", max_retries=0
+    )
     for q in questions:
         for arm in arms:
             journal.append(

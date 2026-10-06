@@ -332,9 +332,7 @@ def test_run_command_loads_settings_and_forwards_to_drive(
     assert captured_kwargs["gate_stage"] is None
 
 
-
-
-# --- 06.3.4.1-33 Task 1: every superseded attempt is journaled (CR-03, D-67) ---
+# --- 06.3.4.1-33 Task 1: every superseded attempt is journaled (CR-03) ---
 
 _SSE_ANSWER_OK = (
     "event: final_answer\n"
@@ -351,7 +349,8 @@ _SSE_ANSWER_EMPTY = (
 _SSE_D69_REJECTION = (
     "event: node_failed\n"
     'data: {"node_name": "GenerateAnswer", "error_kind": 3, '
-    "\"error_message\": \"answer basis 'mixed' requires at least one cited evidence ID\", "
+    "\"error_message\": \"answer basis 'mixed' requires at least one cited "
+    "evidence ID\", "
     '"retryable": false}\n\n'
     "event: workflow_completed\n"
     'data: {"success": false, "duration_ms": 55, "error_kind": 3, '
@@ -389,7 +388,9 @@ def no_retry_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _q() -> GoldQuestion:
-    return GoldQuestion(question_id="q1", question="What is Paris?", gold_facts=["Paris"])
+    return GoldQuestion(
+        question_id="q1", question="What is Paris?", gold_facts=["Paris"]
+    )
 
 
 def test_retried_timeout_stays_on_the_record_as_a_prior_attempt(
@@ -416,7 +417,7 @@ def test_retried_timeout_stays_on_the_record_as_a_prior_attempt(
 def test_first_attempt_view_classifies_like_a_single_attempt_run(
     httpx_mock: HTTPXMock, no_retry_sleep: None
 ) -> None:
-    """The retried record's first attempt reads as timeout, the class max_retries=0 gets."""
+    """The first attempt of a retried record reads as timeout, like max_retries=0."""
     from lancet_eval.diagnostic import classify_record
     from lancet_eval.journal import first_attempt_view
 
@@ -512,7 +513,9 @@ def test_exhausted_retries_keep_every_earlier_attempt_on_the_final_error_record(
 def test_first_attempt_view_returns_the_record_itself_when_it_ran_once() -> None:
     from lancet_eval.journal import RunRecord, first_attempt_view
 
-    rec = RunRecord(corpus="c", question_id="q", graph_arm="graph-on", outcome="success")
+    rec = RunRecord(
+        corpus="c", question_id="q", graph_arm="graph-on", outcome="success"
+    )
     assert first_attempt_view(rec) is rec
 
 
@@ -606,7 +609,10 @@ def test_gate_stage_drive_refuses_retries_before_any_journal_io(
     assert httpx_mock.get_requests() == []
 
 
-@pytest.mark.parametrize("label", ["", "has space", "bad/label", "-leading-dash", "x" * 65])
+@pytest.mark.parametrize(
+    "label",
+    ["", "has space", "bad/label", "-leading-dash", "x" * 65, "drive3\n"],
+)
 def test_gate_stage_drive_refuses_a_malformed_label_before_any_journal_io(
     label: str, tmp_path: Path, httpx_mock: HTTPXMock
 ) -> None:
@@ -656,7 +662,9 @@ def test_non_gate_drive_writes_a_null_gate_stage_and_its_retries(
         pytest.param(None, id="no-header"),
         pytest.param(_header(gate_stage="drive2", max_retries=0), id="different-label"),
         pytest.param(_header(gate_stage=None, max_retries=0), id="non-gate-header"),
-        pytest.param(_header(gate_stage="drive3", max_retries=2), id="different-retries"),
+        pytest.param(
+            _header(gate_stage="drive3", max_retries=2), id="different-retries"
+        ),
     ],
 )
 def test_gate_stage_drive_refuses_to_append_to_a_journal_it_does_not_describe(
@@ -680,8 +688,12 @@ def test_gate_stage_drive_refuses_to_append_to_a_journal_it_does_not_describe(
     ("header", "max_retries"),
     [
         pytest.param(_header(gate_stage="drive3", max_retries=0), 2, id="gate-journal"),
-        pytest.param(_header(gate_stage=None, max_retries=0), 2, id="other-retries-lower"),
-        pytest.param(_header(gate_stage=None, max_retries=2), 0, id="other-retries-higher"),
+        pytest.param(
+            _header(gate_stage=None, max_retries=0), 2, id="other-retries-lower"
+        ),
+        pytest.param(
+            _header(gate_stage=None, max_retries=2), 0, id="other-retries-higher"
+        ),
     ],
 )
 def test_any_drive_refuses_a_journal_whose_marker_differs_from_its_own(

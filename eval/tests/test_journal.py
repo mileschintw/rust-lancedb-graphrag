@@ -183,7 +183,9 @@ def _strict_lines(path: Path) -> list[str]:
 def test_prior_attempts_defaults_to_empty_and_is_inherited() -> None:
     from lancet_eval.measure import MeasurementRecord
 
-    rec = RunRecord(corpus="c", question_id="q", graph_arm="graph-on", outcome="success")
+    rec = RunRecord(
+        corpus="c", question_id="q", graph_arm="graph-on", outcome="success"
+    )
     assert rec.prior_attempts == []
 
     meas = MeasurementRecord(

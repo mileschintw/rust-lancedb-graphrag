@@ -465,8 +465,31 @@ def run_benchmark(
             callback=_validate_stage_cap,
         ),
     ] = ...,
+    gate_stage: Annotated[
+        str | None,
+        typer.Option(
+            "--gate-stage",
+            help=(
+                "Declare this a gate-stage drive: the label that "
+                "'unpark_gates --stage' will be given. Recorded in the journal "
+                "header (with max_retries) and requires --retries 0."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Run evaluation benchmark questions across graph-on and graph-off arms."""
+    if gate_stage is not None:
+        if not gate_stage.strip() or any(ch.isspace() for ch in gate_stage):
+            raise typer.BadParameter(
+                "the gate-stage label must be non-empty and contain no whitespace",
+                param_hint="'--gate-stage'",
+            )
+        if retries != 0:
+            raise typer.BadParameter(
+                f"a gate-stage drive requires --retries 0 (got {retries}); "
+                "a retry would replace an attempt the gates must see (D-67)",
+                param_hint="'--retries'",
+            )
     try:
         from lancet_eval.run import drive
 
@@ -477,7 +500,8 @@ def run_benchmark(
         console.print(f"[dim]Resolved run directory: {out.parent}[/dim]")
         msg = (
             f"[bold blue]Driving corpus '{corpus}' "
-            f"(limit={limit}, resume={resume}, workers={workers}, retries={retries}, stage_cap=${stage_cap:.2f})...[/bold blue]"
+            f"(limit={limit}, resume={resume}, workers={workers}, retries={retries}, "
+            f"gate_stage={gate_stage}, stage_cap=${stage_cap:.2f})...[/bold blue]"
         )
         console.print(msg)
         settings = load_settings()
@@ -490,6 +514,7 @@ def run_benchmark(
             resume=resume,
             workers=workers,
             max_retries=retries,
+            gate_stage=gate_stage,
         )
         stopped = getattr(count, "stopped_by_cap", False)
         spend = getattr(count, "observed_spend", 0.0)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from lancet_eval.journal import (
     journal_key,
     load_done,
     load_records,
+    read_journal_header,
     reconcile_header,
 )
 from lancet_eval.measure import compute_spend
@@ -58,6 +60,42 @@ GRAPH_ARMS: dict[str, bool] = {
     "graph-on": False,
     "graph-off": True,
 }
+
+
+# A gate-stage label is the one `unpark_gates --stage` will be given; short ASCII keeps
+# the journal header and the gate markdown free of whitespace and control characters.
+_GATE_STAGE_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+
+
+def _require_matching_journal_marker(
+    path: Path, *, gate_stage: str | None, max_retries: int
+) -> None:
+    """Refuse to append to a journal whose header does not describe this drive.
+
+    The header written by the first invocation must describe every record after it
+    (06.3.4.1-33, D-67), with or without ``--resume``. A header that carries a marker
+    must equal this drive's ``(gate_stage, max_retries)``; an unmarked or missing header
+    is refused only by a gate-stage drive. A new or empty file is always fine: the
+    header is written after this check.
+    """
+    if not path.is_file() or path.stat().st_size == 0:
+        return
+    header = read_journal_header(path)
+    if header is not None and ("gate_stage" in header or "max_retries" in header):
+        found = (header.get("gate_stage"), header.get("max_retries"))
+        if found != (gate_stage, max_retries):
+            raise ValueError(
+                f"journal {path} was started with gate_stage={found[0]!r}, "
+                f"max_retries={found[1]!r} but this drive has "
+                f"gate_stage={gate_stage!r}, max_retries={max_retries!r}; "
+                "refusing to append records its header does not describe"
+            )
+        return
+    if gate_stage is not None:
+        raise ValueError(
+            f"journal {path} has no gate_stage marker in its header, so a gate-stage "
+            f"drive (gate_stage={gate_stage!r}) cannot append to it; use a new journal"
+        )
 
 
 def _attempt_of(record: RunRecord, attempt: int) -> AttemptRecord:
@@ -269,14 +307,31 @@ def drive(
     workers: int = 1,
     client: httpx.Client | None = None,
     max_retries: int = 0,
+    gate_stage: str | None = None,
 ) -> DriveResult:
     """Drive questions across graph-on and graph-off arms into a journal.
 
     Enforces fail-closed stage spend cap in-process with a bounded in-flight window.
     Returns DriveResult with executed count, stopped_by_cap status, and observed spend.
+
+    ``gate_stage`` declares a gate-stage drive (D-67): it requires ``max_retries == 0``,
+    is recorded in the journal header with ``max_retries``, and the drive refuses to
+    append to a journal whose header marker differs from its own.
     """
     eval_settings = settings or EvalSettings()
     require_index_identity(eval_settings, corpus)
+
+    if gate_stage is not None:
+        if not _GATE_STAGE_LABEL.fullmatch(gate_stage):
+            raise ValueError(
+                f"invalid gate-stage label {gate_stage!r}: expected 1-64 characters "
+                "from A-Z a-z 0-9 . _ -, starting with a letter or digit"
+            )
+        if max_retries != 0:
+            raise ValueError(
+                "gate-stage drives require --retries 0 (D-67): a retry would replace "
+                f"an attempt the gates must see (got max_retries={max_retries})"
+            )
 
     config = load_corpus_config(corpus)
     questions = load_sample_questions(corpus)
@@ -291,6 +346,9 @@ def drive(
     ]
 
     target_path = Path(journal_path)
+    _require_matching_journal_marker(
+        target_path, gate_stage=gate_stage, max_retries=max_retries
+    )
     done_keys = load_done(target_path) if resume else set()
     records: list[RunRecord] = load_records(target_path) if resume else []
 
@@ -301,7 +359,9 @@ def drive(
     ]
 
     journal = Journal(target_path)
-    journal.write_header(corpus=corpus, partial=True)
+    journal.write_header(
+        corpus=corpus, partial=True, gate_stage=gate_stage, max_retries=max_retries
+    )
 
     def _safe_reconcile() -> None:
         try:
