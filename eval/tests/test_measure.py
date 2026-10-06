@@ -829,3 +829,216 @@ def test_run_measurement_pass_allowance_check_reads_env_api_key(monkeypatch, tmp
                 check_allowance=True,
             )
     assert seen == ["sk-test-env-key"]
+
+
+# ---------------------------------------------------------------------------
+# 06.3.4.1-31 (G-06.3.4.1-3b, CR-01 / WR-01 / WR-02, D-86): the measurement
+# driver honours its stage spend cap at every worker count.
+# ---------------------------------------------------------------------------
+
+_CAP_WINDOW_CFG = {
+    "reformulate_timeout_ms": 5000,
+    "query_embedding_timeout_ms": 10000,
+    "retrieve_timeout_ms": 10000,
+    "graph_operation_timeout_ms": 4000,
+    "graph_node_timeout_ms": 30000,
+    "prompt_timeout_ms": 5000,
+    "generation_node_timeout_ms": 65000,
+}
+
+
+def _cap_window_questions(n: int) -> list[GoldQuestion]:
+    return [
+        GoldQuestion(
+            question_id=f"q{i}",
+            question=f"What is {i}?",
+            question_type="bridge",
+            gold_answer=str(i),
+            supporting_facts=[],
+        )
+        for i in range(n)
+    ]
+
+
+def _run_capped_pass(
+    tmp_path: Path,
+    *,
+    workers: int,
+    cap: float,
+    n_questions: int = 10,
+    sleep_s: float = 0.0,
+):
+    """Drive run_measurement_pass with every paid seam stubbed (zero cost).
+
+    ``compute_spend`` is patched to $0.01 per record. Returns
+    ``(summary, run_dir, calls, peak_concurrent, peak_outstanding)``.
+    """
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    lock = threading.Lock()
+    state = {"calls": 0, "live": 0, "peak_live": 0, "submits": 0, "finished": 0}
+    state["peak_outstanding"] = 0
+
+    def stub_measure_one(client, **kwargs):
+        with lock:
+            state["calls"] += 1
+            state["live"] += 1
+            state["peak_live"] = max(state["peak_live"], state["live"])
+        if sleep_s:
+            time.sleep(sleep_s)
+        with lock:
+            state["live"] -= 1
+            state["finished"] += 1
+        return MeasurementRecord(
+            corpus="multihop_rag",
+            question_id=kwargs["question"].question_id,
+            graph_arm=kwargs["arm"],
+            outcome="success",
+            ordinal=kwargs["ordinal"],
+            segment=kwargs["segment"],
+            warm_up=kwargs["warm_up"],
+        )
+
+    orig_submit = ThreadPoolExecutor.submit
+
+    def counting_submit(self, fn, *args, **kwargs):
+        with lock:
+            state["submits"] += 1
+            outstanding = state["submits"] - state["finished"]
+            state["peak_outstanding"] = max(state["peak_outstanding"], outstanding)
+        return orig_submit(self, fn, *args, **kwargs)
+
+    run_dir = tmp_path / "capped-pass"
+    with (
+        patch("lancet_eval.measure.measure_one", stub_measure_one),
+        patch(
+            "lancet_eval.measure.compute_spend",
+            lambda records, include_embeddings=True: (0.01 * len(records), False),
+        ),
+        patch("lancet_eval.measure.require_index_identity"),
+        patch("lancet_eval.measure.load_corpus") as mock_lc,
+        patch(
+            "lancet_eval.measure.read_effective_workflow_config",
+            return_value=dict(_CAP_WINDOW_CFG),
+        ),
+        patch.object(ThreadPoolExecutor, "submit", counting_submit),
+    ):
+        mock_lc.return_value = MagicMock(questions=_cap_window_questions(n_questions))
+        _, summary = run_measurement_pass(
+            corpus_name="multihop_rag",
+            sample_size_questions=n_questions,
+            warm_up_count=0,
+            stage_spend_cap=cap,
+            output_dir=run_dir,
+            client=MagicMock(),
+            check_allowance=False,
+            workers=workers,
+        )
+    return (
+        summary,
+        run_dir,
+        state["calls"],
+        state["peak_live"],
+        state["peak_outstanding"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("workers", "cap", "expected_calls", "expected_capped"),
+    [
+        # CR-01: a binding cap bounds dispatch to the window, never all 20 units.
+        (4, 0.005, 4, True),
+        (1, 0.005, 1, True),
+        # Never reached: every unit dispatches and the pass is not labelled capped.
+        (4, 1.0, 20, False),
+        # WR-01 boundary: the 20th record brings spend to exactly the cap with
+        # nothing left to dispatch, so a complete pass is not labelled capped.
+        (1, 0.01 * 20, 20, False),
+        (4, 0.01 * 20, 20, False),
+    ],
+)
+def test_measure_window_honours_stage_cap_at_every_worker_count(
+    tmp_path, workers, cap, expected_calls, expected_capped
+):
+    summary, run_dir, calls, _, _ = _run_capped_pass(
+        tmp_path, workers=workers, cap=cap
+    )
+    assert calls == expected_calls
+    journal_lines = (run_dir / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(journal_lines) == expected_calls
+    assert summary["total_records_emitted"] == expected_calls
+    assert summary["stopped_by_cap"] is expected_capped
+    assert summary["workers"] == workers
+    assert summary["work_units_planned"] == 20
+
+    for name in ("run_record.json", "measurement.json"):
+        written = json.loads((run_dir / name).read_text(encoding="utf-8"))
+        assert written["stopped_by_cap"] is expected_capped
+        assert written["workers"] == workers
+        assert written["work_units_planned"] == 20
+
+
+def test_measure_window_never_has_more_than_workers_units_in_flight(tmp_path):
+    """The window bounds submitted-but-unfinished units, not just running threads."""
+    _, _, calls, peak_live, peak_outstanding = _run_capped_pass(
+        tmp_path, workers=4, cap=1000.0, sleep_s=0.02
+    )
+    assert calls == 20
+    assert peak_live <= 4
+    assert peak_outstanding <= 4
+
+
+def test_measure_effective_workers_is_at_least_one(tmp_path):
+    summary, _, calls, _, _ = _run_capped_pass(tmp_path, workers=0, cap=1.0)
+    assert calls == 20
+    assert summary["workers"] == 1
+
+
+@pytest.mark.parametrize(
+    "bad_cap", [float("nan"), float("inf"), float("-inf"), 0.0, -1.0]
+)
+def test_run_measurement_pass_rejects_caps_that_cannot_fire(tmp_path, bad_cap):
+    """WR-02: a non-finite or non-positive cap raises before any dispatch or I/O."""
+    run_dir = tmp_path / "never-created"
+    stub = MagicMock(
+        side_effect=lambda client, **kw: MeasurementRecord(
+            corpus="multihop_rag",
+            question_id=kw["question"].question_id,
+            graph_arm=kw["arm"],
+            outcome="success",
+            ordinal=kw["ordinal"],
+            segment=kw["segment"],
+            warm_up=kw["warm_up"],
+        )
+    )
+    with (
+        patch("lancet_eval.measure.measure_one", stub),
+        patch("lancet_eval.measure.require_index_identity"),
+        patch("lancet_eval.measure.load_corpus") as mock_lc,
+    ):
+        mock_lc.return_value = MagicMock(questions=_cap_window_questions(10))
+        with pytest.raises(ValueError, match="stage_spend_cap"):
+            run_measurement_pass(
+                corpus_name="multihop_rag",
+                sample_size_questions=10,
+                warm_up_count=0,
+                stage_spend_cap=bad_cap,
+                output_dir=run_dir,
+                client=MagicMock(),
+                check_allowance=False,
+                workers=1,
+            )
+    stub.assert_not_called()
+    assert not run_dir.exists()
+
+
+def test_measure_workers_one_journal_order_equals_ordinal_order(tmp_path):
+    """A window of one keeps journal line order equal to dispatch ordinal order."""
+    _, run_dir, _, _, _ = _run_capped_pass(tmp_path, workers=1, cap=1.0)
+    ordinals = [
+        json.loads(line)["ordinal"]
+        for line in (run_dir / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert ordinals == list(range(1, 21))
