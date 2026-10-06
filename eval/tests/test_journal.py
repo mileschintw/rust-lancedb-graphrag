@@ -246,3 +246,85 @@ def test_recorded_pass_a_journal_validates_strictly_with_empty_prior_attempts() 
     for line in lines:
         rec = MeasurementRecord.model_validate_json(line)
         assert rec.prior_attempts == []
+
+
+# --- 06.3.4.1-33 Task 3: the gate-stage header marker ---------------------------
+
+
+def test_write_header_carries_gate_stage_and_max_retries(tmp_path: Path) -> None:
+    from lancet_eval.journal import read_journal_header
+
+    path = tmp_path / "journal.jsonl"
+    Journal(path).write_header(
+        corpus="multihop_rag", partial=True, gate_stage="drive3", max_retries=0
+    )
+
+    header = read_journal_header(path)
+    assert header is not None
+    assert header["type"] == "header"
+    assert header["gate_stage"] == "drive3"
+    assert header["max_retries"] == 0
+
+
+def test_write_header_records_a_null_gate_stage_for_a_non_gate_drive(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.journal import read_journal_header
+
+    path = tmp_path / "journal.jsonl"
+    Journal(path).write_header(corpus="multihop_rag", partial=True, max_retries=2)
+
+    header = read_journal_header(path)
+    assert header is not None
+    assert "gate_stage" in header and header["gate_stage"] is None
+    assert header["max_retries"] == 2
+
+
+def test_write_header_without_max_retries_keeps_the_four_key_header(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "journal.jsonl"
+    Journal(path).write_header(corpus="multihop_rag", partial=False)
+
+    header = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert set(header) == {"type", "corpus", "partial", "created_at"}
+
+
+def test_write_header_does_not_overwrite_a_non_empty_journal(tmp_path: Path) -> None:
+    from lancet_eval.journal import read_journal_header
+
+    path = tmp_path / "journal.jsonl"
+    journal = Journal(path)
+    journal.write_header(
+        corpus="multihop_rag", partial=True, gate_stage="drive3", max_retries=0
+    )
+    journal.write_header(
+        corpus="multihop_rag", partial=True, gate_stage="other", max_retries=2
+    )
+
+    header = read_journal_header(path)
+    assert header is not None
+    assert header["gate_stage"] == "drive3"
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_read_journal_header_returns_none_when_there_is_no_header(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.journal import read_journal_header
+
+    assert read_journal_header(tmp_path / "missing.jsonl") is None
+
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+    assert read_journal_header(empty) is None
+
+    record_first = tmp_path / "record_first.jsonl"
+    Journal(record_first).append(
+        RunRecord(corpus="c", question_id="q", graph_arm="graph-on", outcome="success")
+    )
+    assert read_journal_header(record_first) is None
+
+    garbled = tmp_path / "garbled.jsonl"
+    garbled.write_text("not json\n", encoding="utf-8")
+    assert read_journal_header(garbled) is None

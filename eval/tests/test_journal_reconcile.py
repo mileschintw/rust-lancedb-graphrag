@@ -552,3 +552,34 @@ def test_score_run_zero_records_raises_score_error(tmp_path: Path) -> None:
     with pytest.raises(ScoreError, match="contains no evaluation records"):
         score_run(run_dir=run_dir, no_judge=True)
 
+
+
+def test_reconcile_header_preserves_the_gate_stage_marker(tmp_path: Path) -> None:
+    """reconcile_header rewrites only `partial`; gate_stage and max_retries survive."""
+    from lancet_eval.journal import Journal, read_journal_header
+
+    corpus = "graphrag_bench"
+    questions = load_sample_questions(corpus)
+    arms = load_corpus_config(corpus).arms
+    path = tmp_path / "journal.jsonl"
+    journal = Journal(path)
+    journal.write_header(corpus=corpus, partial=True, gate_stage="drive3", max_retries=0)
+    for q in questions:
+        for arm in arms:
+            journal.append(
+                RunRecord(
+                    corpus=corpus,
+                    question_id=q.id,
+                    graph_arm=arm,
+                    outcome="success",
+                )
+            )
+
+    publishable, changed, _ = reconcile_header(path, corpus)
+
+    assert publishable is True and changed is True
+    header = read_journal_header(path)
+    assert header is not None
+    assert header["partial"] is False
+    assert header["gate_stage"] == "drive3"
+    assert header["max_retries"] == 0

@@ -328,6 +328,8 @@ def test_run_command_loads_settings_and_forwards_to_drive(
     assert isinstance(forwarded_settings, EvalSettings)
     assert forwarded_settings.question_deadline_secs == 789.0
     assert captured_kwargs.get("stage_spend_cap") == 2.0
+    assert "gate_stage" in captured_kwargs
+    assert captured_kwargs["gate_stage"] is None
 
 
 
@@ -544,3 +546,269 @@ def test_drive_journals_prior_attempts_and_they_survive_the_round_trip(
     assert len(records[0].prior_attempts) == 1
     assert records[0].prior_attempts[0].error_type == "ReadTimeout"
     assert records[1].prior_attempts == []
+
+
+# --- 06.3.4.1-33 Task 3: gate-stage marker, retry refusal, header guard (D-67) ---
+
+_GATE_HEADER_BASE = {
+    "type": "header",
+    "corpus": "graphrag_bench",
+    "partial": True,
+    "created_at": 1.0,
+}
+
+
+def _header(**extra: object) -> dict[str, object]:
+    return {**_GATE_HEADER_BASE, **extra}
+
+
+def _seed_journal(path: Path, header: dict[str, object] | None) -> bytes:
+    """Write a non-empty journal (optional header, one record); return its bytes."""
+    from lancet_eval.journal import RunRecord
+
+    lines = [] if header is None else [json.dumps(header)]
+    lines.append(
+        RunRecord(
+            corpus="graphrag_bench",
+            question_id="seed-q",
+            graph_arm="graph-on",
+            outcome="success",
+        ).model_dump_json()
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path.read_bytes()
+
+
+def _drive_gate(
+    path: Path, *, gate_stage: str | None, max_retries: int, resume: bool = True
+) -> int:
+    return drive(
+        corpus="graphrag_bench",
+        journal_path=path,
+        stage_spend_cap=10.0,
+        limit=1,
+        workers=1,
+        resume=resume,
+        max_retries=max_retries,
+        gate_stage=gate_stage,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+
+
+def test_gate_stage_drive_refuses_retries_before_any_journal_io(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    j_path = tmp_path / "journal.jsonl"
+    for retries in (1, 2):
+        with pytest.raises(ValueError, match="--retries 0"):
+            _drive_gate(j_path, gate_stage="drive3", max_retries=retries)
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("label", ["", "has space", "bad/label", "-leading-dash", "x" * 65])
+def test_gate_stage_drive_refuses_a_malformed_label_before_any_journal_io(
+    label: str, tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    j_path = tmp_path / "journal.jsonl"
+    with pytest.raises(ValueError, match="gate-stage label"):
+        _drive_gate(j_path, gate_stage=label, max_retries=0)
+    assert not j_path.exists()
+
+
+def test_gate_stage_drive_writes_the_marker_into_the_header(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval.journal import read_journal_header
+
+    httpx_mock.add_callback(_sse(_SSE_ANSWER_OK), is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+
+    assert _drive_gate(j_path, gate_stage="drive3", max_retries=0) == 2
+
+    header = read_journal_header(j_path)
+    assert header is not None
+    assert header["gate_stage"] == "drive3"
+    assert header["max_retries"] == 0
+
+
+def test_non_gate_drive_writes_a_null_gate_stage_and_its_retries(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval.journal import read_journal_header
+
+    httpx_mock.add_callback(_sse(_SSE_ANSWER_OK), is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+
+    assert _drive_gate(j_path, gate_stage=None, max_retries=2) == 2
+
+    header = read_journal_header(j_path)
+    assert header is not None
+    assert header["gate_stage"] is None
+    assert header["max_retries"] == 2
+
+
+@pytest.mark.parametrize("resume", [True, False])
+@pytest.mark.parametrize(
+    "existing_header",
+    [
+        pytest.param(_header(), id="unmarked"),
+        pytest.param(None, id="no-header"),
+        pytest.param(_header(gate_stage="drive2", max_retries=0), id="different-label"),
+        pytest.param(_header(gate_stage=None, max_retries=0), id="non-gate-header"),
+        pytest.param(_header(gate_stage="drive3", max_retries=2), id="different-retries"),
+    ],
+)
+def test_gate_stage_drive_refuses_to_append_to_a_journal_it_does_not_describe(
+    existing_header: dict[str, object] | None,
+    resume: bool,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    j_path = tmp_path / "journal.jsonl"
+    before = _seed_journal(j_path, existing_header)
+
+    with pytest.raises(ValueError, match="gate_stage"):
+        _drive_gate(j_path, gate_stage="drive3", max_retries=0, resume=resume)
+
+    assert j_path.read_bytes() == before, "no record line may be appended"
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("resume", [True, False])
+@pytest.mark.parametrize(
+    ("header", "max_retries"),
+    [
+        pytest.param(_header(gate_stage="drive3", max_retries=0), 2, id="gate-journal"),
+        pytest.param(_header(gate_stage=None, max_retries=0), 2, id="other-retries-lower"),
+        pytest.param(_header(gate_stage=None, max_retries=2), 0, id="other-retries-higher"),
+    ],
+)
+def test_any_drive_refuses_a_journal_whose_marker_differs_from_its_own(
+    header: dict[str, object],
+    max_retries: int,
+    resume: bool,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+) -> None:
+    j_path = tmp_path / "journal.jsonl"
+    before = _seed_journal(j_path, header)
+
+    with pytest.raises(ValueError, match="gate_stage"):
+        _drive_gate(j_path, gate_stage=None, max_retries=max_retries, resume=resume)
+
+    assert j_path.read_bytes() == before
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.parametrize("header", [_header(), None], ids=["unmarked", "no-header"])
+def test_non_gate_drive_still_appends_to_an_unmarked_journal(
+    header: dict[str, object] | None, tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_callback(_sse(_SSE_ANSWER_OK), is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+    _seed_journal(j_path, header)
+
+    assert _drive_gate(j_path, gate_stage=None, max_retries=2) == 2
+
+
+@pytest.mark.parametrize(
+    ("gate_stage", "max_retries"), [("drive3", 0), (None, 2)], ids=["gate", "non-gate"]
+)
+def test_a_drive_resumes_a_journal_carrying_its_own_marker(
+    gate_stage: str | None, max_retries: int, tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_callback(_sse(_SSE_ANSWER_OK), is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+    _seed_journal(j_path, _header(gate_stage=gate_stage, max_retries=max_retries))
+
+    assert _drive_gate(j_path, gate_stage=gate_stage, max_retries=max_retries) == 2
+
+
+def _invoke_gate_run(tmp_path: Path, extra: list[str]) -> object:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    return CliRunner().invoke(
+        app,
+        [
+            "run",
+            "--corpus",
+            "multihop_rag",
+            "--stage-cap",
+            "0.5",
+            "--out",
+            str(tmp_path / "journal.jsonl"),
+            *extra,
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        pytest.param(["--gate-stage", "drive3"], id="default-retries"),
+        pytest.param(["--gate-stage", "drive3", "--retries", "1"], id="retries-1"),
+        pytest.param(["--gate-stage", "drive3", "-r", "2"], id="retries-2"),
+    ],
+)
+def test_run_gate_stage_refuses_retries_other_than_zero(
+    extra: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "lancet_eval.run.drive", lambda *a, **k: calls.append(k) or 0
+    )
+
+    res = _invoke_gate_run(tmp_path, extra)
+
+    assert res.exit_code == 2
+    assert "--retries" in res.output
+    assert calls == []
+
+
+def test_run_gate_stage_with_zero_retries_forwards_the_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "lancet_eval.run.drive", lambda *a, **k: calls.append(dict(k)) or 0
+    )
+
+    res = _invoke_gate_run(tmp_path, ["--gate-stage", "drive3", "--retries", "0"])
+
+    assert res.exit_code == 0
+    assert calls[0]["gate_stage"] == "drive3"
+    assert calls[0]["max_retries"] == 0
+
+
+def test_run_without_gate_stage_forwards_none_and_keeps_default_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "lancet_eval.run.drive", lambda *a, **k: calls.append(dict(k)) or 0
+    )
+
+    res = _invoke_gate_run(tmp_path, [])
+
+    assert res.exit_code == 0
+    assert "gate_stage" in calls[0] and calls[0]["gate_stage"] is None
+    assert calls[0]["max_retries"] == 2
+
+
+@pytest.mark.parametrize("label", ["", "  ", "has space", "tab\there"])
+def test_run_gate_stage_refuses_a_blank_or_whitespace_label(
+    label: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "lancet_eval.run.drive", lambda *a, **k: calls.append(k) or 0
+    )
+
+    res = _invoke_gate_run(tmp_path, ["--gate-stage", label, "--retries", "0"])
+
+    assert res.exit_code == 2
+    assert "--gate-stage" in res.output
+    assert calls == []
