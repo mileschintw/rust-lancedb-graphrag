@@ -49,9 +49,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
         .await
         .map_err(|error| format!("initial BM25 snapshot build failed: {error}"))?;
+    let graph_index = engine::graph::index::GraphIndex::build(&database)
+        .await
+        .map_err(|error| format!("initial graph index build failed: {error}"))?;
     let initial_snapshot = Arc::new(CorpusSnapshot::new(
         Arc::new(bm25_index),
-        Arc::new(engine::graph::index::GraphIndex::empty()),
+        Arc::new(graph_index),
         nodes_version,
         false,
     ));
@@ -60,6 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         document_count = initial_snapshot.bm25.len(),
         generation = %initial_snapshot.generation,
         nodes_version = initial_snapshot.nodes_version,
+        graph_entities = initial_snapshot.graph_index.entity_count(),
         "BM25 snapshot built"
     );
     let corpus_store = Arc::new(tokio::sync::RwLock::new(initial_snapshot));

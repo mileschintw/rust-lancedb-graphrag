@@ -1588,11 +1588,16 @@ pub async fn rebuild_and_swap(
 }
 
 /// [`rebuild_and_swap`] with the graph index builder supplied by the caller.
+///
+/// The BM25 index and the graph index are both built off the write lock and swapped together in
+/// one new snapshot. When either build fails, or the latest table version cannot be read, the
+/// prior snapshot is kept whole (its BM25 index, its graph index and its generation) with
+/// `rebuild_degraded` set, so a query never sees a new BM25 index beside an old graph index.
 pub async fn rebuild_and_swap_with_graph_builder(
     database: &DatabaseManager,
     corpus_store: &crate::workflow::ports::CorpusStore,
     bm25_settings: crate::retrieval::Bm25Config,
-    _build_graph_index: &GraphIndexBuilder,
+    build_graph_index: &GraphIndexBuilder,
 ) -> Result<Arc<crate::workflow::ports::CorpusSnapshot>, String> {
     let rebuild_start = std::time::Instant::now();
     REBUILD_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1710,9 +1715,34 @@ pub async fn rebuild_and_swap_with_graph_builder(
         }
     };
 
+    // Build the graph index off the write lock, with the same degraded handling as BM25.
+    let new_graph_index = match build_graph_index(database).await {
+        Ok(index) => index,
+        Err(err) => {
+            tracing::error!("graph index rebuild failed: {err}");
+            let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
+                bm25: Arc::clone(&prior.bm25),
+                graph_index: Arc::clone(&prior.graph_index),
+                generation: prior.generation.clone(),
+                nodes_version: prior.nodes_version,
+                rebuild_degraded: true,
+            });
+            let mut write_guard = corpus_store.write().await;
+            *write_guard = degraded_snapshot;
+            current_span.record("lancet.index.generation_after", &prior.generation);
+            current_span.record("lancet.index.nodes_version_after", prior.nodes_version);
+            let elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+            crate::telemetry::metrics::record_index_rebuild_duration_ms(
+                crate::telemetry::metrics::REBUILD_FAILED,
+                elapsed_ms,
+            );
+            return Err(format!("graph index rebuild failed: {err}"));
+        }
+    };
+
     let new_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
         bm25: Arc::new(new_bm25),
-        graph_index: Arc::new(graph::index::GraphIndex::empty()),
+        graph_index: Arc::new(new_graph_index),
         generation: crate::workflow::ports::corpus_generation_from_nodes_version(nodes_version),
         nodes_version,
         rebuild_degraded: false,
@@ -1726,7 +1756,8 @@ pub async fn rebuild_and_swap_with_graph_builder(
     tracing::info!(
         generation = %new_snapshot.generation,
         nodes_version = new_snapshot.nodes_version,
-        "BM25 index rebuilt and swapped successfully"
+        graph_entities = new_snapshot.graph_index.entity_count(),
+        "BM25 and graph indexes rebuilt and swapped successfully"
     );
 
     current_span.record("lancet.index.generation_after", &new_snapshot.generation);
