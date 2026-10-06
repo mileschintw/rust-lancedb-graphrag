@@ -566,6 +566,56 @@ def test_evaluate_sc1_no_journal_is_miss(tmp_path: Path) -> None:
     assert reading.status == "MISS"
 
 
+def test_evaluate_sc1_an_honest_partial_journal_without_a_report_is_miss(
+    tmp_path: Path,
+) -> None:
+    """CR-02: header `partial: true` on an INCOMPLETE journal is honest metadata, but
+    SC-1 also needs the journal to be complete (D-87a: a halted drive is never reported
+    as complete). It read PASS before the completeness precondition."""
+    from lancet_eval.corpus import load_corpus_config, load_sample_questions
+
+    corpus = "graphrag_bench"
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)
+    _write_sc1_journal(
+        tmp_path / "journal.jsonl",
+        corpus=corpus,
+        questions=questions,
+        arms=config.arms,
+        header_partial=True,
+        omit_last=True,
+    )
+    # No report.json: the fail-closed path left none for the halted run.
+
+    reading = evaluate_sc1(tmp_path)
+
+    assert reading.status == "MISS"
+    assert "journal incomplete: 1 work unit(s) missing" in reading.reason
+    assert reading.detail["journal_complete"] is False
+
+
+def test_evaluate_sc1_reports_journal_complete_on_a_complete_journal(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.corpus import load_corpus_config, load_sample_questions
+
+    corpus = "graphrag_bench"
+    config = load_corpus_config(corpus)
+    _write_sc1_journal(
+        tmp_path / "journal.jsonl",
+        corpus=corpus,
+        questions=load_sample_questions(corpus),
+        arms=config.arms,
+        header_partial=False,
+    )
+    (tmp_path / "report.json").write_text("{}", encoding="utf-8")
+
+    reading = evaluate_sc1(tmp_path)
+
+    assert reading.status == "PASS"
+    assert reading.detail["journal_complete"] is True
+
+
 # --- evaluate_sc3 ---------------------------------------------------------------------
 
 
@@ -1770,3 +1820,137 @@ def test_sc5_unpaired_boost_share_is_none_without_a_usable_graph_on_record(
     )
     block = reading.detail["unpaired_all_usable_graph_on"]
     assert (block["n"], block["rate"]) == (0, None)
+
+
+# --- main: completeness precondition (06.3.4.1-32, CR-02) ---------------------------
+
+_INCOMPLETE_REASON = "journal incomplete: 1 work unit(s) missing"
+_EARLIER_STAGE_KEYS = ["SC-1", "SC-2", "D-69 companion", "SC-3"]
+_DRIVE2_READING_KEYS = [*_EARLIER_STAGE_KEYS, "SC-4", "SC-5"]
+
+
+def _truncate_last_record(journal: Path) -> None:
+    lines = journal.read_text(encoding="utf-8").splitlines()
+    journal.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+
+
+def _forbid_reading_computation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No reading may be computed from the records of an incomplete journal."""
+    import lancet_eval.unpark_gates as module
+
+    def _forbidden(name: str):
+        def _raise(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError(f"{name} computed from an incomplete journal")
+
+        return _raise
+
+    for name in (
+        "evaluate_sc2",
+        "citation_rejection_rate",
+        "build_rows",
+        "evaluate_sc3",
+        "evaluate_sc4",
+        "evaluate_sc5",
+        "graph_off_invariance",
+    ):
+        monkeypatch.setattr(module, name, _forbidden(name))
+
+
+def _run_main(
+    stage: str,
+    tmp_path: Path,
+    fixture: tuple[Path, Path, Path, Path],
+) -> tuple[dict[str, Any], str]:
+    run_dir, baseline_dir, gold_chunks, selection = fixture
+    out = tmp_path / "out" / "GATES.md"
+    args = _main_args(stage, run_dir, gold_chunks, selection, out)
+    if stage == "drive2":
+        args += ["--baseline-run", str(baseline_dir)]
+    assert main(args) == 0
+    payload = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    return payload, out.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("stage", ["drive1", "drive2"])
+def test_main_misses_every_reading_on_an_incomplete_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    fixture = _main_fixture(tmp_path, monkeypatch)
+    _truncate_last_record(fixture[0] / "journal.jsonl")
+    _forbid_reading_computation(monkeypatch)
+
+    payload, markdown = _run_main(stage, tmp_path, fixture)
+
+    keys = _DRIVE2_READING_KEYS if stage == "drive2" else _EARLIER_STAGE_KEYS
+    expected_order = [*keys, "graph-off invariance"] if stage == "drive2" else keys
+    assert list(payload) == expected_order
+    for name in keys:
+        assert payload[name]["status"] == "MISS", name
+    assert _INCOMPLETE_REASON in payload["SC-1"]["reason"]
+    assert payload["SC-1"]["detail"]["journal_complete"] is False
+    for name in keys[1:]:
+        assert payload[name]["gate"] == (
+            "citation_rejection_rate" if name == "D-69 companion" else name
+        )
+        assert payload[name]["reason"] == _INCOMPLETE_REASON, name
+        assert payload[name]["detail"]["journal_complete"] is False
+        assert payload[name]["detail"]["missing_units"] == 1
+    assert f"# Unpark Gates ({stage})" in markdown
+    if stage == "drive2":
+        assert payload["graph-off invariance"] == {"not_computed": _INCOMPLETE_REASON}
+        assert f"not computed: {_INCOMPLETE_REASON}" in markdown
+        assert "## Gates" in markdown
+
+
+def test_main_misses_every_reading_when_the_run_has_no_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _main_fixture(tmp_path, monkeypatch)
+    (fixture[0] / "journal.jsonl").unlink()
+    _forbid_reading_computation(monkeypatch)
+
+    payload, _ = _run_main("drive1", tmp_path, fixture)
+
+    assert list(payload) == _EARLIER_STAGE_KEYS
+    for name in _EARLIER_STAGE_KEYS:
+        assert payload[name]["status"] == "MISS", name
+        assert payload[name]["reason"] == "no journal file", name
+
+
+def test_main_a_complete_journal_with_a_dishonest_header_misses_sc1_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `_main_fixture` writes a COMPLETE journal under header partial=true: a header
+    # mismatch is a different condition from incompleteness and MISSes SC-1 alone.
+    fixture = _main_fixture(tmp_path, monkeypatch)
+
+    payload, _ = _run_main("drive1", tmp_path, fixture)
+
+    assert payload["SC-1"]["status"] == "MISS"
+    assert "header partial=True" in payload["SC-1"]["reason"]
+    assert payload["SC-1"]["detail"]["journal_complete"] is True
+    for name in ("SC-2", "D-69 companion", "SC-3"):
+        assert "journal incomplete" not in payload[name]["reason"], name
+
+
+@pytest.mark.parametrize("truncate", [False, True])
+def test_main_measures_completeness_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, truncate: bool
+) -> None:
+    import lancet_eval.unpark_gates as module
+
+    fixture = _main_fixture(tmp_path, monkeypatch)
+    if truncate:
+        _truncate_last_record(fixture[0] / "journal.jsonl")
+    calls: list[tuple[Any, ...]] = []
+    real = module.completeness_comparison
+
+    def _counting(*args: Any, **kwargs: Any) -> Any:
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, "completeness_comparison", _counting)
+
+    _run_main("drive1", tmp_path, fixture)
+
+    assert len(calls) == 1
