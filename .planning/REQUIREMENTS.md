@@ -56,7 +56,7 @@
 | OBS-02 | Phase 06.3 | Offline evaluation harness against MultiHop-RAG (06-CONTEXT.md D-78). |
 | OBS-03 | Phase 06.4 | README/design-narrative suite and verified quickstart (06-CONTEXT.md D-78). |
 | OBS-04 | Phase 06.3 | Placeholder global-evaluation metric, registered as an explicit `skipped` dimension (06-CONTEXT.md D-78, D-51). |
-| OBS-05 | Phases 06.3.1, 06.3.2, 06.3.3, 06.3.4 | Evaluation fidelity. Split across the family sharing `06.3.1-CONTEXT.md` (D-46): 06.3.1 engine/config failure signalling and provenance; 06.3.2 harness capture, scored dimensions and paired ablation; 06.3.3 latency measurement and budget derivation; 06.3.4 corrected re-drive, calibration and root-cause docs. |
+| OBS-05 | Phases 06.3.1, 06.3.2, 06.3.3, 06.3.4, 06.3.4.1 | Evaluation fidelity. Split across the family sharing `06.3.1-CONTEXT.md` (D-46): 06.3.1 engine/config failure signalling and provenance; 06.3.2 harness capture, scored dimensions and paired ablation; 06.3.3 latency measurement and budget derivation; 06.3.4 corrected re-drive, calibration and root-cause docs; 06.3.4.1 index identity, OI-02 fix, answer-usability metrics, graph repair and run of record. |
 
 The Phase 03 source audit and coverage matrix must show RAG-03 as opted out/deferred rather than covered.
 
