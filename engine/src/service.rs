@@ -312,7 +312,7 @@ pub struct GraphAugmentationReport {
     pub path_found: bool,
     /// Two-hop paths dropped because their intermediate was above the degree cap.
     pub degree_capped_count: u32,
-    /// Document IDs of the seeds source chunks, sorted and de-duplicated.
+    /// Document IDs of the seeds' source chunks, sorted and de-duplicated.
     pub seed_document_ids: Vec<String>,
     /// Source-chunk IDs of the entities on the kept paths (empty when no path was kept).
     pub chunk_candidates: Vec<String>,

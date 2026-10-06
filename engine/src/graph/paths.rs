@@ -56,7 +56,8 @@ pub const DEGREE_CAP: u32 = 33;
 /// is [`derive_max_path_facts`]`(8192, 2048, 69)`. The inputs are an evidence token budget of 8192,
 /// an answer budget of 2048, and a measured `p95` of 69 tokens per path fact over the 338 paths of
 /// the diagnostic sample. One [`GraphFact`] was counted per path (a two-hop path is a single fact
-/// whose relation text is the chain `r1→X→r2`) and tokenised with cl100k. The measurement and the
+/// whose relation text is the chain `r1→X→r2`, with each arrow pointing the way its hop is
+/// stored) and tokenised with cl100k. The measurement and the
 /// formula are in `06.3.4.1-SEED-PROBE.md` section 8. The user confirmed the value at the
 /// `06.3.4.1-13` Task 3 decision checkpoint on 2026-10-05.
 ///
@@ -284,9 +285,16 @@ fn make_path(
                 connector(&second_hop.edge.relation, !second_hop.from_seed)
             );
             let score = hop_score(index, first_hop.edge) + hop_score(index, second_hop.edge);
+            // Each arrow follows its hop: `\u{2192}` when the stored edge points along the path and
+            // `\u{2190}` when it points against it, the same rule the readable text above uses. The
+            // chain is as long as before, so the measured token cost of a fact is unchanged.
+            let arrow = |along: bool| if along { '\u{2192}' } else { '\u{2190}' };
             let chain = format!(
-                "{}\u{2192}{via_name}\u{2192}{}",
-                first_hop.edge.relation, second_hop.edge.relation
+                "{}{}{via_name}{}{}",
+                first_hop.edge.relation,
+                arrow(first_hop.from_seed),
+                arrow(!second_hop.from_seed),
+                second_hop.edge.relation
             );
             let fact = GraphFact::new(
                 first_name,

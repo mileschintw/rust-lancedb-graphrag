@@ -117,7 +117,7 @@ pub struct WorkflowContext {
     pub graph_path_found: bool,
     /// D-79: two-hop paths dropped because their intermediate entity was above the degree cap.
     pub graph_degree_capped_count: u32,
-    /// D-79: document IDs of the seed entities source chunks, sorted and de-duplicated.
+    /// D-79: document IDs of the seed entities' source chunks, sorted and de-duplicated.
     pub graph_seed_document_ids: Vec<String>,
     /// D-79, D-76: source-chunk IDs of the entities on the found paths, for the graph chunk
     /// boost. Empty when no path was found (decision `paths-only`, 06.3.4.1-13).

@@ -240,14 +240,14 @@ async fn seeds_with_no_path_between_them_yield_no_facts_and_no_chunk_candidates(
     assert!(!report.path_found);
     assert!(
         report.chunk_candidates.is_empty(),
-        "paths-only: the seeds own source chunks are not candidates, got {:?}",
+        "paths-only: the seeds' own source chunks are not candidates, got {:?}",
         report.chunk_candidates
     );
     assert_eq!((report.node_count, report.edge_count), (0, 0));
     assert_eq!(
         report.seed_document_ids,
         vec![id(904), id(905)],
-        "the seeds source documents are still reported"
+        "the seeds' source documents are still reported"
     );
     fixture.cleanup();
 }
@@ -684,7 +684,7 @@ fn no_production_code_keeps_the_old_single_nearest_entity_lookup() {
     assert!(augmentation.contains("find_seed_paths("), "facts come from seed-to-seed paths");
 }
 
-/// The boost decision `paths-only`: the seeds own chunks are never the candidates.
+/// The boost decision `paths-only`: the seeds' own chunks are never the candidates.
 #[test]
 fn the_seed_chunk_fallback_is_not_called_from_the_service_or_the_workflow() {
     for (name, source) in [
@@ -705,28 +705,25 @@ fn the_seed_chunk_fallback_is_not_called_from_the_service_or_the_workflow() {
 
 // ---- how a path fact reaches the prompt -------------------------------------------------------
 
-fn directed_two_hop_facts() -> Vec<GraphFactBlock> {
-    // Penn State <-ASSOCIATED_WITH- Sherrone Moore -SUBSTITUTE_FOR-> Jim Harbaugh: the first hop
-    // is stored against the path direction, the second along it.
+/// One two-hop path fact over three named entities, as `build_paths` builds it.
+///
+/// `along[i]` says whether hop `i` is stored in the direction the path runs: the first hop from
+/// `start` to `via`, the second from `via` to `end`.
+fn two_hop_fact(names: [&str; 3], relations: [&str; 2], along: [bool; 2]) -> GraphFactBlock {
+    let [start, via, end] = names;
+    let record = |n: u128, name: &str| crate::graph::index::EntityRecord {
+        entity_id: id(n),
+        name: name.into(),
+        source_chunk_ids: vec![],
+    };
+    let (first_source, first_target) = if along[0] { (1, 3) } else { (3, 1) };
+    let (second_source, second_target) = if along[1] { (3, 2) } else { (2, 3) };
     let index = GraphIndex::from_parts(
-        vec![
-            crate::graph::index::EntityRecord {
-                entity_id: id(1),
-                name: "Penn State".into(),
-                source_chunk_ids: vec![],
-            },
-            crate::graph::index::EntityRecord {
-                entity_id: id(2),
-                name: "Jim Harbaugh".into(),
-                source_chunk_ids: vec![],
-            },
-            crate::graph::index::EntityRecord {
-                entity_id: id(3),
-                name: "Sherrone Moore".into(),
-                source_chunk_ids: vec![],
-            },
+        vec![record(1, start), record(2, end), record(3, via)],
+        &[
+            (id(first_source), id(first_target)),
+            (id(second_source), id(second_target)),
         ],
-        &[(id(3), id(1)), (id(3), id(2))],
     );
     let edge = |n: u32, source: u128, target: u128, relation: &str| EdgeRow {
         edge_id: format!("edge-{n}"),
@@ -744,10 +741,10 @@ fn directed_two_hop_facts() -> Vec<GraphFactBlock> {
     };
     let result = build_paths(
         &index,
-        &[seed(1, "Penn State"), seed(2, "Jim Harbaugh")],
+        &[seed(1, start), seed(2, end)],
         &[
-            edge(0, 3, 1, "ASSOCIATED_WITH"),
-            edge(1, 3, 2, "SUBSTITUTE_FOR"),
+            edge(0, first_source, first_target, relations[0]),
+            edge(1, second_source, second_target, relations[1]),
         ],
         &PathSettings {
             degree_cap: DEGREE_CAP,
@@ -755,11 +752,18 @@ fn directed_two_hop_facts() -> Vec<GraphFactBlock> {
             max_graph_chunk_candidates: 8,
         },
     );
-    result
-        .facts
-        .into_iter()
-        .map(|fact| GraphFactBlock { fact })
-        .collect()
+    let fact = result.facts.into_iter().next().expect("one path joins the seeds");
+    GraphFactBlock { fact }
+}
+
+/// Penn State <-ASSOCIATED_WITH- Sherrone Moore -SUBSTITUTE_FOR-> Jim Harbaugh: the first hop is
+/// stored against the path direction, the second along it (a path from the offline probe).
+fn penn_state_fact() -> GraphFactBlock {
+    two_hop_fact(
+        ["Penn State", "Sherrone Moore", "Jim Harbaugh"],
+        ["ASSOCIATED_WITH", "SUBSTITUTE_FOR"],
+        [false, true],
+    )
 }
 
 fn one_evidence_block() -> Vec<crate::prompt::EvidenceBlock> {
@@ -783,8 +787,7 @@ fn one_evidence_block() -> Vec<crate::prompt::EvidenceBlock> {
 /// names alone (`r1->X->r2`) would state that both hops point along the path.
 #[tokio::test]
 async fn a_two_hop_path_fact_reaches_the_prompt_with_the_direction_of_every_hop() {
-    let facts = directed_two_hop_facts();
-    assert_eq!(facts.len(), 1);
+    let facts = vec![penn_state_fact()];
 
     let packed = crate::prompt::pack_evidence_and_graph_prompt(
         "Who replaced Harbaugh?",
@@ -816,14 +819,14 @@ async fn a_two_hop_path_fact_reaches_the_prompt_with_the_direction_of_every_hop(
 }
 
 /// Rendering the directional text instead of the relation chain costs a few more tokens per
-/// fact. The confirmed cap of 8 (06.3.4.1-13) was derived from the chain rendering at a measured
-/// p95 of 69 tokens per fact, so the cap must still follow from the new cost.
+/// fact. The confirmed cap of 8 (06.3.4.1-13) was derived from the old rendering (one forward
+/// arrow in the relation chain for both hops, and the chain as the block body) at a measured p95
+/// of 69 tokens per fact, so the cap must still follow from the new cost.
 #[test]
 fn the_directional_path_text_keeps_the_confirmed_path_fact_cap() {
-    use crate::graph::context_strategy::ContextAssemblyStrategy;
+    use crate::graph::context_strategy::{ContextAssemblyStrategy, GraphFact};
 
-    let block_tokens = |fact: &crate::graph::context_strategy::GraphFact,
-                        strategy: ContextAssemblyStrategy| {
+    let block_tokens = |fact: &GraphFact, strategy: ContextAssemblyStrategy| {
         let block = format!(
             "<GRAPH_FACT entity_a=\"{}\" relation=\"{}\" entity_b=\"{}\" score=\"{:.4}\">\n{}\n</GRAPH_FACT>\n\n",
             fact.entity_a_name(),
@@ -838,11 +841,28 @@ fn the_directional_path_text_keeps_the_confirmed_path_fact_cap() {
     };
 
     let measured_p95 = 69_usize;
+    let samples = [
+        penn_state_fact(),
+        two_hop_fact(
+            ["The Verge", "Snap", "TechCrunch"],
+            ["reported_by", "REPORTED_TO"],
+            [true, true],
+        ),
+    ];
     let mut worst_increase = 0_usize;
-    for block in directed_two_hop_facts() {
-        let chain = block_tokens(&block.fact, ContextAssemblyStrategy::SourceChunks);
-        let directional = block_tokens(&block.fact, ContextAssemblyStrategy::PrecomputedSemantics);
-        worst_increase = worst_increase.max(directional.saturating_sub(chain));
+    for sample in &samples {
+        let new = &sample.fact;
+        // The block as it was measured: forward arrows for both hops, and the chain as the body.
+        let old = GraphFact::new(
+            new.entity_a_name(),
+            &new.relation_type().replace('\u{2190}', "\u{2192}"),
+            new.entity_b_name(),
+            None,
+            new.score,
+        );
+        let before = block_tokens(&old, ContextAssemblyStrategy::SourceChunks);
+        let after = block_tokens(new, ContextAssemblyStrategy::PrecomputedSemantics);
+        worst_increase = worst_increase.max(after.saturating_sub(before));
     }
 
     assert!(
@@ -856,6 +876,6 @@ fn the_directional_path_text_keeps_the_confirmed_path_fact_cap() {
             (measured_p95 + worst_increase) as u32
         ),
         Some(MAX_PATH_FACTS),
-        "the cap of 8 still follows from the p95 plus the added tokens"
+        "the cap of 8 still follows from the p95 plus the added tokens ({worst_increase})"
     );
 }
