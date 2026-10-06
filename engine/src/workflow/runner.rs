@@ -636,11 +636,11 @@ impl WorkflowRunner {
             completion_tokens: ctx.completion_tokens,
             degraded_mode,
             graph_prompt_fact_count: ctx.graph_prompt_fact_count,
-            graph_seed_count: 0,
-            graph_path_found: false,
-            graph_boosted_chunk_count: 0,
-            graph_degree_capped_count: 0,
-            graph_seed_document_ids: Vec::new(),
+            graph_seed_count: ctx.graph_seed_count,
+            graph_path_found: ctx.graph_path_found,
+            graph_boosted_chunk_count: ctx.graph_boosted_chunk_count,
+            graph_degree_capped_count: ctx.graph_degree_capped_count,
+            graph_seed_document_ids: ctx.graph_seed_document_ids.clone(),
         };
 
         let current_span = tracing::Span::current();
@@ -652,6 +652,9 @@ impl WorkflowRunner {
         current_span.record("lancet.workflow.graph_node_count", metadata.graph_node_count);
         current_span.record("lancet.workflow.graph_edge_count", metadata.graph_edge_count);
         current_span.record("lancet.workflow.graph_prompt_fact_count", metadata.graph_prompt_fact_count);
+        // D-79: a count and a boolean only. The seed document IDs stay off the span.
+        current_span.record("lancet.workflow.graph_seed_count", metadata.graph_seed_count);
+        current_span.record("lancet.workflow.graph_path_found", metadata.graph_path_found);
         current_span.record("lancet.workflow.prompt_tokens", metadata.prompt_tokens);
         current_span.record("lancet.workflow.completion_tokens", metadata.completion_tokens);
         current_span.record("lancet.degraded_mode", metadata.degraded_mode);

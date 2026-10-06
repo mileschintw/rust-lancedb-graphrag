@@ -1020,6 +1020,8 @@ impl LancetService for LancetServiceImpl {
             "lancet.workflow.graph_node_count" = tracing::field::Empty,
             "lancet.workflow.graph_edge_count" = tracing::field::Empty,
             "lancet.workflow.graph_prompt_fact_count" = tracing::field::Empty,
+            "lancet.workflow.graph_seed_count" = tracing::field::Empty,
+            "lancet.workflow.graph_path_found" = tracing::field::Empty,
             "lancet.workflow.prompt_tokens" = tracing::field::Empty,
             "lancet.workflow.completion_tokens" = tracing::field::Empty,
             "lancet.degraded_mode" = tracing::field::Empty,

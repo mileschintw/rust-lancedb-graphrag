@@ -413,7 +413,7 @@ impl RetrieveHybridNode {
                         .content_type
                         .clone()
                         .unwrap_or_else(|| "text/plain".into()),
-                    graph_boosted: false,
+                    graph_boosted: block.graph_boosted,
                 }
             })
             .collect();
