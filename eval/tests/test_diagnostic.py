@@ -19,10 +19,13 @@ from lancet_eval.diagnostic import (
     build_rows,
     classify_record,
     compute_populations,
+    main,
+    summarize_seed_probe,
     write_gold_coverage,
     write_table,
 )
 from lancet_eval.journal import RunRecord
+from lancet_eval.seed import load_document_map
 
 FIXTURES = Path(__file__).parent / "fixtures" / "diagnostic"
 GOLD_CHUNKS = FIXTURES / "gold_chunks.jsonl"
@@ -495,3 +498,371 @@ def test_write_gold_coverage_emits_jsonl_and_markdown(tmp_path: Path) -> None:
     assert "Gold-doc / document_map.json Coverage Table" in content
     assert "in_chunk" in content
     assert "unmapped title (no document_id)" in content
+
+
+# --- 06.3.4.1-13: column (d), seed count and path found from the graph-seeds probe ---
+
+_MICHIGAN_TITLE_PREFIX = "Michigan State hires Jonathan Smith"
+
+
+def _document_id_for(title_prefix: str) -> str:
+    for document_id, entry in load_document_map(CORPUS).entries.items():
+        if entry.title.startswith(title_prefix):
+            return document_id
+    raise AssertionError(f"no document_map entry starts with {title_prefix!r}")
+
+
+def _seed(name: str, kind: str, degree: int, documents: list[str]) -> dict:
+    return {
+        "entity_id": f"entity-{name}",
+        "name": name,
+        "match_kind": kind,
+        "score": 1.0,
+        "degree": degree,
+        "source_document_ids": documents,
+        "source_chunk_count": len(documents),
+    }
+
+
+def _path(entities: list[str], tokens: int) -> dict:
+    return {
+        "entities": entities,
+        "relations": ["r"] * (len(entities) - 1),
+        "rendered": " - ".join(entities),
+        "score": 1.0,
+        "tokens": tokens,
+    }
+
+
+def _probe_record(question_id: str, **overrides: object) -> dict:
+    record: dict[str, object] = {
+        "question_id": question_id,
+        "mentions": [],
+        "seeds": [],
+        "seed_count": 0,
+        "path_found": False,
+        "paths": [],
+        "candidate_chunk_ids": [],
+        "seed_chunk_candidate_ids": [],
+        "degree_capped_count": 0,
+    }
+    record.update(overrides)
+    return record
+
+
+_PROBE_SUMMARY = {
+    "spend_usd": 0.0004,
+    "questions": 4,
+    "stopped_by_cap": False,
+    "degree_p95": 10.0,
+    "degree_p99": 33.0,
+    "evidence_token_budget": 8192,
+    "max_output_tokens": 2048,
+}
+
+
+def _write_probe(tmp_path: Path, records: list[dict], summary: dict | None) -> Path:
+    path = tmp_path / "seed_probe.jsonl"
+    lines = [json.dumps(record) for record in records]
+    if summary is not None:
+        lines.append(json.dumps(summary))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _probe_fixture(tmp_path: Path) -> Path:
+    michigan = _document_id_for(_MICHIGAN_TITLE_PREFIX)
+    prime_day = _document_id_for("The best October Prime Day gaming deals")
+    records = [
+        # In G: a seed sits in a gold document, a path exists, one intermediate was
+        # degree-capped.
+        _probe_record(
+            "mhr-0073ab564e55",
+            seeds=[
+                _seed("CBSSports.com", "exact", 5, [michigan]),
+                _seed("Jonathan Smith", "normalized", 2, ["unrelated-doc"]),
+            ],
+            seed_count=2,
+            path_found=True,
+            paths=[
+                _path(["entity-CBSSports.com", "entity-Jonathan Smith"], 30),
+                _path(["entity-CBSSports.com", "x", "entity-Jonathan Smith"], 50),
+            ],
+            candidate_chunk_ids=[
+                "11111111-1111-4111-8111-111111111111:0",
+                "zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz:5",
+            ],
+            seed_chunk_candidate_ids=["99999999-9999-4999-8999-999999999999:0"],
+            degree_capped_count=1,
+        ),
+        # Not in G (a split gold fact): one hub vector seed, no path; the seed chunks
+        # lie outside the dense top-4.
+        _probe_record(
+            "mhr-0085f76defbe",
+            seeds=[_seed("Obscure", "vector", 50, ["unrelated-doc"])],
+            seed_count=1,
+            seed_chunk_candidate_ids=["55555555-5555-4555-8555-555555555555:3"],
+        ),
+        # In G: its only seed is a degenerate nameless entity that happens to sit in a
+        # gold document, so (d) reads yes only because of it.
+        _probe_record(
+            "mhr-012f1f51ac88",
+            seeds=[_seed("  ", "vector", 0, [prime_day])],
+            seed_count=1,
+        ),
+        # A null question: seed count and path are still recorded, (d) is not.
+        _probe_record("mhr-0279d4a349c3"),
+    ]
+    return _write_probe(tmp_path, records, _PROBE_SUMMARY)
+
+
+def test_build_rows_fills_d_seed_count_and_path_found_from_the_seed_probe(
+    tmp_path: Path,
+) -> None:
+    rows = build_rows(
+        CORPUS, None, GOLD_CHUNKS, VECTOR_TOP4, seed_probe_path=_probe_fixture(tmp_path)
+    )
+
+    hit = _row(rows, "mhr-0073ab564e55")
+    assert hit.d_graph_seed_hit is True, (
+        "a seed sourced from a gold document is a hit (D-79)"
+    )
+    assert hit.seed_count == 2
+    assert hit.path_found is True
+
+    miss = _row(rows, "mhr-0085f76defbe")
+    assert miss.d_graph_seed_hit is False
+    assert (miss.seed_count, miss.path_found) == (1, False)
+
+    nameless_only = _row(rows, "mhr-012f1f51ac88")
+    assert (
+        nameless_only.d_graph_seed_hit,
+        nameless_only.seed_count,
+        nameless_only.path_found,
+    ) == (True, 1, False)
+
+    null = _row(rows, "mhr-0279d4a349c3")
+    assert null.d_graph_seed_hit is None, "a null question has no gold document to hit"
+    assert (null.seed_count, null.path_found) == (0, False)
+
+
+def test_question_missing_from_the_seed_probe_stays_unmeasured(tmp_path: Path) -> None:
+    rows = build_rows(
+        CORPUS, None, GOLD_CHUNKS, seed_probe_path=_probe_fixture(tmp_path)
+    )
+    unmeasured = _row(rows, "mhr-00fc91a80765")
+    assert unmeasured.d_graph_seed_hit is None
+    assert unmeasured.seed_count is None
+    assert unmeasured.path_found is None
+
+
+def test_build_rows_without_a_seed_probe_leaves_the_graph_columns_none() -> None:
+    rows = build_rows(CORPUS, None, GOLD_CHUNKS)
+    assert all(
+        row.d_graph_seed_hit is None
+        and row.seed_count is None
+        and row.path_found is None
+        for row in rows
+    )
+
+
+def test_a_seed_from_another_document_is_not_a_hit(tmp_path: Path) -> None:
+    # The question's own gold documents come from the map, never from the probe, so a
+    # seed whose only source document is some other article must not read "yes".
+    records = [
+        _probe_record(
+            "mhr-0073ab564e55",
+            seeds=[_seed("Other", "exact", 3, ["not-a-gold-document"])],
+            seed_count=1,
+        )
+    ]
+    probe = _write_probe(tmp_path, records, None)
+    rows = build_rows(CORPUS, None, GOLD_CHUNKS, seed_probe_path=probe)
+    assert _row(rows, "mhr-0073ab564e55").d_graph_seed_hit is False
+
+
+def test_write_table_renders_the_graph_columns(tmp_path: Path) -> None:
+    rows = build_rows(
+        CORPUS, None, GOLD_CHUNKS, VECTOR_TOP4, seed_probe_path=_probe_fixture(tmp_path)
+    )
+    out_dir = tmp_path / "table"
+    write_table(rows, out_dir, label="seed-probe", gold_chunks_path=GOLD_CHUNKS)
+    lines = (out_dir / "table.jsonl").read_text(encoding="utf-8").splitlines()
+    by_id = {row["question_id"]: row for row in map(json.loads, lines)}
+    assert by_id["mhr-0073ab564e55"]["d_graph_seed_hit"] is True
+    assert by_id["mhr-0073ab564e55"]["seed_count"] == 2
+    md = (out_dir / "table.md").read_text(encoding="utf-8")
+    assert "| mhr-0073ab564e55 | comparison_query | yes | yes | yes | yes |" in md
+
+
+def test_table_cli_accepts_seed_probe_and_writes_columns(tmp_path: Path) -> None:
+    out_dir = tmp_path / "cli-table"
+    code = main([
+        "table",
+        "--corpus",
+        CORPUS,
+        "--gold-chunks",
+        str(GOLD_CHUNKS),
+        "--seed-probe",
+        str(_probe_fixture(tmp_path)),
+        "--out-dir",
+        str(out_dir),
+        "--label",
+        "cli",
+    ])
+    assert code == 0
+    lines = (out_dir / "table.jsonl").read_text(encoding="utf-8").splitlines()
+    assert {row["question_id"]: row["path_found"] for row in map(json.loads, lines)}[
+        "mhr-0073ab564e55"
+    ] is True
+
+
+# --- 06.3.4.1-13: the seed-probe summary that feeds 06.3.4.1-SEED-PROBE.md ---
+
+
+def test_summarize_seed_probe_computes_every_headline_number(tmp_path: Path) -> None:
+    summary = summarize_seed_probe(
+        CORPUS, _probe_fixture(tmp_path), GOLD_CHUNKS, VECTOR_TOP4
+    )
+
+    assert summary["questions"] == 4
+    assert summary["non_null"] == 3
+    assert summary["gold_in_index_subset"] == 2
+    assert summary["seed_count_distribution"] == {"0": 1, "1": 2, "2": 1}
+    assert summary["seeds_total"] == 4
+    assert summary["match_kind_counts"] == {"exact": 1, "normalized": 1, "vector": 2}
+
+    assert summary["d_graph_seed_hit"]["gold_in_index_subset"] == {
+        "yes": 2,
+        "n": 2,
+        "rate": 1.0,
+    }
+    assert summary["d_graph_seed_hit"]["all_non_null"]["yes"] == 2
+    assert summary["d_graph_seed_hit"]["all_non_null"]["n"] == 3
+
+    assert summary["path_found"]["overall"] == {"yes": 1, "n": 4, "rate": 0.25}
+    by_type = summary["path_found"]["by_question_type"]
+    assert (by_type["comparison_query"]["yes"], by_type["comparison_query"]["n"]) == (
+        1,
+        3,
+    )
+    assert by_type["null_query"] == {"yes": 0, "n": 1, "rate": 0.0}
+
+    assert summary["hub_seeds"]["seeds_over_p95"]["yes"] == 1, (
+        "only the degree-50 seed is over p95"
+    )
+    assert summary["publisher_seeds"]["seeds_that_are_publishers"]["yes"] == 1, (
+        "CBSSports.com"
+    )
+    assert summary["degree_capped"]["total"] == 1
+
+
+def test_summarize_seed_probe_separates_what_publisher_and_nameless_seeds_contribute(
+    tmp_path: Path,
+) -> None:
+    summary = summarize_seed_probe(
+        CORPUS, _probe_fixture(tmp_path), GOLD_CHUNKS, VECTOR_TOP4
+    )
+
+    # One degenerate seed, in one question.
+    assert summary["nameless_seeds"]["seeds"] == 1
+    assert summary["nameless_seeds"]["questions"] == 1
+
+    # Raw (d) is 2 of 2 on G, but one of those hits comes only from the nameless seed.
+    without = summary["d_graph_seed_hit_without"]
+    assert without["nameless_seeds"]["gold_in_index_subset"]["yes"] == 1
+    assert without["nameless_seeds"]["gold_in_index_subset"]["n"] == 2
+    assert without["nameless_seeds"]["all_non_null"]["yes"] == 1
+    # The CBSSports.com seed (a publisher) is the only source of the other hit.
+    assert without["publisher_seeds"]["gold_in_index_subset"]["yes"] == 1
+    assert without["publisher_and_hub_seeds"]["gold_in_index_subset"]["yes"] == 1
+
+
+def test_summarize_seed_probe_classifies_path_ends_by_publisher_name(
+    tmp_path: Path,
+) -> None:
+    summary = summarize_seed_probe(
+        CORPUS, _probe_fixture(tmp_path), GOLD_CHUNKS, VECTOR_TOP4
+    )
+
+    ends = summary["path_endpoints"]
+    # Both fixture paths join CBSSports.com (a publisher) to a person.
+    classes = (ends["both_publisher"], ends["one_publisher"], ends["neither_publisher"])
+    assert classes == (0, 2, 0)
+    assert ends["questions_with_a_path_with_no_publisher_end"] == {
+        "yes": 0,
+        "n": 1,
+        "rate": 0.0,
+    }
+
+
+def test_summarize_seed_probe_compares_candidates_with_dense_top4_for_both_options(
+    tmp_path: Path,
+) -> None:
+    summary = summarize_seed_probe(
+        CORPUS, _probe_fixture(tmp_path), GOLD_CHUNKS, VECTOR_TOP4
+    )
+
+    counts = summary["candidate_chunks"]
+    assert counts["paths_only"]["distribution"] == {"0": 3, "2": 1}
+    assert counts["paths_plus_seed_chunks"]["distribution"] == {"0": 2, "1": 1, "2": 1}
+
+    proxy = summary["composition_change_proxy"]["all_probed"]
+    # Only the two questions that the (c) probe covers are measured.
+    assert proxy["paths_only"]["n"] == 2
+    assert proxy["paths_only"]["yes"] == 1, "only the path chunk outside top-4 counts"
+    assert proxy["paths_plus_seed_chunks"]["yes"] == 2, (
+        "seed chunks reach the second question"
+    )
+    assert proxy["paths_plus_seed_chunks"]["n"] == 2
+
+
+def test_summarize_seed_probe_derives_the_d77_cap_inputs(tmp_path: Path) -> None:
+    summary = summarize_seed_probe(
+        CORPUS, _probe_fixture(tmp_path), GOLD_CHUNKS, VECTOR_TOP4
+    )
+
+    tokens = summary["path_fact_tokens"]
+    assert (tokens["paths"], tokens["one_hop_paths"], tokens["two_hop_paths"]) == (
+        2,
+        1,
+        1,
+    )
+    assert (tokens["p50"], tokens["p95"], tokens["max"]) == (30, 50, 50)
+
+    caps = summary["d77_caps"]
+    assert caps["degree_cap"] == 33
+    assert caps["p95_fact_tokens"] == 50
+    # min(16, floor(0.10 * (8192 - 2048) / 50)) = min(16, 12)
+    assert caps["max_path_facts"] == 12
+
+
+def test_d77_max_path_facts_is_undefined_when_no_path_was_found(tmp_path: Path) -> None:
+    probe = _write_probe(tmp_path, [_probe_record("mhr-0073ab564e55")], _PROBE_SUMMARY)
+    summary = summarize_seed_probe(CORPUS, probe, GOLD_CHUNKS, VECTOR_TOP4)
+    assert summary["path_fact_tokens"]["paths"] == 0
+    assert summary["d77_caps"]["p95_fact_tokens"] is None
+    assert summary["d77_caps"]["max_path_facts"] is None, (
+        "no measured fact, no invented cap"
+    )
+
+
+def test_seed_summary_cli_writes_json(tmp_path: Path) -> None:
+    out = tmp_path / "summary.json"
+    code = main([
+        "seed-summary",
+        "--corpus",
+        CORPUS,
+        "--seed-probe",
+        str(_probe_fixture(tmp_path)),
+        "--gold-chunks",
+        str(GOLD_CHUNKS),
+        "--vector-top4",
+        str(VECTOR_TOP4),
+        "--out",
+        str(out),
+    ])
+    assert code == 0
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["questions"] == 4
+    assert written["probe"]["degree_p99"] == 33.0

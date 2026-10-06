@@ -3,16 +3,20 @@ run journal, and the corpus/document map into one regenerable yes/no table.
 
 This module never computes ground truth itself. Column (a) comes from
 `load_document_map`, column (b) comes from the `inspect_lancedb --gold-chunks`
-probe output (JSONL, one line per evidence item), and per-arm outcomes come
-from the run journal via `load_records`. Everything here is read-only: no
-function in this module writes to the eval store, the journal, or the
-document map.
+probe output (JSONL, one line per evidence item), column (c)
+comes from the `diag_probe --vector-top-k 4` output, columns (d)/seed count/path
+found come from the `diag_probe --graph-seeds` output (D-75..D-79), and per-arm
+outcomes come from the run journal via `load_records`. Everything here is
+read-only: no function in this module writes to the eval store, the journal, or
+the document map.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -249,6 +253,61 @@ def _question_c(
     return any(chunk_id in gold_chunk_ids for chunk_id in top4_chunk_ids)
 
 
+def _load_seed_probe(
+    seed_probe_path: str | Path,
+) -> tuple[dict[str, dict], dict | None]:
+    """Reads the `diag_probe --graph-seeds` JSONL.
+
+    Returns the per-question records keyed by `question_id` and the trailing
+    summary line (the one record without a `question_id`; `None` when the file
+    has none, as in a hand-built fixture).
+    """
+    by_question: dict[str, dict] = {}
+    summary: dict | None = None
+    path = Path(seed_probe_path)
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            record = json.loads(stripped)
+            question_id = record.get("question_id")
+            if question_id is None:
+                summary = record
+            else:
+                by_question[question_id] = record
+    return by_question, summary
+
+
+def _gold_document_ids(
+    question: GoldQuestion, title_to_document_id: dict[str, str]
+) -> set[str]:
+    """Document IDs of a question's gold evidence, resolved by title through the map.
+
+    A title with no map entry contributes nothing (column (a) already reports
+    that case), so an unmapped title can never make column (d) read "yes".
+    """
+    ids: set[str] = set()
+    for item in question.evidence_list:
+        document_id = title_to_document_id.get(item.get("title", ""))
+        if document_id is not None:
+            ids.add(document_id)
+    return ids
+
+
+def _question_d(gold_document_ids: set[str], probe_record: dict) -> bool:
+    """Column (d): a seed entity is sourced from a gold evidence document (D-79).
+
+    A seed's `source_document_ids` come from its `source_chunk_ids` (the
+    `{document_id}:{chunk_index}` prefix), so this is entity -> source chunk ->
+    document, as D-79 defines it.
+    """
+    for seed in probe_record.get("seeds", []):
+        if gold_document_ids.intersection(seed.get("source_document_ids", [])):
+            return True
+    return False
+
+
 def compute_populations(rows: list[DiagnosticRow]) -> dict:
     """Computes G (gold-in-index subset, D-63) and V (G ∩ (c)=yes, D-82/D-63).
 
@@ -289,12 +348,17 @@ def build_rows(
     journal_path: str | Path | None,
     gold_chunks_path: str | Path,
     vector_top4_path: str | Path | None = None,
+    seed_probe_path: str | Path | None = None,
 ) -> list[DiagnosticRow]:
     """Builds one DiagnosticRow per question in `corpus_name`'s sample.
 
-    Columns (d)/seed_count/path_found are left `None` here; later tasks in
-    this phase compute them from additional inputs this task does not yet
-    have. Column (c) is computed here when `vector_top4_path` is given (the
+    Columns (d)/seed_count/path_found are filled from `seed_probe_path` (the
+    `diag_probe --graph-seeds` output, D-79) when it is given, and only for
+    the questions that file covers: a question the probe did not measure stays
+    `None`, never "no". (d) is `None` for a null question (no gold evidence to
+    hit), while its `seed_count`/`path_found` are still recorded.
+    `seed_probe_path=None` (the default) leaves all three `None` for every row.
+    Column (c) is computed here when `vector_top4_path` is given (the
     (c) join, RESEARCH §E/§F); `vector_top4_path=None` (the default) leaves
     (c) `None` for every row, so every existing caller of this function is
     unaffected. Per-arm `error_class` (via `classify_record`) and, for
@@ -313,6 +377,12 @@ def build_rows(
         if vector_top4_path is not None
         else None
     )
+    seed_probe_by_question = (
+        _load_seed_probe(seed_probe_path)[0] if seed_probe_path is not None else None
+    )
+    title_to_document_id = {
+        entry.title: document_id for document_id, entry in document_map.entries.items()
+    }
 
     if journal_path is not None:
         records = load_records(journal_path)
@@ -336,6 +406,22 @@ def build_rows(
                 else None
             )
             c = _question_c(items, top4)
+
+        d: bool | None = None
+        seed_count: int | None = None
+        path_found: bool | None = None
+        probe_record = (
+            seed_probe_by_question.get(question.question_id)
+            if seed_probe_by_question is not None
+            else None
+        )
+        if probe_record is not None:
+            seed_count = probe_record["seed_count"]
+            path_found = probe_record["path_found"]
+            if not question.is_null:
+                d = _question_d(
+                    _gold_document_ids(question, title_to_document_id), probe_record
+                )
 
         arms: dict[str, ArmResult] = {}
         for arm in all_arms:
@@ -380,6 +466,9 @@ def build_rows(
                 b_items=b_items,
                 b_gold_chunk_in_lancedb=b,
                 c_gold_in_vector_top4=c,
+                d_graph_seed_hit=d,
+                seed_count=seed_count,
+                path_found=path_found,
                 e_answer_usable=e_answer_usable,
                 arms=arms,
                 in_gold_in_index_subset=in_gold_in_index_subset,
@@ -587,6 +676,397 @@ def write_gold_coverage(
         f.write("\n")
 
 
+#: Ceiling on the path facts one question injects (mirrors the engine constant
+#: `graph::paths::MAX_PATH_FACTS_CEILING`).
+_MAX_PATH_FACTS_CEILING = 16
+
+#: Share of the evidence budget that graph facts may use, in percent (the engine's
+#: 10%).
+_PATH_FACT_BUDGET_PERCENT = 10
+
+
+def _rate(yes: int, n: int) -> dict:
+    """`{yes, n, rate}`; the rate is `None` when `n` is 0 (never a fake 0.0)."""
+    return {"yes": yes, "n": n, "rate": (yes / n) if n else None}
+
+
+def _distribution(values: list[int]) -> dict[str, int]:
+    """Histogram `{value: count}` with string keys in ascending numeric order."""
+    counts: dict[int, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return {str(key): counts[key] for key in sorted(counts)}
+
+
+def _nearest_rank(sorted_values: list[int], q: float) -> int | None:
+    """Nearest-rank percentile of an ascending list; `None` for an empty list."""
+    if not sorted_values:
+        return None
+    rank = max(math.ceil(q * len(sorted_values)) - 1, 0)
+    return sorted_values[min(rank, len(sorted_values) - 1)]
+
+
+def _median(values: list[int]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return float(ordered[middle])
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _normalize_name(name: str) -> str:
+    """The engine's `normalize_name`: lower-case words, no leading `the`."""
+    words = re.findall(r"[^\W_]+", name.lower())
+    if len(words) > 1 and words[0] == "the":
+        words = words[1:]
+    return " ".join(words)
+
+
+def summarize_seed_probe(
+    corpus_name: str,
+    seed_probe_path: str | Path,
+    gold_chunks_path: str | Path,
+    vector_top4_path: str | Path,
+) -> dict:
+    """Summarises a `diag_probe --graph-seeds` run for `06.3.4.1-SEED-PROBE.md`.
+
+    Every number in the probe write-up is computed here, not by hand: the
+    seed-count distribution, match-kind shares, column (d) on G and on all
+    non-null rows, path-found rate by `question_type`, hub and publisher seeds,
+    degree-capped totals, candidate-chunk distributions, the composition-change
+    proxy under both Task 3 options, and the D-77 cap inputs.
+
+    Only questions the probe covers are counted. A "publisher" is any `source`
+    value that appears in the corpus's gold evidence (read from the data here;
+    the engine has no such list). The composition proxy compares each
+    question's candidate chunks with the (c) probe's dense top-4:
+    `paths_only` uses the chunks of the found paths; `paths_plus_seed_chunks`
+    uses those when a path was found and the seeds' own chunks otherwise.
+    """
+    rows = build_rows(
+        corpus_name,
+        None,
+        gold_chunks_path,
+        vector_top4_path,
+        seed_probe_path,
+    )
+    probe_by_question, probe_summary = _load_seed_probe(seed_probe_path)
+    top4_by_question = _load_vector_top4_by_question(vector_top4_path)
+    sample_questions = load_sample_questions(corpus_name)
+
+    probed = [row for row in rows if row.question_id in probe_by_question]
+    non_null = [row for row in probed if not row.is_null]
+    in_g = [row for row in probed if row.in_gold_in_index_subset]
+
+    publisher_names: set[str] = set()
+    for question in sample_questions:
+        for item in question.evidence_list:
+            source = item.get("source")
+            if source:
+                publisher_names.add(_normalize_name(source))
+    publisher_names.discard("")
+
+    document_map = load_document_map(corpus_name)
+    title_to_document_id = {
+        entry.title: document_id for document_id, entry in document_map.entries.items()
+    }
+    questions_by_id = {question.question_id: question for question in sample_questions}
+
+    degree_p95 = probe_summary.get("degree_p95") if probe_summary else None
+
+    def is_nameless(seed: dict) -> bool:
+        return not _normalize_name(seed.get("name", ""))
+
+    def is_publisher(seed: dict) -> bool:
+        return _normalize_name(seed.get("name", "")) in publisher_names
+
+    def is_hub(seed: dict) -> bool:
+        return degree_p95 is not None and seed.get("degree", 0) > degree_p95
+
+    def d_without(selected: list[DiagnosticRow], drop) -> dict:
+        """Column (d) recomputed with the seeds that `drop` selects removed."""
+        yes = 0
+        for row in selected:
+            kept = [
+                seed
+                for seed in probe_by_question[row.question_id].get("seeds", [])
+                if not drop(seed)
+            ]
+            gold = _gold_document_ids(
+                questions_by_id[row.question_id], title_to_document_id
+            )
+            yes += int(_question_d(gold, {"seeds": kept}))
+        return _rate(yes, len(selected))
+
+    seeds_total = 0
+    kind_counts: dict[str, int] = {}
+    hub_seeds = 0
+    publisher_seeds = 0
+    publisher_hub_seeds = 0
+    questions_with_hub = 0
+    questions_with_publisher = 0
+    capped_total = 0
+    questions_with_capped = 0
+    fact_tokens: list[int] = []
+    one_hop_paths = 0
+    two_hop_paths = 0
+    nameless_seeds = 0
+    nameless_question_ids: set[str] = set()
+    endpoint_classes = {"both_publisher": 0, "one_publisher": 0, "neither_publisher": 0}
+    questions_with_paths = 0
+    questions_with_non_publisher_path = 0
+    for row in probed:
+        record = probe_by_question[row.question_id]
+        has_hub = False
+        has_publisher = False
+        for seed in record.get("seeds", []):
+            seeds_total += 1
+            kind = seed.get("match_kind", "unknown")
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+            seed_is_hub = is_hub(seed)
+            seed_is_publisher = is_publisher(seed)
+            nameless_seeds += int(is_nameless(seed))
+            if is_nameless(seed):
+                nameless_question_ids.add(row.question_id)
+            hub_seeds += int(seed_is_hub)
+            publisher_seeds += int(seed_is_publisher)
+            publisher_hub_seeds += int(seed_is_hub and seed_is_publisher)
+            has_hub = has_hub or seed_is_hub
+            has_publisher = has_publisher or seed_is_publisher
+        questions_with_hub += int(has_hub)
+        questions_with_publisher += int(has_publisher)
+        capped = record.get("degree_capped_count", 0)
+        capped_total += capped
+        questions_with_capped += int(capped > 0)
+        publisher_by_entity = {
+            seed["entity_id"]: is_publisher(seed) for seed in record.get("seeds", [])
+        }
+        has_path = False
+        has_non_publisher_path = False
+        for path in record.get("paths", []):
+            fact_tokens.append(path["tokens"])
+            if len(path["entities"]) == 2:
+                one_hop_paths += 1
+            else:
+                two_hop_paths += 1
+            ends = [
+                publisher_by_entity.get(path["entities"][0], False),
+                publisher_by_entity.get(path["entities"][-1], False),
+            ]
+            if all(ends):
+                endpoint_classes["both_publisher"] += 1
+            elif any(ends):
+                endpoint_classes["one_publisher"] += 1
+            else:
+                endpoint_classes["neither_publisher"] += 1
+            has_path = True
+            has_non_publisher_path = has_non_publisher_path or not any(ends)
+        questions_with_paths += int(has_path)
+        questions_with_non_publisher_path += int(has_non_publisher_path)
+
+    def candidates(record: dict, option: str) -> list[str]:
+        if option == "paths_only" or record["path_found"]:
+            return list(record["candidate_chunk_ids"])
+        return list(record["seed_chunk_candidate_ids"])
+
+    candidate_counts = {
+        option: [
+            len(candidates(probe_by_question[row.question_id], option))
+            for row in probed
+        ]
+        for option in ("paths_only", "paths_plus_seed_chunks")
+    }
+
+    def proxy(selected: list[DiagnosticRow]) -> dict:
+        result: dict[str, dict] = {}
+        measured = [row for row in selected if row.question_id in top4_by_question]
+        for option in ("paths_only", "paths_plus_seed_chunks"):
+            outside_counts = []
+            for row in measured:
+                top4 = set(top4_by_question[row.question_id])
+                outside = [
+                    chunk_id
+                    for chunk_id in candidates(
+                        probe_by_question[row.question_id], option
+                    )
+                    if chunk_id not in top4
+                ]
+                outside_counts.append(len(outside))
+            result[option] = {
+                **_rate(sum(1 for count in outside_counts if count > 0), len(measured)),
+                "outside_chunk_count_distribution": _distribution(outside_counts),
+            }
+        return result
+
+    fact_tokens.sort()
+    p95_tokens = _nearest_rank(fact_tokens, 0.95)
+    degree_p99 = probe_summary.get("degree_p99") if probe_summary else None
+    evidence_budget = (
+        probe_summary.get("evidence_token_budget") if probe_summary else None
+    )
+    answer_budget = probe_summary.get("max_output_tokens") if probe_summary else None
+    max_path_facts = None
+    if p95_tokens and evidence_budget is not None and answer_budget is not None:
+        room = max(evidence_budget - answer_budget, 0)
+        max_path_facts = min(
+            _MAX_PATH_FACTS_CEILING,
+            room * _PATH_FACT_BUDGET_PERCENT // (100 * p95_tokens),
+        )
+
+    types = sorted({row.question_type for row in probed})
+    return {
+        "questions": len(probed),
+        "non_null": len(non_null),
+        "gold_in_index_subset": len(in_g),
+        "question_types": {
+            t: sum(1 for row in probed if row.question_type == t) for t in types
+        },
+        "seed_count_distribution": _distribution([
+            row.seed_count or 0 for row in probed
+        ]),
+        "seeds_total": seeds_total,
+        "match_kind_counts": dict(sorted(kind_counts.items())),
+        "match_kind_shares": {
+            kind: (count / seeds_total) if seeds_total else None
+            for kind, count in sorted(kind_counts.items())
+        },
+        "d_graph_seed_hit": {
+            "gold_in_index_subset": _rate(
+                sum(1 for row in in_g if row.d_graph_seed_hit is True), len(in_g)
+            ),
+            "all_non_null": _rate(
+                sum(1 for row in non_null if row.d_graph_seed_hit is True),
+                len(non_null),
+            ),
+        },
+        "path_found": {
+            "overall": _rate(
+                sum(1 for row in probed if row.path_found is True), len(probed)
+            ),
+            "all_non_null": _rate(
+                sum(1 for row in non_null if row.path_found is True), len(non_null)
+            ),
+            "gold_in_index_subset": _rate(
+                sum(1 for row in in_g if row.path_found is True), len(in_g)
+            ),
+            "by_question_type": {
+                t: _rate(
+                    sum(
+                        1
+                        for row in probed
+                        if row.question_type == t and row.path_found is True
+                    ),
+                    sum(1 for row in probed if row.question_type == t),
+                )
+                for t in types
+            },
+        },
+        "hub_seeds": {
+            "degree_p95": degree_p95,
+            "seeds_over_p95": _rate(hub_seeds, seeds_total),
+            "questions_with_a_hub_seed": _rate(questions_with_hub, len(probed)),
+        },
+        "nameless_seeds": {
+            "label": (
+                "seeds whose name has no letter or digit (a degenerate entity the "
+                "library now refuses; the probe ran before that guard)"
+            ),
+            "seeds": nameless_seeds,
+            "questions": len(nameless_question_ids),
+        },
+        "d_graph_seed_hit_without": {
+            "label": (
+                "column (d) recomputed with one kind of seed removed, from the same "
+                "probe output"
+            ),
+            "nameless_seeds": {
+                "gold_in_index_subset": d_without(in_g, is_nameless),
+                "all_non_null": d_without(non_null, is_nameless),
+            },
+            "publisher_seeds": {
+                "gold_in_index_subset": d_without(in_g, is_publisher),
+                "all_non_null": d_without(non_null, is_publisher),
+            },
+            "publisher_and_hub_seeds": {
+                "gold_in_index_subset": d_without(
+                    in_g, lambda seed: is_publisher(seed) or is_hub(seed)
+                ),
+                "all_non_null": d_without(
+                    non_null, lambda seed: is_publisher(seed) or is_hub(seed)
+                ),
+            },
+        },
+        "path_endpoints": {
+            "label": (
+                "the two end seeds of each found path, by whether they are "
+                "publisher names"
+            ),
+            **endpoint_classes,
+            "questions_with_a_path_with_no_publisher_end": _rate(
+                questions_with_non_publisher_path, questions_with_paths
+            ),
+        },
+        "publisher_seeds": {
+            "distinct_publisher_names_in_gold": len(publisher_names),
+            "seeds_that_are_publishers": _rate(publisher_seeds, seeds_total),
+            "questions_with_a_publisher_seed": _rate(
+                questions_with_publisher, len(probed)
+            ),
+            "publisher_seeds_that_are_hubs": _rate(
+                publisher_hub_seeds, publisher_seeds
+            ),
+        },
+        "degree_capped": {
+            "total": capped_total,
+            "questions_with_any": _rate(questions_with_capped, len(probed)),
+        },
+        "candidate_chunks": {
+            option: {
+                "distribution": _distribution(counts),
+                "mean": (sum(counts) / len(counts)) if counts else None,
+                "median": _median(counts),
+                "questions_with_none": _rate(
+                    sum(1 for count in counts if count == 0), len(counts)
+                ),
+            }
+            for option, counts in candidate_counts.items()
+        },
+        "composition_change_proxy": {
+            "label": (
+                "share of questions whose candidate chunks include a chunk outside the "
+                "(c)-probe dense top-4 (a proxy, not a retrieval measurement)"
+            ),
+            "all_probed": proxy(probed),
+            "all_non_null": proxy(non_null),
+            "gold_in_index_subset": proxy(in_g),
+        },
+        "path_fact_tokens": {
+            "paths": len(fact_tokens),
+            "one_hop_paths": one_hop_paths,
+            "two_hop_paths": two_hop_paths,
+            "p50": _nearest_rank(fact_tokens, 0.50),
+            "p95": p95_tokens,
+            "max": fact_tokens[-1] if fact_tokens else None,
+            "mean": (sum(fact_tokens) / len(fact_tokens)) if fact_tokens else None,
+        },
+        "d77_caps": {
+            "degree_p99": degree_p99,
+            "degree_cap": math.ceil(degree_p99) if degree_p99 is not None else None,
+            "evidence_token_budget": evidence_budget,
+            "answer_token_budget": answer_budget,
+            "p95_fact_tokens": p95_tokens,
+            "max_path_facts": max_path_facts,
+            "max_path_facts_formula": (
+                "min(16, floor(0.10 * (evidence_token_budget - answer_token_budget)"
+                " / p95_fact_tokens))"
+            ),
+        },
+        "probe": probe_summary,
+    }
+
+
 def _compose_label(label: str, journal_path: str | Path | None, row_count: int) -> str:
     """Builds the markdown line-1 label, enforcing the partial-run disclosure rule.
 
@@ -618,8 +1098,19 @@ def main(argv: list[str] | None = None) -> int:
     table_parser.add_argument("--journal", default=None)
     table_parser.add_argument("--gold-chunks", dest="gold_chunks", required=True)
     table_parser.add_argument("--vector-top4", dest="vector_top4", default=None)
+    table_parser.add_argument("--seed-probe", dest="seed_probe", default=None)
     table_parser.add_argument("--out-dir", dest="out_dir", required=True)
     table_parser.add_argument("--label", default="")
+
+    seed_summary_parser = subparsers.add_parser(
+        "seed-summary",
+        help="Summarise a `diag_probe --graph-seeds` run (06.3.4.1-13) as JSON.",
+    )
+    seed_summary_parser.add_argument("--corpus", required=True)
+    seed_summary_parser.add_argument("--seed-probe", dest="seed_probe", required=True)
+    seed_summary_parser.add_argument("--gold-chunks", dest="gold_chunks", required=True)
+    seed_summary_parser.add_argument("--vector-top4", dest="vector_top4", required=True)
+    seed_summary_parser.add_argument("--out", default=None)
 
     coverage_parser = subparsers.add_parser(
         "coverage",
@@ -633,7 +1124,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "table":
-        rows = build_rows(args.corpus, args.journal, args.gold_chunks, args.vector_top4)
+        rows = build_rows(
+            args.corpus,
+            args.journal,
+            args.gold_chunks,
+            args.vector_top4,
+            args.seed_probe,
+        )
         label = _compose_label(args.label, args.journal, len(rows))
         write_table(
             rows,
@@ -642,6 +1139,21 @@ def main(argv: list[str] | None = None) -> int:
             journal_path=args.journal,
             gold_chunks_path=args.gold_chunks,
         )
+        return 0
+
+    if args.command == "seed-summary":
+        summary = summarize_seed_probe(
+            args.corpus, args.seed_probe, args.gold_chunks, args.vector_top4
+        )
+        text = json.dumps(summary, indent=2, sort_keys=False, ensure_ascii=False)
+        if args.out:
+            out_path = Path(args.out)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+                f.write("\n")
+        else:
+            print(text)
         return 0
 
     if args.command == "coverage":

@@ -2,7 +2,7 @@
 //! reconciled eval store to answer "is the gold chunk in the index, and does plain vector
 //! retrieval find it?" without touching graph architecture (ROADMAP constraint 4).
 //!
-//! Two independent modes, selected by mutually exclusive flags:
+//! Three independent modes, selected by mutually exclusive flags:
 //!
 //! - `--vector-top-k K --questions PATH [--stage-cap USD] [--cache PATH] [--estimate-only]`:
 //!   embeds each question (batches of 32, cached by `(question_id, embedding_model)` in a JSONL
@@ -27,8 +27,22 @@
 //!   surfaces a rechunk-config or raw-byte mismatch *before* a candidate's `identical: false` is
 //!   misread as "re-ingestion would reproduce the gap" (it would instead mean the check itself is
 //!   miscalibrated). It is read-only: no `add`/`delete`/`optimize` call anywhere in this bin.
+//! - `--graph-seeds --questions PATH --stage-cap USD [--degree-cap N] [--mention-cache PATH]`
+//!   (06.3.4.1-13, OI-01 probe, D-75..D-79): runs the exact library functions that production
+//!   graph retrieval will call (`engine::graph::seeding::{extract_mentions, match_seeds}` and
+//!   `engine::graph::paths::find_seed_paths`) over each question's original text, against the
+//!   reconciled eval store, and prints one JSON line per question (mentions, seeds with their
+//!   match kind and source documents, paths with their cl100k token cost, candidate chunk IDs and
+//!   the degree-capped count) followed by a summary line that carries spend. The store is opened
+//!   with `DatabaseManager::open_and_validate` before `GraphIndex::build` touches any table
+//!   accessor, because the accessors create an empty table when one is missing. The only paid call
+//!   is one batched mention-embedding request per question for the mentions that no entity name
+//!   matched; embeddings are cached by `(mention, embedding_model)` in a separate JSONL file, spend
+//!   is estimated per request exactly as the vector mode does (the provider reports no usage), and
+//!   dispatch stops before a request that would exceed `--stage-cap` (D-86). It never writes the
+//!   store, and the path-fact cap is left unbounded here so every found path is reported.
 //!
-//! Both modes refuse to run against a store path that does not look like the eval store
+//! Every mode refuses to run against a store path that does not look like the eval store
 //! (`lancedb-eval`), because a missing `LANCET_ENV=eval` would otherwise silently point this bin
 //! at the dev store and misreport `index_generation`. Opens the store via
 //! `DatabaseManager::open_and_validate` (never `::initialize`, which creates tables — a write).
@@ -39,8 +53,11 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use arrow_array::{Array, BinaryArray, Int32Array, RecordBatch, StringArray};
+use futures::future::BoxFuture;
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
 use lancedb::Table;
@@ -52,7 +69,15 @@ use engine::config::{load_settings, EffectiveRagSettings};
 use engine::client::{OpenRouterClient, OpenRouterEmbeddingConfig};
 use engine::db::DatabaseManager;
 use engine::graph::escape_sql_literal;
-use engine::ingest::{chunk_ingestion_job, IngestionJob, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE};
+use engine::graph::context_strategy::{ContextAssemblyStrategy, GraphFact};
+use engine::graph::index::GraphIndex;
+use engine::graph::paths::{find_seed_paths, seed_chunk_candidates, PathSettings, DEGREE_CAP};
+use engine::graph::seeding::{
+    extract_mentions, match_seeds, LanceMentionVectorSearch, Seed, SeedSettings,
+};
+use engine::ingest::{
+    chunk_ingestion_job, EmbeddingProvider, IngestionJob, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE,
+};
 use engine::pb::lancet::v1;
 use engine::service::ProductionDenseRetrievalPort;
 use engine::workflow::ports::{corpus_generation_from_nodes_version, DenseRetrievalPort};
@@ -60,6 +85,7 @@ use engine::workflow::ports::{corpus_generation_from_nodes_version, DenseRetriev
 const USAGE: &str = "\
 usage: diag_probe --vector-top-k K --questions QUESTIONS.jsonl [--stage-cap USD] [--cache PATH] [--estimate-only]
    or: diag_probe --rechunk-check DOC_IDS.json
+   or: diag_probe --graph-seeds --questions QUESTIONS.jsonl --stage-cap USD [--degree-cap N] [--mention-cache PATH]
 
   --vector-top-k     dense-only top-K at the pinned startup nodes_version (RESEARCH §E/§F, column c).
   --questions        JSONL, one question per line, each carrying question_id and query|question.
@@ -70,12 +96,19 @@ usage: diag_probe --vector-top-k K --questions QUESTIONS.jsonl [--stage-cap USD]
   --estimate-only     print the projected embedding spend and exit; opens no store, calls no
                       provider, reads no OPENROUTER_API_KEY.
   --rechunk-check    read-only production-chunker replay for the documents named in DOC_IDS.json
-                      (a JSON object with `candidates` and `controls` string arrays).";
+                      (a JSON object with `candidates` and `controls` string arrays).
+  --graph-seeds      OI-01 offline seed/path probe (06.3.4.1-13): mention seeds, seed-to-seed
+                      paths and candidate chunks per question; requires --questions and --stage-cap.
+  --degree-cap       largest degree a two-hop intermediate may have (default: the committed
+                      DEGREE_CAP of engine::graph::paths).
+  --mention-cache    mention embedding cache JSONL keyed by (mention, embedding_model); default
+                      data/probe-cache/mention_embeddings.jsonl (gitignored).";
 
 const EMBEDDING_PRICE_PER_1M: f64 = 0.12; // RESEARCH §L / measure.py EMBEDDING_PRICE_PER_1M.
 const EMBED_BATCH_SIZE: usize = 32;
 const EXPECTED_EMBEDDING_DIM: usize = 2048;
 const DEFAULT_CACHE_PATH: &str = "data/probe-cache/question_embeddings.jsonl";
+const DEFAULT_MENTION_CACHE_PATH: &str = "data/probe-cache/mention_embeddings.jsonl";
 
 #[derive(Debug, Clone, PartialEq)]
 enum Mode {
@@ -89,6 +122,12 @@ enum Mode {
     RechunkCheck {
         doc_ids_path: PathBuf,
     },
+    GraphSeeds {
+        questions: PathBuf,
+        stage_cap: f64,
+        degree_cap: u32,
+        mention_cache: PathBuf,
+    },
 }
 
 fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Mode, String> {
@@ -98,6 +137,9 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Mode, String> {
     let mut cache: Option<PathBuf> = None;
     let mut estimate_only = false;
     let mut rechunk_check: Option<PathBuf> = None;
+    let mut graph_seeds = false;
+    let mut degree_cap: Option<u32> = None;
+    let mut mention_cache: Option<PathBuf> = None;
 
     let mut iter = args.into_iter();
     while let Some(flag) = iter.next() {
@@ -141,6 +183,25 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Mode, String> {
                 cache = Some(PathBuf::from(value));
             }
             "--estimate-only" => estimate_only = true,
+            "--graph-seeds" => graph_seeds = true,
+            "--degree-cap" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| format!("--degree-cap requires a value\n{USAGE}"))?;
+                let parsed: u32 = value
+                    .parse()
+                    .map_err(|_| format!("--degree-cap must be a positive integer\n{USAGE}"))?;
+                if parsed == 0 {
+                    return Err(format!("--degree-cap must be greater than 0\n{USAGE}"));
+                }
+                degree_cap = Some(parsed);
+            }
+            "--mention-cache" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| format!("--mention-cache requires a value\n{USAGE}"))?;
+                mention_cache = Some(PathBuf::from(value));
+            }
             "--rechunk-check" => {
                 let value = iter
                     .next()
@@ -151,12 +212,36 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Mode, String> {
         }
     }
 
+    let selected = usize::from(vector_top_k.is_some())
+        + usize::from(rechunk_check.is_some())
+        + usize::from(graph_seeds);
+    if selected > 1 {
+        return Err(format!(
+            "--vector-top-k, --rechunk-check and --graph-seeds are mutually exclusive\n{USAGE}"
+        ));
+    }
+    if graph_seeds {
+        let questions =
+            questions.ok_or_else(|| format!("--graph-seeds requires --questions\n{USAGE}"))?;
+        let stage_cap =
+            stage_cap.ok_or_else(|| format!("--graph-seeds requires --stage-cap\n{USAGE}"))?;
+        if estimate_only {
+            return Err(format!(
+                "--estimate-only is not supported with --graph-seeds\n{USAGE}"
+            ));
+        }
+        return Ok(Mode::GraphSeeds {
+            questions,
+            stage_cap,
+            degree_cap: degree_cap.unwrap_or(DEGREE_CAP),
+            mention_cache: mention_cache
+                .unwrap_or_else(|| PathBuf::from(DEFAULT_MENTION_CACHE_PATH)),
+        });
+    }
     match (vector_top_k, rechunk_check) {
-        (Some(_), Some(_)) => Err(format!(
-            "--vector-top-k and --rechunk-check are mutually exclusive\n{USAGE}"
-        )),
+        (Some(_), Some(_)) => unreachable!("mutual exclusion is checked above"),
         (None, None) => Err(format!(
-            "either --vector-top-k or --rechunk-check is required\n{USAGE}"
+            "one of --vector-top-k, --rechunk-check or --graph-seeds is required\n{USAGE}"
         )),
         (None, Some(doc_ids_path)) => Ok(Mode::RechunkCheck { doc_ids_path }),
         (Some(k), None) => {
@@ -300,7 +385,7 @@ fn load_cached_question_ids(cache_path: &Path, embedding_model: &str) -> HashSet
 }
 
 /// Appends newly-fetched cache entries to `cache_path`, creating its parent directory if needed.
-fn append_cache(cache_path: &Path, entries: &[CacheEntry]) -> Result<(), String> {
+fn append_cache<T: Serialize>(cache_path: &Path, entries: &[T]) -> Result<(), String> {
     if let Some(parent) = cache_path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent).map_err(|error| {
@@ -568,6 +653,411 @@ async fn run_vector_top_k(
     Ok(())
 }
 
+/// One cached mention embedding, keyed by `(mention, embedding_model)`.
+#[derive(Serialize, Deserialize, Clone)]
+struct MentionCacheEntry {
+    mention: String,
+    embedding_model: String,
+    embedding: Vec<f32>,
+}
+
+/// Loads the mention embedding cache JSONL (if present) for `embedding_model`.
+///
+/// A missing cache file is not an error; entries for another embedding model are ignored, so a
+/// model change can never serve a stale vector.
+fn load_mention_cache(
+    cache_path: &Path,
+    embedding_model: &str,
+) -> Result<HashMap<String, Vec<f32>>, String> {
+    let mut map = HashMap::new();
+    if !cache_path.exists() {
+        return Ok(map);
+    }
+    let content = std::fs::read_to_string(cache_path)
+        .map_err(|error| format!("failed to read cache {}: {error}", cache_path.display()))?;
+    for (line_number, line) in content.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let entry: MentionCacheEntry = serde_json::from_str(line).map_err(|error| {
+            format!(
+                "failed to parse cache {} at line {}: {error}",
+                cache_path.display(),
+                line_number + 1
+            )
+        })?;
+        if entry.embedding_model == embedding_model {
+            map.insert(entry.mention, entry.embedding);
+        }
+    }
+    Ok(map)
+}
+
+/// What the mention embedder has spent and holds, behind one lock.
+struct MeterState {
+    cache: HashMap<String, Vec<f32>>,
+    spend_usd: f64,
+}
+
+/// Wraps the production embedding client with a mention cache, the in-process spend estimate and
+/// the `--stage-cap` check, so the seed and path code under test is the exact library path
+/// (`LanceMentionVectorSearch`) and only the paid dispatch is metered here (D-86).
+///
+/// The OpenRouter embeddings response carries no `usage` field, so spend is always the estimated
+/// case: cl100k tokens of the uncached mentions at `EMBEDDING_PRICE_PER_1M`, charged per request
+/// and checked before the request is dispatched.
+struct MeteredEmbedder {
+    inner: OpenRouterClient,
+    model: String,
+    cache_path: PathBuf,
+    stage_cap: f64,
+    state: Mutex<MeterState>,
+    stopped_by_cap: AtomicBool,
+    embedded_mentions: AtomicUsize,
+    cache_hits: AtomicUsize,
+}
+
+impl MeteredEmbedder {
+    fn lock(&self) -> Result<std::sync::MutexGuard<'_, MeterState>, String> {
+        self.state
+            .lock()
+            .map_err(|_| "mention embedder state lock was poisoned".to_string())
+    }
+}
+
+impl EmbeddingProvider for MeteredEmbedder {
+    fn model_id(&self) -> &str {
+        &self.model
+    }
+
+    fn get_embeddings<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
+        Box::pin(async move {
+            let misses: Vec<String> = {
+                let state = self.lock()?;
+                let mut seen: HashSet<&String> = HashSet::new();
+                texts
+                    .iter()
+                    .filter(|text| !state.cache.contains_key(*text) && seen.insert(*text))
+                    .cloned()
+                    .collect()
+            };
+            if !misses.is_empty() {
+                let tokens: u64 = misses.iter().map(|text| estimate_tokens_cl100k(text)).sum();
+                let cost = (tokens as f64 / 1_000_000.0) * EMBEDDING_PRICE_PER_1M;
+                {
+                    let state = self.lock()?;
+                    if state.spend_usd + cost > self.stage_cap {
+                        self.stopped_by_cap.store(true, Ordering::SeqCst);
+                        return Err(format!(
+                            "stage cap ${:.4} would be exceeded by a ${cost:.6} mention-embedding \
+                             request after ${:.6} spent; no further request dispatched",
+                            self.stage_cap, state.spend_usd
+                        ));
+                    }
+                }
+                let vectors = self
+                    .inner
+                    .get_embeddings(&misses)
+                    .await
+                    .map_err(|error| format!("mention embedding request failed: {error}"))?;
+                if vectors.len() != misses.len() {
+                    return Err(format!(
+                        "embedding provider returned {} vectors for {} mentions",
+                        vectors.len(),
+                        misses.len()
+                    ));
+                }
+                if vectors.iter().any(|vector| {
+                    vector.len() != EXPECTED_EMBEDDING_DIM
+                        || vector.iter().any(|value| !value.is_finite())
+                }) {
+                    return Err("embedding provider returned an invalid mention payload".to_string());
+                }
+                let entries: Vec<MentionCacheEntry> = misses
+                    .iter()
+                    .cloned()
+                    .zip(vectors)
+                    .map(|(mention, embedding)| MentionCacheEntry {
+                        mention,
+                        embedding_model: self.model.clone(),
+                        embedding,
+                    })
+                    .collect();
+                append_cache(&self.cache_path, &entries)?;
+                let mut state = self.lock()?;
+                for entry in entries {
+                    state.cache.insert(entry.mention, entry.embedding);
+                }
+                state.spend_usd += cost;
+                self.embedded_mentions
+                    .fetch_add(misses.len(), Ordering::SeqCst);
+            }
+            self.cache_hits
+                .fetch_add(texts.len().saturating_sub(misses.len()), Ordering::SeqCst);
+            let state = self.lock()?;
+            texts
+                .iter()
+                .map(|text| {
+                    state
+                        .cache
+                        .get(text)
+                        .cloned()
+                        .ok_or_else(|| "mention embedding missing after dispatch".to_string())
+                })
+                .collect()
+        })
+    }
+}
+
+/// One matched seed as printed by the probe, with its source documents for column (d).
+#[derive(Serialize)]
+struct SeedRecord<'a> {
+    #[serde(flatten)]
+    seed: &'a Seed,
+    source_document_ids: Vec<String>,
+    source_chunk_count: usize,
+}
+
+#[derive(Serialize)]
+struct PathRecord {
+    entities: Vec<String>,
+    relations: Vec<String>,
+    rendered: String,
+    score: f64,
+    /// cl100k tokens of the `<GRAPH_FACT>` block the prompt packer would emit for this path.
+    tokens: u64,
+}
+
+#[derive(Serialize)]
+struct GraphSeedRecord<'a> {
+    question_id: String,
+    mentions: Vec<String>,
+    seeds: Vec<SeedRecord<'a>>,
+    seed_count: usize,
+    path_found: bool,
+    paths: Vec<PathRecord>,
+    /// Ranked source chunks of the entities on the found paths (the `paths-only` option).
+    candidate_chunk_ids: Vec<String>,
+    /// Ranked source chunks of the seeds themselves (the length-0 paths of `paths-plus-seed-chunks`).
+    seed_chunk_candidate_ids: Vec<String>,
+    degree_capped_count: u32,
+}
+
+#[derive(Serialize)]
+struct ProbeSettings {
+    max_seeds: usize,
+    mention_vector_top_k: usize,
+    seed_match_min_score: f64,
+    degree_cap: u32,
+    max_graph_chunk_candidates: usize,
+    max_path_facts: &'static str,
+}
+
+#[derive(Serialize)]
+struct GraphSeedsSummary {
+    /// In-process spend estimate in USD (the provider reports no usage).
+    spend_usd: f64,
+    stage_cap_usd: f64,
+    questions: usize,
+    mentions_embedded: usize,
+    mention_cache_hits: usize,
+    stopped_by_cap: bool,
+    index_generation: String,
+    embedding_model: String,
+    entity_count: usize,
+    degree_p95: f64,
+    degree_p99: f64,
+    degree_max: f64,
+    evidence_token_budget: usize,
+    max_output_tokens: u32,
+    settings: ProbeSettings,
+    error: Option<String>,
+}
+
+/// cl100k tokens of the `<GRAPH_FACT>` block `prompt::pack_evidence_and_graph_prompt` builds for a
+/// fact (`prompt.rs`, the `PackCandidate::Graph` arm), counted with the same tokenizer. The
+/// section header is counted once per prompt there and is not part of the per-fact figure.
+fn graph_fact_block_tokens(fact: &GraphFact) -> u64 {
+    let rendered = ContextAssemblyStrategy::SourceChunks.assemble(fact);
+    let block = format!(
+        "<GRAPH_FACT entity_a=\"{}\" relation=\"{}\" entity_b=\"{}\" score=\"{:.4}\">\n{}\n</GRAPH_FACT>\n\n",
+        fact.entity_a_name(),
+        fact.relation_type(),
+        fact.entity_b_name(),
+        fact.score,
+        rendered
+    );
+    estimate_tokens_cl100k(&block)
+}
+
+/// `--graph-seeds`: the OI-01 offline seed/path probe (06.3.4.1-13). Read-only against the store.
+async fn run_graph_seeds(
+    questions_path: &Path,
+    stage_cap: f64,
+    degree_cap: u32,
+    mention_cache: &Path,
+) -> Result<(), String> {
+    let settings = load_settings().map_err(|error| format!("failed to load settings: {error}"))?;
+    let lancedb_path = settings.engine.lancedb_path.clone();
+    ensure_eval_store(&lancedb_path)?;
+    let effective_settings = EffectiveRagSettings::try_from_settings(&settings)
+        .map_err(|error| format!("invalid RAG configuration: {error}"))?;
+
+    let api_key = std::env::var("OPENROUTER_API_KEY")
+        .map_err(|_| "OPENROUTER_API_KEY environment variable is not set".to_string())?;
+    if api_key.trim().is_empty() {
+        return Err("OPENROUTER_API_KEY environment variable must not be empty or blank".to_string());
+    }
+
+    // The store is validated first: `DatabaseManager`'s table accessors create an empty table when
+    // one is missing, so nothing may call one before `open_and_validate` has succeeded. `initialize`
+    // is never called.
+    let database = DatabaseManager::open_and_validate(&lancedb_path)
+        .await
+        .map_err(|error| format!("failed to open LanceDB read-only: {error}"))?;
+    let nodes = database
+        .nodes_table()
+        .await
+        .map_err(|error| format!("failed to open nodes table: {error}"))?;
+    let nodes_version = nodes
+        .version()
+        .await
+        .map_err(|error| format!("failed to read nodes version: {error}"))?;
+    let generation = corpus_generation_from_nodes_version(nodes_version);
+
+    let index = GraphIndex::build(&database).await?;
+    tracing::info!(
+        index_generation = %generation,
+        entity_count = index.entity_count(),
+        "diag_probe graph-seeds index built"
+    );
+
+    let embedding_config = OpenRouterEmbeddingConfig::new_with_concurrency(
+        effective_settings.embedding_model.clone(),
+        effective_settings.embedding_endpoint.clone(),
+        effective_settings.embedding_concurrency,
+    )
+    .map_err(|error| format!("invalid embedding config: {error}"))?;
+    let client = OpenRouterClient::new_with_config(api_key, embedding_config)
+        .map_err(|error| format!("failed to build embedding client: {error}"))?;
+    let model = effective_settings.embedding_model.clone();
+    let embedder = Arc::new(MeteredEmbedder {
+        inner: client,
+        model: model.clone(),
+        cache_path: mention_cache.to_path_buf(),
+        stage_cap,
+        state: Mutex::new(MeterState {
+            cache: load_mention_cache(mention_cache, &model)?,
+            spend_usd: 0.0,
+        }),
+        stopped_by_cap: AtomicBool::new(false),
+        embedded_mentions: AtomicUsize::new(0),
+        cache_hits: AtomicUsize::new(0),
+    });
+    let search = LanceMentionVectorSearch {
+        database: database.clone(),
+        embedder: embedder.clone(),
+    };
+
+    let seed_settings = SeedSettings {
+        seed_match_min_score: effective_settings.graph.seed_match_min_score,
+        ..SeedSettings::default()
+    };
+    let path_settings = PathSettings {
+        degree_cap,
+        // Unbounded for the probe only, so every found path is reported and its token cost can
+        // inform the cap. Production applies `MAX_PATH_FACTS`.
+        max_path_facts: usize::MAX,
+        max_graph_chunk_candidates: effective_settings.retrieval.final_limit,
+    };
+
+    let questions = load_questions(questions_path)?;
+    let mut processed = 0usize;
+    let outcome: Result<(), String> = async {
+        for (question_id, text) in &questions {
+            let mentions = extract_mentions(text);
+            let seeds = match_seeds(&index, &mentions, &search, &seed_settings).await?;
+            let result = find_seed_paths(&database, &index, &seeds, &path_settings).await?;
+            let seed_chunk_candidate_ids =
+                seed_chunk_candidates(&index, &seeds, path_settings.max_graph_chunk_candidates);
+
+            let paths: Vec<PathRecord> = result
+                .paths
+                .iter()
+                .zip(result.facts.iter())
+                .map(|(path, fact)| PathRecord {
+                    entities: path.entities.clone(),
+                    relations: path.relations.clone(),
+                    rendered: path.rendered.clone(),
+                    score: path.score,
+                    tokens: graph_fact_block_tokens(fact),
+                })
+                .collect();
+            let record = GraphSeedRecord {
+                question_id: question_id.clone(),
+                mentions,
+                seed_count: seeds.len(),
+                seeds: seeds
+                    .iter()
+                    .map(|seed| SeedRecord {
+                        seed,
+                        source_document_ids: index.seed_document_ids(&seed.entity_id),
+                        source_chunk_count: index.source_chunk_ids(&seed.entity_id).len(),
+                    })
+                    .collect(),
+                path_found: result.path_found,
+                paths,
+                candidate_chunk_ids: result.candidate_chunk_ids,
+                seed_chunk_candidate_ids,
+                degree_capped_count: result.degree_capped_count,
+            };
+            println!(
+                "{}",
+                serde_json::to_string(&record).map_err(|error| error.to_string())?
+            );
+            processed += 1;
+        }
+        Ok(())
+    }
+    .await;
+
+    let spend_usd = embedder.lock().map(|state| state.spend_usd).unwrap_or(0.0);
+    let summary = GraphSeedsSummary {
+        spend_usd,
+        stage_cap_usd: stage_cap,
+        questions: processed,
+        mentions_embedded: embedder.embedded_mentions.load(Ordering::SeqCst),
+        mention_cache_hits: embedder.cache_hits.load(Ordering::SeqCst),
+        stopped_by_cap: embedder.stopped_by_cap.load(Ordering::SeqCst),
+        index_generation: generation,
+        embedding_model: model,
+        entity_count: index.entity_count(),
+        degree_p95: index.degree_percentile(0.95),
+        degree_p99: index.degree_percentile(0.99),
+        degree_max: index.degree_percentile(1.0),
+        evidence_token_budget: effective_settings.evidence_token_budget,
+        max_output_tokens: effective_settings.max_output_tokens,
+        settings: ProbeSettings {
+            max_seeds: seed_settings.max_seeds,
+            mention_vector_top_k: seed_settings.mention_vector_top_k,
+            seed_match_min_score: seed_settings.seed_match_min_score,
+            degree_cap,
+            max_graph_chunk_candidates: path_settings.max_graph_chunk_candidates,
+            max_path_facts: "unbounded",
+        },
+        error: outcome.as_ref().err().cloned(),
+    };
+    println!(
+        "{}",
+        serde_json::to_string(&summary).map_err(|error| error.to_string())?
+    );
+    outcome
+}
+
 #[derive(Deserialize, Default)]
 struct RechunkCheckInput {
     #[serde(default)]
@@ -740,6 +1230,12 @@ async fn main() -> Result<(), String> {
                 .map_err(|error| format!("failed to open LanceDB read-only: {error}"))?;
             run_rechunk_check(&database, &doc_ids_path).await
         }
+        Mode::GraphSeeds {
+            questions,
+            stage_cap,
+            degree_cap,
+            mention_cache,
+        } => run_graph_seeds(&questions, stage_cap, degree_cap, &mention_cache).await,
         Mode::VectorTopK {
             k,
             questions,
