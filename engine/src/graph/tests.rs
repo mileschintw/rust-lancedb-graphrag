@@ -1166,6 +1166,21 @@ mod seed_paths {
     }
 
     #[tokio::test]
+    async fn a_vector_candidate_whose_name_has_no_letters_or_digits_is_never_a_seed() {
+        // A whitespace-only entity name embeds to a degenerate vector that sits at distance 1 from
+        // every unit-length mention vector, which is exactly the minimum score of 0.5.
+        let index = graph(vec![ent(1, "Alpha Corp", &[]), ent(2, "  ", &["c1"])], &[]).0;
+        let search = FakeSearch::new(&[("Gamma", vec![(id(2), 0.5), (id(1), 0.9)])]);
+
+        let seeds = match_seeds(&index, &mention_list(&["Gamma"]), &search, &SeedSettings::default())
+            .await
+            .unwrap();
+
+        let ids: Vec<&str> = seeds.iter().map(|s| s.entity_id.as_str()).collect();
+        assert_eq!(ids, [id(1).as_str()], "the nameless entity is skipped, the real one stays");
+    }
+
+    #[tokio::test]
     async fn two_mentions_for_one_entity_make_one_seed_with_the_best_match_kind() {
         let index = matching_index();
         let search = FakeSearch::new(&[("Gamma", vec![(id(1), 0.9)])]);

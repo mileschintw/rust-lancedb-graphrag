@@ -19,7 +19,7 @@ use lancedb::query::{ExecutableQuery, QueryBase, Select};
 use serde::Serialize;
 
 use crate::db::DatabaseManager;
-use crate::graph::index::GraphIndex;
+use crate::graph::index::{normalize_name, GraphIndex};
 use crate::ingest::EmbeddingProvider;
 use crate::retrieval::dense::dense_score;
 
@@ -480,11 +480,13 @@ fn offer(best: &mut HashMap<String, Seed>, seed: Seed) {
 /// Each mention is matched by case-folded exact name; a mention with no exact match is matched
 /// by normalised name; the mentions still unmatched are sent to `search` together, in one call,
 /// and a candidate is accepted only when its score is at least
-/// [`SeedSettings::seed_match_min_score`]. One entity found through several mentions is one
-/// seed, with its best match kind. Seeds are ordered by match kind, then by degree ascending
-/// (which is specificity `1 / ln(2 + degree)` descending, so a hub sorts after a specific
-/// entity of the same kind), then by entity ID, and cut to [`SeedSettings::max_seeds`]. The order
-/// does not depend on the order of `mentions`.
+/// [`SeedSettings::seed_match_min_score`] and its name has at least one letter or digit (an
+/// entity named only with spaces or punctuation embeds to a degenerate vector that scores exactly
+/// the minimum against any mention, so it is never a seed). One entity found through several
+/// mentions is one seed, with its best match kind. Seeds are ordered by match kind, then by
+/// degree ascending (which is specificity `1 / ln(2 + degree)` descending, so a hub sorts after
+/// a specific entity of the same kind), then by entity ID, and cut to
+/// [`SeedSettings::max_seeds`]. The order does not depend on the order of `mentions`.
 ///
 /// # Errors
 /// Returns the error of `search`, or a message when it returns the wrong number of result lists.
@@ -536,7 +538,9 @@ pub async fn match_seeds(
             for (entity_id, score) in list.into_iter().take(settings.mention_vector_top_k) {
                 if score.is_finite()
                     && score >= settings.seed_match_min_score
-                    && index.contains(&entity_id)
+                    && index
+                        .entity_name(&entity_id)
+                        .is_some_and(|name| !normalize_name(name).is_empty())
                 {
                     offer(
                         &mut best,
