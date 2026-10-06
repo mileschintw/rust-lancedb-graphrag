@@ -265,3 +265,79 @@ def test_cap_counts_failed_generations_and_stops_earlier_than_the_old_estimator(
     assert 20 * old_per_record < cap
     assert compute_spend(journaled)[0] >= cap
     assert compute_spend(journaled[:2])[0] < cap
+
+
+def _wr01_stub_drive_one(*args: object, **kwargs: object) -> RunRecord:
+    return RunRecord(
+        corpus="graphrag_bench",
+        question_id=str(kwargs.get("question", MagicMock()).id),
+        graph_arm=str(kwargs.get("arm")),
+        outcome="success",
+    )
+
+
+def test_drive_complete_run_is_not_labelled_capped_when_last_record_crosses_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WR-01 (06.3.4.1-31): a cap first reached by the final record, with no unit left
+    to dispatch, must not read as a capped drive.
+
+    3 questions x 2 arms = 6 units; spend is $0.01 per record, so the 6th record
+    brings spend to exactly the cap with nothing left waiting.
+    """
+    dispatched = 0
+
+    def counting_drive_one(*args: object, **kwargs: object) -> RunRecord:
+        nonlocal dispatched
+        dispatched += 1
+        return _wr01_stub_drive_one(*args, **kwargs)
+
+    monkeypatch.setattr("lancet_eval.run.drive_one", counting_drive_one)
+    monkeypatch.setattr(
+        "lancet_eval.run.compute_spend",
+        lambda records, include_embeddings=True: (0.01 * len(records), False),
+    )
+
+    res = drive(
+        corpus="graphrag_bench",
+        journal_path=tmp_path / "journal.jsonl",
+        stage_spend_cap=0.01 * 6,
+        limit=3,
+        workers=1,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+    assert dispatched == 6
+    assert res.executed_count == 6
+    assert res.stopped_by_cap is False
+    assert res.capped is False
+
+
+def test_drive_is_labelled_capped_when_cap_reached_with_units_still_waiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WR-01 companion: the cap reached after the 2nd of 6 records leaves work undone."""
+    dispatched = 0
+
+    def counting_drive_one(*args: object, **kwargs: object) -> RunRecord:
+        nonlocal dispatched
+        dispatched += 1
+        return _wr01_stub_drive_one(*args, **kwargs)
+
+    monkeypatch.setattr("lancet_eval.run.drive_one", counting_drive_one)
+    monkeypatch.setattr(
+        "lancet_eval.run.compute_spend",
+        lambda records, include_embeddings=True: (0.01 * len(records), False),
+    )
+
+    res = drive(
+        corpus="graphrag_bench",
+        journal_path=tmp_path / "journal.jsonl",
+        stage_spend_cap=0.01 * 2,
+        limit=3,
+        workers=1,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+    assert dispatched == 2
+    assert res.executed_count == 2
+    assert res.stopped_by_cap is True
+    assert res.capped is True
