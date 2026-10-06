@@ -866,3 +866,194 @@ def test_seed_summary_cli_writes_json(tmp_path: Path) -> None:
     written = json.loads(out.read_text(encoding="utf-8"))
     assert written["questions"] == 4
     assert written["probe"]["degree_p99"] == 33.0
+
+
+# --- 06.3.4.1-17: column (d), seed count and path found from the wire ---------------
+
+
+def _wire_journal(
+    tmp_path: Path, meta_by_question: dict[str, dict | None]
+) -> Path:
+    """A graph-on-only journal whose records carry the given workflow_meta dicts."""
+    lines = [
+        json.dumps({"type": "header", "corpus": CORPUS, "partial": True}),
+    ]
+    for question_id, meta in meta_by_question.items():
+        record: dict = {
+            "corpus": CORPUS,
+            "question_id": question_id,
+            "graph_arm": "graph-on",
+            "outcome": "success",
+            "answer": "Answer: Yes",
+        }
+        if meta is not None:
+            record["workflow_meta"] = meta
+        lines.append(json.dumps(record))
+    path = tmp_path / "wire_journal.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_wire_seed_documents_with_a_gold_document_read_column_d_yes(
+    tmp_path: Path,
+) -> None:
+    michigan = _document_id_for(_MICHIGAN_TITLE_PREFIX)
+    journal = _wire_journal(
+        tmp_path,
+        {
+            "mhr-0073ab564e55": {
+                "graph_seed_document_ids": [michigan, "unrelated-doc"],
+                "graph_seed_count": 2,
+                "graph_path_found": True,
+            }
+        },
+    )
+    rows = build_rows(CORPUS, journal, GOLD_CHUNKS)
+    row = _row(rows, "mhr-0073ab564e55")
+    assert row.d_graph_seed_hit is True
+    assert row.seed_count == 2
+    assert row.path_found is True
+
+
+def test_wire_seed_documents_without_a_gold_document_read_column_d_no(
+    tmp_path: Path,
+) -> None:
+    journal = _wire_journal(
+        tmp_path,
+        {
+            "mhr-0073ab564e55": {
+                "graph_seed_document_ids": ["unrelated-doc"],
+                "graph_seed_count": 1,
+                "graph_path_found": False,
+            }
+        },
+    )
+    row = _row(build_rows(CORPUS, journal, GOLD_CHUNKS), "mhr-0073ab564e55")
+    assert (row.d_graph_seed_hit, row.seed_count, row.path_found) == (False, 1, False)
+
+
+def test_a_measured_empty_wire_seed_list_is_no_not_unmeasured(tmp_path: Path) -> None:
+    journal = _wire_journal(
+        tmp_path,
+        {
+            "mhr-0073ab564e55": {
+                "graph_seed_document_ids": [],
+                "graph_seed_count": 0,
+                "graph_path_found": False,
+            }
+        },
+    )
+    row = _row(build_rows(CORPUS, journal, GOLD_CHUNKS), "mhr-0073ab564e55")
+    assert (row.d_graph_seed_hit, row.seed_count, row.path_found) == (False, 0, False)
+
+
+def test_a_record_that_predates_the_wire_fields_leaves_the_columns_none(
+    tmp_path: Path,
+) -> None:
+    journal = _wire_journal(
+        tmp_path,
+        {
+            # workflow_meta, but none of the seed fields
+            "mhr-0073ab564e55": {"graph_node_count": 2},
+            "mhr-0085f76defbe": None,  # no workflow_meta at all
+        },
+    )
+    rows = build_rows(CORPUS, journal, GOLD_CHUNKS)
+    for question_id in ("mhr-0073ab564e55", "mhr-0085f76defbe"):
+        row = _row(rows, question_id)
+        assert (row.d_graph_seed_hit, row.seed_count, row.path_found) == (
+            None,
+            None,
+            None,
+        ), question_id
+
+
+def test_wire_fields_are_preferred_over_the_offline_seed_probe(
+    tmp_path: Path,
+) -> None:
+    michigan = _document_id_for(_MICHIGAN_TITLE_PREFIX)
+    # The probe says no hit, one seed, no path; the wire says hit, three, a path.
+    probe = _write_probe(
+        tmp_path,
+        [
+            _probe_record(
+                "mhr-0073ab564e55",
+                seeds=[_seed("Other", "exact", 3, ["not-a-gold-document"])],
+                seed_count=1,
+                path_found=False,
+            )
+        ],
+        None,
+    )
+    journal = _wire_journal(
+        tmp_path,
+        {
+            "mhr-0073ab564e55": {
+                "graph_seed_document_ids": [michigan],
+                "graph_seed_count": 3,
+                "graph_path_found": True,
+            }
+        },
+    )
+    row = _row(
+        build_rows(CORPUS, journal, GOLD_CHUNKS, seed_probe_path=probe),
+        "mhr-0073ab564e55",
+    )
+    assert (row.d_graph_seed_hit, row.seed_count, row.path_found) == (True, 3, True)
+
+
+def test_the_probe_still_fills_what_the_wire_record_does_not_carry(
+    tmp_path: Path,
+) -> None:
+    probe = _probe_fixture(tmp_path)
+    journal = _wire_journal(tmp_path, {"mhr-0073ab564e55": {"graph_node_count": 1}})
+    row = _row(
+        build_rows(CORPUS, journal, GOLD_CHUNKS, seed_probe_path=probe),
+        "mhr-0073ab564e55",
+    )
+    assert row.d_graph_seed_hit is True
+    assert (row.seed_count, row.path_found) == (2, True)
+
+
+def test_a_null_question_records_its_wire_seed_count_but_has_no_column_d(
+    tmp_path: Path,
+) -> None:
+    journal = _wire_journal(
+        tmp_path,
+        {
+            "mhr-0279d4a349c3": {
+                "graph_seed_document_ids": ["any-doc"],
+                "graph_seed_count": 4,
+                "graph_path_found": True,
+            }
+        },
+    )
+    row = _row(build_rows(CORPUS, journal, GOLD_CHUNKS), "mhr-0279d4a349c3")
+    assert row.d_graph_seed_hit is None, "a null question has no gold document to hit"
+    assert (row.seed_count, row.path_found) == (4, True)
+
+
+def test_the_graph_off_record_never_supplies_the_wire_columns(tmp_path: Path) -> None:
+    michigan = _document_id_for(_MICHIGAN_TITLE_PREFIX)
+    record = {
+        "corpus": CORPUS,
+        "question_id": "mhr-0073ab564e55",
+        "graph_arm": "graph-off",
+        "outcome": "success",
+        "answer": "Answer: Yes",
+        "workflow_meta": {
+            "graph_seed_document_ids": [michigan],
+            "graph_seed_count": 5,
+            "graph_path_found": True,
+        },
+    }
+    journal = tmp_path / "off_only.jsonl"
+    journal.write_text(
+        json.dumps({"type": "header", "corpus": CORPUS, "partial": True})
+        + "\n"
+        + json.dumps(record)
+        + "\n",
+        encoding="utf-8",
+    )
+    row = _row(build_rows(CORPUS, journal, GOLD_CHUNKS), "mhr-0073ab564e55")
+    assert (row.d_graph_seed_hit, row.seed_count, row.path_found) == (None, None, None)

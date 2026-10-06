@@ -622,3 +622,35 @@ def test_vector_baseline_usable_floor_committed_before_drive_1() -> None:
 
     assert floor == pytest.approx(expected_floor)
 
+
+# --- 06.3.4.1 D-81/D-82/D-83 drive-2 literals -----------------------------------------
+
+
+def test_graph_presence_wilson_lower_floor_committed_before_drive_2() -> None:
+    """The SC-4 Wilson clause literal: the 06.3.4 presence rate 14/143 = 0.098."""
+    assert hasattr(thresholds_module, "GRAPH_PRESENCE_WILSON_LOWER_FLOOR")
+    value = thresholds_module.GRAPH_PRESENCE_WILSON_LOWER_FLOOR
+    assert isinstance(value, float)
+    assert value == pytest.approx(0.098)
+
+
+def test_graph_composition_change_floor_committed_before_drive_2() -> None:
+    """D-81: half the 0.20 yield floor, committed as a float."""
+    assert hasattr(thresholds_module, "GRAPH_COMPOSITION_CHANGE_FLOOR")
+    value = thresholds_module.GRAPH_COMPOSITION_CHANGE_FLOOR
+    assert isinstance(value, float)
+    assert value == pytest.approx(0.10)
+
+
+def test_sc5_visibility_rule_committed_before_drive_2() -> None:
+    """D-82: the SC-5 PASS rule is a committed string reading, like SC-2's."""
+    assert hasattr(thresholds_module, "SC5_VISIBILITY_RULE")
+    value = thresholds_module.SC5_VISIBILITY_RULE
+    assert isinstance(value, str)
+    assert value == "composition_floor_or_paired_ci_excludes_zero_n_ge_2"
+
+
+def test_graph_yield_investigation_floor_is_not_amended_by_drive_2() -> None:
+    """D-83: a drive-2 miss triggers the iteration rule; the 0.20 floor never moves."""
+    assert GRAPH_YIELD_INVESTIGATION_FLOOR == 0.20
+    assert thresholds_module.GRAPH_YIELD_INVESTIGATION_FLOOR == 0.20

@@ -526,6 +526,60 @@ def evaluate_sc3(
     )
 
 
+@dataclass(frozen=True)
+class InvarianceReport:
+    """Graph-off invariance between a baseline journal and a later one (D-95).
+
+    A disclosure, not a gate: no threshold is committed for "a systematic shift",
+    so this reports counts and the question IDs behind them for a human to read.
+    """
+
+    n_common: int = 0
+    only_in_baseline: list[str] = field(default_factory=list)
+    only_in_drive2: list[str] = field(default_factory=list)
+    collapsed_duplicates: dict[str, int] = field(default_factory=dict)
+    n_comparable: int = 0
+    not_comparable_ids: list[str] = field(default_factory=list)
+    answer_usable_agree_n: int = 0
+    answer_usable_disagree_ids: list[str] = field(default_factory=list)
+    answer_usable_not_scored_n: int = 0
+    retrieved_set_equal_n: int = 0
+    retrieved_set_differ_ids: list[str] = field(default_factory=list)
+    retrieved_order_equal_n: int = 0
+    any_difference: bool = False
+
+
+def evaluate_sc4(
+    journal_path: Path | str,
+    populations_path: Path | str,
+    *,
+    corpus: str | None = None,
+    gold_questions: Any = None,
+) -> GateReading:
+    return GateReading(gate="SC-4", status="MISS", reason="not implemented")
+
+
+def evaluate_sc5(
+    journal_path: Path | str,
+    populations_path: Path | str,
+    *,
+    corpus: str | None = None,
+    gold_questions: Any = None,
+    chunk_size: int | None = None,
+) -> GateReading:
+    return GateReading(gate="SC-5", status="MISS", reason="not implemented")
+
+
+def graph_off_invariance(
+    baseline_journal: Path | str,
+    drive2_journal: Path | str,
+    *,
+    corpus: str | None = None,
+    gold_questions: Any = None,
+) -> InvarianceReport:
+    return InvarianceReport()
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI: `python -m lancet_eval.unpark_gates --stage drive1 --run <dir>
     --gold-chunks <file> --populations <diag_selection.json> --engine-pid-before N

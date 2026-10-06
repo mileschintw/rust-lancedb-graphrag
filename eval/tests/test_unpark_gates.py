@@ -14,13 +14,17 @@ from typing import Any
 import pytest
 
 import lancet_eval.thresholds as thresholds_module
+from lancet_eval.client import Notice, RetrievalSnapshot, StructuredCitation
 from lancet_eval.corpus import GoldQuestion
-from lancet_eval.journal import NodeFailed, NodeTiming, RunRecord
+from lancet_eval.journal import NodeFailed, NodeTiming, RunRecord, WorkflowWireMeta
 from lancet_eval.unpark_gates import (
     citation_rejection_rate,
     evaluate_sc1,
     evaluate_sc2,
     evaluate_sc3,
+    evaluate_sc4,
+    evaluate_sc5,
+    graph_off_invariance,
     main,
 )
 
@@ -962,3 +966,704 @@ def test_main_writes_markdown_and_json_and_exits_zero(
     assert "SC-1" in payload
     assert "SC-2" in payload
     assert "SC-3" in payload
+
+
+# --- drive 2: SC-4, SC-5 and graph-off invariance (06.3.4.1-17) -----------------------
+
+_ABLATION = Notice(code="GRAPH_ABLATION", message="graph ablated", typed_code=18)
+_GOLD_FACT = "a gold fact"
+
+
+def _chunk(
+    chunk_id: str,
+    *,
+    boosted: bool | None = None,
+    gold: bool = False,
+    rank: int = 1,
+) -> StructuredCitation:
+    return StructuredCitation(
+        chunk_id=chunk_id,
+        document_id=chunk_id.split(":")[0],
+        excerpt=_GOLD_FACT if gold else "unrelated text",
+        rank=rank,
+        graph_boosted=boosted,
+    )
+
+
+def _arm_record(
+    question_id: str,
+    arm: str,
+    *,
+    chunks: list[StructuredCitation] | None = None,
+    answer: str = "Answer: entity",
+    graph_nodes: int = 0,
+    graph_edges: int = 0,
+    prompt_facts: int | None = None,
+    prompt_tokens: int = 100,
+    duration_ms: float = 1000.0,
+    outcome: str = "success",
+) -> RunRecord:
+    is_off = arm == "graph-off"
+    return RunRecord(
+        corpus="multihop_rag",
+        question_id=question_id,
+        graph_arm=arm,
+        outcome=outcome,  # type: ignore[arg-type]
+        answer=answer if outcome == "success" else None,
+        snapshot=RetrievalSnapshot(retrieved_chunks=chunks or []),
+        notices=[_ABLATION] if is_off else [],
+        index_generation="gen-1",
+        duration_ms=duration_ms,
+        workflow_meta=WorkflowWireMeta(
+            graph_node_count=graph_nodes,
+            graph_edge_count=graph_edges,
+            graph_prompt_fact_count=prompt_facts,
+            prompt_tokens=prompt_tokens,
+        ),
+    )
+
+
+def _qid(i: int) -> str:
+    return f"q{i:03d}"
+
+
+def _gold_map(
+    n: int, *, question_type: str = "inference_query"
+) -> dict[str, GoldQuestion]:
+    return {
+        _qid(i): _gold_question(_qid(i), question_type=question_type) for i in range(n)
+    }
+
+
+def _write_selection(
+    path: Path, *, g: list[str], v: list[str] | None = None
+) -> Path:
+    payload: dict[str, Any] = {"g_question_ids": g}
+    if v is not None:
+        payload["v_question_ids"] = v
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _presence_journal(
+    tmp_path: Path, *, n: int, present: int
+) -> tuple[Path, Path, dict[str, GoldQuestion]]:
+    """n dual-success pairs, the first `present` with graph facts on graph-on."""
+    records: list[RunRecord] = []
+    for i in range(n):
+        records.append(
+            _arm_record(_qid(i), "graph-on", graph_nodes=3 if i < present else 0)
+        )
+        records.append(_arm_record(_qid(i), "graph-off"))
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    selection = _write_selection(
+        tmp_path / "diag_selection.json", g=[_qid(i) for i in range(n)]
+    )
+    return journal, selection, _gold_map(n)
+
+
+# SC-4 -------------------------------------------------------------------------------
+
+
+def test_sc4_ten_of_forty_pairs_in_g_with_presence_passes(tmp_path: Path) -> None:
+    journal, selection, gold = _presence_journal(tmp_path, n=40, present=10)
+    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    assert reading.gate == "SC-4"
+    assert reading.status == "PASS", reading.reason
+    assert reading.value == pytest.approx(0.25)
+    assert reading.n == 40
+    assert reading.ci is not None and 0.13 < reading.ci[0] < 0.16
+
+
+def test_sc4_five_of_forty_misses_the_investigation_floor(tmp_path: Path) -> None:
+    journal, selection, gold = _presence_journal(tmp_path, n=40, present=5)
+    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    assert reading.status == "MISS"
+    assert reading.value == pytest.approx(0.125)
+    assert "0.20" in reading.reason
+
+
+def test_sc4_one_of_five_misses_on_the_wilson_clause_only(tmp_path: Path) -> None:
+    journal, selection, gold = _presence_journal(tmp_path, n=5, present=1)
+    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    assert reading.value == pytest.approx(0.20), "0.20 meets the floor itself"
+    assert reading.ci is not None and 0.03 < reading.ci[0] < 0.04
+    assert reading.status == "MISS"
+    assert "Wilson" in reading.reason
+    assert "investigation floor" not in reading.reason
+
+
+def test_sc4_without_a_pair_in_g_is_miss_n0(tmp_path: Path) -> None:
+    journal, _, gold = _presence_journal(tmp_path, n=10, present=10)
+    selection = _write_selection(tmp_path / "other.json", g=["not-in-the-journal"])
+    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    assert reading.status == "MISS"
+    assert reading.reason == "n=0"
+    assert reading.n == 0
+
+
+def test_sc4_restricts_the_headline_to_g_and_reports_a_and_all_usable(
+    tmp_path: Path,
+) -> None:
+    # 40 pairs; G is the first 20 and none of them show the graph, the other 20 all do.
+    records: list[RunRecord] = []
+    for i in range(40):
+        records.append(
+            _arm_record(
+                _qid(i), "graph-on", graph_nodes=0 if i < 20 else 2, prompt_facts=0
+            )
+        )
+        records.append(_arm_record(_qid(i), "graph-off"))
+    # One graph-on record whose graph-off twin errored: usable, but in no pair.
+    records.append(_arm_record("lone", "graph-on", graph_nodes=1, prompt_facts=1))
+    records.append(_arm_record("lone", "graph-off", outcome="error"))
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    selection = _write_selection(tmp_path / "sel.json", g=[_qid(i) for i in range(20)])
+    gold = {**_gold_map(40), "lone": _gold_question("lone")}
+
+    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+
+    assert reading.status == "MISS"
+    assert reading.value == pytest.approx(0.0), "the headline is over pairs(G) only"
+    populations = reading.detail["populations"]
+    assert populations["pairs_G"]["n"] == 20
+    assert populations["pairs_A"]["n"] == 40
+    assert populations["pairs_A"]["rate"] == pytest.approx(0.5)
+    assert populations["all_usable_graph_on"]["n"] == 41
+    assert populations["all_usable_graph_on"]["positive_n"] == 21
+
+
+def test_sc4_carries_influence_and_no_match_rates(tmp_path: Path) -> None:
+    records: list[RunRecord] = []
+    for i in range(10):
+        records.append(
+            _arm_record(
+                _qid(i),
+                "graph-on",
+                graph_nodes=1 if i < 4 else 0,
+                prompt_facts=2 if i < 2 else 0,
+            )
+        )
+        records.append(_arm_record(_qid(i), "graph-off"))
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    selection = _write_selection(tmp_path / "sel.json", g=[_qid(i) for i in range(10)])
+
+    reading = evaluate_sc4(journal, selection, gold_questions=_gold_map(10))
+
+    pairs_g = reading.detail["populations"]["pairs_G"]
+    assert pairs_g["positive_n"] == 4
+    assert pairs_g["influence_n"] == 10
+    assert pairs_g["influence_positive_n"] == 2
+    assert pairs_g["influence_rate"] == pytest.approx(0.2)
+    assert "no_match_rate" in pairs_g
+
+
+def test_sc4_influence_is_unreported_when_the_field_is_absent(tmp_path: Path) -> None:
+    journal, selection, gold = _presence_journal(tmp_path, n=10, present=5)
+    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    pairs_g = reading.detail["populations"]["pairs_G"]
+    assert pairs_g["influence_n"] == 0
+    assert pairs_g["influence_rate"] is None, "None is not zero"
+
+
+# SC-5 -------------------------------------------------------------------------------
+
+
+def _composition_journal(
+    tmp_path: Path,
+    *,
+    n: int,
+    boosted_for: set[int] | None = None,
+    on_gold_for: set[int] | None = None,
+    off_gold_for: set[int] | None = None,
+    on_answer_correct_for: set[int] | None = None,
+    off_answer_correct_for: set[int] | None = None,
+) -> tuple[Path, Path, dict[str, GoldQuestion]]:
+    """n dual-success pairs, all of them in V (and G).
+
+    Graph-on's final set always differs from graph-off's by a chunk id, so a plain
+    set difference is everywhere; only the pairs in `boosted_for` carry a
+    `graph_boosted` chunk the graph-off set lacks.
+    """
+    boosted_for = boosted_for or set()
+    on_gold_for = on_gold_for or set()
+    off_gold_for = off_gold_for or set()
+    on_ok = on_answer_correct_for or set()
+    off_ok = off_answer_correct_for or set()
+    records: list[RunRecord] = []
+    for i in range(n):
+        qid = _qid(i)
+        on_chunks = [_chunk(f"d-on-{i}:0", gold=i in on_gold_for, boosted=False)]
+        if i in boosted_for:
+            on_chunks.append(_chunk(f"d-boost-{i}:1", boosted=True, rank=2))
+        else:
+            on_chunks.append(_chunk(f"d-plain-{i}:1", boosted=False, rank=2))
+        off_chunks = [_chunk(f"d-off-{i}:0", gold=i in off_gold_for)]
+        records.append(
+            _arm_record(
+                qid,
+                "graph-on",
+                chunks=on_chunks,
+                answer="Answer: entity" if i in on_ok else "Answer: wrong",
+                graph_nodes=1,
+            )
+        )
+        records.append(
+            _arm_record(
+                qid,
+                "graph-off",
+                chunks=off_chunks,
+                answer="Answer: entity" if i in off_ok else "Answer: wrong",
+            )
+        )
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    ids = [_qid(i) for i in range(n)]
+    selection = _write_selection(tmp_path / "sel.json", g=ids, v=ids)
+    return journal, selection, _gold_map(n)
+
+
+def test_sc5_composition_five_of_forty_meets_the_floor(tmp_path: Path) -> None:
+    journal, selection, gold = _composition_journal(
+        tmp_path, n=40, boosted_for=set(range(5))
+    )
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.gate == "SC-5"
+    assert reading.status == "PASS", reading.reason
+    composition = reading.detail["populations"]["pairs_V"]["composition"]
+    assert composition["changed_n"] == 5
+    assert composition["n"] == 40
+    assert composition["rate"] == pytest.approx(0.125)
+
+
+def test_sc5_two_of_forty_composition_passes_through_a_coverage_delta(
+    tmp_path: Path,
+) -> None:
+    # Graph-on holds the gold fact in every pair and graph-off in none: delta +1.
+    journal, selection, gold = _composition_journal(
+        tmp_path, n=40, boosted_for={0, 1}, on_gold_for=set(range(40))
+    )
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.status == "PASS", reading.reason
+    pairs_v = reading.detail["populations"]["pairs_V"]
+    assert pairs_v["composition"]["rate"] == pytest.approx(0.05)
+    delta = pairs_v["deltas"]["coverage_at_4"]
+    assert delta["mean"] == pytest.approx(1.0)
+    assert delta["ci_lower"] > 0
+    assert delta["n_pairs"] == 40
+    assert reading.detail["negative"] is False
+
+
+def test_sc5_two_of_forty_composition_with_a_ci_through_zero_misses(
+    tmp_path: Path,
+) -> None:
+    # Half the pairs gain the gold fact and half lose it: the mean delta is 0.
+    journal, selection, gold = _composition_journal(
+        tmp_path,
+        n=40,
+        boosted_for={0, 1},
+        on_gold_for=set(range(20)),
+        off_gold_for=set(range(20, 40)),
+    )
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.status == "MISS"
+    delta = reading.detail["populations"]["pairs_V"]["deltas"]["coverage_at_4"]
+    assert delta["ci_lower"] <= 0 <= delta["ci_upper"]
+
+
+def test_sc5_a_plain_set_difference_is_not_a_composition_change(
+    tmp_path: Path,
+) -> None:
+    # Every pair's final sets differ (reformulation), but no chunk is graph_boosted.
+    journal, selection, gold = _composition_journal(tmp_path, n=40, boosted_for=set())
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    composition = reading.detail["populations"]["pairs_V"]["composition"]
+    assert composition["n"] == 40
+    assert composition["changed_n"] == 0
+    assert reading.status == "MISS"
+
+
+def test_sc5_a_boosted_chunk_that_graph_off_also_holds_is_not_a_change(
+    tmp_path: Path,
+) -> None:
+    records = []
+    for i in range(10):
+        records.append(
+            _arm_record(
+                _qid(i), "graph-on", chunks=[_chunk(f"shared-{i}:0", boosted=True)]
+            )
+        )
+        records.append(
+            _arm_record(_qid(i), "graph-off", chunks=[_chunk(f"shared-{i}:0")])
+        )
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    ids = [_qid(i) for i in range(10)]
+    selection = _write_selection(tmp_path / "sel.json", g=ids, v=ids)
+    reading = evaluate_sc5(
+        journal, selection, gold_questions=_gold_map(10), chunk_size=500
+    )
+    composition = reading.detail["populations"]["pairs_V"]["composition"]
+    assert composition["n"] == 10
+    assert composition["changed_n"] == 0
+
+
+def test_sc5_one_pair_without_a_composition_change_misses(tmp_path: Path) -> None:
+    # n = 1: the paired CI collapses to a point, so there is no interval to exclude 0.
+    journal, selection, gold = _composition_journal(
+        tmp_path, n=1, on_gold_for={0}, on_answer_correct_for={0}
+    )
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.status == "MISS"
+    delta = reading.detail["populations"]["pairs_V"]["deltas"]["coverage_at_4"]
+    assert delta["n_pairs"] == 1
+    assert delta["is_degenerate"] is True
+
+
+def test_sc5_one_pair_with_a_composition_change_passes(tmp_path: Path) -> None:
+    journal, selection, gold = _composition_journal(tmp_path, n=1, boosted_for={0})
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.status == "PASS", reading.reason
+
+
+def test_sc5_without_a_pair_in_v_is_miss_n0(tmp_path: Path) -> None:
+    journal, _, gold = _composition_journal(tmp_path, n=5, boosted_for={0, 1, 2})
+    selection = _write_selection(
+        tmp_path / "other.json", g=[_qid(0)], v=["not-in-the-journal"]
+    )
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.status == "MISS"
+    assert reading.reason == "n=0"
+
+
+def test_sc5_negative_delta_with_a_ci_excluding_zero_passes_and_is_flagged(
+    tmp_path: Path,
+) -> None:
+    # Graph-off holds the gold fact in every pair and graph-on in none: delta -1.
+    journal, selection, gold = _composition_journal(
+        tmp_path, n=10, off_gold_for=set(range(10))
+    )
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.status == "PASS", "direction is not part of the rule (D-82)"
+    assert reading.detail["negative"] is True
+    assert "negative" in reading.reason
+
+
+def test_sc5_an_answer_usable_delta_also_qualifies(tmp_path: Path) -> None:
+    journal, selection, gold = _composition_journal(
+        tmp_path, n=10, on_answer_correct_for=set(range(10))
+    )
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.status == "PASS", reading.reason
+    delta = reading.detail["populations"]["pairs_V"]["deltas"]["answer_usable"]
+    assert delta["mean"] == pytest.approx(1.0)
+
+
+def test_sc5_unmeasured_composition_is_not_a_zero(tmp_path: Path) -> None:
+    # Every graph-on chunk lacks the flag (a journal that predates it).
+    records = []
+    for i in range(10):
+        records.append(
+            _arm_record(_qid(i), "graph-on", chunks=[_chunk(f"on-{i}:0", boosted=None)])
+        )
+        records.append(
+            _arm_record(_qid(i), "graph-off", chunks=[_chunk(f"off-{i}:0")])
+        )
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    ids = [_qid(i) for i in range(10)]
+    selection = _write_selection(tmp_path / "sel.json", g=ids, v=ids)
+    reading = evaluate_sc5(
+        journal, selection, gold_questions=_gold_map(10), chunk_size=500
+    )
+    composition = reading.detail["populations"]["pairs_V"]["composition"]
+    assert composition["n"] == 0
+    assert composition["unmeasured_n"] == 10
+    assert composition["rate"] is None
+    assert reading.status == "MISS"
+
+
+def test_sc5_reports_v_g_and_a_with_cost_deltas_and_strata(tmp_path: Path) -> None:
+    journal, selection, gold = _composition_journal(
+        tmp_path, n=6, boosted_for={0}, on_gold_for={0, 1}
+    )
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    populations = reading.detail["populations"]
+    assert set(populations) == {"pairs_V", "pairs_G", "pairs_A"}
+    deltas = populations["pairs_V"]["deltas"]
+    assert set(deltas) == {
+        "coverage_at_4",
+        "answer_usable",
+        "final_answer_em",
+        "latency_ms",
+        "prompt_tokens",
+    }
+    coverage = deltas["coverage_at_4"]
+    assert {"n_pairs", "pairing_coverage", "strata", "mean"} <= set(coverage)
+    assert coverage["strata"] == {"inference_query": pytest.approx(1 / 3)}
+
+
+def test_sc5_requires_the_committed_v_population(tmp_path: Path) -> None:
+    journal, _, gold = _composition_journal(tmp_path, n=5, boosted_for={0})
+    selection = _write_selection(tmp_path / "no_v.json", g=[_qid(0)])
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    assert reading.status == "MISS"
+    assert "v_question_ids" in reading.reason
+
+
+def test_the_drive2_literals_are_committed_with_their_values() -> None:
+    assert thresholds_module.GRAPH_COMPOSITION_CHANGE_FLOOR == pytest.approx(0.10)
+    assert thresholds_module.GRAPH_PRESENCE_WILSON_LOWER_FLOOR == pytest.approx(0.098)
+    assert thresholds_module.SC5_VISIBILITY_RULE == (
+        "composition_floor_or_paired_ci_excludes_zero_n_ge_2"
+    )
+
+
+# graph-off invariance ---------------------------------------------------------------
+
+
+def _off_journal(
+    path: Path,
+    specs: dict[str, tuple[str, list[str]]],
+    *,
+    extra: list[RunRecord] | None = None,
+) -> Path:
+    records = [
+        _arm_record(
+            qid,
+            "graph-off",
+            answer=answer,
+            chunks=[_chunk(cid) for cid in chunk_ids],
+        )
+        for qid, (answer, chunk_ids) in specs.items()
+    ]
+    # A graph-on record must never be compared.
+    records.append(_arm_record("q000", "graph-on", answer="Answer: other"))
+    records.extend(extra or [])
+    _write_journal(path, records, corpus="multihop_rag")
+    return path
+
+
+def test_invariance_of_identical_graph_off_arms_reports_no_difference(
+    tmp_path: Path,
+) -> None:
+    specs = {
+        "q000": ("Answer: entity", ["a:0", "b:1"]),
+        "q001": ("Answer: wrong", ["c:0"]),
+    }
+    baseline = _off_journal(tmp_path / "base.jsonl", specs)
+    drive2 = _off_journal(tmp_path / "d2.jsonl", specs)
+    report = graph_off_invariance(baseline, drive2, gold_questions=_gold_map(2))
+    assert report.n_common == 2
+    assert report.answer_usable_agree_n == 2
+    assert report.retrieved_set_equal_n == 2
+    assert report.retrieved_order_equal_n == 2
+    assert report.any_difference is False
+
+
+def test_invariance_names_the_questions_that_changed(tmp_path: Path) -> None:
+    baseline = _off_journal(
+        tmp_path / "base.jsonl",
+        {
+            "q000": ("Answer: entity", ["a:0", "b:1"]),
+            "q001": ("Answer: wrong", ["c:0"]),
+            "q002": ("Answer: entity", ["d:0", "e:0"]),
+        },
+    )
+    drive2 = _off_journal(
+        tmp_path / "d2.jsonl",
+        {
+            "q000": ("Answer: wrong", ["a:0", "b:1"]),
+            "q001": ("Answer: wrong", ["c:0", "z:9"]),
+            "q002": ("Answer: entity", ["e:0", "d:0"]),
+        },
+    )
+    report = graph_off_invariance(baseline, drive2, gold_questions=_gold_map(3))
+    assert report.answer_usable_agree_n == 2
+    assert report.answer_usable_disagree_ids == ["q000"]
+    assert report.retrieved_set_differ_ids == ["q001"]
+    assert report.retrieved_set_equal_n == 2
+    assert report.retrieved_order_equal_n == 1, "q002 holds the same set in a new order"
+    assert report.any_difference is True
+
+
+def test_invariance_lists_questions_present_in_only_one_journal(
+    tmp_path: Path,
+) -> None:
+    baseline = _off_journal(
+        tmp_path / "base.jsonl",
+        {"q000": ("Answer: entity", ["a:0"]), "q001": ("Answer: entity", ["b:0"])},
+    )
+    drive2 = _off_journal(
+        tmp_path / "d2.jsonl",
+        {"q000": ("Answer: entity", ["a:0"]), "q002": ("Answer: entity", ["c:0"])},
+    )
+    report = graph_off_invariance(baseline, drive2, gold_questions=_gold_map(3))
+    assert report.n_common == 1
+    assert report.only_in_baseline == ["q001"]
+    assert report.only_in_drive2 == ["q002"]
+
+
+def test_invariance_reports_collapsed_duplicate_records(tmp_path: Path) -> None:
+    baseline = _off_journal(
+        tmp_path / "base.jsonl",
+        {"q000": ("Answer: entity", ["a:0"])},
+        extra=[_arm_record("q000", "graph-off", answer="Answer: wrong")],
+    )
+    drive2 = _off_journal(tmp_path / "d2.jsonl", {"q000": ("Answer: wrong", ["a:0"])})
+    report = graph_off_invariance(baseline, drive2, gold_questions=_gold_map(1))
+    assert report.collapsed_duplicates == {"baseline": 1, "drive2": 0}
+    # The later duplicate wins, as `deduplicate_by_arm` does everywhere else.
+    assert report.answer_usable_agree_n == 1
+
+
+def test_invariance_does_not_compare_an_errored_graph_off_record(
+    tmp_path: Path,
+) -> None:
+    baseline = _off_journal(
+        tmp_path / "base.jsonl", {"q000": ("Answer: entity", ["a:0"])}
+    )
+    drive2 = tmp_path / "d2.jsonl"
+    _write_journal(
+        drive2,
+        [_arm_record("q000", "graph-off", outcome="error")],
+        corpus="multihop_rag",
+    )
+    report = graph_off_invariance(baseline, drive2, gold_questions=_gold_map(1))
+    assert report.n_common == 1
+    assert report.n_comparable == 0
+    assert report.not_comparable_ids == ["q000"]
+    assert report.answer_usable_agree_n == 0
+
+
+# main --stage drive2 ----------------------------------------------------------------
+
+
+def _main_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path, Path, Path]:
+    _set_vector_baseline_usable_floor(monkeypatch, 0.10)
+    import lancet_eval.diagnostic as diagnostic_module
+    from lancet_eval.corpus import load_corpus_config, load_sample_questions
+    from lancet_eval.seed import DocumentMap
+
+    monkeypatch.setattr(
+        diagnostic_module,
+        "load_document_map",
+        lambda corpus_name: DocumentMap(corpus=corpus_name),
+    )
+    corpus = "graphrag_bench"
+    config = load_corpus_config(corpus)
+    questions = load_sample_questions(corpus)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_sc1_journal(
+        run_dir / "journal.jsonl",
+        corpus=corpus,
+        questions=questions,
+        arms=config.arms,
+        header_partial=True,
+    )
+    baseline_dir = tmp_path / "baseline"
+    baseline_dir.mkdir()
+    _write_sc1_journal(
+        baseline_dir / "journal.jsonl",
+        corpus=corpus,
+        questions=questions,
+        arms=config.arms,
+        header_partial=True,
+    )
+    gold_chunks = tmp_path / "gold_chunks.jsonl"
+    with open(gold_chunks, "w", encoding="utf-8") as f:
+        for q in questions:
+            for ev_idx, _item in enumerate(q.evidence_list):
+                f.write(
+                    json.dumps(
+                        {
+                            "question_id": q.question_id,
+                            "evidence_index": ev_idx,
+                            "state": "in_chunk",
+                        }
+                    )
+                    + "\n"
+                )
+    ids = [q.question_id for q in questions]
+    selection = _write_selection(tmp_path / "diag_selection.json", g=ids, v=ids)
+    return run_dir, baseline_dir, gold_chunks, selection
+
+
+def _main_args(
+    stage: str, run_dir: Path, gold_chunks: Path, selection: Path, out: Path
+) -> list[str]:
+    return [
+        "--stage",
+        stage,
+        "--run",
+        str(run_dir),
+        "--gold-chunks",
+        str(gold_chunks),
+        "--populations",
+        str(selection),
+        "--engine-pid-before",
+        "1",
+        "--engine-pid-after",
+        "1",
+        "--out",
+        str(out),
+    ]
+
+
+@pytest.mark.parametrize("stage", ["drive1", "drive1b"])
+def test_main_for_the_earlier_stages_writes_exactly_the_four_readings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    run_dir, _, gold_chunks, selection = _main_fixture(tmp_path, monkeypatch)
+    out = tmp_path / "out" / "GATES.md"
+    code = main(_main_args(stage, run_dir, gold_chunks, selection, out))
+    assert code == 0
+    payload = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    assert list(payload) == ["SC-1", "SC-2", "D-69 companion", "SC-3"]
+    assert f"# Unpark Gates ({stage})" in out.read_text(encoding="utf-8")
+
+
+def test_main_drive2_requires_a_baseline_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir, _, gold_chunks, selection = _main_fixture(tmp_path, monkeypatch)
+    out = tmp_path / "out" / "GATES.md"
+    with pytest.raises(SystemExit) as exc:
+        main(_main_args("drive2", run_dir, gold_chunks, selection, out))
+    assert exc.value.code == 2
+    assert not out.exists()
+
+
+def test_main_drive2_adds_sc4_sc5_and_the_invariance_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir, baseline_dir, gold_chunks, selection = _main_fixture(tmp_path, monkeypatch)
+    out = tmp_path / "out" / "GATES.md"
+    code = main(
+        [
+            *_main_args("drive2", run_dir, gold_chunks, selection, out),
+            "--baseline-run",
+            str(baseline_dir),
+        ]
+    )
+    assert code == 0
+    payload = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    assert list(payload) == [
+        "SC-1",
+        "SC-2",
+        "D-69 companion",
+        "SC-3",
+        "SC-4",
+        "SC-5",
+        "graph-off invariance",
+    ]
+    assert payload["SC-4"]["gate"] == "SC-4"
+    markdown = out.read_text(encoding="utf-8")
+    assert "# Unpark Gates (drive2)" in markdown
+    assert "disclosure" in markdown.lower()
