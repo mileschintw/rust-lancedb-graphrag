@@ -12,7 +12,14 @@ from typer.testing import CliRunner
 
 from lancet_eval.cli import app
 from lancet_eval.client import RetrievalSnapshot
-from lancet_eval.journal import RunRecord, WorkflowWireMeta, journal_key, load_done, load_records
+from lancet_eval.journal import (
+    JournalReuseError,
+    RunRecord,
+    WorkflowWireMeta,
+    journal_key,
+    load_done,
+    load_records,
+)
 from lancet_eval.run import DriveResult, drive
 
 
@@ -153,8 +160,45 @@ def test_accumulator_is_cumulative_over_journal(tmp_path: Path, monkeypatch: pyt
     assert res_resume.stopped_by_cap is True
     assert dispatched == 0
 
-    # Companion: resume=False starts accumulator empty
-    res_no_resume = drive(
+    # Companion (WR-03): resume=False no longer re-drives into a populated journal. The
+    # stage cap is per invocation, so that would restart spend at zero.
+    before = j_path.read_bytes()
+    with pytest.raises(JournalReuseError, match="already holds records"):
+        drive(
+            corpus="graphrag_bench",
+            journal_path=j_path,
+            stage_spend_cap=5.0,
+            resume=False,
+            limit=1,
+            workers=1,
+            client=client,
+        )
+    assert dispatched == 0
+    assert j_path.read_bytes() == before
+
+
+def _stub_drive_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    def mock_drive_one(*args: object, **kwargs: object) -> RunRecord:
+        return RunRecord(
+            corpus="graphrag_bench",
+            question_id=str(kwargs["question"].id),  # type: ignore[attr-defined]
+            graph_arm=str(kwargs["arm"]),
+            outcome="success",
+        )
+
+    monkeypatch.setattr("lancet_eval.run.drive_one", mock_drive_one)
+
+
+def test_drive_without_resume_refuses_a_populated_journal_and_leaves_it_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WR-03: `drive(resume=False)` on a journal that holds records is refused before
+    anything is appended."""
+    _stub_drive_one(monkeypatch)
+    client = httpx.Client(base_url="http://testserver")
+    j_path = tmp_path / "journal.jsonl"
+
+    first = drive(
         corpus="graphrag_bench",
         journal_path=j_path,
         stage_spend_cap=5.0,
@@ -163,7 +207,66 @@ def test_accumulator_is_cumulative_over_journal(tmp_path: Path, monkeypatch: pyt
         workers=1,
         client=client,
     )
-    assert dispatched > 0
+    assert first.executed_count == 2
+    before = j_path.read_bytes()
+
+    with pytest.raises(JournalReuseError, match=r"journal\.jsonl"):
+        drive(
+            corpus="graphrag_bench",
+            journal_path=j_path,
+            stage_spend_cap=5.0,
+            resume=False,
+            limit=1,
+            workers=1,
+            client=client,
+        )
+
+    assert j_path.read_bytes() == before
+
+
+def test_drive_without_resume_still_works_on_a_missing_or_empty_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WR-03: a fresh run (no journal, or an empty file) is not refused."""
+    _stub_drive_one(monkeypatch)
+    client = httpx.Client(base_url="http://testserver")
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+
+    for journal in (tmp_path / "missing.jsonl", empty):
+        result = drive(
+            corpus="graphrag_bench",
+            journal_path=journal,
+            stage_spend_cap=5.0,
+            resume=False,
+            limit=1,
+            workers=1,
+            client=client,
+        )
+        assert result.executed_count == 2, journal.name
+
+
+def test_drive_with_resume_is_unchanged_on_a_populated_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WR-03: `resume=True` still continues a populated journal."""
+    _stub_drive_one(monkeypatch)
+    client = httpx.Client(base_url="http://testserver")
+    j_path = tmp_path / "journal.jsonl"
+
+    def run_resumed() -> int:
+        return drive(
+            corpus="graphrag_bench",
+            journal_path=j_path,
+            stage_spend_cap=5.0,
+            resume=True,
+            limit=1,
+            workers=1,
+            client=client,
+        ).executed_count
+
+    assert run_resumed() == 2
+    assert run_resumed() == 0
 
 
 def test_load_records_matches_load_done_parity(tmp_path: Path) -> None:

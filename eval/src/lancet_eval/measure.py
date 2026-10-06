@@ -25,6 +25,7 @@ from lancet_eval.journal import (
     NodeTiming,
     RunRecord,
     WorkflowWireMeta,
+    refuse_populated_journal,
 )
 from lancet_eval.latency import (
     CensoringLabel,
@@ -598,6 +599,9 @@ def run_measurement_pass(
     run_dir = output_dir or resolve_measurement_run_dir(corpus_name)
     run_dir.mkdir(parents=True, exist_ok=True)
     journal_path = run_dir / "journal.jsonl"
+    # WR-03: the stage cap is per invocation, so a pass into a journal that already
+    # holds records would restart spend at zero. Refused before anything is opened.
+    refuse_populated_journal(journal_path, what="measurement pass")
 
     corpus = load_corpus(corpus_name)
     selected_questions = corpus.questions[:sample_size_questions]

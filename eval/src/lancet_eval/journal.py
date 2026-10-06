@@ -17,6 +17,29 @@ from lancet_eval.client import (
 )
 
 
+class JournalReuseError(RuntimeError):
+    """A drive or measurement pass was pointed at a journal that already holds records.
+
+    The stage spend cap is per invocation, so appending a second pass to a populated
+    journal would restart spend at zero and mix two passes in one file (WR-03).
+    """
+
+
+def refuse_populated_journal(journal_path: Path | str, *, what: str) -> None:
+    """Raise `JournalReuseError` when `journal_path` already holds anything.
+
+    A missing or empty file passes. Called before the journal is opened for append.
+    """
+    path = Path(journal_path)
+    if path.is_file() and path.stat().st_size > 0:
+        raise JournalReuseError(
+            f"{what} refused: {path} already holds records from an earlier pass, "
+            "and the stage spend cap is per invocation, so reusing it would restart "
+            "spend at zero and mix two passes in one journal. Use a fresh run "
+            "directory."
+        )
+
+
 class NodeTiming(BaseModel):
     """Durable record of completed node timing."""
 

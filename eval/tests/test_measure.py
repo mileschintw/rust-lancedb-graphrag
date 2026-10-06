@@ -1081,3 +1081,94 @@ def test_measure_command_prints_no_cap_notice_when_pass_was_complete():
     )
     assert res.exit_code == 0
     assert "stage spend cap" not in " ".join(res.output.split())
+
+
+
+# ---------------------------------------------------------------------------
+# 06.3.4.1 WR-03: the stage spend cap is per invocation, so a measurement pass
+# refuses a journal that already holds records.
+# ---------------------------------------------------------------------------
+
+
+def _run_stubbed_pass(run_dir: Path):
+    """One zero-cost measurement pass into `run_dir` (every paid seam stubbed)."""
+
+    def stub_measure_one(client, **kwargs):
+        return MeasurementRecord(
+            corpus="multihop_rag",
+            question_id=kwargs["question"].question_id,
+            graph_arm=kwargs["arm"],
+            outcome="success",
+            ordinal=kwargs["ordinal"],
+            segment=kwargs["segment"],
+            warm_up=kwargs["warm_up"],
+        )
+
+    with (
+        patch("lancet_eval.measure.measure_one", stub_measure_one),
+        patch("lancet_eval.measure.require_index_identity"),
+        patch("lancet_eval.measure.load_corpus") as mock_lc,
+        patch(
+            "lancet_eval.measure.read_effective_workflow_config",
+            return_value=dict(_CAP_WINDOW_CFG),
+        ),
+    ):
+        mock_lc.return_value = MagicMock(questions=_cap_window_questions(3))
+        return run_measurement_pass(
+            corpus_name="multihop_rag",
+            sample_size_questions=3,
+            warm_up_count=0,
+            stage_spend_cap=5.0,
+            output_dir=run_dir,
+            client=MagicMock(),
+            check_allowance=False,
+        )
+
+
+def test_a_second_measurement_pass_into_the_same_journal_is_refused(tmp_path):
+    from lancet_eval.journal import JournalReuseError
+
+    run_dir = tmp_path / "pass"
+    _, summary = _run_stubbed_pass(run_dir)
+    assert summary["total_records_emitted"] == 6
+    journal = run_dir / "journal.jsonl"
+    before = journal.read_bytes()
+    assert before
+
+    with pytest.raises(JournalReuseError) as excinfo:
+        _run_stubbed_pass(run_dir)
+
+    assert str(journal) in str(excinfo.value)
+    assert "fresh run directory" in str(excinfo.value)
+    assert journal.read_bytes() == before
+
+
+def test_a_measurement_pass_into_a_missing_or_empty_journal_still_runs(tmp_path):
+    _, summary = _run_stubbed_pass(tmp_path / "pass")  # no run dir yet
+    assert summary["total_records_emitted"] == 6
+
+    empty_dir = tmp_path / "empty-pass"
+    empty_dir.mkdir()
+    (empty_dir / "journal.jsonl").write_text("", encoding="utf-8")
+    _, summary = _run_stubbed_pass(empty_dir)
+    assert summary["total_records_emitted"] == 6
+
+
+def test_measure_command_exits_non_zero_naming_the_reused_journal(tmp_path):
+    """The CLI surfaces the refusal as a non-zero exit with the message."""
+    run_dir = tmp_path / "pass"
+    run_dir.mkdir()
+    journal = run_dir / "journal.jsonl"
+    journal.write_text('{"corpus": "multihop_rag"}\n', encoding="utf-8")
+    before = journal.read_bytes()
+
+    with patch("lancet_eval.measure.require_index_identity"):
+        res = CliRunner().invoke(
+            app, ["measure", "--stage-cap", "0.5", "--out", str(run_dir)]
+        )
+
+    assert res.exit_code == 1
+    flat = "".join(res.output.split())
+    assert "journal.jsonl" in flat
+    assert "freshrundirectory" in flat
+    assert journal.read_bytes() == before

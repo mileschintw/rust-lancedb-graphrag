@@ -17,6 +17,7 @@ from lancet_eval.identity import require_index_identity
 from lancet_eval.journal import (
     AttemptRecord,
     Journal,
+    JournalReuseError,
     NodeTiming,
     RunRecord,
     WorkflowWireMeta,
@@ -316,7 +317,8 @@ def drive(
 
     ``gate_stage`` declares a gate-stage drive (D-67): it requires ``max_retries == 0``,
     is recorded in the journal header with ``max_retries``, and the drive refuses to
-    append to a journal whose header marker differs from its own.
+    append to a journal whose header marker differs from its own. ``resume=False``
+    refuses a journal that already holds records (`JournalReuseError`, WR-03).
     """
     eval_settings = settings or EvalSettings()
     require_index_identity(eval_settings, corpus)
@@ -349,6 +351,14 @@ def drive(
     _require_matching_journal_marker(
         target_path, gate_stage=gate_stage, max_retries=max_retries
     )
+    if not resume and load_records(target_path):
+        # WR-03: spend is accumulated per invocation, so re-driving every unit into a
+        # journal that already holds records restarts spend at zero and duplicates keys.
+        raise JournalReuseError(
+            f"drive with resume=False refused: {target_path} already holds records, "
+            "and the stage spend cap is per invocation. Use --resume to continue it "
+            "or a fresh run directory for a new drive."
+        )
     done_keys = load_done(target_path) if resume else set()
     records: list[RunRecord] = load_records(target_path) if resume else []
 
