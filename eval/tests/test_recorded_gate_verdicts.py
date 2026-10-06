@@ -160,6 +160,43 @@ def test_the_recorded_verdicts_are_unchanged_on_a_reread(
             assert reread[name][field] == recorded[name][field], (stage, name, field)
 
 
+@pytest.mark.parametrize("stage", list(_RECORDED))
+def test_the_recorded_drives_read_as_legacy_retry_provenance(
+    _rereads: dict[str, dict[str, Any]], stage: str
+) -> None:
+    """06.3.4.1-34: the three drives predate the gate-stage marker, so they read under
+    the closed registry. The text says so, and no reading carries a provenance MISS."""
+    provenance = _rereads[stage]["SC-1"]["detail"].get("retry_provenance") or ""
+    assert provenance.startswith("legacy"), provenance
+    for name, entry in _rereads[stage].items():
+        if "reason" in entry:
+            assert "gate-stage marker" not in entry["reason"], (stage, name)
+            assert "retried attempts" not in entry["reason"], (stage, name)
+
+
+def test_the_legacy_registry_is_exactly_the_three_recorded_drives() -> None:
+    """06.3.4.1-34: the registry is closed and keyed on each recorded header's own
+    `(corpus, created_at)`; each drive's console records `retries=0` (D-67)."""
+    from lancet_eval import unpark_gates
+
+    registry = getattr(unpark_gates, "_LEGACY_UNMARKED_GATE_DRIVES", {})
+    root = repo_root()
+    expected: dict[tuple[str, float], str] = {}
+    for stage, (run, _, _) in _RECORDED.items():
+        journal = root / run / "journal.jsonl"
+        header = json.loads(journal.read_text(encoding="utf-8").splitlines()[0])
+        assert header["type"] == "header"
+        assert "gate_stage" not in header and "max_retries" not in header, stage
+        expected[(header["corpus"], header["created_at"])] = stage
+        console = (root / run / "drive-console.txt").read_bytes()
+        assert b"retries=0" in console, stage
+    assert len(registry) == 3
+    assert {key: label for key, (label, _) in registry.items()} == expected
+    for key, (label, evidence) in registry.items():
+        run = _RECORDED[label][0]
+        assert evidence == f"{run}/drive-console.txt records retries=0", key
+
+
 @pytest.mark.parametrize(
     ("stage", "readings", "expected_key", "expected"),
     [

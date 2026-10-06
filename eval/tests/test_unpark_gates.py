@@ -468,12 +468,22 @@ def _write_sc1_journal(
     arms: list[str],
     header_partial: bool,
     omit_last: bool = False,
+    gate_stage: str | None = None,
+    max_retries: int | None = None,
 ) -> None:
+    """The journal a drive writes. `gate_stage` and `max_retries` add the gate-stage
+    marker (06.3.4.1-33) to the header; without them it is the pre-marker header."""
+    header: dict[str, Any] = {
+        "type": "header",
+        "corpus": corpus,
+        "partial": header_partial,
+    }
+    if gate_stage is not None:
+        header["gate_stage"] = gate_stage
+    if max_retries is not None:
+        header["max_retries"] = max_retries
     with open(path, "w", encoding="utf-8") as f:
-        f.write(
-            json.dumps({"type": "header", "corpus": corpus, "partial": header_partial})
-            + "\n"
-        )
+        f.write(json.dumps(header) + "\n")
         units = [(q, arm) for q in questions for arm in arms]
         if omit_last and units:
             units = units[:-1]
@@ -967,6 +977,8 @@ def test_main_writes_markdown_and_json_and_exits_zero(
         questions=questions,
         arms=config.arms,
         header_partial=True,
+        gate_stage="drive1",
+        max_retries=0,
     )
 
     gold_chunks_path = tmp_path / "gold_chunks.jsonl"
@@ -1593,8 +1605,15 @@ def test_invariance_does_not_compare_an_errored_graph_off_record(
 
 
 def _main_fixture(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stage: str = "drive1",
+    *,
+    honest_header: bool = False,
 ) -> tuple[Path, Path, Path, Path]:
+    """A complete journal driven as `stage` with `--retries 0`: the header carries the
+    gate-stage marker for `stage` (06.3.4.1-33). `honest_header` writes `partial: false`
+    and a `report.json`, so SC-1 reads PASS on it unless a precondition fails."""
     _set_vector_baseline_usable_floor(monkeypatch, 0.10)
     import lancet_eval.diagnostic as diagnostic_module
     from lancet_eval.corpus import load_corpus_config, load_sample_questions
@@ -1615,8 +1634,12 @@ def _main_fixture(
         corpus=corpus,
         questions=questions,
         arms=config.arms,
-        header_partial=True,
+        header_partial=not honest_header,
+        gate_stage=stage,
+        max_retries=0,
     )
+    if honest_header:
+        (run_dir / "report.json").write_text("{}", encoding="utf-8")
     baseline_dir = tmp_path / "baseline"
     baseline_dir.mkdir()
     _write_sc1_journal(
@@ -1670,7 +1693,7 @@ def _main_args(
 def test_main_for_the_earlier_stages_writes_exactly_the_four_readings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
 ) -> None:
-    run_dir, _, gold_chunks, selection = _main_fixture(tmp_path, monkeypatch)
+    run_dir, _, gold_chunks, selection = _main_fixture(tmp_path, monkeypatch, stage)
     out = tmp_path / "out" / "GATES.md"
     code = main(_main_args(stage, run_dir, gold_chunks, selection, out))
     assert code == 0
@@ -1693,7 +1716,9 @@ def test_main_drive2_requires_a_baseline_run(
 def test_main_drive2_adds_sc4_sc5_and_the_invariance_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    run_dir, baseline_dir, gold_chunks, selection = _main_fixture(tmp_path, monkeypatch)
+    run_dir, baseline_dir, gold_chunks, selection = _main_fixture(
+        tmp_path, monkeypatch, "drive2"
+    )
     out = tmp_path / "out" / "GATES.md"
     code = main(
         [
@@ -1875,7 +1900,7 @@ def _run_main(
 def test_main_misses_every_reading_on_an_incomplete_journal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
 ) -> None:
-    fixture = _main_fixture(tmp_path, monkeypatch)
+    fixture = _main_fixture(tmp_path, monkeypatch, stage)
     _truncate_last_record(fixture[0] / "journal.jsonl")
     _forbid_reading_computation(monkeypatch)
 
@@ -1954,6 +1979,157 @@ def test_main_measures_completeness_exactly_once(
     _run_main("drive1", tmp_path, fixture)
 
     assert len(calls) == 1
+
+
+# --- main: retry-provenance precondition (06.3.4.1-34, CR-03, D-67) ------------------
+
+_NO_MARKER_REASON = "journal header carries no gate-stage marker"
+_PRIOR_ATTEMPT = {"attempt": 1, "outcome": "error", "error_type": "ReadTimeout"}
+
+
+def _rewrite_header(
+    journal: Path, *, drop: tuple[str, ...] = (), **changes: Any
+) -> None:
+    lines = journal.read_text(encoding="utf-8").splitlines()
+    header = json.loads(lines[0])
+    for key in drop:
+        header.pop(key, None)
+    header.update(changes)
+    journal.write_text("\n".join([json.dumps(header), *lines[1:]]) + "\n", "utf-8")
+
+
+def _give_a_record_a_prior_attempt(journal: Path) -> None:
+    lines = journal.read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[1])
+    record["prior_attempts"] = [_PRIOR_ATTEMPT]
+    lines[1] = json.dumps(record)
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _mutate_provenance(case: str, journal: Path) -> str:
+    """Apply one provenance defect to a journal driven as `drive1`/`drive2`; return
+    the text every reading's reason must carry."""
+    if case == "unmarked":
+        _rewrite_header(journal, drop=("gate_stage", "max_retries"))
+        return _NO_MARKER_REASON
+    if case == "other_stage":
+        _rewrite_header(journal, gate_stage="drive3")
+        return "gate_stage='drive3'"
+    if case == "retries_on":
+        _rewrite_header(journal, max_retries=2)
+        return "max_retries=2"
+    if case == "half_marker":
+        _rewrite_header(journal, drop=("max_retries",))
+        return "gate_stage without max_retries"
+    assert case == "prior_attempt"
+    _give_a_record_a_prior_attempt(journal)
+    return "1 record(s) carry retried attempts"
+
+
+@pytest.mark.parametrize("stage", ["drive1", "drive2"])
+@pytest.mark.parametrize(
+    "case", ["unmarked", "other_stage", "retries_on", "half_marker", "prior_attempt"]
+)
+def test_main_misses_every_reading_on_a_journal_without_clean_retry_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str, case: str
+) -> None:
+    """CR-03 / D-67: an honest, complete, report-bearing journal that was not driven
+    as this stage with `--retries 0` (or that holds a retried attempt) reads MISS on
+    every reading, SC-1 included, and nothing is computed from its records."""
+    fixture = _main_fixture(tmp_path, monkeypatch, stage, honest_header=True)
+    cause = _mutate_provenance(case, fixture[0] / "journal.jsonl")
+    _forbid_reading_computation(monkeypatch)
+
+    payload, markdown = _run_main(stage, tmp_path, fixture)
+
+    keys = _DRIVE2_READING_KEYS if stage == "drive2" else _EARLIER_STAGE_KEYS
+    expected_keys = [*keys, "graph-off invariance"] if stage == "drive2" else keys
+    assert list(payload) == expected_keys
+    for name in keys:
+        assert payload[name]["status"] == "MISS", name
+        assert cause in payload[name]["reason"], (name, payload[name]["reason"])
+    for name in keys[1:]:
+        assert payload[name]["detail"]["journal_complete"] is True, name
+    provenance = payload["SC-1"]["detail"].get("retry_provenance")
+    assert isinstance(provenance, str) and provenance
+    assert not provenance.startswith("legacy")
+    assert f"Retry provenance: {provenance}" in markdown
+    if stage == "drive2":
+        assert cause in payload["graph-off invariance"]["not_computed"]
+
+
+@pytest.mark.parametrize("stage", ["drive1", "drive2"])
+def test_main_reads_a_marked_retry_free_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    fixture = _main_fixture(tmp_path, monkeypatch, stage, honest_header=True)
+
+    payload, markdown = _run_main(stage, tmp_path, fixture)
+
+    expected = f"header marker: gate_stage={stage}, max_retries=0"
+    assert payload["SC-1"]["status"] == "PASS", payload["SC-1"]["reason"]
+    assert payload["SC-1"]["detail"].get("retry_provenance") == expected
+    assert f"Retry provenance: {expected}" in markdown
+    for name, entry in payload.items():
+        if "reason" in entry:
+            assert _NO_MARKER_REASON not in entry["reason"], name
+            assert "retried attempts" not in entry["reason"], name
+            assert "gate_stage=" not in entry["reason"], name
+
+
+def _register(
+    monkeypatch: pytest.MonkeyPatch, journal: Path, label: str
+) -> dict[tuple[str, float], tuple[str, str]]:
+    """Make the fixture journal a registered pre-marker drive (test-only registry)."""
+    import lancet_eval.unpark_gates as module
+
+    _rewrite_header(journal, drop=("gate_stage", "max_retries"), created_at=123.5)
+    registry = {("graphrag_bench", 123.5): (label, "console records retries=0")}
+    monkeypatch.setattr(module, "_LEGACY_UNMARKED_GATE_DRIVES", registry, raising=False)
+    return registry
+
+
+def test_main_reads_a_registered_pre_marker_drive_as_legacy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _main_fixture(tmp_path, monkeypatch, "drive1", honest_header=True)
+    _register(monkeypatch, fixture[0] / "journal.jsonl", "drive1")
+
+    payload, markdown = _run_main("drive1", tmp_path, fixture)
+
+    provenance = payload["SC-1"]["detail"].get("retry_provenance") or ""
+    assert provenance.startswith("legacy"), provenance
+    assert "console records retries=0" in provenance
+    assert payload["SC-1"]["status"] == "PASS", payload["SC-1"]["reason"]
+    assert f"Retry provenance: {provenance}" in markdown
+    for name, entry in payload.items():
+        assert _NO_MARKER_REASON not in entry["reason"], name
+
+
+def test_main_misses_a_registered_pre_marker_drive_read_under_another_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _main_fixture(tmp_path, monkeypatch, "drive1", honest_header=True)
+    _register(monkeypatch, fixture[0] / "journal.jsonl", "drive1b")
+    _forbid_reading_computation(monkeypatch)
+
+    payload, _ = _run_main("drive1", tmp_path, fixture)
+
+    for name in _EARLIER_STAGE_KEYS:
+        assert payload[name]["status"] == "MISS", name
+        assert "'drive1b'" in payload[name]["reason"], (name, payload[name]["reason"])
+
+
+def test_main_states_that_retry_provenance_was_not_assessed_without_a_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = _main_fixture(tmp_path, monkeypatch)
+    (fixture[0] / "journal.jsonl").unlink()
+
+    payload, _ = _run_main("drive1", tmp_path, fixture)
+
+    provenance = payload["SC-1"]["detail"].get("retry_provenance") or ""
+    assert provenance.startswith("not assessed"), provenance
 
 
 # --- coverage floor (06.3.4.1-32, CR-02/WR-04) ---------------------------------------
@@ -2237,7 +2413,7 @@ def test_main_passes_sample_scoped_integer_denominators(
     corpus-wide len(g_ids)/len(v_ids), and never None."""
     import lancet_eval.unpark_gates as module
 
-    fixture = _main_fixture(tmp_path, monkeypatch)
+    fixture = _main_fixture(tmp_path, monkeypatch, "drive2")
     sample_ids = json.loads(fixture[3].read_text(encoding="utf-8"))["g_question_ids"]
     # G and V reach well beyond the sample (the real populations are corpus-wide).
     _write_selection(
@@ -2275,7 +2451,7 @@ def test_main_passes_zero_for_a_population_the_selection_lacks(
 ) -> None:
     import lancet_eval.unpark_gates as module
 
-    fixture = _main_fixture(tmp_path, monkeypatch)
+    fixture = _main_fixture(tmp_path, monkeypatch, "drive2")
     sample_ids = json.loads(fixture[3].read_text(encoding="utf-8"))["g_question_ids"]
     _write_selection(fixture[3], g=sample_ids)  # no v_question_ids
     seen: dict[str, Any] = {}
