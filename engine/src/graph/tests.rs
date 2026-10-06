@@ -995,6 +995,15 @@ mod seed_paths {
     }
 
     #[test]
+    fn a_lower_case_connector_never_starts_a_mention() {
+        // The stop-word `Does` is stripped, which leaves the connector `the` at the front of the
+        // span; a connector never starts a span, so the mention is `Engadget`, not `the Engadget`.
+        let mentions =
+            extract_mentions("Does the Engadget article from the TechCrunch desk mention it?");
+        assert_eq!(mentions, ["Engadget", "TechCrunch"]);
+    }
+
+    #[test]
     fn mentions_also_split_a_span_at_and_connectors() {
         let mentions = extract_mentions("Did Apple and Google or Procter & Gamble announce it?");
         for expected in ["Apple and Google", "Apple", "Google", "Procter & Gamble", "Procter", "Gamble"] {

@@ -333,8 +333,15 @@ fn is_the(text: &str) -> bool {
 
 /// Turns one finished span into its mentions: the span after stop-word stripping, the same span
 /// without a leading `The`, and the parts split at `and` / `&`.
+///
+/// Stripping a leading stop-word can leave a lower-case connector at the front (`Does the
+/// Engadget` leaves `the Engadget`). A connector never starts a span, so those are stripped too;
+/// the capitalised `The` of `The Verge` is not a connector and stays.
 fn span_mentions(span: &[String]) -> Vec<String> {
-    let start = span.iter().take_while(|word| is_stop_word(word)).count();
+    let start = span
+        .iter()
+        .take_while(|word| is_stop_word(word) || INNER_CONNECTORS.contains(&word.as_str()))
+        .count();
     let core = &span[start..];
     if core.is_empty() || (core.len() == 1 && is_the(&core[0])) {
         return Vec::new();
