@@ -1,4 +1,4 @@
-//! Deterministic weighted Reciprocal Rank Fusion for dense and BM25 results.
+//! Deterministic weighted Reciprocal Rank Fusion for dense, BM25 and graph results.
 //!
 //! Fusion keeps one canonical candidate per `chunk_id`, retains both source
 //! ranks and scores, and uses the configured full-precision RRF score for the
@@ -9,8 +9,14 @@
 //! produces per-variant fused outputs (dense + BM25 for variant 0, BM25-only for
 //! variants 1..N), and `fuse_cross_variant_candidates` performs a second RRF merge
 //! across those per-variant outputs with documented scoring and deterministic tie rules.
+//!
+//! The graph chunk list is a third RRF list that belongs to the query, not to a variant. It is
+//! merged once into the final result of `fuse_cross_variant_candidates`, so its contribution to a
+//! chunk, `graph_rrf_weight / (rrf_k + rank)`, is the same for one variant as for eight. With no
+//! graph list, or a `graph_rrf_weight` of `0.0`, the result is returned exactly as the
+//! cross-variant pass produced it (D-76, D-81).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::Serialize;
 
@@ -51,8 +57,13 @@ pub struct FusedCandidate {
 
 impl FusedCandidate {
     /// Whether the graph list contributed to this candidate (D-76, D-81).
+    ///
+    /// True for a chunk the graph added and for a chunk dense or BM25 already found that the
+    /// graph also found.
     pub fn graph_boosted(&self) -> bool {
-        false
+        self.variant_provenance
+            .iter()
+            .any(|entry| entry.source == VariantProvenanceSource::Graph)
     }
 }
 
@@ -207,6 +218,102 @@ struct CrossVariantAccumulator {
     variant_provenance: Vec<VariantProvenance>,
 }
 
+/// Fuses per-variant fused candidate lists and the graph chunk list into one ranked list.
+///
+/// The per-variant lists are merged by a second RRF pass (`fuse_variant_lists`), then the
+/// graph list is merged once into that result as a third RRF list (`apply_graph_list`).
+/// With an empty `graph_candidates`, or `settings.graph_rrf_weight == 0.0`, the second step does
+/// nothing and the result is the per-variant merge unchanged.
+///
+/// # Errors
+/// Returns an error for invalid settings, more than eight variants, or a non-finite score.
+pub fn fuse_cross_variant_candidates(
+    variant_fused_candidates: Vec<Vec<FusedCandidate>>,
+    graph_candidates: Vec<Candidate>,
+    settings: &RetrievalSettings,
+) -> Result<Vec<FusedCandidate>, RetrievalError> {
+    let fused = fuse_variant_lists(variant_fused_candidates, settings)?;
+    apply_graph_list(fused, graph_candidates, settings)
+}
+
+/// Merges the graph chunk list into a fused list as a third RRF list (D-76).
+///
+/// Each graph candidate at 1-based rank `r` adds `graph_rrf_weight / (rrf_k + r)` to its chunk and
+/// a `Graph` provenance entry (variant 0). A chunk dense or BM25 already found keeps its first
+/// canonical copy and gains the contribution; a chunk only the graph found is appended with that
+/// contribution as its whole score. The list is de-duplicated and bounded by `candidate_limit`
+/// like every other source.
+///
+/// The result is re-sorted by score descending with a stable sort, so chunks that tie keep the
+/// order the earlier passes gave them (D-51) and graph-only chunks that tie follow them in graph
+/// rank order.
+fn apply_graph_list(
+    mut fused: Vec<FusedCandidate>,
+    graph_candidates: Vec<Candidate>,
+    settings: &RetrievalSettings,
+) -> Result<Vec<FusedCandidate>, RetrievalError> {
+    if settings.graph_rrf_weight == 0.0 || graph_candidates.is_empty() {
+        return Ok(fused);
+    }
+    let graph_candidates = deduplicate_source_candidates(graph_candidates)?;
+    let mut positions: HashMap<String, usize> =
+        HashMap::with_capacity(fused.len() + graph_candidates.len());
+    for (position, entry) in fused.iter().enumerate() {
+        positions.insert(entry.candidate.chunk_id.clone(), position);
+    }
+    for (index, candidate) in graph_candidates
+        .into_iter()
+        .take(settings.candidate_limit)
+        .enumerate()
+    {
+        let rank = index + 1;
+        let contribution = settings.graph_rrf_weight / (settings.rrf_k + rank as f64);
+        if !contribution.is_finite() {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::NonFiniteScore,
+                format!(
+                    "non-finite graph contribution for candidate {}",
+                    candidate.chunk_id
+                ),
+            ));
+        }
+        let provenance = VariantProvenance {
+            variant_index: 0,
+            source: VariantProvenanceSource::Graph,
+            rank,
+            score: candidate.score,
+            contribution,
+        };
+        if let Some(&position) = positions.get(&candidate.chunk_id) {
+            let entry = &mut fused[position];
+            entry.fused_score += contribution;
+            if !entry.fused_score.is_finite() {
+                return Err(RetrievalError::new(
+                    RetrievalErrorKind::NonFiniteScore,
+                    format!(
+                        "non-finite accumulator for candidate {}",
+                        entry.candidate.chunk_id
+                    ),
+                ));
+            }
+            entry.variant_provenance.push(provenance);
+        } else {
+            positions.insert(candidate.chunk_id.clone(), fused.len());
+            fused.push(FusedCandidate {
+                candidate,
+                fused_score: contribution,
+                vector_rank: None,
+                bm25_rank: None,
+                vector_score: None,
+                bm25_score: None,
+                variant_provenance: vec![provenance],
+            });
+        }
+    }
+    fused.sort_by(|left, right| right.fused_score.total_cmp(&left.fused_score));
+    Ok(fused)
+}
+
 /// Fuses per-variant fused candidate lists into a single ranked list using a second RRF merge pass.
 ///
 /// For a single variant, returns the established single-variant fused candidate scores, fields,
@@ -225,9 +332,8 @@ struct CrossVariantAccumulator {
 /// 2. Best (lowest) per-variant rank ascending
 /// 3. First outer variant index ascending
 /// 4. Candidate identity sort key (`(&candidate.document_id, candidate.chunk_index, &candidate.chunk_id)`) ascending.
-pub fn fuse_cross_variant_candidates(
+fn fuse_variant_lists(
     variant_fused_candidates: Vec<Vec<FusedCandidate>>,
-    _graph_candidates: Vec<Candidate>,
     settings: &RetrievalSettings,
 ) -> Result<Vec<FusedCandidate>, RetrievalError> {
     settings.validate()?;
@@ -509,6 +615,7 @@ fn add_source_candidate(
                 }
             }
         }
+        // The graph list is merged into the final fused list by `apply_graph_list`, never here.
         VariantProvenanceSource::Graph => {}
     }
     Ok(())

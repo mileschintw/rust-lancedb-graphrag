@@ -80,6 +80,10 @@ max_document_ids = 100
 max_content_types = 16
 vector_weight = 1.0
 bm25_weight = 1.0
+# D-76: weight of the graph chunk list in retrieval fusion (06.3.4.1-15). It equals vector_weight,
+# so a chunk the graph found counts like one dense hit; 0.0 ignores the graph list. This is not
+# graph_weight, the prompt-packing weight of graph facts (D-30).
+graph_rrf_weight = 1.0
 rrf_k = 60.0
 evidence_token_budget = 8192
 excerpt_max_chars = 512

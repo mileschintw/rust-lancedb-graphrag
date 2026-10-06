@@ -98,6 +98,11 @@ vector_weight = 1.0
 bm25_weight = 1.0
 # unit=unitless; range=finite 0.0..=16.0
 graph_weight = 1.0
+# D-76: weight of the graph chunk list in retrieval fusion (06.3.4.1-15). It equals vector_weight,
+# so a chunk the graph found counts like one dense hit; 0.0 ignores the graph list. This is not
+# graph_weight above, which is the prompt-packing weight of graph facts (D-30).
+# unit=unitless; range=finite 0.0..=16.0
+graph_rrf_weight = 1.0
 # unit=rank constant; range=integer 1.0..=1000000.0
 rrf_k = 60.0
 # unit=tokens; range=>0
