@@ -224,7 +224,11 @@ pub struct RetrievalSettings {
     pub max_content_types: usize,
     pub vector_weight: f64,
     pub bm25_weight: f64,
+    /// Weight of graph facts when the prompt is packed (D-30). Never an RRF weight.
     pub graph_weight: f64,
+    /// Weight of the graph chunk list in fusion: the list's contribution to a chunk is
+    /// `graph_rrf_weight / (rrf_k + rank)`. Distinct from [`Self::graph_weight`] (D-76).
+    pub graph_rrf_weight: f64,
     pub rrf_k: f64,
     pub bm25: Bm25Config,
 }
@@ -240,6 +244,7 @@ impl Default for RetrievalSettings {
             vector_weight: 1.0,
             bm25_weight: 1.0,
             graph_weight: 1.0,
+            graph_rrf_weight: 1.0,
             rrf_k: 60.0,
             bm25: Bm25Config::default(),
         }
@@ -322,6 +327,17 @@ impl RetrievalSettings {
             return Err(RetrievalError::new(
                 RetrievalErrorKind::InvalidSettings,
                 format!("graph_weight must be finite and between 0.0 and {MAX_SERVICE_RRF_WEIGHT}"),
+            ));
+        }
+        if !self.graph_rrf_weight.is_finite()
+            || self.graph_rrf_weight < 0.0
+            || self.graph_rrf_weight > MAX_SERVICE_RRF_WEIGHT
+        {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidSettings,
+                format!(
+                    "graph_rrf_weight must be finite and between 0.0 and {MAX_SERVICE_RRF_WEIGHT}"
+                ),
             ));
         }
         if !self.rrf_k.is_finite()

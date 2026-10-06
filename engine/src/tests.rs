@@ -69,6 +69,7 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.retrieval.vector_weight",
     "engine.retrieval.bm25_weight",
     "engine.retrieval.graph_weight",
+    "engine.retrieval.graph_rrf_weight",
     "engine.retrieval.rrf_k",
     "engine.retrieval.evidence_token_budget",
     "engine.retrieval.excerpt_max_chars",
@@ -132,6 +133,10 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     ),
     (
         "engine.retrieval.graph_weight",
+        "unit=unitless; range=finite 0.0..=16.0",
+    ),
+    (
+        "engine.retrieval.graph_rrf_weight",
         "unit=unitless; range=finite 0.0..=16.0",
     ),
     (
@@ -1204,6 +1209,7 @@ fn configured_settings(lancedb_path: &str) -> Settings {
                 vector_weight: 0.7,
                 bm25_weight: 0.3,
                 graph_weight: 1.0,
+                graph_rrf_weight: 0.6,
                 rrf_k: 17.0,
                 evidence_token_budget: 4096,
                 excerpt_max_chars: 23,
@@ -3379,6 +3385,7 @@ async fn configured_rag_settings_drive_service() {
                 vector_weight: 0.8,
                 bm25_weight: 0.2,
                 graph_weight: 1.0,
+                graph_rrf_weight: 1.0,
                 rrf_k: 30.0,
                 evidence_token_budget: 4096,
                 excerpt_max_chars: 128,
@@ -6984,6 +6991,7 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
                 vector_weight: 0.0,
                 bm25_weight: 1.0,
                 graph_weight,
+                graph_rrf_weight: 1.0,
                 rrf_k: 60.0,
                 // D-71 (06.3.4.1-08) raised the system policy's fixed token overhead by
                 // ~95 tokens (measured); widened from 382 by that same delta plus margin

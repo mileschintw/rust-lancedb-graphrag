@@ -32,6 +32,19 @@ pub fn default_weight() -> f64 {
 pub fn default_rrf_k() -> f64 {
     60.0
 }
+/// Weight of the graph chunk list in retrieval fusion: 1.0.
+///
+/// **Derivation.** Equal to `vector_weight` (1.0), so a chunk the graph found counts like one
+/// dense hit: the list's contribution to a chunk is `graph_rrf_weight / (rrf_k + rank)`, the same
+/// form as a dense or BM25 hit. It is a tuning value, not a mode switch (D-78): 0.0 ignores the
+/// list, and the effect of the graph is measured by the paired graph-on and graph-off comparison.
+///
+/// **Effect of changing it.** Raising it lets graph-found chunks outrank chunks found by dense and
+/// BM25; lowering it leaves the graph chunks behind them. It is not `graph_weight`, which is the
+/// prompt-packing weight of graph facts (D-30) and never reaches fusion.
+pub fn default_graph_rrf_weight() -> f64 {
+    1.0
+}
 pub fn default_evidence_token_budget() -> usize {
     8192
 }
@@ -584,6 +597,8 @@ pub struct RetrievalConfigSettings {
     pub bm25_weight: f64,
     #[serde(default = "default_weight")]
     pub graph_weight: f64,
+    #[serde(default = "default_graph_rrf_weight")]
+    pub graph_rrf_weight: f64,
     #[serde(default = "default_rrf_k")]
     pub rrf_k: f64,
     #[serde(default = "default_evidence_token_budget")]
@@ -605,6 +620,7 @@ impl Default for RetrievalConfigSettings {
             vector_weight: 1.0,
             bm25_weight: 1.0,
             graph_weight: 1.0,
+            graph_rrf_weight: default_graph_rrf_weight(),
             rrf_k: 60.0,
             evidence_token_budget: 8192,
             excerpt_max_chars: 512,
@@ -624,6 +640,7 @@ impl RetrievalConfigSettings {
             vector_weight: self.vector_weight,
             bm25_weight: self.bm25_weight,
             graph_weight: self.graph_weight,
+            graph_rrf_weight: self.graph_rrf_weight,
             rrf_k: self.rrf_k,
             bm25: self.bm25.to_bm25_config(),
         }
@@ -1247,5 +1264,56 @@ mod tests {
         }
         EffectiveRagSettings::try_from_settings(&Settings::default())
             .expect("the defaults must pass validation");
+    }
+
+    /// D-66, D-76: the committed configuration files and the compiled-in default are one value of
+    /// the graph list's RRF weight, and it equals `vector_weight` in both files.
+    #[test]
+    fn graph_rrf_weight_agrees_with_both_config_files_and_the_default() {
+        assert_eq!(default_graph_rrf_weight(), 1.0);
+        for (file_name, raw) in [
+            ("config/config.toml", CONFIG_TOML),
+            ("config/config.example.toml", CONFIG_EXAMPLE_TOML),
+        ] {
+            assert_eq!(
+                file_number(raw, "retrieval", "graph_rrf_weight"),
+                default_graph_rrf_weight(),
+                "{file_name} engine.retrieval.graph_rrf_weight must equal the config.rs default"
+            );
+            assert_eq!(
+                file_number(raw, "retrieval", "graph_rrf_weight"),
+                file_number(raw, "retrieval", "vector_weight"),
+                "{file_name}: a graph-found chunk must count like one dense hit"
+            );
+        }
+    }
+
+    /// The fusion weight and the prompt-packing weight (D-30) are two settings: each reaches
+    /// its own field, and a bad fusion weight is refused at startup.
+    #[test]
+    fn graph_rrf_weight_is_a_separate_setting_from_the_prompt_packing_weight() {
+        let retrieval = RetrievalConfigSettings {
+            graph_weight: 3.0,
+            graph_rrf_weight: 0.25,
+            ..RetrievalConfigSettings::default()
+        };
+        let mapped = retrieval.to_retrieval_settings();
+        assert_eq!(mapped.graph_weight, 3.0);
+        assert_eq!(mapped.graph_rrf_weight, 0.25);
+
+        let mut settings = Settings::default();
+        settings.engine.retrieval = retrieval;
+        let effective = EffectiveRagSettings::try_from_settings(&settings)
+            .expect("a graph_rrf_weight inside 0.0..=16.0 must pass validation");
+        assert_eq!(effective.retrieval.graph_rrf_weight, 0.25);
+        assert_eq!(effective.retrieval.graph_weight, 3.0);
+
+        settings.engine.retrieval.graph_rrf_weight = -1.0;
+        let error = EffectiveRagSettings::try_from_settings(&settings)
+            .expect_err("a negative graph_rrf_weight must be rejected");
+        assert!(
+            error.contains("graph_rrf_weight"),
+            "the error must name graph_rrf_weight: {error}"
+        );
     }
 }

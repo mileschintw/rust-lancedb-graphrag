@@ -23,6 +23,8 @@ pub enum VariantProvenanceSource {
     Vector,
     #[serde(rename = "bm25")]
     Bm25,
+    #[serde(rename = "graph")]
+    Graph,
 }
 
 /// Provenance contribution entry for a variant/source candidate.
@@ -45,6 +47,13 @@ pub struct FusedCandidate {
     pub vector_score: Option<f64>,
     pub bm25_score: Option<f64>,
     pub variant_provenance: Vec<VariantProvenance>,
+}
+
+impl FusedCandidate {
+    /// Whether the graph list contributed to this candidate (D-76, D-81).
+    pub fn graph_boosted(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug)]
@@ -218,6 +227,7 @@ struct CrossVariantAccumulator {
 /// 4. Candidate identity sort key (`(&candidate.document_id, candidate.chunk_index, &candidate.chunk_id)`) ascending.
 pub fn fuse_cross_variant_candidates(
     variant_fused_candidates: Vec<Vec<FusedCandidate>>,
+    _graph_candidates: Vec<Candidate>,
     settings: &RetrievalSettings,
 ) -> Result<Vec<FusedCandidate>, RetrievalError> {
     settings.validate()?;
@@ -499,6 +509,7 @@ fn add_source_candidate(
                 }
             }
         }
+        VariantProvenanceSource::Graph => {}
     }
     Ok(())
 }

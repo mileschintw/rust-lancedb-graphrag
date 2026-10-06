@@ -325,7 +325,7 @@ impl RetrieveHybridNode {
         // 3. Second pass: cross-variant RRF fusion
         let cross_fuse_start = Instant::now();
         let fused_candidates =
-            match fuse_cross_variant_candidates(per_variant_fused, &self.settings) {
+            match fuse_cross_variant_candidates(per_variant_fused, Vec::new(), &self.settings) {
                 Ok(fused) => fused,
                 Err(err) => {
                     return Err(NodeError::new(

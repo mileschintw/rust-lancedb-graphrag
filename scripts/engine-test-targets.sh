@@ -196,6 +196,18 @@ fi
 #         the path it contradicted the readable text of the same fact; each arrow now follows its
 #         hop, at the same length, 592->593. `engine (bin)` stays 0;
 #         inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
+#   691 -- Phase 06.3.4.1 plan 15 Task 1: the graph chunk list as a third RRF list. The graph list is
+#         applied once to the cross-variant result (so its contribution does not scale with the
+#         variant count) with provenance source `graph` and the new `graph_rrf_weight` setting
+#         (default 1.0, separate from the D-30 prompt-packing `graph_weight`), with 11 fusion tests in
+#         `retrieval::tests` (graph-only entry, summed score with dense, reorder and tie order, graph
+#         rank order, zero weight, variant-count independence, dedupe and candidate limit, non-finite
+#         score, provenance serialisation, `graph_weight` never reaching fusion, weight validation),
+#         one graph-off pin against the output recorded before the change
+#         (`retrieval/testdata/graph_off_fusion.golden`) and 2 `config::tests` (the three-way
+#         agreement of `graph_rrf_weight`, its separation from `graph_weight`), 677->691. The lib
+#         count rises 593->607. `engine (bin)` stays 0; inspect_lancedb/reconcile_eval_store/
+#         config_startup unchanged (44/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -235,18 +247,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 677 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 677, got $TOTAL" >&2
+if [ "$TOTAL" -ne 691 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 691, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 593 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 593, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 607 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 607, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 593 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 593, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 607 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 607, got $LIB_COUNT" >&2
   exit 1
 fi
 

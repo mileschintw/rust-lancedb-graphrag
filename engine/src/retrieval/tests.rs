@@ -675,7 +675,7 @@ fn fusion_cross_variant_tracer() {
     let fused_v0 = fuse_candidates(vec![cand_vec], vec![cand_bm25_v0], &settings).unwrap();
     let fused_v1 = fuse_candidates(vec![], vec![cand_bm25_v1], &settings).unwrap();
 
-    let fused = fuse_cross_variant_candidates(vec![fused_v0, fused_v1], &settings).unwrap();
+    let fused = fuse_cross_variant_candidates(vec![fused_v0, fused_v1], vec![], &settings).unwrap();
 
     assert_eq!(fused.len(), 2);
     assert_eq!(fused[0].candidate.chunk_id, "chunk-1");
@@ -775,7 +775,7 @@ fn fusion_variant_provenance_source_is_typed() {
         fuse_candidates(vec![vector_candidate], vec![bm25_variant_zero], &settings).unwrap();
     let fused_v1 = fuse_candidates(vec![], vec![bm25_variant_one], &settings).unwrap();
 
-    let fused = fuse_cross_variant_candidates(vec![fused_v0, fused_v1], &settings).unwrap();
+    let fused = fuse_cross_variant_candidates(vec![fused_v0, fused_v1], vec![], &settings).unwrap();
 
     assert_eq!(fused.len(), 1);
     let shared = &fused[0];
@@ -830,7 +830,7 @@ fn variant_zero_one_variant_matches_existing_scores() {
         fuse_candidates(vec![cand_vec.clone()], vec![cand_bm25.clone()], &settings).unwrap();
 
     let fused_variant =
-        fuse_cross_variant_candidates(vec![fused_single.clone()], &settings).unwrap();
+        fuse_cross_variant_candidates(vec![fused_single.clone()], vec![], &settings).unwrap();
 
     assert_eq!(fused_single.len(), fused_variant.len());
     for (s, v) in fused_single.iter().zip(fused_variant.iter()) {
@@ -883,7 +883,7 @@ fn cross_variant_provenance_is_bounded() {
         );
     }
 
-    let fused = fuse_cross_variant_candidates(per_variant_fused, &settings).unwrap();
+    let fused = fuse_cross_variant_candidates(per_variant_fused, vec![], &settings).unwrap();
 
     let chunk1_fused = fused
         .iter()
@@ -950,7 +950,7 @@ fn cross_variant_rrf_tie_order_is_deterministic() {
 
     for _ in 0..5 {
         let fused =
-            fuse_cross_variant_candidates(vec![fused_v0.clone(), fused_v1.clone()], &settings)
+            fuse_cross_variant_candidates(vec![fused_v0.clone(), fused_v1.clone()], vec![], &settings)
                 .unwrap();
         assert_eq!(fused.len(), 2);
         assert_eq!(fused[0].candidate.chunk_id, "chunk-1");
@@ -1299,4 +1299,472 @@ async fn retrieve_empty_candidates_leaves_snapshot_some_with_empty_retrieved_chu
     assert!(ctx.snapshot.is_some(), "ctx.snapshot must be Some even on zero evidence");
     let snapshot = ctx.snapshot.as_ref().unwrap();
     assert!(snapshot.retrieved_chunks.is_empty(), "retrieved_chunks must be empty");
+}
+
+// ---------------------------------------------------------------------------
+// Graph-off invariance pins (06.3.4.1-15, D-76 and D-81 comparability)
+//
+// `testdata/graph_off_fusion.golden` was recorded by running the fusion code as it stood before
+// the graph list existed (HEAD 8899b6b5), over the scenarios below. The expected text is never
+// rebuilt from the code under test.
+// ---------------------------------------------------------------------------
+
+const PIN_DOC_ONE: &str = "00000000-0000-4000-8000-0000000000a1";
+const PIN_DOC_TWO: &str = "00000000-0000-4000-8000-0000000000a2";
+const PIN_DOC_THREE: &str = "00000000-0000-4000-8000-0000000000a3";
+
+/// A candidate whose content names the path that produced it, so the pin shows which copy of a
+/// chunk found by two paths becomes the canonical one.
+fn pin_candidate(chunk: &str, source: &str, score: f64) -> Candidate {
+    let (document_id, chunk_index) = match chunk {
+        "c1" | "c2" | "c3" => (PIN_DOC_ONE, chunk[1..].parse::<i32>().unwrap()),
+        "c4" | "c5" | "c6" => (PIN_DOC_TWO, chunk[1..].parse::<i32>().unwrap()),
+        _ => (PIN_DOC_THREE, chunk[1..].parse::<i32>().unwrap()),
+    };
+    let mut pinned = candidate(document_id, chunk, &format!("{source} {chunk}"));
+    pinned.chunk_index = chunk_index;
+    pinned.score = score;
+    pinned
+}
+
+fn pin_list(source: &str, chunks: &[(&str, f64)]) -> Vec<Candidate> {
+    chunks
+        .iter()
+        .map(|(chunk, score)| pin_candidate(chunk, source, *score))
+        .collect()
+}
+
+fn pin_settings() -> RetrievalSettings {
+    RetrievalSettings {
+        candidate_limit: 12,
+        final_limit: 8,
+        vector_weight: 1.0,
+        bm25_weight: 0.75,
+        rrf_k: 60.0,
+        ..RetrievalSettings::default()
+    }
+}
+
+/// Every field of every fused candidate, with each float as its exact bit pattern.
+fn render_fused(list: &[super::FusedCandidate]) -> String {
+    list.iter()
+        .map(|fused| {
+            let provenance = fused
+                .variant_provenance
+                .iter()
+                .map(|entry| {
+                    format!(
+                        "{}:{}:{}:{:016x}:{:016x}",
+                        entry.variant_index,
+                        serde_json::to_string(&entry.source).unwrap(),
+                        entry.rank,
+                        entry.score.to_bits(),
+                        entry.contribution.to_bits()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "{}|{}|{:016x}|{:?}|{:?}|{:?}|{:?}|{}",
+                fused.candidate.chunk_id,
+                fused.candidate.content,
+                fused.fused_score.to_bits(),
+                fused.vector_rank,
+                fused.bm25_rank,
+                fused.vector_score.map(f64::to_bits),
+                fused.bm25_score.map(f64::to_bits),
+                provenance
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The cross-variant fusion call with no graph list, so the pins read the same before and after
+/// the graph list gained its parameter.
+fn cross_without_graph(
+    lists: Vec<Vec<super::FusedCandidate>>,
+    settings: &RetrievalSettings,
+) -> Vec<super::FusedCandidate> {
+    fuse_cross_variant_candidates(lists, vec![], settings).unwrap()
+}
+
+/// The graph-off scenarios: one variant, three variants, exact ties, and empty inputs.
+fn graph_off_pin_scenarios() -> Vec<(&'static str, String)> {
+    let settings = pin_settings();
+    let dense = pin_list("dense", &[("c1", 0.9), ("c2", 0.8), ("c3", 0.7), ("c4", 0.6)]);
+    let single_bm25 = pin_list(
+        "bm25",
+        &[("c3", 12.0), ("c1", 9.5), ("c5", 4.0), ("c6", 1.5)],
+    );
+    let single = fuse_candidates(dense.clone(), single_bm25, &settings).unwrap();
+    let single_cross = cross_without_graph(vec![single.clone()], &settings);
+
+    let v0 = fuse_candidates(
+        dense,
+        pin_list("bm25", &[("c2", 8.0), ("c1", 6.0), ("c7", 2.0)]),
+        &settings,
+    )
+    .unwrap();
+    let v1 = fuse_candidates(
+        vec![],
+        pin_list("bm25", &[("c1", 7.0), ("c5", 5.0), ("c8", 3.0)]),
+        &settings,
+    )
+    .unwrap();
+    let v2 = fuse_candidates(
+        vec![],
+        pin_list("bm25", &[("c5", 9.0), ("c2", 4.0), ("c9", 1.0)]),
+        &settings,
+    )
+    .unwrap();
+    let three = cross_without_graph(vec![v0, v1, v2], &settings);
+
+    let tie_a = fuse_candidates(
+        vec![],
+        pin_list("bm25", &[("c4", 3.0), ("c5", 2.0)]),
+        &settings,
+    )
+    .unwrap();
+    let tie_b = fuse_candidates(
+        vec![],
+        pin_list("bm25", &[("c5", 3.0), ("c4", 2.0)]),
+        &settings,
+    )
+    .unwrap();
+    let tied = cross_without_graph(vec![tie_a, tie_b], &settings);
+
+    vec![
+        ("single_variant_fused", render_fused(&single)),
+        ("single_variant_cross", render_fused(&single_cross)),
+        ("three_variants_cross", render_fused(&three)),
+        ("two_variants_exact_ties_cross", render_fused(&tied)),
+        ("no_variants", render_fused(&cross_without_graph(vec![], &settings))),
+        (
+            "one_empty_variant",
+            render_fused(&cross_without_graph(vec![vec![]], &settings)),
+        ),
+        (
+            "two_empty_variants",
+            render_fused(&cross_without_graph(vec![vec![], vec![]], &settings)),
+        ),
+    ]
+}
+
+#[test]
+fn graph_off_fusion_is_byte_identical_to_the_recorded_pre_change_output() {
+    let golden = include_str!("testdata/graph_off_fusion.golden").replace("\r\n", "\n");
+    let mut current = String::new();
+    for (name, rendered) in graph_off_pin_scenarios() {
+        current.push_str(&format!("== {name} ==\n{rendered}\n"));
+    }
+    assert_eq!(
+        current, golden,
+        "graph-off fusion must match the output recorded before the graph list existed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The graph chunk list as a third RRF list (06.3.4.1-15, D-76)
+// ---------------------------------------------------------------------------
+
+/// Chunks the graph offers, in graph rank order. A graph candidate has no source score of its own.
+fn graph_list(chunks: &[&str]) -> Vec<Candidate> {
+    chunks
+        .iter()
+        .map(|chunk| pin_candidate(chunk, "graph", 0.0))
+        .collect()
+}
+
+fn with_graph_rrf_weight(weight: f64) -> RetrievalSettings {
+    RetrievalSettings {
+        graph_rrf_weight: weight,
+        ..pin_settings()
+    }
+}
+
+fn find<'a>(list: &'a [super::FusedCandidate], chunk_id: &str) -> &'a super::FusedCandidate {
+    list.iter()
+        .find(|fused| fused.candidate.chunk_id == chunk_id)
+        .unwrap_or_else(|| panic!("{chunk_id} must be in the fused list"))
+}
+
+/// One dense list and one BM25 list for variant zero, and a BM25-only list for each extra variant.
+fn variant_lists(
+    extra_variants: usize,
+    settings: &RetrievalSettings,
+) -> Vec<Vec<super::FusedCandidate>> {
+    let variant_zero = fuse_candidates(
+        pin_list("dense", &[("c1", 0.9), ("c2", 0.8)]),
+        pin_list("bm25", &[("c2", 5.0), ("c3", 4.0)]),
+        settings,
+    )
+    .unwrap();
+    let mut lists = vec![variant_zero];
+    for extra in 0..extra_variants {
+        let bm25: &[(&str, f64)] = if extra == 0 {
+            &[("c3", 6.0), ("c4", 5.0)]
+        } else {
+            &[("c4", 7.0), ("c5", 6.0)]
+        };
+        lists.push(fuse_candidates(vec![], pin_list("bm25", bm25), settings).unwrap());
+    }
+    lists
+}
+
+fn chunk_order(list: &[super::FusedCandidate]) -> Vec<&str> {
+    list.iter()
+        .map(|fused| fused.candidate.chunk_id.as_str())
+        .collect()
+}
+
+#[test]
+fn a_graph_only_candidate_enters_with_graph_provenance_and_the_graph_weight() {
+    let settings = with_graph_rrf_weight(0.5);
+    let fused = fuse_cross_variant_candidates(
+        variant_lists(0, &settings),
+        graph_list(&["c7", "c8"]),
+        &settings,
+    )
+    .unwrap();
+
+    for (chunk, rank) in [("c7", 1_usize), ("c8", 2)] {
+        let entry = find(&fused, chunk);
+        let contribution = 0.5 / (60.0 + rank as f64);
+        assert_eq!(entry.fused_score, contribution);
+        assert_eq!(
+            entry.variant_provenance,
+            vec![super::VariantProvenance {
+                variant_index: 0,
+                source: VariantProvenanceSource::Graph,
+                rank,
+                score: 0.0,
+                contribution,
+            }]
+        );
+        assert_eq!(entry.vector_rank, None);
+        assert_eq!(entry.bm25_rank, None);
+        assert!(entry.graph_boosted());
+    }
+    assert!(!find(&fused, "c1").graph_boosted());
+}
+
+#[test]
+fn a_graph_candidate_also_found_by_dense_gets_the_summed_score_and_both_provenances() {
+    let settings = with_graph_rrf_weight(0.5);
+    let fused = fuse_cross_variant_candidates(
+        variant_lists(0, &settings),
+        graph_list(&["c1"]),
+        &settings,
+    )
+    .unwrap();
+
+    let entry = find(&fused, "c1");
+    assert_eq!(entry.fused_score, 1.0 / 61.0 + 0.5 / 61.0);
+    let sources: Vec<_> = entry.variant_provenance.iter().map(|p| p.source).collect();
+    assert_eq!(
+        sources,
+        vec![
+            VariantProvenanceSource::Vector,
+            VariantProvenanceSource::Graph
+        ]
+    );
+    assert_eq!(entry.vector_rank, Some(1));
+    assert_eq!(
+        entry.candidate.content, "dense c1",
+        "the copy from the first path stays canonical"
+    );
+    assert!(entry.graph_boosted());
+}
+
+#[test]
+fn a_graph_boost_can_move_a_chunk_ahead_and_a_tie_keeps_the_incoming_order() {
+    let settings = with_graph_rrf_weight(1.0);
+    // Dense alone: c1 (1/61) then c2 (1/62). The graph also found c2, which lifts it above c1.
+    let boosted = fuse_cross_variant_candidates(
+        vec![fuse_candidates(
+            pin_list("dense", &[("c1", 0.9), ("c2", 0.8)]),
+            vec![],
+            &settings,
+        )
+        .unwrap()],
+        graph_list(&["c2"]),
+        &settings,
+    )
+    .unwrap();
+    assert_eq!(chunk_order(&boosted), vec!["c2", "c1"]);
+
+    // The graph-only c7 at rank 1 scores exactly what c1 scores at dense rank 1: the existing
+    // chunk keeps its place and the graph-only chunk follows it.
+    let tied = fuse_cross_variant_candidates(
+        vec![fuse_candidates(pin_list("dense", &[("c1", 0.9)]), vec![], &settings).unwrap()],
+        graph_list(&["c7"]),
+        &settings,
+    )
+    .unwrap();
+    assert_eq!(chunk_order(&tied), vec!["c1", "c7"]);
+}
+
+#[test]
+fn graph_only_candidates_follow_the_graph_rank_order() {
+    let settings = with_graph_rrf_weight(1.0);
+    let fused =
+        fuse_cross_variant_candidates(vec![], graph_list(&["c9", "c7", "c8"]), &settings).unwrap();
+    assert_eq!(chunk_order(&fused), vec!["c9", "c7", "c8"]);
+}
+
+#[test]
+fn a_zero_graph_weight_ignores_the_graph_list() {
+    let off = with_graph_rrf_weight(0.0);
+    let ignored =
+        fuse_cross_variant_candidates(variant_lists(2, &off), graph_list(&["c1", "c7"]), &off)
+            .unwrap();
+    let without = fuse_cross_variant_candidates(variant_lists(2, &off), vec![], &off).unwrap();
+    assert_eq!(render_fused(&ignored), render_fused(&without));
+    assert!(ignored.iter().all(|fused| !fused.graph_boosted()));
+}
+
+#[test]
+fn the_graph_contribution_does_not_scale_with_the_variant_count() {
+    let settings = with_graph_rrf_weight(0.5);
+    for extra_variants in [0_usize, 2] {
+        let without = fuse_cross_variant_candidates(
+            variant_lists(extra_variants, &settings),
+            vec![],
+            &settings,
+        )
+        .unwrap();
+        let with = fuse_cross_variant_candidates(
+            variant_lists(extra_variants, &settings),
+            graph_list(&["c7", "c2"]),
+            &settings,
+        )
+        .unwrap();
+
+        // c7 is graph-only, so its whole score is the graph contribution at rank 1.
+        assert_eq!(
+            find(&with, "c7").fused_score,
+            0.5 / 61.0,
+            "{extra_variants} extra variants"
+        );
+        // c2 is found by dense and BM25; the graph adds the rank 2 contribution once.
+        let gain = find(&with, "c2").fused_score - find(&without, "c2").fused_score;
+        assert!(
+            (gain - 0.5 / 62.0).abs() < 1e-15,
+            "{extra_variants} extra variants: gain {gain}"
+        );
+        for chunk in ["c7", "c2"] {
+            let graph_entries = find(&with, chunk)
+                .variant_provenance
+                .iter()
+                .filter(|entry| entry.source == VariantProvenanceSource::Graph)
+                .count();
+            assert_eq!(
+                graph_entries, 1,
+                "{chunk} with {extra_variants} extra variants"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_graph_list_is_deduplicated_and_bounded_by_the_candidate_limit() {
+    let settings = RetrievalSettings {
+        candidate_limit: 3,
+        final_limit: 2,
+        ..with_graph_rrf_weight(1.0)
+    };
+    let fused = fuse_cross_variant_candidates(
+        vec![],
+        graph_list(&["c7", "c7", "c8", "c9", "c6"]),
+        &settings,
+    )
+    .unwrap();
+    assert_eq!(
+        chunk_order(&fused),
+        vec!["c7", "c8", "c9"],
+        "the duplicate is dropped before ranking and only candidate_limit entries are used"
+    );
+}
+
+#[test]
+fn a_non_finite_graph_score_is_rejected_unless_the_list_is_ignored() {
+    let mut bad = graph_list(&["c7"]);
+    bad[0].score = f64::NAN;
+    let settings = with_graph_rrf_weight(1.0);
+    let error = fuse_cross_variant_candidates(vec![], bad.clone(), &settings).unwrap_err();
+    assert_eq!(error.kind, RetrievalErrorKind::NonFiniteScore);
+
+    let off = with_graph_rrf_weight(0.0);
+    assert!(fuse_cross_variant_candidates(vec![], bad, &off)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn graph_provenance_serialises_as_graph_and_a_dense_hit_is_not_a_boost() {
+    assert_eq!(
+        serde_json::to_string(&VariantProvenanceSource::Graph).unwrap(),
+        "\"graph\""
+    );
+    let settings = with_graph_rrf_weight(1.0);
+    let plain = fuse_candidates(pin_list("dense", &[("c1", 0.9)]), vec![], &settings).unwrap();
+    assert!(!plain[0].graph_boosted(), "a dense hit is not graph-boosted");
+}
+
+#[test]
+fn the_prompt_packing_graph_weight_never_reaches_fusion() {
+    let quiet = RetrievalSettings {
+        graph_weight: 0.0,
+        ..with_graph_rrf_weight(0.5)
+    };
+    let loud = RetrievalSettings {
+        graph_weight: 9.0,
+        ..with_graph_rrf_weight(0.5)
+    };
+    let fuse = |settings: &RetrievalSettings| {
+        render_fused(
+            &fuse_cross_variant_candidates(
+                variant_lists(1, settings),
+                graph_list(&["c2", "c7"]),
+                settings,
+            )
+            .unwrap(),
+        )
+    };
+    assert_eq!(fuse(&quiet), fuse(&loud));
+    assert!(
+        fuse(&quiet).contains("\"graph\""),
+        "the graph list was applied"
+    );
+}
+
+#[test]
+fn graph_rrf_weight_is_validated_like_the_other_weights_and_is_not_part_of_the_nonzero_rule() {
+    for invalid in [
+        f64::NAN,
+        f64::INFINITY,
+        -0.1,
+        super::MAX_SERVICE_RRF_WEIGHT + 1.0,
+    ] {
+        let error = with_graph_rrf_weight(invalid).validate().unwrap_err();
+        assert_eq!(error.kind, RetrievalErrorKind::InvalidSettings);
+        assert!(
+            error.message().contains("graph_rrf_weight"),
+            "{}",
+            error.message()
+        );
+    }
+    with_graph_rrf_weight(0.0)
+        .validate()
+        .expect("0.0 turns the graph list off and is valid");
+    let only_graph = RetrievalSettings {
+        vector_weight: 0.0,
+        bm25_weight: 0.0,
+        ..with_graph_rrf_weight(1.0)
+    };
+    assert!(
+        only_graph.validate().is_err(),
+        "a graph weight cannot stand in for the dense and BM25 weights"
+    );
 }
