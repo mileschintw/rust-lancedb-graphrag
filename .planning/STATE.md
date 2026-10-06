@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 13
+current_plan: 14
 status: executing
-stopped_at: Gap plans 29 and 30 complete; drive 1b PASS (SC-3 0.578), D-84 pass-proceed. The user stopped the run before plan 13; next run starts OI-01 at 06.3.4.1-13 (probe cap $0.05 authorised)
-last_updated: "2026-10-06T02:58:12.000Z"
+stopped_at: Plan 06.3.4.1-13 complete (OI-01 library, offline probe, caps 33/8 confirmed, boost decision paths-only); plan 14 is next
+last_updated: "2026-10-06T04:03:52.784Z"
 last_activity: 2026-10-05
-last_activity_desc: "Started the OI-01 run at 06.3.4.1-13 (/gsd-execute-phase 06.3.4.1, plans 13-20)"
-state_head: b6c6de34444edd3ae1860a7dd31f91f3f370ba93
+last_activity_desc: "Completed 06.3.4.1-13 (OI-01 library, offline probe, caps 33/8 confirmed, boost decision paths-only); plan 14 is next"
+state_head: 52b8f80e9e628e848fcee83e250ebf2b6b09060e
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 180
+  completed_plans: 181
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,7 +22,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 13
+Current Plan: 14
 Total Plans in Phase: 30
 
 ## Current Status
@@ -391,6 +391,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P11 | 2 days elapsed (completed through gap plans 21-28) | 3 tasks | 6 files |
 | Phase 06.3.4.1 P29 | 45 min | 5 tasks | 18 files |
 | Phase 06.3.4.1 P30 | 65 min | 4 tasks | 64 files |
+| Phase 06.3.4.1 P13 | 64 min | 3 tasks | 13 files |
 
 ## Decisions
 
@@ -477,12 +478,14 @@ Total Plans in Phase: 30
 - [Phase 06.3.4.1]: 06.3.4.1-27 re-summarized complete and 06.3.4.1-11 closed by 06.3.4.1-28 (status line only; halt record kept) — Summary template #2830: a resolved halt is re-summarized complete, otherwise plan 12 stays blocked
 - [Phase 06.3.4.1]: 06.3.4.1-29 D-95: the engine renders Answer: <final_answer> as the last answer line at WorkflowContext::update_from_model_output, after validation; a trailing model Answer segment is stripped only when it has no bracket and leaves prose, and a field that does not fit within MAX_ANSWER_CHARS renders no line — Rendering after validation on every path keeps generate.rs, metrics.py and thresholds.py untouched, so drive 1's reading stands (D-87a) and D-69 cannot move
 - [Phase 06.3.4.1]: 06.3.4.1-29 D-96: every OpenRouter chat payload carries provider {require_parameters: true} (hard-coded, no config key), and each provider response logs one INFO generation_served event keyed by correlation_id — Routes only to endpoints honouring the strict-schema parameters and lets drive 1b map who served each record; a missing or non-string id, model or provider never fails a generation
+- [Phase 06.3.4.1]: 06.3.4.1-13 Task 3: paths-only. A question with seeds but no seed-to-seed path gets no graph chunk candidates; production default, no flag (D-78), reported per D-49 if negative. User reply: paths-only (2026-10-05). — Chosen by the user after the orchestrator's offline analysis: on the 30 G questions with no path the seed-chunk fallback mostly adds non-gold chunks (hub and publisher seeds), and paths-only matches D-76's literal wording. Enforced in plans 14 and 15.
+- [Phase 06.3.4.1]: 06.3.4.1-13 Task 3: DEGREE_CAP = 33 (p99 degree) and MAX_PATH_FACTS = 8 (p95 = 69 tokens/fact) confirmed by the user. User reply: Confirm both (2026-10-05). — MAX_PATH_FACTS = min(16, floor(0.10 x (8192 - 2048) / 69)) = 8; both are M-DOCUMENTED-MAGIC constants in engine/src/graph/paths.rs.
 
 ## Session
 
-**Last session:** 2026-10-01T22:55:08.438Z
+**Last session:** 2026-10-06T04:03:51.632Z
 **Last activity:** 2026-10-05 - Started the OI-01 run at 06.3.4.1-13
-**Stopped at:** Gap plans 29 and 30 complete; drive 1b PASS (SC-3 0.578), D-84 pass-proceed. The user stopped the run before plan 13; next run starts OI-01 at 06.3.4.1-13 (probe cap $0.05 authorised)
+**Stopped at:** Plan 06.3.4.1-13 complete (OI-01 library, offline probe, caps 33/8 confirmed, boost decision paths-only); plan 14 is next
 **Resume file:** None
 
 ## Accumulated Context

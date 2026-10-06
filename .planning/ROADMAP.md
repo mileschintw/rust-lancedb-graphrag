@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 22/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
+**Plans:** 23/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
 
 Plans:
 
@@ -995,7 +995,7 @@ Plans:
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
-- [ ] 06.3.4.1-13-PLAN.md — Build OI-01's seeding and path search as library code, prove it end to end on the real reconciled graph with an offline probe (store → mention seeds → seed-to-seed paths →…
+- [x] 06.3.4.1-13-PLAN.md — Build OI-01's seeding and path search as library code, prove it end to end on the real reconciled graph with an offline probe (store → mention seeds → seed-to-seed paths →…
 
 **Wave 15** *(blocked on Wave 14 completion)*
 
