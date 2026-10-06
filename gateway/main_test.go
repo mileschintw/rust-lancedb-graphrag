@@ -2649,7 +2649,10 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	chatCalls, metadataCalls, embeddingCalls := state.chatCalls, state.metadataCalls, state.embeddingCalls
 	chatEvidence, chatModel, usageReturned, strictChat := state.chatEvidence, state.chatModel, state.chatUsageReturned, state.strictChatObserved
 	state.mu.Unlock()
-	if embeddingCalls != 1 || metadataCalls != 1 || chatCalls != 1 || chatModel != "openai/gpt-4o-mini" || !usageReturned || !strictChat {
+	// Two embedding calls: the query embedding that retrieval reads, and the one batched embedding of
+	// the question's one mention that no entity name matched (06.3.4.1-14, D-75). The graph facts
+	// asserted below come from that mention's vector match, joined by a seed-to-seed path.
+	if embeddingCalls != 2 || metadataCalls != 1 || chatCalls != 1 || chatModel != "openai/gpt-4o-mini" || !usageReturned || !strictChat {
 		t.Fatalf("mock call contract = embeddings:%d metadata:%d chat:%d model:%q usage:%v strict:%v", embeddingCalls, metadataCalls, chatCalls, chatModel, usageReturned, strictChat)
 	}
 	if !strings.Contains(chatEvidence, "DENSE_FIXTURE_MARKER") ||

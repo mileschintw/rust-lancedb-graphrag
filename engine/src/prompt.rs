@@ -498,8 +498,11 @@ pub async fn pack_evidence_and_graph_prompt(
             }
             PackCandidate::Graph(fact_block) => {
                 let fact = &fact_block.fact;
+                // A path fact carries its readable text with the direction of every hop, which a
+                // chain of relation names cannot show. A fact with no such text renders as the
+                // plain triple, exactly as before.
                 let rendered_fact =
-                    crate::graph::context_strategy::ContextAssemblyStrategy::SourceChunks
+                    crate::graph::context_strategy::ContextAssemblyStrategy::PrecomputedSemantics
                         .assemble(fact);
                 let fact_str = format!(
                     "<GRAPH_FACT entity_a=\"{}\" relation=\"{}\" entity_b=\"{}\" score=\"{:.4}\">\n{}\n</GRAPH_FACT>\n\n",

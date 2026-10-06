@@ -227,15 +227,19 @@ impl Default for GraphSettings {
 impl GraphSettings {
     /// The seed-matching settings these graph settings select (D-75, D-77).
     pub fn seed_settings(&self) -> graph::seeding::SeedSettings {
-        graph::seeding::SeedSettings::default()
+        graph::seeding::SeedSettings {
+            max_seeds: self.max_seeds,
+            mention_vector_top_k: self.mention_vector_top_k,
+            seed_match_min_score: self.seed_match_min_score,
+        }
     }
 
     /// The path-search settings these graph settings select (D-76, D-77).
     pub fn path_settings(&self) -> graph::paths::PathSettings {
         graph::paths::PathSettings {
-            degree_cap: graph::paths::DEGREE_CAP,
-            max_path_facts: graph::paths::MAX_PATH_FACTS,
-            max_graph_chunk_candidates: 8,
+            degree_cap: self.degree_cap,
+            max_path_facts: self.max_path_facts,
+            max_graph_chunk_candidates: self.max_graph_chunk_candidates,
         }
     }
 }

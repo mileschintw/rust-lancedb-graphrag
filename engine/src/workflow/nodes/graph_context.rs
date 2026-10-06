@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort},
     notice,
-    ports::GraphQueryPort,
+    ports::{GraphQueryOutput, GraphQueryPort},
     WorkflowContext,
 };
 use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
@@ -125,7 +125,23 @@ impl Node for ExtractGraphContextNode {
 
                 match graph_res {
                     Ok(output) => {
-                        let facts = output.facts;
+                        let GraphQueryOutput {
+                            facts,
+                            node_count,
+                            edge_count,
+                            seed_count,
+                            path_found,
+                            degree_capped_count,
+                            seed_document_ids,
+                            chunk_candidates,
+                        } = output;
+                        // D-79: recorded on every completed query, so seeds that found no path
+                        // are visible. A graph-off, failed or timed-out query never gets here.
+                        ctx.graph_seed_count = seed_count;
+                        ctx.graph_path_found = path_found;
+                        ctx.graph_degree_capped_count = degree_capped_count;
+                        ctx.graph_seed_document_ids = seed_document_ids;
+                        ctx.graph_chunk_candidates = chunk_candidates;
                         if facts.is_empty() {
                             ctx.graph_context = String::new();
                             ctx.graph_facts = Vec::new();
@@ -141,22 +157,20 @@ impl Node for ExtractGraphContextNode {
                                 crate::telemetry::metrics::KIND_UNAVAILABLE,
                             );
                         } else {
-                            let mut unique_nodes = std::collections::HashSet::new();
-                            for f in &facts {
-                                unique_nodes.insert(f.fact.entity_a_name());
-                                unique_nodes.insert(f.fact.entity_b_name());
-                            }
-                            ctx.graph_node_count = unique_nodes.len() as u32;
-                            ctx.graph_edge_count = facts.len() as u32;
+                            ctx.graph_node_count = node_count;
+                            ctx.graph_edge_count = edge_count;
+                            // A path fact carries its readable text with the direction of every
+                            // hop; a plain triple falls back to the entity -- relation -- entity line.
                             ctx.graph_context = facts
                                 .iter()
-                                .map(|f| {
-                                    format!(
+                                .map(|f| match f.fact.edge_summary() {
+                                    Some(path) => path.to_string(),
+                                    None => format!(
                                         "{} -- {} -- {}",
                                         f.fact.entity_a_name(),
                                         f.fact.relation_type(),
                                         f.fact.entity_b_name()
-                                    )
+                                    ),
                                 })
                                 .collect::<Vec<_>>()
                                 .join("\n");

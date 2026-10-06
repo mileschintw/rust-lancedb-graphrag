@@ -882,7 +882,7 @@ struct GraphSeedsSummary {
 /// fact (`prompt.rs`, the `PackCandidate::Graph` arm), counted with the same tokenizer. The
 /// section header is counted once per prompt there and is not part of the per-fact figure.
 fn graph_fact_block_tokens(fact: &GraphFact) -> u64 {
-    let rendered = ContextAssemblyStrategy::SourceChunks.assemble(fact);
+    let rendered = ContextAssemblyStrategy::PrecomputedSemantics.assemble(fact);
     let block = format!(
         "<GRAPH_FACT entity_a=\"{}\" relation=\"{}\" entity_b=\"{}\" score=\"{:.4}\">\n{}\n</GRAPH_FACT>\n\n",
         fact.entity_a_name(),

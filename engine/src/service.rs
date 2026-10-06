@@ -323,6 +323,11 @@ pub struct GraphAugmentationReport {
 }
 
 /// Augments a query with the seed-to-seed paths between the entities its question mentions.
+///
+/// The question text yields mentions, the mentions are matched to seed entities by name and then
+/// by name vector (D-75), and only the paths that join two seeds become facts (D-76). A seed's own
+/// neighbourhood is never injected. `graph_index` is the index of the snapshot the query was
+/// admitted under. Every failure is an `AttemptedAndFailed`; nothing here panics.
 pub async fn attempt_graph_augmentation(
     database: &DatabaseManager,
     graph_index: &graph::index::GraphIndex,
@@ -330,14 +335,18 @@ pub async fn attempt_graph_augmentation(
     embedder: &Arc<dyn EmbeddingProvider>,
     settings: &GraphSettings,
 ) -> (GraphAugmentationOutcome, GraphAugmentationReport) {
-    let _ = (database, graph_index, question, embedder, settings);
-    (
-        GraphAugmentationOutcome::NoMatchFound,
-        GraphAugmentationReport::default(),
-    )
+    let search = graph::seeding::LanceMentionVectorSearch {
+        database: database.clone(),
+        embedder: Arc::clone(embedder),
+    };
+    attempt_graph_augmentation_with_search(database, graph_index, question, &search, settings).await
 }
 
 /// [`attempt_graph_augmentation`] with the mention vector search supplied by the caller.
+///
+/// An index with no entities, and a question with no mention, return `NoMatchFound` before any
+/// embedding call or store read. Seeds that no path joins are a success with no facts, no chunk
+/// candidates (decision `paths-only`) and the seed count recorded.
 pub async fn attempt_graph_augmentation_with_search(
     database: &DatabaseManager,
     graph_index: &graph::index::GraphIndex,
@@ -345,10 +354,75 @@ pub async fn attempt_graph_augmentation_with_search(
     search: &dyn graph::seeding::MentionVectorSearch,
     settings: &GraphSettings,
 ) -> (GraphAugmentationOutcome, GraphAugmentationReport) {
-    let _ = (database, graph_index, question, search, settings);
+    let no_match = || {
+        (
+            GraphAugmentationOutcome::NoMatchFound,
+            GraphAugmentationReport::default(),
+        )
+    };
+    let failed = |reason: String| {
+        (
+            GraphAugmentationOutcome::AttemptedAndFailed { reason },
+            GraphAugmentationReport::default(),
+        )
+    };
+
+    if graph_index.entity_count() == 0 {
+        return no_match();
+    }
+    let mentions = graph::seeding::extract_mentions(question);
+    if mentions.is_empty() {
+        return no_match();
+    }
+    let seeds = match graph::seeding::match_seeds(
+        graph_index,
+        &mentions,
+        search,
+        &settings.seed_settings(),
+    )
+    .await
+    {
+        Ok(seeds) => seeds,
+        Err(error) => return failed(format!("seed matching failed: {error}")),
+    };
+    if seeds.is_empty() {
+        return no_match();
+    }
+    let paths = match graph::paths::find_seed_paths(
+        database,
+        graph_index,
+        &seeds,
+        &settings.path_settings(),
+    )
+    .await
+    {
+        Ok(paths) => paths,
+        Err(error) => return failed(format!("seed path search failed: {error}")),
+    };
+
+    let mut seed_document_ids: Vec<String> = seeds
+        .iter()
+        .flat_map(|seed| graph_index.seed_document_ids(&seed.entity_id))
+        .collect();
+    seed_document_ids.sort_unstable();
+    seed_document_ids.dedup();
+    let path_entities: HashSet<&str> = paths
+        .paths
+        .iter()
+        .flat_map(|path| path.entities.iter().map(String::as_str))
+        .collect();
+    let report = GraphAugmentationReport {
+        seed_count: seeds.len() as u32,
+        path_found: paths.path_found,
+        degree_capped_count: paths.degree_capped_count,
+        seed_document_ids,
+        chunk_candidates: paths.candidate_chunk_ids,
+        node_count: path_entities.len() as u32,
+        edge_count: paths.paths.iter().map(|path| path.relations.len() as u32).sum(),
+    };
     (
-        GraphAugmentationOutcome::NoMatchFound,
-        GraphAugmentationReport::default(),
+        GraphAugmentationOutcome::Succeeded { facts: paths.facts },
+        report,
     )
 }
 
@@ -421,6 +495,8 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
             graph_augmentation = tracing::field::Empty,
             lancet.graph.node_count = tracing::field::Empty,
             lancet.graph.edge_count = tracing::field::Empty,
+            lancet.graph.seed_count = tracing::field::Empty,
+            lancet.graph.path_found = tracing::field::Empty,
         );
         Box::pin(
             async move {
@@ -442,6 +518,10 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
                     GraphAugmentationOutcome::AttemptedAndFailed { .. } => "attempted_and_failed",
                 };
                 tracing::Span::current().record("graph_augmentation", tag);
+                // Counts and a boolean only: no question text and no entity name reach a span.
+                tracing::Span::current()
+                    .record("lancet.graph.seed_count", u64::from(report.seed_count));
+                tracing::Span::current().record("lancet.graph.path_found", report.path_found);
 
                 let facts: Vec<prompt::GraphFactBlock> = match graph_outcome {
                     GraphAugmentationOutcome::Succeeded { facts } => {
