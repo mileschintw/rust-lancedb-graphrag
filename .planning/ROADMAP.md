@@ -895,7 +895,6 @@ Plans:
 ### Phase 06.3.4.1: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
 
 **Goal:** Separate seeding/index drift vs vector/hybrid retrieval vs graph architecture; restore a working vector baseline; then make graph-on produce a measurable paired effect. This phase unblocks parked Phase 6.4 docs — it is not a docs phase. Also in scope: diagnose why graph-off is also near floor (EM 0.0000, Token-F1 0.0223, Recall@4 0.3613, Precision@4 0.2150) — the operator suspects vector search and/or seeding, not only graph, and the phase must split the hypothesis rather than assume the cause.
-**Mode:** mvp
 **Requirements:** OBS-05, DATA-03, DATA-04, DATA-05
 **Depends on:** Phase 06.3.4 (including its still-open gap-closure items: T-19/CR-01, T-24, T-25, T-43)
 **Constraints (mandatory layer order — do not invert):**
