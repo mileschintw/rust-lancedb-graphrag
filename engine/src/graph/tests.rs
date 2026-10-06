@@ -702,7 +702,7 @@ fn validate_extraction_output_logs_confidence_field_on_out_of_range_failure() {
 }
 
 /// OI-01 (06.3.4.1-13): `GraphIndex`, mention seeding and seed-to-seed paths.
-mod seed_paths {
+pub(crate) mod seed_paths {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
@@ -725,7 +725,7 @@ mod seed_paths {
     };
     use crate::ingest::EmbeddingProvider;
 
-    fn id(n: u128) -> String {
+    pub(crate) fn id(n: u128) -> String {
         Uuid::from_u128(n).to_string()
     }
 
@@ -738,7 +738,7 @@ mod seed_paths {
     }
 
     /// `(source, target, relation, weight)` edges over entity numbers.
-    type EdgeSpec = (u128, u128, &'static str, f64);
+    pub(crate) type EdgeSpec = (u128, u128, &'static str, f64);
 
     fn graph(entities: Vec<EntityRecord>, edges: &[EdgeSpec]) -> (GraphIndex, Vec<EdgeRow>) {
         let pairs: Vec<(String, String)> = edges.iter().map(|(s, t, _, _)| (id(*s), id(*t))).collect();
@@ -840,21 +840,21 @@ mod seed_paths {
 
     // ---- store-backed fixtures ------------------------------------------------------------
 
-    fn temp_path(name: &str) -> String {
+    pub(crate) fn temp_path(name: &str) -> String {
         std::env::temp_dir()
             .join(format!("lancet-seedpaths-{name}-{}", Uuid::new_v4()))
             .to_string_lossy()
             .into_owned()
     }
 
-    struct StoreEntity {
-        n: u128,
-        name: &'static str,
-        chunks: Vec<String>,
-        vector_value: f32,
+    pub(crate) struct StoreEntity {
+        pub(crate) n: u128,
+        pub(crate) name: &'static str,
+        pub(crate) chunks: Vec<String>,
+        pub(crate) vector_value: f32,
     }
 
-    async fn write_store_entities(db: &DatabaseManager, rows: &[StoreEntity]) {
+    pub(crate) async fn write_store_entities(db: &DatabaseManager, rows: &[StoreEntity]) {
         let table = db.entities_table().await.unwrap();
         let schema = table.schema().await.unwrap();
         let n = rows.len();
@@ -890,7 +890,7 @@ mod seed_paths {
         table.add(batch).execute().await.unwrap();
     }
 
-    async fn write_store_edges(db: &DatabaseManager, edges: &[EdgeSpec]) {
+    pub(crate) async fn write_store_edges(db: &DatabaseManager, edges: &[EdgeSpec]) {
         let table = db.entity_edges_table().await.unwrap();
         let schema = table.schema().await.unwrap();
         let n = edges.len();
@@ -1515,5 +1515,183 @@ mod seed_paths {
         assert!(error.contains("not a valid UUID") || error.contains("invalid"), "{error}");
         drop(db);
         let _ = std::fs::remove_dir_all(path);
+    }
+}
+
+/// The graph index travels in the corpus snapshot beside BM25: built at startup, rebuilt at the
+/// same trigger and swapped with it, and degraded together with it (06.3.4.1-14 Task 1).
+mod snapshot_graph_index {
+    use std::sync::Arc;
+
+    use super::seed_paths::{id, temp_path, write_store_edges, write_store_entities, StoreEntity};
+    use crate::db::DatabaseManager;
+    use crate::graph::index::GraphIndex;
+    use crate::ingest::{rebuild_and_swap, rebuild_and_swap_with_graph_builder, REBUILD_TEST_MUTEX};
+    use crate::retrieval::{Bm25Config, Bm25Index};
+    use crate::workflow::ports::{CorpusSnapshot, CorpusStore};
+
+    fn entity(n: u128, name: &'static str) -> StoreEntity {
+        StoreEntity {
+            n,
+            name,
+            chunks: vec![format!("{}:0", id(900 + n))],
+            vector_value: 0.1 * n as f32,
+        }
+    }
+
+    /// A store with two entities and one edge, and a corpus store whose snapshot was built from
+    /// it the way `main.rs` builds the first one.
+    async fn built_corpus_store(name: &str) -> (DatabaseManager, CorpusStore, String) {
+        let path = temp_path(name);
+        let db = DatabaseManager::initialize(&path).await.unwrap();
+        write_store_entities(&db, &[entity(1, "Alpha"), entity(2, "Beta")]).await;
+        write_store_edges(&db, &[(1, 2, "partners", 1.0)]).await;
+        let nodes = db.nodes_table().await.unwrap();
+        let bm25 = Bm25Index::from_table(&nodes, Bm25Config::default())
+            .await
+            .unwrap();
+        let index = GraphIndex::build(&db).await.unwrap();
+        let snapshot = Arc::new(CorpusSnapshot::new(
+            Arc::new(bm25),
+            Arc::new(index),
+            nodes.version().await.unwrap(),
+            false,
+        ));
+        (db, Arc::new(tokio::sync::RwLock::new(snapshot)), path)
+    }
+
+    async fn grow_the_graph(db: &DatabaseManager) {
+        write_store_entities(db, &[entity(3, "Gamma")]).await;
+        write_store_edges(db, &[(2, 3, "supplies", 1.0)]).await;
+    }
+
+    #[test]
+    fn the_empty_graph_index_has_no_entities_and_matches_nothing() {
+        let index = GraphIndex::empty();
+
+        assert_eq!(index.entity_count(), 0);
+        assert!(index.exact_matches("Alpha").is_empty());
+        assert!(index.normalized_matches("Alpha").is_empty());
+        assert_eq!(index.degree(&id(1)), 0);
+        assert!(!index.contains(&id(1)));
+    }
+
+    #[tokio::test]
+    async fn a_rebuild_swaps_in_a_graph_index_built_from_the_latest_entities_and_edges() {
+        let _lock = REBUILD_TEST_MUTEX.lock().await;
+        let (db, store, path) = built_corpus_store("rebuild-index").await;
+        let before = Arc::clone(&*store.read().await);
+        assert_eq!(before.graph_index.entity_count(), 2);
+        grow_the_graph(&db).await;
+
+        let rebuilt = rebuild_and_swap(&db, &store, Bm25Config::default())
+            .await
+            .unwrap();
+
+        let current = Arc::clone(&*store.read().await);
+        assert!(Arc::ptr_eq(&current, &rebuilt), "the swapped snapshot is the returned one");
+        assert!(!current.rebuild_degraded);
+        assert_eq!(current.graph_index.entity_count(), 3, "the new entity is indexed");
+        assert_eq!(current.graph_index.exact_matches("gamma"), &[id(3)]);
+        assert_eq!(
+            current.graph_index.degree(&id(2)),
+            2,
+            "Beta now has the old and the new edge"
+        );
+        drop(db);
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[tokio::test]
+    async fn a_query_holding_the_old_snapshot_keeps_the_old_graph_index_after_a_rebuild() {
+        let _lock = REBUILD_TEST_MUTEX.lock().await;
+        let (db, store, path) = built_corpus_store("old-snapshot-index").await;
+        let held_by_a_query = Arc::clone(&*store.read().await);
+        grow_the_graph(&db).await;
+
+        rebuild_and_swap(&db, &store, Bm25Config::default())
+            .await
+            .unwrap();
+
+        assert_eq!(held_by_a_query.graph_index.entity_count(), 2, "no mutation in place");
+        assert!(!held_by_a_query.graph_index.contains(&id(3)));
+        assert_eq!(held_by_a_query.graph_index.degree(&id(2)), 1);
+        let current = Arc::clone(&*store.read().await);
+        assert!(!Arc::ptr_eq(&held_by_a_query.graph_index, &current.graph_index));
+        drop(db);
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[tokio::test]
+    async fn a_graph_index_build_failure_keeps_the_whole_prior_snapshot_and_marks_it_degraded() {
+        let _lock = REBUILD_TEST_MUTEX.lock().await;
+        let (db, store, path) = built_corpus_store("index-build-failure").await;
+        let prior = Arc::clone(&*store.read().await);
+        grow_the_graph(&db).await;
+
+        let failure = rebuild_and_swap_with_graph_builder(
+            &db,
+            &store,
+            Bm25Config::default(),
+            &|_db| Box::pin(async { Err("injected graph index failure".to_string()) }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(failure.contains("injected graph index failure"), "{failure}");
+        let current = Arc::clone(&*store.read().await);
+        assert!(current.rebuild_degraded, "the degraded flag is set like a BM25 failure");
+        assert!(Arc::ptr_eq(&current.bm25, &prior.bm25), "BM25 stays at the prior generation");
+        assert!(
+            Arc::ptr_eq(&current.graph_index, &prior.graph_index),
+            "the graph index stays at the prior generation, so the pair is never mixed"
+        );
+        assert_eq!(current.generation, prior.generation);
+        assert_eq!(current.nodes_version, prior.nodes_version);
+        drop(db);
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[tokio::test]
+    async fn a_later_successful_rebuild_clears_a_graph_index_degradation() {
+        let _lock = REBUILD_TEST_MUTEX.lock().await;
+        let (db, store, path) = built_corpus_store("index-recovers").await;
+        grow_the_graph(&db).await;
+        let _ = rebuild_and_swap_with_graph_builder(
+            &db,
+            &store,
+            Bm25Config::default(),
+            &|_db| Box::pin(async { Err("injected graph index failure".to_string()) }),
+        )
+        .await;
+        assert!(store.read().await.rebuild_degraded);
+
+        rebuild_and_swap(&db, &store, Bm25Config::default())
+            .await
+            .unwrap();
+
+        let current = Arc::clone(&*store.read().await);
+        assert!(!current.rebuild_degraded);
+        assert_eq!(current.graph_index.entity_count(), 3);
+        drop(db);
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    /// `main.rs` has no test module (the binary target count is pinned at 0), so the startup
+    /// order is read from its source: the graph index is built before the first snapshot.
+    #[test]
+    fn main_builds_the_graph_index_once_before_the_first_snapshot() {
+        let main_source = include_str!("../main.rs");
+        assert_eq!(
+            main_source.matches("GraphIndex::build(&database)").count(),
+            1,
+            "main.rs must build the graph index exactly once"
+        );
+        let build = main_source.find("GraphIndex::build(&database)").unwrap();
+        let snapshot = main_source.find("CorpusSnapshot::new(").unwrap();
+        assert!(
+            build < snapshot,
+            "the graph index ({build}) must be built before the first snapshot ({snapshot})"
+        );
     }
 }

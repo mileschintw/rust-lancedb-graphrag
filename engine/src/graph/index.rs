@@ -70,6 +70,13 @@ pub fn normalize_name(name: &str) -> String {
 }
 
 impl GraphIndex {
+    /// An index with no entities, for a cold start and for tests that need no graph.
+    ///
+    /// A graph query against it matches no seed and so returns no match without any model call.
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
     /// Builds the index from already-read rows.
     ///
     /// `edges` holds `(source_node_id, target_node_id)` pairs for every row of `entity_edges`.

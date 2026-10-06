@@ -1562,10 +1562,37 @@ impl RebuildTriggerLinks {
     }
 }
 
+/// Builds the graph index for one rebuild. A function value so a test can inject a failure.
+pub type GraphIndexBuilder =
+    dyn for<'a> Fn(&'a DatabaseManager) -> BoxFuture<'a, Result<graph::index::GraphIndex, String>>
+        + Send
+        + Sync;
+
+/// Rebuilds the BM25 and graph indexes from the latest store and swaps in one new snapshot.
+///
+/// # Errors
+/// Returns the failure text after storing a degraded snapshot (see
+/// [`rebuild_and_swap_with_graph_builder`]).
 pub async fn rebuild_and_swap(
     database: &DatabaseManager,
     corpus_store: &crate::workflow::ports::CorpusStore,
     bm25_settings: crate::retrieval::Bm25Config,
+) -> Result<Arc<crate::workflow::ports::CorpusSnapshot>, String> {
+    rebuild_and_swap_with_graph_builder(
+        database,
+        corpus_store,
+        bm25_settings,
+        &|db| Box::pin(graph::index::GraphIndex::build(db)),
+    )
+    .await
+}
+
+/// [`rebuild_and_swap`] with the graph index builder supplied by the caller.
+pub async fn rebuild_and_swap_with_graph_builder(
+    database: &DatabaseManager,
+    corpus_store: &crate::workflow::ports::CorpusStore,
+    bm25_settings: crate::retrieval::Bm25Config,
+    _build_graph_index: &GraphIndexBuilder,
 ) -> Result<Arc<crate::workflow::ports::CorpusSnapshot>, String> {
     let rebuild_start = std::time::Instant::now();
     REBUILD_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1584,6 +1611,7 @@ pub async fn rebuild_and_swap(
             tracing::error!("rebuild_and_swap injected fault triggered");
             let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
                 bm25: Arc::clone(&prior.bm25),
+                graph_index: Arc::clone(&prior.graph_index),
                 generation: prior.generation.clone(),
                 nodes_version: prior.nodes_version,
                 rebuild_degraded: true,
@@ -1628,6 +1656,7 @@ pub async fn rebuild_and_swap(
         tracing::error!("nodes table checkout_latest failed: {err}");
         let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
             bm25: Arc::clone(&prior.bm25),
+            graph_index: Arc::clone(&prior.graph_index),
             generation: prior.generation.clone(),
             nodes_version: prior.nodes_version,
             rebuild_degraded: true,
@@ -1663,6 +1692,7 @@ pub async fn rebuild_and_swap(
             tracing::error!("BM25 rebuild from nodes table failed: {err}");
             let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
                 bm25: Arc::clone(&prior.bm25),
+                graph_index: Arc::clone(&prior.graph_index),
                 generation: prior.generation.clone(),
                 nodes_version: prior.nodes_version,
                 rebuild_degraded: true,
@@ -1682,6 +1712,7 @@ pub async fn rebuild_and_swap(
 
     let new_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
         bm25: Arc::new(new_bm25),
+        graph_index: Arc::new(graph::index::GraphIndex::empty()),
         generation: crate::workflow::ports::corpus_generation_from_nodes_version(nodes_version),
         nodes_version,
         rebuild_degraded: false,

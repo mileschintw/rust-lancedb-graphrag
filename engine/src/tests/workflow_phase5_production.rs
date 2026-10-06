@@ -325,6 +325,7 @@ async fn workflow_phase5_production_reachability() {
     let nodes_version = nodes.version().await.unwrap();
     let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
         Arc::new(bm25_index),
+        Arc::new(crate::graph::index::GraphIndex::empty()),
         nodes_version,
         false,
     ));
@@ -1702,6 +1703,7 @@ async fn workflow_phase5_bm25_snapshot_releases_lock() {
     );
     *write_guard = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
         new_index,
+        Arc::clone(&write_guard.graph_index),
         write_guard.nodes_version,
         false,
     ));

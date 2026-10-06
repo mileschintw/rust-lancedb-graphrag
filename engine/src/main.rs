@@ -51,6 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|error| format!("initial BM25 snapshot build failed: {error}"))?;
     let initial_snapshot = Arc::new(CorpusSnapshot::new(
         Arc::new(bm25_index),
+        Arc::new(engine::graph::index::GraphIndex::empty()),
         nodes_version,
         false,
     ));

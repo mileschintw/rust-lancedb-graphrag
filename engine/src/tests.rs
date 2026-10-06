@@ -1220,6 +1220,7 @@ pub(crate) async fn test_corpus_store(
     let nodes_version = nodes.version().await.unwrap_or(1);
     let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
         Arc::new(bm25_index),
+        Arc::new(crate::graph::index::GraphIndex::empty()),
         nodes_version,
         false,
     ));
@@ -1240,6 +1241,7 @@ pub(crate) async fn configured_service(
         .unwrap();
     let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
         Arc::new(bm25_index),
+        Arc::new(crate::graph::index::GraphIndex::empty()),
         nodes_version,
         false,
     ));
@@ -2334,6 +2336,7 @@ async fn staging_delete_failure_remains_replayable() {
         .unwrap();
     let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
         Arc::new(bm25_index),
+        Arc::new(crate::graph::index::GraphIndex::empty()),
         nodes_version,
         false,
     ));
@@ -4408,6 +4411,7 @@ async fn query_rag_fail_closed_dense_snapshot() {
 
     let snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
         Arc::new(bm25_index),
+        Arc::new(crate::graph::index::GraphIndex::empty()),
         999_999,
         false,
     ));

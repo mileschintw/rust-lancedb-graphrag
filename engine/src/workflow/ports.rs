@@ -3,6 +3,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use super::node::{BoxFuture, NodeError};
+use crate::graph::index::GraphIndex;
 use crate::pb::lancet::v1::DocumentFilter;
 use crate::prompt::GraphFactBlock;
 use crate::retrieval::bm25::Bm25Index;
@@ -16,18 +17,31 @@ pub fn corpus_generation_from_nodes_version(nodes_version: u64) -> String {
     format!("lance-{nodes_version}")
 }
 
+/// One immutable generation of the query-time indexes.
+///
+/// The BM25 index and the graph index are built together and swapped together inside one new
+/// snapshot, so a query that holds an `Arc<CorpusSnapshot>` sees one generation of both and never
+/// a mix. Neither index is mutated after the snapshot is built.
 #[derive(Clone, Debug)]
 pub struct CorpusSnapshot {
     pub bm25: Arc<Bm25Index>,
+    /// Name, degree and source-chunk maps for mention seeding and seed-to-seed paths.
+    pub graph_index: Arc<GraphIndex>,
     pub generation: String,
     pub nodes_version: u64,
     pub rebuild_degraded: bool,
 }
 
 impl CorpusSnapshot {
-    pub fn new(bm25: Arc<Bm25Index>, nodes_version: u64, rebuild_degraded: bool) -> Self {
+    pub fn new(
+        bm25: Arc<Bm25Index>,
+        graph_index: Arc<GraphIndex>,
+        nodes_version: u64,
+        rebuild_degraded: bool,
+    ) -> Self {
         Self {
             bm25,
+            graph_index,
             generation: corpus_generation_from_nodes_version(nodes_version),
             nodes_version,
             rebuild_degraded,

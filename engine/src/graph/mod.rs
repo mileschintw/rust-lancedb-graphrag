@@ -31,7 +31,7 @@ pub mod paths;
 pub mod seeding;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// Identifies the category of failure raised by the graph-spike PoC.
 #[derive(Debug, Clone, PartialEq, Eq)]
