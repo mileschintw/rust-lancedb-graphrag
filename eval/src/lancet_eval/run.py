@@ -133,6 +133,11 @@ def drive_one(
                     completion_tokens=outcome.workflow_meta.completion_tokens,
                     degraded_mode=outcome.workflow_meta.degraded_mode,
                     graph_prompt_fact_count=outcome.workflow_meta.graph_prompt_fact_count,
+                    graph_seed_count=outcome.workflow_meta.graph_seed_count,
+                    graph_path_found=outcome.workflow_meta.graph_path_found,
+                    graph_boosted_chunk_count=outcome.workflow_meta.graph_boosted_chunk_count,
+                    graph_degree_capped_count=outcome.workflow_meta.graph_degree_capped_count,
+                    graph_seed_document_ids=outcome.workflow_meta.graph_seed_document_ids,
                 )
 
             # Raw event retention: keep when node failure occurred or in baseline set

@@ -40,6 +40,13 @@ class WorkflowWireMeta(BaseModel):
     completion_tokens: int = 0
     degraded_mode: bool = False
     graph_prompt_fact_count: int | None = None
+    # 06.3.4.1 D-79: the seeding diagnostics. None means the record predates the
+    # field; a measured zero, False or empty list is 0, False or [].
+    graph_seed_count: int | None = None
+    graph_path_found: bool | None = None
+    graph_boosted_chunk_count: int | None = None
+    graph_degree_capped_count: int | None = None
+    graph_seed_document_ids: list[str] | None = None
 
 
 class RunRecord(BaseModel):

@@ -365,5 +365,5 @@ def test_every_wire_metadata_field_is_mapped_at_each_drive_site() -> None:
     ):
         source = Path(site).read_text(encoding="utf-8")
         for name in sorted(names):
-            pattern = rf"{name}\s*=\s*outcome\.workflow_meta\.{name}"
+            pattern = rf"\b{name}\s*=\s*outcome\.workflow_meta\.{name}\b"
             assert re.search(pattern, source), f"{site} does not map {name}"
