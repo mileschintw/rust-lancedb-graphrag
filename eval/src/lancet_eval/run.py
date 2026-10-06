@@ -14,6 +14,7 @@ from lancet_eval.config import EvalSettings
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
 from lancet_eval.identity import require_index_identity
 from lancet_eval.journal import (
+    AttemptRecord,
     Journal,
     NodeTiming,
     RunRecord,
@@ -59,6 +60,23 @@ GRAPH_ARMS: dict[str, bool] = {
 }
 
 
+def _attempt_of(record: RunRecord, attempt: int) -> AttemptRecord:
+    """The AttemptRecord a retry is about to supersede (06.3.4.1-33, CR-03)."""
+    return AttemptRecord(
+        attempt=attempt,
+        outcome=record.outcome,
+        answer_chars=len(record.answer or ""),
+        error_type=record.error_type,
+        error=record.error,
+        node_failures=list(record.node_failures),
+        node_timings=list(record.node_timings),
+        workflow_meta=record.workflow_meta,
+        duration_ms=record.duration_ms,
+        correlation_id=record.correlation_id,
+        session_id=record.session_id,
+    )
+
+
 def drive_one(
     client: httpx.Client,
     *,
@@ -85,6 +103,8 @@ def drive_one(
     disable_graph_context = GRAPH_ARMS[arm]
 
     last_record: RunRecord | None = None
+    # Every attempt a retry supersedes stays on the returned record (CR-03, D-67).
+    superseded: list[AttemptRecord] = []
     for attempt in range(max_retries + 1):
         try:
             outcome = run_query(
@@ -180,6 +200,7 @@ def drive_one(
                 partial=partial,
                 node_timings=node_timings,
                 workflow_meta=workflow_meta,
+                prior_attempts=list(superseded),
             )
 
             # If success and non-empty answer, return immediately
@@ -197,6 +218,7 @@ def drive_one(
                     max_retries,
                 )
                 time.sleep(1.0 * (attempt + 1))
+                superseded.append(_attempt_of(last_record, attempt + 1))
                 continue
 
             return last_record
@@ -210,6 +232,7 @@ def drive_one(
                 partial=partial,
                 error_type=type(exc).__name__,
                 error=str(exc),
+                prior_attempts=list(superseded),
             )
             if attempt < max_retries:
                 logger.warning(
@@ -221,6 +244,7 @@ def drive_one(
                     max_retries,
                 )
                 time.sleep(1.0 * (attempt + 1))
+                superseded.append(_attempt_of(last_record, attempt + 1))
                 continue
             return last_record
 
@@ -230,6 +254,7 @@ def drive_one(
         graph_arm=arm,
         outcome="error",
         partial=partial,
+        prior_attempts=list(superseded),
     )
 
 

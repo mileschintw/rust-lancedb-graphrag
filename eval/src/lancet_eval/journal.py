@@ -49,6 +49,29 @@ class WorkflowWireMeta(BaseModel):
     graph_seed_document_ids: list[str] | None = None
 
 
+class AttemptRecord(BaseModel):
+    """One harness attempt a retry superseded (06.3.4.1-33, CR-03, D-67).
+
+    Carries exactly the fields ``classify_record`` and the failed-generation charge
+    read, so both run on an attempt unchanged. Answer text and the retrieval snapshot
+    are not kept; ``answer_chars`` records the answer length only.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    attempt: int = Field(description="1-based attempt number.")
+    outcome: Literal["success", "error"]
+    answer_chars: int = 0
+    error_type: str | None = None
+    error: str | None = None
+    node_failures: list[NodeFailed] = Field(default_factory=list)
+    node_timings: list[NodeTiming] = Field(default_factory=list)
+    workflow_meta: WorkflowWireMeta | None = None
+    duration_ms: float = 0.0
+    correlation_id: str = ""
+    session_id: str = ""
+
+
 class RunRecord(BaseModel):
     """Durable record of a single question execution under one experimental arm."""
 
@@ -78,6 +101,41 @@ class RunRecord(BaseModel):
     error: str | None = None
     node_timings: list[NodeTiming] = Field(default_factory=list)
     workflow_meta: WorkflowWireMeta | None = None
+    prior_attempts: list[AttemptRecord] = Field(
+        default_factory=list,
+        description=(
+            "The attempts a harness retry superseded, in order. The record's own fields "
+            "are the final attempt. Empty when the work unit ran once."
+        ),
+    )
+
+
+def first_attempt_view(record: RunRecord) -> RunRecord:
+    """The first attempt of a work unit as a RunRecord.
+
+    The record itself when it ran once. Otherwise a record carrying the unit's identity
+    and the first superseded attempt's fields, so readers that classify failures see a
+    retried-away timeout or rejection (06.3.4.1-33, CR-03).
+    """
+    if not record.prior_attempts:
+        return record
+    first = record.prior_attempts[0]
+    return RunRecord(
+        corpus=record.corpus,
+        question_id=record.question_id,
+        graph_arm=record.graph_arm,
+        partial=record.partial,
+        index_generation=record.index_generation,
+        outcome=first.outcome,
+        error_type=first.error_type,
+        error=first.error,
+        node_failures=list(first.node_failures),
+        node_timings=list(first.node_timings),
+        workflow_meta=first.workflow_meta,
+        duration_ms=first.duration_ms,
+        correlation_id=first.correlation_id,
+        session_id=first.session_id,
+    )
 
 
 def journal_key(corpus: str, question_id: str, graph_arm: str) -> str:
