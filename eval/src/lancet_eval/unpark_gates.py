@@ -842,6 +842,43 @@ def _composition_change(pairs: list[Any]) -> dict[str, Any]:
     }
 
 
+def _unpaired_boost_share(records: list[Any]) -> dict[str, Any]:
+    """The D-82 "all usable graph-on records" view of retrieval composition.
+
+    Pairs are what D-81's measure needs (a chunk is a composition change only against
+    graph-off's set), so this is NOT that measure: it is the unpaired share of usable
+    graph-on records whose final set holds a `graph_boosted` chunk, kept visible so the
+    G and V restrictions never hide the unrestricted population. Records whose chunks
+    all lack the flag (they predate it) are counted apart, never as "no". It does not
+    feed the SC-5 PASS rule.
+    """
+    n = 0
+    boosted_n = 0
+    unmeasured_n = 0
+    for record in records:
+        if record.graph_arm != "graph-on" or not is_usable(record):
+            continue
+        chunks = record.snapshot.retrieved_chunks if record.snapshot else []
+        if record.snapshot is None or (
+            chunks and all(c.graph_boosted is None for c in chunks)
+        ):
+            unmeasured_n += 1
+            continue
+        n += 1
+        boosted_n += int(any(c.graph_boosted is True for c in chunks))
+    rate, ci_lower, ci_upper = _ci_fields(boosted_n, n)
+    return {
+        "paired": False,
+        "gating": False,
+        "n": n,
+        "boosted_n": boosted_n,
+        "rate": rate,
+        "ci_lower": ci_lower,
+        "ci_upper": ci_upper,
+        "unmeasured_n": unmeasured_n,
+    }
+
+
 def _delta_fields(result: Any) -> dict[str, Any]:
     return {
         "mean": result.mean,
@@ -933,7 +970,9 @@ def evaluate_sc5(
     delta that qualifies is a PASS flagged `negative` (06.3.1 D-49), and it is
     surfaced for the 6.4 unpark decision rather than hidden.
 
-    pairs(G) and pairs(A) are reported beside pairs(V), never instead of it (D-82).
+    pairs(G) and pairs(A) are reported beside pairs(V), never instead of it (D-82),
+    and so is an unpaired view over all usable graph-on records
+    (`unpaired_all_usable_graph_on`), which never feeds the PASS rule.
     V comes from the `v_question_ids` list in `populations_path`; without it the
     reading is MISS, never a guess.
     """
@@ -1027,6 +1066,7 @@ def evaluate_sc5(
         "composition_floor": float(floor),
         "sc5_visibility_rule": SC5_VISIBILITY_RULE,
         "populations": populations,
+        "unpaired_all_usable_graph_on": _unpaired_boost_share(records),
         "negative_metrics": negative_metrics,
         "negative": False,
     }
