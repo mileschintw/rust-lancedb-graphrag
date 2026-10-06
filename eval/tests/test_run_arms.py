@@ -823,4 +823,5 @@ def test_run_gate_stage_refuses_a_blank_or_whitespace_label(
 
     assert res.exit_code == 2
     assert "--gate-stage" in res.output
+    assert "whitespace" in res.output
     assert calls == []
