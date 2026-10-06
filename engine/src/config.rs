@@ -282,17 +282,24 @@ pub fn default_retrieve_timeout_ms() -> u64 {
 }
 /// Budget for the graph traversal inside `ExtractGraphContext`, in milliseconds.
 ///
-/// A user-stated value (06.3.4.1-24). A graph-operation timeout degrades silently to
-/// chunk-only context and records a success, so a tight value would hide lost graph yield.
-/// See `06.3.4.1-BUDGETS.md`.
+/// Derived by budget pass B (06.3.4.1-18, 2026-10-06) under the committed rule: p95 x 1.5 of the
+/// graph-on `ExtractGraphContext` node duration over 160 measured records, 1616 ms x 1.5 = 2424 ms.
+/// The node duration includes the query embedding, so this is an upper-bound proxy for the graph
+/// operation alone, adopted by the user's decision. The pass's largest duration was 2162 ms. A
+/// graph-operation timeout degrades silently to chunk-only context and records a success, so a
+/// tighter value would hide lost graph yield and a looser one lets a slow traversal run long.
+/// `graph_node_timeout_ms` must keep 500 ms of slack over `query_embedding_timeout_ms` plus this
+/// value. See `06.3.4.1-BUDGETS.md`, "Pass B (D-77)".
 pub fn default_graph_operation_timeout_ms() -> u64 {
-    10000
+    2424
 }
 /// Budget for the whole `ExtractGraphContext` node, in milliseconds.
 ///
-/// The committed rule writes 1062 ms, which nesting lifts to `query_embedding_timeout_ms` +
-/// `graph_operation_timeout_ms` + 500. Engine startup rejects a value below that sum. See
-/// `06.3.4.1-BUDGETS.md`.
+/// Pass A's rule value (1062 ms) was lifted by nesting to `query_embedding_timeout_ms` +
+/// `graph_operation_timeout_ms` + 500 = 12500 at the old graph budget of 10000. Pass B lowered
+/// `graph_operation_timeout_ms` to 2424, so nesting now needs only 4924, and 12500 is kept as
+/// pass A's value, with 8076 ms of slack. Engine startup rejects a value below
+/// `query_embedding_timeout_ms` + `graph_operation_timeout_ms`. See `06.3.4.1-BUDGETS.md`.
 pub fn default_graph_node_timeout_ms() -> u64 {
     12500
 }
