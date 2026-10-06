@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 17
+current_plan: 18
 status: executing
-stopped_at: Completed 06.3.4.1-16-PLAN.md
-last_updated: "2026-10-06T06:29:41.291Z"
-last_activity: 2026-10-05
-last_activity_desc: Completed 06.3.4.1-16 (the graph seeding diagnostics and the per-chunk graph_boosted flag reach the journal through additive proto tags 12-16 and 10, an explicit gateway mapping and optional harness fields; graph_seed_document_ids is uncapped, at most 88 IDs per question on the 100-question probe); plan 17 is next. The release engine.exe is stale and must be rebuilt before the next live engine step.
-state_head: e5d808923b0589b742eedae07b0c39c8e8b667fc
+stopped_at: Completed 06.3.4.1-17-PLAN.md
+last_updated: "2026-10-06T07:02:40.167Z"
+last_activity: 2026-10-06
+last_activity_desc: Completed 06.3.4.1-17 (the drive-2 literals GRAPH_PRESENCE_WILSON_LOWER_FLOOR 0.098, GRAPH_COMPOSITION_CHANGE_FLOOR 0.10 and SC5_VISIBILITY_RULE are committed before any drive-2 record; evaluate_sc4, evaluate_sc5, graph_off_invariance against drive 1b and unpark_gates --stage drive2 --baseline-run exist with the other stages unchanged; column (d) reads the wire; the path canary mhr-3b0dac3a26bd is the eighth canary row behind a hard require_seed_path floor, manifest 8 rows / 7 IDs, never an accepted known miss); plan 18 is next (live canary re-validation on the new engine). The release engine.exe is stale and must be rebuilt before the next live engine step.
+state_head: 6946ac61b67be21a71afa9152f9840c4f7b93411
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 184
+  completed_plans: 185
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,7 +22,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 17
+Current Plan: 18
 Total Plans in Phase: 30
 
 ## Current Status
@@ -395,6 +395,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P14 | 52 min | 3 tasks | 22 files |
 | Phase 06.3.4.1 P15 | 55 min | 2 tasks | 20 files |
 | Phase 06.3.4.1 P16 | 27 min | 3 tasks | 23 files |
+| Phase 06.3.4.1 P17 | 30 min | 2 tasks | 11 files |
 
 ## Decisions
 
@@ -491,12 +492,15 @@ Total Plans in Phase: 30
 - [Phase 06.3.4.1]: 06.3.4.1-15: graph chunk rows are read at the snapshot's nodes_version, restricted by the request's DocumentFilter, with every ID validated as a canonical lower-case uuidv4 plus an unsigned index; a failed read degrades to no graph list and EvidenceBlock.graph_boosted is omitted from a checkpoint when false — Snapshot isolation (06.1), no leak past a document or content-type filter, no predicate from an unvalidated ID, and graph-off output byte-identical
 - [Phase 06.3.4.1]: 06.3.4.1-16: graph_seed_document_ids is not capped on the wire. Measured on the 100-question seed probe: at most 88 IDs per question (median 32.5, p95 76), engine-side sorted and de-duplicated, bounded by max_seeds 6 and the corpus document count; column (d) needs every seed document, so a cap could drop the gold document.
 - [Phase 06.3.4.1]: 06.3.4.1-16: snapshot.retrieved_chunks has its own gateway DTO with graph_boosted always present; structured_citations keeps its nine keys and a cited chunk is never flagged.
+- [Phase 06.3.4.1]: 06.3.4.1-17: the drive-2 literals (GRAPH_PRESENCE_WILSON_LOWER_FLOOR 0.098, GRAPH_COMPOSITION_CHANGE_FLOOR 0.10, SC5_VISIBILITY_RULE) are committed before any drive-2 record; no existing literal changed (D-83) — Tests pinning the values landed first (61fc439a), the literals in 786e3d3e; GRAPH_YIELD_INVESTIGATION_FLOOR stays 0.20
+- [Phase 06.3.4.1]: 06.3.4.1-17: the path canary is mhr-3b0dac3a26bd, the lowest question_id among 3 questions passing a five-criterion rule fixed before the list was read; require_seed_path is a hard floor, never an accepted known miss (D-80, D-94) — Recorded in SEED-PROBE section 10; live re-validation is plan 18; canary manifest is 8 rows over 7 IDs, the seven earlier rows byte-identical
+- [Phase 06.3.4.1]: 06.3.4.1-17: graph_off_invariance is a disclosure with no committed threshold; --stage drive2 requires --baseline-run (drive 1b); other stages are unchanged (D-95) — No threshold for a systematic shift was committed, and inventing one would be the D-83 violation this plan prevents
 
 ## Session
 
-**Last session:** 2026-10-06T06:29:40.138Z
+**Last session:** 2026-10-06T07:02:38.821Z
 **Last activity:** 2026-10-05 - Started the OI-01 run at 06.3.4.1-13
-**Stopped at:** Completed 06.3.4.1-16-PLAN.md
+**Stopped at:** Completed 06.3.4.1-17-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
