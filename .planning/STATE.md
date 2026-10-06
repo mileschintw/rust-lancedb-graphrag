@@ -1,31 +1,33 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 21
+current_plan: 31
 status: executing
 stopped_at: Completed 06.3.4.1-20-PLAN.md
-last_updated: "2026-10-06T10:23:48.323Z"
+last_updated: "2026-10-06T19:34:01.802Z"
 last_activity: 2026-10-06
-last_activity_desc: "Completed 06.3.4.1-20 (D-88 non-comparability record: SUPERSEDED.md on the 2026-09-09 run, dated docs addendum with the three D-78 disclosures, 6.4 canonical refs and OBS-05 traceability row); all 30 plans of 06.3.4.1 have SUMMARYs; phase gates are the orchestrator's; 6.4 stays parked pending a later user decision."
-state_head: 781cf6de7643e0c903bb1249a10dd5d9461e6940
+last_activity_desc: "Started gap-closure execution of 06.3.4.1 plans 31-34 (UAT gaps G-06.3.4.1-2, -3a, -3b), sequential on main."
+state_head: c83888a0065217fea8340b59534053a8af1c5ebf
 progress:
   total_phases: 16
   completed_phases: 9
-  total_plans: 188
+  total_plans: 192
   completed_plans: 188
 milestone_name: milestone
-current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
+current_phase: 06.3.4.1
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 21
-Total Plans in Phase: 30
+Current Plan: 31
+Total Plans in Phase: 34
 
 ## Current Status
+
+- **2026-10-06: Gap-closure execution of 06.3.4.1 started** (`/gsd-execute-phase 06.3.4.1 --gaps-only`). Plans 31-34 close UAT gaps G-06.3.4.1-2 (retries erase attempts; gate-stage drives must refuse retries > 0 and record every attempt), G-06.3.4.1-3a (unpark gates scored partial journals; completeness computed once in `main`, all readings MISS when incomplete, 0.80 coverage floor over sample∩G/sample∩V) and G-06.3.4.1-3b (`measure` ignored the stage cap with workers > 1; NaN/inf `--stage-cap` accepted). Order: 31 and 32 (wave 22), then 33 (wave 23), then 34 (wave 24), each run sequentially on main. Plans 01-30 stay summarized; drive 2 stays the run of record; 6.4 stays parked.
 
 - **2026-10-06: Plan 06.3.4.1-20 complete (D-88, the non-comparability record).** `eval/runs/2026-09-09-multihop_rag/SUPERSEDED.md` added (the only file added there; no existing `eval/runs/` file changed); `docs/evaluation-fidelity-and-graph-yield.md` gained the dated addendum (what changed, EM/Token-F1/graph-presence non-comparable with the run of record, SC-1/SC-4/SC-5 outcomes, the three standing disclosures); ROADMAP 6.4's canonical refs cite the run of record and the D-83 all-pass-close outcome; REQUIREMENTS OBS-05's traceability row gained 06.3.4.1 (no checkbox changed; OBS-05, DATA-04, DATA-05 stay checked; no requirements mark-complete run). Commits `e39a1dbd`, `781cf6de`. **6.4 is not unparked**; that is a later user decision.
   - Next: all 30 plans of 06.3.4.1 have SUMMARYs; the orchestrator runs the phase gates (verification, code review). `Current Plan: 21` is the tool's mechanical advance, not outstanding work.
@@ -512,7 +514,7 @@ Total Plans in Phase: 30
 ## Session
 
 **Last session:** 2026-10-06T10:23:47.119Z
-**Last activity:** 2026-10-05 - Started the OI-01 run at 06.3.4.1-13
+**Last activity:** 2026-10-06
 **Stopped at:** Completed 06.3.4.1-20-PLAN.md
 **Resume file:** None
 
