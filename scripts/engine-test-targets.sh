@@ -222,6 +222,13 @@ fi
 #         the untouched dense sub-stage timings), 691->711. The lib count rises 607->627.
 #         `engine (bin)` stays 0; inspect_lancedb/reconcile_eval_store/config_startup unchanged
 #         (44/18/22).
+#   712 -- Phase 06.3.4.1 plan 15 Task 2: one more `tests::graph_boost` test, written after the
+#         implementation (it passed on its first run and was shown to fail with the graph list
+#         turned off): a graph-on query over the production ports and a temp store retrieves the
+#         path entities' chunk in place of the second dense filler, flagged and counted, and the same
+#         question with the graph disabled does not, 711->712. The lib count rises 627->628.
+#         `engine (bin)` stays 0; inspect_lancedb/reconcile_eval_store/config_startup unchanged
+#         (44/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -261,18 +268,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 711 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 711, got $TOTAL" >&2
+if [ "$TOTAL" -ne 712 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 712, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 627 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 627, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 628 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 628, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 627 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 627, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 628 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 628, got $LIB_COUNT" >&2
   exit 1
 fi
 

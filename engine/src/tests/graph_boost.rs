@@ -928,3 +928,124 @@ async fn the_production_fetch_leaves_the_dense_substage_timings_alone() {
     drop(database);
     let _ = std::fs::remove_dir_all(path);
 }
+
+// ---- end to end through the production ports -------------------------------------------------
+
+/// A graph-on query changes which chunks are retrieved, and a graph-off query does not.
+///
+/// Three documents: two fillers that dense search ranks first (every vector is the same, so ties
+/// fall to the document ID), and one whose chunk only the graph knows about: the extraction names
+/// Alice and Bob as entities of its chunk, and the question names them, but no word of the question
+/// is in any document, so BM25 finds nothing. With room for two chunks, the graph chunk displaces
+/// the second filler.
+#[tokio::test]
+async fn a_graph_on_query_retrieves_the_path_entities_chunk_and_a_graph_off_query_does_not() {
+    use crate::graph::extraction::{
+        ExtractedEntity, ExtractedRelation, ExtractionOutput, FakeExtractionGenerator,
+    };
+    use crate::ingest::{extract_and_persist_entities, process_job, read_staged_jobs};
+    use crate::tests::{query_rag_graph_service_with_db, stage_document, FakeEmbedder};
+
+    const FILLER_ONE: &str = "00000000-0000-4000-8000-0000000000e1";
+    const FILLER_TWO: &str = "00000000-0000-4000-8000-0000000000e2";
+    const GRAPH_DOC: &str = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
+    let path = store_path("end-to-end");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    for (document_id, text) in [
+        (FILLER_ONE, "Compost heaps need turning every week."),
+        (FILLER_TWO, "Rain barrels fill during the autumn."),
+        (GRAPH_DOC, "Tomato seedlings prefer a sunny windowsill."),
+    ] {
+        stage_document(&database, document_id, text.as_bytes()).await;
+    }
+    let jobs = read_staged_jobs(&database).await.unwrap();
+    assert_eq!(jobs.len(), 3);
+    for job in &jobs {
+        process_job(job, &database, &FakeEmbedder).await.unwrap();
+    }
+    let graph_job = jobs
+        .iter()
+        .find(|job| job.document_id == GRAPH_DOC)
+        .expect("the graph document was staged");
+    let extraction = FakeExtractionGenerator::new(Ok(ExtractionOutput {
+        entities: vec![
+            ExtractedEntity {
+                name: "Alice".into(),
+                entity_type: "person".into(),
+            },
+            ExtractedEntity {
+                name: "Bob".into(),
+                entity_type: "person".into(),
+            },
+        ],
+        relations: vec![ExtractedRelation {
+            source: "Alice".into(),
+            target: "Bob".into(),
+            relation_type: "knows".into(),
+            confidence: 0.9,
+        }],
+    }));
+    extract_and_persist_entities(&database, graph_job, &extraction, &FakeEmbedder)
+        .await
+        .unwrap();
+
+    let mut service = query_rag_graph_service_with_db(database).await;
+    service.effective_settings.retrieval.candidate_limit = 2;
+    service.effective_settings.retrieval.final_limit = 2;
+    let snapshot = service.corpus_store.read().await.clone();
+    let (_runner, deps) = service.build_production_workflow(Arc::clone(&snapshot));
+
+    let run = |disable_graph: bool| {
+        let graph_node =
+            ExtractGraphContextNode::new(deps.embedding_port.clone(), deps.graph_port.clone());
+        let retrieve_node = RetrieveHybridNode::new(
+            deps.dense_port.clone(),
+            deps.bm25_port.clone(),
+            deps.reranker_port.clone(),
+            deps.retrieval_settings.clone(),
+        )
+        .with_snapshot_metadata(snapshot.generation.clone(), "test-model");
+        async move {
+            let mut ctx = WorkflowContext::new(
+                "sess-e2e".into(),
+                "trace-e2e".into(),
+                &test_query_request("Alice knows Bob", "00000000-0000-4000-8000-000000000001"),
+            );
+            ctx.disable_graph_context = disable_graph;
+            let cancel = CancellationToken::new();
+            graph_node.run(&mut ctx, &cancel).await.unwrap();
+            retrieve_node.run(&mut ctx, &cancel).await.unwrap();
+            ctx
+        }
+    };
+
+    let graph_off = run(true).await;
+    assert_eq!(
+        graph_off.final_candidates,
+        vec![chunk_id(FILLER_ONE, 0), chunk_id(FILLER_TWO, 0)],
+        "dense search alone fills the two places with the fillers"
+    );
+    assert_eq!(graph_off.graph_boosted_chunk_count, 0);
+    assert!(flagged_chunks(&graph_off).is_empty());
+
+    let graph_on = run(false).await;
+    assert!(
+        graph_on.graph_path_found,
+        "Alice and Bob are joined by an edge"
+    );
+    assert_eq!(
+        graph_on.graph_chunk_candidates,
+        vec![chunk_id(GRAPH_DOC, 0)]
+    );
+    assert_eq!(
+        graph_on.final_candidates,
+        vec![chunk_id(FILLER_ONE, 0), chunk_id(GRAPH_DOC, 0)],
+        "the graph's chunk displaces the second filler"
+    );
+    assert_eq!(flagged_chunks(&graph_on), vec![chunk_id(GRAPH_DOC, 0)]);
+    assert_eq!(graph_on.graph_boosted_chunk_count, 1);
+
+    drop(service);
+    let _ = std::fs::remove_dir_all(path);
+}
