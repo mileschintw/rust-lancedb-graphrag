@@ -3,8 +3,8 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: Not started
 status: executing
-stopped_at: "Phase 06.3.4.1 complete (gap closure 31-34 verified); 6.4 stays parked pending the user's unpark decision"
-last_updated: "2026-10-06T20:51:02.684Z"
+stopped_at: "Phase 06.3.4.1 closed out: UAT 4/4, validated, secured (threats_open 0), re-verified 10/10 after WR-01..03; 6.4 stays parked pending the user's unpark decision"
+last_updated: "2026-10-06T22:30:00.000Z"
 last_activity: 2026-10-06
 state_head: 98923c163a4ea2542a933fdb980033fe0b264029
 progress:
@@ -15,7 +15,7 @@ progress:
 milestone_name: milestone
 current_phase: "06.4"
 current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
-last_activity_desc: "Completed 06.3.4.1 gap closure (plans 31-34), code review (0 critical), re-verification passed 10/10, phase.complete run; 6.4 stays parked."
+last_activity_desc: "verify-work 06.3.4.1: UAT gaps reconciled, UAT 4/4 pass, Nyquist validated (0 gaps), SECURITY 156/156 closed, VERIFICATION re-run passed 10/10; 6.4 stays parked."
 ---
 
 # Project State
@@ -27,6 +27,7 @@ Total Plans in Phase: 34
 
 ## Current Status
 
+- **2026-10-06: `/gsd-verify-work 06.3.4.1` closed out the phase gates.** UAT gaps G-06.3.4.1-2, -3a and -3b were reconciled as resolved by plans 31-34 (a2f6ae4c). The owner then re-checked and passed tests 2 and 3, for a UAT of 4/4 (816475d1). Code-review warnings WR-01..03 were fixed after the 98923c16 verification by `/gsd-code-review 06.3.4.1 --fix` (f04e89a1, c7340a65, a923eb0c, ledger e3df1696): the legacy exemption is bound to record content, `expected_g`/`expected_v` are required, and a populated journal is refused by `measure` and `--no-resume`. `06.3.4.1-VALIDATION.md` was validated with 0 gaps and Wave 0 complete (5c0dfd23). `06.3.4.1-SECURITY.md` closed 156/156 with `threats_open: 0` at ASVS L1 (85ce0fde). `06.3.4.1-VERIFICATION.md` re-ran over the fixed code and passed 10/10, with drive 1/1b/2 verdicts re-read unchanged (9a38bd45). The transition ran in post-completion mode, with no second `phase.complete`; STATE did not advance again and DATA-03 stays `[ ]`. The UI review step was skipped: there is no UI-SPEC and no frontend files. The security audit left two non-blocking follow-ups: register the 14-SUMMARY `outbound-call` flag, and route `eval/scripts/drive_measurement_pass.py` (WR-10) through `require_index_identity` or retire it. **6.4 stays parked.**
 - **2026-10-06: Phase 06.3.4.1 complete after gap closure.** Plans 31-34 executed sequentially on main (8409cf85..fc695544): 31 bounds `measure` to one cap-checked window at every worker count, fixes the `stopped_by_cap` ordering in `measure` and `drive`, and validates `--stage-cap` (CR-01, WR-01, WR-02); 32 makes every unpark-gate reading MISS on an incomplete journal and adds the 0.80 coverage floor over |sample & G| / |sample & V| (CR-02, WR-04); 33 journals every superseded attempt, charges every attempt, and adds the `run --gate-stage` marker that refuses retries > 0 (CR-03, drive side); 34 makes the gate reader MISS unmarked or retried journals except the closed three-drive legacy registry, with SC-2/D-69 on the first attempt (CR-03, reader side). Eval suite 1078 passed; cargo, go and scripts suites clean. Recorded drive 1/1b/2 verdicts re-read unchanged; nothing under `eval/runs/` changed. Code review `06.3.4.1-REVIEW.md` (323a4690): 0 critical, 3 warning, 5 info, CR-01..03 confirmed closed; WR-01 (legacy exemption keyed on header text only), WR-02 (evaluators skip coverage when `expected_*` omitted), WR-03 (per-invocation cap on a reused journal) stay open in `06.3.4.1-REVIEW-DISPOSITION.md`. Re-verification `06.3.4.1-VERIFICATION.md` (98923c16): passed, 10/10. `phase.complete` run; its traceability write checked DATA-03 and that was reverted (DATA-03 stays `[ ]` by owner decision; OBS-05/DATA-05 untouched). `close_parent_artifacts` skipped (it derives parent `06` for an X.Y.Z.W phase); this phase's own UAT gaps are reconciled by `/gsd-verify-work 06.3.4.1`. Security enforcement is on and no `06.3.4.1-SECURITY.md` exists yet: run `/gsd-secure-phase 06.3.4.1`. **6.4 stays parked; `current_phase: 06.4` is the tool's mechanical advance, not an unpark.** Gated drives now need `--gate-stage <label> --retries 0`.
 
 - **2026-10-06: Gap-closure execution of 06.3.4.1 started** (`/gsd-execute-phase 06.3.4.1 --gaps-only`). Plans 31-34 close UAT gaps G-06.3.4.1-2 (retries erase attempts; gate-stage drives must refuse retries > 0 and record every attempt), G-06.3.4.1-3a (unpark gates scored partial journals; completeness computed once in `main`, all readings MISS when incomplete, 0.80 coverage floor over sample∩G/sample∩V) and G-06.3.4.1-3b (`measure` ignored the stage cap with workers > 1; NaN/inf `--stage-cap` accepted). Order: 31 and 32 (wave 22), then 33 (wave 23), then 34 (wave 24), each run sequentially on main. Plans 01-30 stay summarized; drive 2 stays the run of record; 6.4 stays parked.
@@ -529,9 +530,9 @@ Total Plans in Phase: 34
 
 ## Session
 
-**Last session:** 2026-10-06T20:33:42.696Z
+**Last session:** 2026-10-06T22:30:00.000Z
 **Last activity:** 2026-10-06
-**Stopped at:** Phase 06.3.4.1 complete; 6.4 stays parked (not ready to plan) until the user decides the unpark
+**Stopped at:** Phase 06.3.4.1 fully closed (UAT, validation, security, re-verification); 6.4 stays parked (not ready to plan) until the user decides the unpark
 **Resume file:** None
 
 ## Accumulated Context
