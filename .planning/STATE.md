@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 14
+current_plan: 15
 status: executing
-stopped_at: Plan 06.3.4.1-13 complete (OI-01 library, offline probe, caps 33/8 confirmed, boost decision paths-only); plan 14 is next
-last_updated: "2026-10-06T04:03:52.784Z"
+stopped_at: Completed 06.3.4.1-14-PLAN.md
+last_updated: "2026-10-06T05:04:35.367Z"
 last_activity: 2026-10-05
-last_activity_desc: "Completed 06.3.4.1-13 (OI-01 library, offline probe, caps 33/8 confirmed, boost decision paths-only); plan 14 is next"
-state_head: 52b8f80e9e628e848fcee83e250ebf2b6b09060e
+last_activity_desc: Completed 06.3.4.1-14 (production graph cutover to mention seeding and seed-to-seed paths under paths-only, GraphIndex in the corpus snapshot, D-77 settings in the config trio); plan 15 is next. The release engine.exe is stale and must be rebuilt before the next live engine step.
+state_head: 891a0bb2ff0c3e6fb114fbccba48f74a107b6f52
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 181
+  completed_plans: 182
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,7 +22,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 14
+Current Plan: 15
 Total Plans in Phase: 30
 
 ## Current Status
@@ -392,6 +392,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P29 | 45 min | 5 tasks | 18 files |
 | Phase 06.3.4.1 P30 | 65 min | 4 tasks | 64 files |
 | Phase 06.3.4.1 P13 | 64 min | 3 tasks | 13 files |
+| Phase 06.3.4.1 P14 | 52 min | 3 tasks | 22 files |
 
 ## Decisions
 
@@ -480,12 +481,15 @@ Total Plans in Phase: 30
 - [Phase 06.3.4.1]: 06.3.4.1-29 D-96: every OpenRouter chat payload carries provider {require_parameters: true} (hard-coded, no config key), and each provider response logs one INFO generation_served event keyed by correlation_id — Routes only to endpoints honouring the strict-schema parameters and lets drive 1b map who served each record; a missing or non-string id, model or provider never fails a generation
 - [Phase 06.3.4.1]: 06.3.4.1-13 Task 3: paths-only. A question with seeds but no seed-to-seed path gets no graph chunk candidates; production default, no flag (D-78), reported per D-49 if negative. User reply: paths-only (2026-10-05). — Chosen by the user after the orchestrator's offline analysis: on the 30 G questions with no path the seed-chunk fallback mostly adds non-gold chunks (hub and publisher seeds), and paths-only matches D-76's literal wording. Enforced in plans 14 and 15.
 - [Phase 06.3.4.1]: 06.3.4.1-13 Task 3: DEGREE_CAP = 33 (p99 degree) and MAX_PATH_FACTS = 8 (p95 = 69 tokens/fact) confirmed by the user. User reply: Confirm both (2026-10-05). — MAX_PATH_FACTS = min(16, floor(0.10 x (8192 - 2048) / 69)) = 8; both are M-DOCUMENTED-MAGIC constants in engine/src/graph/paths.rs.
+- [Phase 06.3.4.1]: 06.3.4.1-14: the boost semantics paths-only is enforced in production: seeds with no seed-to-seed path give no facts and no graph chunk candidates, and the seeds' own source chunks are never used (source-scan test pins it).
+- [Phase 06.3.4.1]: 06.3.4.1-14: a two-hop path fact is one GraphFact per path; its prompt body is PathFact.rendered with arrow directions (packer uses PrecomputedSemantics) and its relation attribute chain points each arrow the way its hop is stored, at the same length; the confirmed MAX_PATH_FACTS of 8 still follows (0 extra tokens on two sample paths).
+- [Phase 06.3.4.1]: 06.3.4.1-14: graph_node_count and graph_edge_count now count the entities and hops on the kept paths and are non-zero only when a path exists, so the old 9.8% presence figure is not comparable; a graph-on query with an unmatched mention makes one extra embedding call inside graph_operation_timeout (still 10000, for plan 18).
 
 ## Session
 
-**Last session:** 2026-10-06T04:03:51.632Z
+**Last session:** 2026-10-06T05:04:34.285Z
 **Last activity:** 2026-10-05 - Started the OI-01 run at 06.3.4.1-13
-**Stopped at:** Plan 06.3.4.1-13 complete (OI-01 library, offline probe, caps 33/8 confirmed, boost decision paths-only); plan 14 is next
+**Stopped at:** Completed 06.3.4.1-14-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
