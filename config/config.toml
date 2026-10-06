@@ -91,6 +91,30 @@ content_boost = 1.0
 title_boost = 2.0
 section_boost = 1.5
 
+[engine.graph]
+# unit=unitless; range=finite 0.0..=1.0
+seed_match_min_score = 0.5
+# unit=count; range=1..=3
+max_hop_cap = 3
+# D-77 graph settings (06.3.4.1-14). Written together with the defaults in engine/src/config.rs and
+# with config/config.example.toml; the three are checked for agreement by a unit test. The
+# derivation of each value is in the doc comment of its default function in engine/src/config.rs.
+# - max_seeds 6: RESEARCH F.1 and the offline probe (mean 4.54 seeds, 39 of 100 questions at 6); 15 pairs.
+# - mention_vector_top_k 3: RESEARCH F.1; the vector fallback gave 19.4% of probe seeds.
+# - degree_cap 33: p99 of the reconciled eval store degree distribution (27,855 entities).
+# - max_path_facts 8: min(16, floor(0.10 * (8192 - 2048) / 69)); 69 is the measured p95 tokens per fact.
+# - max_graph_chunk_candidates 8: equals retrieval.final_limit.
+# unit=count; range=>0
+max_seeds = 6
+# unit=count; range=any count; 0 turns the vector fallback off
+mention_vector_top_k = 3
+# unit=count (entity degree); range=>0
+degree_cap = 33
+# unit=count; range=>0
+max_path_facts = 8
+# unit=count; range=any count; keep equal to final_limit
+max_graph_chunk_candidates = 8
+
 [openrouter]
 embedding_endpoint = "https://openrouter.ai/api/v1/embeddings"
 embedding_model = "voyageai/voyage-4-large"

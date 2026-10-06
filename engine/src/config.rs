@@ -99,24 +99,71 @@ pub fn default_max_hop_cap() -> u32 {
     3
 }
 
+/// Most seeds one question may use for graph path search: 6.
+///
+/// **Derivation.** `graph::seeding::DEFAULT_MAX_SEEDS`, from RESEARCH section F.1 (about 6) and the
+/// seed-count distribution of the offline probe (`06.3.4.1-SEED-PROBE.md` section 2): over 100
+/// diagnostic questions the mean is 4.54 seeds and 39 questions reached 6. The path search checks
+/// every pair of seeds, so the value sets the work: 6 seeds make 15 pairs.
+///
+/// **Effect of changing it.** Raising it grows the pair count quadratically (7 seeds make 21
+/// pairs) and admits weaker, more generic seeds; lowering it drops the lower-priority seeds
+/// first (exact before normalised before vector match, then the lower degree) and so loses paths.
+/// The path search itself never reads more than 8.
 pub fn default_max_seeds() -> usize {
-    0
+    graph::seeding::DEFAULT_MAX_SEEDS
 }
 
+/// Nearest entities fetched per mention that has no name match: 3.
+///
+/// **Derivation.** `graph::seeding::DEFAULT_MENTION_VECTOR_TOP_K`, RESEARCH section F.1 (k = 3). In
+/// the offline probe 19.4% of seeds came from this vector fallback.
+///
+/// **Effect of changing it.** Raising it widens recall for a misspelt or abbreviated name and
+/// admits more weak seeds; `0` turns the vector fallback off, leaving exact and normalised
+/// name matching only.
 pub fn default_mention_vector_top_k() -> usize {
-    0
+    graph::seeding::DEFAULT_MENTION_VECTOR_TOP_K
 }
 
+/// Largest degree a two-hop path may pass through: 33.
+///
+/// **Derivation.** `graph::paths::DEGREE_CAP`: the 99th percentile of the entity degree of the
+/// reconciled eval store, 33.0 over 27,855 entities (`06.3.4.1-STORE-BASELINE.md` section 4,
+/// `reconcile/graph_population_post.json`), confirmed by the user on 2026-10-05
+/// (`06.3.4.1-SEED-PROBE.md` sections 8 and 9).
+///
+/// **Effect of changing it.** A smaller cap, such as the p95 of 10, also excludes mid-size real
+/// entities as bridges and loses paths; a larger one admits hubs, whose paths join almost any two
+/// seeds and carry no information. It affects intermediates only; a hub that is a seed stays one.
 pub fn default_degree_cap() -> u32 {
-    0
+    graph::paths::DEGREE_CAP
 }
 
+/// Most path facts one question may put in the prompt: 8.
+///
+/// **Derivation.** `graph::paths::MAX_PATH_FACTS`: `min(16, floor(0.10 * (8192 - 2048) / 69))`,
+/// where 8192 is the evidence token budget, 2048 the answer budget and 69 the measured p95 of
+/// tokens per path fact (`06.3.4.1-SEED-PROBE.md` section 8), confirmed by the user on 2026-10-05.
+///
+/// **Effect of changing it.** Raising it moves prompt budget from evidence chunks to graph facts
+/// (about 69 tokens per fact); lowering it drops the lower-ranked, less specific paths. The value
+/// was derived from the evidence and answer budgets, so changing either budget means re-deriving it.
 pub fn default_max_path_facts() -> usize {
-    0
+    graph::paths::MAX_PATH_FACTS
 }
 
+/// Most chunk candidates the graph offers to retrieval fusion: 8.
+///
+/// **Derivation.** Equal to `default_final_limit()` (`engine.retrieval.final_limit`): retrieval
+/// returns that many chunks, so a graph list longer than it only adds candidates that cannot
+/// all be used. Only chunks of the entities on seed-to-seed paths are candidates, and a question
+/// with no such path has none (06.3.4.1-13 decision `paths-only`).
+///
+/// **Effect of changing it.** Raising it lets the graph list outweigh a longer part of the fused
+/// ranking; lowering it limits the graph to its best chunks.
 pub fn default_max_graph_chunk_candidates() -> usize {
-    0
+    default_final_limit()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -701,6 +748,15 @@ impl EffectiveRagSettings {
                 "invalid graph.max_hop_cap: must be between 1 and {}",
                 graph::MAX_HOP_CAP
             ));
+        }
+        if self.graph.max_seeds == 0 {
+            return Err("invalid graph.max_seeds: must be greater than 0".into());
+        }
+        if self.graph.degree_cap == 0 {
+            return Err("invalid graph.degree_cap: must be greater than 0".into());
+        }
+        if self.graph.max_path_facts == 0 {
+            return Err("invalid graph.max_path_facts: must be greater than 0".into());
         }
         if self.evidence_token_budget == 0 {
             return Err("invalid evidence_token_budget: must be greater than 0".into());

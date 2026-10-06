@@ -78,6 +78,11 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.retrieval.bm25.section_boost",
     "engine.graph.seed_match_min_score",
     "engine.graph.max_hop_cap",
+    "engine.graph.max_seeds",
+    "engine.graph.mention_vector_top_k",
+    "engine.graph.degree_cap",
+    "engine.graph.max_path_facts",
+    "engine.graph.max_graph_chunk_candidates",
     "engine.workflow.reformulate_timeout_ms",
     "engine.workflow.query_embedding_timeout_ms",
     "engine.workflow.retrieve_timeout_ms",
@@ -162,6 +167,20 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
         "unit=unitless; range=finite 0.0..=1.0",
     ),
     ("engine.graph.max_hop_cap", "unit=count; range=1..=3"),
+    ("engine.graph.max_seeds", "unit=count; range=>0"),
+    (
+        "engine.graph.mention_vector_top_k",
+        "unit=count; range=any count; 0 turns the vector fallback off",
+    ),
+    (
+        "engine.graph.degree_cap",
+        "unit=count (entity degree); range=>0",
+    ),
+    ("engine.graph.max_path_facts", "unit=count; range=>0"),
+    (
+        "engine.graph.max_graph_chunk_candidates",
+        "unit=count; range=any count; keep equal to final_limit",
+    ),
     (
         "engine.workflow.reformulate_timeout_ms",
         "unit=milliseconds; range=>0",
