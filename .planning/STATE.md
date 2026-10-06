@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 16
+current_plan: 17
 status: executing
-stopped_at: Completed 06.3.4.1-15-PLAN.md
-last_updated: "2026-10-06T06:01:57.007Z"
+stopped_at: Completed 06.3.4.1-16-PLAN.md
+last_updated: "2026-10-06T06:29:41.291Z"
 last_activity: 2026-10-05
-last_activity_desc: Completed 06.3.4.1-15 (the graph's chunks enter RetrieveHybrid fusion as a third RRF list at the snapshot's nodes version, graph_rrf_weight 1.0 in the config trio, graph_boosted flag and count; graph-off pinned byte-identical); plan 16 is next. The release engine.exe is stale and must be rebuilt before the next live engine step.
-state_head: 82750e52a97e0d8cb27c3389304545486c4418bf
+last_activity_desc: Completed 06.3.4.1-16 (the graph seeding diagnostics and the per-chunk graph_boosted flag reach the journal through additive proto tags 12-16 and 10, an explicit gateway mapping and optional harness fields; graph_seed_document_ids is uncapped, at most 88 IDs per question on the 100-question probe); plan 17 is next. The release engine.exe is stale and must be rebuilt before the next live engine step.
+state_head: e5d808923b0589b742eedae07b0c39c8e8b667fc
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 183
+  completed_plans: 184
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,7 +22,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 16
+Current Plan: 17
 Total Plans in Phase: 30
 
 ## Current Status
@@ -394,6 +394,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P13 | 64 min | 3 tasks | 13 files |
 | Phase 06.3.4.1 P14 | 52 min | 3 tasks | 22 files |
 | Phase 06.3.4.1 P15 | 55 min | 2 tasks | 20 files |
+| Phase 06.3.4.1 P16 | 27 min | 3 tasks | 23 files |
 
 ## Decisions
 
@@ -488,12 +489,14 @@ Total Plans in Phase: 30
 - [Phase 06.3.4.1]: 06.3.4.1-15: the graph chunk list is merged once into the result of fuse_cross_variant_candidates (not into variant 0), so its contribution graph_rrf_weight / (rrf_k + rank) does not scale with the variant count; fuse_candidates is unchanged — The cross-variant pass keeps only each chunk's rank per list, so a graph block inside variant 0 would act only through that rank and its effect would depend on the other variants
 - [Phase 06.3.4.1]: 06.3.4.1-15: graph_rrf_weight = 1.0 (equal to vector_weight) is a retrieval setting separate from the D-30 prompt-packing graph_weight, written to config.rs, config.toml and config.example.toml together — A graph-found chunk counts like one dense hit; the weight is a tuning value (D-78) and 0.0 ignores the list
 - [Phase 06.3.4.1]: 06.3.4.1-15: graph chunk rows are read at the snapshot's nodes_version, restricted by the request's DocumentFilter, with every ID validated as a canonical lower-case uuidv4 plus an unsigned index; a failed read degrades to no graph list and EvidenceBlock.graph_boosted is omitted from a checkpoint when false — Snapshot isolation (06.1), no leak past a document or content-type filter, no predicate from an unvalidated ID, and graph-off output byte-identical
+- [Phase 06.3.4.1]: 06.3.4.1-16: graph_seed_document_ids is not capped on the wire. Measured on the 100-question seed probe: at most 88 IDs per question (median 32.5, p95 76), engine-side sorted and de-duplicated, bounded by max_seeds 6 and the corpus document count; column (d) needs every seed document, so a cap could drop the gold document.
+- [Phase 06.3.4.1]: 06.3.4.1-16: snapshot.retrieved_chunks has its own gateway DTO with graph_boosted always present; structured_citations keeps its nine keys and a cited chunk is never flagged.
 
 ## Session
 
-**Last session:** 2026-10-06T06:01:55.885Z
+**Last session:** 2026-10-06T06:29:40.138Z
 **Last activity:** 2026-10-05 - Started the OI-01 run at 06.3.4.1-13
-**Stopped at:** Completed 06.3.4.1-15-PLAN.md
+**Stopped at:** Completed 06.3.4.1-16-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context

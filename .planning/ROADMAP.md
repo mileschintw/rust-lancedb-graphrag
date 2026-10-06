@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 25/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
+**Plans:** 26/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
 
 Plans:
 
@@ -1007,7 +1007,7 @@ Plans:
 
 **Wave 17** *(blocked on Wave 16 completion)*
 
-- [ ] 06.3.4.1-16-PLAN.md — Carry the new graph diagnostics from the engine to the journal so SC-4 and SC-5 can be computed per record
+- [x] 06.3.4.1-16-PLAN.md — Carry the new graph diagnostics from the engine to the journal so SC-4 and SC-5 can be computed per record
 
 **Wave 18** *(blocked on Wave 17 completion)*
 
