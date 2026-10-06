@@ -99,12 +99,42 @@ pub fn default_max_hop_cap() -> u32 {
     3
 }
 
+pub fn default_max_seeds() -> usize {
+    0
+}
+
+pub fn default_mention_vector_top_k() -> usize {
+    0
+}
+
+pub fn default_degree_cap() -> u32 {
+    0
+}
+
+pub fn default_max_path_facts() -> usize {
+    0
+}
+
+pub fn default_max_graph_chunk_candidates() -> usize {
+    0
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct GraphConfigSettings {
     #[serde(default = "default_seed_match_min_score")]
     pub seed_match_min_score: f64,
     #[serde(default = "default_max_hop_cap")]
     pub max_hop_cap: u32,
+    #[serde(default = "default_max_seeds")]
+    pub max_seeds: usize,
+    #[serde(default = "default_mention_vector_top_k")]
+    pub mention_vector_top_k: usize,
+    #[serde(default = "default_degree_cap")]
+    pub degree_cap: u32,
+    #[serde(default = "default_max_path_facts")]
+    pub max_path_facts: usize,
+    #[serde(default = "default_max_graph_chunk_candidates")]
+    pub max_graph_chunk_candidates: usize,
 }
 
 impl Default for GraphConfigSettings {
@@ -112,6 +142,11 @@ impl Default for GraphConfigSettings {
         Self {
             seed_match_min_score: default_seed_match_min_score(),
             max_hop_cap: default_max_hop_cap(),
+            max_seeds: default_max_seeds(),
+            mention_vector_top_k: default_mention_vector_top_k(),
+            degree_cap: default_degree_cap(),
+            max_path_facts: default_max_path_facts(),
+            max_graph_chunk_candidates: default_max_graph_chunk_candidates(),
         }
     }
 }
@@ -120,6 +155,26 @@ impl Default for GraphConfigSettings {
 pub struct GraphSettings {
     pub seed_match_min_score: f64,
     pub max_hop_cap: u32,
+    pub max_seeds: usize,
+    pub mention_vector_top_k: usize,
+    pub degree_cap: u32,
+    pub max_path_facts: usize,
+    pub max_graph_chunk_candidates: usize,
+}
+
+impl Default for GraphSettings {
+    fn default() -> Self {
+        let defaults = GraphConfigSettings::default();
+        Self {
+            seed_match_min_score: defaults.seed_match_min_score,
+            max_hop_cap: defaults.max_hop_cap,
+            max_seeds: defaults.max_seeds,
+            mention_vector_top_k: defaults.mention_vector_top_k,
+            degree_cap: defaults.degree_cap,
+            max_path_facts: defaults.max_path_facts,
+            max_graph_chunk_candidates: defaults.max_graph_chunk_candidates,
+        }
+    }
 }
 
 /// Budget for `ReformulateQuery`, in milliseconds.
@@ -593,6 +648,11 @@ impl EffectiveRagSettings {
         let graph = GraphSettings {
             seed_match_min_score: settings.engine.graph.seed_match_min_score,
             max_hop_cap: settings.engine.graph.max_hop_cap,
+            max_seeds: settings.engine.graph.max_seeds,
+            mention_vector_top_k: settings.engine.graph.mention_vector_top_k,
+            degree_cap: settings.engine.graph.degree_cap,
+            max_path_facts: settings.engine.graph.max_path_facts,
+            max_graph_chunk_candidates: settings.engine.graph.max_graph_chunk_candidates,
         };
         let ev = u32::try_from(settings.engine.retrieval.evidence_token_budget)
             .map_err(|_| "evidence_token_budget exceeds u32::MAX".to_string())?;
@@ -1002,5 +1062,114 @@ mod tests {
             settings.retrieve_timeout_ms >= settings.query_embedding_timeout_ms + NESTING_SLACK_MS,
             "retrieve must contain query_embedding with {NESTING_SLACK_MS} ms slack"
         );
+    }
+
+    /// The seven `[engine.graph]` keys paired with the compiled-in default of each, as numbers.
+    fn graph_defaults() -> [(&'static str, f64); 7] {
+        [
+            ("seed_match_min_score", default_seed_match_min_score()),
+            ("max_hop_cap", f64::from(default_max_hop_cap())),
+            ("max_seeds", default_max_seeds() as f64),
+            ("mention_vector_top_k", default_mention_vector_top_k() as f64),
+            ("degree_cap", f64::from(default_degree_cap())),
+            ("max_path_facts", default_max_path_facts() as f64),
+            (
+                "max_graph_chunk_candidates",
+                default_max_graph_chunk_candidates() as f64,
+            ),
+        ]
+    }
+
+    /// Reads `engine.<table>.<key>` from a TOML document as a number, failing when it is absent.
+    ///
+    /// Like `file_budget`, this reads the raw key so a key a file dropped cannot agree through
+    /// its serde default.
+    fn file_number(raw: &str, table: &str, key: &str) -> f64 {
+        ::config::Config::builder()
+            .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+            .build()
+            .expect("configuration file must parse as TOML")
+            .get::<f64>(&format!("engine.{table}.{key}"))
+            .unwrap_or_else(|error| {
+                panic!("engine.{table}.{key} must be present and numeric: {error}")
+            })
+    }
+
+    /// D-66, D-77: the committed configuration files and the compiled-in defaults are one set of
+    /// graph settings.
+    #[test]
+    fn graph_defaults_agree_with_config_files() {
+        for (file_name, raw) in [
+            ("config/config.toml", CONFIG_TOML),
+            ("config/config.example.toml", CONFIG_EXAMPLE_TOML),
+        ] {
+            for (key, default) in graph_defaults() {
+                assert_eq!(
+                    file_number(raw, "graph", key),
+                    default,
+                    "{file_name} engine.graph.{key} must equal the config.rs default"
+                );
+            }
+        }
+    }
+
+    /// Pins the decided D-77 values (06.3.4.1-13: `DEGREE_CAP` 33 and `MAX_PATH_FACTS` 8,
+    /// confirmed by the user on 2026-10-05) so a coordinated edit of the files and the defaults
+    /// cannot move a cap unnoticed.
+    #[test]
+    fn graph_defaults_carry_the_decided_values() {
+        assert_eq!(
+            graph_defaults(),
+            [
+                ("seed_match_min_score", 0.5),
+                ("max_hop_cap", 3.0),
+                ("max_seeds", 6.0),
+                ("mention_vector_top_k", 3.0),
+                ("degree_cap", 33.0),
+                ("max_path_facts", 8.0),
+                ("max_graph_chunk_candidates", 8.0),
+            ]
+        );
+    }
+
+    /// The candidate cap is the number of chunks retrieval returns, so the graph never offers
+    /// more chunks than the answer can use.
+    #[test]
+    fn the_graph_chunk_candidate_cap_equals_the_final_limit_in_the_defaults_and_both_files() {
+        assert_eq!(default_max_graph_chunk_candidates(), default_final_limit());
+        for (file_name, raw) in [
+            ("config/config.toml", CONFIG_TOML),
+            ("config/config.example.toml", CONFIG_EXAMPLE_TOML),
+        ] {
+            assert_eq!(
+                file_number(raw, "graph", "max_graph_chunk_candidates"),
+                file_number(raw, "retrieval", "final_limit"),
+                "{file_name} must keep max_graph_chunk_candidates equal to final_limit"
+            );
+        }
+    }
+
+    /// Startup refuses a graph setting that would make the seeding or the path search do nothing
+    /// or run without a bound.
+    #[test]
+    fn graph_settings_reject_zero_seeds_degree_cap_and_path_facts() {
+        type Zeroed = fn(&mut Settings);
+        let cases: [(&str, Zeroed); 3] = [
+            ("max_seeds", |s| s.engine.graph.max_seeds = 0),
+            ("degree_cap", |s| s.engine.graph.degree_cap = 0),
+            ("max_path_facts", |s| s.engine.graph.max_path_facts = 0),
+        ];
+        for (key, zero) in cases {
+            let mut settings = Settings::default();
+            zero(&mut settings);
+            let error = EffectiveRagSettings::try_from_settings(&settings)
+                .expect_err(&format!("graph.{key} = 0 must be rejected"));
+            assert!(
+                error.contains(&format!("graph.{key}")),
+                "the error must name graph.{key}: {error}"
+            );
+        }
+        EffectiveRagSettings::try_from_settings(&Settings::default())
+            .expect("the defaults must pass validation");
     }
 }

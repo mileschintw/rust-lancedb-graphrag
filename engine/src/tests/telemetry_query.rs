@@ -650,6 +650,7 @@ async fn leaf_span_graph_traversal_wraps_real_traversal() {
         graph_settings: GraphSettings {
             seed_match_min_score: 0.7,
             max_hop_cap: 2,
+            ..GraphSettings::default()
         },
     };
 
@@ -807,6 +808,7 @@ async fn graph_augmentation_record_lands_on_graph_traversal_leaf() {
         graph_settings: GraphSettings {
             seed_match_min_score: 0.7,
             max_hop_cap: 2,
+            ..GraphSettings::default()
         },
     };
 

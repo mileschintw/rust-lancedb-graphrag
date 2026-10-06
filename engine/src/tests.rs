@@ -4932,6 +4932,7 @@ async fn attempt_graph_augmentation_scoring_and_neighborhood() {
     let settings = GraphSettings {
         seed_match_min_score: 0.5,
         max_hop_cap: 3,
+        ..GraphSettings::default()
     };
 
     let outcome = attempt_graph_augmentation(&database, &[0.0; 2048], &settings).await;
@@ -6956,6 +6957,7 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
             graph: GraphConfigSettings {
                 seed_match_min_score: 0.0,
                 max_hop_cap: 1,
+                ..GraphConfigSettings::default()
             },
             workflow: WorkflowConfigSettings::default(),
         },
@@ -7841,6 +7843,7 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
     let settings = GraphSettings {
         seed_match_min_score: 0.0,
         max_hop_cap: 3,
+        ..GraphSettings::default()
     };
 
     let outcome = attempt_graph_augmentation(&database, &dave_vector, &settings).await;
