@@ -1,0 +1,339 @@
+{
+  "questions": 100,
+  "non_null": 90,
+  "gold_in_index_subset": 90,
+  "question_types": {
+    "comparison_query": 36,
+    "inference_query": 31,
+    "null_query": 10,
+    "temporal_query": 23
+  },
+  "seed_count_distribution": {
+    "0": 1,
+    "1": 1,
+    "2": 8,
+    "3": 17,
+    "4": 18,
+    "5": 16,
+    "6": 39
+  },
+  "seeds_total": 454,
+  "match_kind_counts": {
+    "exact": 365,
+    "normalized": 1,
+    "vector": 88
+  },
+  "match_kind_shares": {
+    "exact": 0.8039647577092511,
+    "normalized": 0.0022026431718061676,
+    "vector": 0.19383259911894274
+  },
+  "d_graph_seed_hit": {
+    "gold_in_index_subset": {
+      "yes": 85,
+      "n": 90,
+      "rate": 0.9444444444444444
+    },
+    "all_non_null": {
+      "yes": 85,
+      "n": 90,
+      "rate": 0.9444444444444444
+    }
+  },
+  "path_found": {
+    "overall": {
+      "yes": 62,
+      "n": 100,
+      "rate": 0.62
+    },
+    "all_non_null": {
+      "yes": 60,
+      "n": 90,
+      "rate": 0.6666666666666666
+    },
+    "gold_in_index_subset": {
+      "yes": 60,
+      "n": 90,
+      "rate": 0.6666666666666666
+    },
+    "by_question_type": {
+      "comparison_query": {
+        "yes": 23,
+        "n": 36,
+        "rate": 0.6388888888888888
+      },
+      "inference_query": {
+        "yes": 19,
+        "n": 31,
+        "rate": 0.6129032258064516
+      },
+      "null_query": {
+        "yes": 2,
+        "n": 10,
+        "rate": 0.2
+      },
+      "temporal_query": {
+        "yes": 18,
+        "n": 23,
+        "rate": 0.782608695652174
+      }
+    }
+  },
+  "hub_seeds": {
+    "degree_p95": 10.0,
+    "seeds_over_p95": {
+      "yes": 221,
+      "n": 454,
+      "rate": 0.486784140969163
+    },
+    "questions_with_a_hub_seed": {
+      "yes": 86,
+      "n": 100,
+      "rate": 0.86
+    }
+  },
+  "nameless_seeds": {
+    "label": "seeds whose name has no letter or digit (a degenerate entity the library now refuses; the probe ran before that guard)",
+    "seeds": 20,
+    "questions": 20
+  },
+  "d_graph_seed_hit_without": {
+    "label": "column (d) recomputed with one kind of seed removed, from the same probe output",
+    "nameless_seeds": {
+      "gold_in_index_subset": {
+        "yes": 85,
+        "n": 90,
+        "rate": 0.9444444444444444
+      },
+      "all_non_null": {
+        "yes": 85,
+        "n": 90,
+        "rate": 0.9444444444444444
+      }
+    },
+    "publisher_seeds": {
+      "gold_in_index_subset": {
+        "yes": 76,
+        "n": 90,
+        "rate": 0.8444444444444444
+      },
+      "all_non_null": {
+        "yes": 76,
+        "n": 90,
+        "rate": 0.8444444444444444
+      }
+    },
+    "publisher_and_hub_seeds": {
+      "gold_in_index_subset": {
+        "yes": 33,
+        "n": 90,
+        "rate": 0.36666666666666664
+      },
+      "all_non_null": {
+        "yes": 33,
+        "n": 90,
+        "rate": 0.36666666666666664
+      }
+    }
+  },
+  "path_endpoints": {
+    "label": "the two end seeds of each found path, by whether they are publisher names",
+    "both_publisher": 15,
+    "one_publisher": 63,
+    "neither_publisher": 260,
+    "questions_with_a_path_with_no_publisher_end": {
+      "yes": 47,
+      "n": 62,
+      "rate": 0.7580645161290323
+    }
+  },
+  "publisher_seeds": {
+    "distinct_publisher_names_in_gold": 43,
+    "seeds_that_are_publishers": {
+      "yes": 156,
+      "n": 454,
+      "rate": 0.3436123348017621
+    },
+    "questions_with_a_publisher_seed": {
+      "yes": 85,
+      "n": 100,
+      "rate": 0.85
+    },
+    "publisher_seeds_that_are_hubs": {
+      "yes": 79,
+      "n": 156,
+      "rate": 0.5064102564102564
+    }
+  },
+  "degree_capped": {
+    "total": 363,
+    "questions_with_any": {
+      "yes": 57,
+      "n": 100,
+      "rate": 0.57
+    }
+  },
+  "candidate_chunks": {
+    "paths_only": {
+      "distribution": {
+        "0": 38,
+        "1": 1,
+        "8": 61
+      },
+      "mean": 4.89,
+      "median": 8.0,
+      "questions_with_none": {
+        "yes": 38,
+        "n": 100,
+        "rate": 0.38
+      }
+    },
+    "paths_plus_seed_chunks": {
+      "distribution": {
+        "0": 1,
+        "1": 2,
+        "2": 1,
+        "4": 1,
+        "5": 2,
+        "8": 93
+      },
+      "mean": 7.62,
+      "median": 8.0,
+      "questions_with_none": {
+        "yes": 1,
+        "n": 100,
+        "rate": 0.01
+      }
+    }
+  },
+  "composition_change_proxy": {
+    "label": "share of questions whose candidate chunks include a chunk outside the (c)-probe dense top-4 (a proxy, not a retrieval measurement)",
+    "all_probed": {
+      "paths_only": {
+        "yes": 61,
+        "n": 100,
+        "rate": 0.61,
+        "outside_chunk_count_distribution": {
+          "0": 39,
+          "5": 1,
+          "6": 5,
+          "7": 15,
+          "8": 40
+        }
+      },
+      "paths_plus_seed_chunks": {
+        "yes": 97,
+        "n": 100,
+        "rate": 0.97,
+        "outside_chunk_count_distribution": {
+          "0": 3,
+          "2": 1,
+          "4": 1,
+          "5": 3,
+          "6": 6,
+          "7": 22,
+          "8": 64
+        }
+      }
+    },
+    "all_non_null": {
+      "paths_only": {
+        "yes": 59,
+        "n": 90,
+        "rate": 0.6555555555555556,
+        "outside_chunk_count_distribution": {
+          "0": 31,
+          "5": 1,
+          "6": 5,
+          "7": 15,
+          "8": 38
+        }
+      },
+      "paths_plus_seed_chunks": {
+        "yes": 87,
+        "n": 90,
+        "rate": 0.9666666666666667,
+        "outside_chunk_count_distribution": {
+          "0": 3,
+          "2": 1,
+          "4": 1,
+          "5": 3,
+          "6": 6,
+          "7": 22,
+          "8": 54
+        }
+      }
+    },
+    "gold_in_index_subset": {
+      "paths_only": {
+        "yes": 59,
+        "n": 90,
+        "rate": 0.6555555555555556,
+        "outside_chunk_count_distribution": {
+          "0": 31,
+          "5": 1,
+          "6": 5,
+          "7": 15,
+          "8": 38
+        }
+      },
+      "paths_plus_seed_chunks": {
+        "yes": 87,
+        "n": 90,
+        "rate": 0.9666666666666667,
+        "outside_chunk_count_distribution": {
+          "0": 3,
+          "2": 1,
+          "4": 1,
+          "5": 3,
+          "6": 6,
+          "7": 22,
+          "8": 54
+        }
+      }
+    }
+  },
+  "path_fact_tokens": {
+    "paths": 338,
+    "one_hop_paths": 59,
+    "two_hop_paths": 279,
+    "p50": 56,
+    "p95": 69,
+    "max": 86,
+    "mean": 55.27218934911242
+  },
+  "d77_caps": {
+    "degree_p99": 33.0,
+    "degree_cap": 33,
+    "evidence_token_budget": 8192,
+    "answer_token_budget": 2048,
+    "p95_fact_tokens": 69,
+    "max_path_facts": 8,
+    "max_path_facts_formula": "min(16, floor(0.10 * (evidence_token_budget - answer_token_budget) / p95_fact_tokens))"
+  },
+  "probe": {
+    "spend_usd": 2.5799999999999997e-05,
+    "stage_cap_usd": 0.05,
+    "questions": 100,
+    "mentions_embedded": 58,
+    "mention_cache_hits": 33,
+    "stopped_by_cap": false,
+    "index_generation": "lance-702",
+    "embedding_model": "voyageai/voyage-4-large",
+    "entity_count": 27855,
+    "degree_p95": 10.0,
+    "degree_p99": 33.0,
+    "degree_max": 543.0,
+    "evidence_token_budget": 8192,
+    "max_output_tokens": 2048,
+    "settings": {
+      "max_seeds": 6,
+      "mention_vector_top_k": 3,
+      "seed_match_min_score": 0.5,
+      "degree_cap": 33,
+      "max_graph_chunk_candidates": 8,
+      "max_path_facts": "unbounded"
+    },
+    "error": null
+  }
+}
