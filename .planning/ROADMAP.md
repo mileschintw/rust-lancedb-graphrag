@@ -927,7 +927,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 30/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
+**Plans:** 30/34 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`; gap-closure plans 31–34 added 2026-10-06 after UAT, closing G-06.3.4.1-2, -3a and -3b (review CR-01, CR-02, CR-03), see `06.3.4.1-UAT.md` `## Gaps`)
 
 Plans:
 
@@ -1023,6 +1023,19 @@ Plans:
 **Wave 21** *(blocked on Wave 20 completion)*
 
 - [x] 06.3.4.1-20-PLAN.md — Record non-comparability publicly (D-88)
+
+**Wave 22** *(blocked on Wave 21 completion)*
+
+- [ ] 06.3.4.1-31-PLAN.md — `gap_closure: true`. `measure` dispatches through one bounded window that checks the stage cap before every further unit at any worker count, and records `stopped_by_cap`, `workers` and `work_units_planned`. In both drivers a run counts as capped only when units were left waiting (WR-01 ordering). `--stage-cap` on `run`, `measure` and `score` rejects NaN, ±inf, 0 and negatives, and `measure`'s silent $5 default is dropped (G-06.3.4.1-3b; CR-01, WR-02; D-86)
+- [ ] 06.3.4.1-32-PLAN.md — `gap_closure: true`. `unpark_gates.main` computes completeness once and MISSes every reading on an incomplete journal. SC-1 requires a complete journal. SC-3, SC-4 and SC-5 MISS below the owner-decided coverage floor (`UNPARK_GATE_COVERAGE_FLOOR = 0.80`, reusing the 2026-09-09 `STAGED_PAIRING_COVERAGE_FLOOR`) against the sample ∩ G and sample ∩ V denominators. Real-data truncations read all-MISS, and the recorded drive 1/1b/2 verdicts are re-read unchanged (G-06.3.4.1-3a; CR-02, WR-04; D-73, D-82, D-87a)
+
+**Wave 23** *(blocked on Wave 22 completion)*
+
+- [ ] 06.3.4.1-33-PLAN.md — `gap_closure: true`. Every harness attempt a retry supersedes is kept on the journaled record (`RunRecord.prior_attempts`; old journals still load), `compute_spend` charges every attempt, and `run --gate-stage` writes a header marker, refuses `--retries` other than 0 and refuses to append to a journal with a different marker (G-06.3.4.1-2; CR-03; D-67, D-86)
+
+**Wave 24** *(blocked on Wave 23 completion)*
+
+- [ ] 06.3.4.1-34-PLAN.md — `gap_closure: true`. The gate reader MISSes every reading on a journal without the matching gate-stage marker, with `max_retries` above 0 or with retried attempts. Only the three recorded drives are grandfathered, through a closed registry keyed on their headers. SC-2 and the D-69 companion count each unit's first attempt. The run of record re-reads unchanged (G-06.3.4.1-2; CR-03; D-67, D-69)
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
