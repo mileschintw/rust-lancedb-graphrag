@@ -1954,3 +1954,340 @@ def test_main_measures_completeness_exactly_once(
     _run_main("drive1", tmp_path, fixture)
 
     assert len(calls) == 1
+
+
+# --- coverage floor (06.3.4.1-32, CR-02/WR-04) ---------------------------------------
+
+
+def test_the_coverage_floor_is_committed_and_equals_the_gate_literal() -> None:
+    """D-73 / 06.3.1 D-44: the 0.80 reuses `gate.py`'s literal, fixed on 2026-09-09
+    (commit eb893ba1), before any 06.3.4.1 drive data existed. It is not an import:
+    `gate.py` imports `thresholds`."""
+    from lancet_eval import gate
+
+    assert thresholds_module.UNPARK_GATE_COVERAGE_FLOOR == pytest.approx(0.80)
+    assert (
+        thresholds_module.UNPARK_GATE_COVERAGE_FLOOR
+        == gate.STAGED_PAIRING_COVERAGE_FLOOR
+    )
+
+
+def _sc3_coverage_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sc3_row_cls: Any,
+    *,
+    scored: int,
+) -> tuple[list[Any], Path]:
+    """Ten G questions; the first `scored` carry a usable answer (rate 1.0), the rest
+    were dropped from `scored_rows` (e_answer_usable None)."""
+    _set_vector_baseline_usable_floor(monkeypatch, 0.47)
+    ids = [f"q{i}" for i in range(10)]
+    pop_path = tmp_path / "diag_selection.json"
+    _write_populations(pop_path, ids)
+    rows = [
+        sc3_row_cls(question_id=qid, e_answer_usable=True if i < scored else None)
+        for i, qid in enumerate(ids)
+    ]
+    return rows, pop_path
+
+
+def test_sc3_seven_of_ten_misses_on_coverage_despite_a_passing_usable_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _sc3_row_cls
+) -> None:
+    rows, pop_path = _sc3_coverage_fixture(
+        tmp_path, monkeypatch, _sc3_row_cls, scored=7
+    )
+
+    reading = evaluate_sc3(rows, pop_path, expected_g=10)
+
+    assert reading.status == "MISS"
+    assert "7/10" in reading.reason
+    assert "0.80" in reading.reason
+    assert reading.value == pytest.approx(1.0)
+    assert reading.detail["coverage_n"] == 7
+    assert reading.detail["coverage_expected"] == 10
+    assert reading.detail["coverage"] == pytest.approx(0.7)
+    assert reading.detail["coverage_floor"] == pytest.approx(0.80)
+
+
+def test_sc3_eight_of_ten_meets_the_coverage_floor_at_or_above(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _sc3_row_cls
+) -> None:
+    rows, pop_path = _sc3_coverage_fixture(
+        tmp_path, monkeypatch, _sc3_row_cls, scored=8
+    )
+
+    reading = evaluate_sc3(rows, pop_path, expected_g=10)
+
+    assert reading.status == "PASS", reading.reason
+    assert reading.reason == "usable rate 1.0000 >= floor 0.4700"
+    assert reading.detail["coverage"] == pytest.approx(0.8)
+
+
+def test_sc3_a_coverage_miss_joins_a_usable_rate_miss(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _sc3_row_cls
+) -> None:
+    _set_vector_baseline_usable_floor(monkeypatch, 0.47)
+    ids = [f"q{i}" for i in range(10)]
+    pop_path = tmp_path / "diag_selection.json"
+    _write_populations(pop_path, ids)
+    rows = [
+        _sc3_row_cls(question_id=qid, e_answer_usable=False if i < 7 else None)
+        for i, qid in enumerate(ids)
+    ]
+
+    reading = evaluate_sc3(rows, pop_path, expected_g=10)
+
+    assert reading.status == "MISS"
+    assert "usable rate 0.0000 < floor 0.4700" in reading.reason
+    assert "7/10" in reading.reason
+
+
+def test_sc3_without_an_expected_population_skips_only_the_coverage_clause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _sc3_row_cls
+) -> None:
+    rows, pop_path = _sc3_coverage_fixture(
+        tmp_path, monkeypatch, _sc3_row_cls, scored=7
+    )
+
+    reading = evaluate_sc3(rows, pop_path)
+
+    assert reading.status == "PASS"
+    assert reading.detail["coverage"] is None
+    assert reading.detail["coverage_note"] == "coverage not assessed"
+
+
+def test_sc3_an_empty_expected_population_is_miss(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _sc3_row_cls
+) -> None:
+    rows, pop_path = _sc3_coverage_fixture(
+        tmp_path, monkeypatch, _sc3_row_cls, scored=8
+    )
+
+    reading = evaluate_sc3(rows, pop_path, expected_g=0)
+
+    assert reading.status == "MISS"
+    assert "expected population is empty" in reading.reason
+
+
+def test_sc3_counts_every_graph_off_error_class_over_g_not_only_d69(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WR-04: a non-D-69 graph-off error shrinks n too, so it is disclosed by class."""
+    from dataclasses import dataclass as _dc
+
+    from lancet_eval.diagnostic import ArmResult
+
+    @_dc(frozen=True)
+    class _Row:
+        question_id: str
+        arms: dict[str, ArmResult]
+        question_type: str = "inference_query"
+        e_answer_usable: bool | None = None
+
+    def _off(outcome: str, error_class: str | None = None) -> dict[str, ArmResult]:
+        return {
+            "graph-off": ArmResult(
+                arm="graph-off", outcome=outcome, error_class=error_class
+            )  # type: ignore[arg-type]
+        }
+
+    _set_vector_baseline_usable_floor(monkeypatch, 0.10)
+    ids = [f"q{i}" for i in range(6)]
+    pop_path = tmp_path / "diag_selection.json"
+    _write_populations(pop_path, ids)
+    rows = [
+        _Row("q0", _off("success"), e_answer_usable=True),
+        _Row("q1", _off("error", "timeout")),
+        _Row("q2", _off("error", "transport")),
+        _Row("q3", _off("error", "citation_basis_mixed")),
+        _Row("q4", _off("error", None)),
+        _Row("q5", _off("error", "timeout")),
+    ]
+
+    reading = evaluate_sc3(rows, pop_path)
+
+    assert reading.detail["excluded_by_class"] == {
+        "timeout": 2,
+        "transport": 1,
+        "citation_basis_mixed": 1,
+        "unclassified": 1,
+    }
+    assert reading.detail["excluded_generate_answer_failures"] == 1
+
+
+def test_sc4_misses_on_coverage_even_when_presence_and_wilson_pass(
+    tmp_path: Path,
+) -> None:
+    journal, selection, gold = _presence_journal(tmp_path, n=40, present=10)
+
+    reading = evaluate_sc4(journal, selection, gold_questions=gold, expected_g=80)
+
+    assert reading.status == "MISS"
+    assert "40/80" in reading.reason
+    assert "presence rate" not in reading.reason
+    assert reading.detail["coverage_n"] == 40
+    assert reading.detail["coverage_expected"] == 80
+    assert reading.detail["coverage"] == pytest.approx(0.5)
+
+
+def test_sc4_at_full_coverage_keeps_its_recorded_reason(tmp_path: Path) -> None:
+    journal, selection, gold = _presence_journal(tmp_path, n=40, present=10)
+    bare = evaluate_sc4(journal, selection, gold_questions=gold)
+
+    reading = evaluate_sc4(journal, selection, gold_questions=gold, expected_g=40)
+
+    assert reading.status == "PASS", reading.reason
+    assert reading.reason == bare.reason
+    assert reading.detail["coverage"] == pytest.approx(1.0)
+    assert bare.detail["coverage"] is None
+    assert bare.detail["coverage_note"] == "coverage not assessed"
+
+
+def test_sc4_an_empty_expected_population_is_miss(tmp_path: Path) -> None:
+    journal, selection, gold = _presence_journal(tmp_path, n=40, present=10)
+
+    reading = evaluate_sc4(journal, selection, gold_questions=gold, expected_g=0)
+
+    assert reading.status == "MISS"
+    assert "expected population is empty" in reading.reason
+
+
+def test_sc5_one_pair_with_a_composition_change_misses_on_thin_v_coverage(
+    tmp_path: Path,
+) -> None:
+    journal, selection, gold = _composition_journal(tmp_path, n=1, boosted_for={0})
+
+    thin = evaluate_sc5(
+        journal, selection, gold_questions=gold, chunk_size=500, expected_v=4
+    )
+    full = evaluate_sc5(
+        journal, selection, gold_questions=gold, chunk_size=500, expected_v=1
+    )
+
+    assert thin.status == "MISS"
+    assert "1/4" in thin.reason
+    assert thin.n == 1, "the headline n stays n_pairs(V)"
+    assert thin.detail["coverage_n"] == 1
+    assert thin.detail["coverage_expected"] == 4
+    assert thin.detail["n_pairs"] == 1
+    assert full.status == "PASS", full.reason
+    assert full.detail["coverage"] == pytest.approx(1.0)
+
+
+def test_sc5_coverage_counts_the_composition_population_not_unmeasured_pairs(
+    tmp_path: Path,
+) -> None:
+    # Ten V pairs whose graph-on chunks all lack the flag: pairs(V) is 10, but the
+    # composition population is 0, so there is nothing for the coverage clause to count.
+    records = []
+    for i in range(10):
+        records.append(
+            _arm_record(_qid(i), "graph-on", chunks=[_chunk(f"on-{i}:0", boosted=None)])
+        )
+        records.append(
+            _arm_record(_qid(i), "graph-off", chunks=[_chunk(f"off-{i}:0")])
+        )
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    ids = [_qid(i) for i in range(10)]
+    selection = _write_selection(tmp_path / "sel.json", g=ids, v=ids)
+
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=_gold_map(10),
+        chunk_size=500,
+        expected_v=10,
+    )
+
+    assert reading.status == "MISS"
+    assert reading.detail["coverage_n"] == 0
+    assert reading.detail["n_pairs"] == 10
+
+
+def test_sc5_an_empty_expected_population_is_miss(tmp_path: Path) -> None:
+    journal, selection, gold = _composition_journal(tmp_path, n=1, boosted_for={0})
+
+    reading = evaluate_sc5(
+        journal, selection, gold_questions=gold, chunk_size=500, expected_v=0
+    )
+
+    assert reading.status == "MISS"
+    assert "expected population is empty" in reading.reason
+
+
+def test_sc5_without_an_expected_population_skips_only_the_coverage_clause(
+    tmp_path: Path,
+) -> None:
+    journal, selection, gold = _composition_journal(tmp_path, n=1, boosted_for={0})
+
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+
+    assert reading.status == "PASS"
+    assert reading.detail["coverage"] is None
+    assert reading.detail["coverage_note"] == "coverage not assessed"
+
+
+def test_main_passes_sample_scoped_integer_denominators(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CR-02/WR-04: the denominators are |sample & G| and |sample & V|, never the
+    corpus-wide len(g_ids)/len(v_ids), and never None."""
+    import lancet_eval.unpark_gates as module
+
+    fixture = _main_fixture(tmp_path, monkeypatch)
+    sample_ids = json.loads(fixture[3].read_text(encoding="utf-8"))["g_question_ids"]
+    # G and V reach well beyond the sample (the real populations are corpus-wide).
+    _write_selection(
+        fixture[3],
+        g=[*sample_ids, "outside-1", "outside-2", "outside-3"],
+        v=[*sample_ids[:2], "outside-1"],
+    )
+    seen: dict[str, dict[str, Any]] = {}
+
+    def _spy(name: str) -> None:
+        real = getattr(module, name)
+
+        def _wrapper(*args: Any, **kwargs: Any) -> Any:
+            seen[name] = kwargs
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(module, name, _wrapper)
+
+    for name in ("evaluate_sc3", "evaluate_sc4", "evaluate_sc5"):
+        _spy(name)
+
+    _run_main("drive2", tmp_path, fixture)
+
+    assert seen["evaluate_sc3"]["expected_g"] == len(sample_ids)
+    assert seen["evaluate_sc4"]["expected_g"] == len(sample_ids)
+    assert seen["evaluate_sc5"]["expected_v"] == 2
+    for kwargs in seen.values():
+        for key in ("expected_g", "expected_v"):
+            if key in kwargs:
+                assert type(kwargs[key]) is int
+
+
+def test_main_passes_zero_for_a_population_the_selection_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import lancet_eval.unpark_gates as module
+
+    fixture = _main_fixture(tmp_path, monkeypatch)
+    sample_ids = json.loads(fixture[3].read_text(encoding="utf-8"))["g_question_ids"]
+    _write_selection(fixture[3], g=sample_ids)  # no v_question_ids
+    seen: dict[str, Any] = {}
+    real = module.evaluate_sc5
+
+    def _wrapper(*args: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, "evaluate_sc5", _wrapper)
+
+    _run_main("drive2", tmp_path, fixture)
+
+    assert seen["expected_v"] == 0
+    assert type(seen["expected_v"]) is int

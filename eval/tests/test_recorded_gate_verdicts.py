@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 
+from lancet_eval import thresholds
 from lancet_eval.config import repo_root
 from lancet_eval.unpark_gates import main
 
@@ -157,3 +158,32 @@ def test_the_recorded_verdicts_are_unchanged_on_a_reread(
     for name in gated:
         for field in ("status", "n", "value"):
             assert reread[name][field] == recorded[name][field], (stage, name, field)
+
+
+@pytest.mark.parametrize(
+    ("stage", "readings", "expected_key", "expected"),
+    [
+        ("drive1", ("SC-3",), "G", 90),
+        ("drive1b", ("SC-3",), "G", 90),
+        ("drive2", ("SC-3", "SC-4"), "G", 90),
+        ("drive2", ("SC-5",), "V", 65),
+    ],
+)
+def test_the_reread_coverages_clear_the_floor_over_sample_scoped_denominators(
+    _rereads: dict[str, dict[str, Any]],
+    stage: str,
+    readings: tuple[str, ...],
+    expected_key: str,
+    expected: int,
+) -> None:
+    """A disclosure of the recorded coverages, not a new verdict (D-73): the floor
+    postdates these drives, and at 0.80 no recorded status changes. The denominators
+    are |sample & G| = 90 and |sample & V| = 65, never the corpus-wide 398 / 291."""
+    for name in readings:
+        detail = _rereads[stage][name]["detail"]
+        assert detail["coverage_expected"] == expected, (stage, name, expected_key)
+        assert detail["coverage"] >= thresholds.UNPARK_GATE_COVERAGE_FLOOR, (
+            stage,
+            name,
+        )
+        assert detail["coverage"] == detail["coverage_n"] / expected
