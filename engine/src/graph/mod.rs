@@ -26,6 +26,9 @@ use arrow_select::filter::filter_record_batch;
 pub(crate) mod bridge;
 pub mod context_strategy;
 pub mod extraction;
+pub mod index;
+pub mod paths;
+pub mod seeding;
 
 #[cfg(test)]
 mod tests;
