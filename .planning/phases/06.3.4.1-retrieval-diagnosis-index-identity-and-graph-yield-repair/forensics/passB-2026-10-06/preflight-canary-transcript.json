@@ -1,0 +1,389 @@
+[
+ {
+  "start_us": 1791276299171477,
+  "correlation_id": "da4bfdb1-d23f-4c59-bdf6-fc0de1feff0c",
+  "canary": "probe-or-unmapped:graph-on",
+  "floors": null,
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "0",
+  "graph_edge_count": "0",
+  "graph_seed_count": "1",
+  "graph_path_found": false,
+  "graph_prompt_fact_count": "0",
+  "notice_codes": [
+   "GRAPH_UNAVAILABLE"
+  ],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    443.8,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    0.1,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    444.0,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    78.0,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    1.0,
+    120
+   ]
+  },
+  "answer_basis": null
+ },
+ {
+  "start_us": 1791276308942311,
+  "correlation_id": "033c5192-3f2d-4e4d-9f7d-5bec268c8915",
+  "canary": "mhr-0073ab564e55:graph-on",
+  "floors": {
+   "min_retrieved_chunks": 1,
+   "require_graph_node": false,
+   "require_retrieval_completed_only": false,
+   "require_ablation_notice": false,
+   "require_seed_path": null
+  },
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "3",
+  "graph_edge_count": "3",
+  "graph_seed_count": "6",
+  "graph_path_found": true,
+  "graph_prompt_fact_count": "2",
+  "notice_codes": [],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    181.0,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    38.9,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    219.9,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    129.6,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    1.4,
+    120
+   ]
+  },
+  "answer_basis": null
+ },
+ {
+  "start_us": 1791276315893884,
+  "correlation_id": "24cdc4a2-e20b-4ec8-9c29-477ef58ebbfa",
+  "canary": "mhr-01a03d465730:graph-on",
+  "floors": {
+   "min_retrieved_chunks": 1,
+   "require_graph_node": false,
+   "require_retrieval_completed_only": false,
+   "require_ablation_notice": false,
+   "require_seed_path": null
+  },
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "3",
+  "graph_edge_count": "2",
+  "graph_seed_count": "6",
+  "graph_path_found": true,
+  "graph_prompt_fact_count": "1",
+  "notice_codes": [],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    203.9,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    427.3,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    631.2,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    159.6,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    2.0,
+    120
+   ]
+  },
+  "answer_basis": null
+ },
+ {
+  "start_us": 1791276321908040,
+  "correlation_id": "ed3df399-883d-4132-98e1-4cb048962827",
+  "canary": "mhr-00fc91a80765:graph-on",
+  "floors": {
+   "min_retrieved_chunks": 1,
+   "require_graph_node": false,
+   "require_retrieval_completed_only": false,
+   "require_ablation_notice": false,
+   "require_seed_path": null
+  },
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "0",
+  "graph_edge_count": "0",
+  "graph_seed_count": "3",
+  "graph_path_found": false,
+  "graph_prompt_fact_count": "0",
+  "notice_codes": [
+   "GRAPH_UNAVAILABLE"
+  ],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    207.8,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    35.2,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    243.1,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    92.7,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    1.7,
+    120
+   ]
+  },
+  "answer_basis": null
+ },
+ {
+  "start_us": 1791276334159676,
+  "correlation_id": "0466f80e-ec71-48c2-99f8-f1bcd64c1cb7",
+  "canary": "mhr-0279d4a349c3:graph-on",
+  "floors": {
+   "min_retrieved_chunks": 0,
+   "require_graph_node": false,
+   "require_retrieval_completed_only": true,
+   "require_ablation_notice": false,
+   "require_seed_path": null
+  },
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "3",
+  "graph_edge_count": "2",
+  "graph_seed_count": "5",
+  "graph_path_found": true,
+  "graph_prompt_fact_count": "1",
+  "notice_codes": [],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    233.2,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    752.1,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    985.3,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    139.6,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    1.6,
+    120
+   ]
+  },
+  "answer_basis": null
+ },
+ {
+  "start_us": 1791276341545744,
+  "correlation_id": "dbca5a69-1e66-4fb9-94bd-41a1242b140d",
+  "canary": "mhr-0d5e238015ef:graph-on",
+  "floors": {
+   "min_retrieved_chunks": 1,
+   "require_graph_node": true,
+   "require_retrieval_completed_only": false,
+   "require_ablation_notice": false,
+   "require_seed_path": null
+  },
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "3",
+  "graph_edge_count": "2",
+  "graph_seed_count": "4",
+  "graph_path_found": true,
+  "graph_prompt_fact_count": "1",
+  "notice_codes": [],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    224.9,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    32.5,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    257.4,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    122.6,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    1.7,
+    120
+   ]
+  },
+  "answer_basis": null
+ },
+ {
+  "start_us": 1791276348522241,
+  "correlation_id": "715433aa-ee23-4192-8cad-cdc5fe218b8d",
+  "canary": "mhr-12912d800c0c:graph-on",
+  "floors": {
+   "min_retrieved_chunks": 1,
+   "require_graph_node": true,
+   "require_retrieval_completed_only": false,
+   "require_ablation_notice": false,
+   "require_seed_path": null
+  },
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "3",
+  "graph_edge_count": "2",
+  "graph_seed_count": "3",
+  "graph_path_found": true,
+  "graph_prompt_fact_count": "1",
+  "notice_codes": [],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    209.8,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    1677.7,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    1887.5,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    129.7,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    1.9,
+    120
+   ]
+  },
+  "answer_basis": null
+ },
+ {
+  "start_us": 1791276360280928,
+  "correlation_id": "f27810d4-209d-45ad-a48c-3e89eb4e287c",
+  "canary": "mhr-0d5e238015ef:graph-off",
+  "floors": {
+   "min_retrieved_chunks": 1,
+   "require_graph_node": false,
+   "require_retrieval_completed_only": false,
+   "require_ablation_notice": true,
+   "require_seed_path": null
+  },
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "0",
+  "graph_edge_count": "0",
+  "graph_seed_count": "0",
+  "graph_path_found": false,
+  "graph_prompt_fact_count": "0",
+  "notice_codes": [
+   "GRAPH_ABLATION"
+  ],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    180.3,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    null,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    180.4,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    108.5,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    1.4,
+    120
+   ]
+  },
+  "answer_basis": null
+ },
+ {
+  "start_us": 1791276374291542,
+  "correlation_id": "24e39ff5-3eb4-4427-900d-9e891a135405",
+  "canary": "mhr-3b0dac3a26bd:graph-on",
+  "floors": {
+   "min_retrieved_chunks": 1,
+   "require_graph_node": true,
+   "require_retrieval_completed_only": false,
+   "require_ablation_notice": false,
+   "require_seed_path": true
+  },
+  "retrieved_chunks_final": 8,
+  "evidence_blocks_in_prompt": 8,
+  "graph_node_count": "2",
+  "graph_edge_count": "1",
+  "graph_seed_count": "6",
+  "graph_path_found": true,
+  "graph_prompt_fact_count": "1",
+  "notice_codes": [],
+  "node_ms_vs_budget": {
+   "embedding_request": [
+    206.1,
+    2000
+   ],
+   "graph_traversal (graph operation)": [
+    1530.1,
+    2424
+   ],
+   "graph_context_extraction (ExtractGraphContext)": [
+    1736.3,
+    12500
+   ],
+   "hybrid_retrieval (RetrieveHybrid)": [
+    116.7,
+    2500
+   ],
+   "prompt_assembly (AssemblePrompt)": [
+    1.0,
+    120
+   ]
+  },
+  "answer_basis": null
+ }
+]
