@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -75,13 +75,40 @@ def _reached_generate_answer(record: Any) -> bool:
     )
 
 
-def evaluate_sc1(run_dir: Path | str) -> GateReading:
-    """SC-1 / D-87a: header `partial` equals `not completeness_comparison(...)` AND
-    (when non-partial) `report.json` exists via the unmodified fail-closed path.
+def _read_journal_header(journal_path: Path) -> dict[str, Any] | None:
+    """The journal's header line, or None when the first line is not one."""
+    with open(journal_path, encoding="utf-8") as f:
+        first_line = f.readline().strip()
+    if not first_line:
+        return None
+    try:
+        parsed = json.loads(first_line)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, dict) and parsed.get("type") == "header":
+        return parsed
+    return None
+
+
+def evaluate_sc1(
+    run_dir: Path | str,
+    *,
+    is_complete: bool | None = None,
+    missing_count: int | None = None,
+) -> GateReading:
+    """SC-1 / D-87a: the journal is COMPLETE, header `partial` equals
+    `not completeness_comparison(...)` AND (when non-partial) `report.json` exists via
+    the unmodified fail-closed path.
 
     Reads only the journal header, `completeness_comparison`, and the presence of
     `report.json` on disk -- never calls `score_run`/`render_json` and adds no flag
     to either (a plan prohibition).
+
+    `main` measures completeness once and passes it in as `is_complete` and
+    `missing_count`; called directly without them, this measures it itself. A journal
+    honestly labelled `partial: true` with no `report.json` is still MISS: honest
+    metadata about an incomplete run does not make the run a complete scored one
+    (CR-02; D-87a "a halted drive is never reported as complete").
     """
     dir_path = Path(run_dir)
     journal_path = dir_path / "journal.jsonl"
@@ -92,16 +119,7 @@ def evaluate_sc1(run_dir: Path | str) -> GateReading:
             gate="SC-1", status="MISS", reason="no journal file", n=0, detail={}
         )
 
-    with open(journal_path, encoding="utf-8") as f:
-        first_line = f.readline().strip()
-    header: dict[str, Any] | None = None
-    if first_line:
-        try:
-            parsed = json.loads(first_line)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, dict) and parsed.get("type") == "header":
-            header = parsed
+    header = _read_journal_header(journal_path)
     if header is None:
         return GateReading(
             gate="SC-1", status="MISS", reason="no header", n=0, detail={}
@@ -119,7 +137,10 @@ def evaluate_sc1(run_dir: Path | str) -> GateReading:
             detail={},
         )
 
-    is_complete, missing = completeness_comparison(journal_path, corpus_name)
+    if is_complete is None:
+        is_complete, missing = completeness_comparison(journal_path, corpus_name)
+        missing_count = len(missing)
+    missing_count = missing_count or 0
     expected_partial = not is_complete
     header_matches = header_partial == expected_partial
 
@@ -127,10 +148,12 @@ def evaluate_sc1(run_dir: Path | str) -> GateReading:
     report_exists = report_json_path.is_file()
 
     reasons: list[str] = []
+    if not is_complete:
+        reasons.append(f"journal incomplete: {missing_count} work unit(s) missing")
     if not header_matches:
         reasons.append(
             f"header partial={header_partial} != not completeness_comparison()="
-            f"{expected_partial} (missing {len(missing)} work unit(s))"
+            f"{expected_partial} (missing {missing_count} work unit(s))"
         )
     if header_partial and report_exists:
         reasons.append(
@@ -152,7 +175,8 @@ def evaluate_sc1(run_dir: Path | str) -> GateReading:
     detail: dict[str, Any] = {
         "header_partial": header_partial,
         "expected_partial": expected_partial,
-        "missing_units": float(len(missing)),
+        "journal_complete": is_complete,
+        "missing_units": float(missing_count),
         "report_json_exists": report_exists,
     }
     return GateReading(
@@ -1228,11 +1252,16 @@ def graph_off_invariance(
 def _drive2_markdown(
     stage: str,
     readings: dict[str, GateReading],
-    invariance: InvarianceReport,
+    invariance: InvarianceReport | None,
+    *,
+    not_computed_reason: str | None = None,
 ) -> list[str]:
     """Drive 2 is the run of record: SC-1, SC-4 and SC-5 are its gates. SC-2, SC-3
     and the D-69 rate are re-reported as disclosures only (AI-SPEC §5, gate sequence
-    D-85), so a regression there is visible without being re-gated."""
+    D-85), so a regression there is visible without being re-gated.
+
+    `invariance` is None when the completeness precondition failed and no reading was
+    computed (CR-02): the section then says `not computed: <reason>`."""
     gates = ("SC-1", "SC-4", "SC-5")
     disclosures = ("SC-2", "D-69 companion", "SC-3")
     lines = [f"# Unpark Gates ({stage})", "", "## Gates", ""]
@@ -1254,6 +1283,11 @@ def _drive2_markdown(
         "",
         "## Graph-off invariance vs the baseline run (disclosure, no threshold)",
         "",
+    ]
+    if invariance is None:
+        lines.append(f"not computed: {not_computed_reason or 'no reason recorded'}")
+        return lines
+    lines += [
         f"- questions in both journals: {invariance.n_common} "
         f"(comparable: {invariance.n_comparable})",
         f"- answer_usable agrees: {invariance.answer_usable_agree_n}; differs: "
@@ -1269,6 +1303,95 @@ def _drive2_markdown(
         f"- any difference: {invariance.any_difference}",
     ]
     return lines
+
+
+def _journal_preconditions(
+    journal_path: Path,
+) -> tuple[str | None, tuple[bool, int] | None, list[str]]:
+    """The one place that decides whether the journal may be scored at all (CR-02).
+
+    Returns the corpus named by the journal, the measured `(is_complete, missing_count)`
+    (None when completeness could not be measured), and the failure reasons. A journal
+    that is absent, headerless, corpus-less, unmeasurable or incomplete fails: no
+    reading may be computed from the records of such a journal (D-87a: a halted drive
+    is never reported as complete). `completeness_comparison` is called here and
+    nowhere else on `main`'s path, so completeness is measured exactly once.
+    """
+    if not journal_path.is_file():
+        return None, None, ["no journal file"]
+    header = _read_journal_header(journal_path)
+    if header is None:
+        return None, None, ["no header"]
+    records = load_records(journal_path)
+    corpus_name = header.get("corpus") or (records[0].corpus if records else None)
+    if not corpus_name:
+        return None, None, ["no corpus in header or records"]
+    try:
+        is_complete, missing = completeness_comparison(journal_path, corpus_name)
+    except Exception as exc:  # fail closed: an unmeasurable journal is not scored
+        reason = (
+            f"journal completeness could not be measured for corpus {corpus_name!r}: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        return corpus_name, None, [reason]
+    failures = (
+        []
+        if is_complete
+        else [f"journal incomplete: {len(missing)} work unit(s) missing"]
+    )
+    return corpus_name, (is_complete, len(missing)), failures
+
+
+def _unmet_precondition_readings(
+    run_dir: Path,
+    journal_path: Path,
+    failures: list[str],
+    completeness: tuple[bool, int] | None,
+    *,
+    is_drive2: bool,
+) -> dict[str, GateReading]:
+    """Every reading for the stage as MISS with the precondition reasons.
+
+    SC-1 keeps its own header and report detail when completeness was measured; every
+    other reading is a bare MISS and nothing is computed from the journal's records.
+    """
+    reason = "; ".join(failures)
+    n = len(load_records(journal_path)) if journal_path.is_file() else 0
+    if completeness is not None:
+        sc1 = evaluate_sc1(
+            run_dir, is_complete=completeness[0], missing_count=completeness[1]
+        )
+        absent = [f for f in failures if f not in sc1.reason]
+        if absent:
+            sc1 = replace(sc1, reason="; ".join([*absent, sc1.reason]))
+    else:
+        sc1 = GateReading(
+            gate="SC-1",
+            status="MISS",
+            reason=reason,
+            n=n,
+            detail={
+                "journal_complete": False,
+                "report_json_exists": (run_dir / "report.json").is_file(),
+            },
+        )
+    miss_detail: dict[str, Any] = {
+        "journal_complete": bool(completeness and completeness[0]),
+        "missing_units": completeness[1] if completeness is not None else None,
+    }
+    gates = [
+        ("SC-2", "SC-2"),
+        ("D-69 companion", "citation_rejection_rate"),
+        ("SC-3", "SC-3"),
+    ]
+    if is_drive2:
+        gates += [("SC-4", "SC-4"), ("SC-5", "SC-5")]
+    readings = {"SC-1": sc1}
+    for name, gate in gates:
+        readings[name] = GateReading(
+            gate=gate, status="MISS", reason=reason, n=n, detail=dict(miss_detail)
+        )
+    return readings
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1320,55 +1443,61 @@ def main(argv: list[str] | None = None) -> int:
         if not baseline_journal.is_file():
             parser.error(f"--baseline-run has no journal: {baseline_dir}")
 
-    sc1 = evaluate_sc1(run_dir)
-    sc2 = evaluate_sc2(journal_path, args.engine_pid_before, args.engine_pid_after)
+    corpus_name, completeness, failures = _journal_preconditions(journal_path)
 
-    corpus_name: str | None = None
-    if journal_path.is_file():
-        with open(journal_path, encoding="utf-8") as f:
-            first_line = f.readline().strip()
-        if first_line:
-            try:
-                header = json.loads(first_line)
-            except json.JSONDecodeError:
-                header = {}
-            if isinstance(header, dict):
-                corpus_name = header.get("corpus")
-
-    questions = load_sample_questions(corpus_name) if corpus_name else []
-    d69 = citation_rejection_rate(journal_path, questions)
-
-    if corpus_name and journal_path.is_file():
-        rows = build_rows(corpus_name, str(journal_path), args.gold_chunks)
-    else:
-        rows = []
-    sc3 = evaluate_sc3(rows, args.populations, corpus=corpus_name)
-
-    readings: dict[str, GateReading] = {
-        "SC-1": sc1,
-        "SC-2": sc2,
-        "D-69 companion": d69,
-        "SC-3": sc3,
-    }
+    readings: dict[str, GateReading]
     payload_extra: dict[str, Any] = {}
     invariance: InvarianceReport | None = None
-    if is_drive2 and baseline_journal is not None:
-        readings["SC-4"] = evaluate_sc4(
-            journal_path, args.populations, corpus=corpus_name
+    not_computed_reason: str | None = None
+    if failures:
+        # CR-02: the journal under gate is not a complete scored run. Every reading is
+        # MISS and none is computed from its records.
+        not_computed_reason = "; ".join(failures)
+        readings = _unmet_precondition_readings(
+            run_dir, journal_path, failures, completeness, is_drive2=is_drive2
         )
-        readings["SC-5"] = evaluate_sc5(
-            journal_path, args.populations, corpus=corpus_name
-        )
-        invariance = graph_off_invariance(
-            baseline_journal, journal_path, corpus=corpus_name
-        )
-        payload_extra["graph-off invariance"] = asdict(invariance)
+        if is_drive2:
+            payload_extra["graph-off invariance"] = {
+                "not_computed": not_computed_reason
+            }
+    else:
+        sc1 = evaluate_sc1(run_dir, is_complete=True, missing_count=0)
+        sc2 = evaluate_sc2(journal_path, args.engine_pid_before, args.engine_pid_after)
+
+        questions = load_sample_questions(corpus_name) if corpus_name else []
+        d69 = citation_rejection_rate(journal_path, questions)
+
+        if corpus_name and journal_path.is_file():
+            rows = build_rows(corpus_name, str(journal_path), args.gold_chunks)
+        else:
+            rows = []
+        sc3 = evaluate_sc3(rows, args.populations, corpus=corpus_name)
+
+        readings = {
+            "SC-1": sc1,
+            "SC-2": sc2,
+            "D-69 companion": d69,
+            "SC-3": sc3,
+        }
+        if is_drive2 and baseline_journal is not None:
+            readings["SC-4"] = evaluate_sc4(
+                journal_path, args.populations, corpus=corpus_name
+            )
+            readings["SC-5"] = evaluate_sc5(
+                journal_path, args.populations, corpus=corpus_name
+            )
+            invariance = graph_off_invariance(
+                baseline_journal, journal_path, corpus=corpus_name
+            )
+            payload_extra["graph-off invariance"] = asdict(invariance)
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if invariance is not None:
-        md_lines = _drive2_markdown(args.stage, readings, invariance)
+    if is_drive2:
+        md_lines = _drive2_markdown(
+            args.stage, readings, invariance, not_computed_reason=not_computed_reason
+        )
     else:
         md_lines = [
             f"# Unpark Gates ({args.stage})",
@@ -1397,6 +1526,8 @@ def main(argv: list[str] | None = None) -> int:
             f"(any_difference={invariance.any_difference}, "
             f"common={invariance.n_common})"
         )
+    elif is_drive2:
+        print(f"graph-off invariance: not computed ({not_computed_reason})")
 
     return 0
 
