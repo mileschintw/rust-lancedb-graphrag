@@ -49,6 +49,33 @@ _TIMEOUT_CLASS = "timeout"
 #: The stage label that adds SC-4, SC-5 and graph-off invariance; any other label keeps
 #: the drive-1 readings unchanged (D-95).
 DRIVE2_STAGE = "drive2"
+#: The gate drives written before the gate-stage marker existed (06.3.4.1-33), read
+#: without it. Keyed by the header's own `(corpus, created_at)`, each maps to the stage
+#: label it was driven as and its retry evidence: the `retries=0` banner in that run's
+#: `drive-console.txt` (D-67; the operator typed `--retries 0` on each).
+#:
+#: The registry is closed. These three journals have no marker to read and their retry
+#: provenance is on record; every other journal without a marker, the `--retries 2`
+#: 06.3.4-era ones included, MISSes (G-06.3.4.1-2). Entries are never added: no
+#: wildcard, no data-driven loading. The key is the header's own content, so a CRLF
+#: checkout of the journal cannot change it (a file hash would).
+_LEGACY_UNMARKED_GATE_DRIVES: dict[tuple[str, float], tuple[str, str]] = {
+    ("multihop_rag_diag", 1790752043.476702): (
+        "drive1",
+        "eval/runs/2026-09-30-drive1-multihop_rag_diag/drive-console.txt "
+        "records retries=0",
+    ),
+    ("multihop_rag_diag", 1790892253.3635316): (
+        "drive1b",
+        "eval/runs/2026-10-01-drive1b-multihop_rag_diag/drive-console.txt "
+        "records retries=0",
+    ),
+    ("multihop_rag_diag", 1791278008.6136012): (
+        "drive2",
+        "eval/runs/2026-10-06-drive2-multihop_rag_diag/drive-console.txt "
+        "records retries=0",
+    ),
+}
 _BINARY_GOLD_ANSWERS = frozenset({"yes", "no"})
 #: D-73: the only dominance reading this phase committed to thresholds.py. A
 #: literal that doesn't match this is a signal the committed policy changed
@@ -1327,13 +1354,15 @@ def _drive2_markdown(
     invariance: InvarianceReport | None,
     *,
     not_computed_reason: str | None = None,
+    retry_provenance: str | None = None,
 ) -> list[str]:
     """Drive 2 is the run of record: SC-1, SC-4 and SC-5 are its gates. SC-2, SC-3
     and the D-69 rate are re-reported as disclosures only (AI-SPEC §5, gate sequence
     D-85), so a regression there is visible without being re-gated.
 
-    `invariance` is None when the completeness precondition failed and no reading was
-    computed (CR-02): the section then says `not computed: <reason>`."""
+    `invariance` is None when a precondition failed and no reading was computed
+    (CR-02, CR-03): the section then says `not computed: <reason>`. `retry_provenance`
+    adds one line below the tables, before the invariance section."""
     gates = ("SC-1", "SC-4", "SC-5")
     disclosures = ("SC-2", "D-69 companion", "SC-3")
     lines = [f"# Unpark Gates ({stage})", "", "## Gates", ""]
@@ -1351,6 +1380,8 @@ def _drive2_markdown(
     for name in disclosures:
         reading = readings[name]
         lines.append(f"| {name} | {reading.status} | {reading.n} | {reading.reason} |")
+    if retry_provenance is not None:
+        lines += ["", f"Retry provenance: {retry_provenance}"]
     lines += [
         "",
         "## Graph-off invariance vs the baseline run (disclosure, no threshold)",
@@ -1377,41 +1408,125 @@ def _drive2_markdown(
     return lines
 
 
+def _ascii(value: Any) -> str:
+    """`value` as ASCII text: `main` prints every reason, and a redirected Windows
+    stdout in a legacy code page raises on anything else (06.3.4.1-32)."""
+    return str(value).encode("ascii", "backslashreplace").decode("ascii")
+
+
+def _legacy_drive(header: dict[str, Any]) -> tuple[str, str] | None:
+    """The registry entry for a pre-marker header, or None when it is not registered."""
+    key: tuple[Any, Any] = (header.get("corpus"), header.get("created_at"))
+    try:
+        return _LEGACY_UNMARKED_GATE_DRIVES.get(key)
+    except TypeError:  # an unhashable header value is never a registered key
+        return None
+
+
+def _retry_provenance(
+    header: dict[str, Any], records: list[Any], stage: str
+) -> tuple[str, list[str]]:
+    """How the journal was driven, as text, and why it may not be read as `stage`.
+
+    The header's gate-stage marker (06.3.4.1-33) must name `stage` with `max_retries`
+    0. A header with no marker is read only when it is one of the three recorded
+    pre-marker drives, under its own stage label (`_LEGACY_UNMARKED_GATE_DRIVES`). The
+    records are scanned as well, because the header is written once: any record that
+    carries a prior attempt means a retry ran (D-67, CR-03).
+    """
+    failures: list[str] = []
+    if "max_retries" in header:
+        marker_stage = header.get("gate_stage")
+        retries = header["max_retries"]
+        text = (
+            f"header marker: gate_stage={_ascii(marker_stage)}, "
+            f"max_retries={_ascii(retries)}"
+        )
+        if marker_stage != stage:
+            failures.append(
+                f"journal header gate_stage={marker_stage!a} is not "
+                f"--stage {stage!a} (D-67)"
+            )
+        if isinstance(retries, bool) or retries != 0:
+            failures.append(
+                f"journal header max_retries={retries!a}, not 0 (D-67)"
+            )
+    elif "gate_stage" in header:
+        text = "no marker: header carries gate_stage without max_retries"
+        failures.append(
+            "journal header carries gate_stage without max_retries "
+            "(incomplete gate-stage marker)"
+        )
+    else:
+        entry = _legacy_drive(header)
+        if entry is None:
+            text = "no marker: not one of the registered pre-marker gate drives"
+            failures.append(
+                "journal header carries no gate-stage marker "
+                "(driven without --gate-stage)"
+            )
+        else:
+            label, evidence = entry
+            if label == stage:
+                text = f"legacy: {evidence}"
+            else:
+                text = (
+                    f"legacy: registered as {label!a}, "
+                    f"read under {stage!a}"
+                )
+                failures.append(
+                    f"journal is the registered pre-marker drive {label!a}, "
+                    f"not --stage {stage!a}"
+                )
+    retried = sum(1 for rec in records if rec.prior_attempts)
+    if retried:
+        failures.append(f"{retried} record(s) carry retried attempts (D-67)")
+    return text, failures
+
+
 def _journal_preconditions(
-    journal_path: Path,
-) -> tuple[str | None, tuple[bool, int] | None, list[str]]:
+    journal_path: Path, stage: str
+) -> tuple[str | None, tuple[bool, int] | None, list[str], str]:
     """The one place that decides whether the journal may be scored at all (CR-02).
 
     Returns the corpus named by the journal, the measured `(is_complete, missing_count)`
-    (None when completeness could not be measured), and the failure reasons. A journal
-    that is absent, headerless, corpus-less, unmeasurable or incomplete fails: no
-    reading may be computed from the records of such a journal (D-87a: a halted drive
-    is never reported as complete). `completeness_comparison` is called here and
-    nowhere else on `main`'s path, so completeness is measured exactly once.
+    (None when completeness could not be measured), the failure reasons, and the retry
+    provenance text. A journal that is absent, headerless, corpus-less, unmeasurable or
+    incomplete fails: no reading may be computed from the records of such a journal
+    (D-87a: a halted drive is never reported as complete). So does one that was not
+    driven as `stage` with `--retries 0`, or that holds a retried attempt (CR-03, D-67;
+    `_retry_provenance`). `completeness_comparison` is called here and nowhere else on
+    `main`'s path, so completeness is measured exactly once.
     """
     if not journal_path.is_file():
-        return None, None, ["no journal file"]
+        return None, None, ["no journal file"], "not assessed: no journal file"
     header = _read_journal_header(journal_path)
     if header is None:
-        return None, None, ["no header"]
+        return None, None, ["no header"], "not assessed: no header"
     records = load_records(journal_path)
     corpus_name = header.get("corpus") or (records[0].corpus if records else None)
     if not corpus_name:
-        return None, None, ["no corpus in header or records"]
+        return (
+            None,
+            None,
+            ["no corpus in header or records"],
+            "not assessed: no corpus in header or records",
+        )
+    failures: list[str] = []
+    completeness: tuple[bool, int] | None = None
     try:
         is_complete, missing = completeness_comparison(journal_path, corpus_name)
     except Exception as exc:  # fail closed: an unmeasurable journal is not scored
-        reason = (
+        failures.append(
             f"journal completeness could not be measured for corpus {corpus_name!r}: "
             f"{type(exc).__name__}: {exc}"
         )
-        return corpus_name, None, [reason]
-    failures = (
-        []
-        if is_complete
-        else [f"journal incomplete: {len(missing)} work unit(s) missing"]
-    )
-    return corpus_name, (is_complete, len(missing)), failures
+    else:
+        completeness = (is_complete, len(missing))
+        if not is_complete:
+            failures.append(f"journal incomplete: {len(missing)} work unit(s) missing")
+    provenance, provenance_failures = _retry_provenance(header, records, stage)
+    return corpus_name, completeness, [*failures, *provenance_failures], provenance
 
 
 def _unmet_precondition_readings(
@@ -1419,13 +1534,16 @@ def _unmet_precondition_readings(
     journal_path: Path,
     failures: list[str],
     completeness: tuple[bool, int] | None,
+    provenance: str,
     *,
     is_drive2: bool,
 ) -> dict[str, GateReading]:
     """Every reading for the stage as MISS with the precondition reasons.
 
-    SC-1 keeps its own header and report detail when completeness was measured; every
-    other reading is a bare MISS and nothing is computed from the journal's records.
+    SC-1 keeps its own header and report detail when completeness was measured, forced
+    to MISS (a complete, honest journal with a provenance failure would otherwise read
+    PASS); every other reading is a bare MISS and nothing is computed from the journal's
+    records. SC-1's detail carries the retry provenance text.
     """
     reason = "; ".join(failures)
     n = len(load_records(journal_path)) if journal_path.is_file() else 0
@@ -1435,7 +1553,8 @@ def _unmet_precondition_readings(
         )
         absent = [f for f in failures if f not in sc1.reason]
         if absent:
-            sc1 = replace(sc1, reason="; ".join([*absent, sc1.reason]))
+            kept = [sc1.reason] if sc1.status == "MISS" else []
+            sc1 = replace(sc1, status="MISS", reason="; ".join([*absent, *kept]))
     else:
         sc1 = GateReading(
             gate="SC-1",
@@ -1447,6 +1566,7 @@ def _unmet_precondition_readings(
                 "report_json_exists": (run_dir / "report.json").is_file(),
             },
         )
+    sc1 = replace(sc1, detail={**sc1.detail, "retry_provenance": provenance})
     miss_detail: dict[str, Any] = {
         "journal_complete": bool(completeness and completeness[0]),
         "missing_units": completeness[1] if completeness is not None else None,
@@ -1515,7 +1635,9 @@ def main(argv: list[str] | None = None) -> int:
         if not baseline_journal.is_file():
             parser.error(f"--baseline-run has no journal: {baseline_dir}")
 
-    corpus_name, completeness, failures = _journal_preconditions(journal_path)
+    corpus_name, completeness, failures, provenance = _journal_preconditions(
+        journal_path, args.stage
+    )
 
     readings: dict[str, GateReading]
     payload_extra: dict[str, Any] = {}
@@ -1526,7 +1648,12 @@ def main(argv: list[str] | None = None) -> int:
         # MISS and none is computed from its records.
         not_computed_reason = "; ".join(failures)
         readings = _unmet_precondition_readings(
-            run_dir, journal_path, failures, completeness, is_drive2=is_drive2
+            run_dir,
+            journal_path,
+            failures,
+            completeness,
+            provenance,
+            is_drive2=is_drive2,
         )
         if is_drive2:
             payload_extra["graph-off invariance"] = {
@@ -1534,6 +1661,7 @@ def main(argv: list[str] | None = None) -> int:
             }
     else:
         sc1 = evaluate_sc1(run_dir, is_complete=True, missing_count=0)
+        sc1 = replace(sc1, detail={**sc1.detail, "retry_provenance": provenance})
         sc2 = evaluate_sc2(journal_path, args.engine_pid_before, args.engine_pid_after)
 
         questions = load_sample_questions(corpus_name) if corpus_name else []
@@ -1584,7 +1712,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if is_drive2:
         md_lines = _drive2_markdown(
-            args.stage, readings, invariance, not_computed_reason=not_computed_reason
+            args.stage,
+            readings,
+            invariance,
+            not_computed_reason=not_computed_reason,
+            retry_provenance=provenance,
         )
     else:
         md_lines = [
@@ -1596,6 +1728,7 @@ def main(argv: list[str] | None = None) -> int:
         for name, reading in readings.items():
             row = f"| {name} | {reading.status} | {reading.n} | {reading.reason} |"
             md_lines.append(row)
+        md_lines += ["", f"Retry provenance: {provenance}"]
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(md_lines) + "\n")
 
@@ -1608,6 +1741,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for name, reading in readings.items():
         print(f"{name}: {reading.status} ({reading.reason})")
+    print(f"retry provenance: {provenance}")
     if invariance is not None:
         print(
             "graph-off invariance: disclosure "
