@@ -3005,7 +3005,7 @@ func TestQueryRAG_SSE_WorkflowCompletedPayloadKeySet(t *testing.T) {
 			"code", "message", "severity", "typed_code",
 		})
 		assertSSEPayloadKeySet(t, string(rawWc["metadata"]), []string{
-			"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_edge_count", "graph_node_count", "graph_prompt_fact_count", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
+			"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_boosted_chunk_count", "graph_degree_capped_count", "graph_edge_count", "graph_node_count", "graph_path_found", "graph_prompt_fact_count", "graph_seed_count", "graph_seed_document_ids", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
 		})
 	}
 }
@@ -4485,7 +4485,7 @@ func TestQueryRAG_SSE_WorkflowCompletedWithExplicitMetadata(t *testing.T) {
 	}
 
 	assertSSEPayloadKeySet(t, string(rawWc["metadata"]), []string{
-		"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_edge_count", "graph_node_count", "graph_prompt_fact_count", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
+		"bm25_count", "completed_at_ms", "completion_tokens", "degraded_mode", "graph_boosted_chunk_count", "graph_degree_capped_count", "graph_edge_count", "graph_node_count", "graph_path_found", "graph_prompt_fact_count", "graph_seed_count", "graph_seed_document_ids", "prompt_tokens", "reformulation_used", "started_at_ms", "vector_count",
 	})
 
 	var metaMap map[string]any

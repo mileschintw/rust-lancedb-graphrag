@@ -707,3 +707,162 @@ func TestWorkflowCompletedCarriesPartialSnapshotAndGraphInfluence(t *testing.T) 
 	}
 }
 
+// 06.3.4.1-16 (D-79, D-81): the seeding diagnostics on workflow_completed and the per-chunk
+// graph flag on the retrieved set. Each new key is asserted by name so a field dropped between the
+// engine and the harness fails here (T-06.3.4.1-16-03).
+
+// seedDiagnosticKeys lists the five keys, in the order WorkflowMetadata declares them.
+var seedDiagnosticKeys = []string{
+	"graph_seed_count",
+	"graph_path_found",
+	"graph_boosted_chunk_count",
+	"graph_degree_capped_count",
+	"graph_seed_document_ids",
+}
+
+func completedMetadata(t *testing.T, ev *pb.WorkflowEvent) map[string]any {
+	t.Helper()
+	_, data := splitFrame(t, writeEvent(t, ev))
+	var payload struct {
+		Metadata map[string]any `json:"metadata"`
+	}
+	if err := json.Unmarshal([]byte(data), &payload); err != nil {
+		t.Fatalf("unmarshal workflow_completed: %v", err)
+	}
+	if payload.Metadata == nil {
+		t.Fatal("expected a metadata object in workflow_completed")
+	}
+	return payload.Metadata
+}
+
+func TestWorkflowCompletedCarriesGraphSeedDiagnostics(t *testing.T) {
+	meta := &pb.WorkflowMetadata{
+		GraphSeedCount:         2,
+		GraphPathFound:         true,
+		GraphBoostedChunkCount: 1,
+		GraphDegreeCappedCount: 3,
+		GraphSeedDocumentIds:   []string{"doc-a", "doc-b"},
+		GraphPromptFactCount:   7,
+		GraphNodeCount:         10,
+	}
+	cases := map[string]*pb.WorkflowCompletedEvent{
+		"success": {Success: true, DurationMs: 800, Metadata: meta, FinalResponse: &pb.QueryRAGResponse{Answer: "ok"}},
+		"failure": {Success: false, DurationMs: 900, Metadata: meta, PartialSnapshot: &pb.RetrievalSnapshot{}},
+	}
+	for name, wc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := completedMetadata(t, &pb.WorkflowEvent{
+				Event: &pb.WorkflowEvent_WorkflowCompleted{WorkflowCompleted: wc},
+			})
+			if got["graph_seed_count"] != float64(2) {
+				t.Errorf("graph_seed_count = %v, want 2", got["graph_seed_count"])
+			}
+			if got["graph_path_found"] != true {
+				t.Errorf("graph_path_found = %v, want true", got["graph_path_found"])
+			}
+			if got["graph_boosted_chunk_count"] != float64(1) {
+				t.Errorf("graph_boosted_chunk_count = %v, want 1", got["graph_boosted_chunk_count"])
+			}
+			if got["graph_degree_capped_count"] != float64(3) {
+				t.Errorf("graph_degree_capped_count = %v, want 3", got["graph_degree_capped_count"])
+			}
+			ids, ok := got["graph_seed_document_ids"].([]any)
+			if !ok || len(ids) != 2 || ids[0] != "doc-a" || ids[1] != "doc-b" {
+				t.Errorf("graph_seed_document_ids = %v, want [doc-a doc-b] in order", got["graph_seed_document_ids"])
+			}
+			if got["graph_prompt_fact_count"] != float64(7) {
+				t.Errorf("an existing key must be unchanged, graph_prompt_fact_count = %v", got["graph_prompt_fact_count"])
+			}
+		})
+	}
+}
+
+func TestWorkflowCompletedNilMetadataDefaultsTheGraphSeedDiagnostics(t *testing.T) {
+	got := completedMetadata(t, &pb.WorkflowEvent{
+		Event: &pb.WorkflowEvent_WorkflowCompleted{
+			WorkflowCompleted: &pb.WorkflowCompletedEvent{Success: true},
+		},
+	})
+	for _, key := range seedDiagnosticKeys {
+		if _, ok := got[key]; !ok {
+			t.Errorf("the nil-metadata default must carry %q", key)
+		}
+	}
+	for _, key := range []string{"graph_seed_count", "graph_boosted_chunk_count", "graph_degree_capped_count"} {
+		if got[key] != float64(0) {
+			t.Errorf("%s = %v, want 0", key, got[key])
+		}
+	}
+	if got["graph_path_found"] != false {
+		t.Errorf("graph_path_found = %v, want false", got["graph_path_found"])
+	}
+	if ids, ok := got["graph_seed_document_ids"].([]any); !ok || len(ids) != 0 {
+		t.Errorf("graph_seed_document_ids = %#v, want an empty array", got["graph_seed_document_ids"])
+	}
+}
+
+func TestEmptySeedDocumentIDsSerialiseAsAnEmptyArrayNotNull(t *testing.T) {
+	// A graph-off query has no seed documents. The harness must be able to tell that measured
+	// empty from a record that predates the field, so the key is `[]`, never `null`.
+	_, data := splitFrame(t, writeEvent(t, &pb.WorkflowEvent{
+		Event: &pb.WorkflowEvent_WorkflowCompleted{
+			WorkflowCompleted: &pb.WorkflowCompletedEvent{
+				Success:  true,
+				Metadata: &pb.WorkflowMetadata{GraphPromptFactCount: 1},
+			},
+		},
+	}))
+	if !strings.Contains(data, `"graph_seed_document_ids":[]`) {
+		t.Fatalf("expected \"graph_seed_document_ids\":[] in %s", data)
+	}
+	if strings.Contains(data, `"graph_seed_document_ids":null`) {
+		t.Fatalf("unexpected null seed document list in %s", data)
+	}
+}
+
+func TestRetrievedChunksCarryGraphBoostedAndCitationsDoNot(t *testing.T) {
+	resp := &pb.QueryRAGResponse{
+		StructuredCitations: []*pb.StructuredCitation{
+			{ChunkId: "c-1", DocumentId: "d-1", GraphBoosted: false},
+		},
+		Snapshot: &pb.RetrievalSnapshot{
+			RetrievedChunks: []*pb.StructuredCitation{
+				{ChunkId: "c-1", DocumentId: "d-1", GraphBoosted: false},
+				{ChunkId: "c-2", DocumentId: "d-2", GraphBoosted: true},
+			},
+		},
+	}
+	raw, err := json.Marshal(ToQueryRAGResponseDTO(resp))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out struct {
+		StructuredCitations []map[string]any `json:"structured_citations"`
+		Snapshot            struct {
+			RetrievedChunks []map[string]any `json:"retrieved_chunks"`
+		} `json:"snapshot"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	chunks := out.Snapshot.RetrievedChunks
+	if len(chunks) != 2 {
+		t.Fatalf("retrieved_chunks length = %d, want 2", len(chunks))
+	}
+	if chunks[0]["graph_boosted"] != false {
+		t.Errorf("an unboosted retrieved chunk must say graph_boosted false, got %v", chunks[0]["graph_boosted"])
+	}
+	if chunks[1]["graph_boosted"] != true {
+		t.Errorf("a boosted retrieved chunk must say graph_boosted true, got %v", chunks[1]["graph_boosted"])
+	}
+	if chunks[1]["chunk_id"] != "c-2" {
+		t.Errorf("the flag must travel with its own chunk, got %v", chunks[1]["chunk_id"])
+	}
+	// A citation names a chunk the answer cited; it keeps the nine-key contract.
+	if len(out.StructuredCitations) != 1 {
+		t.Fatalf("structured_citations length = %d, want 1", len(out.StructuredCitations))
+	}
+	if _, has := out.StructuredCitations[0]["graph_boosted"]; has {
+		t.Error("structured_citations must not carry graph_boosted")
+	}
+}
