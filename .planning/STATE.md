@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 18
+current_plan: 19
 status: executing
-stopped_at: Completed 06.3.4.1-17-PLAN.md
-last_updated: "2026-10-06T07:02:40.167Z"
+stopped_at: Completed 06.3.4.1-18-PLAN.md
+last_updated: "2026-10-06T09:05:00.000Z"
 last_activity: 2026-10-06
-last_activity_desc: Completed 06.3.4.1-17 (the drive-2 literals GRAPH_PRESENCE_WILSON_LOWER_FLOOR 0.098, GRAPH_COMPOSITION_CHANGE_FLOOR 0.10 and SC5_VISIBILITY_RULE are committed before any drive-2 record; evaluate_sc4, evaluate_sc5, graph_off_invariance against drive 1b and unpark_gates --stage drive2 --baseline-run exist with the other stages unchanged; column (d) reads the wire; the path canary mhr-3b0dac3a26bd is the eighth canary row behind a hard require_seed_path floor, manifest 8 rows / 7 IDs, never an accepted known miss); plan 18 is next (live canary re-validation on the new engine). The release engine.exe is stale and must be rebuilt before the next live engine step.
-state_head: 6946ac61b67be21a71afa9152f9840c4f7b93411
+last_activity_desc: Completed 06.3.4.1-18 (budget pass B ran once at an explicit $1.50 cap, settled $0.1205; the D-89 verdict on RetrieveHybrid is available and not present; graph_operation_timeout_ms is re-derived to 2424 ms from the graph-on ExtractGraphContext proxy and written to the config trio with the agreement test green; the one live preflight on the rebuilt engine passed all 8 canaries with no --accept-known-miss, so D-94 expired unused); plan 19 (paid drive 2, needs its own D-86 cap question) is next. The release engine.exe and gateway.exe were rebuilt at this plan and are current.
+state_head: 4d615272c11bd8d1fc35d3edb2760c9ad78ee97e
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 185
+  completed_plans: 186
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,10 +22,13 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 18
+Current Plan: 19
 Total Plans in Phase: 30
 
 ## Current Status
+
+- **2026-10-06: Plan 06.3.4.1-18 complete (budget pass B and live canary re-validation).** Pass B ran once on the rebuilt release engine at an explicit `--stage-cap 1.50` (user, 2026-10-06), engine PID unchanged, settled spend $0.1205. Its D-89 verdict on `RetrieveHybrid` reads available and not present. `graph_operation_timeout_ms` is **2424 ms** (was 10000): p95 1616 ms x 1.5 of the graph-on `ExtractGraphContext` node duration, an upper-bound proxy that includes the query embedding, over-budget share 0 of 160 against 0.10. It is written to `config.rs`, `config.toml` and `config.example.toml` together (RED `e43f0fe7`, GREEN `33945ca3`). The other six budgets are unchanged (`graph_node_timeout_ms` stays 12500). The one `preflight --corpus multihop_rag_diag` on the committed budgets passed all 8 canaries with exit 0 (settled $0.003341). **D-94 expired at this plan and was not used**: no `--accept-known-miss` was passed, and `mhr-0d5e238015ef` now observes 3 graph nodes. Disclosure for plan 19: two canary graph operations used 63 to 69% of the new 2424 ms budget, and a heavier traversal degrades silently to chunk-only context. OBS-05 and DATA-05 are not marked complete.
+  - Next: plan 19 (paid drive 2, the run of record). It needs its own blocking D-86 cap question.
 
 - **2026-09-13T22:20:00Z: Phase-final gates completed for real this round** (`/gsd-execute-phase 06.3.4 --gaps-only`, explicitly overriding the mechanical "no matching incomplete plans" exit per user instruction, same class as the `gaps-only-resume-to-gates` precedent — all 10 plans, including plan 10, already had SUMMARYs, and `06.3.4-REVIEW.md`/`06.3.4-VERIFICATION.md` were 3 commits stale, not missing):
   - **Regression gate:** `cargo test --manifest-path engine/Cargo.toml --locked`, `cd gateway && go test ./...`, `uv run --project eval pytest eval/tests -q` (416/416, run from repo root), and `python -O -m unittest discover -s scripts -p "test_*.py"` (26/26) — all clean. The Phase 02 `sys.flags.optimize` failure noted in prior rounds is confirmed to be an interpreter-flag artifact (passes under `-O`), not a regression.
