@@ -74,7 +74,10 @@ fn new_context() -> WorkflowContext {
 
 /// What the node publishes for one query, with each float as its exact bit pattern.
 fn render_outcome(ctx: &WorkflowContext) -> String {
-    let snapshot = ctx.snapshot.as_ref().expect("the node publishes a snapshot");
+    let snapshot = ctx
+        .snapshot
+        .as_ref()
+        .expect("the node publishes a snapshot");
     let chunks = snapshot
         .retrieved_chunks
         .iter()
@@ -249,7 +252,10 @@ async fn graph_off_single_variant_outcome_matches_the_recorded_pre_change_output
     assert_eq!(render_outcome(&ctx), SINGLE_VARIANT_RECORDED);
     assert_eq!(ctx.graph_boosted_chunk_count, 0);
     assert!(flagged_chunks(&ctx).is_empty());
-    assert!(dense.fetch_requests().is_empty(), "no graph candidates, no fetch");
+    assert!(
+        dense.fetch_requests().is_empty(),
+        "no graph candidates, no fetch"
+    );
 }
 
 #[tokio::test]
@@ -290,7 +296,10 @@ async fn candidates_offered_to_a_zero_graph_weight_leave_the_outcome_unchanged_a
     .await;
     assert_eq!(render_outcome(&ctx), SINGLE_VARIANT_RECORDED);
     assert_eq!(ctx.graph_boosted_chunk_count, 0);
-    assert!(dense.fetch_requests().is_empty(), "an ignored list is not fetched");
+    assert!(
+        dense.fetch_requests().is_empty(),
+        "an ignored list is not fetched"
+    );
 }
 
 // ---- the boost -------------------------------------------------------------------------------
@@ -357,7 +366,10 @@ async fn the_boosted_count_covers_the_final_retrieved_set_only() {
         row(DOC_A, 0, "dense", 0.9),
         row(DOC_A, 1, "dense", 0.8),
     ])
-    .with_chunk_rows(vec![row(DOC_B, 0, "graph", 0.0), row(DOC_B, 1, "graph", 0.0)]);
+    .with_chunk_rows(vec![
+        row(DOC_B, 0, "graph", 0.0),
+        row(DOC_B, 1, "graph", 0.0),
+    ]);
     let settings = RetrievalSettings {
         candidate_limit: 4,
         final_limit: 2,
@@ -380,7 +392,11 @@ async fn the_boosted_count_covers_the_final_retrieved_set_only() {
         vec![chunk_id(DOC_A, 0), chunk_id(DOC_A, 1)],
         "two strong chunks fill the final set"
     );
-    assert_eq!(dense.fetch_requests().len(), 1, "the graph chunks were still fetched");
+    assert_eq!(
+        dense.fetch_requests().len(),
+        1,
+        "the graph chunks were still fetched"
+    );
     assert_eq!(ctx.graph_boosted_chunk_count, 0);
     assert!(flagged_chunks(&ctx).is_empty());
 }
@@ -395,7 +411,11 @@ async fn the_graph_list_is_fetched_once_and_applied_once_for_three_variants() {
     })
     .await;
 
-    assert_eq!(dense.fetch_requests().len(), 1, "one fetch per query, not per variant");
+    assert_eq!(
+        dense.fetch_requests().len(),
+        1,
+        "one fetch per query, not per variant"
+    );
     let snapshot = ctx.snapshot.as_ref().unwrap();
     let boosted = snapshot
         .retrieved_chunks
@@ -412,13 +432,15 @@ async fn the_graph_list_is_fetched_once_and_applied_once_for_three_variants() {
 
 #[tokio::test]
 async fn the_graph_node_hands_its_candidates_to_retrieval_through_the_context() {
-    let embedding: Arc<dyn QueryEmbeddingPort> = Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 4]));
-    let graph: Arc<dyn GraphQueryPort> = Arc::new(FakeGraphQueryPort::success_output(GraphQueryOutput {
-        seed_count: 2,
-        path_found: true,
-        chunk_candidates: vec![chunk_id(DOC_B, 3)],
-        ..GraphQueryOutput::default()
-    }));
+    let embedding: Arc<dyn QueryEmbeddingPort> =
+        Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 4]));
+    let graph: Arc<dyn GraphQueryPort> =
+        Arc::new(FakeGraphQueryPort::success_output(GraphQueryOutput {
+            seed_count: 2,
+            path_found: true,
+            chunk_candidates: vec![chunk_id(DOC_B, 3)],
+            ..GraphQueryOutput::default()
+        }));
     let graph_node = ExtractGraphContextNode::new(Some(embedding), Some(graph));
     let dense = FakeDenseRetrievalPort::success(vec![row(DOC_A, 0, "dense", 0.9)])
         .with_chunk_rows(vec![row(DOC_B, 3, "graph", 0.0)]);
@@ -518,9 +540,15 @@ async fn malformed_candidate_ids_are_dropped_before_the_fetch_and_logged_without
     assert_eq!(flagged_chunks(&ctx), vec![chunk_id(DOC_B, 3)]);
     let log = captured(&sink);
     assert!(log.contains("WARN"), "the drop is a warning: {log}");
-    assert!(log.contains("dropped_count=4"), "the log counts the dropped IDs: {log}");
+    assert!(
+        log.contains("dropped_count=4"),
+        "the log counts the dropped IDs: {log}"
+    );
     for text in ["OR '1'", "not-an-id", &DOC_B.to_uppercase()] {
-        assert!(!log.contains(text), "the log must not carry ID text {text:?}: {log}");
+        assert!(
+            !log.contains(text),
+            "the log must not carry ID text {text:?}: {log}"
+        );
     }
 }
 
@@ -539,18 +567,18 @@ async fn when_every_candidate_is_malformed_nothing_is_fetched() {
 
 #[tokio::test]
 async fn a_repeated_candidate_id_is_fetched_once() {
-    let dense = FakeDenseRetrievalPort::success(vec![row(DOC_A, 0, "dense", 0.9)])
-        .with_chunk_rows(vec![row(DOC_B, 3, "graph", 0.0), row(DOC_B, 4, "graph", 0.0)]);
+    let dense =
+        FakeDenseRetrievalPort::success(vec![row(DOC_A, 0, "dense", 0.9)]).with_chunk_rows(vec![
+            row(DOC_B, 3, "graph", 0.0),
+            row(DOC_B, 4, "graph", 0.0),
+        ]);
     let (_ctx, dense) = run_node(
         dense,
         FakeBm25RetrievalPort::success(vec![]),
         pin_settings(),
         |ctx| {
-            ctx.graph_chunk_candidates = vec![
-                chunk_id(DOC_B, 3),
-                chunk_id(DOC_B, 3),
-                chunk_id(DOC_B, 4),
-            ];
+            ctx.graph_chunk_candidates =
+                vec![chunk_id(DOC_B, 3), chunk_id(DOC_B, 3), chunk_id(DOC_B, 4)];
         },
     )
     .await;
@@ -589,15 +617,11 @@ async fn a_fetch_failure_degrades_to_the_graph_off_outcome_with_a_warning() {
 
 #[tokio::test]
 async fn graph_chunks_outside_the_request_filter_never_enter() {
-    let rows = vec![
-        row(DOC_B, 3, "graph", 0.0),
-        row(DOC_A, 5, "graph", 0.0),
-        {
-            let mut json = row(DOC_A, 6, "graph", 0.0);
-            json.content_type = Some("application/json".to_owned());
-            json
-        },
-    ];
+    let rows = vec![row(DOC_B, 3, "graph", 0.0), row(DOC_A, 5, "graph", 0.0), {
+        let mut json = row(DOC_A, 6, "graph", 0.0);
+        json.content_type = Some("application/json".to_owned());
+        json
+    }];
     let candidates = vec![chunk_id(DOC_B, 3), chunk_id(DOC_A, 5), chunk_id(DOC_A, 6)];
 
     // A document filter: the chunk of another document is dropped, both of this one stay.
@@ -677,7 +701,10 @@ fn an_evidence_block_carries_graph_provenance_without_changing_the_prompt_text()
     let plain_json = serde_json::to_string(&unflagged[0]).unwrap();
     assert!(!plain_json.contains("graph_boosted"), "{plain_json}");
     let flagged_json = serde_json::to_string(&blocks[0]).unwrap();
-    assert!(flagged_json.contains("\"graph_boosted\":true"), "{flagged_json}");
+    assert!(
+        flagged_json.contains("\"graph_boosted\":true"),
+        "{flagged_json}"
+    );
     let round_trip: EvidenceBlock = serde_json::from_str(&plain_json).unwrap();
     assert!(!round_trip.graph_boosted);
 }
@@ -696,12 +723,13 @@ async fn add_node_rows(nodes: &lancedb::Table, rows: &[(&str, i32, &str)]) {
     let schema = nodes.schema().await.unwrap();
     let count = rows.len();
     let embeddings = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
-        (0..count).map(|_| Some(vec![Some(0.5_f32); 2048])).collect::<Vec<_>>(),
+        (0..count)
+            .map(|_| Some(vec![Some(0.5_f32); 2048]))
+            .collect::<Vec<_>>(),
         2048,
     );
-    let nullable = |name: &str| {
-        new_null_array(schema.field_with_name(name).unwrap().data_type(), count)
-    };
+    let nullable =
+        |name: &str| new_null_array(schema.field_with_name(name).unwrap().data_type(), count);
     let documents: Vec<Option<&str>> = rows.iter().map(|row| Some(row.0)).collect();
     let chunk_ids: Vec<String> = rows.iter().map(|row| chunk_id(row.0, row.1)).collect();
     let contents: Vec<Option<&str>> = rows.iter().map(|row| Some(row.2)).collect();
@@ -710,9 +738,14 @@ async fn add_node_rows(nodes: &lancedb::Table, rows: &[(&str, i32, &str)]) {
         vec![
             Arc::new(StringArray::from(documents)),
             Arc::new(StringArray::from(
-                chunk_ids.iter().map(|id| Some(id.as_str())).collect::<Vec<_>>(),
+                chunk_ids
+                    .iter()
+                    .map(|id| Some(id.as_str()))
+                    .collect::<Vec<_>>(),
             )),
-            Arc::new(Int32Array::from(rows.iter().map(|row| row.1).collect::<Vec<_>>())),
+            Arc::new(Int32Array::from(
+                rows.iter().map(|row| row.1).collect::<Vec<_>>(),
+            )),
             Arc::new(Int32Array::from(vec![0; count])),
             Arc::new(Int32Array::from(vec![10; count])),
             Arc::new(StringArray::from(contents)),
@@ -773,7 +806,10 @@ async fn the_production_fetch_reads_the_pinned_nodes_version_not_the_latest() {
         .await
         .unwrap();
     assert_eq!(
-        at_first.iter().map(|c| c.content.as_str()).collect::<Vec<_>>(),
+        at_first
+            .iter()
+            .map(|c| c.content.as_str())
+            .collect::<Vec<_>>(),
         vec!["first generation"],
         "the snapshot's version has the old content and not the later chunk"
     );
@@ -783,7 +819,10 @@ async fn the_production_fetch_reads_the_pinned_nodes_version_not_the_latest() {
         .await
         .unwrap();
     assert_eq!(
-        at_latest.iter().map(|c| c.content.as_str()).collect::<Vec<_>>(),
+        at_latest
+            .iter()
+            .map(|c| c.content.as_str())
+            .collect::<Vec<_>>(),
         vec!["second generation", "only later"]
     );
 
@@ -880,7 +919,10 @@ async fn the_production_fetch_leaves_the_dense_substage_timings_alone() {
             },
         )
         .await;
-    assert_eq!(after.open_table_ms, 7.0, "the dense search's timings are not overwritten");
+    assert_eq!(
+        after.open_table_ms, 7.0,
+        "the dense search's timings are not overwritten"
+    );
     assert_eq!(after.checkout_ms, 9.0);
 
     drop(database);

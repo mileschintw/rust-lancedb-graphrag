@@ -68,7 +68,7 @@ impl EvidenceBlock {
             score: candidate.fused_score,
             rank: index + 1,
             suspicious,
-            graph_boosted: false,
+            graph_boosted: candidate.graph_boosted(),
         }
     }
 }

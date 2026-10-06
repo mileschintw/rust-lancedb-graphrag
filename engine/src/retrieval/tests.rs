@@ -949,9 +949,12 @@ fn cross_variant_rrf_tie_order_is_deterministic() {
     let fused_v1 = fuse_candidates(vec![], vec![c_y2.clone(), c_y1.clone()], &settings).unwrap();
 
     for _ in 0..5 {
-        let fused =
-            fuse_cross_variant_candidates(vec![fused_v0.clone(), fused_v1.clone()], vec![], &settings)
-                .unwrap();
+        let fused = fuse_cross_variant_candidates(
+            vec![fused_v0.clone(), fused_v1.clone()],
+            vec![],
+            &settings,
+        )
+        .unwrap();
         assert_eq!(fused.len(), 2);
         assert_eq!(fused[0].candidate.chunk_id, "chunk-1");
         assert_eq!(fused[1].candidate.chunk_id, "chunk-2");
@@ -1392,7 +1395,10 @@ fn cross_without_graph(
 /// The graph-off scenarios: one variant, three variants, exact ties, and empty inputs.
 fn graph_off_pin_scenarios() -> Vec<(&'static str, String)> {
     let settings = pin_settings();
-    let dense = pin_list("dense", &[("c1", 0.9), ("c2", 0.8), ("c3", 0.7), ("c4", 0.6)]);
+    let dense = pin_list(
+        "dense",
+        &[("c1", 0.9), ("c2", 0.8), ("c3", 0.7), ("c4", 0.6)],
+    );
     let single_bm25 = pin_list(
         "bm25",
         &[("c3", 12.0), ("c1", 9.5), ("c5", 4.0), ("c6", 1.5)],
@@ -1439,7 +1445,10 @@ fn graph_off_pin_scenarios() -> Vec<(&'static str, String)> {
         ("single_variant_cross", render_fused(&single_cross)),
         ("three_variants_cross", render_fused(&three)),
         ("two_variants_exact_ties_cross", render_fused(&tied)),
-        ("no_variants", render_fused(&cross_without_graph(vec![], &settings))),
+        (
+            "no_variants",
+            render_fused(&cross_without_graph(vec![], &settings)),
+        ),
         (
             "one_empty_variant",
             render_fused(&cross_without_graph(vec![vec![]], &settings)),
@@ -1552,12 +1561,9 @@ fn a_graph_only_candidate_enters_with_graph_provenance_and_the_graph_weight() {
 #[test]
 fn a_graph_candidate_also_found_by_dense_gets_the_summed_score_and_both_provenances() {
     let settings = with_graph_rrf_weight(0.5);
-    let fused = fuse_cross_variant_candidates(
-        variant_lists(0, &settings),
-        graph_list(&["c1"]),
-        &settings,
-    )
-    .unwrap();
+    let fused =
+        fuse_cross_variant_candidates(variant_lists(0, &settings), graph_list(&["c1"]), &settings)
+            .unwrap();
 
     let entry = find(&fused, "c1");
     assert_eq!(entry.fused_score, 1.0 / 61.0 + 0.5 / 61.0);
@@ -1709,7 +1715,10 @@ fn graph_provenance_serialises_as_graph_and_a_dense_hit_is_not_a_boost() {
     );
     let settings = with_graph_rrf_weight(1.0);
     let plain = fuse_candidates(pin_list("dense", &[("c1", 0.9)]), vec![], &settings).unwrap();
-    assert!(!plain[0].graph_boosted(), "a dense hit is not graph-boosted");
+    assert!(
+        !plain[0].graph_boosted(),
+        "a dense hit is not graph-boosted"
+    );
 }
 
 #[test]

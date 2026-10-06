@@ -11,7 +11,10 @@ use super::super::{
 };
 use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
 use crate::rerank::Reranker;
-use crate::retrieval::{fuse_candidates, fuse_cross_variant_candidates, RetrievalSettings};
+use crate::retrieval::dense::is_valid_chunk_id;
+use crate::retrieval::{
+    fuse_candidates, fuse_cross_variant_candidates, Candidate, QueryFilters, RetrievalSettings,
+};
 
 pub const DEFAULT_RETRIEVED_EXCERPT_MAX_CHARS: usize = 512;
 
@@ -47,6 +50,8 @@ pub struct RetrieveSubStageReport {
     pub checkout_ms: f64,
     pub dense_ms: f64,
     pub bm25_ms: f64,
+    /// Time spent reading the graph's candidate chunks (D-76); `0.0` when the graph offered none.
+    pub graph_fetch_ms: f64,
     pub fusion_ms: f64,
     /// Wall time of the whole `execute_inner` body, from just after the cancellation check to
     /// just before it emits this report — i.e. the same span `WorkflowRunner::run_node` times
@@ -150,6 +155,8 @@ impl RetrieveHybridNode {
         if cancel.is_cancelled() {
             return Err(NodeError::cancelled());
         }
+        // A count left on the context by an earlier run never describes this query.
+        ctx.graph_boosted_chunk_count = 0;
 
         if self.rebuild_degraded {
             ctx.add_notice(notice(
@@ -240,6 +247,12 @@ impl RetrieveHybridNode {
             .collect();
         ctx.bm25_results.clear();
 
+        // 1b. The graph's candidate chunks (D-76): read once per query from the snapshot's `nodes`
+        // version, so they cannot come from another generation, and merged once below.
+        let graph_fetch_start = Instant::now();
+        let graph_candidates = self.fetch_graph_candidates(ctx, cancel).await?;
+        let graph_fetch_ms = graph_fetch_start.elapsed().as_secs_f64() * 1000.0;
+
         // 2. Per-variant BM25 and single-variant fusion pass
         let variants = ctx.variants.clone();
         let mut per_variant_fused = Vec::with_capacity(variants.len());
@@ -324,16 +337,19 @@ impl RetrieveHybridNode {
 
         // 3. Second pass: cross-variant RRF fusion
         let cross_fuse_start = Instant::now();
-        let fused_candidates =
-            match fuse_cross_variant_candidates(per_variant_fused, Vec::new(), &self.settings) {
-                Ok(fused) => fused,
-                Err(err) => {
-                    return Err(NodeError::new(
-                        NodeErrorKind::RetrievalFailed,
-                        format!("Cross-variant fusion failed: {}", err),
-                    ));
-                }
-            };
+        let fused_candidates = match fuse_cross_variant_candidates(
+            per_variant_fused,
+            graph_candidates,
+            &self.settings,
+        ) {
+            Ok(fused) => fused,
+            Err(err) => {
+                return Err(NodeError::new(
+                    NodeErrorKind::RetrievalFailed,
+                    format!("Cross-variant fusion failed: {}", err),
+                ));
+            }
+        };
         fusion_ms_total += cross_fuse_start.elapsed().as_secs_f64() * 1000.0;
 
         // 4. Reranking
@@ -368,6 +384,12 @@ impl RetrieveHybridNode {
             .iter()
             .map(|b| b.chunk_id.clone())
             .collect();
+        // D-81: counted over the final retrieved set, after the final limit.
+        ctx.graph_boosted_chunk_count = ctx
+            .evidence_blocks
+            .iter()
+            .filter(|block| block.graph_boosted)
+            .count() as u32;
 
         let retrieved_chunks: Vec<crate::pb::lancet::v1::StructuredCitation> = ctx
             .evidence_blocks
@@ -434,6 +456,7 @@ impl RetrieveHybridNode {
             checkout_ms: substage_timings.checkout_ms,
             dense_ms,
             bm25_ms: bm25_ms_total,
+            graph_fetch_ms,
             fusion_ms: fusion_ms_total,
             total_ms: node_start.elapsed().as_secs_f64() * 1000.0,
         };
@@ -447,6 +470,7 @@ impl RetrieveHybridNode {
             checkout_ms = report.checkout_ms,
             dense_ms = report.dense_ms,
             bm25_ms = report.bm25_ms,
+            graph_fetch_ms = report.graph_fetch_ms,
             fusion_ms = report.fusion_ms,
             alive_tasks = runtime_metrics.num_alive_tasks(),
             global_queue = runtime_metrics.global_queue_depth(),
@@ -454,6 +478,91 @@ impl RetrieveHybridNode {
         );
 
         Ok(())
+    }
+}
+
+/// The IDs of `candidates` that are well-formed chunk IDs, first occurrence first, and how many
+/// were dropped as malformed. A repeated ID is kept once and is not a drop.
+fn well_formed_chunk_ids(candidates: &[String]) -> (Vec<String>, usize) {
+    let mut seen = std::collections::HashSet::with_capacity(candidates.len());
+    let mut ids = Vec::with_capacity(candidates.len());
+    let mut dropped = 0;
+    for id in candidates {
+        if !is_valid_chunk_id(id) {
+            dropped += 1;
+        } else if seen.insert(id.as_str()) {
+            ids.push(id.clone());
+        }
+    }
+    (ids, dropped)
+}
+
+impl RetrieveHybridNode {
+    /// Reads the rows of `ctx.graph_chunk_candidates` for the graph list of fusion (D-76).
+    ///
+    /// Returns the rows in the graph's rank order, restricted to what the request's filter
+    /// allows, exactly as dense and BM25 are. An empty candidate list, a zero `graph_rrf_weight`,
+    /// no dense port, or no well-formed ID means no read at all. A malformed ID is dropped before
+    /// any predicate is built and counted in a warning that carries no ID text. A failed read
+    /// degrades to no graph list with a warning and never fails the node; only cancellation does.
+    async fn fetch_graph_candidates(
+        &self,
+        ctx: &WorkflowContext,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<Candidate>, NodeError> {
+        let Some(dense_port) = &self.dense_port else {
+            return Ok(Vec::new());
+        };
+        if ctx.graph_chunk_candidates.is_empty() || self.settings.graph_rrf_weight == 0.0 {
+            return Ok(Vec::new());
+        }
+        let (ids, dropped) = well_formed_chunk_ids(&ctx.graph_chunk_candidates);
+        if dropped > 0 {
+            tracing::warn!(
+                dropped_count = dropped,
+                "graph chunk candidates with a malformed id were dropped"
+            );
+        }
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let (document_ids, content_types) = match &ctx.filter {
+            Some(filter) => (filter.document_ids.clone(), filter.content_types.clone()),
+            None => (Vec::new(), Vec::new()),
+        };
+        let Ok(filters) = QueryFilters::normalize_with_limits(
+            document_ids,
+            content_types,
+            self.settings.max_document_ids,
+            self.settings.max_content_types,
+        ) else {
+            tracing::warn!("graph chunk candidates skipped: the request filter is not valid");
+            return Ok(Vec::new());
+        };
+        match dense_port.fetch_chunks_by_id(&ids, cancel).await {
+            Ok(rows) => Ok(rows
+                .into_iter()
+                .filter(|candidate| filters.matches(candidate))
+                .collect()),
+            Err(err) if err.kind == NodeErrorKind::Cancelled => Err(err),
+            Err(err) => {
+                // The kind only: the message of a store error can quote the predicate and so
+                // the IDs.
+                tracing::warn!(
+                    error_kind = err.kind.as_str_name(),
+                    "graph chunk fetch failed; continuing without the graph list"
+                );
+                let kind = match err.kind {
+                    NodeErrorKind::Timeout => crate::telemetry::metrics::KIND_TIMEOUT,
+                    _ => crate::telemetry::metrics::KIND_ERROR,
+                };
+                crate::telemetry::metrics::record_retrieval_path_failure(
+                    crate::telemetry::metrics::PATH_GRAPH,
+                    kind,
+                );
+                Ok(Vec::new())
+            }
+        }
     }
 }
 

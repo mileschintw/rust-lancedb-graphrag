@@ -13,12 +13,33 @@ use lancedb::{
     query::{ExecutableQuery, QueryBase, Select},
     Table,
 };
+use std::collections::HashMap;
+use uuid::Uuid;
 
 use super::{
     Candidate, QueryFilters, QueryRequest, RetrievalError, RetrievalErrorKind, RetrievalSettings,
 };
 
 const DISTANCE_COLUMN: &str = "_distance";
+
+/// The `nodes` columns a [`Candidate`] is built from.
+const CANDIDATE_COLUMNS: [&str; 11] = [
+    "document_id",
+    "chunk_id",
+    "chunk_index",
+    "char_start",
+    "char_end",
+    "content",
+    "title",
+    "section_path",
+    "embedding_model",
+    "ingested_at",
+    "content_type",
+];
+
+/// The score of a row read by chunk ID. Such a read ranks nothing, so the score is `0.0`; the
+/// caller's order is the only ranking, and fusion uses that rank, never this score.
+const FETCH_BY_ID_SCORE: f64 = 0.0;
 
 /// Reads canonical completed-node rows through LanceDB nearest-vector search.
 #[derive(Clone)]
@@ -67,21 +88,10 @@ impl DenseRetriever {
         if let Some(predicate) = filter_predicate(&request.filters) {
             query = query.only_if(predicate);
         }
+        let mut columns = CANDIDATE_COLUMNS.to_vec();
+        columns.push(DISTANCE_COLUMN);
         let batches: Vec<RecordBatch> = query
-            .select(Select::columns(&[
-                "document_id",
-                "chunk_id",
-                "chunk_index",
-                "char_start",
-                "char_end",
-                "content",
-                "title",
-                "section_path",
-                "embedding_model",
-                "ingested_at",
-                "content_type",
-                DISTANCE_COLUMN,
-            ]))
+            .select(Select::columns(&columns))
             .limit(settings.candidate_limit)
             .execute()
             .await
@@ -104,20 +114,7 @@ impl DenseRetriever {
         for batch in &batches {
             for row in 0..batch.num_rows() {
                 let distance = distance_at(batch, row)?;
-                let candidate = Candidate {
-                    document_id: required_string(batch, "document_id", row)?,
-                    chunk_id: required_string(batch, "chunk_id", row)?,
-                    chunk_index: required_i32(batch, "chunk_index", row)?,
-                    char_start: required_i32(batch, "char_start", row)?,
-                    char_end: required_i32(batch, "char_end", row)?,
-                    content: required_string(batch, "content", row)?,
-                    title: optional_string(batch, "title", row)?,
-                    section_path: optional_string(batch, "section_path", row)?,
-                    content_type: optional_string(batch, "content_type", row)?,
-                    embedding_model: optional_string(batch, "embedding_model", row)?,
-                    ingested_at: optional_i64(batch, "ingested_at", row)?,
-                    score: dense_score(distance),
-                };
+                let candidate = candidate_at(batch, row, dense_score(distance))?;
                 results.push((distance, candidate));
             }
         }
@@ -144,15 +141,96 @@ impl DenseRetriever {
     /// Returns an error for a malformed ID or a failed LanceDB read.
     pub async fn fetch_by_chunk_ids(
         &self,
-        _chunk_ids: &[String],
+        chunk_ids: &[String],
     ) -> Result<Vec<Candidate>, RetrievalError> {
-        Ok(Vec::new())
+        if chunk_ids.iter().any(|id| !is_valid_chunk_id(id)) {
+            return Err(RetrievalError::new(
+                RetrievalErrorKind::InvalidDocumentId,
+                "a chunk id is not <uuidv4>:<chunk index>",
+            ));
+        }
+        if chunk_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let values = chunk_ids
+            .iter()
+            .map(|id| format!("'{}'", escape_sql_literal(id)))
+            .collect::<Vec<_>>();
+        let batches: Vec<RecordBatch> = self
+            .table
+            .query()
+            .only_if(format!("chunk_id IN ({})", values.join(", ")))
+            .select(Select::columns(&CANDIDATE_COLUMNS))
+            .limit(chunk_ids.len())
+            .execute()
+            .await
+            .map_err(|error| {
+                RetrievalError::new(
+                    RetrievalErrorKind::Snapshot,
+                    format!("chunk LanceDB query failed: {error}"),
+                )
+            })?
+            .try_collect()
+            .await
+            .map_err(|error| {
+                RetrievalError::new(
+                    RetrievalErrorKind::Snapshot,
+                    format!("chunk LanceDB result collection failed: {error}"),
+                )
+            })?;
+
+        let mut rows: HashMap<String, Candidate> = HashMap::with_capacity(chunk_ids.len());
+        for batch in &batches {
+            for row in 0..batch.num_rows() {
+                let candidate = candidate_at(batch, row, FETCH_BY_ID_SCORE)?;
+                rows.entry(candidate.chunk_id.clone()).or_insert(candidate);
+            }
+        }
+        // The caller's order, which is the graph's rank order. An ID the table lacks has no row,
+        // and a repeated ID is returned once.
+        Ok(chunk_ids.iter().filter_map(|id| rows.remove(id)).collect())
     }
 }
 
-/// Whether `value` is a chunk ID: a canonical lower-case UUIDv4, a colon, and a chunk index.
-pub fn is_valid_chunk_id(_value: &str) -> bool {
-    false
+/// Whether `value` is a chunk ID: `<uuidv4>:<chunk index>`.
+///
+/// The document part must be a UUIDv4 in its canonical lower-case hyphenated form (the form the
+/// ingest path writes), and the index a decimal `i32` with no sign, no leading zero and no
+/// whitespace. `Uuid::parse_str` alone also accepts upper-case, simple, braced and `urn:uuid:`
+/// spellings, none of which can name a stored chunk, so the canonical rendering must equal the
+/// input. A value that passes carries no character that is special in a SQL string literal.
+pub fn is_valid_chunk_id(value: &str) -> bool {
+    let Some((document_id, index)) = value.rsplit_once(':') else {
+        return false;
+    };
+    let Ok(uuid) = Uuid::parse_str(document_id) else {
+        return false;
+    };
+    uuid.get_version_num() == 4
+        && uuid.get_variant() == uuid::Variant::RFC4122
+        && uuid.hyphenated().to_string() == document_id
+        && !index.is_empty()
+        && index.bytes().all(|byte| byte.is_ascii_digit())
+        && (index == "0" || !index.starts_with('0'))
+        && index.parse::<i32>().is_ok()
+}
+
+/// Builds the candidate at `row` of a batch that carries every [`CANDIDATE_COLUMNS`] column.
+fn candidate_at(batch: &RecordBatch, row: usize, score: f64) -> Result<Candidate, RetrievalError> {
+    Ok(Candidate {
+        document_id: required_string(batch, "document_id", row)?,
+        chunk_id: required_string(batch, "chunk_id", row)?,
+        chunk_index: required_i32(batch, "chunk_index", row)?,
+        char_start: required_i32(batch, "char_start", row)?,
+        char_end: required_i32(batch, "char_end", row)?,
+        content: required_string(batch, "content", row)?,
+        title: optional_string(batch, "title", row)?,
+        section_path: optional_string(batch, "section_path", row)?,
+        content_type: optional_string(batch, "content_type", row)?,
+        embedding_model: optional_string(batch, "embedding_model", row)?,
+        ingested_at: optional_i64(batch, "ingested_at", row)?,
+        score,
+    })
 }
 
 fn filter_predicate(filters: &QueryFilters) -> Option<String> {
