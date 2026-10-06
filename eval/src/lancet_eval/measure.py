@@ -21,6 +21,7 @@ from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_r
 from lancet_eval.corpus import GoldQuestion, load_corpus
 from lancet_eval.identity import require_index_identity
 from lancet_eval.journal import (
+    AttemptRecord,
     NodeTiming,
     RunRecord,
     WorkflowWireMeta,
@@ -153,10 +154,11 @@ def _generation_error_is_retried(kind: int, message: str) -> bool:
     return False
 
 
-def _failed_generation_attempts(rec: RunRecord) -> int:
-    """Billed-but-unmetered generation attempts for one record.
+def _failed_generation_attempts(rec: RunRecord | AttemptRecord) -> int:
+    """Billed-but-unmetered generation attempts for one record or one harness attempt.
 
-    Zero when the record is metered by wire tokens or never reached generation.
+    Zero when it is metered by wire tokens or never reached generation. Both types
+    carry the fields read here.
     """
     meta = rec.workflow_meta
     if meta is not None and (meta.prompt_tokens > 0 or meta.completion_tokens > 0):
@@ -176,9 +178,21 @@ def _failed_generation_attempts(rec: RunRecord) -> int:
     return 0
 
 
+def _every_attempt(rec: RunRecord) -> list[RunRecord | AttemptRecord]:
+    """The attempts a harness retry superseded, then the record's own (final) attempt."""
+    return [*rec.prior_attempts, rec]
+
+
 def count_failed_generation_attempts(records: Sequence[RunRecord]) -> int:
-    """Count generation attempts that reached the provider but carry no wire tokens."""
-    return sum(_failed_generation_attempts(rec) for rec in records)
+    """Count generation attempts that reached the provider but carry no wire tokens.
+
+    Covers every attempt: each record's prior attempts and the record itself.
+    """
+    return sum(
+        _failed_generation_attempts(attempt)
+        for rec in records
+        for attempt in _every_attempt(rec)
+    )
 
 
 def compute_spend(
@@ -194,15 +208,22 @@ def compute_spend(
     are charged at the per-attempt ceiling, so a stage cap cannot be overshot by
     failures the provider billed (06.3.4.1-23, G4 cost item). Metered records are
     priced exactly as before and embeddings are never scaled.
+
+    Every attempt is charged (06.3.4.1-33, CR-03, D-86): a record's prior attempts, the
+    attempts a harness retry superseded, are priced like the record itself, each with
+    its wire tokens, its failed-generation ceiling and its own embedding estimate. A
+    record without prior attempts prices exactly as it always did.
     """
     total_prompt_tokens = 0
     total_completion_tokens = 0
-    query_count = len(records)
+    query_count = 0
 
     for rec in records:
-        if rec.workflow_meta is not None:
-            total_prompt_tokens += rec.workflow_meta.prompt_tokens
-            total_completion_tokens += rec.workflow_meta.completion_tokens
+        for attempt in _every_attempt(rec):
+            query_count += 1
+            if attempt.workflow_meta is not None:
+                total_prompt_tokens += attempt.workflow_meta.prompt_tokens
+                total_completion_tokens += attempt.workflow_meta.completion_tokens
 
     gen_spend = (total_prompt_tokens / 1_000_000.0) * GENERATION_INPUT_PRICE_PER_1M + (
         total_completion_tokens / 1_000_000.0
