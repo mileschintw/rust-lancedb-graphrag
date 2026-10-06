@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 15
+current_plan: 16
 status: executing
-stopped_at: Completed 06.3.4.1-14-PLAN.md
-last_updated: "2026-10-06T05:04:35.367Z"
+stopped_at: Completed 06.3.4.1-15-PLAN.md
+last_updated: "2026-10-06T06:01:57.007Z"
 last_activity: 2026-10-05
-last_activity_desc: Completed 06.3.4.1-14 (production graph cutover to mention seeding and seed-to-seed paths under paths-only, GraphIndex in the corpus snapshot, D-77 settings in the config trio); plan 15 is next. The release engine.exe is stale and must be rebuilt before the next live engine step.
-state_head: 891a0bb2ff0c3e6fb114fbccba48f74a107b6f52
+last_activity_desc: Completed 06.3.4.1-15 (the graph's chunks enter RetrieveHybrid fusion as a third RRF list at the snapshot's nodes version, graph_rrf_weight 1.0 in the config trio, graph_boosted flag and count; graph-off pinned byte-identical); plan 16 is next. The release engine.exe is stale and must be rebuilt before the next live engine step.
+state_head: 82750e52a97e0d8cb27c3389304545486c4418bf
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 182
+  completed_plans: 183
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,7 +22,7 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 15
+Current Plan: 16
 Total Plans in Phase: 30
 
 ## Current Status
@@ -393,6 +393,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P30 | 65 min | 4 tasks | 64 files |
 | Phase 06.3.4.1 P13 | 64 min | 3 tasks | 13 files |
 | Phase 06.3.4.1 P14 | 52 min | 3 tasks | 22 files |
+| Phase 06.3.4.1 P15 | 55 min | 2 tasks | 20 files |
 
 ## Decisions
 
@@ -484,12 +485,15 @@ Total Plans in Phase: 30
 - [Phase 06.3.4.1]: 06.3.4.1-14: the boost semantics paths-only is enforced in production: seeds with no seed-to-seed path give no facts and no graph chunk candidates, and the seeds' own source chunks are never used (source-scan test pins it).
 - [Phase 06.3.4.1]: 06.3.4.1-14: a two-hop path fact is one GraphFact per path; its prompt body is PathFact.rendered with arrow directions (packer uses PrecomputedSemantics) and its relation attribute chain points each arrow the way its hop is stored, at the same length; the confirmed MAX_PATH_FACTS of 8 still follows (0 extra tokens on two sample paths).
 - [Phase 06.3.4.1]: 06.3.4.1-14: graph_node_count and graph_edge_count now count the entities and hops on the kept paths and are non-zero only when a path exists, so the old 9.8% presence figure is not comparable; a graph-on query with an unmatched mention makes one extra embedding call inside graph_operation_timeout (still 10000, for plan 18).
+- [Phase 06.3.4.1]: 06.3.4.1-15: the graph chunk list is merged once into the result of fuse_cross_variant_candidates (not into variant 0), so its contribution graph_rrf_weight / (rrf_k + rank) does not scale with the variant count; fuse_candidates is unchanged — The cross-variant pass keeps only each chunk's rank per list, so a graph block inside variant 0 would act only through that rank and its effect would depend on the other variants
+- [Phase 06.3.4.1]: 06.3.4.1-15: graph_rrf_weight = 1.0 (equal to vector_weight) is a retrieval setting separate from the D-30 prompt-packing graph_weight, written to config.rs, config.toml and config.example.toml together — A graph-found chunk counts like one dense hit; the weight is a tuning value (D-78) and 0.0 ignores the list
+- [Phase 06.3.4.1]: 06.3.4.1-15: graph chunk rows are read at the snapshot's nodes_version, restricted by the request's DocumentFilter, with every ID validated as a canonical lower-case uuidv4 plus an unsigned index; a failed read degrades to no graph list and EvidenceBlock.graph_boosted is omitted from a checkpoint when false — Snapshot isolation (06.1), no leak past a document or content-type filter, no predicate from an unvalidated ID, and graph-off output byte-identical
 
 ## Session
 
-**Last session:** 2026-10-06T05:04:34.285Z
+**Last session:** 2026-10-06T06:01:55.885Z
 **Last activity:** 2026-10-05 - Started the OI-01 run at 06.3.4.1-13
-**Stopped at:** Completed 06.3.4.1-14-PLAN.md
+**Stopped at:** Completed 06.3.4.1-15-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
