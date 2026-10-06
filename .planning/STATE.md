@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 34
 status: executing
-stopped_at: Completed 06.3.4.1-33-PLAN.md
-last_updated: "2026-10-06T20:18:45.162Z"
+stopped_at: Completed 06.3.4.1-34-PLAN.md
+last_updated: "2026-10-06T20:33:43.928Z"
 last_activity: 2026-10-06
-state_head: 95c8b844c4b325321ca5e2bcb816f2db1712c627
+state_head: 85a4136cfb010e7cd5b9b0cf895e45ddff11e8c3
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 192
-  completed_plans: 191
+  completed_plans: 192
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -28,6 +28,9 @@ Total Plans in Phase: 34
 ## Current Status
 
 - **2026-10-06: Gap-closure execution of 06.3.4.1 started** (`/gsd-execute-phase 06.3.4.1 --gaps-only`). Plans 31-34 close UAT gaps G-06.3.4.1-2 (retries erase attempts; gate-stage drives must refuse retries > 0 and record every attempt), G-06.3.4.1-3a (unpark gates scored partial journals; completeness computed once in `main`, all readings MISS when incomplete, 0.80 coverage floor over sample∩G/sample∩V) and G-06.3.4.1-3b (`measure` ignored the stage cap with workers > 1; NaN/inf `--stage-cap` accepted). Order: 31 and 32 (wave 22), then 33 (wave 23), then 34 (wave 24), each run sequentially on main. Plans 01-30 stay summarized; drive 2 stays the run of record; 6.4 stays parked.
+
+- **2026-10-06: Plan 06.3.4.1-34 complete (gap G-06.3.4.1-2, reader side, CR-03; the last plan of the gap-closure run 31-34).** `unpark_gates` MISSes every reading on a journal whose header does not carry the gate-stage marker for `--stage` with `max_retries` 0, or whose records carry `prior_attempts`, with SC-1 forced to MISS and `retry_provenance` in its detail and the markdown. Only the three recorded drives (1, 1b, 2) are read without a marker, through the closed `_LEGACY_UNMARKED_GATE_DRIVES` registry keyed on their headers' `(corpus, created_at)` with their `retries=0` console evidence; every other unmarked journal MISSes. SC-2's error-mode tally and the D-69 companion count each unit's first attempt (`first_attempt_view`), so a retry cannot clear a timeout or a rejection; both report `retried_records`. Drives 1, 1b and 2 re-read unchanged (status, n, value), an out-of-tree drive-2 re-read agrees on all six readings, `eval/runs/` untouched. Commits `38fd040e`/`718c306d` (marker precondition), `422df74f`/`85a4136c` (first-attempt tallies). Full eval suite 1078 passed (baseline 1052). No paid call; `SC5_VISIBILITY_RULE`, `_KNOWN_SC5_RULES` and `thresholds.py` unchanged. OBS-05 not marked (shared ID, already checked). `ruff --preview` repo-wide count unchanged at 550; touched files 0.
+  - Next: all 34 plans of 06.3.4.1 have SUMMARYs; the orchestrator runs the phase gates (verification, code review). There is no plan 35; `Current Plan: 34` is the tool's mechanical state (it did not advance past the last plan). 6.4 stays parked.
 
 - **2026-10-06: Plan 06.3.4.1-33 complete (gap G-06.3.4.1-2, drive side, folds in CR-03: retries no longer erase attempts).** `RunRecord.prior_attempts` (new `AttemptRecord`) keeps every attempt a harness retry superseded, in order, on the final record; old journals still load (drive 1/1b/2: 200 lines each and pass A: 324 validate strictly, line by line, all with empty `prior_attempts`); `first_attempt_view` lets `classify_record` see a retried-away timeout (`timeout`) or D-69 rejection. `compute_spend` and `count_failed_generation_attempts` charge every attempt (a retried record costs exactly its first attempt plus its final attempt); pass A is unchanged ($0.3199 estimate, 135 failed-generation attempts). `lancet-eval run --gate-stage <label>` requires `--retries 0` (exit 2), `drive(gate_stage=...)` refuses retries and a malformed label before any journal I/O, every drive header now carries `gate_stage` and `max_retries`, and a drive refuses to append to a journal whose header marker differs from its own (resume or not); existing drive journals are unmarked, so a gate-stage drive cannot append to them. `--retries` keeps default 2 for non-gate drives. Commits `ad48aa54`/`b3fe1e9d` (attempts), `2d2e2243`/`8964776e` (spend), `0341c880`/`cc742070`/`bf76b708` (marker). Full eval suite 1052 passed (baseline 986). No paid call, no `eval/runs/` change, no price/ceiling constant changed. OBS-05 not marked (shared ID, already checked). `ruff --preview` per-file counts unchanged from base.
   - Next: plan 34 (gate readers: SC-2 and D-69 see first-attempt failures via `first_attempt_view`, MISS on an unmarked or retried journal; edits `unpark_gates.py`).
@@ -418,6 +421,7 @@ Total Plans in Phase: 34
 | Phase 06.3.4.1 P31 | 5 min | 3 tasks | 5 files |
 | Phase 06.3.4.1 P32 | 16 min | 2 tasks | 4 files |
 | Phase 06.3.4.1 P33 | 14 min | 3 tasks | 9 files |
+| Phase 06.3.4.1 P34 | 13 min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -524,9 +528,9 @@ Total Plans in Phase: 34
 
 ## Session
 
-**Last session:** 2026-10-06T20:18:43.911Z
+**Last session:** 2026-10-06T20:33:42.696Z
 **Last activity:** 2026-10-06
-**Stopped at:** Completed 06.3.4.1-33-PLAN.md
+**Stopped at:** Completed 06.3.4.1-34-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context

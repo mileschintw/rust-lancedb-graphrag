@@ -927,7 +927,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 33/34 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`; gap-closure plans 31–34 added 2026-10-06 after UAT, closing G-06.3.4.1-2, -3a and -3b (review CR-01, CR-02, CR-03), see `06.3.4.1-UAT.md` `## Gaps`)
+**Plans:** 34/34 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`; gap-closure plans 31–34 added 2026-10-06 after UAT, closing G-06.3.4.1-2, -3a and -3b (review CR-01, CR-02, CR-03), see `06.3.4.1-UAT.md` `## Gaps`)
 
 Plans:
 
@@ -1035,7 +1035,7 @@ Plans:
 
 **Wave 24** *(blocked on Wave 23 completion)*
 
-- [ ] 06.3.4.1-34-PLAN.md — `gap_closure: true`. The gate reader MISSes every reading on a journal without the matching gate-stage marker, with `max_retries` above 0 or with retried attempts. Only the three recorded drives are grandfathered, through a closed registry keyed on their headers. SC-2 and the D-69 companion count each unit's first attempt. The run of record re-reads unchanged (G-06.3.4.1-2; CR-03; D-67, D-69)
+- [x] 06.3.4.1-34-PLAN.md — `gap_closure: true`. The gate reader MISSes every reading on a journal without the matching gate-stage marker, with `max_retries` above 0 or with retried attempts. Only the three recorded drives are grandfathered, through a closed registry keyed on their headers. SC-2 and the D-69 companion count each unit's first attempt. The run of record re-reads unchanged (G-06.3.4.1-2; CR-03; D-67, D-69)
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
