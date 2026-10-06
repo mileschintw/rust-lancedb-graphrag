@@ -356,15 +356,17 @@ def drive(
                         records.append(record)
                         executed_count += 1
 
-                    # Before submitting each next unit, check spend vs cap
+                    # Take the next unit before the cap check (WR-01): a drive is
+                    # "stopped by cap" only if a unit was still waiting when the cap
+                    # was reached, so a complete drive is never labelled capped.
                     while len(in_flight) < effective_workers and not stopped_by_cap:
-                        current_spend, _ = compute_spend(records)
-                        if current_spend >= stage_spend_cap:
-                            stopped_by_cap = True
-                            break
                         try:
                             q, arm = next(remaining_iter)
                         except StopIteration:
+                            break
+                        current_spend, _ = compute_spend(records)
+                        if current_spend >= stage_spend_cap:
+                            stopped_by_cap = True
                             break
                         fut = executor.submit(
                             drive_one,
