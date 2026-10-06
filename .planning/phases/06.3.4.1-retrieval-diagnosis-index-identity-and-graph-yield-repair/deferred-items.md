@@ -67,3 +67,8 @@
   status: open
   **What:** `ruff check --preview eval/src/lancet_eval/cli.py` reports 10 findings (9 `line-too-long` and 1 `too-many-blank-lines`, lines 445-694 after this plan) in the `reconcile`, `score` and `run` commands. The same 10 are present at the planning base `a58c6ae2`, so they predate 06.3.4.1-28. The plan's verify line lists `cli.py` among three files and reads exit 0, which cannot hold until those lines are fixed. `preflight.py` and `test_preflight_accepted_miss.py` are clean, and 06.3.4.1-28 added no finding to `cli.py`. Not fixed here: unrelated code outside the task.
   **Evidence:** `ruff check --preview --output-format concise` on `git show a58c6ae2:eval/src/lancet_eval/cli.py` (10 errors) and on the committed file (the same 10).
+
+- `config_startup::initial_bm25_failure_blocks_readiness` can fail on a port race (06.3.4.1-16)
+  status: open
+  **What:** the test starts the engine with a failing BM25 build and asserts nothing listens on a port it picked; in one full `cargo test` run it reported `engine must not open a listening socket at 127.0.0.1:62503`, and it passed alone on the rerun. Another process on the machine can hold the port. No 06.3.4.1-16 change touches startup.
+  **Evidence:** the full-run log and the single-test rerun of 2026-10-06.
