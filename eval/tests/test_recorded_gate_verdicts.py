@@ -204,7 +204,8 @@ def test_the_legacy_registry_is_exactly_the_three_recorded_drives() -> None:
         records = load_records(journal)
         entry = registry[(header["corpus"], header["created_at"])]
         assert entry.n_records == len(records), stage
-        assert entry.records_sha256 == unpark_gates.legacy_records_digest(records), stage
+        digest = unpark_gates.legacy_records_digest(records)
+        assert entry.records_sha256 == digest, stage
     assert len(registry) == 3
     assert {key: entry.label for key, entry in registry.items()} == expected
     for entry in registry.values():

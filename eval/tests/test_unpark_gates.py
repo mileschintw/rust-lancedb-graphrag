@@ -819,6 +819,25 @@ def _write_populations(
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _population_size(populations_path: Path | str, key: str) -> int:
+    path = Path(populations_path)
+    if not path.is_file():
+        return 0
+    selection = json.loads(path.read_text(encoding="utf-8"))
+    return len(set(selection.get(key) or []))
+
+
+def _expected_g(populations_path: Path | str) -> int:
+    """|G| as the test wrote it to its selection file: the `expected_g` the SC-3 and
+    SC-4 evaluators now require (WR-02)."""
+    return _population_size(populations_path, "g_question_ids")
+
+
+def _expected_v(populations_path: Path | str) -> int:
+    """|V| as the test wrote it: the `expected_v` SC-5 requires (WR-02)."""
+    return _population_size(populations_path, "v_question_ids")
+
+
 def test_evaluate_sc3_floor_absent_is_miss_floor_not_committed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _sc3_row_cls
 ) -> None:
@@ -830,7 +849,7 @@ def test_evaluate_sc3_floor_absent_is_miss_floor_not_committed(
     _write_populations(pop_path, ["q1", "q2"])
     rows = [_sc3_row_cls(question_id="q1", e_answer_usable=True)]
 
-    reading = evaluate_sc3(rows, pop_path)
+    reading = evaluate_sc3(rows, pop_path, expected_g=_expected_g(pop_path))
 
     assert reading.status == "MISS"
     assert reading.reason == "floor not committed"
@@ -850,7 +869,7 @@ def test_evaluate_sc3_floor_present_pass(
         for i, qid in enumerate(ids)
     ]
 
-    reading = evaluate_sc3(rows, pop_path)
+    reading = evaluate_sc3(rows, pop_path, expected_g=_expected_g(pop_path))
 
     assert reading.status == "PASS"
     assert reading.n == 80
@@ -870,7 +889,7 @@ def test_evaluate_sc3_below_floor_is_miss(
         for i, qid in enumerate(ids)
     ]
 
-    reading = evaluate_sc3(rows, pop_path)
+    reading = evaluate_sc3(rows, pop_path, expected_g=_expected_g(pop_path))
 
     assert reading.status == "MISS"
 
@@ -884,7 +903,7 @@ def test_evaluate_sc3_empty_population_is_miss_n0(
     pop_path = tmp_path / "diag_selection.json"
     _write_populations(pop_path, [])
 
-    reading = evaluate_sc3([], pop_path)
+    reading = evaluate_sc3([], pop_path, expected_g=_expected_g(pop_path))
 
     assert reading.status == "MISS"
     assert reading.reason == "n=0"
@@ -903,7 +922,7 @@ def test_evaluate_sc3_carries_wilson_ci(
         for i, qid in enumerate(ids)
     ]
 
-    reading = evaluate_sc3(rows, pop_path)
+    reading = evaluate_sc3(rows, pop_path, expected_g=_expected_g(pop_path))
 
     assert reading.ci is not None
     ci_lo, ci_hi = reading.ci
@@ -944,7 +963,7 @@ def test_evaluate_sc3_strata_present_with_corpus(
         for q in questions
     ]
 
-    reading = evaluate_sc3(rows, pop_path)
+    reading = evaluate_sc3(rows, pop_path, expected_g=_expected_g(pop_path))
 
     assert "strata" in reading.detail
     assert reading.detail["strata"]
@@ -985,7 +1004,12 @@ def test_evaluate_sc3_corpus_kwarg_works_without_selection_corpus_key(
         for q in questions
     ]
 
-    reading = evaluate_sc3(rows, pop_path, corpus=corpus)
+    reading = evaluate_sc3(
+        rows,
+        pop_path,
+        corpus=corpus,
+        expected_g=_expected_g(pop_path),
+    )
 
     assert "strata" in reading.detail
     assert reading.detail["strata"]
@@ -1065,7 +1089,7 @@ def test_evaluate_sc3_excludes_d69_generate_answer_failures(
         ),
     ]
 
-    reading = evaluate_sc3(rows, pop_path)
+    reading = evaluate_sc3(rows, pop_path, expected_g=_expected_g(pop_path))
 
     assert reading.detail["excluded_generate_answer_failures"] == 1.0
 
@@ -1105,7 +1129,7 @@ def test_evaluate_sc3_final_answer_missing_review_triggered(
         for i in range(10)
     ]
 
-    reading = evaluate_sc3(rows, pop_path)
+    reading = evaluate_sc3(rows, pop_path, expected_g=_expected_g(pop_path))
 
     assert reading.detail["final_answer_missing_rate"] == pytest.approx(0.30)
     assert reading.detail["final_answer_missing_review_triggered"] is True
@@ -1298,7 +1322,12 @@ def _presence_journal(
 
 def test_sc4_ten_of_forty_pairs_in_g_with_presence_passes(tmp_path: Path) -> None:
     journal, selection, gold = _presence_journal(tmp_path, n=40, present=10)
-    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    reading = evaluate_sc4(
+        journal,
+        selection,
+        gold_questions=gold,
+        expected_g=_expected_g(selection),
+    )
     assert reading.gate == "SC-4"
     assert reading.status == "PASS", reading.reason
     assert reading.value == pytest.approx(0.25)
@@ -1308,7 +1337,12 @@ def test_sc4_ten_of_forty_pairs_in_g_with_presence_passes(tmp_path: Path) -> Non
 
 def test_sc4_five_of_forty_misses_the_investigation_floor(tmp_path: Path) -> None:
     journal, selection, gold = _presence_journal(tmp_path, n=40, present=5)
-    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    reading = evaluate_sc4(
+        journal,
+        selection,
+        gold_questions=gold,
+        expected_g=_expected_g(selection),
+    )
     assert reading.status == "MISS"
     assert reading.value == pytest.approx(0.125)
     assert "0.20" in reading.reason
@@ -1316,7 +1350,12 @@ def test_sc4_five_of_forty_misses_the_investigation_floor(tmp_path: Path) -> Non
 
 def test_sc4_one_of_five_misses_on_the_wilson_clause_only(tmp_path: Path) -> None:
     journal, selection, gold = _presence_journal(tmp_path, n=5, present=1)
-    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    reading = evaluate_sc4(
+        journal,
+        selection,
+        gold_questions=gold,
+        expected_g=_expected_g(selection),
+    )
     assert reading.value == pytest.approx(0.20), "0.20 meets the floor itself"
     assert reading.ci is not None and 0.03 < reading.ci[0] < 0.04
     assert reading.status == "MISS"
@@ -1327,7 +1366,12 @@ def test_sc4_one_of_five_misses_on_the_wilson_clause_only(tmp_path: Path) -> Non
 def test_sc4_without_a_pair_in_g_is_miss_n0(tmp_path: Path) -> None:
     journal, _, gold = _presence_journal(tmp_path, n=10, present=10)
     selection = _write_selection(tmp_path / "other.json", g=["not-in-the-journal"])
-    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    reading = evaluate_sc4(
+        journal,
+        selection,
+        gold_questions=gold,
+        expected_g=_expected_g(selection),
+    )
     assert reading.status == "MISS"
     assert reading.reason == "n=0"
     assert reading.n == 0
@@ -1353,7 +1397,12 @@ def test_sc4_restricts_the_headline_to_g_and_reports_a_and_all_usable(
     selection = _write_selection(tmp_path / "sel.json", g=[_qid(i) for i in range(20)])
     gold = {**_gold_map(40), "lone": _gold_question("lone")}
 
-    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    reading = evaluate_sc4(
+        journal,
+        selection,
+        gold_questions=gold,
+        expected_g=_expected_g(selection),
+    )
 
     assert reading.status == "MISS"
     assert reading.value == pytest.approx(0.0), "the headline is over pairs(G) only"
@@ -1381,7 +1430,12 @@ def test_sc4_carries_influence_and_no_match_rates(tmp_path: Path) -> None:
     _write_journal(journal, records, corpus="multihop_rag")
     selection = _write_selection(tmp_path / "sel.json", g=[_qid(i) for i in range(10)])
 
-    reading = evaluate_sc4(journal, selection, gold_questions=_gold_map(10))
+    reading = evaluate_sc4(
+        journal,
+        selection,
+        gold_questions=_gold_map(10),
+        expected_g=_expected_g(selection),
+    )
 
     pairs_g = reading.detail["populations"]["pairs_G"]
     assert pairs_g["positive_n"] == 4
@@ -1393,7 +1447,12 @@ def test_sc4_carries_influence_and_no_match_rates(tmp_path: Path) -> None:
 
 def test_sc4_influence_is_unreported_when_the_field_is_absent(tmp_path: Path) -> None:
     journal, selection, gold = _presence_journal(tmp_path, n=10, present=5)
-    reading = evaluate_sc4(journal, selection, gold_questions=gold)
+    reading = evaluate_sc4(
+        journal,
+        selection,
+        gold_questions=gold,
+        expected_g=_expected_g(selection),
+    )
     pairs_g = reading.detail["populations"]["pairs_G"]
     assert pairs_g["influence_n"] == 0
     assert pairs_g["influence_rate"] is None, "None is not zero"
@@ -1460,7 +1519,13 @@ def test_sc5_composition_five_of_forty_meets_the_floor(tmp_path: Path) -> None:
     journal, selection, gold = _composition_journal(
         tmp_path, n=40, boosted_for=set(range(5))
     )
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.gate == "SC-5"
     assert reading.status == "PASS", reading.reason
     composition = reading.detail["populations"]["pairs_V"]["composition"]
@@ -1476,7 +1541,13 @@ def test_sc5_two_of_forty_composition_passes_through_a_coverage_delta(
     journal, selection, gold = _composition_journal(
         tmp_path, n=40, boosted_for={0, 1}, on_gold_for=set(range(40))
     )
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.status == "PASS", reading.reason
     pairs_v = reading.detail["populations"]["pairs_V"]
     assert pairs_v["composition"]["rate"] == pytest.approx(0.05)
@@ -1498,7 +1569,13 @@ def test_sc5_two_of_forty_composition_with_a_ci_through_zero_misses(
         on_gold_for=set(range(20)),
         off_gold_for=set(range(20, 40)),
     )
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.status == "MISS"
     delta = reading.detail["populations"]["pairs_V"]["deltas"]["coverage_at_4"]
     assert delta["ci_lower"] <= 0 <= delta["ci_upper"]
@@ -1509,7 +1586,13 @@ def test_sc5_a_plain_set_difference_is_not_a_composition_change(
 ) -> None:
     # Every pair's final sets differ (reformulation), but no chunk is graph_boosted.
     journal, selection, gold = _composition_journal(tmp_path, n=40, boosted_for=set())
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     composition = reading.detail["populations"]["pairs_V"]["composition"]
     assert composition["n"] == 40
     assert composition["changed_n"] == 0
@@ -1534,7 +1617,8 @@ def test_sc5_a_boosted_chunk_that_graph_off_also_holds_is_not_a_change(
     ids = [_qid(i) for i in range(10)]
     selection = _write_selection(tmp_path / "sel.json", g=ids, v=ids)
     reading = evaluate_sc5(
-        journal, selection, gold_questions=_gold_map(10), chunk_size=500
+        journal, selection, gold_questions=_gold_map(10), chunk_size=500,
+        expected_v=_expected_v(selection),
     )
     composition = reading.detail["populations"]["pairs_V"]["composition"]
     assert composition["n"] == 10
@@ -1546,7 +1630,13 @@ def test_sc5_one_pair_without_a_composition_change_misses(tmp_path: Path) -> Non
     journal, selection, gold = _composition_journal(
         tmp_path, n=1, on_gold_for={0}, on_answer_correct_for={0}
     )
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.status == "MISS"
     delta = reading.detail["populations"]["pairs_V"]["deltas"]["coverage_at_4"]
     assert delta["n_pairs"] == 1
@@ -1555,7 +1645,13 @@ def test_sc5_one_pair_without_a_composition_change_misses(tmp_path: Path) -> Non
 
 def test_sc5_one_pair_with_a_composition_change_passes(tmp_path: Path) -> None:
     journal, selection, gold = _composition_journal(tmp_path, n=1, boosted_for={0})
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.status == "PASS", reading.reason
 
 
@@ -1564,7 +1660,13 @@ def test_sc5_without_a_pair_in_v_is_miss_n0(tmp_path: Path) -> None:
     selection = _write_selection(
         tmp_path / "other.json", g=[_qid(0)], v=["not-in-the-journal"]
     )
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.status == "MISS"
     assert reading.reason == "n=0"
 
@@ -1576,7 +1678,13 @@ def test_sc5_negative_delta_with_a_ci_excluding_zero_passes_and_is_flagged(
     journal, selection, gold = _composition_journal(
         tmp_path, n=10, off_gold_for=set(range(10))
     )
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.status == "PASS", "direction is not part of the rule (D-82)"
     assert reading.detail["negative"] is True
     assert "negative" in reading.reason
@@ -1586,7 +1694,13 @@ def test_sc5_an_answer_usable_delta_also_qualifies(tmp_path: Path) -> None:
     journal, selection, gold = _composition_journal(
         tmp_path, n=10, on_answer_correct_for=set(range(10))
     )
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.status == "PASS", reading.reason
     delta = reading.detail["populations"]["pairs_V"]["deltas"]["answer_usable"]
     assert delta["mean"] == pytest.approx(1.0)
@@ -1607,7 +1721,8 @@ def test_sc5_unmeasured_composition_is_not_a_zero(tmp_path: Path) -> None:
     ids = [_qid(i) for i in range(10)]
     selection = _write_selection(tmp_path / "sel.json", g=ids, v=ids)
     reading = evaluate_sc5(
-        journal, selection, gold_questions=_gold_map(10), chunk_size=500
+        journal, selection, gold_questions=_gold_map(10), chunk_size=500,
+        expected_v=_expected_v(selection),
     )
     composition = reading.detail["populations"]["pairs_V"]["composition"]
     assert composition["n"] == 0
@@ -1620,7 +1735,13 @@ def test_sc5_reports_v_g_and_a_with_cost_deltas_and_strata(tmp_path: Path) -> No
     journal, selection, gold = _composition_journal(
         tmp_path, n=6, boosted_for={0}, on_gold_for={0, 1}
     )
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     populations = reading.detail["populations"]
     assert set(populations) == {"pairs_V", "pairs_G", "pairs_A"}
     deltas = populations["pairs_V"]["deltas"]
@@ -1639,7 +1760,13 @@ def test_sc5_reports_v_g_and_a_with_cost_deltas_and_strata(tmp_path: Path) -> No
 def test_sc5_requires_the_committed_v_population(tmp_path: Path) -> None:
     journal, _, gold = _composition_journal(tmp_path, n=5, boosted_for={0})
     selection = _write_selection(tmp_path / "no_v.json", g=[_qid(0)])
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     assert reading.status == "MISS"
     assert "v_question_ids" in reading.reason
 
@@ -1955,7 +2082,13 @@ def test_sc5_discloses_the_unpaired_boost_share_over_all_usable_graph_on(
     tmp_path: Path,
 ) -> None:
     journal, selection, gold = _unpaired_boost_journal(tmp_path)
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     block = reading.detail["unpaired_all_usable_graph_on"]
     # q000, q001 and lone are measured; q002 predates the flag; broken is unusable.
     assert block["n"] == 3
@@ -1990,7 +2123,13 @@ def test_sc5_unpaired_boost_share_never_feeds_the_pass_rule(tmp_path: Path) -> N
         **_gold_map(3),
         **{f"lone{i}": _gold_question(f"lone{i}") for i in range(40)},
     }
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    reading = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=_expected_v(selection),
+    )
     # 3 unboosted pair records + 40 boosted lone records: 40 of 43.
     assert reading.detail["unpaired_all_usable_graph_on"]["rate"] == pytest.approx(
         40 / 43
@@ -2009,7 +2148,8 @@ def test_sc5_unpaired_boost_share_is_none_without_a_usable_graph_on_record(
     _write_journal(journal, records, corpus="multihop_rag")
     selection = _write_selection(tmp_path / "sel.json", g=["q000"], v=["q000"])
     reading = evaluate_sc5(
-        journal, selection, gold_questions=_gold_map(1), chunk_size=500
+        journal, selection, gold_questions=_gold_map(1), chunk_size=500,
+        expected_v=_expected_v(selection),
     )
     block = reading.detail["unpaired_all_usable_graph_on"]
     assert (block["n"], block["rate"]) == (0, None)
@@ -2306,7 +2446,9 @@ def test_main_misses_a_journal_that_copies_a_registered_header_over_other_record
     different digest, or a different count) reads as an unmarked journal: MISS."""
     fixture = _main_fixture(tmp_path, monkeypatch, stage, honest_header=True)
     if tamper == "digest":
-        _register(monkeypatch, fixture[0] / "journal.jsonl", stage, records_sha256="0" * 64)
+        _register(
+            monkeypatch, fixture[0] / "journal.jsonl", stage, records_sha256="0" * 64
+        )
     else:
         from lancet_eval.journal import load_records
 
@@ -2468,18 +2610,20 @@ def test_sc3_a_coverage_miss_joins_a_usable_rate_miss(
     assert "7/10" in reading.reason
 
 
-def test_sc3_without_an_expected_population_skips_only_the_coverage_clause(
+def test_sc3_requires_an_expected_population(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _sc3_row_cls
 ) -> None:
+    """WR-02: no default, so a direct call cannot pass on a thin population."""
     rows, pop_path = _sc3_coverage_fixture(
         tmp_path, monkeypatch, _sc3_row_cls, scored=7
     )
 
-    reading = evaluate_sc3(rows, pop_path)
+    with pytest.raises(TypeError, match="expected_g"):
+        evaluate_sc3(rows, pop_path)  # type: ignore[call-arg]
+    reading = evaluate_sc3(rows, pop_path, expected_g=None)  # type: ignore[arg-type]
 
-    assert reading.status == "PASS"
-    assert reading.detail["coverage"] is None
-    assert reading.detail["coverage_note"] == "coverage not assessed"
+    assert reading.status == "MISS"
+    assert "coverage not assessed" in reading.reason
 
 
 def test_sc3_an_empty_expected_population_is_miss(
@@ -2530,7 +2674,7 @@ def test_sc3_counts_every_graph_off_error_class_over_g_not_only_d69(
         _Row("q5", _off("error", "timeout")),
     ]
 
-    reading = evaluate_sc3(rows, pop_path)
+    reading = evaluate_sc3(rows, pop_path, expected_g=_expected_g(pop_path))
 
     assert reading.detail["excluded_by_class"] == {
         "timeout": 2,
@@ -2558,15 +2702,14 @@ def test_sc4_misses_on_coverage_even_when_presence_and_wilson_pass(
 
 def test_sc4_at_full_coverage_keeps_its_recorded_reason(tmp_path: Path) -> None:
     journal, selection, gold = _presence_journal(tmp_path, n=40, present=10)
-    bare = evaluate_sc4(journal, selection, gold_questions=gold)
 
     reading = evaluate_sc4(journal, selection, gold_questions=gold, expected_g=40)
 
     assert reading.status == "PASS", reading.reason
-    assert reading.reason == bare.reason
+    assert "coverage" not in reading.reason
     assert reading.detail["coverage"] == pytest.approx(1.0)
-    assert bare.detail["coverage"] is None
-    assert bare.detail["coverage_note"] == "coverage not assessed"
+    assert reading.detail["coverage_n"] == reading.detail["coverage_expected"] == 40
+    assert "coverage_note" not in reading.detail
 
 
 def test_sc4_an_empty_expected_population_is_miss(tmp_path: Path) -> None:
@@ -2642,16 +2785,33 @@ def test_sc5_an_empty_expected_population_is_miss(tmp_path: Path) -> None:
     assert "expected population is empty" in reading.reason
 
 
-def test_sc5_without_an_expected_population_skips_only_the_coverage_clause(
-    tmp_path: Path,
-) -> None:
+def test_sc4_and_sc5_require_an_expected_population(tmp_path: Path) -> None:
+    """WR-02: no default on either evaluator, and an explicit None is a MISS."""
     journal, selection, gold = _composition_journal(tmp_path, n=1, boosted_for={0})
 
-    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    with pytest.raises(TypeError, match="expected_v"):
+        evaluate_sc5(  # type: ignore[call-arg]
+            journal, selection, gold_questions=gold, chunk_size=500
+        )
+    with pytest.raises(TypeError, match="expected_g"):
+        evaluate_sc4(journal, selection, gold_questions=gold)  # type: ignore[call-arg]
+    sc5 = evaluate_sc5(
+        journal,
+        selection,
+        gold_questions=gold,
+        chunk_size=500,
+        expected_v=None,  # type: ignore[arg-type]
+    )
+    sc4 = evaluate_sc4(
+        journal,
+        selection,
+        gold_questions=gold,
+        expected_g=None,  # type: ignore[arg-type]
+    )
 
-    assert reading.status == "PASS"
-    assert reading.detail["coverage"] is None
-    assert reading.detail["coverage_note"] == "coverage not assessed"
+    for reading in (sc4, sc5):
+        assert reading.status == "MISS"
+        assert "coverage not assessed" in reading.reason
 
 
 def test_main_passes_sample_scoped_integer_denominators(

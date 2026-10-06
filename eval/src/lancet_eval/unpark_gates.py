@@ -56,6 +56,17 @@ _TIMEOUT_CLASS = "timeout"
 #: The stage label that adds SC-4, SC-5 and graph-off invariance; any other label keeps
 #: the drive-1 readings unchanged (D-95).
 DRIVE2_STAGE = "drive2"
+
+
+class _LegacyDrive(NamedTuple):
+    """One registered pre-marker gate drive (WR-01)."""
+
+    label: str
+    evidence: str
+    n_records: int
+    records_sha256: str
+
+
 #: The gate drives written before the gate-stage marker existed (06.3.4.1-33), read
 #: without it. Each maps the header's own `(corpus, created_at)` to the stage label it
 #: was driven as, its retry evidence (the `retries=0` banner in that run's
@@ -70,13 +81,6 @@ DRIVE2_STAGE = "drive2"
 #: holds other records, or more or fewer of them, is not that drive. The digest hashes
 #: the parsed record values, not file bytes, so a CRLF checkout cannot change it (a file
 #: hash would).
-class _LegacyDrive(NamedTuple):
-    label: str
-    evidence: str
-    n_records: int
-    records_sha256: str
-
-
 _LEGACY_UNMARKED_GATE_DRIVES: Mapping[tuple[str, float], _LegacyDrive] = (
     MappingProxyType(
         {
@@ -138,9 +142,10 @@ def _coverage_clause(
     `n` is the population a gate scored and `expected` the sample-scoped population it
     should have scored (|sample & G| or |sample & V|, computed once by `main`, never
     the corpus-wide G or V and never a journal-relative denominator). Returns the MISS
-    reason (None when the clause passes or is skipped) and the `detail` fields. At or
-    above `UNPARK_GATE_COVERAGE_FLOOR` passes. `expected` None skips the clause and
-    says so: only a direct evaluator call omits it, `main` always passes an integer.
+    reason (None when the clause passes) and the `detail` fields. At or
+    above `UNPARK_GATE_COVERAGE_FLOOR` passes. An `expected` that is not an integer
+    (None, say) is a MISS, never a pass: the evaluators require it, so a caller that
+    cannot say how many questions it should have scored does not get a reading (WR-02).
     """
     floor = thresholds.UNPARK_GATE_COVERAGE_FLOOR
     detail: dict[str, Any] = {
@@ -149,9 +154,9 @@ def _coverage_clause(
         "coverage": None,
         "coverage_floor": float(floor),
     }
-    if expected is None:
+    if isinstance(expected, bool) or not isinstance(expected, int):
         detail["coverage_note"] = "coverage not assessed"
-        return None, detail
+        return f"coverage not assessed: no expected population for {label}", detail
     if expected <= 0:
         return "expected population is empty", detail
     coverage = n / expected
@@ -514,7 +519,7 @@ def evaluate_sc3(
     populations_path: Path | str,
     *,
     corpus: str | None = None,
-    expected_g: int | None = None,
+    expected_g: int,
 ) -> GateReading:
     """SC-3 (AI-SPEC #5): answer_usable rate over G against the committed
     VECTOR_BASELINE_USABLE_FLOOR (D-73); never supplies a default when the floor
@@ -529,9 +534,9 @@ def evaluate_sc3(
     binary-vs-entity gold (each with its constant-Yes baseline) are added to
     `detail["strata"]` on a best-effort basis.
 
-    `expected_g` is |sample & G| (keyword-only, supplied by `main`): scored n below
-    `UNPARK_GATE_COVERAGE_FLOOR` of it is MISS however high the usable rate. Omitted,
-    the coverage clause is skipped and `detail` says `coverage not assessed`.
+    `expected_g` is |sample & G| (keyword-only and required, supplied by `main`): scored
+    n below `UNPARK_GATE_COVERAGE_FLOOR` of it is MISS however high the usable rate.
+    There is no default (WR-02): a non-integer value is MISS `coverage not assessed`.
     """
     pop_path = Path(populations_path)
     if not pop_path.is_file():
@@ -849,7 +854,7 @@ def evaluate_sc4(
     *,
     corpus: str | None = None,
     gold_questions: Any = None,
-    expected_g: int | None = None,
+    expected_g: int,
 ) -> GateReading:
     """SC-4 (AI-SPEC #9/#10, D-81): graph presence over pairs(G) on the drive-2 journal.
 
@@ -862,8 +867,9 @@ def evaluate_sc4(
     no-match rate; none of those gates. An empty pairs(G) is MISS "n=0".
 
     `corpus` and `gold_questions` are keyword-only overrides: by default the corpus
-    comes from the journal header, as in `evaluate_sc3`. `expected_g` is |sample & G|:
-    the pairs(G) headline n below `UNPARK_GATE_COVERAGE_FLOOR` of it is MISS (CR-02).
+    comes from the journal header, as in `evaluate_sc3`. `expected_g` is |sample & G|
+    (keyword-only, required, no default; WR-02): the pairs(G) headline n below
+    `UNPARK_GATE_COVERAGE_FLOOR` of it is MISS (CR-02).
     """
     selection = _load_selection(populations_path)
     if selection is None:
@@ -1113,7 +1119,7 @@ def evaluate_sc5(
     corpus: str | None = None,
     gold_questions: Any = None,
     chunk_size: int | None = None,
-    expected_v: int | None = None,
+    expected_v: int,
 ) -> GateReading:
     """SC-5 (AI-SPEC #11/#12, D-81/D-82): does the graph visibly change retrieval on V?
 
@@ -1131,9 +1137,10 @@ def evaluate_sc5(
     V comes from the `v_question_ids` list in `populations_path`; without it the
     reading is MISS, never a guess.
 
-    `expected_v` is |sample & V|: the composition population n over pairs(V) (the
-    population rule (a) is computed on) below `UNPARK_GATE_COVERAGE_FLOOR` of it is
-    MISS (CR-02). `n_pairs(V)` is reported beside it, and the rule itself is untouched.
+    `expected_v` is |sample & V| (keyword-only, required, no default; WR-02): the
+    composition population n over pairs(V) (the population rule (a) is computed on)
+    below `UNPARK_GATE_COVERAGE_FLOOR` of it is MISS (CR-02). `n_pairs(V)` is reported
+    beside it, and the rule itself is untouched.
     """
     selection = _load_selection(populations_path)
     if selection is None:
