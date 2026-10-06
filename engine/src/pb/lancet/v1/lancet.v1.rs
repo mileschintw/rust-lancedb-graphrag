@@ -106,6 +106,10 @@ pub struct StructuredCitation {
     pub rank: i32,
     #[prost(string, tag="9")]
     pub content_type: ::prost::alloc::string::String,
+    /// 06.3.4.1 D-81: the graph contributed to this chunk's place in the retrieved set. Set on
+    /// `RetrievalSnapshot.retrieved_chunks`; always false on the generator's cited chunks.
+    #[prost(bool, tag="10")]
+    pub graph_boosted: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetrievalSnapshot {
@@ -240,7 +244,7 @@ pub struct CheckpointEvent {
 }
 /// D-41 + Phase 05 D-30. One nested message = one additive tag, matching Phase 05's
 /// tags 10/11 pattern. The field list is D-30's, verbatim, not re-derived.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WorkflowMetadata {
     #[prost(int64, tag="1")]
     pub started_at_ms: i64,
@@ -267,6 +271,24 @@ pub struct WorkflowMetadata {
     /// which is distinct from the presence counters at tags 6 and 7.
     #[prost(uint32, tag="11")]
     pub graph_prompt_fact_count: u32,
+    /// 06.3.4.1 D-79: seeds the question's mentions matched. Counts, a boolean and document IDs only;
+    /// never question text or entity names.
+    #[prost(uint32, tag="12")]
+    pub graph_seed_count: u32,
+    /// 06.3.4.1 D-79: at least one seed-to-seed path was found.
+    #[prost(bool, tag="13")]
+    pub graph_path_found: bool,
+    /// 06.3.4.1 D-81: chunks of the final retrieved set the graph list contributed to.
+    #[prost(uint32, tag="14")]
+    pub graph_boosted_chunk_count: u32,
+    /// 06.3.4.1 D-79: two-hop paths dropped for an intermediate entity above the degree cap.
+    #[prost(uint32, tag="15")]
+    pub graph_degree_capped_count: u32,
+    /// 06.3.4.1 D-79: document IDs of the seeds' source chunks, sorted and de-duplicated, so
+    /// column (d) can be computed per record. Not capped: bounded by max_seeds and the corpus
+    /// document count (at most 88 IDs per question on the 100-question probe).
+    #[prost(string, repeated, tag="16")]
+    pub graph_seed_document_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkflowCompletedEvent {

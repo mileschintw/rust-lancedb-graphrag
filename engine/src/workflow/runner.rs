@@ -636,6 +636,11 @@ impl WorkflowRunner {
             completion_tokens: ctx.completion_tokens,
             degraded_mode,
             graph_prompt_fact_count: ctx.graph_prompt_fact_count,
+            graph_seed_count: 0,
+            graph_path_found: false,
+            graph_boosted_chunk_count: 0,
+            graph_degree_capped_count: 0,
+            graph_seed_document_ids: Vec::new(),
         };
 
         let current_span = tracing::Span::current();

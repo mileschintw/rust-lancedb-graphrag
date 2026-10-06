@@ -3045,6 +3045,7 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
         score: 0.88,
         rank: 1,
         content_type: "text/plain".into(),
+        graph_boosted: false,
     }];
     ctx.merge_notices(vec![
         test_notice(

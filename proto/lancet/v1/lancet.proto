@@ -133,6 +133,9 @@ message StructuredCitation {
   double score = 7;
   int32 rank = 8;
   string content_type = 9;
+  // 06.3.4.1 D-81: the graph contributed to this chunk's place in the retrieved set. Set on
+  // `RetrievalSnapshot.retrieved_chunks`; always false on the generator's cited chunks.
+  bool graph_boosted = 10;
 }
 
 message RetrievalSnapshot {
@@ -249,6 +252,19 @@ message WorkflowMetadata {
   // D-06: counts graph-derived facts that reached the assembled prompt (influence),
   // which is distinct from the presence counters at tags 6 and 7.
   uint32 graph_prompt_fact_count = 11;
+  // 06.3.4.1 D-79: seeds the question's mentions matched. Counts, a boolean and document IDs only;
+  // never question text or entity names.
+  uint32 graph_seed_count = 12;
+  // 06.3.4.1 D-79: at least one seed-to-seed path was found.
+  bool graph_path_found = 13;
+  // 06.3.4.1 D-81: chunks of the final retrieved set the graph list contributed to.
+  uint32 graph_boosted_chunk_count = 14;
+  // 06.3.4.1 D-79: two-hop paths dropped for an intermediate entity above the degree cap.
+  uint32 graph_degree_capped_count = 15;
+  // 06.3.4.1 D-79: document IDs of the seeds' source chunks, sorted and de-duplicated, so
+  // column (d) can be computed per record. Not capped: bounded by max_seeds and the corpus
+  // document count (at most 88 IDs per question on the 100-question probe).
+  repeated string graph_seed_document_ids = 16;
 }
 
 message WorkflowCompletedEvent {

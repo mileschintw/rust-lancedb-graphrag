@@ -1071,6 +1071,7 @@ fn retrieval_snapshot_retrieved_chunks_wire_contract() {
         score: 0.95,
         rank: 1,
         content_type: "text/plain".to_string(),
+        graph_boosted: false,
     };
     let chunk2 = crate::pb::lancet::v1::StructuredCitation {
         chunk_id: "chunk-002".to_string(),
@@ -1082,6 +1083,7 @@ fn retrieval_snapshot_retrieved_chunks_wire_contract() {
         score: 0.85,
         rank: 2,
         content_type: "text/markdown".to_string(),
+        graph_boosted: false,
     };
 
     let populated = crate::pb::lancet::v1::RetrievalSnapshot {

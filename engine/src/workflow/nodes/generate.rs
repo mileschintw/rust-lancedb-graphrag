@@ -443,6 +443,7 @@ impl Node for GenerateAnswerNode {
                                 score: c.score,
                                 rank: c.rank as i32,
                                 content_type: c.content_type.clone(),
+                                graph_boosted: false,
                             })
                             .collect();
                     } else {
@@ -509,6 +510,7 @@ impl Node for GenerateAnswerNode {
                                 score: c.score,
                                 rank: c.rank as i32,
                                 content_type: c.content_type.clone(),
+                                graph_boosted: false,
                             })
                             .collect();
                     }
