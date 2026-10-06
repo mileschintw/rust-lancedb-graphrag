@@ -190,6 +190,12 @@ fi
 #         rewritten in place (`attempt_graph_augmentation_over_an_empty_store_finds_no_match` and
 #         `graph_fact_preserves_stored_edge_orientation_when_seed_is_target`). `engine (bin)` stays
 #         0; inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
+#   677 -- Phase 06.3.4.1 plan 14 Task 3 (fix): one more `graph::tests::seed_paths` test
+#         (a_two_hop_fact_relation_text_points_each_hop_the_way_its_edge_is_stored). The relation
+#         attribute of a two-hop `GraphFact` used one arrow for both hops, so for a hop stored against
+#         the path it contradicted the readable text of the same fact; each arrow now follows its
+#         hop, at the same length, 592->593. `engine (bin)` stays 0;
+#         inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -229,18 +235,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 676 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 676, got $TOTAL" >&2
+if [ "$TOTAL" -ne 677 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 677, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 592 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 592, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 593 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 593, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 592 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 592, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 593 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 593, got $LIB_COUNT" >&2
   exit 1
 fi
 

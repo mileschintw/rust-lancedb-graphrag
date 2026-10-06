@@ -1328,6 +1328,41 @@ pub(crate) mod seed_paths {
         assert_eq!(at_cap.degree_capped_count, 0);
     }
 
+    /// The relation attribute of a two-hop fact shows which way each hop points along the path, so
+    /// it never contradicts the readable text of the same fact.
+    #[test]
+    fn a_two_hop_fact_relation_text_points_each_hop_the_way_its_edge_is_stored() {
+        // Alpha -owns-> Mid <-buys_from- Beta: the first hop is stored along the path, the second
+        // against it.
+        let (index, edges) = graph(
+            vec![ent(1, "Alpha", &[]), ent(2, "Beta", &[]), ent(3, "Mid", &[])],
+            &[(1, 3, "owns", 1.0), (2, 3, "buys_from", 1.0)],
+        );
+        let result = build_paths(
+            &index,
+            &[seed_of(&index, 1), seed_of(&index, 2)],
+            &edges,
+            &path_settings(33, 16, 8),
+        );
+        assert_eq!(result.paths[0].rendered, "Alpha \u{2014}owns\u{2192} Mid \u{2190}buys_from\u{2014} Beta");
+        assert_eq!(result.facts[0].relation_type(), "owns\u{2192}Mid\u{2190}buys_from");
+
+        // Alpha <-owns- Mid -sells_to-> Beta: the first hop is stored against the path, the
+        // second along it.
+        let (index, edges) = graph(
+            vec![ent(1, "Alpha", &[]), ent(2, "Beta", &[]), ent(3, "Mid", &[])],
+            &[(3, 1, "owns", 1.0), (3, 2, "sells_to", 1.0)],
+        );
+        let result = build_paths(
+            &index,
+            &[seed_of(&index, 1), seed_of(&index, 2)],
+            &edges,
+            &path_settings(33, 16, 8),
+        );
+        assert_eq!(result.paths[0].rendered, "Alpha \u{2190}owns\u{2014} Mid \u{2014}sells_to\u{2192} Beta");
+        assert_eq!(result.facts[0].relation_type(), "owns\u{2190}Mid\u{2192}sells_to");
+    }
+
     #[test]
     fn a_seed_is_never_an_intermediate_and_a_single_seed_has_no_path() {
         let (index, edges) = graph(

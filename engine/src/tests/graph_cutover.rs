@@ -196,6 +196,11 @@ async fn a_question_naming_two_entities_joined_by_a_two_hop_path_yields_the_path
     );
     assert_eq!(facts[0].entity_a_name(), "Acme Corp");
     assert_eq!(facts[0].entity_b_name(), "Beta Works");
+    assert_eq!(
+        facts[0].relation_type(),
+        "owns\u{2192}Gamma Bridge\u{2192}supplies",
+        "the relation attribute agrees with the readable text for two forward hops"
+    );
     assert_eq!(report.seed_count, 2);
     assert!(report.path_found);
     assert_eq!(report.degree_capped_count, 0);
@@ -580,9 +585,11 @@ async fn graph_off_returns_before_the_port_and_leaves_every_new_field_at_its_def
     assert!(ctx.notices.iter().any(|n| n.code == "GRAPH_ABLATION"));
 }
 
-/// The ablation return comes before the node reads the question text at all.
+/// The node copies the question for the port only after the ablation return, and calls the port
+/// from one place. (The variants seeding and the variant-zero embedding before the return are
+/// existing behaviour that makes no graph lookup.)
 #[test]
-fn the_ablation_return_precedes_every_use_of_the_question_text_in_the_node() {
+fn the_node_copies_the_question_for_the_port_only_after_the_ablation_return() {
     let source = include_str!("../workflow/nodes/graph_context.rs");
     let ablation = source
         .find("if ctx.disable_graph_context {")
@@ -796,6 +803,13 @@ async fn a_two_hop_path_fact_reaches_the_prompt_with_the_direction_of_every_hop(
             "Penn State \u{2190}ASSOCIATED_WITH\u{2014} Sherrone Moore \u{2014}SUBSTITUTE_FOR\u{2192} Jim Harbaugh"
         ),
         "the prompt must carry the directional path text: {}",
+        packed.prompt
+    );
+    assert!(
+        packed
+            .prompt
+            .contains("relation=\"ASSOCIATED_WITH\u{2190}Sherrone Moore\u{2192}SUBSTITUTE_FOR\""),
+        "the relation attribute must point the first hop backwards, as the text does: {}",
         packed.prompt
     );
     assert_eq!(packed.graph_facts.len(), 1);
