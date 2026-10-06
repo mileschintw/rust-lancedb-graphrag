@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 20
+current_plan: 21
 status: executing
-stopped_at: Completed 06.3.4.1-19-PLAN.md
-last_updated: "2026-10-06T10:20:47.775Z"
+stopped_at: Completed 06.3.4.1-20-PLAN.md
+last_updated: "2026-10-06T10:23:48.323Z"
 last_activity: 2026-10-06
-last_activity_desc: Completed 06.3.4.1-19 (paid drive 2, the run of record: 200 records, header partial false, $0.071053 of a $0.91 cap; SC-1 200/200, SC-4 59/89 = 0.6629, SC-5 35/65 = 0.5385 all PASS; D-83 closed by the user as all-pass-close, three disclosures stand as reported); plan 20 (D-88 non-comparability record) is next. 6.4 stays parked pending a later user decision.
-state_head: 58f16017ee60f2d68e8b704a1de32fbbde00e3b2
+last_activity_desc: "Completed 06.3.4.1-20 (D-88 non-comparability record: SUPERSEDED.md on the 2026-09-09 run, dated docs addendum with the three D-78 disclosures, 6.4 canonical refs and OBS-05 traceability row); all 30 plans of 06.3.4.1 have SUMMARYs; phase gates are the orchestrator's; 6.4 stays parked pending a later user decision."
+state_head: 781cf6de7643e0c903bb1249a10dd5d9461e6940
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 187
+  completed_plans: 188
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,10 +22,13 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 20
+Current Plan: 21
 Total Plans in Phase: 30
 
 ## Current Status
+
+- **2026-10-06: Plan 06.3.4.1-20 complete (D-88, the non-comparability record).** `eval/runs/2026-09-09-multihop_rag/SUPERSEDED.md` added (the only file added there; no existing `eval/runs/` file changed); `docs/evaluation-fidelity-and-graph-yield.md` gained the dated addendum (what changed, EM/Token-F1/graph-presence non-comparable with the run of record, SC-1/SC-4/SC-5 outcomes, the three standing disclosures); ROADMAP 6.4's canonical refs cite the run of record and the D-83 all-pass-close outcome; REQUIREMENTS OBS-05's traceability row gained 06.3.4.1 (no checkbox changed; OBS-05, DATA-04, DATA-05 stay checked; no requirements mark-complete run). Commits `e39a1dbd`, `781cf6de`. **6.4 is not unparked**; that is a later user decision.
+  - Next: all 30 plans of 06.3.4.1 have SUMMARYs; the orchestrator runs the phase gates (verification, code review). `Current Plan: 21` is the tool's mechanical advance, not outstanding work.
 
 - **2026-10-06: Plan 06.3.4.1-19 complete (paid drive 2, the run of record).** One drive at an explicit `--stage-cap 0.91` (user, 2026-10-06), 200 records (100 questions x 2 arms), engine PID 7372 before and after, header `partial` false, scored through the unmodified fail-closed path; spend $0.071053 of the cap. `unpark_gates --stage drive2`: SC-1 PASS (200/200), SC-4 PASS (59/89 = 0.6629 over pairs(G), Wilson [0.5598, 0.7526]), SC-5 PASS (35/65 = 0.5385 over pairs(V)); SC-2, SC-3 and D-69 re-reported as PASS disclosures. **D-83 closed by the user as `all-pass-close`** (reply verbatim `all-pass-close (建議)`, 2026-10-06, after asking for and receiving the orchestrator's recommendation). Three disclosures stand as reported (D-78), not toggled off: negative non-significant paired quality deltas with the latency and token cost (legacy ranking-quality delta -0.0807 [-0.1362, -0.0259]); a mid-drive provider switch to Sail Research from ordinal 165 (graph-off usable 6/16 against 46/74); and a 4/100 graph-off retrieved-set difference against drive 1b with an undetermined cause. The 0.20 floor is unamended. Run of record: `eval/runs/2026-10-06-drive2-multihop_rag_diag/`; readings and D-83 outcome in `06.3.4.1-RUN-OF-RECORD.md`; drive 1 and drive 1b carry `DIAGNOSTIC.md` markers. OBS-05 and DATA-05 were not marked (shared IDs).
   - Next: plan 20 (D-88: SUPERSEDED marker on the 06.3.4 run, the dated addendum, the 6.4 canonical refs). The 6.4 unpark is a later user decision and is not made by plan 20.
@@ -403,6 +406,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P16 | 27 min | 3 tasks | 23 files |
 | Phase 06.3.4.1 P17 | 30 min | 2 tasks | 11 files |
 | Phase 06.3.4.1 P19 | 73 min | 3 tasks | 8 files |
+| Phase 06.3.4.1 P20 | 20 min | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -503,12 +507,13 @@ Total Plans in Phase: 30
 - [Phase 06.3.4.1]: 06.3.4.1-17: the path canary is mhr-3b0dac3a26bd, the lowest question_id among 3 questions passing a five-criterion rule fixed before the list was read; require_seed_path is a hard floor, never an accepted known miss (D-80, D-94) — Recorded in SEED-PROBE section 10; live re-validation is plan 18; canary manifest is 8 rows over 7 IDs, the seven earlier rows byte-identical
 - [Phase 06.3.4.1]: 06.3.4.1-17: graph_off_invariance is a disclosure with no committed threshold; --stage drive2 requires --baseline-run (drive 1b); other stages are unchanged (D-95) — No threshold for a systematic shift was committed, and inventing one would be the D-83 violation this plan prevents
 - [Phase 06.3.4.1]: D-83 closed as all-pass-close on the drive 2 run of record (user, 2026-10-06, reply 'all-pass-close (建議)', after receiving the orchestrator's recommendation): SC-1 200/200, SC-4 59/89 = 0.6629, SC-5 35/65 = 0.5385 all PASS; three disclosures stand as reported (D-78); 0.20 floor unamended; 6.4 not unparked, a later user decision; D-88 is plan 20 — Gates committed before the drive and pass with margin; iterate-once requires a miss and would otherwise be tuning (06.3.1 D-49)
+- [Phase 06.3.4.1]: 06.3.4.1-20: the docs addendum and SUPERSEDED notice report the three D-78 standing disclosures alongside the all-pass-close outcome; 6.4 is cited the run of record but stays parked (unpark is a later user decision); OBS-05 traceability documented without any checkbox change
 
 ## Session
 
-**Last session:** 2026-10-06T10:20:44.908Z
+**Last session:** 2026-10-06T10:23:47.119Z
 **Last activity:** 2026-10-05 - Started the OI-01 run at 06.3.4.1-13
-**Stopped at:** Completed 06.3.4.1-19-PLAN.md
+**Stopped at:** Completed 06.3.4.1-20-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context

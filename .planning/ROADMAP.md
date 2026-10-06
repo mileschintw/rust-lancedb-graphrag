@@ -928,7 +928,7 @@ Plans:
 - Rewriting 06.3.4 as complete.
 - Agent back-fill of calibration worksheets.
 
-**Plans:** 29/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
+**Plans:** 30/30 plans executed (7 gap-closure plans 21–27 added 2026-09-28 after budget pass A, see `06.3.4.1-PASSA-GAPS.md`; gap-closure plan 28 added 2026-09-29 after 06.3.4.1-27's failed preflight, see `06.3.4.1-PREFLIGHT-GAPS.md`; gap-closure plans 29–30 added 2026-09-30 after drive 1's SC-3 miss and the D-84 `iterate-once` decision, see `06.3.4.1-DRIVE1-GAPS.md`)
 
 Plans:
 
@@ -1023,7 +1023,7 @@ Plans:
 
 **Wave 21** *(blocked on Wave 20 completion)*
 
-- [ ] 06.3.4.1-20-PLAN.md — Record non-comparability publicly (D-88)
+- [x] 06.3.4.1-20-PLAN.md — Record non-comparability publicly (D-88)
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
