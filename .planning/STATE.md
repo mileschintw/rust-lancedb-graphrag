@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 19
+current_plan: 20
 status: executing
-stopped_at: Completed 06.3.4.1-18-PLAN.md
-last_updated: "2026-10-06T09:05:00.000Z"
+stopped_at: Completed 06.3.4.1-19-PLAN.md
+last_updated: "2026-10-06T10:20:47.775Z"
 last_activity: 2026-10-06
-last_activity_desc: Completed 06.3.4.1-18 (budget pass B ran once at an explicit $1.50 cap, settled $0.1205; the D-89 verdict on RetrieveHybrid is available and not present; graph_operation_timeout_ms is re-derived to 2424 ms from the graph-on ExtractGraphContext proxy and written to the config trio with the agreement test green; the one live preflight on the rebuilt engine passed all 8 canaries with no --accept-known-miss, so D-94 expired unused); plan 19 (paid drive 2, needs its own D-86 cap question) is next. The release engine.exe and gateway.exe were rebuilt at this plan and are current.
-state_head: 4d615272c11bd8d1fc35d3edb2760c9ad78ee97e
+last_activity_desc: Completed 06.3.4.1-19 (paid drive 2, the run of record: 200 records, header partial false, $0.071053 of a $0.91 cap; SC-1 200/200, SC-4 59/89 = 0.6629, SC-5 35/65 = 0.5385 all PASS; D-83 closed by the user as all-pass-close, three disclosures stand as reported); plan 20 (D-88 non-comparability record) is next. 6.4 stays parked pending a later user decision.
+state_head: 58f16017ee60f2d68e8b704a1de32fbbde00e3b2
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 188
-  completed_plans: 186
+  completed_plans: 187
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,10 +22,13 @@ current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair 
 
 ## Current Position
 
-Current Plan: 19
+Current Plan: 20
 Total Plans in Phase: 30
 
 ## Current Status
+
+- **2026-10-06: Plan 06.3.4.1-19 complete (paid drive 2, the run of record).** One drive at an explicit `--stage-cap 0.91` (user, 2026-10-06), 200 records (100 questions x 2 arms), engine PID 7372 before and after, header `partial` false, scored through the unmodified fail-closed path; spend $0.071053 of the cap. `unpark_gates --stage drive2`: SC-1 PASS (200/200), SC-4 PASS (59/89 = 0.6629 over pairs(G), Wilson [0.5598, 0.7526]), SC-5 PASS (35/65 = 0.5385 over pairs(V)); SC-2, SC-3 and D-69 re-reported as PASS disclosures. **D-83 closed by the user as `all-pass-close`** (reply verbatim `all-pass-close (建議)`, 2026-10-06, after asking for and receiving the orchestrator's recommendation). Three disclosures stand as reported (D-78), not toggled off: negative non-significant paired quality deltas with the latency and token cost (legacy ranking-quality delta -0.0807 [-0.1362, -0.0259]); a mid-drive provider switch to Sail Research from ordinal 165 (graph-off usable 6/16 against 46/74); and a 4/100 graph-off retrieved-set difference against drive 1b with an undetermined cause. The 0.20 floor is unamended. Run of record: `eval/runs/2026-10-06-drive2-multihop_rag_diag/`; readings and D-83 outcome in `06.3.4.1-RUN-OF-RECORD.md`; drive 1 and drive 1b carry `DIAGNOSTIC.md` markers. OBS-05 and DATA-05 were not marked (shared IDs).
+  - Next: plan 20 (D-88: SUPERSEDED marker on the 06.3.4 run, the dated addendum, the 6.4 canonical refs). The 6.4 unpark is a later user decision and is not made by plan 20.
 
 - **2026-10-06: Plan 06.3.4.1-18 complete (budget pass B and live canary re-validation).** Pass B ran once on the rebuilt release engine at an explicit `--stage-cap 1.50` (user, 2026-10-06), engine PID unchanged, settled spend $0.1205. Its D-89 verdict on `RetrieveHybrid` reads available and not present. `graph_operation_timeout_ms` is **2424 ms** (was 10000): p95 1616 ms x 1.5 of the graph-on `ExtractGraphContext` node duration, an upper-bound proxy that includes the query embedding, over-budget share 0 of 160 against 0.10. It is written to `config.rs`, `config.toml` and `config.example.toml` together (RED `e43f0fe7`, GREEN `33945ca3`). The other six budgets are unchanged (`graph_node_timeout_ms` stays 12500). The one `preflight --corpus multihop_rag_diag` on the committed budgets passed all 8 canaries with exit 0 (settled $0.003341). **D-94 expired at this plan and was not used**: no `--accept-known-miss` was passed, and `mhr-0d5e238015ef` now observes 3 graph nodes. Disclosure for plan 19: two canary graph operations used 63 to 69% of the new 2424 ms budget, and a heavier traversal degrades silently to chunk-only context. OBS-05 and DATA-05 are not marked complete.
   - Next: plan 19 (paid drive 2, the run of record). It needs its own blocking D-86 cap question.
@@ -399,6 +402,7 @@ Total Plans in Phase: 30
 | Phase 06.3.4.1 P15 | 55 min | 2 tasks | 20 files |
 | Phase 06.3.4.1 P16 | 27 min | 3 tasks | 23 files |
 | Phase 06.3.4.1 P17 | 30 min | 2 tasks | 11 files |
+| Phase 06.3.4.1 P19 | 73 min | 3 tasks | 8 files |
 
 ## Decisions
 
@@ -498,12 +502,13 @@ Total Plans in Phase: 30
 - [Phase 06.3.4.1]: 06.3.4.1-17: the drive-2 literals (GRAPH_PRESENCE_WILSON_LOWER_FLOOR 0.098, GRAPH_COMPOSITION_CHANGE_FLOOR 0.10, SC5_VISIBILITY_RULE) are committed before any drive-2 record; no existing literal changed (D-83) — Tests pinning the values landed first (61fc439a), the literals in 786e3d3e; GRAPH_YIELD_INVESTIGATION_FLOOR stays 0.20
 - [Phase 06.3.4.1]: 06.3.4.1-17: the path canary is mhr-3b0dac3a26bd, the lowest question_id among 3 questions passing a five-criterion rule fixed before the list was read; require_seed_path is a hard floor, never an accepted known miss (D-80, D-94) — Recorded in SEED-PROBE section 10; live re-validation is plan 18; canary manifest is 8 rows over 7 IDs, the seven earlier rows byte-identical
 - [Phase 06.3.4.1]: 06.3.4.1-17: graph_off_invariance is a disclosure with no committed threshold; --stage drive2 requires --baseline-run (drive 1b); other stages are unchanged (D-95) — No threshold for a systematic shift was committed, and inventing one would be the D-83 violation this plan prevents
+- [Phase 06.3.4.1]: D-83 closed as all-pass-close on the drive 2 run of record (user, 2026-10-06, reply 'all-pass-close (建議)', after receiving the orchestrator's recommendation): SC-1 200/200, SC-4 59/89 = 0.6629, SC-5 35/65 = 0.5385 all PASS; three disclosures stand as reported (D-78); 0.20 floor unamended; 6.4 not unparked, a later user decision; D-88 is plan 20 — Gates committed before the drive and pass with margin; iterate-once requires a miss and would otherwise be tuning (06.3.1 D-49)
 
 ## Session
 
-**Last session:** 2026-10-06T07:02:38.821Z
+**Last session:** 2026-10-06T10:20:44.908Z
 **Last activity:** 2026-10-05 - Started the OI-01 run at 06.3.4.1-13
-**Stopped at:** Completed 06.3.4.1-17-PLAN.md
+**Stopped at:** Completed 06.3.4.1-19-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
