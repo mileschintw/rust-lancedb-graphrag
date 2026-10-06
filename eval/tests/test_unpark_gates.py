@@ -16,7 +16,13 @@ import pytest
 import lancet_eval.thresholds as thresholds_module
 from lancet_eval.client import Notice, RetrievalSnapshot, StructuredCitation
 from lancet_eval.corpus import GoldQuestion
-from lancet_eval.journal import NodeFailed, NodeTiming, RunRecord, WorkflowWireMeta
+from lancet_eval.journal import (
+    AttemptRecord,
+    NodeFailed,
+    NodeTiming,
+    RunRecord,
+    WorkflowWireMeta,
+)
 from lancet_eval.unpark_gates import (
     citation_rejection_rate,
     evaluate_sc1,
@@ -455,6 +461,168 @@ def test_evaluate_sc2_unknown_dominance_rule_is_miss(
 
     assert reading.status == "MISS"
     assert "unknown dominance rule" in reading.reason
+
+
+# --- first-attempt SC-2 and D-69 (06.3.4.1-34, CR-03, D-67, D-69) --------------------
+
+_MIXED_REJECTION = "answer basis 'mixed' requires at least one cited evidence ID: none"
+
+
+def _attempt(
+    outcome: str = "error",
+    *,
+    error_type: str | None = None,
+    node_failures: list[NodeFailed] | None = None,
+) -> AttemptRecord:
+    return AttemptRecord(
+        attempt=1,
+        outcome=outcome,  # type: ignore[arg-type]
+        error_type=error_type,
+        node_failures=node_failures or [],
+    )
+
+
+def _retried(record: RunRecord, *prior: AttemptRecord) -> RunRecord:
+    """`record` as the final attempt of a unit whose earlier attempts are `prior`."""
+    return record.model_copy(update={"prior_attempts": list(prior)})
+
+
+def _timeout_error(question_id: str, *, arm: str = "graph-off") -> RunRecord:
+    return RunRecord(
+        corpus="graphrag_bench",
+        question_id=question_id,
+        graph_arm=arm,
+        outcome="error",
+        index_generation="gen-1",
+        error_type="ReadTimeout",
+    )
+
+
+def _success(question_id: str, *, arm: str = "graph-off") -> RunRecord:
+    return _generate_answer_success(question_id).model_copy(update={"graph_arm": arm})
+
+
+def test_sc2_counts_a_retried_timeout_like_a_retries_zero_journal(
+    tmp_path: Path,
+) -> None:
+    """D-67: a unit that timed out and then answered on a retry counts its timeout
+    once, as the same unit driven with `--retries 0` would."""
+    retried = tmp_path / "retried.jsonl"
+    single = tmp_path / "single.jsonl"
+    _write_journal(
+        retried,
+        [_retried(_success("q1"), _attempt(error_type="ReadTimeout"))],
+    )
+    _write_journal(single, [_timeout_error("q1")])
+
+    got = evaluate_sc2(retried, engine_pid_before=1, engine_pid_after=1)
+    want = evaluate_sc2(single, engine_pid_before=1, engine_pid_after=1)
+
+    assert got.detail["class_counts"] == {"timeout": 1.0}
+    assert got.detail["timeout_dominant"] is True
+    assert got.detail["class_counts"] == want.detail["class_counts"]
+    assert got.detail["timeout_dominant"] == want.detail["timeout_dominant"]
+    assert got.detail.get("retried_records") == 1.0
+    assert want.detail.get("retried_records") == 0.0
+
+
+def test_sc2_both_arm_error_pairs_come_from_the_first_attempts(tmp_path: Path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    prior = _attempt(error_type="ReadTimeout")
+    _write_journal(
+        journal,
+        [
+            _retried(_success("q1", arm="graph-off"), prior),
+            _retried(_success("q1", arm="graph-on"), prior),
+        ],
+    )
+
+    reading = evaluate_sc2(journal, engine_pid_before=1, engine_pid_after=1)
+
+    assert reading.detail["both_arm_error_question_count"] == 1.0
+    assert reading.detail["class_counts"] == {"timeout": 2.0}
+    assert reading.detail.get("retried_records") == 2.0
+
+
+def test_sc2_a_record_with_no_prior_attempt_reads_as_before(tmp_path: Path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, [_timeout_error("q1"), _success("q2")])
+
+    reading = evaluate_sc2(journal, engine_pid_before=1, engine_pid_after=1)
+
+    assert reading.detail["class_counts"] == {"timeout": 1.0}
+    assert reading.detail.get("retried_records") == 0.0
+
+
+def test_d69_counts_a_retried_away_rejection(tmp_path: Path) -> None:
+    """D-69: a first-attempt GenerateAnswer rejection that a retry answered is one
+    `citation_basis_mixed` rejection in a denominator of one."""
+    journal = tmp_path / "journal.jsonl"
+    rejection = NodeFailed(
+        node_name="GenerateAnswer",
+        error_kind=0,
+        error_message=_MIXED_REJECTION,
+        retryable=False,
+    )
+    _write_journal(
+        journal,
+        [_retried(_success("q1"), _attempt(node_failures=[rejection]))],
+    )
+
+    reading = citation_rejection_rate(journal, [_gold_question("q1")])
+
+    assert reading.n == 1
+    assert reading.detail["total_rejections"] == 1.0
+    assert reading.detail["class_counts"] == {"citation_basis_mixed": 1.0}
+    assert reading.detail.get("retried_records") == 1.0
+
+
+def test_d69_excludes_a_first_attempt_that_never_reached_generate_answer(
+    tmp_path: Path,
+) -> None:
+    """A first-attempt transport timeout is outside D-69's denominator even though
+    the final attempt reached GenerateAnswer."""
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(
+        journal,
+        [
+            _retried(_success("q1"), _attempt(error_type="ReadTimeout")),
+            _success("q2"),
+        ],
+    )
+
+    reading = citation_rejection_rate(
+        journal, [_gold_question("q1"), _gold_question("q2")]
+    )
+
+    assert reading.n == 1
+    assert reading.detail["total_rejections"] == 0.0
+    assert reading.detail.get("retried_records") == 1.0
+
+
+def test_d69_reports_zero_retried_records_for_a_plain_journal(tmp_path: Path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, [_success("q1")])
+
+    reading = citation_rejection_rate(journal, [_gold_question("q1")])
+
+    assert reading.detail.get("retried_records") == 0.0
+
+
+def test_d69_reports_retried_records_when_no_first_attempt_reached_the_node(
+    tmp_path: Path,
+) -> None:
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(
+        journal,
+        [_retried(_success("q1"), _attempt(error_type="ReadTimeout"))],
+    )
+
+    reading = citation_rejection_rate(journal, [_gold_question("q1")])
+
+    assert reading.status == "MISS"
+    assert reading.reason == "n=0"
+    assert reading.detail.get("retried_records") == 1.0
 
 
 # --- evaluate_sc1 ---------------------------------------------------------------------
