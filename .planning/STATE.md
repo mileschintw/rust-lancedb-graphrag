@@ -1,33 +1,36 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 31
+current_plan: 32
 status: executing
-stopped_at: Completed 06.3.4.1-20-PLAN.md
-last_updated: "2026-10-06T19:34:01.802Z"
+stopped_at: Completed 06.3.4.1-31-PLAN.md
+last_updated: "2026-10-06T19:43:38.815Z"
 last_activity: 2026-10-06
-last_activity_desc: "Started gap-closure execution of 06.3.4.1 plans 31-34 (UAT gaps G-06.3.4.1-2, -3a, -3b), sequential on main."
-state_head: c83888a0065217fea8340b59534053a8af1c5ebf
+state_head: 309c9aec9de40cc31ec0bd545527bad1ba3455be
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 192
-  completed_plans: 188
+  completed_plans: 189
 milestone_name: milestone
-current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
 current_phase: 06.3.4.1
+current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
+last_activity_desc: Started gap-closure execution of 06.3.4.1 plans 31-34 (UAT gaps G-06.3.4.1-2, -3a, -3b), sequential on main.
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 31
+Current Plan: 32
 Total Plans in Phase: 34
 
 ## Current Status
 
 - **2026-10-06: Gap-closure execution of 06.3.4.1 started** (`/gsd-execute-phase 06.3.4.1 --gaps-only`). Plans 31-34 close UAT gaps G-06.3.4.1-2 (retries erase attempts; gate-stage drives must refuse retries > 0 and record every attempt), G-06.3.4.1-3a (unpark gates scored partial journals; completeness computed once in `main`, all readings MISS when incomplete, 0.80 coverage floor over sample∩G/sample∩V) and G-06.3.4.1-3b (`measure` ignored the stage cap with workers > 1; NaN/inf `--stage-cap` accepted). Order: 31 and 32 (wave 22), then 33 (wave 23), then 34 (wave 24), each run sequentially on main. Plans 01-30 stay summarized; drive 2 stays the run of record; 6.4 stays parked.
+
+- **2026-10-06: Plan 06.3.4.1-31 complete (gap G-06.3.4.1-3b: the stage cap holds at any worker count).** `run_measurement_pass` now dispatches through one bounded in-flight window for every worker count and checks the cap before each further unit (workers=4 with a binding cap measured 4 units, was 20 of 20); `stopped_by_cap` is true only when a unit was still waiting, in `measure` and in `run.drive` (WR-01 ordering); `measurement.json` and `run_record.json` carry `stopped_by_cap`, `workers`, `work_units_planned`; `--stage-cap` on `run`, `measure` and `score` rejects NaN, +/-inf, 0 and negatives (exit 2) and `measure --stage-cap` is required (no silent $5 default). Commits `8409cf85`/`1cd6ffb1` (measure), `9abab08c`/`8d109c93` (drive), `b4f0b7cc`/`309c9aec` (CLI). Full eval suite 953 passed. No paid call, no `eval/runs/` change, no price/ceiling constant changed. OBS-05 not marked (shared ID, already checked). Pre-existing: `ruff --preview` has 551 findings repo-wide; this plan added none.
+  - Next: plan 32 (unpark_gates completeness, G-06.3.4.1-3a), then 33, then 34.
 
 - **2026-10-06: Plan 06.3.4.1-20 complete (D-88, the non-comparability record).** `eval/runs/2026-09-09-multihop_rag/SUPERSEDED.md` added (the only file added there; no existing `eval/runs/` file changed); `docs/evaluation-fidelity-and-graph-yield.md` gained the dated addendum (what changed, EM/Token-F1/graph-presence non-comparable with the run of record, SC-1/SC-4/SC-5 outcomes, the three standing disclosures); ROADMAP 6.4's canonical refs cite the run of record and the D-83 all-pass-close outcome; REQUIREMENTS OBS-05's traceability row gained 06.3.4.1 (no checkbox changed; OBS-05, DATA-04, DATA-05 stay checked; no requirements mark-complete run). Commits `e39a1dbd`, `781cf6de`. **6.4 is not unparked**; that is a later user decision.
   - Next: all 30 plans of 06.3.4.1 have SUMMARYs; the orchestrator runs the phase gates (verification, code review). `Current Plan: 21` is the tool's mechanical advance, not outstanding work.
@@ -409,6 +412,7 @@ Total Plans in Phase: 34
 | Phase 06.3.4.1 P17 | 30 min | 2 tasks | 11 files |
 | Phase 06.3.4.1 P19 | 73 min | 3 tasks | 8 files |
 | Phase 06.3.4.1 P20 | 20 min | 2 tasks | 4 files |
+| Phase 06.3.4.1 P31 | 5 min | 3 tasks | 5 files |
 
 ## Decisions
 
@@ -510,12 +514,13 @@ Total Plans in Phase: 34
 - [Phase 06.3.4.1]: 06.3.4.1-17: graph_off_invariance is a disclosure with no committed threshold; --stage drive2 requires --baseline-run (drive 1b); other stages are unchanged (D-95) — No threshold for a systematic shift was committed, and inventing one would be the D-83 violation this plan prevents
 - [Phase 06.3.4.1]: D-83 closed as all-pass-close on the drive 2 run of record (user, 2026-10-06, reply 'all-pass-close (建議)', after receiving the orchestrator's recommendation): SC-1 200/200, SC-4 59/89 = 0.6629, SC-5 35/65 = 0.5385 all PASS; three disclosures stand as reported (D-78); 0.20 floor unamended; 6.4 not unparked, a later user decision; D-88 is plan 20 — Gates committed before the drive and pass with margin; iterate-once requires a miss and would otherwise be tuning (06.3.1 D-49)
 - [Phase 06.3.4.1]: 06.3.4.1-20: the docs addendum and SUPERSEDED notice report the three D-78 standing disclosures alongside the all-pass-close outcome; 6.4 is cited the run of record but stays parked (unpark is a later user decision); OBS-05 traceability documented without any checkbox change
+- [Phase 06.3.4.1]: 06.3.4.1-31: measure dispatches through one bounded cap-checked window at every worker count (serial branch folded in as a window of one); stopped_by_cap means a unit was still waiting (also fixed in run.drive); --stage-cap validated on run/measure/score and required on measure; library keeps its default but raises ValueError on a non-finite or non-positive cap.
 
 ## Session
 
-**Last session:** 2026-10-06T10:23:47.119Z
+**Last session:** 2026-10-06T19:43:37.631Z
 **Last activity:** 2026-10-06
-**Stopped at:** Completed 06.3.4.1-20-PLAN.md
+**Stopped at:** Completed 06.3.4.1-31-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
