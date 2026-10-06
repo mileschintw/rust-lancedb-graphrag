@@ -1042,3 +1042,42 @@ def test_measure_workers_one_journal_order_equals_ordinal_order(tmp_path):
         for line in (run_dir / "journal.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert ordinals == list(range(1, 21))
+
+
+def _invoke_measure_with_summary(summary):
+    """Run `measure --stage-cap 0.005` with run_measurement_pass stubbed to `summary`."""
+    runner = CliRunner()
+    with patch(
+        "lancet_eval.measure.run_measurement_pass",
+        return_value=(Path("stub-run-dir"), summary),
+    ):
+        return runner.invoke(app, ["measure", "--stage-cap", "0.005"])
+
+
+def test_measure_command_prints_cap_notice_when_pass_stopped_by_cap():
+    """A capped measurement pass is reported as capped, with measured-of-planned counts."""
+    res = _invoke_measure_with_summary(
+        {
+            "total_records_emitted": 4,
+            "work_units_planned": 20,
+            "stopped_by_cap": True,
+            "spend_summary": {"spend_usd": 0.04},
+        }
+    )
+    assert res.exit_code == 0
+    flat = " ".join(res.output.split())
+    assert "stage spend cap" in flat
+    assert "4 of 20" in flat
+
+
+def test_measure_command_prints_no_cap_notice_when_pass_was_complete():
+    res = _invoke_measure_with_summary(
+        {
+            "total_records_emitted": 20,
+            "work_units_planned": 20,
+            "stopped_by_cap": False,
+            "spend_summary": {"spend_usd": 0.04},
+        }
+    )
+    assert res.exit_code == 0
+    assert "stage spend cap" not in " ".join(res.output.split())

@@ -341,3 +341,136 @@ def test_drive_is_labelled_capped_when_cap_reached_with_units_still_waiting(
     assert res.executed_count == 2
     assert res.stopped_by_cap is True
     assert res.capped is True
+
+
+# ---------------------------------------------------------------------------
+# 06.3.4.1-31 (WR-02, D-86): --stage-cap rejects values that cannot fire.
+# ---------------------------------------------------------------------------
+
+_BAD_CAPS = ["nan", "inf", "-inf", "0", "-1"]
+
+
+def _invoke_run(tmp_path: Path, cap_args: list[str]) -> object:
+    return CliRunner().invoke(
+        app,
+        ["run", "--corpus", "multihop_rag", *cap_args, "--out", str(tmp_path / "j.jsonl")],
+    )
+
+
+@pytest.mark.parametrize("bad_cap", _BAD_CAPS)
+def test_cli_run_rejects_stage_cap_that_cannot_fire(
+    bad_cap: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "lancet_eval.run.drive", lambda *a, **k: calls.append(k) or DriveResult(0)
+    )
+    res = _invoke_run(tmp_path, [f"--stage-cap={bad_cap}"])
+    assert res.exit_code == 2
+    assert "--stage-cap" in res.output
+    assert calls == []
+
+
+@pytest.mark.parametrize("bad_cap", _BAD_CAPS)
+def test_cli_measure_rejects_stage_cap_that_cannot_fire(
+    bad_cap: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[object] = []
+
+    def fake_measure(*a: object, **k: object) -> tuple[Path, dict[str, object]]:
+        calls.append(k)
+        return Path("stub-run-dir"), {"total_records_emitted": 0}
+
+    monkeypatch.setattr("lancet_eval.measure.run_measurement_pass", fake_measure)
+    res = CliRunner().invoke(app, ["measure", f"--stage-cap={bad_cap}"])
+    assert res.exit_code == 2
+    assert "--stage-cap" in res.output
+    assert calls == []
+
+
+@pytest.mark.parametrize("bad_cap", _BAD_CAPS)
+def test_cli_score_rejects_stage_cap_that_cannot_fire(
+    bad_cap: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "lancet_eval.score.score_run", lambda *a, **k: calls.append(k) or MagicMock()
+    )
+    monkeypatch.setattr("lancet_eval.cli.render_markdown", lambda *a, **k: "report")
+    res = CliRunner().invoke(
+        app, ["score", "--run", str(tmp_path), f"--stage-cap={bad_cap}"]
+    )
+    assert res.exit_code == 2
+    assert "--stage-cap" in res.output
+    assert calls == []
+
+
+def test_cli_measure_without_stage_cap_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`measure --stage-cap` is required: the silent $5.00 default is gone."""
+    calls: list[object] = []
+
+    def fake_measure(*a: object, **k: object) -> tuple[Path, dict[str, object]]:
+        calls.append(k)
+        return Path("stub-run-dir"), {"total_records_emitted": 0}
+
+    monkeypatch.setattr("lancet_eval.measure.run_measurement_pass", fake_measure)
+    res = CliRunner().invoke(app, ["measure"])
+    assert res.exit_code != 0
+    assert "--stage-cap" in res.output
+    assert calls == []
+
+
+def test_cli_score_without_stage_cap_still_reaches_score_run_with_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, object]] = []
+
+    def fake_score_run(*args: object, **kwargs: object) -> MagicMock:
+        seen.append(dict(kwargs))
+        return MagicMock()
+
+    monkeypatch.setattr("lancet_eval.score.score_run", fake_score_run)
+    monkeypatch.setattr("lancet_eval.cli.render_markdown", lambda *a, **k: "report")
+    res = CliRunner().invoke(app, ["score", "--run", str(tmp_path)])
+    assert res.exit_code == 0
+    assert seen[0]["stage_spend_cap"] is None
+
+
+def test_cli_valid_stage_cap_reaches_each_callee_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_seen: list[dict[str, object]] = []
+    measure_seen: list[dict[str, object]] = []
+    score_seen: list[dict[str, object]] = []
+
+    def fake_drive(*args: object, **kwargs: object) -> DriveResult:
+        run_seen.append(dict(kwargs))
+        return DriveResult(0)
+
+    def fake_measure(*args: object, **kwargs: object) -> tuple[Path, dict[str, object]]:
+        measure_seen.append(dict(kwargs))
+        return tmp_path, {"total_records_emitted": 0, "work_units_planned": 0}
+
+    def fake_score_run(*args: object, **kwargs: object) -> MagicMock:
+        score_seen.append(dict(kwargs))
+        return MagicMock()
+
+    monkeypatch.setattr("lancet_eval.run.drive", fake_drive)
+    monkeypatch.setattr("lancet_eval.measure.run_measurement_pass", fake_measure)
+    monkeypatch.setattr("lancet_eval.score.score_run", fake_score_run)
+    monkeypatch.setattr("lancet_eval.cli.render_markdown", lambda *a, **k: "report")
+
+    runner = CliRunner()
+    assert _invoke_run(tmp_path, ["--stage-cap", "0.5"]).exit_code == 0
+    assert runner.invoke(app, ["measure", "--stage-cap", "0.5"]).exit_code == 0
+    assert (
+        runner.invoke(
+            app, ["score", "--run", str(tmp_path), "--stage-cap", "0.5"]
+        ).exit_code
+        == 0
+    )
+    assert run_seen[0]["stage_spend_cap"] == 0.5
+    assert measure_seen[0]["stage_spend_cap"] == 0.5
+    assert score_seen[0]["stage_spend_cap"] == 0.5
