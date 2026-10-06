@@ -358,6 +358,10 @@ def build_rows(
     `None`, never "no". (d) is `None` for a null question (no gold evidence to
     hit), while its `seed_count`/`path_found` are still recorded.
     `seed_probe_path=None` (the default) leaves all three `None` for every row.
+    A graph-on journal record that carries the wire fields (`graph_seed_count`,
+    `graph_path_found`, `graph_seed_document_ids`) overrides the probe field by
+    field, so a drive's table reads what that drive's engine measured; a record
+    that predates a field leaves the probe's value (or `None`) in place.
     Column (c) is computed here when `vector_top4_path` is given (the
     (c) join, RESEARCH §E/§F); `vector_top4_path=None` (the default) leaves
     (c) `None` for every row, so every existing caller of this function is
@@ -415,13 +419,30 @@ def build_rows(
             if seed_probe_by_question is not None
             else None
         )
+        gold_document_ids = (
+            set()
+            if question.is_null
+            else _gold_document_ids(question, title_to_document_id)
+        )
         if probe_record is not None:
             seed_count = probe_record["seed_count"]
             path_found = probe_record["path_found"]
             if not question.is_null:
-                d = _question_d(
-                    _gold_document_ids(question, title_to_document_id), probe_record
-                )
+                d = _question_d(gold_document_ids, probe_record)
+
+        # The graph-on record's own wire fields are what the engine measured on the
+        # run itself, so each one that is present beats the offline probe (D-79).
+        # None means the record predates the field; an empty list is a measured "no".
+        wire = records_by_key.get((question.question_id, "graph-on"))
+        wire_meta = wire.workflow_meta if wire is not None else None
+        if wire_meta is not None:
+            if wire_meta.graph_seed_count is not None:
+                seed_count = wire_meta.graph_seed_count
+            if wire_meta.graph_path_found is not None:
+                path_found = wire_meta.graph_path_found
+            seed_documents = wire_meta.graph_seed_document_ids
+            if seed_documents is not None and not question.is_null:
+                d = bool(gold_document_ids.intersection(seed_documents))
 
         arms: dict[str, ArmResult] = {}
         for arm in all_arms:

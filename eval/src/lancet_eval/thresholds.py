@@ -129,6 +129,20 @@ FINAL_ANSWER_MISSING_REVIEW_RATE: float = 0.10
 # (D-84), not suppression.
 VECTOR_BASELINE_USABLE_FLOOR: float = 0.512
 
+# 06.3.4.1 D-81/D-82/D-83: committed before paid drive 2 (AI-SPEC §5 #9/#11/#12).
+# SC-4's Wilson clause: the 95% Wilson lower bound of the graph-presence headline
+# must clear the 06.3.4 presence rate, 14/143 = 0.098 ("clearly above 9.8%").
+GRAPH_PRESENCE_WILSON_LOWER_FLOOR: float = 0.098
+# 06.3.4.1 D-81/D-82/D-83: committed before paid drive 2 (AI-SPEC §5 #9/#11/#12).
+# SC-5's retrieval-composition floor: half the 0.20 yield floor (06.3.1 D-32).
+GRAPH_COMPOSITION_CHANGE_FLOOR: float = 0.10
+# 06.3.4.1 D-81/D-82/D-83: committed before paid drive 2 (AI-SPEC §5 #9/#11/#12).
+# SC-5 PASS reading: n_pairs(V) >= 1 and either the composition change reaches
+# GRAPH_COMPOSITION_CHANGE_FLOOR, or a paired delta in retrieval coverage@4 or
+# `answer_usable` has a bootstrap CI that excludes 0 with n_pairs(V) >= 2.
+# Direction is not part of the rule; a negative delta is reported (06.3.1 D-49).
+SC5_VISIBILITY_RULE: str = "composition_floor_or_paired_ci_excludes_zero_n_ge_2"
+
 
 @dataclass(frozen=True)
 class MaterialDecayThresholds:
