@@ -481,3 +481,74 @@ def test_cli_valid_stage_cap_reaches_each_callee_unchanged(
     assert run_seen[0]["stage_spend_cap"] == 0.5
     assert measure_seen[0]["stage_spend_cap"] == 0.5
     assert score_seen[0]["stage_spend_cap"] == 0.5
+
+
+def _drive_with_stubbed_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    with_prior_attempt: bool,
+    cap: float,
+) -> tuple[DriveResult, list[RunRecord]]:
+    """Drive 20 units whose stub records each cost the same wire tokens."""
+    from lancet_eval.journal import AttemptRecord
+
+    def stub(*args: object, **kwargs: object) -> RunRecord:
+        meta = WorkflowWireMeta(prompt_tokens=20_000, completion_tokens=5_000)
+        prior = (
+            [
+                AttemptRecord(
+                    attempt=1,
+                    outcome="success",
+                    answer_chars=0,
+                    workflow_meta=meta,
+                )
+            ]
+            if with_prior_attempt
+            else []
+        )
+        return RunRecord(
+            corpus="graphrag_bench",
+            question_id=str(kwargs.get("question", MagicMock()).id),
+            graph_arm=str(kwargs.get("arm")),
+            outcome="success",
+            workflow_meta=meta,
+            prior_attempts=prior,
+        )
+
+    monkeypatch.setattr("lancet_eval.run.drive_one", stub)
+    sub = tmp_path / ("with" if with_prior_attempt else "without")
+    res = drive(
+        corpus="graphrag_bench",
+        journal_path=sub / "journal.jsonl",
+        stage_spend_cap=cap,
+        limit=10,  # 20 work units
+        workers=1,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+    return res, load_records(sub / "journal.jsonl")
+
+
+def test_cap_sees_retried_spend_and_stops_earlier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CR-03 (D-86): a billed attempt a later attempt replaced still counts toward the cap.
+
+    Each stub record costs about $0.0044 of wire tokens. With a $0.01 cap the drive
+    crosses it at the third record; when every record also carries one prior attempt
+    with the same tokens, each unit costs double and the drive crosses it at the second.
+    """
+    cap = 0.01
+    plain, plain_records = _drive_with_stubbed_records(
+        tmp_path, monkeypatch, with_prior_attempt=False, cap=cap
+    )
+    retried, retried_records = _drive_with_stubbed_records(
+        tmp_path, monkeypatch, with_prior_attempt=True, cap=cap
+    )
+
+    assert plain.stopped_by_cap is True
+    assert retried.stopped_by_cap is True
+    assert len(plain_records) == 3
+    assert len(retried_records) == 2
+    assert retried.executed_count < plain.executed_count
+    assert retried.observed_spend >= cap

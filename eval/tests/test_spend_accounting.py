@@ -11,12 +11,19 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
 from lancet_eval import measure
 from lancet_eval.client import NodeFailed
-from lancet_eval.journal import NodeTiming, RunRecord, WorkflowWireMeta
+from lancet_eval.journal import (
+    AttemptRecord,
+    NodeTiming,
+    RunRecord,
+    WorkflowWireMeta,
+    first_attempt_view,
+)
 from lancet_eval.measure import MeasurementRecord, compute_spend
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -376,3 +383,150 @@ def test_count_failed_generation_attempts_rules() -> None:
         ])
         == 3
     )
+
+
+# --- every attempt is charged (06.3.4.1-33, CR-03, D-86) ------------------------
+
+
+def _attempt(
+    *,
+    outcome: Literal["success", "error"] = "error",
+    prompt: int = 0,
+    completion: int = 0,
+    failure: str | None = None,
+    reached_generation: bool = False,
+    error_type: str | None = None,
+    attempt: int = 1,
+) -> AttemptRecord:
+    """An attempt a retry superseded, shaped like the record kinds the charge rules read."""
+    timings = (
+        [NodeTiming(node_name="AssemblePrompt", duration_ms=12.0)]
+        if reached_generation
+        else []
+    )
+    failures = (
+        [
+            NodeFailed(
+                node_name="GenerateAnswer",
+                error_kind=3,
+                error_message=failure,
+                retryable=False,
+            )
+        ]
+        if failure is not None
+        else []
+    )
+    return AttemptRecord(
+        attempt=attempt,
+        outcome=outcome,
+        node_failures=failures,
+        node_timings=timings,
+        workflow_meta=WorkflowWireMeta(prompt_tokens=prompt, completion_tokens=completion),
+        error_type=error_type,
+    )
+
+
+_PRIOR_ATTEMPT_KINDS = {
+    "wire_tokens": lambda: _attempt(outcome="success", prompt=4000, completion=300),
+    "zero_token_failure_one_ceiling": lambda: _attempt(
+        failure=SCHEMA_CLASSES[0], reached_generation=True
+    ),
+    "zero_token_failure_retried_class": lambda: _attempt(
+        failure=RETRIED_MESSAGES[0], reached_generation=True
+    ),
+    "transport_timeout_never_reached_generation": lambda: _attempt(
+        error_type="ReadTimeout"
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_PRIOR_ATTEMPT_KINDS))
+def test_retried_record_spend_is_first_attempt_plus_final_attempt_exactly(
+    kind: str,
+) -> None:
+    """The decomposition: spend(R) == spend(first attempt) + spend(R without priors)."""
+    prior = _PRIOR_ATTEMPT_KINDS[kind]()
+    final = _success_record(6000, 250)
+    retried = final.model_copy(update={"prior_attempts": [prior]})
+
+    total, _ = compute_spend([retried])
+    first_only, _ = compute_spend([first_attempt_view(retried)])
+    final_only, _ = compute_spend([final])
+
+    assert total == pytest.approx(first_only + final_only)
+    assert total > final_only  # an attempt always costs at least its embedding estimate
+
+
+def test_prior_attempt_wire_tokens_are_priced_like_a_record_with_those_tokens() -> None:
+    prior = _attempt(outcome="success", prompt=4000, completion=300)
+    retried = _success_record(0, 0).model_copy(update={"prior_attempts": [prior]})
+    spend, _ = compute_spend([retried], include_embeddings=False)
+    expected = (4000 / 1_000_000.0) * measure.GENERATION_INPUT_PRICE_PER_1M + (
+        300 / 1_000_000.0
+    ) * measure.GENERATION_OUTPUT_PRICE_PER_1M
+    assert spend == pytest.approx(expected)
+
+
+def test_prior_attempt_zero_token_failure_charges_one_ceiling_and_a_retried_class_two() -> (
+    None
+):
+    base = _success_record(0, 0)
+    one = base.model_copy(
+        update={"prior_attempts": [_PRIOR_ATTEMPT_KINDS["zero_token_failure_one_ceiling"]()]}
+    )
+    two = base.model_copy(
+        update={
+            "prior_attempts": [
+                _PRIOR_ATTEMPT_KINDS["zero_token_failure_retried_class"]()
+            ]
+        }
+    )
+    assert compute_spend([one], include_embeddings=False)[0] == pytest.approx(
+        _ceiling_usd()
+    )
+    assert compute_spend([two], include_embeddings=False)[0] == pytest.approx(
+        2 * _ceiling_usd()
+    )
+
+
+def test_count_failed_generation_attempts_covers_prior_attempts_and_the_final_record() -> (
+    None
+):
+    prior = _attempt(failure=RETRIED_MESSAGES[0], reached_generation=True)  # 2
+    final = _failed_generation_record(SCHEMA_CLASSES[0])  # 1
+    retried = final.model_copy(update={"prior_attempts": [prior]})
+    assert measure.count_failed_generation_attempts([retried]) == 3
+    assert measure.count_failed_generation_attempts([final]) == 1
+
+
+def test_embedding_estimate_counts_one_per_attempt() -> None:
+    retried = _success_record(1000, 100).model_copy(
+        update={
+            "prior_attempts": [
+                _attempt(error_type="ReadTimeout", attempt=1),
+                _attempt(error_type="ReadTimeout", attempt=2),
+            ]
+        }
+    )
+    with_emb, _ = compute_spend([retried], include_embeddings=True)
+    without_emb, _ = compute_spend([retried], include_embeddings=False)
+    one_embedding = (
+        measure.ESTIMATED_EMBEDDING_TOKENS_PER_QUERY
+        * measure.EMBEDDING_PRICE_PER_1M
+        / 1_000_000.0
+    )
+    # two prior attempts plus the final record: three embedding estimates
+    assert with_emb - without_emb == pytest.approx(3 * one_embedding)
+
+
+def test_records_without_prior_attempts_price_exactly_as_before() -> None:
+    recs = [
+        _success_record(5000, 200, qid="a"),
+        _failed_generation_record(SCHEMA_CLASSES[0], qid="b"),
+        _failed_generation_record(RETRIED_MESSAGES[0], qid="c"),
+    ]
+    assert all(r.prior_attempts == [] for r in recs)
+    with_emb, _ = compute_spend(recs)
+    without_emb, _ = compute_spend(recs, include_embeddings=False)
+    assert without_emb == pytest.approx(_old_spend(recs, include_embeddings=False) + 3 * _ceiling_usd())
+    assert with_emb == pytest.approx(_old_spend(recs) + 3 * _ceiling_usd())
