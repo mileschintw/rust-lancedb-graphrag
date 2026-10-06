@@ -111,17 +111,21 @@ impl Node for ExtractGraphContextNode {
             };
 
             if let Some(graph_port) = &self.graph_port {
+                // Mention extraction reads what the user wrote, so the port gets the original
+                // question and not a reformulated variant.
+                let question = ctx.original_query.clone();
                 let graph_res = tokio::select! {
                     biased;
                     _ = cancel.cancelled() => return Err(NodeError::cancelled()),
-                    res = timeout(self.graph_operation_timeout, graph_port.query_graph(&query_embedding, cancel)) => match res {
+                    res = timeout(self.graph_operation_timeout, graph_port.query_graph(&question, &query_embedding, cancel)) => match res {
                         Ok(inner) => inner,
                         Err(_) => Err(NodeError::new(NodeErrorKind::Timeout, "GRAPH_TIMEOUT")),
                     },
                 };
 
                 match graph_res {
-                    Ok(facts) => {
+                    Ok(output) => {
+                        let facts = output.facts;
                         if facts.is_empty() {
                             ctx.graph_context = String::new();
                             ctx.graph_facts = Vec::new();

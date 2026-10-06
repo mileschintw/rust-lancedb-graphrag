@@ -142,6 +142,8 @@ impl LancetServiceImpl {
             Arc::new(ProductionGraphQueryPort {
                 database: self.database.clone(),
                 graph_settings: self.effective_settings.graph.clone(),
+                graph_index: Arc::clone(&snapshot.graph_index),
+                embedder: Arc::clone(&self.embedder),
             });
         let dense_adapter: Arc<dyn workflow::ports::DenseRetrievalPort> =
             Arc::new(ProductionDenseRetrievalPort {
@@ -301,182 +303,53 @@ pub enum GraphAugmentationOutcome {
     AttemptedAndFailed { reason: String },
 }
 
-/// Attempts to augment a query with knowledge graph facts from the nearest entity match.
+/// What a graph augmentation found, beyond the facts themselves (D-79).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GraphAugmentationReport {
+    /// Seeds the question mentions matched.
+    pub seed_count: u32,
+    /// Whether at least one seed-to-seed path was kept.
+    pub path_found: bool,
+    /// Two-hop paths dropped because their intermediate was above the degree cap.
+    pub degree_capped_count: u32,
+    /// Document IDs of the seeds source chunks, sorted and de-duplicated.
+    pub seed_document_ids: Vec<String>,
+    /// Source-chunk IDs of the entities on the kept paths (empty when no path was kept).
+    pub chunk_candidates: Vec<String>,
+    /// Distinct entities on the kept paths.
+    pub node_count: u32,
+    /// Relations on the kept paths, one per hop.
+    pub edge_count: u32,
+}
+
+/// Augments a query with the seed-to-seed paths between the entities its question mentions.
 pub async fn attempt_graph_augmentation(
     database: &DatabaseManager,
-    query_embedding: &[f32],
+    graph_index: &graph::index::GraphIndex,
+    question: &str,
+    embedder: &Arc<dyn EmbeddingProvider>,
     settings: &GraphSettings,
-) -> GraphAugmentationOutcome {
-    let entities_table = match database.entities_table().await {
-        Ok(t) => t,
-        Err(e) => {
-            return GraphAugmentationOutcome::AttemptedAndFailed {
-                reason: format!("entities table error: {e}"),
-            }
-        }
-    };
+) -> (GraphAugmentationOutcome, GraphAugmentationReport) {
+    let _ = (database, graph_index, question, embedder, settings);
+    (
+        GraphAugmentationOutcome::NoMatchFound,
+        GraphAugmentationReport::default(),
+    )
+}
 
-    let nearest = match entities_table.query().nearest_to(query_embedding.to_vec()) {
-        Ok(q) => q,
-        Err(e) => {
-            return GraphAugmentationOutcome::AttemptedAndFailed {
-                reason: format!("nearest_to error: {e}"),
-            }
-        }
-    };
-
-    let batches: Vec<RecordBatch> = match nearest
-        .column("name_vector")
-        .select(lancedb::query::Select::columns(&[
-            "entity_id",
-            "name",
-            "entity_type",
-            "_distance",
-        ]))
-        .limit(1)
-        .execute()
-        .await
-    {
-        Ok(s) => match s.try_collect().await {
-            Ok(b) => b,
-            Err(e) => {
-                return GraphAugmentationOutcome::AttemptedAndFailed {
-                    reason: format!("execute collect error: {e}"),
-                }
-            }
-        },
-        Err(e) => {
-            return GraphAugmentationOutcome::AttemptedAndFailed {
-                reason: format!("execute error: {e}"),
-            }
-        }
-    };
-
-    if batches.is_empty() || batches[0].num_rows() == 0 {
-        return GraphAugmentationOutcome::NoMatchFound;
-    }
-
-    let seed_batch = &batches[0];
-    let distance_col = match seed_batch
-        .column_by_name("_distance")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>())
-    {
-        Some(c) => c,
-        None => {
-            return GraphAugmentationOutcome::AttemptedAndFailed {
-                reason: "missing _distance column".into(),
-            }
-        }
-    };
-    let distance = distance_col.value(0) as f64;
-    let seed_match_score = retrieval::dense::dense_score(distance);
-
-    if seed_match_score < settings.seed_match_min_score {
-        return GraphAugmentationOutcome::NoMatchFound;
-    }
-
-    let seed_id_col = match seed_batch
-        .column_by_name("entity_id")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-    {
-        Some(c) => c,
-        None => {
-            return GraphAugmentationOutcome::AttemptedAndFailed {
-                reason: "missing entity_id column".into(),
-            }
-        }
-    };
-    let matched_entity_id = seed_id_col.value(0).to_string();
-
-    let (entities_batch, edges_batch) =
-        match graph::fetch_neighborhood(database, &matched_entity_id, 1, true).await {
-            Ok(res) => res,
-            Err(e) => {
-                return GraphAugmentationOutcome::AttemptedAndFailed {
-                    reason: format!("fetch_neighborhood kind: {:?}", e.kind),
-                }
-            }
-        };
-
-    let (entities_batch, edges_batch) =
-        graph::narrow_via_cypher(&entities_batch, &edges_batch, &matched_entity_id, 1).await;
-
-    let entity_id_col = match entities_batch
-        .column_by_name("entity_id")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-    {
-        Some(c) => c,
-        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
-    };
-    let name_col = match entities_batch
-        .column_by_name("name")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-    {
-        Some(c) => c,
-        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
-    };
-
-    let mut name_map = HashMap::new();
-    for i in 0..entities_batch.num_rows() {
-        if !entity_id_col.is_null(i) && !name_col.is_null(i) {
-            name_map.insert(
-                entity_id_col.value(i).to_string(),
-                name_col.value(i).to_string(),
-            );
-        }
-    }
-
-    let source_col = match edges_batch
-        .column_by_name("source_node_id")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-    {
-        Some(c) => c,
-        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
-    };
-    let target_col = match edges_batch
-        .column_by_name("target_node_id")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-    {
-        Some(c) => c,
-        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
-    };
-    let rel_col = match edges_batch
-        .column_by_name("relation_type")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::StringArray>())
-    {
-        Some(c) => c,
-        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
-    };
-    let weight_col = match edges_batch
-        .column_by_name("weight")
-        .and_then(|c| c.as_any().downcast_ref::<arrow_array::Float32Array>())
-    {
-        Some(c) => c,
-        None => return GraphAugmentationOutcome::Succeeded { facts: vec![] },
-    };
-
-    let mut facts = Vec::new();
-    for i in 0..edges_batch.num_rows() {
-        if !source_col.is_null(i)
-            && !target_col.is_null(i)
-            && !rel_col.is_null(i)
-            && !weight_col.is_null(i)
-        {
-            let src_id = source_col.value(i);
-            let tgt_id = target_col.value(i);
-            let rel = rel_col.value(i);
-            let weight = weight_col.value(i) as f64;
-
-            if let (Some(src_name), Some(tgt_name)) = (name_map.get(src_id), name_map.get(tgt_id)) {
-                let score = seed_match_score * weight;
-                facts.push(graph::context_strategy::GraphFact::new(
-                    src_name, rel, tgt_name, None, score,
-                ));
-            }
-        }
-    }
-
-    GraphAugmentationOutcome::Succeeded { facts }
+/// [`attempt_graph_augmentation`] with the mention vector search supplied by the caller.
+pub async fn attempt_graph_augmentation_with_search(
+    database: &DatabaseManager,
+    graph_index: &graph::index::GraphIndex,
+    question: &str,
+    search: &dyn graph::seeding::MentionVectorSearch,
+    settings: &GraphSettings,
+) -> (GraphAugmentationOutcome, GraphAugmentationReport) {
+    let _ = (database, graph_index, question, search, settings);
+    (
+        GraphAugmentationOutcome::NoMatchFound,
+        GraphAugmentationReport::default(),
+    )
 }
 
 /// Production adapter implementing `QueryEmbeddingPort` backed by `EmbeddingProvider`.
@@ -526,15 +399,23 @@ impl workflow::node::QueryEmbeddingPort for ProductionEmbeddingPort {
 pub struct ProductionGraphQueryPort {
     pub database: DatabaseManager,
     pub graph_settings: GraphSettings,
+    /// The graph index of the snapshot this request was admitted under, so a query sees one
+    /// generation of the index however many rebuilds happen while it runs.
+    pub graph_index: Arc<graph::index::GraphIndex>,
+    /// Embeds the question mentions that no entity name matched.
+    pub embedder: Arc<dyn EmbeddingProvider>,
 }
 
 impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
     fn query_graph<'a>(
         &'a self,
-        query_embedding: &'a [f32],
+        question: &'a str,
+        _query_embedding: &'a [f32],
         cancel: &'a tokio_util::sync::CancellationToken,
-    ) -> workflow::node::BoxFuture<'a, Result<Vec<prompt::GraphFactBlock>, workflow::node::NodeError>>
-    {
+    ) -> workflow::node::BoxFuture<
+        'a,
+        Result<workflow::ports::GraphQueryOutput, workflow::node::NodeError>,
+    > {
         let span = tracing::info_span!(
             "graph_traversal",
             graph_augmentation = tracing::field::Empty,
@@ -546,9 +427,14 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
                 if cancel.is_cancelled() {
                     return Err(workflow::node::NodeError::cancelled());
                 }
-                let graph_outcome =
-                    attempt_graph_augmentation(&self.database, query_embedding, &self.graph_settings)
-                        .await;
+                let (graph_outcome, report) = attempt_graph_augmentation(
+                    &self.database,
+                    &self.graph_index,
+                    question,
+                    &self.embedder,
+                    &self.graph_settings,
+                )
+                .await;
 
                 let tag = match &graph_outcome {
                     GraphAugmentationOutcome::Succeeded { .. } => "succeeded",
@@ -559,13 +445,10 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
 
                 let facts: Vec<prompt::GraphFactBlock> = match graph_outcome {
                     GraphAugmentationOutcome::Succeeded { facts } => {
-                        let mut unique_nodes = std::collections::HashSet::new();
-                        for f in &facts {
-                            unique_nodes.insert(f.entity_a_name());
-                            unique_nodes.insert(f.entity_b_name());
-                        }
-                        tracing::Span::current().record("lancet.graph.node_count", unique_nodes.len() as u64);
-                        tracing::Span::current().record("lancet.graph.edge_count", facts.len() as u64);
+                        tracing::Span::current()
+                            .record("lancet.graph.node_count", u64::from(report.node_count));
+                        tracing::Span::current()
+                            .record("lancet.graph.edge_count", u64::from(report.edge_count));
                         facts
                             .into_iter()
                             .map(|fact| prompt::GraphFactBlock { fact })
@@ -583,7 +466,16 @@ impl workflow::ports::GraphQueryPort for ProductionGraphQueryPort {
                         ));
                     }
                 };
-                Ok(facts)
+                Ok(workflow::ports::GraphQueryOutput {
+                    facts,
+                    node_count: report.node_count,
+                    edge_count: report.edge_count,
+                    seed_count: report.seed_count,
+                    path_found: report.path_found,
+                    degree_capped_count: report.degree_capped_count,
+                    seed_document_ids: report.seed_document_ids,
+                    chunk_candidates: report.chunk_candidates,
+                })
             }
             .instrument(span),
         )

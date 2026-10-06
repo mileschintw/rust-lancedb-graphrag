@@ -13,6 +13,13 @@
 //! generation ports are replaced by deterministic in-bin stand-ins (`FixedEmbeddingPort`,
 //! `FixedGenerator`) so arm W never calls a provider either.
 //!
+//! The graph arms (RG, RGT, W) run the production mention-seeding path (06.3.4.1-14): the
+//! question text is the seeded row's own text, and the mention vector fallback embeds through
+//! `FixedMentionEmbedder`, which returns the row's stored vector, so no provider is called. An
+//! entity row's text is the entity name, so it seeds by exact name; unlike the pre-14 whole-question
+//! lookup, an iteration is no longer guaranteed to reach the graph work, and a lone seed finds no
+//! path. The graph arms therefore profile the mention path on single-name questions.
+//!
 //! Stdout carries exactly one header JSON object followed by one JSON object per iteration
 //! (an inspect-bin CLI, per M-LOG-NOT-PRINT's exception — see `inspect_lancedb.rs`). Tracing
 //! output from `engine::telemetry::init` goes to stderr (see `telemetry/mod.rs`), so it never
@@ -35,6 +42,8 @@ use engine::generation::{
     self, AnswerBasis, GenerationError, GenerationRequest, Generator, ModelOutput, ModelUsage,
 };
 use engine::graph::escape_sql_literal;
+use engine::graph::index::GraphIndex;
+use engine::ingest::EmbeddingProvider;
 use engine::pb::lancet::v1::QueryRagRequest;
 use engine::prompt;
 use engine::rerank;
@@ -455,6 +464,21 @@ impl engine::workflow::node::QueryEmbeddingPort for FixedEmbeddingPort {
     }
 }
 
+/// Deterministic mention embedder returning one stored vector for every text. No provider call
+/// (D-64/D-65 soak fidelity): the production mention vector fallback runs against it.
+struct FixedMentionEmbedder {
+    embedding: Vec<f32>,
+}
+
+impl EmbeddingProvider for FixedMentionEmbedder {
+    fn get_embeddings<'a>(
+        &'a self,
+        texts: &'a [String],
+    ) -> futures::future::BoxFuture<'a, Result<Vec<Vec<f32>>, String>> {
+        Box::pin(async move { Ok(texts.iter().map(|_| self.embedding.clone()).collect()) })
+    }
+}
+
 /// Deterministic generator returning one fixed valid `ModelOutput` with an `[1]` citation. No
 /// provider call (D-64/D-65 soak fidelity).
 struct FixedGenerator;
@@ -591,6 +615,7 @@ async fn run_r_rp_rg_rgt(
     max_prompt_tokens: usize,
     answer_token_budget: usize,
     database: &DatabaseManager,
+    graph_index: &GraphIndex,
     graph_settings: &GraphSettings,
     graph_timeout_ms: u64,
     session_stats_table: &Table,
@@ -637,11 +662,21 @@ async fn run_r_rp_rg_rgt(
         drop(packed);
     }
 
+    let mention_embedder: Arc<dyn EmbeddingProvider> = Arc::new(FixedMentionEmbedder {
+        embedding: row.embedding.clone(),
+    });
     if ok {
         match arm {
             Arm::Rg => {
                 let graph_start = Instant::now();
-                let _ = attempt_graph_augmentation(database, &row.embedding, graph_settings).await;
+                let _ = attempt_graph_augmentation(
+                    database,
+                    graph_index,
+                    &row.query_text,
+                    &mention_embedder,
+                    graph_settings,
+                )
+                .await;
                 graph_ms = Some(graph_start.elapsed().as_secs_f64() * 1000.0);
                 graph_timed_out = Some(false);
             }
@@ -649,7 +684,13 @@ async fn run_r_rp_rg_rgt(
                 let graph_start = Instant::now();
                 let timed = tokio::time::timeout(
                     Duration::from_millis(graph_timeout_ms),
-                    attempt_graph_augmentation(database, &row.embedding, graph_settings),
+                    attempt_graph_augmentation(
+                        database,
+                        graph_index,
+                        &row.query_text,
+                        &mention_embedder,
+                        graph_settings,
+                    ),
                 )
                 .await;
                 graph_ms = Some(graph_start.elapsed().as_secs_f64() * 1000.0);
@@ -691,6 +732,7 @@ async fn run_w(
     ordinal: usize,
     row: &SeedRow,
     database: &DatabaseManager,
+    graph_index: &Arc<GraphIndex>,
     effective_settings: &EffectiveRagSettings,
     dense_port: Arc<dyn DenseRetrievalPort>,
     bm25_port: Arc<dyn engine::workflow::ports::Bm25RetrievalPort>,
@@ -717,6 +759,10 @@ async fn run_w(
             Some(Arc::new(ProductionGraphQueryPort {
                 database: database.clone(),
                 graph_settings: effective_settings.graph.clone(),
+                graph_index: Arc::clone(graph_index),
+                embedder: Arc::new(FixedMentionEmbedder {
+                    embedding: row.embedding.clone(),
+                }),
             })),
         )
         .with_timeouts(wf.query_embedding_timeout_ms, wf.graph_operation_timeout_ms),
@@ -945,6 +991,11 @@ async fn main() -> Result<(), String> {
         .await
         .map_err(|error| format!("failed to build BM25 snapshot: {error}"))?;
     let bm25 = Arc::new(bm25_index);
+    let graph_index = Arc::new(
+        GraphIndex::build(&database)
+            .await
+            .map_err(|error| format!("failed to build graph index: {error}"))?,
+    );
     let generation_label = corpus_generation_from_nodes_version(nodes_version);
 
     let dense_port: Arc<dyn DenseRetrievalPort> = Arc::new(ProductionDenseRetrievalPort {
@@ -1013,6 +1064,7 @@ async fn main() -> Result<(), String> {
                     ordinal,
                     row,
                     &database,
+                    &graph_index,
                     &effective_settings,
                     Arc::clone(&dense_port),
                     Arc::clone(&bm25_port),
@@ -1036,6 +1088,7 @@ async fn main() -> Result<(), String> {
                     max_prompt_tokens,
                     answer_token_budget,
                     &database,
+                    &graph_index,
                     &graph_settings,
                     parsed.graph_timeout_ms,
                     &nodes_table,

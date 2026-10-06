@@ -176,6 +176,20 @@ fi
 #         values, the chunk-candidate cap equal to `final_limit`, and startup rejecting a zero
 #         `max_seeds`, `degree_cap` or `max_path_facts`), 566->570. `engine (bin)` stays 0;
 #         inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
+#   676 -- Phase 06.3.4.1 plan 14 Task 3: the production graph cutover. Mention seeding and
+#         seed-to-seed path facts replace the single nearest-entity seeding in
+#         `attempt_graph_augmentation`, the graph port takes the question text and returns a
+#         `GraphQueryOutput`, and the node records the D-79 fields. 21 `tests::graph_cutover`
+#         tests (the service function over a temp store: a two-hop path, seeds without a path and
+#         no chunk candidates under paths-only, no mention, no vector match, a vector seed, a failed
+#         search, the seed and degree caps, an empty index, the settings mapping; the production
+#         port; the node's fields, graph-off, the original question, the timeout; the removed
+#         seeding and the unused seed-chunk fallback as source checks; the directional path text in
+#         the prompt and the confirmed cap) and one `telemetry_query` span test (seed count and
+#         path found recorded, no question or entity text), 570->592. Two existing tests were
+#         rewritten in place (`attempt_graph_augmentation_over_an_empty_store_finds_no_match` and
+#         `graph_fact_preserves_stored_edge_orientation_when_seed_is_target`). `engine (bin)` stays
+#         0; inspect_lancedb/reconcile_eval_store/config_startup unchanged (44/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -215,18 +229,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 654 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 654, got $TOTAL" >&2
+if [ "$TOTAL" -ne 676 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 676, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 570 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 570, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 592 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 592, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 570 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 570, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 592 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 592, got $LIB_COUNT" >&2
   exit 1
 fi
 

@@ -57,6 +57,7 @@ use engine::workflow::{self, WorkflowContext};
 use tokio_util::sync::CancellationToken;
 
 pub mod bad_input_matrix;
+pub mod graph_cutover;
 pub mod workflow_phase5_production;
 
 const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
@@ -1258,9 +1259,12 @@ pub(crate) async fn configured_service(
     let bm25_index = Bm25Index::from_table(&nodes, effective_settings.retrieval.bm25.clone())
         .await
         .unwrap();
+    // Built from the store exactly as `main.rs` builds the first snapshot, so a test that adds
+    // entities before it builds the service finds them through the production graph port.
+    let graph_index = graph::index::GraphIndex::build(database).await.unwrap();
     let initial_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot::new(
         Arc::new(bm25_index),
-        Arc::new(crate::graph::index::GraphIndex::empty()),
+        Arc::new(graph_index),
         nodes_version,
         false,
     ));
@@ -4944,18 +4948,23 @@ async fn unmapped_relation_endpoint_dropped() {
 }
 
 #[tokio::test]
-async fn attempt_graph_augmentation_scoring_and_neighborhood() {
+async fn attempt_graph_augmentation_over_an_empty_store_finds_no_match() {
     let path = database_path("attempt-graph-aug");
     let database = DatabaseManager::initialize(&path).await.unwrap();
+    let index = graph::index::GraphIndex::build(&database).await.unwrap();
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(FakeEmbedder);
 
-    let settings = GraphSettings {
-        seed_match_min_score: 0.5,
-        max_hop_cap: 3,
-        ..GraphSettings::default()
-    };
+    let (outcome, report) = attempt_graph_augmentation(
+        &database,
+        &index,
+        "Who runs Acme Corp?",
+        &embedder,
+        &GraphSettings::default(),
+    )
+    .await;
 
-    let outcome = attempt_graph_augmentation(&database, &[0.0; 2048], &settings).await;
     assert!(matches!(outcome, GraphAugmentationOutcome::NoMatchFound));
+    assert_eq!(report, engine::service::GraphAugmentationReport::default());
 
     let _ = std::fs::remove_dir_all(path);
 }
@@ -5940,6 +5949,22 @@ async fn query_graph_service_with_db(database: DatabaseManager) -> LancetService
         embedder: Arc::new(FakeEmbedder),
         database,
     }
+}
+
+/// [`query_graph_service_with_db`] with the corpus snapshot carrying the graph index built from
+/// the store, as `main.rs` builds it, so `query_rag` finds the entities the fixture persisted.
+async fn query_rag_graph_service_with_db(database: DatabaseManager) -> LancetServiceImpl {
+    let graph_index = graph::index::GraphIndex::build(&database).await.unwrap();
+    let service = query_graph_service_with_db(database).await;
+    let current = Arc::clone(&*service.corpus_store.read().await);
+    *service.corpus_store.write().await =
+        Arc::new(crate::workflow::ports::CorpusSnapshot::new(
+            Arc::clone(&current.bm25),
+            Arc::new(graph_index),
+            current.nodes_version,
+            false,
+        ));
+    service
 }
 
 /// Construct a minimal LancetServiceImpl backed by a real (but empty) DB for query_graph tests.
@@ -7029,7 +7054,7 @@ async fn capture_chat_request_body(database: &DatabaseManager, graph_weight: f64
     let response = execute_query_rag(
         &service,
         test_query_request(
-            "keystone retrieval architecture explanation",
+            "keystone retrieval architecture explanation for Alice and Bob",
             &Uuid::new_v4().to_string(),
         ),
     )
@@ -7209,7 +7234,7 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
 
     let path = database_path("graph-aug-succeeded-observable");
     let database = seed_single_edge_graph(&path, "Alice", "Bob", "knows").await;
-    let service = query_graph_service_with_db(database).await;
+    let service = query_rag_graph_service_with_db(database).await;
 
     let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
     let layer = GraphAugmentationCaptureLayer {
@@ -7271,26 +7296,25 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
 }
 
 /// Test 3 (04.1-05 Task 2): a full `query_rag` call under a real forced-fault
-/// (deleted LanceDB directory for `entities`) records `graph_augmentation =
-/// "attempted_and_failed"` on the span, and the query STILL returns
-/// successfully (D-32) — proving the tag is purely observational and never
-/// changes the response contract.
+/// records `graph_augmentation = "attempted_and_failed"` on the span, and the
+/// query STILL returns successfully (D-32) — proving the tag is purely
+/// observational and never changes the response contract.
+///
+/// The seeds come from the in-memory graph index, so the fault is placed where the
+/// path search reads the store: the `entity_edges` table directory is deleted after the
+/// service (and its index) were built, so `entity_edges_table()` genuinely fails to open.
 #[tokio::test(flavor = "current_thread")]
 async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
     use tracing_subscriber::layer::SubscriberExt;
 
     let path = database_path("graph-aug-attempted-failed-observable");
-    let database = DatabaseManager::initialize(&path).await.unwrap();
-    // Force a real fault: delete the entities table's on-disk LanceDB
-    // directory after initialization, so `entities_table()` genuinely fails
-    // to open rather than simulating the error path.
-    let entities_dir = std::path::Path::new(&path).join("entities.lance");
-    std::fs::remove_dir_all(&entities_dir)
-        .expect("remove entities.lance to force a real table-open failure");
-    std::fs::write(&entities_dir, b"corrupted non-directory file")
-        .expect("write corrupted file in place of entities.lance");
-
-    let service = query_graph_service_with_db(database).await;
+    let database = seed_single_edge_graph(&path, "Alice", "Bob", "knows").await;
+    let service = query_rag_graph_service_with_db(database).await;
+    let edges_dir = std::path::Path::new(&path).join("entity_edges.lance");
+    std::fs::remove_dir_all(&edges_dir)
+        .expect("remove entity_edges.lance to force a real table-open failure");
+    std::fs::write(&edges_dir, b"corrupted non-directory file")
+        .expect("write corrupted file in place of entity_edges.lance");
 
     let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
     let layer = GraphAugmentationCaptureLayer {
@@ -7301,7 +7325,7 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
 
     let response = execute_query_rag(
         &service,
-        test_query_request("entities table is corrupted", &Uuid::new_v4().to_string()),
+        test_query_request("Alice knows Bob", &Uuid::new_v4().to_string()),
     )
     .await
     .expect(
@@ -7858,18 +7882,33 @@ async fn graph_fact_preserves_stored_edge_orientation_when_seed_is_target() {
         .await
         .unwrap();
 
-    let dave_vector = vec![-0.9_f32; 2048];
-    let settings = GraphSettings {
-        seed_match_min_score: 0.0,
-        max_hop_cap: 3,
-        ..GraphSettings::default()
-    };
-
-    let outcome = attempt_graph_augmentation(&database, &dave_vector, &settings).await;
+    // The question names both ends, so the one-hop path joins them whichever seed is first.
+    // When Dave (the edge target) is the first seed the stored edge points against the path, and
+    // the fact must still read Carol -> Dave.
+    let index = graph::index::GraphIndex::build(&database).await.unwrap();
+    let embedder: Arc<dyn EmbeddingProvider> = Arc::new(FakeEmbedder);
+    let (outcome, report) = attempt_graph_augmentation(
+        &database,
+        &index,
+        "Does Carol mentor Dave?",
+        &embedder,
+        &GraphSettings::default(),
+    )
+    .await;
     if let GraphAugmentationOutcome::Succeeded { facts } = outcome {
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].entity_a_name(), "Carol");
+        assert_eq!(facts[0].relation_type(), "mentors");
         assert_eq!(facts[0].entity_b_name(), "Dave");
+        let along = "Carol \u{2014}mentors\u{2192} Dave";
+        let against = "Dave \u{2190}mentors\u{2014} Carol";
+        let summary = facts[0].edge_summary().expect("a path fact carries its text");
+        assert!(
+            summary == along || summary == against,
+            "the text shows the stored direction: {summary}"
+        );
+        assert!(report.path_found);
+        assert_eq!((report.node_count, report.edge_count), (2, 1));
     } else {
         panic!("expected GraphAugmentationOutcome::Succeeded");
     }

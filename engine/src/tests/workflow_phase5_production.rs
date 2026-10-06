@@ -1124,15 +1124,16 @@ async fn workflow_phase5_nodekind_tracer() {
     impl workflow::ports::GraphQueryPort for SpyGraphPort {
         fn query_graph<'a>(
             &'a self,
+            _question: &'a str,
             _embedding: &'a [f32],
             _cancel: &'a CancellationToken,
         ) -> workflow::node::BoxFuture<
             'a,
-            Result<Vec<crate::prompt::GraphFactBlock>, workflow::node::NodeError>,
+            Result<workflow::ports::GraphQueryOutput, workflow::node::NodeError>,
         > {
             Box::pin(async move {
                 self.calls.fetch_add(1, Ordering::SeqCst);
-                Ok(vec![])
+                Ok(workflow::ports::GraphQueryOutput::default())
             })
         }
     }

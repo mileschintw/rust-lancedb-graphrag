@@ -652,10 +652,14 @@ async fn leaf_span_graph_traversal_wraps_real_traversal() {
             max_hop_cap: 2,
             ..GraphSettings::default()
         },
+        graph_index: Arc::new(crate::graph::index::GraphIndex::empty()),
+        embedder: Arc::new(TestEmbeddingProvider),
     };
 
     let cancel = CancellationToken::new();
-    let _ = graph_port.query_graph(&[0.1; 2048], &cancel).await;
+    let _ = graph_port
+        .query_graph("Who runs Acme Corp?", &[0.1; 2048], &cancel)
+        .await;
     let _ = tracer_provider.force_flush();
 
     let mut found_graph = false;
@@ -666,6 +670,66 @@ async fn leaf_span_graph_traversal_wraps_real_traversal() {
     }
     assert!(found_graph, "graph_traversal leaf span must be exported");
     let _ = std::fs::remove_dir_all(temp_dir);
+}
+
+/// T-06.3.4.1-14-04: the graph span carries counts and a boolean only, never the question text or
+/// an entity name, and it records the new seed and path fields.
+#[tokio::test]
+async fn graph_traversal_span_records_seed_count_and_path_found_and_no_question_or_entity_text() {
+    crate::telemetry::ensure_propagators();
+
+    let (exporter, mut rx, _rx_shutdown) = new_test_exporter();
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter)
+        .build();
+    let tracer = tracer_provider.tracer("test_tracer");
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let fixture = crate::tests::graph_cutover::Fixture::new("span-seed-count").await;
+    let graph_port = ProductionGraphQueryPort {
+        database: fixture.database.clone(),
+        graph_settings: GraphSettings::default(),
+        graph_index: Arc::new(fixture.index.clone()),
+        embedder: Arc::new(TestEmbeddingProvider),
+    };
+
+    let cancel = CancellationToken::new();
+    let output = graph_port
+        .query_graph("Does Acme Corp work with Beta Works?", &[0.1; 2048], &cancel)
+        .await
+        .unwrap();
+    assert!(output.path_found);
+    let _ = tracer_provider.force_flush();
+
+    let mut found_graph = false;
+    while let Ok(span) = rx.try_recv() {
+        for kv in &span.attributes {
+            let text = kv.value.to_string();
+            assert!(
+                !text.contains("Acme") && !text.contains("Beta") && !text.contains("Does"),
+                "span {} attribute {} must not carry question or entity text: {text}",
+                span.name,
+                kv.key
+            );
+        }
+        if span.name == "graph_traversal" {
+            found_graph = true;
+            let attribute = |key: &str| {
+                span.attributes
+                    .iter()
+                    .find(|kv| kv.key.as_str() == key)
+                    .map(|kv| kv.value.to_string())
+            };
+            assert_eq!(attribute("lancet.graph.seed_count").as_deref(), Some("2"));
+            assert_eq!(attribute("lancet.graph.path_found").as_deref(), Some("true"));
+            assert_eq!(attribute("lancet.graph.node_count").as_deref(), Some("3"));
+            assert_eq!(attribute("lancet.graph.edge_count").as_deref(), Some("2"));
+        }
+    }
+    assert!(found_graph, "graph_traversal span must be exported");
+    fixture.cleanup();
 }
 
 #[tokio::test]
@@ -810,10 +874,14 @@ async fn graph_augmentation_record_lands_on_graph_traversal_leaf() {
             max_hop_cap: 2,
             ..GraphSettings::default()
         },
+        graph_index: Arc::new(crate::graph::index::GraphIndex::empty()),
+        embedder: Arc::new(TestEmbeddingProvider),
     };
 
     let cancel = CancellationToken::new();
-    let _ = graph_port.query_graph(&[0.1; 2048], &cancel).await;
+    let _ = graph_port
+        .query_graph("Who runs Acme Corp?", &[0.1; 2048], &cancel)
+        .await;
     let _ = tracer_provider.force_flush();
 
     let mut found_graph_leaf = false;

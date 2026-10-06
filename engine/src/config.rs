@@ -224,6 +224,22 @@ impl Default for GraphSettings {
     }
 }
 
+impl GraphSettings {
+    /// The seed-matching settings these graph settings select (D-75, D-77).
+    pub fn seed_settings(&self) -> graph::seeding::SeedSettings {
+        graph::seeding::SeedSettings::default()
+    }
+
+    /// The path-search settings these graph settings select (D-76, D-77).
+    pub fn path_settings(&self) -> graph::paths::PathSettings {
+        graph::paths::PathSettings {
+            degree_cap: graph::paths::DEGREE_CAP,
+            max_path_facts: graph::paths::MAX_PATH_FACTS,
+            max_graph_chunk_candidates: 8,
+        }
+    }
+}
+
 /// Budget for `ReformulateQuery`, in milliseconds.
 ///
 /// Carried forward and never derived from a measurement, so it is left out of the pass-A

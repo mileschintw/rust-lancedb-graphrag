@@ -20,7 +20,8 @@ pub use nodes::{
     RetrieveHybridNode,
 };
 pub use ports::{
-    Bm25RetrievalPort, DenseRetrievalPort, GraphQueryPort, NoOpQueryReformulator, QueryReformulator,
+    Bm25RetrievalPort, DenseRetrievalPort, GraphQueryOutput, GraphQueryPort, NoOpQueryReformulator,
+    QueryReformulator,
 };
 pub use runner::{WorkflowEventSink, WorkflowRunner};
 
@@ -108,6 +109,19 @@ pub struct WorkflowContext {
     /// Distinct from graph_node_count and graph_edge_count, which measure graph presence.
     /// Non-zero presence with zero influence is a valid, expected outcome (e.g. graph weight 0.0 or low priority).
     pub graph_prompt_fact_count: u32,
+    /// D-79: seeds the question mentions matched. Set when a graph query completes, so a
+    /// graph-off, failed or timed-out query leaves it at `0`.
+    pub graph_seed_count: u32,
+    /// D-79: whether at least one seed-to-seed path was found. `false` when seeds matched but no
+    /// path joined them, and also when the graph did not run.
+    pub graph_path_found: bool,
+    /// D-79: two-hop paths dropped because their intermediate entity was above the degree cap.
+    pub graph_degree_capped_count: u32,
+    /// D-79: document IDs of the seed entities source chunks, sorted and de-duplicated.
+    pub graph_seed_document_ids: Vec<String>,
+    /// D-79, D-76: source-chunk IDs of the entities on the found paths, for the graph chunk
+    /// boost. Empty when no path was found (decision `paths-only`, 06.3.4.1-13).
+    pub graph_chunk_candidates: Vec<String>,
     pub generation_attempts: u32,
     pub started_at_ms: i64,
     pub prompt_tokens: u32,
@@ -141,6 +155,11 @@ impl WorkflowContext {
             graph_node_count: 0,
             graph_edge_count: 0,
             graph_prompt_fact_count: 0,
+            graph_seed_count: 0,
+            graph_path_found: false,
+            graph_degree_capped_count: 0,
+            graph_seed_document_ids: Vec::new(),
+            graph_chunk_candidates: Vec::new(),
             generation_attempts: 0,
             started_at_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

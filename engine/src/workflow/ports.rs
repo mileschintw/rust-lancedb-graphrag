@@ -83,12 +83,66 @@ impl QueryReformulator for NoOpQueryReformulator {
     }
 }
 
+/// What one graph query hands to the `ExtractGraphContext` node (D-76, D-79).
+///
+/// `facts` are the seed-to-seed path facts for the prompt. The counts and lists describe how the
+/// query went and are recorded on the workflow context for the wire fields and the chunk boost.
+/// Seeds found with no path is a valid result: empty `facts`, `path_found = false` and no
+/// chunk candidates.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GraphQueryOutput {
+    /// Path facts in rank order, ready for the prompt packer.
+    pub facts: Vec<GraphFactBlock>,
+    /// Distinct entities on the kept paths (the graph presence count, D-06).
+    pub node_count: u32,
+    /// Relations on the kept paths: one per hop (the graph presence count, D-06).
+    pub edge_count: u32,
+    /// Seeds the question mentions matched.
+    pub seed_count: u32,
+    /// Whether at least one seed-to-seed path was kept.
+    pub path_found: bool,
+    /// Two-hop paths dropped because their intermediate was above the degree cap.
+    pub degree_capped_count: u32,
+    /// Document IDs of the seeds source chunks, sorted and de-duplicated.
+    pub seed_document_ids: Vec<String>,
+    /// Source-chunk IDs of the entities on the kept paths: the graph chunk candidates.
+    pub chunk_candidates: Vec<String>,
+}
+
+impl GraphQueryOutput {
+    /// An output that carries only facts, counted by their endpoint names and by fact.
+    ///
+    /// This is the shape a port that knows nothing about seeds or paths returns; the production
+    /// port fills every field from the path result instead.
+    pub fn from_facts(facts: Vec<GraphFactBlock>) -> Self {
+        let mut unique_nodes = std::collections::HashSet::new();
+        for fact in &facts {
+            unique_nodes.insert(fact.fact.entity_a_name());
+            unique_nodes.insert(fact.fact.entity_b_name());
+        }
+        let node_count = unique_nodes.len() as u32;
+        let edge_count = facts.len() as u32;
+        Self {
+            facts,
+            node_count,
+            edge_count,
+            ..Self::default()
+        }
+    }
+}
+
 pub trait GraphQueryPort: Send + Sync {
+    /// Finds the graph facts for one question.
+    ///
+    /// `question` is the original question text, not a reformulated variant, because mention
+    /// extraction reads what the user wrote. `query_embedding` is the variant-zero embedding the
+    /// node already computed for retrieval.
     fn query_graph<'a>(
         &'a self,
+        question: &'a str,
         query_embedding: &'a [f32],
         cancel: &'a CancellationToken,
-    ) -> BoxFuture<'a, Result<Vec<GraphFactBlock>, NodeError>>;
+    ) -> BoxFuture<'a, Result<GraphQueryOutput, NodeError>>;
 }
 
 pub trait DenseRetrievalPort: Send + Sync {
@@ -253,51 +307,63 @@ impl IntoGraphFacts for Vec<&str> {
 
 #[cfg(test)]
 pub struct FakeGraphQueryPort {
-    graph_facts: Result<Vec<crate::prompt::GraphFactBlock>, NodeError>,
+    graph_output: Result<GraphQueryOutput, NodeError>,
     stall: bool,
     call_count: std::sync::atomic::AtomicUsize,
+    questions: std::sync::Mutex<Vec<String>>,
 }
 
 #[cfg(test)]
 impl FakeGraphQueryPort {
     pub fn success(facts: impl IntoGraphFacts) -> Self {
+        Self::success_output(GraphQueryOutput::from_facts(facts.into_graph_facts()))
+    }
+
+    /// A port that returns exactly `output`, seed and path fields included.
+    pub fn success_output(output: GraphQueryOutput) -> Self {
         Self {
-            graph_facts: Ok(facts.into_graph_facts()),
+            graph_output: Ok(output),
             stall: false,
             call_count: std::sync::atomic::AtomicUsize::new(0),
+            questions: std::sync::Mutex::new(Vec::new()),
         }
     }
 
     pub fn failure(err: NodeError) -> Self {
         Self {
-            graph_facts: Err(err),
+            graph_output: Err(err),
             stall: false,
             call_count: std::sync::atomic::AtomicUsize::new(0),
+            questions: std::sync::Mutex::new(Vec::new()),
         }
     }
 
     pub fn failure_with_retryable(retryable: bool) -> Self {
-        Self {
-            graph_facts: Err(NodeError::new(
+        Self::failure(
+            NodeError::new(
                 crate::pb::lancet::v1::NodeErrorKind::GraphFailed,
                 "synthetic graph query failure",
             )
-            .with_retryable(retryable)),
-            stall: false,
-            call_count: std::sync::atomic::AtomicUsize::new(0),
-        }
+            .with_retryable(retryable),
+        )
     }
 
     pub fn stall() -> Self {
         Self {
-            graph_facts: Ok(vec![]),
+            graph_output: Ok(GraphQueryOutput::default()),
             stall: true,
             call_count: std::sync::atomic::AtomicUsize::new(0),
+            questions: std::sync::Mutex::new(Vec::new()),
         }
     }
 
     pub fn calls(&self) -> usize {
         self.call_count.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The question text of every call, in call order.
+    pub fn questions(&self) -> Vec<String> {
+        self.questions.lock().unwrap().clone()
     }
 }
 
@@ -305,16 +371,18 @@ impl FakeGraphQueryPort {
 impl GraphQueryPort for FakeGraphQueryPort {
     fn query_graph<'a>(
         &'a self,
+        question: &'a str,
         _query_embedding: &'a [f32],
         _cancel: &'a CancellationToken,
-    ) -> BoxFuture<'a, Result<Vec<crate::prompt::GraphFactBlock>, NodeError>> {
+    ) -> BoxFuture<'a, Result<GraphQueryOutput, NodeError>> {
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.questions.lock().unwrap().push(question.to_string());
         Box::pin(async move {
             if self.stall {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
             }
-            self.graph_facts.clone()
+            self.graph_output.clone()
         })
     }
 }
@@ -526,7 +594,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let port_non_retryable = FakeGraphQueryPort::failure_with_retryable(false);
         let err_non_retryable = port_non_retryable
-            .query_graph(&[0.1; 128], &cancel)
+            .query_graph("question", &[0.1; 128], &cancel)
             .await
             .unwrap_err();
         assert!(!err_non_retryable.retryable);
@@ -537,7 +605,7 @@ mod tests {
 
         let port_retryable = FakeGraphQueryPort::failure_with_retryable(true);
         let err_retryable = port_retryable
-            .query_graph(&[0.1; 128], &cancel)
+            .query_graph("question", &[0.1; 128], &cancel)
             .await
             .unwrap_err();
         assert!(err_retryable.retryable);
