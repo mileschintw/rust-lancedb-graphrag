@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 33
+current_plan: 34
 status: executing
-stopped_at: Completed 06.3.4.1-32-PLAN.md
-last_updated: "2026-10-06T19:59:44.558Z"
+stopped_at: Completed 06.3.4.1-33-PLAN.md
+last_updated: "2026-10-06T20:18:45.162Z"
 last_activity: 2026-10-06
-state_head: 795afe31db74dfb2c0db83452fbfb7770dc2b346
+state_head: 95c8b844c4b325321ca5e2bcb816f2db1712c627
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 192
-  completed_plans: 190
+  completed_plans: 191
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,12 +22,15 @@ last_activity_desc: Started gap-closure execution of 06.3.4.1 plans 31-34 (UAT g
 
 ## Current Position
 
-Current Plan: 33
+Current Plan: 34
 Total Plans in Phase: 34
 
 ## Current Status
 
 - **2026-10-06: Gap-closure execution of 06.3.4.1 started** (`/gsd-execute-phase 06.3.4.1 --gaps-only`). Plans 31-34 close UAT gaps G-06.3.4.1-2 (retries erase attempts; gate-stage drives must refuse retries > 0 and record every attempt), G-06.3.4.1-3a (unpark gates scored partial journals; completeness computed once in `main`, all readings MISS when incomplete, 0.80 coverage floor over sample∩G/sample∩V) and G-06.3.4.1-3b (`measure` ignored the stage cap with workers > 1; NaN/inf `--stage-cap` accepted). Order: 31 and 32 (wave 22), then 33 (wave 23), then 34 (wave 24), each run sequentially on main. Plans 01-30 stay summarized; drive 2 stays the run of record; 6.4 stays parked.
+
+- **2026-10-06: Plan 06.3.4.1-33 complete (gap G-06.3.4.1-2, drive side, folds in CR-03: retries no longer erase attempts).** `RunRecord.prior_attempts` (new `AttemptRecord`) keeps every attempt a harness retry superseded, in order, on the final record; old journals still load (drive 1/1b/2: 200 lines each and pass A: 324 validate strictly, line by line, all with empty `prior_attempts`); `first_attempt_view` lets `classify_record` see a retried-away timeout (`timeout`) or D-69 rejection. `compute_spend` and `count_failed_generation_attempts` charge every attempt (a retried record costs exactly its first attempt plus its final attempt); pass A is unchanged ($0.3199 estimate, 135 failed-generation attempts). `lancet-eval run --gate-stage <label>` requires `--retries 0` (exit 2), `drive(gate_stage=...)` refuses retries and a malformed label before any journal I/O, every drive header now carries `gate_stage` and `max_retries`, and a drive refuses to append to a journal whose header marker differs from its own (resume or not); existing drive journals are unmarked, so a gate-stage drive cannot append to them. `--retries` keeps default 2 for non-gate drives. Commits `ad48aa54`/`b3fe1e9d` (attempts), `2d2e2243`/`8964776e` (spend), `0341c880`/`cc742070`/`bf76b708` (marker). Full eval suite 1052 passed (baseline 986). No paid call, no `eval/runs/` change, no price/ceiling constant changed. OBS-05 not marked (shared ID, already checked). `ruff --preview` per-file counts unchanged from base.
+  - Next: plan 34 (gate readers: SC-2 and D-69 see first-attempt failures via `first_attempt_view`, MISS on an unmarked or retried journal; edits `unpark_gates.py`).
 
 - **2026-10-06: Plan 06.3.4.1-31 complete (gap G-06.3.4.1-3b: the stage cap holds at any worker count).** `run_measurement_pass` now dispatches through one bounded in-flight window for every worker count and checks the cap before each further unit (workers=4 with a binding cap measured 4 units, was 20 of 20); `stopped_by_cap` is true only when a unit was still waiting, in `measure` and in `run.drive` (WR-01 ordering); `measurement.json` and `run_record.json` carry `stopped_by_cap`, `workers`, `work_units_planned`; `--stage-cap` on `run`, `measure` and `score` rejects NaN, +/-inf, 0 and negatives (exit 2) and `measure --stage-cap` is required (no silent $5 default). Commits `8409cf85`/`1cd6ffb1` (measure), `9abab08c`/`8d109c93` (drive), `b4f0b7cc`/`309c9aec` (CLI). Full eval suite 953 passed. No paid call, no `eval/runs/` change, no price/ceiling constant changed. OBS-05 not marked (shared ID, already checked). Pre-existing: `ruff --preview` has 551 findings repo-wide; this plan added none.
   - Next: plan 32 (unpark_gates completeness, G-06.3.4.1-3a), then 33, then 34.
@@ -414,6 +417,7 @@ Total Plans in Phase: 34
 | Phase 06.3.4.1 P20 | 20 min | 2 tasks | 4 files |
 | Phase 06.3.4.1 P31 | 5 min | 3 tasks | 5 files |
 | Phase 06.3.4.1 P32 | 16 min | 2 tasks | 4 files |
+| Phase 06.3.4.1 P33 | 14 min | 3 tasks | 9 files |
 
 ## Decisions
 
@@ -520,9 +524,9 @@ Total Plans in Phase: 34
 
 ## Session
 
-**Last session:** 2026-10-06T19:59:33.831Z
+**Last session:** 2026-10-06T20:18:43.911Z
 **Last activity:** 2026-10-06
-**Stopped at:** Completed 06.3.4.1-32-PLAN.md
+**Stopped at:** Completed 06.3.4.1-33-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
