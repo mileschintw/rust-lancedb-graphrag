@@ -23,7 +23,11 @@ from lancet_eval.corpus import load_corpus_config, load_sample_questions
 from lancet_eval.diagnostic import build_rows, classify_record
 from lancet_eval.dimensions import make_graph_presence_rate
 from lancet_eval.flatness import flatness_verdict, records_from_run_journal
-from lancet_eval.journal import completeness_comparison, load_records
+from lancet_eval.journal import (
+    completeness_comparison,
+    first_attempt_view,
+    load_records,
+)
 from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval.metrics import final_answer_em, recall_at_k
 from lancet_eval.pairing import compute_paired_delta, deduplicate_by_arm, form_pairs
@@ -289,10 +293,17 @@ def evaluate_sc2(
             detail={"sc2_timeout_dominance_rule": SC2_TIMEOUT_DOMINANCE_RULE},
         )
 
+    # D-67: each work unit counts its first attempt once, exactly what a `--retries 0`
+    # drive would have journaled, so a retry cannot clear a timeout from the tally. The
+    # flatness clause below keeps the final outcome (a gate reading never reaches it on
+    # a retried journal: `_journal_preconditions` MISSes every reading first).
     class_counts: dict[str, int] = {}
     error_arms_by_qid: dict[str, set[str]] = {}
+    retried_records = 0
     for rec in records:
-        cls = classify_record(rec)
+        if rec.prior_attempts:
+            retried_records += 1
+        cls = classify_record(first_attempt_view(rec))
         if cls is None:
             continue
         class_counts[cls] = class_counts.get(cls, 0) + 1
@@ -340,6 +351,7 @@ def evaluate_sc2(
         "sc2_timeout_dominance_rule": SC2_TIMEOUT_DOMINANCE_RULE,
         "both_arm_error_question_count": float(len(both_arm_error_pairs)),
         "both_arm_error_class_pairs": both_arm_error_pairs,
+        "retried_records": float(retried_records),
         "flatness_reason": flatness.reason,
         "flatness_trend_available": flatness.trend_available,
         "flatness_window_available": flatness.window_available,
@@ -374,13 +386,20 @@ def citation_rejection_rate(
     nonnull_rejections = 0
     marker_mismatch_count = 0
     class_counts: dict[str, int] = {}
+    retried_records = 0
 
     for rec in records:
-        if not _reached_generate_answer(rec):
+        if rec.prior_attempts:
+            retried_records += 1
+        # D-67, D-69: the first attempt of each work unit, so a rejection a retry
+        # answered still counts and a first attempt that never reached GenerateAnswer
+        # stays outside the denominator. Null-ness comes from the gold question.
+        view = first_attempt_view(rec)
+        if not _reached_generate_answer(view):
             continue
         gold = gold_map.get(rec.question_id)
         is_null = bool(gold.is_null) if gold is not None else False
-        cls = classify_record(rec)
+        cls = classify_record(view)
         is_rejection = cls in _D69_REJECTION_CLASSES
         if cls:
             class_counts[cls] = class_counts.get(cls, 0) + 1
@@ -402,7 +421,7 @@ def citation_rejection_rate(
             status="MISS",
             reason="n=0",
             n=0,
-            detail={"class_counts": {}},
+            detail={"class_counts": {}, "retried_records": float(retried_records)},
         )
 
     total_rejections = null_rejections + nonnull_rejections
@@ -450,6 +469,7 @@ def citation_rejection_rate(
         "nonnull_total": float(nonnull_total),
         "nonnull_rejections": float(nonnull_rejections),
         "nonnull_rate": float(nonnull_rate),
+        "retried_records": float(retried_records),
         "ci_lower": float(ci_lo),
         "ci_upper": float(ci_hi),
     }
