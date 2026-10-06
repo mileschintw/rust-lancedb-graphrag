@@ -108,6 +108,12 @@ func WriteWorkflowEvent(w http.ResponseWriter, rc *http.ResponseController, ev *
 		}
 		var metaMap map[string]any
 		if meta := e.WorkflowCompleted.GetMetadata(); meta != nil {
+			// A graph-off query has no seed documents. The key is `[]`, never `null`, so a
+			// measured empty list stays distinguishable from a record without the field.
+			seedDocumentIDs := meta.GetGraphSeedDocumentIds()
+			if seedDocumentIDs == nil {
+				seedDocumentIDs = []string{}
+			}
 			metaMap = map[string]any{
 				"started_at_ms":           meta.GetStartedAtMs(),
 				"completed_at_ms":         meta.GetCompletedAtMs(),
@@ -120,6 +126,12 @@ func WriteWorkflowEvent(w http.ResponseWriter, rc *http.ResponseController, ev *
 				"prompt_tokens":           meta.GetPromptTokens(),
 				"completion_tokens":       meta.GetCompletionTokens(),
 				"degraded_mode":           meta.GetDegradedMode(),
+				// 06.3.4.1 D-79, D-81: counts, a boolean and document IDs only.
+				"graph_seed_count":          meta.GetGraphSeedCount(),
+				"graph_path_found":          meta.GetGraphPathFound(),
+				"graph_boosted_chunk_count": meta.GetGraphBoostedChunkCount(),
+				"graph_degree_capped_count": meta.GetGraphDegreeCappedCount(),
+				"graph_seed_document_ids":   seedDocumentIDs,
 			}
 		} else {
 			metaMap = map[string]any{
@@ -134,6 +146,12 @@ func WriteWorkflowEvent(w http.ResponseWriter, rc *http.ResponseController, ev *
 				"prompt_tokens":           uint32(0),
 				"completion_tokens":       uint32(0),
 				"degraded_mode":           false,
+				// 06.3.4.1 D-79, D-81: the zero defaults of the five seeding diagnostics.
+				"graph_seed_count":          uint32(0),
+				"graph_path_found":          false,
+				"graph_boosted_chunk_count": uint32(0),
+				"graph_degree_capped_count": uint32(0),
+				"graph_seed_document_ids":   []string{},
 			}
 		}
 		wcPayload["metadata"] = metaMap

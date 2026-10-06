@@ -29,6 +29,15 @@ type StructuredCitationDTO struct {
 	ContentType string  `json:"content_type"`
 }
 
+// RetrievedChunkDTO is one chunk of the final retrieved set: a structured citation plus whether the
+// graph contributed to its place there (06.3.4.1 D-81). The flag is always present, so a chunk the
+// graph did not touch says `false`. It is a separate type so `structured_citations` keeps its
+// nine-key contract: a citation names a chunk the answer cited, not how retrieval found it.
+type RetrievedChunkDTO struct {
+	StructuredCitationDTO
+	GraphBoosted bool `json:"graph_boosted"`
+}
+
 // NoticeDTO represents a human- or machine-readable execution notice.
 type NoticeDTO struct {
 	Code      string `json:"code"`
@@ -45,16 +54,30 @@ type DocumentFilterDTO struct {
 
 // RetrievalSnapshotDTO represents the retrieval parameters and state snapshot.
 type RetrievalSnapshotDTO struct {
-	IndexGeneration string                  `json:"index_generation"`
-	EmbeddingModel  string                  `json:"embedding_model"`
-	VectorWeight    float64                 `json:"vector_weight"`
-	Bm25Weight      float64                 `json:"bm25_weight"`
-	RrfK            int32                   `json:"rrf_k"`
-	CandidateLimit  int32                   `json:"candidate_limit"`
-	FinalLimit      int32                   `json:"final_limit"`
-	ActiveFilter    *DocumentFilterDTO      `json:"active_filter"`
-	ResultHash      string                  `json:"result_hash"`
-	RetrievedChunks []StructuredCitationDTO `json:"retrieved_chunks"`
+	IndexGeneration string              `json:"index_generation"`
+	EmbeddingModel  string              `json:"embedding_model"`
+	VectorWeight    float64             `json:"vector_weight"`
+	Bm25Weight      float64             `json:"bm25_weight"`
+	RrfK            int32               `json:"rrf_k"`
+	CandidateLimit  int32               `json:"candidate_limit"`
+	FinalLimit      int32               `json:"final_limit"`
+	ActiveFilter    *DocumentFilterDTO  `json:"active_filter"`
+	ResultHash      string              `json:"result_hash"`
+	RetrievedChunks []RetrievedChunkDTO `json:"retrieved_chunks"`
+}
+
+func toStructuredCitationDTO(sc *pb.StructuredCitation) StructuredCitationDTO {
+	return StructuredCitationDTO{
+		ChunkID:     sc.ChunkId,
+		DocumentID:  sc.DocumentId,
+		Title:       sc.Title,
+		SectionPath: sc.SectionPath,
+		Excerpt:     sc.Excerpt,
+		IsTruncated: sc.IsTruncated,
+		Score:       sc.Score,
+		Rank:        sc.Rank,
+		ContentType: sc.ContentType,
+	}
 }
 
 func toStructuredCitationDTOs(in []*pb.StructuredCitation) []StructuredCitationDTO {
@@ -63,16 +86,20 @@ func toStructuredCitationDTOs(in []*pb.StructuredCitation) []StructuredCitationD
 		if sc == nil {
 			continue
 		}
-		out = append(out, StructuredCitationDTO{
-			ChunkID:     sc.ChunkId,
-			DocumentID:  sc.DocumentId,
-			Title:       sc.Title,
-			SectionPath: sc.SectionPath,
-			Excerpt:     sc.Excerpt,
-			IsTruncated: sc.IsTruncated,
-			Score:       sc.Score,
-			Rank:        sc.Rank,
-			ContentType: sc.ContentType,
+		out = append(out, toStructuredCitationDTO(sc))
+	}
+	return out
+}
+
+func toRetrievedChunkDTOs(in []*pb.StructuredCitation) []RetrievedChunkDTO {
+	out := make([]RetrievedChunkDTO, 0)
+	for _, sc := range in {
+		if sc == nil {
+			continue
+		}
+		out = append(out, RetrievedChunkDTO{
+			StructuredCitationDTO: toStructuredCitationDTO(sc),
+			GraphBoosted:          sc.GraphBoosted,
 		})
 	}
 	return out
@@ -110,7 +137,7 @@ func ToRetrievalSnapshotDTO(in *pb.RetrievalSnapshot) *RetrievalSnapshotDTO {
 		FinalLimit:      in.FinalLimit,
 		ActiveFilter:    activeFilter,
 		ResultHash:      in.ResultHash,
-		RetrievedChunks: toStructuredCitationDTOs(in.RetrievedChunks),
+		RetrievedChunks: toRetrievedChunkDTOs(in.RetrievedChunks),
 	}
 }
 
