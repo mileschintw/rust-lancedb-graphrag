@@ -1667,3 +1667,106 @@ def test_main_drive2_adds_sc4_sc5_and_the_invariance_report(
     markdown = out.read_text(encoding="utf-8")
     assert "# Unpark Gates (drive2)" in markdown
     assert "disclosure" in markdown.lower()
+
+
+def _unpaired_boost_journal(
+    tmp_path: Path,
+) -> tuple[Path, Path, dict[str, GoldQuestion]]:
+    """Three V pairs plus graph-on records that sit in no pair.
+
+    q000 holds a boosted chunk, q001 an unboosted one, q002 only unflagged chunks (a
+    record that predates the flag). `lone` is a usable graph-on record whose graph-off
+    twin errored (boosted); `broken` is a graph-on record that errored itself.
+    """
+    records = [
+        _arm_record(
+            "q000", "graph-on", chunks=[_chunk("on-0:0", boosted=True)], graph_nodes=1
+        ),
+        _arm_record("q000", "graph-off", chunks=[_chunk("off-0:0")]),
+        _arm_record(
+            "q001", "graph-on", chunks=[_chunk("on-1:0", boosted=False)], graph_nodes=1
+        ),
+        _arm_record("q001", "graph-off", chunks=[_chunk("off-1:0")]),
+        _arm_record(
+            "q002", "graph-on", chunks=[_chunk("on-2:0", boosted=None)], graph_nodes=1
+        ),
+        _arm_record("q002", "graph-off", chunks=[_chunk("off-2:0")]),
+        _arm_record("lone", "graph-on", chunks=[_chunk("on-l:0", boosted=True)]),
+        _arm_record("lone", "graph-off", outcome="error"),
+        _arm_record("broken", "graph-on", outcome="error"),
+        _arm_record("broken", "graph-off", chunks=[_chunk("off-b:0")]),
+    ]
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    ids = ["q000", "q001", "q002"]
+    selection = _write_selection(tmp_path / "sel.json", g=ids, v=ids)
+    gold = {
+        **_gold_map(3),
+        "lone": _gold_question("lone"),
+        "broken": _gold_question("broken"),
+    }
+    return journal, selection, gold
+
+
+def test_sc5_discloses_the_unpaired_boost_share_over_all_usable_graph_on(
+    tmp_path: Path,
+) -> None:
+    journal, selection, gold = _unpaired_boost_journal(tmp_path)
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    block = reading.detail["unpaired_all_usable_graph_on"]
+    # q000, q001 and lone are measured; q002 predates the flag; broken is unusable.
+    assert block["n"] == 3
+    assert block["boosted_n"] == 2
+    assert block["rate"] == pytest.approx(2 / 3)
+    assert block["unmeasured_n"] == 1
+    assert block["paired"] is False
+
+
+def test_sc5_unpaired_boost_share_never_feeds_the_pass_rule(tmp_path: Path) -> None:
+    # Every V pair is unboosted, so the paired composition is 0; the unpaired block
+    # (here 40/40 boosted) must not turn that MISS into a PASS.
+    records: list[RunRecord] = []
+    for i in range(3):
+        records.append(
+            _arm_record(
+                _qid(i), "graph-on", chunks=[_chunk(f"on-{i}:0", boosted=False)]
+            )
+        )
+        records.append(_arm_record(_qid(i), "graph-off", chunks=[_chunk(f"off-{i}:0")]))
+    for i in range(40):
+        records.append(
+            _arm_record(
+                f"lone{i}", "graph-on", chunks=[_chunk(f"l-{i}:0", boosted=True)]
+            )
+        )
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    ids = [_qid(i) for i in range(3)]
+    selection = _write_selection(tmp_path / "sel.json", g=ids, v=ids)
+    gold = {
+        **_gold_map(3),
+        **{f"lone{i}": _gold_question(f"lone{i}") for i in range(40)},
+    }
+    reading = evaluate_sc5(journal, selection, gold_questions=gold, chunk_size=500)
+    # 3 unboosted pair records + 40 boosted lone records: 40 of 43.
+    assert reading.detail["unpaired_all_usable_graph_on"]["rate"] == pytest.approx(
+        40 / 43
+    )
+    assert reading.status == "MISS"
+
+
+def test_sc5_unpaired_boost_share_is_none_without_a_usable_graph_on_record(
+    tmp_path: Path,
+) -> None:
+    records = [
+        _arm_record("q000", "graph-on", outcome="error"),
+        _arm_record("q000", "graph-off", chunks=[_chunk("off-0:0")]),
+    ]
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(journal, records, corpus="multihop_rag")
+    selection = _write_selection(tmp_path / "sel.json", g=["q000"], v=["q000"])
+    reading = evaluate_sc5(
+        journal, selection, gold_questions=_gold_map(1), chunk_size=500
+    )
+    block = reading.detail["unpaired_all_usable_graph_on"]
+    assert (block["n"], block["rate"]) == (0, None)
