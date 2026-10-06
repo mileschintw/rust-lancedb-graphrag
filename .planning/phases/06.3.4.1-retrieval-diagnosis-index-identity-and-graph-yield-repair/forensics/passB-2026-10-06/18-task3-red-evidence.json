@@ -1,0 +1,24 @@
+{
+  "command": "cargo test --manifest-path engine/Cargo.toml --locked --lib config::tests::",
+  "exitCode": 101,
+  "output": "ok 1 - config::tests::graph_defaults_carry_the_decided_values\nok 2 - config::tests::workflow_budget_defaults_nest_and_pass_startup_validation\nok 3 - config::tests::graph_rrf_weight_is_a_separate_setting_from_the_prompt_packing_weight\nok 4 - config::tests::graph_settings_reject_zero_seeds_degree_cap_and_path_facts\nnot ok 5 - config::tests::workflow_budget_defaults_carry_the_decided_values\nok 6 - config::tests::the_graph_chunk_candidate_cap_equals_the_final_limit_in_the_defaults_and_both_files\nok 7 - config::tests::graph_rrf_weight_agrees_with_both_config_files_and_the_default\nok 8 - config::tests::graph_defaults_agree_with_config_files\nok 9 - config::tests::workflow_budget_defaults_agree_with_config_files\n# tests 9\n# pass 8\n# fail 1",
+  "cargoTranscript": [
+    "test config::tests::graph_defaults_carry_the_decided_values ... ok",
+    "test config::tests::workflow_budget_defaults_nest_and_pass_startup_validation ... ok",
+    "test config::tests::graph_rrf_weight_is_a_separate_setting_from_the_prompt_packing_weight ... ok",
+    "test config::tests::graph_settings_reject_zero_seeds_degree_cap_and_path_facts ... ok",
+    "test config::tests::workflow_budget_defaults_carry_the_decided_values ... FAILED",
+    "test config::tests::the_graph_chunk_candidate_cap_equals_the_final_limit_in_the_defaults_and_both_files ... ok",
+    "test config::tests::graph_rrf_weight_agrees_with_both_config_files_and_the_default ... ok",
+    "test config::tests::graph_defaults_agree_with_config_files ... ok",
+    "test config::tests::workflow_budget_defaults_agree_with_config_files ... ok",
+    "thread 'config::tests::workflow_budget_defaults_carry_the_decided_values' (20736) panicked at src\\config.rs:1125:9:",
+    "  left: [(\"reformulate_timeout_ms\", 5000), (\"query_embedding_timeout_ms\", 2000), (\"retrieve_timeout_ms\", 2500), (\"graph_operation_timeout_ms\", 10000), (\"graph_node_timeout_ms\", 12500), (\"prompt_timeout_ms\", 120), (\"generation_node_timeout_ms\", 65000)]",
+    " right: [(\"reformulate_timeout_ms\", 5000), (\"query_embedding_timeout_ms\", 2000), (\"retrieve_timeout_ms\", 2500), (\"graph_operation_timeout_ms\", 2424), (\"graph_node_timeout_ms\", 12500), (\"prompt_timeout_ms\", 120), (\"generation_node_timeout_ms\", 65000)]",
+    "test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 628 filtered out; finished in 0.01s"
+  ],
+  "note": "output is the TAP rendering of the cargo libtest result lines in cargoTranscript (the checker parses TAP); the test names and verdicts are copied one to one",
+  "targetTest": "config::tests::workflow_budget_defaults_carry_the_decided_values",
+  "expected": "the compiled-in workflow budget defaults carry graph_operation_timeout_ms = 2424 (pass B derivation, 06.3.4.1-BUDGETS.md)",
+  "actual": "assertion failed: left graph_operation_timeout_ms = 10000, right = 2424"
+}

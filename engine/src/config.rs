@@ -1116,8 +1116,10 @@ mod tests {
     }
 
     /// Pins the set the user decided at 06.3.4.1-24 as amended by D-93 (2026-09-29), where
-    /// `prompt_timeout_ms` moved from 65 to 120 (recorded in `06.3.4.1-BUDGETS.md`), so a
-    /// coordinated edit of the files and the defaults cannot move a budget unnoticed.
+    /// `prompt_timeout_ms` moved from 65 to 120, and by pass B (2026-10-06), where
+    /// `graph_operation_timeout_ms` moved from 10000 to 2424 (all recorded in
+    /// `06.3.4.1-BUDGETS.md`), so a coordinated edit of the files and the defaults cannot
+    /// move a budget unnoticed.
     #[test]
     fn workflow_budget_defaults_carry_the_decided_values() {
         assert_eq!(
@@ -1126,7 +1128,7 @@ mod tests {
                 ("reformulate_timeout_ms", 5000),
                 ("query_embedding_timeout_ms", 2000),
                 ("retrieve_timeout_ms", 2500),
-                ("graph_operation_timeout_ms", 10000),
+                ("graph_operation_timeout_ms", 2424),
                 ("graph_node_timeout_ms", 12500),
                 ("prompt_timeout_ms", 120),
                 ("generation_node_timeout_ms", 65000),
