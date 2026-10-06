@@ -154,3 +154,95 @@ def test_load_done_skips_truncated_trailing_line(tmp_path: Path) -> None:
     assert journal_key("multihop_rag", "q1", "graph-on") in done
     assert journal_key("multihop_rag", "q2", "graph-off") in done
     assert journal_key("multihop_rag", "q3", "graph-on") not in done
+
+
+# --- 06.3.4.1-33 Task 1: prior_attempts schema and strict back-compat -----------
+
+_RUNS = repo_root() / "eval" / "runs"
+_RECORDED_DRIVES = [
+    _RUNS / "2026-09-30-drive1-multihop_rag_diag" / "journal.jsonl",
+    _RUNS / "2026-10-01-drive1b-multihop_rag_diag" / "journal.jsonl",
+    _RUNS / "2026-10-06-drive2-multihop_rag_diag" / "journal.jsonl",
+]
+_PASS_A = _RUNS / "2026-09-28-passA-measure-multihop_rag" / "journal.jsonl"
+
+
+def _strict_lines(path: Path) -> list[str]:
+    """Every non-empty, non-header line, read raw (never through load_records)."""
+    out: list[str] = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            if json.loads(line).get("type") == "header":
+                continue
+            out.append(line)
+    return out
+
+
+def test_prior_attempts_defaults_to_empty_and_is_inherited() -> None:
+    from lancet_eval.measure import MeasurementRecord
+
+    rec = RunRecord(corpus="c", question_id="q", graph_arm="graph-on", outcome="success")
+    assert rec.prior_attempts == []
+
+    meas = MeasurementRecord(
+        corpus="c",
+        question_id="q",
+        graph_arm="graph-on",
+        outcome="success",
+        ordinal=0,
+        segment="s",
+    )
+    assert meas.prior_attempts == []
+
+
+def test_attempt_record_is_strict_and_round_trips(tmp_path: Path) -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from lancet_eval.journal import AttemptRecord
+
+    with pytest.raises(ValidationError):
+        AttemptRecord(attempt=1, outcome="error", surprise="x")  # type: ignore[call-arg]
+
+    rec = RunRecord(
+        corpus="c",
+        question_id="q",
+        graph_arm="graph-on",
+        outcome="success",
+        prior_attempts=[
+            AttemptRecord(
+                attempt=1,
+                outcome="error",
+                error_type="ReadTimeout",
+                error="read timed out",
+                duration_ms=12.5,
+            )
+        ],
+    )
+    j = Journal(tmp_path / "journal.jsonl")
+    j.append(rec)
+    line = (tmp_path / "journal.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    assert json.loads(line)["prior_attempts"][0]["error_type"] == "ReadTimeout"
+    assert RunRecord.model_validate_json(line) == rec
+
+
+def test_recorded_drive_journals_validate_strictly_with_empty_prior_attempts() -> None:
+    """Back-compat (T-06.3.4.1-33-05): 200 records per drive journal, none retried."""
+    for path in _RECORDED_DRIVES:
+        lines = _strict_lines(path)
+        assert len(lines) == 200, path
+        for line in lines:
+            rec = RunRecord.model_validate_json(line)
+            assert rec.prior_attempts == []
+
+
+def test_recorded_pass_a_journal_validates_strictly_with_empty_prior_attempts() -> None:
+    from lancet_eval.measure import MeasurementRecord
+
+    lines = _strict_lines(_PASS_A)
+    assert len(lines) == 324
+    for line in lines:
+        rec = MeasurementRecord.model_validate_json(line)
+        assert rec.prior_attempts == []
