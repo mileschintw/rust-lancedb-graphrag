@@ -717,7 +717,7 @@ mod seed_paths {
     use crate::graph::index::{casefold_name, normalize_name, EntityRecord, GraphIndex};
     use crate::graph::paths::{
         build_paths, derive_max_path_facts, find_seed_paths, seed_chunk_candidates, EdgeRow,
-        PathSettings,
+        PathSettings, MAX_PATH_FACTS, MAX_PATH_FACTS_CEILING,
     };
     use crate::graph::seeding::{
         extract_mentions, match_seeds, LanceMentionVectorSearch, MatchKind, MentionVectorSearch,
@@ -1445,6 +1445,16 @@ mod seed_paths {
         assert_eq!(derive_max_path_facts(8192, 2048, 25), Some(16));
         assert_eq!(derive_max_path_facts(8192, 2048, 0), None, "no measured fact size, no cap");
         assert_eq!(derive_max_path_facts(2048, 2048, 10), Some(0), "no room left, no facts");
+    }
+
+    #[test]
+    fn the_confirmed_path_fact_cap_is_the_budget_formula_at_the_measured_p95() {
+        // 8192 evidence tokens, 2048 answer tokens, p95 of 69 tokens per path fact (SEED-PROBE s8).
+        assert_eq!(derive_max_path_facts(8192, 2048, 69), Some(MAX_PATH_FACTS));
+        assert!(
+            MAX_PATH_FACTS < MAX_PATH_FACTS_CEILING,
+            "the ceiling must not be what sets the cap at the measured fact size"
+        );
     }
 
     // ---- find_seed_paths (store-backed) -------------------------------------------------------

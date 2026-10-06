@@ -45,19 +45,41 @@ use crate::graph::seeding::Seed;
 /// single intermediate can join any two seeds that both mention a large publisher, and every such
 /// path is noise. The cap affects intermediates only; a hub that is itself a seed stays a seed.
 ///
-/// Confirmed or amended at the `06.3.4.1-13` Task 3 decision checkpoint.
+/// Confirmed by the user at the `06.3.4.1-13` Task 3 decision checkpoint on 2026-10-05
+/// ("Confirm both": `DEGREE_CAP` 33 and `MAX_PATH_FACTS` 8). The seed probe measured the same
+/// 33.0 on its own index (`06.3.4.1-SEED-PROBE.md` section 8).
 pub const DEGREE_CAP: u32 = 33;
 
-/// The most path facts one question may inject into the prompt, whatever the budget formula says.
+/// The most path facts one question injects into the prompt: 8.
+///
+/// **Derivation.** `min(16, floor(0.10 * (8192 - 2048) / 69))` = `min(16, floor(8.90))` = 8, which
+/// is [`derive_max_path_facts`]`(8192, 2048, 69)`. The inputs are an evidence token budget of 8192,
+/// an answer budget of 2048, and a measured `p95` of 69 tokens per path fact over the 338 paths of
+/// the diagnostic sample. One [`GraphFact`] was counted per path (a two-hop path is a single fact
+/// whose relation text is the chain `r1→X→r2`) and tokenised with cl100k. The measurement and the
+/// formula are in `06.3.4.1-SEED-PROBE.md` section 8. The user confirmed the value at the
+/// `06.3.4.1-13` Task 3 decision checkpoint on 2026-10-05.
+///
+/// **Effect of changing it.** Raising it moves prompt budget from evidence chunks to graph facts:
+/// at 69 tokens per fact each extra fact costs about 69 tokens of the 6144 left after the answer,
+/// and the 8 kept now already use about 9% of that. Lowering it drops the lower-ranked paths, which
+/// are the least specific because paths are ranked by hub-demoting score. Rendering a two-hop path
+/// as two facts instead of one was not measured and would need the value re-derived.
+///
+/// **Where it applies.** The probe ran with no limit so that every path was reported. Production
+/// sets [`PathSettings::max_path_facts`] to this value (`06.3.4.1-14`).
+pub const MAX_PATH_FACTS: usize = 8;
+
+/// The ceiling that [`derive_max_path_facts`] clamps to, whatever the budget formula says.
 ///
 /// **Derivation.** `MAX_PATH_FACTS = min(16, floor(0.10 * (evidence_token_budget -
 /// answer_budget) / p95_fact_tokens))` (see [`derive_max_path_facts`]). The ceiling of 16 keeps
 /// the graph section a small part of the evidence even when facts are short; RESEARCH §F.6 gives
-/// `0.10 * 6144 / ~25 = ~24` and rounds it down to at most 16. The measured `p95_fact_tokens` and
-/// the resulting value are recorded in `06.3.4.1-SEED-PROBE.md`.
+/// `0.10 * 6144 / ~25 = ~24` and rounds it down to at most 16. The measured `p95_fact_tokens` is 69,
+/// so the ceiling does not bind and [`MAX_PATH_FACTS`] is 8.
 ///
-/// **Effect of changing it.** Raising it spends prompt budget that evidence chunks would use;
-/// lowering it drops lower-ranked paths.
+/// **Effect of changing it.** Raising it lets a short-fact formula result exceed 16 and spend
+/// prompt budget that evidence chunks would use; lowering it caps the section sooner.
 pub const MAX_PATH_FACTS_CEILING: usize = 16;
 
 /// The share of the evidence token budget that graph facts may occupy.
@@ -96,7 +118,7 @@ pub struct EdgeRow {
 pub struct PathSettings {
     /// Largest degree an intermediate may have. See [`DEGREE_CAP`].
     pub degree_cap: u32,
-    /// Most path facts kept after ranking. See [`MAX_PATH_FACTS_CEILING`].
+    /// Most path facts kept after ranking. See [`MAX_PATH_FACTS`].
     pub max_path_facts: usize,
     /// Most candidate chunk IDs returned.
     pub max_graph_chunk_candidates: usize,
@@ -329,9 +351,10 @@ fn rank_chunks(index: &GraphIndex, entities: &[&str], cap: usize) -> Vec<String>
 /// Source chunks of the seeds themselves, ranked and capped: the candidates of a length-0 path.
 ///
 /// This is what the `paths-plus-seed-chunks` option of the `06.3.4.1-13` Task 3 decision would
-/// use when a question has seeds but no path. Nothing in the retrieval path calls it until that
-/// option is chosen; the offline probe calls it to measure the option. `seeds` is in priority
-/// order.
+/// have used when a question has seeds but no path. The user chose `paths-only` on 2026-10-05, so
+/// no question without a path gets graph chunk candidates and nothing in the retrieval path calls
+/// this function; the offline probe calls it to measure the option that was not chosen. `seeds` is
+/// in priority order.
 pub fn seed_chunk_candidates(index: &GraphIndex, seeds: &[Seed], cap: usize) -> Vec<String> {
     let mut seen: HashSet<&str> = HashSet::new();
     let ordered: Vec<&str> = seeds
