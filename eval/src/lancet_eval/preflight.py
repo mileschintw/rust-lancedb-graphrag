@@ -530,6 +530,13 @@ def check_model_differentiation(
     )
 
 
+# 06.3.4.1 D-80: the manifest holds the seed-to-seed path canary as its eighth row, so
+# it is exactly 8 rows over 7 distinct question IDs (06.3.4 had 7 over 6: every ID once,
+# and the graph-off ablation twin of mhr-0d5e238015ef beside its graph-on row).
+CANARY_MANIFEST_ROW_COUNT: int = 8
+CANARY_MANIFEST_DISTINCT_IDS: int = 7
+
+
 def check_canary_manifest(
     canary_path: Path | str | None = None,
     sample_path: Path | str | None = None,
@@ -582,23 +589,25 @@ def check_canary_manifest(
                 continue
             canary_rows.append(json.loads(line_str))
 
-        if len(canary_rows) != 7:
+        if len(canary_rows) != CANARY_MANIFEST_ROW_COUNT:
             return PreflightCheckResult(
                 name="canary_manifest",
                 passed=False,
                 message=(
-                    f"Canary manifest must have exactly 7 rows, got {len(canary_rows)}"
+                    "Canary manifest must have exactly "
+                    f"{CANARY_MANIFEST_ROW_COUNT} rows, got {len(canary_rows)}"
                 ),
                 detail={"row_count": len(canary_rows)},
             )
 
         unique_ids = {r["question_id"] for r in canary_rows}
-        if len(unique_ids) != 6:
+        if len(unique_ids) != CANARY_MANIFEST_DISTINCT_IDS:
             return PreflightCheckResult(
                 name="canary_manifest",
                 passed=False,
                 message=(
-                    "Canary manifest must have exactly 6 distinct IDs, "
+                    "Canary manifest must have exactly "
+                    f"{CANARY_MANIFEST_DISTINCT_IDS} distinct IDs, "
                     f"got {len(unique_ids)}"
                 ),
                 detail={"distinct_ids": len(unique_ids)},
@@ -734,6 +743,34 @@ def read_workflow_timeouts(config_path: Path | str | None = None) -> dict[str, i
     return timeouts
 
 
+def _seed_path_unmet(
+    meta: Any, observed_chunks: int
+) -> str | None:
+    """The first unmet `require_seed_path` condition, or None when all four hold.
+
+    D-80, in order: `graph_path_found` true, `graph_node_count` at least 1,
+    `graph_prompt_fact_count` at least 1, and at least one retrieved chunk. A wire
+    field the engine did not report (None) is a miss, never a pass.
+    """
+    path_found = None if meta is None else meta.graph_path_found
+    if path_found is not True:
+        return (
+            f"graph_path_found is {path_found} "
+            "(a seed-to-seed path is required)"
+        )
+    if meta.graph_node_count < 1:
+        return f"graph_node_count is {meta.graph_node_count} (at least 1 is required)"
+    facts = meta.graph_prompt_fact_count
+    if facts is None or facts < 1:
+        return (
+            f"graph_prompt_fact_count is {facts} "
+            "(at least 1 path fact must reach the prompt)"
+        )
+    if observed_chunks < 1:
+        return f"{observed_chunks} retrieved chunks (at least 1 is required)"
+    return None
+
+
 def check_canary_floors(
     client: httpx.Client,
     canary_path: Path | str | None = None,
@@ -747,6 +784,10 @@ def check_canary_floors(
     is reported as ``accepted_known_miss`` instead of failing. Every other floor
     still gates. When ``answered_snapshots`` is given, the snapshot of each canary
     whose answer succeeded is appended to it, labelled by question and arm.
+
+    ``require_seed_path`` (D-80) is a hard floor beside ``require_graph_node``. It is
+    never routed through the accepted-known-miss branch: the D-94 registry names
+    ``require_graph_node`` on one row and nothing else.
     """
     from lancet_eval.client import run_query
     from lancet_eval.dimensions import NOTICE_CODE_GRAPH_ABLATION
@@ -814,6 +855,7 @@ def check_canary_floors(
         qtext = row["question"]
         min_chunks = row.get("min_retrieved_chunks", 1)
         req_graph = row.get("require_graph_node", False)
+        req_seed_path = row.get("require_seed_path", False)
         req_retrieval_completed = row.get("require_retrieval_completed_only", False)
         req_ablation = row.get("require_ablation_notice", False)
 
@@ -903,6 +945,14 @@ def check_canary_floors(
                         observed_graph_node_count=graph_nodes,
                         outcome="floor_met",
                     )
+                )
+
+        # 2b. Seed-to-seed path check (D-80): never an accepted known miss.
+        if req_seed_path:
+            unmet = _seed_path_unmet(outcome.workflow_meta, observed_chunks)
+            if unmet is not None:
+                failures.append(
+                    f"Canary {qid} ({arm}) require_seed_path floor missed: {unmet}"
                 )
 
         # 3. Ablation notice check
