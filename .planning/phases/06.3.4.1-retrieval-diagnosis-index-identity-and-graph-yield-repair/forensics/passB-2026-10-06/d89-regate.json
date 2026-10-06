@@ -1,0 +1,61 @@
+{
+  "base_trend_reason": "Theil-Sen slope = 0.0000 ms/query, p-value = 0.6712 (alpha = 0.05)",
+  "base_window_reason": "Early p95 = 146.0ms (n=80), Late p95 = 132.0ms (n=80), Delta = -14.0ms (threshold = 500.0ms)",
+  "censored_count": 0,
+  "decay_present": false,
+  "early_p95_ms": 146.0,
+  "flatness_reason": "flat",
+  "journal": "eval\\runs\\2026-10-06-passB-measure-multihop_rag\\journal.jsonl",
+  "late_p95_ms": 132.0,
+  "materiality_threshold_ms": 36.5,
+  "may_derive_budgets": true,
+  "n": 320,
+  "node": "RetrieveHybrid",
+  "passed": true,
+  "projected_growth_ms": 0.0,
+  "reason": "flat",
+  "rule": "D-89",
+  "rule_provenance": "06.3.4.1 D-89 (user decision, 2026-09-28): amends D-64 for every decay and flatness reading in 06.3.4.1 (pass A re-gate, pass B, drive 1, drive 2). Decay is present when either the significant positive Theil-Sen slope projected over 658 records (the 06.3.4 drive's length) or the late-window p95 minus the early-window p95 reaches max(25% of the early-window p95, 25 ms); equality fires. Rationale: budgets are p95 x 1.5, i.e. 50% headroom, and decay is material once it would use half of that headroom. Base inputs (alpha 0.05, window fractions 25%/25%, p95, seed 42) are 06.3.3's COMMITTED_THRESHOLDS; its fixed 500 ms delta is not consulted. Censoring is unchanged: a censored or too-small set reads unavailable, never flat.",
+  "slice_medians_ms": [
+    98.5,
+    107.0,
+    96.0,
+    105.5,
+    100.5,
+    102.0,
+    106.5
+  ],
+  "slope_ms_per_query": 0.0,
+  "slope_p_value": 0.6711553055693429,
+  "slope_prong_available": true,
+  "slope_prong_fired": false,
+  "thresholds": {
+    "base": {
+      "bootstrap_seed": 42,
+      "decay_significance_threshold": 0.05,
+      "derivation_percentile": 0.95,
+      "materiality_delta_ms": 500.0,
+      "max_tolerated_graph_timeout_rate": 0.1,
+      "min_stratum_cell_size": 10,
+      "multiplier": 1.5,
+      "provenance": "Committed decision inputs per Phase 06.3.3: D-14 (multiplier=1.5, p95), D-18/D-19 (decay alpha=0.05, delta=500ms, window fractions 25%/25%), D-21 (segment boundary sizes 30/30), AI-SPEC bootstrap seed=42, min stratum cell size=10, max tolerated graph timeout rate=0.10, nesting invariant slack=500ms.",
+      "segment_boundary_sizes": [
+        30,
+        30
+      ],
+      "slack_ms": 500.0,
+      "window_fractions": [
+        0.25,
+        0.25
+      ]
+    },
+    "materiality_floor_ms": 25.0,
+    "projection_horizon_records": 658,
+    "provenance": "06.3.4.1 D-89 (user decision, 2026-09-28): amends D-64 for every decay and flatness reading in 06.3.4.1 (pass A re-gate, pass B, drive 1, drive 2). Decay is present when either the significant positive Theil-Sen slope projected over 658 records (the 06.3.4 drive's length) or the late-window p95 minus the early-window p95 reaches max(25% of the early-window p95, 25 ms); equality fires. Rationale: budgets are p95 x 1.5, i.e. 50% headroom, and decay is material once it would use half of that headroom. Base inputs (alpha 0.05, window fractions 25%/25%, p95, seed 42) are 06.3.3's COMMITTED_THRESHOLDS; its fixed 500 ms delta is not consulted. Censoring is unchanged: a censored or too-small set reads unavailable, never flat.",
+    "relative_materiality_fraction": 0.25
+  },
+  "unusable_dropped_count": 0,
+  "window_delta_ms": -14.0,
+  "window_prong_available": true,
+  "window_prong_fired": false
+}

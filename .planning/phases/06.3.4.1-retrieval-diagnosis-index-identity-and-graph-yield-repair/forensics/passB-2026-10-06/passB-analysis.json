@@ -1,0 +1,359 @@
+{
+  "distributions_graph_off_must_be_zero": {
+    "any_boosted": 0,
+    "any_path": 0,
+    "any_seed": 0
+  },
+  "distributions_graph_on": {
+    "graph_boosted_chunk_count": {
+      "histogram": {
+        "0": 81,
+        "1": 13,
+        "2": 19,
+        "3": 16,
+        "4": 18,
+        "5": 6,
+        "6": 6,
+        "7": 1
+      },
+      "max": 7.0,
+      "mean": 1.525,
+      "median": 0.0,
+      "min": 0.0,
+      "n": 160,
+      "p95": 5.0
+    },
+    "graph_degree_capped_count": {
+      "histogram": {
+        "0": 65,
+        "1": 16,
+        "2": 13,
+        "3": 14,
+        "4": 13,
+        "5": 2,
+        "6": 6,
+        "7": 3,
+        "8": 6,
+        "9": 7,
+        "10": 6,
+        "11": 1,
+        "12": 1,
+        "13": 1,
+        "19": 1,
+        "20": 2,
+        "23": 1,
+        "24": 1,
+        "58": 1
+      },
+      "max": 58.0,
+      "mean": 3.5875,
+      "median": 1.0,
+      "min": 0.0,
+      "n": 160,
+      "p95": 11.0
+    },
+    "graph_node_count": {
+      "histogram": {
+        "0": 70,
+        "2": 7,
+        "3": 25,
+        "4": 11,
+        "5": 10,
+        "6": 4,
+        "7": 3,
+        "8": 11,
+        "9": 4,
+        "10": 7,
+        "11": 3,
+        "12": 5
+      },
+      "max": 12.0,
+      "mean": 3.21875,
+      "median": 3.0,
+      "min": 0.0,
+      "n": 160,
+      "p95": 10.0
+    },
+    "graph_path_found_rate": 0.5625,
+    "graph_prompt_fact_count": {
+      "histogram": {
+        "0": 70,
+        "1": 29,
+        "2": 13,
+        "3": 13,
+        "4": 3,
+        "5": 6,
+        "6": 4,
+        "7": 3,
+        "8": 19
+      },
+      "max": 8.0,
+      "mean": 2.08125,
+      "median": 1.0,
+      "min": 0.0,
+      "n": 160,
+      "p95": 8.0
+    },
+    "graph_seed_count": {
+      "histogram": {
+        "1": 2,
+        "2": 16,
+        "3": 25,
+        "4": 27,
+        "5": 26,
+        "6": 64
+      },
+      "max": 6.0,
+      "mean": 4.56875,
+      "median": 5.0,
+      "min": 1.0,
+      "n": 160,
+      "p95": 6.0
+    },
+    "notice_codes": {
+      "GRAPH_UNAVAILABLE": 70,
+      "MODEL_NOTICE": 73,
+      "MODEL_WARNING": 57
+    },
+    "records_with_any_boosted_chunk": 79,
+    "records_with_path": 90
+  },
+  "extract_graph_context_slope": {
+    "all_measured_records": {
+      "base_trend_reason": "Theil-Sen slope = 0.0000 ms/query, p-value = 0.8943 (alpha = 0.05)",
+      "base_window_reason": "Early p95 = 1605.0ms (n=80), Late p95 = 1446.0ms (n=80), Delta = -159.0ms (threshold = 500.0ms)",
+      "censored_count": 0,
+      "decay_present": false,
+      "early_p95_ms": 1605.0,
+      "late_p95_ms": 1446.0,
+      "materiality_threshold_ms": 401.25,
+      "n": 320,
+      "node": "ExtractGraphContext",
+      "projected_growth_ms": 0.0,
+      "reason": "flat",
+      "slope_ms_per_query": 0.0,
+      "slope_p_value": 0.8943463048665277,
+      "slope_prong_available": true,
+      "slope_prong_fired": false,
+      "unusable_dropped_count": 0,
+      "window_delta_ms": -159.0,
+      "window_prong_available": true,
+      "window_prong_fired": false
+    },
+    "graph_on_only": {
+      "base_trend_reason": "Theil-Sen slope = 0.0418 ms/query, p-value = 0.7332 (alpha = 0.05)",
+      "base_window_reason": "Early p95 = 1646.0ms (n=40), Late p95 = 1586.0ms (n=40), Delta = -60.0ms (threshold = 500.0ms)",
+      "censored_count": 0,
+      "decay_present": false,
+      "early_p95_ms": 1646.0,
+      "late_p95_ms": 1586.0,
+      "materiality_threshold_ms": 411.5,
+      "n": 160,
+      "node": "ExtractGraphContext",
+      "projected_growth_ms": 27.531862745098042,
+      "reason": "flat",
+      "slope_ms_per_query": 0.041841736694677875,
+      "slope_p_value": 0.7332255473935272,
+      "slope_prong_available": true,
+      "slope_prong_fired": false,
+      "unusable_dropped_count": 0,
+      "window_delta_ms": -60.0,
+      "window_prong_available": true,
+      "window_prong_fired": false
+    }
+  },
+  "first_five_measured_graph_on_extract_graph_context_ms": [
+    256.0,
+    213.0,
+    210.0,
+    222.0,
+    531.0
+  ],
+  "graph_budget_derivation": {
+    "censoring_ceiling_ms": 150500.0,
+    "derived_graph_operation_timeout_ms": 2424,
+    "graph_timeout_note": "reads 0 by construction: the engine ran at the 120000 ms graph_operation ceiling",
+    "graph_timeout_notices_in_graph_on_records": 0,
+    "max_tolerated_over_budget_share": 0.1,
+    "multiplier": 1.5,
+    "n_censored_at_ceiling": 0,
+    "n_observed": 160,
+    "over_budget_count": 0,
+    "over_budget_share": 0.0,
+    "over_budget_values_ms": [],
+    "p95_ci_ms": [
+      1478.0,
+      1746.0
+    ],
+    "p95_nearest_rank_ms": 1616.0,
+    "proxy": "graph-on ExtractGraphContext node duration (includes the query embedding)",
+    "recompute_matches": true
+  },
+  "harness_ceilings": {
+    "largest_single_node_budget_ms": 65000,
+    "largest_single_node_name": "generation_node_timeout_ms",
+    "question_deadline_ms": 600000,
+    "single_exceeds_read_timeout": false,
+    "sse_read_timeout_ms": 300000,
+    "sum_exceeds_deadline": false,
+    "summary_message": "PASS: Proposed budgets satisfy both harness ceilings independently.",
+    "worst_case_sum_ms": 85120
+  },
+  "nesting": {
+    "groups": [
+      {
+        "adjusted_outer_ms": 12500,
+        "fires_first": "graph_operation_timeout_ms",
+        "inner_budgets": {
+          "graph_operation_timeout_ms": 2424,
+          "query_embedding_timeout_ms": 2000
+        },
+        "inner_sum_ms": 4424,
+        "is_invariant_driven": false,
+        "is_violation": false,
+        "outer_budget_ms": 12500,
+        "outer_name": "graph_node_timeout_ms",
+        "slack_ms": 8076
+      },
+      {
+        "adjusted_outer_ms": 2500,
+        "fires_first": "query_embedding_timeout_ms",
+        "inner_budgets": {
+          "query_embedding_timeout_ms": 2000
+        },
+        "inner_sum_ms": 2000,
+        "is_invariant_driven": false,
+        "is_violation": false,
+        "outer_budget_ms": 2500,
+        "outer_name": "retrieve_timeout_ms",
+        "slack_ms": 500
+      }
+    ],
+    "has_violations": false,
+    "proposed_input": {
+      "generation_node_timeout_ms": 65000,
+      "graph_node_timeout_ms": 12500,
+      "graph_operation_timeout_ms": 2424,
+      "prompt_timeout_ms": 120,
+      "query_embedding_timeout_ms": 2000,
+      "reformulate_timeout_ms": 5000,
+      "retrieve_timeout_ms": 2500
+    },
+    "resolved_budgets": {
+      "generation_node_timeout_ms": 65000,
+      "graph_node_timeout_ms": 12500,
+      "graph_operation_timeout_ms": 2424,
+      "prompt_timeout_ms": 120,
+      "query_embedding_timeout_ms": 2000,
+      "reformulate_timeout_ms": 5000,
+      "retrieve_timeout_ms": 2500
+    }
+  },
+  "node_stats_ms": {
+    "graph-off:AssemblePrompt": {
+      "max_ms": 2.0,
+      "median_ms": 1.0,
+      "n": 160,
+      "p95_ci_high_ms": 1.0,
+      "p95_ci_low_ms": 1.0,
+      "p95_nearest_rank_ms": 1.0
+    },
+    "graph-off:ExtractGraphContext": {
+      "max_ms": 1465.0,
+      "median_ms": 191.0,
+      "n": 160,
+      "p95_ci_high_ms": 525.0,
+      "p95_ci_low_ms": 262.0,
+      "p95_nearest_rank_ms": 318.0
+    },
+    "graph-off:ReformulateQuery": {
+      "max_ms": 0.0,
+      "median_ms": 0.0,
+      "n": 160,
+      "p95_ci_high_ms": 0.0,
+      "p95_ci_low_ms": 0.0,
+      "p95_nearest_rank_ms": 0.0
+    },
+    "graph-off:RetrieveHybrid": {
+      "max_ms": 183.0,
+      "median_ms": 98.0,
+      "n": 160,
+      "p95_ci_high_ms": 145.0,
+      "p95_ci_low_ms": 114.0,
+      "p95_nearest_rank_ms": 133.0
+    },
+    "graph-on:AssemblePrompt": {
+      "max_ms": 3.0,
+      "median_ms": 1.0,
+      "n": 160,
+      "p95_ci_high_ms": 2.0,
+      "p95_ci_low_ms": 1.0,
+      "p95_nearest_rank_ms": 2.0
+    },
+    "graph-on:ExtractGraphContext": {
+      "max_ms": 2162.0,
+      "median_ms": 507.0,
+      "n": 160,
+      "p95_ci_high_ms": 1746.0,
+      "p95_ci_low_ms": 1478.0,
+      "p95_nearest_rank_ms": 1616.0
+    },
+    "graph-on:ReformulateQuery": {
+      "max_ms": 0.0,
+      "median_ms": 0.0,
+      "n": 160,
+      "p95_ci_high_ms": 0.0,
+      "p95_ci_low_ms": 0.0,
+      "p95_nearest_rank_ms": 0.0
+    },
+    "graph-on:RetrieveHybrid": {
+      "max_ms": 195.0,
+      "median_ms": 113.0,
+      "n": 160,
+      "p95_ci_high_ms": 165.0,
+      "p95_ci_low_ms": 134.0,
+      "p95_nearest_rank_ms": 142.0
+    }
+  },
+  "outcomes": {
+    "graph-off:error": 2,
+    "graph-off:success": 158,
+    "graph-on:error": 1,
+    "graph-on:success": 159
+  },
+  "reading_a_retrieve_hybrid_graph_on": {
+    "count_above_budget": 0,
+    "max_exceeds_budget": false,
+    "max_ms": 195.0,
+    "median_ms": 113.0,
+    "n": 160,
+    "p95_ci_high_ms": 165.0,
+    "p95_ci_low_ms": 134.0,
+    "p95_exceeds_budget": false,
+    "p95_nearest_rank_ms": 142.0,
+    "retrieve_timeout_ms": 2500,
+    "rule_value_p95_x_1_5_ms": 213
+  },
+  "reading_c_prompt_tokens_graph_on": {
+    "evidence_token_budget": 8192,
+    "max": 2927,
+    "max_exceeds_budget": false,
+    "n": 159,
+    "note": "prompt_tokens is the provider-reported prompt size (includes the template), reported against 8192 as asked",
+    "p95": 2679
+  },
+  "records": {
+    "graph_off": 160,
+    "graph_on": 160,
+    "measured": 320,
+    "total": 324,
+    "warm_up": 4
+  },
+  "run_dir": "eval\\runs\\2026-10-06-passB-measure-multihop_rag",
+  "spend_estimate_is_lower_bound": false,
+  "spend_estimate_usd": 0.12918358000000002,
+  "warm_up_graph_on_extract_graph_context_ms": [
+    223.0,
+    272.0
+  ]
+}
