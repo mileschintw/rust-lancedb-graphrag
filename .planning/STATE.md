@@ -264,11 +264,9 @@ Total Plans in Phase: 34
 
 ## Active Phase
 
-- **Phase:** 06.3.4.1 — Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
-- **Status:** executing (started 2026-09-23 via `/gsd-execute-phase 06.3.4.1`; now 30 plans across 21 waves, run sequentially on main — see note below). Gap-closure run started 2026-10-01 via `/gsd-execute-phase 06.3.4.1 --gaps-only` (plans 29 and 30 only; the user asked to stop after the gap closes, before plans 13-20). OI-01 run started 2026-10-05 via `/gsd-execute-phase 06.3.4.1` (plans 13-20, sequentially on main). Step 0 re-checked before dispatch: all six `lancet-*` containers Up, `:13133` healthy, `identity check` passes for `multihop_rag` and `multihop_rag_diag`. Executors run on Sonnet and sign with their own Sonnet trailer (the user's decision, 2026-10-05, settling handover item 10.1); orchestrator commits carry the Opus line
-- **Current Plan (compound ID):** 06.3.4.1-13 (Wave 14; OI-01 seeding library and offline mention-embedding probe, cap $0.05 authorised at 06.3.4.1-30 Task 4; dispatched 2026-10-05, stops at Task 3's blocking decision) — see `## Current Position` above for the machine-readable `Current Plan`/`Total Plans in Phase` counters
-- **Execution mode note:** worktree isolation deliberately not used for this run. Plan 01's precondition reads the gitignored live eval store (`data/lancedb-eval/nodes.lance`), which does not exist inside a harness worktree, and plan 03 is a release-build latency/working-set soak whose slopes select the class plan 07 must fix (D-64), so it needs a quiet machine rather than sibling executors' parallel cargo builds. Waves 2+ would have degraded to sequential anyway once wave 1 merges past `origin/HEAD` (#1369).
-- **Previous phase:** 06.3.4 remains `gaps_found` (7/8; SC-3 D-48 fresh human calibration parked, see Current Status). Phase 6.4 stays **parked** until Phase 06.3.4.1 clears its unpark gates (a demonstrable graph-on vs graph-off effect on a gold-in-index subset; both arms failing to answer is not a v1 story).
+- **Phase:** none active. 06.3.4.1 completed 2026-10-06; Phase 6.4 is **parked** (not ready to plan) until the user decides the unpark. `current_phase: 06.4` in the frontmatter is `phase.complete`'s mechanical advance, not an unpark decision.
+- **Open follow-ups from 06.3.4.1:** `/gsd-verify-work 06.3.4.1` to reconcile UAT gaps G-06.3.4.1-2/-3a/-3b against plans 31-34; `/gsd-secure-phase 06.3.4.1` (security enforcement on, no SECURITY.md yet); triage review warnings WR-01..WR-03 in `06.3.4.1-REVIEW-DISPOSITION.md` before the next gated drive or the 6.4 unpark.
+- **Execution mode note (kept for later live-stack phases):** 06.3.4.1 ran sequentially on main, not in harness worktrees, because its plans read the gitignored live eval store and ran latency soaks. Executors run on Sonnet and sign with their own trailer (user decision, 2026-10-05).
 
 ## Completed Phases
 
@@ -281,6 +279,7 @@ Total Plans in Phase: 34
 - **Phase 06.3.2: Eval Harness Diagnostics, Scored Dimensions and Paired Ablation** (Completed: 2026-09-06 — 6/6 plans; re-verification `passed` 10/10 must-haves after gap-closure plan 06.3.2-06 closed SC-7 and two follow-up fixes closed code-review criticals CR-01/CR-02; OBS-05 remains jointly owned across 06.3.1–06.3.4, not yet checked)
 - **Phase 06.3.3: Retrieval Latency Measurement Pass and Timeout Budget Derivation** (Completed: 2026-09-07 — 6/6 plans; timeout budgets anchored)
 - **Phase 06.3.4: Corrected re-drive, calibration and root-cause documentation** (Completed: 2026-09-10 — 7/7 plans; 658 records driven, findings documented in `06.3.4-FINDINGS.md`, forensic trail in `06.3.1-ROOT-CAUSE.md`, open items carried into Phase 6.4)
+- **Phase 06.3.4.1: Retrieval diagnosis, index identity, and graph-yield repair** (Completed: 2026-10-06 — 34/34 plans; run of record drive 2, D-83 `all-pass-close`; UAT gaps closed by plans 31-34; re-verification `passed` 10/10; 6.4 stays parked)
 
 ## Known Issues & Debt
 
@@ -605,6 +604,7 @@ Total Plans in Phase: 34
 
 ### Blockers
 
+- RESOLVED 2026-10-06 (06.3.4.1 complete): the three entries below are historical. 06.3.4.1-07 executed; OI-02 did not reproduce on the free arms and drive 2 completed within budget (carry-forward instrumentation stays in `06.3.4.1-OI02-MEMO.md`); the plan-27 preflight failure was closed by plans 28 and 18 (all 8 canaries passed). No open blocker for 06.3.4.1.
 - 06.3.4.1-07 REPLANNED (2026-09-24, user decision): revised to diagnose the OI-02 decay cause across the whole pipeline (forensics → full-stack replay → bisection), with checkpoints after the primary replay and before any fix, then fix and same-replay proof. Plan-checker passed (warning fixed); downstream 08/09/11/12 aligned to its `## Fix` section. Resume with /gsd-execute-phase 06.3.4.1 at wave 4. Note: the 06.3.4 drive's Prometheus export is preserved only in gitignored data/oi02-evidence/prometheus-06.3.4-drive/ (Task 1 input).
 - OI-02 (RetrieveHybrid 4.9s->29.0s growth, 06.3.4 drive) NOT reproduced or fixed in 06.3.4.1-07. Checkpoint resolved diagnose-in-drive-1 (2026-09-26) after every free Route B arm (drive-era, drive-era-prewarm, paced) and one paid arm (paid-drive-era, real provider+embeddings) stayed flat. D-64: no paid drive 1 (06.3.4.1-11/-12) should run without expecting to hit its own decay gate on an unfixed engine; full account and carry-forward instrumentation list in .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-OI02-MEMO.md.
 - 06.3.4.1-27 preflight FAILED (2026-09-29): first query on a fresh engine timed out at AssemblePrompt (78.6 ms vs the 65 ms prompt floor); canary mhr-0d5e238015ef graph floor also missed (0 graph nodes, GRAPH_UNAVAILABLE, no timeout). Plan 11 not closed; drive 1 (06.3.4.1-12) waits on a gap plan and a passing preflight. See 06.3.4.1-BUDGETS.md 'Budgets written (06.3.4.1-27)'.

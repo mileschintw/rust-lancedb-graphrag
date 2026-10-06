@@ -100,6 +100,10 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | Six derived production timeout budgets synchronized across TOML and Rust defaults | Replaced uncalibrated 10s guesses with p95 empirical derivations (645 / 16647 / 38595 / 45674 / 1070 / 65000 ms) | ✓ Shipped, Phase 06.3.3 |
 | Engine startup validation enforces provider-attempt invariant | `generation_node_timeout_ms >= 2 * per_attempt_timeout_ms` prevents node timer preempting provider retries | ✓ Shipped, Phase 06.3.3 |
 | Censoring-aware derivation refuses unobserved nodes | Explicit `derivation_refused_empty_or_unavailable` row prevents fabricating integers via nesting invariants | ✓ Shipped, Phase 06.3.3 |
+| Drive 2 (`eval/runs/2026-10-06-drive2-multihop_rag_diag/`) is the run of record; D-83 closed `all-pass-close` with three standing disclosures | Unpark gates were committed before the drive and passed with margin (SC-4 0.6629, SC-5 0.5385); disclosures (negative non-significant paired deltas, mid-drive provider switch, 4/100 graph-off retrieved-set difference) are reported, not toggled off. Phase 6.4 stays parked pending a separate user decision | ✓ Shipped, Phase 06.3.4.1 |
+| Gate-stage drives refuse harness retries and every attempt is journaled and charged | UAT G-06.3.4.1-2 (review CR-03): a retried-away timeout erased SC-2 evidence and undercounted spend. `run --gate-stage <label>` requires `--retries 0`; the gate reader MISSes unmarked or retried journals except a closed three-drive legacy registry | ✓ Shipped, Phase 06.3.4.1 (plans 33-34) |
+| Unpark gates fail closed on an incomplete journal, with a 0.80 coverage floor over sample-scoped denominators | UAT G-06.3.4.1-3a (CR-02): truncated journals read all-PASS. The floor reuses `gate.py`'s 2026-09-09 literal (no post-hoc threshold) and is measured against sample∩G / sample∩V, not the corpus-wide populations | ✓ Shipped, Phase 06.3.4.1 (plan 32) |
+| `measure` honours its stage spend cap at every worker count; `--stage-cap` rejects NaN, infinity and non-positive values | UAT G-06.3.4.1-3b (CR-01, WR-02): with workers > 1 every unit was submitted up front, 40x over cap in a free repro | ✓ Shipped, Phase 06.3.4.1 (plan 31) |
 
 ## Evolution
 
@@ -120,4 +124,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. Update Roadmap status
 
 ---
-*Last updated: 2026-09-08 after Phase 06.3.3*
+*Last updated: 2026-10-06 after Phase 06.3.4.1*
