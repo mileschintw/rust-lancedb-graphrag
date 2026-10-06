@@ -143,6 +143,19 @@ GRAPH_COMPOSITION_CHANGE_FLOOR: float = 0.10
 # Direction is not part of the rule; a negative delta is reported (06.3.1 D-49).
 SC5_VISIBILITY_RULE: str = "composition_floor_or_paired_ci_excludes_zero_n_ge_2"
 
+# 06.3.4.1-32 (G-06.3.4.1-3a: CR-02 and WR-04), owner decision 2026-10-06. The unpark
+# gates' coverage floor: a gate that scores a thin population MISSes instead of reading
+# PASS. The value reuses `gate.py` STAGED_PAIRING_COVERAGE_FLOOR (06.3.1 D-44 as applied
+# in 06.3.4, commit eb893ba1, 2026-09-09), fixed before any 06.3.4.1 drive data existed;
+# it was not chosen by looking at any drive's coverage. It is applied at or above to
+# n / |sample & G| (SC-3 and SC-4) and n / |sample & V| (SC-5), where the sample is the
+# journal header corpus's questions: never to a corpus-wide G or V (398 / 291) and never
+# to the journal-relative pairing_coverage. It governs gated drives whose journal
+# header `created_at` follows its commit, so a re-read of drive 1, 1b or 2 under it is a
+# labelled disclosure, not a re-adjudication, and their recorded gates-drive*.{md,json}
+# are not rewritten (D-73).
+UNPARK_GATE_COVERAGE_FLOOR: float = 0.80
+
 
 @dataclass(frozen=True)
 class MaterialDecayThresholds:

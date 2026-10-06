@@ -75,6 +75,40 @@ def _reached_generate_answer(record: Any) -> bool:
     )
 
 
+def _coverage_clause(
+    n: int, expected: int | None, label: str
+) -> tuple[str | None, dict[str, Any]]:
+    """The coverage floor (CR-02, WR-04; D-73, D-82) shared by SC-3, SC-4 and SC-5.
+
+    `n` is the population a gate scored and `expected` the sample-scoped population it
+    should have scored (|sample & G| or |sample & V|, computed once by `main`, never
+    the corpus-wide G or V and never a journal-relative denominator). Returns the MISS
+    reason (None when the clause passes or is skipped) and the `detail` fields. At or
+    above `UNPARK_GATE_COVERAGE_FLOOR` passes. `expected` None skips the clause and
+    says so: only a direct evaluator call omits it, `main` always passes an integer.
+    """
+    floor = thresholds.UNPARK_GATE_COVERAGE_FLOOR
+    detail: dict[str, Any] = {
+        "coverage_n": n,
+        "coverage_expected": expected,
+        "coverage": None,
+        "coverage_floor": float(floor),
+    }
+    if expected is None:
+        detail["coverage_note"] = "coverage not assessed"
+        return None, detail
+    if expected <= 0:
+        return "expected population is empty", detail
+    coverage = n / expected
+    detail["coverage"] = coverage
+    if coverage < floor:
+        return (
+            f"coverage {n}/{expected} = {coverage:.4f} < floor {floor:.2f} ({label})",
+            detail,
+        )
+    return None, detail
+
+
 def _read_journal_header(journal_path: Path) -> dict[str, Any] | None:
     """The journal's header line, or None when the first line is not one."""
     with open(journal_path, encoding="utf-8") as f:
@@ -405,7 +439,11 @@ def citation_rejection_rate(
 
 
 def evaluate_sc3(
-    rows: list[Any], populations_path: Path | str, *, corpus: str | None = None
+    rows: list[Any],
+    populations_path: Path | str,
+    *,
+    corpus: str | None = None,
+    expected_g: int | None = None,
 ) -> GateReading:
     """SC-3 (AI-SPEC #5): answer_usable rate over G against the committed
     VECTOR_BASELINE_USABLE_FLOOR (D-73); never supplies a default when the floor
@@ -419,6 +457,10 @@ def evaluate_sc3(
     never PASS. When a corpus is resolved, strata by `question_type` and
     binary-vs-entity gold (each with its constant-Yes baseline) are added to
     `detail["strata"]` on a best-effort basis.
+
+    `expected_g` is |sample & G| (keyword-only, supplied by `main`): scored n below
+    `UNPARK_GATE_COVERAGE_FLOOR` of it is MISS however high the usable rate. Omitted,
+    the coverage clause is skipped and `detail` says `coverage not assessed`.
     """
     pop_path = Path(populations_path)
     if not pop_path.is_file():
@@ -469,6 +511,7 @@ def evaluate_sc3(
     # only ever emits for the GenerateAnswer node, so a rise here (e.g. from D-71)
     # shrinks n instead of silently lowering (e) (AI-SPEC #5).
     excluded_generate_answer_failures = 0
+    excluded_by_class: dict[str, int] = {}
     missing_flags: list[bool] = []
     for r in g_rows:
         arms = getattr(r, "arms", None)
@@ -480,6 +523,10 @@ def evaluate_sc3(
         is_d69_rejection = graph_off.error_class in _D69_REJECTION_CLASSES
         if graph_off.outcome == "error" and is_d69_rejection:
             excluded_generate_answer_failures += 1
+        if graph_off.outcome == "error":
+            # WR-04: every graph-off error class over G shrinks n, not only D-69's.
+            error_class = graph_off.error_class or "unclassified"
+            excluded_by_class[error_class] = excluded_by_class.get(error_class, 0) + 1
         if graph_off.final_answer_missing is not None:
             missing_flags.append(bool(graph_off.final_answer_missing))
 
@@ -490,7 +537,13 @@ def evaluate_sc3(
         "ci_lower": float(ci_lo),
         "ci_upper": float(ci_hi),
         "excluded_generate_answer_failures": float(excluded_generate_answer_failures),
+        "excluded_by_class": excluded_by_class,
     }
+    coverage_reason, coverage_detail = _coverage_clause(n, expected_g, "sample & G")
+    detail.update(coverage_detail)
+    if coverage_reason is not None:
+        reason = coverage_reason if status == "PASS" else f"{reason}; {coverage_reason}"
+        status = "MISS"
 
     # D-70/D-74/AI-SPEC #6: final_answer_missing rate over G (graph-off), reported
     # beside SC-3 (context, not gated) -- a rise above the committed review rate
@@ -725,6 +778,7 @@ def evaluate_sc4(
     *,
     corpus: str | None = None,
     gold_questions: Any = None,
+    expected_g: int | None = None,
 ) -> GateReading:
     """SC-4 (AI-SPEC #9/#10, D-81): graph presence over pairs(G) on the drive-2 journal.
 
@@ -737,7 +791,8 @@ def evaluate_sc4(
     no-match rate; none of those gates. An empty pairs(G) is MISS "n=0".
 
     `corpus` and `gold_questions` are keyword-only overrides: by default the corpus
-    comes from the journal header, as in `evaluate_sc3`.
+    comes from the journal header, as in `evaluate_sc3`. `expected_g` is |sample & G|:
+    the pairs(G) headline n below `UNPARK_GATE_COVERAGE_FLOOR` of it is MISS (CR-02).
     """
     selection = _load_selection(populations_path)
     if selection is None:
@@ -804,6 +859,10 @@ def evaluate_sc4(
         reasons.append(
             f"Wilson lower bound {ci_lower:.4f} <= committed {wilson_floor:.3f}"
         )
+    coverage_reason, coverage_detail = _coverage_clause(n, expected_g, "sample & G")
+    detail.update(coverage_detail)
+    if coverage_reason is not None:
+        reasons.append(coverage_reason)
     status = "MISS" if reasons else "PASS"
     reason = (
         "; ".join(reasons)
@@ -983,6 +1042,7 @@ def evaluate_sc5(
     corpus: str | None = None,
     gold_questions: Any = None,
     chunk_size: int | None = None,
+    expected_v: int | None = None,
 ) -> GateReading:
     """SC-5 (AI-SPEC #11/#12, D-81/D-82): does the graph visibly change retrieval on V?
 
@@ -999,6 +1059,10 @@ def evaluate_sc5(
     (`unpaired_all_usable_graph_on`), which never feeds the PASS rule.
     V comes from the `v_question_ids` list in `populations_path`; without it the
     reading is MISS, never a guess.
+
+    `expected_v` is |sample & V|: the composition population n over pairs(V) (the
+    population rule (a) is computed on) below `UNPARK_GATE_COVERAGE_FLOOR` of it is
+    MISS (CR-02). `n_pairs(V)` is reported beside it, and the rule itself is untouched.
     """
     selection = _load_selection(populations_path)
     if selection is None:
@@ -1150,6 +1214,14 @@ def evaluate_sc5(
             f"{' or '.join(_SC5_QUALIFYING_DELTAS)} has a CI excluding 0 with "
             f"n_pairs >= 2"
         )
+        status = "MISS"
+    coverage_reason, coverage_detail = _coverage_clause(
+        composition["n"], expected_v, "sample & V"
+    )
+    coverage_detail["n_pairs"] = len(pairs_v)
+    detail.update(coverage_detail)
+    if coverage_reason is not None:
+        reason = coverage_reason if status == "PASS" else f"{reason}; {coverage_reason}"
         status = "MISS"
     return GateReading(
         gate="SC-5",
@@ -1467,11 +1539,21 @@ def main(argv: list[str] | None = None) -> int:
         questions = load_sample_questions(corpus_name) if corpus_name else []
         d69 = citation_rejection_rate(journal_path, questions)
 
+        # CR-02/WR-04: the coverage denominators are the SAMPLE's slice of G and V
+        # (D-82), computed once here. Never len(g_ids) / len(v_ids), which are
+        # corpus-wide, and never a journal-relative figure. A missing list is 0.
+        selection = _load_selection(args.populations) or {}
+        sample_ids = {q.question_id for q in questions}
+        expected_g = len(sample_ids & set(selection.get("g_question_ids") or []))
+        expected_v = len(sample_ids & set(selection.get("v_question_ids") or []))
+
         if corpus_name and journal_path.is_file():
             rows = build_rows(corpus_name, str(journal_path), args.gold_chunks)
         else:
             rows = []
-        sc3 = evaluate_sc3(rows, args.populations, corpus=corpus_name)
+        sc3 = evaluate_sc3(
+            rows, args.populations, corpus=corpus_name, expected_g=expected_g
+        )
 
         readings = {
             "SC-1": sc1,
@@ -1481,10 +1563,16 @@ def main(argv: list[str] | None = None) -> int:
         }
         if is_drive2 and baseline_journal is not None:
             readings["SC-4"] = evaluate_sc4(
-                journal_path, args.populations, corpus=corpus_name
+                journal_path,
+                args.populations,
+                corpus=corpus_name,
+                expected_g=expected_g,
             )
             readings["SC-5"] = evaluate_sc5(
-                journal_path, args.populations, corpus=corpus_name
+                journal_path,
+                args.populations,
+                corpus=corpus_name,
+                expected_v=expected_v,
             )
             invariance = graph_off_invariance(
                 baseline_journal, journal_path, corpus=corpus_name
