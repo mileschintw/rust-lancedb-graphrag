@@ -37,6 +37,7 @@ D94_VALUE = "mhr-0d5e238015ef:graph-on:require_graph_node:D-94"
 TARGET = ("mhr-0d5e238015ef", "graph-on")
 TWIN = ("mhr-0d5e238015ef", "graph-off")
 OTHER_GRAPH_CANARY = ("mhr-12912d800c0c", "graph-on")
+PATH_CANARY = ("mhr-3b0dac3a26bd", "graph-on")
 PROBE_QUERY = "What hospital program helps teenage patients in Nebraska?"
 
 runner = CliRunner()
@@ -61,6 +62,8 @@ class Behaviour:
 
     chunk_count: int = 2
     graph_nodes: int = 3
+    graph_path_found: bool | None = True
+    graph_prompt_fact_count: int | None = 2
     ablation_notice: bool = True
     success: bool = True
     durations: dict[str, float] | None = None
@@ -109,15 +112,20 @@ def _canary_events(arm: str, behaviour: Behaviour) -> list[tuple[str, dict[str, 
         ))
     for node, duration in (behaviour.durations or DEFAULT_DURATIONS).items():
         events.append(("node_completed", {"node_name": node, "duration_ms": duration}))
+    metadata: dict[str, Any] = {
+        "vector_count": behaviour.chunk_count,
+        "bm25_count": 0,
+        "graph_node_count": 0 if graph_off else behaviour.graph_nodes,
+    }
+    if not graph_off and behaviour.graph_path_found is not None:
+        metadata["graph_path_found"] = behaviour.graph_path_found
+    if not graph_off and behaviour.graph_prompt_fact_count is not None:
+        metadata["graph_prompt_fact_count"] = behaviour.graph_prompt_fact_count
     completed: dict[str, Any] = {
         "success": behaviour.success,
         "total_duration_ms": 1000,
         "notices": notices,
-        "metadata": {
-            "vector_count": behaviour.chunk_count,
-            "bm25_count": 0,
-            "graph_node_count": 0 if graph_off else behaviour.graph_nodes,
-        },
+        "metadata": metadata,
     }
     if not behaviour.success:
         completed["error_kind"] = 1
@@ -243,6 +251,8 @@ def test_malformed_value_is_rejected_by_the_parser(raw: str) -> None:
         "mhr-0d5e238015ef:graph-on:min_retrieved_chunks:D-94",
         # a different decision ID
         "mhr-0d5e238015ef:graph-on:require_graph_node:D-93",
+        # the D-80 path canary: require_seed_path is never an acceptable known miss
+        "mhr-3b0dac3a26bd:graph-on:require_seed_path:D-94",
         # unknown question and unknown arm
         "mhr-000000000000:graph-on:require_graph_node:D-94",
         "mhr-0d5e238015ef:graph-both:require_graph_node:D-94",
@@ -308,6 +318,37 @@ def test_default_without_the_option_the_miss_still_fails(
     assert "mhr-0d5e238015ef" in res.message
 
 
+def test_a_seed_path_miss_is_never_accepted_beside_the_d94_miss(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """D-80/D-94: the registry stays scoped to require_graph_node on one row."""
+    _mock_queries(
+        httpx_mock,
+        {
+            TARGET: Behaviour(graph_nodes=0),
+            PATH_CANARY: Behaviour(graph_path_found=False),
+        },
+    )
+    res = check_canary_floors(_client(), accepted_known_misses=[_accepted()])
+    assert res.passed is False
+    assert res.status == "fail"
+    assert "require_seed_path" in res.message
+    assert "mhr-3b0dac3a26bd" in res.message
+    # The D-94 miss itself is still reported as accepted, not as a failure.
+    entries = res.detail["accepted_known_misses"]
+    assert [e["question_id"] for e in entries] == ["mhr-0d5e238015ef"]
+
+
+def test_a_met_seed_path_floor_leaves_the_d94_status_unchanged(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_queries(httpx_mock, {TARGET: Behaviour(graph_nodes=0)})
+    res = check_canary_floors(_client(), accepted_known_misses=[_accepted()])
+    assert res.passed is True
+    assert res.status == "accepted_known_miss"
+    assert "7 of 8 canary rows met every floor" in res.message
+
+
 def test_option_accepts_the_single_miss_with_its_own_status(
     httpx_mock: HTTPXMock,
 ) -> None:
@@ -322,7 +363,7 @@ def test_option_accepts_the_single_miss_with_its_own_status(
     assert entries[0]["outcome"] == "accepted_known_miss"
     assert "ACCEPTED KNOWN MISS" in res.message
     assert "D-94" in res.message
-    assert "All 7 canaries passed floors" not in res.message
+    assert "All 8 canaries passed floors" not in res.message
 
 
 def test_option_reports_a_met_floor_as_pass_and_floor_met(
@@ -649,7 +690,7 @@ def test_cli_reports_a_met_floor_without_using_the_exception(
         PreflightCheckResult(
             name="canary_floors",
             passed=True,
-            message="All 7 canaries passed floors against live engine budgets.",
+            message="All 8 canaries passed floors against live engine budgets.",
             detail={"accepted_known_misses": [_outcome(3, "floor_met")]},
         )
     ]
