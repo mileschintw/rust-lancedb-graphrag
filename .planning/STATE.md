@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 32
+current_plan: 33
 status: executing
-stopped_at: Completed 06.3.4.1-31-PLAN.md
-last_updated: "2026-10-06T19:43:38.815Z"
+stopped_at: Completed 06.3.4.1-32-PLAN.md
+last_updated: "2026-10-06T19:59:44.558Z"
 last_activity: 2026-10-06
-state_head: 309c9aec9de40cc31ec0bd545527bad1ba3455be
+state_head: 795afe31db74dfb2c0db83452fbfb7770dc2b346
 progress:
   total_phases: 16
   completed_phases: 9
   total_plans: 192
-  completed_plans: 189
+  completed_plans: 190
 milestone_name: milestone
 current_phase: 06.3.4.1
 current_phase_name: Retrieval diagnosis, index identity, and graph-yield repair (INSERTED)
@@ -22,7 +22,7 @@ last_activity_desc: Started gap-closure execution of 06.3.4.1 plans 31-34 (UAT g
 
 ## Current Position
 
-Current Plan: 32
+Current Plan: 33
 Total Plans in Phase: 34
 
 ## Current Status
@@ -413,6 +413,7 @@ Total Plans in Phase: 34
 | Phase 06.3.4.1 P19 | 73 min | 3 tasks | 8 files |
 | Phase 06.3.4.1 P20 | 20 min | 2 tasks | 4 files |
 | Phase 06.3.4.1 P31 | 5 min | 3 tasks | 5 files |
+| Phase 06.3.4.1 P32 | 16 min | 2 tasks | 4 files |
 
 ## Decisions
 
@@ -515,12 +516,13 @@ Total Plans in Phase: 34
 - [Phase 06.3.4.1]: D-83 closed as all-pass-close on the drive 2 run of record (user, 2026-10-06, reply 'all-pass-close (建議)', after receiving the orchestrator's recommendation): SC-1 200/200, SC-4 59/89 = 0.6629, SC-5 35/65 = 0.5385 all PASS; three disclosures stand as reported (D-78); 0.20 floor unamended; 6.4 not unparked, a later user decision; D-88 is plan 20 — Gates committed before the drive and pass with margin; iterate-once requires a miss and would otherwise be tuning (06.3.1 D-49)
 - [Phase 06.3.4.1]: 06.3.4.1-20: the docs addendum and SUPERSEDED notice report the three D-78 standing disclosures alongside the all-pass-close outcome; 6.4 is cited the run of record but stays parked (unpark is a later user decision); OBS-05 traceability documented without any checkbox change
 - [Phase 06.3.4.1]: 06.3.4.1-31: measure dispatches through one bounded cap-checked window at every worker count (serial branch folded in as a window of one); stopped_by_cap means a unit was still waiting (also fixed in run.drive); --stage-cap validated on run/measure/score and required on measure; library keeps its default but raises ValueError on a non-finite or non-positive cap.
+- [Phase 06.3.4.1]: 06.3.4.1-32: unpark gates MISS on incomplete journals; SC-3/4/5 coverage floor 0.80 (gate.py literal reused, D-73) over sample-scoped |sample & G|=90 / |sample & V|=65, never corpus-wide 398/291
 
 ## Session
 
-**Last session:** 2026-10-06T19:43:37.631Z
+**Last session:** 2026-10-06T19:59:33.831Z
 **Last activity:** 2026-10-06
-**Stopped at:** Completed 06.3.4.1-31-PLAN.md
+**Stopped at:** Completed 06.3.4.1-32-PLAN.md
 **Resume file:** None
 
 ## Accumulated Context
