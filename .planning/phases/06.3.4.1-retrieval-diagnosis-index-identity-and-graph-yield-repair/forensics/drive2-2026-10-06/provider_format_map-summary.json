@@ -1,0 +1,99 @@
+{
+ "records": 200,
+ "format_counts": {
+  "L": 197,
+  ".": 3
+ },
+ "format_by_arm": {
+  "graph-off": {
+   "L": 99,
+   ".": 1
+  },
+  "graph-on": {
+   "L": 98,
+   ".": 2
+  }
+ },
+ "format_map": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL..LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+ "provider_sequence_rle": [
+  [
+   "OpenInference",
+   96
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "OpenInference",
+   67
+  ],
+  [
+   "Sail Research",
+   11
+  ],
+  [
+   "OpenInference",
+   1
+  ],
+  [
+   "Sail Research",
+   24
+  ]
+ ],
+ "per_provider": {
+  "OpenInference": {
+   "records": 164,
+   "L": 164,
+   "i": 0,
+   "n": 0,
+   ".": 0,
+   "errors": 0,
+   "graph_off_G_usable": 46,
+   "graph_off_G_n": 74
+  },
+  "null": {
+   "records": 1,
+   "L": 0,
+   "i": 0,
+   "n": 0,
+   ".": 1,
+   "errors": 1,
+   "graph_off_G_usable": 0,
+   "graph_off_G_n": 0
+  },
+  "Sail Research": {
+   "records": 35,
+   "L": 33,
+   "i": 0,
+   "n": 0,
+   ".": 2,
+   "errors": 2,
+   "graph_off_G_usable": 6,
+   "graph_off_G_n": 16
+  }
+ },
+ "unmatched_count": 1,
+ "unmatched": [
+  {
+   "index": 96,
+   "question_id": "mhr-64ef998fb6c6",
+   "graph_arm": "graph-on",
+   "outcome": "error"
+  }
+ ],
+ "two_served_lines": [],
+ "join_coverage": {
+  "reached_generate_answer": 197,
+  "with_served_line": 197
+ },
+ "served_lines_total": 208,
+ "served_lines_not_in_journal": 9,
+ "distinct_models": [
+  "deepseek/deepseek-v4-flash-0731"
+ ],
+ "distinct_providers": [
+  "OpenInference",
+  "Sail Research"
+ ]
+}

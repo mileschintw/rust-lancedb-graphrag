@@ -1,0 +1,20 @@
+                  Preflight Health Checks — multihop_rag_diag                  
+┌───────────────────┬────────┬────────────────────────────────────────────────┐
+│ Check             │ Status │ Details                                        │
+├───────────────────┼────────┼────────────────────────────────────────────────┤
+│ store_isolation   │  PASS  │ Eval LanceDB and PostgreSQL schema are fully   │
+│                   │        │ isolated from dev.                             │
+│ index_identity    │  PASS  │ PostgreSQL, LanceDB, and document map document │
+│                   │        │ IDs agree.                                     │
+│ canary_manifest   │  PASS  │ Canary manifest verified against corpus        │
+│                   │        │ sample.                                        │
+│ gateway_reachable │  PASS  │ Gateway is reachable (HTTP 200).               │
+│ engine_reachable  │  PASS  │ Engine is reachable and healthy.               │
+│ corpus_generation │  PASS  │ Index generation matched ('lance-702') and     │
+│                   │        │ excerpt budget verified.                       │
+│ canary_floors     │  PASS  │ All 8 canaries passed floors against live      │
+│                   │        │ engine budgets.                                │
+│ openrouter_api    │  PASS  │ Deterministic evaluation path requires no      │
+│                   │        │ OpenRouter API key.                            │
+└───────────────────┴────────┴────────────────────────────────────────────────┘
+All preflight checks passed successfully.
