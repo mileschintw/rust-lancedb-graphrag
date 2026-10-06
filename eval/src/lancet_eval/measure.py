@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import logging
+import math
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -563,6 +564,15 @@ def run_measurement_pass(
     settings = settings or load_settings()
     require_index_identity(settings, corpus_name)
 
+    # WR-02 (D-86): a cap that cannot fire (NaN, infinite, zero or negative) would
+    # silently disable the stop rule, so it is refused before any directory, client
+    # or dispatch exists. Kept after the identity gate so that gate stays first.
+    if not (math.isfinite(stage_spend_cap) and stage_spend_cap > 0):
+        raise ValueError(
+            "stage_spend_cap must be a finite positive USD amount, "
+            f"got {stage_spend_cap!r}"
+        )
+
     thresholds = thresholds or COMMITTED_THRESHOLDS
     run_dir = output_dir or resolve_measurement_run_dir(corpus_name)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -630,20 +640,27 @@ def run_measurement_pass(
         )
         own_client = True
 
+    effective_workers = max(1, workers)
+    stopped_by_cap = False
+
     try:
         with open(journal_path, "a", encoding="utf-8") as jf:
-            if workers <= 1:
-                for u in work_units:
-                    # Check spend stop-rule
-                    spend, _ = compute_spend(records, include_embeddings=True)
-                    if spend >= stage_spend_cap:
-                        logger.warning(
-                            "Stage spend cap $%.2f reached. Halting drive.",
-                            stage_spend_cap,
-                        )
-                        break
+            # One bounded in-flight window for every worker count (CR-01, D-86): at
+            # most ``effective_workers`` units are ever submitted-but-unfinished, and
+            # the stage spend cap is checked before every unit after the priming
+            # window. A window of one reproduces the former serial order exactly.
+            unit_iter = iter(work_units)
+            in_flight: set[concurrent.futures.Future[MeasurementRecord]] = set()
 
-                    rec = measure_one(
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=effective_workers
+            ) as executor:
+
+                def submit_unit(
+                    u: dict[str, Any],
+                ) -> concurrent.futures.Future[MeasurementRecord]:
+                    return executor.submit(
+                        measure_one,
                         effective_client,
                         corpus=corpus_name,
                         question=u["question"],
@@ -654,33 +671,41 @@ def run_measurement_pass(
                         deadline_s=settings.question_deadline_secs,
                         read_timeout_s=settings.gateway_timeout_secs,
                     )
-                    records.append(rec)
-                    jf.write(rec.model_dump_json() + "\n")
-                    jf.flush()
-            else:
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=workers
-                ) as executor:
-                    futures = [
-                        executor.submit(
-                            measure_one,
-                            effective_client,
-                            corpus=corpus_name,
-                            question=u["question"],
-                            arm=u["arm"],
-                            ordinal=u["ordinal"],
-                            segment=u["segment"],
-                            warm_up=u["warm_up"],
-                            deadline_s=settings.question_deadline_secs,
-                            read_timeout_s=settings.gateway_timeout_secs,
-                        )
-                        for u in work_units
-                    ]
-                    for fut in concurrent.futures.as_completed(futures):
+
+                # Prime: spend cannot change before the first completion and the
+                # cap was validated above zero.
+                for _ in range(effective_workers):
+                    first_unit = next(unit_iter, None)
+                    if first_unit is None:
+                        break
+                    in_flight.add(submit_unit(first_unit))
+
+                while in_flight:
+                    done, in_flight = concurrent.futures.wait(
+                        in_flight,
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
+                    for fut in done:
                         rec = fut.result()
                         records.append(rec)
                         jf.write(rec.model_dump_json() + "\n")
                         jf.flush()
+
+                    # Take the next unit before the cap check (WR-01): the pass is
+                    # "stopped by cap" only if a unit was still waiting.
+                    while len(in_flight) < effective_workers and not stopped_by_cap:
+                        next_unit = next(unit_iter, None)
+                        if next_unit is None:
+                            break
+                        spend, _ = compute_spend(records, include_embeddings=True)
+                        if spend >= stage_spend_cap:
+                            stopped_by_cap = True
+                            logger.warning(
+                                "Stage spend cap $%.4f reached. Halting drive.",
+                                stage_spend_cap,
+                            )
+                            break
+                        in_flight.add(submit_unit(next_unit))
     finally:
         if own_client:
             effective_client.close()
@@ -710,6 +735,9 @@ def run_measurement_pass(
         ),
         "corpus": corpus_name,
         "sample_size_questions": sample_size_questions,
+        "stopped_by_cap": stopped_by_cap,
+        "workers": effective_workers,
+        "work_units_planned": len(work_units),
         "total_records_emitted": len(records),
         "measured_records": len(analysis_records),
         "raised_budgets": effective_cfg,
