@@ -13,10 +13,13 @@ No function here adds a flag, keyword, or bypass to `score_run`/`report` --
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import Any, NamedTuple
 
 from lancet_eval import thresholds
 from lancet_eval.corpus import load_corpus_config, load_sample_questions
@@ -54,32 +57,53 @@ _TIMEOUT_CLASS = "timeout"
 #: the drive-1 readings unchanged (D-95).
 DRIVE2_STAGE = "drive2"
 #: The gate drives written before the gate-stage marker existed (06.3.4.1-33), read
-#: without it. Keyed by the header's own `(corpus, created_at)`, each maps to the stage
-#: label it was driven as and its retry evidence: the `retries=0` banner in that run's
-#: `drive-console.txt` (D-67; the operator typed `--retries 0` on each).
+#: without it. Each maps the header's own `(corpus, created_at)` to the stage label it
+#: was driven as, its retry evidence (the `retries=0` banner in that run's
+#: `drive-console.txt`; D-67, the operator typed `--retries 0` on each), and the content
+#: it was recorded with: the record count and `legacy_records_digest` of its records.
 #:
 #: The registry is closed. These three journals have no marker to read and their retry
 #: provenance is on record; every other journal without a marker, the `--retries 2`
 #: 06.3.4-era ones included, MISSes (G-06.3.4.1-2). Entries are never added: no
-#: wildcard, no data-driven loading. The key is the header's own content, so a CRLF
-#: checkout of the journal cannot change it (a file hash would).
-_LEGACY_UNMARKED_GATE_DRIVES: dict[tuple[str, float], tuple[str, str]] = {
-    ("multihop_rag_diag", 1790752043.476702): (
-        "drive1",
-        "eval/runs/2026-09-30-drive1-multihop_rag_diag/drive-console.txt "
-        "records retries=0",
-    ),
-    ("multihop_rag_diag", 1790892253.3635316): (
-        "drive1b",
-        "eval/runs/2026-10-01-drive1b-multihop_rag_diag/drive-console.txt "
-        "records retries=0",
-    ),
-    ("multihop_rag_diag", 1791278008.6136012): (
-        "drive2",
-        "eval/runs/2026-10-06-drive2-multihop_rag_diag/drive-console.txt "
-        "records retries=0",
-    ),
-}
+#: wildcard, no data-driven loading, and the mapping is read-only. The header alone does
+#: not earn the exemption (WR-01): a journal that copies a registered header line but
+#: holds other records, or more or fewer of them, is not that drive. The digest hashes
+#: the parsed record values, not file bytes, so a CRLF checkout cannot change it (a file
+#: hash would).
+class _LegacyDrive(NamedTuple):
+    label: str
+    evidence: str
+    n_records: int
+    records_sha256: str
+
+
+_LEGACY_UNMARKED_GATE_DRIVES: Mapping[tuple[str, float], _LegacyDrive] = (
+    MappingProxyType(
+        {
+            ("multihop_rag_diag", 1790752043.476702): _LegacyDrive(
+                "drive1",
+                "eval/runs/2026-09-30-drive1-multihop_rag_diag/drive-console.txt "
+                "records retries=0",
+                200,
+                "84c8adf801e89a057c5b6ea3c1f5fd473b48f25c95d5e4fb5364484a2e3e44cd",
+            ),
+            ("multihop_rag_diag", 1790892253.3635316): _LegacyDrive(
+                "drive1b",
+                "eval/runs/2026-10-01-drive1b-multihop_rag_diag/drive-console.txt "
+                "records retries=0",
+                200,
+                "d27780299a6a64b6c66b3b9b0b909be814037d1ee9b3c2235366f688c1125bad",
+            ),
+            ("multihop_rag_diag", 1791278008.6136012): _LegacyDrive(
+                "drive2",
+                "eval/runs/2026-10-06-drive2-multihop_rag_diag/drive-console.txt "
+                "records retries=0",
+                200,
+                "a5f9bb5a75a989530caa9e5666f15685cd39b12adb717310600513dbc19171b8",
+            ),
+        }
+    )
+)
 _BINARY_GOLD_ANSWERS = frozenset({"yes", "no"})
 #: D-73: the only dominance reading this phase committed to thresholds.py. A
 #: literal that doesn't match this is a signal the committed policy changed
@@ -1434,13 +1458,53 @@ def _ascii(value: Any) -> str:
     return str(value).encode("ascii", "backslashreplace").decode("ascii")
 
 
-def _legacy_drive(header: dict[str, Any]) -> tuple[str, str] | None:
-    """The registry entry for a pre-marker header, or None when it is not registered."""
+def legacy_records_digest(records: Sequence[Any]) -> str:
+    """The sha256 that binds a legacy-registry entry to a journal's records (WR-01).
+
+    Over the parsed identity fields of every record, in a canonical order and a
+    canonical JSON form, so the line endings of the file cannot change it. Each row is
+    `[corpus, question_id, graph_arm, outcome, duration_ms, correlation_id]`.
+    """
+    rows = sorted(
+        (
+            [
+                rec.corpus,
+                rec.question_id,
+                rec.graph_arm,
+                rec.outcome,
+                rec.duration_ms,
+                rec.correlation_id,
+            ]
+            for rec in records
+        ),
+        key=lambda row: json.dumps(row, separators=(",", ":")),
+    )
+    canonical = json.dumps(rows, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _legacy_registry() -> Mapping[tuple[str, float], _LegacyDrive]:
+    """The registered pre-marker drives (the lookup tests patch; never mutated)."""
+    return _LEGACY_UNMARKED_GATE_DRIVES
+
+
+def _legacy_drive(
+    header: dict[str, Any], records: Sequence[Any]
+) -> _LegacyDrive | None:
+    """The registry entry for a pre-marker journal, or None when it is not that drive.
+
+    The header key, the record count and the records' digest must all match (WR-01).
+    """
     key: tuple[Any, Any] = (header.get("corpus"), header.get("created_at"))
     try:
-        return _LEGACY_UNMARKED_GATE_DRIVES.get(key)
+        entry = _legacy_registry().get(key)
     except TypeError:  # an unhashable header value is never a registered key
         return None
+    if entry is None or len(records) != entry.n_records:
+        return None
+    if legacy_records_digest(records) != entry.records_sha256:
+        return None
+    return entry
 
 
 def _retry_provenance(
@@ -1478,7 +1542,7 @@ def _retry_provenance(
             "(incomplete gate-stage marker)"
         )
     else:
-        entry = _legacy_drive(header)
+        entry = _legacy_drive(header, records)
         if entry is None:
             text = "no marker: not one of the registered pre-marker gate drives"
             failures.append(
@@ -1486,7 +1550,7 @@ def _retry_provenance(
                 "(driven without --gate-stage)"
             )
         else:
-            label, evidence = entry
+            label, evidence = entry.label, entry.evidence
             if label == stage:
                 text = f"legacy: {evidence}"
             else:

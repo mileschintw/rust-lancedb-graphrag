@@ -78,12 +78,17 @@ def _args(
 
 def _drive2_truncation(tmp_path: Path, n_records: int) -> Path:
     """The drive-2 journal cut to its first `n_records` records, header partial=true,
-    and no `report.json`: exactly what a drive halted early leaves on disk."""
+    and no `report.json`: what a drive halted early leaves on disk (marked)."""
     source = repo_root() / _DRIVE2 / "journal.jsonl"
     lines = source.read_text(encoding="utf-8").splitlines()
     header = json.loads(lines[0])
     assert header["type"] == "header"
     header["partial"] = True
+    # A truncation no longer matches the registered record digest (WR-01), so carry the
+    # gate-stage marker a --gate-stage drive writes: the readings then fail on the
+    # missing units alone, which is what these tests pin.
+    header["gate_stage"] = "drive2"
+    header["max_retries"] = 0
     run = tmp_path / "run"
     run.mkdir()
     with open(run / "journal.jsonl", "w", encoding="utf-8", newline="\n") as f:
@@ -176,10 +181,14 @@ def test_the_recorded_drives_read_as_legacy_retry_provenance(
 
 def test_the_legacy_registry_is_exactly_the_three_recorded_drives() -> None:
     """06.3.4.1-34: the registry is closed and keyed on each recorded header's own
-    `(corpus, created_at)`; each drive's console records `retries=0` (D-67)."""
-    from lancet_eval import unpark_gates
+    `(corpus, created_at)`; each drive's console records `retries=0` (D-67), and each
+    entry binds the drive's record count and content digest (WR-01)."""
+    import re
 
-    registry = getattr(unpark_gates, "_LEGACY_UNMARKED_GATE_DRIVES", {})
+    from lancet_eval import unpark_gates
+    from lancet_eval.journal import load_records
+
+    registry = unpark_gates._LEGACY_UNMARKED_GATE_DRIVES
     root = repo_root()
     expected: dict[tuple[str, float], str] = {}
     for stage, (run, _, _) in _RECORDED.items():
@@ -188,13 +197,19 @@ def test_the_legacy_registry_is_exactly_the_three_recorded_drives() -> None:
         assert header["type"] == "header"
         assert "gate_stage" not in header and "max_retries" not in header, stage
         expected[(header["corpus"], header["created_at"])] = stage
-        console = (root / run / "drive-console.txt").read_bytes()
-        assert b"retries=0" in console, stage
+        console = (root / run / "drive-console.txt").read_text(encoding="utf-8")
+        banners = re.findall(r"retries=(\d+)", console)
+        assert banners, stage
+        assert all(int(value) == 0 for value in banners), (stage, banners)
+        records = load_records(journal)
+        entry = registry[(header["corpus"], header["created_at"])]
+        assert entry.n_records == len(records), stage
+        assert entry.records_sha256 == unpark_gates.legacy_records_digest(records), stage
     assert len(registry) == 3
-    assert {key: label for key, (label, _) in registry.items()} == expected
-    for key, (label, evidence) in registry.items():
-        run = _RECORDED[label][0]
-        assert evidence == f"{run}/drive-console.txt records retries=0", key
+    assert {key: entry.label for key, entry in registry.items()} == expected
+    for entry in registry.values():
+        run = _RECORDED[entry.label][0]
+        assert entry.evidence == f"{run}/drive-console.txt records retries=0", entry
 
 
 @pytest.mark.parametrize(

@@ -2246,14 +2246,36 @@ def test_main_reads_a_marked_retry_free_journal(
 
 
 def _register(
-    monkeypatch: pytest.MonkeyPatch, journal: Path, label: str
-) -> dict[tuple[str, float], tuple[str, str]]:
-    """Make the fixture journal a registered pre-marker drive (test-only registry)."""
+    monkeypatch: pytest.MonkeyPatch,
+    journal: Path,
+    label: str,
+    *,
+    records_sha256: str | None = None,
+    n_records: int | None = None,
+) -> Any:
+    """Make the fixture journal a registered pre-marker drive (test-only registry).
+
+    The real registry is read-only, so the lookup is patched with a registry that binds
+    the fixture's header AND its records, exactly as a real entry does (WR-01). The
+    keyword arguments let a test register a different content for the same header.
+    """
+    from types import MappingProxyType
+
     import lancet_eval.unpark_gates as module
+    from lancet_eval.journal import load_records
 
     _rewrite_header(journal, drop=("gate_stage", "max_retries"), created_at=123.5)
-    registry = {("graphrag_bench", 123.5): (label, "console records retries=0")}
-    monkeypatch.setattr(module, "_LEGACY_UNMARKED_GATE_DRIVES", registry, raising=False)
+    records = load_records(journal)
+    entry = module._LegacyDrive(
+        label,
+        "console records retries=0",
+        len(records) if n_records is None else n_records,
+        module.legacy_records_digest(records)
+        if records_sha256 is None
+        else records_sha256,
+    )
+    registry = MappingProxyType({("graphrag_bench", 123.5): entry})
+    monkeypatch.setattr(module, "_legacy_registry", lambda: registry)
     return registry
 
 
@@ -2272,6 +2294,64 @@ def test_main_reads_a_registered_pre_marker_drive_as_legacy(
     assert f"Retry provenance: {provenance}" in markdown
     for name, entry in payload.items():
         assert _NO_MARKER_REASON not in entry["reason"], name
+
+
+@pytest.mark.parametrize("stage", ["drive1", "drive2"])
+@pytest.mark.parametrize("tamper", ["digest", "count"])
+def test_main_misses_a_journal_that_copies_a_registered_header_over_other_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str, tamper: str
+) -> None:
+    """WR-01: the header key alone does not earn the legacy exemption. A journal whose
+    header matches a registry key but whose records differ from the recorded drive (a
+    different digest, or a different count) reads as an unmarked journal: MISS."""
+    fixture = _main_fixture(tmp_path, monkeypatch, stage, honest_header=True)
+    if tamper == "digest":
+        _register(monkeypatch, fixture[0] / "journal.jsonl", stage, records_sha256="0" * 64)
+    else:
+        from lancet_eval.journal import load_records
+
+        count = len(load_records(fixture[0] / "journal.jsonl"))
+        _register(monkeypatch, fixture[0] / "journal.jsonl", stage, n_records=count + 1)
+    _forbid_reading_computation(monkeypatch)
+
+    payload, _ = _run_main(stage, tmp_path, fixture)
+
+    keys = _DRIVE2_READING_KEYS if stage == "drive2" else _EARLIER_STAGE_KEYS
+    for name in keys:
+        assert payload[name]["status"] == "MISS", name
+        assert _NO_MARKER_REASON in payload[name]["reason"], name
+    provenance = payload["SC-1"]["detail"].get("retry_provenance") or ""
+    assert not provenance.startswith("legacy"), provenance
+
+
+def test_a_copied_real_legacy_header_over_other_records_is_not_exempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """WR-01 against the real registry: the recorded drive1 header line, copied onto a
+    journal with different records, finds no registry entry."""
+    from lancet_eval import unpark_gates
+    from lancet_eval.journal import load_records
+
+    fixture = _main_fixture(tmp_path, monkeypatch, "drive1", honest_header=True)
+    records = load_records(fixture[0] / "journal.jsonl")
+    (key, entry), *_ = unpark_gates._LEGACY_UNMARKED_GATE_DRIVES.items()
+    header = {"type": "header", "corpus": key[0], "created_at": key[1]}
+
+    assert unpark_gates._legacy_drive(header, records) is None
+    assert unpark_gates._legacy_drive(header, records[: entry.n_records]) is None
+    retried = unpark_gates._retry_provenance(header, records, entry.label)
+    assert not retried[0].startswith("legacy")
+    assert any(_NO_MARKER_REASON in failure for failure in retried[1])
+
+
+def test_the_legacy_registry_is_read_only() -> None:
+    from lancet_eval import unpark_gates
+
+    registry = unpark_gates._LEGACY_UNMARKED_GATE_DRIVES
+    with pytest.raises(TypeError):
+        registry[("x", 1.0)] = None  # type: ignore[index]
+    with pytest.raises(AttributeError):
+        next(iter(registry.values())).n_records = 0  # type: ignore[misc]
 
 
 def test_main_misses_a_registered_pre_marker_drive_read_under_another_stage(
