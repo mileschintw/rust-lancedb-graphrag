@@ -153,6 +153,19 @@ pub trait DenseRetrievalPort: Send + Sync {
         filter: Option<&'a DocumentFilter>,
         cancel: &'a CancellationToken,
     ) -> BoxFuture<'a, Result<Vec<Candidate>, NodeError>>;
+
+    /// Reads the rows of the given chunk IDs from the same corpus generation as the dense search.
+    ///
+    /// Used for the graph chunk list (D-76): the rows must come from the snapshot's `nodes`
+    /// version, never a later one, so the boost cannot read another generation. Rows come back
+    /// in the order of `chunk_ids` with the IDs the generation lacks left out, and carry no
+    /// retrieval score. The caller validates the IDs; an implementation that builds a predicate
+    /// from them validates them again.
+    fn fetch_chunks_by_id<'a>(
+        &'a self,
+        chunk_ids: &'a [String],
+        cancel: &'a CancellationToken,
+    ) -> BoxFuture<'a, Result<Vec<Candidate>, NodeError>>;
 }
 
 pub trait Bm25RetrievalPort: Send + Sync {
@@ -392,36 +405,57 @@ pub struct FakeDenseRetrievalPort {
     candidates: Result<Vec<Candidate>, NodeError>,
     stall: bool,
     call_count: std::sync::atomic::AtomicUsize,
+    /// The rows `fetch_chunks_by_id` can return, whatever the dense search returns.
+    chunk_rows: Vec<Candidate>,
+    fetch_failure: Option<NodeError>,
+    /// The IDs of every `fetch_chunks_by_id` call, in call order.
+    fetch_requests: std::sync::Mutex<Vec<Vec<String>>>,
 }
 
 #[cfg(test)]
 impl FakeDenseRetrievalPort {
     pub fn success(candidates: Vec<Candidate>) -> Self {
-        Self {
-            candidates: Ok(candidates),
-            stall: false,
-            call_count: std::sync::atomic::AtomicUsize::new(0),
-        }
+        Self::with_candidates(Ok(candidates), false)
     }
 
     pub fn failure(err: NodeError) -> Self {
-        Self {
-            candidates: Err(err),
-            stall: false,
-            call_count: std::sync::atomic::AtomicUsize::new(0),
-        }
+        Self::with_candidates(Err(err), false)
     }
 
     pub fn stall() -> Self {
+        Self::with_candidates(Ok(vec![]), true)
+    }
+
+    fn with_candidates(candidates: Result<Vec<Candidate>, NodeError>, stall: bool) -> Self {
         Self {
-            candidates: Ok(vec![]),
-            stall: true,
+            candidates,
+            stall,
             call_count: std::sync::atomic::AtomicUsize::new(0),
+            chunk_rows: Vec::new(),
+            fetch_failure: None,
+            fetch_requests: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// The rows `fetch_chunks_by_id` looks IDs up in.
+    pub fn with_chunk_rows(mut self, rows: Vec<Candidate>) -> Self {
+        self.chunk_rows = rows;
+        self
+    }
+
+    /// Makes every `fetch_chunks_by_id` call fail with `err`.
+    pub fn with_fetch_failure(mut self, err: NodeError) -> Self {
+        self.fetch_failure = Some(err);
+        self
     }
 
     pub fn calls(&self) -> usize {
         self.call_count.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The ID list of every `fetch_chunks_by_id` call, in call order.
+    pub fn fetch_requests(&self) -> Vec<Vec<String>> {
+        self.fetch_requests.lock().unwrap().clone()
     }
 }
 
@@ -441,6 +475,25 @@ impl DenseRetrievalPort for FakeDenseRetrievalPort {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
             }
             self.candidates.clone()
+        })
+    }
+
+    fn fetch_chunks_by_id<'a>(
+        &'a self,
+        chunk_ids: &'a [String],
+        _cancel: &'a CancellationToken,
+    ) -> BoxFuture<'a, Result<Vec<Candidate>, NodeError>> {
+        self.fetch_requests.lock().unwrap().push(chunk_ids.to_vec());
+        Box::pin(async move {
+            if let Some(err) = &self.fetch_failure {
+                return Err(err.clone());
+            }
+            // Rows in the order of the request, as the production port returns them.
+            Ok(chunk_ids
+                .iter()
+                .filter_map(|id| self.chunk_rows.iter().find(|row| &row.chunk_id == id))
+                .cloned()
+                .collect())
         })
     }
 }

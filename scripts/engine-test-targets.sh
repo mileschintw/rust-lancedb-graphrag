@@ -208,6 +208,20 @@ fi
 #         agreement of `graph_rrf_weight`, its separation from `graph_weight`), 677->691. The lib
 #         count rises 593->607. `engine (bin)` stays 0; inspect_lancedb/reconcile_eval_store/
 #         config_startup unchanged (44/18/22).
+#   711 -- Phase 06.3.4.1 plan 15 Task 2: RetrieveHybrid fetches the graph's candidate chunks at the
+#         snapshot's `nodes` version (`DenseRetrievalPort::fetch_chunks_by_id`), merges them once per
+#         query as the third RRF list and flags every chunk the graph contributed to
+#         (`EvidenceBlock.graph_boosted`, `WorkflowContext.graph_boosted_chunk_count`), with 20
+#         `tests::graph_boost` tests (two graph-off pins against the node output recorded before the
+#         change, a stale count reset, the zero-weight and empty-list cases, a graph-only chunk, a
+#         chunk dense also found, the count over the final set only, one fetch for three variants, the
+#         graph node's hand-off through the context, chunk ID validation, malformed IDs dropped and
+#         logged without their text, a repeated ID, a fetch failure that degrades, the request
+#         filter, the evidence block flag and its omission from the checkpoint, and four production
+#         port tests over a temp store: the pinned version, request order, a refused malformed ID and
+#         the untouched dense sub-stage timings), 691->711. The lib count rises 607->627.
+#         `engine (bin)` stays 0; inspect_lancedb/reconcile_eval_store/config_startup unchanged
+#         (44/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -247,18 +261,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 691 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 691, got $TOTAL" >&2
+if [ "$TOTAL" -ne 711 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 711, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 607 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 607, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 627 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 627, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 607 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 607, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 627 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 627, got $LIB_COUNT" >&2
   exit 1
 fi
 

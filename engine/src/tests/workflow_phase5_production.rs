@@ -257,6 +257,7 @@ async fn workflow_phase5_production_context_population() {
         score: 0.9,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }];
 
     let assemble_node = workflow::nodes::AssemblePromptNode::new();
@@ -514,6 +515,22 @@ async fn workflow_phase5_production_reachability() {
                 ))
             })
         }
+
+        fn fetch_chunks_by_id<'a>(
+            &'a self,
+            _chunk_ids: &'a [String],
+            _cancel: &'a CancellationToken,
+        ) -> workflow::node::BoxFuture<
+            'a,
+            Result<Vec<crate::retrieval::Candidate>, workflow::node::NodeError>,
+        > {
+            Box::pin(async move {
+                Err(workflow::node::NodeError::new(
+                    v1::NodeErrorKind::RetrievalFailed,
+                    "Hard database failure",
+                ))
+            })
+        }
     }
 
     let snapshot = service.corpus_store.read().await.clone();
@@ -736,6 +753,7 @@ async fn workflow_phase5_config_verify_generation_timeout() {
         score: 0.9,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(deps.generator.clone());
@@ -935,6 +953,7 @@ async fn workflow_phase5_generation_retry_tracer() {
         score: 0.95,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator));
@@ -1013,6 +1032,7 @@ async fn workflow_phase5_openrouter_cancellation_propagates() {
         score: 0.95,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }];
     let mut req = generation::GenerationRequest::new("Question?", evidence);
     req.cancel = Some(cancel.clone());
@@ -1982,6 +2002,7 @@ async fn openrouter_node_standalone_near_miss_marker_is_repaired() {
         score: 0.95,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))
@@ -2135,6 +2156,7 @@ async fn openrouter_node_strict_visible_unresolvable_marker_is_dropped() {
         score: 0.95,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))
@@ -2285,6 +2307,7 @@ async fn openrouter_node_total_citation_loss_downgrades_basis_to_model_only() {
         score: 0.95,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))
@@ -2443,6 +2466,7 @@ async fn openrouter_node_total_citation_loss_flag_off_fails_closed() {
         score: 0.95,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))

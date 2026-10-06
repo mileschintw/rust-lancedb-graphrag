@@ -122,6 +122,10 @@ pub struct WorkflowContext {
     /// D-79, D-76: source-chunk IDs of the entities on the found paths, for the graph chunk
     /// boost. Empty when no path was found (decision `paths-only`, 06.3.4.1-13).
     pub graph_chunk_candidates: Vec<String>,
+    /// D-76, D-81: how many chunks of the final retrieved set the graph list contributed to.
+    /// Counted by RetrieveHybrid after the final limit; `0` for a graph-off query and for one
+    /// whose graph list was empty, ignored or failed to fetch.
+    pub graph_boosted_chunk_count: u32,
     pub generation_attempts: u32,
     pub started_at_ms: i64,
     pub prompt_tokens: u32,
@@ -160,6 +164,7 @@ impl WorkflowContext {
             graph_degree_capped_count: 0,
             graph_seed_document_ids: Vec::new(),
             graph_chunk_candidates: Vec::new(),
+            graph_boosted_chunk_count: 0,
             generation_attempts: 0,
             started_at_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

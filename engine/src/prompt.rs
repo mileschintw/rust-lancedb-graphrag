@@ -29,6 +29,12 @@ pub struct EvidenceBlock {
     pub score: f64,
     pub rank: usize,
     pub suspicious: bool,
+    /// Whether the graph chunk list contributed to this chunk's retrieval (D-76, D-81).
+    ///
+    /// Retrieval provenance only: it is never rendered into the prompt, and a checkpoint omits
+    /// the key when it is `false`, so a query the graph did not touch serialises as before.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub graph_boosted: bool,
 }
 
 impl EvidenceBlock {
@@ -62,6 +68,7 @@ impl EvidenceBlock {
             score: candidate.fused_score,
             rank: index + 1,
             suspicious,
+            graph_boosted: false,
         }
     }
 }
@@ -866,6 +873,7 @@ If the evidence is insufficient, still name the evidence blocks you checked with
             score: 0.9,
             rank: 1,
             suspicious: false,
+            graph_boosted: false,
         }
     }
 

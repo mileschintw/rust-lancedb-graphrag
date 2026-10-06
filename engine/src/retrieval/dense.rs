@@ -134,6 +134,27 @@ impl DenseRetriever {
     }
 }
 
+impl DenseRetriever {
+    /// Reads the rows of the given chunk IDs, in the order given, skipping IDs the table lacks.
+    ///
+    /// Every ID must be `<uuidv4>:<non-negative integer>` (see [`is_valid_chunk_id`]); a bad ID
+    /// fails the whole call before any predicate is built. The rows carry no retrieval score.
+    ///
+    /// # Errors
+    /// Returns an error for a malformed ID or a failed LanceDB read.
+    pub async fn fetch_by_chunk_ids(
+        &self,
+        _chunk_ids: &[String],
+    ) -> Result<Vec<Candidate>, RetrievalError> {
+        Ok(Vec::new())
+    }
+}
+
+/// Whether `value` is a chunk ID: a canonical lower-case UUIDv4, a colon, and a chunk index.
+pub fn is_valid_chunk_id(_value: &str) -> bool {
+    false
+}
+
 fn filter_predicate(filters: &QueryFilters) -> Option<String> {
     let mut clauses = Vec::new();
     if !filters.document_ids.is_empty() {

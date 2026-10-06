@@ -780,6 +780,7 @@ fn one_evidence_block() -> Vec<crate::prompt::EvidenceBlock> {
         score: 0.9,
         rank: 1,
         suspicious: false,
+        graph_boosted: false,
     }]
 }
 

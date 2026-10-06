@@ -644,6 +644,56 @@ impl workflow::ports::DenseRetrievalPort for ProductionDenseRetrievalPort {
             .instrument(span),
         )
     }
+
+    fn fetch_chunks_by_id<'a>(
+        &'a self,
+        chunk_ids: &'a [String],
+        cancel: &'a tokio_util::sync::CancellationToken,
+    ) -> workflow::node::BoxFuture<'a, Result<Vec<retrieval::Candidate>, workflow::node::NodeError>>
+    {
+        let generation = workflow::ports::corpus_generation_from_nodes_version(self.nodes_version);
+        let span = tracing::info_span!(
+            "graph_chunk_fetch",
+            db.system = "lancedb",
+            db.operation = "select",
+            lancet.index.generation = %generation,
+        );
+        Box::pin(
+            async move {
+                if cancel.is_cancelled() {
+                    return Err(workflow::node::NodeError::cancelled());
+                }
+                let nodes = self.database.nodes_table().await.map_err(|err| {
+                    workflow::node::NodeError::new(
+                        v1::NodeErrorKind::RetrievalFailed,
+                        format!("failed to open nodes table: {err}"),
+                    )
+                })?;
+                // The same checkout as `retrieve_dense`: the graph chunks come from the
+                // snapshot's generation, never a later version of the table. This call does not
+                // touch `DENSE_SUBSTAGE_TIMINGS`, which belongs to the dense search.
+                nodes.checkout(self.nodes_version).await.map_err(|err| {
+                    workflow::node::NodeError::new(
+                        v1::NodeErrorKind::RetrievalFailed,
+                        format!(
+                            "graph chunk checkout failure at version {}: {err}",
+                            self.nodes_version
+                        ),
+                    )
+                })?;
+                DenseRetriever::new(nodes)
+                    .fetch_by_chunk_ids(chunk_ids)
+                    .await
+                    .map_err(|err| {
+                        workflow::node::NodeError::new(
+                            v1::NodeErrorKind::RetrievalFailed,
+                            format!("graph chunk fetch failure: {}", err.message()),
+                        )
+                    })
+            }
+            .instrument(span),
+        )
+    }
 }
 
 /// Production adapter implementing `Bm25RetrievalPort` backed by the in-memory BM25 index snapshot.
