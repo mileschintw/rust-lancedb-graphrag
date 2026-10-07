@@ -609,3 +609,38 @@ def reference_convention_map_at_10(
         detail={"accrued": accrued, "ideal_len": float(ideal_len)},
         n=len(eligible_facts),
     )
+
+
+# --- D-102 paper-convention metrics (06.3.5-07) -------------------------------------
+OFFICIAL_COMMIT = "c1c1287aa60a94acf9c4d20c891c9cd611a0f6e8"
+
+
+class PaperMetricsResult(BaseModel):
+    """Placeholder, replaced in the GREEN step."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+def id_matcher(chunk_id: str, gold_set: Any) -> bool:
+    """Placeholder, replaced in the GREEN step."""
+    return False
+
+
+def text_matcher(text: str, fact: str) -> bool:
+    """Placeholder, replaced in the GREEN step."""
+    return False
+
+
+def paper_question_scores(ranked: Any, gold: Any, matches: Any) -> dict[str, Any]:
+    """Placeholder, replaced in the GREEN step."""
+    return {"hit4": False, "hit10": False, "rr": 0.0, "ap": 0.0}
+
+
+def load_gold_chunk_sets(path: Any) -> dict[str, list[frozenset[str]]]:
+    """Placeholder, replaced in the GREEN step."""
+    return {}
+
+
+def paper_metrics(per_question: list[dict[str, Any]]) -> dict[str, float]:
+    """Placeholder, replaced in the GREEN step."""
+    return {}
