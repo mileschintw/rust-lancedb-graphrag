@@ -6,6 +6,7 @@ use arrow_array::{
 };
 use engine::db::DatabaseManager;
 use engine::graph::escape_sql_literal;
+use engine::retrieval::dense::is_valid_chunk_id;
 use futures::TryStreamExt;
 use lancedb::{
     query::{ExecutableQuery, QueryBase, Select},
@@ -1128,7 +1129,13 @@ pub async fn inspect_document_ids(
     })
 }
 
+/// Columns the `--chunk-text` dump reads from the `nodes` table.
+const CHUNK_TEXT_COLUMNS: [&str; 4] = ["chunk_id", "document_id", "chunk_index", "content"];
+
 /// One `--chunk-text` output line: the exact text of a chunk and a digest of it.
+///
+/// `content_sha256` is the lowercase hex SHA-256 of the UTF-8 bytes of `text`, so a reader can
+/// check that the text it holds is the text that was ranked.
 #[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ChunkTextRow {
     pub chunk_id: String,
@@ -1142,8 +1149,10 @@ pub struct ChunkTextRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChunkTextFailure {
     /// The ID file is unreadable or holds a malformed line (exit status 2).
+    ///
+    /// The message names a line number and never the offending text.
     Input(String),
-    /// The store, the table version or a read failed (exit status 1).
+    /// The store, the requested table version or a read failed (exit status 1).
     Store(String),
 }
 
@@ -1156,58 +1165,357 @@ impl std::fmt::Display for ChunkTextFailure {
 }
 
 impl ChunkTextFailure {
+    /// The process exit status for this failure: 2 for malformed input, 1 otherwise.
     pub fn exit_code(&self) -> i32 {
-        0
+        match self {
+            Self::Input(_) => 2,
+            Self::Store(_) => 1,
+        }
     }
 }
 
 /// What a `--chunk-text` run found at the pinned table version.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChunkTextReport {
+    /// How many distinct, valid IDs were asked for.
     pub requested: usize,
+    /// The rows that exist at the version, in request order.
     pub rows: Vec<ChunkTextRow>,
 }
 
 impl ChunkTextReport {
+    /// How many requested IDs have no row at the pinned version.
     pub fn missing_count(&self) -> usize {
-        0
+        self.requested.saturating_sub(self.rows.len())
     }
 
+    /// The process exit status for a completed read: 3 when any requested ID is missing.
     pub fn exit_code(&self) -> i32 {
-        0
+        if self.missing_count() > 0 {
+            3
+        } else {
+            0
+        }
     }
 
+    /// Counts only, so it can be printed without exposing chunk text or IDs.
     pub fn summary(&self) -> String {
-        String::new()
+        format!(
+            "chunk-text: requested {}, found {}, missing {}",
+            self.requested,
+            self.rows.len(),
+            self.missing_count()
+        )
     }
 }
 
-pub fn parse_generation(_generation: &str) -> Result<u64, String> {
-    Ok(0)
+/// Parses a corpus generation of the form `lance-<N>` into the nodes-table version `N`.
+///
+/// `N` must be an unsigned integer in canonical form (no sign, no leading zeros, except `0`
+/// itself), which is the only spelling `corpus_generation_from_nodes_version` produces.
+///
+/// # Errors
+/// Returns an error naming the expected form when `generation` is anything else.
+pub fn parse_generation(generation: &str) -> Result<u64, String> {
+    let invalid = || {
+        format!("--generation must be of the form lance-<N>, N an unsigned integer without leading zeros\n{USAGE}")
+    };
+    let digits = generation.strip_prefix("lance-").ok_or_else(invalid)?;
+    let canonical = !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && (digits == "0" || !digits.starts_with('0'));
+    if !canonical {
+        return Err(invalid());
+    }
+    digits.parse::<u64>().map_err(|_| invalid())
 }
 
-pub fn read_chunk_id_file(_path: &Path) -> Result<Vec<String>, ChunkTextFailure> {
-    Ok(Vec::new())
+/// One line of a `--chunk-text` ID file. Other keys on the line are ignored.
+#[derive(serde::Deserialize)]
+struct ChunkIdLine {
+    chunk_id: String,
 }
 
-fn chunk_id_predicates(_ids: &[String]) -> Vec<String> {
-    Vec::new()
+/// Reads the chunk IDs of a JSONL file, one object with a `chunk_id` key per line.
+///
+/// Blank lines are skipped but still counted in line numbers. An ID is validated with the same
+/// rule the retrieval node applies before it builds a predicate, and a repeated ID is kept once at
+/// its first position.
+///
+/// # Errors
+/// Returns [`ChunkTextFailure::Input`] when the file cannot be read, when a line is not a JSON
+/// object with a string `chunk_id`, when an ID is malformed, or when the file holds no ID. The
+/// message names the line number and never the text of the line.
+pub fn read_chunk_id_file(path: &Path) -> Result<Vec<String>, ChunkTextFailure> {
+    let text = std::fs::read_to_string(path).map_err(|error| {
+        ChunkTextFailure::Input(format!(
+            "failed to read chunk ID file {}: {error}",
+            path.display()
+        ))
+    })?;
+    let mut seen = HashSet::new();
+    let mut ids = Vec::new();
+    for (index, line) in text.trim_start_matches('\u{feff}').lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let line_number = index + 1;
+        let parsed: ChunkIdLine = serde_json::from_str(trimmed).map_err(|_| {
+            ChunkTextFailure::Input(format!(
+                "chunk ID file line {line_number} is not a JSON object with a string chunk_id"
+            ))
+        })?;
+        if !is_valid_chunk_id(&parsed.chunk_id) {
+            return Err(ChunkTextFailure::Input(format!(
+                "chunk ID file line {line_number} holds a malformed chunk_id"
+            )));
+        }
+        if seen.insert(parsed.chunk_id.clone()) {
+            ids.push(parsed.chunk_id);
+        }
+    }
+    if ids.is_empty() {
+        return Err(ChunkTextFailure::Input(
+            "chunk ID file holds no chunk IDs".to_owned(),
+        ));
+    }
+    Ok(ids)
 }
 
-fn sha256_hex(_data: &[u8]) -> String {
-    String::new()
+/// `chunk_id IN (...)` predicates over `ids`, at most [`IN_PREDICATE_BATCH_SIZE`] IDs each.
+///
+/// Callers validate every ID first; each is also escaped as a SQL literal here.
+fn chunk_id_predicates(ids: &[String]) -> Vec<String> {
+    ids.chunks(IN_PREDICATE_BATCH_SIZE)
+        .map(|batch| {
+            let list = batch
+                .iter()
+                .map(|id| format!("'{}'", escape_sql_literal(id)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("chunk_id IN ({list})")
+        })
+        .collect()
 }
 
-pub fn render_chunk_text_jsonl(_rows: &[ChunkTextRow]) -> Result<String, String> {
-    Ok(String::new())
+/// Lowercase hex SHA-256 of `data` (FIPS 180-4).
+///
+/// Written out here so the inspector adds no dependency: the eval side compares this digest with
+/// Python's `hashlib.sha256`, and the unit tests pin it to published vectors.
+fn sha256_hex(data: &[u8]) -> String {
+    const ROUND_CONSTANTS: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut state: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ];
+
+    // Pad: a 1 bit, zeros up to 56 mod 64 bytes, then the message length in bits, big-endian.
+    let mut padded = Vec::with_capacity(data.len() + 72);
+    padded.extend_from_slice(data);
+    padded.push(0x80);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&((data.len() as u64).wrapping_mul(8)).to_be_bytes());
+
+    for block in padded.chunks_exact(64) {
+        let mut schedule = [0u32; 64];
+        for (word, bytes) in schedule.iter_mut().zip(block.chunks_exact(4)) {
+            *word = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        }
+        for index in 16..64 {
+            let w15 = schedule[index - 15];
+            let w2 = schedule[index - 2];
+            let s0 = w15.rotate_right(7) ^ w15.rotate_right(18) ^ (w15 >> 3);
+            let s1 = w2.rotate_right(17) ^ w2.rotate_right(19) ^ (w2 >> 10);
+            schedule[index] = schedule[index - 16]
+                .wrapping_add(s0)
+                .wrapping_add(schedule[index - 7])
+                .wrapping_add(s1);
+        }
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
+        for index in 0..64 {
+            let big_s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let choose = (e & f) ^ (!e & g);
+            let temp1 = h
+                .wrapping_add(big_s1)
+                .wrapping_add(choose)
+                .wrapping_add(ROUND_CONSTANTS[index])
+                .wrapping_add(schedule[index]);
+            let big_s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let majority = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = big_s0.wrapping_add(majority);
+            h = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temp1);
+            d = c;
+            c = b;
+            b = a;
+            a = temp1.wrapping_add(temp2);
+        }
+        for (slot, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
+            *slot = slot.wrapping_add(value);
+        }
+    }
+    state.iter().map(|word| format!("{word:08x}")).collect()
 }
 
+/// Renders `rows` as JSONL: one object per line, each newline-terminated.
+///
+/// # Errors
+/// Returns an error if a row cannot be serialized.
+pub fn render_chunk_text_jsonl(rows: &[ChunkTextRow]) -> Result<String, String> {
+    let mut rendered = String::new();
+    for row in rows {
+        rendered.push_str(&serde_json::to_string(row).map_err(|error| error.to_string())?);
+        rendered.push('\n');
+    }
+    Ok(rendered)
+}
+
+/// Reads the text of `ids` from the `nodes` table as it stood at table version `version`.
+///
+/// The table handle is checked out at `version` before any read, so rows added or replaced
+/// afterwards are not seen, and nothing is ever written. IDs are queried in batches of at most
+/// [`IN_PREDICATE_BATCH_SIZE`]. The rows come back in the order of `ids`; an ID with no row at the
+/// version is simply absent from them (see [`ChunkTextReport::missing_count`]).
+///
+/// # Errors
+/// Returns [`ChunkTextFailure::Input`] if an ID is malformed, and [`ChunkTextFailure::Store`] if
+/// the table cannot be opened, the version does not exist, a read fails, or a requested ID has
+/// more than one row.
 pub async fn inspect_chunk_text(
-    _database: &DatabaseManager,
-    _ids: &[String],
-    _version: u64,
+    database: &DatabaseManager,
+    ids: &[String],
+    version: u64,
 ) -> Result<ChunkTextReport, ChunkTextFailure> {
-    Err(ChunkTextFailure::Store("not implemented".to_owned()))
+    if ids.iter().any(|id| !is_valid_chunk_id(id)) {
+        return Err(ChunkTextFailure::Input(
+            "a requested chunk ID is malformed".to_owned(),
+        ));
+    }
+    let nodes = database
+        .nodes_table()
+        .await
+        .map_err(ChunkTextFailure::Store)?;
+    nodes.checkout(version).await.map_err(|error| {
+        ChunkTextFailure::Store(format!(
+            "nodes table version {version} is not available: {error}"
+        ))
+    })?;
+
+    let mut found: HashMap<String, ChunkTextRow> = HashMap::with_capacity(ids.len());
+    for predicate in chunk_id_predicates(ids) {
+        let batches = query_columns(&nodes, &predicate, &CHUNK_TEXT_COLUMNS)
+            .await
+            .map_err(|error| {
+                ChunkTextFailure::Store(format!(
+                    "failed to read nodes at version {version}: {error}"
+                ))
+            })?;
+        for batch in &batches {
+            let chunk_id_col = string_column(batch, "chunk_id").map_err(ChunkTextFailure::Store)?;
+            let document_id_col =
+                string_column(batch, "document_id").map_err(ChunkTextFailure::Store)?;
+            let chunk_index_col =
+                int32_column(batch, "chunk_index").map_err(ChunkTextFailure::Store)?;
+            let content_col = string_column(batch, "content").map_err(ChunkTextFailure::Store)?;
+            for row in 0..batch.num_rows() {
+                if content_col.is_null(row) {
+                    return Err(ChunkTextFailure::Store(format!(
+                        "nodes at version {version} holds a requested chunk with no content"
+                    )));
+                }
+                let content = content_col.value(row);
+                let chunk_id = chunk_id_col.value(row).to_owned();
+                let entry = ChunkTextRow {
+                    chunk_id: chunk_id.clone(),
+                    document_id: document_id_col.value(row).to_owned(),
+                    chunk_index: chunk_index_col.value(row),
+                    content_sha256: sha256_hex(content.as_bytes()),
+                    text: content.to_owned(),
+                };
+                if found.insert(chunk_id, entry).is_some() {
+                    return Err(ChunkTextFailure::Store(format!(
+                        "nodes at version {version} holds more than one row for a requested chunk"
+                    )));
+                }
+            }
+        }
+    }
+
+    let rows = ids.iter().filter_map(|id| found.remove(id)).collect();
+    Ok(ChunkTextReport {
+        requested: ids.len(),
+        rows,
+    })
+}
+
+/// Runs `--chunk-text` end to end and returns the process exit status.
+///
+/// Input is validated before the store is opened. Exit status: 0 on success, 1 for a store or
+/// output failure, 2 for malformed input, 3 when a requested ID has no row at the version (the
+/// rows that were found are still written). Chunk text goes to `out` or stdout; stderr carries
+/// counts only.
+async fn run_chunk_text(
+    lancedb_path: &str,
+    ids_path: &Path,
+    version: u64,
+    out: Option<&Path>,
+) -> i32 {
+    use std::io::Write as _;
+
+    let ids = match read_chunk_id_file(ids_path) {
+        Ok(ids) => ids,
+        Err(failure) => {
+            eprintln!("{failure}");
+            return failure.exit_code();
+        }
+    };
+    let database = match DatabaseManager::open_and_validate(lancedb_path).await {
+        Ok(database) => database,
+        Err(error) => {
+            eprintln!("{error}");
+            return 1;
+        }
+    };
+    let report = match inspect_chunk_text(&database, &ids, version).await {
+        Ok(report) => report,
+        Err(failure) => {
+            eprintln!("{failure}");
+            return failure.exit_code();
+        }
+    };
+    let rendered = match render_chunk_text_jsonl(&report.rows) {
+        Ok(rendered) => rendered,
+        Err(error) => {
+            eprintln!("failed to render chunk text: {error}");
+            return 1;
+        }
+    };
+    let written = match out {
+        Some(path) => std::fs::write(path, rendered.as_bytes()),
+        None => std::io::stdout().lock().write_all(rendered.as_bytes()),
+    };
+    if let Err(error) = written {
+        eprintln!("failed to write chunk text output: {error}");
+        return 1;
+    }
+    eprintln!("{}", report.summary());
+    report.exit_code()
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1231,7 +1539,7 @@ pub struct InspectConfig {
     pub lancedb_path: Option<String>,
 }
 
-pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME | --gold-chunks QUESTIONS_JSONL --map DOCUMENT_MAP_JSON | --document-ids] [--lancedb-path PATH]";
+pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME | --gold-chunks QUESTIONS_JSONL --map DOCUMENT_MAP_JSON | --document-ids | --chunk-text IDS_JSONL --generation lance-N [--out PATH]] [--lancedb-path PATH]";
 
 pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConfig, String> {
     let mut iter = args.into_iter();
@@ -1243,6 +1551,9 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
     let mut gold_chunks_questions = None;
     let mut gold_chunks_map = None;
     let mut document_ids = false;
+    let mut chunk_text = None;
+    let mut generation = None;
+    let mut out = None;
     let mut lancedb_path = None;
 
     while let Some(arg) = iter.next() {
@@ -1292,6 +1603,24 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
             "--document-ids" => {
                 document_ids = true;
             }
+            "--chunk-text" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--chunk-text requires a value\n{USAGE}"))?;
+                chunk_text = Some(val);
+            }
+            "--generation" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--generation requires a value\n{USAGE}"))?;
+                generation = Some(val);
+            }
+            "--out" => {
+                let val = iter
+                    .next()
+                    .ok_or_else(|| format!("--out requires a value\n{USAGE}"))?;
+                out = Some(val);
+            }
             "--lancedb-path" => {
                 let val = iter
                     .next()
@@ -1310,13 +1639,22 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
     if gold_chunks_map.is_some() && gold_chunks_questions.is_none() {
         return Err(format!("--map is only valid with --gold-chunks\n{USAGE}"));
     }
+    if generation.is_some() && chunk_text.is_none() {
+        return Err(format!(
+            "--generation is only valid with --chunk-text\n{USAGE}"
+        ));
+    }
+    if out.is_some() && chunk_text.is_none() {
+        return Err(format!("--out is only valid with --chunk-text\n{USAGE}"));
+    }
 
     let mode_count = (document_id.is_some() as usize)
         + (graph_population as usize)
         + (entity_id.is_some() as usize)
         + (entity_name.is_some() as usize)
         + (gold_chunks_questions.is_some() as usize)
-        + (document_ids as usize);
+        + (document_ids as usize)
+        + (chunk_text.is_some() as usize);
 
     if mode_count == 0 {
         return Err(format!("no mode specified\n{USAGE}"));
@@ -1355,6 +1693,14 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
         }
     } else if document_ids {
         InspectMode::DocumentIds
+    } else if let Some(ids) = chunk_text {
+        let generation = generation
+            .ok_or_else(|| format!("--chunk-text requires --generation\n{USAGE}"))?;
+        InspectMode::ChunkText {
+            ids: PathBuf::from(ids),
+            version: parse_generation(&generation)?,
+            out: out.map(PathBuf::from),
+        }
     } else {
         unreachable!();
     };
@@ -1377,6 +1723,13 @@ async fn main() -> Result<(), String> {
         Some(p) => p,
         None => settings_path()?,
     };
+    if let InspectMode::ChunkText { ids, version, out } = &config.mode {
+        let status = run_chunk_text(&target_path, ids, *version, out.as_deref()).await;
+        if status != 0 {
+            std::process::exit(status);
+        }
+        return Ok(());
+    }
     let database = DatabaseManager::open_and_validate(&target_path).await?;
     match config.mode {
         InspectMode::Document(document_id) => {
@@ -1424,7 +1777,7 @@ async fn main() -> Result<(), String> {
             );
         }
         InspectMode::ChunkText { .. } => {
-            return Err("--chunk-text is not implemented".to_owned());
+            unreachable!("--chunk-text returns before the store is opened for the other modes")
         }
     }
     Ok(())
