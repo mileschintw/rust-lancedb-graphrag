@@ -100,7 +100,6 @@ from lancet_eval.stats import (
     BOOTSTRAP_B,
     BOOTSTRAP_SEED,
     bootstrap_mean_ci,
-    percentile,
     wilson_ci,
 )
 from lancet_eval.pairing import (
@@ -462,10 +461,7 @@ def _per_arm_dimension(
             name=name, status="skipped", reason=empty_reason, detail=dict(detail), n=0
         )
     xs = [float(values[q]) for q in sorted(values)]
-    if statistic == "mean":
-        score = float(fmean(xs))
-    else:
-        score = float(percentile(xs, 0.50 if statistic == "p50" else 0.95))
+    score = strata.summarize(xs, statistic)
     out: dict[str, float] = {k: float(v) for k, v in detail.items()}
     if kind == "wilson":
         out["successes"] = float(round(sum(xs)))
@@ -732,12 +728,16 @@ def _four_arm_dimensions(
             "bootstrap",
             "precision_at_4_delta",
         ),
-        _Metric("prompt_tokens_mean", _prompt_tokens, "bootstrap", "prompt_tokens_delta"),
+        _Metric(
+            "prompt_tokens_mean", _prompt_tokens, "bootstrap", "prompt_tokens_delta"
+        ),
         # D-42 route: the paired difference is taken per question and reported as a
         # mean difference with its bootstrap CI. The p50 / p95 dimensions below stay
         # per-arm and descriptive: a difference of two arms' percentiles is not a
         # paired per-question statistic.
-        _Metric("latency_total_ms_mean", duration, "bootstrap", "latency_total_ms_delta"),
+        _Metric(
+            "latency_total_ms_mean", duration, "bootstrap", "latency_total_ms_delta"
+        ),
         _Metric(
             "retrieve_node_ms_mean",
             _retrieve_node_ms,

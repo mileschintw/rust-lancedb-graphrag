@@ -114,9 +114,24 @@ KINDS: dict[str, dict[str, str]] = {
     ),
 }
 
-DURATION = {"dense-only": 800.0, "bm25-only": 600.0, "hybrid": 1000.0, "hybrid+graph": 1200.0}
-RETRIEVE_MS = {"dense-only": 90.0, "bm25-only": 40.0, "hybrid": 100.0, "hybrid+graph": 150.0}
-PROMPT_TOKENS = {"dense-only": 400, "bm25-only": 300, "hybrid": 500, "hybrid+graph": 600}
+DURATION = {
+    "dense-only": 800.0,
+    "bm25-only": 600.0,
+    "hybrid": 1000.0,
+    "hybrid+graph": 1200.0,
+}
+RETRIEVE_MS = {
+    "dense-only": 90.0,
+    "bm25-only": 40.0,
+    "hybrid": 100.0,
+    "hybrid+graph": 150.0,
+}
+PROMPT_TOKENS = {
+    "dense-only": 400,
+    "bm25-only": 300,
+    "hybrid": 500,
+    "hybrid+graph": 600,
+}
 COMPLETION_TOKENS = 50
 
 
@@ -230,7 +245,7 @@ Mutations = dict[tuple[str, str], Callable[[RunRecord], RunRecord]]
 
 
 def _write_corpus(root: Path) -> Path:
-    """Writes the tmp `[split]` corpus under `root/eval/corpora`; returns gold chunks."""
+    """Writes the tmp `[split]` corpus under `root/eval/corpora`; returns gold."""
     corpora = root / "eval" / "corpora"
     (corpora / "fourarm").mkdir(parents=True)
     arms = ", ".join(f'"{a}"' for a in ARMS)
@@ -433,10 +448,6 @@ def gold_question(qid: str) -> GoldQuestion:
     )
 
 
-def per_arm_values(arm: str, qids: list[str], fn: Callable[[str], float]) -> list[float]:
-    return [fn(q) for q in sorted(qids)]
-
-
 SLUGS = {arm: arm_slug(arm) for arm in ARMS}
 assert SLUGS == {
     "dense-only": "dense_only",
@@ -568,7 +579,8 @@ def test_a_usable_blank_no_evidence_answer_scores_zero_and_is_an_abstention(
     assert kinds["fx-i1"] == "ok"  # it would have scored 1 but for the decline
     assert d.score == pytest.approx(sum(usable) / 6)
     assert d.detail["usable_blank_answer_count"] == 1.0
-    assert dim(report, "answer_usable_p4__hybrid").detail["usable_blank_answer_count"] == 0.0
+    hybrid_usable = dim(report, "answer_usable_p4__hybrid")
+    assert hybrid_usable.detail["usable_blank_answer_count"] == 0.0
     ab = dim(report, "abstention_rate_g__bm25_only")
     assert ab.score == pytest.approx(1 / 6)
     assert ab.n == 6
@@ -597,9 +609,13 @@ def test_the_d70_secondaries_and_legacy_retrieval_metrics_are_per_arm_on_p4(
         golds = {q: gold_question(q) for q in G_IDS}
         ans = {q: _answer(arm, q) for q in G_IDS}
         em = [final_answer_em(golds[q], ans[q]).score for q in sorted(G_IDS)]
-        cont = [float(gold_contained(golds[q].gold_answer, ans[q])) for q in sorted(G_IDS)]
-        assert dim(report, f"final_answer_em__{slug}").score == pytest.approx(fmean(em))
-        assert dim(report, f"gold_containment__{slug}").score == pytest.approx(fmean(cont))
+        cont = [
+            float(gold_contained(golds[q].gold_answer, ans[q])) for q in sorted(G_IDS)
+        ]
+        em_dim = dim(report, f"final_answer_em__{slug}")
+        assert em_dim.score == pytest.approx(fmean(em))
+        cont_dim = dim(report, f"gold_containment__{slug}")
+        assert cont_dim.score == pytest.approx(fmean(cont))
         missing = [float(KINDS[arm][q] == "noline") for q in sorted(G_IDS)]
         d = dim(report, f"final_answer_missing_rate__{slug}")
         assert d.score == pytest.approx(fmean(missing))
@@ -612,7 +628,8 @@ def test_the_d70_secondaries_and_legacy_retrieval_metrics_are_per_arm_on_p4(
             for q in sorted(G_IDS)
         ]
         assert dim(report, f"coverage_at_4__{slug}").score == pytest.approx(fmean(cov))
-        assert dim(report, f"precision_at_4__{slug}").score == pytest.approx(fmean(prec))
+        prec_dim = dim(report, f"precision_at_4__{slug}")
+        assert prec_dim.score == pytest.approx(fmean(prec))
 
 
 def test_null_questions_appear_only_in_the_null_abstention_dimension(

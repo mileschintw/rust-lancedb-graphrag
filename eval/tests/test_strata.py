@@ -89,7 +89,17 @@ def test_a_percentile_statistic_reports_the_percentile_as_the_value(
     out = type_strata(
         values, _of(qids, CMP), statistic=statistic, interval="none"  # type: ignore[arg-type]
     )
-    assert out[f"type_{CMP}_value"] == pytest.approx(percentile(list(values.values()), q))
+    want = percentile(list(values.values()), q)
+    assert out[f"type_{CMP}_value"] == pytest.approx(want)
+
+
+def test_summarize_reads_the_mean_and_the_percentiles_of_the_values() -> None:
+    xs = [1.0, 2.0, 3.0, 4.0, 9.0]
+    assert strata.summarize(xs) == pytest.approx(3.8)
+    assert strata.summarize(xs, "p50") == pytest.approx(percentile(xs, 0.50))
+    assert strata.summarize(xs, "p95") == pytest.approx(percentile(xs, 0.95))
+    with pytest.raises(ValueError, match="empty"):
+        strata.summarize([])
 
 
 def test_a_type_with_no_value_emits_a_zero_n_and_no_value_key() -> None:

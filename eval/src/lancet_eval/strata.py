@@ -61,6 +61,28 @@ def _cell_size() -> int:
     return COMMITTED_THRESHOLDS.min_stratum_cell_size
 
 
+def summarize(
+    xs: Sequence[float], statistic: Literal["mean", "p50", "p95"] = "mean"
+) -> float:
+    """The mean, p50 or p95 of `xs` (the `stats.percentile` the latency rows use).
+
+    Args:
+        xs: The values; not empty.
+        statistic: Which summary to take.
+
+    Returns:
+        The summary as a float.
+
+    Raises:
+        ValueError: If `xs` is empty.
+    """
+    if not xs:
+        raise ValueError("cannot summarise an empty list of values")
+    if statistic == "mean":
+        return float(fmean(xs))
+    return float(percentile(list(xs), _PERCENTILES[statistic]))
+
+
 def type_strata(
     values: Mapping[str, float],
     qtype_of: Mapping[str, str],
@@ -104,10 +126,7 @@ def type_strata(
         out[f"type_{qtype}_n"] = float(len(xs))
         if not xs:
             continue
-        if statistic == "mean":
-            out[f"type_{qtype}_value"] = float(fmean(xs))
-        else:
-            out[f"type_{qtype}_value"] = float(percentile(xs, _PERCENTILES[statistic]))
+        out[f"type_{qtype}_value"] = summarize(xs, statistic)
         if interval == "none" or len(xs) < _cell_size():
             continue
         if interval == "wilson":
