@@ -14,6 +14,7 @@ import ast
 import json
 import re
 import shutil
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -33,13 +34,16 @@ from lancet_eval.comparison import (
     NON_COMPARABILITY_CAVEAT,
     PAPER_REFERENCE_TABLE5,
     SECONDARY_DELTA_BASES,
+    SIDECAR_FILES,
     Comparison,
     ComparisonError,
+    build_chart_data,
     build_comparison,
     coverage_evaluable,
     format_number,
     format_stratum_cell,
     holm_family,
+    render_chart_svg,
     write_comparison,
 )
 from lancet_eval.judge import JudgeCache
@@ -1162,9 +1166,10 @@ def test_the_compare_command_writes_the_sidecars_and_exits_zero(
     )
     result = CliRunner().invoke(app, ["compare", "--run", str(run)])
     assert result.exit_code == 0, result.output
-    for name in ("comparison.json", "comparison.md"):
+    for name in ("comparison.json", "comparison.md", "chart.json", "chart.svg"):
         assert (run / name).is_file()
-    assert "comparison.md" in result.output
+    assert not list(run.glob("*.png"))
+    assert "chart.svg" in result.output
 
 
 def test_the_compare_command_exits_one_when_it_refuses(
@@ -1176,3 +1181,197 @@ def test_the_compare_command_exits_one_when_it_refuses(
     assert result.exit_code == 1
     assert "judged-result.json" in result.output
     _no_sidecars(run)
+
+
+# ---- Task 2: chart.json and the deterministic chart.svg ---------------------------
+
+CHART_KEYS = {"schema_version", "run", "arms", "series", "paper_reference", "caveat"}
+SERIES_KEYS = {"metric", "arm", "value", "ci_lo", "ci_hi", "n"}
+SVG_NS = "{http://www.w3.org/2000/svg}"
+
+
+def _svg_root(svg: str) -> ET.Element:
+    return ET.fromstring(svg)
+
+
+def _by_class(root: ET.Element, tag: str, cls: str) -> list[ET.Element]:
+    return [
+        e
+        for e in root.iter(f"{SVG_NS}{tag}")
+        if cls in (e.get("class") or "").split()
+    ]
+
+
+def test_the_sidecar_list_names_all_four_files() -> None:
+    assert SIDECAR_FILES == (
+        "comparison.json",
+        "comparison.md",
+        "chart.json",
+        "chart.svg",
+    )
+
+
+def test_chart_data_has_the_planned_keys_arms_and_series(written: Any) -> None:
+    comp = written["comparison"]
+    data = build_chart_data(comp)
+    assert set(data) == CHART_KEYS
+    assert data["schema_version"] == 1
+    assert data["run"] == comp.run.run
+    assert data["arms"] == list(sj.ARMS)
+    series = data["series"]
+    assert len(series) == 2 * 4
+    assert {r["metric"] for r in series} == {"paper_hits_at_4", "answer_usable_p4"}
+    dims = dims_of(written["report"])
+    for row in series:
+        assert set(row) == SERIES_KEYS
+        dim = dims[f"{row['metric']}__{SLUG[row['arm']]}"]
+        assert row["value"] == dim["score"]
+        assert row["ci_lo"] == dim["detail"]["ci_lower"]  # the Wilson interval
+        assert row["ci_hi"] == dim["detail"]["ci_upper"]
+        assert row["n"] == dim["n"] == 26
+    order = [(r["metric"], r["arm"]) for r in series]
+    expected = [
+        (m, a) for m in ("paper_hits_at_4", "answer_usable_p4") for a in sj.ARMS
+    ]
+    assert order == expected
+
+
+def test_chart_data_carries_the_paper_reference_and_the_caveat(written: Any) -> None:
+    data = build_chart_data(written["comparison"])
+    ref = data["paper_reference"]
+    assert ref["citation"] == PAPER_REFERENCE_TABLE5["citation"]
+    assert ref["configuration"] == "Without Reranker"
+    assert ref["rows"] == PAPER_REFERENCE_TABLE5["rows"]
+    assert "not comparable" in data["caveat"]
+    assert APPROXIMATION in data["caveat"]  # no cross-check on this run
+    assert "sota" not in json.dumps(data).lower()
+
+
+def test_the_svg_is_well_formed_with_a_group_per_metric_and_a_bar_per_arm(
+    written: Any,
+) -> None:
+    svg = render_chart_svg(build_chart_data(written["comparison"]))
+    root = _svg_root(svg)
+    assert root.tag == f"{SVG_NS}svg"
+    assert root.get("version") == "1.1"
+    groups = _by_class(root, "g", "bar-group")
+    assert [g.get("data-metric") for g in groups] == [
+        "paper_hits_at_4",
+        "answer_usable_p4",
+    ]
+    for group in groups:
+        bars = _by_class(group, "rect", "bar")
+        assert [b.get("data-arm") for b in bars] == list(sj.ARMS)
+        assert len(_by_class(group, "line", "errbar")) == 4
+    assert len(_by_class(root, "rect", "bar")) == 8
+    assert len(_by_class(root, "line", "errbar")) == 8
+
+
+def test_bar_heights_and_error_bars_follow_a_fixed_zero_to_one_scale(
+    written: Any,
+) -> None:
+    data = build_chart_data(written["comparison"])
+    root = _svg_root(render_chart_svg(data))
+    usable = next(
+        g
+        for g in _by_class(root, "g", "bar-group")
+        if g.get("data-metric") == "answer_usable_p4"
+    )
+    bars = {b.get("data-arm"): b for b in _by_class(usable, "rect", "bar")}
+    values = {r["arm"]: r for r in data["series"] if r["metric"] == "answer_usable_p4"}
+    assert values["dense-only"]["value"] == 1.0
+    scale = float(bars["dense-only"].get("height"))  # pixels per unit of value
+    for arm, bar in bars.items():
+        assert float(bar.get("height")) == pytest.approx(
+            values[arm]["value"] * scale, abs=0.02
+        )
+    errbars = {e.get("data-arm"): e for e in _by_class(usable, "line", "errbar")}
+    bm25 = bars["bm25-only"]
+    bottom = float(bm25.get("y")) + float(bm25.get("height"))
+    err = errbars["bm25-only"]
+    assert float(err.get("y1")) == pytest.approx(
+        bottom - values["bm25-only"]["ci_hi"] * scale, abs=0.02
+    )
+    assert float(err.get("y2")) == pytest.approx(
+        bottom - values["bm25-only"]["ci_lo"] * scale, abs=0.02
+    )
+
+
+def test_the_svg_labels_the_axis_the_legend_the_source_and_the_owner(
+    written: Any,
+) -> None:
+    svg = render_chart_svg(build_chart_data(written["comparison"]))
+    root = _svg_root(svg)
+    texts = [(t.text or "").strip() for t in root.iter(f"{SVG_NS}text")]
+    for arm in sj.ARMS:
+        assert arm in texts
+    assert "0.0" in texts and "1.0" in texts
+    footnote = " ".join(texts)
+    assert "chart.json" in footnote
+    assert "Phase 6.4" in footnote
+    assert "Wilson" in footnote
+    assert "sota" not in svg.lower()
+
+
+def test_two_renders_of_the_same_chart_json_are_byte_identical(written: Any) -> None:
+    data = build_chart_data(written["comparison"])
+    first = render_chart_svg(data)
+    assert render_chart_svg(data) == first
+    assert render_chart_svg(json.loads(json.dumps(data))) == first
+    assert "\r" not in first
+    # coordinates use a fixed number of decimals, never full float precision
+    assert not re.search(r"=\"-?\d+\.\d{3,}\"", first)
+    assert "e-" not in re.sub(r"[A-Za-z-]+e-[A-Za-z]+", "", first)
+
+
+def test_a_missing_value_draws_no_bar_and_text_is_escaped() -> None:
+    data = {
+        "schema_version": 1,
+        "run": "run <1> & more",
+        "arms": ["dense-only", "hybrid"],
+        "series": [
+            {
+                "metric": "paper_hits_at_4",
+                "arm": "dense-only",
+                "value": None,
+                "ci_lo": None,
+                "ci_hi": None,
+                "n": 0,
+            },
+            {
+                "metric": "paper_hits_at_4",
+                "arm": "hybrid",
+                "value": 0.5,
+                "ci_lo": 0.25,
+                "ci_hi": 0.75,
+                "n": 4,
+            },
+        ],
+        "paper_reference": {
+            "citation": "arXiv 2401.15391 v1, Table 5",
+            "caption": "x",
+            "configuration": "Without Reranker",
+            "rows": [],
+        },
+        "caveat": 'quotes " and <tags> & ampersands',
+    }
+    root = _svg_root(render_chart_svg(data))
+    bars = _by_class(root, "rect", "bar")
+    assert [b.get("data-arm") for b in bars] == ["hybrid"]
+
+
+def test_compare_writes_chart_json_and_chart_svg_from_the_same_data(
+    written: Any,
+) -> None:
+    run = written["dir"]
+    text = (run / "chart.json").read_text(encoding="utf-8")
+    assert text.endswith("}\n")
+    data = json.loads(text)
+    assert set(data) == CHART_KEYS
+    assert text == json.dumps(data, indent=2, sort_keys=True) + "\n"
+    assert data == json.loads(json.dumps(build_chart_data(written["comparison"])))
+    svg = (run / "chart.svg").read_text(encoding="utf-8")
+    assert svg == render_chart_svg(data)  # chart.svg is rendered from chart.json alone
+    _svg_root(svg)
+    assert not list(run.glob("*.png"))
+    assert "\r\n" not in text and "\r\n" not in svg

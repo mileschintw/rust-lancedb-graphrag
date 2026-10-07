@@ -1909,3 +1909,13 @@ def write_comparison(
     _write_text(run / "comparison.json", comparison_json)
     _write_text(run / "comparison.md", comparison_md)
     return comparison
+
+
+def build_chart_data(comparison: Comparison) -> dict[str, Any]:
+    """RED stub."""
+    raise NotImplementedError
+
+
+def render_chart_svg(chart_data: Mapping[str, Any]) -> str:
+    """RED stub."""
+    raise NotImplementedError
