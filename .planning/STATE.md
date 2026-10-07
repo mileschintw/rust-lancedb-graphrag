@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 15
 status: executing
-stopped_at: Phase 06.3.5 wave 10 complete (gap-closure plan 18, re-rehearsal PASS); wave 11 (plan 15 held-out drive) next
+stopped_at: Phase 06.3.5 plan 15 held-out drive running detached (started 2026-10-07T21:13:08Z); on drive-exit.txt run part B then the Task 3 gate
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-07
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 15 (wave 11 of 13) - held-out drive (resumed after gap closure)
+Current Plan: 15 (wave 11 of 13) - held-out drive RUNNING (detached), then part B
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-07: 06.3.5-15 held-out drive STARTED (detached).** Part A2: rehearsal-2 processes stopped; fresh detached engine PID 24012 / gateway PID 13480 (logs `engine-stderr-drive2.log` / `gateway-stderr-drive2.log` in `data/oi02-evidence/heldout-2026-10-07/`); held-out preflight PASS on the first attempt (retry unused; 2 `generation_basis_normalised`, 0 rejections), spend $0.001446; failed attempt-1 preflight moved to `preflight-attempt1-FAILED.txt`. The orchestrator started `drive.sh` through WMI (`start-drive-detached.ps1`, wrapper outside any agent job object) with `--stage-cap 2.00 --retries 0 --no-resume --gate-stage heldout`; usage before drive 2.646655508. Wait on `eval/runs/2026-10-07-heldout-multihop_rag_heldout/drive-exit.txt`, then part B (steps 4-8) and the Task 3 gate.
 - **2026-10-07: Phase 06.3.5 wave 10 complete (gap-closure plan 18).** Re-rehearsal provenance gate PASS (`59e8c8e5`, SUMMARY `6b8763a2`; run dir `eval/runs/2026-10-07-rehearsal2-multihop_rag_rehearsal/`; section `## Re-rehearsal after 06.3.5-18` in `06.3.5-REHEARSAL.md`; Re-rehearsal HEAD `bb4bf0a0`). Preflight passed first attempt (retry unused); the engine logged 4 `generation_basis_normalised` events and 0 rejections during the preflight (the fix fired live on the exact plan-15 failure shape; 4/12 canary queries, a much higher rate than the ~1% assumed), probe 12/12 with 0 normalised; judge sample p50 8569 ms / p95 13703 ms (slower than 06.3.5-14). Settled spend: preflight $0.002100, probe $0.002286 (cap $0.05), judge $0.001426 (cap $0.02), total $0.005812. Engine PID 20192 / gateway PID 16688 left running (WMI-detached). Gate green: engine 749, gateway 120, eval pytest 1761; wave:post gates no block. OBS-06 stays unticked (D-98).
 - **2026-10-07: 06.3.5-18 Task 4 answered from the owner's pre-authorisation: `authorise-0.05-with-judge-0.02-retry-1`** ($0.05 probe `--stage-cap`, $0.02 `judge --rehearsal` cap, ~$0.005 uncapped preflight, ONE preflight retry on a canary flake as defined in Task 4). Tasks 1-3 committed: RED `692ec43a`, GREEN `e4ae2b4e` (normalisation at the OpenRouter adapter and the generate node; 8 `abstention_` tests; engine 741 -> 749), counts script `bb4bf0a0` (eval 1761), re-rehearsal free checks `deee6264` (re-rehearsal HEAD `bb4bf0a0`; engine PID 20192 / gateway PID 16688 launched detached via WMI under `data/oi02-evidence/rehearsal2-2026-10-07/`). Finding: processes launched from an agent shell live in the agent's job object and die with it (why 19900/37844 vanished); later launches must be detached the same way.
 - **2026-10-07: Owner answered the plan-15 stop: `fix-first`.** Root cause verified: in all three observed rejections (canary corr `14b46f0b…`, drive-2 corrs `c5384336…`, `2fb73c03…`) the model gave a grounded abstention (8 cited ids, `final_answer` "Insufficient information") mislabelled `answer_basis: model_only`, which `validate_output_shape_with_limits` rejects unconditionally. Owner decisions: (1) fix shape = validator normalisation, engine-only, prompt unchanged, with conditions: regression fixture from the failing output; tolerant abstention match (trim, case, trailing punctuation); a distinct log event + identifiable record (original basis, correlation id) countable per arm/question_type; substantive model_only still rejected (pinned); the uncited variant is not widened (not observed). (2) Re-run plan 14's rehearsal under the same caps ($0.05 / $0.02 / ~$0.005 uncapped) plus ONE pre-authorised preflight retry, then continue plan 15 (`authorise-2.00`) and 16 under the earlier pre-authorisation. (3) Route = gap-closure plan 06.3.5-18. Idle engine/gateway (19900/37844) were already gone when checked.
@@ -552,7 +553,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 wave 10 complete (gap-closure plan 18, re-rehearsal PASS); wave 11 (plan 15 held-out drive) next
+**Stopped at:** Phase 06.3.5 plan 15 held-out drive running detached (started 2026-10-07T21:13:08Z); on drive-exit.txt run part B then the Task 3 gate
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
