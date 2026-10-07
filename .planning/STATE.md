@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 18
 status: executing
-stopped_at: Phase 06.3.5 fix-first: planning gap-closure plan 06.3.5-18 (engine normalises grounded abstentions mislabelled model_only; re-rehearse), then resume plan 15
+stopped_at: Phase 06.3.5 plan 18 Task 4 answered (authorise-0.05-with-judge-0.02-retry-1, pre-authorised); Task 5 re-rehearsal running
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-07
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 18 (gap closure: grounded-abstention normalisation + re-rehearsal), then 15
+Current Plan: 18 (wave 10 of 13) - Task 5 (re-rehearsal) running
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-07: 06.3.5-18 Task 4 answered from the owner's pre-authorisation: `authorise-0.05-with-judge-0.02-retry-1`** ($0.05 probe `--stage-cap`, $0.02 `judge --rehearsal` cap, ~$0.005 uncapped preflight, ONE preflight retry on a canary flake as defined in Task 4). Tasks 1-3 committed: RED `692ec43a`, GREEN `e4ae2b4e` (normalisation at the OpenRouter adapter and the generate node; 8 `abstention_` tests; engine 741 -> 749), counts script `bb4bf0a0` (eval 1761), re-rehearsal free checks `deee6264` (re-rehearsal HEAD `bb4bf0a0`; engine PID 20192 / gateway PID 16688 launched detached via WMI under `data/oi02-evidence/rehearsal2-2026-10-07/`). Finding: processes launched from an agent shell live in the agent's job object and die with it (why 19900/37844 vanished); later launches must be detached the same way.
 - **2026-10-07: Owner answered the plan-15 stop: `fix-first`.** Root cause verified: in all three observed rejections (canary corr `14b46f0b…`, drive-2 corrs `c5384336…`, `2fb73c03…`) the model gave a grounded abstention (8 cited ids, `final_answer` "Insufficient information") mislabelled `answer_basis: model_only`, which `validate_output_shape_with_limits` rejects unconditionally. Owner decisions: (1) fix shape = validator normalisation, engine-only, prompt unchanged, with conditions: regression fixture from the failing output; tolerant abstention match (trim, case, trailing punctuation); a distinct log event + identifiable record (original basis, correlation id) countable per arm/question_type; substantive model_only still rejected (pinned); the uncited variant is not widened (not observed). (2) Re-run plan 14's rehearsal under the same caps ($0.05 / $0.02 / ~$0.005 uncapped) plus ONE pre-authorised preflight retry, then continue plan 15 (`authorise-2.00`) and 16 under the earlier pre-authorisation. (3) Route = gap-closure plan 06.3.5-18. Idle engine/gateway (19900/37844) were already gone when checked.
 - **2026-10-07: AUTONOMOUS RUN STOPPED (problem stop) — see `06.3.5-HANDOVER.md`.** 06.3.5-15 part A: stopped rehearsal processes, fresh engine PID 19900 / gateway PID 37844 (left running, idle), held-out preflight FAILED on `arm_mode_canaries` (canary `mhr-bb3f4ad63839` dense-only: engine rejected a `model_only` "Insufficient information" answer at validate; same ~1% behaviour as drive 2's 2 rejections). Preflight spend $0.002129 (uncapped, acknowledged); total phase spend $0.008035. No drive started; `eval/runs/2026-10-07-heldout-multihop_rag_heldout/` untracked with only `preflight.txt`. Owner decision needed: `rerun-preflight`, `override-canary`, `fix-first` or `halt-disclose`. Companion memo `06.3.5-WORKFLOW-MEMO.md`.
 - **2026-10-07: 06.3.5-15 Task 1 answered from the owner's standing pre-authorization: `authorise-2.00`** ($2.00 `--stage-cap` on the 1,404-record held-out drive `run`; the one held-out preflight acknowledged as uncapped). Applied before dispatch (Task 1 is the plan's first task, no executor work precedes it). Task 2 is split by the orchestrator: executor A runs steps 1-3 (stop the rehearsal processes, fresh launch, preflight, start the detached drive) and returns; the orchestrator waits on `drive-exit.txt` with a Monitor (executors have no Monitor tool); executor B runs steps 4-8.
@@ -550,7 +551,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 fix-first: planning gap-closure plan 06.3.5-18 (engine normalises grounded abstentions mislabelled model_only; re-rehearse), then resume plan 15
+**Stopped at:** Phase 06.3.5 plan 18 Task 4 answered (authorise-0.05-with-judge-0.02-retry-1, pre-authorised); Task 5 re-rehearsal running
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
