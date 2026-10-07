@@ -518,3 +518,344 @@ def test_seed_path_floor_reports_only_the_first_unmet_condition(
     assert "graph_path_found" in seed_path_failures[0]
     assert "graph_node_count" not in seed_path_failures[0]
     assert "graph_prompt_fact_count" not in seed_path_failures[0]
+
+
+# --- 06.3.5-09 D-108, D-124, D-106: arm-mode canaries from the rehearsal pool ---------
+
+_ARMS = ["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
+_CORPORA = Path(__file__).resolve().parents[1] / "corpora"
+ARM_CANARY_FILE = _CORPORA / "multihop_rag" / "canary.arms.jsonl"
+SPLIT_FILE = _CORPORA / "multihop_rag" / "heldout_split.json"
+
+
+def _jsonl(path: Path) -> list[dict[str, Any]]:
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def _arm_of_body(body: dict[str, Any]) -> str:
+    """The arm a request body asks for, by the fields `request_fields` produces."""
+    mode = body.get("retrieval_mode")
+    if mode == "dense_only":
+        return "dense-only"
+    if mode == "bm25_only":
+        return "bm25-only"
+    if mode == "hybrid":
+        return "hybrid" if body.get("disable_graph_context") else "hybrid+graph"
+    return "legacy"
+
+
+def _mock_arm_responses(
+    httpx_mock: HTTPXMock,
+    *,
+    echo: dict[str, str] | None = None,
+    drop_ranking: tuple[str, ...] = (),
+    omit_ablation: tuple[str, ...] = (),
+    bm25_count_on_dense: int = 0,
+    chunk_count: int = 2,
+    retrieve_ms: float = 100.0,
+) -> None:
+    """A well-formed answer for each arm, and one fault per keyword when asked."""
+
+    def sse_cb(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.read().decode("utf-8"))
+        arm = _arm_of_body(body)
+        graph_off = bool(body.get("disable_graph_context"))
+        mode = body.get("retrieval_mode") or "hybrid"
+        notices = []
+        if graph_off and arm not in omit_ablation:
+            notices.append(
+                {
+                    "code": "GRAPH_ABLATION",
+                    "typed_code": 18,
+                    "message": "Graph disabled by request",
+                }
+            )
+        chunks = [
+            {
+                "chunk_id": f"c{i}",
+                "document_id": "doc1",
+                "rank": i + 1,
+                "graph_boosted": False,
+            }
+            for i in range(chunk_count)
+        ]
+        ranking = [
+            {
+                "chunk_id": f"c{i}",
+                "document_id": "doc1",
+                "fused_rank": i + 1,
+                **({} if arm == "bm25-only" else {"vector_rank": i + 1}),
+                **({} if arm == "dense-only" else {"bm25_rank": i + 1}),
+            }
+            for i in range(chunk_count)
+        ]
+        snapshot: dict[str, Any] = {
+            "index_generation": "gen1",
+            "retrieval_mode": (echo or {}).get(arm, mode),
+            "result_hash": "abc123",
+            "rrf_k": 60,
+            "candidate_limit": 32,
+            "final_limit": 8,
+            "vector_weight": 1.0,
+            "bm25_weight": 1.0,
+            "retrieved_chunks": chunks,
+        }
+        if arm not in drop_ranking:
+            snapshot["pre_truncation_ranking"] = ranking
+        events: list[tuple[str, dict[str, Any]]] = [
+            (
+                "final_answer",
+                {"answer": "Test answer", "notices": notices, "snapshot": snapshot},
+            ),
+            (
+                "node_completed",
+                {"node_name": "RetrieveHybrid", "duration_ms": retrieve_ms},
+            ),
+            (
+                "workflow_completed",
+                {
+                    "success": True,
+                    "total_duration_ms": 1000,
+                    "notices": notices,
+                    "metadata": {
+                        "vector_count": 0 if arm == "bm25-only" else chunk_count,
+                        "bm25_count": (
+                            bm25_count_on_dense
+                            if arm == "dense-only"
+                            else chunk_count
+                        ),
+                        "graph_node_count": 0,
+                    },
+                },
+            ),
+        ]
+        return httpx.Response(
+            status_code=200,
+            headers={"content-type": "text/event-stream"},
+            text=_make_sse_stream(events),
+        )
+
+    httpx_mock.add_callback(sse_cb, is_reusable=True)
+
+
+def _request_bodies(httpx_mock: HTTPXMock) -> list[dict[str, Any]]:
+    return [
+        json.loads(r.read().decode("utf-8"))
+        for r in httpx_mock.get_requests()
+        if r.url.path == "/rag/query"
+    ]
+
+
+def _run_arm_canaries(client: httpx.Client, **overrides: Any) -> Any:
+    kwargs: dict[str, Any] = {
+        "arms": _ARMS,
+        "canary_path": ARM_CANARY_FILE,
+        "split_path": SPLIT_FILE,
+    }
+    kwargs.update(overrides)
+    return preflight_module.check_arm_mode_canaries(client, **kwargs)
+
+
+def test_arm_mode_canaries_run_every_row_under_every_arm(
+    httpx_mock: HTTPXMock,
+) -> None:
+    from lancet_eval.arms import request_fields
+
+    _mock_arm_responses(httpx_mock)
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert res.name == "arm_mode_canaries"
+    assert res.passed, res.message
+    rows = _jsonl(ARM_CANARY_FILE)
+    assert len(rows) == 3
+    bodies = _request_bodies(httpx_mock)
+    assert len(bodies) == 12
+    expected = [
+        {"query": row["question"], "session_id": "", **request_fields(arm)}
+        for row in rows
+        for arm in _ARMS
+    ]
+    key = lambda b: json.dumps(b, sort_keys=True)  # noqa: E731
+    assert sorted(map(key, bodies)) == sorted(map(key, expected))
+
+
+@pytest.mark.parametrize(
+    ("fault", "mock_kwargs", "arm", "needle"),
+    [
+        (
+            "a wrong echo on one arm",
+            {"echo": {"bm25-only": "hybrid"}},
+            "bm25-only",
+            "retrieval_mode",
+        ),
+        (
+            "an absent ranking beside non-empty chunks",
+            {"drop_ranking": ("hybrid",)},
+            "hybrid",
+            "pre_truncation_ranking",
+        ),
+        (
+            "a missing GRAPH_ABLATION on a graph-off arm",
+            {"omit_ablation": ("hybrid",)},
+            "hybrid",
+            "GRAPH_ABLATION",
+        ),
+        (
+            "a non-zero bm25_count on dense-only",
+            {"bm25_count_on_dense": 3},
+            "dense-only",
+            "bm25_count",
+        ),
+        (
+            "zero retrieved chunks",
+            {"chunk_count": 0},
+            "hybrid+graph",
+            "retrieval floor",
+        ),
+    ],
+)
+def test_arm_mode_canary_faults_fail_naming_the_question_and_the_arm(
+    httpx_mock: HTTPXMock,
+    fault: str,
+    mock_kwargs: dict[str, Any],
+    arm: str,
+    needle: str,
+) -> None:
+    _mock_arm_responses(httpx_mock, **mock_kwargs)
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert not res.passed, fault
+    qid = _jsonl(ARM_CANARY_FILE)[0]["question_id"]
+    assert f"{qid} ({arm})" in res.message, fault
+    assert needle in res.message, fault
+
+
+def test_arm_mode_canary_duration_floor_is_read_from_the_live_config(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    _mock_arm_responses(httpx_mock, retrieve_ms=1500.0)
+    client = httpx.Client(base_url="http://testserver")
+    template = """
+    [engine.workflow]
+    reformulate_timeout_ms = 5000
+    retrieve_timeout_ms = {retrieve}
+    graph_node_timeout_ms = 15000
+    prompt_timeout_ms = 2000
+    generation_node_timeout_ms = 65000
+    """
+    generous = tmp_path / "generous.toml"
+    generous.write_text(template.format(retrieve=2000), encoding="utf-8")
+    tight = tmp_path / "tight.toml"
+    tight.write_text(template.format(retrieve=1000), encoding="utf-8")
+
+    assert _run_arm_canaries(client, config_path=generous).passed
+    res = _run_arm_canaries(client, config_path=tight)
+
+    assert not res.passed
+    assert "RetrieveHybrid" in res.message
+    assert "retrieve_timeout_ms" in res.message
+
+
+def _split_ids() -> dict[str, str]:
+    split = json.loads(SPLIT_FILE.read_text(encoding="utf-8"))
+    return {
+        "a dev ID": split["dev_ids"][0],
+        "a held-out G ID": split["heldout_g_ids"][0],
+        "a held-out null ID": split["heldout_null_ids"][0],
+    }
+
+
+@pytest.mark.parametrize("which", sorted(_split_ids()))
+def test_a_manifest_holding_a_dev_or_heldout_id_is_refused_before_any_request(
+    tmp_path: Path, httpx_mock: HTTPXMock, which: str
+) -> None:
+    banned = _split_ids()[which]
+    rows = _jsonl(ARM_CANARY_FILE)
+    rows.append({"question_id": banned, "question": "A banned question?"})
+    manifest = tmp_path / "canary.arms.jsonl"
+    manifest.write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8"
+    )
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client, canary_path=manifest)
+
+    assert not res.passed
+    assert banned in res.message
+    assert "D-124" in res.message
+    assert httpx_mock.get_requests() == []
+
+
+def test_the_committed_arm_manifest_holds_no_dev_or_heldout_id() -> None:
+    split = json.loads(SPLIT_FILE.read_text(encoding="utf-8"))
+    banned = set(split["dev_ids"]) | set(split["heldout_g_ids"])
+    banned |= set(split["heldout_null_ids"])
+    assert not {r["question_id"] for r in _jsonl(ARM_CANARY_FILE)} & banned
+
+
+def _legacy_only_texts() -> set[str]:
+    arm_texts = {r["question"] for r in _jsonl(ARM_CANARY_FILE)}
+    legacy = _jsonl(_CORPORA / "multihop_rag" / "canary.jsonl")
+    return {r["question"] for r in legacy} - arm_texts
+
+
+def _health_ok(httpx_mock: HTTPXMock) -> None:
+    httpx_mock.add_response(
+        url="http://testserver/health",
+        status_code=200,
+        json={"status": "ok", "engine": {"status": "ok"}},
+    )
+
+
+def test_heldout_preflight_skips_the_legacy_canaries_and_runs_the_arm_canaries(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _health_ok(httpx_mock)
+    _mock_arm_responses(httpx_mock)
+
+    with httpx.Client(base_url="http://testserver") as client:
+        results = run_preflight_checks("multihop_rag_heldout", client=client)
+
+    by_name = {r.name: r for r in results}
+    for name in ("canary_manifest", "canary_floors"):
+        skipped = by_name[name]
+        assert skipped.passed
+        assert skipped.detail.get("skipped") is True
+        assert "D-124" in skipped.message
+    assert by_name["arm_mode_canaries"].passed, by_name["arm_mode_canaries"].message
+
+    arm_texts = {r["question"] for r in _jsonl(ARM_CANARY_FILE)}
+    bodies = _request_bodies(httpx_mock)
+    sent = [b["query"] for b in bodies]
+    # None of the 7 legacy canary questions is sent (the one shared with the arm
+    # manifest is sent only as an arm canary: 3 rows x 4 arms and nothing else).
+    assert not set(sent) & _legacy_only_texts()
+    assert sum(1 for q in sent if q in arm_texts) == 12
+
+
+def test_legacy_corpora_run_exactly_the_checks_they_ran_before(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _health_ok(httpx_mock)
+    _mock_canary_responses(httpx_mock)
+
+    with httpx.Client(base_url="http://testserver") as client:
+        results = run_preflight_checks("multihop_rag_diag", client=client)
+
+    by_name = {r.name: r for r in results}
+    assert "arm_mode_canaries" not in by_name
+    assert "skipped" not in by_name["canary_manifest"].detail
+    assert "skipped" not in by_name["canary_floors"].detail
+    legacy_texts = {
+        r["question"] for r in _jsonl(_CORPORA / "multihop_rag" / "canary.jsonl")
+    }
+    sent = [b["query"] for b in _request_bodies(httpx_mock)]
+    assert sum(1 for q in sent if q in legacy_texts) == 8

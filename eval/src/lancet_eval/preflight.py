@@ -1033,6 +1033,234 @@ def check_canary_floors(
     )
 
 
+# The engine workflow timeout key that bounds each node, for the arm-canary budget
+# messages. Mirrors the mapping `check_canary_floors` and `read_workflow_timeouts` use.
+_NODE_TIMEOUT_KEYS = MappingProxyType(
+    {
+        "ReformulateQuery": "reformulate_timeout_ms",
+        "RetrieveHybrid": "retrieve_timeout_ms",
+        "ExtractGraphContext": "graph_node_timeout_ms",
+        "AssemblePrompt": "prompt_timeout_ms",
+        "GenerateAnswer": "generation_node_timeout_ms",
+    }
+)
+
+
+def legacy_canary_skip(name: str) -> PreflightCheckResult:
+    """A named skip for a legacy canary check (06.3.5 D-124, D-105, D-106).
+
+    The legacy canary manifest holds dev question IDs, so a corpus that sends held-out
+    questions to the live stack declares `[preflight] legacy_canaries = false` and must
+    not send those rows. The result passes (nothing failed) and says why it did not run.
+    """
+    return PreflightCheckResult(
+        name=name,
+        passed=True,
+        message=(
+            f"{name} skipped (06.3.5 D-124): this corpus declares [preflight] "
+            "legacy_canaries = false because the 8 legacy canary rows hold dev "
+            "question IDs (D-105, D-106); none of them was sent."
+        ),
+        detail={"skipped": True, "decision": "D-124"},
+    )
+
+
+def check_arm_mode_canaries(
+    client: httpx.Client,
+    *,
+    arms: Sequence[str],
+    canary_path: Path | str,
+    split_path: Path | str,
+    config_path: Path | str | None = None,
+    answered_snapshots: list[tuple[str, RetrievalSnapshot]] | None = None,
+) -> PreflightCheckResult:
+    """Prove every arm's provenance on the live stack with rehearsal-pool canaries.
+
+    Every row of the `arm_canaries` manifest runs under every configured arm through
+    `run_query(**request_fields(arm))` (D-108, D-124). Each answer must carry a
+    completed retrieval snapshot echoing the arm's `retrieval_mode`, have no failure in
+    any provenance clause of `provenance.provenance_failures` (the echo, the
+    pre-truncation ranking, the GRAPH_ABLATION notice on graph-off arms, the snapshot
+    config, and `bm25_count == 0` on dense-only and `vector_count == 0` on bm25-only),
+    retrieve at least the row's `min_retrieved_chunks`, and keep every node under the
+    live workflow budget. Every failure names the question and the arm.
+
+    The manifest is refused before any request when it holds a dev or held-out question
+    ID of the split (T-06.3.5-29): a canary must never spend a question the held-out
+    drive needs unseen. When `answered_snapshots` is given, the snapshot of each
+    answered canary is appended to it, labelled by question and arm.
+    """
+    from lancet_eval.arms import request_fields, resolve_arm
+    from lancet_eval.client import run_query
+    from lancet_eval.journal import NodeTiming, RunRecord, WorkflowWireMeta
+    from lancet_eval.provenance import provenance_failures
+    from lancet_eval.split import load_split
+
+    name = "arm_mode_canaries"
+    try:
+        rows: list[dict[str, Any]] = [
+            json.loads(line)
+            for line in Path(canary_path).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        split = load_split(split_path)
+    except Exception as exc:
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message=f"Failed to read the arm canary manifest or the split: {exc}",
+        )
+    if not rows:
+        return PreflightCheckResult(
+            name=name, passed=False, message="The arm canary manifest has no rows."
+        )
+
+    banned = (
+        set(split.dev_ids) | set(split.heldout_g_ids) | set(split.heldout_null_ids)
+    )
+    held = sorted({str(r.get("question_id", "")) for r in rows} & banned)
+    if held:
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message=(
+                f"Arm canary manifest holds {len(held)} dev or held-out question "
+                f"ID(s) {held}; refused before any request (06.3.5 D-124, D-105, "
+                "D-106)."
+            ),
+            detail={"refused_ids": held},
+        )
+    unreadable = [r for r in rows if not r.get("question_id") or not r.get("question")]
+    if unreadable:
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message=(
+                f"{len(unreadable)} arm canary row(s) lack a question_id or question; "
+                "refused before any request."
+            ),
+        )
+    try:
+        specs = {arm: resolve_arm(arm) for arm in arms}
+        node_timeouts = read_workflow_timeouts(config_path)
+    except Exception as exc:
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message=f"Arm canaries could not start: {exc}",
+        )
+
+    failures: list[str] = []
+    for row in rows:
+        qid = row["question_id"]
+        min_chunks = int(row.get("min_retrieved_chunks", 1))
+        for arm in arms:
+            label = f"Canary {qid} ({arm})"
+            try:
+                outcome = run_query(
+                    client,
+                    query=row["question"],
+                    capture_raw_events=False,
+                    **request_fields(arm),
+                )
+            except Exception as exc:
+                failures.append(f"{label} query failed with exception: {exc}")
+                continue
+
+            answer = outcome.answer
+            snapshot = (
+                answer.snapshot
+                if answer is not None and answer.snapshot is not None
+                else outcome.partial_snapshot
+            )
+            if (
+                answered_snapshots is not None
+                and answer is not None
+                and answer.snapshot is not None
+            ):
+                answered_snapshots.append(
+                    (f"arm canary {qid} ({arm})", answer.snapshot)
+                )
+            if outcome.status == "failed":
+                failures.append(f"{label} workflow failed ({outcome.status})")
+                continue
+
+            observed = len(snapshot.retrieved_chunks) if snapshot is not None else 0
+            if snapshot is None or not snapshot.result_hash:
+                failures.append(
+                    f"{label} has no completed retrieval snapshot (absent, or an "
+                    "empty result_hash), so the retrieval_mode echo and the ranking "
+                    "cannot be checked"
+                )
+            if observed < min_chunks:
+                failures.append(
+                    f"{label} retrieval floor missed: observed {observed} chunks, "
+                    f"floor is {min_chunks}"
+                )
+
+            meta = outcome.workflow_meta
+            record = RunRecord(
+                corpus="preflight",
+                question_id=qid,
+                graph_arm=arm,
+                outcome="success",
+                snapshot=snapshot,
+                notices=outcome.notices,
+                node_failures=outcome.node_failures,
+                node_timings=[
+                    NodeTiming(node_name=t.node_name, duration_ms=float(t.duration_ms))
+                    for t in outcome.node_timings
+                    if t.duration_ms is not None
+                ],
+                workflow_meta=(
+                    WorkflowWireMeta.model_validate(meta.model_dump())
+                    if meta is not None
+                    else None
+                ),
+            )
+            failures.extend(
+                f"{label} provenance clause ({f.code}): {f.detail}"
+                for f in provenance_failures(record)
+            )
+            if meta is None and specs[arm].retrieval_mode != "hybrid":
+                failures.append(
+                    f"{label} carries no workflow metadata, so the bm25_count / "
+                    "vector_count corroboration cannot be checked"
+                )
+
+            for timing in outcome.node_timings:
+                budget = node_timeouts.get(timing.node_name)
+                duration = timing.duration_ms or 0.0
+                if budget is not None and duration >= budget:
+                    key = _NODE_TIMEOUT_KEYS.get(timing.node_name, timing.node_name)
+                    failures.append(
+                        f"{label} node {timing.node_name} duration {duration}ms "
+                        f"exceeded configured budget {budget}ms ({key})"
+                    )
+
+    detail: dict[str, Any] = {
+        "canary_count": len(rows) * len(arms),
+        "rows": len(rows),
+        "arms": list(arms),
+    }
+    if failures:
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message="; ".join(failures),
+            detail={**detail, "failure_count": len(failures)},
+        )
+    return PreflightCheckResult(
+        name=name,
+        passed=True,
+        message=(
+            f"All {len(rows) * len(arms)} arm-mode canaries ({len(rows)} rehearsal "
+            f"rows x {len(arms)} arms) passed provenance, floors and live budgets."
+        ),
+        detail=detail,
+    )
+
+
 def check_index_identity(
     settings: EvalSettings, corpus_name: str
 ) -> PreflightCheckResult:
@@ -1091,6 +1319,25 @@ def run_preflight_checks(
     settings = settings or load_settings()
     results: list[PreflightCheckResult] = []
 
+    # 06.3.5 D-124: a corpus that declares `legacy_canaries = false` skips the two
+    # legacy canary checks, and one with an `arm_canaries` manifest and more than two
+    # arms adds `arm_mode_canaries`. A corpus config that cannot be loaded runs the
+    # legacy checks exactly as before.
+    from lancet_eval.corpus import load_corpus_config
+
+    try:
+        corpus_config = load_corpus_config(corpus_name)
+    except Exception:
+        corpus_config = None
+    skip_legacy_canaries = (
+        corpus_config is not None and not corpus_config.legacy_canaries
+    )
+    run_arm_canaries = (
+        corpus_config is not None
+        and corpus_config.arm_canaries is not None
+        and len(corpus_config.arms) > 2
+    )
+
     # 1. Store isolation
     results.append(check_store_isolation(settings))
 
@@ -1098,7 +1345,11 @@ def run_preflight_checks(
     results.append(check_index_identity(settings, corpus_name))
 
     # 3. Canary manifest check (unconditional, independent of gateway/engine)
-    results.append(check_canary_manifest())
+    results.append(
+        legacy_canary_skip("canary_manifest")
+        if skip_legacy_canaries
+        else check_canary_manifest()
+    )
 
     # 4. Gateway and engine reachability
     should_close_client = False
@@ -1118,17 +1369,47 @@ def run_preflight_checks(
         if gw_check.passed and eng_check.passed:
             generation_check = check_corpus_generation(client, corpus_name)
             answered: list[tuple[str, RetrievalSnapshot]] = []
-            canary_check = check_canary_floors(
-                client,
-                accepted_known_misses=accepted_known_misses,
-                answered_snapshots=answered,
-            )
+            if skip_legacy_canaries:
+                canary_check = legacy_canary_skip("canary_floors")
+            else:
+                canary_check = check_canary_floors(
+                    client,
+                    accepted_known_misses=accepted_known_misses,
+                    answered_snapshots=answered,
+                )
+            arm_check: PreflightCheckResult | None = None
+            if run_arm_canaries and corpus_config is not None:
+                if corpus_config.split_path is None:
+                    arm_check = PreflightCheckResult(
+                        name="arm_mode_canaries",
+                        passed=False,
+                        message=(
+                            "The corpus declares arm_canaries but no [split]; the "
+                            "manifest cannot be proved free of dev and held-out IDs "
+                            "(06.3.5 D-124), so no canary was sent."
+                        ),
+                    )
+                else:
+                    arm_check = check_arm_mode_canaries(
+                        client,
+                        arms=corpus_config.arms,
+                        canary_path=(
+                            repo_root()
+                            / "eval"
+                            / "corpora"
+                            / str(corpus_config.arm_canaries)
+                        ),
+                        split_path=corpus_config.split_path,
+                        answered_snapshots=answered,
+                    )
             if generation_check.detail.get("probe_snapshot_missing"):
                 generation_check = corpus_generation_from_canaries(
                     corpus_name, answered
                 )
             results.append(generation_check)
             results.append(canary_check)
+            if arm_check is not None:
+                results.append(arm_check)
     finally:
         if should_close_client:
             client.close()

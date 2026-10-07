@@ -61,6 +61,9 @@ _TIMEOUT_CLASS = "timeout"
 #: The stage label that adds SC-4, SC-5 and graph-off invariance; any other label keeps
 #: the drive-1 readings unchanged (D-95).
 DRIVE2_STAGE = "drive2"
+#: The stage label of the held-out drive (06.3.5, D-109). It reads SC-1 and SC-2 only,
+#: per arm and pooled; SC-3, SC-4 and SC-5 are not computed for it.
+HELDOUT_STAGE = "heldout"
 
 
 class _LegacyDrive(NamedTuple):
@@ -146,6 +149,10 @@ class ArmRoles:
 
 #: The arms drives 1, 1b and 2 stored; every existing stage reads under these.
 DEFAULT_ARM_ROLES = ArmRoles(reference="graph-off", treatment="graph-on")
+
+#: The pair the held-out stage's pooled readings count both-arm errors over: the
+#: registry's own `hybrid` and `hybrid+graph` (D-101), matched by canonical label.
+HELDOUT_ARM_ROLES = ArmRoles(reference="hybrid", treatment="hybrid+graph")
 
 
 def _matches_role(stored_label: str, role_label: str) -> bool:
@@ -476,10 +483,193 @@ def evaluate_sc2(
     )
 
 
+def evaluate_sc1_arm(
+    arm: str,
+    *,
+    n_expected: int,
+    n_recorded: int,
+    missing_count: int,
+    other_failures: Sequence[str] = (),
+) -> GateReading:
+    """SC-1 for one arm of the held-out drive (D-109): every question has a record.
+
+    `n_expected` is the number of corpus questions, `n_recorded` the questions with a
+    record under `arm`, and `missing_count` the arm's missing work units from the one
+    `completeness_comparison` call. An arm with no records reads MISS with `n=0`, and so
+    does an empty corpus (`n_expected` 0): a reading over nothing is never a PASS.
+    `other_failures` are the journal-level precondition failures (stage marker, retries,
+    unreadable journal); any of them makes every arm MISS.
+    """
+    reasons: list[str] = []
+    if n_expected <= 0:
+        reasons.append(f"arm {arm}: n_expected=0 (the corpus has no questions)")
+    elif n_recorded == 0:
+        reasons.append(f"arm {arm}: n=0 (no records)")
+    if missing_count > 0:
+        reasons.append(
+            f"arm {arm}: {missing_count} of {n_expected} work unit(s) missing"
+        )
+    reasons.extend(other_failures)
+    return GateReading(
+        gate="SC-1",
+        status="PASS" if not reasons else "MISS",
+        reason=(
+            "; ".join(reasons)
+            if reasons
+            else f"arm {arm}: all {n_expected} work unit(s) recorded"
+        ),
+        n=n_recorded,
+        detail={
+            "arm": arm,
+            "n_expected": n_expected,
+            "missing_units": missing_count,
+        },
+    )
+
+
+def _arm_flatness_records(journal_path: Path | str, arm: str) -> list[Any]:
+    """The flatness records of one arm with ordinals renumbered 1..n.
+
+    `records_from_run_journal` numbers the whole journal in line order, and
+    `decay.validate_and_sort_records` raises on a gap, so one arm's records of an
+    interleaved journal must be renumbered before they are read.
+    """
+    kept = [
+        rec
+        for rec in records_from_run_journal(journal_path)
+        if _matches_role(rec.graph_arm, arm)
+    ]
+    return [replace(rec, ordinal=i) for i, rec in enumerate(kept, start=1)]
+
+
+def evaluate_sc2_arm(
+    journal_path: Path | str,
+    arm: str,
+    engine_pid_before: int,
+    engine_pid_after: int,
+) -> GateReading:
+    """SC-2 for one arm of the held-out drive (D-109), so a failing arm cannot hide.
+
+    The same two clauses as `evaluate_sc2`, over only the records stored under `arm`
+    (matched by canonical label): the first-attempt error-mode tally (timeout not the
+    plurality or tied class) and the RetrieveHybrid flatness clause over the arm's
+    records renumbered 1..n. An engine restart is a MISS; an arm with no records is a
+    MISS with `n=0`.
+    """
+    if engine_pid_before != engine_pid_after:
+        return GateReading(
+            gate="SC-2",
+            status="MISS",
+            reason=f"arm {arm}: engine restarted",
+            n=0,
+            detail={
+                "arm": arm,
+                "engine_pid_before": float(engine_pid_before),
+                "engine_pid_after": float(engine_pid_after),
+            },
+        )
+    records = [
+        rec for rec in load_records(journal_path) if _matches_role(rec.graph_arm, arm)
+    ]
+    if not records:
+        return GateReading(
+            gate="SC-2",
+            status="MISS",
+            reason=f"arm {arm}: n=0 (no records)",
+            n=0,
+            detail={"arm": arm},
+        )
+    if SC2_TIMEOUT_DOMINANCE_RULE not in _KNOWN_SC2_DOMINANCE_RULES:
+        return GateReading(
+            gate="SC-2",
+            status="MISS",
+            reason=(
+                f"arm {arm}: unknown dominance rule {SC2_TIMEOUT_DOMINANCE_RULE!r} "
+                f"(known: {sorted(_KNOWN_SC2_DOMINANCE_RULES)})"
+            ),
+            n=len(records),
+            detail={
+                "arm": arm,
+                "sc2_timeout_dominance_rule": SC2_TIMEOUT_DOMINANCE_RULE,
+            },
+        )
+
+    # D-67: each work unit counts its first attempt once, as in `evaluate_sc2`.
+    class_counts: dict[str, int] = {}
+    retried_records = 0
+    for rec in records:
+        if rec.prior_attempts:
+            retried_records += 1
+        cls = classify_record(first_attempt_view(rec))
+        if cls is not None:
+            class_counts[cls] = class_counts.get(cls, 0) + 1
+    if class_counts:
+        max_count = max(class_counts.values())
+        dominant_classes = sorted(c for c, v in class_counts.items() if v == max_count)
+    else:
+        dominant_classes = []
+    timeout_dominant = _TIMEOUT_CLASS in dominant_classes
+
+    try:
+        flatness = flatness_verdict(_arm_flatness_records(journal_path, arm))
+    except ValueError as exc:
+        return GateReading(
+            gate="SC-2",
+            status="MISS",
+            reason=f"arm {arm}: flatness records could not be read: {exc}",
+            n=len(records),
+            detail={"arm": arm},
+        )
+
+    reasons: list[str] = []
+    if timeout_dominant:
+        reasons.append(
+            f"arm {arm}: timeout is a dominant error class (tied or plurality): "
+            f"{class_counts}"
+        )
+    if not flatness.passed:
+        reasons.append(f"arm {arm}: flatness {flatness.reason}")
+    return GateReading(
+        gate="SC-2",
+        status="PASS" if not reasons else "MISS",
+        reason=(
+            "; ".join(reasons)
+            if reasons
+            else f"arm {arm}: error mode and RetrieveHybrid flatness both pass"
+        ),
+        n=len(records),
+        detail={
+            "arm": arm,
+            "class_counts": {k: float(v) for k, v in class_counts.items()},
+            "dominant_classes": dominant_classes,
+            "timeout_dominant": timeout_dominant,
+            "sc2_timeout_dominance_rule": SC2_TIMEOUT_DOMINANCE_RULE,
+            "retried_records": float(retried_records),
+            "flatness_reason": flatness.reason,
+            "flatness_n": flatness.n,
+            "flatness_trend_available": flatness.trend_available,
+            "flatness_window_available": flatness.window_available,
+            "flatness_decay_present": flatness.decay_present,
+            "flatness_slope_ms_per_query": flatness.slope_ms_per_query,
+            "flatness_window_delta_ms": flatness.window_delta_ms,
+        },
+    )
+
+
 def citation_rejection_rate(
     journal_path: Path | str, questions: list[Any]
 ) -> GateReading:
-    """D-69 companion tripwire (SC-2 companion, AI-SPEC #4).
+    """D-69 companion tripwire over every record of a journal.
+
+    See `_citation_rejection_from_records` for the rule.
+    """
+    return _citation_rejection_from_records(load_records(journal_path), questions)
+
+
+def _citation_rejection_from_records(
+    records: Sequence[Any], questions: list[Any]
+) -> GateReading:
+    """D-69 companion tripwire (SC-2 companion, AI-SPEC #4) over `records`.
 
     PASS iff `citation_marker_mismatch` count is 0 AND the total rejection rate is
     <= `CITATION_REJECTION_TRIPWIRE` AND the null-query rejection rate does not
@@ -489,7 +679,6 @@ def citation_rejection_rate(
     or `citation_marker_mismatch`. Null and non-null are reported separately.
     """
     gold_map = {q.question_id: q for q in questions}
-    records = load_records(journal_path)
 
     null_total = 0
     null_rejections = 0
@@ -1701,6 +1890,80 @@ def _retry_provenance(
     return text, failures
 
 
+class _JournalState(NamedTuple):
+    """What `_journal_state` read from a journal, failures kept apart by kind.
+
+    `unreadable` holds the failures that mean nothing could be measured (no journal,
+    no header, no corpus, an unmeasurable completeness), `incomplete` the one
+    incompleteness failure, and `provenance_failures` the stage-marker and retry
+    failures. `missing` is the missing work-unit keys of the one
+    `completeness_comparison` call.
+    """
+
+    corpus: str | None
+    completeness: tuple[bool, int] | None
+    missing: frozenset[str]
+    unreadable: list[str]
+    incomplete: list[str]
+    provenance_failures: list[str]
+    provenance: str
+
+
+def _journal_state(journal_path: Path, stage: str) -> _JournalState:
+    """Reads a journal once: its corpus, completeness, missing keys and provenance."""
+    if not journal_path.is_file():
+        return _JournalState(
+            None, None, frozenset(), ["no journal file"], [], [],
+            "not assessed: no journal file",
+        )
+    header = _read_journal_header(journal_path)
+    if header is None:
+        return _JournalState(
+            None, None, frozenset(), ["no header"], [], [],
+            "not assessed: no header",
+        )
+    records = load_records(journal_path)
+    corpus_name = header.get("corpus") or (records[0].corpus if records else None)
+    if not corpus_name:
+        return _JournalState(
+            None,
+            None,
+            frozenset(),
+            ["no corpus in header or records"],
+            [],
+            [],
+            "not assessed: no corpus in header or records",
+        )
+    unreadable: list[str] = []
+    incomplete: list[str] = []
+    completeness: tuple[bool, int] | None = None
+    missing_keys: frozenset[str] = frozenset()
+    try:
+        is_complete, missing = completeness_comparison(journal_path, corpus_name)
+    except Exception as exc:  # fail closed: an unmeasurable journal is not scored
+        unreadable.append(
+            f"journal completeness could not be measured for corpus {corpus_name!r}: "
+            f"{type(exc).__name__}: {exc}"
+        )
+    else:
+        completeness = (is_complete, len(missing))
+        missing_keys = frozenset(missing)
+        if not is_complete:
+            incomplete.append(
+                f"journal incomplete: {len(missing)} work unit(s) missing"
+            )
+    provenance, provenance_failures = _retry_provenance(header, records, stage)
+    return _JournalState(
+        corpus_name,
+        completeness,
+        missing_keys,
+        unreadable,
+        incomplete,
+        provenance_failures,
+        provenance,
+    )
+
+
 def _journal_preconditions(
     journal_path: Path, stage: str
 ) -> tuple[str | None, tuple[bool, int] | None, list[str], str]:
@@ -1715,35 +1978,13 @@ def _journal_preconditions(
     `_retry_provenance`). `completeness_comparison` is called here and nowhere else on
     `main`'s path, so completeness is measured exactly once.
     """
-    if not journal_path.is_file():
-        return None, None, ["no journal file"], "not assessed: no journal file"
-    header = _read_journal_header(journal_path)
-    if header is None:
-        return None, None, ["no header"], "not assessed: no header"
-    records = load_records(journal_path)
-    corpus_name = header.get("corpus") or (records[0].corpus if records else None)
-    if not corpus_name:
-        return (
-            None,
-            None,
-            ["no corpus in header or records"],
-            "not assessed: no corpus in header or records",
-        )
-    failures: list[str] = []
-    completeness: tuple[bool, int] | None = None
-    try:
-        is_complete, missing = completeness_comparison(journal_path, corpus_name)
-    except Exception as exc:  # fail closed: an unmeasurable journal is not scored
-        failures.append(
-            f"journal completeness could not be measured for corpus {corpus_name!r}: "
-            f"{type(exc).__name__}: {exc}"
-        )
-    else:
-        completeness = (is_complete, len(missing))
-        if not is_complete:
-            failures.append(f"journal incomplete: {len(missing)} work unit(s) missing")
-    provenance, provenance_failures = _retry_provenance(header, records, stage)
-    return corpus_name, completeness, [*failures, *provenance_failures], provenance
+    state = _journal_state(journal_path, stage)
+    return (
+        state.corpus,
+        state.completeness,
+        [*state.unreadable, *state.incomplete, *state.provenance_failures],
+        state.provenance,
+    )
 
 
 def _unmet_precondition_readings(
@@ -1803,6 +2044,203 @@ def _unmet_precondition_readings(
     return readings
 
 
+_HELDOUT_NOT_COMPUTED = (
+    "not computed for the heldout stage (D-109): SC-3, SC-4 and SC-5 need the dev "
+    "populations and the two-arm graph pairing, which the four-arm held-out drive "
+    "does not carry"
+)
+_HELDOUT_POOLED = "pooled"
+
+
+def _heldout_readings(
+    run_dir: Path,
+    journal_path: Path,
+    state: _JournalState,
+    engine_pid_before: int,
+    engine_pid_after: int,
+) -> tuple[list[str], dict[str, dict[str, GateReading]]]:
+    """The held-out stage's SC-1, SC-2 and D-69 companion readings, per arm and pooled.
+
+    Returns the corpus's arm labels (empty when the journal names no readable corpus)
+    and `{gate: {arm label or "pooled": reading}}`, arms first in config order. Nothing
+    is computed from the records of a journal whose preconditions fail: every SC-2 and
+    D-69 reading is a bare MISS, while SC-1 keeps its per-arm completeness detail so a
+    complete arm reads PASS when completeness is the only failure. A failing arm reads
+    MISS on its own line whatever the pooled line says (T-06.3.5-28).
+    """
+    arms: list[str] = []
+    questions: list[Any] = []
+    config_failures: list[str] = []
+    if state.corpus:
+        try:
+            arms = list(load_corpus_config(state.corpus).arms)
+            questions = list(load_sample_questions(state.corpus))
+        except Exception as exc:  # fail closed
+            config_failures.append(
+                f"corpus {state.corpus!r} could not be loaded: "
+                f"{type(exc).__name__}: {exc}"
+            )
+    blocking = [*state.unreadable, *state.provenance_failures, *config_failures]
+    failures = [*state.unreadable, *state.incomplete, *state.provenance_failures]
+    failures += config_failures
+    computable = not failures
+
+    records = load_records(journal_path) if journal_path.is_file() else []
+    n_expected = len(questions)
+    missing_by_arm: dict[str, int] = {}
+    for key in state.missing:
+        label = key.rsplit(":", 1)[-1]
+        missing_by_arm[label] = missing_by_arm.get(label, 0) + 1
+
+    sc1: dict[str, GateReading] = {}
+    sc2: dict[str, GateReading] = {}
+    d69: dict[str, GateReading] = {}
+    for label in arms:
+        recorded = len({rec.question_id for rec in records if rec.graph_arm == label})
+        sc1[label] = evaluate_sc1_arm(
+            label,
+            n_expected=n_expected,
+            n_recorded=recorded,
+            missing_count=missing_by_arm.get(label, 0),
+            other_failures=blocking,
+        )
+        if computable:
+            sc2[label] = evaluate_sc2_arm(
+                journal_path, label, engine_pid_before, engine_pid_after
+            )
+            d69[label] = _citation_rejection_from_records(
+                [rec for rec in records if _matches_role(rec.graph_arm, label)],
+                questions,
+            )
+        else:
+            miss_detail: dict[str, Any] = {
+                "arm": label,
+                "journal_complete": bool(state.completeness and state.completeness[0]),
+                "missing_units": missing_by_arm.get(label, 0),
+            }
+            reason = "; ".join(failures)
+            sc2[label] = GateReading(
+                gate="SC-2", status="MISS", reason=reason, n=recorded,
+                detail=dict(miss_detail),
+            )
+            d69[label] = GateReading(
+                gate="citation_rejection_rate", status="MISS", reason=reason,
+                n=recorded, detail=dict(miss_detail),
+            )
+
+    if computable:
+        pooled_sc1 = evaluate_sc1(run_dir, is_complete=True, missing_count=0)
+        pooled_sc1 = replace(
+            pooled_sc1,
+            detail={**pooled_sc1.detail, "retry_provenance": state.provenance},
+        )
+        if n_expected <= 0 or not arms:
+            pooled_sc1 = replace(
+                pooled_sc1,
+                status="MISS",
+                reason="n_expected=0: the corpus has no questions or no arms",
+            )
+        pooled_sc2 = evaluate_sc2(
+            journal_path,
+            engine_pid_before,
+            engine_pid_after,
+            roles=HELDOUT_ARM_ROLES,
+        )
+        pooled_d69 = citation_rejection_rate(journal_path, questions)
+    else:
+        unmet = _unmet_precondition_readings(
+            run_dir,
+            journal_path,
+            failures,
+            state.completeness,
+            state.provenance,
+            is_drive2=False,
+        )
+        pooled_sc1 = unmet["SC-1"]
+        pooled_sc2 = unmet["SC-2"]
+        pooled_d69 = unmet["D-69 companion"]
+    sc1[_HELDOUT_POOLED] = pooled_sc1
+    sc2[_HELDOUT_POOLED] = pooled_sc2
+    d69[_HELDOUT_POOLED] = pooled_d69
+    return arms, {"SC-1": sc1, "SC-2": sc2, "D-69 companion": d69}
+
+
+def _heldout_cell(reading: GateReading) -> str:
+    """One table cell: `PASS (n)` or `MISS (n): reason`, safe inside a markdown row."""
+    text = f"{reading.status} ({reading.n})"
+    if reading.status != "PASS":
+        text += f": {reading.reason}"
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _heldout_markdown(
+    arms: Sequence[str],
+    readings: Mapping[str, Mapping[str, GateReading]],
+    provenance: str,
+) -> list[str]:
+    """The held-out gate table: one row per reading, a column per arm plus the pool.
+
+    SC-1 and SC-2 are the gates; the D-69 companion is re-reported as a disclosure.
+    """
+    columns = [*arms, _HELDOUT_POOLED]
+    header = "| Reading | " + " | ".join(columns) + " |"
+    divider = "|---|" + "---|" * len(columns)
+    lines = ["# Unpark Gates (heldout)", "", "## Gates", "", header, divider]
+    for gate in ("SC-1", "SC-2"):
+        cells = [_heldout_cell(readings[gate][column]) for column in columns]
+        lines.append(f"| {gate} | " + " | ".join(cells) + " |")
+    lines += [
+        "",
+        "## Re-reported as a disclosure (not a gate)",
+        "",
+        header,
+        divider,
+    ]
+    cells = [_heldout_cell(readings["D-69 companion"][c]) for c in columns]
+    lines.append("| D-69 companion | " + " | ".join(cells) + " |")
+    lines += [
+        "",
+        f"Retry provenance: {provenance}",
+        "",
+        "SC-3, SC-4, SC-5 are not computed for the heldout stage "
+        f"({_HELDOUT_NOT_COMPUTED}).",
+    ]
+    return lines
+
+
+def _main_heldout(
+    args: argparse.Namespace, run_dir: Path, journal_path: Path
+) -> int:
+    """`--stage heldout`: write `--out` (markdown) and its JSON sibling (D-109)."""
+    state = _journal_state(journal_path, args.stage)
+    arms, readings = _heldout_readings(
+        run_dir, journal_path, state, args.engine_pid_before, args.engine_pid_after
+    )
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    md_lines = _heldout_markdown(arms, readings, state.provenance)
+    with open(out_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(md_lines) + "\n")
+
+    payload: dict[str, Any] = {"stage": args.stage, "arms": arms}
+    for gate, by_label in readings.items():
+        payload[gate] = {label: asdict(reading) for label, reading in by_label.items()}
+    payload["not_computed"] = {
+        gate: _HELDOUT_NOT_COMPUTED for gate in ("SC-3", "SC-4", "SC-5")
+    }
+    payload["retry_provenance"] = state.provenance
+    with open(out_path.with_suffix(".json"), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(payload, f, indent=2)
+        f.write("\n")
+
+    for gate, by_label in readings.items():
+        for label, reading in by_label.items():
+            print(f"{gate} [{label}]: {reading.status} ({_ascii(reading.reason)})")
+    print(f"retry provenance: {_ascii(state.provenance)}")
+    print(f"SC-3, SC-4, SC-5: {_HELDOUT_NOT_COMPUTED}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI: `python -m lancet_eval.unpark_gates --stage drive1 --run <dir>
     --gold-chunks <file> --populations <diag_selection.json> --engine-pid-before N
@@ -1815,13 +2253,18 @@ def main(argv: list[str] | None = None) -> int:
     requires `--baseline-run` (drive 1b's run directory, 06.3.4.1-30; D-95). Every
     other stage label, `drive1` and `drive1b` included, writes exactly the SC-1,
     SC-2, D-69 companion and SC-3 readings and needs no baseline.
+
+    `--stage heldout` (06.3.5, D-109) reads SC-1, SC-2 and the D-69 companion per arm
+    and pooled, writes them to `--out` and its JSON sibling (use `gates-heldout.md`),
+    does not compute SC-3, SC-4 or SC-5, and needs neither `--gold-chunks` nor
+    `--populations`.
     """
     parser = argparse.ArgumentParser(prog="python -m lancet_eval.unpark_gates")
     parser.add_argument("--stage", required=True)
     parser.add_argument("--run", required=True)
     parser.add_argument("--baseline-run", dest="baseline_run", default=None)
-    parser.add_argument("--gold-chunks", dest="gold_chunks", required=True)
-    parser.add_argument("--populations", required=True)
+    parser.add_argument("--gold-chunks", dest="gold_chunks", default=None)
+    parser.add_argument("--populations", default=None)
     parser.add_argument(
         "--engine-pid-before", dest="engine_pid_before", type=int, required=True
     )
@@ -1830,6 +2273,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
+
+    is_heldout = args.stage == HELDOUT_STAGE
+    if not is_heldout and not (args.gold_chunks and args.populations):
+        parser.error(
+            "--gold-chunks and --populations are required unless --stage heldout"
+        )
 
     is_drive2 = args.stage == DRIVE2_STAGE
     if is_drive2 and not args.baseline_run:
@@ -1842,6 +2291,9 @@ def main(argv: list[str] | None = None) -> int:
     journal_path = run_dir / "journal.jsonl"
     if not journal_path.is_file():
         journal_path = run_dir / "journal.json"
+
+    if is_heldout:
+        return _main_heldout(args, run_dir, journal_path)
 
     baseline_journal: Path | None = None
     if is_drive2:
