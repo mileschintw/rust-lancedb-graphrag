@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Callable
 from pathlib import Path
 from statistics import fmean
@@ -25,6 +26,11 @@ from lancet_eval.client import (
 )
 from lancet_eval.corpus import GoldQuestion
 from lancet_eval.journal import Journal, NodeTiming, RunRecord, WorkflowWireMeta
+from lancet_eval.measure import (
+    EMBEDDING_PRICE_PER_1M,
+    ESTIMATED_EMBEDDING_TOKENS_PER_QUERY,
+    compute_spend,
+)
 from lancet_eval.metrics import (
     answer_usable,
     final_answer_em,
@@ -751,3 +757,353 @@ def test_p4_helper_agrees_with_the_report_population(
     )
     assert p4_mod.DEFAULT_REFERENCE_ARM == "hybrid"
     assert not math.isnan(dim(report, "p4_size").score or 0.0)
+
+
+# ---- Task 2: provenance refusal, per-arm means, spend, paired deltas ---------------
+
+COMPARISON_SLUGS = ("dense_only", "bm25_only", "hybrid_graph")
+DELTA_NAMES = [
+    "paper_hits_at_10_delta",
+    "paper_mrr_at_10_delta",
+    "paper_map_at_10_delta",
+    "final_answer_em_delta",
+    "gold_containment_delta",
+    "final_answer_missing_rate_delta",
+    "coverage_at_4_delta",
+    "precision_at_4_delta",
+    "abstention_rate_g_delta",
+    "latency_total_ms_delta",
+    "retrieve_node_ms_delta",
+    "prompt_tokens_delta",
+    "spend_usd_delta",
+]
+MEAN_NAMES = [
+    "latency_total_ms_mean",
+    "retrieve_node_ms_mean",
+    "spend_usd_mean",
+]
+
+
+def _snapshot(rec: RunRecord, **update: object) -> RunRecord:
+    assert rec.snapshot is not None
+    return rec.model_copy(update={"snapshot": rec.snapshot.model_copy(update=update)})
+
+
+def _echo_hybrid(rec: RunRecord) -> RunRecord:  # clause (a)
+    return _snapshot(rec, retrieval_mode="hybrid")
+
+
+def _drop_ranking(rec: RunRecord) -> RunRecord:  # clause (b)
+    return _snapshot(rec, pre_truncation_ranking=[])
+
+
+def _break_prefix(rec: RunRecord) -> RunRecord:  # clause (c)
+    assert rec.snapshot is not None
+    final = list(rec.snapshot.retrieved_chunks)
+    final[0] = final[0].model_copy(update={"chunk_id": "not-the-ranking"})
+    return _snapshot(rec, retrieved_chunks=final)
+
+
+def _bm25_rank_on_dense(rec: RunRecord) -> RunRecord:  # clause (d)
+    assert rec.snapshot is not None
+    ranking = list(rec.snapshot.pre_truncation_ranking)
+    ranking[0] = ranking[0].model_copy(update={"bm25_rank": 1})
+    return _snapshot(rec, pre_truncation_ranking=ranking)
+
+
+def _wrong_rrf_k(rec: RunRecord) -> RunRecord:  # clause (f)
+    return _snapshot(rec, rrf_k=61)
+
+
+def _drop_ablation(rec: RunRecord) -> RunRecord:  # clause (e)
+    return rec.model_copy(update={"notices": []})
+
+
+def _bm25_count_on_dense(rec: RunRecord) -> RunRecord:  # clause (g)
+    return rec.model_copy(
+        update={"workflow_meta": WorkflowWireMeta(vector_count=8, bm25_count=3)}
+    )
+
+
+@pytest.mark.parametrize(
+    ("code", "arm", "mutate"),
+    [
+        ("a", "dense-only", _echo_hybrid),
+        ("b", "hybrid", _drop_ranking),
+        ("c", "hybrid", _break_prefix),
+        ("d", "dense-only", _bm25_rank_on_dense),
+        ("f", "hybrid+graph", _wrong_rrf_k),
+    ],
+)
+def test_a_zero_tolerance_provenance_failure_refuses_the_report(
+    code, arm, mutate, tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    assert preregistered_clean_tree
+    run_dir, gold = build_run(tmp_path, monkeypatch, {(arm, "fx-c1"): mutate})
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(run_dir=run_dir, no_judge=True, gold_chunks_path=gold)
+    message = str(exc_info.value)
+    assert f"fx-c1/{arm}/{code}" in message
+    assert "D-110" in message
+    assert "1 record(s)" in message
+    assert not (run_dir / "report.json").exists()
+
+
+def test_more_than_twenty_failing_records_lists_twenty_and_states_the_total(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    assert preregistered_clean_tree
+    every = {
+        (arm, qid): _wrong_rrf_k
+        for arm in ARMS
+        for qid in [*G_IDS, *NULL_IDS]
+        if (arm, qid) != ("dense-only", "fx-c1")
+    }
+    assert len(every) == 31
+    run_dir, gold = build_run(tmp_path, monkeypatch, every)
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(run_dir=run_dir, no_judge=True, gold_chunks_path=gold)
+    message = str(exc_info.value)
+    assert "31 record(s)" in message
+    assert len(re.findall(r"fx-[a-z0-9]+/[a-z0-9+-]+/f", message)) == 20
+
+
+def test_a_missing_graph_ablation_is_counted_and_excluded_not_refused(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored(
+        "e",
+        tmp_path,
+        monkeypatch,
+        preregistered_clean_tree,
+        {("hybrid", "fx-c1"): _drop_ablation},
+    )
+    size = dim(report, "p4_size")
+    assert size.score == 5.0
+    assert size.detail["excluded_provenance__hybrid"] == 1.0
+    assert size.detail["excluded_other_arm_failure__dense_only"] == 1.0
+    conformance = dim(report, "arm_provenance_conformance")
+    assert conformance.detail["code_e"] == 1.0
+    assert conformance.score == 1.0  # no zero-tolerance failure
+
+
+def test_a_corroboration_failure_is_counted_and_changes_nothing_else(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored(
+        "g",
+        tmp_path,
+        monkeypatch,
+        preregistered_clean_tree,
+        {("dense-only", "fx-c1"): _bm25_count_on_dense},
+    )
+    assert dim(report, "p4_size").score == 6.0
+    conformance = dim(report, "arm_provenance_conformance")
+    assert conformance.detail["code_g"] == 1.0
+    assert conformance.detail["code_e"] == 0.0
+
+
+def test_arm_provenance_conformance_is_one_with_zero_counts_on_a_clean_drive(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored("base", tmp_path, monkeypatch, preregistered_clean_tree)
+    d = dim(report, "arm_provenance_conformance")
+    assert d.score == 1.0
+    assert d.n == 32
+    for code in "abcdefg":
+        assert d.detail[f"code_{code}"] == 0.0
+    assert d.detail["records_failing_zero_tolerance"] == 0.0
+    assert not [k for k in d.detail if k.startswith("type_")]
+
+
+def test_every_secondary_delta_exists_for_the_three_comparison_arms_only(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored("base", tmp_path, monkeypatch, preregistered_clean_tree)
+    names = {d.name for d in report.dimensions}
+    for slug in COMPARISON_SLUGS:
+        for base in DELTA_NAMES:
+            assert f"{base}__{slug}" in names, f"{base}__{slug}"
+        for base in MEAN_NAMES:
+            assert f"{base}__{slug}" in names
+    assert "paper_mrr_at_10_delta__dense_only" in names
+    assert "final_answer_em_delta__hybrid_graph" in names
+    assert "coverage_at_4_delta__bm25_only" in names
+    assert "latency_total_ms_delta__bm25_only" in names
+    assert "spend_usd_delta__hybrid_graph" in names
+    assert not [n for n in names if n.endswith("_delta__hybrid")]
+    # the primaries' deltas belong to 06.3.5-13, inside their Holm families
+    assert not [n for n in names if n.startswith("paper_hits_at_4_delta")]
+    assert not [n for n in names if n.startswith("answer_usable") and "_delta" in n]
+    # a difference of two percentiles is not a paired per-question statistic
+    assert not [n for n in names if "_p50_delta" in n or "_p95_delta" in n]
+
+
+def _expected_spend(arm: str, qid: str) -> float:
+    rec = make_record(arm, qid)
+    embeds = not (
+        ARM_REGISTRY[arm].retrieval_mode == "bm25_only"
+        and ARM_REGISTRY[arm].disable_graph_context
+    )
+    return compute_spend([rec], include_embeddings=embeds)[0]
+
+
+def _expected_values(arm: str, metric: str) -> dict[str, float]:
+    """Per-question P4 values of one secondary, derived from the tables."""
+    out: dict[str, float] = {}
+    for qid in G_IDS:
+        gold = gold_question(qid)
+        ans = _answer(arm, qid)
+        ranks = RANKS[arm][qid]
+        in4 = sum(1 for r in ranks if r is not None and r <= 4)
+        out[qid] = {
+            "paper_hits_at_10": paper_q(arm, qid)["hit10"],
+            "paper_mrr_at_10": paper_q(arm, qid)["rr"],
+            "paper_map_at_10": paper_q(arm, qid)["ap"],
+            "final_answer_em": float(final_answer_em(gold, ans).score or 0.0),
+            "gold_containment": float(gold_contained(gold.gold_answer, ans)),
+            "final_answer_missing_rate": float(KINDS[arm][qid] == "noline"),
+            "coverage_at_4": in4 / 2,
+            "precision_at_4": in4 / 4,
+            "abstention_rate_g": 0.0,
+            "latency_total_ms": DURATION[arm],
+            "retrieve_node_ms": RETRIEVE_MS[arm],
+            "prompt_tokens": float(PROMPT_TOKENS[arm]),
+            "spend_usd": _expected_spend(arm, qid),
+        }[metric]
+    return out
+
+
+def test_each_delta_equals_the_p4_mean_difference_with_the_p4_bootstrap_ci(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored("base", tmp_path, monkeypatch, preregistered_clean_tree)
+    for arm in ("dense-only", "bm25-only", "hybrid+graph"):
+        slug = SLUGS[arm]
+        for base in DELTA_NAMES:
+            metric = base.removesuffix("_delta")
+            x = _expected_values(arm, metric)
+            ref = _expected_values("hybrid", metric)
+            want = p4_mod.paired_delta(x, ref)
+            d = dim(report, f"{base}__{slug}")
+            assert d.n == 6, d.name
+            assert d.score == pytest.approx(
+                fmean(x.values()) - fmean(ref.values()), abs=1e-9
+            ), d.name
+            assert d.score == pytest.approx(want.delta, abs=1e-9), d.name
+            assert d.detail["n_pairs"] == 6.0
+            assert d.detail["ci_lower"] == pytest.approx(want.ci_lower, abs=1e-9)
+            assert d.detail["ci_upper"] == pytest.approx(want.ci_upper, abs=1e-9)
+            assert d.detail["mean_x"] == pytest.approx(fmean(x.values()), abs=1e-9)
+            assert d.detail["mean_hybrid"] == pytest.approx(
+                fmean(ref.values()), abs=1e-9
+            )
+            for qtype in STRATUM_TYPES:
+                assert f"type_{qtype}_n_pairs" in d.detail, d.name
+                assert f"type_{qtype}_delta" in d.detail, d.name
+            assert not [k for k in d.detail if k.startswith("type_") and "_ci_" in k]
+
+
+def test_the_latency_delta_is_the_paired_per_question_difference(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored("base", tmp_path, monkeypatch, preregistered_clean_tree)
+    assert dim(report, "latency_total_ms_delta__hybrid_graph").score == 200.0
+    assert dim(report, "latency_total_ms_delta__dense_only").score == -200.0
+    assert dim(report, "retrieve_node_ms_delta__bm25_only").score == -60.0
+    assert dim(report, "prompt_tokens_delta__hybrid_graph").score == 100.0
+
+
+def test_the_missing_rate_delta_carries_the_counts(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored("base", tmp_path, monkeypatch, preregistered_clean_tree)
+    d = dim(report, "final_answer_missing_rate_delta__hybrid_graph")
+    assert (d.detail["count_x"], d.detail["count_hybrid"]) == (1.0, 0.0)
+    assert d.detail["count_delta"] == 1.0
+    b = dim(report, "final_answer_missing_rate_delta__bm25_only")
+    assert (b.detail["count_x"], b.detail["count_hybrid"]) == (0.0, 0.0)
+    assert b.detail["count_delta"] == 0.0
+
+
+def test_the_abstention_delta_reads_a_decline_against_hybrid(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored("blank", tmp_path, monkeypatch, preregistered_clean_tree, BLANK)
+    d = dim(report, "abstention_rate_g_delta__bm25_only")
+    assert d.score == pytest.approx(1 / 6)
+    assert d.detail["mean_x"] == pytest.approx(1 / 6)
+    assert d.detail["mean_hybrid"] == 0.0
+
+
+def test_no_secondary_delta_carries_a_p_value_or_a_holm_field(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored("base", tmp_path, monkeypatch, preregistered_clean_tree)
+    for d in report.dimensions:
+        for key in d.detail:
+            assert "p_value" not in key, (d.name, key)
+            assert "holm" not in key, (d.name, key)
+        assert "holm" not in d.name
+        assert "p_value" not in d.name
+        if "_delta__" in d.name:
+            assert all(type(v) is float for v in d.detail.values())
+
+
+def test_the_per_arm_means_carry_a_bootstrap_ci_and_strata_percentiles_do_not(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    report = scored("base", tmp_path, monkeypatch, preregistered_clean_tree)
+    for arm, slug in SLUGS.items():
+        for base, per_q in (
+            ("latency_total_ms_mean", [DURATION[arm]] * 6),
+            ("retrieve_node_ms_mean", [RETRIEVE_MS[arm]] * 6),
+            ("spend_usd_mean", [_expected_spend(arm, q) for q in sorted(G_IDS)]),
+        ):
+            d = dim(report, f"{base}__{slug}")
+            _, lo, hi = bootstrap_mean_ci(per_q, seed=42, b=10_000)
+            assert d.score == pytest.approx(fmean(per_q), abs=1e-12)
+            assert d.detail["ci_lower"] == pytest.approx(lo, abs=1e-9)
+            assert d.detail["ci_upper"] == pytest.approx(hi, abs=1e-9)
+            assert sum(d.detail[f"type_{t}_n"] for t in STRATUM_TYPES) == 6.0
+        pct = dim(report, f"latency_total_ms_p95__{slug}")
+        assert "ci_lower" not in pct.detail
+
+
+def test_bm25_only_carries_no_embedding_charge_and_dense_only_does() -> None:
+    """D-125: bm25-only with the graph off embeds nothing; measure.py is unchanged."""
+    from lancet_eval.score import _record_spend_usd
+
+    meta = WorkflowWireMeta(prompt_tokens=500, completion_tokens=50)
+
+    def with_tokens(arm: str) -> RunRecord:
+        return make_record(arm, "fx-c1").model_copy(update={"workflow_meta": meta})
+
+    dense, bm25, graph = (
+        with_tokens("dense-only"),
+        with_tokens("bm25-only"),
+        with_tokens("hybrid+graph"),
+    )
+    one_embedding = ESTIMATED_EMBEDDING_TOKENS_PER_QUERY * EMBEDDING_PRICE_PER_1M / 1e6
+    generation = compute_spend([bm25], include_embeddings=False)[0]
+    assert _record_spend_usd(bm25) == pytest.approx(generation, abs=1e-15)
+    assert _record_spend_usd(dense) - _record_spend_usd(bm25) == pytest.approx(
+        one_embedding, abs=1e-15
+    )
+    assert _record_spend_usd(graph) == pytest.approx(
+        generation + one_embedding, abs=1e-15
+    )
+
+
+def test_a_superseded_attempt_is_priced_with_its_own_embedding() -> None:
+    from lancet_eval.journal import AttemptRecord
+    from lancet_eval.score import _record_spend_usd
+
+    base = make_record("dense-only", "fx-c1")
+    prior = AttemptRecord(
+        attempt=1, outcome="error", error_type="timeout", error="slow"
+    )
+    retried = base.model_copy(update={"prior_attempts": [prior]})
+    one_embedding = ESTIMATED_EMBEDDING_TOKENS_PER_QUERY * EMBEDDING_PRICE_PER_1M / 1e6
+    gap = _record_spend_usd(retried) - _record_spend_usd(base)
+    assert gap == pytest.approx(one_embedding, abs=1e-15)

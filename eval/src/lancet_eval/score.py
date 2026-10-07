@@ -495,6 +495,11 @@ def _retrieve_node_ms(rec: RunRecord) -> float | None:
     return None
 
 
+def _record_spend_usd(rec: RunRecord) -> float:
+    """RED stub: replaced by the per-record spend of 06.3.5-10 Task 2."""
+    return 0.0
+
+
 def _prompt_tokens(rec: RunRecord) -> float:
     """Wire prompt tokens; 0 for a record that skipped generation or has no meta."""
     return float(rec.workflow_meta.prompt_tokens) if rec.workflow_meta else 0.0
