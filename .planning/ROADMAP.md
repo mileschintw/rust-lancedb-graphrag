@@ -1064,7 +1064,62 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 0 plans (not yet planned)
+**Plans:** 17 plans (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+
+Plans:
+
+**Wave 1**
+
+- [ ] 06.3.5-01-PLAN.md — Wave 0 pins: reset the gateway count gate to the measured 118 / sse 16, record the default-request node-chain golden at the pre-change HEAD, and add the read-only `inspect_lancedb --chunk-text` dump (D-99, D-100, D-102)
+- [ ] 06.3.5-02-PLAN.md — Commit the D-105 held-out split (308 G + 43 null) behind a one-way `checkpoint:decision`, with the rehearsal-pool canaries (D-124), rehearsal picks, both corpus configs and the run-directory `.gitignore` negations
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06.3.5-03-PLAN.md — `checkpoint:decision` on the wire shape, then the tracer: one dense-only request with the ranking flag through proto, engine, gateway, harness client and paper Hits@4 (D-99, D-100)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06.3.5-04-PLAN.md — bm25-only skips the dense call and the embedding (D-125); flag-on and explicit-hybrid golden identity; an unknown mode fails closed at gateway and engine; snapshot key-set pins
+- [ ] 06.3.5-05-PLAN.md — The D-101 arm registry, registry-driven requests with the companion round-trip test, the seeded balanced rotation over the split (D-107), and the split-role refusals
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 06.3.5-06-PLAN.md — Registry-aware readers: score, dimensions, usability, pairing and `unpark_gates` `ArmRoles`; unknown or mixed labels fail closed; drives 1/1b/2 re-read and re-score unchanged
+- [ ] 06.3.5-07-PLAN.md — Paper-convention metrics proven by golden vectors from the official script (not vendored), `provenance.py` (AI-SPEC #1 a-g), and the D-104 dev retro
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 06.3.5-08-PLAN.md — Pre-registration: abstention predicate and 06.3.5 judgeable policy, exact sign-flip and Holm, P4, one `thresholds.py` commit, and the D-73 refusals in run and score
+- [ ] 06.3.5-09-PLAN.md — `unpark_gates --stage heldout` per arm plus pooled (D-109), rehearsal-pool arm-mode canaries with the legacy skip (D-124), and the per-arm provider map (D-96)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 06.3.5-10-PLAN.md — The four-arm deterministic report on P4 with the script-faithful line (D-121, D-122, D-126), the zero-tolerance provenance refusal, and the text-rule cross-check tool
+- [ ] 06.3.5-11-PLAN.md — The cache-only, counts-only judge stage (D-112) and the seeded, blinded, commit-reveal calibration emit (D-113, D-120)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 06.3.5-12-PLAN.md — `score --judged` as the only judged-aggregate path: git-ordered ingest, D-114 labels, judged deltas with abstention companions, legacy judged path refused
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 06.3.5-13-PLAN.md — `lancet-eval compare`: the four-arm comparison with the Holm families, matching-rule robustness, the cited paper row, and `chart.json` / `chart.svg` (D-115, D-126)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 06.3.5-14-PLAN.md — Live rehearsal: rebuild, stderr capture, D-86 cap, held-out preflight and the 12-record probe with journal-level provenance assertions (D-108)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 06.3.5-15-PLAN.md — The paid held-out drive (1,404 records) under its D-86 cap, every free post-drive reading, and the D-109 / D-110 gate decision
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 06.3.5-16-PLAN.md — The paid judge stage under its D-86 cap, the committed blinded worksheet, and owner scoring (`checkpoint:human-action`)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 06.3.5-17-PLAN.md — Key reveal, `score --judged`, `compare`, the D-103 paper-row `checkpoint:decision`, and `06.3.5-RUN-OF-RECORD.md`
 
 ### Phase 06.3.6: Quality levers measured as arms — reranker, graph repair by diagnosis, temporal metadata, answer format (INSERTED)
 
