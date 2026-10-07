@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 4
+current_plan: 6
 status: executing
-stopped_at: Phase 06.3.5 wave 2 complete (plan 03); wave 3 (plans 04, 05) next
+stopped_at: Phase 06.3.5 wave 3 complete (plans 04, 05); wave 4 (plans 06, 07) next
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-07
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 04 (wave 3 of 12)
+Current Plan: 06 (wave 4 of 12)
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-07: Phase 06.3.5 wave 3 complete (plans 04, 05).** 04 (main): bm25-only skips the query embedding when the graph is off (D-125, `8015b106`), unknown `retrieval_mode` fails closed at engine and gateway plus snapshot key-set pins (`c407a6a2`), SUMMARY `682fef47`; engine 732 -> 741, gateway 119 -> 120; goldens unchanged. 05 (Workflow worktree, merged `d87fcdba`): D-101 arm registry and corpus sections, registry-driven requests and provenance round trip, seeded balanced rotation and split-role refusals (D-107), SUMMARY `97e14455`. Post-merge gate green (cargo, go, eval pytest 1175 passed, both count scripts). Owner pre-authorized the remaining checkpoint answers for 14/15/16 and set resource limits (CARGO_BUILD_JOBS=4, --test-threads=4, go test -p 2, no concurrent suites) for every remaining executor; the run stops at 16 Task 3 (calibration scoring) with a handover. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 2 complete (plan 03).** Owner-approved `adopt-recommended` wire shape: `retrieval_mode` and `include_pre_truncation_ranking` on QueryRAG, carried through proto/engine (`63d9d6df`), gateway mapping and snapshot DTO (`db870f6f`) and the harness client `RankedCandidate` model (`f933c07b`); SUMMARY `b284331f`. The first continuation agent died mid-task (host out of memory, traced by the owner to an unrelated GPU program); its uncommitted proto/engine diff was reviewed and committed by a recovery continuation, not redone. The tracer feedback gate auto-continued per checkpoints.md row 3 (interactive, `end-of-phase`, automated-only verify, re-run passed). Engine tests 731 -> 732, gateway 118 -> 119, eval pytest 1118 passed; default-request golden unchanged; `buf generate` idempotent. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 1 complete (plans 01, 02).** 01 (main tree): gateway count gate reset to the measured 118 / sse 16 (`00fed3e4`); default-request node-chain golden recorded at pre-change HEAD `00fed3e4` in its own test-only commit `c59ab310`; read-only `inspect_lancedb --chunk-text --generation lance-N` (`c4979b88`/`caf318a1`; SHA-256 hand-written so `Cargo.lock` stays unchanged); engine tests 721 -> 731. 02 (Workflow worktree, merged `f1cdd54f`): `split.py` + deterministic generator (`8a27d97e`); **owner answered `commit-split`** at the D-105 one-way checkpoint; split, question files, arm canaries, rehearsal picks, both four-arm TOMLs and the `.gitignore` negations committed (`97662f9e`), regeneration reproduced every approved value (308/43/351, LF sha `81a3cc2a...`). Owner also pre-answered plan 03 Task 1: **`adopt-recommended`** wire shape. Post-merge gate: cargo build/test, go test, eval pytest 1117 passed, both count scripts green. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 execution started** (`/gsd-execute-phase 06.3.5`, owner directive: fan parallel waves out through a Workflow run). 17 plans in 12 waves: wave 1 (01, 02), 2 (03), 3 (04, 05), 4 (06, 07), 5 (08, 09), 6 (10, 11), then 12, 13, 14 (rehearsal), 15 (held-out drive), 16 (judge), 17 (run of record) one per wave. Execution mode: in each parallel wave the plan that builds Rust runs on main (warm cargo target) and its sibling runs in a Workflow worktree (`worktree.baseRef: head`), merged back through the GSD manifest gauntlet; single-plan waves run sequentially on main, and the live, paid plans 14-17 always do (gitignored store, `.env`, `config/config.dev.toml`). Executors run on Sonnet. The orchestrator owns STATE/ROADMAP writes. Blocking checkpoints: 02 (D-105 split commit), 03, 14, 15, 16, 17. No paid call before plan 02's split commit. 6.4 stays parked.
@@ -539,7 +540,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 wave 2 complete; wave 3 (plans 04, 05) next
+**Stopped at:** Phase 06.3.5 wave 3 complete (plans 04, 05); wave 4 (plans 06, 07) next
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context

@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 3/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 5/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1079,8 +1079,8 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06.3.5-04-PLAN.md — bm25-only skips the dense call and the embedding (D-125); flag-on and explicit-hybrid golden identity; an unknown mode fails closed at gateway and engine; snapshot key-set pins
-- [ ] 06.3.5-05-PLAN.md — The D-101 arm registry, registry-driven requests with the companion round-trip test, the seeded balanced rotation over the split (D-107), and the split-role refusals
+- [x] 06.3.5-04-PLAN.md — bm25-only skips the dense call and the embedding (D-125); flag-on and explicit-hybrid golden identity; an unknown mode fails closed at gateway and engine; snapshot key-set pins
+- [x] 06.3.5-05-PLAN.md — The D-101 arm registry, registry-driven requests with the companion round-trip test, the seeded balanced rotation over the split (D-107), and the split-role refusals
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
