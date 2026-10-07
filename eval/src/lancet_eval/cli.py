@@ -49,6 +49,13 @@ identity_app = typer.Typer(
 )
 app.add_typer(identity_app, name="identity")
 
+calibration_app = typer.Typer(
+    name="calibration",
+    help="Judge calibration commands (D-113).",
+    no_args_is_help=True,
+)
+app.add_typer(calibration_app, name="calibration")
+
 console = Console()
 
 
@@ -782,6 +789,42 @@ def judge_benchmark(
         )
         raise typer.Exit(code=1)
     console.print("Wrote judge-stage.json and judge_cache.json.", markup=False)
+
+
+@calibration_app.command("emit")
+def calibration_emit(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Closed run directory whose judge stage completed",
+        ),
+    ],
+) -> None:
+    """Draw the blinded 20-item calibration slice and write its worksheet (D-113).
+
+    Makes no API call and shows counts only. The worksheet is written into the run
+    directory; the key file and salt go under the gitignored data/calibration-keys/ and
+    stay uncommitted until the reveal (D-120 step 2).
+    """
+    from lancet_eval.calibration import emit_worksheet
+
+    def line(text: str, **kwargs: Any) -> None:
+        console.print(text, markup=False, highlight=False, soft_wrap=True, **kwargs)
+
+    try:
+        result = emit_worksheet(run)
+    except Exception as exc:
+        line(f"Calibration emit refused: {exc}", style="bold red")
+        raise typer.Exit(code=1) from exc
+    line(f"Calibration worksheet emitted: {result.n_items} rows.")
+    line(f"Emitted at {result.emitted_at_sha}; key_sha256 {result.key_sha256}.")
+    line(f"Commit the worksheet only: {result.git_add}")
+    line(
+        "The key file and salt stay uncommitted under data/calibration-keys/ until "
+        "the owner's scores are committed (06.3.5-17)."
+    )
 
 
 @app.command("report")

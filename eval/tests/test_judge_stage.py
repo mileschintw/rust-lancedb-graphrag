@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import functools
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -116,6 +117,20 @@ def _final(
     ]
 
 
+# Fixture text must not name the arm or the question ID: the calibration tests assert
+# that neither reaches the worksheet.
+_ARM_WORD = {
+    "dense-only": "alpha",
+    "bm25-only": "bravo",
+    "hybrid": "charlie",
+    "hybrid+graph": "echo",
+}
+
+
+def _tag(qid: str) -> str:
+    return hashlib.sha256(qid.encode("utf-8")).hexdigest()[:10]
+
+
 def make_record(
     arm: str,
     qid: str,
@@ -135,7 +150,7 @@ def make_record(
     """
     spec = ARM_REGISTRY[arm]
     ranking = [] if no_evidence else _ranking(arm, 12)
-    text = excerpt if excerpt is not None else f"Evidence text for question {qid}."
+    text = excerpt if excerpt is not None else f"Evidence text {_tag(qid)}."
     final = _final(ranking, text)
     snapshot = RetrievalSnapshot(
         index_generation="gen1",
@@ -161,7 +176,7 @@ def make_record(
         outcome="error" if error else "success",
         answer=""
         if no_evidence
-        else (answer or f"Reasoning for {qid} under {arm}. Answer: Yes"),
+        else (answer or f"Reasoning {_tag(qid)} {_ARM_WORD[arm]}. Answer: Yes"),
         snapshot=snapshot,
         notices=notices,
         structured_citations=[] if (no_evidence or uncited) else final[:2],
