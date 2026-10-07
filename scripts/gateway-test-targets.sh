@@ -15,9 +15,11 @@
 #   110 — 109 plus TestOTelErrorHandlerBoundsRepeatedExportErrors (plan 06.2-12), bounding export errors (D-38).
 #   112 — baseline before Phase 06.3.1.
 #   114 — Phase 06.3.1 (gateway 79, internal/sse 12): plan 01 added TestRetrievalFailedNoticeRendersAsString, plan 04 added TestWorkflowCompletedCarriesPartialSnapshotAndGraphInfluence.
+#   118 — Phase 06.3.4.1 plan 16 (f74f6b24) added 4 gateway/internal/sse tests without bumping this
+#         script; reset in Phase 06.3.5 plan 01 Task 1 (gateway 79, internal/sse 16).
 set -e
 
-EXPECTED_TOTAL=114
+EXPECTED_TOTAL=118
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
@@ -25,7 +27,7 @@ RELOCATION_BASELINE=67
 EXPECTED_PACKAGES="gateway 79
 gateway/db 7
 gateway/internal/config 4
-gateway/internal/sse 12
+gateway/internal/sse 16
 gateway/internal/telemetry 12"
 
 # Ensure go is found in standard user environments
