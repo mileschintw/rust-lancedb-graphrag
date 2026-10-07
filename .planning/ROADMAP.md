@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 5/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 7/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1084,8 +1084,8 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 06.3.5-06-PLAN.md — Registry-aware readers: score, dimensions, usability, pairing and `unpark_gates` `ArmRoles`; unknown or mixed labels fail closed; drives 1/1b/2 re-read and re-score unchanged
-- [ ] 06.3.5-07-PLAN.md — Paper-convention metrics (the `paper_question_scores` core included) proven by golden vectors from the official script (not vendored), `provenance.py` (AI-SPEC #1 a-g), and the D-104 dev retro
+- [x] 06.3.5-06-PLAN.md — Registry-aware readers: score, dimensions, usability, pairing and `unpark_gates` `ArmRoles`; unknown or mixed labels fail closed; drives 1/1b/2 re-read and re-score unchanged
+- [x] 06.3.5-07-PLAN.md — Paper-convention metrics (the `paper_question_scores` core included) proven by golden vectors from the official script (not vendored), `provenance.py` (AI-SPEC #1 a-g), and the D-104 dev retro
 
 **Wave 5** *(blocked on Wave 4 completion)*
 

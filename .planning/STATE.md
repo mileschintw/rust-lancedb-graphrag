@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 6
+current_plan: 8
 status: executing
-stopped_at: Phase 06.3.5 wave 3 complete (plans 04, 05); wave 4 (plans 06, 07) next
+stopped_at: Phase 06.3.5 wave 4 complete (plans 06, 07); wave 5 (plans 08, 09) next
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-07
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 06 (wave 4 of 12)
+Current Plan: 08 (wave 5 of 12)
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-07: Phase 06.3.5 wave 4 complete (plans 06, 07).** 06 (main): score/usability/dimensions/pairing and unpark_gates resolve arms through the D-101 registry (`ac531c40`..`36823e9e`, SUMMARY `dd451ba8`); drive 2 re-scores identically and a relabelled copy reads the same gates; Rule-1/Rule-3 deviations recorded in its SUMMARY. 07 (Workflow worktree, merged `02cf704d`): paper-convention metrics equal the official `calculate_metrics` on 247 golden cases, arm-provenance conformance check (a-g), D-104 dev-only paper Hits@4 retro (hybrid 68/90, hybrid+graph 65/89) in `06.3.5-RETRO-PAPER-HITS4.md`, SUMMARY `83ea2311`. Post-merge gate green: engine 741, gateway 120, eval pytest 1267 passed; wave:post gates no block. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 3 complete (plans 04, 05).** 04 (main): bm25-only skips the query embedding when the graph is off (D-125, `8015b106`), unknown `retrieval_mode` fails closed at engine and gateway plus snapshot key-set pins (`c407a6a2`), SUMMARY `682fef47`; engine 732 -> 741, gateway 119 -> 120; goldens unchanged. 05 (Workflow worktree, merged `d87fcdba`): D-101 arm registry and corpus sections, registry-driven requests and provenance round trip, seeded balanced rotation and split-role refusals (D-107), SUMMARY `97e14455`. Post-merge gate green (cargo, go, eval pytest 1175 passed, both count scripts). Owner pre-authorized the remaining checkpoint answers for 14/15/16 and set resource limits (CARGO_BUILD_JOBS=4, --test-threads=4, go test -p 2, no concurrent suites) for every remaining executor; the run stops at 16 Task 3 (calibration scoring) with a handover. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 2 complete (plan 03).** Owner-approved `adopt-recommended` wire shape: `retrieval_mode` and `include_pre_truncation_ranking` on QueryRAG, carried through proto/engine (`63d9d6df`), gateway mapping and snapshot DTO (`db870f6f`) and the harness client `RankedCandidate` model (`f933c07b`); SUMMARY `b284331f`. The first continuation agent died mid-task (host out of memory, traced by the owner to an unrelated GPU program); its uncommitted proto/engine diff was reviewed and committed by a recovery continuation, not redone. The tracer feedback gate auto-continued per checkpoints.md row 3 (interactive, `end-of-phase`, automated-only verify, re-run passed). Engine tests 731 -> 732, gateway 118 -> 119, eval pytest 1118 passed; default-request golden unchanged; `buf generate` idempotent. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 1 complete (plans 01, 02).** 01 (main tree): gateway count gate reset to the measured 118 / sse 16 (`00fed3e4`); default-request node-chain golden recorded at pre-change HEAD `00fed3e4` in its own test-only commit `c59ab310`; read-only `inspect_lancedb --chunk-text --generation lance-N` (`c4979b88`/`caf318a1`; SHA-256 hand-written so `Cargo.lock` stays unchanged); engine tests 721 -> 731. 02 (Workflow worktree, merged `f1cdd54f`): `split.py` + deterministic generator (`8a27d97e`); **owner answered `commit-split`** at the D-105 one-way checkpoint; split, question files, arm canaries, rehearsal picks, both four-arm TOMLs and the `.gitignore` negations committed (`97662f9e`), regeneration reproduced every approved value (308/43/351, LF sha `81a3cc2a...`). Owner also pre-answered plan 03 Task 1: **`adopt-recommended`** wire shape. Post-merge gate: cargo build/test, go test, eval pytest 1117 passed, both count scripts green. OBS-06 stays unticked (D-98).
@@ -540,7 +541,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 wave 3 complete (plans 04, 05); wave 4 (plans 06, 07) next
+**Stopped at:** Phase 06.3.5 wave 4 complete (plans 06, 07); wave 5 (plans 08, 09) next
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
