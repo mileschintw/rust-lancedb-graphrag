@@ -678,11 +678,65 @@ def score_benchmark(
             callback=_validate_stage_cap,
         ),
     ] = None,
+    judged: Annotated[
+        bool,
+        typer.Option(
+            "--judged/--no-judged",
+            help=(
+                "Compute the judged aggregates of an ordered-protocol corpus from "
+                "the cached stage and the owner-scored worksheet (D-113, D-120). "
+                "Needs --calibration-file and --calibration-key; the salt is read "
+                "from calibration-salt.txt beside the key."
+            ),
+        ),
+    ] = False,
+    calibration_key: Annotated[
+        Path | None,
+        typer.Option(
+            "--calibration-key",
+            help=(
+                "Path to the revealed calibration-key.jsonl (with --judged); "
+                "calibration-salt.txt must sit beside it"
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Score journaled evaluation runs offline or with LLM judge."""
+    # Usage errors are raised outside the try block so they keep exit code 2.
+    if judged:
+        missing = [
+            flag
+            for flag, value in (
+                ("--calibration-file", calibration_file),
+                ("--calibration-key", calibration_key),
+            )
+            if value is None
+        ]
+        if missing:
+            raise typer.BadParameter(f"--judged also needs {' and '.join(missing)}")
+        if not no_judge or emit_calibration_worksheet is not None:
+            raise typer.BadParameter(
+                "--judged is cache-only and cannot be combined with --judge or "
+                "--emit-calibration-worksheet"
+            )
+        if sample is not None or stage_cap is not None:
+            raise typer.BadParameter(
+                "--judged judges nothing new, so --sample and --stage-cap do not apply"
+            )
+    elif calibration_key is not None:
+        raise typer.BadParameter("--calibration-key only applies with --judged")
     try:
         from lancet_eval.score import score_run
 
+        if judged and calibration_key is not None:
+            from lancet_eval.calibration import SALT_FILE
+
+            salt_path = calibration_key.parent / SALT_FILE
+            if not salt_path.is_file():
+                raise FileNotFoundError(
+                    f"the salt file {salt_path} is missing; the reveal copies "
+                    f"{SALT_FILE} beside the key"
+                )
         console.print(f"[bold blue]Scoring run at {run}...[/bold blue]")
         report = score_run(
             run_dir=run,
@@ -691,6 +745,8 @@ def score_benchmark(
             emit_calibration_worksheet=emit_calibration_worksheet,
             calibration_file=calibration_file,
             stage_spend_cap=stage_cap,
+            judged=judged,
+            calibration_key=calibration_key,
         )
         md = render_markdown(report)
         console.print(md)

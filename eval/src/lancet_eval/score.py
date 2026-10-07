@@ -1140,6 +1140,456 @@ class JudgedResult(BaseModel):
     report_lines: list[str]
 
 
+def _ordered_protocol_guard(
+    config: Any,
+    *,
+    judged: bool,
+    no_judge: bool,
+    sample: int | None,
+    emit_calibration_worksheet: Path | str | None,
+    calibration_file: Path | str | None,
+    calibration_key: Path | str | None,
+    stage_spend_cap: float | None,
+) -> None:
+    """Refuses legacy judged inputs on an ordered corpus and a malformed `--judged`.
+
+    Raises:
+        ScoreError: Naming `lancet-eval judge`, `lancet-eval calibration emit` and
+            `score --judged` when a legacy judged input meets an ordered corpus, or the
+            reason a `--judged` call cannot proceed.
+    """
+    ordered = getattr(config, "judge_protocol", "legacy") == "ordered"
+    if not judged:
+        if ordered:
+            used = []
+            if not no_judge:
+                used.append("`score --judge`")
+            if emit_calibration_worksheet is not None:
+                used.append("`--emit-calibration-worksheet`")
+            if calibration_file is not None:
+                used.append("`--calibration-file` without `--judged`")
+            if calibration_key is not None:
+                used.append("`--calibration-key` without `--judged`")
+            if used:
+                raise ScoreError(_ORDERED_REFUSAL.format(used=" and ".join(used)))
+        return
+    if not ordered:
+        raise ScoreError(
+            '--judged needs a corpus that declares [judge] protocol = "ordered"; '
+            f"corpus {config.name!r} does not (use the legacy `score --judge`)"
+        )
+    if config.split_file is None:
+        raise ScoreError("--judged needs a corpus that declares a [split] (P4, D-121)")
+    if not no_judge or emit_calibration_worksheet is not None:
+        raise ScoreError(
+            "--judged is cache-only: it cannot be combined with --judge or "
+            "--emit-calibration-worksheet (D-113)"
+        )
+    if sample is not None or stage_spend_cap is not None:
+        raise ScoreError(
+            "--judged judges nothing new, so --sample and --stage-cap do not apply; "
+            "the judged population is the whole cached stage (D-112)"
+        )
+    if calibration_file is None or calibration_key is None:
+        raise ScoreError("--judged needs both --calibration-file and --calibration-key")
+
+
+def _stratum_rows(
+    detail: Mapping[str, float], abstention: Mapping[str, float]
+) -> list[JudgedStratum]:
+    rows = []
+    for qtype in strata.STRATUM_TYPES:
+        rows.append(
+            JudgedStratum(
+                question_type=qtype,
+                n=int(detail.get(f"type_{qtype}_n", 0)),
+                mean=detail.get(f"type_{qtype}_value"),
+                ci_lower=detail.get(f"type_{qtype}_ci_lower"),
+                ci_upper=detail.get(f"type_{qtype}_ci_upper"),
+                abstention_rate=abstention.get(f"type_{qtype}_value"),
+                abstention_n=int(abstention.get(f"type_{qtype}_n", 0)),
+            )
+        )
+    return rows
+
+
+def _delta_stratum_rows(detail: Mapping[str, float]) -> list[JudgedDeltaStratum]:
+    rows = []
+    for qtype in strata.STRATUM_TYPES:
+        lower = detail.get(f"type_{qtype}_ci_lower")
+        rows.append(
+            JudgedDeltaStratum(
+                question_type=qtype,
+                n_pairs=int(detail.get(f"type_{qtype}_n_pairs", 0)),
+                delta=detail.get(f"type_{qtype}_delta"),
+                ci_lower=lower,
+                ci_upper=detail.get(f"type_{qtype}_ci_upper"),
+                ci_label=DELTA_STRATUM_LABEL if lower is not None else None,
+            )
+        )
+    return rows
+
+
+def _qwk_dimension(dimension: str, d: Mapping[str, Any]) -> DimensionResult:
+    """`judge_qwk_<dimension>`: the QWK point estimate and its float companions."""
+    detail: dict[str, float] = {
+        "n_pairs": float(d["n_pairs"]),
+        "d114_floor": float(d["floor"]),
+        "d114_label_code": float(d["label_code"]),
+        "qwk_dropped_resamples": float(d["qwk_dropped_resamples"]),
+        "spearman_dropped_resamples": float(d["spearman_dropped_resamples"]),
+    }
+    optional = {
+        "ci_lower": d["qwk_ci_lower"],
+        "ci_upper": d["qwk_ci_upper"],
+        "spearman": d["spearman"],
+        "spearman_ci_lower": d["spearman_ci_lower"],
+        "spearman_ci_upper": d["spearman_ci_upper"],
+        "exact_agreement": d["exact_agreement"],
+        "mad": d["mad"],
+        "mean_signed_difference": d["mean_signed_difference"],
+        "joint_5_5_share": d["joint_5_5_share"],
+    }
+    for key, value in optional.items():
+        if value is not None:
+            detail[key] = float(value)
+    for value in range(1, 6):
+        detail[f"judge_marginal_{value}"] = float(d["judge_marginals"][str(value)])
+        detail[f"human_marginal_{value}"] = float(d["human_marginals"][str(value)])
+    for arm, counts in d["per_arm_exact_agreement"].items():
+        detail[f"exact_agreement_n__{arm_slug(arm)}"] = float(counts["n"])
+        detail[f"exact_agreement_exact__{arm_slug(arm)}"] = float(counts["exact"])
+    name = f"judge_qwk_{dimension}"
+    if d["qwk"] is None:
+        return DimensionResult(
+            name=name,
+            status="skipped",
+            reason=(
+                f"{d['label']}: the QWK state is {d['qwk_state']} on "
+                f"{d['n_pairs']} scored pair(s)"
+            ),
+            detail=detail,
+            n=int(d["n_pairs"]),
+        )
+    return DimensionResult(
+        name=name,
+        status="ok",
+        score=float(d["qwk"]),
+        detail=detail,
+        n=int(d["n_pairs"]),
+    )
+
+
+def _judged_dimensions(
+    *,
+    records: Sequence[RunRecord],
+    config: Any,
+    inputs: _SplitInputs,
+    gold_map: Mapping[str, Any],
+    cache: JudgeCache,
+    verified: Any,
+    four_arm: Sequence[DimensionResult],
+) -> tuple[list[DimensionResult], JudgedResult]:
+    """The judged dimensions and the sidecar of a verified ordered run (06.3.5-12).
+
+    Per-arm judged means are over J_a (P4, 06.3.5-judgeable, non-error verdict) and are
+    always carried beside the arm's abstention rate and its n. Paired judged deltas
+    against `hybrid` cover the P4 questions where both arms gave a judged,
+    non-abstaining answer, with the selection-effect counts and the paired
+    abstention-rate delta read from the four-arm dimensions already computed (one
+    definition, no second delta).
+
+    Raises:
+        ScoreError: If the arms cannot form P4 or the agreement cannot be summarised.
+    """
+    from lancet_eval import calibration  # imported late: calibration imports score
+
+    try:
+        summary = calibration.agreement_summary(verified, cache)
+        pop = p4_mod.build_p4(records, inputs.split, config.arms)
+    except (calibration.CalibrationError, ValueError) as exc:
+        raise ScoreError(f"Cannot compute the judged pass: {exc}") from exc
+    arms = [a for a in ARM_REGISTRY if a in pop.arms]
+    reference = pop.reference_arm
+    index = {(r.question_id, canonical_arm(r.graph_arm)): r for r in records}
+    qtype_of = {q: str(gold_map[q].question_type) for q in inputs.split.heldout_g_ids}
+    by_name = {d.name: d for d in four_arm}
+    labels = {d: summary["dimensions"][d]["label"] for d in JUDGED_DIMENSIONS}
+    codes = {
+        d: float(summary["dimensions"][d]["label_code"]) for d in JUDGED_DIMENSIONS
+    }
+
+    def verdict_of(rec: RunRecord) -> Any:
+        gold = gold_map[rec.question_id]
+        entry = cache.get(
+            cache_key(
+                prompt_version=config.judge_prompt_version,
+                judge_model=config.judge_model,
+                question=gold.question,
+                answer=rec.answer or "",
+                post_truncation_evidence=truncate_evidence(rec.structured_citations),
+            )
+        )
+        return None if entry is None else entry.verdict
+
+    def judgeable(rec: RunRecord) -> bool:
+        return _is_judgeable(rec, gold_map, policy="06.3.5")
+
+    def judged_ok(rec: RunRecord) -> bool:
+        return judgeable(rec) and verdict_of(rec) is not None
+
+    def score_of(rec: RunRecord, dimension: str) -> float:
+        verdict = verdict_of(rec)
+        return float(getattr(verdict, dimension))
+
+    errors = {
+        arm: sum(
+            1
+            for q in pop.question_ids
+            if judgeable(index[(q, arm)]) and verdict_of(index[(q, arm)]) is None
+        )
+        for arm in arms
+    }
+
+    def abstention(arm: str) -> DimensionResult | None:
+        dim = by_name.get(f"abstention_rate_g__{arm_slug(arm)}")
+        return dim if dim is not None and dim.status == "ok" else None
+
+    dims: list[DimensionResult] = []
+    arm_rows: list[JudgedArmRow] = []
+    delta_rows: list[JudgedDeltaRow] = []
+    empty = "no judged, non-abstaining answer of this arm in P4"
+    for arm in arms:
+        slug = arm_slug(arm)
+        abs_dim = abstention(arm)
+        abs_rate = abs_dim.score if abs_dim is not None else None
+        abs_n = abs_dim.n if abs_dim is not None else 0
+        j_a = {
+            q: index[(q, arm)]
+            for q in pop.question_ids
+            if judged_ok(index[(q, arm)])
+        }
+        for dimension in JUDGED_DIMENSIONS:
+            detail: dict[str, float] = {
+                "judge_errors": float(errors[arm]),
+                "n_p4": float(len(pop.question_ids)),
+                "abstention_n": float(abs_n),
+                "d114_label_code": codes[dimension],
+            }
+            if abs_rate is not None:
+                detail["abstention_rate"] = float(abs_rate)
+            dim = _per_arm_dimension(
+                f"answer_{dimension}__{slug}",
+                {q: score_of(r, dimension) for q, r in j_a.items()},
+                kind="bootstrap",
+                qtype_of=qtype_of,
+                detail=detail,
+                empty_reason=empty,
+            )
+            dims.append(dim)
+            arm_rows.append(
+                JudgedArmRow(
+                    arm=arm,
+                    dimension=dimension,
+                    n=dim.n,
+                    mean=dim.score,
+                    ci_lower=dim.detail.get("ci_lower"),
+                    ci_upper=dim.detail.get("ci_upper"),
+                    judge_errors=errors[arm],
+                    abstention_rate=abs_rate,
+                    abstention_n=abs_n,
+                    d114_label=labels[dimension],
+                    strata=_stratum_rows(
+                        dim.detail, abs_dim.detail if abs_dim is not None else {}
+                    ),
+                )
+            )
+
+    ref_abs = abstention(reference)
+    for arm in arms:
+        if arm == reference:
+            continue
+        slug = arm_slug(arm)
+        try:
+            counts = p4_mod.judged_pairs(
+                records, pop, arm, reference, judged_ok=judged_ok
+            )
+        except ValueError as exc:
+            raise ScoreError(f"Cannot form the judged pairs: {exc}") from exc
+        pairs = list(counts.pair_question_ids)
+        arm_abs = abstention(arm)
+        abs_delta = by_name.get(f"abstention_rate_g_delta__{slug}")
+        delta_ok = abs_delta is not None and abs_delta.status == "ok"
+        for dimension in JUDGED_DIMENSIONS:
+            detail = {
+                "dropped_only_arm_abstained": float(counts.only_x_abstained),
+                "dropped_only_hybrid_abstained": float(counts.only_reference_abstained),
+                "dropped_both_abstained": float(counts.both_abstained),
+                "dropped_judge_unavailable": float(counts.judge_unavailable),
+                "judge_errors_x": float(errors[arm]),
+                "judge_errors_hybrid": float(errors[reference]),
+                "abstention_n": float(len(pop.question_ids)),
+                "d114_label_code": codes[dimension],
+            }
+            if arm_abs is not None and arm_abs.score is not None:
+                detail["abstention_rate_x"] = float(arm_abs.score)
+            if ref_abs is not None and ref_abs.score is not None:
+                detail["abstention_rate_hybrid"] = float(ref_abs.score)
+            differs = False
+            if delta_ok and abs_delta is not None and abs_delta.score is not None:
+                lo = abs_delta.detail.get("ci_lower")
+                hi = abs_delta.detail.get("ci_upper")
+                detail["abstention_rate_delta"] = float(abs_delta.score)
+                if lo is not None and hi is not None:
+                    detail["abstention_rate_delta_ci_lower"] = float(lo)
+                    detail["abstention_rate_delta_ci_upper"] = float(hi)
+                    differs = lo > 0 or hi < 0
+            detail["abstention_differs"] = 1.0 if differs else 0.0
+            dim = _delta_dimension(
+                f"answer_{dimension}_delta__{slug}",
+                {q: score_of(index[(q, arm)], dimension) for q in pairs},
+                {q: score_of(index[(q, reference)], dimension) for q in pairs},
+                qtype_of=qtype_of,
+                counts=False,
+                detail=detail,
+                empty_reason="no P4 question where both arms gave a judged answer",
+            )
+            dims.append(dim)
+            delta_rows.append(
+                JudgedDeltaRow(
+                    arm=arm,
+                    reference=reference,
+                    dimension=dimension,
+                    n_pairs=dim.n,
+                    delta=dim.score,
+                    ci_lower=dim.detail.get("ci_lower"),
+                    ci_upper=dim.detail.get("ci_upper"),
+                    dropped_only_arm_abstained=counts.only_x_abstained,
+                    dropped_only_reference_abstained=counts.only_reference_abstained,
+                    dropped_both_abstained=counts.both_abstained,
+                    dropped_judge_unavailable=counts.judge_unavailable,
+                    judge_errors_arm=errors[arm],
+                    judge_errors_reference=errors[reference],
+                    abstention_rate_arm=arm_abs.score if arm_abs is not None else None,
+                    abstention_rate_reference=(
+                        ref_abs.score if ref_abs is not None else None
+                    ),
+                    abstention_n=len(pop.question_ids),
+                    abstention_rate_delta=detail.get("abstention_rate_delta"),
+                    abstention_rate_delta_ci_lower=detail.get(
+                        "abstention_rate_delta_ci_lower"
+                    ),
+                    abstention_rate_delta_ci_upper=detail.get(
+                        "abstention_rate_delta_ci_upper"
+                    ),
+                    flag=ABSTENTION_DIFFERS_FLAG if differs else None,
+                    d114_label=labels[dimension],
+                    strata=_delta_stratum_rows(dim.detail),
+                )
+            )
+
+    for dimension in JUDGED_DIMENSIONS:
+        dims.append(_qwk_dimension(dimension, summary["dimensions"][dimension]))
+
+    lines = _judged_report_lines(summary, arm_rows, delta_rows)
+    result = JudgedResult(
+        corpus=config.name,
+        judge_model=config.judge_model,
+        judge_prompt_version=config.judge_prompt_version,
+        commits=JudgedCommits(
+            emitted_at_sha=verified.emitted_at_sha,
+            worksheet_commit=verified.worksheet_commit,
+            scores_commit=verified.scores_commit,
+            key_commit=verified.key_commit,
+            salt_commit=verified.salt_commit,
+            d114_floor=verified.floor,
+        ),
+        labels=labels,
+        agreement=summary,
+        legacy_lines=summary["legacy_lines"],
+        divergence_lines=summary["divergence_lines"],
+        dropped_slice_ids=summary["dropped_slice_ids"],
+        arms=arm_rows,
+        deltas=delta_rows,
+        report_lines=lines,
+    )
+    return dims, result
+
+
+def _fmt_num(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.4f}"
+
+
+def _fmt_ci(lower: float | None, upper: float | None) -> str:
+    if lower is None or upper is None:
+        return "no CI"
+    return f"95% CI [{lower:.4f}, {upper:.4f}]"
+
+
+def _judged_report_lines(
+    summary: Mapping[str, Any],
+    arm_rows: Sequence[JudgedArmRow],
+    delta_rows: Sequence[JudgedDeltaRow],
+) -> list[str]:
+    """The printed text of the judged pass; ASCII only."""
+    lines: list[str] = []
+    for dimension in JUDGED_DIMENSIONS:
+        d = summary["dimensions"][dimension]
+        lines.append(
+            f"judge-human agreement, {dimension}: n={d['n_pairs']} "
+            f"QWK {_fmt_num(d['qwk'])} {_fmt_ci(d['qwk_ci_lower'], d['qwk_ci_upper'])} "
+            f"(B=10000, {d['qwk_dropped_resamples']} resample(s) dropped as "
+            "undefined), "
+            f"Spearman {_fmt_num(d['spearman'])} "
+            f"{_fmt_ci(d['spearman_ci_lower'], d['spearman_ci_upper'])}; "
+            f"exact {_fmt_num(d['exact_agreement'])}, MAD {_fmt_num(d['mad'])}, "
+            f"mean signed difference (judge - human) "
+            f"{_fmt_num(d['mean_signed_difference'])}, joint 5/5 share "
+            f"{_fmt_num(d['joint_5_5_share'])}; D-114 label: {d['label']}"
+        )
+        marginals = ", ".join(
+            f"{who} "
+            + "/".join(str(d[f"{who}_marginals"][str(v)]) for v in range(1, 6))
+            for who in ("judge", "human")
+        )
+        per_arm = ", ".join(
+            f"{arm} {c['exact']}/{c['n']}"
+            for arm, c in d["per_arm_exact_agreement"].items()
+        )
+        lines.append(
+            f"  {dimension} marginal counts over 1..5: {marginals}; per-arm exact "
+            f"agreement (no statistic at this n): {per_arm}"
+        )
+    lines.extend(summary["legacy_lines"])
+    lines.extend(summary["divergence_lines"])
+    if summary["dropped_slice_ids"]:
+        lines.append(
+            "slice items dropped (judge error, no redraw): "
+            + ", ".join(summary["dropped_slice_ids"])
+        )
+    for row in arm_rows:
+        lines.append(
+            f"{row.arm} {row.dimension}: mean {_fmt_num(row.mean)} "
+            f"{_fmt_ci(row.ci_lower, row.ci_upper)} n={row.n} "
+            f"judge errors {row.judge_errors}; abstention rate "
+            f"{_fmt_num(row.abstention_rate)} (n={row.abstention_n}); "
+            f"{row.d114_label} ({row.comparability_note})"
+        )
+    for drow in delta_rows:
+        flag = f" [{drow.flag}]" if drow.flag else ""
+        lines.append(
+            f"{drow.arm} - {drow.reference} {drow.dimension}: delta "
+            f"{_fmt_num(drow.delta)} {_fmt_ci(drow.ci_lower, drow.ci_upper)} "
+            f"n_pairs={drow.n_pairs}; dropped only-{drow.arm} "
+            f"{drow.dropped_only_arm_abstained}, only-{drow.reference} "
+            f"{drow.dropped_only_reference_abstained}, both "
+            f"{drow.dropped_both_abstained}, judge unavailable "
+            f"{drow.dropped_judge_unavailable}; abstention delta "
+            f"{_fmt_num(drow.abstention_rate_delta)}; {drow.d114_label}{flag}"
+        )
+    return lines
+
+
 def score_run(
     *,
     run_dir: Path | str,
@@ -1161,6 +1611,14 @@ def score_run(
     `PREREGISTRATION_06_3_5` and `JUDGE_QWK_TRUST_FLOOR` are ancestors of HEAD and
     older than the journal header's `created_at`. `git_repo` points that check at
     another repository; it is the live repository when None.
+
+    A corpus declaring `[judge] protocol = "ordered"` refuses `no_judge=False`,
+    `emit_calibration_worksheet` and a `calibration_file` without `judged=True`
+    (D-113, D-120). `judged=True` with `calibration_file` (the owner-scored worksheet)
+    and `calibration_key` is the only path that computes judged aggregates for such a
+    corpus: it first proves the emit -> scores -> reveal order from git, reads the
+    salt from `calibration-salt.txt` beside the key, makes no API call, and writes
+    `judged-result.json` next to `report.json`.
     """
     dir_path = Path(run_dir)
     journal_path = dir_path / "journal.jsonl"
@@ -1244,6 +1702,18 @@ def score_run(
 
     # Load gold questions and config
     config = load_corpus_config(corpus_name)
+    _ordered_protocol_guard(
+        config,
+        judged=judged,
+        no_judge=no_judge,
+        sample=sample,
+        emit_calibration_worksheet=emit_calibration_worksheet,
+        calibration_file=calibration_file,
+        calibration_key=calibration_key,
+        stage_spend_cap=stage_spend_cap,
+    )
+    # The legacy ingest below never sees the ordered worksheet.
+    legacy_calibration_file = None if judged else calibration_file
     if config.split_file is not None:
         _require_preregistered_before(header_created_at, git_repo)
     sampled_questions = load_sample_questions(corpus_name)
@@ -1276,6 +1746,26 @@ def score_run(
                 f"{listed}{tail}"
             )
         split_inputs = _load_split_inputs(config, gold_map, gold_chunks_path)
+
+    # D-113 / D-120 step 7: nothing judged exists before the order is proven.
+    verified: Any = None
+    judged_cache: JudgeCache | None = None
+    if judged:
+        from lancet_eval import calibration  # late: calibration imports score
+
+        assert calibration_file is not None and calibration_key is not None
+        key_path = Path(calibration_key)
+        try:
+            verified = calibration.ingest_and_verify(
+                dir_path,
+                calibration_file,
+                key_path,
+                key_path.parent / calibration.SALT_FILE,
+                repo=git_repo,
+            )
+        except calibration.CalibrationError as exc:
+            raise ScoreError(f"D-120: refusing the judged pass: {exc}") from exc
+        judged_cache = JudgeCache(dir_path / calibration.CACHE_FILE)
 
     # Compute deterministic scores for every configured arm
     arm_metrics: dict[str, dict[str, Any]] = {}
@@ -1440,7 +1930,7 @@ def score_run(
     judged_slice_state: str = JUDGED_SLICE_STATES[JUDGED_SLICE_STATE_NOT_JUDGED]
     usage_absent_fallback_count: int = 0
 
-    if calibration_file is not None:
+    if legacy_calibration_file is not None:
         if no_judge and cached_verdict_count > 0:
             raise ScoreError(
                 "calibration_file was provided with --no-judge, but "
@@ -1666,7 +2156,7 @@ def score_run(
     completed_dual_scores: int = 0
     calibration_notes: str = ""
 
-    if calibration_file is None:
+    if legacy_calibration_file is None:
         g_calibration_state = CALIBRATION_STATE_NONE
         f_calibration_state = CALIBRATION_STATE_NONE
         calibration_notes = (
@@ -1674,7 +2164,7 @@ def score_run(
             "judged dimensions are uncalibrated."
         )
     else:
-        calib_path = Path(calibration_file)
+        calib_path = Path(legacy_calibration_file)
         if not calib_path.is_file():
             raise ScoreError(f"Calibration file not found at {calib_path}")
 
@@ -1921,6 +2411,13 @@ def score_run(
                 calibration_notes = f"{prefix}{', '.join(shortfalls)}."
             else:
                 calibration_notes = ""
+
+    if judged:
+        completed_dual_scores = len(verified.pairs)
+        calibration_notes = (
+            "Ordered judged protocol (D-113, D-120): the D-114 labels and the "
+            f"selection-effect text are in {JUDGED_RESULT_FILE}."
+        )
 
     # Emit calibration worksheet if requested
     if emit_calibration_worksheet is not None:
@@ -2555,17 +3052,28 @@ def score_run(
         )
     )
 
+    judged_result: JudgedResult | None = None
     if split_inputs is not None:
-        dimensions.extend(
-            _four_arm_dimensions(
+        four_arm = _four_arm_dimensions(
+            records=records,
+            config=config,
+            inputs=split_inputs,
+            gold_map=gold_map,
+            arm_metrics=arm_metrics,
+            provenance_counts=provenance_counts,
+        )
+        dimensions.extend(four_arm)
+        if judged and judged_cache is not None:
+            judged_dims, judged_result = _judged_dimensions(
                 records=records,
                 config=config,
                 inputs=split_inputs,
                 gold_map=gold_map,
-                arm_metrics=arm_metrics,
-                provenance_counts=provenance_counts,
+                cache=judged_cache,
+                verified=verified,
+                four_arm=four_arm,
             )
-        )
+            dimensions.extend(judged_dims)
 
     res_hash = compute_result_hash(dimensions)
     lock_hash = get_lock_hash()
@@ -2666,6 +3174,13 @@ def score_run(
 
     # Write report.json to run_dir if not partial
     if not effective_partial:
+        if judged_result is not None:
+            with open(
+                dir_path / JUDGED_RESULT_FILE, "w", encoding="utf-8", newline="\n"
+            ) as f:
+                f.write(judged_result.model_dump_json(indent=2) + "\n")
+            for text in judged_result.report_lines:
+                print(text)
         report_json_path = dir_path / "report.json"
         with open(report_json_path, "w", encoding="utf-8") as f:
             f.write(render_json(report))

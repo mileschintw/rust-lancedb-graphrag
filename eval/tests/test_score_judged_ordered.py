@@ -682,6 +682,22 @@ def test_the_legacy_gate_is_printed_as_non_governing(happy: Happy) -> None:
     assert "uncalibrated" not in " ".join(happy.sidecar.labels.values())
 
 
+def test_the_printed_text_carries_the_marginals_and_the_per_arm_exact_counts(
+    happy: Happy,
+) -> None:
+    for dimension in ("groundedness", "faithfulness"):
+        d = happy.sidecar.agreement["dimensions"][dimension]
+        judge = "/".join(str(d["judge_marginals"][str(v)]) for v in range(1, 6))
+        human = "/".join(str(d["human_marginals"][str(v)]) for v in range(1, 6))
+        assert (
+            f"{dimension} marginal counts over 1..5: judge {judge}, human {human}"
+            in (happy.output)
+        )
+        for arm, counts in d["per_arm_exact_agreement"].items():
+            assert f"{arm} {counts['exact']}/{counts['n']}" in happy.output
+        assert "resample(s) dropped as undefined" in happy.output
+
+
 def test_the_judged_result_sidecar_holds_the_text_labels_and_the_commits(
     happy: Happy,
 ) -> None:
