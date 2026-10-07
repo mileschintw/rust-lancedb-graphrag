@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 14
 status: executing
-stopped_at: Phase 06.3.5 wave 8 complete (plan 13); wave 9 (plan 14, live rehearsal) next
+stopped_at: Phase 06.3.5 plan 14 Task 2 answered (authorise-0.05-with-judge-0.02, pre-authorized); Task 3 rehearsal running
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-07
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 14 (wave 9 of 12)
+Current Plan: 14 (wave 9 of 12) - Task 3 (rehearsal) running
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-07: 06.3.5-14 Task 2 answered from the owner's standing pre-authorization: `authorise-0.05-with-judge-0.02`** ($0.05 `--stage-cap` on the 12-record rehearsal probe, $0.02 cap on the `judge --rehearsal` sample, the ~$0.005 held-out preflight acknowledged as uncapped). Task 1 committed `9741ba48` (suites green on `0c5efd4f`, release engine and gateway rebuilt after `c407a6a2`, env-scope and identity checks pass, engine PID 37108 / gateway PID 27712 serving with stderr captured under `data/oi02-evidence/heldout-2026-10-07/`, nothing spent). Continuation runs Task 3 against the running processes.
 - **2026-10-07: Phase 06.3.5 wave 8 complete (plan 13); all 13 offline code plans done.** `lancet-eval compare --run <dir>` writes `comparison.json`/`comparison.md`/`chart.json`/deterministic `chart.svg`; refuses without judged dimensions and `judged-result.json`; never edits `report.json`; runtime test proves the judge cache is never opened (`b37ea2ca`..`28e09a54`, SUMMARY `c11f392c`). Human-judgment items left: paper reference row (owner, at 17), rendered `chart.svg` unviewed, real held-out behaviour. Gate green: engine 741, gateway 120, eval pytest 1748 passed; wave:post gates no block. Next: live plans 14-17 sequentially on main. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 7 complete (plan 12).** `lancet-eval score --judged` is the only judged path on an ordered corpus: it proves from git the D-120 sequence (worksheet emitted, owner scores committed, key revealed) before writing per-arm judged means, paired deltas vs `hybrid`, D-40 strata, QWK agreement and D-114 labels (`ff1e22b3`..`39411140`, SUMMARY `0570d19e`). Extra Rule-2 refusals recorded in the SUMMARY. Known issue for the code review: a judged report still carries `judged_slice_state = "not_judged"` and the legacy groundedness/faithfulness rows read "--no-judge specified". `check tdd-red-evidence` cannot parse pytest output (INVALID_RED zero_tests_discovered) although RED runs failed on assertions. Gate green: engine 741, gateway 120, eval pytest 1677 passed; wave:post gates no block. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 6 complete (plans 10, 11).** 10 (main): four-arm per-arm dimensions on P4 with D-40 strata, zero-tolerance provenance refusal, per-record spend, secondary paired deltas vs `hybrid`, `paper_text_crosscheck.py`; SUMMARY `2467b070`/`4e93b681`; logged 22 pre-existing ruff findings in `score.py` to `deferred-items.md` + WINDOWS.md; one accidental `git stash` was popped at once (stash list empty before/after). Downstream note: `cli.py` does not pass `score_run(gold_chunks_path=)`, so the CLI scores with the default path. 11 (Workflow worktree, merged `54af82c0`): cache-only counts-only judge stage, seeded arm-stratified blinded 20-item calibration slice with commit-reveal key under gitignored `data/calibration-keys/`, `lancet-eval judge` and `calibration emit`; tripwire example in the plan was arithmetically impossible, implemented the stated rule; SUMMARY `ac69f2a0`. Post-merge gate green: engine 741, gateway 120, eval pytest 1580 passed; wave:post gates no block. OBS-06 stays unticked (D-98).
@@ -545,7 +546,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 wave 8 complete (plan 13); wave 9 (plan 14, live rehearsal) next
+**Stopped at:** Phase 06.3.5 plan 14 Task 2 answered (authorise-0.05-with-judge-0.02, pre-authorized); Task 3 rehearsal running
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
