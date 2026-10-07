@@ -1,0 +1,78 @@
+{
+  "records": 12,
+  "arms": [
+    "dense-only",
+    "bm25-only",
+    "hybrid",
+    "hybrid+graph"
+  ],
+  "question_types": [
+    "comparison_query",
+    "inference_query",
+    "temporal_query"
+  ],
+  "normalised": {
+    "total": 0,
+    "by_arm": {
+      "dense-only": 0,
+      "bm25-only": 0,
+      "hybrid": 0,
+      "hybrid+graph": 0
+    },
+    "by_arm_question_type": {
+      "dense-only": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "temporal_query": 0
+      },
+      "bm25-only": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "temporal_query": 0
+      },
+      "hybrid": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "temporal_query": 0
+      },
+      "hybrid+graph": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "temporal_query": 0
+      }
+    }
+  },
+  "model_only_rejected": {
+    "total": 0,
+    "by_arm": {
+      "dense-only": 0,
+      "bm25-only": 0,
+      "hybrid": 0,
+      "hybrid+graph": 0
+    },
+    "by_arm_question_type": {
+      "dense-only": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "temporal_query": 0
+      },
+      "bm25-only": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "temporal_query": 0
+      },
+      "hybrid": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "temporal_query": 0
+      },
+      "hybrid+graph": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "temporal_query": 0
+      }
+    }
+  },
+  "normalised_not_abstaining": 0,
+  "rows": []
+}

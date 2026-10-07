@@ -1,0 +1,29 @@
+                Preflight Health Checks ¡X multihop_rag_heldout                 
++-----------------------------------------------------------------------------+
+| Check             | Status | Details                                        |
+|-------------------+--------+------------------------------------------------|
+| store_isolation   |  PASS  | Eval LanceDB and PostgreSQL schema are fully   |
+|                   |        | isolated from dev.                             |
+| index_identity    |  PASS  | PostgreSQL, LanceDB, and document map document |
+|                   |        | IDs agree.                                     |
+| canary_manifest   |  PASS  | canary_manifest skipped (06.3.5 D-124): this   |
+|                   |        | corpus declares  legacy_canaries = false       |
+|                   |        | because the 8 legacy canary rows hold dev      |
+|                   |        | question IDs (D-105, D-106); none of them was  |
+|                   |        | sent.                                          |
+| gateway_reachable |  PASS  | Gateway is reachable (HTTP 200).               |
+| engine_reachable  |  PASS  | Engine is reachable and healthy.               |
+| corpus_generation |  PASS  | Index generation matched ('lance-702') and     |
+|                   |        | excerpt budget verified.                       |
+| canary_floors     |  PASS  | canary_floors skipped (06.3.5 D-124): this     |
+|                   |        | corpus declares  legacy_canaries = false       |
+|                   |        | because the 8 legacy canary rows hold dev      |
+|                   |        | question IDs (D-105, D-106); none of them was  |
+|                   |        | sent.                                          |
+| arm_mode_canaries |  PASS  | All 12 arm-mode canaries (3 rehearsal rows x 4 |
+|                   |        | arms) passed provenance, floors and live       |
+|                   |        | budgets.                                       |
+| openrouter_api    |  PASS  | Deterministic evaluation path requires no      |
+|                   |        | OpenRouter API key.                            |
++-----------------------------------------------------------------------------+
+All preflight checks passed successfully.

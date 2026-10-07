@@ -1,0 +1,9 @@
+Judge stage (rehearsal): meta-llama/llama-3.3-70b-instruct, prompt v1
+arm            judgeable  unique  cached  judged  errors  retried  pending
+dense-only             2       2       0       2       0        0        0
+bm25-only              2       2       0       2       0        0        0
+hybrid                 2       2       0       2       0        0        0
+hybrid+graph           2       2       0       2       0        0        0
+calls 8, unique keys 8, spend $0.001639 of cap $0.020000, wall-clock 71.6s
+per-call latency p50 8569 ms, p95 13703 ms
+Wrote judge-stage.json and judge_cache.json.
