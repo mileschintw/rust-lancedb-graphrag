@@ -5578,3 +5578,89 @@ func TestRetrievalFailedNoticeRendersAsString(t *testing.T) {
 	}
 }
 
+
+// TestQueryRAGRetrievalModeAndRankingRoundTrip pins the 06.3.5 D-99 / D-100 wire path: the JSON
+// request keys reach pb.QueryRAGRequest, and the engine's snapshot echo and ranking reach the SSE JSON.
+func TestQueryRAGRetrievalModeAndRankingRoundTrip(t *testing.T) {
+	var receivedReq *pb.QueryRAGRequest
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			receivedReq = req
+			resp := &pb.QueryRAGResponse{
+				Answer:    "Dense answer",
+				SessionId: req.GetSessionId(),
+				Snapshot: &pb.RetrievalSnapshot{
+					IndexGeneration: "gen-1",
+					RetrievalMode:   pb.RetrievalMode_RETRIEVAL_MODE_DENSE_ONLY,
+					PreTruncationRanking: []*pb.RankedCandidate{
+						{ChunkId: "chunk-a", DocumentId: "doc-1", FusedRank: 1, VectorRank: 1},
+						{ChunkId: "chunk-b", DocumentId: "doc-2", FusedRank: 2, VectorRank: 2, GraphRank: 1, GraphBoosted: true},
+					},
+				},
+			}
+			return newSingleResponseStream(resp, nil), nil
+		},
+	}
+
+	body := `{"query":"dense question","session_id":"sess-mode","retrieval_mode":"dense_only","include_pre_truncation_ranking":true}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(body)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if receivedReq == nil {
+		t.Fatal("engine QueryRAG was not called")
+	}
+	if got := receivedReq.GetRetrievalMode(); got != pb.RetrievalMode_RETRIEVAL_MODE_DENSE_ONLY {
+		t.Errorf("retrieval_mode = %v, want RETRIEVAL_MODE_DENSE_ONLY", got)
+	}
+	if !receivedReq.GetIncludePreTruncationRanking() {
+		t.Error("include_pre_truncation_ranking = false, want true")
+	}
+
+	var final *sseEvent
+	for _, ev := range parseSSEEvents(recorder.Body.String()) {
+		if ev.Event == "final_answer" {
+			final = &ev
+		}
+	}
+	if final == nil {
+		t.Fatalf("no final_answer event in %s", recorder.Body.String())
+	}
+	var payload struct {
+		Snapshot struct {
+			RetrievalMode        string `json:"retrieval_mode"`
+			PreTruncationRanking []struct {
+				ChunkID      string `json:"chunk_id"`
+				DocumentID   string `json:"document_id"`
+				FusedRank    int    `json:"fused_rank"`
+				VectorRank   int    `json:"vector_rank"`
+				GraphRank    int    `json:"graph_rank"`
+				GraphBoosted bool   `json:"graph_boosted"`
+			} `json:"pre_truncation_ranking"`
+		} `json:"snapshot"`
+	}
+	if err := json.Unmarshal([]byte(final.Data), &payload); err != nil {
+		t.Fatalf("unmarshal final_answer: %v", err)
+	}
+	if payload.Snapshot.RetrievalMode != "dense_only" {
+		t.Errorf("snapshot retrieval_mode = %q, want dense_only", payload.Snapshot.RetrievalMode)
+	}
+	ranking := payload.Snapshot.PreTruncationRanking
+	if len(ranking) != 2 {
+		t.Fatalf("pre_truncation_ranking has %d rows, want 2: %s", len(ranking), final.Data)
+	}
+	if ranking[0].ChunkID != "chunk-a" || ranking[0].FusedRank != 1 || ranking[0].GraphRank != 0 || ranking[0].GraphBoosted {
+		t.Errorf("row 0 = %+v", ranking[0])
+	}
+	if ranking[1].ChunkID != "chunk-b" || ranking[1].GraphRank != 1 || !ranking[1].GraphBoosted {
+		t.Errorf("row 1 = %+v", ranking[1])
+	}
+	if strings.Contains(final.Data, `"bm25_rank"`) {
+		t.Errorf("a rank that is absent from its list must be omitted: %s", final.Data)
+	}
+}

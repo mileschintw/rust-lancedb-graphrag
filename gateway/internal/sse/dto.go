@@ -64,6 +64,53 @@ type RetrievalSnapshotDTO struct {
 	ActiveFilter    *DocumentFilterDTO  `json:"active_filter"`
 	ResultHash      string              `json:"result_hash"`
 	RetrievedChunks []RetrievedChunkDTO `json:"retrieved_chunks"`
+	// RetrievalMode echoes the request's mode as a lowercase name (06.3.5 D-99). It is omitted
+	// when the request set none, so a default snapshot keeps exactly its 10 keys.
+	RetrievalMode string `json:"retrieval_mode,omitzero"`
+	// PreTruncationRanking is the pre-rerank candidate ranking, present only when the request
+	// opted in (06.3.5 D-100). IDs and ranks only; omitted otherwise.
+	PreTruncationRanking []RankedCandidateDTO `json:"pre_truncation_ranking,omitzero"`
+}
+
+// RankedCandidateDTO is one row of the pre-truncation ranking (06.3.5 D-100). Ranks are 1-based
+// and a rank that is absent from its list is omitted. No chunk text is carried.
+type RankedCandidateDTO struct {
+	ChunkID      string `json:"chunk_id"`
+	DocumentID   string `json:"document_id"`
+	FusedRank    int32  `json:"fused_rank"`
+	VectorRank   int32  `json:"vector_rank,omitzero"`
+	Bm25Rank     int32  `json:"bm25_rank,omitzero"`
+	GraphRank    int32  `json:"graph_rank,omitzero"`
+	GraphBoosted bool   `json:"graph_boosted"`
+}
+
+// retrievalModeNames maps a non-zero RetrievalMode to its JSON name; the zero value has none.
+var retrievalModeNames = map[pb.RetrievalMode]string{
+	pb.RetrievalMode_RETRIEVAL_MODE_HYBRID:     "hybrid",
+	pb.RetrievalMode_RETRIEVAL_MODE_DENSE_ONLY: "dense_only",
+	pb.RetrievalMode_RETRIEVAL_MODE_BM25_ONLY:  "bm25_only",
+}
+
+func toRankedCandidateDTOs(in []*pb.RankedCandidate) []RankedCandidateDTO {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]RankedCandidateDTO, 0, len(in))
+	for _, rc := range in {
+		if rc == nil {
+			continue
+		}
+		out = append(out, RankedCandidateDTO{
+			ChunkID:      rc.ChunkId,
+			DocumentID:   rc.DocumentId,
+			FusedRank:    rc.FusedRank,
+			VectorRank:   rc.VectorRank,
+			Bm25Rank:     rc.Bm25Rank,
+			GraphRank:    rc.GraphRank,
+			GraphBoosted: rc.GraphBoosted,
+		})
+	}
+	return out
 }
 
 func toStructuredCitationDTO(sc *pb.StructuredCitation) StructuredCitationDTO {
@@ -107,7 +154,8 @@ func toRetrievedChunkDTOs(in []*pb.StructuredCitation) []RetrievedChunkDTO {
 
 // ToRetrievalSnapshotDTO maps a protobuf RetrievalSnapshot to its JSON DTO representation.
 // Note: variant_count and variant_identities are deliberately omitted to preserve the exact
-// 10-key payload contract asserted across gateway tests.
+// 10-key payload contract asserted across gateway tests. A default request still yields exactly
+// those 10 keys: retrieval_mode and pre_truncation_ranking appear only when the request set them.
 func ToRetrievalSnapshotDTO(in *pb.RetrievalSnapshot) *RetrievalSnapshotDTO {
 	if in == nil {
 		return nil
@@ -138,6 +186,9 @@ func ToRetrievalSnapshotDTO(in *pb.RetrievalSnapshot) *RetrievalSnapshotDTO {
 		ActiveFilter:    activeFilter,
 		ResultHash:      in.ResultHash,
 		RetrievedChunks: toRetrievedChunkDTOs(in.RetrievedChunks),
+		// A mode outside the known names (a future enum value) maps to "" and is omitted.
+		RetrievalMode:        retrievalModeNames[in.RetrievalMode],
+		PreTruncationRanking: toRankedCandidateDTOs(in.PreTruncationRanking),
 	}
 }
 

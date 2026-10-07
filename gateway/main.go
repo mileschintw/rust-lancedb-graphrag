@@ -536,6 +536,20 @@ type ragQueryRequestBody struct {
 	} `json:"filter"`
 	AllowModelOnly      *bool `json:"allow_model_only"`
 	DisableGraphContext *bool `json:"disable_graph_context"`
+	// RetrievalMode names the retrieval path set (06.3.5 D-99). Absent means the engine default
+	// (hybrid); a value outside retrievalModeByName is rejected before the engine is called.
+	RetrievalMode *string `json:"retrieval_mode"`
+	// IncludePreTruncationRanking opts in to the snapshot's pre-rerank ranking (06.3.5 D-100).
+	IncludePreTruncationRanking *bool `json:"include_pre_truncation_ranking"`
+}
+
+// retrievalModeByName is the closed set of request strings for retrieval_mode (06.3.5 D-99).
+// Anything else, including the empty string and "unspecified", is a client error: the gateway
+// never forwards a mode the engine could not name.
+var retrievalModeByName = map[string]pb.RetrievalMode{
+	"hybrid":     pb.RetrievalMode_RETRIEVAL_MODE_HYBRID,
+	"dense_only": pb.RetrievalMode_RETRIEVAL_MODE_DENSE_ONLY,
+	"bm25_only":  pb.RetrievalMode_RETRIEVAL_MODE_BM25_ONLY,
 }
 
 const streamErrorCodeClientDisconnected = "client_disconnected"
@@ -675,11 +689,24 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var retrievalMode pb.RetrievalMode
+	if body.RetrievalMode != nil {
+		mode, ok := retrievalModeByName[*body.RetrievalMode]
+		if !ok {
+			streamErrorCode = "invalid_request_body"
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		retrievalMode = mode
+	}
+
 	req := &pb.QueryRAGRequest{
-		Query:               body.Query,
-		SessionId:           body.SessionID,
-		AllowModelOnly:      body.AllowModelOnly,
-		DisableGraphContext: body.DisableGraphContext,
+		Query:                       body.Query,
+		SessionId:                   body.SessionID,
+		AllowModelOnly:              body.AllowModelOnly,
+		DisableGraphContext:         body.DisableGraphContext,
+		RetrievalMode:               retrievalMode,
+		IncludePreTruncationRanking: body.IncludePreTruncationRanking != nil && *body.IncludePreTruncationRanking,
 	}
 	if body.Filter != nil {
 		req.Filter = &pb.DocumentFilter{
@@ -951,5 +978,3 @@ func run() error {
 	}
 	return fatal
 }
-
-

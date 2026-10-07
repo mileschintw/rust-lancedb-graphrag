@@ -17,14 +17,16 @@
 #   114 — Phase 06.3.1 (gateway 79, internal/sse 12): plan 01 added TestRetrievalFailedNoticeRendersAsString, plan 04 added TestWorkflowCompletedCarriesPartialSnapshotAndGraphInfluence.
 #   118 — Phase 06.3.4.1 plan 16 (f74f6b24) added 4 gateway/internal/sse tests without bumping this
 #         script; reset in Phase 06.3.5 plan 01 Task 1 (gateway 79, internal/sse 16).
+#   119 — Phase 06.3.5 plan 03 Task 2 (gateway 80, internal/sse 16): added TestQueryRAGRetrievalModeAndRankingRoundTrip,
+#         the D-99/D-100 request-key to snapshot-DTO round trip.
 set -e
 
-EXPECTED_TOTAL=118
+EXPECTED_TOTAL=119
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 79
+EXPECTED_PACKAGES="gateway 80
 gateway/db 7
 gateway/internal/config 4
 gateway/internal/sse 16
