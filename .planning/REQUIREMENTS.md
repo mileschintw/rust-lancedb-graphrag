@@ -52,7 +52,9 @@
 |---|---|---|
 | RAG-02 | Phase 03 | Current MVP acceptance: successful dense/BM25 hybrid retrieval, valid filters, deterministic fusion, and deduplication. |
 | RAG-03 | Phase 06, Phase 06.1 | Deferred hardening target; not covered or accepted by Phase 03. Split during Phase 6 discussion (06-CONTEXT.md D-77/D-78): DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-05 and DEBT-RAG-06 clauses → Phase 06; DEBT-RAG-04 (index rebuild-and-swap) → Phase 06.1. |
-| RAG-04 | Phase 03 | Current MVP acceptance: async `Reranker` port and `NoOpReranker` pass-through. |
+| RAG-04 | Phase 03 | Current MVP acceptance: async `Reranker` port and `NoOpReranker` pass-through. Phase 06.3.6 consumes the port for its reranker lever without re-mapping the ID. |
+| GATE-01 | Phase 05 | Wire contract roundtrip and SSE error framing; formalized during Phase 05 planning (`05-12-TRACEABILITY-ERRATA.md` §8). Added to Phase 5's ROADMAP Requirements line 2026-10-06. |
+| GATE-02 | Phase 05 | Checkpoint ownership across backpressure, graceful shutdown and PostgreSQL persistence; formalized during Phase 05 planning (`05-12-TRACEABILITY-ERRATA.md` §8). Added to Phase 5's ROADMAP Requirements line 2026-10-06. |
 | OBS-01 | Phase 06.2 | OpenTelemetry traces, metrics and logs across Go and Rust (06-CONTEXT.md D-78). |
 | OBS-02 | Phase 06.3 | Offline evaluation harness against MultiHop-RAG (06-CONTEXT.md D-78). |
 | OBS-03 | Phase 06.4 | README/design-narrative suite and verified quickstart (06-CONTEXT.md D-78). |
