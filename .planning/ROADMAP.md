@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 13/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 14/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1107,7 +1107,7 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 06.3.5-14-PLAN.md — Live rehearsal: rebuild, stderr capture, D-86 cap, held-out preflight and the 12-record probe with journal-level provenance assertions (D-108)
+- [x] 06.3.5-14-PLAN.md — Live rehearsal: rebuild, stderr capture, D-86 cap, held-out preflight and the 12-record probe with journal-level provenance assertions (D-108)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
