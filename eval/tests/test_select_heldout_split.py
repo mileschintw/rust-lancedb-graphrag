@@ -15,6 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from lancet_eval.config import repo_root
+from lancet_eval.corpus import load_corpus_config, load_sample_questions
 from lancet_eval.split import (
     HeldOutSplit,
     lf_sha256,
@@ -291,3 +292,65 @@ def test_model_rejects_overlap_duplicates_and_bad_sha(over: dict[str, object]) -
 def test_model_rejects_unknown_keys() -> None:
     with pytest.raises(ValidationError):
         HeldOutSplit(**_split_kwargs(surprise=1))  # type: ignore[arg-type]
+
+
+# --- committed-file pins (D-105, D-106, D-108, D-124) --------------------------------
+
+COMMITTED_FILES = (
+    "heldout_split.json",
+    "questions.heldout.jsonl",
+    "questions.rehearsal.jsonl",
+    "canary.arms.jsonl",
+)
+FOUR_ARMS = ["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
+
+
+def test_committed_files_equal_a_fresh_regeneration_after_lf_normalisation(
+    generated: Path,
+) -> None:
+    for name in COMMITTED_FILES:
+        assert _lf(CORPUS_DIR / name) == _lf(generated / name), name
+
+
+def test_committed_split_has_the_d105_shape() -> None:
+    split = load_split(CORPUS_DIR / "heldout_split.json")
+    assert len(split.dev_ids) == 100
+    assert len(split.heldout_g_ids) == 308
+    assert len(split.heldout_null_ids) == 43
+    assert split.order_seed == 42
+    assert split.populations_sha256 == POPULATIONS_LF_SHA256
+    assert split.diag_selection_sha256 == DIAG_SELECTION_LF_SHA256
+
+
+def test_four_arm_corpora_declare_the_four_arms_and_diag_keeps_its_two() -> None:
+    assert load_corpus_config("multihop_rag_heldout").arms == FOUR_ARMS
+    assert load_corpus_config("multihop_rag_rehearsal").arms == FOUR_ARMS
+    assert load_corpus_config("multihop_rag_diag").arms == ["graph-on", "graph-off"]
+
+
+def test_committed_question_files_match_the_split_lists() -> None:
+    split = load_split(CORPUS_DIR / "heldout_split.json")
+    heldout = {r["question_id"] for r in _read_jsonl(CORPUS_DIR / COMMITTED_FILES[1])}
+    rehearsal = {r["question_id"] for r in _read_jsonl(CORPUS_DIR / COMMITTED_FILES[2])}
+    assert heldout == set(split.heldout_g_ids) | set(split.heldout_null_ids)
+    assert not rehearsal & (heldout | set(split.dev_ids))
+
+
+def test_no_canary_or_rehearsal_id_is_in_dev_or_heldout() -> None:
+    split = load_split(CORPUS_DIR / "heldout_split.json")
+    used = set(split.dev_ids) | set(split.heldout_g_ids) | set(split.heldout_null_ids)
+    canary = {r["question_id"] for r in _read_jsonl(CORPUS_DIR / COMMITTED_FILES[3])}
+    rehearsal = {r["question_id"] for r in _read_jsonl(CORPUS_DIR / COMMITTED_FILES[2])}
+    assert len(canary) == 3
+    assert len(rehearsal) == 3
+    assert not (canary | rehearsal) & used
+    assert not canary & rehearsal
+
+
+def test_load_sample_questions_returns_exactly_the_351_split_ids() -> None:
+    split = load_split(CORPUS_DIR / "heldout_split.json")
+    loaded = load_sample_questions("multihop_rag_heldout")
+    assert len(loaded) == 351
+    assert {q.question_id for q in loaded} == set(split.heldout_g_ids) | set(
+        split.heldout_null_ids
+    )

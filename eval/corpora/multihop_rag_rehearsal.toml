@@ -1,0 +1,37 @@
+[documents]
+map_corpus = "multihop_rag"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = true
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.rehearsal.jsonl"
+label_format = "multihop_rag"
+sample_seed = 42
+sample_size = 3
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 25
+
+[models]
+judge_model = "meta-llama/llama-3.3-70b-instruct"
+judge_temperature = 0.0
+judge_max_tokens = 400
+judge_prompt_version = "v1"
+
+[arms]
+arms = ["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
+
+[split]
+file = "multihop_rag/heldout_split.json"
+role = "rehearsal"
+
+[judge]
+protocol = "ordered"
+
+[preflight]
+legacy_canaries = false
+arm_canaries = "multihop_rag/canary.arms.jsonl"
