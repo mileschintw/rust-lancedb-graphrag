@@ -52,6 +52,22 @@ class DocumentFilter(BaseModel):
     content_types: list[str] = Field(default_factory=list)
 
 
+class RankedCandidate(BaseModel):
+    """One row of the pre-truncation candidate ranking (D-100): IDs and ranks only.
+
+    Ranks are 1-based; a rank the gateway omitted (not in that list) is None.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    chunk_id: str
+    document_id: str
+    fused_rank: int
+    vector_rank: int | None = None
+    bm25_rank: int | None = None
+    graph_rank: int | None = None
+    graph_boosted: bool = False
+
+
 class RetrievalSnapshot(BaseModel):
     """Retrieval state snapshot including the candidate result set."""
 
@@ -66,6 +82,8 @@ class RetrievalSnapshot(BaseModel):
     active_filter: DocumentFilter | None = None
     result_hash: str = ""
     retrieved_chunks: list[StructuredCitation] = Field(default_factory=list)
+    retrieval_mode: str | None = None
+    pre_truncation_ranking: list[RankedCandidate] = Field(default_factory=list)
 
 
 class RagAnswer(BaseModel):
@@ -201,6 +219,8 @@ def run_query(
     query: str,
     session_id: str = "",
     disable_graph_context: bool = False,
+    retrieval_mode: str | None = None,
+    include_pre_truncation_ranking: bool = False,
     deadline_s: float = 600.0,
     read_timeout_s: float | None = None,
     capture_raw_events: bool = False,
@@ -216,6 +236,10 @@ def run_query(
     body: dict[str, object] = {"query": query, "session_id": session_id}
     if disable_graph_context:
         body["disable_graph_context"] = True
+    if retrieval_mode is not None:
+        body["retrieval_mode"] = retrieval_mode
+    if include_pre_truncation_ranking:
+        body["include_pre_truncation_ranking"] = True
 
     effective_read_timeout = (
         read_timeout_s

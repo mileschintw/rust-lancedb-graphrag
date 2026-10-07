@@ -10,6 +10,7 @@ from pytest_httpx import HTTPXMock
 from lancet_eval.client import (
     ContractViolation,
     PreStreamError,
+    RankedCandidate,
     StreamAborted,
     StreamDeadlineExceeded,
     StructuredCitation,
@@ -269,6 +270,90 @@ def test_disable_graph_context_body_serialization(httpx_mock: HTTPXMock) -> None
 
     body_on = json.loads(requests[1].read().decode("utf-8"))
     assert "disable_graph_context" not in body_on
+
+
+def test_run_query_sends_retrieval_mode_and_parses_ranking(
+    httpx_mock: HTTPXMock,
+) -> None:
+    ranking = [
+        {
+            "chunk_id": "chunk-a",
+            "document_id": "doc-1",
+            "fused_rank": 1,
+            "vector_rank": 1,
+            "graph_boosted": False,
+        },
+        {
+            "chunk_id": "chunk-b",
+            "document_id": "doc-2",
+            "fused_rank": 2,
+            "vector_rank": 2,
+            "graph_rank": 3,
+            "graph_boosted": True,
+        },
+    ]
+    snapshot = {
+        "index_generation": "gen-1",
+        "retrieved_chunks": [],
+        "retrieval_mode": "dense_only",
+        "pre_truncation_ranking": ranking,
+    }
+    final = {"answer": "ok", "snapshot": snapshot}
+    sse = (
+        f"event: final_answer\ndata: {json.dumps(final)}\n\n"
+        "event: workflow_completed\n"
+        f"data: {json.dumps({'success': True, 'final_response': final})}\n\n"
+    )
+    plain = (
+        "event: workflow_completed\n"
+        'data: {"success":true,"final_response":{"answer":"ok"}}\n\n'
+    )
+    for text in (sse, plain):
+        httpx_mock.add_response(
+            url="http://testserver/rag/query",
+            status_code=200,
+            headers={"content-type": "text/event-stream"},
+            text=text,
+        )
+
+    sig = inspect.signature(run_query)
+    assert "retrieval_mode" in sig.parameters
+    assert "include_pre_truncation_ranking" in sig.parameters
+
+    with httpx.Client(base_url="http://testserver") as client:
+        outcome = run_query(
+            client,
+            query="dense question",
+            session_id="s",
+            retrieval_mode="dense_only",
+            include_pre_truncation_ranking=True,
+        )
+        run_query(client, query="legacy", session_id="s")
+
+    requests = httpx_mock.get_requests()
+    body_new = json.loads(requests[0].read().decode("utf-8"))
+    assert body_new == {
+        "query": "dense question",
+        "session_id": "s",
+        "retrieval_mode": "dense_only",
+        "include_pre_truncation_ranking": True,
+    }
+    # A call without the new kwargs sends exactly the body it sent before this change.
+    body_legacy = json.loads(requests[1].read().decode("utf-8"))
+    assert body_legacy == {"query": "legacy", "session_id": "s"}
+
+    assert outcome.answer is not None
+    parsed = outcome.answer.snapshot
+    assert parsed is not None
+    assert parsed.retrieval_mode == "dense_only"
+    assert all(
+        isinstance(row, RankedCandidate) for row in parsed.pre_truncation_ranking
+    )
+    # The ID list the paper metrics consume, in streamed order.
+    assert [c.chunk_id for c in parsed.pre_truncation_ranking] == ["chunk-a", "chunk-b"]
+    assert parsed.pre_truncation_ranking[0].bm25_rank is None
+    assert parsed.pre_truncation_ranking[1].graph_rank == 3
+    assert parsed.pre_truncation_ranking[1].graph_boosted is True
 
 
 def test_snapshot_null_vs_empty_distinction(httpx_mock: HTTPXMock) -> None:
