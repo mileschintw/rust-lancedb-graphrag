@@ -22,6 +22,7 @@ from types import MappingProxyType
 from typing import Any, NamedTuple
 
 from lancet_eval import thresholds
+from lancet_eval.arms import canonical_arm
 from lancet_eval.corpus import load_corpus_config, load_sample_questions
 from lancet_eval.diagnostic import build_rows, classify_record
 from lancet_eval.dimensions import make_graph_presence_rate
@@ -33,7 +34,11 @@ from lancet_eval.journal import (
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval.metrics import final_answer_em, recall_at_k
-from lancet_eval.pairing import compute_paired_delta, deduplicate_by_arm, form_pairs
+from lancet_eval.pairing import (
+    compute_paired_delta,
+    deduplicate_by_arm,
+    form_arm_pairs,
+)
 from lancet_eval.stats import wilson_ci
 from lancet_eval.thresholds import (
     CITATION_REJECTION_NULL_BASELINE,
@@ -113,6 +118,77 @@ _BINARY_GOLD_ANSWERS = frozenset({"yes", "no"})
 #: literal that doesn't match this is a signal the committed policy changed
 #: without unpark_gates.py being updated to interpret it -- refuse, don't guess.
 _KNOWN_SC2_DOMINANCE_RULES = frozenset({"plurality_tie_is_dominant"})
+
+
+@dataclass(frozen=True)
+class ArmRoles:
+    """The two arms a gate compares (D-101, SC-2).
+
+    Attributes:
+        reference: The reference arm (the legacy `graph-off`), by canonical label or
+            alias; matched to stored labels by canonical form.
+        treatment: The treatment arm (the legacy `graph-on`), likewise.
+
+    Raises:
+        ValueError: If a label is not in the registry, or both name one arm.
+    """
+
+    reference: str
+    treatment: str
+
+    def __post_init__(self) -> None:
+        if canonical_arm(self.reference) == canonical_arm(self.treatment):
+            raise ValueError(
+                f"reference {self.reference!r} and treatment {self.treatment!r} "
+                "are the same arm"
+            )
+
+
+#: The arms drives 1, 1b and 2 stored; every existing stage reads under these.
+DEFAULT_ARM_ROLES = ArmRoles(reference="graph-off", treatment="graph-on")
+
+
+def _matches_role(stored_label: str, role_label: str) -> bool:
+    """Whether a stored arm label is the arm a role names (canonical equivalence).
+
+    A stored label the registry does not know matches no role.
+    """
+    try:
+        return canonical_arm(stored_label) == canonical_arm(role_label)
+    except ValueError:
+        return False
+
+
+def _record_for_role[T](arms_by_label: Mapping[str, T], role_label: str) -> T | None:
+    """The entry whose stored label is the role's arm, or None when it has none.
+
+    Raises:
+        ValueError: If two stored labels of one question are the one arm (an alias
+            and its canonical label are never merged).
+    """
+    matched = [label for label in arms_by_label if _matches_role(label, role_label)]
+    if len(matched) > 1:
+        raise ValueError(
+            f"stored arm labels {sorted(matched)} are all the {role_label!r} arm; "
+            "refusing to merge them"
+        )
+    return arms_by_label[matched[0]] if matched else None
+
+
+def _refuse_mixed_labels(records: Sequence[Any], roles: ArmRoles) -> None:
+    """Raise when one question holds records under two stored labels of one role arm."""
+    seen: dict[tuple[str, str], str] = {}
+    for rec in records:
+        for role in (roles.reference, roles.treatment):
+            if not _matches_role(rec.graph_arm, role):
+                continue
+            first = seen.setdefault((rec.question_id, role), rec.graph_arm)
+            if first != rec.graph_arm:
+                raise ValueError(
+                    f"question {rec.question_id!r} has records under both "
+                    f"{first!r} and {rec.graph_arm!r}, which are the {role!r} arm; "
+                    "refusing to merge them"
+                )
 
 
 @dataclass(frozen=True)
@@ -282,6 +358,8 @@ def evaluate_sc2(
     journal_path: Path | str,
     engine_pid_before: int,
     engine_pid_after: int,
+    *,
+    roles: ArmRoles = DEFAULT_ARM_ROLES,
 ) -> GateReading:
     """SC-2: PASS only when the error-mode clause (timeout not the plurality/tied
     error class) AND the RetrieveHybrid flatness clause both pass. An engine
@@ -290,7 +368,8 @@ def evaluate_sc2(
     Uses `diagnostic.classify_record` for the error-mode tally and
     `flatness.flatness_verdict(flatness.records_from_run_journal(...))` for the
     flatness clause (D-64). Prints (in `detail`) the both-arm-error question count
-    and the error class counts, per AI-SPEC #2.
+    and the error class counts, per AI-SPEC #2. A "both-arm" error is an error on both
+    arms of `roles`.
     """
     if engine_pid_before != engine_pid_after:
         return GateReading(
@@ -336,7 +415,10 @@ def evaluate_sc2(
         if cls is None:
             continue
         class_counts[cls] = class_counts.get(cls, 0) + 1
-        error_arms_by_qid.setdefault(rec.question_id, set()).add(rec.graph_arm)
+        if _matches_role(rec.graph_arm, roles.reference) or _matches_role(
+            rec.graph_arm, roles.treatment
+        ):
+            error_arms_by_qid.setdefault(rec.question_id, set()).add(rec.graph_arm)
 
     both_arm_error_pairs = sorted(
         (qid, tuple(sorted(arms)))
@@ -514,12 +596,31 @@ def citation_rejection_rate(
     )
 
 
+def _reference_usable(row: Any, roles: ArmRoles) -> bool | None:
+    """The reference arm's `answer_usable` for one diagnostic row.
+
+    Read from the row's per-arm results by role, so a registry-labelled journal reads
+    as a legacy one. `build_rows` copies the `graph-off` (`hybrid`) arm's value into
+    `e_answer_usable`, so for a legacy row the two are the same; a row whose reference
+    arm carries no value keeps `e_answer_usable`, but only when the reference is
+    `hybrid`, the arm that field is defined over.
+    """
+    arms = getattr(row, "arms", None)
+    entry = _record_for_role(arms, roles.reference) if arms else None
+    if entry is not None and entry.answer_usable is not None:
+        return entry.answer_usable
+    if canonical_arm(roles.reference) == "hybrid":
+        return getattr(row, "e_answer_usable", None)
+    return None
+
+
 def evaluate_sc3(
     rows: list[Any],
     populations_path: Path | str,
     *,
     corpus: str | None = None,
     expected_g: int,
+    roles: ArmRoles = DEFAULT_ARM_ROLES,
 ) -> GateReading:
     """SC-3 (AI-SPEC #5): answer_usable rate over G against the committed
     VECTOR_BASELINE_USABLE_FLOOR (D-73); never supplies a default when the floor
@@ -537,6 +638,10 @@ def evaluate_sc3(
     `expected_g` is |sample & G| (keyword-only and required, supplied by `main`): scored
     n below `UNPARK_GATE_COVERAGE_FLOOR` of it is MISS however high the usable rate.
     There is no default (WR-02): a non-integer value is MISS `coverage not assessed`.
+
+    The usable rate and the excluded-failure counts are read from the `roles.reference`
+    arm of each row (alias-aware); a row with no per-arm results falls back to its
+    `e_answer_usable`.
     """
     pop_path = Path(populations_path)
     if not pop_path.is_file():
@@ -557,7 +662,7 @@ def evaluate_sc3(
         return GateReading(gate="SC-3", status="MISS", reason="n=0", n=0, detail={})
 
     g_rows = [r for r in rows if r.question_id in g_ids]
-    scored_rows = [r for r in g_rows if getattr(r, "e_answer_usable", None) is not None]
+    scored_rows = [r for r in g_rows if _reference_usable(r, roles) is not None]
 
     floor = getattr(thresholds, "VECTOR_BASELINE_USABLE_FLOOR", None)
     if floor is None:
@@ -573,7 +678,7 @@ def evaluate_sc3(
     if n == 0:
         return GateReading(gate="SC-3", status="MISS", reason="n=0", n=0, detail={})
 
-    usable_n = sum(1 for r in scored_rows if r.e_answer_usable)
+    usable_n = sum(1 for r in scored_rows if _reference_usable(r, roles))
     p, ci_lo, ci_hi = wilson_ci(usable_n, n)
     status = "PASS" if p >= floor else "MISS"
     reason = (
@@ -593,7 +698,7 @@ def evaluate_sc3(
         arms = getattr(r, "arms", None)
         if not arms:
             continue
-        graph_off = arms.get("graph-off")
+        graph_off = _record_for_role(arms, roles.reference)
         if graph_off is None:
             continue
         is_d69_rejection = graph_off.error_class in _D69_REJECTION_CLASSES
@@ -841,11 +946,18 @@ def _presence_stats(graph_on_records: list[Any]) -> dict[str, Any]:
 
 
 def _form_drive2_pairs(
-    journal_path: Path | str, gold: dict[str, Any]
+    journal_path: Path | str,
+    gold: dict[str, Any],
+    roles: ArmRoles = DEFAULT_ARM_ROLES,
 ) -> tuple[list[Any], Any]:
-    """Deduplicated records and the D-34/D-37 `form_pairs` join over them."""
+    """Deduplicated records and the D-34/D-37 pair join over them, for `roles`."""
     records, _ = deduplicate_by_arm(load_records(journal_path))
-    return records, form_pairs(records, gold)
+    return records, form_arm_pairs(
+        records,
+        gold,
+        treatment_arm=roles.treatment,
+        reference_arm=roles.reference,
+    )
 
 
 def evaluate_sc4(
@@ -855,6 +967,7 @@ def evaluate_sc4(
     corpus: str | None = None,
     gold_questions: Any = None,
     expected_g: int,
+    roles: ArmRoles = DEFAULT_ARM_ROLES,
 ) -> GateReading:
     """SC-4 (AI-SPEC #9/#10, D-81): graph presence over pairs(G) on the drive-2 journal.
 
@@ -890,11 +1003,13 @@ def evaluate_sc4(
         )
 
     g_ids = set(selection.get("g_question_ids") or [])
-    records, join = _form_drive2_pairs(journal_path, gold)
+    records, join = _form_drive2_pairs(journal_path, gold, roles)
     pairs_a = join.pairs
     pairs_g = [p for p in pairs_a if p.question_id in g_ids]
     usable_graph_on = [
-        r for r in records if r.graph_arm == "graph-on" and is_usable(r)
+        r
+        for r in records
+        if _matches_role(r.graph_arm, roles.treatment) and is_usable(r)
     ]
 
     populations = {
@@ -1002,7 +1117,9 @@ def _composition_change(pairs: list[Any]) -> dict[str, Any]:
     }
 
 
-def _unpaired_boost_share(records: list[Any]) -> dict[str, Any]:
+def _unpaired_boost_share(
+    records: list[Any], roles: ArmRoles = DEFAULT_ARM_ROLES
+) -> dict[str, Any]:
     """The D-82 "all usable graph-on records" view of retrieval composition.
 
     Pairs are what D-81's measure needs (a chunk is a composition change only against
@@ -1016,7 +1133,9 @@ def _unpaired_boost_share(records: list[Any]) -> dict[str, Any]:
     boosted_n = 0
     unmeasured_n = 0
     for record in records:
-        if record.graph_arm != "graph-on" or not is_usable(record):
+        if not _matches_role(record.graph_arm, roles.treatment) or not is_usable(
+            record
+        ):
             continue
         chunks = record.snapshot.retrieved_chunks if record.snapshot else []
         if record.snapshot is None or (
@@ -1120,6 +1239,7 @@ def evaluate_sc5(
     gold_questions: Any = None,
     chunk_size: int | None = None,
     expected_v: int,
+    roles: ArmRoles = DEFAULT_ARM_ROLES,
 ) -> GateReading:
     """SC-5 (AI-SPEC #11/#12, D-81/D-82): does the graph visibly change retrieval on V?
 
@@ -1187,7 +1307,7 @@ def evaluate_sc5(
 
     v_ids = set(selection["v_question_ids"])
     g_ids = set(selection.get("g_question_ids") or [])
-    records, join = _form_drive2_pairs(journal_path, gold)
+    records, join = _form_drive2_pairs(journal_path, gold, roles)
     attempted = {r.question_id for r in records}
 
     def population(
@@ -1232,7 +1352,7 @@ def evaluate_sc5(
         "composition_floor": float(floor),
         "sc5_visibility_rule": SC5_VISIBILITY_RULE,
         "populations": populations,
-        "unpaired_all_usable_graph_on": _unpaired_boost_share(records),
+        "unpaired_all_usable_graph_on": _unpaired_boost_share(records, roles),
         "negative_metrics": negative_metrics,
         "negative": False,
     }
@@ -1318,6 +1438,7 @@ def graph_off_invariance(
     *,
     corpus: str | None = None,
     gold_questions: Any = None,
+    roles: ArmRoles = DEFAULT_ARM_ROLES,
 ) -> InvarianceReport:
     """Graph-off invariance (AI-SPEC §6): the graph-off arm early-returns, so the
     graph work must not reach it. Reports, per question present in both journals,
@@ -1332,7 +1453,12 @@ def graph_off_invariance(
     gold, _ = _resolve_gold(baseline_journal, corpus, gold_questions)
 
     def graph_off(path: Path | str) -> tuple[dict[str, Any], int]:
-        off_records = [r for r in load_records(path) if r.graph_arm == "graph-off"]
+        off_records = [
+            r
+            for r in load_records(path)
+            if _matches_role(r.graph_arm, roles.reference)
+        ]
+        _refuse_mixed_labels(off_records, roles)
         deduped, collapsed = deduplicate_by_arm(off_records)
         return {r.question_id: r for r in deduped}, collapsed
 
@@ -1753,7 +1879,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sc1 = evaluate_sc1(run_dir, is_complete=True, missing_count=0)
         sc1 = replace(sc1, detail={**sc1.detail, "retry_provenance": provenance})
-        sc2 = evaluate_sc2(journal_path, args.engine_pid_before, args.engine_pid_after)
+        # Every existing stage reads the legacy pair (06.3.5-09 adds the heldout stage).
+        roles = DEFAULT_ARM_ROLES
+        sc2 = evaluate_sc2(
+            journal_path, args.engine_pid_before, args.engine_pid_after, roles=roles
+        )
 
         questions = load_sample_questions(corpus_name) if corpus_name else []
         d69 = citation_rejection_rate(journal_path, questions)
@@ -1771,7 +1901,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             rows = []
         sc3 = evaluate_sc3(
-            rows, args.populations, corpus=corpus_name, expected_g=expected_g
+            rows,
+            args.populations,
+            corpus=corpus_name,
+            expected_g=expected_g,
+            roles=roles,
         )
 
         readings = {
@@ -1786,15 +1920,17 @@ def main(argv: list[str] | None = None) -> int:
                 args.populations,
                 corpus=corpus_name,
                 expected_g=expected_g,
+                roles=roles,
             )
             readings["SC-5"] = evaluate_sc5(
                 journal_path,
                 args.populations,
                 corpus=corpus_name,
                 expected_v=expected_v,
+                roles=roles,
             )
             invariance = graph_off_invariance(
-                baseline_journal, journal_path, corpus=corpus_name
+                baseline_journal, journal_path, corpus=corpus_name, roles=roles
             )
             payload_extra["graph-off invariance"] = asdict(invariance)
 
