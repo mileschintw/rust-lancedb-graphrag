@@ -1,0 +1,28 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type Ranked struct {
+	ChunkID string `json:"chunk_id"`
+	Rank    int32  `json:"fused_rank"`
+}
+type Snap struct {
+	A                    string   `json:"index_generation"`
+	RetrievedChunks      []string `json:"retrieved_chunks"`
+	RetrievalMode        string   `json:"retrieval_mode,omitempty"`
+	PreTruncationRanking []Ranked `json:"pre_truncation_ranking,omitempty"`
+}
+
+func main() {
+	for _, s := range []Snap{
+		{A: "g", RetrievedChunks: []string{}},                       // default request: nil mode, nil ranking
+		{A: "g", RetrievedChunks: []string{}, PreTruncationRanking: make([]Ranked, 0)}, // empty-but-non-nil slice
+		{A: "g", RetrievedChunks: []string{}, RetrievalMode: "hybrid", PreTruncationRanking: []Ranked{{"c", 1}}},
+	} {
+		b, _ := json.Marshal(s)
+		fmt.Println(string(b))
+	}
+}
