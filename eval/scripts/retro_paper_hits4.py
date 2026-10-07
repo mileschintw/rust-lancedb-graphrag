@@ -102,8 +102,9 @@ def build_report(
     lines: list[str] = [LABEL, ""]
     lines.append(
         f"Read-only D-104 retro over `{_display(journal_path)}`. Dev-G records only "
-        "(the 06.3.4.1 dev split): it never enters a held-out decision (D-106), and "
-        "it is never scored, never published as a complete run (OBS-05)."
+        "(G questions of the diagnostic dev sample, disjoint from the held-out "
+        "split): it never enters a held-out decision (D-106), and it is never "
+        "scored, never published as a complete run (OBS-05)."
     )
     lines.append("")
     lines.append("## Method")
