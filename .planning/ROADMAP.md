@@ -13,6 +13,8 @@
 | 6.1 | Index Rebuild-and-Swap, BU Proofs, CR-04/CR-05 Review (INSERTED) | Rebuild-and-swap index lifecycle, DEBT-BU-01/02 deterministic proofs, documented CR-04/CR-05 review | RAG-03 |
 | 6.2 | OpenTelemetry Traces, Metrics and Logs (INSERTED) | OTel across Go and Rust via Collector to Jaeger/Prometheus/Loki/Grafana | OBS-01 |
 | 6.3 | Evaluation Harness, Corpora and Recorded Run (INSERTED) | Python eval harness against MultiHop-RAG with deterministic + LLM-judged metrics | OBS-02, OBS-04 |
+| 6.3.5 | Retrieval Ablation Matrix, Paper-Convention Metrics, Judged Pass and Calibration (INSERTED) | dense-only / BM25-only / hybrid / hybrid+graph arms on a committed held-out split; Hits@k and MRR beside Lancet's metrics; judged pass with human calibration | OBS-06, OBS-02, OBS-05, RAG-02 |
+| 6.3.6 | Quality Levers Measured as Arms (INSERTED) | reranker (999.2), graph repair by diagnosis (999.6-lite), temporal metadata, answer format — each an arm against the 6.3.5 reference | OBS-06, RAG-04, DATA-09 |
 | 6.4 | Docs Suite, Verified Quickstart and v1 Closure (INSERTED) | README/docs suite, verified quickstart, debt backlog promotion, milestone closure | OBS-03 |
 
 ## Phase Details
@@ -1037,12 +1039,60 @@ Plans:
 
 - [x] 06.3.4.1-34-PLAN.md — `gap_closure: true`. The gate reader MISSes every reading on a journal without the matching gate-stage marker, with `max_retries` above 0 or with retried attempts. Only the three recorded drives are grandfathered, through a closed registry keyed on their headers. SC-2 and the D-69 companion count each unit's first attempt. The run of record re-reads unchanged (G-06.3.4.1-2; CR-03; D-67, D-69)
 
+### Phase 06.3.5: Retrieval ablation matrix, paper-convention metrics, judged pass and calibration (INSERTED)
+
+**Goal:** Measure, on the same question set and the same system that produced the 06.3.4.1 run of record, how much each retrieval path contributes — dense-only, BM25-only, hybrid (dense + BM25 RRF) and hybrid + graph — with MultiHop-RAG's own retrieval convention reported beside Lancet's, and finally run the LLM-judged dimensions with a human-calibrated slice. This is the standard-RAG baseline the project has never had: the contract's only ablation flag today is `disable_graph_context`, so "how does vector or hybrid search help" currently has no data behind it. The system under test is NOT changed in this phase (no reranker, no graph change, no prompt change), so every reading stays comparable to `eval/runs/2026-10-06-drive2-multihop_rag_diag/`. Quality levers belong to Phase 06.3.6.
+**Mode:** mvp
+**Requirements:** OBS-06, OBS-02, OBS-05, RAG-02
+**Depends on:** Phase 06.3.4.1 (run of record, D-61 coverage table, `unpark_gates` completeness/coverage gates, stage-cap and journal-reuse guards)
+**Canonical refs:** `.planning/research/NEXT-STEPS-2026-10-06.md` (the analyst plan that inserted this phase; §2 is the design intent), `06.3.4.1-RUN-OF-RECORD.md` (reference readings), `06.3.1-CONTEXT.md` D-46/D-49 (negative results are reported, never re-run until they look better), `eval/README.md` (harness conventions). Inject `context_path` by hand when planning if a CONTEXT.md is written for this phase.
+**Success Criteria** (procedural, never value-bearing — the numbers are produced by the drive this phase runs):
+
+1. The query contract carries a retrieval mode (dense-only / BM25-only / hybrid) orthogonal to `disable_graph_context`; the default is hybrid, and a golden test proves the drive-2 graph-off fusion output is byte-identical under the default (the existing `graph_off_fusion.golden` pins this). The mode is visible on the wire per record (notice code or snapshot field) so the harness can verify arm provenance the way it verifies `GRAPH_ABLATION` today.
+2. The harness arm registry generalises from the two-entry `GRAPH_ARMS` map to a label → request-flags table carrying at least `dense-only`, `bm25-only`, `hybrid` and `hybrid+graph`; `[arms]` in the corpus TOML, `--arm` on the CLI and the provenance checks agree; every record carries its arm.
+3. MultiHop-RAG's own retrieval convention — Hits@k (k = 4 and 10) and MRR@10 over document-level evidence match — is computed as additive, labelled dimensions beside Lancet's substring-containment metrics, with the methodological caveat on non-comparability rewritten to state exactly which figures are comparable to the paper's table.
+4. A dev / held-out split is committed before any paid drive: the 100 diagnostic questions are the dev set; the held-out set is a fresh seeded sample from the remaining 400 of the 500-question sample, restricted to questions whose gold is in the index per the D-61 coverage table, with its seed, size and question IDs recorded. No weight, threshold or prompt is changed after a held-out reading (D-49).
+5. One drive on the held-out set over the four arms under a pre-authorised stage cap, `--retries 0`, `--gate-stage`, with SC-1 (completeness) and SC-2 (error mode, retrieval flatness) read by `unpark_gates` and published; a mid-drive provider switch, if any, is disclosed per arm as in drive 2.
+6. The judged dimensions (`answer_faithfulness`, `answer_groundedness`) run on the held-out records of all arms with cached verdicts, and a human calibration slice of at least 20 items is scored by the project owner with quadratic weighted kappa and Spearman rho reported through the 06.3.4 machinery (closes 06.3.4 SC-3's deferral).
+7. The run of record publishes a four-arm comparison: per-arm retrieval, answer and judged metrics with Wilson or bootstrap CIs, paired deltas of every arm against `hybrid` as the reference arm, latency and prompt-token cost per arm, and one eval-results chart artifact (SVG or PNG under `docs/`) for the README. The result is reported whichever direction it takes.
+
+**Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
+
+**Plans:** 0 plans (not yet planned)
+
+### Phase 06.3.6: Quality levers measured as arms — reranker, graph repair by diagnosis, temporal metadata, answer format (INSERTED)
+
+**Goal:** Improve answer quality with a small set of standard levers, each implemented as an independently switchable arm and measured once on the 06.3.5 held-out split against the 06.3.5 `hybrid` reference, so attribution is clean and a lever that does not pay is recorded rather than shipped. Promotes backlog 999.2 (Reranking) and a lite form of 999.6 (entity resolution) into v1. **More hops is explicitly not a lever:** paths are already seed-to-seed one-hop and two-hop with a degree cap, MultiHop-RAG questions are mostly two-document questions, and the run of record's significant negative `ranking_quality` delta says the graph already injects noise — the bottleneck is path recall and graph-evidence precision, not depth.
+**Mode:** mvp
+**Requirements:** OBS-06, RAG-04, DATA-09, DATA-04, DATA-05
+**Depends on:** Phase 06.3.5 (held-out split, arm registry, reference arm, paper-convention metrics)
+**Canonical refs:** `.planning/research/NEXT-STEPS-2026-10-06.md` §2 (levers and ordering), `06.3.4.1-RUN-OF-RECORD.md` (the 38 `GRAPH_UNAVAILABLE` questions, the (c)-yes/(e)-no list of 26, the stratum table), `engine/src/rerank/mod.rs` (`Reranker` port, RAG-04), `engine/src/db/mod.rs` (`EntityResolver` port, DATA-09), `engine/src/graph/paths.rs` (`rank_chunks`, `DEGREE_CAP`, `MAX_PATH_FACTS` derivations).
+**Levers (priority order):**
+
+1. **Reranker (999.2).** Cross-encoder re-scoring of the fused candidate list behind the existing `Reranker` trait (provider chosen at research time: a rerank API or a local ONNX cross-encoder), with its own node timing on the wire.
+2. **Graph repair chosen by diagnosis (999.6-lite).** A per-question table over the 38 drive-2 `GRAPH_UNAVAILABLE` questions (gold entities present? alias split? missing edge?) selects exactly one repair before code is written: entity resolution behind `EntityResolver` (alias merge by normalised name + name-vector similarity), or graph-list precision (restrict the graph RRF list to chunks cited by at least two path entities or to the edge-evidence chunk).
+3. **Temporal metadata.** Carry the corpus's `published_at` through ingestion into chunk metadata and the prompt's evidence headers (the 0.13 temporal stratum).
+4. **Answer-format prompting for binary gold.** A yes/no format instruction for comparison-type questions (the 0.43 binary stratum; the 26 gold-in-top-4-but-unusable cases).
+
+**Success Criteria** (procedural, never value-bearing):
+
+1. The no-path diagnosis table exists as a regenerated artifact (not a narrative) and its selection rule for lever 2 is recorded before any lever-2 code is committed.
+2. Every lever is switchable per request or per config and has a golden or snapshot test proving the reference arm's output is unchanged when the lever is off.
+3. The reranker is wired behind `Reranker` with `NoOpReranker` still the default; its latency is a wire-visible node timing and is budgeted per the 06.3.3 derivation rule (censoring-aware, derived from a measurement, not guessed).
+4. `published_at` is persisted on chunks and surfaced in prompt evidence; ingestion of a document without a date degrades to no header, never to a failure.
+5. One drive on the held-out split under a pre-authorised stage cap with arms `hybrid` (reference, re-run same day for provider control), `hybrid+rerank`, `hybrid+graph-v2`, `hybrid+temporal`, `hybrid+answer-format` and `hybrid+all`; SC-1/SC-2 gates read and published; paired deltas with bootstrap CIs against the same-day reference; latency and prompt-token cost per arm.
+6. A lever becomes a default only when its paired delta CI excludes zero in the positive direction on the held-out split; the others stay off by default and are listed with their readings in Phase 6.4's honest-limitations section. Results are published whichever direction they take (D-49).
+
+**Out of Scope:** community summaries (999.1/999.5/999.4), query reformulation strategies (999.3 — a v1.1 arm), local inference endpoint (999.11 — v1.1), deeper traversal, new corpora.
+
+**Plans:** 0 plans (not yet planned)
+
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
-**Goal:** **[PARKED — not ready to plan.]** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone. Parked until Phase 06.3.4.1 (Retrieval diagnosis, index identity, and graph-yield repair) clears its unpark gates — a demonstrable graph-on vs graph-off effect on a gold-in-index subset. "Both arms fail to answer" is not a v1 story: do not draft the evaluation-methodology, eval-results, or quickstart pages before that unpark.
+**Goal:** **[PARKED — not ready to plan.]** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone. Phase 06.3.4.1 cleared its unpark gates on 2026-10-06 (`all-pass-close`), but on 2026-10-06 the owner decided (`.planning/research/NEXT-STEPS-2026-10-06.md`) that the docs must report a standard-RAG baseline and a measured lever table, not only a graph-on/graph-off null result. This phase therefore stays parked until Phases 06.3.5 and 06.3.6 publish their runs of record; the unpark remains a separate user decision. Do not draft the evaluation-methodology, eval-results, or quickstart pages before that.
 **Mode:** mvp
 **Requirements:** OBS-03
-**Depends on:** Phase 6, Phase 06.3.4 (including its still-open gap-closure items T-19/CR-01, T-24, T-25, T-43), Phase 06.3.4.1 (unpark gate — see that phase's Success Criteria; this phase does not start planning until 06.3.4.1 clears them)
+**Depends on:** Phase 6, Phase 06.3.4 (including its still-open gap-closure items T-19/CR-01, T-24, T-25, T-43), Phase 06.3.4.1 (gates cleared 2026-10-06), Phase 06.3.5 (four-arm matrix run of record), Phase 06.3.6 (lever table and default decisions)
 **Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phases 06.3.1–06.3.4 (inserted between 6.3 and 6.4, sharing `06.3.1-CONTEXT.md` as their own decision record) attempted to fix the retrieval collapse surfaced by Phase 6.3's evaluation run; 06.3.4's own drive halted at 658/1000 records, uncalibrated, with an open journal-completeness defect (T-19/CR-01) — **it is not a run of record and must not be cited as complete.** Phase 06.3.4.1 was inserted after 06.3.4 to diagnose and repair retrieval/graph yield (OI-01 graph architecture, OI-02 `RetrieveHybrid` latency, OI-03 corpus/index drift — see `06.3.4-FINDINGS.md` §4 — these are 06.3.4.1's work, not this phase's); this phase's evaluation-methodology and eval-results documentation must reflect whatever run 06.3.4.1 validates as trustworthy, not the 2026-09-03 run and not 06.3.4's halted re-drive. Root-cause analysis for the 2026-09-03 collapse and correction rationale is in `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md` (D-53, D-54). **Run of record validated by Phase 06.3.4.1:** `eval/runs/2026-10-06-drive2-multihop_rag_diag/` (index generation `lance-702`), with its readings and the decision record in `.planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-RUN-OF-RECORD.md`. The D-83 outcome, decided by the user 2026-10-06, is `all-pass-close`: SC-1 200/200 work units, SC-4 59/89 = 0.6629 (Wilson [0.5598, 0.7526]) and SC-5 35/65 = 0.5385 all pass, with three standing disclosures (non-significant negative paired quality deltas with a latency and prompt-token cost, a mid-drive provider switch, and a graph-off retrieved-set difference of undetermined cause). Phase 06.3.4.1's gates are met; **this entry is not unparked by that outcome, 6.4 stays parked, and the unpark is a separate user decision.** Graph usefulness (whether the graph earns its cost) is a 6.4 question.
 **Success Criteria** (parked — none of these are achievable, and none should be drafted against, until Phase 06.3.4.1 clears its unpark gates):
 
@@ -1076,10 +1126,10 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.2: Reranking (BACKLOG)
+### Phase 999.2: Reranking (BACKLOG — PROMOTED into Phase 06.3.6 lever 1, 2026-10-06)
 
-**Goal:** A second-pass cross-encoder model to re-score merged retrieval candidates.
-**Requirements:** TBD
+**Goal:** A second-pass cross-encoder model to re-score merged retrieval candidates. Promoted on 2026-10-06 (`.planning/research/NEXT-STEPS-2026-10-06.md` §3): the `Reranker` port already exists (RAG-04) and this is the most likely single gain for standard-RAG metrics. Implemented and measured as an arm in Phase 06.3.6; this backlog entry is retained as the pointer.
+**Requirements:** RAG-04
 **Plans:** 0 plans
 
 Plans:
@@ -1106,10 +1156,10 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-### Phase 999.6: Knowledge Drift Detection and Node Merging (BACKLOG)
+### Phase 999.6: Knowledge Drift Detection and Node Merging (BACKLOG — lite form PROMOTED into Phase 06.3.6 lever 2, 2026-10-06)
 
-**Goal:** Implement semantic entity resolution and node merging using vector similarity and LLM verification to maintain a self-healing, clean knowledge graph.
-**Requirements:** TBD
+**Goal:** Implement semantic entity resolution and node merging using vector similarity and LLM verification to maintain a self-healing, clean knowledge graph. On 2026-10-06 a lite form (alias merge by normalised name + name-vector similarity behind the existing `EntityResolver` port, DATA-09) was promoted into Phase 06.3.6 as a candidate graph repair, conditional on that phase's no-path diagnosis selecting it. LLM-verified merging and drift detection stay here for v2.
+**Requirements:** DATA-09
 **Plans:** 0 plans
 
 Plans:
