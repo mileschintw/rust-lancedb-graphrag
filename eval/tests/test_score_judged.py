@@ -8,7 +8,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from lancet_eval.client import RetrievalSnapshot, StructuredCitation
-from lancet_eval.corpus import load_sample_questions
+from lancet_eval.corpus import GoldQuestion, load_sample_questions
 from lancet_eval.journal import Journal, RunRecord
 from lancet_eval.score import ScoreError, score_run
 
@@ -2203,3 +2203,133 @@ def test_cached_verdict_count_scoped_by_prompt_version_and_model(tmp_path: Path)
 
 
 
+
+
+# --- 06.3.5-08 D-112 / D-118: the judgeable policy ------------------------------------
+
+
+def _gold(qid: str, *, null: bool = False) -> GoldQuestion:
+    if null:
+        return GoldQuestion(
+            question_id=qid, question="q?", question_type="null_query", gold_answer=""
+        )
+    return GoldQuestion(
+        question_id=qid,
+        question="q?",
+        question_type="inference_query",
+        gold_facts=["fact"],
+        gold_answer="Yes",
+        evidence_list=[{"fact": "fact"}],
+    )
+
+
+def _policy_record(
+    qid: str,
+    *,
+    answer: str = "Answer: Yes",
+    cited: bool = True,
+    outcome: str = "success",
+    arm: str = "graph-on",
+) -> RunRecord:
+    cites = (
+        [StructuredCitation(chunk_id="c1", document_id="d1", excerpt="fact", rank=1)]
+        if cited
+        else []
+    )
+    return RunRecord(
+        corpus="multihop_rag",
+        question_id=qid,
+        graph_arm=arm,
+        outcome=outcome,  # type: ignore[arg-type]
+        answer=answer,
+        structured_citations=cites,
+        index_generation="gen-1",
+    )
+
+
+def test_default_policy_equals_the_pre_change_expression_on_drive2() -> None:
+    from lancet_eval.config import repo_root
+    from lancet_eval.journal import load_records
+    from lancet_eval.score import _is_judgeable
+
+    journal = (
+        repo_root()
+        / "eval"
+        / "runs"
+        / "2026-10-06-drive2-multihop_rag_diag"
+        / "journal.jsonl"
+    )
+    records = load_records(journal)
+    gold_map = {q.question_id: q for q in load_sample_questions("multihop_rag_diag")}
+    assert len(records) == 200
+    truth = [
+        bool(gold_map.get(r.question_id)) and bool(r.structured_citations)
+        for r in records
+    ]
+    assert [_is_judgeable(r, gold_map) for r in records] == truth
+    assert [_is_judgeable(r, gold_map, policy="legacy") for r in records] == truth
+    assert sum(truth) == 197
+
+
+def test_policy_06_3_5_admits_a_clean_cited_answered_g_record() -> None:
+    from lancet_eval.score import _is_judgeable
+
+    gold_map = {"q1": _gold("q1")}
+    assert _is_judgeable(_policy_record("q1"), gold_map, policy="06.3.5") is True
+
+
+def test_policy_06_3_5_refuses_a_null_question_with_citations() -> None:
+    from lancet_eval.score import _is_judgeable
+
+    gold_map = {"n1": _gold("n1", null=True)}
+    rec = _policy_record("n1")
+    assert _is_judgeable(rec, gold_map) is True
+    assert _is_judgeable(rec, gold_map, policy="06.3.5") is False
+
+
+def test_policy_06_3_5_refuses_an_abstaining_record_with_citations() -> None:
+    from lancet_eval.score import _is_judgeable
+
+    gold_map = {"q1": _gold("q1")}
+    rec = _policy_record("q1", answer="Answer: Insufficient information")
+    assert _is_judgeable(rec, gold_map) is True
+    assert _is_judgeable(rec, gold_map, policy="06.3.5") is False
+
+
+def test_policy_06_3_5_refuses_an_uncited_record() -> None:
+    from lancet_eval.score import _is_judgeable
+
+    gold_map = {"q1": _gold("q1")}
+    rec = _policy_record("q1", cited=False)
+    assert _is_judgeable(rec, gold_map, policy="06.3.5") is False
+
+
+def test_policy_06_3_5_refuses_an_unusable_error_record() -> None:
+    from lancet_eval.score import _is_judgeable
+
+    gold_map = {"q1": _gold("q1")}
+    rec = _policy_record("q1", outcome="error")
+    assert _is_judgeable(rec, gold_map, policy="06.3.5") is False
+
+
+def test_policy_06_3_5_refuses_a_record_failing_a_provenance_clause() -> None:
+    from lancet_eval.score import _is_judgeable
+
+    gold_map = {"q1": _gold("q1")}
+    # a canonical graph-off label with no GRAPH_ABLATION notice fails clause (e)
+    rec = _policy_record("q1", arm="hybrid")
+    assert _is_judgeable(rec, gold_map, policy="legacy") is True
+    assert _is_judgeable(rec, gold_map, policy="06.3.5") is False
+
+
+def test_policy_06_3_5_refuses_a_question_without_gold() -> None:
+    from lancet_eval.score import _is_judgeable
+
+    assert _is_judgeable(_policy_record("q9"), {}, policy="06.3.5") is False
+
+
+def test_an_unknown_judgeable_policy_raises() -> None:
+    from lancet_eval.score import _is_judgeable
+
+    with pytest.raises(ValueError, match="policy"):
+        _is_judgeable(_policy_record("q1"), {"q1": _gold("q1")}, policy="nope")

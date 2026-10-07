@@ -10,12 +10,22 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from lancet_eval.client import StructuredCitation
 from lancet_eval.corpus import GoldQuestion
+
+
+class _AnswerRecord(Protocol):
+    """What the abstention predicate reads: a `RunRecord` or a look-alike."""
+
+    @property
+    def answer(self) -> str | None: ...
+
+    @property
+    def notices(self) -> Sequence[Any]: ...
 
 
 class MatchVerdict(StrEnum):
@@ -143,6 +153,55 @@ def null_abstention_correct(question: GoldQuestion, answer: str) -> MetricOutcom
     extracted = extract_final_answer(answer)
     score = 1.0 if extracted == "insufficient information" else 0.0
     return MetricOutcome(status="ok", score=score, n=1)
+
+
+# D-118: the typed NO_EVIDENCE notice code (dimensions.NOTICE_CODE_NO_EVIDENCE); kept
+# local so this module stays free of the dimensions import graph.
+_NO_EVIDENCE_TYPED_CODE = 1
+_ABSTENTION_ANSWER = "insufficient information"
+_LEAK_PHRASES = ("insufficient information", "cannot answer")
+
+
+def _has_no_evidence_notice(record: _AnswerRecord) -> bool:
+    return any(
+        getattr(n, "typed_code", None) == _NO_EVIDENCE_TYPED_CODE
+        or getattr(n, "code", "") == "NO_EVIDENCE"
+        for n in record.notices
+    )
+
+
+def is_abstention(record: _AnswerRecord) -> bool:
+    """The single abstention predicate (D-118, owner-approved 2026-10-06).
+
+    True when the record carries a NO_EVIDENCE notice (typed code 1 or the string
+    code), or when the extracted final `Answer:` line, after the D-70 normalisation,
+    equals `insufficient information` (the D-72 equality). It never reads the prose
+    fallback of `abstention_outcome`: a hedge such as `Evidence says insufficient
+    information` followed by `Answer: Yes` is not an abstention and is counted by
+    `abstention_leak` instead. A blank answer without NO_EVIDENCE is not one.
+
+    Args:
+        record: Any object with `.answer` (str or None) and `.notices`.
+
+    Returns:
+        True when the record abstains.
+    """
+    if _has_no_evidence_notice(record):
+        return True
+    return extract_final_answer(record.answer) == _ABSTENTION_ANSWER
+
+
+def abstention_leak(record: _AnswerRecord) -> bool:
+    """True for a non-abstaining record whose prose holds an abstention phrase (D-118).
+
+    The whitespace-normalised, lower-cased answer contains `insufficient information`
+    or `cannot answer`, yet `is_abstention` is false: a hedge that goes on to commit.
+    It is reported as a count, never used to classify a record.
+    """
+    if is_abstention(record):
+        return False
+    text = normalize_ws(record.answer or "")
+    return any(phrase in text for phrase in _LEAK_PHRASES)
 
 
 def fact_matches_excerpt(fact: str, chunk: StructuredCitation) -> MatchVerdict:

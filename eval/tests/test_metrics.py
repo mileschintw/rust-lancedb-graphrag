@@ -16,6 +16,7 @@ from lancet_eval.corpus import GoldQuestion
 from lancet_eval.metrics import (
     MatchVerdict,
     PaperMetricsResult,
+    abstention_leak,
     abstention_outcome,
     abstention_rate,
     answer_usable,
@@ -28,6 +29,7 @@ from lancet_eval.metrics import (
     gold_contained,
     hits_at_k,
     id_matcher,
+    is_abstention,
     load_gold_chunk_sets,
     mrr_at_k,
     ndcg_at_k,
@@ -887,3 +889,69 @@ def test_the_official_script_is_not_tracked_in_the_repository() -> None:
     )
     tracked = [p for p in res.stdout.splitlines() if p.endswith("retrieval_evaluate.py")]
     assert tracked == []
+
+
+# --- 06.3.5-08 D-118: one abstention predicate ----------------------------------------
+
+
+@dataclass
+class _Notice:
+    code: str = ""
+    typed_code: int = 0
+
+
+@dataclass
+class _Rec:
+    answer: str | None
+    notices: list[_Notice]
+
+
+def _rec(answer: str | None, *notices: _Notice) -> _Rec:
+    return _Rec(answer=answer, notices=list(notices))
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Answer: Insufficient information",
+        "Answer: Insufficient information.",
+        "**Answer:** insufficient information [2]",
+        "Answer: Yes\nOn reflection.\nAnswer: Insufficient information",
+    ],
+)
+def test_is_abstention_true_for_a_final_line_that_abstains(answer: str) -> None:
+    assert is_abstention(_rec(answer)) is True
+
+
+def test_is_abstention_true_for_a_typed_no_evidence_notice_and_blank_answer() -> None:
+    assert is_abstention(_rec("", _Notice(code="NO_EVIDENCE", typed_code=1))) is True
+    assert is_abstention(_rec(None, _Notice(typed_code=1))) is True
+
+
+def test_is_abstention_true_for_a_string_no_evidence_notice() -> None:
+    assert is_abstention(_rec("", _Notice(code="NO_EVIDENCE"))) is True
+
+
+def test_is_abstention_false_for_a_hedge_that_commits_to_an_answer() -> None:
+    answer = "Evidence says insufficient information\nAnswer: Yes"
+    assert is_abstention(_rec(answer)) is False
+
+
+def test_is_abstention_false_for_a_blank_answer_without_no_evidence() -> None:
+    assert is_abstention(_rec("")) is False
+    assert is_abstention(_rec(None)) is False
+    assert (
+        is_abstention(_rec("", _Notice(code="GRAPH_ABLATION", typed_code=18))) is False
+    )
+
+
+def test_abstention_leak_counts_only_non_abstaining_prose_matches() -> None:
+    hedge = _rec("Evidence says  insufficient\ninformation\nAnswer: Yes")
+    assert is_abstention(hedge) is False
+    assert abstention_leak(hedge) is True
+    assert abstention_leak(_rec("I Cannot   Answer this.\nAnswer: No")) is True
+    # an abstention is never a leak
+    assert abstention_leak(_rec("Answer: Insufficient information")) is False
+    # a plain committed answer is not a leak
+    assert abstention_leak(_rec("Answer: Yes")) is False
+    assert abstention_leak(_rec("")) is False

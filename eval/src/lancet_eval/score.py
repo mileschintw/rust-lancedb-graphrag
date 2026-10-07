@@ -69,6 +69,7 @@ from lancet_eval.metrics import (
     extract_final_answer,
     final_answer_em,
     gold_contained,
+    is_abstention,
     mrr_at_k,
     ndcg_at_k,
     null_abstention_correct,
@@ -77,6 +78,7 @@ from lancet_eval.metrics import (
     squad_f1,
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
+from lancet_eval import provenance
 from lancet_eval.pairing import (
     compute_paired_delta,
     deduplicate_by_arm,
@@ -225,12 +227,39 @@ def _primary_arm(configured_arms: list[str], totals: dict[str, int]) -> str:
     return configured_arms[0]
 
 
-def _is_judgeable(rec: RunRecord, gold_map: dict[str, Any]) -> bool:
+_JUDGEABLE_POLICIES = ("legacy", "06.3.5")
+
+
+def _is_judgeable(
+    rec: RunRecord, gold_map: dict[str, Any], *, policy: str = "legacy"
+) -> bool:
     """T-06.3.4-42: Single judgeable predicate read by candidate selection, judge loop, and calibration worksheet.
 
-    A record is judgeable if gold is present for its question_id and it carries non-empty structured_citations.
+    Policy `"legacy"` (the default, byte for byte the 06.3.4 predicate): gold is present
+    for the record's question_id and it carries non-empty structured_citations.
+
+    Policy `"06.3.5"` (D-112 / D-118): additionally the question is not a null question,
+    `provenance.is_ok(rec)` holds (D-34 usable, no clause a to f failure), and
+    `not is_abstention(rec)`. The judge stage, the calibration draw and the judged
+    aggregates all call this one predicate; a null, an abstention, an uncited, an
+    unusable or a provenance-failed record is never judgeable under it.
+
+    Raises:
+        ValueError: If `policy` is not a known policy.
     """
-    return bool(gold_map.get(rec.question_id)) and bool(rec.structured_citations)
+    if policy not in _JUDGEABLE_POLICIES:
+        raise ValueError(
+            f"Unknown judgeable policy {policy!r}; expected {_JUDGEABLE_POLICIES}"
+        )
+    gold = gold_map.get(rec.question_id)
+    legacy = bool(gold) and bool(rec.structured_citations)
+    if policy == "legacy":
+        return legacy
+    if not legacy:
+        return False
+    if gold.is_null or gold.question_type == "null_query":
+        return False
+    return provenance.is_ok(rec) and not is_abstention(rec)
 
 
 def _reusable_verdict_count(
