@@ -3077,6 +3077,8 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
         variant_count: 2,
         variant_identities: ctx.variants.clone(),
         retrieved_chunks: vec![],
+        retrieval_mode: 0,
+        pre_truncation_ranking: Vec::new(),
     });
 
     let event = events::checkpoint("full_snapshot", 77, &ctx);

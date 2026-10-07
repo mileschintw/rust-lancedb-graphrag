@@ -938,6 +938,102 @@ async fn cross_variant_rrf_two_variant_exact_scores() {
     assert!((ctx.evidence_blocks[1].score - expected_score).abs() < 1e-9);
 }
 
+/// Phase 06.3.5 plan 03 Task 2 tracer (D-99, D-100): a `dense_only` request with the ranking flag
+/// runs through `WorkflowContext::new` and `RetrieveHybridNode` over fakes. The BM25 path is
+/// skipped, the snapshot echoes the mode, and the pre-truncation ranking is the pre-rerank order
+/// whose head is exactly the final retrieved set.
+#[tokio::test]
+async fn dense_only_request_skips_bm25_and_carries_the_ranking() {
+    use crate::pb::lancet::v1::RetrievalMode;
+    use crate::workflow::nodes::RetrieveHybridNode;
+    use crate::workflow::ports::{FakeBm25RetrievalPort, FakeDenseRetrievalPort};
+    use crate::workflow::{Node, WorkflowContext};
+    use tokio_util::sync::CancellationToken;
+
+    let c_a = candidate(
+        "00000000-0000-4000-8000-000000000001",
+        "chunk-a",
+        "content A",
+    );
+    let c_b = candidate(
+        "00000000-0000-4000-8000-000000000002",
+        "chunk-b",
+        "content B",
+    );
+    let c_c = candidate(
+        "00000000-0000-4000-8000-000000000003",
+        "chunk-c",
+        "content C",
+    );
+    let c_bm25_only = candidate(
+        "00000000-0000-4000-8000-000000000004",
+        "chunk-bm25-only",
+        "content D",
+    );
+
+    let fake_dense = Arc::new(FakeDenseRetrievalPort::success(vec![
+        c_a.clone(),
+        c_b.clone(),
+        c_c.clone(),
+    ]));
+    let fake_bm25 = Arc::new(FakeBm25RetrievalPort::success(vec![c_bm25_only]));
+
+    // `final_limit` below the candidate count, so the ranking is longer than the retrieved set.
+    let settings = RetrievalSettings {
+        final_limit: 2,
+        ..RetrievalSettings::default()
+    };
+    let candidate_limit = settings.candidate_limit;
+    let node = RetrieveHybridNode::new(
+        Some(fake_dense.clone()),
+        Some(fake_bm25.clone()),
+        None,
+        settings,
+    );
+
+    let mut req = crate::testkit::test_query_request("dense question", "sess-1");
+    req.retrieval_mode = RetrievalMode::DenseOnly as i32;
+    req.include_pre_truncation_ranking = true;
+    req.disable_graph_context = Some(true);
+    let mut ctx = WorkflowContext::new("sess-1".into(), "trace-1".into(), &req);
+
+    let cancel = CancellationToken::new();
+    node.run(&mut ctx, &cancel).await.unwrap();
+
+    assert_eq!(fake_dense.calls(), 1);
+    assert_eq!(fake_bm25.calls(), 0, "dense_only must skip the BM25 path");
+    assert!(
+        ctx.notices
+            .iter()
+            .all(|notice| !notice.code.starts_with("RETRIEVAL_DEGRADED")),
+        "a skipped path is not a degraded path: {:?}",
+        ctx.notices
+    );
+
+    let snapshot = ctx.snapshot.as_ref().expect("a completed run has a snapshot");
+    assert_eq!(snapshot.retrieval_mode, RetrievalMode::DenseOnly as i32);
+
+    let ranking = &snapshot.pre_truncation_ranking;
+    assert!(!ranking.is_empty());
+    assert!(ranking.len() <= candidate_limit);
+    assert!(ranking.len() > snapshot.retrieved_chunks.len());
+    let ranked_ids: Vec<&str> = ranking.iter().map(|row| row.chunk_id.as_str()).collect();
+    let retrieved_ids: Vec<&str> = snapshot
+        .retrieved_chunks
+        .iter()
+        .map(|chunk| chunk.chunk_id.as_str())
+        .collect();
+    assert_eq!(&ranked_ids[..retrieved_ids.len()], retrieved_ids.as_slice());
+    assert_eq!(ranked_ids, ["chunk-a", "chunk-b", "chunk-c"]);
+
+    let fused_ranks: Vec<i32> = ranking.iter().map(|row| row.fused_rank).collect();
+    assert_eq!(fused_ranks, [1, 2, 3]);
+    let vector_ranks: Vec<i32> = ranking.iter().map(|row| row.vector_rank).collect();
+    assert_eq!(vector_ranks, [1, 2, 3]);
+    assert!(ranking.iter().all(|row| row.bm25_rank == 0));
+    assert!(ranking.iter().all(|row| row.graph_rank == 0 && !row.graph_boosted));
+}
+
 #[test]
 fn cross_variant_rrf_tie_order_is_deterministic() {
     let settings = RetrievalSettings::default();
@@ -989,6 +1085,8 @@ fn retrieval_snapshot_variant_provenance_wire_contract() {
             "v2:expanded-query".to_string(),
         ],
         retrieved_chunks: vec![],
+        retrieval_mode: 0,
+        pre_truncation_ranking: Vec::new(),
     };
 
     let mut buf = Vec::new();
@@ -1102,6 +1200,8 @@ fn retrieval_snapshot_retrieved_chunks_wire_contract() {
         variant_count: 1,
         variant_identities: vec!["v0:test".to_string()],
         retrieved_chunks: vec![chunk1.clone(), chunk2.clone()],
+        retrieval_mode: 0,
+        pre_truncation_ranking: Vec::new(),
     };
 
     let mut buf = Vec::new();
@@ -1166,6 +1266,8 @@ fn retrieval_snapshot_retrieved_chunks_wire_contract() {
         variant_count: 1,
         variant_identities: vec!["v0:test".to_string()],
         retrieved_chunks: vec![],
+        retrieval_mode: 0,
+        pre_truncation_ranking: Vec::new(),
     };
 
     let mut empty_buf = Vec::new();

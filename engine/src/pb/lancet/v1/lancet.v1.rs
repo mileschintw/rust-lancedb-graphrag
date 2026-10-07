@@ -73,6 +73,15 @@ pub struct QueryRagRequest {
     /// field is what produces 6.3's `graph-off` arm. `graph-on` is the absent/false state.
     #[prost(bool, optional, tag="5")]
     pub disable_graph_context: ::core::option::Option<bool>,
+    /// 06.3.5 D-99. Names the retrieval path set the request runs; UNSPECIFIED (absent) is HYBRID.
+    /// The chosen value is echoed on `RetrievalSnapshot.retrieval_mode` so a failed record stays attributable.
+    #[prost(enumeration="RetrievalMode", tag="6")]
+    pub retrieval_mode: i32,
+    /// 06.3.5 D-100. Opt-in diagnostic: when true the snapshot carries the pre-rerank,
+    /// pre-truncation candidate ranking (`RetrievalSnapshot.pre_truncation_ranking`, IDs and ranks
+    /// only, at most `candidate_limit` rows). False/absent leaves the snapshot bytes unchanged.
+    #[prost(bool, tag="7")]
+    pub include_pre_truncation_ranking: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Notice {
@@ -111,6 +120,26 @@ pub struct StructuredCitation {
     #[prost(bool, tag="10")]
     pub graph_boosted: bool,
 }
+/// 06.3.5 D-100. One row of the pre-truncation candidate ranking: IDs and ranks only, never
+/// chunk text. Ranks are 1-based; 0 means the chunk was not in that list.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RankedCandidate {
+    #[prost(string, tag="1")]
+    pub chunk_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub document_id: ::prost::alloc::string::String,
+    /// Position in the cross-variant fused list (before the reranker and the final-limit take).
+    #[prost(int32, tag="3")]
+    pub fused_rank: i32,
+    #[prost(int32, tag="4")]
+    pub vector_rank: i32,
+    #[prost(int32, tag="5")]
+    pub bm25_rank: i32,
+    #[prost(int32, tag="6")]
+    pub graph_rank: i32,
+    #[prost(bool, tag="7")]
+    pub graph_boosted: bool,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RetrievalSnapshot {
     #[prost(string, tag="1")]
@@ -138,6 +167,12 @@ pub struct RetrievalSnapshot {
     /// The full ranked retrieval result set independent of what the generator cited.
     #[prost(message, repeated, tag="12")]
     pub retrieved_chunks: ::prost::alloc::vec::Vec<StructuredCitation>,
+    /// 06.3.5 D-99: echo of `QueryRAGRequest.retrieval_mode`; 0 when the request did not set one.
+    #[prost(enumeration="RetrievalMode", tag="13")]
+    pub retrieval_mode: i32,
+    /// 06.3.5 D-100: populated only when the request set `include_pre_truncation_ranking`.
+    #[prost(message, repeated, tag="14")]
+    pub pre_truncation_ranking: ::prost::alloc::vec::Vec<RankedCandidate>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryRagResponse {
@@ -343,6 +378,42 @@ pub mod workflow_event {
         Checkpoint(super::CheckpointEvent),
         #[prost(message, tag="11")]
         WorkflowCompleted(super::WorkflowCompletedEvent),
+    }
+}
+/// 06.3.5 D-99. Which retrieval paths a request runs. Plain enum (not `optional`): proto3's
+/// zero value already means "absent == default", so UNSPECIFIED behaves exactly as HYBRID and
+/// the default request stays byte-identical on the wire. A path a mode excludes is SKIPPED, not
+/// zero-weighted: it is never called and emits no RETRIEVAL_DEGRADED_* notice.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RetrievalMode {
+    Unspecified = 0,
+    Hybrid = 1,
+    DenseOnly = 2,
+    Bm25Only = 3,
+}
+impl RetrievalMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "RETRIEVAL_MODE_UNSPECIFIED",
+            Self::Hybrid => "RETRIEVAL_MODE_HYBRID",
+            Self::DenseOnly => "RETRIEVAL_MODE_DENSE_ONLY",
+            Self::Bm25Only => "RETRIEVAL_MODE_BM25_ONLY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RETRIEVAL_MODE_UNSPECIFIED" => Some(Self::Unspecified),
+            "RETRIEVAL_MODE_HYBRID" => Some(Self::Hybrid),
+            "RETRIEVAL_MODE_DENSE_ONLY" => Some(Self::DenseOnly),
+            "RETRIEVAL_MODE_BM25_ONLY" => Some(Self::Bm25Only),
+            _ => None,
+        }
     }
 }
 /// D-76. The enum is CANONICAL; `Notice.code` (string) is DERIVED from it by one mapping

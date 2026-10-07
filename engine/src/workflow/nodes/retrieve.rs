@@ -9,11 +9,14 @@ use super::super::{
     ports::{Bm25RetrievalPort, DenseRetrievalPort},
     WorkflowContext,
 };
+use crate::pb::lancet::v1::RankedCandidate;
 use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
 use crate::rerank::Reranker;
 use crate::retrieval::dense::is_valid_chunk_id;
+use crate::retrieval::fusion::VariantProvenanceSource;
 use crate::retrieval::{
-    fuse_candidates, fuse_cross_variant_candidates, Candidate, QueryFilters, RetrievalSettings,
+    fuse_candidates, fuse_cross_variant_candidates, Candidate, FusedCandidate, QueryFilters,
+    RetrievalSettings,
 };
 
 pub const DEFAULT_RETRIEVED_EXCERPT_MAX_CHARS: usize = 512;
@@ -190,13 +193,23 @@ impl RetrieveHybridNode {
             variant_count: ctx.variants.len() as u32,
             variant_identities: ctx.variants.clone(),
             retrieved_chunks: Vec::new(),
+            // D-99: echoed on the seed too, so a failed record stays attributable to its mode.
+            retrieval_mode: ctx.retrieval_mode as i32,
+            pre_truncation_ranking: Vec::new(),
         });
 
         let embedding = ctx.query_embedding.as_deref().unwrap_or(&[]);
 
+        // D-99: a path the mode excludes is skipped, never zero-weighted. Its port stays in place
+        // (the graph list is fetched through the dense port) and it is simply not called, so it
+        // yields an empty list, emits no RETRIEVAL_DEGRADED_* notice and times at about zero.
+        let run_dense = ctx.runs_dense();
+        let run_bm25 = ctx.runs_bm25();
+
         // 1. Dense retrieval for variant-zero embedding
         let dense_start = Instant::now();
-        let dense_candidates = if let Some(dense_port) = &self.dense_port {
+        let dense_port = self.dense_port.as_ref().filter(|_| run_dense);
+        let dense_candidates = if let Some(dense_port) = dense_port {
             match dense_port
                 .retrieve_dense(&ctx.original_query, embedding, ctx.filter.as_ref(), cancel)
                 .await
@@ -270,7 +283,8 @@ impl RetrieveHybridNode {
             };
 
             let bm25_start = Instant::now();
-            let bm25_candidates = if let Some(bm25_port) = &self.bm25_port {
+            let bm25_port = self.bm25_port.as_ref().filter(|_| run_bm25);
+            let bm25_candidates = if let Some(bm25_port) = bm25_port {
                 match bm25_port
                     .retrieve_bm25(variant, ctx.filter.as_ref(), cancel)
                     .await
@@ -352,6 +366,14 @@ impl RetrieveHybridNode {
         };
         fusion_ms_total += cross_fuse_start.elapsed().as_secs_f64() * 1000.0;
 
+        // D-100: the pre-rerank order, captured only on request and before the reranker can reorder
+        // it, bounded by `candidate_limit`. IDs and ranks only; the final list is untouched.
+        let pre_truncation_ranking = if ctx.include_pre_truncation_ranking {
+            ranked_candidates(&fused_candidates, self.settings.candidate_limit)
+        } else {
+            Vec::new()
+        };
+
         // 4. Reranking
         let final_fused = if let Some(reranker) = &self.reranker {
             match reranker.rerank(fused_candidates).await {
@@ -431,6 +453,8 @@ impl RetrieveHybridNode {
             variant_count: ctx.variants.len() as u32,
             variant_identities: ctx.variants.clone(),
             retrieved_chunks,
+            retrieval_mode: ctx.retrieval_mode as i32,
+            pre_truncation_ranking,
         });
 
         // 5. Zero evidence check
@@ -480,6 +504,37 @@ impl RetrieveHybridNode {
 
         Ok(())
     }
+}
+
+/// The first `limit` of the cross-variant fused list as wire rows (D-100).
+///
+/// Ranks are 1-based; `0` means the chunk was not in that list. `fused_rank` is the position in
+/// `fused`. No chunk text is copied.
+fn ranked_candidates(fused: &[FusedCandidate], limit: usize) -> Vec<RankedCandidate> {
+    fused
+        .iter()
+        .take(limit)
+        .enumerate()
+        .map(|(index, entry)| RankedCandidate {
+            chunk_id: entry.candidate.chunk_id.clone(),
+            document_id: entry.candidate.document_id.clone(),
+            fused_rank: rank_to_wire(index + 1),
+            vector_rank: entry.vector_rank.map_or(0, rank_to_wire),
+            bm25_rank: entry.bm25_rank.map_or(0, rank_to_wire),
+            graph_rank: entry
+                .variant_provenance
+                .iter()
+                .find(|provenance| provenance.source == VariantProvenanceSource::Graph)
+                .map_or(0, |provenance| rank_to_wire(provenance.rank)),
+            graph_boosted: entry.graph_boosted(),
+        })
+        .collect()
+}
+
+/// A rank as the wire's `int32`, saturating rather than wrapping (ranks are bounded by
+/// `candidate_limit`, so saturation never occurs in practice).
+fn rank_to_wire(rank: usize) -> i32 {
+    i32::try_from(rank).unwrap_or(i32::MAX)
 }
 
 /// The IDs of `candidates` that are well-formed chunk IDs, first occurrence first, and how many

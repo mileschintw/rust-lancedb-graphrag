@@ -50,6 +50,17 @@ message DocumentFilter {
   repeated string content_types = 2;
 }
 
+// 06.3.5 D-99. Which retrieval paths a request runs. Plain enum (not `optional`): proto3's
+// zero value already means "absent == default", so UNSPECIFIED behaves exactly as HYBRID and
+// the default request stays byte-identical on the wire. A path a mode excludes is SKIPPED, not
+// zero-weighted: it is never called and emits no RETRIEVAL_DEGRADED_* notice.
+enum RetrievalMode {
+  RETRIEVAL_MODE_UNSPECIFIED = 0;
+  RETRIEVAL_MODE_HYBRID = 1;
+  RETRIEVAL_MODE_DENSE_ONLY = 2;
+  RETRIEVAL_MODE_BM25_ONLY = 3;
+}
+
 message QueryRAGRequest {
   string query = 1;
   string session_id = 2;
@@ -64,6 +75,15 @@ message QueryRAGRequest {
   // Names what it turns OFF because the graph node has no disable path today, so this
   // field is what produces 6.3's `graph-off` arm. `graph-on` is the absent/false state.
   optional bool disable_graph_context = 5;
+
+  // 06.3.5 D-99. Names the retrieval path set the request runs; UNSPECIFIED (absent) is HYBRID.
+  // The chosen value is echoed on `RetrievalSnapshot.retrieval_mode` so a failed record stays attributable.
+  RetrievalMode retrieval_mode = 6;
+
+  // 06.3.5 D-100. Opt-in diagnostic: when true the snapshot carries the pre-rerank,
+  // pre-truncation candidate ranking (`RetrievalSnapshot.pre_truncation_ranking`, IDs and ranks
+  // only, at most `candidate_limit` rows). False/absent leaves the snapshot bytes unchanged.
+  bool include_pre_truncation_ranking = 7;
 }
 
 // D-76. The enum is CANONICAL; `Notice.code` (string) is DERIVED from it by one mapping
@@ -138,6 +158,19 @@ message StructuredCitation {
   bool graph_boosted = 10;
 }
 
+// 06.3.5 D-100. One row of the pre-truncation candidate ranking: IDs and ranks only, never
+// chunk text. Ranks are 1-based; 0 means the chunk was not in that list.
+message RankedCandidate {
+  string chunk_id = 1;
+  string document_id = 2;
+  // Position in the cross-variant fused list (before the reranker and the final-limit take).
+  int32 fused_rank = 3;
+  int32 vector_rank = 4;
+  int32 bm25_rank = 5;
+  int32 graph_rank = 6;
+  bool graph_boosted = 7;
+}
+
 message RetrievalSnapshot {
   string index_generation = 1;
   string embedding_model = 2;
@@ -152,6 +185,10 @@ message RetrievalSnapshot {
   repeated string variant_identities = 11;
   // The full ranked retrieval result set independent of what the generator cited.
   repeated StructuredCitation retrieved_chunks = 12;
+  // 06.3.5 D-99: echo of `QueryRAGRequest.retrieval_mode`; 0 when the request did not set one.
+  RetrievalMode retrieval_mode = 13;
+  // 06.3.5 D-100: populated only when the request set `include_pre_truncation_ranking`.
+  repeated RankedCandidate pre_truncation_ranking = 14;
 }
 
 message QueryRAGResponse {

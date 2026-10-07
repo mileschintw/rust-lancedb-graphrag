@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::generation::ModelOutput;
 use crate::pb::lancet::v1::{
     AnswerBasis, DocumentFilter, NodeErrorKind, Notice, NoticeCode, NoticeSeverity,
-    QueryRagRequest, QueryRagResponse, RetrievalSnapshot, StructuredCitation,
+    QueryRagRequest, QueryRagResponse, RetrievalMode, RetrievalSnapshot, StructuredCitation,
 };
 
 pub use events::EventSequence;
@@ -84,6 +84,16 @@ pub struct WorkflowContext {
     ///
     /// Resolved once at admission from the request flag and never re-read from configuration downstream.
     pub disable_graph_context: bool,
+    /// Which retrieval paths this query runs (D-99), exactly as the request named it.
+    ///
+    /// Resolved once at admission. An absent or unrecognised value is `Unspecified`, which
+    /// [`runs_dense`](Self::runs_dense) and [`runs_bm25`](Self::runs_bm25) treat as `Hybrid`, and
+    /// which the snapshot echoes as `0` so a default request's snapshot bytes do not change.
+    pub retrieval_mode: RetrievalMode,
+    /// Whether the snapshot carries the pre-rerank candidate ranking (D-100).
+    ///
+    /// Resolved once at admission from the request flag; `false` leaves the snapshot unchanged.
+    pub include_pre_truncation_ranking: bool,
     /// Whether model-only answers are permitted when no evidence survives retrieval.
     ///
     /// Resolved once at admission in the order request, then configuration, then false (D-10/D-12), and never re-read downstream.
@@ -140,6 +150,8 @@ impl WorkflowContext {
             original_query: request.query.clone(),
             filter: request.filter.clone(),
             disable_graph_context: request.disable_graph_context.unwrap_or(false),
+            retrieval_mode: request.retrieval_mode(),
+            include_pre_truncation_ranking: request.include_pre_truncation_ranking,
             allow_model_only: request.allow_model_only.unwrap_or(false),
             variants: Vec::new(),
             query_embedding: None,
@@ -173,6 +185,16 @@ impl WorkflowContext {
             prompt_tokens: 0,
             completion_tokens: 0,
         }
+    }
+
+    /// Whether the dense path runs for this query: every mode except `Bm25Only` (D-99).
+    pub fn runs_dense(&self) -> bool {
+        self.retrieval_mode != RetrievalMode::Bm25Only
+    }
+
+    /// Whether the BM25 path runs for this query: every mode except `DenseOnly` (D-99).
+    pub fn runs_bm25(&self) -> bool {
+        self.retrieval_mode != RetrievalMode::DenseOnly
     }
 
     pub fn add_notice(&mut self, notice: Notice) {
