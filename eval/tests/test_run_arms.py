@@ -8,6 +8,7 @@ import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
+from lancet_eval.arms import ARM_REGISTRY
 from lancet_eval.corpus import GoldQuestion, load_corpus_config
 from lancet_eval.identity import IdentityGateError
 from lancet_eval.journal import load_done
@@ -825,3 +826,165 @@ def test_run_gate_stage_refuses_a_blank_or_whitespace_label(
     assert "--gate-stage" in res.output
     assert "whitespace" in res.output
     assert calls == []
+
+
+# --- 06.3.5-05 Task 2: every request path sends the registry's flags (D-101, D-100) ---
+
+_GRAPH_ABLATION_NOTICE = {"code": "GRAPH_ABLATION", "message": "", "typed_code": 18}
+
+
+def _echoing_stream(request: httpx.Request) -> httpx.Response:
+    """A stream whose snapshot echoes the request's mode and its graph ablation."""
+    body = json.loads(request.read().decode("utf-8"))
+    mode = body.get("retrieval_mode")
+    snapshot: dict[str, object] = {"index_generation": "gen1"}
+    if mode is not None:
+        snapshot["retrieval_mode"] = mode
+    answer: dict[str, object] = {"answer": "Paris", "snapshot": snapshot}
+    if body.get("disable_graph_context"):
+        answer["notices"] = [_GRAPH_ABLATION_NOTICE]
+    text = (
+        "event: final_answer\n"
+        f"data: {json.dumps(answer)}\n\n"
+        "event: workflow_completed\n"
+        'data: {"success": true, "duration_ms": 100}\n\n'
+    )
+    return httpx.Response(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        text=text,
+    )
+
+
+def test_drive_one_unknown_arm_names_the_valid_labels() -> None:
+    client = httpx.Client(base_url="http://testserver")
+    with pytest.raises(ValueError) as excinfo:
+        drive_one(client, corpus="multihop_rag", question=_q(), arm="bogus")
+    message = str(excinfo.value)
+    assert message.startswith("Unknown arm 'bogus'. Expected one of:")
+    for label in (*ARM_REGISTRY, "graph-on", "graph-off"):
+        assert label in message
+
+
+def test_drive_one_legacy_labels_send_todays_request_bodies(
+    httpx_mock: HTTPXMock,
+) -> None:
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    client = httpx.Client(base_url="http://testserver")
+
+    drive_one(client, corpus="multihop_rag", question=_q(), arm="graph-off")
+    drive_one(client, corpus="multihop_rag", question=_q(), arm="graph-on")
+
+    off, on = (
+        json.loads(r.read().decode("utf-8")) for r in httpx_mock.get_requests()
+    )
+    base = {"query": "What is Paris?", "session_id": ""}
+    assert off == {**base, "disable_graph_context": True}
+    assert on == base
+
+
+def test_every_registry_arm_round_trips_request_to_provenance(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Companion invariant: a new arm without flags or provenance turns this red."""
+    from lancet_eval.arms import mode_provenance_failures, request_fields
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    client = httpx.Client(base_url="http://testserver")
+
+    for label in ARM_REGISTRY:
+        rec = drive_one(client, corpus="multihop_rag", question=_q(), arm=label)
+        assert rec.outcome == "success"
+        assert rec.graph_arm == label
+        body = json.loads(httpx_mock.get_requests()[-1].read().decode("utf-8"))
+
+        # 1. the request body is exactly query + session + the registry's flags
+        assert set(body) == {"query", "session_id", *request_fields(label)}
+        assert body["include_pre_truncation_ranking"] is True
+
+        # 2./3. the echoed mode and ablation notice satisfy the provenance check
+        assert rec.snapshot is not None
+        assert rec.snapshot.retrieval_mode == body["retrieval_mode"]
+        assert (
+            mode_provenance_failures(label, rec.snapshot.retrieval_mode, rec.notices)
+            == []
+        )
+
+        # 4. another arm's echo is a failure that names the label
+        other_mode = next(
+            s.retrieval_mode
+            for s in ARM_REGISTRY.values()
+            if s.retrieval_mode != ARM_REGISTRY[label].retrieval_mode
+        )
+        failures = mode_provenance_failures(label, other_mode, rec.notices)
+        assert failures
+        assert all(label in f for f in failures)
+
+
+def test_mode_provenance_failures_rules() -> None:
+    from lancet_eval.arms import mode_provenance_failures
+    from lancet_eval.client import Notice
+
+    ablation = Notice(code="GRAPH_ABLATION", message="", typed_code=18)
+    unavailable = Notice(code="GRAPH_UNAVAILABLE", message="", typed_code=10)
+
+    # a missing echo is a failure on a canonical label
+    assert mode_provenance_failures("hybrid+graph", None, [])
+    # graph-off arms need the ablation notice and not the unavailable one
+    assert mode_provenance_failures("dense-only", "dense_only", [])
+    assert mode_provenance_failures("dense-only", "dense_only", [ablation, unavailable])
+    assert mode_provenance_failures("dense-only", "dense_only", [ablation]) == []
+    # hybrid+graph does not need the ablation notice
+    assert mode_provenance_failures("hybrid+graph", "hybrid", []) == []
+    # legacy labels: graph-off check only, no echo required
+    assert mode_provenance_failures("graph-off", None, [ablation]) == []
+    assert mode_provenance_failures("graph-off", None, [])
+    assert mode_provenance_failures("graph-on", None, []) == []
+
+
+def test_raw_events_directory_uses_the_slug_for_canonical_labels(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.raw_events import RawEventSink
+
+    sink = RawEventSink(tmp_path)
+    events = [{"event": "x", "data": "{}"}]
+    for label in ("hybrid+graph", "graph-on", "dense-only"):
+        sink.write_events(corpus="c", question_id="q1", graph_arm=label, events=events)
+    raw = tmp_path / "raw_events"
+    assert (raw / "hybrid_graph" / "q1.jsonl").is_file()
+    assert (raw / "graph-on" / "q1.jsonl").is_file()
+    assert (raw / "dense_only" / "q1.jsonl").is_file()
+    assert not (raw / "hybrid+graph").exists()
+
+
+@pytest.mark.parametrize(
+    "arm",
+    ["dense-only", "bm25-only", "hybrid", "hybrid+graph", "graph-on", "graph-off"],
+)
+def test_probe_accepts_the_four_labels_and_both_aliases(
+    arm: str, httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.arms import request_fields
+    from lancet_eval.cli import app
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    res = CliRunner().invoke(
+        app, ["probe", "-q", "q", "-f", "f", "--arm", arm, "-o", str(tmp_path / "o")]
+    )
+    assert res.exit_code == 0, res.output
+    body = json.loads(httpx_mock.get_requests()[0].read().decode("utf-8"))
+    assert set(body) == {"query", "session_id", *request_fields(arm)}
+
+
+def test_probe_rejects_an_unknown_arm_with_exit_2() -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    res = CliRunner().invoke(
+        app, ["probe", "-q", "q", "-f", "f", "--arm", "dense+graph"]
+    )
+    assert res.exit_code == 2
