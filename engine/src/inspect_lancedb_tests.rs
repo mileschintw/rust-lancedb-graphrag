@@ -10,10 +10,13 @@ use arrow_array::{
 use uuid::Uuid;
 
 use super::{
-    inspect_document, inspect_document_ids, inspect_entity_name, inspect_entity_neighborhood,
-    inspect_gold_chunks, inspect_graph_population, parse_args, DegreeDistribution,
+    chunk_id_predicates, inspect_chunk_text, inspect_document, inspect_document_ids,
+    inspect_entity_name, inspect_entity_neighborhood, inspect_gold_chunks,
+    inspect_graph_population, parse_args, parse_generation, read_chunk_id_file,
+    render_chunk_text_jsonl, sha256_hex, ChunkTextFailure, ChunkTextRow, DegreeDistribution,
     DegreeHistogramBucket, DocumentIdsReport, EntityMatch, EntityNameReport, GraphPopulationReport,
-    Inspection, NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
+    InspectMode, Inspection, NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
+    IN_PREDICATE_BATCH_SIZE,
 };
 use engine::db::DatabaseManager;
 
@@ -83,31 +86,8 @@ fn database_path(test_name: &str) -> String {
         .into_owned()
 }
 
-async fn fixture(
-    test_name: &str,
-    nodes: &[NodeFixture],
-    edges: &[EdgeFixture],
-) -> (DatabaseManager, String, String) {
-    let path = database_path(test_name);
-    let document_id = Uuid::new_v4().to_string();
-    let database = DatabaseManager::initialize(&path).await.unwrap();
-
-    let documents = database.documents_table().await.unwrap();
-    documents
-        .add(
-            RecordBatch::try_new(
-                documents.schema().await.unwrap(),
-                vec![
-                    Arc::new(StringArray::from(vec![document_id.as_str()])),
-                    Arc::new(BinaryArray::from_vec(vec![b"fixture"])),
-                ],
-            )
-            .unwrap(),
-        )
-        .execute()
-        .await
-        .unwrap();
-
+/// Appends `nodes`, all belonging to `document_id`, to the `nodes` table as one new version.
+async fn add_nodes(database: &DatabaseManager, document_id: &str, nodes: &[NodeFixture]) {
     let node_table = database.nodes_table().await.unwrap();
     let node_schema = node_table.schema().await.unwrap();
     let node_count = nodes.len();
@@ -124,7 +104,7 @@ async fn fixture(
     let node_batch = RecordBatch::try_new(
         node_schema.clone(),
         vec![
-            Arc::new(StringArray::from(vec![document_id.as_str(); node_count])),
+            Arc::new(StringArray::from(vec![document_id; node_count])),
             Arc::new(StringArray::from(
                 nodes
                     .iter()
@@ -179,6 +159,34 @@ async fn fixture(
     )
     .unwrap();
     node_table.add(node_batch).execute().await.unwrap();
+}
+
+async fn fixture(
+    test_name: &str,
+    nodes: &[NodeFixture],
+    edges: &[EdgeFixture],
+) -> (DatabaseManager, String, String) {
+    let path = database_path(test_name);
+    let document_id = Uuid::new_v4().to_string();
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    let documents = database.documents_table().await.unwrap();
+    documents
+        .add(
+            RecordBatch::try_new(
+                documents.schema().await.unwrap(),
+                vec![
+                    Arc::new(StringArray::from(vec![document_id.as_str()])),
+                    Arc::new(BinaryArray::from_vec(vec![b"fixture"])),
+                ],
+            )
+            .unwrap(),
+        )
+        .execute()
+        .await
+        .unwrap();
+
+    add_nodes(&database, &document_id, nodes).await;
 
     let edge_table = database.edges_table().await.unwrap();
     let edge_schema = edge_table.schema().await.unwrap();
@@ -1773,4 +1781,397 @@ async fn document_ids_empty_store_yields_empty() {
     assert_eq!(report.staged_documents_v2_rows, 0);
 
     let _ = std::fs::remove_dir_all(path);
+}
+
+// ---- --chunk-text (06.3.5-01 Task 3, D-102) ---------------------------------------------------
+
+fn parse_chunk_text_args(extra: &[&str]) -> Result<super::InspectConfig, String> {
+    parse_args(extra.iter().map(|arg| (*arg).to_owned()))
+}
+
+fn chunk_id_line(chunk_id: &str) -> String {
+    serde_json::json!({ "chunk_id": chunk_id }).to_string()
+}
+
+fn write_id_file(test_name: &str, lines: &[String]) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("chunk-text-{test_name}-{}.jsonl", Uuid::new_v4()));
+    std::fs::write(&path, lines.join("\n")).unwrap();
+    path
+}
+
+fn extra_node(chunk_id: String, chunk_index: i32, content: &str) -> NodeFixture {
+    NodeFixture {
+        chunk_id,
+        chunk_index,
+        embedding_model: Some(EMBEDDING_MODEL.to_owned()),
+        ingested_at: Some(42),
+        content: content.to_owned(),
+    }
+}
+
+/// The current version of the `nodes`, `documents` and `edges` tables, in that order.
+async fn table_versions(database: &DatabaseManager) -> Vec<u64> {
+    let mut versions = Vec::new();
+    for table in [
+        database.nodes_table().await.unwrap(),
+        database.documents_table().await.unwrap(),
+        database.edges_table().await.unwrap(),
+    ] {
+        versions.push(table.version().await.unwrap());
+    }
+    versions
+}
+
+#[test]
+fn chunk_text_flags_parse_and_require_a_canonical_generation() {
+    let parsed = parse_chunk_text_args(&[
+        "--chunk-text",
+        "ids.jsonl",
+        "--generation",
+        "lance-702",
+        "--out",
+        "rows.jsonl",
+        "--lancedb-path",
+        "store",
+    ])
+    .unwrap();
+    assert_eq!(
+        parsed.mode,
+        InspectMode::ChunkText {
+            ids: std::path::PathBuf::from("ids.jsonl"),
+            version: 702,
+            out: Some(std::path::PathBuf::from("rows.jsonl")),
+        }
+    );
+    assert_eq!(parsed.lancedb_path.as_deref(), Some("store"));
+
+    let without_out =
+        parse_chunk_text_args(&["--chunk-text", "ids.jsonl", "--generation", "lance-1"]).unwrap();
+    assert_eq!(
+        without_out.mode,
+        InspectMode::ChunkText {
+            ids: std::path::PathBuf::from("ids.jsonl"),
+            version: 1,
+            out: None,
+        }
+    );
+
+    let missing = parse_chunk_text_args(&["--chunk-text", "ids.jsonl"]).unwrap_err();
+    assert!(missing.contains("--chunk-text requires --generation"), "{missing}");
+    let stray_generation =
+        parse_chunk_text_args(&["--document-ids", "--generation", "lance-1"]).unwrap_err();
+    assert!(
+        stray_generation.contains("--generation is only valid with --chunk-text"),
+        "{stray_generation}"
+    );
+    let stray_out = parse_chunk_text_args(&["--document-ids", "--out", "o"]).unwrap_err();
+    assert!(
+        stray_out.contains("--out is only valid with --chunk-text"),
+        "{stray_out}"
+    );
+    let combined = parse_chunk_text_args(&[
+        "--chunk-text",
+        "ids.jsonl",
+        "--generation",
+        "lance-1",
+        "--document-ids",
+    ])
+    .unwrap_err();
+    assert!(combined.contains("multiple modes"), "{combined}");
+
+    for bad in [
+        "702",
+        "lance-",
+        "lance-x",
+        "lance--1",
+        "lance-+7",
+        "lance-0702",
+        "lance-702 ",
+        "LANCE-702",
+        "lance-18446744073709551616",
+    ] {
+        let err =
+            parse_chunk_text_args(&["--chunk-text", "ids.jsonl", "--generation", bad]).unwrap_err();
+        assert!(err.contains("lance-<N>"), "{bad:?} should be refused, got: {err}");
+        assert!(parse_generation(bad).is_err(), "{bad:?} must not parse");
+    }
+    assert_eq!(parse_generation("lance-0"), Ok(0));
+    assert_eq!(parse_generation("lance-18446744073709551615"), Ok(u64::MAX));
+}
+
+#[test]
+fn chunk_text_refuses_a_malformed_id_by_line_number_without_echoing_it() {
+    let good = format!("{}:0", Uuid::new_v4());
+    let hostile = "x' OR '1'='1";
+    let upper = format!("{}:0", Uuid::new_v4().to_string().to_uppercase());
+    let cases: Vec<(Vec<String>, &str)> = vec![
+        (vec![chunk_id_line(&good), chunk_id_line(hostile)], "line 2"),
+        (
+            vec![chunk_id_line(&good), String::new(), chunk_id_line(&upper)],
+            "line 3",
+        ),
+        (vec![chunk_id_line(&good), "not json at all".to_owned()], "line 2"),
+        (vec![serde_json::json!({ "document_id": "d" }).to_string()], "line 1"),
+        (vec![serde_json::json!({ "chunk_id": 5 }).to_string()], "line 1"),
+    ];
+    for (lines, expected_line) in cases {
+        let path = write_id_file("malformed", &lines);
+        let err = read_chunk_id_file(&path).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+        assert!(matches!(err, ChunkTextFailure::Input(_)), "{err:?}");
+        assert_eq!(err.exit_code(), 2);
+        let message = err.to_string();
+        assert!(message.contains(expected_line), "{message}");
+        assert!(!message.contains(hostile), "{message}");
+        assert!(!message.contains("OR '1'"), "{message}");
+        assert!(!message.contains(&upper), "{message}");
+        assert!(!message.contains("not json at all"), "{message}");
+    }
+
+    let empty = write_id_file("empty", &[]);
+    let err = read_chunk_id_file(&empty).unwrap_err();
+    let _ = std::fs::remove_file(&empty);
+    assert_eq!(err.exit_code(), 2);
+
+    let absent = std::env::temp_dir().join(format!("chunk-text-absent-{}.jsonl", Uuid::new_v4()));
+    assert_eq!(read_chunk_id_file(&absent).unwrap_err().exit_code(), 2);
+}
+
+#[test]
+fn chunk_text_reads_ids_in_batches_of_at_most_the_in_predicate_limit() {
+    let document_id = Uuid::new_v4().to_string();
+    let ids: Vec<String> = (0..1201)
+        .map(|index| format!("{document_id}:{index}"))
+        .collect();
+    let predicates = chunk_id_predicates(&ids);
+    assert_eq!(IN_PREDICATE_BATCH_SIZE, 500);
+    assert_eq!(predicates.len(), 3);
+    let sizes: Vec<usize> = predicates
+        .iter()
+        .map(|predicate| predicate.matches('\'').count() / 2)
+        .collect();
+    assert_eq!(sizes, vec![500, 500, 201]);
+    for predicate in &predicates {
+        assert!(predicate.starts_with("chunk_id IN ('"), "{predicate}");
+        assert!(predicate.ends_with("')"), "{predicate}");
+    }
+    assert!(predicates[0].contains(&format!("'{document_id}:0'")));
+    assert!(predicates[2].contains(&format!("'{document_id}:1200'")));
+    assert!(chunk_id_predicates(&[]).is_empty());
+}
+
+#[tokio::test]
+async fn chunk_text_reads_rows_at_the_pinned_version_in_request_order() {
+    let document_id = Uuid::new_v4().to_string();
+    let nodes = gold_chunk_nodes(&document_id, &["Alpha zero ünï.", "Beta one."]);
+    let (database, path, stored_document_id) = fixture("chunk-text-pinned", &nodes, &[]).await;
+    let pinned = database.nodes_table().await.unwrap().version().await.unwrap();
+    add_nodes(
+        &database,
+        &stored_document_id,
+        &[extra_node(format!("{document_id}:2"), 2, "Gamma two.")],
+    )
+    .await;
+    let latest = database.nodes_table().await.unwrap().version().await.unwrap();
+    assert!(latest > pinned, "adding a row opened a new table version");
+
+    // Repeated and out-of-order IDs: the first sighting fixes the order, the repeat is dropped.
+    let lines = vec![
+        chunk_id_line(&format!("{document_id}:1")),
+        chunk_id_line(&format!("{document_id}:0")),
+        chunk_id_line(&format!("{document_id}:1")),
+        chunk_id_line(&format!("{document_id}:2")),
+    ];
+    let id_file = write_id_file("pinned", &lines);
+    let ids = read_chunk_id_file(&id_file).unwrap();
+    let _ = std::fs::remove_file(&id_file);
+    assert_eq!(
+        ids,
+        vec![
+            format!("{document_id}:1"),
+            format!("{document_id}:0"),
+            format!("{document_id}:2")
+        ]
+    );
+
+    let at_pinned = inspect_chunk_text(&database, &ids, pinned).await.unwrap();
+    assert_eq!(at_pinned.requested, 3);
+    assert_eq!(
+        at_pinned.rows,
+        vec![
+            ChunkTextRow {
+                chunk_id: format!("{document_id}:1"),
+                document_id: stored_document_id.clone(),
+                chunk_index: 1,
+                content_sha256:
+                    "e1426f99e3dd8b08d523fce71370ce0dbccd331b1672e2c6a4d766567cc6fae8".to_owned(),
+                text: "Beta one.".to_owned(),
+            },
+            ChunkTextRow {
+                chunk_id: format!("{document_id}:0"),
+                document_id: stored_document_id.clone(),
+                chunk_index: 0,
+                content_sha256:
+                    "15cdbf5bb1f7eac75ceb56c27f1f838cb1b216b6242a887a3d17f5b2f3cac797".to_owned(),
+                text: "Alpha zero ünï.".to_owned(),
+            },
+        ],
+        "the row added after the pinned version is not read"
+    );
+    assert_eq!(at_pinned.missing_count(), 1);
+    assert_eq!(at_pinned.exit_code(), 3);
+
+    let at_latest = inspect_chunk_text(&database, &ids, latest).await.unwrap();
+    assert_eq!(at_latest.missing_count(), 0);
+    assert_eq!(at_latest.exit_code(), 0);
+    assert_eq!(
+        at_latest
+            .rows
+            .iter()
+            .map(|row| row.chunk_id.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            format!("{document_id}:1"),
+            format!("{document_id}:0"),
+            format!("{document_id}:2")
+        ]
+    );
+    assert_eq!(
+        at_latest.rows[2].content_sha256,
+        "ced3ff086a9c8ada770249b776dbcd49ba000a56eb2e4da5ad1c9ee3fd2ba75b"
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn chunk_text_an_absent_table_version_is_an_error() {
+    let document_id = Uuid::new_v4().to_string();
+    let nodes = gold_chunk_nodes(&document_id, &["Alpha content."]);
+    let (database, path, _) = fixture("chunk-text-absent-version", &nodes, &[]).await;
+    let latest = database.nodes_table().await.unwrap().version().await.unwrap();
+
+    let ids = vec![format!("{document_id}:0")];
+    let err = inspect_chunk_text(&database, &ids, latest + 100)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, ChunkTextFailure::Store(_)), "{err:?}");
+    assert_eq!(err.exit_code(), 1);
+    let message = err.to_string();
+    assert!(message.contains(&format!("{}", latest + 100)), "{message}");
+    assert!(!message.contains("Alpha content"), "{message}");
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn chunk_text_a_valid_id_absent_at_the_version_exits_3_and_the_summary_has_no_text() {
+    let document_id = Uuid::new_v4().to_string();
+    let nodes = gold_chunk_nodes(&document_id, &["Alpha content."]);
+    let (database, path, _) = fixture("chunk-text-missing-id", &nodes, &[]).await;
+    let latest = database.nodes_table().await.unwrap().version().await.unwrap();
+
+    let absent = format!("{}:0", Uuid::new_v4());
+    let ids = vec![format!("{document_id}:0"), absent.clone()];
+    let report = inspect_chunk_text(&database, &ids, latest).await.unwrap();
+    assert_eq!(report.requested, 2);
+    assert_eq!(report.rows.len(), 1);
+    assert_eq!(report.missing_count(), 1);
+    assert_eq!(report.exit_code(), 3);
+    let summary = report.summary();
+    assert!(summary.contains('2') && summary.contains('1'), "{summary}");
+    assert!(!summary.contains("Alpha content"), "{summary}");
+    assert!(!summary.contains(&absent), "{summary}");
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn chunk_text_does_not_mutate_table_versions() {
+    let document_id = Uuid::new_v4().to_string();
+    let nodes = gold_chunk_nodes(&document_id, &["Alpha content.", "Beta content."]);
+    let (database, path, stored_document_id) = fixture("chunk-text-versions", &nodes, &[]).await;
+    let early = database.nodes_table().await.unwrap().version().await.unwrap();
+    add_nodes(
+        &database,
+        &stored_document_id,
+        &[extra_node(format!("{document_id}:2"), 2, "Gamma content.")],
+    )
+    .await;
+    let before = table_versions(&database).await;
+
+    let ids: Vec<String> = (0..3)
+        .map(|index| format!("{document_id}:{index}"))
+        .collect();
+    inspect_chunk_text(&database, &ids, early).await.unwrap();
+    inspect_chunk_text(&database, &ids, before[0]).await.unwrap();
+    assert!(inspect_chunk_text(&database, &ids, before[0] + 50)
+        .await
+        .is_err());
+
+    assert_eq!(table_versions(&database).await, before);
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn chunk_text_sha256_matches_the_published_vectors() {
+    assert_eq!(
+        sha256_hex(b""),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    assert_eq!(
+        sha256_hex(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    // 56 bytes: the length field no longer fits in the first block, so a second block is needed.
+    assert_eq!(
+        sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+    );
+    // Multi-byte UTF-8 across several blocks: 200 bytes.
+    assert_eq!(
+        sha256_hex("é".repeat(100).as_bytes()),
+        "f42ec48e1e4b487e590e0b3d4e58437c8327efa855d769709f4942a4f73a7eb6"
+    );
+    assert_eq!(
+        sha256_hex("line one\nline two ☃".as_bytes()),
+        "4acbce6e7e8b1d1af1e6cedb4dfb2386a182e29e066dc29dc81b8d6a1353954b"
+    );
+}
+
+#[test]
+fn chunk_text_jsonl_has_one_object_per_row_with_exactly_the_five_keys() {
+    let rows = vec![
+        ChunkTextRow {
+            chunk_id: "c:0".to_owned(),
+            document_id: "d".to_owned(),
+            chunk_index: 0,
+            content_sha256: sha256_hex("line one\nline two ☃".as_bytes()),
+            text: "line one\nline two ☃".to_owned(),
+        },
+        ChunkTextRow {
+            chunk_id: "c:1".to_owned(),
+            document_id: "d".to_owned(),
+            chunk_index: 1,
+            content_sha256: sha256_hex(b""),
+            text: String::new(),
+        },
+    ];
+    let rendered = render_chunk_text_jsonl(&rows).unwrap();
+    assert!(rendered.ends_with('\n'));
+    let lines: Vec<&str> = rendered.lines().collect();
+    assert_eq!(lines.len(), 2, "an embedded newline is escaped, not a line break");
+    for (line, row) in lines.iter().zip(&rows) {
+        let value: serde_json::Value = serde_json::from_str(line).unwrap();
+        let mut keys: Vec<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["chunk_id", "chunk_index", "content_sha256", "document_id", "text"]
+        );
+        assert_eq!(&serde_json::from_str::<ChunkTextRow>(line).unwrap(), row);
+    }
+    assert!(render_chunk_text_jsonl(&[]).unwrap().is_empty());
 }

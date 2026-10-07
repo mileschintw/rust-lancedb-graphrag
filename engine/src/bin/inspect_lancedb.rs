@@ -1128,6 +1128,88 @@ pub async fn inspect_document_ids(
     })
 }
 
+/// One `--chunk-text` output line: the exact text of a chunk and a digest of it.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ChunkTextRow {
+    pub chunk_id: String,
+    pub document_id: String,
+    pub chunk_index: i32,
+    pub content_sha256: String,
+    pub text: String,
+}
+
+/// Why a `--chunk-text` run produced no usable output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChunkTextFailure {
+    /// The ID file is unreadable or holds a malformed line (exit status 2).
+    Input(String),
+    /// The store, the table version or a read failed (exit status 1).
+    Store(String),
+}
+
+impl std::fmt::Display for ChunkTextFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Input(message) | Self::Store(message) => f.write_str(message),
+        }
+    }
+}
+
+impl ChunkTextFailure {
+    pub fn exit_code(&self) -> i32 {
+        0
+    }
+}
+
+/// What a `--chunk-text` run found at the pinned table version.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChunkTextReport {
+    pub requested: usize,
+    pub rows: Vec<ChunkTextRow>,
+}
+
+impl ChunkTextReport {
+    pub fn missing_count(&self) -> usize {
+        0
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        0
+    }
+
+    pub fn summary(&self) -> String {
+        String::new()
+    }
+}
+
+pub fn parse_generation(_generation: &str) -> Result<u64, String> {
+    Ok(0)
+}
+
+pub fn read_chunk_id_file(_path: &Path) -> Result<Vec<String>, ChunkTextFailure> {
+    Ok(Vec::new())
+}
+
+fn chunk_id_predicates(_ids: &[String]) -> Vec<String> {
+    Vec::new()
+}
+
+fn sha256_hex(_data: &[u8]) -> String {
+    String::new()
+}
+
+pub fn render_chunk_text_jsonl(_rows: &[ChunkTextRow]) -> Result<String, String> {
+    Ok(String::new())
+}
+
+pub async fn inspect_chunk_text(
+    _database: &DatabaseManager,
+    _ids: &[String],
+    _version: u64,
+) -> Result<ChunkTextReport, ChunkTextFailure> {
+    Err(ChunkTextFailure::Store("not implemented".to_owned()))
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum InspectMode {
     Document(String),
@@ -1136,6 +1218,11 @@ pub enum InspectMode {
     EntityName(String),
     GoldChunks { questions: PathBuf, map: PathBuf },
     DocumentIds,
+    ChunkText {
+        ids: PathBuf,
+        version: u64,
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1335,6 +1422,9 @@ async fn main() -> Result<(), String> {
                 "{}",
                 serde_json::to_string(&report).map_err(|error| error.to_string())?
             );
+        }
+        InspectMode::ChunkText { .. } => {
+            return Err("--chunk-text is not implemented".to_owned());
         }
     }
     Ok(())

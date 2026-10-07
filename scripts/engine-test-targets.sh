@@ -241,6 +241,13 @@ fi
 #         node-chain golden recorded at 00fed3e424832650d2103b51b83f50b9335be1c4), 721->722. The lib
 #         count rises 637->638. `engine (bin)` stays 0; inspect_lancedb/reconcile_eval_store/
 #         config_startup unchanged (44/18/22).
+#   731 -- Phase 06.3.5 plan 01 Task 3: nine `inspect_lancedb` tests for the read-only `--chunk-text`
+#         mode (flag parsing and the canonical `lance-<N>` generation, a malformed ID refused by line
+#         number without echoing it, batching at the IN-predicate limit, the pinned-version read in
+#         request order, an absent table version, a valid ID missing at the version, table versions
+#         unchanged after a run, the SHA-256 vectors, and the JSONL row shape), 722->731.
+#         inspect_lancedb rises 44->53. lib stays 638; `engine (bin)`/reconcile_eval_store/
+#         config_startup unchanged (0/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -280,8 +287,8 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 722 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 722, got $TOTAL" >&2
+if [ "$TOTAL" -ne 731 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 731, got $TOTAL" >&2
   exit 1
 fi
 
@@ -300,8 +307,8 @@ if [ "$BIN_MAIN_COUNT" -ne 0 ]; then
   exit 1
 fi
 
-if [ "$BIN_INSPECT_COUNT" -ne 44 ]; then
-  echo "FAIL: inspect_lancedb test count mismatch: expected 44, got $BIN_INSPECT_COUNT" >&2
+if [ "$BIN_INSPECT_COUNT" -ne 53 ]; then
+  echo "FAIL: inspect_lancedb test count mismatch: expected 53, got $BIN_INSPECT_COUNT" >&2
   exit 1
 fi
 
