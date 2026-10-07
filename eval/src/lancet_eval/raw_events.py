@@ -7,6 +7,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lancet_eval.arms import ARM_REGISTRY, arm_slug
+
 if TYPE_CHECKING:
     from lancet_eval.corpus import GoldQuestion
 
@@ -62,7 +64,10 @@ class RawEventSink:
         )
 
         try:
-            target_dir = self.raw_dir / graph_arm
+            # Canonical labels get a filesystem-safe slug; legacy labels (and any
+            # other stored label) keep the directory names earlier drives wrote.
+            arm_dir = arm_slug(graph_arm) if graph_arm in ARM_REGISTRY else graph_arm
+            target_dir = self.raw_dir / arm_dir
             target_dir.mkdir(parents=True, exist_ok=True)
             target_file = target_dir / f"{question_id}.jsonl"
 

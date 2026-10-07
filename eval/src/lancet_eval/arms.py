@@ -13,9 +13,14 @@ An unknown label fails closed.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from lancet_eval.client import Notice
 
 RetrievalMode = Literal["dense_only", "bm25_only", "hybrid"]
 ArmLabel = Literal["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
@@ -154,3 +159,49 @@ def request_fields(label: str) -> dict[str, object]:
         fields["disable_graph_context"] = True
     fields["include_pre_truncation_ranking"] = True
     return fields
+
+
+def mode_provenance_failures(
+    label: str,
+    snapshot_mode: str | None,
+    notices: Sequence[Notice],
+) -> list[str]:
+    """Checks that a record's echo and notices match the arm that was requested.
+
+    A canonical label must see its own retrieval mode echoed in the snapshot, and an
+    arm that disables graph context must carry the graph-ablation notice and not the
+    graph-unavailable one. A legacy label is held only to the graph-off notice check,
+    because legacy journals carry no mode echo.
+
+    Args:
+        label: The stored arm label (canonical or legacy alias).
+        snapshot_mode: ``RetrievalSnapshot.retrieval_mode`` of the record, if any.
+        notices: The record's notices.
+
+    Returns:
+        Failure strings that each name the label; empty when provenance holds.
+    """
+    from lancet_eval.journal import RunRecord
+    from lancet_eval.usability import has_arm_provenance
+
+    spec = resolve_arm(label)
+    failures: list[str] = []
+    if not is_legacy_label(label) and snapshot_mode != spec.retrieval_mode:
+        failures.append(
+            f"arm {label!r}: expected retrieval_mode {spec.retrieval_mode!r} "
+            f"echoed in the snapshot, observed {snapshot_mode!r}"
+        )
+    if spec.disable_graph_context:
+        record = RunRecord(
+            corpus="",
+            question_id="",
+            graph_arm=label,
+            outcome="success",
+            notices=list(notices),
+        )
+        if not has_arm_provenance(record):
+            failures.append(
+                f"arm {label!r}: graph-off arm lacks the GRAPH_ABLATION notice "
+                "or carries GRAPH_UNAVAILABLE"
+            )
+    return failures

@@ -1,4 +1,4 @@
-"""Two-armed benchmark runner driving queries across graph-on and graph-off arms."""
+"""Benchmark runner driving queries across the arms a corpus declares."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 
 import httpx
 
+from lancet_eval.arms import request_fields, resolve_arm
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
@@ -56,7 +57,8 @@ class DriveResult(int):
     def capped(self) -> bool:
         return self.stopped_by_cap
 
-# The sole durable arm-to-flag mapping in the evaluation harness (Task 1 / D-47).
+# Legacy read-only view of the two drive 1/1b/2 labels. The sole durable arm-to-flag
+# mapping is `lancet_eval.arms.ARM_REGISTRY` (D-101); requests derive from it.
 GRAPH_ARMS: dict[str, bool] = {
     "graph-on": False,
     "graph-off": True,
@@ -135,11 +137,9 @@ def drive_one(
     errors become durable error records with outcome='error' so sibling results are
     never discarded. Retries up to max_retries on transient failure or early termination.
     """
-    if arm not in GRAPH_ARMS:
-        raise ValueError(
-            f"Unknown arm {arm!r}. Expected one of: {sorted(GRAPH_ARMS.keys())}"
-        )
-    disable_graph_context = GRAPH_ARMS[arm]
+    # Fails closed on an unknown label (D-101); the flags come from ARM_REGISTRY.
+    resolve_arm(arm)
+    arm_request_fields = request_fields(arm)
 
     last_record: RunRecord | None = None
     # Every attempt a retry supersedes stays on the returned record (CR-03, D-67).
@@ -149,10 +149,10 @@ def drive_one(
             outcome = run_query(
                 client,
                 query=question.question,
-                disable_graph_context=disable_graph_context,
                 deadline_s=deadline_s,
                 read_timeout_s=read_timeout_s,
                 capture_raw_events=raw_sink is not None,
+                **arm_request_fields,
             )
 
             outcome_literal = "error" if outcome.status == "failed" else "success"
@@ -310,7 +310,7 @@ def drive(
     max_retries: int = 0,
     gate_stage: str | None = None,
 ) -> DriveResult:
-    """Drive questions across graph-on and graph-off arms into a journal.
+    """Drive questions across the corpus's arms into a journal.
 
     Enforces fail-closed stage spend cap in-process with a bounded in-flight window.
     Returns DriveResult with executed count, stopped_by_cap status, and observed spend.
