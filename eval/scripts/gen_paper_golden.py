@@ -143,7 +143,9 @@ def _random_cases(official: Any, rng: random.Random) -> list[dict[str, Any]]:
                 if c not in ranked:
                     ranked.insert(rng.randint(0, len(ranked)), c)
         cases.append(
-            build_case(official, f"random-{len(cases):03d}", "random", chunks, ranked, facts)
+            build_case(
+                official, f"random-{len(cases):03d}", "random", chunks, ranked, facts
+            )
         )
     return cases
 
@@ -159,7 +161,14 @@ def _special_cases(official: Any) -> list[dict[str, Any]]:
         "n3": "filler words only",
     }
     facts = ["first unique fact", "second unique fact"]
-    case = build_case(official, "negative-control", "negative_control", chunks, ["n1", "n2", "n3"], facts)
+    case = build_case(
+        official,
+        "negative-control",
+        "negative_control",
+        chunks,
+        ["n1", "n2", "n3"],
+        facts,
+    )
     case["textbook_ap"] = textbook_ap(case["ranked_texts"], facts)
     cases.append(case)
 
@@ -171,7 +180,14 @@ def _special_cases(official: Any) -> list[dict[str, Any]]:
     }
     facts = ["only the first unit", "splitleft splitright"]
     cases.append(
-        build_case(official, "empty-gold-unit", "empty_gold_unit", chunks, ["s3", "s1", "s2"], facts)
+        build_case(
+            official,
+            "empty-gold-unit",
+            "empty_gold_unit",
+            chunks,
+            ["s3", "s1", "s2"],
+            facts,
+        )
     )
 
     # A hit only at rank 11 never counts.
@@ -205,7 +221,14 @@ def _special_cases(official: Any) -> list[dict[str, Any]]:
 
     # An empty ranking is a miss, not an error.
     cases.append(
-        build_case(official, "empty-ranking", "empty_ranking", {"e1": "some text"}, [], ["some text"])
+        build_case(
+            official,
+            "empty-ranking",
+            "empty_ranking",
+            {"e1": "some text"},
+            [],
+            ["some text"],
+        )
     )
     return cases
 
@@ -220,7 +243,9 @@ def generate(official_path: Path) -> dict[str, Any]:
             "official_repo": OFFICIAL_REPO,
             "official_commit": OFFICIAL_COMMIT,
             "official_file": OFFICIAL_FILE,
-            "official_file_sha256": hashlib.sha256(official_path.read_bytes()).hexdigest(),
+            "official_file_sha256": hashlib.sha256(
+                official_path.read_bytes()
+            ).hexdigest(),
             "generator": "eval/scripts/gen_paper_golden.py",
             "seed": SEED,
             "n_cases": len(cases),

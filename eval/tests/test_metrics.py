@@ -16,11 +16,6 @@ from lancet_eval.corpus import GoldQuestion
 from lancet_eval.metrics import (
     MatchVerdict,
     PaperMetricsResult,
-    id_matcher,
-    load_gold_chunk_sets,
-    paper_metrics,
-    paper_question_scores,
-    text_matcher,
     abstention_outcome,
     abstention_rate,
     answer_usable,
@@ -32,10 +27,15 @@ from lancet_eval.metrics import (
     final_answer_em,
     gold_contained,
     hits_at_k,
+    id_matcher,
+    load_gold_chunk_sets,
     mrr_at_k,
     ndcg_at_k,
     null_abstention_correct,
+    paper_metrics,
+    paper_question_scores,
     recall_at_k,
+    text_matcher,
 )
 
 
