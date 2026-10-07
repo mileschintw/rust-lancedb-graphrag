@@ -594,8 +594,9 @@ def make_graph_presence_rate(
 ) -> DimensionResult:
     """Build DimensionResult for graph_presence_rate over usable graph-on records."""
     from lancet_eval.stats import wilson_ci
+    from lancet_eval.usability import is_graph_arm
 
-    graph_on_records = [r for r in records if r.graph_arm == "graph-on"]
+    graph_on_records = [r for r in records if is_graph_arm(r.graph_arm)]
     if not graph_on_records:
         return DimensionResult(
             name="graph_presence_rate",
@@ -683,8 +684,9 @@ def make_graph_influence_rate(
 ) -> DimensionResult:
     """Build DimensionResult for graph_influence_rate over usable graph-on records."""
     from lancet_eval.stats import wilson_ci
+    from lancet_eval.usability import is_graph_arm
 
-    graph_on_records = [r for r in records if r.graph_arm == "graph-on"]
+    graph_on_records = [r for r in records if is_graph_arm(r.graph_arm)]
     if not graph_on_records:
         return DimensionResult(
             name="graph_influence_rate",

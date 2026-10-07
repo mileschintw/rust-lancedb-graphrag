@@ -62,6 +62,7 @@ from lancet_eval.judge import (
     truncate_evidence,
 )
 from lancet_eval.measure import compute_judge_spend, estimate_judge_cost_per_question
+from lancet_eval.arms import canonical_arm, resolve_arm
 from lancet_eval.metrics import (
     abstention_rate,
     context_precision_at_k,
@@ -79,7 +80,7 @@ from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval.pairing import (
     compute_paired_delta,
     deduplicate_by_arm,
-    form_pairs,
+    form_arm_pairs,
 )
 from lancet_eval.report import (
     CorpusReport,
@@ -136,6 +137,92 @@ def _check_provenance(record: RunRecord) -> bool:
         for n in record.notices
     )
     return has_ablation and not has_unavailable
+
+
+def _group_records_by_arm(
+    records: list[RunRecord], configured_arms: list[str]
+) -> dict[str, list[RunRecord]]:
+    """D-101/D-120: group records under the corpus's configured arm labels.
+
+    A record belongs to the configured label whose `canonical_arm` equals its stored
+    label's, so a legacy corpus keeps keying `graph-on` / `graph-off` and a registry
+    corpus keys its canonical labels. The stored label is never rewritten.
+
+    Raises:
+        ScoreError: If a configured label is unknown or two configured labels are
+            one arm; a stored label is not in the registry, or names an arm the
+            corpus does not configure (counted per label, never dropped); or one
+            question holds records under two stored labels of one arm (an alias and
+            its canonical label), which `deduplicate_by_arm` would keep both of.
+    """
+    by_canonical: dict[str, str] = {}
+    for label in configured_arms:
+        try:
+            canonical = canonical_arm(label)
+        except ValueError as exc:
+            raise ScoreError(f"Configured arm {label!r} is not a known arm") from exc
+        if canonical in by_canonical:
+            raise ScoreError(
+                f"Configured arms {by_canonical[canonical]!r} and {label!r} are the "
+                f"same arm ({canonical!r})"
+            )
+        by_canonical[canonical] = label
+
+    unknown: dict[str, int] = {}
+    unconfigured: dict[str, int] = {}
+    stored_by_slot: dict[tuple[str, str], str] = {}
+    grouped: dict[str, list[RunRecord]] = {label: [] for label in configured_arms}
+    for rec in records:
+        try:
+            canonical = canonical_arm(rec.graph_arm)
+        except ValueError:
+            unknown[rec.graph_arm] = unknown.get(rec.graph_arm, 0) + 1
+            continue
+        configured = by_canonical.get(canonical)
+        if configured is None:
+            unconfigured[rec.graph_arm] = unconfigured.get(rec.graph_arm, 0) + 1
+            continue
+        seen = stored_by_slot.setdefault((rec.question_id, canonical), rec.graph_arm)
+        if seen != rec.graph_arm:
+            raise ScoreError(
+                f"Question {rec.question_id!r} has records under both {seen!r} and "
+                f"{rec.graph_arm!r}, which are the same arm ({canonical!r}); "
+                "refusing to merge them"
+            )
+        grouped[configured].append(rec)
+
+    if unknown:
+        listing = ", ".join(
+            f"{k!r} ({v} record(s))" for k, v in sorted(unknown.items())
+        )
+        raise ScoreError(
+            f"Unknown arm label(s) in journal, not in the registry: {listing}"
+        )
+    if unconfigured:
+        listing = ", ".join(
+            f"{k!r} ({v} record(s))" for k, v in sorted(unconfigured.items())
+        )
+        raise ScoreError(
+            f"Arm label(s) in journal not configured for this corpus "
+            f"(arms {list(configured_arms)}): {listing}"
+        )
+    return grouped
+
+
+def _primary_arm(configured_arms: list[str], totals: dict[str, int]) -> str:
+    """The arm the legacy-named dimensions are computed over (D-101, WR-03).
+
+    The configured label whose canonical form is `hybrid+graph`, else `hybrid`, else
+    the first configured label with records; each only when it has records.
+    """
+    for wanted in ("hybrid+graph", "hybrid"):
+        for label in configured_arms:
+            if canonical_arm(label) == wanted and totals.get(label, 0) > 0:
+                return label
+    for label in configured_arms:
+        if totals.get(label, 0) > 0:
+            return label
+    return configured_arms[0]
 
 
 def _is_judgeable(rec: RunRecord, gold_map: dict[str, Any]) -> bool:
@@ -283,16 +370,17 @@ def score_run(
     sampled_questions = load_sample_questions(corpus_name)
     gold_map = {q.question_id: q for q in sampled_questions}
 
-    # Group records by arm
-    records_by_arm: dict[str, list[RunRecord]] = {"graph-on": [], "graph-off": []}
-    for rec in records:
-        if rec.graph_arm in records_by_arm:
-            records_by_arm[rec.graph_arm].append(rec)
+    # Group records by the corpus's configured arm labels (D-101, D-120); a label that
+    # cannot be attributed raises rather than being dropped.
+    records_by_arm = _group_records_by_arm(records, config.arms)
 
-    # Compute deterministic scores for graph-on and graph-off
+    # Compute deterministic scores for every configured arm
     arm_metrics: dict[str, dict[str, Any]] = {}
 
     for arm, arm_records in records_by_arm.items():
+        # D-101: the GRAPH_ABLATION provenance check holds every arm that switches
+        # graph context off, not only the literal `graph-off`.
+        needs_ablation_provenance = resolve_arm(arm).disable_graph_context
         total_records = len(arm_records)
         unusable_records = [r for r in arm_records if not is_usable(r)]
         usable_records = [r for r in arm_records if is_usable(r)]
@@ -318,8 +406,8 @@ def score_run(
             if not gold:
                 continue
 
-            # Provenance check on graph-off
-            if arm == "graph-off" and not has_arm_provenance(rec):
+            # Provenance check on every graph-context-off arm
+            if needs_ablation_provenance and not has_arm_provenance(rec):
                 provenance_error_count += 1
                 continue
 
@@ -409,19 +497,16 @@ def score_run(
             "final_answer_missings": final_answer_missings,
             "null_abstention_corrects": null_abstention_corrects,
             "usable_records": [
-                r for r in usable_records if arm != "graph-off" or has_arm_provenance(r)
+                r
+                for r in usable_records
+                if not needs_ablation_provenance or has_arm_provenance(r)
             ],
         }
 
     # WR-03: Primary scoring arm is chosen from the arm that actually has records
-    if arm_metrics.get("graph-on", {}).get("total", 0) > 0:
-        primary_arm = "graph-on"
-    elif arm_metrics.get("graph-off", {}).get("total", 0) > 0:
-        primary_arm = "graph-off"
-    else:
-        # Belt-and-suspenders fallback if neither has records
-        # (though score_run refuses empty journals)
-        primary_arm = "graph-on"
+    primary_arm = _primary_arm(
+        config.arms, {label: m["total"] for label, m in arm_metrics.items()}
+    )
     p_data = arm_metrics[primary_arm]
     p_records = records_by_arm.get(primary_arm, [])
 
@@ -1286,7 +1371,9 @@ def score_run(
 
     # 8. graph_ablation_delta (redefined paired difference of evidence coverage)
     # Form pairs once from deduplicated records
-    join_res = form_pairs(records, gold_map)
+    join_res = form_arm_pairs(
+        records, gold_map, treatment_arm="hybrid+graph", reference_arm="hybrid"
+    )
     pairs = join_res.pairs
 
     # Distinct questions attempted in this journal across both arms

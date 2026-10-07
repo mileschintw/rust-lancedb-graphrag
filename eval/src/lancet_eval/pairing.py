@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from lancet_eval.arms import canonical_arm, resolve_arm
 from lancet_eval.stats import BOOTSTRAP_B, BOOTSTRAP_SEED, bootstrap_mean_ci
 from lancet_eval.usability import has_arm_provenance, is_usable
 
@@ -16,12 +17,28 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ArmPair:
-    """Paired work units for a single question across graph-on and graph-off."""
+    """Paired work units for a single question across graph-on and graph-off.
+
+    `graph_on` and `graph_off` are the historical field names. `treatment` and
+    `reference` read the same two records for a pair formed over any registry pair
+    (`form_arm_pairs`): the treatment arm is stored as `graph_on`, the reference arm
+    as `graph_off`.
+    """
 
     question_id: str
     graph_on: RunRecord
     graph_off: RunRecord
     gold_question: GoldQuestion
+
+    @property
+    def treatment(self) -> RunRecord:
+        """The treatment-arm record (the historical `graph_on` field)."""
+        return self.graph_on
+
+    @property
+    def reference(self) -> RunRecord:
+        """The reference-arm record (the historical `graph_off` field)."""
+        return self.graph_off
 
 
 @dataclass(frozen=True)
@@ -88,7 +105,88 @@ def form_pairs(
     for r in records:
         by_question.setdefault(r.question_id, {})[r.graph_arm] = r
 
-    total_distinct_questions = len(by_question)
+    selected = {
+        qid: (arm_map.get("graph-on"), arm_map.get("graph-off"))
+        for qid, arm_map in by_question.items()
+    }
+    return _join_pairs(selected, gold_questions, treatment_needs_provenance=False)
+
+
+def form_arm_pairs(
+    records: list[RunRecord],
+    gold_questions: dict[str, GoldQuestion],
+    *,
+    treatment_arm: str,
+    reference_arm: str,
+) -> JoinResult:
+    """Form the `form_pairs` join over any two registry arms (D-101).
+
+    Records are matched to an arm by canonical label, so a legacy `graph-off` record
+    answers to `hybrid` and `graph-on` to `hybrid+graph`; the stored label is never
+    rewritten. The treatment record is carried as `ArmPair.graph_on` (`.treatment`) and
+    the reference record as `ArmPair.graph_off` (`.reference`). The edges are those of
+    `form_pairs`; the GRAPH_ABLATION provenance edge applies to every side whose arm
+    disables graph context, so for the legacy pair it is the reference alone.
+
+    Args:
+        records: Deduplicated records of any arms.
+        gold_questions: Gold questions keyed by question ID.
+        treatment_arm: Canonical label or alias of the treatment arm.
+        reference_arm: Canonical label or alias of the reference arm.
+
+    Returns:
+        The join result; a record of a different arm is ignored, and counts toward
+        `total_distinct_questions` only through its question.
+
+    Raises:
+        ValueError: If an arm is unknown, or one question has records under two
+            stored labels that share a canonical form (an alias and its canonical
+            label are never merged).
+    """
+    treatment = canonical_arm(treatment_arm)
+    reference = canonical_arm(reference_arm)
+    treatment_needs = resolve_arm(treatment).disable_graph_context
+
+    by_question: dict[str, dict[str, RunRecord]] = {}
+    stored: dict[tuple[str, str], str] = {}
+    for r in records:
+        by_question.setdefault(r.question_id, {})
+        try:
+            canonical = canonical_arm(r.graph_arm)
+        except ValueError:
+            continue
+        if canonical not in (treatment, reference):
+            continue
+        seen = stored.setdefault((r.question_id, canonical), r.graph_arm)
+        if seen != r.graph_arm:
+            raise ValueError(
+                f"question {r.question_id!r} has records under both "
+                f"{seen!r} and {r.graph_arm!r}, which are the same arm "
+                f"({canonical!r}); refusing to merge them"
+            )
+        by_question[r.question_id][canonical] = r
+
+    selected = {
+        qid: (arm_map.get(treatment), arm_map.get(reference))
+        for qid, arm_map in by_question.items()
+    }
+    return _join_pairs(
+        selected, gold_questions, treatment_needs_provenance=treatment_needs
+    )
+
+
+def _join_pairs(
+    selected: dict[str, tuple[RunRecord | None, RunRecord | None]],
+    gold_questions: dict[str, GoldQuestion],
+    *,
+    treatment_needs_provenance: bool,
+) -> JoinResult:
+    """The shared inner join of `form_pairs` and `form_arm_pairs`.
+
+    `selected` maps each question to its `(treatment, reference)` records, either of
+    which may be absent.
+    """
+    total_distinct_questions = len(selected)
     pairs: list[ArmPair] = []
 
     single_arm_usable_drops = 0
@@ -96,10 +194,8 @@ def form_pairs(
     null_gold_drops = 0
     provenance_drops = 0
 
-    for qid in sorted(by_question.keys()):
-        arm_map = by_question[qid]
-        rec_on = arm_map.get("graph-on")
-        rec_off = arm_map.get("graph-off")
+    for qid in sorted(selected.keys()):
+        rec_on, rec_off = selected[qid]
 
         if rec_on is None or rec_off is None:
             missing_arm_drops += 1
@@ -118,6 +214,9 @@ def form_pairs(
 
         # Both are usable. Check provenance of graph-off
         if not has_arm_provenance(rec_off):
+            provenance_drops += 1
+            continue
+        if treatment_needs_provenance and not has_arm_provenance(rec_on):
             provenance_drops += 1
             continue
 

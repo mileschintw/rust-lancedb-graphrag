@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from lancet_eval.arms import canonical_arm
+
 if TYPE_CHECKING:
     from lancet_eval.journal import RunRecord
 
@@ -79,16 +81,29 @@ def has_arm_provenance(record: RunRecord) -> bool:
     return has_ablation and not has_unavailable
 
 
+def is_graph_arm(label: str) -> bool:
+    """Whether a stored arm label is the graph-on arm (D-101).
+
+    Lookup only: `hybrid+graph` and its legacy alias `graph-on` are the graph-on arm.
+    A label the registry does not know is not (the reader never raises; `score_run`
+    is the fail-closed point that refuses an unattributable label).
+    """
+    try:
+        return canonical_arm(label) == "hybrid+graph"
+    except ValueError:
+        return False
+
+
 def attempted_graph(record: RunRecord) -> bool:
     """Determine if a usable record attempted the graph node.
 
     Per D-02 / D-29 / Task 2 behavior:
-    - Arm must be 'graph-on'
+    - Arm must be the graph-on arm (`hybrid+graph`, or its legacy alias `graph-on`)
     - Must NOT carry graph ablation notice
     - Must have EITHER a graph node timing (ExtractGraphContext) OR a graph node failure
       (e.g. inner GRAPH_TIMEOUT notice on completed node satisfies the timing half).
     """
-    if record.graph_arm != "graph-on":
+    if not is_graph_arm(record.graph_arm):
         return False
 
     has_ablation = any(
