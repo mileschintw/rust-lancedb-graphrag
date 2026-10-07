@@ -3,19 +3,19 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: Not started
 status: executing
-stopped_at: "Phases 06.3.5 and 06.3.6 inserted before 6.4 per NEXT-STEPS-2026-10-06.md (OBS-06 added; 999.2 and 999.6-lite promoted); next: /gsd-discuss-phase 06.3.5 then /gsd-plan-phase 06.3.5; 6.4 stays parked until 06.3.6 publishes"
-last_updated: "2026-10-06T23:40:00.000Z"
+stopped_at: Phase 06.3.5 context gathered
+last_updated: "2026-10-07T01:55:27.706Z"
 last_activity: 2026-10-06
-state_head: 98923c163a4ea2542a933fdb980033fe0b264029
+state_head: d9c6b61699d697022a202f2937bee6193bde95ed
 progress:
   total_phases: 18
   completed_phases: 10
   total_plans: 192
   completed_plans: 192
 milestone_name: milestone
-current_phase: "06.3.5"
+current_phase: 06.3.5
 current_phase_name: Retrieval ablation matrix, paper-convention metrics, judged pass and calibration
-last_activity_desc: "Analyst plan NEXT-STEPS-2026-10-06.md written; ROADMAP gained 06.3.5 (four-arm retrieval matrix, Hits@k/MRR, judged pass + calibration, held-out split) and 06.3.6 (reranker, graph repair by diagnosis, temporal metadata, answer format as arms); REQUIREMENTS gained OBS-06; 6.4 depends on both and stays parked."
+last_activity_desc: Analyst plan NEXT-STEPS-2026-10-06.md written; ROADMAP gained 06.3.5 (four-arm retrieval matrix, Hits@k/MRR, judged pass + calibration, held-out split) and 06.3.6 (reranker, graph repair by diagnosis, temporal metadata, answer format as arms); REQUIREMENTS gained OBS-06; 6.4 depends on both and stays parked.
 ---
 
 # Project State
@@ -533,10 +533,10 @@ Total Plans in Phase: 0
 
 ## Session
 
-**Last session:** 2026-10-06T22:30:00.000Z
+**Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-06
-**Stopped at:** Phase 06.3.4.1 fully closed (UAT, validation, security, re-verification); 6.4 stays parked (not ready to plan) until the user decides the unpark
-**Resume file:** None
+**Stopped at:** Phase 06.3.5 context gathered
+**Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
 
