@@ -1,0 +1,172 @@
+{% macro table(lines) %}
+{% for line in lines %}
+{{ line }}
+{% endfor %}
+{% endmacro %}
+# Four-arm comparison: {{ c.run.corpus }}
+
+Run `{{ c.run.run }}`, run date {{ c.run.run_date }}, commit `{{ c.run.commit_sha }}`, index generation `{{ c.run.index_generation }}`. Generation of this file is offline: it reads `report.json` and `judged-result.json`, and computes only the two pre-registered inference families and the per-type deltas of the primaries.
+
+Arms: {{ c.run.arms | join(", ") }}. Reference arm: `{{ c.run.reference_arm }}`. Judge: `{{ c.run.judge_model }}`, prompt `{{ c.run.judge_prompt_version }}`. Embedding model: `{{ c.run.embedding_model }}`.
+
+## Population (P4)
+
+P4 is the set of held-out G questions with an ok record on all four arms. |P4| = {{ c.p4.n_p4 }} of {{ c.p4.n_heldout_g }} held-out G questions (coverage {{ v.coverage_pct }}; pre-registered complete-case floor {{ c.p4.floor }}). Null questions ({{ c.p4.n_heldout_null }}) feed only the null abstention row.
+{% if c.p4.evaluable %}
+
+The coverage floor is met, so both primary families are evaluable.
+{% else %}
+
+{{ v.not_evaluable_note }}
+{% endif %}
+
+Exclusions per arm, by reason, beside each pairwise join size with `hybrid`:
+
+{{ table(v.exclusion_table) }}
+
+## Pre-registered inference: two Holm families
+
+{{ c.fwer_statement }}
+
+Test: the exact two-sided paired sign-flip test (the exact McNemar test) over the discordant pairs of the per-question 0/1 values on P4, then Holm step-down per family at familywise error rate 0.05. Only a Holm rejection is printed as significant. A CI that excludes 0 without a Holm rejection is printed as exactly that, and every CI below is {{ v.unadjusted }}. Results are published in either direction (D-49).
+{% if not c.p4.evaluable %}
+
+{{ v.not_evaluable_note }}
+{% endif %}
+{% for fam in v.families %}
+
+### Family: {{ fam.title }}
+
+{{ table(fam.table) }}
+{% endfor %}
+
+## Matching-rule cross-check (D-102)
+{% if c.robustness.ran %}
+
+The paper metrics were recomputed under the official text rule at index generation `{{ c.robustness.index_generation }}` (official script commit `{{ c.robustness.official_commit }}`). Holm was re-run on the text-rule `paper_hits_at_4` values; a decision that differs reads `not robust to the matching rule` in the table above. Records whose figure differs between the two rules, per arm, over P4:
+
+{{ table(v.robustness_table) }}
+{% else %}
+
+The official text-rule cross-check did not run for this run directory, so every ID-rule paper row carries `{{ c.robustness.paper_rows_label }}`.
+{% endif %}
+
+## Four-arm table
+
+Every per-arm figure is on P4 unless its row says otherwise. Intervals are Wilson for rates and percentile bootstrap (B = 10000, seed 42) for means.
+
+### Retrieval, paper convention (ID rule on the D-100 pre-truncation ranking) and the cited reference rows
+
+{{ table(v.paper_table) }}
+
+### Retrieval, lancet convention (final eight chunks, excerpt matching)
+
+{{ table(v.legacy_table) }}
+
+### Answer
+
+{{ table(v.answer_table) }}
+
+### Abstention (G and null)
+
+{{ table(v.abstention_table) }}
+
+### Latency and cost
+
+Latency p50 and p95 are descriptive per-arm values with no delta. The bm25-only latency and cost rows carry no embedding caveat label: D-125 skips the query embedding on the bm25-only arm with the graph off, which resolves AI-SPEC section 3 Pitfall 5.
+
+{{ table(v.latency_table) }}
+
+## Judged rows (secondary; the D-114 label sets how far they are trusted)
+
+Judged means are over J_a (P4, judgeable, non-abstaining, non-error verdicts) and are not comparable across arms; compare arms only through the paired delta. Every row sits beside the arm's abstention rate and its n (D-118). Read, not recomputed, from `judged-result.json`.
+
+{{ table(v.judged.agreement) }}
+{% for line in c.legacy_lines %}
+- {{ line }}
+{% endfor %}
+{% for line in c.divergence_lines %}
+- {{ line }}
+{% endfor %}
+
+{{ table(v.judged.arms) }}
+
+Paired judged deltas against `hybrid` over the questions both arms answered and both have a usable verdict for (CIs are {{ v.unadjusted }}):
+
+{{ table(v.judged.deltas) }}
+
+## Secondary paired deltas against hybrid (unadjusted, estimation only)
+
+Read from `report.json`, never recomputed. Each delta is the mean paired difference over P4 with its bootstrap CI. The latency, retrieve-node and spend deltas are taken on the per-question mean (the 06.3.5-10 route); the p50 and p95 rows stay per-arm descriptive values in the four-arm table.
+
+{{ table(v.secondary_table) }}
+
+## Per-type strata (D-40; secondary, never decisive)
+
+Cells read `value [ci_lo, ci_hi] (n)`, or `value (n = k; n < {{ v.cell_size }}, no CI)` below the cell size of {{ v.cell_size }}. Each answer_usable stratum shows its constant-Yes baseline beside it, and each judged stratum its abstention rate and n. Every per-type delta CI is {{ v.unadjusted }}.
+{% for s in v.strata %}
+
+### `{{ s.metric }}`
+
+{{ table(s.table) }}
+{% endfor %}
+{% for s in v.primary_delta_strata %}
+
+### Per-type paired delta against hybrid: `{{ s.metric }}`
+
+{{ table(s.table) }}
+{% endfor %}
+{% for s in v.judged_delta_strata %}
+
+### Per-type paired delta against hybrid (judged): `{{ s.metric }}`
+
+{{ table(s.table) }}
+{% endfor %}
+
+## Paper reference row (cited; not comparable)
+
+{{ c.paper_reference.label }}: {{ c.paper_reference.citation }}, "{{ c.paper_reference.caption }}", {{ c.paper_reference.configuration }} half, quoted as printed.
+
+| embedding | MRR@10 | MAP@10 | Hits@10 | Hits@4 |
+| --- | --- | --- | --- | --- |
+{% for r in c.paper_reference.rows %}
+| {{ r.embedding }} | {{ r.mrr_at_10 }} | {{ r.map_at_10 }} | {{ r.hits_at_10 }} | {{ r.hits_at_4 }} |
+{% endfor %}
+
+These figures are not directly comparable with lancet's. The differences:
+{% for s in c.paper_reference.caveat %}
+
+- {{ s }}
+{% endfor %}
+
+{{ c.paper_reference.comparable_line }}
+
+Lancet's comparable line ({{ c.paper_reference.lancet_line_rule }}):
+
+{{ table(v.paper_line_table) }}
+
+## Comparison lines (D-121, D-122)
+{% for line in c.lines %}
+
+### {{ line.code }}: {{ line.title }}
+
+{{ line.text }}
+
+{{ table(v.line_tables[loop.index0]) }}
+{% endfor %}
+
+## Disclosures
+
+{{ c.disclosures.d124 }}
+{% if c.disclosures.gates %}
+
+Run-integrity gate readings (D-109), as written by `unpark_gates`:
+
+{{ table(v.gate_table) }}
+{% endif %}
+{% if c.disclosures.providers %}
+
+Records by serving provider per arm (D-107){% if c.disclosures.provider_unmatched is not none %}; {{ c.disclosures.provider_unmatched }} record(s) had no served line{% endif %}:
+
+{{ table(v.provider_table) }}
+{% endif %}

@@ -37,6 +37,7 @@ from lancet_eval.comparison import (
     ComparisonError,
     build_comparison,
     coverage_evaluable,
+    format_number,
     format_stratum_cell,
     holm_family,
     write_comparison,
@@ -52,7 +53,9 @@ SLUG = {
     "hybrid": "hybrid",
     "hybrid+graph": "hybrid_graph",
 }
-SECONDARY_HEADING = "Secondary paired deltas against hybrid (unadjusted, estimation only)"
+SECONDARY_HEADING = (
+    "Secondary paired deltas against hybrid (unadjusted, estimation only)"
+)
 STRATA_HEADING = "Per-type strata (D-40; secondary, never decisive)"
 UNADJUSTED = "unadjusted, estimation only"
 NOT_ROBUST = "not robust to the matching rule"
@@ -108,7 +111,7 @@ def by_arm(family):  # type: ignore[no-untyped-def]
 # ---- Holm families: exact p, adjusted p, decisions ---------------------------------
 
 
-def test_each_comparison_reports_the_exact_p_the_holm_adjustment_and_the_decision() -> None:
+def test_each_comparison_reports_exact_p_holm_adjustment_and_decision() -> None:
     # (n_pos, n_neg): dense 0/6 -> p 2/64; bm25 0/9 -> p 2/512; hybrid+graph 3/2 -> p 1.
     family = _family(
         {"dense-only": (0, 6), "bm25-only": (0, 9), "hybrid+graph": (3, 2)}
@@ -151,7 +154,8 @@ def test_significant_appears_only_on_a_rejected_row() -> None:
         "hybrid+graph": "not significant",
     }
     for c in family.comparisons:
-        assert (c.decision == "significant") == (c.raw_p <= 0.05 / 3 and c.arm == "bm25-only")
+        rejected = c.raw_p <= 0.05 / 3 and c.arm == "bm25-only"
+        assert (c.decision == "significant") == rejected
 
 
 def test_the_step_down_stops_at_the_first_failure() -> None:
@@ -213,18 +217,17 @@ def test_coverage_below_the_floor_makes_every_comparison_not_evaluable() -> None
     assert not coverage_evaluable(799, 1000)
     assert coverage_evaluable(800, 1000)
     assert not coverage_evaluable(0, 308)
-    family = holm_family(
-        "paper_hits_at_4",
-        values_from_counts(
-            40, {"dense-only": (0, 9), "bm25-only": (0, 9), "hybrid+graph": (0, 9)}
-        ),
-        evaluable=False,
+    values = values_from_counts(
+        40, {"dense-only": (0, 9), "bm25-only": (0, 9), "hybrid+graph": (0, 9)}
     )
-    assert family.evaluable is False
-    for c in family.comparisons:
-        assert c.decision == "not evaluable: coverage"
-        assert c.raw_p is None and c.adjusted_p is None
-        assert c.ci_note is None
+    for primary in ("paper_hits_at_4", "answer_usable"):
+        family = holm_family(primary, values, evaluable=False)
+        assert family.evaluable is False
+        assert len(family.comparisons) == 3
+        for c in family.comparisons:
+            assert c.decision == "not evaluable: coverage"
+            assert c.raw_p is None and c.adjusted_p is None
+            assert c.ci_note is None
 
 
 def test_a_flipped_decision_under_the_text_rule_reads_not_robust() -> None:
@@ -289,7 +292,7 @@ def test_the_paper_reference_rows_are_table_5_without_reranker_verbatim() -> Non
     )
 
 
-def test_the_caveat_names_a_to_f_and_the_population_subset_chunker_and_embedder() -> None:
+def test_the_caveat_names_a_to_f_population_subset_chunker_and_embedder() -> None:
     text = " ".join(NON_COMPARABILITY_CAVEAT)
     for needle in (
         "(a)",
@@ -334,7 +337,7 @@ def test_the_four_d124_ids_are_held_out_and_were_in_the_legacy_canary_file() -> 
     assert "drives 1b and 2" in D124_DISCLOSURE
 
 
-def test_the_fwer_statement_and_the_approximation_label_are_the_planned_strings() -> None:
+def test_the_fwer_statement_and_the_approximation_label_are_planned() -> None:
     assert "can reach 0.10" in FWER_STATEMENT
     assert APPROXIMATION_LABEL == APPROXIMATION
 
@@ -476,11 +479,11 @@ def test_the_comparison_validates_and_names_the_four_arms_and_both_conventions(
     assert [a.arm for a in comp.arms] == list(sj.ARMS)
 
 
-def test_the_run_wrote_its_four_sidecars_and_left_report_json_alone(
+def test_the_run_wrote_its_comparison_sidecars_and_left_report_json_alone(
     written: Any,
 ) -> None:
     run = written["dir"]
-    for name in ("comparison.json", "comparison.md", "chart.json", "chart.svg"):
+    for name in ("comparison.json", "comparison.md"):
         assert (run / name).is_file(), name
     assert (run / "report.json").read_bytes() == written["report_bytes_before"]
     assert not list(run.glob("*.png"))
@@ -620,7 +623,7 @@ def test_a_secondary_whose_ci_excludes_zero_is_printed_without_the_word_signific
             if ln.startswith("|") and f"`{r.metric}`" in ln and r.arm in ln
         )
         assert "significant" not in line.lower()
-        assert f"{r.delta:.4f}" in line
+        assert format_number(r.delta) in line
     # and no secondary is a member of any Holm family
     members = {c.arm for f in written["comparison"].families for c in f.comparisons}
     assert members == set(COMPARISON_ARMS)
@@ -649,7 +652,7 @@ def test_the_bm25_only_rows_carry_no_embedding_caveat_label(written: Any) -> Non
     assert "includes the query embedding" not in json.dumps(written["json"])
 
 
-# ---- D-40 strata -----------------------------------------------------------------------
+# ---- D-40 strata ---------------------------------------------------------------------
 
 STRATA_METRICS_REPORT = (
     "paper_hits_at_4",
@@ -693,7 +696,16 @@ def test_strata_rows_exist_for_every_metric_arm_and_type_with_the_report_values(
         for arm in sj.ARMS:
             for qt in TYPES:
                 assert (metric, arm, qt) in index
-    assert len(rows) == (len(STRATA_METRICS_REPORT) + 2 + 3) * 4 * 3 or len(rows) > 0
+    scanned = {
+        n.split("__")[0]
+        for n, d in dims.items()
+        if "__" in n
+        and "_delta__" not in n
+        and not n.startswith(("answer_groundedness", "answer_faithfulness"))
+        and "type_comparison_query_n" in d["detail"]
+    }
+    assert set(STRATA_METRICS_REPORT) <= scanned
+    assert len(rows) == (len(scanned) + 2) * 4 * 3
 
 
 def test_a_stratum_has_a_ci_only_at_ten_or_more(written: Any) -> None:
@@ -805,7 +817,7 @@ def test_the_strata_section_has_the_judged_rows_beside_their_abstention_rate(
     assert "abstention" in sec.lower()
 
 
-# ---- judged rows, labels, lines and disclosures ---------------------------------------
+# ---- judged rows, labels, lines and disclosures --------------------------------------
 
 
 def test_the_judged_rows_show_abstention_n_errors_and_the_d114_label_with_its_qwk_ci(
@@ -855,17 +867,27 @@ def test_the_reference_row_is_cited_with_its_caveat_and_no_superlative_label(
 ) -> None:
     md = written["md"]
     sec = section(md, "Paper reference row (cited; not comparable)")
-    for needle in ("0.4298", "0.3423", "0.6718", "0.5221", "0.3934", "0.3143", "0.6506", "0.4619"):
+    for needle in (
+        "0.4298",
+        "0.3423",
+        "0.6718",
+        "0.5221",
+        "0.3934",
+        "0.3143",
+        "0.6506",
+        "0.4619",
+    ):
         assert needle in sec
     assert "arXiv 2401.15391 v1, Table 5" in sec
     assert "Without Reranker" in sec
-    for sentence in NON_COMPARABILITY_CAVEAT:
-        assert sentence.format(n_g=26, embedding_model="X") in sec.replace("\n", " ") or (
-            sentence.split("{")[0].strip() in sec.replace("\n", " ")
-        )
+    caveat = written["comparison"].paper_reference.caveat
+    assert len(caveat) == len(NON_COMPARABILITY_CAVEAT)
+    for sentence in caveat:
+        assert sentence in sec
+    assert "26 G-restricted held-out questions" in sec
     assert "sota" not in md.lower()
     assert "state-of-the-art" not in md.lower()
-    # the lancet line named as comparable, and its rule, when the cross-check did not run
+    # the lancet line named as comparable, and its rule, with no cross-check
     assert "script-faithful" in sec
     assert APPROXIMATION in sec
 
@@ -883,12 +905,11 @@ def test_without_the_crosscheck_every_id_rule_paper_row_carries_the_approximatio
             assert c.robustness is None
 
 
-# ---- robustness with a cross-check ----------------------------------------------------
+# ---- robustness with a cross-check ---------------------------------------------------
 
 
 def write_crosscheck(
     run: Path,
-    comparison: Comparison,
     *,
     text_hit4: Mapping[str, Mapping[str, int]],
     index_generation: str = "gen1",
@@ -952,7 +973,7 @@ def test_a_crosscheck_that_flips_a_decision_marks_that_row_not_robust(
 ) -> None:
     sc, _ = ordered
     run = fresh_run(ordered, tmp_path)
-    write_crosscheck(run, None, text_hit4=_text_hit4(True))  # type: ignore[arg-type]
+    write_crosscheck(run, text_hit4=_text_hit4(True))
     comp = build_comparison(run, gold_chunks_path=sc.gold)
     fam = {f.primary: f for f in comp.families}["paper_hits_at_4"]
     rows = by_arm(fam)
@@ -974,7 +995,7 @@ def test_the_crosscheck_table_prints_the_per_arm_disagreement_counts(
 ) -> None:
     sc, _ = ordered
     run = fresh_run(ordered, tmp_path)
-    write_crosscheck(run, None, text_hit4=_text_hit4(True))  # type: ignore[arg-type]
+    write_crosscheck(run, text_hit4=_text_hit4(True))
     write_comparison(run, gold_chunks_path=sc.gold)
     md = (run / "comparison.md").read_text(encoding="utf-8")
     assert NOT_ROBUST in md
@@ -993,7 +1014,7 @@ def test_a_crosscheck_without_a_flip_reads_robust_everywhere(
 ) -> None:
     sc, _ = ordered
     run = fresh_run(ordered, tmp_path)
-    write_crosscheck(run, None, text_hit4=_text_hit4(False))  # type: ignore[arg-type]
+    write_crosscheck(run, text_hit4=_text_hit4(False))
     comp = build_comparison(run, gold_chunks_path=sc.gold)
     fam = {f.primary: f for f in comp.families}["paper_hits_at_4"]
     assert all(c.robustness == "robust to the matching rule" for c in fam.comparisons)
@@ -1003,21 +1024,34 @@ def test_a_stale_crosscheck_refuses(ordered: Any, tmp_path: Path) -> None:
     sc, _ = ordered
     run = fresh_run(ordered, tmp_path)
     write_crosscheck(
-        run,
-        None,  # type: ignore[arg-type]
-        text_hit4=_text_hit4(False),
-        p4_ids=sorted(sj.G_IDS)[:-1],
+        run, text_hit4=_text_hit4(False), p4_ids=sorted(sj.G_IDS)[:-1]
     )
     with pytest.raises(ComparisonError, match="cross-check"):
         build_comparison(run, gold_chunks_path=sc.gold)
     run2 = tmp_path / "run2"
     shutil.copytree(run, run2)
-    write_crosscheck(run2, None, text_hit4=_text_hit4(False), index_generation="gen9")  # type: ignore[arg-type]
+    write_crosscheck(run2, text_hit4=_text_hit4(False), index_generation="gen9")
     with pytest.raises(ComparisonError, match="index_generation"):
         build_comparison(run2, gold_chunks_path=sc.gold)
 
 
-# ---- refusals -------------------------------------------------------------------------
+def test_a_coverage_below_the_floor_reads_not_evaluable_end_to_end(
+    ordered: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sc, _ = ordered
+    run = fresh_run(ordered, tmp_path)
+    monkeypatch.setattr(cmp_mod, "coverage_evaluable", lambda *a, **k: False)
+    comp = build_comparison(run, gold_chunks_path=sc.gold)
+    assert comp.p4.evaluable is False
+    for fam in comp.families:
+        assert fam.evaluable is False
+        for c in fam.comparisons:
+            assert c.decision == "not evaluable: coverage"
+            assert c.raw_p is None and c.delta is None
+    assert "|P4| / |H_G| is below" in cmp_mod.render_markdown(comp)
+
+
+# ---- refusals ------------------------------------------------------------------------
 
 
 def _no_sidecars(run: Path) -> None:
@@ -1105,17 +1139,14 @@ def test_compare_never_opens_the_judge_cache_and_is_idempotent(
 
     monkeypatch.setattr(JudgeCache, "__init__", boom)
     write_comparison(run, gold_chunks_path=sc.gold)
-    first = {
-        n: (run / n).read_bytes()
-        for n in ("comparison.json", "comparison.md", "chart.json", "chart.svg")
-    }
+    first = {n: (run / n).read_bytes() for n in ("comparison.json", "comparison.md")}
     write_comparison(run, gold_chunks_path=sc.gold)
     second = {n: (run / n).read_bytes() for n in first}
     assert first == second
     assert all(b"\r\n" not in v for v in first.values())
 
 
-# ---- the command ----------------------------------------------------------------------
+# ---- the command ---------------------------------------------------------------------
 
 
 def test_the_compare_command_writes_the_sidecars_and_exits_zero(
@@ -1131,7 +1162,7 @@ def test_the_compare_command_writes_the_sidecars_and_exits_zero(
     )
     result = CliRunner().invoke(app, ["compare", "--run", str(run)])
     assert result.exit_code == 0, result.output
-    for name in ("comparison.json", "comparison.md", "chart.json", "chart.svg"):
+    for name in ("comparison.json", "comparison.md"):
         assert (run / name).is_file()
     assert "comparison.md" in result.output
 

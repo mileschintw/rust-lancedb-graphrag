@@ -964,6 +964,55 @@ def generate_report(
         raise typer.Exit(code=1) from exc
 
 
+@app.command("compare")
+def compare_benchmark(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help=(
+                "Run directory that `score --judged` has passed (it holds report.json "
+                "and judged-result.json)"
+            ),
+        ),
+    ],
+) -> None:
+    """Write the four-arm comparison sidecars of a scored, judged run (D-115, D-126).
+
+    Offline and read-only on the run's inputs: it writes comparison.json,
+    comparison.md, chart.json and chart.svg into the run directory, never opens the
+    judge cache and never modifies report.json. It refuses unless report.json carries
+    the judged dimensions and judged-result.json exists.
+    """
+    from lancet_eval.comparison import write_comparison
+
+    def line(text: str, **kwargs: Any) -> None:
+        console.print(text, markup=False, highlight=False, soft_wrap=True, **kwargs)
+
+    try:
+        comparison = write_comparison(run)
+    except Exception as exc:
+        line(f"Compare refused: {exc}", style="bold red")
+        raise typer.Exit(code=1) from exc
+    p4 = comparison.p4
+    line(
+        f"Four-arm comparison of {comparison.run.corpus}: |P4| = {p4.n_p4} of "
+        f"{p4.n_heldout_g} held-out G questions (coverage {p4.coverage:.4f}, "
+        f"evaluable: {'yes' if p4.evaluable else 'no'})."
+    )
+    for family in comparison.families:
+        reads = ", ".join(f"{c.arm}: {c.decision}" for c in family.comparisons)
+        line(f"Holm family {family.primary}: {reads}")
+    for name in comparison_files():
+        line(f"Wrote {run / name}")
+
+
+def comparison_files() -> tuple[str, ...]:
+    """The sidecars `compare` writes into the run directory."""
+    return ("comparison.json", "comparison.md")
+
+
 def _normalize_ws(text: str) -> str:
     """Whitespace and case normalization for containment matching."""
     return " ".join(text.split()).lower()
