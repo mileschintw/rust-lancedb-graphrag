@@ -1,0 +1,6 @@
+Resolved run directory: eval\runs\2026-10-07-rehearsal-multihop_rag_rehearsal
+Driving corpus 'multihop_rag_rehearsal' (limit=None, resume=False, workers=1, 
+retries=0, gate_stage=None, stage_cap=$0.05)...
+Successfully recorded 12 new work units to 
+eval\runs\2026-10-07-rehearsal-multihop_rag_rehearsal\journal.jsonl (observed 
+spend: $0.0055)
