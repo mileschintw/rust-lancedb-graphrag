@@ -520,7 +520,7 @@ def test_seed_path_floor_reports_only_the_first_unmet_condition(
     assert "graph_prompt_fact_count" not in seed_path_failures[0]
 
 
-# --- 06.3.5-09 D-108, D-124, D-106: arm-mode canaries from the rehearsal pool ----------
+# --- 06.3.5-09 D-108, D-124, D-106: arm-mode canaries from the rehearsal pool ---------
 
 _ARMS = ["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
 _CORPORA = Path(__file__).resolve().parents[1] / "corpora"
