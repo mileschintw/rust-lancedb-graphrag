@@ -1064,14 +1064,14 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 17 plans (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 2/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
 **Wave 1**
 
-- [ ] 06.3.5-01-PLAN.md — Wave 0 pins: reset the gateway count gate to the measured 118 / sse 16, record the default-request node-chain golden at the pre-change HEAD, and add the read-only `inspect_lancedb --chunk-text` dump (D-99, D-100, D-102)
-- [ ] 06.3.5-02-PLAN.md — Commit the D-105 held-out split (308 G + 43 null) behind a one-way `checkpoint:decision`, with the rehearsal-pool canaries (D-124), rehearsal picks, both corpus configs and the run-directory `.gitignore` negations
+- [x] 06.3.5-01-PLAN.md — Wave 0 pins: reset the gateway count gate to the measured 118 / sse 16, record the default-request node-chain golden at the pre-change HEAD, and add the read-only `inspect_lancedb --chunk-text` dump (D-99, D-100, D-102)
+- [x] 06.3.5-02-PLAN.md — Commit the D-105 held-out split (308 G + 43 null) behind a one-way `checkpoint:decision`, with the rehearsal-pool canaries (D-124), rehearsal picks, both corpus configs and the run-directory `.gitignore` negations
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
