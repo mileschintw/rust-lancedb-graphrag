@@ -16,6 +16,11 @@
 //! contain no square bracket (removing a bracketed segment could drop a marker that the
 //! citation set counts), and must leave some prose behind. Otherwise the segment is kept,
 //! and the rendered line is still the last line-start `Answer:` match.
+//!
+//! [`abstains`] answers whether that rendered last line is the prescribed abstention. It only
+//! reads the would-be-published line: validation still sees the model's own answer, and
+//! publication still happens only at the single seam in
+//! [`crate::workflow::WorkflowContext::update_from_model_output`].
 
 use crate::generation::MAX_ANSWER_CHARS;
 
@@ -135,15 +140,42 @@ fn strip_leading_answer_label(text: &str) -> &str {
     }
 }
 
-/// Returns the prose without the model's own trailing `Answer:` segment, when the strip's
-/// narrow conditions hold, and otherwise the answer with trailing whitespace trimmed.
-fn strip_trailing_model_answer(answer: &str) -> &str {
-    let trimmed = answer.trim_end();
+/// A model-written `Answer:` segment on the last line of an answer, located by byte offsets.
+struct ModelAnswerSegment<'a> {
+    /// The last line of the trimmed answer.
+    last_line: &'a str,
+    /// Offset of `last_line` within the trimmed answer.
+    line_start: usize,
+    /// Offset in `last_line` where the segment begins, including any leading emphasis.
+    segment_start: usize,
+    /// Offset in `last_line` of the `Answer:` label itself.
+    label_at: usize,
+}
+
+impl<'a> ModelAnswerSegment<'a> {
+    /// The segment as written: its emphasis, the label and the text after it.
+    fn as_written(&self) -> &'a str {
+        &self.last_line[self.segment_start..]
+    }
+
+    /// The text after the label, without surrounding whitespace or leading emphasis.
+    fn value(&self) -> &'a str {
+        self.last_line[self.label_at + MODEL_ANSWER_LABEL.len()..]
+            .trim_start_matches(|c: char| matches!(c, '*' | '_'))
+            .trim()
+    }
+}
+
+/// Finds the model's own trailing `Answer:` segment on the last line of `trimmed`.
+///
+/// `trimmed` is the answer with trailing whitespace removed. The label must begin the line or
+/// follow whitespace, and a leading `*` or `_` emphasis run belongs to the segment. The strip
+/// and the abstention check share this one rule, so they cannot disagree about where the
+/// model's segment is.
+fn locate_trailing_model_answer(trimmed: &str) -> Option<ModelAnswerSegment<'_>> {
     let line_start = trimmed.rfind('\n').map_or(0, |idx| idx + 1);
     let last_line = &trimmed[line_start..];
-    let Some(label_at) = last_line.rfind(MODEL_ANSWER_LABEL) else {
-        return trimmed;
-    };
+    let label_at = last_line.rfind(MODEL_ANSWER_LABEL)?;
     // Extend the segment backwards over `*` and `_` emphasis; both are ASCII, so the byte
     // walk stays on char boundaries.
     let mut segment_start = label_at;
@@ -153,18 +185,83 @@ fn strip_trailing_model_answer(answer: &str) -> &str {
     let before = &last_line[..segment_start];
     let begins_line = before.chars().all(|c| matches!(c, ' ' | '\t' | '>' | '-'));
     let follows_whitespace = before.chars().next_back().is_some_and(char::is_whitespace);
-    if !(begins_line || follows_whitespace) {
+    (begins_line || follows_whitespace).then_some(ModelAnswerSegment {
+        last_line,
+        line_start,
+        segment_start,
+        label_at,
+    })
+}
+
+/// Returns the prose without the model's own trailing `Answer:` segment, when the strip's
+/// narrow conditions hold, and otherwise the answer with trailing whitespace trimmed.
+fn strip_trailing_model_answer(answer: &str) -> &str {
+    let trimmed = answer.trim_end();
+    let Some(segment) = locate_trailing_model_answer(trimmed) else {
+        return trimmed;
+    };
+    if segment.as_written().contains(['[', ']']) {
         return trimmed;
     }
-    if last_line[segment_start..].contains(['[', ']']) {
-        return trimmed;
-    }
-    let remaining = trimmed[..line_start + segment_start].trim_end();
+    let remaining = trimmed[..segment.line_start + segment.segment_start].trim_end();
     if remaining.is_empty() {
         trimmed
     } else {
         remaining
     }
+}
+
+/// The abstention text the grounded policy prescribes after `Answer: `.
+///
+/// It is the literal `base_system_policy` in `prompt.rs` tells the model to write when the
+/// evidence is insufficient. The harness abstention predicate (D-118,
+/// `_ABSTENTION_ANSWER` in `eval/src/lancet_eval/metrics.py`) compares the extracted final
+/// line against its lower-cased form, so changing this constant decouples the engine from
+/// both the prompt and the harness; the prompt-literal test fails when it drifts.
+pub(crate) const ABSTENTION_ANSWER: &str = "Insufficient information";
+
+/// Whether `text` is the abstention answer, after the three tolerances the owner approved.
+///
+/// Whitespace is trimmed, trailing ASCII punctuation is ignored and the comparison ignores
+/// ASCII case. Nothing wider matches: no prefix, no substring and no fuzzy comparison.
+fn is_abstention_text(text: &str) -> bool {
+    text.trim()
+        .trim_end_matches(|c: char| c.is_ascii_punctuation())
+        .trim()
+        .eq_ignore_ascii_case(ABSTENTION_ANSWER)
+}
+
+/// The text after the `Answer:` label on the last line of `rendered`, when that line starts
+/// with the label (ASCII case-insensitive) after optional leading whitespace.
+fn published_answer_text(rendered: &str) -> Option<&str> {
+    let last_line = rendered.trim_end().lines().next_back()?.trim_start();
+    let head = last_line.get(..MODEL_ANSWER_LABEL.len())?;
+    head.eq_ignore_ascii_case(MODEL_ANSWER_LABEL)
+        .then(|| &last_line[MODEL_ANSWER_LABEL.len()..])
+}
+
+/// Whether the engine would publish `answer` with an `Answer: Insufficient information` line.
+///
+/// True only when both hold. First, the last line of the rendered answer starts with the
+/// label `Answer:` and the rest matches the abstention text tolerantly. Keying the check to
+/// the line the engine publishes means a true result always implies the harness abstention
+/// predicate (D-118), which reads the same line-start `Answer:` line. Second, if the model
+/// wrote its own trailing `Answer:` segment, that segment also matches, so a `final_answer`
+/// field that disagrees with the model's own prose is never read as an abstention.
+///
+/// The check only reads the would-be-published line. Validation still sees the model's own
+/// answer, and publication still happens only at the single seam in
+/// [`crate::workflow::WorkflowContext::update_from_model_output`].
+pub(crate) fn abstains(answer: &str, final_answer: Option<&str>) -> bool {
+    let rendered = render_final_answer_line(answer, final_answer);
+    let Some(published) = published_answer_text(&rendered) else {
+        return false;
+    };
+    if !is_abstention_text(published) {
+        return false;
+    }
+    locate_trailing_model_answer(answer.trim_end())
+        .is_none_or(|segment| is_abstention_text(segment.value()))
 }
 
 #[cfg(test)]

@@ -8,8 +8,8 @@ use super::super::{
 };
 use crate::generation::citations::{self, Resolution};
 use crate::generation::{
-    emit_generation_output_rejected, GenerationErrorKind, GenerationRequest, Generator,
-    GroundingLimits, ModelOutput, RejectedOutput,
+    emit_generation_output_rejected, AnswerBasis, GenerationErrorKind, GenerationRequest,
+    Generator, GroundingLimits, ModelOutput, RejectedOutput, GROUNDED_ABSTENTION_NORMALISED_NOTICE,
 };
 use crate::pb::lancet::v1::NodeErrorKind;
 use crate::prompt::{resolve_citations, resolve_citations_with_max_chars};
@@ -47,6 +47,27 @@ fn emit_validation_rejection(
         total_drop: repair.map(|counts| counts.total_drop),
         content: &output.answer,
     });
+}
+
+/// Emits the `generation_basis_normalised` event for a record whose basis the engine normalised.
+///
+/// The record is a cited grounded abstention that the model labelled `model_only` and the
+/// engine accepted as `retrieval` (06.3.5-18). The event is distinct from
+/// `generation_output_rejected`, so a drive can count normalisations per correlation ID. It
+/// carries basis names, counts and the correlation ID only, never the answer, the prompt, the
+/// evidence or a key. It is INFO under the `engine::` target, so it passes the D-90 default
+/// filter, and it only observes: it never alters what the caller returns.
+fn emit_basis_normalised(correlation_id: &str, original: &ModelOutput, cited_ids: usize) {
+    tracing::info!(
+        generation_basis_normalised = true,
+        reason = "grounded_abstention",
+        correlation_id = ?correlation_id,
+        original_basis = ?original.answer_basis.as_str(),
+        normalised_basis = ?AnswerBasis::Retrieval.as_str(),
+        model_cited_ids = original.cited_evidence_ids.len(),
+        cited_ids = cited_ids,
+        "generation_basis_normalised"
+    );
 }
 
 pub struct GenerateAnswerNode {
@@ -252,7 +273,22 @@ impl Node for GenerateAnswerNode {
             };
 
             match final_result {
-                Ok(output) => {
+                Ok(model_output) => {
+                    // 06.3.5-18 (owner decision 2026-10-07): a cited grounded abstention the model
+                    // labelled `model_only` is validated, reconciled and published as the
+                    // `retrieval` abstention it is. This is the one normalisation seam. The
+                    // branches below run unchanged on the working `output`, so every existing
+                    // check still applies; a rejection event still shows `model_output`, what the
+                    // model wrote. The notice and the event follow only a successful validation.
+                    let normalised = if ctx.allow_model_only {
+                        None
+                    } else {
+                        self.grounding_limits.and_then(|limits| {
+                            model_output.grounded_abstention_view(limits.with_allow_model_only(false))
+                        })
+                    };
+                    let output = normalised.as_ref().unwrap_or(&model_output);
+
                     if ctx.allow_model_only
                         && output.should_treat_as_model_only(ctx.evidence_blocks.is_empty())
                     {
@@ -264,7 +300,7 @@ impl Node for GenerateAnswerNode {
                                 .map_err(|err| {
                                     emit_validation_rejection(
                                         &ctx.trace_id,
-                                        &output,
+                                        &model_output,
                                         err.message(),
                                         None,
                                     );
@@ -383,7 +419,7 @@ impl Node for GenerateAnswerNode {
                                 .map_err(|err| {
                                     emit_validation_rejection(
                                         &ctx.trace_id,
-                                        &output,
+                                        &model_output,
                                         err.message(),
                                         Some(&RepairCounts {
                                             markers_found: markers.len(),
@@ -455,7 +491,7 @@ impl Node for GenerateAnswerNode {
                                 .map_err(|err| {
                                     emit_validation_rejection(
                                         &ctx.trace_id,
-                                        &output,
+                                        &model_output,
                                         err.message(),
                                         None,
                                     );
@@ -513,6 +549,18 @@ impl Node for GenerateAnswerNode {
                                 graph_boosted: false,
                             })
                             .collect();
+                    }
+
+                    // The record passed every check on its normalised view. Disclose the
+                    // override in two places: the response notice reaches the journal, and the
+                    // log event carries the model's original basis and the correlation ID.
+                    if normalised.is_some() {
+                        ctx.add_notice(crate::workflow::notice(
+                            crate::pb::lancet::v1::NoticeCode::BasisReconciled,
+                            GROUNDED_ABSTENTION_NORMALISED_NOTICE,
+                            crate::pb::lancet::v1::NoticeSeverity::Info,
+                        ));
+                        emit_basis_normalised(&ctx.trace_id, &model_output, ctx.citations.len());
                     }
                     Ok(())
                 }

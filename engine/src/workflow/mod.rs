@@ -247,7 +247,11 @@ impl WorkflowContext {
         // Retrieval from Mixed; that is the model's own admission), and citations absent
         // means the answer has no observable grounding left at all. Reconciliation takes
         // the weaker of the two and only ever weakens a claim: a model that self-reports
-        // model-only while its citations resolve stays model-only.
+        // model-only while its citations resolve stays model-only. Conservative-wins still
+        // holds at this seam. The one strengthening happens upstream, in `GenerateAnswerNode`:
+        // a cited grounded abstention the model labelled model-only arrives here as retrieval,
+        // by owner decision in 06.3.5-18, disclosed by the BASIS_RECONCILED notice and the
+        // `generation_basis_normalised` event.
         let self_reported = match output.answer_basis {
             crate::generation::AnswerBasis::Retrieval => AnswerBasis::Retrieval,
             crate::generation::AnswerBasis::Mixed => AnswerBasis::Mixed,

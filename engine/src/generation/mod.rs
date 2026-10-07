@@ -201,6 +201,39 @@ impl ModelOutput {
         final_answer::render_final_answer_line(&self.answer, self.final_answer.as_deref())
     }
 
+    /// Whether the engine would publish this output as an `Answer: Insufficient information`.
+    ///
+    /// The check reads the last line the engine renders and, when the model wrote one, its own
+    /// trailing `Answer:` segment; see [`final_answer::abstains`] for the exact tolerances.
+    pub fn is_abstention(&self) -> bool {
+        final_answer::abstains(&self.answer, self.final_answer.as_deref())
+    }
+
+    /// The `retrieval`-basis view of a cited grounded abstention that the model labelled `model_only`.
+    ///
+    /// Returns `Some` only when `limits` has no model-only opt-in, the output self-reports
+    /// [`AnswerBasis::ModelOnly`], it cites at least one evidence ID and
+    /// [`is_abstention`](Self::is_abstention) holds. The result equals `self` in every field
+    /// except `answer_basis`, which is [`AnswerBasis::Retrieval`]. This implements the owner
+    /// decision of 2026-10-07 recorded in plan 06.3.5-18: a grounded abstention names the
+    /// evidence blocks it checked, so `model_only` is a mislabelled self-report. An abstention
+    /// that cites nothing is deliberately excluded; widening to it is a deferred owner decision.
+    ///
+    /// The caller must still run the full existing validation on the returned view, so every
+    /// shape, length, budget and cited-ID check applies to it as to any other output.
+    pub fn grounded_abstention_view(&self, limits: GroundingLimits) -> Option<ModelOutput> {
+        if limits.allow_model_only()
+            || self.answer_basis != AnswerBasis::ModelOnly
+            || self.cited_evidence_ids.is_empty()
+            || !self.is_abstention()
+        {
+            return None;
+        }
+        let mut view = self.clone();
+        view.answer_basis = AnswerBasis::Retrieval;
+        Some(view)
+    }
+
     pub fn validate_grounding(
         &self,
         packed_evidence: &[EvidenceBlock],

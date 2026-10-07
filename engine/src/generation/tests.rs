@@ -3204,6 +3204,165 @@ async fn abstention_fixture_passes_the_adapter_and_the_generate_node() {
     assert_eq!(reconciled[0].message, GROUNDED_ABSTENTION_NORMALISED_NOTICE);
 }
 
+/// Owner condition 3: the abstention text is matched after trimming whitespace, ignoring case
+/// and ignoring trailing punctuation, and by nothing wider.
+#[test]
+fn abstention_match_ignores_case_whitespace_and_trailing_punctuation() {
+    use crate::generation::final_answer::abstains;
+
+    let fixture: ModelOutput = serde_json::from_str(GROUNDED_ABSTENTION_RAW_OUTPUT)
+        .expect("the fixture parses as the strict ModelOutput shape");
+    let prose = "I checked evidence blocks [1] and [2].";
+
+    for field in [
+        "Insufficient information",
+        "insufficient information.",
+        "  INSUFFICIENT INFORMATION!  ",
+        "Insufficient information...",
+    ] {
+        assert!(abstains(prose, Some(field)), "field {field:?} is an abstention");
+    }
+    assert!(
+        abstains(&fixture.answer, fixture.final_answer.as_deref()),
+        "the live output, with its own trailing `Answer: Insufficient information.`"
+    );
+    assert!(
+        abstains("Checked [1].\nanswer: insufficient information.", None),
+        "no field: the answer's own last line, matched case-insensitively at a line start"
+    );
+
+    for field in [
+        "Insufficient information about the Fed",
+        "Insufficient",
+        "Yes",
+    ] {
+        assert!(
+            !abstains(prose, Some(field)),
+            "field {field:?} is not an abstention"
+        );
+    }
+    assert!(
+        !abstains(
+            "Hedging prose [1]. Answer: Insufficient information.",
+            Some("Yes")
+        ),
+        "the published line is `Answer: Yes`, whatever the prose ends on"
+    );
+    assert!(
+        !abstains(
+            "Hedging prose [1].\nAnswer: Yes",
+            Some("Insufficient information")
+        ),
+        "the field and the model's own trailing Answer segment disagree"
+    );
+    assert!(
+        !abstains("Checked [1]. Answer: Insufficient information.", None),
+        "an inline Answer segment is not at a line start, so the harness would not read it"
+    );
+    assert!(
+        !abstains("No answer line here.", Some("   ")),
+        "a blank field with no Answer line"
+    );
+    assert!(!abstains("No answer line here.", None));
+}
+
+/// The engine constant is the literal the grounded policy prescribes, read from `prompt.rs`
+/// without editing it.
+#[test]
+fn abstention_literal_of_the_grounded_policy_is_recognised() {
+    use crate::generation::final_answer::{abstains, ABSTENTION_ANSWER};
+
+    let prompt_source = include_str!("../prompt.rs");
+    let label = "then end with: Answer: ";
+    let start = prompt_source
+        .find(label)
+        .expect("the grounded policy prescribes an abstention line")
+        + label.len();
+    let tail = &prompt_source[start..];
+    let literal = &tail[..=tail
+        .find('.')
+        .expect("the prescribed abstention ends at a period")];
+
+    assert!(
+        abstains("Checked blocks [1] and [2].", Some(literal)),
+        "the policy literal {literal:?} is an abstention"
+    );
+    assert_eq!(
+        literal.trim_end_matches('.'),
+        ABSTENTION_ANSWER,
+        "the constant is the policy literal without its period"
+    );
+}
+
+/// The normalisation view exists only for a cited `model_only` abstention without the opt-in.
+#[test]
+fn abstention_view_needs_model_only_citations_and_no_opt_in() {
+    fn output(basis: AnswerBasis, cited: &[&str], answer: &str, field: &str) -> ModelOutput {
+        ModelOutput {
+            answer: answer.into(),
+            final_answer: Some(field.into()),
+            cited_evidence_ids: cited.iter().map(|id| (*id).to_string()).collect(),
+            answer_basis: basis,
+            notices: vec!["a notice".into()],
+            warnings: vec!["a warning".into()],
+            usage: Some(ModelUsage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+            }),
+        }
+    }
+    const ABSTAINING: &str = "Checked blocks [1] and [2].\nAnswer: Insufficient information";
+    let limits = crate::generation::GroundingLimits::new(8192, 2048).unwrap();
+
+    let input = output(
+        AnswerBasis::ModelOnly,
+        &["1", "2"],
+        ABSTAINING,
+        "Insufficient information",
+    );
+    let view = input
+        .grounded_abstention_view(limits)
+        .expect("a cited model_only abstention is normalised");
+    assert_eq!(
+        view,
+        ModelOutput {
+            answer_basis: AnswerBasis::Retrieval,
+            ..input.clone()
+        },
+        "only the basis differs"
+    );
+    assert!(input.is_abstention());
+
+    assert_eq!(
+        input.grounded_abstention_view(limits.with_allow_model_only(true)),
+        None,
+        "with the opt-in the existing model-only path applies"
+    );
+    let uncited = output(
+        AnswerBasis::ModelOnly,
+        &[],
+        ABSTAINING,
+        "Insufficient information",
+    );
+    assert_eq!(uncited.grounded_abstention_view(limits), None);
+    let substantive = output(
+        AnswerBasis::ModelOnly,
+        &["1"],
+        "The Fed held rates [1].\nAnswer: Yes",
+        "Yes",
+    );
+    assert_eq!(substantive.grounded_abstention_view(limits), None);
+    for basis in [AnswerBasis::Retrieval, AnswerBasis::Mixed] {
+        let other = output(basis, &["1", "2"], ABSTAINING, "Insufficient information");
+        assert_eq!(
+            other.grounded_abstention_view(limits),
+            None,
+            "{basis:?} needs no normalisation"
+        );
+    }
+}
+
 /// Owner condition 5: a substantive `model_only` answer is rejected exactly as before.
 #[tokio::test]
 async fn abstention_substantive_model_only_answer_is_still_rejected() {

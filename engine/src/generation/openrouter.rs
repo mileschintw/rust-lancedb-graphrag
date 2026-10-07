@@ -848,8 +848,14 @@ impl OpenRouterGenerator {
             .config
             .grounding_limits
             .with_allow_model_only(request.allow_model_only);
+        // 06.3.5-18: a cited grounded abstention the model labelled `model_only` is shape-checked
+        // as the `retrieval` abstention it is. The adapter still returns the provider output
+        // unchanged and emits no event: `GenerateAnswerNode` owns the one normalisation seam, so
+        // the `generation_basis_normalised` event and the notice occur once per record.
         let validation_view = if request.evidence.is_empty() && request.allow_model_only {
             model_output.into_model_only()
+        } else if let Some(normalised) = model_output.grounded_abstention_view(limits) {
+            normalised
         } else {
             model_output.clone()
         };
