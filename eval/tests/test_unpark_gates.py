@@ -2875,3 +2875,259 @@ def test_main_passes_zero_for_a_population_the_selection_lacks(
 
     assert seen["expected_v"] == 0
     assert type(seen["expected_v"]) is int
+
+
+# --- 06.3.5-06 Task 2: ArmRoles, alias-aware role matching (D-101, SC-2) --------------
+
+_REL_DRIVE2 = "eval/runs/2026-10-06-drive2-multihop_rag_diag"
+_REL_DRIVE1B = "eval/runs/2026-10-01-drive1b-multihop_rag_diag"
+_REL_PHASE_DIR = (
+    ".planning/phases/"
+    "06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair"
+)
+_REL_GOLD_CHUNKS = f"{_REL_PHASE_DIR}/diagnostic/post-reconcile/gold_chunks.jsonl"
+_REL_POPULATIONS = "eval/corpora/multihop_rag/diag_selection.json"
+_RELABEL = {"graph-off": "hybrid", "graph-on": "hybrid+graph"}
+
+
+def _ug():  # type: ignore[no-untyped-def]
+    import lancet_eval.unpark_gates as unpark_gates
+
+    assert hasattr(unpark_gates, "ArmRoles"), "unpark_gates.ArmRoles is not defined"
+    return unpark_gates
+
+
+def _relabelled_copy(source: Path, dest: Path) -> Path:
+    """Copy a journal into `dest`, rewriting only each record's `graph_arm` field."""
+    lines = source.read_text(encoding="utf-8").splitlines()
+    out = []
+    for line in lines:
+        data = json.loads(line)
+        if data.get("type") != "header" and "graph_arm" in data:
+            data["graph_arm"] = _RELABEL[data["graph_arm"]]
+        out.append(json.dumps(data))
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(out) + "\n")
+    return dest
+
+
+def _drive2_inputs() -> dict[str, Any]:
+    from lancet_eval.config import repo_root
+    from lancet_eval.corpus import load_sample_questions
+
+    root = repo_root()
+    journal = root / _REL_DRIVE2 / "journal.jsonl"
+    header = json.loads(journal.read_text(encoding="utf-8").splitlines()[0])
+    corpus = header["corpus"]
+    selection = json.loads((root / _REL_POPULATIONS).read_text(encoding="utf-8"))
+    sample_ids = {q.question_id for q in load_sample_questions(corpus)}
+    return {
+        "root": root,
+        "journal": journal,
+        "corpus": corpus,
+        "populations": root / _REL_POPULATIONS,
+        "gold_chunks": root / _REL_GOLD_CHUNKS,
+        "expected_g": len(sample_ids & set(selection["g_question_ids"])),
+        "expected_v": len(sample_ids & set(selection["v_question_ids"])),
+    }
+
+
+def _readings(journal: Path, inputs: dict[str, Any], roles: Any) -> dict[str, Any]:
+    from lancet_eval.diagnostic import build_rows
+
+    kwargs = {} if roles is None else {"roles": roles}
+    rows = build_rows(inputs["corpus"], str(journal), str(inputs["gold_chunks"]))
+    sc3 = evaluate_sc3(
+        rows,
+        inputs["populations"],
+        corpus=inputs["corpus"],
+        expected_g=inputs["expected_g"],
+        **kwargs,
+    )
+    sc4 = evaluate_sc4(
+        journal,
+        inputs["populations"],
+        corpus=inputs["corpus"],
+        expected_g=inputs["expected_g"],
+        **kwargs,
+    )
+    sc5 = evaluate_sc5(
+        journal,
+        inputs["populations"],
+        corpus=inputs["corpus"],
+        expected_v=inputs["expected_v"],
+        **kwargs,
+    )
+    return {"SC-3": sc3, "SC-4": sc4, "SC-5": sc5}
+
+
+def _key(reading: Any) -> tuple[Any, ...]:
+    return (reading.status, reading.n, reading.value, reading.ci)
+
+
+def test_arm_roles_default_is_the_legacy_pair_and_is_validated() -> None:
+    ug = _ug()
+    assert ug.DEFAULT_ARM_ROLES == ug.ArmRoles(
+        reference="graph-off", treatment="graph-on"
+    )
+    with pytest.raises(ValueError):
+        ug.ArmRoles(reference="graph-sideways", treatment="graph-on")
+    with pytest.raises(ValueError):
+        ug.ArmRoles(reference="hybrid", treatment="graph-off")  # one arm twice
+
+
+def test_a_relabelled_drive2_reads_the_same_under_registry_roles(
+    tmp_path: Path,
+) -> None:
+    """D-101 relabel proof: graph-off -> hybrid and graph-on -> hybrid+graph in a tmp
+    copy; SC-3, SC-4 and SC-5 read as the legacy readings of the original journal."""
+    ug = _ug()
+    inputs = _drive2_inputs()
+    legacy = _readings(inputs["journal"], inputs, None)
+    relabelled = _relabelled_copy(inputs["journal"], tmp_path / "relabelled.jsonl")
+
+    roles = ug.ArmRoles(reference="hybrid", treatment="hybrid+graph")
+    got = _readings(relabelled, inputs, roles)
+
+    for name, reading in legacy.items():
+        assert reading.n > 0, name  # the comparison is not vacuous
+        assert _key(got[name]) == _key(reading), name
+
+
+def test_registry_roles_read_a_legacy_labelled_journal_alias_aware() -> None:
+    ug = _ug()
+    inputs = _drive2_inputs()
+    legacy = _readings(inputs["journal"], inputs, None)
+
+    roles = ug.ArmRoles(reference="hybrid", treatment="hybrid+graph")
+    got = _readings(inputs["journal"], inputs, roles)
+
+    for name, reading in legacy.items():
+        assert _key(got[name]) == _key(reading), name
+
+
+def test_graph_off_invariance_reads_the_reference_role(tmp_path: Path) -> None:
+    ug = _ug()
+    inputs = _drive2_inputs()
+    baseline = inputs["root"] / _REL_DRIVE1B / "journal.jsonl"
+    legacy = graph_off_invariance(baseline, inputs["journal"])
+    relabelled = _relabelled_copy(inputs["journal"], tmp_path / "relabelled.jsonl")
+
+    got = graph_off_invariance(
+        baseline,
+        relabelled,
+        roles=ug.ArmRoles(reference="hybrid", treatment="hybrid+graph"),
+    )
+
+    assert legacy.n_common > 0
+    assert got == legacy
+
+
+def test_a_relabelled_copy_no_longer_matches_the_legacy_registry(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.journal import load_records
+    from lancet_eval.unpark_gates import (
+        _legacy_drive,
+        _read_journal_header,
+        legacy_records_digest,
+    )
+
+    inputs = _drive2_inputs()
+    header = _read_journal_header(inputs["journal"])
+    assert header is not None
+    original = load_records(inputs["journal"])
+    relabelled_path = _relabelled_copy(
+        inputs["journal"], tmp_path / "relabelled.jsonl"
+    )
+    relabelled = load_records(relabelled_path)
+
+    assert _legacy_drive(header, original) is not None
+    assert legacy_records_digest(relabelled) != legacy_records_digest(original)
+    assert _legacy_drive(header, relabelled) is None
+
+
+def test_record_for_role_refuses_an_alias_and_its_canonical_label() -> None:
+    ug = _ug()
+    helper = getattr(ug, "_record_for_role", None)
+    assert helper is not None, "unpark_gates._record_for_role is not defined"
+
+    arms = {"graph-off": "A", "dense-only": "D", "hybrid+graph": "G"}
+    assert helper(arms, "hybrid") == "A"
+    assert helper(arms, "graph-on") == "G"
+    assert helper(arms, "bm25-only") is None
+    with pytest.raises(ValueError, match="hybrid"):
+        helper({"graph-off": "A", "hybrid": "B"}, "hybrid")
+
+
+def test_a_mixed_alias_journal_is_refused_by_the_pair_readers(
+    tmp_path: Path,
+) -> None:
+    ug = _ug()
+    qid = "q1"
+    journal = tmp_path / "journal.jsonl"
+    _write_journal(
+        journal,
+        [
+            _arm_record(qid, "graph-off"),
+            _arm_record(qid, "hybrid"),
+            _arm_record(qid, "graph-on"),
+        ],
+    )
+    selection = tmp_path / "sel.json"
+    _write_populations(selection, [qid])
+
+    with pytest.raises(ValueError, match="q1"):
+        evaluate_sc4(
+            journal,
+            selection,
+            corpus="multihop_rag",
+            gold_questions={qid: _gold_question(qid)},
+            expected_g=1,
+            roles=ug.ArmRoles(reference="hybrid", treatment="hybrid+graph"),
+        )
+
+
+def test_no_evaluator_indexes_an_arm_map_with_a_legacy_literal() -> None:
+    """The evaluators name no arm: every lookup goes through the roles (a docstring
+    may still mention the legacy labels; only subscripts, `.get` and comparisons)."""
+    import ast
+    import inspect
+
+    import lancet_eval.unpark_gates as unpark_gates
+
+    assert hasattr(unpark_gates, "ArmRoles"), "unpark_gates.ArmRoles is not defined"
+    tree = ast.parse(inspect.getsource(unpark_gates))
+    evaluators = {
+        "evaluate_sc2",
+        "evaluate_sc3",
+        "evaluate_sc4",
+        "evaluate_sc5",
+        "graph_off_invariance",
+        "_unpaired_boost_share",
+        "_composition_change",
+        "_form_drive2_pairs",
+    }
+    legacy = {"graph-on", "graph-off"}
+    offenders: list[str] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef) or fn.name not in evaluators:
+            continue
+        for node in ast.walk(fn):
+            consts: list[ast.expr] = []
+            if isinstance(node, ast.Subscript):
+                consts.append(node.slice)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get"
+                and node.args
+            ):
+                consts.append(node.args[0])
+            elif isinstance(node, ast.Compare):
+                consts.extend(node.comparators)
+            for const in consts:
+                if isinstance(const, ast.Constant) and const.value in legacy:
+                    offenders.append(f"{fn.name}:{const.value}")
+    assert offenders == []
