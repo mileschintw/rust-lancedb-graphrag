@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 9/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 11/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1094,8 +1094,8 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06.3.5-10-PLAN.md — The four-arm deterministic report on P4 with the script-faithful line, the D-40 per-type strata and every secondary's paired delta against `hybrid` (D-121, D-122, D-126, D-40, D-115), the zero-tolerance provenance refusal, and the text-rule cross-check tool
-- [ ] 06.3.5-11-PLAN.md — The cache-only, counts-only judge stage (D-112) and the seeded, blinded, commit-reveal calibration emit (D-113, D-120)
+- [x] 06.3.5-10-PLAN.md — The four-arm deterministic report on P4 with the script-faithful line, the D-40 per-type strata and every secondary's paired delta against `hybrid` (D-121, D-122, D-126, D-40, D-115), the zero-tolerance provenance refusal, and the text-rule cross-check tool
+- [x] 06.3.5-11-PLAN.md — The cache-only, counts-only judge stage (D-112) and the seeded, blinded, commit-reveal calibration emit (D-113, D-120)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 

@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 10
+current_plan: 12
 status: executing
-stopped_at: Phase 06.3.5 wave 5 complete (plans 08, 09); wave 6 (plans 10, 11) next
+stopped_at: Phase 06.3.5 wave 6 complete (plans 10, 11); wave 7 (plan 12) next
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-07
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 10 (wave 6 of 12)
+Current Plan: 12 (wave 7 of 12)
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-07: Phase 06.3.5 wave 6 complete (plans 10, 11).** 10 (main): four-arm per-arm dimensions on P4 with D-40 strata, zero-tolerance provenance refusal, per-record spend, secondary paired deltas vs `hybrid`, `paper_text_crosscheck.py`; SUMMARY `2467b070`/`4e93b681`; logged 22 pre-existing ruff findings in `score.py` to `deferred-items.md` + WINDOWS.md; one accidental `git stash` was popped at once (stash list empty before/after). Downstream note: `cli.py` does not pass `score_run(gold_chunks_path=)`, so the CLI scores with the default path. 11 (Workflow worktree, merged `54af82c0`): cache-only counts-only judge stage, seeded arm-stratified blinded 20-item calibration slice with commit-reveal key under gitignored `data/calibration-keys/`, `lancet-eval judge` and `calibration emit`; tripwire example in the plan was arithmetically impossible, implemented the stated rule; SUMMARY `ac69f2a0`. Post-merge gate green: engine 741, gateway 120, eval pytest 1580 passed; wave:post gates no block. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 5 complete (plans 08, 09).** 08 (main): one abstention predicate and the 06.3.5 judgeable policy, exact paired sign-flip + Holm and the P4 population, the pre-registration / QWK trust floor / judge tripwire constants committed alone in `ac2bf45d`, D-73 ordering refusals through `gitcheck` (drive refuses a `[split]` corpus without a committed pre-registration on a clean tree); SUMMARY `6d9cbc1d`. 09 (Workflow worktree, merged `230d63ef`): `unpark_gates --stage heldout` (SC-1/SC-2 per arm and pooled, MISS on zero-record arms), arm-mode canary preflight with D-124 legacy skips, per-arm provider/format map; SUMMARY `18f65823`. Post-merge gate green: engine 741, gateway 120, eval pytest 1402 passed; wave:post gates no block. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 4 complete (plans 06, 07).** 06 (main): score/usability/dimensions/pairing and unpark_gates resolve arms through the D-101 registry (`ac531c40`..`36823e9e`, SUMMARY `dd451ba8`); drive 2 re-scores identically and a relabelled copy reads the same gates; Rule-1/Rule-3 deviations recorded in its SUMMARY. 07 (Workflow worktree, merged `02cf704d`): paper-convention metrics equal the official `calculate_metrics` on 247 golden cases, arm-provenance conformance check (a-g), D-104 dev-only paper Hits@4 retro (hybrid 68/90, hybrid+graph 65/89) in `06.3.5-RETRO-PAPER-HITS4.md`, SUMMARY `83ea2311`. Post-merge gate green: engine 741, gateway 120, eval pytest 1267 passed; wave:post gates no block. OBS-06 stays unticked (D-98).
 - **2026-10-07: Phase 06.3.5 wave 3 complete (plans 04, 05).** 04 (main): bm25-only skips the query embedding when the graph is off (D-125, `8015b106`), unknown `retrieval_mode` fails closed at engine and gateway plus snapshot key-set pins (`c407a6a2`), SUMMARY `682fef47`; engine 732 -> 741, gateway 119 -> 120; goldens unchanged. 05 (Workflow worktree, merged `d87fcdba`): D-101 arm registry and corpus sections, registry-driven requests and provenance round trip, seeded balanced rotation and split-role refusals (D-107), SUMMARY `97e14455`. Post-merge gate green (cargo, go, eval pytest 1175 passed, both count scripts). Owner pre-authorized the remaining checkpoint answers for 14/15/16 and set resource limits (CARGO_BUILD_JOBS=4, --test-threads=4, go test -p 2, no concurrent suites) for every remaining executor; the run stops at 16 Task 3 (calibration scoring) with a handover. OBS-06 stays unticked (D-98).
@@ -542,7 +543,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 wave 5 complete (plans 08, 09); wave 6 (plans 10, 11) next
+**Stopped at:** Phase 06.3.5 wave 6 complete (plans 10, 11); wave 7 (plan 12) next
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
