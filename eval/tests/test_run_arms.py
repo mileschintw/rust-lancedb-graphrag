@@ -988,3 +988,206 @@ def test_probe_rejects_an_unknown_arm_with_exit_2() -> None:
         app, ["probe", "-q", "q", "-f", "f", "--arm", "dense+graph"]
     )
     assert res.exit_code == 2
+
+
+# --- 06.3.5-05 Task 3: seeded rotation, split-role refusals, header provenance ---
+
+
+def _split_path() -> Path:
+    from lancet_eval.config import repo_root
+
+    return repo_root() / "eval" / "corpora" / "multihop_rag" / "heldout_split.json"
+
+
+def _drive_split(
+    corpus: str,
+    journal: Path,
+    *,
+    limit: int | None = None,
+    resume: bool = True,
+) -> int:
+    return drive(
+        corpus=corpus,
+        journal_path=journal,
+        stage_spend_cap=10.0,
+        limit=limit,
+        workers=1,
+        resume=resume,
+        max_retries=0,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+
+
+def _journal_units(path: Path) -> list[tuple[str, str]]:
+    from lancet_eval.journal import load_records
+
+    return [(r.question_id, r.graph_arm) for r in load_records(path)]
+
+
+def test_split_drive_follows_the_seeded_rotation_and_limit_takes_whole_questions(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval.arms import plan_work_units
+    from lancet_eval.corpus import load_corpus_config, load_sample_questions
+    from lancet_eval.split import load_split
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    config = load_corpus_config("multihop_rag_heldout")
+    planned = plan_work_units(
+        load_sample_questions("multihop_rag_heldout"),
+        config.arms,
+        load_split(_split_path()).order_seed,
+    )
+    j_path = tmp_path / "journal.jsonl"
+
+    assert _drive_split("multihop_rag_heldout", j_path, limit=3) == 12
+
+    expected = [(q.question_id, arm) for q, arm in planned[:12]]
+    assert _journal_units(j_path) == expected
+    # the first three questions of the rotated order, all four arms each
+    assert len({q for q, _ in expected}) == 3
+    assert sorted(a for _, a in expected[:4]) == sorted(config.arms)
+
+
+def test_split_drive_resume_rebuilds_the_same_suffix(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval.arms import plan_work_units
+    from lancet_eval.corpus import load_corpus_config, load_sample_questions
+    from lancet_eval.split import load_split
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    config = load_corpus_config("multihop_rag_heldout")
+    planned = plan_work_units(
+        load_sample_questions("multihop_rag_heldout"),
+        config.arms,
+        load_split(_split_path()).order_seed,
+    )
+    j_path = tmp_path / "journal.jsonl"
+
+    assert _drive_split("multihop_rag_heldout", j_path, limit=25) == 100
+    assert _drive_split("multihop_rag_heldout", j_path, limit=30) == 20
+
+    assert _journal_units(j_path) == [(q.question_id, a) for q, a in planned[:120]]
+
+
+def test_legacy_corpus_work_units_equal_the_old_question_major_comprehension(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval.corpus import load_corpus_config, load_sample_questions
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    for corpus in ("multihop_rag_diag", "graphrag_bench"):
+        config = load_corpus_config(corpus)
+        assert config.split_file is None
+        questions = load_sample_questions(corpus)[:2]
+        old = [(q.question_id, arm) for q in questions for arm in config.arms]
+        j_path = tmp_path / f"{corpus}.jsonl"
+
+        assert _drive_split(corpus, j_path, limit=2) == len(old)
+        assert _journal_units(j_path) == old
+
+
+def test_split_drive_header_carries_order_seed_and_split_digest(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval.journal import read_journal_header
+    from lancet_eval.split import load_split, split_sha256
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+    _drive_split("multihop_rag_heldout", j_path, limit=1)
+
+    split = load_split(_split_path())
+    header = read_journal_header(j_path)
+    assert header is not None
+    assert header["order_seed"] == split.order_seed == 42
+    assert header["split_sha256"] == split_sha256(split)
+    assert "gate_stage" in header and "max_retries" in header
+
+
+def test_legacy_header_has_no_split_keys(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval.journal import read_journal_header
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+    _drive_split("graphrag_bench", j_path, limit=1)
+
+    header = read_journal_header(j_path)
+    assert header is not None
+    assert "order_seed" not in header
+    assert "split_sha256" not in header
+
+
+def test_heldout_corpus_that_differs_from_the_split_is_refused_before_any_io(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.corpus import load_sample_questions
+
+    questions = load_sample_questions("multihop_rag_heldout")
+    monkeypatch.setattr(
+        "lancet_eval.run.load_sample_questions", lambda _name: questions[:350]
+    )
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(ValueError, match="351") as excinfo:
+        _drive_split("multihop_rag_heldout", j_path)
+    assert "350" in str(excinfo.value)
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_heldout_corpus_with_a_foreign_question_is_refused(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.corpus import load_sample_questions
+    from lancet_eval.split import load_split
+
+    questions = load_sample_questions("multihop_rag_heldout")
+    dev_id = load_split(_split_path()).dev_ids[0]
+    swapped = [
+        GoldQuestion(question_id=dev_id, question="dev?", gold_facts=[]),
+        *questions[1:],
+    ]
+    monkeypatch.setattr("lancet_eval.run.load_sample_questions", lambda _name: swapped)
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(ValueError, match="held-out"):
+        _drive_split("multihop_rag_heldout", j_path)
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_rehearsal_corpus_holding_a_dev_or_heldout_id_is_refused_before_any_request(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.corpus import load_sample_questions
+    from lancet_eval.split import load_split
+
+    split = load_split(_split_path())
+    base = load_sample_questions("multihop_rag_rehearsal")
+    for leaked_id in (split.dev_ids[0], split.heldout_g_ids[0], split.heldout_null_ids[0]):
+        leaked = [
+            *base,
+            GoldQuestion(question_id=leaked_id, question="leak?", gold_facts=[]),
+        ]
+        monkeypatch.setattr(
+            "lancet_eval.run.load_sample_questions", lambda _name, qs=leaked: qs
+        )
+        j_path = tmp_path / f"{leaked_id}.jsonl"
+        with pytest.raises(ValueError, match="rehearsal"):
+            _drive_split("multihop_rag_rehearsal", j_path)
+        assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_real_rehearsal_corpus_is_disjoint_and_runs_the_rotation(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+
+    assert _drive_split("multihop_rag_rehearsal", j_path) == 12
+    assert len({q for q, _ in _journal_units(j_path)}) == 3

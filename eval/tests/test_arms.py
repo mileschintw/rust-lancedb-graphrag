@@ -115,3 +115,72 @@ def test_no_deferred_d116_label_in_the_harness_source() -> None:
         text = path.read_text(encoding="utf-8")
         assert "dense+graph" not in text, path
         assert "bm25+graph" not in text, path
+
+
+# --- 06.3.5-05 Task 3: seeded balanced rotation (D-107) ---
+
+
+def _heldout_questions() -> list:
+    from lancet_eval.corpus import load_sample_questions
+
+    return load_sample_questions("multihop_rag_heldout")
+
+
+def _split_seed() -> int:
+    from lancet_eval.config import repo_root
+    from lancet_eval.split import load_split
+
+    split = load_split(
+        repo_root() / "eval" / "corpora" / "multihop_rag" / "heldout_split.json"
+    )
+    return split.order_seed
+
+
+def test_rotation_is_balanced_over_the_committed_351_question_split() -> None:
+    from collections import Counter
+
+    from lancet_eval.arms import plan_work_units
+
+    arms = list(ARM_REGISTRY)
+    questions = _heldout_questions()
+    assert len(questions) == 351
+    units = plan_work_units(questions, arms, _split_seed())
+    assert len(units) == 351 * 4
+
+    # No question repeats, and each question's four arms run back to back.
+    blocks = [units[i : i + 4] for i in range(0, len(units), 4)]
+    assert len({b[0][0].question_id for b in blocks}) == 351
+    for block in blocks:
+        assert len({q.question_id for q, _ in block}) == 1
+        assert sorted(a for _, a in block) == sorted(arms)
+
+    first = Counter(block[0][1] for block in blocks)
+    assert sorted(first.values(), reverse=True) == [88, 88, 88, 87]
+    for position in range(4):
+        held = Counter(block[position][1] for block in blocks)
+        assert sorted(held.values(), reverse=True) == [88, 88, 88, 87]
+
+
+def test_rotation_is_pure_and_independent_of_input_order() -> None:
+    from lancet_eval.arms import plan_work_units
+
+    arms = list(ARM_REGISTRY)
+    questions = _heldout_questions()
+    seed = _split_seed()
+    once = plan_work_units(questions, arms, seed)
+    again = plan_work_units(list(questions), arms, seed)
+    reversed_input = plan_work_units(list(reversed(questions)), arms, seed)
+
+    def key(units: list) -> list[tuple[str, str]]:
+        return [(q.question_id, a) for q, a in units]
+
+    assert key(once) == key(again) == key(reversed_input)
+    assert key(plan_work_units(questions, arms, seed + 1)) != key(once)
+
+
+def test_rotation_with_fewer_questions_than_arms_still_runs_every_arm() -> None:
+    from lancet_eval.arms import plan_work_units
+
+    arms = list(ARM_REGISTRY)
+    units = plan_work_units(_heldout_questions()[:3], arms, 42)
+    assert len(units) == 12
