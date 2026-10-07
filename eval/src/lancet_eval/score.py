@@ -342,6 +342,7 @@ def score_run(
     client: httpx.Client | None = None,
     stage_spend_cap: float | None = None,
     git_repo: Path | None = None,
+    gold_chunks_path: Path | str | None = None,
 ) -> CorpusReport:
     """Read a run journal and produce a scored evaluation report.
 
