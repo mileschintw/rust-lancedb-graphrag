@@ -15,6 +15,7 @@ from statistics import fmean
 from typing import Any, Literal
 
 import httpx
+from pydantic import BaseModel, ConfigDict
 
 from lancet_eval.agreement import (
     CALIBRATION_STATE_BELOW_TARGET,
@@ -1003,6 +1004,142 @@ def _four_arm_dimensions(
     return dims
 
 
+# --- 06.3.5-12: the ordered judged pass (D-97, D-112, D-113, D-118, D-120, D-126) ---
+#
+# `score_run(judged=True)` is the only path that computes or writes judged
+# aggregates for a corpus declaring `[judge] protocol = "ordered"`. It runs
+# `calibration.ingest_and_verify` first, so every aggregate below exists only
+# after the emit -> owner scores -> reveal order is proven from git. It reads
+# `judge_cache.json` and makes no API call.
+
+JUDGED_DIMENSIONS = ("groundedness", "faithfulness")
+JUDGED_RESULT_FILE = "judged-result.json"
+ABSTENTION_DIFFERS_FLAG = (
+    "abstention differs: conditional on both arms answering; "
+    "not an arm effect on grounding"
+)
+DELTA_STRATUM_LABEL = "unadjusted, estimation only"
+ARM_MEANS_NOTE = "different question sets; compare arms only through the paired delta"
+_ORDERED_REFUSAL = (
+    'this corpus declares [judge] protocol = "ordered" (D-113, D-120), so {used} '
+    "would compute judged aggregates before the owner's calibration scores are "
+    "committed. Run `lancet-eval judge`, then `lancet-eval calibration emit`, have the "
+    "owner score and commit the worksheet, reveal the key, and then run "
+    "`lancet-eval score --judged --calibration-file <W> --calibration-key <K>`."
+)
+
+
+class JudgedStratum(BaseModel):
+    """One D-40 stratum of a per-arm judged mean, beside that type's abstention rate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question_type: str
+    n: int
+    mean: float | None = None
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    abstention_rate: float | None = None
+    abstention_n: int = 0
+
+
+class JudgedArmRow(BaseModel):
+    """A per-arm judged mean over J_a, always beside the arm's abstention rate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    arm: str
+    dimension: str
+    n: int
+    mean: float | None = None
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    judge_errors: int
+    abstention_rate: float | None = None
+    abstention_n: int
+    d114_label: str
+    comparability_note: str = ARM_MEANS_NOTE
+    strata: list[JudgedStratum]
+
+
+class JudgedDeltaStratum(BaseModel):
+    """One D-40 stratum of a paired judged delta; a CI is estimation only (D-123)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question_type: str
+    n_pairs: int
+    delta: float | None = None
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    ci_label: str | None = None
+
+
+class JudgedDeltaRow(BaseModel):
+    """A paired judged delta against the reference with selection-effect columns."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    arm: str
+    reference: str
+    dimension: str
+    n_pairs: int
+    delta: float | None = None
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    dropped_only_arm_abstained: int
+    dropped_only_reference_abstained: int
+    dropped_both_abstained: int
+    dropped_judge_unavailable: int
+    judge_errors_arm: int
+    judge_errors_reference: int
+    abstention_rate_arm: float | None = None
+    abstention_rate_reference: float | None = None
+    abstention_n: int
+    abstention_rate_delta: float | None = None
+    abstention_rate_delta_ci_lower: float | None = None
+    abstention_rate_delta_ci_upper: float | None = None
+    flag: str | None = None
+    d114_label: str
+    strata: list[JudgedDeltaStratum]
+
+
+class JudgedCommits(BaseModel):
+    """The commits that prove the D-120 order."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    emitted_at_sha: str
+    worksheet_commit: str
+    scores_commit: str
+    key_commit: str
+    salt_commit: str
+    d114_floor: float
+
+
+class JudgedResult(BaseModel):
+    """`judged-result.json`: every text label of the judged pass (D-126).
+
+    `report.json` carries only floats; the labels, the lines and the selection-effect
+    text live here. No row carries a p-value: judged numbers are secondaries.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    corpus: str
+    judge_model: str
+    judge_prompt_version: str
+    commits: JudgedCommits
+    labels: dict[str, str]
+    agreement: dict[str, Any]
+    legacy_lines: list[str]
+    divergence_lines: list[str]
+    dropped_slice_ids: list[str]
+    arms: list[JudgedArmRow]
+    deltas: list[JudgedDeltaRow]
+    report_lines: list[str]
+
+
 def score_run(
     *,
     run_dir: Path | str,
@@ -1015,6 +1152,8 @@ def score_run(
     stage_spend_cap: float | None = None,
     git_repo: Path | None = None,
     gold_chunks_path: Path | str | None = None,
+    judged: bool = False,
+    calibration_key: Path | str | None = None,
 ) -> CorpusReport:
     """Read a run journal and produce a scored evaluation report.
 

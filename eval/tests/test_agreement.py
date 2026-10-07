@@ -213,7 +213,7 @@ def test_bootstrap_ci_reproducibility_and_bounds() -> None:
     assert d_ci is None
 
 
-# --- 06.3.5-12: the counting variant (D-113, AI-SPEC 5 "Agreement statistics") ---------
+# --- 06.3.5-12: the counting variant (D-113, AI-SPEC 5 "Agreement statistics") ---
 
 R1 = [1, 2, 3, 4, 5, 2, 3, 4, 5, 1, 2, 4]
 R2 = [1, 2, 2, 4, 5, 3, 3, 4, 4, 1, 3, 4]
