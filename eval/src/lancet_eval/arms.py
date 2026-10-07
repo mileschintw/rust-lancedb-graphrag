@@ -13,6 +13,7 @@ An unknown label fails closed.
 
 from __future__ import annotations
 
+import random
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from lancet_eval.client import Notice
+    from lancet_eval.corpus import GoldQuestion
 
 RetrievalMode = Literal["dense_only", "bm25_only", "hybrid"]
 ArmLabel = Literal["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
@@ -205,3 +207,38 @@ def mode_provenance_failures(
                 "or carries GRAPH_UNAVAILABLE"
             )
     return failures
+
+
+def plan_work_units(
+    questions: Sequence[GoldQuestion],
+    arms: Sequence[str],
+    order_seed: int,
+) -> list[tuple[GoldQuestion, str]]:
+    """Plans the D-107 seeded, balanced arm rotation over a question set.
+
+    The questions are sorted by ID and shuffled with ``random.Random(order_seed)``.
+    The per-question offsets ``i % len(arms)`` are then shuffled with the same
+    stream, and each question's arm list is rotated by its offset. Every arm of a
+    question therefore runs back to back, and over N questions each arm is first,
+    and holds each later position, ``N // len(arms)`` or one more times. The function
+    is pure, so ``--resume`` rebuilds the identical order.
+
+    Args:
+        questions: The questions to drive, in any order.
+        arms: The arm labels, in registry order.
+        order_seed: Seed of the rotation, recorded in the journal header.
+
+    Returns:
+        The ``(question, arm)`` work units, question-major in rotated order.
+    """
+    arm_list = list(arms)
+    ordered = sorted(questions, key=lambda q: q.question_id)
+    rng = random.Random(order_seed)
+    rng.shuffle(ordered)
+    offsets = [i % len(arm_list) for i in range(len(ordered))]
+    rng.shuffle(offsets)
+    units: list[tuple[GoldQuestion, str]] = []
+    for question, offset in zip(ordered, offsets, strict=True):
+        for arm in arm_list[offset:] + arm_list[:offset]:
+            units.append((question, arm))
+    return units

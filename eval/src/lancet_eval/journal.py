@@ -365,6 +365,8 @@ class Journal:
         partial: bool,
         gate_stage: str | None = None,
         max_retries: int | None = None,
+        order_seed: int | None = None,
+        split_sha256: str | None = None,
     ) -> None:
         """Write journal metadata header if file is empty or new.
 
@@ -373,6 +375,9 @@ class Journal:
         record written under it (06.3.4.1-33, D-67). Without ``max_retries`` the
         header keeps its four original keys. This is a provenance marker, distinct from
         the ``partial`` completeness flag.
+
+        A ``[split]`` drive also passes ``order_seed`` and ``split_sha256`` (D-107),
+        written as additive keys only when given, so a legacy header is unchanged.
         """
         if gate_stage is not None and max_retries is None:
             raise ValueError("gate_stage requires max_retries (D-67)")
@@ -386,6 +391,10 @@ class Journal:
             if max_retries is not None:
                 header["gate_stage"] = gate_stage
                 header["max_retries"] = max_retries
+            if order_seed is not None:
+                header["order_seed"] = order_seed
+            if split_sha256 is not None:
+                header["split_sha256"] = split_sha256
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(header, ensure_ascii=False) + "\n")
                 f.flush()

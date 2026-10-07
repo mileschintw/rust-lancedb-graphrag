@@ -164,6 +164,9 @@ class CorpusConfig:
                 )
             self.split_file = str(split_file)
             self.split_role = str(split_role)
+        self.split_path: Path | None = (
+            root / "eval" / "corpora" / self.split_file if self.split_file else None
+        )
 
         judge_protocol = str(data.get("judge", {}).get("protocol", "legacy"))
         if judge_protocol not in _JUDGE_PROTOCOLS:

@@ -1168,7 +1168,8 @@ def test_rehearsal_corpus_holding_a_dev_or_heldout_id_is_refused_before_any_requ
 
     split = load_split(_split_path())
     base = load_sample_questions("multihop_rag_rehearsal")
-    for leaked_id in (split.dev_ids[0], split.heldout_g_ids[0], split.heldout_null_ids[0]):
+    leaks = (split.dev_ids[0], split.heldout_g_ids[0], split.heldout_null_ids[0])
+    for leaked_id in leaks:
         leaked = [
             *base,
             GoldQuestion(question_id=leaked_id, question="leak?", gold_facts=[]),
