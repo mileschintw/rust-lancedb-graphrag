@@ -34,11 +34,12 @@ import random
 import secrets
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from lancet_eval import gitcheck, thresholds
+from lancet_eval.agreement import AgreementResult
 from lancet_eval.arms import ARM_REGISTRY, ArmLabel, canonical_arm
 from lancet_eval.config import repo_root
 from lancet_eval.judge import (
@@ -619,4 +620,101 @@ def emit_worksheet(
         emitted_at_sha=sha,
         n_items=len(items),
         git_add=f"git add {shown}",
+    )
+
+
+# --- 06.3.5-12: the ordered ingest, agreement and the D-114 labels (RED stubs) ----------
+
+SLICE_SIZE = PER_ARM * len(ARM_REGISTRY)
+
+LABEL_CALIBRATED = "calibrated"
+LABEL_UNCALIBRATED = "uncalibrated"
+LABEL_ATTRITION = "uncalibrated: slice attrition"
+LABEL_QWK_UNDEFINED = "uncalibrated: QWK undefined"
+LABEL_CODES: dict[str, float] = {
+    LABEL_CALIBRATED: 1.0,
+    LABEL_UNCALIBRATED: 0.0,
+    LABEL_ATTRITION: -1.0,
+    LABEL_QWK_UNDEFINED: -2.0,
+}
+DIMENSIONS = ("groundedness", "faithfulness")
+
+
+class SlicePair(BaseModel):
+    """One scored slice item joined to its key row (06.3.5-12)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    slice_id: str
+    arm: str
+    question_id: str
+    question_type: str
+    cache_key: str
+    human_groundedness: int
+    human_faithfulness: int
+
+
+class VerifiedSlice(BaseModel):
+    """A worksheet whose emit, scoring and reveal order is proven from git."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    header: CalibrationHeader
+    pairs: tuple[SlicePair, ...]
+    floor: float
+    emitted_at_sha: str
+    worksheet_commit: str = ""
+    scores_commit: str = ""
+    key_commit: str = ""
+    salt_commit: str = ""
+
+
+class LegacyLine(BaseModel):
+    """The legacy `calibration_state` for one dimension, for display only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    text: str
+    satisfied: bool
+    divergence: str | None = None
+
+
+def d114_label(qwk_result: AgreementResult, n_pairs: int, floor: float) -> str:
+    """RED stub."""
+    return ""
+
+
+def label_code(label: str) -> float:
+    """RED stub."""
+    return 0.0
+
+
+def legacy_calibration_line(
+    dimension: str, qwk: float | None, spearman: float | None, label: str
+) -> LegacyLine:
+    """RED stub."""
+    return LegacyLine(text="", satisfied=False)
+
+
+def agreement_summary(verified: VerifiedSlice, cache: JudgeCache) -> dict[str, Any]:
+    """RED stub."""
+    return {}
+
+
+def ingest_and_verify(
+    run_dir: Path | str,
+    worksheet_path: Path | str,
+    key_path: Path | str,
+    salt_path: Path | str,
+    *,
+    repo: Path | None = None,
+) -> VerifiedSlice:
+    """RED stub: reads the header only and refuses nothing."""
+    lines = Path(worksheet_path).read_text(encoding="utf-8").splitlines()
+    header = CalibrationHeader.model_validate_json(lines[0])
+    return VerifiedSlice(
+        header=header,
+        pairs=(),
+        floor=header.d114_floor,
+        emitted_at_sha=header.emitted_at_sha,
     )

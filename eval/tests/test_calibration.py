@@ -34,7 +34,8 @@ from test_judge_stage import (
 )
 from typer.testing import CliRunner
 
-from lancet_eval import calibration, gitcheck, thresholds
+from lancet_eval import calibration, gitcheck, judge_stage, thresholds
+from lancet_eval.agreement import AgreementResult
 from lancet_eval.calibration import (
     MECHANICS_LINE,
     CalibrationError,
@@ -53,6 +54,7 @@ from lancet_eval.judge import (
     JUDGE_SYSTEM_V1,
     JudgeCache,
     JudgeCacheEntry,
+    JudgeVerdict,
     cache_key,
 )
 from lancet_eval.judge_stage import run_judge_stage
@@ -820,3 +822,733 @@ def test_the_emit_command_exits_nonzero_on_a_refusal(
 def test_the_emit_command_requires_a_run() -> None:
     result = CliRunner().invoke(app, ["calibration", "emit"])
     assert result.exit_code == 2
+
+
+# --- 06.3.5-12: the ordered ingest (D-113, D-114, D-119, D-120; AI-SPEC 5 step 7) ----------
+
+THRESHOLDS_TEXT = "PREREGISTRATION_06_3_5 = 1\nJUDGE_QWK_TRUST_FLOOR: float = 0.70\n"
+THRESHOLDS_REL = "eval/src/lancet_eval/thresholds.py"
+
+
+def verdict_for(key: str) -> JudgeVerdict:
+    """A deterministic, varied verdict of a cache key (so the QWK is defined)."""
+    n = int(key[:8], 16)
+    return JudgeVerdict(groundedness=1 + n % 5, faithfulness=1 + (n // 5) % 5)
+
+
+def varied_judge(client: Any = None, **kwargs: Any) -> Any:
+    key = cache_key(
+        prompt_version=kwargs["prompt_version"],
+        judge_model=kwargs["model"],
+        question=kwargs["question"],
+        answer=kwargs["answer"],
+        post_truncation_evidence=kwargs["evidence"],
+    )
+    return (verdict_for(key), None, None)
+
+
+class Flow:
+    """A throwaway git repository holding the D-120 sequence, one step at a time."""
+
+    def __init__(self, repo: Path, run: Path, emitted: calibration.EmitResult) -> None:
+        self.repo = repo
+        self.run = run
+        self.emitted = emitted
+        self.worksheet = emitted.worksheet_path
+        self.key_copy = run / "calibration-key.jsonl"
+        self.salt_copy = run / "calibration-salt.txt"
+
+    def git(self, *args: str, when: int | None = None) -> str:
+        return _git(self.repo, *args, when=when)
+
+    def rel(self, path: Path) -> str:
+        return path.relative_to(self.repo).as_posix()
+
+    def commit(self, message: str, *paths: Path) -> str:
+        self.git("add", "--", *[self.rel(p) for p in paths])
+        self.git("commit", "-q", "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def header(self) -> dict[str, Any]:
+        return json.loads(self.worksheet.read_text(encoding="utf-8").splitlines()[0])
+
+    def rows(self) -> list[dict[str, Any]]:
+        lines = self.worksheet.read_text(encoding="utf-8").splitlines()
+        return [json.loads(line) for line in lines[1:]]
+
+    def write_worksheet(
+        self, header: dict[str, Any], rows: list[dict[str, Any]]
+    ) -> None:
+        lines = [json.dumps(header, ensure_ascii=False)] + [
+            json.dumps(r, ensure_ascii=False) for r in rows
+        ]
+        self.worksheet.write_text(
+            "\n".join(lines) + "\n", encoding="utf-8", newline="\n"
+        )
+
+    def key_by_slice(self) -> dict[str, CalibrationKeyRow]:
+        return {k.slice_id: k for k in read_key_file(self.emitted.key_path)}
+
+    def commit_worksheet(self) -> str:
+        return self.commit("emit the worksheet", self.worksheet)
+
+    def fill_scores(self, edit: Any = None) -> None:
+        """The owner scores every row; `edit(slice_id, g, f)` may bend a value."""
+        keys = self.key_by_slice()
+        rows = self.rows()
+        for row in rows:
+            verdict = verdict_for(keys[row["slice_id"]].cache_key)
+            g, f = verdict.groundedness, verdict.faithfulness
+            if edit is not None:
+                g, f = edit(row["slice_id"], g, f)
+            row["human_groundedness"], row["human_faithfulness"] = g, f
+        self.write_worksheet(self.header(), rows)
+
+    def commit_scores(self) -> str:
+        return self.commit("the owner scores the worksheet", self.worksheet)
+
+    def copy_reveal(self) -> None:
+        shutil.copyfile(self.emitted.key_path, self.key_copy)
+        shutil.copyfile(self.emitted.salt_path, self.salt_copy)
+
+    def reveal(self) -> str:
+        self.copy_reveal()
+        return self.commit("reveal the key and the salt", self.key_copy, self.salt_copy)
+
+    def ingest(self, **kwargs: Any) -> Any:
+        return calibration.ingest_and_verify(
+            self.run,
+            self.worksheet,
+            self.key_copy,
+            self.salt_copy,
+            repo=self.repo,
+            **kwargs,
+        )
+
+    def complete(self) -> dict[str, str]:
+        e = self.commit_worksheet()
+        self.fill_scores()
+        c = self.commit_scores()
+        r = self.reveal()
+        return {"E": e, "C": c, "R": r}
+
+
+def start_flow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    key_rows_fn: Any = None,
+    header_updates: dict[str, Any] | None = None,
+    thresholds_text: str = THRESHOLDS_TEXT,
+) -> Flow:
+    """Floor commit, judge stage, emit; optionally a key tampered with a matching digest."""
+    repo = tmp_path / "throwaway"
+    (repo / "eval" / "src" / "lancet_eval").mkdir(parents=True)
+    (tmp_path / "empty.gitconfig").write_text("", encoding="utf-8")
+    (repo / ".gitignore").write_text("data/\n", encoding="utf-8")
+    (repo / THRESHOLDS_REL).write_text(thresholds_text, encoding="utf-8")
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "floor", when=int(time.time()) - 100_000)
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", API_KEY)
+    monkeypatch.setattr(judge_stage, "judge_once", varied_judge)
+    run = build_run(repo / "runs", standard_records(g_ids(12, 12, 6)), name="run")
+    run_judge_stage(run_dir=run, stage_cap=5.0, git_repo=repo)
+    emitted = emit_worksheet(
+        run, keys_root=repo / "data" / "calibration-keys", git_repo=repo
+    )
+    flow = Flow(repo, run, emitted)
+    if key_rows_fn is not None or header_updates:
+        header = flow.header()
+        if key_rows_fn is not None:
+            rows = key_rows_fn(read_key_file(emitted.key_path))
+            emitted.key_path.write_text(
+                "".join(r.model_dump_json() + "\n" for r in rows), encoding="utf-8"
+            )
+            salt = emitted.salt_path.read_text(encoding="utf-8").strip()
+            header["key_sha256"] = key_digest(salt, rows)
+        header.update(header_updates or {})
+        flow.write_worksheet(header, flow.rows())
+    return flow
+
+
+# --- the passing sequence -------------------------------------------------------------
+
+
+def test_the_ordered_sequence_passes_and_returns_the_joined_pairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    shas = flow.complete()
+    verified = flow.ingest()
+    assert len(verified.pairs) == 20
+    assert {p.slice_id for p in verified.pairs} == {f"S{i:02d}" for i in range(1, 21)}
+    keys = flow.key_by_slice()
+    for pair in verified.pairs:
+        key = keys[pair.slice_id]
+        assert (pair.arm, pair.question_id, pair.cache_key) == (
+            key.arm,
+            key.question_id,
+            key.cache_key,
+        )
+        verdict = verdict_for(key.cache_key)
+        assert pair.human_groundedness == verdict.groundedness
+        assert pair.human_faithfulness == verdict.faithfulness
+    assert verified.floor == 0.70
+    assert verified.emitted_at_sha == flow.header()["emitted_at_sha"]
+    assert verified.scores_commit == shas["C"]
+    assert verified.worksheet_commit == shas["E"]
+    assert verified.key_commit == shas["R"]
+    assert verified.salt_commit == shas["R"]
+    assert not (flow.run / "report.json").exists()
+
+
+def test_the_ingest_never_calls_the_judge_or_writes_a_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.complete()
+
+    def boom(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("the ingest must not call the judge")
+
+    monkeypatch.setattr(judge_stage, "judge_once", boom)
+    monkeypatch.setattr("lancet_eval.judge.judge_once", boom)
+    flow.ingest()
+    assert not (flow.run / "report.json").exists()
+
+
+# --- every ordering condition refuses, with its own message ---------------------------
+
+
+def test_an_untracked_worksheet_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.fill_scores()
+    flow.copy_reveal()
+    with pytest.raises(CalibrationError, match="is not tracked by git"):
+        flow.ingest()
+
+
+def test_a_dirty_worksheet_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.complete()
+    rows = flow.rows()
+    rows[0]["notes"] = "edited after the scores commit"
+    flow.write_worksheet(flow.header(), rows)
+    with pytest.raises(CalibrationError, match="uncommitted change"):
+        flow.ingest()
+
+
+@pytest.mark.parametrize("which", ["key", "salt"])
+def test_an_untracked_or_dirty_key_or_salt_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, which: str
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.commit_worksheet()
+    flow.fill_scores()
+    flow.commit_scores()
+    flow.copy_reveal()  # copied, never committed
+    with pytest.raises(CalibrationError, match="is not tracked by git"):
+        flow.ingest()
+    flow.commit("reveal", flow.key_copy, flow.salt_copy)
+    target = flow.key_copy if which == "key" else flow.salt_copy
+    target.write_text(target.read_text(encoding="utf-8") + "\n ", encoding="utf-8")
+    with pytest.raises(CalibrationError, match="uncommitted change"):
+        flow.ingest()
+
+
+def test_a_path_outside_the_repository_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.complete()
+    outside = tmp_path / "elsewhere.jsonl"
+    shutil.copyfile(flow.worksheet, outside)
+    with pytest.raises(CalibrationError, match="is not inside the repository"):
+        calibration.ingest_and_verify(
+            flow.run, outside, flow.key_copy, flow.salt_copy, repo=flow.repo
+        )
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [None, 0, 6, "3", 3.0, True, -1],
+    ids=["blank", "zero", "six", "string", "float", "bool", "negative"],
+)
+def test_a_blank_or_out_of_range_or_non_integer_score_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: Any
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.commit_worksheet()
+    flow.fill_scores(lambda sid, g, f: (bad, f) if sid == "S07" else (g, f))
+    flow.commit_scores()
+    flow.reveal()
+    with pytest.raises(CalibrationError, match=r"human score of S07"):
+        flow.ingest()
+
+
+def test_scores_committed_in_the_emit_commit_itself_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.fill_scores()  # the owner scored before the worksheet was ever committed
+    flow.commit_worksheet()
+    flow.reveal()
+    with pytest.raises(CalibrationError, match="first added"):
+        flow.ingest()
+
+
+def test_a_key_and_salt_committed_with_the_scores_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.commit_worksheet()
+    flow.fill_scores()
+    flow.copy_reveal()
+    flow.commit(
+        "scores and the key together", flow.worksheet, flow.key_copy, flow.salt_copy
+    )
+    with pytest.raises(CalibrationError, match="no later than the scores commit"):
+        flow.ingest()
+
+
+@pytest.mark.parametrize("which", ["key", "salt"])
+def test_a_key_or_salt_committed_before_the_scores_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, which: str
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.copy_reveal()
+    early = flow.key_copy if which == "key" else flow.salt_copy
+    flow.commit("an early reveal", flow.worksheet, early)
+    flow.fill_scores()
+    flow.commit_scores()
+    flow.reveal()
+    with pytest.raises(CalibrationError, match="no later than the scores commit"):
+        flow.ingest()
+
+
+def test_a_key_row_edit_after_the_hash_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.commit_worksheet()
+    flow.fill_scores()
+    flow.commit_scores()
+    rows = read_key_file(flow.emitted.key_path)
+    other = "hybrid" if rows[0].arm != "hybrid" else "dense-only"
+    swapped = rows[0].model_copy(update={"arm": other})
+    flow.emitted.key_path.write_text(
+        "".join(r.model_dump_json() + "\n" for r in [swapped, *rows[1:]]),
+        encoding="utf-8",
+    )
+    flow.reveal()
+    with pytest.raises(CalibrationError, match="key digest"):
+        flow.ingest()
+
+
+def test_a_different_salt_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.commit_worksheet()
+    flow.fill_scores()
+    flow.commit_scores()
+    flow.emitted.salt_path.write_text("0" * 64 + "\n", encoding="utf-8")
+    flow.reveal()
+    with pytest.raises(CalibrationError, match="key digest"):
+        flow.ingest()
+
+
+def test_a_slice_id_missing_from_the_key_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch, key_rows_fn=lambda rows: rows[:-1])
+    flow.complete()
+    with pytest.raises(CalibrationError, match="not in the key file"):
+        flow.ingest()
+
+
+def test_a_key_cache_key_missing_from_the_cache_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def alien(rows: list[CalibrationKeyRow]) -> list[CalibrationKeyRow]:
+        return [rows[0].model_copy(update={"cache_key": "f" * 64}), *rows[1:]]
+
+    flow = start_flow(tmp_path, monkeypatch, key_rows_fn=alien)
+    flow.complete()
+    with pytest.raises(CalibrationError, match="no judge cache entry"):
+        flow.ingest()
+
+
+def test_a_judgeable_record_without_a_cache_entry_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.complete()
+    slice_keys = {k.cache_key for k in flow.key_by_slice().values()}
+    cache = JudgeCache(flow.run / "judge_cache.json")
+    victim = next(k for k in sorted(cache.entries) if k not in slice_keys)
+    del cache.entries[victim]
+    cache.save()
+    with pytest.raises(CalibrationError, match="without a judge cache entry"):
+        flow.ingest()
+
+
+def test_the_floor_at_the_emit_commit_must_equal_the_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch, header_updates={"d114_floor": 0.65})
+    flow.complete()
+    with pytest.raises(CalibrationError, match="calibration floor"):
+        flow.ingest()
+
+
+def test_the_floor_must_equal_the_current_constant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.complete()
+    monkeypatch.setattr(thresholds, "JUDGE_QWK_TRUST_FLOOR", 0.5)
+    with pytest.raises(CalibrationError, match="calibration floor"):
+        flow.ingest()
+
+
+def test_a_header_edited_after_the_worksheet_was_first_committed_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.commit_worksheet()
+    flow.fill_scores()
+    header = flow.header()
+    header["seed"] = 7
+    flow.write_worksheet(header, flow.rows())
+    flow.commit_scores()
+    flow.reveal()
+    with pytest.raises(CalibrationError, match="header changed"):
+        flow.ingest()
+
+
+def test_a_question_edited_after_the_worksheet_was_first_committed_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.commit_worksheet()
+    flow.fill_scores()
+    rows = flow.rows()
+    rows[0]["answer"] = rows[0]["answer"] + " (edited)"
+    flow.write_worksheet(flow.header(), rows)
+    flow.commit_scores()
+    flow.reveal()
+    with pytest.raises(CalibrationError, match="changed after the first commit"):
+        flow.ingest()
+
+
+def test_an_emit_sha_that_is_not_an_ancestor_of_the_scores_commit_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.git("checkout", "-q", "-b", "side")
+    (flow.repo / "side.txt").write_text("side\n", encoding="utf-8")
+    flow.git("add", "side.txt")
+    flow.git("commit", "-q", "-m", "a commit on a side branch")
+    side = flow.git("rev-parse", "HEAD")
+    flow.git("checkout", "-q", "-")
+    header = flow.header()
+    header["emitted_at_sha"] = side
+    flow.write_worksheet(header, flow.rows())
+    flow.complete()
+    with pytest.raises(CalibrationError, match="not an ancestor of the scores commit"):
+        flow.ingest()
+
+
+def test_a_judge_error_on_a_slice_item_is_attrition_not_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flow = start_flow(tmp_path, monkeypatch)
+    flow.complete()
+    key = flow.key_by_slice()["S05"]
+    cache = JudgeCache(flow.run / "judge_cache.json")
+    old = cache.get(key.cache_key)
+    assert old is not None
+    cache.set(key.cache_key, old.model_copy(update={"verdict": None, "error": "boom"}))
+    verified = flow.ingest()
+    assert len(verified.pairs) == 20  # the pair is joined; the summary drops it
+
+
+# --- the D-114 label ------------------------------------------------------------------
+
+
+def _qwk(value: float | None, state: str = "computed") -> AgreementResult:
+    return AgreementResult(value=value, state=state)
+
+
+def test_an_undefined_qwk_is_labelled_first() -> None:
+    label = calibration.d114_label(
+        _qwk(None, "undefined_expected_agreement"), 10, 0.70
+    )
+    assert label == "uncalibrated: QWK undefined"
+
+
+def test_fifteen_scored_pairs_are_attrition_whatever_the_qwk() -> None:
+    assert (
+        calibration.d114_label(_qwk(0.9), 15, 0.70) == "uncalibrated: slice attrition"
+    )
+    assert calibration.d114_label(_qwk(0.9), 16, 0.70) == "calibrated"
+
+
+def test_a_qwk_below_the_floor_is_uncalibrated() -> None:
+    assert calibration.d114_label(_qwk(0.69), 20, 0.70) == "uncalibrated"
+
+
+def test_a_qwk_of_exactly_the_floor_reads_calibrated() -> None:
+    assert calibration.d114_label(_qwk(0.70), 20, 0.70) == "calibrated"
+
+
+def test_the_label_codes_are_the_pinned_floats() -> None:
+    assert calibration.label_code("calibrated") == 1.0
+    assert calibration.label_code("uncalibrated") == 0.0
+    assert calibration.label_code("uncalibrated: slice attrition") == -1.0
+    assert calibration.label_code("uncalibrated: QWK undefined") == -2.0
+    with pytest.raises(KeyError):
+        calibration.label_code("calibrated?")
+
+
+def test_a_qwk_at_the_floor_with_a_low_spearman_prints_the_divergence_line() -> None:
+    line = calibration.legacy_calibration_line("groundedness", 0.72, 0.5, "calibrated")
+    assert not line.satisfied
+    assert line.text.startswith("legacy (06.3), non-governing")
+    assert (
+        line.divergence
+        == "legacy calibration_state and D-114 disagree for groundedness; D-114 governs"
+    )
+
+
+def test_slice_attrition_with_both_statistics_high_also_diverges() -> None:
+    line = calibration.legacy_calibration_line(
+        "faithfulness", 0.9, 0.9, "uncalibrated: slice attrition"
+    )
+    assert line.satisfied
+    assert line.divergence is not None and "faithfulness" in line.divergence
+
+
+def test_agreeing_gates_print_no_divergence_line() -> None:
+    both = calibration.legacy_calibration_line("groundedness", 0.9, 0.9, "calibrated")
+    assert both.satisfied and both.divergence is None
+    neither = calibration.legacy_calibration_line(
+        "groundedness", 0.3, 0.9, "uncalibrated"
+    )
+    assert not neither.satisfied and neither.divergence is None
+    undefined = calibration.legacy_calibration_line(
+        "groundedness", None, None, "uncalibrated: QWK undefined"
+    )
+    assert not undefined.satisfied and undefined.divergence is None
+
+
+# --- agreement_summary ----------------------------------------------------------------
+
+HUMAN_G = [5, 4, 3, 2, 1, 5, 4, 3, 2, 1, 5, 4, 3, 2, 1, 5, 5, 4, 3, 2]
+JUDGE_G = [5, 4, 3, 3, 1, 5, 4, 2, 2, 1, 5, 5, 3, 2, 1, 5, 4, 4, 3, 2]
+HUMAN_F = [4, 4, 3, 2, 2, 5, 4, 3, 1, 1, 5, 4, 3, 2, 1, 5, 5, 3, 3, 2]
+JUDGE_F = [4, 5, 3, 2, 2, 5, 3, 3, 1, 1, 4, 4, 3, 2, 1, 5, 5, 3, 3, 1]
+
+
+def make_verified(floor: float = 0.70) -> calibration.VerifiedSlice:
+    header = CalibrationHeader(
+        corpus="c",
+        judge_prompt_version="v1",
+        judge_model=MODEL,
+        seed=42,
+        emitted_at_sha=SHA,
+        d114_floor=floor,
+        key_sha256="0" * 64,
+        rubric="r",
+        mechanics="m",
+    )
+    pairs = tuple(
+        calibration.SlicePair(
+            slice_id=f"S{i + 1:02d}",
+            arm=ARMS[i % 4],
+            question_id=f"q{i}",
+            question_type="comparison_query",
+            cache_key=f"{i:064x}",
+            human_groundedness=HUMAN_G[i],
+            human_faithfulness=HUMAN_F[i],
+        )
+        for i in range(20)
+    )
+    return calibration.VerifiedSlice(
+        header=header, pairs=pairs, floor=floor, emitted_at_sha=SHA
+    )
+
+
+def make_cache(
+    tmp_path: Path, *, errors: set[int] | None = None, missing: set[int] | None = None
+) -> JudgeCache:
+    cache = JudgeCache(tmp_path / "judge_cache.json")
+    for i in range(20):
+        if i in (missing or set()):
+            continue
+        failed = i in (errors or set())
+        cache.entries[f"{i:064x}"] = JudgeCacheEntry(
+            cache_key=f"{i:064x}",
+            prompt_version="v1",
+            judge_model=MODEL,
+            question="q",
+            answer="a",
+            evidence="e",
+            verdict=None
+            if failed
+            else JudgeVerdict(groundedness=JUDGE_G[i], faithfulness=JUDGE_F[i]),
+            error="boom" if failed else None,
+        )
+    return cache
+
+
+def test_the_summary_computes_the_point_statistics_and_every_companion(
+    tmp_path: Path,
+) -> None:
+    from lancet_eval.agreement import (
+        quadratic_weighted_kappa,
+        spearman_rank_correlation,
+    )
+
+    summary = calibration.agreement_summary(make_verified(), make_cache(tmp_path))
+    for dim, human, judge in (
+        ("groundedness", HUMAN_G, JUDGE_G),
+        ("faithfulness", HUMAN_F, JUDGE_F),
+    ):
+        d = summary["dimensions"][dim]
+        qwk = quadratic_weighted_kappa(human, judge).value
+        rho = spearman_rank_correlation(human, judge).value
+        assert d["n_pairs"] == 20
+        assert d["qwk"] == pytest.approx(qwk)
+        assert d["spearman"] == pytest.approx(rho)
+        assert d["exact_agreement"] == pytest.approx(
+            sum(h == j for h, j in zip(human, judge, strict=True)) / 20
+        )
+        assert d["mad"] == pytest.approx(
+            sum(abs(h - j) for h, j in zip(human, judge, strict=True)) / 20
+        )
+        assert d["mean_signed_difference"] == pytest.approx(
+            sum(j - h for h, j in zip(human, judge, strict=True)) / 20
+        )
+        assert d["judge_marginals"] == {str(v): judge.count(v) for v in range(1, 6)}
+        assert d["human_marginals"] == {str(v): human.count(v) for v in range(1, 6)}
+        assert d["joint_5_5_share"] == pytest.approx(
+            sum(h == 5 and j == 5 for h, j in zip(human, judge, strict=True)) / 20
+        )
+        assert d["qwk_ci_lower"] <= d["qwk"] <= d["qwk_ci_upper"]
+        assert d["spearman_ci_lower"] <= d["spearman"] <= d["spearman_ci_upper"]
+        assert isinstance(d["qwk_dropped_resamples"], int)
+        assert isinstance(d["spearman_dropped_resamples"], int)
+        per_arm = d["per_arm_exact_agreement"]
+        assert set(per_arm) == set(ARMS)
+        for arm_index, arm in enumerate(ARMS):
+            idx = range(arm_index, 20, 4)
+            assert per_arm[arm] == {
+                "n": 5,
+                "exact": sum(human[i] == judge[i] for i in idx),
+            }
+        assert d["label"] in {"calibrated", "uncalibrated"}
+        assert d["label_code"] == calibration.label_code(d["label"])
+    assert summary["dropped_slice_ids"] == []
+
+
+def test_both_cis_are_computed_at_b_10000_with_seed_42(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import agreement
+
+    calls: list[dict[str, Any]] = []
+    real = agreement.bootstrap_agreement_ci_counted
+
+    def spy(r1: Any, r2: Any, metric: str, **kwargs: Any) -> Any:
+        calls.append({"metric": metric, **kwargs})
+        return real(r1, r2, metric, **kwargs)
+
+    monkeypatch.setattr(agreement, "bootstrap_agreement_ci_counted", spy)
+    calibration.agreement_summary(make_verified(), make_cache(tmp_path))
+    assert sorted(c["metric"] for c in calls) == [
+        "kappa",
+        "kappa",
+        "spearman",
+        "spearman",
+    ]
+    for call in calls:
+        assert call["b"] == 10_000
+        assert call["seed"] == 42
+
+
+def test_an_error_verdict_is_dropped_and_its_slice_id_listed(tmp_path: Path) -> None:
+    summary = calibration.agreement_summary(
+        make_verified(), make_cache(tmp_path, errors={3, 9})
+    )
+    assert summary["dropped_slice_ids"] == ["S04", "S10"]
+    for dim in ("groundedness", "faithfulness"):
+        assert summary["dimensions"][dim]["n_pairs"] == 18
+    per_arm = summary["dimensions"]["groundedness"]["per_arm_exact_agreement"]
+    assert per_arm["hybrid+graph"]["n"] == 4  # S04 is index 3 -> arm index 3
+    assert per_arm["bm25-only"]["n"] == 4  # S10 is index 9 -> arm index 1
+    assert sum(v["n"] for v in per_arm.values()) == 18
+
+
+def test_five_judge_errors_leave_fifteen_pairs_and_read_slice_attrition(
+    tmp_path: Path,
+) -> None:
+    summary = calibration.agreement_summary(
+        make_verified(), make_cache(tmp_path, errors={0, 1, 2, 3, 4})
+    )
+    for dim in ("groundedness", "faithfulness"):
+        d = summary["dimensions"][dim]
+        assert d["n_pairs"] == 15
+        assert d["label"] == "uncalibrated: slice attrition"
+        assert d["label_code"] == -1.0
+    assert len(summary["dropped_slice_ids"]) == 5
+
+
+def test_a_pair_with_no_cache_entry_is_refused_by_the_summary(tmp_path: Path) -> None:
+    with pytest.raises(CalibrationError, match="no judge cache entry"):
+        calibration.agreement_summary(
+            make_verified(), make_cache(tmp_path, missing={2})
+        )
+
+
+def test_the_summary_prints_the_legacy_line_and_the_divergence_when_they_differ(
+    tmp_path: Path,
+) -> None:
+    summary = calibration.agreement_summary(make_verified(), make_cache(tmp_path))
+    legacy = summary["legacy_lines"]
+    assert len(legacy) == 2
+    assert all(line.startswith("legacy (06.3), non-governing") for line in legacy)
+    for dim in ("groundedness", "faithfulness"):
+        d = summary["dimensions"][dim]
+        disagree = d["legacy_satisfied"] != (d["label"] == "calibrated")
+        line = f"legacy calibration_state and D-114 disagree for {dim}; D-114 governs"
+        assert (line in summary["divergence_lines"]) == disagree
+
+
+def test_an_undefined_qwk_slice_is_labelled_and_carries_no_ci(tmp_path: Path) -> None:
+    verified = make_verified()
+    flat = tuple(p.model_copy(update={"human_groundedness": 3}) for p in verified.pairs)
+    verified = verified.model_copy(update={"pairs": flat})
+    cache = JudgeCache(tmp_path / "judge_cache.json")
+    for p in flat:
+        cache.entries[p.cache_key] = JudgeCacheEntry(
+            cache_key=p.cache_key,
+            prompt_version="v1",
+            judge_model=MODEL,
+            question="q",
+            answer="a",
+            evidence="e",
+            verdict=JudgeVerdict(groundedness=3, faithfulness=3),
+        )
+    d = calibration.agreement_summary(verified, cache)["dimensions"]["groundedness"]
+    assert d["label"] == "uncalibrated: QWK undefined"
+    assert d["label_code"] == -2.0
+    assert d["qwk"] is None
+    assert d["qwk_ci_lower"] is None

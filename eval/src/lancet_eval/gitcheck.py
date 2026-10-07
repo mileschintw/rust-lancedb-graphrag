@@ -170,6 +170,27 @@ def last_commit_touching(path: str, *, repo: Path | None = None) -> str | None:
     return sha or None
 
 
+def first_commit_adding(path: str, *, repo: Path | None = None) -> str | None:
+    """Returns the oldest commit that added `path`, or None when none did.
+
+    Uses `git log --diff-filter=A --reverse`, so it is the commit where the file first
+    entered history, whatever later commits changed it.
+
+    Args:
+        path: Repo-relative path.
+        repo: Repository to query; the live repository when None.
+
+    Returns:
+        The full sha, or None when `path` was never added.
+    """
+    _require_plain(path, "path")
+    res = _run(
+        ["log", "--diff-filter=A", "--reverse", "--format=%H", "--", path], repo=repo
+    )
+    lines = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+    return lines[0] if lines else None
+
+
 def preregistration_problems(
     tokens: tuple[str, ...],
     *,

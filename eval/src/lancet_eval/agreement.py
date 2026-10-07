@@ -281,3 +281,17 @@ def bootstrap_agreement_ci(
     ci_lo = _percentile(estimates, 0.025)
     ci_hi = _percentile(estimates, 0.975)
     return ci_lo, ci_hi
+
+
+def bootstrap_agreement_ci_counted(
+    rater1: Sequence[int],
+    rater2: Sequence[int],
+    metric: str,
+    *,
+    min_rating: int = 1,
+    max_rating: int = 5,
+    seed: int = 42,
+    b: int = 1000,
+) -> tuple[tuple[float, float] | None, int]:
+    """RED stub: the counting variant of `bootstrap_agreement_ci` (06.3.5-12)."""
+    return None, 0

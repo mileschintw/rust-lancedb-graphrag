@@ -211,3 +211,70 @@ def test_bootstrap_ci_reproducibility_and_bounds() -> None:
         [3, 3, 3], [3, 3, 3], "kappa", min_rating=1, max_rating=5
     )
     assert d_ci is None
+
+
+# --- 06.3.5-12: the counting variant (D-113, AI-SPEC 5 "Agreement statistics") ---------
+
+R1 = [1, 2, 3, 4, 5, 2, 3, 4, 5, 1, 2, 4]
+R2 = [1, 2, 2, 4, 5, 3, 3, 4, 4, 1, 3, 4]
+
+
+@pytest.mark.parametrize("metric", ["kappa", "spearman"])
+def test_the_counted_variant_returns_the_same_ci_as_the_original(metric: str) -> None:
+    for seed, b in ((42, 1000), (7, 500), (42, 2000)):
+        original = bootstrap_agreement_ci(R1, R2, metric, seed=seed, b=b)
+        counted, dropped = agreement_mod.bootstrap_agreement_ci_counted(
+            R1, R2, metric, seed=seed, b=b
+        )
+        assert counted == original
+        assert counted is not None
+        assert dropped == 0
+
+
+def test_the_counted_variant_counts_the_resamples_dropped_as_undefined() -> None:
+    # One 5 among eleven 1s on both raters: a resample without the 5 has a single
+    # rating on each side, so its expected agreement is undefined and it is dropped.
+    r1 = [1] * 11 + [5]
+    r2 = [1] * 11 + [5]
+    ci, dropped = agreement_mod.bootstrap_agreement_ci_counted(
+        r1, r2, "kappa", seed=42, b=1000
+    )
+    assert dropped > 0
+    assert dropped < 1000
+    # the same sample through the original: identical interval, drops stay silent
+    assert bootstrap_agreement_ci(r1, r2, "kappa", seed=42, b=1000) == ci
+
+
+def test_the_counted_variant_reports_no_interval_when_the_base_is_undefined() -> None:
+    assert agreement_mod.bootstrap_agreement_ci_counted(
+        [3, 3, 3], [3, 3, 3], "kappa", b=100
+    ) == (None, 0)
+    assert agreement_mod.bootstrap_agreement_ci_counted([], [], "kappa", b=100) == (
+        None,
+        0,
+    )
+
+
+def test_a_single_pair_has_no_interval_because_its_statistic_is_undefined() -> None:
+    assert agreement_mod.bootstrap_agreement_ci_counted([3], [3], "kappa", b=100) == (
+        None,
+        0,
+    )
+    assert agreement_mod.bootstrap_agreement_ci_counted(
+        [1], [1], "spearman", b=100
+    ) == (None, 0)
+
+
+def test_the_counted_variant_rejects_an_unknown_metric() -> None:
+    with pytest.raises(ValueError, match="Unknown metric"):
+        agreement_mod.bootstrap_agreement_ci_counted(R1, R2, "pearson")
+
+
+def test_the_original_keeps_its_signature_and_its_default_b() -> None:
+    params = inspect.signature(bootstrap_agreement_ci).parameters
+    assert params["b"].default == 1000
+    assert params["seed"].default == 42
+    counted = inspect.signature(
+        agreement_mod.bootstrap_agreement_ci_counted
+    ).parameters
+    assert list(counted) == list(params)
