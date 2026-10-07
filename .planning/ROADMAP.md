@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 7/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 9/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1089,8 +1089,8 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 06.3.5-08-PLAN.md — Pre-registration: abstention predicate and 06.3.5 judgeable policy, exact sign-flip and Holm, P4, one `thresholds.py` commit, and the D-73 refusals in run and score
-- [ ] 06.3.5-09-PLAN.md — `unpark_gates --stage heldout` per arm plus pooled (D-109), rehearsal-pool arm-mode canaries with the legacy skip (D-124), and the per-arm provider map (D-96)
+- [x] 06.3.5-08-PLAN.md — Pre-registration: abstention predicate and 06.3.5 judgeable policy, exact sign-flip and Holm, P4, one `thresholds.py` commit, and the D-73 refusals in run and score
+- [x] 06.3.5-09-PLAN.md — `unpark_gates --stage heldout` per arm plus pooled (D-109), rehearsal-pool arm-mode canaries with the legacy skip (D-124), and the per-arm provider map (D-96)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
