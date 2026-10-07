@@ -985,7 +985,7 @@ def compare_benchmark(
     judge cache and never modifies report.json. It refuses unless report.json carries
     the judged dimensions and judged-result.json exists.
     """
-    from lancet_eval.comparison import write_comparison
+    from lancet_eval.comparison import SIDECAR_FILES, write_comparison
 
     def line(text: str, **kwargs: Any) -> None:
         console.print(text, markup=False, highlight=False, soft_wrap=True, **kwargs)
@@ -1004,13 +1004,8 @@ def compare_benchmark(
     for family in comparison.families:
         reads = ", ".join(f"{c.arm}: {c.decision}" for c in family.comparisons)
         line(f"Holm family {family.primary}: {reads}")
-    for name in comparison_files():
+    for name in SIDECAR_FILES:
         line(f"Wrote {run / name}")
-
-
-def comparison_files() -> tuple[str, ...]:
-    """The sidecars `compare` writes into the run directory."""
-    return ("comparison.json", "comparison.md")
 
 
 def _normalize_ws(text: str) -> str:

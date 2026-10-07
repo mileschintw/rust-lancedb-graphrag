@@ -49,7 +49,12 @@ from lancet_eval.stats import exact_signflip_p, holm_stepdown
 from lancet_eval.thresholds import COMMITTED_THRESHOLDS, PREREGISTRATION_06_3_5
 
 SCHEMA_VERSION = 1
-SIDECAR_FILES: tuple[str, ...] = ("comparison.json", "comparison.md")
+SIDECAR_FILES: tuple[str, ...] = (
+    "comparison.json",
+    "comparison.md",
+    "chart.json",
+    "chart.svg",
+)
 
 # ---- labels and fixed texts ----------------------------------------------------------
 
@@ -1887,7 +1892,7 @@ def _write_text(path: Path, text: str) -> None:
 def write_comparison(
     run_dir: Path | str, *, gold_chunks_path: Path | str | None = None
 ) -> Comparison:
-    """Builds the comparison and writes `comparison.json` and `comparison.md`.
+    """Builds the comparison and writes its four sidecars into the run directory.
 
     Everything is built in memory before anything is written, so a refusal leaves no
     partial sidecar. `report.json` and `report.schema.json` are never touched.
@@ -1906,16 +1911,236 @@ def write_comparison(
     comparison = build_comparison(run, gold_chunks_path=gold_chunks_path)
     comparison_json = _dump_json(comparison.model_dump(mode="json"))
     comparison_md = render_markdown(comparison)
+    chart_json = _dump_json(build_chart_data(comparison))
+    # chart.svg is rendered from the chart.json text alone (D-126)
+    chart_svg = render_chart_svg(json.loads(chart_json))
     _write_text(run / "comparison.json", comparison_json)
     _write_text(run / "comparison.md", comparison_md)
+    _write_text(run / "chart.json", chart_json)
+    _write_text(run / "chart.svg", chart_svg)
     return comparison
 
 
+# ---- chart.json and chart.svg (D-115, D-126) --------------------------------------
+
+CHART_METRICS = ("paper_hits_at_4", "answer_usable_p4")
+_CHART_METRIC_LABELS = {
+    "paper_hits_at_4": "Hits@4, paper convention (P4, ID rule)",
+    "answer_usable_p4": "answer_usable (P4)",
+}
+_CHART_COLORS = ("#4C78A8", "#F58518", "#54A24B", "#B279A2")
+_TICK_COUNT = 5
+
+
 def build_chart_data(comparison: Comparison) -> dict[str, Any]:
-    """RED stub."""
-    raise NotImplementedError
+    """The chart's machine-readable source (`chart.json`, schema version 1).
+
+    One series row per metric and arm: the per-arm value read from `report.json`, its
+    Wilson 95% bounds and n. The cited paper reference and its caveat travel with the
+    data, so the interim chart and Phase 6.4's final chart can be regenerated from this
+    file alone.
+
+    Args:
+        comparison: The built comparison.
+
+    Returns:
+        A JSON-serialisable dict.
+    """
+    series = []
+    for metric in CHART_METRICS:
+        for arm in comparison.arms:
+            cell = arm.cells[metric]
+            series.append(
+                {
+                    "metric": metric,
+                    "arm": arm.arm,
+                    "value": cell.value,
+                    "ci_lo": cell.ci_lo,
+                    "ci_hi": cell.ci_hi,
+                    "n": cell.n,
+                }
+            )
+    ref = comparison.paper_reference
+    caveat = (
+        f"Cited, not comparable: {ref.citation} ({ref.configuration}) is shown "
+        "beside these arms only as a reference. " + " ".join(ref.caveat)
+    )
+    if comparison.robustness.paper_rows_label is not None:
+        caveat += (
+            " Hits@4 here is under the ID rule: "
+            f"{comparison.robustness.paper_rows_label}."
+        )
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "run": comparison.run.run,
+        "arms": [a.arm for a in comparison.arms],
+        "series": series,
+        "paper_reference": {
+            "citation": ref.citation,
+            "caption": ref.caption,
+            "configuration": ref.configuration,
+            "rows": [row.model_dump() for row in ref.rows],
+        },
+        "caveat": caveat,
+    }
+
+
+def _f2(value: float) -> str:
+    """A coordinate at a fixed two decimals, never `-0.00`."""
+    text = f"{value:.2f}"
+    return "0.00" if text == "-0.00" else text
+
+
+def _clamp01(value: float) -> float:
+    return min(1.0, max(0.0, value))
+
+
+def _chart_geometry(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Every number the SVG shows, computed from the chart data alone."""
+    arms: list[str] = list(data["arms"])
+    series: list[Mapping[str, Any]] = list(data["series"])
+    metrics: list[str] = []
+    for row in series:
+        if row["metric"] not in metrics:
+            metrics.append(row["metric"])
+    width, height = 760, 520
+    left, right, top, bottom = 70, 730, 80, 360
+    plot_h = bottom - top
+    plot_w = right - left
+    group_w = plot_w / max(1, len(metrics))
+    slot = group_w * 0.72 / max(1, len(arms))
+    bar_w = slot * 0.8
+
+    def y_of(value: float) -> float:
+        return bottom - _clamp01(value) * plot_h
+
+    ticks = [
+        {
+            "y": _f2(y_of(i / _TICK_COUNT)),
+            "label_y": _f2(y_of(i / _TICK_COUNT) + 4),
+            "label": f"{i / _TICK_COUNT:.1f}",
+        }
+        for i in range(_TICK_COUNT + 1)
+    ]
+    groups: list[dict[str, Any]] = []
+    for gi, metric in enumerate(metrics):
+        group_left = left + gi * group_w
+        start = group_left + group_w * 0.14
+        bars: list[dict[str, Any]] = []
+        for ai, arm in enumerate(arms):
+            row = next(
+                (r for r in series if r["metric"] == metric and r["arm"] == arm), None
+            )
+            if row is None or row["value"] is None:
+                continue
+            x = start + ai * slot + (slot - bar_w) / 2
+            value = _clamp01(float(row["value"]))
+            top_y = y_of(value)
+            err = None
+            label_y = top_y - 5
+            if row["ci_lo"] is not None and row["ci_hi"] is not None:
+                cx = x + bar_w / 2
+                y_hi = y_of(float(row["ci_hi"]))
+                y_lo = y_of(float(row["ci_lo"]))
+                err = {
+                    "cx": _f2(cx),
+                    "y_hi": _f2(y_hi),
+                    "y_lo": _f2(y_lo),
+                    "cap_left": _f2(cx - 4),
+                    "cap_right": _f2(cx + 4),
+                }
+                label_y = min(top_y, y_hi) - 5
+            bars.append(
+                {
+                    "arm": arm,
+                    "value_text": f"{float(row['value']):.2f}",
+                    "x": _f2(x),
+                    "y": _f2(top_y),
+                    "width": _f2(bar_w),
+                    "height": _f2(value * plot_h),
+                    "color": _CHART_COLORS[ai % len(_CHART_COLORS)],
+                    "err": err,
+                    "label_x": _f2(x + bar_w / 2),
+                    "label_y": _f2(label_y),
+                }
+            )
+        groups.append(
+            {
+                "metric": metric,
+                "label": _CHART_METRIC_LABELS.get(metric, metric),
+                "label_x": _f2(start + slot * len(arms) / 2),
+                "bars": bars,
+            }
+        )
+    legend = []
+    cursor = float(left)
+    for ai, arm in enumerate(arms):
+        legend.append(
+            {
+                "arm": arm,
+                "color": _CHART_COLORS[ai % len(_CHART_COLORS)],
+                "x": _f2(cursor),
+                "label_x": _f2(cursor + 18),
+            }
+        )
+        cursor += 18 + 7 * len(arm) + 22
+    footnote_texts = [
+        "Error bars are Wilson 95% intervals on P4 (unadjusted, estimation only).",
+        "Source: chart.json (schema_version 1). Interim chart; Phase 6.4 owns the "
+        "final chart.",
+        f"{data['paper_reference']['citation']} is cited in chart.json and "
+        "comparison.md only; not comparable, see its caveat.",
+    ]
+    if APPROXIMATION_LABEL in str(data["caveat"]):
+        footnote_texts.append(
+            f"Hits@4 is under the ID rule: {APPROXIMATION_LABEL}."
+        )
+    footnotes = [
+        {"y": _f2(bottom + 90 + 14 * i), "text": text}
+        for i, text in enumerate(footnote_texts)
+    ]
+    return {
+        "width": width,
+        "height": height,
+        "left": left,
+        "right": right,
+        "top": top,
+        "bottom": bottom,
+        "axis_title_y": _f2((top + bottom) / 2),
+        "title": f"Four-arm comparison: {data['run']}",
+        "subtitle": "Paper-convention Hits@4 and answer_usable per arm, on P4",
+        "desc": "Grouped bars of the per-arm value with Wilson 95% error bars.",
+        "ticks": ticks,
+        "groups": groups,
+        "group_label_y": _f2(bottom + 22),
+        "legend": legend,
+        "legend_y": _f2(bottom + 48),
+        "legend_text_y": _f2(bottom + 58),
+        "footnotes": footnotes,
+    }
 
 
 def render_chart_svg(chart_data: Mapping[str, Any]) -> str:
-    """RED stub."""
-    raise NotImplementedError
+    """Renders `chart.svg` from the chart data alone, as a Jinja2 SVG 1.1 document.
+
+    Grouped bars (one group per metric, one bar per arm) on a fixed 0 to 1 scale, with
+    Wilson error bars at the CI bounds. Coordinates use a fixed two decimals and
+    nothing depends on time or randomness, so two renders of the same data are
+    byte-identical.
+
+    Args:
+        chart_data: The dict `build_chart_data` returns (or its JSON round trip).
+
+    Returns:
+        The SVG text, ending with a newline.
+    """
+    template_dir = Path(__file__).resolve().parent / "templates"
+    env = Environment(
+        loader=FileSystemLoader(template_dir, encoding="utf-8"),
+        undefined=StrictUndefined,
+        autoescape=True,
+        keep_trailing_newline=True,
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+    return env.get_template("chart.svg.j2").render(g=_chart_geometry(chart_data))

@@ -1321,7 +1321,7 @@ def test_two_renders_of_the_same_chart_json_are_byte_identical(written: Any) -> 
     assert "\r" not in first
     # coordinates use a fixed number of decimals, never full float precision
     assert not re.search(r"=\"-?\d+\.\d{3,}\"", first)
-    assert "e-" not in re.sub(r"[A-Za-z-]+e-[A-Za-z]+", "", first)
+    assert not re.search(r"\d[eE]-\d", first)
 
 
 def test_a_missing_value_draws_no_bar_and_text_is_escaped() -> None:

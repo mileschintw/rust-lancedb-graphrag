@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="{{ g.width }}" height="{{ g.height }}" viewBox="0 0 {{ g.width }} {{ g.height }}" role="img" aria-labelledby="chart-title chart-desc">
+<title id="chart-title">{{ g.title }}</title>
+<desc id="chart-desc">{{ g.desc }}</desc>
+<rect class="background" x="0" y="0" width="{{ g.width }}" height="{{ g.height }}" fill="#ffffff"/>
+<text class="title" x="{{ g.left }}" y="30" font-family="sans-serif" font-size="16" font-weight="bold">{{ g.title }}</text>
+<text class="subtitle" x="{{ g.left }}" y="50" font-family="sans-serif" font-size="11" fill="#444444">{{ g.subtitle }}</text>
+<g class="axis">
+{% for tick in g.ticks %}
+<line class="gridline" x1="{{ g.left }}" y1="{{ tick.y }}" x2="{{ g.right }}" y2="{{ tick.y }}" stroke="#dddddd" stroke-width="1"/>
+<text class="tick-label" x="{{ g.left - 8 }}" y="{{ tick.label_y }}" text-anchor="end" font-family="sans-serif" font-size="11">{{ tick.label }}</text>
+{% endfor %}
+<line class="axis-line" x1="{{ g.left }}" y1="{{ g.top }}" x2="{{ g.left }}" y2="{{ g.bottom }}" stroke="#333333" stroke-width="1"/>
+<line class="axis-line" x1="{{ g.left }}" y1="{{ g.bottom }}" x2="{{ g.right }}" y2="{{ g.bottom }}" stroke="#333333" stroke-width="1"/>
+<text class="axis-title" x="18" y="{{ g.axis_title_y }}" transform="rotate(-90 18 {{ g.axis_title_y }})" text-anchor="middle" font-family="sans-serif" font-size="11">rate on P4 (fixed scale 0 to 1)</text>
+</g>
+{% for group in g.groups %}
+<g class="bar-group" data-metric="{{ group.metric }}">
+{% for bar in group.bars %}
+<rect class="bar" data-arm="{{ bar.arm }}" data-value="{{ bar.value_text }}" x="{{ bar.x }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" fill="{{ bar.color }}"/>
+{% if bar.err is not none %}
+<line class="errbar" data-arm="{{ bar.arm }}" x1="{{ bar.err.cx }}" y1="{{ bar.err.y_hi }}" x2="{{ bar.err.cx }}" y2="{{ bar.err.y_lo }}" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="{{ bar.arm }}" x1="{{ bar.err.cap_left }}" y1="{{ bar.err.y_hi }}" x2="{{ bar.err.cap_right }}" y2="{{ bar.err.y_hi }}" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="{{ bar.arm }}" x1="{{ bar.err.cap_left }}" y1="{{ bar.err.y_lo }}" x2="{{ bar.err.cap_right }}" y2="{{ bar.err.y_lo }}" stroke="#222222" stroke-width="1.5"/>
+{% endif %}
+<text class="bar-value" x="{{ bar.label_x }}" y="{{ bar.label_y }}" text-anchor="middle" font-family="sans-serif" font-size="10">{{ bar.value_text }}</text>
+{% endfor %}
+<text class="group-label" x="{{ group.label_x }}" y="{{ g.group_label_y }}" text-anchor="middle" font-family="sans-serif" font-size="12">{{ group.label }}</text>
+</g>
+{% endfor %}
+<g class="legend">
+{% for item in g.legend %}
+<rect class="legend-swatch" x="{{ item.x }}" y="{{ g.legend_y }}" width="12" height="12" fill="{{ item.color }}"/>
+<text class="legend-label" x="{{ item.label_x }}" y="{{ g.legend_text_y }}" font-family="sans-serif" font-size="11">{{ item.arm }}</text>
+{% endfor %}
+</g>
+<g class="footnotes">
+{% for note in g.footnotes %}
+<text class="footnote" x="{{ g.left }}" y="{{ note.y }}" font-family="sans-serif" font-size="9" fill="#444444">{{ note.text }}</text>
+{% endfor %}
+</g>
+</svg>
