@@ -1075,7 +1075,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06.3.5-03-PLAN.md — `checkpoint:decision` on the wire shape, then the tracer: one dense-only request with the ranking flag through proto, engine, gateway, harness client and paper Hits@4 (D-99, D-100)
+- [ ] 06.3.5-03-PLAN.md — `checkpoint:decision` on the wire shape, then the tracer: one dense-only request with the ranking flag through proto, engine, gateway and the harness client, ending at the parsed ranking (D-99, D-100)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -1085,7 +1085,7 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [ ] 06.3.5-06-PLAN.md — Registry-aware readers: score, dimensions, usability, pairing and `unpark_gates` `ArmRoles`; unknown or mixed labels fail closed; drives 1/1b/2 re-read and re-score unchanged
-- [ ] 06.3.5-07-PLAN.md — Paper-convention metrics proven by golden vectors from the official script (not vendored), `provenance.py` (AI-SPEC #1 a-g), and the D-104 dev retro
+- [ ] 06.3.5-07-PLAN.md — Paper-convention metrics (the `paper_question_scores` core included) proven by golden vectors from the official script (not vendored), `provenance.py` (AI-SPEC #1 a-g), and the D-104 dev retro
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -1094,7 +1094,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06.3.5-10-PLAN.md — The four-arm deterministic report on P4 with the script-faithful line (D-121, D-122, D-126), the zero-tolerance provenance refusal, and the text-rule cross-check tool
+- [ ] 06.3.5-10-PLAN.md — The four-arm deterministic report on P4 with the script-faithful line, the D-40 per-type strata and every secondary's paired delta against `hybrid` (D-121, D-122, D-126, D-40, D-115), the zero-tolerance provenance refusal, and the text-rule cross-check tool
 - [ ] 06.3.5-11-PLAN.md — The cache-only, counts-only judge stage (D-112) and the seeded, blinded, commit-reveal calibration emit (D-113, D-120)
 
 **Wave 7** *(blocked on Wave 6 completion)*
@@ -1103,7 +1103,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 06.3.5-13-PLAN.md — `lancet-eval compare`: the four-arm comparison with the Holm families, matching-rule robustness, the cited paper row, and `chart.json` / `chart.svg` (D-115, D-126)
+- [ ] 06.3.5-13-PLAN.md — `lancet-eval compare`: the four-arm comparison with the Holm families, the secondary paired deltas, the D-40 strata, matching-rule robustness, the cited paper row, and `chart.json` / `chart.svg` (D-115, D-126)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
