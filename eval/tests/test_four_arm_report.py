@@ -244,7 +244,7 @@ def make_record(arm: str, qid: str) -> RunRecord:
 Mutations = dict[tuple[str, str], Callable[[RunRecord], RunRecord]]
 
 
-def _write_corpus(root: Path) -> Path:
+def _write_corpus(root: Path, qtype_override: dict[str, str] | None = None) -> Path:
     """Writes the tmp `[split]` corpus under `root/eval/corpora`; returns gold."""
     corpora = root / "eval" / "corpora"
     (corpora / "fourarm").mkdir(parents=True)
@@ -280,7 +280,7 @@ def _write_corpus(root: Path) -> Path:
             {
                 "question_id": qid,
                 "query": f"Question {qid}?",
-                "question_type": qtype,
+                "question_type": (qtype_override or {}).get(qid, qtype),
                 "answer": answer,
                 "evidence_list": [
                     {"title": "t", "fact": _fact(qid, "a")},
@@ -343,10 +343,11 @@ def build_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     mutations: Mutations | None = None,
+    qtype_override: dict[str, str] | None = None,
 ) -> tuple[Path, Path]:
     """Writes the corpus and a complete journal; returns (run_dir, gold_chunks)."""
     root = tmp_path / "repo"
-    gold = _write_corpus(root)
+    gold = _write_corpus(root, qtype_override)
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
     run_dir = tmp_path / "run"
     journal = Journal(run_dir / "journal.jsonl")
@@ -1124,3 +1125,19 @@ def test_a_superseded_attempt_is_priced_with_its_own_embedding() -> None:
     one_embedding = ESTIMATED_EMBEDDING_TOKENS_PER_QUERY * EMBEDDING_PRICE_PER_1M / 1e6
     gap = _record_spend_usd(retried) - _record_spend_usd(base)
     assert gap == pytest.approx(one_embedding, abs=1e-15)
+
+
+@pytest.mark.parametrize("bad_type", ["unknown", "null_query"])
+def test_a_held_out_g_question_outside_the_three_types_refuses_before_scoring(
+    bad_type, tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    assert preregistered_clean_tree
+    run_dir, gold = build_run(
+        tmp_path, monkeypatch, qtype_override={"fx-i2": bad_type}
+    )
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(run_dir=run_dir, no_judge=True, gold_chunks_path=gold)
+    message = str(exc_info.value)
+    assert "fx-i2" in message
+    assert "not a G stratum" in message
+    assert not (run_dir / "report.json").exists()

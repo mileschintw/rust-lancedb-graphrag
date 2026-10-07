@@ -391,7 +391,8 @@ def _load_split_inputs(
 
     Raises:
         ScoreError: If the split or the gold-chunk table cannot be read, or a held-out
-            G question has no gold question, is a null question, or has no gold set.
+            G question has no gold question, is a null question, is not one of the
+            three G question types, or has no gold set.
     """
     try:
         split = load_split(config.split_path)
@@ -419,6 +420,10 @@ def _load_split_inputs(
             problems.append(f"{qid}: not in the corpus's question file")
         elif gold.is_null:
             problems.append(f"{qid}: a held-out G question with no gold evidence")
+        elif gold.question_type not in strata.STRATUM_TYPES:
+            problems.append(
+                f"{qid}: question_type {gold.question_type!r} is not a G stratum"
+            )
         elif not gold_sets.get(qid):
             problems.append(f"{qid}: no row in the gold-chunk table")
     if problems:
@@ -618,7 +623,7 @@ def _four_arm_dimensions(
     out are counted in `n_unscorable`.
 
     Raises:
-        ScoreError: If the arms cannot form P4 or a held-out question has no stratum.
+        ScoreError: If the arms cannot form P4.
     """
     split = inputs.split
     gold_sets = inputs.gold_sets
