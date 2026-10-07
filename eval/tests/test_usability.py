@@ -95,3 +95,23 @@ def test_has_arm_provenance() -> None:
         ]
     )
     assert has_arm_provenance(r_has_unavailable) is False
+
+
+def test_attempted_graph_reads_the_canonical_label_and_the_legacy_alias() -> None:
+    """D-101: `hybrid+graph` is the graph-on arm; the other canonical labels and the
+    `graph-off` alias are not, and an unreadable label is False, never a raise."""
+    from lancet_eval.journal import NodeTiming
+    from lancet_eval.usability import attempted_graph
+
+    timing = NodeTiming(node_name="ExtractGraphContext", duration_ms=1.0)
+    for label, expected in (
+        ("hybrid+graph", True),
+        ("graph-on", True),
+        ("hybrid", False),
+        ("dense-only", False),
+        ("bm25-only", False),
+        ("graph-off", False),
+        ("graph-sideways", False),
+    ):
+        record = _base_record(graph_arm=label, node_timings=[timing])
+        assert attempted_graph(record) is expected, label

@@ -257,3 +257,98 @@ def test_compute_paired_delta_all_pairs_unscorable_yields_no_score() -> None:
     assert res.ci_lower is None
     assert res.ci_upper is None
     assert res.excluded_count == 1
+
+
+# ---------------------------------------------------------------------------
+# 06.3.5-06 Task 1: registry-driven pairing (D-101)
+# ---------------------------------------------------------------------------
+
+_ABLATION = [Notice(code="GRAPH_ABLATION", message="", typed_code=18)]
+
+
+def _need_arm_pairs():  # type: ignore[no-untyped-def]
+    import lancet_eval.pairing as pairing
+
+    fn = getattr(pairing, "form_arm_pairs", None)
+    assert fn is not None, "pairing.form_arm_pairs is not defined"
+    return fn
+
+
+def test_form_arm_pairs_matches_the_requested_registry_pair() -> None:
+    """`dense-only` against `hybrid` pairs those two records, not graph-on/off."""
+    form_arm_pairs = _need_arm_pairs()
+    records = [
+        _make_record("q1", "dense-only", notices=_ABLATION, answer="dense"),
+        _make_record("q1", "hybrid", notices=_ABLATION, answer="hybrid"),
+        _make_record("q1", "hybrid+graph", answer="graph"),
+        _make_record("q2", "dense-only", notices=_ABLATION),
+    ]
+    gold = {"q1": _make_gold("q1"), "q2": _make_gold("q2")}
+
+    res = form_arm_pairs(
+        records, gold, treatment_arm="dense-only", reference_arm="hybrid"
+    )
+
+    assert [p.question_id for p in res.pairs] == ["q1"]
+    pair = res.pairs[0]
+    assert pair.treatment.answer == "dense"
+    assert pair.reference.answer == "hybrid"
+    assert res.missing_arm_drops == 1
+    assert res.total_distinct_questions == 2
+
+
+def test_form_arm_pairs_equals_form_pairs_on_legacy_records() -> None:
+    """Over legacy-labelled records the canonical pair is `form_pairs`, element by
+    element, and the historical field names are the same objects as the aliases."""
+    form_arm_pairs = _need_arm_pairs()
+    records = []
+    gold = {}
+    for qid in ("q1", "q2", "q3", "q4"):
+        records.append(_make_record(qid, "graph-on", answer=f"on-{qid}"))
+        records.append(
+            _make_record(qid, "graph-off", notices=_ABLATION, answer=f"off-{qid}")
+        )
+        gold[qid] = _make_gold(qid, is_null=(qid == "q4"))
+    records[2] = _make_record("q2", "graph-on", outcome="error")
+
+    legacy = form_pairs(records, gold)
+    canonical = form_arm_pairs(
+        records, gold, treatment_arm="hybrid+graph", reference_arm="hybrid"
+    )
+
+    assert canonical == legacy
+    for pair in canonical.pairs:
+        assert pair.treatment is pair.graph_on
+        assert pair.reference is pair.graph_off
+
+
+def test_form_arm_pairs_requires_provenance_on_a_graph_disabled_treatment() -> None:
+    form_arm_pairs = _need_arm_pairs()
+    records = [
+        _make_record("q1", "dense-only"),
+        _make_record("q1", "hybrid", notices=_ABLATION),
+    ]
+    res = form_arm_pairs(
+        records,
+        {"q1": _make_gold("q1")},
+        treatment_arm="dense-only",
+        reference_arm="hybrid",
+    )
+    assert res.pairs == []
+    assert res.provenance_drops == 1
+
+
+def test_form_arm_pairs_refuses_an_alias_and_its_canonical_label() -> None:
+    form_arm_pairs = _need_arm_pairs()
+    records = [
+        _make_record("q1", "graph-off", notices=_ABLATION),
+        _make_record("q1", "hybrid", notices=_ABLATION),
+        _make_record("q1", "graph-on"),
+    ]
+    with pytest.raises(ValueError, match="q1"):
+        form_arm_pairs(
+            records,
+            {"q1": _make_gold("q1")},
+            treatment_arm="hybrid+graph",
+            reference_arm="hybrid",
+        )

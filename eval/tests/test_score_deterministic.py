@@ -1,5 +1,9 @@
 """Tests for offline deterministic scorer and ablation provenance."""
 
+import ast
+import hashlib
+import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -513,3 +517,179 @@ def test_score_run_stamps_real_commit_sha(
     monkeypatch.setenv("GIT_COMMIT_SHA", "custom_sha_1234567890abcdef")
     report_override = score_run(run_dir=tmp_path, no_judge=True)
     assert report_override.metadata.commit_sha == "custom_sha_1234567890abcdef"
+
+
+# ---------------------------------------------------------------------------
+# 06.3.5-06 Task 1: registry-driven arm grouping (D-101, D-120)
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_DRIVE2 = _REPO_ROOT / "eval" / "runs" / "2026-10-06-drive2-multihop_rag_diag"
+
+
+def _sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _ablation_notice() -> Notice:
+    return Notice(
+        code="GRAPH_ABLATION", message="", typed_code=NOTICE_CODE_GRAPH_ABLATION
+    )
+
+
+def _arm_record(
+    qid: str,
+    arm: str,
+    chunks: list[StructuredCitation] | None = None,
+    *,
+    ablation: bool = False,
+) -> RunRecord:
+    return RunRecord(
+        corpus="multihop_rag",
+        question_id=qid,
+        graph_arm=arm,
+        outcome="success",
+        answer="test answer",
+        index_generation="gen-test-1",
+        notices=[_ablation_notice()] if ablation else [],
+        snapshot=RetrievalSnapshot(
+            index_generation="gen-test-1", retrieved_chunks=chunks or []
+        ),
+    )
+
+
+def _four_arm_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Score against a corpus config that configures all four D-101 arms."""
+    import lancet_eval.score as score_mod
+
+    real = score_mod.load_corpus_config
+
+    def _load(name: str):  # type: ignore[no-untyped-def]
+        cfg = real(name)
+        cfg.arms = ["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
+        return cfg
+
+    monkeypatch.setattr(score_mod, "load_corpus_config", _load)
+
+
+def test_rescore_of_the_recorded_drive2_reproduces_its_report(
+    tmp_path: Path,
+) -> None:
+    """D-101 re-score proof: every dimension of the committed drive-2 report is
+    reproduced from a tmp copy, and the recorded files are byte-identical."""
+    journal = _DRIVE2 / "journal.jsonl"
+    report = _DRIVE2 / "report.json"
+    before = (_sha(journal), _sha(report))
+
+    copy = tmp_path / "drive2"
+    shutil.copytree(_DRIVE2, copy)
+    scored = score_run(run_dir=copy, no_judge=True)
+
+    committed = json.loads(report.read_text(encoding="utf-8"))["dimensions"]
+    got = [(d.name, d.status, d.score, d.n) for d in scored.dimensions]
+    want = [(d["name"], d["status"], d["score"], d["n"]) for d in committed]
+    assert got == want
+    assert (_sha(journal), _sha(report)) == before
+
+
+def test_an_unknown_arm_label_fails_closed_naming_label_and_count(
+    tmp_path: Path,
+) -> None:
+    """T-06.3.5-19: a record whose label is not in the registry is refused, never
+    dropped (score.py used to drop it)."""
+    _, qid = _setup_mock_corpus_files(tmp_path)
+    journal = Journal(tmp_path / "journal.jsonl")
+    journal.append(_arm_record(qid, "graph-on"))
+    journal.append(_arm_record(qid, "graph-sideways"))
+
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(run_dir=tmp_path, no_judge=True)
+
+    message = str(exc_info.value)
+    assert "graph-sideways" in message
+    assert "1 record(s)" in message
+
+
+def test_a_question_under_an_alias_and_its_canonical_label_is_refused(
+    tmp_path: Path,
+) -> None:
+    """T-06.3.5-21: `deduplicate_by_arm` keys on the raw label and would keep both."""
+    _, qid = _setup_mock_corpus_files(tmp_path)
+    journal = Journal(tmp_path / "journal.jsonl")
+    journal.append(_arm_record(qid, "graph-off", ablation=True))
+    journal.append(_arm_record(qid, "hybrid", ablation=True))
+
+    with pytest.raises(ScoreError) as exc_info:
+        score_run(run_dir=tmp_path, no_judge=True)
+
+    message = str(exc_info.value)
+    assert qid in message
+    assert "graph-off" in message
+    assert "hybrid" in message
+
+
+def test_a_four_arm_journal_keeps_every_arm_and_scores_hybrid_plus_graph(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-101: all four configured arms group under their own label, the primary arm
+    is `hybrid+graph`, and the ablation delta pairs it with `hybrid`."""
+    _four_arm_config(monkeypatch)
+    q1 = load_sample_questions("multihop_rag")[0]
+    doc_id = _get_valid_doc_id()
+    full = [
+        StructuredCitation(
+            chunk_id=f"c{i}", document_id=doc_id, excerpt=f"match {fact}", rank=i + 1
+        )
+        for i, fact in enumerate(q1.gold_facts)
+    ]
+    none = [
+        StructuredCitation(
+            chunk_id="c1", document_id=doc_id, excerpt="irrelevant", rank=1
+        )
+    ]
+    journal = Journal(tmp_path / "journal.jsonl")
+    journal.append(_arm_record(q1.question_id, "dense-only", full, ablation=True))
+    journal.append(_arm_record(q1.question_id, "bm25-only", full, ablation=True))
+    journal.append(_arm_record(q1.question_id, "hybrid", full, ablation=True))
+    journal.append(_arm_record(q1.question_id, "hybrid+graph", none))
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+
+    coverage = next(
+        d for d in report.dimensions if d.name == "retrieval_evidence_coverage"
+    )
+    assert coverage.status == "ok"
+    assert coverage.score == 0.0  # the primary arm is hybrid+graph, not hybrid
+    assert coverage.n == 1
+    delta = next(d for d in report.dimensions if d.name == "graph_ablation_delta")
+    assert delta.status == "ok"
+    assert delta.score == -1.0
+    assert delta.detail["n_pairs"] == 1.0
+
+
+def test_graph_off_provenance_applies_to_every_arm_that_disables_graph_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-101: with no `hybrid+graph` records the primary arm is `hybrid`, and a
+    `hybrid` record without the GRAPH_ABLATION notice is a provenance exclusion."""
+    _four_arm_config(monkeypatch)
+    questions = load_sample_questions("multihop_rag")
+    journal = Journal(tmp_path / "journal.jsonl")
+    journal.append(_arm_record(questions[0].question_id, "hybrid", ablation=True))
+    journal.append(_arm_record(questions[1].question_id, "hybrid", ablation=False))
+    journal.append(_arm_record(questions[0].question_id, "dense-only"))
+
+    report = score_run(run_dir=tmp_path, no_judge=True)
+
+    coverage = next(
+        d for d in report.dimensions if d.name == "retrieval_evidence_coverage"
+    )
+    assert coverage.detail["errors"] == 1.0
+
+
+def test_score_module_no_longer_hardcodes_the_two_legacy_arms() -> None:
+    """The literal `{"graph-on": [], "graph-off": []}` grouping is gone."""
+    source = (_REPO_ROOT / "eval/src/lancet_eval/score.py").read_text(encoding="utf-8")
+    ast.parse(source)
+    assert "canonical_arm(" in source
+    assert '{"graph-on": [], "graph-off": []}' not in source
