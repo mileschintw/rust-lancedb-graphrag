@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import string
 from collections import Counter
+from collections.abc import Callable, Sequence
 from enum import StrEnum
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -609,3 +612,194 @@ def reference_convention_map_at_10(
         detail={"accrued": accrued, "ideal_len": float(ideal_len)},
         n=len(eligible_facts),
     )
+
+
+# --- D-102 paper-convention metrics (06.3.5-07) -------------------------------------
+#
+# These follow the official MultiHop-RAG ``calculate_metrics`` at
+# yixuantt/MultiHop-RAG@c1c1287aa60a94acf9c4d20c891c9cd611a0f6e8
+# (retrieval_evaluate.py), and are proven equal to its outputs by the committed
+# golden vectors. They are
+# deliberately separate from ``hits_at_k``, ``mrr_at_k`` and
+# ``reference_convention_map_at_10``, which match on 512-character wire excerpts over
+# the final eight chunks and are not the paper convention.
+OFFICIAL_COMMIT = "c1c1287aa60a94acf9c4d20c891c9cd611a0f6e8"
+PAPER_RANK_CUTOFF = 10
+PAPER_HITS_CUTOFF = 4
+
+
+class PaperMetricsResult(BaseModel):
+    """Paper-convention retrieval metrics of one arm (AI-SPEC 4b, D-102).
+
+    The ``paper_`` prefix keeps these apart from the excerpt-matched, final-eight
+    ``mrr_at_k`` that ``score.py`` already reports under a similar name.
+
+    Attributes:
+        arm: Canonical arm label.
+        official_commit: The MultiHop-RAG commit whose arithmetic these equal.
+        matching_rule: ``chunk_id_via_gold_chunks`` (the ID rule through the D-61
+            gold-chunk table) or ``store_text_official`` (the official text rule
+            over stored chunk text).
+        n_queries: Questions in the denominator.
+        n_excluded: Questions left out before scoring.
+        paper_hits_at_4: Share of questions with a relevant chunk in the top 4.
+        paper_hits_at_10: Share with a relevant chunk in the top 10.
+        paper_mrr_at_10: Mean reciprocal rank of the first relevant chunk, rank <= 10.
+        paper_map_at_10: The script's non-standard MAP@10: facts first found at a
+            rank, over that rank, divided by ``min(len(gold), 10)``. Each fact is
+            credited once at no more than 1/rank, so the value is at most 1.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    arm: str
+    official_commit: Literal["c1c1287aa60a94acf9c4d20c891c9cd611a0f6e8"]
+    matching_rule: Literal["chunk_id_via_gold_chunks", "store_text_official"]
+    n_queries: int = Field(ge=0)
+    n_excluded: int = Field(ge=0)
+    paper_hits_at_4: float = Field(ge=0.0, le=1.0)
+    paper_hits_at_10: float = Field(ge=0.0, le=1.0)
+    paper_mrr_at_10: float = Field(ge=0.0, le=1.0)
+    paper_map_at_10: float = Field(ge=0.0, le=1.0)
+
+
+def id_matcher(chunk_id: str, gold_set: frozenset[str]) -> bool:
+    """ID rule: a chunk is relevant to a gold unit if its ID is in the unit's set."""
+    return chunk_id in gold_set
+
+
+def text_matcher(text: str, fact: str) -> bool:
+    """Official text rule: the fact is a substring of the chunk text.
+
+    Both sides lose every space and newline first, and the test is case-sensitive.
+    An empty ``fact`` matches, exactly as in the official function.
+    """
+    return fact.replace(" ", "").replace("\n", "") in text.replace(" ", "").replace(
+        "\n", ""
+    )
+
+
+def paper_question_scores[R, G](
+    ranked: Sequence[R],
+    gold: Sequence[G],
+    matches: Callable[[R, G], bool],
+) -> dict[str, Any]:
+    """Scores one question with the official ``calculate_metrics`` semantics.
+
+    Walks ranks 1..10. An item is relevant when it matches any gold unit. ``hit4``
+    and ``hit10`` follow the first relevant rank, ``rr`` is ``1 / first``, and ``ap``
+    is the script's non-standard MAP: for each relevant rank, the gold units first
+    found there, over the rank, summed and divided by ``min(len(gold), 10)``. A unit
+    that matches nothing (a fact split across two chunks, an empty ID set) never
+    matches but still counts in that divisor.
+
+    The ID form passes chunk IDs and ``frozenset`` units with ``id_matcher``. The
+    text form passes chunk texts and fact strings with ``text_matcher``. Two gold
+    units with the same text are the one input where this differs from the official
+    function (it tracks found facts by text, this by index); real facts carry no
+    duplicates in the 06.3.5 sample.
+
+    Args:
+        ranked: Retrieved items in rank order; only the first ten are read.
+        gold: The question's gold units, one per evidence fact.
+        matches: ``matches(item, unit)``.
+
+    Returns:
+        ``{"hit4": bool, "hit10": bool, "rr": float, "ap": float}``.
+
+    Raises:
+        ValueError: If ``gold`` is empty (the official function divides by zero).
+    """
+    if not gold:
+        raise ValueError("gold must hold at least one unit")
+    found: set[int] = set()
+    ap_sum = 0.0
+    first: int | None = None
+    for rank, item in enumerate(ranked[:PAPER_RANK_CUTOFF], start=1):
+        matched = [i for i, unit in enumerate(gold) if matches(item, unit)]
+        if not matched:
+            continue
+        if first is None:
+            first = rank
+        new = [i for i in matched if i not in found]
+        found.update(new)
+        ap_sum += len(new) / rank
+    return {
+        "hit4": first is not None and first <= PAPER_HITS_CUTOFF,
+        "hit10": first is not None,
+        "rr": 1 / first if first is not None else 0.0,
+        "ap": ap_sum / min(len(gold), PAPER_RANK_CUTOFF),
+    }
+
+
+def load_gold_chunk_sets(path: Path | str) -> dict[str, list[frozenset[str]]]:
+    """Reads ``gold_chunks.jsonl`` into one chunk-ID set per evidence row.
+
+    Each question maps to its sets in ``evidence_index`` order. An ``in_chunk`` row
+    becomes ``frozenset(chunk_ids)``. A ``split_across_chunks`` row becomes
+    ``frozenset()``, which never matches but still counts in ``min(len(gold), 10)``.
+
+    Args:
+        path: The JSONL table (row shape ``{question_id, evidence_index, title,
+            document_id, state, chunk_ids}``).
+
+    Returns:
+        ``question_id`` to the question's gold sets, ordered by ``evidence_index``.
+
+    Raises:
+        ValueError: On an unknown ``state``, an ``in_chunk`` row without chunk IDs, or
+            a repeated ``(question_id, evidence_index)``.
+    """
+    by_question: dict[str, dict[int, frozenset[str]]] = {}
+    with open(path, encoding="utf-8") as f:
+        for line_no, line in enumerate(f, start=1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            qid, idx, state = row["question_id"], row["evidence_index"], row["state"]
+            if state == "in_chunk":
+                chunk_ids = frozenset(row["chunk_ids"])
+                if not chunk_ids:
+                    raise ValueError(
+                        f"{path}:{line_no}: in_chunk row for {qid}[{idx}] "
+                        "has no chunk_ids"
+                    )
+            elif state == "split_across_chunks":
+                chunk_ids = frozenset()
+            else:
+                raise ValueError(
+                    f"{path}:{line_no}: unknown state {state!r} for {qid}[{idx}]"
+                )
+            slot = by_question.setdefault(qid, {})
+            if idx in slot:
+                raise ValueError(
+                    f"{path}:{line_no}: duplicate row for ({qid}, {idx})"
+                )
+            slot[idx] = chunk_ids
+    return {
+        qid: [slot[i] for i in sorted(slot)] for qid, slot in by_question.items()
+    }
+
+
+def paper_metrics(per_question: list[dict[str, Any]]) -> dict[str, float]:
+    """Averages ``paper_question_scores`` results over the questions.
+
+    Args:
+        per_question: One ``paper_question_scores`` dict per question.
+
+    Returns:
+        ``paper_hits_at_4``, ``paper_hits_at_10``, ``paper_mrr_at_10`` and
+        ``paper_map_at_10``, each the mean over the list.
+
+    Raises:
+        ValueError: If the list is empty.
+    """
+    if not per_question:
+        raise ValueError("cannot average an empty list of per-question scores")
+    n = len(per_question)
+    return {
+        "paper_hits_at_4": sum(1 for s in per_question if s["hit4"]) / n,
+        "paper_hits_at_10": sum(1 for s in per_question if s["hit10"]) / n,
+        "paper_mrr_at_10": sum(s["rr"] for s in per_question) / n,
+        "paper_map_at_10": sum(s["ap"] for s in per_question) / n,
+    }

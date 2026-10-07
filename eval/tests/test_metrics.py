@@ -1,16 +1,21 @@
 """Golden vector tests for deterministic IR and answer metrics."""
 
+import json
 import math
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
-from lancet_eval.client import StructuredCitation
+from lancet_eval.client import RetrievalSnapshot, StructuredCitation
+from lancet_eval.config import repo_root
 from lancet_eval.corpus import GoldQuestion
 from lancet_eval.metrics import (
     MatchVerdict,
+    PaperMetricsResult,
     abstention_outcome,
     abstention_rate,
     answer_usable,
@@ -22,10 +27,15 @@ from lancet_eval.metrics import (
     final_answer_em,
     gold_contained,
     hits_at_k,
+    id_matcher,
+    load_gold_chunk_sets,
     mrr_at_k,
     ndcg_at_k,
     null_abstention_correct,
+    paper_metrics,
+    paper_question_scores,
     recall_at_k,
+    text_matcher,
 )
 
 
@@ -583,3 +593,297 @@ def test_extract_final_answer_still_misses_an_inline_only_answer() -> None:
     # The committed rule is unchanged (drive 1's reading stands, D-87a): an inline
     # `... Answer: X` with no line start is a miss.
     assert extract_final_answer("The source says so [1]. Answer: ChatGPT") is None
+
+
+# --- D-102 paper-convention metrics (06.3.5-07) -------------------------------------
+
+GOLDEN_PATH = (
+    repo_root()
+    / "eval"
+    / "tests"
+    / "fixtures"
+    / "multihop_rag_calculate_metrics_golden.json"
+)
+OFFICIAL_COMMIT = "c1c1287aa60a94acf9c4d20c891c9cd611a0f6e8"
+
+
+def _golden() -> dict:
+    return json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+
+
+def _gold_chunks_path() -> Path:
+    matches = list(
+        repo_root().glob(
+            ".planning/phases/06.3.4.1-*/diagnostic/post-reconcile/gold_chunks.jsonl"
+        )
+    )
+    assert len(matches) == 1
+    return matches[0]
+
+
+def _textbook_ap(ranked_texts: list[str], facts: list[str]) -> float:
+    """Cumulative distinct facts found over the rank: NOT the official arithmetic."""
+
+    def strip(s: str) -> str:
+        return s.replace(" ", "").replace("\n", "")
+
+    gold = [strip(f) for f in facts]
+    found: set[str] = set()
+    total = 0.0
+    for rank, text in enumerate(ranked_texts[:10], start=1):
+        hit = [g for g in gold if g in strip(text)]
+        if hit:
+            found.update(hit)
+            total += len(found) / rank
+    return total / min(len(gold), 10)
+
+
+def test_golden_fixture_header_names_the_official_commit_and_file_hash() -> None:
+    header = _golden()["header"]
+    assert header["official_commit"] == OFFICIAL_COMMIT
+    assert header["official_repo"] == "yixuantt/MultiHop-RAG"
+    assert header["official_file"] == "retrieval_evaluate.py"
+    assert re.fullmatch(r"[0-9a-f]{64}", header["official_file_sha256"])
+
+
+def test_golden_fixture_holds_the_required_special_cases() -> None:
+    cases = _golden()["cases"]
+    assert len(cases) >= 200
+    kinds = {c["kind"] for c in cases}
+    assert {"negative_control", "empty_gold_unit", "rank_11"} <= kinds
+    empty = next(c for c in cases if c["kind"] == "empty_gold_unit")
+    assert any(not s for s in empty["gold_id_sets"])
+    assert sum(1 for c in cases if c["official"]["hit4"] > 0) > 20
+    assert sum(1 for c in cases if c["official"]["map"] > 0) > 20
+
+
+def test_paper_question_scores_equals_official_in_id_form_on_every_case() -> None:
+    for case in _golden()["cases"]:
+        gold = [frozenset(s) for s in case["gold_id_sets"]]
+        got = paper_question_scores(case["ranked_ids"], gold, id_matcher)
+        want = case["official"]
+        assert float(got["hit4"]) == want["hit4"], case["id"]
+        assert float(got["hit10"]) == want["hit10"], case["id"]
+        assert got["rr"] == pytest.approx(want["mrr"], abs=1e-12), case["id"]
+        assert got["ap"] == pytest.approx(want["map"], abs=1e-12), case["id"]
+
+
+def test_paper_question_scores_equals_official_in_text_form_on_every_case() -> None:
+    for case in _golden()["cases"]:
+        got = paper_question_scores(
+            case["ranked_texts"], case["facts"], text_matcher
+        )
+        want = case["official"]
+        assert float(got["hit4"]) == want["hit4"], case["id"]
+        assert float(got["hit10"]) == want["hit10"], case["id"]
+        assert got["rr"] == pytest.approx(want["mrr"], abs=1e-12), case["id"]
+        assert got["ap"] == pytest.approx(want["map"], abs=1e-12), case["id"]
+
+
+def test_negative_control_textbook_ap_differs_from_the_official_value() -> None:
+    case = next(c for c in _golden()["cases"] if c["kind"] == "negative_control")
+    gold = [frozenset(s) for s in case["gold_id_sets"]]
+    harness = paper_question_scores(case["ranked_ids"], gold, id_matcher)["ap"]
+    textbook = _textbook_ap(case["ranked_texts"], case["facts"])
+    assert abs(textbook - case["official"]["map"]) > 1e-6
+    assert case["textbook_ap"] == pytest.approx(textbook, abs=1e-12)
+    assert harness == pytest.approx(case["official"]["map"], abs=1e-12)
+    assert abs(harness - textbook) > 1e-6
+
+
+def test_paper_question_scores_hits_at_4_on_a_parsed_ranking() -> None:
+    snapshot = RetrievalSnapshot.model_validate(
+        {
+            "retrieval_mode": "hybrid",
+            "candidate_limit": 32,
+            "final_limit": 8,
+            "pre_truncation_ranking": [
+                {"chunk_id": f"d{i}:0", "document_id": f"d{i}", "fused_rank": i}
+                for i in range(1, 7)
+            ],
+        }
+    )
+    ranked = [c.chunk_id for c in snapshot.pre_truncation_ranking]
+    hit = paper_question_scores(ranked, [frozenset({"d3:0"})], id_matcher)
+    assert hit["hit4"] is True
+    assert hit["rr"] == pytest.approx(1 / 3)
+    miss = paper_question_scores(ranked, [frozenset({"zz:0"})], id_matcher)
+    assert miss["hit4"] is False
+    assert miss["rr"] == 0
+
+
+def test_an_empty_gold_unit_never_matches_but_counts_in_the_divisor() -> None:
+    got = paper_question_scores(["c1"], [frozenset({"c1"}), frozenset()], id_matcher)
+    assert got["ap"] == pytest.approx(0.5)
+    assert got["hit4"] is True
+
+
+def test_ranks_beyond_ten_never_count() -> None:
+    ranked = [f"x{i}" for i in range(10)] + ["gold"]
+    got = paper_question_scores(ranked, [frozenset({"gold"})], id_matcher)
+    assert got["hit10"] is False
+    assert got["hit4"] is False
+    assert got["rr"] == 0
+    assert got["ap"] == 0
+    at_ten = [f"x{i}" for i in range(9)] + ["gold"]
+    got = paper_question_scores(at_ten, [frozenset({"gold"})], id_matcher)
+    assert got["hit10"] is True
+    assert got["hit4"] is False
+    assert got["rr"] == pytest.approx(0.1)
+
+
+def test_ap_divisor_is_capped_at_ten_gold_units() -> None:
+    gold = [frozenset({f"g{i}"}) for i in range(12)]
+    got = paper_question_scores(["g0"], gold, id_matcher)
+    assert got["ap"] == pytest.approx(1.0 / 10)
+
+
+def test_a_chunk_holding_two_new_facts_credits_both_at_its_rank() -> None:
+    gold = [frozenset({"a"}), frozenset({"a", "b"})]
+    got = paper_question_scores(["z", "a", "b"], gold, id_matcher)
+    # rank 2: facts 0 and 1 are both new -> 2/2; rank 3: no new fact -> 0
+    assert got["ap"] == pytest.approx((2 / 2) / 2)
+
+
+def test_paper_question_scores_rejects_an_empty_gold_list() -> None:
+    with pytest.raises(ValueError, match="gold"):
+        paper_question_scores(["a"], [], id_matcher)
+
+
+def test_text_matcher_strips_every_space_and_newline_on_both_sides() -> None:
+    assert text_matcher("the quick  brown\nfox jumps", "quick brown fox")
+    assert text_matcher("thequickbrownfox", "the quick\nbrown fox")
+    assert not text_matcher("The Quick", "the quick")  # case-sensitive, like the script
+    assert id_matcher("c1", frozenset({"c1", "c2"}))
+    assert not id_matcher("c3", frozenset({"c1", "c2"}))
+
+
+def test_load_gold_chunk_sets_over_the_real_table() -> None:
+    path = _gold_chunks_path()
+    sets = load_gold_chunk_sets(path)
+    assert len(sets) == 447
+    rows = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x]
+    split_rows = [r for r in rows if r["state"] == "split_across_chunks"]
+    assert split_rows
+    for r in split_rows:
+        assert sets[r["question_id"]][r["evidence_index"]] == frozenset()
+    in_chunk = [r for r in rows if r["state"] == "in_chunk"]
+    for r in in_chunk:
+        assert sets[r["question_id"]][r["evidence_index"]] == frozenset(r["chunk_ids"])
+    assert sum(len(v) for v in sets.values()) == len(rows)
+
+
+def test_load_gold_chunk_sets_orders_by_evidence_index_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    def row(qid: str, idx: int, state: str, ids: list[str]) -> str:
+        return json.dumps(
+            {
+                "question_id": qid,
+                "evidence_index": idx,
+                "title": "t",
+                "document_id": "d",
+                "state": state,
+                "chunk_ids": ids,
+            }
+        )
+
+    ok = tmp_path / "ok.jsonl"
+    ok.write_text(
+        "\n".join(
+            [
+                row("q1", 1, "split_across_chunks", []),
+                row("q1", 0, "in_chunk", ["a:0", "a:1"]),
+                row("q2", 0, "in_chunk", ["b:0"]),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    sets = load_gold_chunk_sets(ok)
+    assert sets["q1"] == [frozenset({"a:0", "a:1"}), frozenset()]
+    assert sets["q2"] == [frozenset({"b:0"})]
+
+    bad_state = tmp_path / "bad_state.jsonl"
+    bad_state.write_text(row("q1", 0, "mystery", []) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="state"):
+        load_gold_chunk_sets(bad_state)
+
+    duplicate = tmp_path / "dup.jsonl"
+    duplicate.write_text(
+        row("q1", 0, "in_chunk", ["a"]) + "\n" + row("q1", 0, "in_chunk", ["b"]) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        load_gold_chunk_sets(duplicate)
+
+
+def test_paper_metrics_averages_and_rejects_an_empty_list() -> None:
+    scores = [
+        {"hit4": True, "hit10": True, "rr": 1.0, "ap": 0.5},
+        {"hit4": False, "hit10": True, "rr": 0.25, "ap": 0.25},
+        {"hit4": False, "hit10": False, "rr": 0.0, "ap": 0.0},
+        {"hit4": True, "hit10": True, "rr": 0.5, "ap": 0.25},
+    ]
+    got = paper_metrics(scores)
+    assert got == {
+        "paper_hits_at_4": pytest.approx(0.5),
+        "paper_hits_at_10": pytest.approx(0.75),
+        "paper_mrr_at_10": pytest.approx(0.4375),
+        "paper_map_at_10": pytest.approx(0.25),
+    }
+    with pytest.raises(ValueError, match="empty"):
+        paper_metrics([])
+
+
+def test_paper_metrics_result_is_frozen_and_pins_the_official_commit() -> None:
+    result = PaperMetricsResult(
+        arm="hybrid",
+        official_commit=OFFICIAL_COMMIT,
+        matching_rule="chunk_id_via_gold_chunks",
+        n_queries=10,
+        n_excluded=1,
+        paper_hits_at_4=0.5,
+        paper_hits_at_10=0.7,
+        paper_mrr_at_10=0.4,
+        paper_map_at_10=0.3,
+    )
+    with pytest.raises(ValueError, match="frozen"):
+        result.n_queries = 11  # type: ignore[misc]
+    with pytest.raises(ValueError, match="official_commit"):
+        PaperMetricsResult(
+            arm="hybrid",
+            official_commit="deadbeef",  # type: ignore[arg-type]
+            matching_rule="chunk_id_via_gold_chunks",
+            n_queries=1,
+            n_excluded=0,
+            paper_hits_at_4=0.0,
+            paper_hits_at_10=0.0,
+            paper_mrr_at_10=0.0,
+            paper_map_at_10=0.0,
+        )
+    with pytest.raises(ValueError, match="paper_hits_at_4"):
+        PaperMetricsResult(
+            arm="hybrid",
+            official_commit=OFFICIAL_COMMIT,
+            matching_rule="store_text_official",
+            n_queries=1,
+            n_excluded=0,
+            paper_hits_at_4=1.5,
+            paper_hits_at_10=0.0,
+            paper_mrr_at_10=0.0,
+            paper_map_at_10=0.0,
+        )
+
+
+def test_the_official_script_is_not_tracked_in_the_repository() -> None:
+    res = subprocess.run(
+        ["git", "ls-files"],
+        capture_output=True,
+        text=True,
+        cwd=repo_root(),
+        shell=False,
+        check=True,
+    )
+    tracked = [p for p in res.stdout.splitlines() if p.endswith("retrieval_evaluate.py")]
+    assert tracked == []
