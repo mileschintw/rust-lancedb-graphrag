@@ -219,7 +219,10 @@ def test_alias_arm_labels_are_accepted_and_stored_verbatim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = _write_tmp_corpus(
-        tmp_path, monkeypatch, "alias_arms", '[arms]\narms = ["graph-on", "graph-off"]\n'
+        tmp_path,
+        monkeypatch,
+        "alias_arms",
+        '[arms]\narms = ["graph-on", "graph-off"]\n',
     )
     assert cfg.arms == ["graph-on", "graph-off"]
 

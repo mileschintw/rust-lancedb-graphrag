@@ -12,6 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from lancet_eval.arms import canonical_arm
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -100,6 +102,10 @@ LABEL_ADAPTERS: dict[str, Callable[[dict[str, Any]], GoldQuestion]] = {
 }
 
 
+_SPLIT_ROLES = frozenset({"heldout", "rehearsal"})
+_JUDGE_PROTOCOLS = frozenset({"legacy", "ordered"})
+
+
 class CorpusConfig:
     """Loaded configuration and question loader for a benchmark corpus."""
 
@@ -135,6 +141,44 @@ class CorpusConfig:
         self.document_subset = data.get("document_subset", {})
         self.models = data.get("models", {})
         self.arms = list(data.get("arms", {}).get("arms", ["graph-on", "graph-off"]))
+        for label in self.arms:
+            # D-101: a label the registry does not know fails the load, naming it.
+            canonical_arm(label)
+
+        # D-105/D-107: a corpus that declares [split] is drawn from the committed
+        # held-out split and driven in the seeded rotation.
+        split_sec = data.get("split", {})
+        self.split_file: str | None = None
+        self.split_role: str | None = None
+        if split_sec:
+            split_file = split_sec.get("file")
+            split_role = split_sec.get("role")
+            if not split_file or not split_role:
+                raise CorpusError(
+                    f"[split] in {toml_path} needs both 'file' and 'role'"
+                )
+            if split_role not in _SPLIT_ROLES:
+                raise CorpusError(
+                    f"[split] role {split_role!r} in {toml_path} must be one of "
+                    f"{sorted(_SPLIT_ROLES)}"
+                )
+            self.split_file = str(split_file)
+            self.split_role = str(split_role)
+
+        judge_protocol = str(data.get("judge", {}).get("protocol", "legacy"))
+        if judge_protocol not in _JUDGE_PROTOCOLS:
+            raise CorpusError(
+                f"[judge] protocol {judge_protocol!r} in {toml_path} must be one of "
+                f"{sorted(_JUDGE_PROTOCOLS)}"
+            )
+        self.judge_protocol = judge_protocol
+
+        preflight_sec = data.get("preflight", {})
+        self.legacy_canaries = bool(preflight_sec.get("legacy_canaries", True))
+        arm_canaries = preflight_sec.get("arm_canaries")
+        self.arm_canaries: str | None = (
+            str(arm_canaries) if arm_canaries is not None else None
+        )
         # D-68: a corpus may name a different corpus's document map via
         # [documents] map_corpus, so a corpus without its own seeded map (e.g. a
         # diagnostic corpus) can share another's. Defaults to itself.
