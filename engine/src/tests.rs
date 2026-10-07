@@ -60,6 +60,7 @@ pub mod bad_input_matrix;
 pub mod graph_boost;
 pub mod graph_cutover;
 pub mod graph_wire;
+pub mod retrieval_mode_pins;
 pub mod workflow_phase5_production;
 
 const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
