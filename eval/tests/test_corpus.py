@@ -10,6 +10,7 @@ import pytest
 from lancet_eval.config import repo_root
 from lancet_eval.corpus import (
     CorpusConfig,
+    CorpusError,
     GoldQuestion,
     load_corpus,
     sample_questions,
@@ -154,3 +155,87 @@ def test_attribution_file_content() -> None:
     assert "ODC-BY" in content
     assert "https://huggingface.co/datasets/yixuantt/MultiHopRAG" in content
     assert "unspecified" in content.lower()
+
+
+# --- 06.3.5-05 Task 1: arm labels, [split], [judge], [preflight] ---
+
+
+def _write_tmp_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, extra: str
+) -> CorpusConfig:
+    corpora_dir = tmp_path / "eval" / "corpora"
+    corpora_dir.mkdir(parents=True)
+    (corpora_dir / f"{name}.toml").write_text(
+        '[documents]\nmap_corpus = "multihop_rag"\n\n'
+        f'[questions]\nfile = "{name}/questions.sample.jsonl"\n'
+        'label_format = "multihop_rag"\n\n' + extra,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: tmp_path)
+    return CorpusConfig(name)
+
+
+def test_heldout_corpus_exposes_the_four_arms_and_new_sections() -> None:
+    cfg = load_corpus("multihop_rag_heldout")
+    assert cfg.arms == ["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
+    assert cfg.split_file == "multihop_rag/heldout_split.json"
+    assert cfg.split_role == "heldout"
+    assert cfg.judge_protocol == "ordered"
+    assert cfg.legacy_canaries is False
+    assert cfg.arm_canaries == "multihop_rag/canary.arms.jsonl"
+
+
+def test_rehearsal_corpus_declares_the_rehearsal_role() -> None:
+    cfg = load_corpus("multihop_rag_rehearsal")
+    assert cfg.split_role == "rehearsal"
+    assert cfg.split_file == "multihop_rag/heldout_split.json"
+
+
+@pytest.mark.parametrize(
+    "corpus_name", ["multihop_rag", "graphrag_bench", "multihop_rag_diag"]
+)
+def test_legacy_corpora_keep_legacy_defaults(corpus_name: str) -> None:
+    cfg = load_corpus(corpus_name)
+    assert cfg.split_file is None
+    assert cfg.split_role is None
+    assert cfg.judge_protocol == "legacy"
+    assert cfg.legacy_canaries is True
+    assert cfg.arm_canaries is None
+
+
+def test_unknown_arm_label_fails_the_load_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(ValueError, match="bogus"):
+        _write_tmp_corpus(
+            tmp_path,
+            monkeypatch,
+            "bad_arms",
+            '[arms]\narms = ["graph-on", "bogus"]\n',
+        )
+
+
+def test_alias_arm_labels_are_accepted_and_stored_verbatim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _write_tmp_corpus(
+        tmp_path, monkeypatch, "alias_arms", '[arms]\narms = ["graph-on", "graph-off"]\n'
+    )
+    assert cfg.arms == ["graph-on", "graph-off"]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        '[split]\nfile = "multihop_rag/heldout_split.json"\nrole = "dev"\n',
+        '[split]\nfile = "multihop_rag/heldout_split.json"\n',
+        '[split]\nrole = "heldout"\n',
+        '[judge]\nprotocol = "strict"\n',
+    ],
+    ids=["bad-role", "missing-role", "missing-file", "bad-protocol"],
+)
+def test_invalid_split_or_judge_sections_fail_the_load(
+    extra: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(CorpusError):
+        _write_tmp_corpus(tmp_path, monkeypatch, "bad_sections", extra)
