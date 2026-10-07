@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 14/18 plans executed (13 offline code plans in waves 1-8, then 5 live-stack plans in waves 9-13 including gap-closure 06.3.5-18, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 15/18 plans executed (13 offline code plans in waves 1-8, then 5 live-stack plans in waves 9-13 including gap-closure 06.3.5-18, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1111,7 +1111,7 @@ Plans:
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 06.3.5-18-PLAN.md — Gap closure: the engine normalises a grounded abstention mislabelled `model_only` to `retrieval` (tolerant match, `generation_basis_normalised` event, `BASIS_RECONCILED` notice; substantive and uncited `model_only` still rejected), journal-only normalisation counts, and the re-rehearsal on rebuilt binaries under the D-86 cap
+- [x] 06.3.5-18-PLAN.md — Gap closure: the engine normalises a grounded abstention mislabelled `model_only` to `retrieval` (tolerant match, `generation_basis_normalised` event, `BASIS_RECONCILED` notice; substantive and uncited `model_only` still rejected), journal-only normalisation counts, and the re-rehearsal on rebuilt binaries under the D-86 cap
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
