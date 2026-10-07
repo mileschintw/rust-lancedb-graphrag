@@ -65,7 +65,13 @@ from lancet_eval.judge import (
     judge_once,
     truncate_evidence,
 )
-from lancet_eval.measure import compute_judge_spend, estimate_judge_cost_per_question
+from lancet_eval.measure import (
+    EMBEDDING_PRICE_PER_1M,
+    ESTIMATED_EMBEDDING_TOKENS_PER_QUERY,
+    compute_judge_spend,
+    compute_spend,
+    estimate_judge_cost_per_question,
+)
 from lancet_eval.arms import ARM_REGISTRY, arm_slug, canonical_arm, resolve_arm
 from lancet_eval.metrics import (
     abstention_leak,
@@ -471,6 +477,46 @@ def _per_arm_dimension(
     return DimensionResult(name=name, status="ok", score=score, detail=out, n=len(xs))
 
 
+def _delta_dimension(
+    name: str,
+    values_x: Mapping[str, float],
+    values_ref: Mapping[str, float],
+    *,
+    qtype_of: Mapping[str, str],
+    counts: bool,
+    detail: Mapping[str, float],
+    empty_reason: str,
+) -> DimensionResult:
+    """A secondary paired delta of arm X against `hybrid` over one question set.
+
+    `score` is the mean paired difference, which equals `mean_x - mean_hybrid` over the
+    same questions, and `n` is the number of pairs. The CI is the percentile bootstrap
+    of `p4.paired_delta` (B and seed from `stats`). There is no p-value and no Holm
+    field: a secondary delta is estimation only and is never called significant
+    (D-111, D-123).
+    """
+    if not values_x:
+        return DimensionResult(
+            name=name, status="skipped", reason=empty_reason, detail=dict(detail), n=0
+        )
+    pd = p4_mod.paired_delta(values_x, values_ref)
+    keys = sorted(values_x)
+    out: dict[str, float] = {k: float(v) for k, v in detail.items()}
+    out["ci_lower"] = float(pd.ci_lower)
+    out["ci_upper"] = float(pd.ci_upper)
+    out["n_pairs"] = float(pd.n)
+    out["mean_x"] = float(fmean(values_x[k] for k in keys))
+    out["mean_hybrid"] = float(fmean(values_ref[k] for k in keys))
+    if counts:
+        out["count_x"] = float(sum(values_x[k] for k in keys))
+        out["count_hybrid"] = float(sum(values_ref[k] for k in keys))
+        out["count_delta"] = out["count_x"] - out["count_hybrid"]
+    out.update(strata.paired_delta_strata(values_x, values_ref, qtype_of))
+    return DimensionResult(
+        name=name, status="ok", score=float(pd.delta), detail=out, n=pd.n
+    )
+
+
 def _record_ranking_ids(rec: RunRecord) -> list[str]:
     """The D-100 pre-truncation ranking's chunk IDs, in order (empty without one)."""
     if rec.snapshot is None:
@@ -496,8 +542,50 @@ def _retrieve_node_ms(rec: RunRecord) -> float | None:
 
 
 def _record_spend_usd(rec: RunRecord) -> float:
-    """RED stub: replaced by the per-record spend of 06.3.5-10 Task 2."""
-    return 0.0
+    """One record's spend in USD: wire tokens, the failed-generation ceiling, embedding.
+
+    The generation part is `measure.compute_spend([rec], include_embeddings=False)`,
+    which already prices every superseded attempt and the failed-generation ceiling.
+    The per-query embedding estimate is added once per attempt, and only on an arm that
+    embeds: `bm25-only` with graph context off embeds nothing (D-125, pinned by
+    06.3.5-04). `measure.compute_spend` is not edited, so the stage cap keeps its
+    conservative per-query embedding charge.
+    """
+    generation, _ = compute_spend([rec], include_embeddings=False)
+    spec = resolve_arm(rec.graph_arm)
+    if spec.retrieval_mode == "bm25_only" and spec.disable_graph_context:
+        return generation
+    attempts = 1 + len(rec.prior_attempts)
+    embedding = (
+        attempts * ESTIMATED_EMBEDDING_TOKENS_PER_QUERY / 1_000_000.0
+    ) * EMBEDDING_PRICE_PER_1M
+    return generation + embedding
+
+
+def _provenance_scan(
+    records: Sequence[RunRecord],
+) -> tuple[dict[str, int], list[tuple[str, str, str]]]:
+    """Counts every provenance code over the records; lists the zero-tolerance failures.
+
+    Returns:
+        `(counts, failing)`: the number of records failing each code `a` to `g`, and
+        `(question_id, arm_label, codes)` for each record with a zero-tolerance
+        failure (clauses a, b, c, d, f), sorted by question and arm.
+    """
+    counts = dict.fromkeys("abcdefg", 0)
+    failing: list[tuple[str, str, str]] = []
+    for rec in records:
+        codes = sorted({f.code for f in provenance.provenance_failures(rec)})
+        for code in codes:
+            counts[code] += 1
+        fatal = [c for c in codes if c in provenance.ZERO_TOLERANCE_CODES]
+        if fatal:
+            failing.append((rec.question_id, rec.graph_arm, ",".join(fatal)))
+    failing.sort()
+    return counts, failing
+
+
+_PROVENANCE_REFUSAL_LISTED = 20
 
 
 def _prompt_tokens(rec: RunRecord) -> float:
@@ -512,6 +600,8 @@ class _Metric:
     name: str
     value: Callable[[RunRecord], float | None]
     kind: Literal["wilson", "bootstrap"]
+    delta_name: str | None = None
+    counts: bool = False
 
 
 def _four_arm_dimensions(
@@ -521,6 +611,7 @@ def _four_arm_dimensions(
     inputs: _SplitInputs,
     gold_map: Mapping[str, Any],
     arm_metrics: Mapping[str, Mapping[str, Any]],
+    provenance_counts: Mapping[str, int],
 ) -> list[DimensionResult]:
     """The four-arm per-arm dimensions of a `[split]` corpus (06.3.5-10, D-126).
 
@@ -566,11 +657,33 @@ def _four_arm_dimensions(
     def answer_of(rec: RunRecord) -> str:
         return rec.answer or ""
 
+    def duration(rec: RunRecord) -> float | None:
+        return float(rec.duration_ms)
+
+    # The primaries' paired deltas (paper_hits_at_4, answer_usable) are not written
+    # here: 06.3.5-13 computes them inside their Holm families. Every other row with a
+    # delta_name is a secondary: a paired delta against hybrid with a bootstrap CI, no
+    # p-value, never Holm-tested (D-111, D-115, D-123).
     metrics = [
         _Metric("paper_hits_at_4", lambda r: float(paper(r)["hit4"]), "wilson"),
-        _Metric("paper_hits_at_10", lambda r: float(paper(r)["hit10"]), "wilson"),
-        _Metric("paper_mrr_at_10", lambda r: float(paper(r)["rr"]), "bootstrap"),
-        _Metric("paper_map_at_10", lambda r: float(paper(r)["ap"]), "bootstrap"),
+        _Metric(
+            "paper_hits_at_10",
+            lambda r: float(paper(r)["hit10"]),
+            "wilson",
+            "paper_hits_at_10_delta",
+        ),
+        _Metric(
+            "paper_mrr_at_10",
+            lambda r: float(paper(r)["rr"]),
+            "bootstrap",
+            "paper_mrr_at_10_delta",
+        ),
+        _Metric(
+            "paper_map_at_10",
+            lambda r: float(paper(r)["ap"]),
+            "bootstrap",
+            "paper_map_at_10_delta",
+        ),
         _Metric(
             "answer_usable_p4",
             lambda r: float(
@@ -579,7 +692,10 @@ def _four_arm_dimensions(
             "wilson",
         ),
         _Metric(
-            "abstention_rate_g", lambda r: 1.0 if is_abstention(r) else 0.0, "wilson"
+            "abstention_rate_g",
+            lambda r: 1.0 if is_abstention(r) else 0.0,
+            "wilson",
+            "abstention_rate_g_delta",
         ),
         _Metric(
             "final_answer_em",
@@ -587,6 +703,7 @@ def _four_arm_dimensions(
                 final_answer_em(gold_map[r.question_id], answer_of(r)).score or 0.0
             ),
             "wilson",
+            "final_answer_em_delta",
         ),
         _Metric(
             "gold_containment",
@@ -594,28 +711,47 @@ def _four_arm_dimensions(
                 gold_contained(gold_map[r.question_id].gold_answer, answer_of(r))
             ),
             "wilson",
+            "gold_containment_delta",
         ),
         _Metric(
             "final_answer_missing_rate",
             lambda r: 1.0 if extract_final_answer(r.answer) is None else 0.0,
             "wilson",
+            "final_answer_missing_rate_delta",
+            counts=True,
         ),
         _Metric(
             "coverage_at_4",
             retrieval(lambda g, c: recall_at_k(g, c, k=4, chunk_size=chunk_size)),
             "bootstrap",
+            "coverage_at_4_delta",
         ),
         _Metric(
             "precision_at_4",
             retrieval(lambda g, c: context_precision_at_k(g, c, k=4)),
             "bootstrap",
+            "precision_at_4_delta",
         ),
-        _Metric("prompt_tokens_mean", _prompt_tokens, "bootstrap"),
+        _Metric("prompt_tokens_mean", _prompt_tokens, "bootstrap", "prompt_tokens_delta"),
+        # D-42 route: the paired difference is taken per question and reported as a
+        # mean difference with its bootstrap CI. The p50 / p95 dimensions below stay
+        # per-arm and descriptive: a difference of two arms' percentiles is not a
+        # paired per-question statistic.
+        _Metric("latency_total_ms_mean", duration, "bootstrap", "latency_total_ms_delta"),
+        _Metric(
+            "retrieve_node_ms_mean",
+            _retrieve_node_ms,
+            "bootstrap",
+            "retrieve_node_ms_delta",
+        ),
+        _Metric("spend_usd_mean", _record_spend_usd, "bootstrap", "spend_usd_delta"),
     ]
     percentile_metrics = [
-        ("latency_total_ms", lambda r: float(r.duration_ms)),
+        ("latency_total_ms", duration),
         ("retrieve_node_ms", _retrieve_node_ms),
     ]
+    reference = pop.reference_arm
+    comparison_arms = [a for a in arms if a != reference]
 
     def p4_values(
         fn: Callable[[RunRecord], float | None],
@@ -669,6 +805,23 @@ def _four_arm_dimensions(
         )
     )
 
+    # Arm provenance (AI-SPEC 5 #1): reaching this point means no zero-tolerance
+    # failure exists (score_run refused otherwise), so the score is 1.0. The counts
+    # include (e), which excludes the record from P4, and (g), corroboration only.
+    dims.append(
+        DimensionResult(
+            name="arm_provenance_conformance",
+            status="ok",
+            score=1.0,
+            detail={
+                **{f"code_{c}": float(provenance_counts[c]) for c in "abcdefg"},
+                "records_checked": float(len(records)),
+                "records_failing_zero_tolerance": 0.0,
+            },
+            n=len(records),
+        )
+    )
+
     for metric in metrics:
         by_arm, n_unscorable = p4_values(metric.value)
         for arm in arms:
@@ -696,6 +849,23 @@ def _four_arm_dimensions(
             if dim.status == "ok" and metric.name == "answer_usable_p4":
                 dim.detail.update(strata.constant_yes_baselines(list(values), gold_map))
             dims.append(dim)
+        if metric.delta_name is None:
+            continue
+        for arm in comparison_arms:
+            dims.append(
+                _delta_dimension(
+                    f"{metric.delta_name}__{arm_slug(arm)}",
+                    by_arm[arm],
+                    by_arm[reference],
+                    qtype_of=qtype_of,
+                    counts=metric.counts,
+                    detail={
+                        "n_excluded": n_excluded,
+                        "n_unscorable": float(n_unscorable),
+                    },
+                    empty_reason=empty,
+                )
+            )
 
     for base, fn in percentile_metrics:
         by_arm, n_unscorable = p4_values(fn)
@@ -942,7 +1112,25 @@ def score_run(
     # A `[split]` corpus's four-arm report reads the split and the gold-chunk table;
     # a gap in either refuses before any judge spend (06.3.5-10).
     split_inputs: _SplitInputs | None = None
+    provenance_counts: dict[str, int] = {}
     if config.split_file is not None:
+        # AI-SPEC 6, "Provenance in the paid drive": a zero-tolerance failure (clauses
+        # a, b, c, d, f) means the plumbing is wrong for an unknown share of records,
+        # so the report is refused, not counted as an exclusion. (e) keeps its
+        # count-and-exclude rule and (g) is counted only. Legacy corpora never run this.
+        provenance_counts, failing = _provenance_scan(records)
+        if failing:
+            listed = ", ".join(
+                f"{qid}/{arm}/{codes}"
+                for qid, arm, codes in failing[:_PROVENANCE_REFUSAL_LISTED]
+            )
+            more = len(failing) - _PROVENANCE_REFUSAL_LISTED
+            tail = f" (and {more} more)" if more > 0 else ""
+            raise ScoreError(
+                f"arm provenance failed on {len(failing)} record(s) (zero tolerance, "
+                "AI-SPEC §6); D-110 allows one bounded re-drive after a plumbing fix: "
+                f"{listed}{tail}"
+            )
         split_inputs = _load_split_inputs(config, gold_map, gold_chunks_path)
 
     # Compute deterministic scores for every configured arm
@@ -2231,6 +2419,7 @@ def score_run(
                 inputs=split_inputs,
                 gold_map=gold_map,
                 arm_metrics=arm_metrics,
+                provenance_counts=provenance_counts,
             )
         )
 
