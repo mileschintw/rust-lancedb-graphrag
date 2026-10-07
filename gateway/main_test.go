@@ -4431,6 +4431,45 @@ func TestQueryRAG_EdgeFlagsAndDisallowUnknownFields(t *testing.T) {
 			t.Fatalf("status = %d, want 400 Bad Request", recorder.Code)
 		}
 	})
+
+	// 06.3.5 D-99 fail closed: the retrieval_mode lookup is exact and closed, and the ranking flag
+	// is a JSON boolean. Each rejected body must fail before the engine is called.
+	invalidRetrievalFields := []struct {
+		name string
+		body string
+	}{
+		{"unknown retrieval_mode", `{"query":"q","session_id":"sess-1","retrieval_mode":"sparse"}`},
+		{"wrong-case retrieval_mode", `{"query":"q","session_id":"sess-1","retrieval_mode":"BM25_ONLY"}`},
+		{"capitalised retrieval_mode", `{"query":"q","session_id":"sess-1","retrieval_mode":"Hybrid"}`},
+		{"empty retrieval_mode", `{"query":"q","session_id":"sess-1","retrieval_mode":""}`},
+		{"numeric retrieval_mode", `{"query":"q","session_id":"sess-1","retrieval_mode":2}`},
+		{"string include_pre_truncation_ranking", `{"query":"q","session_id":"sess-1","include_pre_truncation_ranking":"true"}`},
+		{"numeric include_pre_truncation_ranking", `{"query":"q","session_id":"sess-1","include_pre_truncation_ranking":1}`},
+	}
+	for _, tc := range invalidRetrievalFields {
+		t.Run(tc.name+" rejected with 400 before the engine is called", func(t *testing.T) {
+			store := &fakeStore{}
+			engine := engineFunc{
+				queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+					t.Fatal("queryRAG should not be called on invalid request")
+					return nil, nil
+				},
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(tc.body)).WithContext(t.Context())
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+
+			app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 Bad Request", recorder.Code)
+			}
+			if !strings.Contains(recorder.Body.String(), "invalid request body") {
+				t.Errorf("body = %q, want the invalid_request_body message", recorder.Body.String())
+			}
+		})
+	}
 }
 
 func TestQueryRAG_SSE_WorkflowCompletedWithExplicitMetadata(t *testing.T) {

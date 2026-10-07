@@ -942,6 +942,19 @@ impl LancetService for LancetServiceImpl {
         // Resolved once at admission; Phase 6 adds no configuration key for this flag.
         let _disable_graph_context = req.disable_graph_context.unwrap_or(false);
 
+        // D-99 fails closed: a mode this build does not know is refused here and never read as
+        // hybrid, because a silent default would make an ablation arm's delta an artefact. The
+        // gateway refuses an unknown name first; this is the engine's own check for a direct caller.
+        if v1::RetrievalMode::try_from(req.retrieval_mode).is_err() {
+            return Err(d1_status(
+                tonic::Code::InvalidArgument,
+                "retrieval_mode must be one of hybrid, dense_only, bm25_only",
+                &session_id,
+                &correlation_id,
+                "invalid_retrieval_mode",
+            ));
+        }
+
         let _query_request = QueryRequest::from_values(
             &req.query,
             doc_ids,

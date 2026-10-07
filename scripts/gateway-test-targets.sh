@@ -19,9 +19,13 @@
 #         script; reset in Phase 06.3.5 plan 01 Task 1 (gateway 79, internal/sse 16).
 #   119 — Phase 06.3.5 plan 03 Task 2 (gateway 80, internal/sse 16): added TestQueryRAGRetrievalModeAndRankingRoundTrip,
 #         the D-99/D-100 request-key to snapshot-DTO round trip.
+#   120 — Phase 06.3.5 plan 04 Task 2 (gateway 80, internal/sse 17): added TestRetrievalSnapshotDTOKeySets,
+#         the default 10-key and explicit 12-key snapshot DTO pins and the ranking-row key rule. The
+#         unknown retrieval_mode and non-boolean flag 400 cases are subtests of an existing test and
+#         do not move the count.
 set -e
 
-EXPECTED_TOTAL=119
+EXPECTED_TOTAL=120
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
@@ -29,7 +33,7 @@ RELOCATION_BASELINE=67
 EXPECTED_PACKAGES="gateway 80
 gateway/db 7
 gateway/internal/config 4
-gateway/internal/sse 16
+gateway/internal/sse 17
 gateway/internal/telemetry 12"
 
 # Ensure go is found in standard user environments

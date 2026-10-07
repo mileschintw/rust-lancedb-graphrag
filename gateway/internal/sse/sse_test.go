@@ -2,8 +2,10 @@ package sse
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -865,4 +867,71 @@ func TestRetrievedChunksCarryGraphBoostedAndCitationsDoNot(t *testing.T) {
 	if _, has := out.StructuredCitations[0]["graph_boosted"]; has {
 		t.Error("structured_citations must not carry graph_boosted")
 	}
+}
+
+// TestRetrievalSnapshotDTOKeySets pins the snapshot's JSON key sets (06.3.5 D-52, D-99, D-100): a
+// default snapshot keeps the ten keys a client saw before the phase, an explicit mode with a
+// ranking adds exactly retrieval_mode and pre_truncation_ranking, and a ranking row carries a rank
+// key only when that rank is set.
+func TestRetrievalSnapshotDTOKeySets(t *testing.T) {
+	marshalKeys := func(t *testing.T, snapshot *pb.RetrievalSnapshot) map[string]json.RawMessage {
+		t.Helper()
+		raw, err := json.Marshal(ToRetrievalSnapshotDTO(snapshot))
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		var keys map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &keys); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return keys
+	}
+	sortedKeys := func(keys map[string]json.RawMessage) []string {
+		return slices.Sorted(maps.Keys(keys))
+	}
+	defaultKeys := []string{
+		"active_filter", "bm25_weight", "candidate_limit", "embedding_model", "final_limit",
+		"index_generation", "result_hash", "retrieved_chunks", "rrf_k", "vector_weight",
+	}
+
+	t.Run("a snapshot with no mode and no ranking has exactly the 10 default keys", func(t *testing.T) {
+		got := sortedKeys(marshalKeys(t, &pb.RetrievalSnapshot{}))
+		if !slices.Equal(got, defaultKeys) {
+			t.Fatalf("keys = %v, want %v", got, defaultKeys)
+		}
+	})
+
+	explicit := &pb.RetrievalSnapshot{
+		RetrievalMode: pb.RetrievalMode_RETRIEVAL_MODE_BM25_ONLY,
+		PreTruncationRanking: []*pb.RankedCandidate{
+			{ChunkId: "c-1", DocumentId: "d-1", FusedRank: 1, Bm25Rank: 3},
+			{ChunkId: "c-2", DocumentId: "d-2", FusedRank: 2, Bm25Rank: 1, GraphBoosted: true},
+		},
+	}
+
+	t.Run("an explicit mode with a ranking adds exactly two keys", func(t *testing.T) {
+		keys := marshalKeys(t, explicit)
+		want := append(slices.Clone(defaultKeys), "pre_truncation_ranking", "retrieval_mode")
+		slices.Sort(want)
+		if got := sortedKeys(keys); !slices.Equal(got, want) {
+			t.Fatalf("keys = %v, want %v", got, want)
+		}
+		if got := string(keys["retrieval_mode"]); got != `"bm25_only"` {
+			t.Errorf("retrieval_mode = %s, want \"bm25_only\"", got)
+		}
+	})
+
+	t.Run("a ranking row carries a rank key only when that rank is set", func(t *testing.T) {
+		var rows []map[string]json.RawMessage
+		if err := json.Unmarshal(marshalKeys(t, explicit)["pre_truncation_ranking"], &rows); err != nil {
+			t.Fatalf("unmarshal ranking: %v", err)
+		}
+		if len(rows) != 2 {
+			t.Fatalf("ranking length = %d, want 2", len(rows))
+		}
+		want := []string{"bm25_rank", "chunk_id", "document_id", "fused_rank", "graph_boosted"}
+		if got := sortedKeys(rows[0]); !slices.Equal(got, want) {
+			t.Errorf("row keys = %v, want %v", got, want)
+		}
+	})
 }

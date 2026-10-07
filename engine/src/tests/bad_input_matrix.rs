@@ -17,6 +17,12 @@
 //! | `filter_limit_exceeded_content_types` | `content_types` filter exceeds the configured count bound | `InvalidArgument` | `filter_limit_exceeded` | — |
 //! | `unmatched_filter` | a well-formed, valid UUIDv4 `document_ids` filter that names no ingested document | success (not rejected) | n/a | Phase 03 shipped a valid zero-match success branch (the `NO_EVIDENCE` notice); rejecting this would contradict shipped behavior and would remove the abstention signal Phase 6.3's scoring depends on. |
 //! | `contradictory_filter` | `document_ids` names the one ingested document but `content_types` names a type it does not have, so no candidate can satisfy both constraints at once | success (not rejected) | n/a | No rejection rule exists in the codebase for a document/content-type combination that cannot both be satisfied, and none is added here; it behaves identically to the unmatched case. |
+//! | `invalid_retrieval_mode` | `retrieval_mode` integer outside the four known `RetrievalMode` values (99) | `InvalidArgument` | `invalid_retrieval_mode` | — |
+//! | `negative_retrieval_mode` | negative `retrieval_mode` integer (-1) | `InvalidArgument` | `invalid_retrieval_mode` | — |
+//! | `retrieval_mode_unspecified_admitted` | `retrieval_mode` 0 (the default), unmatched filter | success (not rejected) | n/a | Every known mode value is admitted; the zero-match filter keeps the row independent of corpus content. |
+//! | `retrieval_mode_hybrid_admitted` | `retrieval_mode` 1, unmatched filter | success (not rejected) | n/a | As above. |
+//! | `retrieval_mode_dense_only_admitted` | `retrieval_mode` 2, unmatched filter | success (not rejected) | n/a | As above. |
+//! | `retrieval_mode_bm25_only_admitted` | `retrieval_mode` 3, unmatched filter | success (not rejected) | n/a | As above. |
 //!
 //! **Negative filter bound (not a request-level row).** D-15's enumeration mentions a negative
 //! filter bound, but [`DocumentFilter`] carries only two repeated string lists and no numeric
@@ -45,11 +51,12 @@
 //!
 //! **The generator *is* independently wired** (`LancetServiceImpl::generator: Arc<dyn
 //! Generator>`), so `FakeGenerator::calls()` below is asserted directly: a real, non-tautological
-//! proof for that one port — and it stays `0` for all twelve rows, not just the ten rejecting
+//! proof for that one port — and it stays `0` for all eighteen rows, not just the twelve rejecting
 //! ones. `WorkflowRunner::run_workflow` (`engine/src/workflow/runner.rs`) skips both
 //! `AssemblePrompt` and `GenerateAnswer` whenever `!ctx.allow_model_only` and the retrieval pass
-//! left zero evidence — which is exactly what `unmatched_filter` and `contradictory_filter`
-//! construct. Dense and lexical retrieval, unlike generation, **do** run for those two rows
+//! left zero evidence — which is exactly what `unmatched_filter`, `contradictory_filter` and the
+//! four `retrieval_mode_*_admitted` rows construct. Dense and lexical retrieval, unlike
+//! generation, **do** run for those six rows
 //! (`RetrieveHybridNode` is never skipped) — the corpus really is queried and really does come
 //! back empty; only the two downstream nodes are skipped.
 
@@ -61,7 +68,7 @@ use engine::config::EffectiveRagSettings;
 use engine::db::DatabaseManager;
 use engine::generation;
 use engine::ingest::{process_job, read_staged_jobs};
-use engine::pb::lancet::v1::{DocumentFilter, NoticeCode, QueryRagRequest};
+use engine::pb::lancet::v1::{DocumentFilter, NoticeCode, QueryRagRequest, RetrievalMode};
 use engine::rerank;
 use engine::testkit::test_query_request;
 
@@ -90,7 +97,7 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
     let path = database_path("bad-input-matrix");
     let database = DatabaseManager::initialize(&path).await.unwrap();
 
-    // One real, ingested document backs the two non-rejection rows so "matches nothing" is a
+    // One real, ingested document backs the non-rejection rows so "matches nothing" is a
     // genuine claim about a populated corpus, not a tautology over an empty one.
     let doc_id = Uuid::new_v4().to_string();
     stage_document(
@@ -118,7 +125,7 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
 
     // Never consumed: WorkflowRunner::run_workflow skips both AssemblePrompt and GenerateAnswer
     // when evidence is empty and allow_model_only is false (the default), which is exactly what
-    // both non-rejection rows below construct. A response queued here would only be reached if
+    // every non-rejection row below constructs. A response queued here would only be reached if
     // that skip regressed — the response's placeholder text says so directly.
     let fake_gen = Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
         answer: "Should not be called — zero evidence must skip generation.".into(),
@@ -298,7 +305,57 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
             },
             outcome: Outcome::Succeed,
         },
+        Row {
+            label: "invalid_retrieval_mode",
+            request: QueryRagRequest {
+                retrieval_mode: 99,
+                ..test_query_request("valid query", "00000000-0000-4000-8000-00000000000a")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "invalid_retrieval_mode",
+            },
+        },
+        Row {
+            label: "negative_retrieval_mode",
+            request: QueryRagRequest {
+                retrieval_mode: -1,
+                ..test_query_request("valid query", "00000000-0000-4000-8000-00000000000b")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "invalid_retrieval_mode",
+            },
+        },
     ];
+    let admitted_modes = [
+        (
+            "retrieval_mode_unspecified_admitted",
+            RetrievalMode::Unspecified,
+        ),
+        ("retrieval_mode_hybrid_admitted", RetrievalMode::Hybrid),
+        (
+            "retrieval_mode_dense_only_admitted",
+            RetrievalMode::DenseOnly,
+        ),
+        ("retrieval_mode_bm25_only_admitted", RetrievalMode::Bm25Only),
+    ];
+    let rows = rows
+        .into_iter()
+        .chain(admitted_modes.map(|(label, mode)| Row {
+            label,
+            request: QueryRagRequest {
+                query: "valid query".into(),
+                session_id: String::new(),
+                filter: Some(DocumentFilter {
+                    document_ids: vec![Uuid::new_v4().to_string()],
+                    content_types: vec![],
+                }),
+                retrieval_mode: mode as i32,
+                ..Default::default()
+            },
+            outcome: Outcome::Succeed,
+        }));
 
     for row in rows {
         match row.outcome {
