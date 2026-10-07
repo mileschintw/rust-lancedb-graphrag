@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 15
 status: executing
-stopped_at: Phase 06.3.5 plan 15 Task 1 answered (authorise-2.00, pre-authorized); held-out drive starting
+stopped_at: Phase 06.3.5 autonomous run stopped at 06.3.5-15 Task 2 step 2 (held-out preflight canary failure); owner decision needed - see .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-HANDOVER.md
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-07
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 15 (wave 10 of 12) - Task 2 (held-out drive) running
+Current Plan: 15 (wave 10 of 12) - STOPPED at Task 2 step 2 (preflight failed); see 06.3.5-HANDOVER.md
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-07: AUTONOMOUS RUN STOPPED (problem stop) — see `06.3.5-HANDOVER.md`.** 06.3.5-15 part A: stopped rehearsal processes, fresh engine PID 19900 / gateway PID 37844 (left running, idle), held-out preflight FAILED on `arm_mode_canaries` (canary `mhr-bb3f4ad63839` dense-only: engine rejected a `model_only` "Insufficient information" answer at validate; same ~1% behaviour as drive 2's 2 rejections). Preflight spend $0.002129 (uncapped, acknowledged); total phase spend $0.008035. No drive started; `eval/runs/2026-10-07-heldout-multihop_rag_heldout/` untracked with only `preflight.txt`. Owner decision needed: `rerun-preflight`, `override-canary`, `fix-first` or `halt-disclose`. Companion memo `06.3.5-WORKFLOW-MEMO.md`.
 - **2026-10-07: 06.3.5-15 Task 1 answered from the owner's standing pre-authorization: `authorise-2.00`** ($2.00 `--stage-cap` on the 1,404-record held-out drive `run`; the one held-out preflight acknowledged as uncapped). Applied before dispatch (Task 1 is the plan's first task, no executor work precedes it). Task 2 is split by the orchestrator: executor A runs steps 1-3 (stop the rehearsal processes, fresh launch, preflight, start the detached drive) and returns; the orchestrator waits on `drive-exit.txt` with a Monitor (executors have no Monitor tool); executor B runs steps 4-8.
 - **2026-10-07: Phase 06.3.5 wave 9 complete (plan 14, live rehearsal).** Rehearsal provenance gate PASS (`202c1d50`, SUMMARY `d8350f89`, record `06.3.5-REHEARSAL.md`, run dir `eval/runs/2026-10-07-rehearsal-multihop_rag_rehearsal/`). Preflight all pass (12 arm-mode canaries; legacy canaries D-124 skips); 12-record probe under `--stage-cap 0.05` exit 0, no provenance code on any record, D-125 live (bm25-only vector_count 0); judge `--rehearsal` (cap 0.02) 8 calls, p50 3251 ms / p95 6560 ms. Settled spend: preflight $0.002157, probe $0.002381, judge $0.001368, total $0.005906. Engine PID 37108 / gateway PID 27712 left running for plan 15 (deviation from Task 3 step 5, recorded). Gate green: engine 741, gateway 120, eval pytest 1748. OBS-06 stays unticked (D-98).
 - **2026-10-07: 06.3.5-14 Task 2 answered from the owner's standing pre-authorization: `authorise-0.05-with-judge-0.02`** ($0.05 `--stage-cap` on the 12-record rehearsal probe, $0.02 cap on the `judge --rehearsal` sample, the ~$0.005 held-out preflight acknowledged as uncapped). Task 1 committed `9741ba48` (suites green on `0c5efd4f`, release engine and gateway rebuilt after `c407a6a2`, env-scope and identity checks pass, engine PID 37108 / gateway PID 27712 serving with stderr captured under `data/oi02-evidence/heldout-2026-10-07/`, nothing spent). Continuation runs Task 3 against the running processes.
@@ -548,7 +549,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 plan 15 Task 1 answered (authorise-2.00, pre-authorized); held-out drive starting
+**Stopped at:** Phase 06.3.5 autonomous run stopped at 06.3.5-15 Task 2 step 2 (held-out preflight canary failure); owner decision needed - see .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-HANDOVER.md
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
