@@ -41,6 +41,7 @@ ARMS = ("dense-only", "hybrid")
 ABLATION = Notice(code="GRAPH_ABLATION", message="", typed_code=18)
 HEX = "0" * 64
 GENERATION = "lance-7"
+EXCERPT_CHARS = 512  # the engine bound the fixture journal was written under
 
 FACTS = {
     "q1": ["Alpha one fact text.", "Alpha two fact text."],
@@ -76,7 +77,7 @@ POSITIONS: dict[str, dict[str, dict[str, int]]] = {
 
 TEXTS = {
     "q1:a": f"Intro. {FACTS['q1'][0]} Outro.",
-    "q1:b": f"Middle. {FACTS['q1'][1]} End.",
+    "q1:b": f"Médiane. {FACTS['q1'][1]} End.",
     "q2:a": f"Start. {FACTS['q2'][0]} Finish.",
     "q2:b": "A chunk that does not hold the second beta fact.",
     "q3:a": f"Opening {FACTS['q3'][0]} closing.",
@@ -115,7 +116,8 @@ def _record(arm: str, qid: str, *, outcome: str = "success") -> RunRecord:
         StructuredCitation(
             chunk_id=r.chunk_id,
             document_id="doc1",
-            excerpt=_text(r.chunk_id)[:512],
+            excerpt=_text(r.chunk_id)[:EXCERPT_CHARS],
+            is_truncated=len(_text(r.chunk_id)) > EXCERPT_CHARS,
             rank=r.fused_rank,
         )
         for r in ranking[:8]
@@ -159,7 +161,9 @@ def _record(arm: str, qid: str, *, outcome: str = "success") -> RunRecord:
 class Fixture:
     """Paths of one tmp cross-check input set."""
 
-    def __init__(self, tmp_path: Path, *, errored: tuple[str, str] | None = None) -> None:
+    def __init__(
+        self, tmp_path: Path, *, errored: tuple[str, str] | None = None
+    ) -> None:
         self.dir = tmp_path
         self.journal = tmp_path / "journal.jsonl"
         self.split = tmp_path / "split.json"
@@ -171,9 +175,8 @@ class Fixture:
         journal.write_header(corpus="fx", partial=False)
         for arm in ARMS:
             for qid in G_IDS:
-                journal.append(
-                    _record(arm, qid, outcome="error" if (arm, qid) == errored else "success")
-                )
+                outcome = "error" if (arm, qid) == errored else "success"
+                journal.append(_record(arm, qid, outcome=outcome))
         self.split.write_text(
             json.dumps(
                 {
@@ -351,7 +354,8 @@ def test_main_writes_per_record_verdicts_and_per_arm_disagreement_counts(
     hybrid = _entry(result, "hybrid", "q1")
     assert (hybrid["text_hit4"], hybrid["text_first_hit_rank"]) == (1, 1)
     assert hybrid["text_ap"] == pytest.approx((1 + 1 / 2) / 2)
-    assert not any(hybrid[f"disagree_{k}"] for k in ("hit4", "hit10", "first_hit_rank", "ap"))
+    keys = ("hit4", "hit10", "first_hit_rank", "ap")
+    assert not any(hybrid[f"disagree_{k}"] for k in keys)
     dense = result["arms"]["dense-only"]["p4"]
     hyb = result["arms"]["hybrid"]["p4"]
     assert dense["n"] == hyb["n"] == 3
@@ -427,7 +431,8 @@ def test_a_final_eight_excerpt_that_drifted_exits_4_naming_the_chunk(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fx = Fixture(tmp_path)
-    fx.write_dump(override={"q1:b": "The store now holds different text for this chunk."})
+    changed = "The store now holds different text for this chunk."
+    fx.write_dump(override={"q1:b": changed})
     assert script.main(fx.args()) == 4
     err = capsys.readouterr().err
     assert "q1:b" in err
@@ -445,14 +450,27 @@ def test_a_dump_text_that_does_not_match_its_digest_is_refused(
     assert not fx.out.exists()
 
 
-def test_the_excerpt_bound_is_the_engines_code_point_prefix(tmp_path: Path) -> None:
-    """A chunk longer than the bound is compared by its first N Unicode code points."""
+def test_the_excerpt_bound_is_the_engines_code_point_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A journal written under a 20-code-point bound matches only that bound."""
+    monkeypatch.setattr(sys.modules[__name__], "EXCERPT_CHARS", 20)
+    fx = Fixture(tmp_path)  # includes a chunk that starts with a multi-byte character
+    assert script.main([*fx.args(), "--excerpt-max-chars", "20"]) == 0
+    assert script.main(fx.args()) == 4  # the default 512 bound reads these as drift
+
+
+def test_a_chunk_longer_than_the_bound_must_be_flagged_truncated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys.modules[__name__], "EXCERPT_CHARS", 20)
     fx = Fixture(tmp_path)
-    long_text = "é" + "x" * 600  # longer than 512 code points, with a multi-byte start
-    fx.write_dump(override={"q1:a": long_text})
-    # the journal excerpt is the old short text, so the long dump text is drift
-    assert script.main(fx.args()) == 4
-    assert script.main([*fx.args(), "--excerpt-max-chars", "5"]) == 4
+    # the same prefixes, but is_truncated is wrong for any chunk longer than 20
+    lines = []
+    for line in fx.journal.read_text(encoding="utf-8").splitlines():
+        lines.append(line.replace('"is_truncated":true', '"is_truncated":false'))
+    fx.journal.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+    assert script.main([*fx.args(), "--excerpt-max-chars", "20"]) == 4
 
 
 # ---- no chunk text, no scorer -------------------------------------------------------
