@@ -3002,3 +3002,272 @@ async fn d96_generation_served_bounds_and_escapes_provider_text() {
         served_lines[0]
     );
 }
+
+// ---------------------------------------------------------------------------
+// 06.3.5-18: a cited grounded abstention that the model labels `model_only` is accepted
+// as a disclosed `retrieval` abstention; every other `model_only` shape stays rejected.
+// ---------------------------------------------------------------------------
+
+/// The exact provider output behind the live canary rejection of 2026-10-07.
+///
+/// It is the `raw_head` of line 86 of `data/oi02-evidence/heldout-2026-10-07/engine-stderr-drive.log`:
+/// a `generation_output_rejected` event for correlation
+/// `14b46f0b-9d79-4c7f-a38f-8a79d4b24fa4`, canary `mhr-bb3f4ad63839` (dense-only arm), served by
+/// Sail Research as `deepseek/deepseek-v4-flash-0731`. It has 954 characters. The model
+/// self-reports `model_only` yet cites the eight evidence blocks it checked and ends on
+/// `Answer: Insufficient information.`, so the engine rejected a grounded abstention. The
+/// literal is written with explicit escapes, never a literal line break, so line-ending
+/// conversion cannot alter its bytes.
+pub const GROUNDED_ABSTENTION_RAW_OUTPUT: &str = "{\n  \"answer\": \"The provided evidence does not include the specific reports by The Sydney Morning Herald on October 1, 2023, or by Fortune on October 6, 2023, that the question references. The evidence blocks [1] through [8] are from other sources (e.g., ASX market reports) and discuss Federal Reserve interest rate decisions in general terms, but they do not contain the content of those two specific reports. Therefore, I cannot assess whether there was agreement in their portrayal of the Federal Reserve's response to economic conditions. I checked evidence blocks [1], [2], [3], [4], [5], [6], [7], and [8], but none match the described reports. Answer: Insufficient information.\",\n  \"answer_basis\": \"model_only\",\n  \"cited_evidence_ids\": [\"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\"],\n  \"final_answer\": \"Insufficient information\",\n  \"notices\": [],\n  \"warnings\": [\"The evidence provided does not contain the specific reports mentioned in the question.\"]\n}";
+
+/// The workflow trace ID of the live rejection, which the node passes to the adapter.
+const ABSTENTION_CORRELATION_ID: &str = "14b46f0b-9d79-4c7f-a38f-8a79d4b24fa4";
+
+/// Collects `generation_output_rejected` and `generation_basis_normalised` events as
+/// `field name -> rendered value`, in the order they were emitted.
+#[derive(Clone, Default)]
+struct AbstentionRecorder {
+    events: Arc<Mutex<Vec<CapturedEvent>>>,
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for AbstentionRecorder {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        let mut fields = FieldMap::default();
+        event.record(&mut fields);
+        if matches!(
+            fields.0.get("message").map(String::as_str),
+            Some("generation_output_rejected") | Some("generation_basis_normalised")
+        ) {
+            self.events
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(fields.0);
+        }
+    }
+}
+
+impl AbstentionRecorder {
+    /// The captured events whose message equals `message`.
+    fn named(&self, message: &str) -> Vec<CapturedEvent> {
+        self.events
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .filter(|event| event.get("message").map(String::as_str) == Some(message))
+            .cloned()
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn abstention_fixture_passes_the_adapter_and_the_generate_node() {
+    use crate::{
+        generation::{GroundingLimits, GROUNDED_ABSTENTION_NORMALISED_NOTICE},
+        pb::lancet::v1::{AnswerBasis as WireBasis, NoticeCode},
+        workflow::{node::Node, nodes::GenerateAnswerNode, WorkflowContext},
+    };
+    use tracing_subscriber::{layer::SubscriberExt, Layer};
+
+    // The fixture is the live output: 954 characters, parsed as a `model_only` answer that
+    // cites the bare IDs "1" to "8" and carries the abstention in `final_answer`.
+    assert_eq!(GROUNDED_ABSTENTION_RAW_OUTPUT.chars().count(), 954);
+    let parsed: ModelOutput = serde_json::from_str(GROUNDED_ABSTENTION_RAW_OUTPUT)
+        .expect("the fixture parses as the strict ModelOutput shape");
+    assert_eq!(parsed.answer_basis, AnswerBasis::ModelOnly);
+    let bare_ids: Vec<String> = (1..=8).map(|n| n.to_string()).collect();
+    assert_eq!(parsed.cited_evidence_ids, bare_ids);
+    assert_eq!(
+        parsed.final_answer.as_deref(),
+        Some("Insufficient information")
+    );
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept chat request");
+        let _ = read_http_request(&mut stream);
+        write_json_response(
+            &mut stream,
+            json!({
+                "choices": [{
+                    "message": { "role": "assistant", "content": GROUNDED_ABSTENTION_RAW_OUTPUT },
+                    "finish_reason": "stop"
+                }],
+                "usage": { "prompt_tokens": 2385, "completion_tokens": 238, "total_tokens": 2623 }
+            }),
+        );
+    });
+    let generator: Arc<dyn Generator> = Arc::new(d95_adapter(addr));
+
+    let recorder = AbstentionRecorder::default();
+    let subscriber = tracing_subscriber::registry().with(
+        recorder
+            .clone()
+            .with_filter(crate::telemetry::resolve_log_filter(None).targets),
+    );
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    let mut request = crate::testkit::test_query_request("Did both outlets agree?", "sess-abstain");
+    request.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new(
+        "sess-abstain".into(),
+        ABSTENTION_CORRELATION_ID.into(),
+        &request,
+    );
+    let candidates: Vec<FusedCandidate> = (1..=8)
+        .map(|n| sample_candidate(&n.to_string(), "Evidence text."))
+        .collect();
+    ctx.evidence_blocks = assemble_evidence_blocks(&candidates);
+
+    let node = GenerateAnswerNode::new(Some(generator)).with_settings(
+        GroundingLimits::new(8192, 2048).unwrap(),
+        200,
+        1.0,
+    );
+    let result = node
+        .run(&mut ctx, &tokio_util::sync::CancellationToken::new())
+        .await;
+    server.join().expect("server completed");
+
+    result.as_ref().unwrap_or_else(|err| {
+        let rejected = recorder.named("generation_output_rejected");
+        let shape: Vec<(&str, &str, &str)> = rejected
+            .iter()
+            .map(|event| {
+                (
+                    event["stage"].as_str(),
+                    event["finish_reason"].as_str(),
+                    event["raw_chars"].as_str(),
+                )
+            })
+            .collect();
+        panic!(
+            "the node rejected the live grounded abstention: {} \
+             (rejection events as (stage, finish_reason, raw_chars): {shape:?})",
+            err.message
+        )
+    });
+    assert_eq!(ctx.answer_basis, WireBasis::Retrieval);
+    let mut citations = ctx.citations.clone();
+    citations.sort();
+    let markers: Vec<String> = (1..=8).map(|n| format!("[{n}]")).collect();
+    assert_eq!(citations, markers);
+    assert_eq!(
+        ctx.answer.lines().last(),
+        Some("Answer: Insufficient information")
+    );
+
+    let rejected = recorder.named("generation_output_rejected");
+    assert!(rejected.is_empty(), "no rejection event: {rejected:?}");
+    let normalised = recorder.named("generation_basis_normalised");
+    assert_eq!(normalised.len(), 1, "exactly one event: {normalised:?}");
+    let event = &normalised[0];
+    let mut field_names: Vec<&str> = event.keys().map(String::as_str).collect();
+    field_names.sort_unstable();
+    assert_eq!(
+        field_names,
+        [
+            "cited_ids",
+            "correlation_id",
+            "generation_basis_normalised",
+            "message",
+            "model_cited_ids",
+            "normalised_basis",
+            "original_basis",
+            "reason",
+        ]
+    );
+    assert_eq!(event["generation_basis_normalised"], "true");
+    assert_eq!(event["reason"], "grounded_abstention");
+    assert_eq!(unquoted(&event["correlation_id"]), ABSTENTION_CORRELATION_ID);
+    assert_eq!(unquoted(&event["original_basis"]), "model_only");
+    assert_eq!(unquoted(&event["normalised_basis"]), "retrieval");
+    assert_eq!(event["model_cited_ids"], "8");
+    assert_eq!(event["cited_ids"], "8");
+    for value in event.values() {
+        assert!(
+            !value.contains("Sydney") && !value.contains("Insufficient"),
+            "the event carries no answer text: {value}"
+        );
+    }
+
+    let reconciled: Vec<_> = ctx
+        .notices
+        .iter()
+        .filter(|notice| notice.typed_code == NoticeCode::BasisReconciled as i32)
+        .collect();
+    assert_eq!(reconciled.len(), 1, "exactly one notice: {reconciled:?}");
+    assert_eq!(reconciled[0].message, GROUNDED_ABSTENTION_NORMALISED_NOTICE);
+}
+
+/// Owner condition 5: a substantive `model_only` answer is rejected exactly as before.
+#[tokio::test]
+async fn abstention_substantive_model_only_answer_is_still_rejected() {
+    let content = json!({
+        "answer": "The Federal Reserve held rates [1].\nAnswer: Yes",
+        "final_answer": "Yes",
+        "cited_evidence_ids": ["1"],
+        "answer_basis": "model_only",
+        "notices": [],
+        "warnings": []
+    })
+    .to_string();
+    let (result, events) = generate_against_mock(
+        "Did the Fed hold rates?",
+        "Text.",
+        &content,
+        Some("stop"),
+        Some((500, 100, 600)),
+    )
+    .await;
+
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert_eq!(
+        err.message(),
+        "ModelOnly answer basis is not supported on Phase 03 QueryRAG path"
+    );
+    assert_eq!(events.len(), 1, "exactly one rejection event: {events:?}");
+    assert_eq!(events[0]["stage"], "validate");
+    assert_eq!(unquoted(&events[0]["answer_basis"]), "model_only");
+    assert_eq!(events[0]["model_cited_ids"], "1");
+}
+
+/// Owner condition 2: an uncited `model_only` abstention is rejected exactly as before.
+///
+/// Widening the fix to abstentions that cite no evidence block is a deferred owner decision,
+/// so this path stays closed until the owner takes it.
+#[tokio::test]
+async fn abstention_uncited_model_only_answer_is_still_rejected() {
+    let content = json!({
+        "answer": "None of the evidence blocks match. Answer: Insufficient information.",
+        "final_answer": "Insufficient information",
+        "cited_evidence_ids": [],
+        "answer_basis": "model_only",
+        "notices": [],
+        "warnings": []
+    })
+    .to_string();
+    let (result, events) = generate_against_mock(
+        "Did both outlets agree?",
+        "Text.",
+        &content,
+        Some("stop"),
+        Some((500, 100, 600)),
+    )
+    .await;
+
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert_eq!(
+        err.message(),
+        "ModelOnly answer basis is not supported on Phase 03 QueryRAG path"
+    );
+    assert_eq!(events.len(), 1, "exactly one rejection event: {events:?}");
+    assert_eq!(unquoted(&events[0]["answer_basis"]), "model_only");
+    assert_eq!(events[0]["model_cited_ids"], "0");
+}

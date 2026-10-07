@@ -586,6 +586,16 @@ impl Display for GenerationError {
 
 impl std::error::Error for GenerationError {}
 
+/// The fixed notice text attached to a record whose `model_only` basis the engine normalised.
+///
+/// It carries typed code `BASIS_RECONCILED` (15) and is fixed text with no interpolation, so
+/// the harness counter in `eval/scripts/basis_normalisation_counts.py` identifies a normalised
+/// record by exact equality with this string. Changing it requires changing
+/// `NORMALISED_NOTICE_MESSAGE` in that script in the same commit, which a harness test
+/// enforces by reading this literal from the source. The literal must stay on one line, with
+/// no `\` continuation and no `concat!`, so that test can read it with a regular expression.
+pub const GROUNDED_ABSTENTION_NORMALISED_NOTICE: &str = "grounded abstention: the model self-reported answer basis 'model_only' on an 'Answer: Insufficient information' answer that cites the evidence blocks it checked; the engine normalised the basis to 'retrieval'";
+
 /// Characters of a rejected model output kept from its start.
 ///
 /// Sized so a complete `ModelOutput` JSON object with a normal answer fits, which makes a

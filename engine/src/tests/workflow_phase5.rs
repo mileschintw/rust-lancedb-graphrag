@@ -7592,7 +7592,10 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RejectionCapture {
     ) {
         let mut fields = RejectionFields::default();
         event.record(&mut fields);
-        if fields.0.get("message").map(String::as_str) == Some("generation_output_rejected") {
+        if matches!(
+            fields.0.get("message").map(String::as_str),
+            Some("generation_output_rejected") | Some("generation_basis_normalised")
+        ) {
             self.events
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -7602,20 +7605,32 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RejectionCapture {
 }
 
 impl RejectionCapture {
-    fn captured(&self) -> Vec<RejectionEvent> {
+    /// The captured events whose message equals `message`.
+    fn named(&self, message: &str) -> Vec<RejectionEvent> {
         self.events
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+            .iter()
+            .filter(|event| event.get("message").map(String::as_str) == Some(message))
+            .cloned()
+            .collect()
+    }
+
+    /// Only the `generation_output_rejected` events, so the D-91 assertions below read
+    /// rejections and nothing else.
+    fn captured(&self) -> Vec<RejectionEvent> {
+        self.named("generation_output_rejected")
     }
 }
 
-/// Runs the node once under a subscriber that only records rejection events, gated by the
-/// D-90 default filter so an event the default drops would not be seen.
-async fn run_node_capturing_rejections(
+/// Runs the node once under a subscriber that records rejection and basis-normalisation
+/// events, gated by the D-90 default filter so an event the default drops would not be seen.
+///
+/// Returns the result, the rejection events and the `generation_basis_normalised` events.
+async fn run_node_capturing_events(
     node: &GenerateAnswerNode,
     ctx: &mut WorkflowContext,
-) -> (Result<(), NodeError>, Vec<RejectionEvent>) {
+) -> (Result<(), NodeError>, Vec<RejectionEvent>, Vec<RejectionEvent>) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::Layer;
 
@@ -7626,7 +7641,20 @@ async fn run_node_capturing_rejections(
 
     let cancel = CancellationToken::new();
     let result = node.run(ctx, &cancel).await;
-    (result, capture.captured())
+    (
+        result,
+        capture.captured(),
+        capture.named("generation_basis_normalised"),
+    )
+}
+
+/// Runs the node once and returns only the rejection events.
+async fn run_node_capturing_rejections(
+    node: &GenerateAnswerNode,
+    ctx: &mut WorkflowContext,
+) -> (Result<(), NodeError>, Vec<RejectionEvent>) {
+    let (result, rejections, _normalised) = run_node_capturing_events(node, ctx).await;
+    (result, rejections)
 }
 
 fn rejection_node_returning(output: ModelOutput, repair: bool) -> GenerateAnswerNode {
@@ -8058,4 +8086,80 @@ fn d95_rendered_answer_revalidates_like_the_original() {
     assert!(rendered
         .validate_grounding_with_limits(&evidence, limits)
         .is_ok());
+}
+
+// ---------------------------------------------------------------------------
+// Plan 06.3.5-18: a grounded abstention labelled `model_only` is normalised only when it
+// still passes every existing check; the node never normalises a rejected output.
+// ---------------------------------------------------------------------------
+
+/// The abstention shape the live canary produced, cited to an evidence block that does
+/// not exist, so no marker resolves. Total citation loss must still fail closed.
+#[tokio::test]
+async fn abstention_with_unresolvable_markers_is_still_rejected() {
+    let mut req = test_query_request("Unresolvable abstention", "sess-abstain-9999");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new(
+        "sess-abstain-9999".into(),
+        "trace-abstain-9999".into(),
+        &req,
+    );
+    ctx.evidence_blocks = vec![evidence_block_with_id("[1]")];
+
+    let node = rejection_node_returning(
+        d95_output_with_field(
+            "Checked block [9999].\nAnswer: Insufficient information",
+            &["[9999]"],
+            AnswerBasis::ModelOnly,
+            "Insufficient information",
+        ),
+        true,
+    );
+
+    let (result, rejected, normalised) = run_node_capturing_events(&node, &mut ctx).await;
+
+    let err = result.expect_err("total citation loss on a model_only output stays rejected");
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+    assert_eq!(
+        err.message,
+        "ModelOnly answer basis is not supported on Phase 03 QueryRAG path"
+    );
+    assert_eq!(rejected.len(), 1, "exactly one rejection event: {rejected:?}");
+    assert_eq!(rejected[0]["answer_basis"], "\"model_only\"");
+    assert_eq!(rejected[0]["total_drop"], "true");
+    assert!(normalised.is_empty(), "nothing was normalised: {normalised:?}");
+    assert!(
+        !ctx.notices
+            .iter()
+            .any(|notice| notice.typed_code == NoticeCode::BasisReconciled as i32),
+        "no basis notice on a rejected record: {:?}",
+        ctx.notices
+    );
+}
+
+/// With citation repair off, the normalised output still goes through the unchanged
+/// cited-ID check: the model's bare IDs are not evidence IDs, so the record is rejected.
+#[tokio::test]
+async fn abstention_repair_disabled_branch_keeps_the_cited_id_check() {
+    let mut req = test_query_request("Repair-off abstention", "sess-abstain-off");
+    req.allow_model_only = Some(false);
+    let mut ctx = WorkflowContext::new("sess-abstain-off".into(), "trace-abstain-off".into(), &req);
+    ctx.evidence_blocks = (1..=8)
+        .map(|n| evidence_block_with_id(&format!("[{n}]")))
+        .collect();
+
+    let output: ModelOutput =
+        serde_json::from_str(engine::generation::tests::GROUNDED_ABSTENTION_RAW_OUTPUT)
+            .expect("the live fixture parses");
+    let node = rejection_node_returning(output, false);
+
+    let (result, rejected, normalised) = run_node_capturing_events(&node, &mut ctx).await;
+
+    let err = result.expect_err("the repair-disabled branch keeps the cited-ID check");
+    assert_eq!(err.kind, NodeErrorKind::LlmGenerationFailed);
+    assert_eq!(err.message, "cited_evidence_id '1' is not in packed evidence");
+    assert_eq!(rejected.len(), 1, "exactly one rejection event: {rejected:?}");
+    // The event shows what the model wrote, not the engine's normalised view of it.
+    assert_eq!(rejected[0]["answer_basis"], "\"model_only\"");
+    assert!(normalised.is_empty(), "nothing was normalised: {normalised:?}");
 }
