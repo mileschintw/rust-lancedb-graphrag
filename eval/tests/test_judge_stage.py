@@ -65,10 +65,13 @@ def _gold(corpus: str) -> dict[str, GoldQuestion]:
 
 @functools.cache
 def real_split() -> HeldOutSplit:
-    return load_split(repo_root() / "eval" / "corpora" / "multihop_rag" / "heldout_split.json")
+    path = repo_root() / "eval" / "corpora" / "multihop_rag" / "heldout_split.json"
+    return load_split(path)
 
 
-def g_ids(n_comparison: int = 4, n_inference: int = 4, n_temporal: int = 4) -> list[str]:
+def g_ids(
+    n_comparison: int = 4, n_inference: int = 4, n_temporal: int = 4
+) -> list[str]:
     """Real held-out G question IDs: the first n of each type, sorted by ID."""
     gold = _gold(HELDOUT)
     pool = sorted(real_split().heldout_g_ids)
@@ -273,7 +276,9 @@ def test_every_judgeable_record_of_every_arm_is_judged_and_cached(
     records = standard_records(
         qids,
         **{
-            f"dense-only|{qids[0]}": make_record("dense-only", qids[0], no_evidence=True),
+            f"dense-only|{qids[0]}": make_record(
+                "dense-only", qids[0], no_evidence=True
+            ),
             f"bm25-only|{qids[1]}": make_record("bm25-only", qids[1], uncited=True),
             f"hybrid|{qids[2]}": make_record("hybrid", qids[2], drop_ablation=True),
             f"hybrid+graph|{qids[3]}": make_record(
@@ -287,7 +292,8 @@ def test_every_judgeable_record_of_every_arm_is_judged_and_cached(
     result = _stage(run)
 
     assert result.stop_reason is None
-    assert len(stage_env.calls) == 44  # 48 minus an abstention, uncited, provenance, error
+    # 48 records minus an abstention, an uncited, a provenance failure and an error
+    assert len(stage_env.calls) == 44
     cache = JudgeCache(run / "judge_cache.json")
     assert len(cache.entries) == 44
     assert all(e.verdict is not None for e in cache.entries.values())
@@ -434,7 +440,7 @@ def test_a_cached_error_entry_is_attempted_again(
     assert sum(a.judged_now for a in result.arms.values()) == 1
 
 
-# --- the refusals, each before the first call ------------------------------------------
+# --- the refusals, each before the first call ---------------------------------
 
 
 def _refused(run: Path, fake: FakeJudge, match: str, **kwargs: Any) -> None:
@@ -510,7 +516,9 @@ def test_a_dirty_harness_source_tree_is_refused(
 def test_the_trust_floor_commit_must_predate_the_journal(
     tmp_path: Path, stage_env: FakeJudge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(gitcheck, "commit_time", lambda sha, *, repo=None: 4_000_000_000)
+    monkeypatch.setattr(
+        gitcheck, "commit_time", lambda sha, *, repo=None: 4_000_000_000
+    )
     run = build_run(tmp_path, standard_records(g_ids(1, 1, 0)))
     _refused(run, stage_env, "created_at")
 
@@ -621,7 +629,7 @@ def test_a_rehearsal_corpus_is_refused_without_the_rehearsal_flag(
     _refused(run, stage_env, "heldout")
 
 
-# --- retries and tripwires -------------------------------------------------------------
+# --- retries and tripwires ----------------------------------------------------
 
 
 def test_an_error_that_succeeds_on_re_attempt_leaves_a_verdict(
@@ -750,7 +758,7 @@ def test_a_cap_stop_leaves_the_stage_incomplete_for_a_later_resume(
     assert len(JudgeCache(run / "judge_cache.json").entries) == 8
 
 
-# --- the stage shows counts only -------------------------------------------------------
+# --- the stage shows counts only ----------------------------------------------
 
 
 def test_the_stage_computes_no_judged_statistic(
@@ -856,7 +864,7 @@ def test_the_judge_command_exits_nonzero_when_the_stage_halts(
     assert "consecutive" in result.output
 
 
-# --- --rehearsal (D-106 c, D-108) ------------------------------------------------------
+# --- --rehearsal (D-106 c, D-108) ---------------------------------------------
 
 
 def _rehearsal_ids() -> list[str]:

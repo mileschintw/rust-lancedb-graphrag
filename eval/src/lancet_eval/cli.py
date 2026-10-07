@@ -693,6 +693,97 @@ def score_benchmark(
         raise typer.Exit(code=1) from exc
 
 
+def _print_judge_stage(record: Any) -> None:
+    """Prints the judge stage's counts, spend and timings. Never a score (D-120)."""
+
+    def line(text: str, **kwargs: Any) -> None:
+        console.print(text, markup=False, highlight=False, soft_wrap=True, **kwargs)
+
+    line(
+        f"Judge stage ({record.mode}): {record.judge_model}, "
+        f"prompt {record.judge_prompt_version}"
+    )
+    line(
+        f"{'arm':<14}{'judgeable':>10}{'unique':>8}{'cached':>8}{'judged':>8}"
+        f"{'errors':>8}{'retried':>9}{'pending':>9}"
+    )
+    for arm, c in record.arms.items():
+        line(
+            f"{arm:<14}{c.judgeable:>10}{c.unique_keys:>8}{c.cached_before:>8}"
+            f"{c.judged_now:>8}{c.errors:>8}{c.re_attempted:>9}{c.not_attempted:>9}"
+        )
+    line(
+        f"calls {record.calls}, unique keys {record.unique_keys_total}, "
+        f"spend ${record.spend_usd:.6f} of cap ${record.stage_cap:.6f}, "
+        f"wall-clock {record.wall_clock_s:.1f}s"
+    )
+    if record.per_call_latency_ms_p50 is not None:
+        line(
+            f"per-call latency p50 {record.per_call_latency_ms_p50:.0f} ms, "
+            f"p95 {record.per_call_latency_ms_p95:.0f} ms"
+        )
+
+
+@app.command("judge")
+def judge_benchmark(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Closed run directory holding journal.jsonl",
+        ),
+    ],
+    stage_cap: Annotated[
+        float,
+        typer.Option(
+            "--stage-cap",
+            help="Stage spend cap in USD, as authorised at the D-86 checkpoint",
+            callback=_validate_stage_cap,
+        ),
+    ],
+    rehearsal: Annotated[
+        bool,
+        typer.Option(
+            "--rehearsal/--no-rehearsal",
+            help="Judge a rehearsal-role corpus's own records (D-106 c); prints "
+            "counts and per-call latency only",
+        ),
+    ] = False,
+) -> None:
+    """Judge every judgeable record of every arm into judge_cache.json (D-112).
+
+    Cache-only and counts-only: the stage writes the judge cache and judge-stage.json
+    and shows counts, spend and latency. It never computes a judged score, mean, delta
+    or agreement figure, and never writes report.json (D-120 step 1).
+    """
+    from lancet_eval.judge_stage import run_judge_stage
+
+    try:
+        record = run_judge_stage(run_dir=run, stage_cap=stage_cap, rehearsal=rehearsal)
+    except Exception as exc:
+        console.print(
+            f"Judge stage refused: {exc}",
+            style="bold red",
+            markup=False,
+            soft_wrap=True,
+        )
+        raise typer.Exit(code=1) from exc
+    _print_judge_stage(record)
+    if record.stop_reason is not None:
+        console.print(
+            f"Judge stage stopped early: {record.stop_reason}",
+            style="bold yellow",
+            markup=False,
+            soft_wrap=True,
+        )
+        console.print(
+            "Resuming needs a new D-86 checkpoint.", markup=False, soft_wrap=True
+        )
+        raise typer.Exit(code=1)
+    console.print("Wrote judge-stage.json and judge_cache.json.", markup=False)
+
+
 @app.command("report")
 def generate_report(
     run: Annotated[
