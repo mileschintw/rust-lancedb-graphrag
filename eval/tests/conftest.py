@@ -243,3 +243,38 @@ def ceiling_censored_measurement_records() -> list[MeasurementRecord]:
         )
         ordinal += 1
     return records
+
+
+@pytest.fixture
+def preregistered_clean_tree(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Make the D-73 ordering gates read a clean tree with a committed pre-registration.
+
+    06.3.5-08 refuses a `[split]` drive unless the commit introducing
+    `PREREGISTRATION_06_3_5` is an ancestor of a clean HEAD, and refuses its score
+    unless that commit is older than the journal header's `created_at`. A test that
+    reaches one of those gates for another reason uses this fixture, so it never
+    depends on the executor's working tree. The refusals themselves are exercised only
+    in `test_preregistration.py`, against a throwaway repository.
+
+    The introducing commit is one hour old; a journal written by `Journal` carries
+    `created_at = time.time()`, which is later.
+
+    Returns:
+        The fake introducing-commit sha.
+    """
+    import time
+
+    from lancet_eval import gitcheck
+
+    introducing = "a" * 40
+    head = "b" * 40
+    monkeypatch.setattr(gitcheck, "head_sha", lambda *, repo=None: head)
+    monkeypatch.setattr(
+        gitcheck, "introducing_commit", lambda token, path, *, repo=None: introducing
+    )
+    monkeypatch.setattr(gitcheck, "is_ancestor", lambda a, b, *, repo=None: True)
+    monkeypatch.setattr(gitcheck, "is_clean", lambda *paths, repo=None: True)
+    monkeypatch.setattr(
+        gitcheck, "commit_time", lambda sha, *, repo=None: int(time.time()) - 3600
+    )
+    return introducing

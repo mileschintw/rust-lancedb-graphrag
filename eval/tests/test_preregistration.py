@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import ast
 import dataclasses
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
 
+import httpx
 import pytest
 
-from lancet_eval import thresholds
+from lancet_eval import gitcheck, thresholds
+from lancet_eval import score as score_mod
+from lancet_eval.run import drive
+from lancet_eval.score import ScoreError, score_run
 
 
 def test_the_preregistration_values_are_the_owner_decisions() -> None:
@@ -60,3 +70,381 @@ def test_the_trust_floor_keeps_continuity_with_the_legacy_target() -> None:
     # Continuity (D-119): the same number in a separate constant; gate.py is untouched.
     assert thresholds.JUDGE_QWK_TRUST_FLOOR == gate.AGREEMENT_TARGET
     assert gate.CALIBRATION_SIZE == 12
+
+
+# --- gitcheck over a throwaway repository (never the live one) ----------------------
+
+THRESHOLDS = "eval/src/lancet_eval/thresholds.py"
+OTHER = "eval/src/lancet_eval/other.py"
+T0 = 1_700_000_000
+
+
+def _git(repo: Path, *args: str, when: int | None = None) -> str:
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": str(repo.parent / "empty.gitconfig"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    if when is not None:
+        env["GIT_AUTHOR_DATE"] = f"{when} +0000"
+        env["GIT_COMMITTER_DATE"] = f"{when} +0000"
+    res = subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.autocrlf=false",
+            *args,
+        ],
+        cwd=repo,
+        shell=False,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    return res.stdout.strip()
+
+
+def _write(repo: Path, rel: str, data: bytes) -> None:
+    path = repo / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
+def _commit(repo: Path, message: str, when: int) -> str:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", message, when=when)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """Two commits: the first has no token, the second adds both constants."""
+    root = tmp_path / "throwaway"
+    root.mkdir()
+    (tmp_path / "empty.gitconfig").write_text("", encoding="utf-8")
+    _git(root, "init", "-q")
+    _write(root, THRESHOLDS, b"BASELINE = 1\r\n")
+    _write(root, OTHER, b"X = 0\n")
+    _commit(root, "first", T0)
+    _write(
+        root,
+        THRESHOLDS,
+        b"BASELINE = 1\r\nPREREGISTRATION_06_3_5 = 2\r\n"
+        b"JUDGE_QWK_TRUST_FLOOR = 0.7\r\n",
+    )
+    _commit(root, "second", T0 + 100)
+    return root
+
+
+def _shas(repo: Path) -> tuple[str, str]:
+    second, first = _git(repo, "log", "--format=%H").splitlines()
+    return first, second
+
+
+def test_introducing_commit_returns_the_first_commit_that_added_the_token(
+    repo: Path,
+) -> None:
+    first, second = _shas(repo)
+    found = gitcheck.introducing_commit("PREREGISTRATION_06_3_5", THRESHOLDS, repo=repo)
+    assert found == second
+    assert gitcheck.introducing_commit("BASELINE", THRESHOLDS, repo=repo) == first
+    assert gitcheck.introducing_commit("NOT_THERE", THRESHOLDS, repo=repo) is None
+
+
+def test_head_sha_commit_time_and_ancestry(repo: Path) -> None:
+    first, second = _shas(repo)
+    assert gitcheck.head_sha(repo=repo) == second
+    assert gitcheck.commit_time(first, repo=repo) == T0
+    assert gitcheck.commit_time(second, repo=repo) == T0 + 100
+    assert gitcheck.is_ancestor(first, second, repo=repo) is True
+    assert gitcheck.is_ancestor(second, first, repo=repo) is False
+    assert gitcheck.is_ancestor(second, second, repo=repo) is True
+
+
+def test_is_tracked_is_false_for_an_untracked_file(repo: Path) -> None:
+    _write(repo, "eval/src/lancet_eval/new.py", b"Y = 1\n")
+    assert gitcheck.is_tracked(THRESHOLDS, repo=repo) is True
+    assert gitcheck.is_tracked("eval/src/lancet_eval/new.py", repo=repo) is False
+
+
+def test_is_clean_is_false_with_a_modified_tracked_file(repo: Path) -> None:
+    assert gitcheck.is_clean(gitcheck.SOURCE_DIR, repo=repo) is True
+    _write(repo, OTHER, b"X = 1\n")
+    assert gitcheck.is_clean(gitcheck.SOURCE_DIR, repo=repo) is False
+    assert gitcheck.is_clean("some/other/dir", repo=repo) is True
+
+
+def test_is_clean_counts_an_untracked_file_under_the_path(repo: Path) -> None:
+    _write(repo, "eval/src/lancet_eval/new.py", b"Y = 1\n")
+    assert gitcheck.is_clean(gitcheck.SOURCE_DIR, repo=repo) is False
+
+
+def test_show_blob_returns_lf_content_of_a_crlf_blob(repo: Path) -> None:
+    first, _ = _shas(repo)
+    blob = gitcheck.show_blob(first, THRESHOLDS, repo=repo)
+    assert blob == "BASELINE = 1\n"
+    assert "\r" not in blob
+
+
+def test_last_commit_touching_a_path(repo: Path) -> None:
+    first, second = _shas(repo)
+    assert gitcheck.last_commit_touching(THRESHOLDS, repo=repo) == second
+    assert gitcheck.last_commit_touching(OTHER, repo=repo) == first
+    assert gitcheck.last_commit_touching("never/existed.py", repo=repo) is None
+
+
+def test_repo_defaults_to_repo_root(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gitcheck, "repo_root", lambda: repo)
+    assert gitcheck.head_sha() == _shas(repo)[1]
+
+
+def test_a_leaking_git_dir_does_not_redirect_a_call(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    expected = _shas(repo)[1]
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "nowhere" / ".git"))
+    assert gitcheck.head_sha(repo=repo) == expected
+
+
+@pytest.mark.parametrize("bad", ["", "-Sevil", "--output=x"])
+def test_a_token_or_path_that_looks_like_an_option_is_refused(
+    repo: Path, bad: str
+) -> None:
+    with pytest.raises(gitcheck.GitCheckError):
+        gitcheck.introducing_commit(bad, THRESHOLDS, repo=repo)
+    with pytest.raises(gitcheck.GitCheckError):
+        gitcheck.introducing_commit("BASELINE", bad, repo=repo)
+
+
+def test_a_revision_that_is_not_a_commit_id_is_refused(repo: Path) -> None:
+    with pytest.raises(gitcheck.GitCheckError):
+        gitcheck.commit_time("--all", repo=repo)
+    with pytest.raises(gitcheck.GitCheckError):
+        gitcheck.is_ancestor("HEAD;rm", "HEAD", repo=repo)
+
+
+def test_an_unexpected_git_failure_raises_gitcheckerror(tmp_path: Path) -> None:
+    not_a_repo = tmp_path / "plain"
+    not_a_repo.mkdir()
+    with pytest.raises(gitcheck.GitCheckError):
+        gitcheck.head_sha(repo=not_a_repo)
+
+
+def test_gitcheck_uses_list_form_subprocess_only() -> None:
+    source = Path(gitcheck.__file__).read_text(encoding="utf-8")
+    assert "shell=False" in source
+    assert "shell=True" not in source
+    assert "os.system" not in source
+
+
+def test_run_and_score_reach_git_only_through_gitcheck() -> None:
+    import lancet_eval.run as run_mod
+
+    for mod in (run_mod, score_mod):
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        literals = {
+            n.value
+            for n in ast.walk(ast.parse(source))
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        }
+        # the token is only ever named by gitcheck's constants, never as a literal here
+        assert "PREREGISTRATION_06_3_5" not in literals
+        assert "JUDGE_QWK_TRUST_FLOOR" not in literals
+        assert "shell=True" not in source
+        assert "gitcheck." in source
+
+
+# --- preregistration_problems -------------------------------------------------------
+
+BOTH = (gitcheck.PREREGISTRATION_TOKEN, gitcheck.TRUST_FLOOR_TOKEN)
+
+
+def test_no_problem_when_the_commit_is_an_older_ancestor_of_a_clean_head(
+    repo: Path,
+) -> None:
+    problems = gitcheck.preregistration_problems(
+        BOTH, created_at=float(T0 + 200), require_clean_tree=True, repo=repo
+    )
+    assert problems == []
+
+
+def test_a_missing_token_is_a_problem(repo: Path) -> None:
+    problems = gitcheck.preregistration_problems(("NOT_THERE",), repo=repo)
+    assert len(problems) == 1
+    assert "NOT_THERE" in problems[0]
+
+
+@pytest.mark.parametrize("created_at", [float(T0 + 100), float(T0 + 50), float(T0)])
+def test_a_commit_not_strictly_older_than_the_data_is_a_problem(
+    repo: Path, created_at: float
+) -> None:
+    problems = gitcheck.preregistration_problems(BOTH, created_at=created_at, repo=repo)
+    assert len(problems) == 2
+    assert all("created_at" in p for p in problems)
+
+
+def test_a_dirty_source_tree_is_a_problem_only_when_clean_is_required(
+    repo: Path,
+) -> None:
+    _write(repo, OTHER, b"X = 99\n")
+    assert gitcheck.preregistration_problems(BOTH, repo=repo) == []
+    problems = gitcheck.preregistration_problems(
+        BOTH, require_clean_tree=True, repo=repo
+    )
+    assert problems == [f"{gitcheck.SOURCE_DIR} has an uncommitted change"]
+
+
+def test_a_token_committed_after_head_is_not_found_from_head(repo: Path) -> None:
+    first, _ = _shas(repo)
+    _git(repo, "checkout", "-q", first)
+    problems = gitcheck.preregistration_problems(BOTH, repo=repo)
+    # git log -S walks HEAD's history only: a later commit is invisible
+    assert len(problems) == 2
+
+
+def test_an_introducing_commit_beyond_head_is_not_an_ancestor(repo: Path) -> None:
+    first, second = _shas(repo)
+    _git(repo, "checkout", "-q", "-b", "side", first)
+    _write(repo, OTHER, b"X = 2\n")
+    side = _commit(repo, "side", T0 + 300)
+    assert gitcheck.head_sha(repo=repo) == side
+    assert gitcheck.is_ancestor(second, side, repo=repo) is False
+
+
+# --- the D-73 refusal in drive ------------------------------------------------------
+
+
+def _drive_args(tmp_path: Path, corpus: str) -> dict[str, object]:
+    return {
+        "corpus": corpus,
+        "journal_path": tmp_path / "journal.jsonl",
+        "stage_spend_cap": 10.0,
+        "workers": 1,
+        "max_retries": 0,
+        "client": httpx.Client(base_url="http://testserver"),
+    }
+
+
+def test_drive_refuses_a_split_corpus_without_a_committed_preregistration(
+    tmp_path: Path,
+) -> None:
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    (tmp_path / "empty.gitconfig").write_text("", encoding="utf-8")
+    _git(bare, "init", "-q")
+    _write(bare, THRESHOLDS, b"BASELINE = 1\n")
+    _commit(bare, "only", T0)
+    args = _drive_args(tmp_path, "multihop_rag_heldout")
+
+    with pytest.raises(ValueError, match="PREREGISTRATION_06_3_5") as excinfo:
+        drive(**args, git_repo=bare)  # type: ignore[arg-type]
+    assert "D-73" in str(excinfo.value)
+    assert isinstance(excinfo.value, gitcheck.PreregistrationError)
+    assert not (tmp_path / "journal.jsonl").exists()
+
+
+def test_drive_refuses_a_split_corpus_when_the_source_tree_is_dirty(
+    tmp_path: Path, repo: Path
+) -> None:
+    _write(repo, OTHER, b"X = 99\n")
+    args = _drive_args(tmp_path, "multihop_rag_heldout")
+
+    with pytest.raises(gitcheck.PreregistrationError, match="uncommitted") as excinfo:
+        drive(**args, git_repo=repo)  # type: ignore[arg-type]
+    assert "D-73" in str(excinfo.value)
+    assert not (tmp_path / "journal.jsonl").exists()
+
+
+def test_drive_refuses_the_rehearsal_split_corpus_too(
+    tmp_path: Path, repo: Path
+) -> None:
+    _write(repo, OTHER, b"X = 99\n")
+    args = _drive_args(tmp_path, "multihop_rag_rehearsal")
+    with pytest.raises(gitcheck.PreregistrationError):
+        drive(**args, git_repo=repo)  # type: ignore[arg-type]
+    assert not (tmp_path / "journal.jsonl").exists()
+
+
+def test_drive_never_checks_a_legacy_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(*_a: object, **_k: object) -> list[str]:
+        raise AssertionError("a legacy corpus must never reach the D-73 check")
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", boom)
+    args = _drive_args(tmp_path, "graphrag_bench")
+    result = drive(**args, limit=0)  # type: ignore[arg-type]
+    assert result == 0
+
+
+# --- the D-73 refusal in score ------------------------------------------------------
+
+
+def _split_journal(tmp_path: Path, created_at: object) -> Path:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    header: dict[str, object] = {
+        "type": "header",
+        "corpus": "multihop_rag_rehearsal",
+        "partial": False,
+    }
+    if created_at is not None:
+        header["created_at"] = created_at
+    record = {
+        "corpus": "multihop_rag_rehearsal",
+        "question_id": "q1",
+        "graph_arm": "hybrid",
+        "outcome": "success",
+        "answer": "Answer: Yes",
+    }
+    with open(run_dir / "journal.jsonl", "w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(header) + "\n")
+        f.write(json.dumps(record) + "\n")
+    return run_dir
+
+
+def test_score_refuses_a_split_report_when_the_data_predates_the_commit(
+    tmp_path: Path, repo: Path
+) -> None:
+    run_dir = _split_journal(tmp_path, float(T0 + 50))
+    with pytest.raises(ScoreError, match="D-73") as excinfo:
+        score_run(run_dir=run_dir, no_judge=True, git_repo=repo)
+    assert "PREREGISTRATION_06_3_5" in str(excinfo.value)
+
+
+def test_score_refuses_a_split_report_whose_header_has_no_created_at(
+    tmp_path: Path, repo: Path
+) -> None:
+    run_dir = _split_journal(tmp_path, None)
+    with pytest.raises(ScoreError, match="created_at"):
+        score_run(run_dir=run_dir, no_judge=True, git_repo=repo)
+
+
+def test_a_later_created_at_passes_the_score_ordering_check(repo: Path) -> None:
+    score_mod._require_preregistered_before(float(T0 + 200), repo)
+    with pytest.raises(ScoreError, match="D-73"):
+        score_mod._require_preregistered_before(float(T0 + 100), repo)
+    with pytest.raises(ScoreError, match="created_at"):
+        score_mod._require_preregistered_before("yesterday", repo)
+    with pytest.raises(ScoreError, match="created_at"):
+        score_mod._require_preregistered_before(True, repo)
+
+
+def test_the_fixture_makes_the_gates_independent_of_the_working_tree(
+    preregistered_clean_tree: str,
+) -> None:
+    problems = gitcheck.preregistration_problems(
+        BOTH, created_at=float(time.time()), require_clean_tree=True
+    )
+    assert problems == []
+    found = gitcheck.introducing_commit("anything", "any/path")
+    assert found == preregistered_clean_tree

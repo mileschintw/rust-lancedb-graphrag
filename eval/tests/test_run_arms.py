@@ -1024,6 +1024,7 @@ def _journal_units(path: Path) -> list[tuple[str, str]]:
     return [(r.question_id, r.graph_arm) for r in load_records(path)]
 
 
+@pytest.mark.usefixtures("preregistered_clean_tree")
 def test_split_drive_follows_the_seeded_rotation_and_limit_takes_whole_questions(
     tmp_path: Path, httpx_mock: HTTPXMock
 ) -> None:
@@ -1049,6 +1050,7 @@ def test_split_drive_follows_the_seeded_rotation_and_limit_takes_whole_questions
     assert sorted(a for _, a in expected[:4]) == sorted(config.arms)
 
 
+@pytest.mark.usefixtures("preregistered_clean_tree")
 def test_split_drive_resume_rebuilds_the_same_suffix(
     tmp_path: Path, httpx_mock: HTTPXMock
 ) -> None:
@@ -1088,6 +1090,7 @@ def test_legacy_corpus_work_units_equal_the_old_question_major_comprehension(
         assert _journal_units(j_path) == old
 
 
+@pytest.mark.usefixtures("preregistered_clean_tree")
 def test_split_drive_header_carries_order_seed_and_split_digest(
     tmp_path: Path, httpx_mock: HTTPXMock
 ) -> None:
@@ -1121,6 +1124,7 @@ def test_legacy_header_has_no_split_keys(
     assert "split_sha256" not in header
 
 
+@pytest.mark.usefixtures("preregistered_clean_tree")
 def test_heldout_corpus_that_differs_from_the_split_is_refused_before_any_io(
     tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1139,6 +1143,7 @@ def test_heldout_corpus_that_differs_from_the_split_is_refused_before_any_io(
     assert httpx_mock.get_requests() == []
 
 
+@pytest.mark.usefixtures("preregistered_clean_tree")
 def test_heldout_corpus_with_a_foreign_question_is_refused(
     tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1160,6 +1165,7 @@ def test_heldout_corpus_with_a_foreign_question_is_refused(
     assert httpx_mock.get_requests() == []
 
 
+@pytest.mark.usefixtures("preregistered_clean_tree")
 def test_rehearsal_corpus_holding_a_dev_or_heldout_id_is_refused_before_any_request(
     tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1184,6 +1190,7 @@ def test_rehearsal_corpus_holding_a_dev_or_heldout_id_is_refused_before_any_requ
     assert httpx_mock.get_requests() == []
 
 
+@pytest.mark.usefixtures("preregistered_clean_tree")
 def test_real_rehearsal_corpus_is_disjoint_and_runs_the_rotation(
     tmp_path: Path, httpx_mock: HTTPXMock
 ) -> None:

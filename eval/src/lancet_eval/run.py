@@ -10,6 +10,7 @@ from pathlib import Path
 
 import httpx
 
+from lancet_eval import gitcheck
 from lancet_eval.arms import plan_work_units, request_fields, resolve_arm
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings
@@ -347,6 +348,7 @@ def drive(
     client: httpx.Client | None = None,
     max_retries: int = 0,
     gate_stage: str | None = None,
+    git_repo: Path | None = None,
 ) -> DriveResult:
     """Drive questions across the corpus's arms into a journal.
 
@@ -357,6 +359,11 @@ def drive(
     is recorded in the journal header with ``max_retries``, and the drive refuses to
     append to a journal whose header marker differs from its own. ``resume=False``
     refuses a journal that already holds records (`JournalReuseError`, WR-03).
+
+    A `[split]` corpus is refused, before any journal I/O, unless the commit introducing
+    `PREREGISTRATION_06_3_5` is an ancestor of HEAD and `eval/src/lancet_eval/` has no
+    uncommitted change (D-73). ``git_repo`` points that check at another repository; it
+    is the live repository when None.
     """
     eval_settings = settings or EvalSettings()
     require_index_identity(eval_settings, corpus)
@@ -379,6 +386,19 @@ def drive(
     is_limited = limit is not None
     split: HeldOutSplit | None = None
     if config.split_file is not None:
+        # D-73: the pre-registration is committed before any paid held-out request.
+        problems = gitcheck.preregistration_problems(
+            (gitcheck.PREREGISTRATION_TOKEN,),
+            require_clean_tree=True,
+            repo=git_repo,
+        )
+        if problems:
+            raise gitcheck.PreregistrationError(
+                f"D-73: refusing to drive the [split] corpus {corpus!r}: "
+                + "; ".join(problems)
+                + f". {gitcheck.PREREGISTRATION_TOKEN} must be committed in "
+                f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
+            )
         # D-105/D-106/D-107: a [split] corpus is refused before any journal I/O unless
         # its IDs fit its role, then driven in the seeded balanced rotation.
         split = load_split(config.split_path)

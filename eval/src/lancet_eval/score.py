@@ -78,7 +78,7 @@ from lancet_eval.metrics import (
     squad_f1,
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
-from lancet_eval import provenance
+from lancet_eval import gitcheck, provenance
 from lancet_eval.pairing import (
     compute_paired_delta,
     deduplicate_by_arm,
@@ -227,6 +227,33 @@ def _primary_arm(configured_arms: list[str], totals: dict[str, int]) -> str:
     return configured_arms[0]
 
 
+def _require_preregistered_before(created_at: object, repo: Path | None) -> None:
+    """D-73: a `[split]` corpus's report needs the pre-registration older than its data.
+
+    Raises:
+        ScoreError: If the journal header carries no numeric `created_at`, or the
+            commits introducing `PREREGISTRATION_06_3_5` and `JUDGE_QWK_TRUST_FLOOR` are
+            absent, not ancestors of HEAD, or not strictly older than `created_at`.
+    """
+    if isinstance(created_at, bool) or not isinstance(created_at, int | float):
+        raise ScoreError(
+            "D-73: a [split] corpus's journal header must carry a numeric created_at "
+            f"to prove the pre-registration predates it (got {created_at!r})"
+        )
+    problems = gitcheck.preregistration_problems(
+        (gitcheck.PREREGISTRATION_TOKEN, gitcheck.TRUST_FLOOR_TOKEN),
+        created_at=float(created_at),
+        repo=repo,
+    )
+    if problems:
+        raise ScoreError(
+            "D-73: refusing to score a [split] corpus's report: "
+            + "; ".join(problems)
+            + f". {gitcheck.PREREGISTRATION_TOKEN} and {gitcheck.TRUST_FLOOR_TOKEN} "
+            "must be committed before the data exists."
+        )
+
+
 _JUDGEABLE_POLICIES = ("legacy", "06.3.5")
 
 
@@ -314,8 +341,15 @@ def score_run(
     api_key: str | None = None,
     client: httpx.Client | None = None,
     stage_spend_cap: float | None = None,
+    git_repo: Path | None = None,
 ) -> CorpusReport:
-    """Read a run journal and produce a scored evaluation report."""
+    """Read a run journal and produce a scored evaluation report.
+
+    A `[split]` corpus's journal is refused (D-73) unless the commits introducing
+    `PREREGISTRATION_06_3_5` and `JUDGE_QWK_TRUST_FLOOR` are ancestors of HEAD and
+    older than the journal header's `created_at`. `git_repo` points that check at
+    another repository; it is the live repository when None.
+    """
     dir_path = Path(run_dir)
     journal_path = dir_path / "journal.jsonl"
     if not journal_path.is_file():
@@ -327,6 +361,7 @@ def score_run(
     records: list[RunRecord] = []
     header_corpus: str | None = None
     header_partial: bool | None = None
+    header_created_at: object = None
     with open(journal_path, encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
             line_str = line.strip()
@@ -341,6 +376,7 @@ def score_run(
 
             if isinstance(data, dict) and data.get("type") == "header":
                 header_corpus = data.get("corpus")
+                header_created_at = data.get("created_at")
                 if "partial" in data:
                     header_partial = bool(data["partial"])
                 continue
@@ -396,6 +432,8 @@ def score_run(
 
     # Load gold questions and config
     config = load_corpus_config(corpus_name)
+    if config.split_file is not None:
+        _require_preregistered_before(header_created_at, git_repo)
     sampled_questions = load_sample_questions(corpus_name)
     gold_map = {q.question_id: q for q in sampled_questions}
 
