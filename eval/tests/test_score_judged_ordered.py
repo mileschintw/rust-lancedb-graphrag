@@ -616,8 +616,10 @@ def test_the_sidecar_lists_every_stratum_beside_its_abstention_rate(
             assert s.abstention_n == total
             assert s.abstention_rate == pytest.approx(expected)
             if s.n < 10:
+                assert s.ci is None
                 assert s.ci_lower is None and s.ci_upper is None
             else:
+                assert s.ci == (s.ci_lower, s.ci_upper)
                 assert s.ci_lower is not None and s.ci_upper is not None
     dense = next(
         r
@@ -625,6 +627,63 @@ def test_the_sidecar_lists_every_stratum_beside_its_abstention_rate(
         if r.arm == "dense-only" and r.dimension == "groundedness"
     )
     assert [s.n for s in dense.strata] == [12, 10, 4]
+
+
+def test_every_delta_stratum_sits_beside_both_arms_per_type_abstention_rates(
+    happy: Happy,
+) -> None:
+    for row in happy.sidecar.deltas:
+        for st in row.strata:
+            members = [q for q in G_IDS if QTYPE[q] == st.question_type]
+            assert st.abstention_n == len(members)
+            arm_rate = len(ABSTAIN[row.arm] & set(members)) / len(members)
+            ref_rate = len(ABSTAIN["hybrid"] & set(members)) / len(members)
+            assert st.abstention_rate_arm == pytest.approx(arm_rate)
+            assert st.abstention_rate_reference == pytest.approx(ref_rate)
+            if st.n_pairs < 10:
+                assert st.ci is None and st.ci_label is None
+            else:
+                assert st.ci == (st.ci_lower, st.ci_upper)
+                assert st.ci_label == "unadjusted, estimation only"
+
+
+def test_the_printed_delta_line_carries_every_selection_effect_column(
+    happy: Happy,
+) -> None:
+    for row in happy.sidecar.deltas:
+        n = row.abstention_n
+        assert (
+            f"judge errors {row.arm} {row.judge_errors_arm}, "
+            f"{row.reference} {row.judge_errors_reference}"
+        ) in happy.output
+        assert (
+            f"abstention rate {row.arm} {row.abstention_rate_arm:.4f} (n={n}), "
+            f"{row.reference} {row.abstention_rate_reference:.4f} (n={n})"
+        ) in happy.output
+        assert (
+            f"abstention delta {row.abstention_rate_delta:.4f} 95% CI "
+            f"[{row.abstention_rate_delta_ci_lower:.4f}, "
+            f"{row.abstention_rate_delta_ci_upper:.4f}]"
+        ) in happy.output
+
+
+def test_the_markdown_of_the_command_prints_every_judged_row_beside_its_abstention(
+    happy: Happy,
+) -> None:
+    from lancet_eval.report import render_markdown
+
+    rows = [
+        line
+        for line in render_markdown(happy.report).splitlines()
+        if line.startswith(("| `answer_groundedness_", "| `answer_faithfulness_"))
+    ]
+    assert len(rows) == 8 + 6
+    for line in rows:
+        if "_delta__" in line:
+            assert "abstention_rate_x=" in line and "abstention_rate_hybrid=" in line
+            assert "abstention_rate_delta=" in line and "abstention_n=" in line
+        else:
+            assert "abstention_rate=" in line and "abstention_n=" in line
 
 
 def test_a_delta_stratum_ci_is_labelled_unadjusted_estimation_only(

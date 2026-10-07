@@ -1037,6 +1037,7 @@ class JudgedStratum(BaseModel):
     question_type: str
     n: int
     mean: float | None = None
+    ci: tuple[float, float] | None = None
     ci_lower: float | None = None
     ci_upper: float | None = None
     abstention_rate: float | None = None
@@ -1070,9 +1071,13 @@ class JudgedDeltaStratum(BaseModel):
     question_type: str
     n_pairs: int
     delta: float | None = None
+    ci: tuple[float, float] | None = None
     ci_lower: float | None = None
     ci_upper: float | None = None
     ci_label: str | None = None
+    abstention_rate_arm: float | None = None
+    abstention_rate_reference: float | None = None
+    abstention_n: int = 0
 
 
 class JudgedDeltaRow(BaseModel):
@@ -1199,13 +1204,16 @@ def _stratum_rows(
 ) -> list[JudgedStratum]:
     rows = []
     for qtype in strata.STRATUM_TYPES:
+        lower = detail.get(f"type_{qtype}_ci_lower")
+        upper = detail.get(f"type_{qtype}_ci_upper")
         rows.append(
             JudgedStratum(
                 question_type=qtype,
                 n=int(detail.get(f"type_{qtype}_n", 0)),
                 mean=detail.get(f"type_{qtype}_value"),
-                ci_lower=detail.get(f"type_{qtype}_ci_lower"),
-                ci_upper=detail.get(f"type_{qtype}_ci_upper"),
+                ci=(lower, upper) if lower is not None and upper is not None else None,
+                ci_lower=lower,
+                ci_upper=upper,
                 abstention_rate=abstention.get(f"type_{qtype}_value"),
                 abstention_n=int(abstention.get(f"type_{qtype}_n", 0)),
             )
@@ -1213,18 +1221,30 @@ def _stratum_rows(
     return rows
 
 
-def _delta_stratum_rows(detail: Mapping[str, float]) -> list[JudgedDeltaStratum]:
+def _delta_stratum_rows(
+    detail: Mapping[str, float],
+    arm_abstention: Mapping[str, float],
+    reference_abstention: Mapping[str, float],
+) -> list[JudgedDeltaStratum]:
+    """The paired-delta strata beside both arms' per-type abstention rate (D-118)."""
     rows = []
     for qtype in strata.STRATUM_TYPES:
         lower = detail.get(f"type_{qtype}_ci_lower")
+        upper = detail.get(f"type_{qtype}_ci_upper")
         rows.append(
             JudgedDeltaStratum(
                 question_type=qtype,
                 n_pairs=int(detail.get(f"type_{qtype}_n_pairs", 0)),
                 delta=detail.get(f"type_{qtype}_delta"),
+                ci=(lower, upper) if lower is not None and upper is not None else None,
                 ci_lower=lower,
-                ci_upper=detail.get(f"type_{qtype}_ci_upper"),
+                ci_upper=upper,
                 ci_label=DELTA_STRATUM_LABEL if lower is not None else None,
+                abstention_rate_arm=arm_abstention.get(f"type_{qtype}_value"),
+                abstention_rate_reference=reference_abstention.get(
+                    f"type_{qtype}_value"
+                ),
+                abstention_n=int(arm_abstention.get(f"type_{qtype}_n", 0)),
             )
         )
     return rows
@@ -1484,7 +1504,11 @@ def _judged_dimensions(
                     ),
                     flag=ABSTENTION_DIFFERS_FLAG if differs else None,
                     d114_label=labels[dimension],
-                    strata=_delta_stratum_rows(dim.detail),
+                    strata=_delta_stratum_rows(
+                        dim.detail,
+                        arm_abs.detail if arm_abs is not None else {},
+                        ref_abs.detail if ref_abs is not None else {},
+                    ),
                 )
             )
 
@@ -1577,6 +1601,9 @@ def _judged_report_lines(
         )
     for drow in delta_rows:
         flag = f" [{drow.flag}]" if drow.flag else ""
+        abstention_ci = _fmt_ci(
+            drow.abstention_rate_delta_ci_lower, drow.abstention_rate_delta_ci_upper
+        )
         lines.append(
             f"{drow.arm} - {drow.reference} {drow.dimension}: delta "
             f"{_fmt_num(drow.delta)} {_fmt_ci(drow.ci_lower, drow.ci_upper)} "
@@ -1584,8 +1611,14 @@ def _judged_report_lines(
             f"{drow.dropped_only_arm_abstained}, only-{drow.reference} "
             f"{drow.dropped_only_reference_abstained}, both "
             f"{drow.dropped_both_abstained}, judge unavailable "
-            f"{drow.dropped_judge_unavailable}; abstention delta "
-            f"{_fmt_num(drow.abstention_rate_delta)}; {drow.d114_label}{flag}"
+            f"{drow.dropped_judge_unavailable}; judge errors {drow.arm} "
+            f"{drow.judge_errors_arm}, {drow.reference} "
+            f"{drow.judge_errors_reference}; abstention rate {drow.arm} "
+            f"{_fmt_num(drow.abstention_rate_arm)} (n={drow.abstention_n}), "
+            f"{drow.reference} {_fmt_num(drow.abstention_rate_reference)} "
+            f"(n={drow.abstention_n}); abstention delta "
+            f"{_fmt_num(drow.abstention_rate_delta)} "
+            f"{abstention_ci}; {drow.d114_label}{flag}"
         )
     return lines
 
