@@ -477,7 +477,7 @@ def run_benchmark(
         ),
     ] = None,
 ) -> None:
-    """Run evaluation benchmark questions across graph-on and graph-off arms."""
+    """Run evaluation benchmark questions across the corpus's arms."""
     if gate_stage is not None:
         if not gate_stage.strip() or any(ch.isspace() for ch in gate_stage):
             raise typer.BadParameter(
@@ -805,7 +805,10 @@ def probe(
         str,
         typer.Option(
             "--arm",
-            help="Graph ablation arm (graph-on or graph-off)",
+            help=(
+                "Retrieval arm: dense-only, bm25-only, hybrid, hybrid+graph "
+                "(aliases: graph-off = hybrid, graph-on = hybrid+graph)"
+            ),
         ),
     ] = "graph-on",
     k: Annotated[
@@ -818,6 +821,7 @@ def probe(
     ] = None,
 ) -> None:
     """Probe a single question end-to-end through the evaluation harness."""
+    from lancet_eval.arms import request_fields, resolve_arm
     from lancet_eval.corpus import GoldQuestion, load_corpus
     from lancet_eval.metrics import (
         context_precision_at_k,
@@ -826,12 +830,11 @@ def probe(
         recall_at_k,
     )
 
-    if arm not in ("graph-on", "graph-off"):
-        console.print(
-            f"[bold red]Error:[/bold red] invalid arm {arm!r}. "
-            "Must be 'graph-on' or 'graph-off'."
-        )
-        raise typer.Exit(code=1)
+    try:
+        resolve_arm(arm)
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/bold red] invalid arm. {exc}")
+        raise typer.Exit(code=2) from exc
 
     target_q = question
     target_facts = list(gold_facts or [])
@@ -879,7 +882,6 @@ def probe(
         evidence_list=[{"fact": f} for f in target_facts],
     )
 
-    disable_graph = arm == "graph-off"
     settings = load_settings()
 
     out_dir = out or Path(tempfile.mkdtemp(prefix="lancet-probe-"))
@@ -901,8 +903,8 @@ def probe(
             outcome = run_query(
                 client,
                 query=target_q,
-                disable_graph_context=disable_graph,
                 deadline_s=settings.question_deadline_secs,
+                **request_fields(arm),
             )
     except (HarnessStreamError, httpx.TransportError, ValidationError) as exc:
         stream_error = f"{type(exc).__name__}: {exc}"

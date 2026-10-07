@@ -1,4 +1,4 @@
-"""Two-armed benchmark runner driving queries across graph-on and graph-off arms."""
+"""Benchmark runner driving queries across the arms a corpus declares."""
 
 from __future__ import annotations
 
@@ -10,9 +10,15 @@ from pathlib import Path
 
 import httpx
 
+from lancet_eval.arms import plan_work_units, request_fields, resolve_arm
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings
-from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
+from lancet_eval.corpus import (
+    CorpusConfig,
+    GoldQuestion,
+    load_corpus_config,
+    load_sample_questions,
+)
 from lancet_eval.identity import require_index_identity
 from lancet_eval.journal import (
     AttemptRecord,
@@ -29,6 +35,7 @@ from lancet_eval.journal import (
 )
 from lancet_eval.measure import compute_spend
 from lancet_eval.raw_events import RawEventSink, baseline_sample_ids
+from lancet_eval.split import HeldOutSplit, load_split, split_sha256
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +63,8 @@ class DriveResult(int):
     def capped(self) -> bool:
         return self.stopped_by_cap
 
-# The sole durable arm-to-flag mapping in the evaluation harness (Task 1 / D-47).
+# Legacy read-only view of the two drive 1/1b/2 labels. The sole durable arm-to-flag
+# mapping is `lancet_eval.arms.ARM_REGISTRY` (D-101); requests derive from it.
 GRAPH_ARMS: dict[str, bool] = {
     "graph-on": False,
     "graph-off": True,
@@ -99,6 +107,38 @@ def _require_matching_journal_marker(
         )
 
 
+def _enforce_split_role(
+    config: CorpusConfig, split: HeldOutSplit, questions: list[GoldQuestion]
+) -> None:
+    """Refuse a corpus whose question IDs do not fit its declared split role.
+
+    A ``heldout`` corpus must hold exactly the split's held-out IDs (D-105). A
+    ``rehearsal`` corpus must hold none of the dev or held-out IDs (D-106), so the
+    paid rehearsal can never spend a held-out or dev question. Runs before any
+    journal I/O and before any request.
+    """
+    ids = [q.question_id for q in questions]
+    heldout = set(split.heldout_g_ids) | set(split.heldout_null_ids)
+    if config.split_role == "heldout":
+        got = set(ids)
+        if len(ids) != len(got) or got != heldout:
+            raise ValueError(
+                f"heldout corpus {config.name!r} holds {len(ids)} question IDs "
+                f"({len(got)} distinct) but the committed split's held-out set has "
+                f"{len(heldout)} ({len(split.heldout_g_ids)} G + "
+                f"{len(split.heldout_null_ids)} null): {len(heldout - got)} missing, "
+                f"{len(got - heldout)} outside the held-out split; refusing to drive"
+            )
+    elif config.split_role == "rehearsal":
+        leaked = set(ids) & (heldout | set(split.dev_ids))
+        if leaked:
+            raise ValueError(
+                f"rehearsal corpus {config.name!r} holds {len(leaked)} dev or "
+                "held-out question ID(s); a rehearsal must be disjoint from both "
+                "(D-106); refusing to drive"
+            )
+
+
 def _attempt_of(record: RunRecord, attempt: int) -> AttemptRecord:
     """The AttemptRecord a retry is about to supersede (06.3.4.1-33, CR-03)."""
     return AttemptRecord(
@@ -135,11 +175,9 @@ def drive_one(
     errors become durable error records with outcome='error' so sibling results are
     never discarded. Retries up to max_retries on transient failure or early termination.
     """
-    if arm not in GRAPH_ARMS:
-        raise ValueError(
-            f"Unknown arm {arm!r}. Expected one of: {sorted(GRAPH_ARMS.keys())}"
-        )
-    disable_graph_context = GRAPH_ARMS[arm]
+    # Fails closed on an unknown label (D-101); the flags come from ARM_REGISTRY.
+    resolve_arm(arm)
+    arm_request_fields = request_fields(arm)
 
     last_record: RunRecord | None = None
     # Every attempt a retry supersedes stays on the returned record (CR-03, D-67).
@@ -149,10 +187,10 @@ def drive_one(
             outcome = run_query(
                 client,
                 query=question.question,
-                disable_graph_context=disable_graph_context,
                 deadline_s=deadline_s,
                 read_timeout_s=read_timeout_s,
                 capture_raw_events=raw_sink is not None,
+                **arm_request_fields,
             )
 
             outcome_literal = "error" if outcome.status == "failed" else "success"
@@ -310,7 +348,7 @@ def drive(
     max_retries: int = 0,
     gate_stage: str | None = None,
 ) -> DriveResult:
-    """Drive questions across graph-on and graph-off arms into a journal.
+    """Drive questions across the corpus's arms into a journal.
 
     Enforces fail-closed stage spend cap in-process with a bounded in-flight window.
     Returns DriveResult with executed count, stopped_by_cap status, and observed spend.
@@ -339,13 +377,25 @@ def drive(
     questions = load_sample_questions(corpus)
 
     is_limited = limit is not None
-    if limit is not None:
-        questions = questions[:limit]
+    split: HeldOutSplit | None = None
+    if config.split_file is not None:
+        # D-105/D-106/D-107: a [split] corpus is refused before any journal I/O unless
+        # its IDs fit its role, then driven in the seeded balanced rotation.
+        split = load_split(config.split_path)
+        _enforce_split_role(config, split, questions)
+        work_units = plan_work_units(questions, config.arms, split.order_seed)
+        if limit is not None:
+            # --limit takes the first N questions of the rotated order, whole.
+            work_units = work_units[: limit * len(config.arms)]
+        questions = list(dict.fromkeys(q.question_id for q, _ in work_units))
+        by_id = {q.question_id: q for q, _ in work_units}
+        questions = [by_id[qid] for qid in questions]
+    else:
+        if limit is not None:
+            questions = questions[:limit]
 
-    # Build work units: cross product of questions and confirmed arms
-    work_units: list[tuple[GoldQuestion, str]] = [
-        (q, arm) for q in questions for arm in config.arms
-    ]
+        # Build work units: cross product of questions and confirmed arms
+        work_units = [(q, arm) for q in questions for arm in config.arms]
 
     target_path = Path(journal_path)
     _require_matching_journal_marker(
@@ -370,7 +420,12 @@ def drive(
 
     journal = Journal(target_path)
     journal.write_header(
-        corpus=corpus, partial=True, gate_stage=gate_stage, max_retries=max_retries
+        corpus=corpus,
+        partial=True,
+        gate_stage=gate_stage,
+        max_retries=max_retries,
+        order_seed=split.order_seed if split is not None else None,
+        split_sha256=split_sha256(split) if split is not None else None,
     )
 
     def _safe_reconcile() -> None:
