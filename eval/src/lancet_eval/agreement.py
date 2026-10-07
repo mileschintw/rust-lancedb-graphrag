@@ -213,32 +213,28 @@ def _percentile(xs: list[float], q: float) -> float:
     return float(ys[lo] * (1.0 - frac) + ys[hi] * frac)
 
 
-def bootstrap_agreement_ci(
+def _bootstrap_ci(
     rater1: Sequence[int],
     rater2: Sequence[int],
     metric: str,
     *,
-    min_rating: int = 1,
-    max_rating: int = 5,
-    seed: int = 42,
-    b: int = 1000,
-) -> tuple[float, float] | None:
-    """Calculate seeded bootstrap 95% CI for kappa or spearman via row resampling.
+    min_rating: int,
+    max_rating: int,
+    seed: int,
+    b: int,
+) -> tuple[tuple[float, float] | None, int]:
+    """The shared resampling loop: the 95% interval and the dropped-resample count.
 
-    Args:
-        rater1: First sequence of ratings.
-        rater2: Second sequence of ratings.
-        metric: Either 'kappa' or 'spearman'.
-        min_rating: Scale min rating (used for kappa).
-        max_rating: Scale max rating (used for kappa).
-        seed: Deterministic random seed.
-        b: Number of bootstrap resamples (default 1000).
+    A resample whose statistic is undefined (for example a single rating value on one
+    side) is dropped from the interval and counted.
 
     Returns:
-        (ci_lower, ci_upper) or None if statistic is undefined on base input.
+        `(interval, dropped)`: the interval is None when the statistic is undefined on
+        the base input or on every resample; `dropped` is 0 when it is None for the
+        base input.
     """
     if len(rater1) != len(rater2) or len(rater1) == 0:
-        return None
+        return None, 0
 
     if metric == "kappa":
         base_res = quadratic_weighted_kappa(
@@ -250,14 +246,15 @@ def bootstrap_agreement_ci(
         raise ValueError(f"Unknown metric '{metric}', expected 'kappa' or 'spearman'")
 
     if base_res.value is None or base_res.state != "computed":
-        return None
+        return None, 0
 
     n = len(rater1)
     if n == 1:
-        return base_res.value, base_res.value
+        return (base_res.value, base_res.value), 0
 
     rng = random.Random(seed)
     estimates: list[float] = []
+    dropped = 0
 
     for _ in range(b):
         sampled_indices = [rng.randrange(n) for _ in range(n)]
@@ -273,14 +270,54 @@ def bootstrap_agreement_ci(
 
         if res.value is not None and not math.isnan(res.value):
             estimates.append(res.value)
+        else:
+            dropped += 1
 
     if not estimates:
-        return None
+        return None, dropped
 
     estimates.sort()
     ci_lo = _percentile(estimates, 0.025)
     ci_hi = _percentile(estimates, 0.975)
-    return ci_lo, ci_hi
+    return (ci_lo, ci_hi), dropped
+
+
+def bootstrap_agreement_ci(
+    rater1: Sequence[int],
+    rater2: Sequence[int],
+    metric: str,
+    *,
+    min_rating: int = 1,
+    max_rating: int = 5,
+    seed: int = 42,
+    b: int = 1000,
+) -> tuple[float, float] | None:
+    """Calculate seeded bootstrap 95% CI for kappa or spearman via row resampling.
+
+    Resamples whose statistic is undefined are dropped silently; use
+    `bootstrap_agreement_ci_counted` to learn how many.
+
+    Args:
+        rater1: First sequence of ratings.
+        rater2: Second sequence of ratings.
+        metric: Either 'kappa' or 'spearman'.
+        min_rating: Scale min rating (used for kappa).
+        max_rating: Scale max rating (used for kappa).
+        seed: Deterministic random seed.
+        b: Number of bootstrap resamples (default 1000).
+
+    Returns:
+        (ci_lower, ci_upper) or None if statistic is undefined on base input.
+    """
+    return _bootstrap_ci(
+        rater1,
+        rater2,
+        metric,
+        min_rating=min_rating,
+        max_rating=max_rating,
+        seed=seed,
+        b=b,
+    )[0]
 
 
 def bootstrap_agreement_ci_counted(
@@ -293,5 +330,29 @@ def bootstrap_agreement_ci_counted(
     seed: int = 42,
     b: int = 1000,
 ) -> tuple[tuple[float, float] | None, int]:
-    """RED stub: the counting variant of `bootstrap_agreement_ci` (06.3.5-12)."""
-    return None, 0
+    """`bootstrap_agreement_ci` plus the count of resamples dropped as undefined.
+
+    The interval is identical to the original's for the same seed and `b`: both call
+    one resampling loop (06.3.5-12, AI-SPEC 5 "Agreement statistics").
+
+    Args:
+        rater1: First sequence of ratings.
+        rater2: Second sequence of ratings.
+        metric: Either 'kappa' or 'spearman'.
+        min_rating: Scale min rating (used for kappa).
+        max_rating: Scale max rating (used for kappa).
+        seed: Deterministic random seed.
+        b: Number of bootstrap resamples (default 1000).
+
+    Returns:
+        `((ci_lower, ci_upper) or None, dropped)`.
+    """
+    return _bootstrap_ci(
+        rater1,
+        rater2,
+        metric,
+        min_rating=min_rating,
+        max_rating=max_rating,
+        seed=seed,
+        b=b,
+    )

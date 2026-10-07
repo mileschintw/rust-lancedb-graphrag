@@ -824,7 +824,7 @@ def test_the_emit_command_requires_a_run() -> None:
     assert result.exit_code == 2
 
 
-# --- 06.3.5-12: the ordered ingest (D-113, D-114, D-119, D-120; AI-SPEC 5 step 7) ----------
+# --- 06.3.5-12: the ordered ingest (D-113, D-114, D-119, D-120; AI-SPEC 5 7) ---
 
 THRESHOLDS_TEXT = "PREREGISTRATION_06_3_5 = 1\nJUDGE_QWK_TRUST_FLOOR: float = 0.70\n"
 THRESHOLDS_REL = "eval/src/lancet_eval/thresholds.py"
@@ -857,6 +857,8 @@ class Flow:
         self.worksheet = emitted.worksheet_path
         self.key_copy = run / "calibration-key.jsonl"
         self.salt_copy = run / "calibration-salt.txt"
+        # the key as emitted: the owner scores from it even if a test tampers later
+        self.emitted_keys = {k.slice_id: k for k in read_key_file(emitted.key_path)}
 
     def git(self, *args: str, when: int | None = None) -> str:
         return _git(self.repo, *args, when=when)
@@ -894,10 +896,9 @@ class Flow:
 
     def fill_scores(self, edit: Any = None) -> None:
         """The owner scores every row; `edit(slice_id, g, f)` may bend a value."""
-        keys = self.key_by_slice()
         rows = self.rows()
         for row in rows:
-            verdict = verdict_for(keys[row["slice_id"]].cache_key)
+            verdict = verdict_for(self.emitted_keys[row["slice_id"]].cache_key)
             g, f = verdict.groundedness, verdict.faithfulness
             if edit is not None:
                 g, f = edit(row["slice_id"], g, f)
@@ -941,7 +942,7 @@ def start_flow(
     header_updates: dict[str, Any] | None = None,
     thresholds_text: str = THRESHOLDS_TEXT,
 ) -> Flow:
-    """Floor commit, judge stage, emit; optionally a key tampered with a matching digest."""
+    """Floor commit, judge stage, emit; optionally a key tampered (digest matches)."""
     repo = tmp_path / "throwaway"
     (repo / "eval" / "src" / "lancet_eval").mkdir(parents=True)
     (tmp_path / "empty.gitconfig").write_text("", encoding="utf-8")
