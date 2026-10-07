@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 11/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 12/17 plans executed (13 offline code plans in waves 1-8, then 4 live-stack plans in waves 9-12, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1099,7 +1099,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 06.3.5-12-PLAN.md — `score --judged` as the only judged-aggregate path: git-ordered ingest, D-114 labels, judged deltas with abstention companions, legacy judged path refused
+- [x] 06.3.5-12-PLAN.md — `score --judged` as the only judged-aggregate path: git-ordered ingest, D-114 labels, judged deltas with abstention companions, legacy judged path refused
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
