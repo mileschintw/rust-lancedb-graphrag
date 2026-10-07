@@ -41,6 +41,7 @@ CMP, INF, TMP = STRATUM_TYPES
 ABLATION = Notice(code="GRAPH_ABLATION", message="", typed_code=18)
 NO_EVIDENCE = Notice(code="NO_EVIDENCE", message="", typed_code=1)
 HEX = "0" * 64
+NL = chr(10)  # the `Answer:` line must start its own line to be extracted
 
 # (question_id, question_type, gold answer)
 G_QUESTIONS = [
@@ -150,8 +151,8 @@ def _answer(arm: str, qid: str) -> str:
     gold = G_BY_ID[qid][1]
     kind = KINDS[arm][qid]
     return {
-        "ok": f"Based on the evidence. Answer: {gold}",
-        "wrong": "Based on the evidence. Answer: Wrong guess",
+        "ok": f"Based on the evidence.{NL}Answer: {gold}",
+        "wrong": f"Based on the evidence.{NL}Answer: Wrong guess",
         "noline": f"I believe it is {gold}.",
         "contained": f"Answer: {gold}, indeed",
     }[kind]

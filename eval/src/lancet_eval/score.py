@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import tomllib
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from statistics import fmean
+from typing import Any, Literal
 
 import httpx
 
@@ -62,23 +66,37 @@ from lancet_eval.judge import (
     truncate_evidence,
 )
 from lancet_eval.measure import compute_judge_spend, estimate_judge_cost_per_question
-from lancet_eval.arms import canonical_arm, resolve_arm
+from lancet_eval.arms import ARM_REGISTRY, arm_slug, canonical_arm, resolve_arm
 from lancet_eval.metrics import (
+    abstention_leak,
     abstention_rate,
     context_precision_at_k,
     extract_final_answer,
     final_answer_em,
     gold_contained,
+    id_matcher,
     is_abstention,
+    load_gold_chunk_sets,
     mrr_at_k,
     ndcg_at_k,
     null_abstention_correct,
+    paper_question_scores,
     recall_at_k,
     squad_em,
     squad_f1,
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval import gitcheck, provenance
+from lancet_eval import p4 as p4_mod
+from lancet_eval import strata
+from lancet_eval.split import HeldOutSplit, load_split
+from lancet_eval.stats import (
+    BOOTSTRAP_B,
+    BOOTSTRAP_SEED,
+    bootstrap_mean_ci,
+    percentile,
+    wilson_ci,
+)
 from lancet_eval.pairing import (
     compute_paired_delta,
     deduplicate_by_arm,
@@ -331,6 +349,480 @@ def _reusable_verdict_count(
     return count
 
 
+# --- 06.3.5-10: four-arm per-arm dimensions on P4 (D-126) ----------------------------
+#
+# A `[split]` corpus's report gains numeric dimensions named `<dimension>__<arm_slug>`
+# through the unchanged fail-closed score/report path. `report.schema.json` does not
+# change: every dimension is a `DimensionResult`, and every `detail` value is a float.
+
+
+def _default_gold_chunks_path() -> Path:
+    """The 06.3.4.1 post-reconcile gold-chunk table (D-61), the ID rule's gold sets."""
+    return (
+        _repo_root()
+        / ".planning"
+        / "phases"
+        / "06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair"
+        / "diagnostic"
+        / "post-reconcile"
+        / "gold_chunks.jsonl"
+    )
+
+
+@dataclass(frozen=True)
+class _SplitInputs:
+    """What a `[split]` corpus's four-arm report reads besides the journal."""
+
+    split: HeldOutSplit
+    gold_sets: dict[str, list[frozenset[str]]]
+
+
+def _load_split_inputs(
+    config: Any,
+    gold_map: Mapping[str, Any],
+    gold_chunks_path: Path | str | None,
+) -> _SplitInputs:
+    """Loads the held-out split and the gold chunk sets; fails closed on any gap.
+
+    Raises:
+        ScoreError: If the split or the gold-chunk table cannot be read, or a held-out
+            G question has no gold question, is a null question, or has no gold set.
+    """
+    try:
+        split = load_split(config.split_path)
+    except (OSError, ValueError) as exc:
+        raise ScoreError(
+            f"Could not load the held-out split {config.split_path}: {exc}"
+        ) from exc
+    path = (
+        Path(gold_chunks_path)
+        if gold_chunks_path is not None
+        else _default_gold_chunks_path()
+    )
+    if not path.is_file():
+        raise ScoreError(
+            f"Gold-chunk table not found at {path}; the ID rule (D-102) needs it"
+        )
+    try:
+        gold_sets = load_gold_chunk_sets(path)
+    except (OSError, ValueError, KeyError) as exc:
+        raise ScoreError(f"Could not read the gold-chunk table {path}: {exc}") from exc
+    problems: list[str] = []
+    for qid in split.heldout_g_ids:
+        gold = gold_map.get(qid)
+        if gold is None:
+            problems.append(f"{qid}: not in the corpus's question file")
+        elif gold.is_null:
+            problems.append(f"{qid}: a held-out G question with no gold evidence")
+        elif not gold_sets.get(qid):
+            problems.append(f"{qid}: no row in the gold-chunk table")
+    if problems:
+        raise ScoreError(
+            f"{len(problems)} held-out G question(s) cannot be scored: "
+            + "; ".join(problems[:20])
+        )
+    return _SplitInputs(split=split, gold_sets=gold_sets)
+
+
+def _interval(
+    xs: Sequence[float], kind: Literal["wilson", "bootstrap"]
+) -> tuple[float, float]:
+    """The 95% interval of the mean of `xs` (Wilson for 0/1, else the bootstrap)."""
+    if kind == "wilson":
+        _, lo, hi = wilson_ci(round(sum(xs)), len(xs))
+    else:
+        _, lo, hi = bootstrap_mean_ci(list(xs), seed=BOOTSTRAP_SEED, b=BOOTSTRAP_B)
+    return lo, hi
+
+
+def _per_arm_dimension(
+    name: str,
+    values: Mapping[str, float],
+    *,
+    kind: Literal["wilson", "bootstrap", "none"],
+    statistic: Literal["mean", "p50", "p95"] = "mean",
+    qtype_of: Mapping[str, str],
+    detail: Mapping[str, float],
+    empty_reason: str,
+) -> DimensionResult:
+    """One per-arm dimension over a per-question value map, with its D-40 strata.
+
+    `detail` carries the dimension's own counts; the interval and the strata are added
+    here. An empty map is a skipped dimension, because Wilson and the bootstrap are
+    undefined at n = 0.
+    """
+    if not values:
+        return DimensionResult(
+            name=name, status="skipped", reason=empty_reason, detail=dict(detail), n=0
+        )
+    xs = [float(values[q]) for q in sorted(values)]
+    if statistic == "mean":
+        score = float(fmean(xs))
+    else:
+        score = float(percentile(xs, 0.50 if statistic == "p50" else 0.95))
+    out: dict[str, float] = {k: float(v) for k, v in detail.items()}
+    if kind == "wilson":
+        out["successes"] = float(round(sum(xs)))
+    if kind != "none":
+        lo, hi = _interval(xs, kind)
+        out["ci_lower"] = float(lo)
+        out["ci_upper"] = float(hi)
+    out.update(strata.type_strata(values, qtype_of, statistic=statistic, interval=kind))
+    return DimensionResult(name=name, status="ok", score=score, detail=out, n=len(xs))
+
+
+def _record_ranking_ids(rec: RunRecord) -> list[str]:
+    """The D-100 pre-truncation ranking's chunk IDs, in order (empty without one)."""
+    if rec.snapshot is None:
+        return []
+    return [c.chunk_id for c in rec.snapshot.pre_truncation_ranking]
+
+
+def _has_valid_ranking(rec: RunRecord | None) -> bool:
+    """A record that is ok(r) and whose RetrieveHybrid completed with a snapshot."""
+    return (
+        rec is not None
+        and rec.snapshot is not None
+        and rec.snapshot.result_hash != ""
+        and provenance.is_ok(rec)
+    )
+
+
+def _retrieve_node_ms(rec: RunRecord) -> float | None:
+    for nt in rec.node_timings:
+        if nt.node_name == "RetrieveHybrid":
+            return float(nt.duration_ms)
+    return None
+
+
+def _prompt_tokens(rec: RunRecord) -> float:
+    """Wire prompt tokens; 0 for a record that skipped generation or has no meta."""
+    return float(rec.workflow_meta.prompt_tokens) if rec.workflow_meta else 0.0
+
+
+@dataclass(frozen=True)
+class _Metric:
+    """One per-arm dimension over the P4 per-question values."""
+
+    name: str
+    value: Callable[[RunRecord], float | None]
+    kind: Literal["wilson", "bootstrap"]
+
+
+def _four_arm_dimensions(
+    *,
+    records: Sequence[RunRecord],
+    config: Any,
+    inputs: _SplitInputs,
+    gold_map: Mapping[str, Any],
+    arm_metrics: Mapping[str, Mapping[str, Any]],
+) -> list[DimensionResult]:
+    """The four-arm per-arm dimensions of a `[split]` corpus (06.3.5-10, D-126).
+
+    Every P4 dimension is computed from one per-question value map per arm, so the
+    strata sum to the dimension's n by construction. A metric that has no value for
+    some P4 question on some arm (a skipped recall, a record with no RetrieveHybrid
+    timing) is computed over the questions where every arm has one; the questions left
+    out are counted in `n_unscorable`.
+
+    Raises:
+        ScoreError: If the arms cannot form P4 or a held-out question has no stratum.
+    """
+    split = inputs.split
+    gold_sets = inputs.gold_sets
+    g_ids = list(split.heldout_g_ids)
+    n_g = len(g_ids)
+    try:
+        pop = p4_mod.build_p4(records, split, config.arms)
+    except ValueError as exc:
+        raise ScoreError(f"Cannot build P4: {exc}") from exc
+    arms = [a for a in ARM_REGISTRY if a in pop.arms]
+    label_of = {canonical_arm(label): label for label in config.arms}
+    qtype_of = {q: str(gold_map[q].question_type) for q in g_ids}
+    index = {(r.question_id, canonical_arm(r.graph_arm)): r for r in records}
+    p4_ids = list(pop.question_ids)
+    n_excluded = float(n_g - len(p4_ids))
+    chunk_size = int(config.chunk_size)
+
+    def paper(rec: RunRecord) -> dict[str, Any]:
+        return paper_question_scores(
+            _record_ranking_ids(rec), gold_sets[rec.question_id], id_matcher
+        )
+
+    def retrieval(fn: Callable[..., Any]) -> Callable[[RunRecord], float | None]:
+        def value(rec: RunRecord) -> float | None:
+            if rec.snapshot is None:
+                return None
+            out = fn(gold_map[rec.question_id], rec.snapshot.retrieved_chunks)
+            return float(out.score) if out.status == "ok" else None
+
+        return value
+
+    def answer_of(rec: RunRecord) -> str:
+        return rec.answer or ""
+
+    metrics = [
+        _Metric("paper_hits_at_4", lambda r: float(paper(r)["hit4"]), "wilson"),
+        _Metric("paper_hits_at_10", lambda r: float(paper(r)["hit10"]), "wilson"),
+        _Metric("paper_mrr_at_10", lambda r: float(paper(r)["rr"]), "bootstrap"),
+        _Metric("paper_map_at_10", lambda r: float(paper(r)["ap"]), "bootstrap"),
+        _Metric(
+            "answer_usable_p4",
+            lambda r: float(
+                compute_answer_usable(gold_map[r.question_id], answer_of(r))
+            ),
+            "wilson",
+        ),
+        _Metric(
+            "abstention_rate_g", lambda r: 1.0 if is_abstention(r) else 0.0, "wilson"
+        ),
+        _Metric(
+            "final_answer_em",
+            lambda r: float(
+                final_answer_em(gold_map[r.question_id], answer_of(r)).score or 0.0
+            ),
+            "wilson",
+        ),
+        _Metric(
+            "gold_containment",
+            lambda r: float(
+                gold_contained(gold_map[r.question_id].gold_answer, answer_of(r))
+            ),
+            "wilson",
+        ),
+        _Metric(
+            "final_answer_missing_rate",
+            lambda r: 1.0 if extract_final_answer(r.answer) is None else 0.0,
+            "wilson",
+        ),
+        _Metric(
+            "coverage_at_4",
+            retrieval(lambda g, c: recall_at_k(g, c, k=4, chunk_size=chunk_size)),
+            "bootstrap",
+        ),
+        _Metric(
+            "precision_at_4",
+            retrieval(lambda g, c: context_precision_at_k(g, c, k=4)),
+            "bootstrap",
+        ),
+        _Metric("prompt_tokens_mean", _prompt_tokens, "bootstrap"),
+    ]
+    percentile_metrics = [
+        ("latency_total_ms", lambda r: float(r.duration_ms)),
+        ("retrieve_node_ms", _retrieve_node_ms),
+    ]
+
+    def p4_values(
+        fn: Callable[[RunRecord], float | None],
+    ) -> tuple[dict[str, dict[str, float]], int]:
+        """Per-arm value maps over the P4 questions every arm can score."""
+        raw = {
+            arm: p4_mod.per_question_values(
+                records,
+                pop,
+                arm,
+                lambda rec: math.nan if (v := fn(rec)) is None else v,
+            )
+            for arm in arms
+        }
+        common = [
+            q for q in p4_ids if all(not math.isnan(raw[arm][q]) for arm in arms)
+        ]
+        return (
+            {arm: {q: raw[arm][q] for q in common} for arm in arms},
+            len(p4_ids) - len(common),
+        )
+
+    dims: list[DimensionResult] = []
+    empty = "P4 is empty: no held-out G question has an ok record on every arm"
+
+    # p4_size: |P4|, the coverage and the per-arm exclusions (D-122).
+    size_detail: dict[str, float] = {
+        "coverage": float(pop.coverage),
+        "n_heldout_g": float(n_g),
+        "n_heldout_null": float(len(split.heldout_null_ids)),
+    }
+    for arm in arms:
+        slug = arm_slug(arm)
+        excl = pop.excluded[arm]
+        size_detail[f"excluded_own_failure__{slug}"] = float(excl.own_failure)
+        size_detail[f"excluded_provenance__{slug}"] = float(excl.provenance)
+        size_detail[f"excluded_other_arm_failure__{slug}"] = float(
+            excl.other_arm_failure
+        )
+        if arm in pop.pairwise_join_sizes:
+            size_detail[f"pairwise_join_size__{slug}"] = float(
+                pop.pairwise_join_sizes[arm]
+            )
+    dims.append(
+        DimensionResult(
+            name="p4_size",
+            status="ok",
+            score=float(len(p4_ids)),
+            detail=size_detail,
+            n=len(p4_ids),
+        )
+    )
+
+    for metric in metrics:
+        by_arm, n_unscorable = p4_values(metric.value)
+        for arm in arms:
+            values = by_arm[arm]
+            detail = {
+                "n_excluded": n_excluded,
+                "n_unscorable": float(n_unscorable),
+            }
+            if metric.name == "answer_usable_p4":
+                detail["usable_blank_answer_count"] = float(
+                    sum(
+                        1
+                        for q in values
+                        if not (index[(q, arm)].answer or "").strip()
+                    )
+                )
+            dim = _per_arm_dimension(
+                f"{metric.name}__{arm_slug(arm)}",
+                values,
+                kind=metric.kind,
+                qtype_of=qtype_of,
+                detail=detail,
+                empty_reason=empty,
+            )
+            if dim.status == "ok" and metric.name == "answer_usable_p4":
+                dim.detail.update(strata.constant_yes_baselines(list(values), gold_map))
+            dims.append(dim)
+
+    for base, fn in percentile_metrics:
+        by_arm, n_unscorable = p4_values(fn)
+        for arm in arms:
+            for statistic in ("p50", "p95"):
+                dims.append(
+                    _per_arm_dimension(
+                        f"{base}_{statistic}__{arm_slug(arm)}",
+                        by_arm[arm],
+                        kind="none",
+                        statistic=statistic,  # type: ignore[arg-type]
+                        qtype_of=qtype_of,
+                        detail={
+                            "n_excluded": n_excluded,
+                            "n_unscorable": float(n_unscorable),
+                        },
+                        empty_reason=empty,
+                    )
+                )
+
+    # D-122 script-faithful line: every held-out G question per arm; a record with no
+    # valid ranking scores as an empty ranking (a miss). Labelled, never decisive.
+    for arm in arms:
+        scores: dict[str, dict[str, Any]] = {}
+        no_ranking = 0
+        for qid in g_ids:
+            rec = index.get((qid, arm))
+            valid = _has_valid_ranking(rec)
+            if not valid:
+                no_ranking += 1
+            ids = _record_ranking_ids(rec) if valid and rec is not None else []
+            scores[qid] = paper_question_scores(ids, gold_sets[qid], id_matcher)
+        for name, key, kind in (
+            ("paper_hits_at_4_script_faithful", "hit4", "wilson"),
+            ("paper_hits_at_10_script_faithful", "hit10", "wilson"),
+            ("paper_mrr_at_10_script_faithful", "rr", "bootstrap"),
+            ("paper_map_at_10_script_faithful", "ap", "bootstrap"),
+        ):
+            dims.append(
+                _per_arm_dimension(
+                    f"{name}__{arm_slug(arm)}",
+                    {q: float(scores[q][key]) for q in g_ids},
+                    kind=kind,  # type: ignore[arg-type]
+                    qtype_of=qtype_of,
+                    detail={
+                        "n_excluded": 0.0,
+                        "n_no_valid_ranking": float(no_ranking),
+                    },
+                    empty_reason="the split has no held-out G question",
+                )
+            )
+
+    # D-121 comparison line: the 06.3.4.1 SC-3 definition, per-arm usable records with
+    # the inherited exclusions. Decides nothing.
+    g_set = set(g_ids)
+    for arm in arms:
+        scored_by_qid: Mapping[str, float] = arm_metrics[label_of[arm]][
+            "answer_usable_by_qid"
+        ]
+        values = {q: v for q, v in scored_by_qid.items() if q in g_set}
+        dim = _per_arm_dimension(
+            f"answer_usable_sc3_definition__{arm_slug(arm)}",
+            values,
+            kind="wilson",
+            qtype_of=qtype_of,
+            detail={"n_excluded": float(n_g - len(values))},
+            empty_reason="no usable held-out G record carries a scorable payload",
+        )
+        if dim.status == "ok":
+            dim.detail.update(strata.constant_yes_baselines(list(values), gold_map))
+        dims.append(dim)
+
+    # D-118 / D-105: null questions feed only this dimension, over the arm's ok(r)
+    # null records. They never enter a retrieval or answer denominator.
+    null_ids = list(split.heldout_null_ids)
+    for arm in arms:
+        null_recs = [
+            rec
+            for qid in null_ids
+            if (rec := index.get((qid, arm))) is not None and provenance.is_ok(rec)
+        ]
+        name = f"null_abstention_correctness__{arm_slug(arm)}"
+        if not null_recs:
+            dims.append(
+                DimensionResult(
+                    name=name,
+                    status="skipped",
+                    reason="no ok record of this arm on a held-out null question",
+                    detail={"n_excluded": float(len(null_ids))},
+                    n=0,
+                )
+            )
+            continue
+        abstained = [1.0 if is_abstention(r) else 0.0 for r in null_recs]
+        lo, hi = _interval(abstained, "wilson")
+        dims.append(
+            DimensionResult(
+                name=name,
+                status="ok",
+                score=float(fmean(abstained)),
+                detail={
+                    "successes": float(sum(abstained)),
+                    "ci_lower": float(lo),
+                    "ci_upper": float(hi),
+                    "n_excluded": float(len(null_ids) - len(null_recs)),
+                    "hallucinated_on_null": float(
+                        sum(
+                            1
+                            for r in null_recs
+                            if not is_abstention(r) and r.structured_citations
+                        )
+                    ),
+                    "no_evidence_count": float(
+                        sum(
+                            1
+                            for r in null_recs
+                            if any(
+                                n.typed_code == 1 or n.code == "NO_EVIDENCE"
+                                for n in r.notices
+                            )
+                        )
+                    ),
+                    "leak_count": float(
+                        sum(1 for r in null_recs if abstention_leak(r))
+                    ),
+                },
+                n=len(null_recs),
+            )
+        )
+    return dims
+
+
 def score_run(
     *,
     run_dir: Path | str,
@@ -442,6 +934,12 @@ def score_run(
     # cannot be attributed raises rather than being dropped.
     records_by_arm = _group_records_by_arm(records, config.arms)
 
+    # A `[split]` corpus's four-arm report reads the split and the gold-chunk table;
+    # a gap in either refuses before any judge spend (06.3.5-10).
+    split_inputs: _SplitInputs | None = None
+    if config.split_file is not None:
+        split_inputs = _load_split_inputs(config, gold_map, gold_chunks_path)
+
     # Compute deterministic scores for every configured arm
     arm_metrics: dict[str, dict[str, Any]] = {}
 
@@ -463,6 +961,7 @@ def score_run(
         final_answer_ems: list[float] = []
         final_answer_containments: list[float] = []
         answer_usables: list[float] = []
+        answer_usable_by_qid: dict[str, float] = {}
         final_answer_missings: list[float] = []
         null_abstention_corrects: list[float] = []
         payload_excluded_answerable_count = 0
@@ -525,9 +1024,9 @@ def score_run(
                 final_answer_containments.append(
                     1.0 if gold_contained(gold.gold_answer, rec.answer) else 0.0
                 )
-                answer_usables.append(
-                    1.0 if compute_answer_usable(gold, rec.answer) else 0.0
-                )
+                usable_value = 1.0 if compute_answer_usable(gold, rec.answer) else 0.0
+                answer_usables.append(usable_value)
+                answer_usable_by_qid[rec.question_id] = usable_value
                 final_answer_missings.append(
                     1.0 if extract_final_answer(rec.answer) is None else 0.0
                 )
@@ -562,6 +1061,7 @@ def score_run(
             "final_answer_ems": final_answer_ems,
             "final_answer_containments": final_answer_containments,
             "answer_usables": answer_usables,
+            "answer_usable_by_qid": answer_usable_by_qid,
             "final_answer_missings": final_answer_missings,
             "null_abstention_corrects": null_abstention_corrects,
             "usable_records": [
@@ -1717,6 +2217,17 @@ def score_run(
             n=total_recs,
         )
     )
+
+    if split_inputs is not None:
+        dimensions.extend(
+            _four_arm_dimensions(
+                records=records,
+                config=config,
+                inputs=split_inputs,
+                gold_map=gold_map,
+                arm_metrics=arm_metrics,
+            )
+        )
 
     res_hash = compute_result_hash(dimensions)
     lock_hash = get_lock_hash()
