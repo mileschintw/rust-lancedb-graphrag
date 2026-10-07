@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 9
 waived_count: 0
 fixed_count: 0
-total_count: 8
-last_updated: 2026-09-29T14:31:32.640Z
+total_count: 9
+last_updated: 2026-10-07T10:05:19.536Z
 ---
 
 # Broken Windows Ledger
@@ -23,6 +23,7 @@ last_updated: 2026-09-29T14:31:32.640Z
 | 6 | 06.3.4.1 | deviation | .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/deferred-items.md |  | 06.3.4.1-21: plan's literal 'pytest -q exits 0' fails on one pre-existing Phase 02 -O test; ruff verify cannot read zero (older line-too-long findings in flatness.py/oi02.py) | open |  | 2026-09-29T01:50:09.858Z |  |
 | 7 | 06.3.4.1 | deviation | engine/src/generation/openrouter.rs |  | 22: provider generation_output_rejected capture also wraps the usage-budget and shape-validation rejections (stages usage, validate) beyond the plan's parse/finish_reason sites; errors unchanged | open |  | 2026-09-29T14:31:32.190Z |  |
 | 8 | 06.3.4.1 | deviation | engine/src/workflow/nodes/generate.rs |  | 22: literal criterion grep -c emit_generation_output_rejected equals validation sites reads 2, not 3, because the three sites share the emit_validation_rejection helper (3 call sites, all covered by tests) | open |  | 2026-09-29T14:31:32.640Z |  |
+| 9 | 06.3.5 | lint-warning | eval/src/lancet_eval/score.py |  | 22 pre-existing ruff findings (21 E501 line-too-long, 1 I001 unsorted-imports) at 32bdc18e; plan 06.3.5-10 Task 3 verify runs ruff on this file, so that check cannot pass until they are fixed | open |  | 2026-10-07T10:05:19.536Z |  |
 
 ````json
 [
@@ -125,6 +126,19 @@ last_updated: 2026-09-29T14:31:32.640Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-29T14:31:32.640Z",
+    "resolved_at": null,
+    "milestone": "v1.0"
+  },
+  {
+    "id": 9,
+    "kind": "lint-warning",
+    "phase": "06.3.5",
+    "file": "eval/src/lancet_eval/score.py",
+    "line": null,
+    "description": "22 pre-existing ruff findings (21 E501 line-too-long, 1 I001 unsorted-imports) at 32bdc18e; plan 06.3.5-10 Task 3 verify runs ruff on this file, so that check cannot pass until they are fixed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-07T10:05:19.536Z",
     "resolved_at": null,
     "milestone": "v1.0"
   }
