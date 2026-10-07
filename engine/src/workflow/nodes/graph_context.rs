@@ -70,7 +70,13 @@ impl Node for ExtractGraphContextNode {
             let variant_zero = &ctx.variants[0];
 
             // 1. Embedding prelude for variant 0
-            if ctx.query_embedding.is_none() {
+            //
+            // D-125: the vector is read by the dense search and by graph seeding, and by nothing
+            // else. A BM25-only request with the graph off needs neither, so it takes no
+            // embedding and pays for no Voyage call or timeout. `runs_dense()` reads an
+            // unspecified mode as hybrid, so only an explicit BM25-only request is skipped.
+            let needs_query_embedding = ctx.runs_dense() || !ctx.disable_graph_context;
+            if needs_query_embedding && ctx.query_embedding.is_none() {
                 if let Some(embedder) = &self.embedding_port {
                     let embed_res = tokio::select! {
                         biased;
