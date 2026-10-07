@@ -1375,3 +1375,126 @@ def test_compare_writes_chart_json_and_chart_svg_from_the_same_data(
     _svg_root(svg)
     assert not list(run.glob("*.png"))
     assert "\r\n" not in text and "\r\n" not in svg
+
+
+# ---- review additions: downstream-facing columns and the optional sidecar readers ----
+
+
+def test_the_answer_usable_strata_have_a_column_named_constant_yes_baseline(
+    written: Any,
+) -> None:
+    sec = section(written["md"], STRATA_HEADING)
+    block = sec[sec.index("### `answer_usable_p4`") :]
+    block = block[: block.index("\n### ", 5)]
+    header = next(ln for ln in block.splitlines() if ln.startswith("| arm |"))
+    assert "constant-Yes baseline" in header
+    row = next(
+        ln for ln in block.splitlines() if ln.startswith("| dense-only | comparison")
+    )
+    # every gold answer in the fixture is Yes, so the baseline is 1.0000
+    assert row.rstrip().endswith("| 1.0000 |")
+
+
+def test_the_judged_rows_sit_inside_the_four_arm_table_section(written: Any) -> None:
+    md = written["md"]
+    four_arm = section(md, "Four-arm table")
+    assert "### Judged rows" in four_arm
+    assert "## Judged rows" not in md.replace("### Judged rows", "")
+
+
+def test_the_agreement_companions_and_the_slice_attrition_line_are_printed(
+    written: Any,
+) -> None:
+    md = written["md"]
+    sidecar = written["sidecar"]
+    for dim in ("groundedness", "faithfulness"):
+        d = sidecar.agreement["dimensions"][dim]
+        marginals = "/".join(str(d["judge_marginals"][str(v)]) for v in range(1, 6))
+        row = next(
+            ln
+            for ln in md.splitlines()
+            if ln.startswith(f"| {dim} | ") and marginals in ln
+        )
+        assert f"{d['mad']:.4f}" in row
+        assert f"{d['mean_signed_difference']:.4f}" in row
+        assert f"{d['joint_5_5_share']:.4f}" in row
+        dropped = f"{d['qwk_dropped_resamples']} / {d['spearman_dropped_resamples']}"
+        assert dropped in row
+    assert "No slice item was dropped for a judge error." in md
+    assert written["json"]["dropped_slice_ids"] == []
+
+
+def test_the_abstention_census_prints_the_leak_and_no_evidence_counts(
+    written: Any,
+) -> None:
+    md = written["md"]
+    dims = dims_of(written["report"])
+    for arm in sj.ARMS:
+        detail = dims[f"null_abstention_correctness__{SLUG[arm]}"]["detail"]
+        row = next(
+            ln
+            for ln in md.splitlines()
+            if ln.startswith(f"| {arm} | ") and "(n=2)" in ln
+        )
+        assert f"| {int(detail['hallucinated_on_null'])} | " in row
+        assert f"| {int(detail['no_evidence_count'])} | " in row
+        assert f"| {int(detail['leak_count'])} | " in row
+
+
+def test_the_gate_and_provider_readers_take_the_real_producer_shapes(
+    ordered: Any, tmp_path: Path
+) -> None:
+    sc, _ = ordered
+    run = fresh_run(ordered, tmp_path)
+    # the payload `unpark_gates._main_heldout` writes: gate -> label -> asdict(reading),
+    # plus non-gate keys that must not be read as gate rows
+    (run / "gates-heldout.json").write_text(
+        json.dumps(
+            {
+                "stage": "heldout",
+                "arms": list(sj.ARMS),
+                "SC-1": {
+                    "dense-only": {"gate": "SC-1", "status": "PASS", "n": 26},
+                    "pooled": {"gate": "SC-1", "status": "MISS", "n": 104},
+                },
+                "SC-2": {"hybrid": {"gate": "SC-2", "status": "PASS", "n": 26}},
+                "not_computed": {"SC-3": "not computed", "SC-4": "not computed"},
+                "retry_provenance": "gate-stage marker present",
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run / "diagnostic").mkdir(exist_ok=True)
+    (run / "diagnostic" / "provider_format_map-summary.json").write_text(
+        json.dumps(
+            {
+                "records": 4,
+                "by_arm_provider": {
+                    "dense-only": {"OpenInference": 3, "null": 1},
+                    "hybrid": {"OpenInference": 2, "Sail Research": 2},
+                },
+                "unmatched_count": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    comp = build_comparison(run, gold_chunks_path=sc.gold)
+    gates = {(g.gate, g.arm): g.status for g in comp.disclosures.gates}
+    assert gates == {
+        ("SC-1", "dense-only"): "PASS",
+        ("SC-1", "pooled"): "MISS",
+        ("SC-2", "hybrid"): "PASS",
+    }
+    providers = {(p.arm, p.provider): p.records for p in comp.disclosures.providers}
+    assert providers == {
+        ("dense-only", "OpenInference"): 3,
+        ("dense-only", "null"): 1,
+        ("hybrid", "OpenInference"): 2,
+        ("hybrid", "Sail Research"): 2,
+    }
+    assert comp.disclosures.provider_unmatched == 1
+    md = cmp_mod.render_markdown(comp)
+    assert "Sail Research" in md and "| SC-1 | pooled | MISS |" in md
+    assert "1 record(s) had no served line" in md

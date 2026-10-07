@@ -381,7 +381,17 @@ class AgreementView(_Model):
     floor: float
     label: str
     spearman: float | None
+    spearman_ci_lo: float | None
+    spearman_ci_hi: float | None
     exact_agreement: float | None
+    mad: float | None
+    mean_signed_difference: float | None
+    joint_5_5_share: float | None
+    judge_marginals: list[int]
+    human_marginals: list[int]
+    qwk_dropped_resamples: int
+    spearman_dropped_resamples: int
+    per_arm_exact: dict[str, str]
 
 
 class JudgedDeltaView(_Model):
@@ -513,6 +523,7 @@ class Comparison(_Model):
     strata: list[StratumRow]
     primary_delta_strata: list[StratumDeltaRow]
     judged_agreement: list[AgreementView]
+    dropped_slice_ids: list[str]
     judged_deltas: list[JudgedDeltaView]
     judged_delta_strata: list[StratumDeltaRow]
     legacy_lines: list[str]
@@ -1030,7 +1041,24 @@ def _agreement_views(judged: JudgedResult) -> list[AgreementView]:
                 floor=float(d["floor"]),
                 label=str(d["label"]),
                 spearman=d["spearman"],
+                spearman_ci_lo=d["spearman_ci_lower"],
+                spearman_ci_hi=d["spearman_ci_upper"],
                 exact_agreement=d["exact_agreement"],
+                mad=d["mad"],
+                mean_signed_difference=d["mean_signed_difference"],
+                joint_5_5_share=d["joint_5_5_share"],
+                judge_marginals=[
+                    int(d["judge_marginals"][str(v)]) for v in range(1, 6)
+                ],
+                human_marginals=[
+                    int(d["human_marginals"][str(v)]) for v in range(1, 6)
+                ],
+                qwk_dropped_resamples=int(d["qwk_dropped_resamples"]),
+                spearman_dropped_resamples=int(d["spearman_dropped_resamples"]),
+                per_arm_exact={
+                    str(arm): f"{counts['exact']}/{counts['n']}"
+                    for arm, counts in d["per_arm_exact_agreement"].items()
+                },
             )
         )
     return views
@@ -1449,6 +1477,7 @@ def build_comparison(
         strata=[*_report_strata(dims, arms), *_judged_strata(judged)],
         primary_delta_strata=_primary_delta_strata(prim),
         judged_agreement=agreement,
+        dropped_slice_ids=list(judged.dropped_slice_ids),
         judged_deltas=judged_deltas,
         judged_delta_strata=judged_delta_strata,
         legacy_lines=list(judged.legacy_lines),
@@ -1669,7 +1698,75 @@ def _judged_tables(comp: Comparison) -> dict[str, list[str]]:
             for d in comp.judged_deltas
         ],
     )
-    return {"agreement": agreement, "arms": arms_table, "deltas": deltas}
+    companions = _table(
+        [
+            "dimension",
+            "Spearman (95% CI)",
+            "exact agreement",
+            "MAD",
+            "mean signed difference (judge - human)",
+            "judge marginals 1..5",
+            "human marginals 1..5",
+            "joint 5/5 share",
+            "dropped resamples (QWK / Spearman)",
+            "per-arm exact agreement",
+        ],
+        [
+            [
+                a.dimension,
+                f"{_p(a.spearman)} {_ci(a.spearman_ci_lo, a.spearman_ci_hi)}",
+                _p(a.exact_agreement),
+                _p(a.mad),
+                _p(a.mean_signed_difference),
+                "/".join(str(m) for m in a.judge_marginals),
+                "/".join(str(m) for m in a.human_marginals),
+                _p(a.joint_5_5_share),
+                f"{a.qwk_dropped_resamples} / {a.spearman_dropped_resamples}",
+                ", ".join(f"{arm} {c}" for arm, c in a.per_arm_exact.items()),
+            ]
+            for a in comp.judged_agreement
+        ],
+    )
+    return {
+        "agreement": agreement,
+        "companions": companions,
+        "arms": arms_table,
+        "deltas": deltas,
+    }
+
+
+def _census_table(comp: Comparison) -> list[str]:
+    """The abstention census per arm (AI-SPEC section 6), read from the report."""
+
+    def detail(arm: ArmRow, metric: str, key: str) -> str:
+        value = arm.cells[metric].detail.get(key)
+        return "n/a" if value is None else str(int(value))
+
+    return _table(
+        [
+            "arm",
+            "G abstention rate (n)",
+            "null correctness (n)",
+            "hallucinated on null",
+            "NO_EVIDENCE count",
+            "leak count",
+            "usable blank answers",
+        ],
+        [
+            [
+                a.arm,
+                f"{_p(a.cells['abstention_rate_g'].value)} "
+                f"(n={a.cells['abstention_rate_g'].n})",
+                f"{_p(a.cells['null_abstention_correctness'].value)} "
+                f"(n={a.cells['null_abstention_correctness'].n})",
+                detail(a, "null_abstention_correctness", "hallucinated_on_null"),
+                detail(a, "null_abstention_correctness", "no_evidence_count"),
+                detail(a, "null_abstention_correctness", "leak_count"),
+                detail(a, "answer_usable_p4", "usable_blank_answer_count"),
+            ]
+            for a in comp.arms
+        ],
+    )
 
 
 def _secondary_table(comp: Comparison) -> list[str]:
@@ -1707,6 +1804,40 @@ def _strata_tables(comp: Comparison) -> list[dict[str, Any]]:
             metrics.append(r.metric)
     out = []
     for metric in metrics:
+        if metric in CONSTANT_YES_METRICS:
+            long_rows = []
+            for arm in comp.run.arms:
+                for qtype in strata_mod.STRATUM_TYPES:
+                    r = next(
+                        s
+                        for s in comp.strata
+                        if s.metric == metric
+                        and s.arm == arm
+                        and s.question_type == qtype
+                    )
+                    baseline = (
+                        "n/a"
+                        if r.constant_yes_baseline is None
+                        else f"{r.constant_yes_baseline:.4f}"
+                    )
+                    long_rows.append(
+                        [
+                            arm,
+                            qtype,
+                            format_stratum_cell(r.value, r.ci_lo, r.ci_hi, r.n),
+                            baseline,
+                        ]
+                    )
+            out.append(
+                {
+                    "metric": metric,
+                    "table": _table(
+                        ["arm", "question_type", "value", "constant-Yes baseline"],
+                        long_rows,
+                    ),
+                }
+            )
+            continue
         rows = []
         for arm in comp.run.arms:
             row: list[object] = [arm]
@@ -1717,8 +1848,6 @@ def _strata_tables(comp: Comparison) -> list[dict[str, Any]]:
                     if s.metric == metric and s.arm == arm and s.question_type == qtype
                 )
                 text = format_stratum_cell(r.value, r.ci_lo, r.ci_hi, r.n)
-                if r.constant_yes_baseline is not None:
-                    text += f"; constant-Yes {r.constant_yes_baseline:.4f}"
                 if r.abstention_n is not None:
                     text += (
                         f"; abstention {_p(r.abstention_rate)} (n = {r.abstention_n})"
@@ -1790,6 +1919,7 @@ def render_markdown(comp: Comparison) -> str:
         "abstention_table": _arm_table(comp, ABSTENTION_METRICS),
         "latency_table": _arm_table(comp, LATENCY_COST_METRICS),
         "judged": _judged_tables(comp),
+        "census_table": _census_table(comp),
         "secondary_table": _secondary_table(comp),
         "strata": _strata_tables(comp),
         "primary_delta_strata": _delta_strata_tables(
