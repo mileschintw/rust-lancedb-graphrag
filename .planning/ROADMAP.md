@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 15/18 plans executed (13 offline code plans in waves 1-8, then 5 live-stack plans in waves 9-13 including gap-closure 06.3.5-18, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 16/18 plans executed (13 offline code plans in waves 1-8, then 5 live-stack plans in waves 9-13 including gap-closure 06.3.5-18, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1115,7 +1115,7 @@ Plans:
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [ ] 06.3.5-15-PLAN.md — The paid held-out drive (1,404 records) under its D-86 cap, every free post-drive reading, and the D-109 / D-110 gate decision
+- [x] 06.3.5-15-PLAN.md — The paid held-out drive (1,404 records) under its D-86 cap, every free post-drive reading, and the D-109 / D-110 gate decision (SC-2 MISS; owner: continue-with-disclosure, post-hoc)
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
