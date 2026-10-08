@@ -1,0 +1,52 @@
+{
+  "mode": "heldout",
+  "judge_model": "meta-llama/llama-3.3-70b-instruct",
+  "judge_prompt_version": "v1",
+  "stage_cap": 1.0,
+  "calls": 707,
+  "keys_attempted": 707,
+  "unique_keys_total": 707,
+  "spend_usd": 0.11593595999999996,
+  "wall_clock_s": 3749.8881909000047,
+  "arms": {
+    "dense-only": {
+      "judgeable": 197,
+      "unique_keys": 197,
+      "cached_before": 0,
+      "judged_now": 197,
+      "errors": 0,
+      "re_attempted": 0,
+      "not_attempted": 0
+    },
+    "bm25-only": {
+      "judgeable": 140,
+      "unique_keys": 140,
+      "cached_before": 0,
+      "judged_now": 140,
+      "errors": 0,
+      "re_attempted": 0,
+      "not_attempted": 0
+    },
+    "hybrid": {
+      "judgeable": 187,
+      "unique_keys": 187,
+      "cached_before": 0,
+      "judged_now": 187,
+      "errors": 0,
+      "re_attempted": 0,
+      "not_attempted": 0
+    },
+    "hybrid+graph": {
+      "judgeable": 184,
+      "unique_keys": 184,
+      "cached_before": 0,
+      "judged_now": 183,
+      "errors": 0,
+      "re_attempted": 0,
+      "not_attempted": 0
+    }
+  },
+  "stop_reason": null,
+  "per_call_latency_ms_p50": 4758.487000013702,
+  "per_call_latency_ms_p95": 9629.990160001034
+}
