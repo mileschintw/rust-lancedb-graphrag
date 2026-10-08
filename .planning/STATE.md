@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 17
 status: executing
-stopped_at: Phase 06.3.5 plan 17 Task 1 running
+stopped_at: Phase 06.3.5 at 06.3.5-17 Task 2: owner confirms the paper reference row (row-matches / row-mismatch)
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-08
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 17 (wave 13 of 13) - Task 1 (key reveal, score --judged, compare)
+Current Plan: 17 (wave 13 of 13) - STOPPED at Task 2 (owner D-103 paper-row read)
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-08: 06.3.5-17 Task 1 done, STOPPED at Task 2 (D-103 owner paper-row read, not pre-authorised).** Reveal commit `f79de2b9` (descends from scores `7c2371e2`). `score --judged`, `report` and `compare` all exit 0; P4 296/308. **D-114: both judged dimensions are uncalibrated** (groundedness QWK -0.026, faithfulness QWK 0.066, n=20). Outputs stay uncommitted until Task 3 (plus `metadata.json`, which `score --judged` rewrote and which goes into Task 3's pathspec).
 - **2026-10-08: 06.3.5-16 complete.** Owner scored the worksheet (`7c2371e2`, fast-forwarded from the owner worktree branch; 20 integer rows; key still untracked). Owner pre-reveal observations (rank-indexed citation markers seen identically by the judge; titles absent from evidence) recorded in JUDGE.md `3f4f2094` as disclosures, no instrument change (D-106). Owner: "Proceed with plan 17". Plan 17 Task 2 (D-103 paper-row read) is an owner checkpoint that is not pre-authorised.
 - **2026-10-08: ENDPOINT reached: plan 16 Task 3 (owner scores the 20-item blinded worksheet).** Judge stage complete, 707 calls, $0.102544 settled of the $1.00 cap. Worksheet commit `1ab36a7d`, JUDGE.md `66b01404`. Phase spend $0.352621. See the ENDPOINT section of `06.3.5-HANDOVER.md`.
 - **2026-10-08: 06.3.5-16 Task 1 answered `authorise-1.00` (owner pre-authorisation).** Population computed for free: 708 judgeable held-out G records, 707 unique cache keys (dense-only 197, bm25-only 140, hybrid 187, hybrid+graph 184), judge `meta-llama/llama-3.3-70b-instruct`, max_tokens 400. The refusal floor is 707 x $0.000264 = $0.186648, below the cap. Price re-check (OpenRouter /models, 2026-10-08): $0.10/M prompt, $0.32/M completion, against the recorded $0.12/$0.30, so the recorded estimate stays conservative ($0.000248 per call at live prices). Expected wall-clock is about 50-105 min (rehearsal p50 3.3-8.6 s per call, sequential). Judge stage runs WMI-detached under a sleep hold and is orchestrator-owned; part B is an executor continuation. The SC-2 MISS from plan 15 stands and is disclosed (owner amendment).
@@ -559,7 +560,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 plan 17 Task 1 running
+**Stopped at:** Phase 06.3.5 at 06.3.5-17 Task 2: owner confirms the paper reference row (row-matches / row-mismatch)
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
