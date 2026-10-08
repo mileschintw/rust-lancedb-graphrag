@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 15
 status: executing
-stopped_at: Phase 06.3.5 stopped at 06.3.5-15 Task 3: held-out gate SC-2 MISS (embedding timeouts); owner D-110 decision needed - see .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-HANDOVER.md
+stopped_at: Phase 06.3.5 plan 15 Task 3 answered continue-with-disclosure (owner, post-hoc; SC-2 MISS stands); closing 15 then plan 16
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-08
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 15 (wave 11 of 13) - STOPPED at Task 3 (SC-2 MISS); see 06.3.5-HANDOVER.md STOP 2
+Current Plan: 15 (wave 11 of 13) - Task 3 answered: continue-with-disclosure (owner, post-hoc); closing plan 15
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-08 (2026-10-08T01:47Z): Owner answered the plan-15 Task 3 stop: "Continue with disclosure".** This is an owner decision OUTSIDE the plan's three options (`gates-pass-continue` is not available and was not used). Outcome id `continue-with-disclosure (owner, post-hoc)`: SC-2 MISS stands as read (dense-only, hybrid, hybrid+graph, pooled; 12 query-embedding timeouts at 2,001-2,016 ms vs the 2,000 ms budget, before any arm-specific retrieval; paired P4 exclusion; coverage 0.961). No re-drive, no rule or config change; `gates-heldout.md/json` unchanged. Plans 16 (judged pass, pre-authorised `authorise-1.00`) and 17 (run of record) proceed on this drive with the SC-2 MISS and the post-hoc deviation as a headline caveat. Deferred to 06.3.6, pre-registered before the next held-out drive: an SC-2 error-mode minimum count/rate, and an embedding retry or timeout budget. Plans 16/17 get an `<owner_amendment>` block; plan 15 closes `complete` with the miss disclosed.
 - **2026-10-08: AUTONOMOUS RUN STOPPED (stop 2) — plan 15 Task 3 gate reading is not a clean pass; see `06.3.5-HANDOVER.md` "STOP 2".** The held-out drive completed: 1,404 records, part 1 plus the owner-approved resume. Part B committed `d28fa088`. Readings: `score` accepted; coverage 0.961 (p4 296/308); provenance conformance 1.0; one provider; cross-check ran. **SC-1 PASS on all arms and pooled. SC-2 MISS on dense-only, hybrid, hybrid+graph and pooled**, from the pre-registered error-mode rule `plurality_tie_is_dominant`: 12 of 13 errors are query-embedding timeouts at 2,001-2,016 ms against the 2,000 ms budget. bm25-only PASS. Drive spend $0.234784 settled; phase total $0.250077. Owner decision needed: `redrive-via-gaps` (with the timeout rows) or `halt-disclose`. The orchestrator did not choose, per the owner's instruction. No live processes are running.
 - **2026-10-07: 06.3.5-15 drive interrupted and RESUMED (owner decision).** Part 1 exited 130 at 688/1,404 records (172 questions x 4 arms, balanced; 682 success, 6 error) at ~23:06Z, about one minute after a Windows standby/session transition (System log Kernel-Power 566, 23:04:58Z); engine PID 24012 stayed up; part-1 spend $0.1155 (settled 2.646655508 -> 2.762196397). Owner chose "Resume same journal": `--resume --gate-stage heldout --retries 0 --stage-cap 1.88` (the $2.00 authorisation minus spend) against the same engine PID, via `drive-resume.sh` / `start-drive-resume-detached.ps1` (WMI-detached; the wrapper holds `SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED)` while it runs; app keep-awake also requested). Part-1 console/exit kept as `drive-console-part1.txt` / `drive-exit-part1.txt`; the interruption is disclosed in DRIVE.md.
 - **2026-10-07: 06.3.5-15 held-out drive STARTED (detached).** Part A2: rehearsal-2 processes stopped; fresh detached engine PID 24012 / gateway PID 13480 (logs `engine-stderr-drive2.log` / `gateway-stderr-drive2.log` in `data/oi02-evidence/heldout-2026-10-07/`); held-out preflight PASS on the first attempt (retry unused; 2 `generation_basis_normalised`, 0 rejections), spend $0.001446; failed attempt-1 preflight moved to `preflight-attempt1-FAILED.txt`. The orchestrator started `drive.sh` through WMI (`start-drive-detached.ps1`, wrapper outside any agent job object) with `--stage-cap 2.00 --retries 0 --no-resume --gate-stage heldout`; usage before drive 2.646655508. Wait on `eval/runs/2026-10-07-heldout-multihop_rag_heldout/drive-exit.txt`, then part B (steps 4-8) and the Task 3 gate.
@@ -555,7 +556,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 stopped at 06.3.5-15 Task 3: held-out gate SC-2 MISS (embedding timeouts); owner D-110 decision needed - see .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-HANDOVER.md
+**Stopped at:** Phase 06.3.5 plan 15 Task 3 answered continue-with-disclosure (owner, post-hoc; SC-2 MISS stands); closing 15 then plan 16
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
