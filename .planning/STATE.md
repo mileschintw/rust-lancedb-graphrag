@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 16
+current_plan: 17
 status: executing
-stopped_at: Phase 06.3.5 at the intended endpoint: 06.3.5-16 Task 3, owner scores eval/runs/2026-10-07-heldout-multihop_rag_heldout/calibration-worksheet.jsonl (commit 1ab36a7d); see 06.3.5-HANDOVER.md ENDPOINT
+stopped_at: Phase 06.3.5 plan 17 Task 1 running
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-08
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 16 (wave 12 of 13) - at Task 3 (owner scores calibration worksheet); see 06.3.5-HANDOVER.md ENDPOINT
+Current Plan: 17 (wave 13 of 13) - Task 1 (key reveal, score --judged, compare)
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-08: 06.3.5-16 complete.** Owner scored the worksheet (`7c2371e2`, fast-forwarded from the owner worktree branch; 20 integer rows; key still untracked). Owner pre-reveal observations (rank-indexed citation markers seen identically by the judge; titles absent from evidence) recorded in JUDGE.md `3f4f2094` as disclosures, no instrument change (D-106). Owner: "Proceed with plan 17". Plan 17 Task 2 (D-103 paper-row read) is an owner checkpoint that is not pre-authorised.
 - **2026-10-08: ENDPOINT reached: plan 16 Task 3 (owner scores the 20-item blinded worksheet).** Judge stage complete, 707 calls, $0.102544 settled of the $1.00 cap. Worksheet commit `1ab36a7d`, JUDGE.md `66b01404`. Phase spend $0.352621. See the ENDPOINT section of `06.3.5-HANDOVER.md`.
 - **2026-10-08: 06.3.5-16 Task 1 answered `authorise-1.00` (owner pre-authorisation).** Population computed for free: 708 judgeable held-out G records, 707 unique cache keys (dense-only 197, bm25-only 140, hybrid 187, hybrid+graph 184), judge `meta-llama/llama-3.3-70b-instruct`, max_tokens 400. The refusal floor is 707 x $0.000264 = $0.186648, below the cap. Price re-check (OpenRouter /models, 2026-10-08): $0.10/M prompt, $0.32/M completion, against the recorded $0.12/$0.30, so the recorded estimate stays conservative ($0.000248 per call at live prices). Expected wall-clock is about 50-105 min (rehearsal p50 3.3-8.6 s per call, sequential). Judge stage runs WMI-detached under a sleep hold and is orchestrator-owned; part B is an executor continuation. The SC-2 MISS from plan 15 stands and is disclosed (owner amendment).
 - **2026-10-08 (2026-10-08T01:47Z): Owner answered the plan-15 Task 3 stop: "Continue with disclosure".** This is an owner decision OUTSIDE the plan's three options (`gates-pass-continue` is not available and was not used). Outcome id `continue-with-disclosure (owner, post-hoc)`: SC-2 MISS stands as read (dense-only, hybrid, hybrid+graph, pooled; 12 query-embedding timeouts at 2,001-2,016 ms vs the 2,000 ms budget, before any arm-specific retrieval; paired P4 exclusion; coverage 0.961). No re-drive, no rule or config change; `gates-heldout.md/json` unchanged. Plans 16 (judged pass, pre-authorised `authorise-1.00`) and 17 (run of record) proceed on this drive with the SC-2 MISS and the post-hoc deviation as a headline caveat. Deferred to 06.3.6, pre-registered before the next held-out drive: an SC-2 error-mode minimum count/rate, and an embedding retry or timeout budget. Plans 16/17 get an `<owner_amendment>` block; plan 15 closes `complete` with the miss disclosed.
@@ -558,7 +559,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 at the intended endpoint: 06.3.5-16 Task 3, owner scores eval/runs/2026-10-07-heldout-multihop_rag_heldout/calibration-worksheet.jsonl (commit 1ab36a7d); see 06.3.5-HANDOVER.md ENDPOINT
+**Stopped at:** Phase 06.3.5 plan 17 Task 1 running
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
