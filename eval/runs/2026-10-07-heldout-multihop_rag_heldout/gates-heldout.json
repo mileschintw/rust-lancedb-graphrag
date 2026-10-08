@@ -1,0 +1,361 @@
+{
+  "stage": "heldout",
+  "arms": [
+    "dense-only",
+    "bm25-only",
+    "hybrid",
+    "hybrid+graph"
+  ],
+  "SC-1": {
+    "dense-only": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm dense-only: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "dense-only",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "bm25-only": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm bm25-only: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "bm25-only",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "hybrid": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "hybrid+graph": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid+graph: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+graph",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "pooled": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "header partial matches completeness_comparison() and report.json state is consistent",
+      "value": null,
+      "ci": null,
+      "n": 1404,
+      "detail": {
+        "header_partial": false,
+        "expected_partial": false,
+        "journal_complete": true,
+        "missing_units": 0.0,
+        "report_json_exists": true,
+        "retry_provenance": "header marker: gate_stage=heldout, max_retries=0"
+      }
+    }
+  },
+  "SC-2": {
+    "dense-only": {
+      "gate": "SC-2",
+      "status": "MISS",
+      "reason": "arm dense-only: timeout is a dominant error class (tied or plurality): {'timeout': 4, 'other': 1}",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "dense-only",
+        "class_counts": {
+          "timeout": 4.0,
+          "other": 1.0
+        },
+        "dominant_classes": [
+          "timeout"
+        ],
+        "timeout_dominant": true,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": 0.0,
+        "flatness_window_delta_ms": 3.0
+      }
+    },
+    "bm25-only": {
+      "gate": "SC-2",
+      "status": "PASS",
+      "reason": "arm bm25-only: error mode and RetrieveHybrid flatness both pass",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "bm25-only",
+        "class_counts": {},
+        "dominant_classes": [],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": 0.0,
+        "flatness_window_delta_ms": -15.0
+      }
+    },
+    "hybrid": {
+      "gate": "SC-2",
+      "status": "MISS",
+      "reason": "arm hybrid: timeout is a dominant error class (tied or plurality): {'timeout': 6}",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid",
+        "class_counts": {
+          "timeout": 6.0
+        },
+        "dominant_classes": [
+          "timeout"
+        ],
+        "timeout_dominant": true,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": -0.006968641114982578,
+        "flatness_window_delta_ms": -11.0
+      }
+    },
+    "hybrid+graph": {
+      "gate": "SC-2",
+      "status": "MISS",
+      "reason": "arm hybrid+graph: timeout is a dominant error class (tied or plurality): {'timeout': 2}",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+graph",
+        "class_counts": {
+          "timeout": 2.0
+        },
+        "dominant_classes": [
+          "timeout"
+        ],
+        "timeout_dominant": true,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": 0.005208333333333333,
+        "flatness_window_delta_ms": 32.0
+      }
+    },
+    "pooled": {
+      "gate": "SC-2",
+      "status": "MISS",
+      "reason": "timeout is a dominant error class (tied or plurality): {'timeout': 12, 'other': 1}",
+      "value": null,
+      "ci": null,
+      "n": 1404,
+      "detail": {
+        "class_counts": {
+          "timeout": 12.0,
+          "other": 1.0
+        },
+        "dominant_classes": [
+          "timeout"
+        ],
+        "timeout_dominant": true,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "both_arm_error_question_count": 0.0,
+        "both_arm_error_class_pairs": [],
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": 0.0,
+        "flatness_window_delta_ms": 2.0
+      }
+    }
+  },
+  "D-69 companion": {
+    "dense-only": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.010949670734599319
+      ],
+      "n": 347,
+      "detail": {
+        "class_counts": {
+          "other": 1.0
+        },
+        "marker_mismatch_count": 0.0,
+        "total": 347.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 304.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.010949670734599319
+      }
+    },
+    "bm25-only": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.010826239088088881
+      ],
+      "n": 351,
+      "detail": {
+        "class_counts": {},
+        "marker_mismatch_count": 0.0,
+        "total": 351.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 308.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.010826239088088881
+      }
+    },
+    "hybrid": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.011012448056653792
+      ],
+      "n": 345,
+      "detail": {
+        "class_counts": {},
+        "marker_mismatch_count": 0.0,
+        "total": 345.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 42.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 303.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.011012448056653792
+      }
+    },
+    "hybrid+graph": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.010887605089649293
+      ],
+      "n": 349,
+      "detail": {
+        "class_counts": {},
+        "marker_mismatch_count": 0.0,
+        "total": 349.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 306.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.010887605089649293
+      }
+    },
+    "pooled": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.0027521747453292697
+      ],
+      "n": 1392,
+      "detail": {
+        "class_counts": {
+          "other": 1.0
+        },
+        "marker_mismatch_count": 0.0,
+        "total": 1392.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 171.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 1221.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.0027521747453292697
+      }
+    }
+  },
+  "not_computed": {
+    "SC-3": "not computed for the heldout stage (D-109): SC-3, SC-4 and SC-5 need the dev populations and the two-arm graph pairing, which the four-arm held-out drive does not carry",
+    "SC-4": "not computed for the heldout stage (D-109): SC-3, SC-4 and SC-5 need the dev populations and the two-arm graph pairing, which the four-arm held-out drive does not carry",
+    "SC-5": "not computed for the heldout stage (D-109): SC-3, SC-4 and SC-5 need the dev populations and the two-arm graph pairing, which the four-arm held-out drive does not carry"
+  },
+  "retry_provenance": "header marker: gate_stage=heldout, max_retries=0"
+}

@@ -1,0 +1,6 @@
+Resolved run directory: eval\runs\2026-10-07-heldout-multihop_rag_heldout
+Driving corpus 'multihop_rag_heldout' (limit=None, resume=True, workers=1, 
+retries=0, gate_stage=heldout, stage_cap=$1.88)...
+Successfully recorded 716 new work units to 
+eval\runs\2026-10-07-heldout-multihop_rag_heldout\journal.jsonl (observed 
+spend: $0.5976)

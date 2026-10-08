@@ -1,0 +1,1032 @@
+{
+  "records": 1404,
+  "arms": [
+    "dense-only",
+    "bm25-only",
+    "hybrid",
+    "hybrid+graph"
+  ],
+  "question_types": [
+    "comparison_query",
+    "inference_query",
+    "null_query",
+    "temporal_query"
+  ],
+  "normalised": {
+    "total": 118,
+    "by_arm": {
+      "dense-only": 27,
+      "bm25-only": 40,
+      "hybrid": 26,
+      "hybrid+graph": 25
+    },
+    "by_arm_question_type": {
+      "dense-only": {
+        "comparison_query": 3,
+        "inference_query": 0,
+        "null_query": 22,
+        "temporal_query": 2
+      },
+      "bm25-only": {
+        "comparison_query": 4,
+        "inference_query": 2,
+        "null_query": 29,
+        "temporal_query": 5
+      },
+      "hybrid": {
+        "comparison_query": 5,
+        "inference_query": 0,
+        "null_query": 17,
+        "temporal_query": 4
+      },
+      "hybrid+graph": {
+        "comparison_query": 1,
+        "inference_query": 0,
+        "null_query": 18,
+        "temporal_query": 6
+      }
+    }
+  },
+  "model_only_rejected": {
+    "total": 0,
+    "by_arm": {
+      "dense-only": 0,
+      "bm25-only": 0,
+      "hybrid": 0,
+      "hybrid+graph": 0
+    },
+    "by_arm_question_type": {
+      "dense-only": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "null_query": 0,
+        "temporal_query": 0
+      },
+      "bm25-only": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "null_query": 0,
+        "temporal_query": 0
+      },
+      "hybrid": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "null_query": 0,
+        "temporal_query": 0
+      },
+      "hybrid+graph": {
+        "comparison_query": 0,
+        "inference_query": 0,
+        "null_query": 0,
+        "temporal_query": 0
+      }
+    }
+  },
+  "normalised_not_abstaining": 0,
+  "rows": [
+    {
+      "question_id": "mhr-c0a65396f672",
+      "arm": "hybrid+graph",
+      "question_type": "temporal_query",
+      "correlation_id": "9e5b94a1-f839-4b93-8015-6c93270b6ace",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-9b5e45e2ff33",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "a1f84b65-54df-416f-85c1-e877b138674b",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-9b5e45e2ff33",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "a7d989ed-a40b-490d-b215-ca688623acef",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-9b5e45e2ff33",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "9558c009-105a-4080-80d3-6a0ba85aff9b",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-9b5e45e2ff33",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "e68fc024-e973-42c4-99a3-6765c6d9f2e5",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-71511bc9a692",
+      "arm": "bm25-only",
+      "question_type": "temporal_query",
+      "correlation_id": "4497f50f-18bd-42e6-87cc-20cd1f42ed91",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-8143daf7c13b",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "c304909c-f1bb-4266-a96b-fe7b68ce7c17",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-3a56e641788d",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "3cba4076-3b35-4403-acb9-fd52c68c4f61",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-980e4c80c0c4",
+      "arm": "bm25-only",
+      "question_type": "comparison_query",
+      "correlation_id": "f1835440-b4de-48f3-a18a-86b8ded168a7",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-980e4c80c0c4",
+      "arm": "hybrid+graph",
+      "question_type": "comparison_query",
+      "correlation_id": "a791885d-9c5e-46cc-a526-277f8564ff74",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-c8cdf6069331",
+      "arm": "hybrid",
+      "question_type": "comparison_query",
+      "correlation_id": "381578e8-568e-407b-8ede-a2494ffba40c",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-0a7a2c277008",
+      "arm": "bm25-only",
+      "question_type": "comparison_query",
+      "correlation_id": "1d3a07b0-1640-4cff-9ee5-5c9b4f3384c4",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-921466545e14",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "4bcba70f-3eee-49a9-8d85-2fcadb307693",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d0ac99e4514f",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "1d9993fc-eaf5-4c6c-85dd-ee6ea96b3e87",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d0ac99e4514f",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "82fbdbe7-f019-4021-8ed8-46793fff06d1",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-47ad58755744",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "2d224e59-bec8-4c89-a6e5-13cd30e5404e",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-ec813220e8f1",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "068b7968-2457-46dc-9377-1daefd69685a",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-ec813220e8f1",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "4173ccb5-7bab-4833-a310-9896535cbf15",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-425ad2757c65",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "1d0a6c1e-1a9d-4ad2-9419-60ef17d49f4c",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-425ad2757c65",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "8ccb4dad-1013-4396-80ba-f8e880fce548",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-425ad2757c65",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "b5209940-2063-49db-87c3-5a9fa7767bd9",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-6516ed238dc4",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "2e6c00e5-8cad-4da5-a4c2-e7496177dd62",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-6516ed238dc4",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "7408aea3-3982-43a4-8e4a-ce8c3f2f0097",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-6516ed238dc4",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "5c690ca1-e75d-4584-af09-ee1f89856bca",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-6516ed238dc4",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "af5f577e-70f2-4157-81b3-7e3b0f7f19db",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-32090feed961",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "a7b71065-5b76-4199-853b-ed3aa4f412be",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-32090feed961",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "10fb7346-71f8-4a36-a49f-7ad3b0c2fc9b",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-7728ff50ff1a",
+      "arm": "hybrid",
+      "question_type": "comparison_query",
+      "correlation_id": "40341281-1850-484f-8e41-80b87dd9425f",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-0cab8f5a5d2c",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "249bfe25-a512-408c-9065-b2721e67ca74",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-4fa4d5dd18ee",
+      "arm": "bm25-only",
+      "question_type": "inference_query",
+      "correlation_id": "de64c3b0-c01f-431b-98b7-baca7b7abe12",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-37c919ab40c8",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "8e9001b4-cbd2-4e3f-ae3e-e8a7f84e1a52",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-a8d2a6b5a522",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "78452919-b92c-4b59-a550-59c156ccb60b",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-e826c05c2d71",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "65542d46-250b-4094-9532-b49b10a2ea6d",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-e826c05c2d71",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "dcdb8b41-32a9-4da7-84fc-5687f069e89d",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-e826c05c2d71",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "e8529699-e0b6-440b-9f6d-c397320b3a0b",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-597cb9c5eb4b",
+      "arm": "dense-only",
+      "question_type": "comparison_query",
+      "correlation_id": "5a13ce41-5e82-404f-a524-b7490d82ed04",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-ef0defe431ae",
+      "arm": "dense-only",
+      "question_type": "temporal_query",
+      "correlation_id": "6f24e4a9-541e-44ad-bb6a-44ac32e384a1",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-6344aeb08cf5",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "f2e56d5b-a606-4498-9850-65fcaeb95e7d",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-6344aeb08cf5",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "3caec4ce-e872-4edb-bcf6-770c564d564d",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-5e82a7170f2d",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "53ee9d59-854e-4479-9aac-6efd84bd463c",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d11898b1ef35",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "fa13aca2-2884-4b06-9679-4236cea45de3",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d11898b1ef35",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "15955f90-2e55-48c7-82f2-996ff74f158d",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d11898b1ef35",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "3fdee01b-64a5-4657-bf41-725ac584ab6c",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-3716695d4dab",
+      "arm": "dense-only",
+      "question_type": "temporal_query",
+      "correlation_id": "16d23649-5344-4ab4-83d4-42d9a4ac8ea1",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-13406b457ade",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "2c57239f-144c-42f8-af75-7bec4f528265",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-13406b457ade",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "5b378755-3f6a-4426-82b2-8b17b77bebe2",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-13406b457ade",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "752a7b4e-bf3e-46c0-b637-1e05f294d0fa",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-00fc91a80765",
+      "arm": "bm25-only",
+      "question_type": "temporal_query",
+      "correlation_id": "f5c1e797-a18a-4bf0-a5d3-e0ee3d85f816",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-0279d4a349c3",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "600f879b-9a00-45c4-aec9-a32b34250dab",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-0279d4a349c3",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "bf98e658-1a4c-42bf-98f9-89dc71071f9c",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-0279d4a349c3",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "bc78497f-33f6-4768-a47e-404b33bba41a",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-5add17717795",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "daf1fdaa-add0-4a4c-a641-049d983e576e",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-5add17717795",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "67581198-7d38-45c9-89d0-75db6771bdd6",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-65b9d72b7f4e",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "7c6c4288-bc97-476a-bb3f-bc06e2396600",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-1fbff35ceee3",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "39d64d79-fedd-49d5-a837-5e2861e6540c",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-1fbff35ceee3",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "bdc7c34d-ed34-4d97-b949-8be19969f16b",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-694eb5c8dace",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "1dc19447-07a5-40d1-b22b-58b2df3b6564",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-be2ac3323e16",
+      "arm": "bm25-only",
+      "question_type": "inference_query",
+      "correlation_id": "6a541f0f-3db8-4440-bee0-d147bb46ab83",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-6f736fe87d1c",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "d8bb40f8-e8d8-479c-9bf2-bdeaa32027bf",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-4adbdf0dec39",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "baf514c3-a01d-4373-ba2b-33a5fd7a6174",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-4adbdf0dec39",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "558863b9-a839-492a-bbe0-6ba109ca6596",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-4adbdf0dec39",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "8d890248-b56d-4861-83ee-e720fd998301",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-f29c02e8d491",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "ad2d1aa5-8a20-4446-b8dd-2fe916a4ca04",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-f29c02e8d491",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "bf15c093-e9fd-4e53-a730-d99b54129c71",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-f29c02e8d491",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "b70518ae-f167-46be-8129-d18ab12644c0",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-f29c02e8d491",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "31d98fe4-3bc2-442e-9572-14f9be64c989",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-745a657e95ca",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "791c3fbc-b551-463a-acd7-c7754a2c55cc",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-745a657e95ca",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "026026e4-b36e-4070-8b2d-8c891fd63413",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-960f7fa55cea",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "49c70442-9a56-4665-8de5-01bd5fc8f561",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-960f7fa55cea",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "004e7ddd-01b6-4452-80c3-6cf6f9f455ac",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-960f7fa55cea",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "29b13d9f-719f-4f77-9402-e40d649d5612",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-b12aee5d5218",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "e375d316-5a17-4340-9b7e-3b8282fc839a",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-4dc133ce515a",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "5daff084-0a70-4d86-a19e-c8a805e89292",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-4dc133ce515a",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "ce837e47-7666-4050-89a8-48e8ebf17a48",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-fd117a9f9071",
+      "arm": "dense-only",
+      "question_type": "comparison_query",
+      "correlation_id": "0fa5e2de-df21-45dd-a051-a8d62a7530dc",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-6e1d1aa6b4d0",
+      "arm": "hybrid",
+      "question_type": "comparison_query",
+      "correlation_id": "e7144675-9931-4867-9746-ea231d4bf443",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-871dc6a862b5",
+      "arm": "hybrid+graph",
+      "question_type": "temporal_query",
+      "correlation_id": "0c099aac-2470-416c-aea8-d0621eeabda6",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-3614e84a03e1",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "16738026-ec70-4d9a-8b50-cc15df9e95bb",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-3614e84a03e1",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "0693988d-4a41-492e-88c2-cc653b220c13",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-3614e84a03e1",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "6f68f39a-1a0a-4725-91e1-e2100b5614bb",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-867884856662",
+      "arm": "hybrid",
+      "question_type": "temporal_query",
+      "correlation_id": "05a8bc9b-f4e6-4565-a9ec-5dd93b35da79",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-867884856662",
+      "arm": "hybrid+graph",
+      "question_type": "temporal_query",
+      "correlation_id": "66d85241-946e-4169-a0ee-3a7545b2b112",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-53f3d7e03c9a",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "3aa79580-276c-4c3a-8be8-173da3a9c122",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-53f3d7e03c9a",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "0a11ea1c-1fb8-4893-8da9-beb22a85a0fc",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-53f3d7e03c9a",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "eb6f524e-6989-40de-a720-a9b3cc6423cc",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-740d9d456d09",
+      "arm": "hybrid+graph",
+      "question_type": "temporal_query",
+      "correlation_id": "090459e8-05fe-48d9-a017-e4081b4d01a9",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-740d9d456d09",
+      "arm": "hybrid",
+      "question_type": "temporal_query",
+      "correlation_id": "181d1d46-e8ec-4153-95f3-b037040cec12",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-fc05c3396cbd",
+      "arm": "hybrid+graph",
+      "question_type": "temporal_query",
+      "correlation_id": "41b70413-799e-46fb-a2fb-633694f9a03a",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-42b00bb83cef",
+      "arm": "bm25-only",
+      "question_type": "comparison_query",
+      "correlation_id": "a5577175-239f-4d32-9cab-b8b71ce1205e",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-42b00bb83cef",
+      "arm": "hybrid",
+      "question_type": "comparison_query",
+      "correlation_id": "e095cf8f-06d8-4c7f-8619-18544207689f",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-dfc2cb0fa6c7",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "4038be7b-8d61-4bf8-9e77-a5d90fc7bebe",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-dfc2cb0fa6c7",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "8f1573a1-69ea-4819-8ce5-3665e1d95774",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-5b6f3c3bd278",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "dec05e53-8dcc-4f58-b808-381465fd840b",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-882252c60549",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "2482fbb3-d91f-499d-b85c-e9c8fcc243b2",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-882252c60549",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "3a652a02-27ee-4fde-9577-1b5c7135a0dc",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-882252c60549",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "a9ddea5b-cd9e-4658-a5aa-272a82074da8",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-342a67a1777e",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "4c8cf9ef-38a1-4ffb-9907-7e407bf96afc",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-342a67a1777e",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "4e3403ac-52fd-479f-8d45-9a94d014171e",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-342a67a1777e",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "94251d6e-e3e0-4ad6-9ed3-12a4585671b9",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-fa9a8a7445c9",
+      "arm": "bm25-only",
+      "question_type": "comparison_query",
+      "correlation_id": "910ef340-52d3-4679-9b40-a06297c17fef",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-fa9a8a7445c9",
+      "arm": "hybrid",
+      "question_type": "comparison_query",
+      "correlation_id": "fa2d16bd-8d9b-47a6-9b4d-a5db13be9667",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-4234b1f2626c",
+      "arm": "bm25-only",
+      "question_type": "temporal_query",
+      "correlation_id": "e039d0ab-1361-4242-b177-c22beb68906b",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-f6de9a1b406a",
+      "arm": "hybrid",
+      "question_type": "temporal_query",
+      "correlation_id": "67c1ba5b-2d77-49ff-9c8f-cb3a3d35e2fa",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-01c35cf3d285",
+      "arm": "hybrid+graph",
+      "question_type": "temporal_query",
+      "correlation_id": "1ad9021b-c4dd-4874-9457-d04f9b3bb1e8",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d564efdb3964",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "ff6d37ff-4573-45f9-a888-95ab1fb59096",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d564efdb3964",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "eb3033cb-ae89-4fd9-9050-2195de67445a",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d564efdb3964",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "b6d79259-c4a4-4bfa-a4f0-fd00f4f73b92",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-d564efdb3964",
+      "arm": "hybrid+graph",
+      "question_type": "null_query",
+      "correlation_id": "97fbbc02-746f-481a-a9d3-c46c72239b58",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-580b6de03e1c",
+      "arm": "dense-only",
+      "question_type": "comparison_query",
+      "correlation_id": "f4a0cc02-dbd6-46b3-b748-ae1b88c1303a",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-943462614434",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "c7bc16ca-697f-4a18-9731-df97234f23ee",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-fa714a2f5415",
+      "arm": "bm25-only",
+      "question_type": "temporal_query",
+      "correlation_id": "41d87411-bdb2-4dcc-b80b-517b0e2200ea",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-50475a3ec8a2",
+      "arm": "hybrid",
+      "question_type": "null_query",
+      "correlation_id": "b4d27272-d96c-40f6-b969-cffbc7b0892f",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-50475a3ec8a2",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "8945fa09-0aa8-46b0-b91a-8c3b0947c5b3",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-50475a3ec8a2",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "ec26d0d2-8e3e-4bde-a6a0-2c737138af50",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-57e511fd4032",
+      "arm": "hybrid",
+      "question_type": "temporal_query",
+      "correlation_id": "fe42e92d-8039-4d37-b97c-c72c5db95622",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-1175d7044fa1",
+      "arm": "bm25-only",
+      "question_type": "temporal_query",
+      "correlation_id": "8af3e6a7-53b1-4175-b449-2c37ee90e0f4",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-11765e17ddfc",
+      "arm": "dense-only",
+      "question_type": "null_query",
+      "correlation_id": "899ade3f-5afa-4bf8-80dc-252e6cc71f06",
+      "kind": "normalised",
+      "harness_abstains": true
+    },
+    {
+      "question_id": "mhr-68a49090e87d",
+      "arm": "bm25-only",
+      "question_type": "null_query",
+      "correlation_id": "c411b861-9c61-41df-988a-622a328d317a",
+      "kind": "normalised",
+      "harness_abstains": true
+    }
+  ]
+}

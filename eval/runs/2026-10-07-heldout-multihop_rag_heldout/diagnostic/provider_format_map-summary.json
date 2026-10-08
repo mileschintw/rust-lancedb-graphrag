@@ -1,0 +1,320 @@
+{
+ "records": 1404,
+ "arms": [
+  "dense-only",
+  "bm25-only",
+  "hybrid",
+  "hybrid+graph"
+ ],
+ "format_counts": {
+  "L": 1391,
+  ".": 13
+ },
+ "format_by_arm": {
+  "dense-only": {
+   "L": 346,
+   ".": 5
+  },
+  "bm25-only": {
+   "L": 351
+  },
+  "hybrid": {
+   "L": 345,
+   ".": 6
+  },
+  "hybrid+graph": {
+   "L": 349,
+   ".": 2
+  }
+ },
+ "format_map": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+ "provider_sequence_rle": [
+  [
+   "Sail Research",
+   163
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   145
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   5
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   36
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   66
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   262
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   156
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   70
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   10
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   39
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   33
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   61
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   21
+  ],
+  [
+   "null",
+   1
+  ],
+  [
+   "Sail Research",
+   324
+  ]
+ ],
+ "per_provider": {
+  "Sail Research": {
+   "records": 1391,
+   "L": 1391,
+   "i": 0,
+   "n": 0,
+   ".": 0,
+   "errors": 0
+  },
+  "null": {
+   "records": 13,
+   "L": 0,
+   "i": 0,
+   "n": 0,
+   ".": 13,
+   "errors": 13
+  }
+ },
+ "by_arm_provider": {
+  "dense-only": {
+   "Sail Research": 346,
+   "null": 5
+  },
+  "bm25-only": {
+   "Sail Research": 351
+  },
+  "hybrid": {
+   "Sail Research": 345,
+   "null": 6
+  },
+  "hybrid+graph": {
+   "Sail Research": 349,
+   "null": 2
+  }
+ },
+ "by_arm": {
+  "dense-only": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 5,
+   "unmatched": 5,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 5
+  },
+  "bm25-only": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 0,
+   "unmatched": 0,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 0
+  },
+  "hybrid": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 6,
+   "unmatched": 6,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 6
+  },
+  "hybrid+graph": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 2,
+   "unmatched": 2,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 2
+  }
+ },
+ "unmatched_count": 13,
+ "unmatched_no_evidence": 0,
+ "unmatched_errored": 13,
+ "unmatched_unexplained": 0,
+ "unmatched": [
+  {
+   "index": 163,
+   "question_id": "mhr-79744a8c3bb9",
+   "graph_arm": "dense-only",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 309,
+   "question_id": "mhr-a80277e346b5",
+   "graph_arm": "dense-only",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 315,
+   "question_id": "mhr-ce3233f7849a",
+   "graph_arm": "hybrid",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 352,
+   "question_id": "mhr-671ea2efb3bf",
+   "graph_arm": "dense-only",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 419,
+   "question_id": "mhr-49e828394806",
+   "graph_arm": "hybrid+graph",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 682,
+   "question_id": "mhr-141809cfa779",
+   "graph_arm": "hybrid",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 839,
+   "question_id": "mhr-745a657e95ca",
+   "graph_arm": "hybrid",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 910,
+   "question_id": "mhr-6f506c721c36",
+   "graph_arm": "hybrid+graph",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 921,
+   "question_id": "mhr-b1aea199ee97",
+   "graph_arm": "dense-only",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 961,
+   "question_id": "mhr-648633ff8cee",
+   "graph_arm": "hybrid",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 995,
+   "question_id": "mhr-6e1d1aa6b4d0",
+   "graph_arm": "dense-only",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 1057,
+   "question_id": "mhr-1acbad14990a",
+   "graph_arm": "hybrid",
+   "outcome": "error",
+   "reason": "errored"
+  },
+  {
+   "index": 1079,
+   "question_id": "mhr-5bc2db6af283",
+   "graph_arm": "hybrid",
+   "outcome": "error",
+   "reason": "errored"
+  }
+ ],
+ "two_served_lines": [],
+ "join_coverage": {
+  "reached_generate_answer": 1392,
+  "with_served_line": 1391
+ },
+ "served_lines_total": 1404,
+ "served_lines_not_in_journal": 13,
+ "distinct_models": [
+  "deepseek/deepseek-v4-flash-0731"
+ ],
+ "distinct_providers": [
+  "Sail Research"
+ ]
+}
