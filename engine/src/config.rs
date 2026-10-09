@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::generation;
 use crate::graph;
 use crate::retrieval::{self, Bm25Config};
+use crate::workflow::nodes::graph_context::{QUERY_EMBEDDING_ATTEMPTS, RETRY_JITTER_MAX_MS};
 
 pub fn default_candidate_limit() -> usize {
     32
@@ -270,6 +271,9 @@ pub fn default_reformulate_timeout_ms() -> u64 {
 /// fails the node and cancels the query, which is cheap to retry because generation has not
 /// started. Raising it loosens the bound on that failure; `graph_node_timeout_ms` and
 /// `retrieve_timeout_ms` must keep 500 ms of slack over it. See `06.3.4.1-BUDGETS.md`.
+///
+/// The budget applies to each attempt: a timed-out embedding is retried once after a short
+/// jitter (D-152), so the graph node budget has to hold two attempts.
 pub fn default_query_embedding_timeout_ms() -> u64 {
     2000
 }
@@ -299,7 +303,9 @@ pub fn default_graph_operation_timeout_ms() -> u64 {
 /// `graph_operation_timeout_ms` + 500 = 12500 at the old graph budget of 10000. Pass B lowered
 /// `graph_operation_timeout_ms` to 2424, so nesting now needs only 4924, and 12500 is kept as
 /// pass A's value, with 8076 ms of slack. Engine startup rejects a value below
-/// `query_embedding_timeout_ms` + `graph_operation_timeout_ms`. See `06.3.4.1-BUDGETS.md`.
+/// `QUERY_EMBEDDING_ATTEMPTS` x `query_embedding_timeout_ms` + `RETRY_JITTER_MAX_MS` +
+/// `graph_operation_timeout_ms` (D-152: both embedding attempts, the retry jitter and the graph
+/// operation). See `06.3.4.1-BUDGETS.md`.
 pub fn default_graph_node_timeout_ms() -> u64 {
     12500
 }
@@ -495,13 +501,19 @@ impl WorkflowSettings {
         if self.generation_node_timeout_ms == 0 {
             return Err("invalid generation_node_timeout_ms: must be greater than 0".into());
         }
-        let graph_required = self
-            .query_embedding_timeout_ms
+        // D-152: the node may spend every embedding attempt, one jitter pause and the graph
+        // operation, so the node budget has to hold all of them.
+        let graph_required = u64::from(QUERY_EMBEDDING_ATTEMPTS)
+            .saturating_mul(self.query_embedding_timeout_ms)
+            .saturating_add(RETRY_JITTER_MAX_MS)
             .saturating_add(self.graph_operation_timeout_ms);
         if self.graph_node_timeout_ms < graph_required {
             return Err(format!(
-                "invalid graph_node_timeout_ms ({}): must be >= query_embedding_timeout_ms + graph_operation_timeout_ms ({})",
-                self.graph_node_timeout_ms, graph_required
+                "invalid graph_node_timeout_ms ({}): must be >= {} x query_embedding_timeout_ms + {} ms retry jitter + graph_operation_timeout_ms ({})",
+                self.graph_node_timeout_ms,
+                QUERY_EMBEDDING_ATTEMPTS,
+                RETRY_JITTER_MAX_MS,
+                graph_required
             ));
         }
         Ok(())
@@ -1153,16 +1165,50 @@ mod tests {
         settings
             .validate_against_provider(30)
             .expect("default generation budget must cover two attempts at the 30s provider timeout");
+        // D-152: both embedding attempts, the jitter pause and the graph operation, with the
+        // committed slack on top: 2 x 2000 + 250 + 2424 + 500 = 7174 <= 12500.
         assert!(
             settings.graph_node_timeout_ms
-                >= settings.query_embedding_timeout_ms
+                >= u64::from(QUERY_EMBEDDING_ATTEMPTS) * settings.query_embedding_timeout_ms
+                    + RETRY_JITTER_MAX_MS
                     + settings.graph_operation_timeout_ms
                     + NESTING_SLACK_MS,
-            "graph_node must contain query_embedding + graph_operation with {NESTING_SLACK_MS} ms slack"
+            "graph_node must contain both query_embedding attempts, the retry jitter and graph_operation with {NESTING_SLACK_MS} ms slack"
         );
         assert!(
             settings.retrieve_timeout_ms >= settings.query_embedding_timeout_ms + NESTING_SLACK_MS,
             "retrieve must contain query_embedding with {NESTING_SLACK_MS} ms slack"
+        );
+    }
+
+    /// D-152: startup refuses a graph node budget that cannot hold both embedding attempts, the
+    /// retry jitter and the graph operation, and accepts exactly that sum.
+    #[test]
+    fn graph_node_timeout_below_the_retry_budget_is_rejected_at_the_boundary() {
+        let settings = WorkflowSettings::default();
+        let required = u64::from(QUERY_EMBEDDING_ATTEMPTS) * settings.query_embedding_timeout_ms
+            + RETRY_JITTER_MAX_MS
+            + settings.graph_operation_timeout_ms;
+        assert_eq!(required, 2 * 2000 + 250 + 2424);
+
+        let at_the_sum = WorkflowSettings {
+            graph_node_timeout_ms: required,
+            ..settings.clone()
+        };
+        at_the_sum
+            .validate()
+            .expect("a node budget equal to the sum must pass");
+
+        let one_below = WorkflowSettings {
+            graph_node_timeout_ms: required - 1,
+            ..settings
+        };
+        let error = one_below
+            .validate()
+            .expect_err("a node budget one millisecond below the sum must be refused");
+        assert!(
+            error.contains("graph_node_timeout_ms") && error.contains(&required.to_string()),
+            "the error names the key and the required sum: {error}"
         );
     }
 

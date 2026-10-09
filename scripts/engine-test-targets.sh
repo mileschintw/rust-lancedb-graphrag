@@ -320,6 +320,13 @@ fi
 #         the retry count reaching `WorkflowMetadata` while a clean record omits the field),
 #         768->776. lib rises 670->678; `engine (bin)`/inspect_lancedb/reconcile_eval_store/
 #         config_startup unchanged (0/58/18/22).
+#   777 -- Phase 06.3.6 plan 06 Task 1 (step 4): one `config::tests` test
+#         (`graph_node_timeout_below_the_retry_budget_is_rejected_at_the_boundary`) pinning the
+#         D-152 nesting rule in `WorkflowSettings::validate`: a node budget equal to
+#         2 x query_embedding_timeout_ms + RETRY_JITTER_MAX_MS + graph_operation_timeout_ms passes
+#         and one millisecond below it is refused with an error naming the key and the sum,
+#         776->777. lib rises 678->679; `engine (bin)`/inspect_lancedb/reconcile_eval_store/
+#         config_startup unchanged (0/58/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -359,18 +366,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 776 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 776, got $TOTAL" >&2
+if [ "$TOTAL" -ne 777 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 777, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 678 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 678, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 679 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 679, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 678 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 678, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 679 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 679, got $LIB_COUNT" >&2
   exit 1
 fi
 

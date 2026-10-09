@@ -385,7 +385,7 @@ fn config_workflow_timeout_overlays_match_contract() {
     assert!(verify_content.contains("query_embedding_timeout_ms = 10000"));
     assert!(verify_content.contains("retrieve_timeout_ms = 10000"));
     assert!(verify_content.contains("graph_operation_timeout_ms = 4000"));
-    assert!(verify_content.contains("graph_node_timeout_ms = 15000"));
+    assert!(verify_content.contains("graph_node_timeout_ms = 25000"));
     assert!(verify_content.contains("prompt_timeout_ms = 2000"));
     assert!(verify_content.contains("generation_node_timeout_ms = 7000"));
 
@@ -447,7 +447,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
             "LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS",
             "3333",
         ),
-        ("LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS", "6666"),
+        ("LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS", "9000"),
         ("LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS", "7777"),
         (
             "LANCET_ENGINE__WORKFLOW__GENERATION_NODE_TIMEOUT_MS",
@@ -479,7 +479,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
     assert_eq!(settings.engine.workflow.query_embedding_timeout_ms, 2222);
     assert_eq!(settings.engine.workflow.retrieve_timeout_ms, 4444);
     assert_eq!(settings.engine.workflow.graph_operation_timeout_ms, 3333);
-    assert_eq!(settings.engine.workflow.graph_node_timeout_ms, 6666);
+    assert_eq!(settings.engine.workflow.graph_node_timeout_ms, 9000);
     assert_eq!(settings.engine.workflow.prompt_timeout_ms, 7777);
     assert_eq!(settings.engine.workflow.generation_node_timeout_ms, 68888);
 
@@ -489,7 +489,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
     assert_eq!(effective.workflow.query_embedding_timeout_ms, 2222);
     assert_eq!(effective.workflow.retrieve_timeout_ms, 4444);
     assert_eq!(effective.workflow.graph_operation_timeout_ms, 3333);
-    assert_eq!(effective.workflow.graph_node_timeout_ms, 6666);
+    assert_eq!(effective.workflow.graph_node_timeout_ms, 9000);
     assert_eq!(effective.workflow.prompt_timeout_ms, 7777);
     assert_eq!(effective.workflow.generation_node_timeout_ms, 68888);
 }

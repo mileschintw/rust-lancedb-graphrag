@@ -18,6 +18,6 @@ reformulate_timeout_ms = 5000
 query_embedding_timeout_ms = 10000
 retrieve_timeout_ms = 10000
 graph_operation_timeout_ms = 4000
-graph_node_timeout_ms = 15000
+graph_node_timeout_ms = 25000
 prompt_timeout_ms = 2000
 generation_node_timeout_ms = 7000
