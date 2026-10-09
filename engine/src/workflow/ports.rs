@@ -576,7 +576,8 @@ impl Bm25RetrievalPort for FakeBm25RetrievalPort {
 #[cfg(test)]
 pub struct FakeReranker {
     call_count: std::sync::atomic::AtomicUsize,
-    should_fail: bool,
+    /// The error every call fails with.
+    failure: Option<crate::rerank::RerankError>,
     stall: bool,
     /// The ranking and cost to answer with instead of the identity ranking.
     scripted: Option<(Vec<crate::rerank::Reranked>, Option<f64>)>,
@@ -587,15 +588,20 @@ impl FakeReranker {
     pub fn success() -> Self {
         Self {
             call_count: std::sync::atomic::AtomicUsize::new(0),
-            should_fail: false,
+            failure: None,
             stall: false,
             scripted: None,
         }
     }
 
     pub fn failure() -> Self {
+        Self::failing_with(crate::rerank::RerankError::transport())
+    }
+
+    /// Fails every call with `error`.
+    pub fn failing_with(error: crate::rerank::RerankError) -> Self {
         Self {
-            should_fail: true,
+            failure: Some(error),
             ..Self::success()
         }
     }
@@ -632,8 +638,8 @@ impl crate::rerank::Reranker for FakeReranker {
             if self.stall {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
             }
-            if self.should_fail {
-                return Err(crate::rerank::RerankError::transport());
+            if let Some(error) = &self.failure {
+                return Err(error.clone());
             }
             if let Some((ranked, cost_credits)) = &self.scripted {
                 return Ok(crate::rerank::RerankOutput {

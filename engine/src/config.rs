@@ -291,6 +291,24 @@ pub fn default_query_embedding_timeout_ms() -> u64 {
 pub fn default_retrieve_timeout_ms() -> u64 {
     2500
 }
+/// Time `RetrieveHybrid` needs for its own search, in milliseconds: the committed rule value of
+/// budget pass A (p95 x 1.5 over 320 records, `06.3.4.1-BUDGETS.md`). The rerank call runs after
+/// the search inside the same node budget, so `retrieve_timeout_ms` must hold this allowance, the
+/// rerank budget and [`NESTING_SLACK_MS`]. Changing it moves the largest rerank budget that nests.
+pub const RETRIEVE_SEARCH_ALLOWANCE_MS: u64 = 294;
+/// Slack every outer budget keeps over the inner budgets it contains, in milliseconds: the
+/// committed rule's margin (D-17, D-66). Startup requires at least this much.
+pub const NESTING_SLACK_MS: u64 = 500;
+/// Budget for the rerank call inside `RetrieveHybrid`, in milliseconds.
+///
+/// **Provisional (D-135).** The largest value that nests in the node budget:
+/// `retrieve_timeout_ms` 2500 - [`RETRIEVE_SEARCH_ALLOWANCE_MS`] 294 - [`NESTING_SLACK_MS`] 500 =
+/// 1706. It is a ceiling, not a measurement; the value derived from dev read 1 replaces it in the
+/// D-154 freeze commit. A rerank that exceeds it degrades to the fused order with a notice, so a
+/// tighter value hides lost rerank yield and a looser one lets a slow provider eat the node.
+pub fn default_rerank_timeout_ms() -> u64 {
+    1706
+}
 /// Budget for the graph traversal inside `ExtractGraphContext`, in milliseconds.
 ///
 /// Derived by budget pass B (06.3.4.1-18, 2026-10-06) under the committed rule: p95 x 1.5 of the
@@ -392,6 +410,9 @@ pub struct WorkflowConfigSettings {
     pub query_embedding_timeout_ms: u64,
     #[serde(default = "default_retrieve_timeout_ms")]
     pub retrieve_timeout_ms: u64,
+    /// Budget for the rerank call inside `RetrieveHybrid`; provisional until the D-154 freeze.
+    #[serde(default = "default_rerank_timeout_ms")]
+    pub rerank_timeout_ms: u64,
     #[serde(default = "default_graph_operation_timeout_ms")]
     pub graph_operation_timeout_ms: u64,
     #[serde(default = "default_graph_node_timeout_ms")]
@@ -424,6 +445,7 @@ impl Default for WorkflowConfigSettings {
             reformulate_timeout_ms: default_reformulate_timeout_ms(),
             query_embedding_timeout_ms: default_query_embedding_timeout_ms(),
             retrieve_timeout_ms: default_retrieve_timeout_ms(),
+            rerank_timeout_ms: default_rerank_timeout_ms(),
             graph_operation_timeout_ms: default_graph_operation_timeout_ms(),
             graph_node_timeout_ms: default_graph_node_timeout_ms(),
             prompt_timeout_ms: default_prompt_timeout_ms(),
@@ -441,6 +463,7 @@ impl WorkflowConfigSettings {
             reformulate_timeout_ms: self.reformulate_timeout_ms,
             query_embedding_timeout_ms: self.query_embedding_timeout_ms,
             retrieve_timeout_ms: self.retrieve_timeout_ms,
+            rerank_timeout_ms: self.rerank_timeout_ms,
             graph_operation_timeout_ms: self.graph_operation_timeout_ms,
             graph_node_timeout_ms: self.graph_node_timeout_ms,
             prompt_timeout_ms: self.prompt_timeout_ms,
@@ -457,6 +480,8 @@ pub struct WorkflowSettings {
     pub reformulate_timeout_ms: u64,
     pub query_embedding_timeout_ms: u64,
     pub retrieve_timeout_ms: u64,
+    /// Budget for the rerank call inside `RetrieveHybrid`; provisional until the D-154 freeze.
+    pub rerank_timeout_ms: u64,
     pub graph_operation_timeout_ms: u64,
     pub graph_node_timeout_ms: u64,
     pub prompt_timeout_ms: u64,
@@ -943,6 +968,11 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
             settings.engine.workflow.retrieve_timeout_ms = val;
         }
     }
+    if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__RERANK_TIMEOUT_MS") {
+        if let Ok(val) = value.trim().parse::<u64>() {
+            settings.engine.workflow.rerank_timeout_ms = val;
+        }
+    }
     if let Ok(value) = std::env::var("LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS") {
         if let Ok(val) = value.trim().parse::<u64>() {
             settings.engine.workflow.graph_operation_timeout_ms = val;
@@ -1101,12 +1131,8 @@ mod tests {
     const CONFIG_TOML: &str = include_str!("../../config/config.toml");
     const CONFIG_EXAMPLE_TOML: &str = include_str!("../../config/config.example.toml");
 
-    /// Minimum gap, in milliseconds, that the operator configuration comments promise between
-    /// an outer budget and the inner budgets it contains.
-    const NESTING_SLACK_MS: u64 = 500;
-
-    /// The seven `[engine.workflow]` timeout keys paired with the compiled-in default of each.
-    fn default_budgets() -> [(&'static str, u64); 7] {
+    /// The eight `[engine.workflow]` timeout keys paired with the compiled-in default of each.
+    fn default_budgets() -> [(&'static str, u64); 8] {
         [
             ("reformulate_timeout_ms", default_reformulate_timeout_ms()),
             (
@@ -1114,6 +1140,7 @@ mod tests {
                 default_query_embedding_timeout_ms(),
             ),
             ("retrieve_timeout_ms", default_retrieve_timeout_ms()),
+            ("rerank_timeout_ms", default_rerank_timeout_ms()),
             (
                 "graph_operation_timeout_ms",
                 default_graph_operation_timeout_ms(),
@@ -1172,6 +1199,7 @@ mod tests {
                 ("reformulate_timeout_ms", 5000),
                 ("query_embedding_timeout_ms", 2000),
                 ("retrieve_timeout_ms", 2500),
+                ("rerank_timeout_ms", 1706),
                 ("graph_operation_timeout_ms", 2424),
                 ("graph_node_timeout_ms", 12500),
                 ("prompt_timeout_ms", 120),
@@ -1203,6 +1231,50 @@ mod tests {
         assert!(
             settings.retrieve_timeout_ms >= settings.query_embedding_timeout_ms + NESTING_SLACK_MS,
             "retrieve must contain query_embedding with {NESTING_SLACK_MS} ms slack"
+        );
+        // D-135: the rerank call runs after the search inside the node budget, so the node holds
+        // the search allowance, the rerank budget and the slack: 294 + 1706 + 500 = 2500.
+        assert_eq!(
+            settings.retrieve_timeout_ms,
+            RETRIEVE_SEARCH_ALLOWANCE_MS + settings.rerank_timeout_ms + NESTING_SLACK_MS,
+            "the provisional rerank budget is the largest value that nests in retrieve"
+        );
+    }
+
+    /// D-135: startup refuses a zero rerank budget and a node budget that cannot hold the search
+    /// allowance, the rerank budget and the slack, and accepts exactly that sum.
+    #[test]
+    fn workflow_budget_rerank_timeout_is_validated_against_the_retrieve_budget() {
+        let settings = WorkflowSettings::default();
+
+        let zero = WorkflowSettings {
+            rerank_timeout_ms: 0,
+            ..settings.clone()
+        };
+        let error = zero.validate().expect_err("a zero rerank budget must be refused");
+        assert!(error.contains("rerank_timeout_ms"), "{error}");
+
+        let at_the_sum = WorkflowSettings {
+            retrieve_timeout_ms: RETRIEVE_SEARCH_ALLOWANCE_MS
+                + settings.rerank_timeout_ms
+                + NESTING_SLACK_MS,
+            ..settings.clone()
+        };
+        at_the_sum
+            .validate()
+            .expect("a node budget equal to the sum must pass");
+
+        let one_below = WorkflowSettings {
+            retrieve_timeout_ms: at_the_sum.retrieve_timeout_ms - 1,
+            ..settings
+        };
+        let error = one_below
+            .validate()
+            .expect_err("a node budget one millisecond below the sum must be refused");
+        assert!(
+            error.contains("retrieve_timeout_ms")
+                && error.contains(&at_the_sum.retrieve_timeout_ms.to_string()),
+            "the error names the key and the required sum: {error}"
         );
     }
 

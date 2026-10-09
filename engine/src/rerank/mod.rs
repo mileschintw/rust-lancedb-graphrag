@@ -193,25 +193,30 @@ impl Reranker for NoOpReranker {
 
 /// Reorders `candidates` by `ranked`, pairing each with the relevance score it was given.
 ///
+/// The candidates are borrowed and cloned into the new order, so a refused ranking leaves the
+/// caller holding the fused list it can fall back to.
+///
 /// # Errors
 ///
 /// Returns a malformed [`RerankError`] when `ranked` is not a permutation of the candidate
 /// indices or holds a non-finite score; nothing is repaired by guessing.
 pub fn reorder(
-    candidates: Vec<FusedCandidate>,
+    candidates: &[FusedCandidate],
     ranked: &[Reranked],
 ) -> Result<Vec<(FusedCandidate, f64)>, RerankError> {
     if ranked.len() != candidates.len() || ranked.iter().any(|entry| !entry.score.is_finite()) {
         return Err(RerankError::malformed());
     }
-    let mut slots: Vec<Option<FusedCandidate>> = candidates.into_iter().map(Some).collect();
-    let mut reordered = Vec::with_capacity(slots.len());
+    let mut seen = vec![false; candidates.len()];
+    let mut reordered = Vec::with_capacity(candidates.len());
     for entry in ranked {
-        let candidate = slots
+        let slot = seen
             .get_mut(entry.index)
-            .and_then(Option::take)
             .ok_or_else(RerankError::malformed)?;
-        reordered.push((candidate, entry.score));
+        if std::mem::replace(slot, true) {
+            return Err(RerankError::malformed());
+        }
+        reordered.push((candidates[entry.index].clone(), entry.score));
     }
     Ok(reordered)
 }

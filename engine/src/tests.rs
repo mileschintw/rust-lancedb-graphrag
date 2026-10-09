@@ -93,6 +93,7 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.workflow.reformulate_timeout_ms",
     "engine.workflow.query_embedding_timeout_ms",
     "engine.workflow.retrieve_timeout_ms",
+    "engine.workflow.rerank_timeout_ms",
     "engine.workflow.graph_operation_timeout_ms",
     "engine.workflow.graph_node_timeout_ms",
     "engine.workflow.prompt_timeout_ms",
@@ -204,6 +205,10 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     ),
     (
         "engine.workflow.retrieve_timeout_ms",
+        "unit=milliseconds; range=>0",
+    ),
+    (
+        "engine.workflow.rerank_timeout_ms",
         "unit=milliseconds; range=>0",
     ),
     (
@@ -373,6 +378,17 @@ fn config_workflow_timeout_overlays_match_contract() {
         "generation_node_timeout_ms",
     ];
 
+    // D-135: the two base files carry the provisional rerank budget. The verify overlay does not
+    // restate it; it inherits the default, which nests in the overlay's 10000 ms retrieve budget.
+    for base_name in ["config.toml", "config.example.toml"] {
+        let content = std::fs::read_to_string(repo_root.join("config").join(base_name))
+            .unwrap_or_else(|_| panic!("read {base_name}"));
+        assert!(
+            content.contains("rerank_timeout_ms = 1706"),
+            "{base_name} must carry the provisional rerank budget (D-135)"
+        );
+    }
+
     for overlay_name in overlays {
         let overlay_path = repo_root.join("config").join(overlay_name);
         let content = std::fs::read_to_string(&overlay_path)
@@ -453,6 +469,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
             "2222",
         ),
         ("LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS", "4444"),
+        ("LANCET_ENGINE__WORKFLOW__RERANK_TIMEOUT_MS", "1234"),
         (
             "LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS",
             "3333",
@@ -488,6 +505,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
     assert_eq!(settings.engine.workflow.reformulate_timeout_ms, 1111);
     assert_eq!(settings.engine.workflow.query_embedding_timeout_ms, 2222);
     assert_eq!(settings.engine.workflow.retrieve_timeout_ms, 4444);
+    assert_eq!(settings.engine.workflow.rerank_timeout_ms, 1234);
     assert_eq!(settings.engine.workflow.graph_operation_timeout_ms, 3333);
     assert_eq!(settings.engine.workflow.graph_node_timeout_ms, 9000);
     assert_eq!(settings.engine.workflow.prompt_timeout_ms, 7777);
@@ -498,6 +516,7 @@ fn config_workflow_nested_env_overrides_match_contract() {
     assert_eq!(effective.workflow.reformulate_timeout_ms, 1111);
     assert_eq!(effective.workflow.query_embedding_timeout_ms, 2222);
     assert_eq!(effective.workflow.retrieve_timeout_ms, 4444);
+    assert_eq!(effective.workflow.rerank_timeout_ms, 1234);
     assert_eq!(effective.workflow.graph_operation_timeout_ms, 3333);
     assert_eq!(effective.workflow.graph_node_timeout_ms, 9000);
     assert_eq!(effective.workflow.prompt_timeout_ms, 7777);
@@ -653,6 +672,7 @@ async fn query_rag_stream() {
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request(
@@ -1310,6 +1330,7 @@ pub(crate) async fn configured_service(
         embedder,
         reranker,
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     }
 }
 
@@ -2318,6 +2339,7 @@ async fn staging_read_error_is_unavailable() {
         }))),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let _ = std::fs::remove_dir_all(&path);
@@ -2410,6 +2432,7 @@ async fn staging_delete_failure_remains_replayable() {
         }))),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let status_res = service
@@ -2664,6 +2687,7 @@ async fn d04_cross_runtime_grpc_fixture() {
         }))),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let addr: std::net::SocketAddr = listen_addr.parse().unwrap();
@@ -2728,6 +2752,7 @@ async fn status_falls_back_to_staged_document() {
         }))),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let status_res = service
@@ -2907,6 +2932,7 @@ async fn query_rag_tracer() {
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request(
@@ -3023,6 +3049,7 @@ async fn query_rag_generation_failure() {
         generator: failing_gen,
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request(
@@ -3123,6 +3150,7 @@ async fn query_rag_happy_path_service() {
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request(
@@ -3467,6 +3495,7 @@ async fn configured_rag_settings_drive_service() {
         generator: fake_gen,
         embedder: configured_embedder,
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request(
@@ -3544,6 +3573,7 @@ async fn configured_evidence_token_budget_is_exact() {
         generator: fake_gen,
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request(
@@ -3606,6 +3636,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         generator: fake_gen1,
         embedder: Arc::new(FakeEmbedder),
         database: database1.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req1 = test_query_request("Query 1", "00000000-0000-4000-8000-000000000004");
@@ -3673,6 +3704,7 @@ async fn service_index_generation_is_opaque_and_stable() {
         }))),
         embedder: Arc::new(FakeEmbedder),
         database: database2.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req3 = test_query_request("Query 3", "00000000-0000-4000-8000-000000000006");
@@ -3770,6 +3802,7 @@ async fn query_rag_citation_identity_and_notices() {
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request("document content", "00000000-0000-4000-8000-000000000099");
@@ -3857,6 +3890,7 @@ async fn query_rag_rejects_unknown_marker_without_response() {
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let mut req = test_query_request("gamma document", "00000000-0000-4000-8000-000000000088");
@@ -3929,6 +3963,7 @@ async fn query_rag_rejects_invalid_provider_grounding() {
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request(
@@ -3995,6 +4030,7 @@ async fn query_rag_generation_error_preserves_identity() {
         generator: failing_gen,
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let session_id = "00000000-0000-4000-8000-000000000077";
@@ -4479,6 +4515,7 @@ async fn query_rag_fail_closed_dense_snapshot() {
         embedder,
         reranker,
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     let req = test_query_request("What is Lancet?", "00000000-0000-4000-8000-000000000001");
@@ -5976,6 +6013,7 @@ async fn query_graph_service_with_db(database: DatabaseManager) -> LancetService
         }))),
         embedder: Arc::new(FakeEmbedder),
         database,
+        lever_resources: crate::service::LeverResources::default(),
     }
 }
 

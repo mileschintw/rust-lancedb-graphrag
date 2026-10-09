@@ -118,7 +118,29 @@ pub struct LancetServiceImpl {
     pub generator: Arc<dyn generation::Generator>,
     pub embedder: Arc<dyn EmbeddingProvider>,
     pub reranker: Arc<dyn rerank::Reranker>,
+    /// Resources the quality levers need beyond the lever-free path (D-131, D-136).
+    pub lever_resources: LeverResources,
     pub database: DatabaseManager,
+}
+
+/// The resources that serve the quality levers of a request, held beside the lever-free ones.
+///
+/// A lever whose resource is `None` is refused at admission with `lever_unavailable`. The
+/// service-wide `reranker` stays the lever-free path (a failing reranker there fails the query);
+/// `reranker` here is the one a request that names `rerank` uses, where a failure degrades to the
+/// fused order instead.
+#[derive(Clone, Default)]
+pub struct LeverResources {
+    /// The reranker of the `rerank` lever; `None` leaves the lever unavailable.
+    pub reranker: Option<Arc<dyn rerank::Reranker>>,
+}
+
+impl std::fmt::Debug for LeverResources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LeverResources")
+            .field("reranker", &self.reranker.is_some())
+            .finish()
+    }
 }
 
 /// Which quality levers this engine can serve right now (D-136, D-165).
@@ -171,10 +193,22 @@ impl LancetServiceImpl {
             .map_err(internal)
     }
 
-    /// Assembles the production workflow runner and dependencies for RAG execution.
+    /// Assembles the production workflow runner and dependencies for a request that names no lever.
     pub fn build_production_workflow(
         &self,
         snapshot: Arc<workflow::ports::CorpusSnapshot>,
+    ) -> (workflow::WorkflowRunner, workflow::WorkflowDependencies) {
+        self.build_production_workflow_with_levers(snapshot, &workflow::LeverSet::default())
+    }
+
+    /// Assembles the production workflow runner and dependencies for the admitted `levers`.
+    ///
+    /// The lever reranker reaches `RetrieveHybrid` only when `levers` contains `rerank`; a request
+    /// without it builds the same nodes as [`build_production_workflow`](Self::build_production_workflow).
+    pub fn build_production_workflow_with_levers(
+        &self,
+        snapshot: Arc<workflow::ports::CorpusSnapshot>,
+        _levers: &workflow::LeverSet,
     ) -> (workflow::WorkflowRunner, workflow::WorkflowDependencies) {
         let embedder_adapter: Arc<dyn workflow::node::QueryEmbeddingPort> =
             Arc::new(ProductionEmbeddingPort {
@@ -1103,7 +1137,7 @@ impl LancetService for LancetServiceImpl {
             workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
         ctx.allow_model_only = req.allow_model_only.unwrap_or(wf.allow_model_only_answers);
         ctx.levers = levers;
-        let (runner, deps) = self.build_production_workflow(snapshot);
+        let (runner, deps) = self.build_production_workflow_with_levers(snapshot, &ctx.levers);
 
         let parent_span = tracing::info_span!(
             "query_rag",

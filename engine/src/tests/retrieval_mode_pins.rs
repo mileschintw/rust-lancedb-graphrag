@@ -17,6 +17,7 @@
 
 use std::fmt::Write as _;
 use std::sync::Arc;
+use std::time::Duration;
 
 use prost::Message;
 use tokio::sync::mpsc;
@@ -28,6 +29,7 @@ use crate::pb::lancet::v1::{
     WorkflowCompletedEvent,
 };
 use crate::prompt::{DEFAULT_ANSWER_TOKEN_BUDGET, DEFAULT_MAX_PROMPT_TOKENS};
+use crate::rerank::Reranker;
 use crate::retrieval::{
     fuse_candidates, fuse_cross_variant_candidates, Candidate, RetrievalSettings,
 };
@@ -39,9 +41,9 @@ use crate::workflow::nodes::{
 };
 use crate::workflow::ports::{
     FakeBm25RetrievalPort, FakeDenseRetrievalPort, FakeGraphQueryPort, FakeQueryEmbeddingPort,
-    GraphQueryOutput,
+    FakeReranker, GraphQueryOutput,
 };
-use crate::workflow::{WorkflowContext, WorkflowEventSink, WorkflowRunner};
+use crate::workflow::{LeverSet, WorkflowContext, WorkflowEventSink, WorkflowRunner};
 
 const DOC_A: &str = "00000000-0000-4000-8000-0000000000d1";
 const DOC_B: &str = "00000000-0000-4000-8000-0000000000d2";
@@ -169,8 +171,11 @@ pub(super) struct Variation {
     include_ranking: bool,
     /// The raw `levers` the request names (06.3.6 D-136); empty is the default request.
     levers: &'static [i32],
-    /// Zero the two snapshot fields a variation adds (the mode echo and the ranking) before
-    /// rendering, so what is compared is everything the variation must NOT change.
+    /// Serve the `rerank` lever from an identity reranker whose scores equal the fused scores
+    /// (06.3.6 D-166), so the lever output must equal the lever-free output.
+    identity_lever: bool,
+    /// Zero the snapshot fields a variation adds (the mode echo, the ranking and the lever echo)
+    /// before rendering, so what is compared is everything the variation must NOT change.
     strip_additions: bool,
 }
 
@@ -179,6 +184,7 @@ impl Variation {
         mode: RetrievalMode::Unspecified,
         include_ranking: false,
         levers: &[],
+        identity_lever: false,
         strip_additions: false,
     };
 
@@ -194,14 +200,22 @@ impl Variation {
         Self { levers, ..self }
     }
 
-    fn with_ranking(self) -> Self {
+    /// The same variation with the `rerank` lever served by an identity reranker.
+    pub(super) fn with_identity_lever(self) -> Self {
+        Self {
+            identity_lever: true,
+            ..self
+        }
+    }
+
+    pub(super) fn with_ranking(self) -> Self {
         Self {
             include_ranking: true,
             ..self
         }
     }
 
-    fn stripped(self) -> Self {
+    pub(super) fn stripped(self) -> Self {
         Self {
             strip_additions: true,
             ..self
@@ -218,45 +232,93 @@ impl Variation {
         if self.strip_additions {
             snapshot.retrieval_mode = 0;
             snapshot.pre_truncation_ranking.clear();
+            snapshot.levers.clear();
         }
     }
 }
 
 /// The fakes and settings one node-chain run uses, kept so a test can read their call counts.
-struct Fixture {
+pub(super) struct Fixture {
     embedding: Arc<FakeQueryEmbeddingPort>,
     dense: Arc<FakeDenseRetrievalPort>,
     bm25: Arc<FakeBm25RetrievalPort>,
     settings: RetrievalSettings,
     variants: Vec<String>,
+    /// The service-wide reranker of the strict, lever-free path; `None` is the recorded fixture.
+    reranker: Option<Arc<dyn Reranker>>,
+    /// The `rerank` lever reranker, its own time limit and the node budget it nests in.
+    lever: Option<(Arc<dyn Reranker>, Duration, Duration)>,
 }
 
 impl Fixture {
     /// The fixture the golden was recorded over.
-    fn recorded() -> Self {
+    pub(super) fn recorded() -> Self {
         Self {
             embedding: Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048])),
             dense: dense_port(),
             bm25: bm25_port(),
             settings: settings(),
             variants: Vec::new(),
+            reranker: None,
+            lever: None,
+        }
+    }
+
+    /// The same fixture with a service-wide reranker on the strict path.
+    pub(super) fn with_reranker(self, reranker: Arc<dyn Reranker>) -> Self {
+        Self {
+            reranker: Some(reranker),
+            ..self
+        }
+    }
+
+    /// The same fixture with the `rerank` lever served by `reranker`.
+    pub(super) fn with_lever(
+        self,
+        reranker: Arc<dyn Reranker>,
+        rerank_timeout: Duration,
+        node_budget: Duration,
+    ) -> Self {
+        Self {
+            lever: Some((reranker, rerank_timeout, node_budget)),
+            ..self
+        }
+    }
+
+    /// The recorded fixture, with an identity lever reranker when `variation` asks for one.
+    fn for_variation(variation: Variation) -> Self {
+        let fixture = Self::recorded();
+        if variation.identity_lever {
+            fixture.with_lever(
+                Arc::new(FakeReranker::success()),
+                Duration::from_millis(1706),
+                Duration::from_millis(2500),
+            )
+        } else {
+            fixture
         }
     }
 
     fn retrieve_node(&self) -> RetrieveHybridNode {
-        RetrieveHybridNode::new(
+        let node = RetrieveHybridNode::new(
             Some(self.dense.clone()),
             Some(self.bm25.clone()),
-            None,
+            self.reranker.clone(),
             self.settings.clone(),
         )
-        .with_snapshot_metadata("lance-1", "test-model")
+        .with_snapshot_metadata("lance-1", "test-model");
+        match &self.lever {
+            Some((reranker, timeout, budget)) => {
+                node.with_rerank_lever(Some(reranker.clone()), *timeout, *budget)
+            }
+            None => node,
+        }
     }
 }
 
 /// Runs `ExtractGraphContext`, `RetrieveHybrid` and `AssemblePrompt` in order, node by node, and
 /// returns the context they left behind.
-async fn run_chain(
+pub(super) async fn run_chain(
     fixture: &Fixture,
     disable_graph: bool,
     variation: Variation,
@@ -265,6 +327,8 @@ async fn run_chain(
     request.disable_graph_context = Some(disable_graph);
     variation.apply(&mut request);
     let mut ctx = WorkflowContext::new("sess-pin".to_owned(), "trace-pin".to_owned(), &request);
+    // Admission belongs to the service; the chain applies the same validated set.
+    ctx.levers = LeverSet::try_from_wire(variation.levers).expect("the pin names declared levers");
     ctx.variants = fixture.variants.clone();
     let cancel = CancellationToken::new();
 
@@ -289,7 +353,7 @@ async fn run_chain(
 }
 
 async fn node_chain(disable_graph: bool, variation: Variation) -> String {
-    let mut ctx = run_chain(&Fixture::recorded(), disable_graph, variation).await;
+    let mut ctx = run_chain(&Fixture::for_variation(variation), disable_graph, variation).await;
     if let Some(snapshot) = ctx.snapshot.as_mut() {
         variation.strip(snapshot);
     }
@@ -299,6 +363,20 @@ async fn node_chain(disable_graph: bool, variation: Variation) -> String {
 /// The whole workflow over the same fakes, graph on, rendering the final response only. The
 /// terminal event's `WorkflowMetadata` carries timings and is left out.
 async fn runner_final_response(variation: Variation) -> String {
+    let completed = run_runner(&Fixture::for_variation(variation), variation).await;
+    assert!(completed.success, "{}", completed.error_message);
+    let mut response = completed
+        .final_response
+        .expect("a successful run carries a final response");
+    if let Some(snapshot) = response.snapshot.as_mut() {
+        variation.strip(snapshot);
+    }
+    format!("final_response: {}\n", hex(&response.encode_to_vec()))
+}
+
+/// The whole workflow over `fixture` fakes with a `FakeGenerator`, graph on, returning the
+/// terminal event.
+pub(super) async fn run_runner(fixture: &Fixture, variation: Variation) -> WorkflowCompletedEvent {
     let (tx, mut rx) = mpsc::channel(100);
     let sink = WorkflowEventSink::new(
         tx,
@@ -308,9 +386,9 @@ async fn runner_final_response(variation: Variation) -> String {
     );
     let mut request = test_query_request("alpha", "sess-pin");
     variation.apply(&mut request);
-    let ctx = WorkflowContext::new("sess-pin".to_owned(), "trace-pin".to_owned(), &request);
+    let mut ctx = WorkflowContext::new("sess-pin".to_owned(), "trace-pin".to_owned(), &request);
+    ctx.levers = LeverSet::try_from_wire(variation.levers).expect("the pin names declared levers");
 
-    let fixture = Fixture::recorded();
     let mut runner = WorkflowRunner::new();
     runner.add_node(ExtractGraphContextNode::new(
         Some(fixture.embedding.clone()),
@@ -345,15 +423,7 @@ async fn runner_final_response(variation: Variation) -> String {
             }
         }
     }
-    let completed = completed.expect("the workflow emits a terminal event");
-    assert!(completed.success, "{}", completed.error_message);
-    let mut response = completed
-        .final_response
-        .expect("a successful run carries a final response");
-    if let Some(snapshot) = response.snapshot.as_mut() {
-        variation.strip(snapshot);
-    }
-    format!("final_response: {}\n", hex(&response.encode_to_vec()))
+    completed.expect("the workflow emits a terminal event")
 }
 
 /// The three scenarios, framed `== <name> ==` as `graph_off_fusion` frames its own.

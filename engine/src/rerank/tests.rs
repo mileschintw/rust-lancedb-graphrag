@@ -85,7 +85,7 @@ fn ranking(entries: &[(usize, f64)]) -> Vec<Reranked> {
 #[test]
 fn reorder_applies_a_permutation_and_pairs_each_candidate_with_its_score() {
     let reordered = reorder(
-        fused_candidates(3),
+        &fused_candidates(3),
         &ranking(&[(2, 0.9), (0, 0.5), (1, 0.1)]),
     )
     .unwrap();
@@ -108,7 +108,7 @@ fn reorder_refuses_what_is_not_a_permutation_of_the_candidates() {
         ranking(&[(0, 1.0), (1, 0.5), (2, f64::INFINITY)]),
     ];
     for ranked in bad_rankings {
-        let error = reorder(fused_candidates(3), &ranked).unwrap_err();
+        let error = reorder(&fused_candidates(3), &ranked).unwrap_err();
         assert!(error.is_malformed(), "{ranked:?}");
     }
 }

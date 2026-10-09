@@ -343,6 +343,7 @@ async fn workflow_phase5_production_reachability() {
         generator: fake_gen.clone(),
         embedder: Arc::new(FakeEmbedder),
         database: database.clone(),
+        lever_resources: crate::service::LeverResources::default(),
     };
 
     // 1. Happy path: full five-node execution with evidence
@@ -605,6 +606,7 @@ async fn workflow_phase5_settings_applied_to_production() {
         reformulate_timeout_ms: 1234,
         query_embedding_timeout_ms: 2345,
         retrieve_timeout_ms: 3456,
+        rerank_timeout_ms: 1706,
         graph_operation_timeout_ms: 4567,
         graph_node_timeout_ms: 5678,
         prompt_timeout_ms: 6789,

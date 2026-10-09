@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 use super::super::{
@@ -20,6 +20,30 @@ use crate::retrieval::{
 };
 
 pub const DEFAULT_RETRIEVED_EXCERPT_MAX_CHARS: usize = 512;
+
+/// Headroom the node keeps for its own work after the rerank call returns, in milliseconds.
+///
+/// The node's work after the rerank returns (the reorder, the evidence blocks, the snapshot) is
+/// sub-millisecond, so 50 ms is headroom, not a measurement. Raising it shortens the rerank call
+/// that fits in a nearly spent node budget; lowering it risks the node timer firing mid-reorder.
+pub const RERANK_NODE_RESERVE_MS: u64 = 50;
+
+/// How long the rerank call may run: its own budget, cut to what the node has left minus
+/// [`RERANK_NODE_RESERVE_MS`], so the call can never outlast the node's timer.
+pub(crate) fn rerank_allowance(
+    rerank_timeout: Duration,
+    _node_budget: Duration,
+    _elapsed: Duration,
+) -> Duration {
+    rerank_timeout
+}
+
+/// The reranker of the `rerank` lever and the time limits that bound its call.
+struct RerankLever {
+    reranker: Arc<dyn Reranker>,
+    timeout: Duration,
+    node_budget: Duration,
+}
 
 /// Per-query LanceDB dense sub-stage durations for the `nodes` table.
 ///
@@ -68,6 +92,8 @@ pub struct RetrieveHybridNode {
     dense_port: Option<Arc<dyn DenseRetrievalPort>>,
     bm25_port: Option<Arc<dyn Bm25RetrievalPort>>,
     reranker: Option<Arc<dyn Reranker>>,
+    /// Set only for a request that names `rerank` (D-131); `None` keeps the strict path.
+    rerank_lever: Option<RerankLever>,
     settings: RetrievalSettings,
     index_generation: String,
     embedding_model: String,
@@ -90,6 +116,7 @@ impl RetrieveHybridNode {
             dense_port,
             bm25_port,
             reranker,
+            rerank_lever: None,
             settings,
             index_generation: String::new(),
             embedding_model: String::new(),
@@ -119,6 +146,24 @@ impl RetrieveHybridNode {
 
     pub fn with_rebuild_degraded(mut self, rebuild_degraded: bool) -> Self {
         self.rebuild_degraded = rebuild_degraded;
+        self
+    }
+
+    /// Sets the reranker of the `rerank` lever, its own time limit and the node budget it nests in.
+    ///
+    /// `reranker` is `None` for a request that did not name the lever, which keeps the strict
+    /// path of [`new`](Self::new).
+    pub fn with_rerank_lever(
+        mut self,
+        reranker: Option<Arc<dyn Reranker>>,
+        rerank_timeout: Duration,
+        node_budget: Duration,
+    ) -> Self {
+        self.rerank_lever = reranker.map(|reranker| RerankLever {
+            reranker,
+            timeout: rerank_timeout,
+            node_budget,
+        });
         self
     }
 
@@ -384,7 +429,7 @@ impl RetrieveHybridNode {
                     candidates: &fused_candidates,
                 })
                 .await;
-            let reordered = result.and_then(|output| reorder(fused_candidates, &output.ranked));
+            let reordered = result.and_then(|output| reorder(&fused_candidates, &output.ranked));
             match reordered {
                 Ok(pairs) => pairs
                     .into_iter()

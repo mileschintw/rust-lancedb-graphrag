@@ -16,7 +16,7 @@ use engine::ingest::{
 use engine::pb::lancet::v1::lancet_service_server::LancetServiceServer;
 use engine::rerank;
 use engine::retrieval::Bm25Index;
-use engine::service::LancetServiceImpl;
+use engine::service::{LancetServiceImpl, LeverResources};
 use engine::workflow::ports::CorpusSnapshot;
 
 #[tokio::main]
@@ -163,6 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         generator,
         embedder: embedder.clone(),
         reranker: Arc::new(rerank::NoOpReranker::new()),
+        lever_resources: LeverResources::default(),
         database: database.clone(),
     };
 
