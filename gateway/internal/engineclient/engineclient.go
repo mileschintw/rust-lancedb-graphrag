@@ -26,9 +26,18 @@ type IngestOutcome struct {
 	Err       error
 }
 
+// IngestMeta carries the evidence metadata of a document (D-144). An empty field is
+// absent: it is never sent to the engine, so a document without one ingests with that
+// key missing. The gateway validates every field before it builds an IngestMeta.
+type IngestMeta struct {
+	DocTitle      string
+	Source        string
+	PublishedDate string
+}
+
 // Engine defines the client interface for interacting with the Lancet engine service.
 type Engine interface {
-	Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome
+	Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, meta IngestMeta, src io.Reader) IngestOutcome
 	IngestionStatus(context.Context, string) (*pb.GetIngestionStatusResponse, error)
 	Ping(context.Context) (time.Duration, error)
 	QueryRAG(context.Context, *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error)
@@ -70,8 +79,28 @@ func New(client pb.LancetServiceClient) *GRPCEngine {
 	return &GRPCEngine{client: client}
 }
 
+// ingestMetadata builds the first-frame metadata map: the three chunk keys always, and
+// the evidence keys doc_title, source and published_date only when non-empty (D-144).
+func ingestMetadata(strategy, chunkSize, chunkOverlap string, meta IngestMeta) map[string]string {
+	md := map[string]string{
+		"chunk_strategy": strategy,
+		"chunk_size":     chunkSize,
+		"chunk_overlap":  chunkOverlap,
+	}
+	if meta.DocTitle != "" {
+		md["doc_title"] = meta.DocTitle
+	}
+	if meta.Source != "" {
+		md["source"] = meta.Source
+	}
+	if meta.PublishedDate != "" {
+		md["published_date"] = meta.PublishedDate
+	}
+	return md
+}
+
 // Ingest streams document bytes to the engine service in chunks.
-func (e GRPCEngine) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) IngestOutcome {
+func (e GRPCEngine) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, meta IngestMeta, src io.Reader) IngestOutcome {
 	stream, err := e.client.IngestDocument(ctx)
 	if err != nil {
 		return IngestOutcome{Err: err}
@@ -88,11 +117,7 @@ func (e GRPCEngine) Ingest(ctx context.Context, id, filename, strategy string, c
 			if firstFrame {
 				firstFrame = false
 				req.Filename = filename
-				req.Metadata = map[string]string{
-					"chunk_strategy": strategy,
-					"chunk_size":     strconv.Itoa(chunkSize),
-					"chunk_overlap":  strconv.Itoa(chunkOverlap),
-				}
+				req.Metadata = ingestMetadata(strategy, strconv.Itoa(chunkSize), strconv.Itoa(chunkOverlap), meta)
 			}
 			if err := stream.Send(req); err != nil {
 				return IngestOutcome{Err: err}
