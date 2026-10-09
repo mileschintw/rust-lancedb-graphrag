@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -13,6 +14,19 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import httpx
+
+# 06.3.6 D-136: the quality levers a request may name, in the proto ``Lever`` enum order
+# (ascending enum number, ``LEVER_`` prefix dropped, lower-cased). ``graph_v2`` is
+# declared because the committed graph diagnosis selected a graph repair (D-137,
+# D-141). A test pins this tuple to the enum names parsed from
+# ``proto/lancet/v1/lancet.proto``.
+LeverName = Literal["rerank", "evidence_metadata", "binary_answer_format", "graph_v2"]
+LEVER_ORDER: tuple[LeverName, ...] = (
+    "rerank",
+    "evidence_metadata",
+    "binary_answer_format",
+    "graph_v2",
+)
 
 
 class StructuredCitation(BaseModel):
@@ -84,6 +98,8 @@ class RetrievalSnapshot(BaseModel):
     retrieved_chunks: list[StructuredCitation] = Field(default_factory=list)
     retrieval_mode: str | None = None
     pre_truncation_ranking: list[RankedCandidate] = Field(default_factory=list)
+    # 06.3.6 D-136: the canonical echo of the admitted levers, ascending enum order.
+    levers: list[str] = Field(default_factory=list)
 
 
 class RagAnswer(BaseModel):
@@ -118,6 +134,20 @@ class NodeCompleted(BaseModel):
     duration_ms: float | None = None
 
 
+class RerankMeta(BaseModel):
+    """Latency, cost and outcome of one rerank attempt (06.3.6 D-134).
+
+    Absent from the wire when no rerank was attempted. ``cost_credits`` is 0 and means
+    "unknown" when ``cost_reported`` is False.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+    latency_ms: int = 0
+    cost_credits: float = 0.0
+    cost_reported: bool = False
+    outcome: str = ""
+
+
 class WorkflowMetadata(BaseModel):
     """Workflow execution metadata emitted with workflow_completed."""
 
@@ -140,6 +170,9 @@ class WorkflowMetadata(BaseModel):
     graph_boosted_chunk_count: int | None = None
     graph_degree_capped_count: int | None = None
     graph_seed_document_ids: list[str] | None = None
+    # 06.3.6 D-134, D-52: both absent from the wire at their defaults.
+    rerank: RerankMeta | None = None
+    query_embedding_retries: int = 0
 
 
 class WorkflowCompleted(BaseModel):
@@ -221,6 +254,7 @@ def run_query(
     disable_graph_context: bool = False,
     retrieval_mode: str | None = None,
     include_pre_truncation_ranking: bool = False,
+    levers: Sequence[str] = (),
     deadline_s: float = 600.0,
     read_timeout_s: float | None = None,
     capture_raw_events: bool = False,
@@ -240,6 +274,8 @@ def run_query(
         body["retrieval_mode"] = retrieval_mode
     if include_pre_truncation_ranking:
         body["include_pre_truncation_ranking"] = True
+    if levers:
+        body["levers"] = list(levers)
 
     effective_read_timeout = (
         read_timeout_s

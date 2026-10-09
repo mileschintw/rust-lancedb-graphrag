@@ -356,6 +356,55 @@ def test_run_query_sends_retrieval_mode_and_parses_ranking(
     assert parsed.pre_truncation_ranking[1].graph_boosted is True
 
 
+def test_run_query_sends_levers_and_parses_the_echo(httpx_mock: HTTPXMock) -> None:
+    snapshot = {
+        "index_generation": "gen-1",
+        "retrieved_chunks": [],
+        "levers": ["binary_answer_format"],
+    }
+    final = {"answer": "ok", "snapshot": snapshot}
+    with_levers = (
+        f"event: final_answer\ndata: {json.dumps(final)}\n\n"
+        "event: workflow_completed\n"
+        f"data: {json.dumps({'success': True, 'final_response': final})}\n\n"
+    )
+    plain = (
+        "event: workflow_completed\n"
+        'data: {"success":true,"final_response":{"answer":"ok"}}\n\n'
+    )
+    for text in (with_levers, plain):
+        httpx_mock.add_response(
+            url="http://testserver/rag/query",
+            status_code=200,
+            headers={"content-type": "text/event-stream"},
+            text=text,
+        )
+
+    with httpx.Client(base_url="http://testserver") as client:
+        outcome = run_query(
+            client,
+            query="is it so",
+            session_id="s",
+            levers=["binary_answer_format"],
+        )
+        run_query(client, query="plain", session_id="s")
+
+    requests = httpx_mock.get_requests()
+    body_levers = json.loads(requests[0].read().decode("utf-8"))
+    assert body_levers == {
+        "query": "is it so",
+        "session_id": "s",
+        "levers": ["binary_answer_format"],
+    }
+    # A call without levers sends exactly the body it sent before this change.
+    body_plain = json.loads(requests[1].read().decode("utf-8"))
+    assert body_plain == {"query": "plain", "session_id": "s"}
+
+    assert outcome.answer is not None
+    assert outcome.answer.snapshot is not None
+    assert outcome.answer.snapshot.levers == ["binary_answer_format"]
+
+
 def test_snapshot_null_vs_empty_distinction(httpx_mock: HTTPXMock) -> None:
     # Snapshot null
     sse_null_snapshot = (

@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from lancet_eval.client import (
     NodeFailed,
     Notice,
+    RerankMeta,
     RetrievalSnapshot,
     StructuredCitation,
 )
@@ -70,6 +71,11 @@ class WorkflowWireMeta(BaseModel):
     graph_boosted_chunk_count: int | None = None
     graph_degree_capped_count: int | None = None
     graph_seed_document_ids: list[str] | None = None
+    # 06.3.6 D-134, D-52: same names and defaults as the client model, so a journal
+    # written before the fields existed still parses and the preflight round trip
+    # loses nothing.
+    rerank: RerankMeta | None = None
+    query_embedding_retries: int = 0
 
 
 class AttemptRecord(BaseModel):
