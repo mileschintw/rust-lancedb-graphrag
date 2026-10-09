@@ -1,0 +1,20 @@
+{
+  "selected": "graph_list_precision",
+  "counts": {
+    "alias_split": 0,
+    "absent": 3,
+    "missing_edge": 15,
+    "other": 20
+  },
+  "rule_sha": "fc1ab4e39650cb68e4001311c3055055ae5dbfc7",
+  "table_sha256": "6477494891a9f8de8d034fe716b1ace5b303e72ab1716da3a06110520862a0ae",
+  "graph_diagnosis_commit": "f717df6ca66af99fec6f148e9fe218eccc706959",
+  "spot_check": {
+    "owner_reply": "labels-agree",
+    "outcome": "every sampled label follows from the committed predicates; no predicate fix, no table regeneration, no label change",
+    "sample_rows": 6,
+    "sample_note": "the sample has 6 rows rather than 8 because alias_split has no members (count 0), so the 2-per-class draw yields 2 each from absent, missing_edge and other (seed 42)",
+    "orchestrator_cross_check": "both absent rows checked against the dump: 'Malini Goyal' and 'Indiranagar' match no entity; every mention of the null 'other' row mhr-434e7d85190f matches an entity",
+    "d187_note": "the D-187 tilt toward absent (empty-gold null_query questions) did not change the outcome: other (20) is the plurality over all 38 and also over the 30 non-null questions (16 vs missing_edge 14)"
+  }
+}
