@@ -9,7 +9,7 @@ and `research/fetched/openrouter-submit-a-rerank-request-2026-10-09.md` (sha256 
 
 | capability | decision | reason |
 |---|---|---|
-| `model` (required): `voyageai/rerank-2.5-lite` | INTEGRATE | D-131 owner choice; config `[openrouter] rerank_model`; the reply may carry the dated slug `voyageai/rerank-2.5-lite-20260727` and must start with the requested slug |
+| `model` (required): `voyageai/rerank-2.5-lite` | INTEGRATE | D-131 owner choice; config `[openrouter] rerank_model`; the live reply carries the bare model name `rerank-2.5-lite` (`06.3.6-PROBE.md`); the reply `model` must start with the requested slug or with its bare name after the vendor prefix (D-186, 2026-10-09) |
 | `query` (required): the search query | INTEGRATE | `ctx.original_query`, the same text retrieval used |
 | `documents` (required, `minItems: 1`) as plain strings | INTEGRATE | `candidate.content` verbatim, fused order, at most `candidate_limit` = 32 (D-132); an empty candidate list returns without a call |
 | `documents` as `{text, image}` objects / image documents | OPT-OUT | Text corpus; no image content exists in the eval store or the ingest path |
@@ -21,7 +21,7 @@ and `research/fetched/openrouter-submit-a-rerank-request-2026-10-09.md` (sha256 
 | `trace` (`TraceConfig`, Broadcast metadata) | OPT-OUT | The engine uses its own OpenTelemetry stack (OBS-01); a second trace sink adds a data path with no measurement value |
 | Streaming | OPT-OUT | Not offered: the OpenAPI states rerank does not support streaming |
 | 200 body `id` | OPT-OUT | Not needed for reconciliation; spend is read from `usage.cost` and the account delta |
-| 200 body `model` | INTEGRATE | Validated: must start with the requested slug, else `MalformedResponse` and the record degrades (D-134) |
+| 200 body `model` | INTEGRATE | Validated: must start with the requested slug or with its bare name after the vendor prefix (D-186, 2026-10-09; the live reply carries `rerank-2.5-lite`), else `MalformedResponse` and the record degrades (D-134) |
 | 200 body `provider` | OPT-OUT | Ignored on purpose (may be logged as a bounded field); `allow_fallbacks: false` already pins routing |
 | 200 body `results[].index` | INTEGRATE | Must be a permutation of `0..n`; anything else is `MalformedResponse` |
 | 200 body `results[].relevance_score` | INTEGRATE | Must be finite; overwrites `fused_score` under the rerank lever (D-166); ties broken by `(relevance_score desc, index asc)` |

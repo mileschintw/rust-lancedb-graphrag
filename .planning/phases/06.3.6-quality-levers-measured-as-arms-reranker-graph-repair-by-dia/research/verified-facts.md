@@ -519,3 +519,18 @@ from the planner and plan checkers.
 - **C7 [research, executed].** At HEAD, `uv run --project eval pytest eval/tests` gives 1802 passed. A repo-root
   `pytest` also collects `scripts/` and fails. `ruff check --preview eval/src eval/tests` reports 556 findings
   before any change, so the lint gate is "no new finding on touched files".
+
+## L. Live facts from plan 06.3.6-01 (the D-131 probe, 2026-10-09)
+
+**[re-checked]** by the orchestrator from `research/probe-result.json` (commit `088d5c08`) and the gitignored settle
+readings in `data/oi02-evidence/probe-2026-10-09/`.
+- One authenticated `POST /api/v1/rerank` for `voyageai/rerank-2.5-lite` with 2 documents, `top_n` 2 and
+  `provider` = `{"allow_fallbacks": false}`: HTTP 200 in 407.3 ms, order `[1, 0]`, scores `[0.90234375, 0.390625]`.
+- The reply `model` is the bare **`rerank-2.5-lite`**, not the requested slug and not the dated canonical slug
+  (supersedes the "may carry the dated slug" expectation in §A7, RESEARCH C11 and the AI-SPEC). `provider` is
+  "VoyageAI by MongoDB".
+- `usage` is `{"cost": 4.4e-07, "total_tokens": 22}`.
+- Settled account `usage`: 2.983984094 before (2 readings agree), 2.983984534 after (2 readings agree). The delta
+  4.4e-07 equals `usage.cost`, so 1 credit = 1 USD is consistent.
+- The response-model rule is corrected by D-186 (owner): the reply `model` starts with the requested slug or with its
+  bare name after the vendor prefix. A re-probe under that rule follows (plan 06.3.6-01).
