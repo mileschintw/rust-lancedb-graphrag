@@ -61,6 +61,12 @@ class _Body(BaseModel):
     usage: _Usage | None = None
 
 
+def model_matches(reply_model: str) -> bool:
+    """D-186: accept the full slug, a dated slug, or the bare name after the vendor prefix."""
+    bare = MODEL.split("/", 1)[-1]
+    return reply_model.startswith(MODEL) or reply_model.startswith(bare)
+
+
 def probe(client: httpx.Client, api_key: str) -> dict[str, object]:
     started = time.monotonic()
     resp = client.post(
@@ -98,7 +104,7 @@ def probe(client: httpx.Client, api_key: str) -> dict[str, object]:
     record["ok"] = (
         sorted(order) == list(range(len(DOCUMENTS)))
         and bool(record["cost_reported"])
-        and body.model.startswith(MODEL)
+        and model_matches(body.model)
     )
     return record
 
@@ -149,6 +155,20 @@ def main() -> int:
         with httpx.Client(transport=httpx.MockTransport(wrong_model)) as client:
             rerouted = probe(client, "test-key")
         assert not rerouted["ok"], rerouted  # a reply from a different model fails the probe
+
+        def with_model(name: str) -> dict[str, object]:
+            def handler(request: httpx.Request) -> httpx.Response:
+                body = _mock_handler(request).json()
+                body["model"] = name
+                return httpx.Response(200, json=body)
+
+            with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+                return probe(client, "test-key")
+
+        for accepted in ("rerank-2.5-lite", "voyageai/rerank-2.5-lite", "voyageai/rerank-2.5-lite-20260727"):
+            assert with_model(accepted)["ok"], accepted  # D-186: bare, full and dated slugs pass
+        for refused in ("rerank-v3.5", "cohere/rerank-v3.5"):
+            assert not with_model(refused)["ok"], refused  # a different model still fails
         print("selftest ok:", json.dumps(record, sort_keys=True))
         return 0
     key = os.environ.get("OPENROUTER_API_KEY", "")
