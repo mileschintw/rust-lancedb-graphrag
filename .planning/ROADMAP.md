@@ -1064,7 +1064,7 @@ Plans:
 
 **Out of Scope:** chunking-strategy comparison (DATA-02 — needs a second seeded index; recorded as unmeasured in 6.4's limitations), new corpora (GraphRAG-Bench stays a schema fixture), reranking, graph repair, prompt changes, provider pinning.
 
-**Plans:** 17/18 plans executed (13 offline code plans in waves 1-8, then 5 live-stack plans in waves 9-13 including gap-closure 06.3.5-18, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
+**Plans:** 18/18 plans executed (13 offline code plans in waves 1-8, then 5 live-stack plans in waves 9-13 including gap-closure 06.3.5-18, run sequentially on main and never in a worktree; decisions in `06.3.5-CONTEXT.md` D-97..D-126)
 
 Plans:
 
@@ -1123,7 +1123,7 @@ Plans:
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [ ] 06.3.5-17-PLAN.md — Key reveal, `score --judged`, `compare`, the D-103 paper-row `checkpoint:decision`, and `06.3.5-RUN-OF-RECORD.md`
+- [x] 06.3.5-17-PLAN.md — Key reveal, `score --judged`, `compare`, the D-103 paper-row `checkpoint:decision`, and `06.3.5-RUN-OF-RECORD.md`
 
 ### Phase 06.3.6: Quality levers measured as arms — reranker, graph repair by diagnosis, temporal metadata, answer format (INSERTED)
 
