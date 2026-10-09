@@ -7,4 +7,4 @@
 .discussion/** linguist-documentation
 
 # Python eval harness / test scripts: keep GitHub language bar showing Rust as the primary language
-eval/** linguist-vendored
+eval/** linguist-detectable=false
