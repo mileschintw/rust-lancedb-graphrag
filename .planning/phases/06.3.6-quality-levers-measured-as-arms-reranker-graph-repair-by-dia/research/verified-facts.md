@@ -417,7 +417,41 @@ These supersede the matching lines above where they conflict.
   $0.22 / 1M prompt and $0.50 / 1M completion. `measure.py:98-99` holds 0.12 and 0.30.
   - The researcher also reports that `GENERATION_OUTPUT_PRICE_PER_1M` (0.32) is below the listing. That
     constant is outside D-153's text, and the owner decides.
-- **The 06.3.6 D-73 gate and `compare` (researcher report, not yet re-checked by the orchestrator; the
-  planner verifies):**
+- **The 06.3.6 D-73 gate and `compare` (researcher report; re-checked by the orchestrator in §J below):**
   - The `gitcheck.py` D-73 token is hard-coded to 06.3.5, so a 06.3.6 drive would pass it vacuously.
   - `compare` reads `PREREGISTRATION_06_3_5` at several sites and assumes a judged result.
+
+---
+
+## J. Orchestrator re-checks at `/gsd-plan-phase 06.3.6` (2026-10-09, HEAD `b5f448e3`)
+
+These confirm §I's last bullet and the price row the owner must decide. Read from source, not from a report.
+
+- **D-73 token is a module constant.** `eval/src/lancet_eval/gitcheck.py:29`:
+  `PREREGISTRATION_TOKEN = "PREREGISTRATION_06_3_5"`.
+  - `run.py:429-440` (the drive gate) passes `(gitcheck.PREREGISTRATION_TOKEN,)` to
+    `gitcheck.preregistration_problems`.
+  - `score.py:269-280` passes `(gitcheck.PREREGISTRATION_TOKEN, gitcheck.TRUST_FLOOR_TOKEN)`.
+  - `judge_stage.py:209-221` passes `(gitcheck.TRUST_FLOOR_TOKEN,)`.
+  - So a 06.3.6 corpus run today is gated on the 06.3.5 block, which is already committed: the gate passes
+    vacuously. AI-SPEC §4 item 7c / §5 select the token per corpus (`[preregistration] token`) instead
+    (**PROPOSED**).
+- **`compare` is 06.3.5-specific and judged.**
+  - `comparison.py:49` imports `PREREGISTRATION_06_3_5`; it is read at `:556`, `:609`, `:906`, `:998`,
+    `:1402`, `:1926` and `:1929`.
+  - `comparison.py:1-9` (module docstring): it reads a run directory that `score --judged` has completed, and
+    `_load_judged` (`:735-748`) refuses when `judged-result.json` is missing.
+  - The CLI entry is `@app.command("compare")` at `eval/src/lancet_eval/cli.py:967`.
+  - `compare` has **no** D-73 git gate today (no `gitcheck` import in `comparison.py`). That is WR-02's
+    remainder (D-158).
+- **Generation price constants and the listing.**
+  - `eval/src/lancet_eval/measure.py:60-61`: `GENERATION_INPUT_PRICE_PER_1M = 0.14`,
+    `GENERATION_OUTPUT_PRICE_PER_1M = 0.32`. The committed rule at `:50-58` (06.3.4.1-23, 2026-09-29): a price
+    constant is never lowered, and is raised when the public listing is higher.
+  - `research/fetched/openrouter-models-2026-10-09/models.json` lists `deepseek/deepseek-v4-flash-0731`
+    (canonical `deepseek/deepseek-v4-flash-20260731`, the `config/config.toml:130` `generation_model`) at
+    `0.0000000137` prompt and `0.00000128` completion USD per token, i.e. $0.0137 and **$1.28** per 1M.
+  - Under the rule, input stays 0.14 and output rises to 1.28 (AI-SPEC §4 item 7f). The output row is outside
+    D-153's text (judge constants only), so it is an **owner decision** before any cap is proposed (O9).
+  - Judge listing: `meta-llama/llama-3.3-70b-instruct` at $0.22 / $0.50 per 1M; `measure.py:98-99` holds
+    0.12 / 0.30. That fix is in scope under D-153.
