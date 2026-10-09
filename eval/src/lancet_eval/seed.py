@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
 from lancet_eval.corpus import CorpusError, load_corpus, load_corpus_config
+from lancet_eval.evidence_meta import normalise
 
 if TYPE_CHECKING:
     import httpx
@@ -432,10 +433,15 @@ def seed_corpus(
                 "file": (safe_name, content_bytes, "text/plain"),
             }
 
+            # D-144: the evidence metadata rides as multipart form fields. Only the
+            # non-empty normalised values are sent, so a row without one ingests with
+            # that key absent.
+            form_fields = {k: v for k, v in normalise(doc).items() if v}
+
             max_article_attempts = 5
             last_err = ""
             for article_attempt in range(max_article_attempts):
-                resp = client.post("/documents", files=files)
+                resp = client.post("/documents", files=files, data=form_fields)
                 if resp.status_code not in (200, 201, 202):
                     raise SeedError(
                         f"Upload failed for article '{corpus_id}' "

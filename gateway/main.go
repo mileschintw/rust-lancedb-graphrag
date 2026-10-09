@@ -17,6 +17,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -53,6 +55,17 @@ const defaultChunkOverlap = 50
 
 // Authoritative Rust MAX_CHUNK_SIZE ceiling mirror
 const maxChunkSize = 1048576
+
+// Evidence-metadata bounds, counted as runes. They mirror the engine's re-validation
+// (plan 06.3.6-14); the corpus maxima are 177 (title) and 59 (source), so these leave
+// room without letting an oversized value into a prompt block (T-06.3.6-28).
+const (
+	maxDocTitleRunes = 512
+	maxSourceRunes   = 256
+)
+
+// publishedDateLayout is the only accepted published_date form: a bare calendar date.
+const publishedDateLayout = "2006-01-02"
 
 const ingestCompensationTimeout = 5 * time.Second
 
@@ -366,6 +379,38 @@ func (a app) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "engine": map[string]any{"status": "ok", "latency_ms": latency.Milliseconds()}})
 }
 
+// validMetaText reports whether v fits within maxRunes runes and holds no control
+// character. An empty v is valid: an empty form field is an absent one.
+func validMetaText(v string, maxRunes int) bool {
+	if utf8.RuneCountInString(v) > maxRunes {
+		return false
+	}
+	return !strings.ContainsFunc(v, unicode.IsControl)
+}
+
+// parseIngestMeta reads and validates the optional evidence-metadata form fields
+// (D-144). On a bad value it returns the 400 message to send; a missing field is simply
+// an empty IngestMeta member and never an error.
+func parseIngestMeta(r *http.Request) (engineclient.IngestMeta, string) {
+	meta := engineclient.IngestMeta{
+		DocTitle:      r.FormValue("doc_title"),
+		Source:        r.FormValue("source"),
+		PublishedDate: r.FormValue("published_date"),
+	}
+	if !validMetaText(meta.DocTitle, maxDocTitleRunes) {
+		return engineclient.IngestMeta{}, "invalid doc_title"
+	}
+	if !validMetaText(meta.Source, maxSourceRunes) {
+		return engineclient.IngestMeta{}, "invalid source"
+	}
+	if meta.PublishedDate != "" {
+		if _, err := time.Parse(publishedDateLayout, meta.PublishedDate); err != nil {
+			return engineclient.IngestMeta{}, "invalid published_date"
+		}
+	}
+	return meta, ""
+}
+
 func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+(1<<20))
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
@@ -420,6 +465,12 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ingestMeta, metaProblem := parseIngestMeta(r)
+	if metaProblem != "" {
+		http.Error(w, metaProblem, http.StatusBadRequest)
+		return
+	}
+
 	id, err := newDocumentID()
 	if err != nil {
 		http.Error(w, "could not allocate document id", http.StatusInternalServerError)
@@ -438,7 +489,7 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not queue document", http.StatusInternalServerError)
 		return
 	}
-	outcome := a.engine.Ingest(r.Context(), id, doc.Filename, strategy, chunkSize, chunkOverlap, io.LimitReader(file, maxUploadBytes+1))
+	outcome := a.engine.Ingest(r.Context(), id, doc.Filename, strategy, chunkSize, chunkOverlap, ingestMeta, io.LimitReader(file, maxUploadBytes+1))
 	if outcome.Err != nil {
 		if outcome.Ambiguous {
 			checkCtx, checkCancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -827,9 +827,14 @@ type engineFunc struct {
 	status    *pb.GetIngestionStatusResponse
 	statusErr error
 	queryRAG  func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error)
+	// onMeta, when set, receives the evidence metadata of every Ingest call.
+	onMeta func(engineclient.IngestMeta)
 }
 
-func (e engineFunc) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, src io.Reader) engineclient.IngestOutcome {
+func (e engineFunc) Ingest(ctx context.Context, id, filename, strategy string, chunkSize, chunkOverlap int, meta engineclient.IngestMeta, src io.Reader) engineclient.IngestOutcome {
+	if e.onMeta != nil {
+		e.onMeta(meta)
+	}
 	data, err := io.ReadAll(src)
 	if err != nil {
 		return engineclient.IngestOutcome{Err: err}
@@ -1744,6 +1749,133 @@ func TestCreateDocumentChunkSettingsContract(t *testing.T) {
 	})
 }
 
+// evidenceMetaRequest builds a /documents upload carrying the given extra form fields.
+func evidenceMetaRequest(t *testing.T, fields map[string]string) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	part, err := w.CreateFormFile("file", "notes.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range slices.Sorted(maps.Keys(fields)) {
+		if err := w.WriteField(name, fields[name]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	return req
+}
+
+func TestCreateDocumentEvidenceMetadata(t *testing.T) {
+	// serve runs one upload and reports the response code, the metadata the engine saw
+	// and how many times the engine and the store were reached.
+	serve := func(t *testing.T, fields map[string]string) (code int, got engineclient.IngestMeta, engineCalls int, inserted bool) {
+		t.Helper()
+		store := &fakeStore{}
+		engine := engineFunc{onMeta: func(m engineclient.IngestMeta) {
+			engineCalls++
+			got = m
+		}}
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, evidenceMetaRequest(t, fields))
+		return recorder.Code, got, engineCalls, store.inserted != nil
+	}
+
+	t.Run("valid fields reach the engine unchanged", func(t *testing.T) {
+		want := engineclient.IngestMeta{
+			DocTitle:      "'Massive intel failure by Mossad': Hamas' surprise attack",
+			Source:        "Business Today | Latest Stock Market And Economy News India",
+			PublishedDate: "2023-10-07",
+		}
+		code, got, calls, _ := serve(t, map[string]string{
+			"doc_title":      want.DocTitle,
+			"source":         want.Source,
+			"published_date": want.PublishedDate,
+		})
+		if code != http.StatusAccepted || calls != 1 {
+			t.Fatalf("status = %d, engine calls = %d, want 202 and 1", code, calls)
+		}
+		if got != want {
+			t.Fatalf("engine meta = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("fields at the length bounds are accepted", func(t *testing.T) {
+		want := engineclient.IngestMeta{
+			DocTitle: strings.Repeat("é", maxDocTitleRunes),
+			Source:   strings.Repeat("s", maxSourceRunes),
+		}
+		code, got, _, _ := serve(t, map[string]string{"doc_title": want.DocTitle, "source": want.Source})
+		if code != http.StatusAccepted || got != want {
+			t.Fatalf("status = %d, meta = %#v, want 202 and the sent values", code, got)
+		}
+	})
+
+	t.Run("absent fields leave an empty meta and succeed as before", func(t *testing.T) {
+		code, got, calls, _ := serve(t, nil)
+		if code != http.StatusAccepted || calls != 1 {
+			t.Fatalf("status = %d, engine calls = %d, want 202 and 1", code, calls)
+		}
+		if got != (engineclient.IngestMeta{}) {
+			t.Fatalf("engine meta = %#v, want empty", got)
+		}
+	})
+
+	t.Run("empty values are absent", func(t *testing.T) {
+		code, got, _, _ := serve(t, map[string]string{"doc_title": "", "source": "", "published_date": ""})
+		if code != http.StatusAccepted || got != (engineclient.IngestMeta{}) {
+			t.Fatalf("status = %d, meta = %#v, want 202 and empty", code, got)
+		}
+	})
+
+	bad := []struct {
+		name   string
+		fields map[string]string
+		body   string
+	}{
+		{"title over 512 runes", map[string]string{"doc_title": strings.Repeat("t", maxDocTitleRunes+1)}, "invalid doc_title"},
+		{"multibyte title over 512 runes", map[string]string{"doc_title": strings.Repeat("é", maxDocTitleRunes+1)}, "invalid doc_title"},
+		{"source over 256 runes", map[string]string{"source": strings.Repeat("s", maxSourceRunes+1)}, "invalid source"},
+		{"title control character", map[string]string{"doc_title": "bad\x07title"}, "invalid doc_title"},
+		{"title newline", map[string]string{"doc_title": "two\nlines"}, "invalid doc_title"},
+		{"source control character", map[string]string{"source": "bad\x00source"}, "invalid source"},
+		{"impossible date", map[string]string{"published_date": "2023-02-30"}, "invalid published_date"},
+		{"date with time", map[string]string{"published_date": "2023-10-07T15:37:43"}, "invalid published_date"},
+		{"slash date", map[string]string{"published_date": "07/10/2023"}, "invalid published_date"},
+		{"unpadded date", map[string]string{"published_date": "2023-1-5"}, "invalid published_date"},
+	}
+	for _, tc := range bad {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			code, _, calls, inserted := serve(t, tc.fields)
+			if code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", code)
+			}
+			if calls != 0 || inserted {
+				t.Fatalf("engine calls = %d, inserted = %v, want 0 and false (refuse before any side effect)", calls, inserted)
+			}
+		})
+	}
+
+	t.Run("400 body names the field", func(t *testing.T) {
+		for _, tc := range bad {
+			store := &fakeStore{}
+			recorder := httptest.NewRecorder()
+			app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, evidenceMetaRequest(t, tc.fields))
+			if got := strings.TrimSpace(recorder.Body.String()); got != tc.body {
+				t.Fatalf("%s: body = %q, want %q", tc.name, got, tc.body)
+			}
+		}
+	})
+}
+
 type fakeStream struct {
 	pb.LancetService_IngestDocumentClient
 	requests []*pb.IngestDocumentRequest
@@ -1774,7 +1906,7 @@ func TestGrpcEngineStreamsChunkSettings(t *testing.T) {
 	stream := &fakeStream{}
 	engine := engineclient.New(&fakeGrpcClient{stream: stream})
 	ctx := t.Context()
-	outcome := engine.Ingest(ctx, "doc-123", "guide.md", "structure-aware", 500, 50, bytes.NewReader([]byte("chunk data payload")))
+	outcome := engine.Ingest(ctx, "doc-123", "guide.md", "structure-aware", 500, 50, engineclient.IngestMeta{}, bytes.NewReader([]byte("chunk data payload")))
 	if outcome.Err != nil {
 		t.Fatalf("unexpected ingest error: %v", outcome.Err)
 	}

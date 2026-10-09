@@ -415,3 +415,77 @@ def test_record_index_generation_raises_and_leaves_file_unchanged(
 
     assert path.read_bytes() == before_bytes
 
+
+def _seed_one_row(
+    httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, row: dict
+) -> bytes:
+    corpus_dir = tmp_path / "eval" / "corpora" / "multihop_rag"
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+    (corpus_dir / "documents.subset.jsonl").write_text(
+        json.dumps(row) + "\n", encoding="utf-8"
+    )
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    httpx_mock.add_response(
+        url="http://testgateway:8080/documents",
+        method="POST",
+        status_code=202,
+        json={"id": "doc-gw-meta", "status": "completed"},
+    )
+    httpx_mock.add_response(
+        url="http://testgateway:8080/rag/query",
+        method="POST",
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        text=(
+            "event: final_answer\n"
+            'data: {"answer":"ok","snapshot":{"index_generation":"gen-meta-01"}}\n\n'
+            "event: workflow_completed\n"
+            'data: {"success":true}\n\n'
+        ),
+    )
+    settings = EvalSettings(
+        gateway_url="http://testgateway:8080",
+        lancedb_path=str(tmp_path / "lancedb-eval"),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+    )
+    seed_corpus("multihop_rag", settings=settings)
+    uploads = [r for r in httpx_mock.get_requests() if r.url.path == "/documents"]
+    assert len(uploads) == 1
+    return uploads[0].read()
+
+
+def test_seed_corpus_sends_normalised_evidence_metadata_fields(
+    httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = _seed_one_row(
+        httpx_mock,
+        tmp_path,
+        monkeypatch,
+        {
+            "title": "&#039;Alpha&#039; &amp; Beta",
+            "text": "Body.",
+            "source": "  The Verge ",
+            "published_at": "2023-10-07T23:30:00-05:00",
+        },
+    ).decode("utf-8", errors="ignore")
+    assert 'name="doc_title"' in body
+    assert "'Alpha' & Beta" in body
+    assert 'name="source"' in body
+    assert "The Verge" in body
+    assert 'name="published_date"' in body
+    assert "2023-10-08" in body
+    assert 'name="file"' in body
+
+
+def test_seed_corpus_omits_absent_evidence_metadata_fields(
+    httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = _seed_one_row(
+        httpx_mock,
+        tmp_path,
+        monkeypatch,
+        {"title": "Only Title", "text": "Body.", "published_at": "not a date"},
+    ).decode("utf-8", errors="ignore")
+    assert 'name="doc_title"' in body
+    assert 'name="source"' not in body
+    assert 'name="published_date"' not in body

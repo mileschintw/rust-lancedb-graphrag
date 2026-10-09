@@ -29,16 +29,21 @@
 #         the D-136 fail-closed request shapes (and the D-146 question_type refusal) as subtests of
 #         ONE top-level test. The snapshot levers key and the rerank / query_embedding_retries
 #         metadata keys are subtests or assertions inside existing sse tests and do not move the count.
+#   124 — Phase 06.3.6 plan 08 Task 2 (gateway 83, internal/engineclient 1, internal/sse 17): added
+#         TestCreateDocumentEvidenceMetadata (the D-144 doc_title / source / published_date edge
+#         validation, as subtests of ONE top-level test) and the new gateway/internal/engineclient
+#         package's TestIngestMetadataMap (the first-frame metadata map builder).
 set -e
 
-EXPECTED_TOTAL=122
+EXPECTED_TOTAL=124
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 82
+EXPECTED_PACKAGES="gateway 83
 gateway/db 7
 gateway/internal/config 4
+gateway/internal/engineclient 1
 gateway/internal/sse 17
 gateway/internal/telemetry 12"
 
