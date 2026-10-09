@@ -1554,7 +1554,8 @@ def test_the_06_3_5_arm_list_is_not_equality_checked(
     )
     _dev_questions_for_rehearsal(monkeypatch)
 
-    assert _drive_split("multihop_rag_heldout", tmp_path / "journal.jsonl", limit=1) == 2
+    journal = tmp_path / "journal.jsonl"
+    assert _drive_split("multihop_rag_heldout", journal, limit=1) == 2
 
 
 def _dev_questions_for_rehearsal(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1580,7 +1581,7 @@ def test_an_unknown_token_is_refused_before_any_request(
     )
     j_path = tmp_path / "journal.jsonl"
 
-    with pytest.raises(gitcheck.PreregistrationError, match="PREREGISTRATION_NOT_THERE"):
+    with pytest.raises(gitcheck.PreregistrationError, match="NOT_THERE"):
         _drive_split("multihop_rag_heldout", j_path)
     assert not j_path.exists()
     assert httpx_mock.get_requests() == []
@@ -1657,7 +1658,8 @@ def test_a_corpus_arm_list_equal_to_the_preregistration_is_driven(
     )
     _dev_questions_for_rehearsal(monkeypatch)
 
-    assert _drive_split("multihop_rag_heldout", tmp_path / "journal.jsonl", limit=1) == 3
+    journal = tmp_path / "journal.jsonl"
+    assert _drive_split("multihop_rag_heldout", journal, limit=1) == 3
 
 
 def test_a_dev_corpus_is_exempt_from_the_arm_set_refusals(

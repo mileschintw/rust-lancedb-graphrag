@@ -574,7 +574,7 @@ def test_mode_provenance_failures_is_the_composition_of_the_two_checks() -> None
     assert len(mode_provenance_failures("dense-only", "hybrid", [])) == 2
 
 
-# --- 06.3.6-07: clauses (h), (i), (j) and (e) on graph-on arms (D-134, D-161) ----------
+# --- 06.3.6-07: clauses (h), (i), (j) and (e) on graph-on arms (D-134, D-161) ---
 
 RERANK_DEGRADED = Notice(code="RERANK_DEGRADED", message="", typed_code=23)
 LEVER_ARMS = (
@@ -762,7 +762,7 @@ def test_clauses_h_and_j_call_their_functions_not_message_text(
     assert failures[0].detail == "reworded"
 
 
-def test_an_ablation_arm_function_flags_a_graph_on_arm_that_carries_the_notice() -> None:
+def test_the_ablation_function_flags_a_graph_on_arm_carrying_the_notice() -> None:
     from lancet_eval.arms import ablation_failures
 
     assert ablation_failures("hybrid+graph", [ABLATION])

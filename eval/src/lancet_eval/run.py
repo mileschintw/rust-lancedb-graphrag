@@ -10,8 +10,8 @@ from pathlib import Path
 
 import httpx
 
-from lancet_eval import gitcheck
-from lancet_eval.arms import plan_work_units, request_fields, resolve_arm
+from lancet_eval import gitcheck, preregistration
+from lancet_eval.arms import canonical_arm, plan_work_units, request_fields, resolve_arm
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings, repo_root
 from lancet_eval.corpus import (
@@ -189,6 +189,38 @@ def _enforce_split_role(
                 "held-out question ID(s); a rehearsal must be disjoint from both "
                 "(D-106); refusing to drive"
             )
+
+
+def _enforce_preregistered_arm_set(config: CorpusConfig) -> None:
+    """Refuse a corpus whose arm list the pre-registration it names did not fix (D-73).
+
+    Under the 06.3.5 token a corpus may list none of the 06.3.6 lever arms: that
+    pre-registration fixed the four-arm ablation and nothing else, and its rehearsal
+    and held-out corpora list the four arms themselves, so no equality is demanded of
+    it. Under any other token the pre-registration must exist (`preregistration.resolve`
+    fails closed) and the corpus's arms, compared by canonical label, must equal the
+    arms it fixed: its reference arm, every family arm and its descriptive arms.
+    Runs after the ordering gate and before any journal I/O and any request.
+    """
+    token = config.preregistration_token
+    listed = {canonical_arm(label) for label in config.arms}
+    if token == gitcheck.PREREGISTRATION_TOKEN:
+        levers = sorted(label for label in listed if resolve_arm(label).levers)
+        if levers:
+            raise gitcheck.PreregistrationError(
+                f"D-73: corpus {config.name!r} lists the 06.3.6 lever arm(s) {levers} "
+                f"under the {token} token, which fixed only the 06.3.5 arms; "
+                "refusing to drive"
+            )
+        return
+    prereg = preregistration.resolve(token)
+    fixed = {canonical_arm(label) for label in preregistration.arms_of(prereg)}
+    if listed != fixed:
+        raise gitcheck.PreregistrationError(
+            f"D-73: corpus {config.name!r} lists arms that differ from the ones "
+            f"{token} fixed: missing {sorted(fixed - listed)}, not pre-registered "
+            f"{sorted(listed - fixed)}; refusing to drive"
+        )
 
 
 def _attempt_of(record: RunRecord, attempt: int) -> AttemptRecord:
@@ -456,6 +488,8 @@ def drive(
                     + f". {config.preregistration_token} must be committed in "
                     f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
                 )
+            # D-73 at drive time (06.3.6): the arm list is the pre-registered one.
+            _enforce_preregistered_arm_set(config)
         # D-105/D-106/D-107: a [split] corpus is refused before any journal I/O unless
         # its IDs fit its role, then driven in the seeded balanced rotation.
         split = load_split(config.split_path)

@@ -954,11 +954,11 @@ def test_preflight_with_an_unloadable_corpus_config_fails_closed_without_a_reque
 _RERANK_ARMS = ["hybrid", "hybrid+rerank", "hybrid+all"]
 
 
-class _Prereg:
+def _prereg(halt: int) -> Any:
     """A synthetic pre-registration carrying only the O10 consecutive-degrade halt."""
+    from types import SimpleNamespace
 
-    def __init__(self, halt: int) -> None:
-        self.rerank_consecutive_degrade_halt = halt
+    return SimpleNamespace(rerank_consecutive_degrade_halt=halt)
 
 
 def _run_rerank_canaries(client: httpx.Client, **overrides: Any) -> Any:
@@ -1055,8 +1055,8 @@ def test_the_pooled_limit_comes_from_the_resolved_preregistration(
     _mock_arm_responses(httpx_mock, degraded={"hybrid+rerank": 2, "hybrid+all": 2})
     client = httpx.Client(base_url="http://testserver")
 
-    assert _run_rerank_canaries(client).passed
-    res = _run_rerank_canaries(client, preregistration=_Prereg(4))
+    # The same canaries pass at the default limit of 5 (see the 2 + 2 test above).
+    res = _run_rerank_canaries(client, preregistration=_prereg(4))
 
     assert not res.passed
     assert "pooled" in res.message

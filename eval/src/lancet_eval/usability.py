@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from lancet_eval.arms import canonical_arm
+from lancet_eval.arms import canonical_arm, resolve_arm
 
 if TYPE_CHECKING:
     from lancet_eval.journal import RunRecord
 
 NOTICE_CODE_GRAPH_UNAVAILABLE = 10
 NOTICE_CODE_GRAPH_ABLATION = 18
+NOTICE_CODE_RERANK_DEGRADED = 23
 
 UNUSABLE_NODE_NAMES = {"RetrieveHybrid", "AssemblePrompt", "GenerateAnswer"}
 
@@ -79,6 +80,41 @@ def has_arm_provenance(record: RunRecord) -> bool:
         for n in record.notices
     )
     return has_ablation and not has_unavailable
+
+
+def carries_graph_ablation(record: RunRecord) -> bool:
+    """Whether a record carries the GRAPH_ABLATION notice (typed code 18)."""
+    return any(
+        n.typed_code == NOTICE_CODE_GRAPH_ABLATION or n.code == "GRAPH_ABLATION"
+        for n in record.notices
+    )
+
+
+def carries_rerank_degraded(record: RunRecord) -> bool:
+    """Whether a record carries the RERANK_DEGRADED notice (typed code 23, D-134)."""
+    return any(
+        n.typed_code == NOTICE_CODE_RERANK_DEGRADED or n.code == "RERANK_DEGRADED"
+        for n in record.notices
+    )
+
+
+def has_rerank_telemetry(record: RunRecord) -> bool:
+    """Whether a record's workflow metadata carries rerank latency, cost and outcome."""
+    return record.workflow_meta is not None and record.workflow_meta.rerank is not None
+
+
+def is_graph_on_arm(label: str) -> bool:
+    """Whether a stored arm label leaves graph context on (06.3.6 D-134).
+
+    Read from the registry, so `hybrid+graph`, its alias `graph-on`, `hybrid+graph-v2`
+    and a `hybrid+all` that carries `graph_v2` are graph-on arms. A label the registry
+    does not know is not (the reader never raises). `is_graph_arm` keeps its 06.3.5
+    meaning: only the v1 graph-on arm.
+    """
+    try:
+        return not resolve_arm(label).disable_graph_context
+    except ValueError:
+        return False
 
 
 def is_graph_arm(label: str) -> bool:

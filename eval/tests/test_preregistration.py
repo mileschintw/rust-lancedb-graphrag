@@ -716,7 +716,7 @@ def test_arms_of_an_ablation_preregistration_is_reference_then_comparisons() -> 
     )
 
 
-def test_arms_of_a_lever_preregistration_is_reference_families_then_descriptive() -> None:
+def test_arms_of_a_lever_preregistration_lists_reference_families_descriptive() -> None:
     from types import SimpleNamespace
 
     from lancet_eval import preregistration

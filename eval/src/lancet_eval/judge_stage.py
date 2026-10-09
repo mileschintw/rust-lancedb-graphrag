@@ -51,7 +51,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from lancet_eval import gitcheck
-from lancet_eval.arms import ARM_REGISTRY, canonical_arm
+from lancet_eval.arms import LEGACY_ARM_LABELS, canonical_arm
 from lancet_eval.corpus import (
     NO_JUDGE_PREREGISTRATION_TOKENS,
     CorpusConfig,
@@ -80,7 +80,7 @@ from lancet_eval.thresholds import (
 
 STAGE_FILE = "judge-stage.json"
 CACHE_FILE = "judge_cache.json"
-_ARM_ORDER = {label: i for i, label in enumerate(ARM_REGISTRY)}
+_ARM_ORDER = {label: i for i, label in enumerate(LEGACY_ARM_LABELS)}
 
 
 class JudgeStageError(Exception):
@@ -457,8 +457,8 @@ def run_judge_stage(
     if rehearsal and not items:
         raise JudgeStageError("no judgeable rehearsal record: nothing to time")
     unique: dict[str, JudgeItem] = {}
-    arm_keys: dict[str, set[str]] = {arm: set() for arm in ARM_REGISTRY}
-    arm_judgeable = dict.fromkeys(ARM_REGISTRY, 0)
+    arm_keys: dict[str, set[str]] = {arm: set() for arm in LEGACY_ARM_LABELS}
+    arm_judgeable = dict.fromkeys(LEGACY_ARM_LABELS, 0)
     for item in items:
         unique.setdefault(item.key, item)
         arm_keys[item.arm].add(item.key)
@@ -571,7 +571,7 @@ def run_judge_stage(
     wall_clock = time.perf_counter() - loop_started
 
     arms: dict[str, JudgeArmCounts] = {}
-    for arm in ARM_REGISTRY:
+    for arm in LEGACY_ARM_LABELS:
         keys = arm_keys[arm]
         first_held = {k for k in keys if unique[k].arm == arm}
         entries = [cache.get(k) for k in keys]
