@@ -244,12 +244,16 @@ def make_record(
         if spec.degraded:
             notices.append(RERANK_DEGRADED)
             rerank_meta = RerankMeta(
-                latency_ms=1706, cost_credits=0.0, cost_reported=False,
+                latency_ms=1706,
+                cost_credits=0.0,
+                cost_reported=False,
                 outcome="degraded_timeout",
             )
         else:
             rerank_meta = RerankMeta(
-                latency_ms=300 + len(qid), cost_credits=0.00035, cost_reported=True,
+                latency_ms=300 + len(qid),
+                cost_credits=0.00035,
+                cost_reported=True,
                 outcome="completed",
             )
     snapshot = RetrievalSnapshot(
@@ -296,7 +300,7 @@ def write_corpus(
     token: str | None = TOKEN,
     name: str = CORPUS,
 ) -> Path:
-    """Writes the tmp `[split]` corpus under `root/eval/corpora`; returns the gold table."""
+    """Writes the tmp `[split]` corpus under `root/eval/corpora`; returns the gold."""
     corpora = root / "eval" / "corpora"
     (corpora / "levers").mkdir(parents=True, exist_ok=True)
     arm_list = ", ".join(f'"{a}"' for a in arms)
@@ -322,60 +326,52 @@ def write_corpus(
     (corpora / f"{name}.toml").write_text("\n".join([*lines, ""]), encoding="utf-8")
     rows = []
     for qid, qtype, answer in qs.g:
-        rows.append(
-            {
-                "question_id": qid,
-                "query": f"Question {qid}?",
-                "question_type": qtype,
-                "answer": answer,
-                "evidence_list": [
-                    {"title": "t", "fact": fact(qid, "a")},
-                    {"title": "t", "fact": fact(qid, "b")},
-                ],
-            }
-        )
+        rows.append({
+            "question_id": qid,
+            "query": f"Question {qid}?",
+            "question_type": qtype,
+            "answer": answer,
+            "evidence_list": [
+                {"title": "t", "fact": fact(qid, "a")},
+                {"title": "t", "fact": fact(qid, "b")},
+            ],
+        })
     for qid in qs.nulls:
-        rows.append(
-            {
-                "question_id": qid,
-                "query": f"Question {qid}?",
-                "question_type": "null_query",
-                "answer": "Insufficient information",
-                "evidence_list": [],
-            }
-        )
+        rows.append({
+            "question_id": qid,
+            "query": f"Question {qid}?",
+            "question_type": "null_query",
+            "answer": "Insufficient information",
+            "evidence_list": [],
+        })
     (corpora / "levers" / "questions.jsonl").write_text(
         "".join(json.dumps(r) + NL for r in rows), encoding="utf-8"
     )
     (corpora / "levers" / "split.json").write_text(
-        json.dumps(
-            {
-                "derivation_rule": "test",
-                "populations_sha256": HEX,
-                "diag_selection_sha256": HEX,
-                "questions_sample_sha256": HEX,
-                "dev_source": "dev.json",
-                "order_seed": 42,
-                "dev_ids": ["lv-dev1"],
-                "heldout_g_ids": qs.g_ids,
-                "heldout_null_ids": qs.nulls,
-            }
-        ),
+        json.dumps({
+            "derivation_rule": "test",
+            "populations_sha256": HEX,
+            "diag_selection_sha256": HEX,
+            "questions_sample_sha256": HEX,
+            "dev_source": "dev.json",
+            "order_seed": 42,
+            "dev_ids": ["lv-dev1"],
+            "heldout_g_ids": qs.g_ids,
+            "heldout_null_ids": qs.nulls,
+        }),
         encoding="utf-8",
     )
     gold = root / "gold_chunks.jsonl"
     gold.write_text(
         "".join(
-            json.dumps(
-                {
-                    "question_id": qid,
-                    "evidence_index": i,
-                    "title": "t",
-                    "document_id": doc_id(),
-                    "state": "in_chunk",
-                    "chunk_ids": [chunk_id(qid, which)],
-                }
-            )
+            json.dumps({
+                "question_id": qid,
+                "evidence_index": i,
+                "title": "t",
+                "document_id": doc_id(),
+                "state": "in_chunk",
+                "chunk_ids": [chunk_id(qid, which)],
+            })
             + NL
             for qid in qs.g_ids
             for i, which in enumerate(("a", "b"))

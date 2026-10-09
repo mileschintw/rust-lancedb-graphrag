@@ -31,7 +31,7 @@ from levers_fixture import (
 
 from lancet_eval import gitcheck, lever_comparison, thresholds
 from lancet_eval import p4 as p4_mod
-from lancet_eval.client import RankedCandidate
+from lancet_eval.dimensions import DimensionResult
 from lancet_eval.lever_comparison import (
     LeverComparisonError,
     all_gold_at_4,
@@ -45,7 +45,6 @@ from lancet_eval.lever_comparison import (
     write_lever_comparison,
 )
 from lancet_eval.report import CorpusReport, RunMetadata
-from lancet_eval.dimensions import DimensionResult
 
 REF = "hybrid"
 RERANK = "hybrid+rerank"
@@ -89,7 +88,9 @@ def test_a_family_of_one_is_an_unadjusted_exact_test() -> None:
 
 
 def test_no_discordant_pair_gives_p_one() -> None:
-    n_pos, n_neg, p = lever_comparison.sign_flip({"a": 1.0, "b": 0.0}, {"a": 1.0, "b": 0.0})
+    n_pos, n_neg, p = lever_comparison.sign_flip(
+        {"a": 1.0, "b": 0.0}, {"a": 1.0, "b": 0.0}
+    )
     assert (n_pos, n_neg, p) == (0, 0, 1.0)
 
 
@@ -143,9 +144,11 @@ def test_a_non_decisional_guard_reads_would_pass_or_would_fail() -> None:
 
 
 def test_the_net_loss_bound_reproduces_the_ai_spec_figure() -> None:
-    # AI-SPEC section 5: d = 4 discordant pairs, three of them a loss, is "3.2
-    # questions, 7.5 points" of 43 (stdlib Clopper-Pearson).
-    assert net_loss_upper_bound(3, 1, 43) == pytest.approx(0.075, abs=0.002)
+    # AI-SPEC section 5 (d148_null_guard.out section D): balanced b = c = d / 2 gives
+    # 3.2 questions = 7.5 points at d = 4 and 4.9 questions = 11.4 points at d = 8,
+    # of 43.
+    assert net_loss_upper_bound(2, 2, 43) == pytest.approx(0.075, abs=0.001)
+    assert net_loss_upper_bound(4, 4, 43) == pytest.approx(0.114, abs=0.001)
     assert net_loss_upper_bound(0, 0, 43) == 0.0
     big = evaluate_null_guard(5, 0, 43, 43, margin=0.10, min_pair_fraction=0.80)
     assert big.ni_label == "non-inferiority not demonstrable at this n"
@@ -182,7 +185,12 @@ def test_the_transition_table_reconciles_with_the_delta() -> None:
 
 # ---- default decisions ---------------------------------------------------------------
 
-GOOD = {"hybrid SC-1": "PASS", "hybrid SC-2": "PASS", "x SC-1": "PASS", "x SC-2": "PASS"}
+GOOD = {
+    "hybrid SC-1": "PASS",
+    "hybrid SC-2": "PASS",
+    "x SC-1": "PASS",
+    "x SC-2": "PASS",
+}
 
 
 def _decide(**over):  # type: ignore[no-untyped-def]
@@ -222,7 +230,9 @@ def test_a_non_evaluable_or_failed_guard_on_a_bound_arm_stays_off() -> None:
 
 
 def test_the_provenance_block_and_gates_gate_a_default() -> None:
-    assert _decide(provenance_passed=False)[0] == "stays off: provenance block not passed"
+    assert (
+        _decide(provenance_passed=False)[0] == "stays off: provenance block not passed"
+    )
     assert _decide(gate_reads=None)[0] == "stays off: gates not read"
     miss = {**GOOD, "x SC-2": "MISS"}
     decision, reasons = _decide(gate_reads=miss)
@@ -275,9 +285,7 @@ def _setup(
     root = tmp_path / "repo"
     gold = write_corpus(root, qs, arms)
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
-    monkeypatch.setattr(
-        thresholds, TOKEN, prereg or make_prereg(arms), raising=False
-    )
+    monkeypatch.setattr(thresholds, TOKEN, prereg or make_prereg(arms), raising=False)
     run = tmp_path / "run"
     write_journal(run, qs, spec_fn, arms)
     _minimal_report(run)
@@ -388,7 +396,9 @@ def test_a_comparison_below_the_floor_is_not_evaluable_and_m_stays(
         return Spec()
 
     run2, gold2, _ = _setup(tmp_path / "again", monkeypatch, spec8)
-    row8 = _row(build_lever_comparison(run2, gold_chunks_path=gold2), "answer_usable", RERANK)
+    row8 = _row(
+        build_lever_comparison(run2, gold_chunks_path=gold2), "answer_usable", RERANK
+    )
     assert row8["n_pairs"] == 8
     assert row8["evaluable"] is True
 
@@ -540,9 +550,12 @@ def test_the_default_row_is_one_per_lever_and_reads_the_gate_file(
     def spec(a: str, q: str) -> Spec:
         if a == REF and q in {f"lv-g00{i}" for i in range(8)}:
             return Spec(kind="wrong")
+        # the metadata arm fails on 5 of 10 nulls: 5 pairs < ceil(0.80 x 10) = 8
+        if a == METADATA and q.startswith("lv-n") and int(q[4:]) < 5:
+            return Spec(errored=True)
         return Spec()
 
-    run, gold, _ = _setup(tmp_path, monkeypatch, spec)
+    run, gold, _ = _setup(tmp_path, monkeypatch, spec, qs=make_questions(10, 10))
     gates = {
         gate: {a: {"status": "PASS"} for a in (*ARMS, "pooled")}
         for gate in ("SC-1", "SC-2")
@@ -550,7 +563,6 @@ def test_the_default_row_is_one_per_lever_and_reads_the_gate_file(
     payload = build_lever_comparison(run, gates=gates, gold_chunks_path=gold)
     decisions = {d["lever"]: d for d in payload["default_decisions"]}
     assert set(decisions) == set(DECISIONAL)
-    # the null guard of the metadata arm has only 5 nulls: not evaluable
     assert decisions[METADATA]["decision"] == "stays off: guard not evaluable"
     assert decisions[RERANK]["decision"] == "default"
     miss = {**gates, "SC-2": {**gates["SC-2"], RERANK: {"status": "MISS"}}}
@@ -559,7 +571,9 @@ def test_the_default_row_is_one_per_lever_and_reads_the_gate_file(
     assert decisions[RERANK]["decision"].startswith("owner disposition")
     no_gates = build_lever_comparison(run, gold_chunks_path=gold)
     assert (
-        next(d for d in no_gates["default_decisions"] if d["lever"] == RERANK)["decision"]
+        next(d for d in no_gates["default_decisions"] if d["lever"] == RERANK)[
+            "decision"
+        ]
         == "stays off: gates not read"
     )
 
@@ -627,7 +641,9 @@ def test_a_corpus_left_on_the_065_token_is_refused(
         build_lever_comparison(run, gold_chunks_path=gold)
 
 
-def test_the_module_never_names_a_judged_result_file_and_gates_before_it_writes() -> None:
+def test_the_module_never_names_a_judged_result_file_and_gates_before_it_writes() -> (
+    None
+):
     source = inspect.getsource(lever_comparison)
     assert "judged-result" not in source
     assert source.index("preregistration_problems(") < source.index("open(run / name")
@@ -646,5 +662,39 @@ def test_a_pairwise_population_comes_from_build_p4(
             assert math.isclose(c["coverage"], 1.0)
 
 
-def test_ranked_candidate_import_is_available() -> None:
-    assert RankedCandidate.model_fields["chunk_id"] is not None
+# ---- the command ---------------------------------------------------------------------
+
+
+def test_compare_levers_is_registered_and_exits_one_on_a_refusal(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    run, gold, _ = _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        gitcheck, "preregistration_problems", lambda *a, **k: ["not older"]
+    )
+    result = CliRunner().invoke(app, ["compare-levers", "--run", str(run)])
+    assert result.exit_code == 1
+    assert "Compare-levers refused" in result.output
+    assert not (run / "lever-comparison.json").exists()
+
+
+def test_compare_levers_writes_both_files_and_prints_the_default_rows(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    run, gold, _ = _setup(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "lancet_eval.lever_comparison._default_gold_chunks_path", lambda: gold
+    )
+    result = CliRunner().invoke(app, ["compare-levers", "--run", str(run)])
+    assert result.exit_code == 0, result.output
+    assert "Default decision hybrid+rerank" in result.output
+    assert (run / "lever-comparison.json").is_file()
+    assert (run / "lever-comparison.md").is_file()
