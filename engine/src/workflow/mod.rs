@@ -315,6 +315,11 @@ impl WorkflowContext {
 /// True when any notice in the terminal notice set is in the included code set or when
 /// the answer basis is anything other than Retrieval. Excluded codes (NoEvidence, ModelNotice,
 /// ModelWarning, CitationRepaired, GraphAblation, and Unspecified) evaluate to false.
+///
+/// A `BasisReconciled` notice whose message is exactly
+/// [`crate::generation::GROUNDED_ABSTENTION_NORMALISED_NOTICE`] discloses a grounded
+/// `Insufficient information` answer that cites the evidence it checked, so it does not count
+/// (D-158 IN-02). Every other reconciliation still does.
 pub fn derive_degraded_mode(
     notices: &[Notice],
     answer_basis: AnswerBasis,
@@ -325,6 +330,11 @@ pub fn derive_degraded_mode(
     for notice in notices {
         if let Ok(code) = NoticeCode::try_from(notice.typed_code) {
             match code {
+                NoticeCode::BasisReconciled => {
+                    if notice.message != crate::generation::GROUNDED_ABSTENTION_NORMALISED_NOTICE {
+                        return true;
+                    }
+                }
                 NoticeCode::GraphUnavailable
                 | NoticeCode::GraphDegraded
                 | NoticeCode::GraphTimeout
@@ -333,7 +343,6 @@ pub fn derive_degraded_mode(
                 | NoticeCode::RetrievalFailed
                 | NoticeCode::CitationDropped
                 | NoticeCode::ModelOnly
-                | NoticeCode::BasisReconciled
                 | NoticeCode::IndexRebuildFailed
                 | NoticeCode::IndexStale
                 | NoticeCode::IndexGenerationMismatch
