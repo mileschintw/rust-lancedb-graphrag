@@ -741,6 +741,67 @@ def test_the_table_is_byte_identical_when_regenerated(
     assert {p.name: p.read_bytes() for p in paths["out_dir"].iterdir()} == first
 
 
+def _drop_gold_rows(paths: dict[str, Path], *qids: str) -> None:
+    rows = [
+        json.loads(line)
+        for line in paths["gold_chunks"].read_text(encoding="utf-8").splitlines()
+    ]
+    _write_jsonl(
+        paths["gold_chunks"], [r for r in rows if r["question_id"] not in qids]
+    )
+
+
+def test_d187_a_null_query_question_without_a_gold_row_gets_the_empty_gold_set(
+    tmp_path: Path, open_gate: list[dict[str, object]]
+) -> None:
+    paths = _make_world(tmp_path, 38)
+    # q000 is alias_split-shaped (its alias cites the gold chunk); q001 is absent.
+    _drop_gold_rows(paths, "q000", "q001")
+    build_table(**paths)  # type: ignore[arg-type]
+    rows = {
+        r["question_id"]: r
+        for r in (
+            json.loads(line)
+            for line in (paths["out_dir"] / "graph_diagnosis.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
+    }
+    assert len(rows) == 38
+    for qid in ("q000", "q001"):
+        assert rows[qid]["evidence_ids"]["gold_chunk_ids"] == []
+        assert "alias_split" not in rows[qid]["memberships"]
+        assert rows[qid]["evidence_ids"]["alias_entity_ids"] == []
+    # Labelled by the remaining predicates: q000 is two seeded mentions with no path.
+    assert rows["q000"]["label"] == "missing_edge"
+    assert rows["q001"]["label"] == "absent"
+    text = (paths["out_dir"] / "graph_diagnosis.md").read_text(encoding="utf-8")
+    assert "D-187 disclosure" in text
+    assert "empty-gold questions (D-187), 2: q000, q001" in text
+    assert "tilt the plurality toward `absent`" in text
+    assert "over the 36 questions with a non-empty gold set" in text
+    assert "follows the pre-registered plurality over all 38" in text
+    assert "diagonal by construction" in text
+
+
+def test_d187_a_question_with_evidence_and_no_gold_row_still_refuses(
+    tmp_path: Path, open_gate: list[dict[str, object]]
+) -> None:
+    paths = _make_world(tmp_path, 38)
+    questions = [
+        json.loads(line)
+        for line in paths["questions"].read_text(encoding="utf-8").splitlines()
+    ]
+    for row in questions:
+        if row["question_id"] == "q003":
+            row["evidence_list"] = [{"fact": "a fact"}]
+    _write_jsonl(paths["questions"], questions)
+    _drop_gold_rows(paths, "q003")
+    with pytest.raises(GraphDiagnosisError, match="gold chunks have no row for q003"):
+        build_table(**paths)  # type: ignore[arg-type]
+    assert not paths["out_dir"].exists()
+
+
 def test_spot_check_sample_reads_only_the_table_and_is_deterministic(
     tmp_path: Path, open_gate: list[dict[str, object]]
 ) -> None:

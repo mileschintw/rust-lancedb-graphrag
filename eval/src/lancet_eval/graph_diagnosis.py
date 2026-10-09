@@ -57,6 +57,24 @@ BIAS_DISCLOSURE = (
     "use vectors (D-138)."
 )
 
+EMPTY_GOLD_DISCLOSURE = (
+    "D-187 disclosure: a population question with no gold-chunk row and an empty "
+    "`evidence_list` in the questions file (a `null_query` question) has the empty "
+    "gold set, the literal reading of the rule's \"the gold chunk ids of the "
+    'question". For those questions `alias_split` cannot hold (it needs an entity '
+    'citing a gold chunk) and `absent` reduces to "some mention has no '
+    'token-matching entity", which can tilt the plurality toward `absent` and so '
+    "toward `none`."
+)
+MATRIX_DIAGONAL_NOTE = (
+    "The three non-residual predicates are pairwise disjoint as pre-registered "
+    "(plan 06.3.6-02 SUMMARY): `alias_split` needs an entity citing a gold chunk and "
+    "`absent` needs none; `missing_edge` requires `alias_split` false and every "
+    "mention seeded, which makes some entity name each mention and so `absent` "
+    "false. The D-171 precedence therefore never changes a label and this matrix is "
+    "diagonal by construction."
+)
+
 _BRANCH: dict[str, Lever2] = {
     "alias_split": "entity_resolution",
     "missing_edge": "graph_list_precision",
@@ -459,6 +477,13 @@ def load_questions(path: Path | str) -> dict[str, str]:
     return {r["question_id"]: r["query"] for r in _read_jsonl(Path(path))}
 
 
+def load_empty_evidence_ids(path: Path | str) -> frozenset[str]:
+    """Question ids whose `evidence_list` is empty; nothing else of a row is kept."""
+    return frozenset(
+        r["question_id"] for r in _read_jsonl(Path(path)) if not r.get("evidence_list")
+    )
+
+
 def _evidence_for(
     record: RunRecord,
     probe_row: Mapping[str, Any],
@@ -545,6 +570,9 @@ def _render_table_md(
 ) -> str:
     counts = class_counts(rows, rule)
     by_set, pair = membership_matrix(rows, rule)
+    empty_gold = sorted(header["empty_gold_ids"])
+    non_empty = [r for r in rows if r["question_id"] not in set(empty_gold)]
+    non_empty_counts = class_counts(non_empty, rule)
     lines = [
         "# Graph diagnosis table (D-137)",
         "",
@@ -569,16 +597,31 @@ def _render_table_md(
         "",
         f"> {BIAS_DISCLOSURE}",
         "",
+        f"> {EMPTY_GOLD_DISCLOSURE}",
+        "",
+        f"- empty-gold questions (D-187), {len(empty_gold)}: "
+        + (", ".join(empty_gold) if empty_gold else "none"),
+        "",
         "## Single-label counts (first match in precedence order)",
         "",
         "| class | count |",
         "|---|---|",
     ]
     lines += [f"| {cls} | {counts[cls]} |" for cls in rule.classes]
+    lines += [
+        "",
+        f"Descriptive only: single-label counts over the {len(non_empty)} questions "
+        f"with a non-empty gold set (excluding the {len(empty_gold)} empty-gold "
+        "questions), beside the counts over all "
+        f"{len(rows)} above: "
+        + ", ".join(f"{cls} {non_empty_counts[cls]}" for cls in rule.classes)
+        + f". The selection follows the pre-registered plurality over all {len(rows)}.",
+    ]
     lines += ["", "## Multi-membership matrix", "", "By exact membership set:", ""]
     lines += ["| memberships | questions |", "|---|---|"]
     for members, n in sorted(by_set.items()):
         lines.append(f"| {' + '.join(members)} | {n} |")
+    lines += ["", MATRIX_DIAGONAL_NOTE]
     lines += ["", "Pairwise overlap (diagonal: questions holding the class):", ""]
     lines.append("| | " + " | ".join(rule.classes) + " |")
     lines.append("|---|" + "---|" * len(rule.classes))
@@ -642,11 +685,18 @@ def build_table(
         raise GraphDiagnosisError(f"questions file lacks population ids: {missing}")
     probe = {r["question_id"]: r for r in _read_jsonl(seed_probe) if "question_id" in r}
     gold = _load_gold_chunks_by_question(gold_chunks)
-    for qid in pop:
+    empty_evidence = load_empty_evidence_ids(questions)
+    empty_gold_ids: list[str] = []
+    for qid in sorted(pop):
         if qid not in probe:
             raise GraphDiagnosisError(f"seed probe has no row for {qid}")
         if qid not in gold:
-            raise GraphDiagnosisError(f"gold chunks have no row for {qid}")
+            # D-187: no gold row AND an empty evidence_list is the empty gold set; a
+            # missing row for a question with evidence still refuses.
+            if qid not in empty_evidence:
+                raise GraphDiagnosisError(f"gold chunks have no row for {qid}")
+            gold[qid] = []
+            empty_gold_ids.append(qid)
     dump = GraphDump.from_dir(graph_dump)
     for qid in pop:
         for seed in probe[qid].get("seeds", ()):
@@ -675,6 +725,7 @@ def build_table(
             "dump_meta.json": sha256_file(graph_dump / "dump_meta.json"),
         },
         "dump_meta": dump.meta,
+        "empty_gold_ids": empty_gold_ids,
     }
     out = Path(out_dir)
     _write_text(
