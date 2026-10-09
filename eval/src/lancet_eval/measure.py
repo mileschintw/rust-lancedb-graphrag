@@ -406,6 +406,8 @@ def measure_one(
                 graph_boosted_chunk_count=outcome.workflow_meta.graph_boosted_chunk_count,
                 graph_degree_capped_count=outcome.workflow_meta.graph_degree_capped_count,
                 graph_seed_document_ids=outcome.workflow_meta.graph_seed_document_ids,
+                rerank=outcome.workflow_meta.rerank,
+                query_embedding_retries=outcome.workflow_meta.query_embedding_retries,
             )
 
         return MeasurementRecord(
