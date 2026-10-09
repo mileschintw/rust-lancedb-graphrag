@@ -66,7 +66,9 @@ def test_six_censored_is_a_lower_bound() -> None:
     assert rec["p95_ms"] == 1706.0
 
 
-def test_five_censored_but_one_below_the_95th_order_statistic_is_a_lower_bound() -> None:
+def test_five_censored_but_one_below_the_95th_order_statistic_is_a_lower_bound() -> (
+    None
+):
     uncensored = [float(v) for v in range(100, 195)]
     rec = derive_from_observations(
         uncensored, [1706.0] * 4 + [120.0], retrieve_timeout_ms=2500
@@ -93,7 +95,9 @@ def test_the_rule_t_is_ceil_1_5_p95_and_nests_at_1137_not_1138() -> None:
     assert over["decision"] == "does_not_fit"
 
 
-def test_a_lower_bound_that_already_does_not_fit_is_decided_otherwise_undecided() -> None:
+def test_a_lower_bound_that_already_does_not_fit_is_decided_otherwise_undecided() -> (
+    None
+):
     low = [float(v) for v in range(100, 194)]
     undecided = derive_from_observations(low, [800.0] * 6, retrieve_timeout_ms=2500)
     assert undecided["label"] == "lower_bound"
@@ -181,9 +185,7 @@ def _dev_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qs: Questions, s
     return run, gold
 
 
-def test_analyse_reports_paired_deltas_without_a_p_value(
-    tmp_path, monkeypatch
-) -> None:
+def test_analyse_reports_paired_deltas_without_a_p_value(tmp_path, monkeypatch) -> None:
     qs = make_questions(10, 5)
 
     def spec(a: str, q: str) -> Spec:
@@ -231,7 +233,10 @@ def test_analyse_refuses_a_journal_holding_a_non_dev_question(
     qs = make_questions(4, 2)
     run, gold = _dev_setup(tmp_path, monkeypatch, qs, lambda a, q: Spec())
     stray = make_record(
-        "hybrid", "lv-h1", Spec(), Questions(g=[("lv-h1", "comparison_query", "Yes")]),
+        "hybrid",
+        "lv-h1",
+        Spec(),
+        Questions(g=[("lv-h1", "comparison_query", "Yes")]),
         corpus=DEV,
     )
     Journal(run / "journal.jsonl").append(stray)
@@ -321,12 +326,17 @@ def _journal(
     repo: Path, rel: str, created_at: float, qids: list[str], corpus: str = "levers_dev"
 ) -> None:
     lines = [
-        json.dumps(
-            {"type": "header", "corpus": corpus, "partial": False, "created_at": created_at}
-        )
+        json.dumps({
+            "type": "header",
+            "corpus": corpus,
+            "partial": False,
+            "created_at": created_at,
+        })
     ]
     for qid in qids:
-        rec = RunRecord(corpus=corpus, question_id=qid, graph_arm="hybrid", outcome="success")
+        rec = RunRecord(
+            corpus=corpus, question_id=qid, graph_arm="hybrid", outcome="success"
+        )
         lines.append(rec.model_dump_json())
     _write(repo, rel, ("\n".join(lines) + "\n").encode())
 
@@ -388,7 +398,10 @@ def test_a_third_read_of_a_lever_fails(lrepo: Path) -> None:
     _journal(lrepo, "eval/runs/s3/journal.jsonl", T0 + 600, ["dv1"])
     _commit(lrepo, "session 3", T0 + 650)
     _add(
-        lrepo, "read", {"lever": "rerank", "read": 3, "run_dir": "eval/runs/s3"}, T0 + 700
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 3, "run_dir": "eval/runs/s3"},
+        T0 + 700,
     )
     problems = _lint(lrepo)
     assert any("at most 2 reads" in p for p in problems)
@@ -399,8 +412,18 @@ def test_a_read_two_whose_reason_was_committed_late_fails(lrepo: Path) -> None:
     _journal(lrepo, "eval/runs/s1/journal.jsonl", T0 + 100, ["dv1"])
     _journal(lrepo, "eval/runs/s2/journal.jsonl", T0 + 400, ["dv1"])
     _commit(lrepo, "sessions", T0 + 450)
-    _add(lrepo, "read", {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"}, T0 + 500)
-    _add(lrepo, "read", {"lever": "rerank", "read": 2, "run_dir": "eval/runs/s2"}, T0 + 510)
+    _add(
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"},
+        T0 + 500,
+    )
+    _add(
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 2, "run_dir": "eval/runs/s2"},
+        T0 + 510,
+    )
     # the reason is committed AFTER the read-2 journal was created
     _add(lrepo, "read2_reason", {"lever": "rerank", "reason": "late"}, T0 + 520)
     problems = _lint(lrepo)
@@ -412,8 +435,18 @@ def test_a_read_two_with_no_reason_entry_fails(lrepo: Path) -> None:
     _journal(lrepo, "eval/runs/s1/journal.jsonl", T0 + 100, ["dv1"])
     _journal(lrepo, "eval/runs/s2/journal.jsonl", T0 + 400, ["dv1"])
     _commit(lrepo, "sessions", T0 + 450)
-    _add(lrepo, "read", {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"}, T0 + 500)
-    _add(lrepo, "read", {"lever": "rerank", "read": 2, "run_dir": "eval/runs/s2"}, T0 + 510)
+    _add(
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"},
+        T0 + 500,
+    )
+    _add(
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 2, "run_dir": "eval/runs/s2"},
+        T0 + 510,
+    )
     assert any("read2_reason" in p for p in _lint(lrepo))
 
 
@@ -421,7 +454,12 @@ def test_a_dev_journal_holding_a_held_out_id_fails(lrepo: Path) -> None:
     _add(lrepo, "rule", {"rule_id": DEV_PROTOCOL_RULE_ID}, T0 + 10)
     _journal(lrepo, "eval/runs/s1/journal.jsonl", T0 + 100, ["dv1", "hg1"])
     _commit(lrepo, "session 1", T0 + 150)
-    _add(lrepo, "read", {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"}, T0 + 200)
+    _add(
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"},
+        T0 + 200,
+    )
     problems = _lint(lrepo)
     assert any("dev IDs only" in p and "hg1" in p for p in problems)
 
@@ -430,7 +468,12 @@ def test_a_read_one_before_the_rules_entry_commit_fails(lrepo: Path) -> None:
     _journal(lrepo, "eval/runs/s1/journal.jsonl", T0 + 50, ["dv1"])
     _commit(lrepo, "session 1", T0 + 60)
     _add(lrepo, "rule", {"rule_id": DEV_PROTOCOL_RULE_ID}, T0 + 100)
-    _add(lrepo, "read", {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"}, T0 + 200)
+    _add(
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"},
+        T0 + 200,
+    )
     problems = _lint(lrepo)
     assert any("rules entry" in p for p in problems)
 
@@ -441,7 +484,12 @@ def test_a_read_with_no_dev_protocol_rule_fails_but_er_theta1_does_not_count(
     _add(lrepo, "rule", {"rule_id": "er-theta1"}, T0 + 10)
     _journal(lrepo, "eval/runs/s1/journal.jsonl", T0 + 100, ["dv1"])
     _commit(lrepo, "session 1", T0 + 150)
-    _add(lrepo, "read", {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"}, T0 + 200)
+    _add(
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"},
+        T0 + 200,
+    )
     assert any(DEV_PROTOCOL_RULE_ID in p for p in _lint(lrepo))
 
 
@@ -450,7 +498,9 @@ def test_an_uncommitted_rule_entry_fails_a_read_that_needs_it(lrepo: Path) -> No
     _commit(lrepo, "session 1", T0 + 150)
     ledger_add(lrepo / LEDGER_REL, "rule", {"rule_id": DEV_PROTOCOL_RULE_ID})
     ledger_add(
-        lrepo / LEDGER_REL, "read", {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"}
+        lrepo / LEDGER_REL,
+        "read",
+        {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"},
     )
     assert any("not committed" in p for p in _lint(lrepo))
 
@@ -460,7 +510,9 @@ def test_an_uncommitted_read_entry_alone_is_fine(lrepo: Path) -> None:
     _journal(lrepo, "eval/runs/s1/journal.jsonl", T0 + 100, ["dv1"])
     _commit(lrepo, "session 1", T0 + 150)
     ledger_add(
-        lrepo / LEDGER_REL, "read", {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"}
+        lrepo / LEDGER_REL,
+        "read",
+        {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"},
     )
     assert _lint(lrepo) == []
 
@@ -470,7 +522,11 @@ def test_a_held_out_side_journal_created_before_the_freeze_commit_fails(
 ) -> None:
     _well_formed(lrepo)
     _journal(
-        lrepo, "eval/runs/rehearsal/journal.jsonl", T0 + 550, ["hg1"], "levers_rehearsal"
+        lrepo,
+        "eval/runs/rehearsal/journal.jsonl",
+        T0 + 550,
+        ["hg1"],
+        "levers_rehearsal",
     )
     _commit(lrepo, "rehearsal journal", T0 + 560)
     held = [lrepo / "eval/runs/rehearsal/journal.jsonl"]
@@ -480,7 +536,11 @@ def test_a_held_out_side_journal_created_before_the_freeze_commit_fails(
     assert any("before the freeze" in p for p in _lint(lrepo, heldout_journals=held))
     # a journal created after the freeze commit is fine
     _journal(
-        lrepo, "eval/runs/drive/journal.jsonl", T0 + 700, ["hg1", "hn1"], "levers_heldout"
+        lrepo,
+        "eval/runs/drive/journal.jsonl",
+        T0 + 700,
+        ["hg1", "hn1"],
+        "levers_heldout",
     )
     _commit(lrepo, "drive journal", T0 + 710)
     ok = [lrepo / "eval/runs/drive/journal.jsonl"]
@@ -492,7 +552,12 @@ def test_a_dev_read_listed_after_the_freeze_fails(lrepo: Path) -> None:
     _add(lrepo, "freeze", {"note": "freeze"}, T0 + 600)
     _journal(lrepo, "eval/runs/s9/journal.jsonl", T0 + 700, ["dv1"])
     _commit(lrepo, "late session", T0 + 710)
-    _add(lrepo, "read", {"lever": "metadata", "read": 1, "run_dir": "eval/runs/s9"}, T0 + 720)
+    _add(
+        lrepo,
+        "read",
+        {"lever": "metadata", "read": 1, "run_dir": "eval/runs/s9"},
+        T0 + 720,
+    )
     assert any("after the freeze" in p for p in _lint(lrepo))
 
 
@@ -506,7 +571,12 @@ def test_the_cli_entry_exits_non_zero_on_a_violation(lrepo: Path) -> None:
     _add(lrepo, "rule", {"rule_id": DEV_PROTOCOL_RULE_ID}, T0 + 10)
     _journal(lrepo, "eval/runs/s1/journal.jsonl", T0 + 100, ["dv1", "hg1"])
     _commit(lrepo, "session 1", T0 + 150)
-    _add(lrepo, "read", {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"}, T0 + 200)
+    _add(
+        lrepo,
+        "read",
+        {"lever": "rerank", "read": 1, "run_dir": "eval/runs/s1"},
+        T0 + 200,
+    )
     args = [
         "lint-ledger",
         "--ledger",
@@ -525,3 +595,30 @@ def test_the_module_names_the_three_command_words() -> None:
     source = inspect.getsource(dev_reads)
     for word in ("censored_above_p95_rank", "lint-ledger", "derive-rerank-timeout"):
         assert word in source
+
+
+def test_the_dev_reads_command_mirrors_the_module(tmp_path: Path) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    path = tmp_path / "dev-reads.jsonl"
+    add = CliRunner().invoke(
+        app,
+        [
+            "dev-reads",
+            "ledger-add",
+            "--kind",
+            "rule",
+            "--json",
+            json.dumps({"rule_id": DEV_PROTOCOL_RULE_ID}),
+            "--ledger",
+            str(path),
+        ],
+    )
+    assert add.exit_code == 0, add.output
+    assert read_ledger(path)[0]["rule_id"] == DEV_PROTOCOL_RULE_ID
+    missing = CliRunner().invoke(
+        app, ["dev-reads", "lint-ledger", "--ledger", str(tmp_path / "nope.jsonl")]
+    )
+    assert missing.exit_code == 1

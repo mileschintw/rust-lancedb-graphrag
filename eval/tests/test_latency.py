@@ -398,7 +398,7 @@ def test_the_d152_relation_is_opt_in_and_legacy_budgets_are_unchanged():
 
 
 def test_the_d152_relation_holds_two_embedding_attempts_the_jitter_and_the_graph_op():
-    """graph_node >= 2 x query_embedding + 250 + graph_operation + slack (D-152, D-188)."""
+    """graph_node >= 2 x query_embedding + 250 + graph_operation + slack (D-152)."""
     # config/config.toml: 2 x 2000 + 250 + 2424 = 6674 (+ 500 slack) <= 15000
     good = {
         "graph_node_timeout_ms": 15000,

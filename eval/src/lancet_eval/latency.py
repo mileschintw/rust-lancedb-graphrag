@@ -445,11 +445,24 @@ class FullNestingReport:
     resolved_budgets: dict[str, int]
 
 
+#: 06.3.6 D-135: the 06.3.4.1 rule value that bounds the search inside RetrieveHybrid
+#: (``config.toml`` ``retrieve``-side search budget), so the rerank gets
+#: ``retrieve_timeout_ms - 294 - slack``. AI-SPEC 4, "The timeout (D-135)".
+RETRIEVE_SEARCH_ALLOWANCE_MS = 294
+#: 06.3.6 D-152: the graph node may spend both query-embedding attempts and one retry
+#: jitter pause (``RETRY_JITTER_MAX_MS``, engine ``graph_context.rs``) before the graph
+#: operation.
+GRAPH_EMBEDDING_ATTEMPTS = 2
+GRAPH_RETRY_JITTER_ALLOWANCE_MS = 250
+
+
 def check_nesting_invariants(
     budgets: dict[str, int],
     required_slack_ms: float = 500.0,
+    *,
+    retry_aware: bool = False,
 ) -> FullNestingReport:
-    """Audit nesting relationships in the 7-field budget set.
+    """Audit nesting relationships in the budget set.
 
     Incoherence rule: outer budget must be strictly greater than inner sum + slack.
     If outer <= inner sum, it is reported as a violation, and the enclosing budget
@@ -457,6 +470,17 @@ def check_nesting_invariants(
     Inner budgets are never shaved down.
     Outer keys absent from ``budgets`` are skipped: they are not treated as 0
     and must not be filled in from inner sum + slack.
+
+    Two 06.3.6 relations follow the original two:
+
+    * the rerank relation, ``retrieve_timeout_ms >= rerank_timeout_ms +
+      RETRIEVE_SEARCH_ALLOWANCE_MS + slack`` (D-135), checked whenever both keys are
+      present, so a legacy budget set (which has no ``rerank_timeout_ms``) is unchanged;
+    * the D-152 graph relation, ``graph_node_timeout_ms >= 2 x
+      query_embedding_timeout_ms + 250 + graph_operation_timeout_ms + slack``, checked
+      only with ``retry_aware=True`` and all three keys present. It is opt-in because a
+      06.3.3 derivation was made before the retry existed and must keep resolving to the
+      same values.
     """
     resolved = dict(budgets)
     present = set(budgets)
@@ -527,6 +551,78 @@ def check_nesting_invariants(
                 is_violation=is_viol_2,
                 adjusted_outer_ms=adj_2,
                 is_invariant_driven=inv_driven_2,
+            )
+        )
+
+    # Relationship 3 (06.3.6 D-135): RetrieveHybrid contains the search and the rerank.
+    if "retrieve_timeout_ms" in present and "rerank_timeout_ms" in present:
+        rerank = resolved["rerank_timeout_ms"]
+        ret_outer = resolved["retrieve_timeout_ms"]
+        inner_sum_3 = rerank + RETRIEVE_SEARCH_ALLOWANCE_MS
+        slack_3 = ret_outer - inner_sum_3
+        is_viol_3 = slack_3 < required_slack_ms
+        adj_3 = ret_outer
+        if is_viol_3:
+            has_violations = True
+            adj_3 = int(math.ceil(inner_sum_3 + required_slack_ms))
+            resolved["retrieve_timeout_ms"] = adj_3
+        groups.append(
+            NestingGroupReport(
+                outer_name="retrieve_timeout_ms",
+                outer_budget_ms=ret_outer,
+                inner_budgets={
+                    "rerank_timeout_ms": rerank,
+                    "retrieve_search_allowance_ms": RETRIEVE_SEARCH_ALLOWANCE_MS,
+                },
+                inner_sum_ms=inner_sum_3,
+                slack_ms=slack_3,
+                fires_first="rerank_timeout_ms"
+                if rerank < ret_outer
+                else "retrieve_timeout_ms",
+                is_violation=is_viol_3,
+                adjusted_outer_ms=adj_3,
+                is_invariant_driven=is_viol_3,
+            )
+        )
+
+    # Relationship 4 (06.3.6 D-152, opt in): ExtractGraphContext contains both
+    # query-embedding attempts, the retry jitter and the graph operation.
+    if retry_aware and {
+        "graph_node_timeout_ms",
+        "query_embedding_timeout_ms",
+        "graph_operation_timeout_ms",
+    } <= present:
+        graph_outer = resolved["graph_node_timeout_ms"]
+        embedding_all = GRAPH_EMBEDDING_ATTEMPTS * resolved["query_embedding_timeout_ms"]
+        inner_sum_4 = (
+            embedding_all
+            + GRAPH_RETRY_JITTER_ALLOWANCE_MS
+            + resolved["graph_operation_timeout_ms"]
+        )
+        slack_4 = graph_outer - inner_sum_4
+        is_viol_4 = slack_4 < required_slack_ms
+        adj_4 = graph_outer
+        if is_viol_4:
+            has_violations = True
+            adj_4 = int(math.ceil(inner_sum_4 + required_slack_ms))
+            resolved["graph_node_timeout_ms"] = adj_4
+        groups.append(
+            NestingGroupReport(
+                outer_name="graph_node_timeout_ms",
+                outer_budget_ms=graph_outer,
+                inner_budgets={
+                    "query_embedding_attempts_ms": embedding_all,
+                    "retry_jitter_allowance_ms": GRAPH_RETRY_JITTER_ALLOWANCE_MS,
+                    "graph_operation_timeout_ms": resolved["graph_operation_timeout_ms"],
+                },
+                inner_sum_ms=inner_sum_4,
+                slack_ms=slack_4,
+                fires_first="graph_operation_timeout_ms"
+                if resolved["graph_operation_timeout_ms"] < graph_outer
+                else "graph_node_timeout_ms",
+                is_violation=is_viol_4,
+                adjusted_outer_ms=adj_4,
+                is_invariant_driven=is_viol_4,
             )
         )
 

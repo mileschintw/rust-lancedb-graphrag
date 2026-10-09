@@ -1058,6 +1058,24 @@ def compare_levers(
         line(f"Wrote {run / name}")
 
 
+@app.command(
+    "dev-reads",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def dev_reads_command(ctx: typer.Context) -> None:
+    """Dev-read analysis, the rerank timeout derivation and the dev-read ledger.
+
+    Mirrors `python -m lancet_eval.dev_reads`: `analyse`, `derive-rerank-timeout`,
+    `ledger-add`, `render-ledger` and `lint-ledger` (D-135, D-154). `lint-ledger`
+    exits non-zero on any violation of the dev protocol.
+    """
+    from lancet_eval.dev_reads import main as dev_reads_main
+
+    code = dev_reads_main(list(ctx.args))
+    if code:
+        raise typer.Exit(code=code)
+
+
 def _normalize_ws(text: str) -> str:
     """Whitespace and case normalization for containment matching."""
     return " ".join(text.split()).lower()
