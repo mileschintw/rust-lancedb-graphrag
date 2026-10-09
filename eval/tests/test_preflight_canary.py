@@ -538,6 +538,13 @@ def _jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _arm_of_body(body: dict[str, Any]) -> str:
     """The arm a request body asks for, by the fields `request_fields` produces."""
+    levers = tuple(body.get("levers") or ())
+    if levers:
+        from lancet_eval.arms import ARM_REGISTRY
+
+        return next(
+            label for label, spec in ARM_REGISTRY.items() if spec.levers == levers
+        )
     mode = body.get("retrieval_mode")
     if mode == "dense_only":
         return "dense-only"
@@ -557,12 +564,33 @@ def _mock_arm_responses(
     bm25_count_on_dense: int = 0,
     chunk_count: int = 2,
     retrieve_ms: float = 100.0,
+    degraded: dict[str, int] | None = None,
+    lever_echo: dict[str, list[str]] | None = None,
+    omit_rerank_meta: tuple[str, ...] = (),
+    leak_rerank: tuple[str, ...] = (),
 ) -> None:
-    """A well-formed answer for each arm, and one fault per keyword when asked."""
+    """A well-formed answer for each arm, and one fault per keyword when asked.
+
+    `degraded` maps an arm to the number of its first canaries that carry the
+    RERANK_DEGRADED notice (typed code 23) and a degraded rerank outcome.
+    """
+    seen_calls: dict[str, int] = {}
 
     def sse_cb(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.read().decode("utf-8"))
         arm = _arm_of_body(body)
+        nth = seen_calls.get(arm, 0)
+        seen_calls[arm] = nth + 1
+        levers = list(body.get("levers") or [])
+        degrade_this = nth < (degraded or {}).get(arm, 0)
+        rerank_meta: dict[str, Any] | None = None
+        if ("rerank" in levers or arm in leak_rerank) and arm not in omit_rerank_meta:
+            rerank_meta = {
+                "latency_ms": 3000 if degrade_this else 120,
+                "cost_credits": 0.0 if degrade_this else 4.4e-07,
+                "cost_reported": not degrade_this,
+                "outcome": "degraded_timeout" if degrade_this else "completed",
+            }
         graph_off = bool(body.get("disable_graph_context"))
         mode = body.get("retrieval_mode") or "hybrid"
         notices = []
@@ -572,6 +600,14 @@ def _mock_arm_responses(
                     "code": "GRAPH_ABLATION",
                     "typed_code": 18,
                     "message": "Graph disabled by request",
+                }
+            )
+        if degrade_this and "rerank" in levers:
+            notices.append(
+                {
+                    "code": "RERANK_DEGRADED",
+                    "typed_code": 23,
+                    "message": "rerank degraded",
                 }
             )
         chunks = [
@@ -604,6 +640,9 @@ def _mock_arm_responses(
             "bm25_weight": 1.0,
             "retrieved_chunks": chunks,
         }
+        echoed_levers = (lever_echo or {}).get(arm, levers)
+        if echoed_levers:
+            snapshot["levers"] = echoed_levers
         if arm not in drop_ranking:
             snapshot["pre_truncation_ranking"] = ranking
         events: list[tuple[str, dict[str, Any]]] = [
@@ -629,6 +668,7 @@ def _mock_arm_responses(
                             else chunk_count
                         ),
                         "graph_node_count": 0,
+                        **({"rerank": rerank_meta} if rerank_meta else {}),
                     },
                 },
             ),
@@ -907,3 +947,223 @@ def test_preflight_with_an_unloadable_corpus_config_fails_closed_without_a_reque
     assert "broken_heldout" in results[0].message
     assert "failed to load" in results[0].message
     assert seen == []
+
+
+# --- 06.3.6-07: rerank canaries counted per arm and pooled (D-134, O10 / D-174) ---
+
+_RERANK_ARMS = ["hybrid", "hybrid+rerank", "hybrid+all"]
+
+
+class _Prereg:
+    """A synthetic pre-registration carrying only the O10 consecutive-degrade halt."""
+
+    def __init__(self, halt: int) -> None:
+        self.rerank_consecutive_degrade_halt = halt
+
+
+def _run_rerank_canaries(client: httpx.Client, **overrides: Any) -> Any:
+    overrides.setdefault("arms", _RERANK_ARMS)
+    return _run_arm_canaries(client, **overrides)
+
+
+def test_the_preflight_degrade_halt_is_the_o10_consecutive_count() -> None:
+    assert preflight_module.PREFLIGHT_RERANK_DEGRADE_HALT == 5
+
+
+def test_a_lever_arm_canary_sends_its_levers(httpx_mock: HTTPXMock) -> None:
+    _mock_arm_responses(httpx_mock)
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert res.passed, res.message
+    bodies = _request_bodies(httpx_mock)
+    assert len(bodies) == 9
+    assert sum(1 for b in bodies if b.get("levers") == ["rerank"]) == 3
+    assert sum(1 for b in bodies if "levers" not in b) == 3
+    assert res.detail["rerank_degraded_by_arm"] == {"hybrid+rerank": 0, "hybrid+all": 0}
+
+
+def test_one_degraded_rerank_canary_passes_and_is_reported(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, degraded={"hybrid+rerank": 1})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert res.passed, res.message
+    assert "rerank degraded on 1 of 6 rerank-arm canaries" in res.message
+    assert res.detail["rerank_degraded_by_arm"] == {"hybrid+rerank": 1, "hybrid+all": 0}
+    assert res.detail["rerank_degraded_total"] == 1
+    assert res.detail["rerank_canary_total"] == 6
+
+
+def test_two_of_three_degraded_on_each_rerank_arm_passes_and_is_reported(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, degraded={"hybrid+rerank": 2, "hybrid+all": 2})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert res.passed, res.message
+    assert "rerank degraded on 4 of 6 rerank-arm canaries" in res.message
+    assert res.detail["rerank_degraded_by_arm"] == {"hybrid+rerank": 2, "hybrid+all": 2}
+
+
+def test_an_arm_with_no_successful_rerank_canary_fails_and_is_named(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, degraded={"hybrid+rerank": 3})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert not res.passed
+    assert "hybrid+rerank" in res.message
+    assert "no successful rerank canary" in res.message
+    assert "hybrid+all has no successful" not in res.message
+
+
+def test_five_of_six_degraded_fails_on_the_pooled_count(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, degraded={"hybrid+rerank": 3, "hybrid+all": 2})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert not res.passed
+    assert "pooled" in res.message
+
+
+def test_all_six_degraded_fails(httpx_mock: HTTPXMock) -> None:
+    _mock_arm_responses(httpx_mock, degraded={"hybrid+rerank": 3, "hybrid+all": 3})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert not res.passed
+    assert "hybrid+rerank" in res.message
+    assert "hybrid+all" in res.message
+
+
+def test_the_pooled_limit_comes_from_the_resolved_preregistration(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, degraded={"hybrid+rerank": 2, "hybrid+all": 2})
+    client = httpx.Client(base_url="http://testserver")
+
+    assert _run_rerank_canaries(client).passed
+    res = _run_rerank_canaries(client, preregistration=_Prereg(4))
+
+    assert not res.passed
+    assert "pooled" in res.message
+    assert "4" in res.message
+
+
+def test_a_preregistration_without_the_halt_falls_back_to_the_constant(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, degraded={"hybrid+rerank": 2, "hybrid+all": 2})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client, preregistration=object())
+
+    assert res.passed, res.message
+
+
+def test_clause_h_fails_beside_degraded_rerank_canaries(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(
+        httpx_mock, degraded={"hybrid+all": 1}, lever_echo={"hybrid+rerank": []}
+    )
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert not res.passed
+    assert "provenance clause (h)" in res.message
+    qid = _jsonl(ARM_CANARY_FILE)[0]["question_id"]
+    assert f"{qid} (hybrid+rerank)" in res.message
+
+
+def test_clause_j_fails_when_a_rerank_arm_carries_no_telemetry(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, omit_rerank_meta=("hybrid+rerank",))
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert not res.passed
+    assert "provenance clause (j)" in res.message
+
+
+def test_clause_j_fails_on_a_rerank_leak_onto_hybrid(httpx_mock: HTTPXMock) -> None:
+    _mock_arm_responses(httpx_mock, leak_rerank=("hybrid",))
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_rerank_canaries(client)
+
+    assert not res.passed
+    assert "provenance clause (j)" in res.message
+
+
+def test_a_corpus_without_rerank_arms_keeps_todays_message(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock)
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert res.passed
+    assert "rerank" not in res.message
+    assert "rerank_degraded_by_arm" not in res.detail
+
+
+def test_the_canary_preregistration_is_the_corpus_token_object() -> None:
+    from lancet_eval import thresholds
+    from lancet_eval.corpus import load_corpus_config
+
+    config = load_corpus_config("multihop_rag_heldout")
+    config.preregistration_token = "PREREGISTRATION_06_3_5"
+    assert (
+        preflight_module.canary_preregistration(config)
+        is thresholds.PREREGISTRATION_06_3_5
+    )
+
+
+def test_the_canary_preregistration_is_none_for_a_dev_corpus_or_a_bad_token() -> None:
+    from lancet_eval.corpus import load_corpus_config
+
+    dev = load_corpus_config("multihop_rag_heldout")
+    dev.split_role = "dev"
+    assert preflight_module.canary_preregistration(dev) is None
+
+    bad = load_corpus_config("multihop_rag_heldout")
+    bad.preregistration_token = "PREREGISTRATION_NOT_THERE"
+    assert preflight_module.canary_preregistration(bad) is None
+
+
+def test_run_preflight_hands_the_resolved_preregistration_to_the_canaries(
+    monkeypatch: pytest.MonkeyPatch, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval import thresholds
+    from lancet_eval.preflight import PreflightCheckResult
+
+    seen: dict[str, Any] = {}
+
+    def fake(client: httpx.Client, **kwargs: Any) -> PreflightCheckResult:
+        seen.update(kwargs)
+        return PreflightCheckResult(name="arm_mode_canaries", passed=True, message="ok")
+
+    monkeypatch.setattr(preflight_module, "check_arm_mode_canaries", fake)
+    _health_ok(httpx_mock)
+    _mock_arm_responses(httpx_mock)
+    with httpx.Client(base_url="http://testserver") as client:
+        run_preflight_checks("multihop_rag_heldout", client=client)
+    assert seen["preregistration"] is thresholds.PREREGISTRATION_06_3_5

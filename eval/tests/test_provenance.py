@@ -6,9 +6,11 @@ import pytest
 
 from lancet_eval.arms import ARM_REGISTRY
 from lancet_eval.client import (
+    LEVER_ORDER,
     NodeFailed,
     Notice,
     RankedCandidate,
+    RerankMeta,
     RetrievalSnapshot,
     StructuredCitation,
 )
@@ -26,6 +28,10 @@ UNAVAILABLE = Notice(code="GRAPH_UNAVAILABLE", message="", typed_code=10)
 CANONICAL = tuple(ARM_REGISTRY)
 
 
+def _graph_on(arm: str) -> bool:
+    return not ARM_REGISTRY[arm].disable_graph_context
+
+
 def _ranking(arm: str, n: int) -> list[RankedCandidate]:
     mode = ARM_REGISTRY[arm].retrieval_mode
     out: list[RankedCandidate] = []
@@ -37,8 +43,8 @@ def _ranking(arm: str, n: int) -> list[RankedCandidate]:
                 fused_rank=i,
                 vector_rank=i if mode != "bm25_only" else None,
                 bm25_rank=i if mode != "dense_only" else None,
-                graph_rank=2 if arm == "hybrid+graph" and i == 3 else None,
-                graph_boosted=arm == "hybrid+graph" and i == 3,
+                graph_rank=2 if _graph_on(arm) and i == 3 else None,
+                graph_boosted=_graph_on(arm) and i == 3,
             )
         )
     return out
@@ -76,6 +82,7 @@ def _record(
         retrieved_chunks=_final(ranking),
         retrieval_mode=spec.retrieval_mode,
         pre_truncation_ranking=ranking,
+        levers=list(spec.levers),
     )
     with_ablation = spec.disable_graph_context if ablation is None else ablation
     return RunRecord(
@@ -89,6 +96,16 @@ def _record(
         workflow_meta=WorkflowWireMeta(
             vector_count=0 if spec.retrieval_mode == "bm25_only" else 8,
             bm25_count=0 if spec.retrieval_mode == "dense_only" else 8,
+            rerank=(
+                RerankMeta(
+                    latency_ms=120,
+                    cost_credits=4.4e-07,
+                    cost_reported=True,
+                    outcome="completed",
+                )
+                if "rerank" in spec.levers
+                else None
+            ),
         ),
     )
 
@@ -137,7 +154,7 @@ def test_snapshot_expectations_match_drive_two() -> None:
     assert SNAPSHOT_EXPECTATIONS.final_limit == 8
     assert SNAPSHOT_EXPECTATIONS.vector_weight == 1.0
     assert SNAPSHOT_EXPECTATIONS.bm25_weight == 1.0
-    assert frozenset("abcdf") == ZERO_TOLERANCE_CODES
+    assert frozenset("abcdfhj") == ZERO_TOLERANCE_CODES
 
 
 def test_a_failure_carries_its_code_label_and_detail() -> None:
@@ -555,3 +572,199 @@ def test_mode_provenance_failures_is_the_composition_of_the_two_checks() -> None
         echo_failures("dense-only", "hybrid") + ablation_failures("dense-only", [])
     )
     assert len(mode_provenance_failures("dense-only", "hybrid", [])) == 2
+
+
+# --- 06.3.6-07: clauses (h), (i), (j) and (e) on graph-on arms (D-134, D-161) ----------
+
+RERANK_DEGRADED = Notice(code="RERANK_DEGRADED", message="", typed_code=23)
+LEVER_ARMS = (
+    "hybrid+rerank",
+    "hybrid+metadata",
+    "hybrid+answer-format",
+    "hybrid+all",
+    *(("hybrid+graph-v2",) if "graph_v2" in LEVER_ORDER else ()),
+)
+
+
+def _with_meta(record: RunRecord, **changes: object) -> RunRecord:
+    assert record.workflow_meta is not None
+    return record.model_copy(
+        update={"workflow_meta": record.workflow_meta.model_copy(update=changes)}
+    )
+
+
+def test_the_code_sets_carry_the_new_clauses() -> None:
+    from lancet_eval.provenance import _OK_CODES
+
+    assert frozenset("abcdfhj") == ZERO_TOLERANCE_CODES
+    assert frozenset("abcdefhij") == _OK_CODES
+    assert "i" not in ZERO_TOLERANCE_CODES
+
+
+@pytest.mark.parametrize("arm", LEVER_ARMS)
+def test_a_well_formed_lever_arm_record_passes(arm: str) -> None:
+    record = _record(arm)
+    assert provenance_failures(record) == []
+    assert is_ok(record)
+
+
+@pytest.mark.parametrize("arm", LEVER_ARMS)
+def test_an_empty_levers_echo_on_a_lever_arm_is_clause_h(arm: str) -> None:
+    record = _with_snapshot(_record(arm), levers=[])
+    assert _codes(record) == {"h"}
+    assert not is_ok(record)
+    assert "h" in ZERO_TOLERANCE_CODES
+
+
+def test_a_different_levers_echo_is_clause_h() -> None:
+    record = _with_snapshot(_record("hybrid+rerank"), levers=["evidence_metadata"])
+    assert _codes(record) == {"h"}
+
+
+def test_a_lever_echo_on_a_lever_free_arm_is_clause_h() -> None:
+    record = _with_snapshot(_record("hybrid"), levers=["rerank"])
+    assert "h" in _codes(record)
+
+
+def test_hybrid_against_a_pre_06_3_6_record_passes_clause_h() -> None:
+    """A journal written before the field existed echoes no levers."""
+    record = _record("hybrid")
+    assert record.snapshot is not None
+    assert record.snapshot.levers == []
+    assert provenance_failures(record) == []
+    for label in ("graph-off", "graph-on"):
+        assert "h" not in _codes(_legacy_record(label))
+
+
+def _legacy_record(label: str) -> RunRecord:
+    return RunRecord(
+        corpus="multihop_rag",
+        question_id="q1",
+        graph_arm=label,
+        outcome="success",
+        answer="An answer",
+        snapshot=RetrievalSnapshot(
+            index_generation="gen1",
+            vector_weight=1.0,
+            bm25_weight=1.0,
+            rrf_k=60,
+            candidate_limit=32,
+            final_limit=8,
+            result_hash="abc123",
+        ),
+        notices=[ABLATION] if label == "graph-off" else [],
+    )
+
+
+def test_clause_h_is_not_checked_without_a_completed_retrieval() -> None:
+    record = _with_snapshot(_record("hybrid+rerank"), levers=[], result_hash="")
+    assert "h" not in _codes(record)
+
+
+def test_a_rerank_arm_record_with_code_23_is_clause_i_and_not_zero_tolerance() -> None:
+    record = _record("hybrid+rerank").model_copy(
+        update={"notices": [ABLATION, RERANK_DEGRADED]}
+    )
+    record = _with_meta(
+        record,
+        rerank=RerankMeta(latency_ms=3000, outcome="degraded_timeout"),
+    )
+    assert _codes(record) == {"i"}
+    assert not is_ok(record)
+    assert "i" not in ZERO_TOLERANCE_CODES
+
+
+def test_code_23_alone_satisfies_the_telemetry_half_of_clause_j() -> None:
+    record = _with_meta(_record("hybrid+rerank"), rerank=None).model_copy(
+        update={"notices": [ABLATION, RERANK_DEGRADED]}
+    )
+    assert _codes(record) == {"i"}
+
+
+def test_a_typed_code_23_without_the_code_string_is_clause_i() -> None:
+    notice = Notice(code="", message="", typed_code=23)
+    record = _record("hybrid+rerank").model_copy(update={"notices": [ABLATION, notice]})
+    assert "i" in _codes(record)
+
+
+def test_clause_i_never_fires_on_a_rerank_free_arm() -> None:
+    record = _record("hybrid")
+    assert "i" not in _codes(record)
+
+
+def test_a_rerank_telemetry_leak_onto_hybrid_is_clause_j() -> None:
+    record = _with_meta(
+        _record("hybrid"),
+        rerank=RerankMeta(latency_ms=10, outcome="completed"),
+    )
+    assert _codes(record) == {"j"}
+    assert not is_ok(record)
+    assert "j" in ZERO_TOLERANCE_CODES
+
+
+def test_a_code_23_leak_onto_hybrid_is_clause_j() -> None:
+    record = _record("hybrid").model_copy(
+        update={"notices": [ABLATION, RERANK_DEGRADED]}
+    )
+    assert "j" in _codes(record)
+    assert "i" not in _codes(record)
+
+
+@pytest.mark.parametrize("arm", ["dense-only", "bm25-only", "hybrid+graph"])
+def test_a_rerank_leak_onto_any_non_rerank_arm_is_clause_j(arm: str) -> None:
+    record = _with_meta(
+        _record(arm), rerank=RerankMeta(latency_ms=10, outcome="completed")
+    )
+    assert "j" in _codes(record)
+
+
+def test_a_rerank_arm_without_telemetry_or_the_notice_is_clause_j() -> None:
+    record = _with_meta(_record("hybrid+rerank"), rerank=None)
+    assert _codes(record) == {"j"}
+    assert not is_ok(record)
+
+
+def test_a_rerank_arm_without_workflow_metadata_is_clause_j() -> None:
+    record = _record("hybrid+rerank").model_copy(update={"workflow_meta": None})
+    assert _codes(record) == {"j"}
+
+
+def test_clause_j_is_not_checked_without_a_completed_retrieval() -> None:
+    record = _with_snapshot(_record("hybrid+rerank"), result_hash="")
+    record = _with_meta(record, rerank=None)
+    assert "j" not in _codes(record)
+
+
+@pytest.mark.parametrize(
+    "arm", [a for a in ARM_REGISTRY if not ARM_REGISTRY[a].disable_graph_context]
+)
+def test_graph_ablation_on_a_graph_on_arm_is_clause_e(arm: str) -> None:
+    record = _record(arm).model_copy(update={"notices": [ABLATION]})
+    assert _codes(record) == {"e"}
+    assert not is_ok(record)
+
+
+def test_a_legacy_graph_on_record_carrying_ablation_is_clause_e() -> None:
+    record = _legacy_record("graph-on").model_copy(update={"notices": [ABLATION]})
+    assert "e" in _codes(record)
+
+
+def test_clauses_h_and_j_call_their_functions_not_message_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lancet_eval.provenance as provenance_module
+
+    monkeypatch.setattr(
+        provenance_module, "lever_echo_failures", lambda label, echo: ["reworded"]
+    )
+    failures = provenance_failures(_record("hybrid"))
+    assert [f.code for f in failures] == ["h"]
+    assert failures[0].detail == "reworded"
+
+
+def test_an_ablation_arm_function_flags_a_graph_on_arm_that_carries_the_notice() -> None:
+    from lancet_eval.arms import ablation_failures
+
+    assert ablation_failures("hybrid+graph", [ABLATION])
+    assert ablation_failures("hybrid+graph", []) == []
+    assert ablation_failures("hybrid+rerank", []) != []

@@ -667,3 +667,72 @@ def test_no_judge_path_at_all_is_open_to_a_06_3_6_token_corpus(
     with pytest.raises(ScoreError, match="D-153"):
         score_run(run_dir=run_dir, **kwargs)  # type: ignore[arg-type]
     assert seen == []
+
+
+# --- 06.3.6-07: the pre-registration resolver (D-73, D-149) ----------------------------
+
+
+def test_resolve_returns_the_object_a_corpus_token_names() -> None:
+    from lancet_eval import preregistration
+
+    assert (
+        preregistration.resolve("PREREGISTRATION_06_3_5")
+        is thresholds.PREREGISTRATION_06_3_5
+    )
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "PREREGISTRATION_NOT_THERE",
+        "UNPARK_GATE_COVERAGE_FLOOR",
+        "COMMITTED_THRESHOLDS",
+        "",
+    ],
+)
+def test_resolve_fails_closed_on_an_absent_or_non_preregistration_token(
+    token: str,
+) -> None:
+    from lancet_eval import preregistration
+
+    with pytest.raises(preregistration.PreregistrationError):
+        preregistration.resolve(token)
+
+
+def test_resolve_raises_the_gitcheck_error_type() -> None:
+    from lancet_eval import preregistration
+
+    assert preregistration.PreregistrationError is gitcheck.PreregistrationError
+
+
+def test_arms_of_an_ablation_preregistration_is_reference_then_comparisons() -> None:
+    from lancet_eval import preregistration
+
+    assert preregistration.arms_of(thresholds.PREREGISTRATION_06_3_5) == (
+        "hybrid",
+        "dense-only",
+        "bm25-only",
+        "hybrid+graph",
+    )
+
+
+def test_arms_of_a_lever_preregistration_is_reference_families_then_descriptive() -> None:
+    from types import SimpleNamespace
+
+    from lancet_eval import preregistration
+
+    prereg = SimpleNamespace(
+        reference_arm="hybrid",
+        families=(
+            SimpleNamespace(arms=("hybrid+rerank", "hybrid+metadata")),
+            SimpleNamespace(arms=("hybrid+rerank", "hybrid+answer-format")),
+        ),
+        descriptive_arms=("hybrid+all",),
+    )
+    assert preregistration.arms_of(prereg) == (
+        "hybrid",
+        "hybrid+rerank",
+        "hybrid+metadata",
+        "hybrid+answer-format",
+        "hybrid+all",
+    )
