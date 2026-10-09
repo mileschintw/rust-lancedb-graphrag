@@ -1,0 +1,52 @@
+== B. Rule (fixed before sections A, C, D are computed)
+margin = 1/10 = 0.10; min pair fraction = 4/5
+derivation: 0.10 = (i) the repo's committed 'material rate' convention (thresholds.py FINAL_ANSWER_MISSING_REVIEW_RATE 0.10; COMMITTED_THRESHOLDS max_tolerated_graph_timeout_rate 0.10); (ii) about the smallest margin a 43-question paired reading can resolve at all (section 1b [computed], cross-checked in section D). Dev cannot set it: section A shows the 10 dev nulls at the ceiling with no discordance. (A first draft of this comment cited a dev null-error rate of 1/10 for drive 2; section A shows 9/9 usable, so that reason was dropped. The value did not change.)
+evaluable iff n_pairs >= ceil(0.80 x 43) = 35
+  n_pairs=43: guard fails iff net loss b-c >= 5 questions (5/43 = 0.1163 > 0.10)
+  n_pairs=40: guard fails iff net loss b-c >= 5 questions (5/40 = 0.1250 > 0.10)
+  n_pairs=35: guard fails iff net loss b-c >= 4 questions (4/35 = 0.1143 > 0.10)
+  one null question = 2.33 points
+
+== A. Dev evidence (drives 1, 1b, 2; the same 10 dev null questions; D-129: dev only)
+dev null questions: 10
+  drive1: arms ['graph-off', 'graph-on']; graph-off abstained 2/8 usable; graph-on abstained 4/10 usable; paired n=8, discordant: graph-off-only abstains 0, graph-on-only abstains 0
+  drive1b: arms ['graph-off', 'graph-on']; graph-off abstained 10/10 usable; graph-on abstained 10/10 usable; paired n=10, discordant: graph-off-only abstains 0, graph-on-only abstains 0
+  drive2: arms ['graph-off', 'graph-on']; graph-off abstained 9/9 usable; graph-on abstained 9/9 usable; paired n=9, discordant: graph-off-only abstains 0, graph-on-only abstains 0
+  pooled over the three drives: 0 discordant of 27 dev null pairs (graph-on vs graph-off, the same prompt; a lever that edits the prompt can perturb more)
+  corpus publications (name before ' | '): 44 distinct
+  dev null questions naming >= 1 corpus publication: 4 of 10; names matched: {'The Sydney Morning Herald': 1, 'The Verge': 1, 'The Guardian': 2, 'The New York Times': 2}
+
+== C. Operating characteristics at n_pairs = 43 (arithmetic; no repo data)
+P(guard FAILS | no true effect), by d discordant null pairs:
+  d    count rule, margin 0.10 (fail iff b-c >= | count rule, margin 0.05 (fail iff b-c >= | formal NI, margin 0.10 (fail iff 95% upp
+  0    0.000                                    | 0.000                                    | 0.000                                   
+  2    0.000                                    | 0.000                                    | 0.000                                   
+  4    0.000                                    | 0.062                                    | 0.000                                   
+  6    0.016                                    | 0.109                                    | 0.344                                   
+  8    0.035                                    | 0.145                                    | 0.637                                   
+  10   0.055                                    | 0.172                                    | 0.623                                   
+  12   0.073                                    | 0.194                                    | 0.806                                   
+  16   0.105                                    | 0.227                                    | 0.773                                   
+P(guard FAILS | the lever converts h abstentions, plus d0 symmetric background pairs):
+  h=2  d0=0  0.000  | 0.000  | 0.000 
+  h=2  d0=4  0.062  | 0.312  | 0.688 
+  h=2  d0=8  0.145  | 0.363  | 0.855 
+  h=3  d0=0  0.000  | 1.000  | 0.000 
+  h=3  d0=4  0.312  | 0.688  | 0.938 
+  h=3  d0=8  0.363  | 0.637  | 0.965 
+  h=5  d0=0  1.000  | 1.000  | 1.000 
+  h=5  d0=4  0.688  | 0.938  | 1.000 
+  h=5  d0=8  0.637  | 0.855  | 0.996 
+  h=7  d0=0  1.000  | 1.000  | 1.000 
+  h=7  d0=4  0.938  | 1.000  | 1.000 
+  h=7  d0=8  0.855  | 0.965  | 1.000 
+  h=10 d0=0  1.000  | 1.000  | 1.000 
+  h=10 d0=4  1.000  | 1.000  | 1.000 
+  h=10 d0=8  0.965  | 0.996  | 1.000 
+
+== D. Cross-check of section 1b's [computed] figures (balanced b = c = d/2)
+  d=4  b=c=2: one-sided 95% upper net loss ~ 3.2 q = 7.5 pts
+  d=8  b=c=4: one-sided 95% upper net loss ~ 4.9 q = 11.4 pts
+  d=12 b=c=6: one-sided 95% upper net loss ~ 6.1 q = 14.2 pts
+  d=16 b=c=8: one-sided 95% upper net loss ~ 7.1 q = 16.5 pts
+{"d148_null_guard": "ok"}

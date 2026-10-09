@@ -1,0 +1,22 @@
+== 06.3.5 held-out drive, cost inputs (06.3.5-DRIVE.md)
+tokens per record: prompt 2269.2, completion 288.4
+harness per record at drive-time constants: $0.000424 (x1404 + one failed-generation ceiling = $0.59762; recorded $0.59762)
+account per record: $0.000167 (disclosure; the cap does not read it)
+graph-on arm extra per record: $0.0000268 ~ 191 prompt tokens
+
+== Dev drive-2 per-record harness cost (D-129: dev), for the all-max case
+  out $0.32/1M: n=200 mean $0.000411 p99 $0.000550 max $0.001817; failed-generation ceiling $0.001802
+  out $1.28/1M: n=200 mean $0.000678 p99 $0.001171 max $0.003783; failed-generation ceiling $0.003768
+
+== Estimates, constants as today (out 0.32)
+  drive 7 arms = 2457 records: generation $1.04 + metadata $0.069 + graph $0.028 + rerank (illustrative) $0.246 + 1% failed-ceiling reserve $0.045 = $1.43; all-max (every record at max(dev max, failed ceiling) $0.00182) $4.78
+  drive 6 arms = 2106 records: generation $0.89 + metadata $0.069 + graph $0.019 + rerank (illustrative) $0.246 + 1% failed-ceiling reserve $0.040 = $1.27; all-max (every record at max(dev max, failed ceiling) $0.00182) $4.14
+  dev blanket <= 1100 records: mean $0.58; all-max $2.09; one 100-record lever read ~ $0.042
+  rehearsal 42 queries (+ the probe): mean $0.018; all-max $0.076
+
+== Estimates, output raised to 1.28
+  drive 7 arms = 2457 records: generation $1.72 + metadata $0.069 + graph $0.028 + rerank (illustrative) $0.246 + 1% failed-ceiling reserve $0.094 = $2.16; all-max (every record at max(dev max, failed ceiling) $0.00378) $9.61
+  drive 6 arms = 2106 records: generation $1.48 + metadata $0.069 + graph $0.019 + rerank (illustrative) $0.246 + 1% failed-ceiling reserve $0.083 = $1.89; all-max (every record at max(dev max, failed ceiling) $0.00378) $8.28
+  dev blanket <= 1100 records: mean $0.90; all-max $4.25; one 100-record lever read ~ $0.070
+  rehearsal 42 queries (+ the probe): mean $0.029; all-max $0.159
+{"cost_caps": "ok"}
