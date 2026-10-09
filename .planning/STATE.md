@@ -3,19 +3,19 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: Not started
 status: executing
-stopped_at: Phase 06.3.6 context gathered
-last_updated: "2026-10-09T05:46:00.113Z"
+stopped_at: "Phase 06.3.6 planned: 22 plans in 17 waves, plan check passed (iteration 3), decision coverage 45/45 (D-127..D-171); next: /gsd-execute-phase 06.3.6 with live-stack plans sequential on main"
+last_updated: "2026-10-09T19:02:24.394Z"
 last_activity: 2026-10-09
-state_head: ff2c6dcaa532ddf3661612550188a42f461ca5d5
+state_head: ac556cc90c1b039f81b4f6fe068f505f00a0a96a
 progress:
   total_phases: 18
   completed_phases: 10
-  total_plans: 210
+  total_plans: 232
   completed_plans: 210
 milestone_name: milestone
+current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, temporal metadata, answer format
-last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; parallel waves (1, 3-6) fan out through a Workflow run, single-plan waves run sequentially on main; 6.4 stays parked."
+last_activity_desc: "/gsd-plan-phase 06.3.6: research (C1-C14), pattern map, 22 plans in 17 waves, plan check passed after two revisions; owner decisions D-165..D-171 recorded; 6.4 stays parked."
 ---
 
 # Project State
@@ -23,10 +23,16 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 ## Current Position
 
 Current Plan: Not started
-Total Plans in Phase: 17
+Total Plans in Phase: 22
 
 ## Current Status
 
+- **2026-10-09: Phase 06.3.6 PLANNED.** 22 plans in 17 waves (`06.3.6-01..22-PLAN.md`). The plan check passed at iteration 3, after one whole-phase pass, four full-read slice checks and two revisions. Decision coverage is 45/45 (D-127..D-171), and OBS-06 is on all 22 plans.
+  - **Owner decisions taken during planning:** D-165..D-168 (AI-SPEC §4 open questions 1-4, each as recommended); D-169 (OBS-06 wording in REQUIREMENTS, applied in `3972d716`, no checkbox change); D-170 (a `dev` split role exempt from the D-73 gate); D-171 (the D-137 class precedence is the skeleton order).
+  - **Research corrections that changed the plans:** C1, Lance has no SQL `CASE`, so the backfill uses `NewColumnTransform::Reader` (executed on a throwaway table). C3, every store opener fails closed after the `nodes` schema commit, so the D-137 store read comes first. C5, there was no `dev` split role.
+  - **Execution shape:** the live-stack plans (01, 04, 15-21) run sequentially on main, never in a worktree. Dev sessions 1-2 and the held-out drive use prep, then an orchestrator-owned WMI-detached wait, then record. Docker Desktop and the compose Postgres must be started (plan 15 human-action).
+  - **Owner checkpoints during execution:** D-131 probe cap $0.01 (plan 01); generation output price 0.32 vs 1.28 (plan 03); D-137 spot-check (plan 04); O10/O14/O15/O16 (plan 07); live backfill apply and the branch-A merge audit (plan 15); O7/O12/O13 (plan 16); O11 only if the rerank timeout does not nest (plan 18); O8 (plan 19); O9 (plan 20); D-110 (plan 21). New owner answers become D-172 onward.
+  - **Next:** `/gsd-execute-phase 06.3.6`.
 - **2026-10-09: Phase 06.3.5 COMPLETE.** UAT 2/2: chart passed; owner adopted the G-1 override and signed off the framing, and the drive-2 comparability sentence was added. VALIDATION validated with 0 gaps. Review `--fix`: CR-01 and WR-01/04/05 fixed, WR-02 partial (`compare` not gated), WR-03 skipped as an owner decision; eval 1802, engine 753, gateway 120. SECURITY 68/68 with threats_open 0 (T-06.3.5-60 closed by `a3af9def`). Re-verification passed 9/9 with the run of record re-derived identically at HEAD. OBS-06 stays unticked (D-98; shared with 06.3.6). Next: `/gsd-discuss-phase 06.3.6` (carry-forwards in its ROADMAP section, plus WR-02 `compare` gate, WR-03 decision, IN-03, and 06.3.6 running on the post-CR-01 engine). Resolved 2026-10-09 (owner): 06.3.5, 06.3.6 and 6.4 are not MVP phases; their `**Mode:** mvp` lines were removed from ROADMAP.
 - **2026-10-08: Phase 06.3.5 execution complete; verification `human_needed` (8/9, all 7 SC met as worded).** Code review: 1 critical, 5 warnings, 6 info, all open (CR-01 affected 0 of 118 drive records). UAT `06.3.5-UAT.md`: chart.svg visual check, plus the owner decision on the plan 18 engine change against the goal wording and the framing sign-off. 06.3.5 carry-forwards added to the 06.3.6 ROADMAP section. Next: `/gsd-verify-work 06.3.5`.
 - **2026-10-08: 06.3.5-17 complete; all 18 plans executed.** Owner D-103: `row-matches`. Run of record `06.3.5-RUN-OF-RECORD.md` (`1b068dd1`): the first paragraph states SC-2 MISS / continue-with-disclosure (owner, post-hoc) / P4 296/308 / both judged dimensions uncalibrated (QWK -0.026, 0.066). Holm: only bm25-only vs hybrid rejects (paper_hits_at_4 and answer_usable). Phase spend $0.352621 settled. Next: phase tail gates (code review, regression, verification).
