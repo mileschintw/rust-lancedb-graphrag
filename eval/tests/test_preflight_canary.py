@@ -859,3 +859,51 @@ def test_legacy_corpora_run_exactly_the_checks_they_ran_before(
     }
     sent = [b["query"] for b in _request_bodies(httpx_mock)]
     assert sum(1 for q in sent if q in legacy_texts) == 8
+
+
+# --- D-158 IN-03: a corpus config that fails to load fails closed ----------------
+
+
+def _recording_client() -> tuple[httpx.Client, list[httpx.Request]]:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"status": "ok"})
+
+    client = httpx.Client(
+        base_url="http://testserver", transport=httpx.MockTransport(handler)
+    )
+    return client, seen
+
+
+@pytest.mark.parametrize("variant", ["malformed", "missing"])
+def test_preflight_with_an_unloadable_corpus_config_fails_closed_without_a_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, variant: str
+) -> None:
+    from lancet_eval.config import EvalSettings
+
+    corpora = tmp_path / "eval" / "corpora"
+    corpora.mkdir(parents=True)
+    if variant == "malformed":
+        (corpora / "broken_heldout.toml").write_text(
+            "[documents\nchunk_size = = 5\n", encoding="utf-8"
+        )
+    monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: tmp_path)
+
+    client, seen = _recording_client()
+    settings = EvalSettings(
+        lancedb_path=str(tmp_path / "lancedb-eval"),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+    )
+    with client:
+        results = run_preflight_checks(
+            "broken_heldout", settings=settings, client=client
+        )
+
+    assert len(results) == 1
+    assert results[0].name == "corpus_config"
+    assert results[0].passed is False
+    assert "broken_heldout" in results[0].message
+    assert "failed to load" in results[0].message
+    assert seen == []

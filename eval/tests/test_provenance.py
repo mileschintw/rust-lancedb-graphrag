@@ -502,3 +502,56 @@ def test_an_unknown_arm_label_fails_closed() -> None:
     record = _legacy("graph-sideways", ablation=True)
     with pytest.raises(ValueError, match="Unknown arm"):
         provenance_failures(record)
+
+
+# --- D-158 IN-04: clause (a) does not read message text -------------------------
+
+
+def test_clause_a_calls_echo_failures_not_a_substring_of_the_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reworded echo message (no 'retrieval_mode' in it) still lands in clause (a)."""
+    import lancet_eval.provenance as provenance_module
+
+    monkeypatch.setattr(
+        provenance_module,
+        "echo_failures",
+        lambda label, echo: ["the mode echo is wrong"],
+    )
+    failures = provenance_failures(_record("hybrid"))
+    assert [f.code for f in failures] == ["a"]
+    assert failures[0].detail == "the mode echo is wrong"
+
+
+def test_rewording_the_ablation_message_moves_no_failure_into_clause_a(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ablation check is clause (e) only, whatever its message says."""
+    import lancet_eval.arms as arms_module
+
+    monkeypatch.setattr(
+        arms_module,
+        "ablation_failures",
+        lambda label, notices: ["retrieval_mode is mentioned here too"],
+    )
+    assert provenance_failures(_record("dense-only")) == []
+
+
+def test_mode_provenance_failures_is_the_composition_of_the_two_checks() -> None:
+    from lancet_eval.arms import (
+        ablation_failures,
+        echo_failures,
+        mode_provenance_failures,
+    )
+
+    rec = _record("dense-only")
+    assert rec.snapshot is not None
+    assert echo_failures("dense-only", rec.snapshot.retrieval_mode) == []
+    assert ablation_failures("dense-only", rec.notices) == []
+    bad_echo = echo_failures("dense-only", "hybrid")
+    assert len(bad_echo) == 1 and "retrieval_mode" in bad_echo[0]
+    assert echo_failures("graph-off", None) == []
+    assert mode_provenance_failures("dense-only", "hybrid", []) == (
+        echo_failures("dense-only", "hybrid") + ablation_failures("dense-only", [])
+    )
+    assert len(mode_provenance_failures("dense-only", "hybrid", [])) == 2

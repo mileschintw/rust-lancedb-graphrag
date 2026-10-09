@@ -1321,21 +1321,25 @@ def run_preflight_checks(
 
     # 06.3.5 D-124: a corpus that declares `legacy_canaries = false` skips the two
     # legacy canary checks, and one with an `arm_canaries` manifest and more than two
-    # arms adds `arm_mode_canaries`. A corpus config that cannot be loaded runs the
-    # legacy checks exactly as before.
+    # arms adds `arm_mode_canaries`. D-158 IN-03: a corpus config that cannot be loaded
+    # fails closed: one failed `corpus_config` check, and no store or gateway call, so
+    # the legacy canaries never run in its place.
     from lancet_eval.corpus import load_corpus_config
 
     try:
         corpus_config = load_corpus_config(corpus_name)
-    except Exception:
-        corpus_config = None
-    skip_legacy_canaries = (
-        corpus_config is not None and not corpus_config.legacy_canaries
-    )
+    except Exception as exc:
+        return [
+            PreflightCheckResult(
+                name="corpus_config",
+                passed=False,
+                message=f"corpus config {corpus_name!r} failed to load: {exc}",
+                detail={},
+            )
+        ]
+    skip_legacy_canaries = not corpus_config.legacy_canaries
     run_arm_canaries = (
-        corpus_config is not None
-        and corpus_config.arm_canaries is not None
-        and len(corpus_config.arms) > 2
+        corpus_config.arm_canaries is not None and len(corpus_config.arms) > 2
     )
 
     # 1. Store isolation
@@ -1378,7 +1382,7 @@ def run_preflight_checks(
                     answered_snapshots=answered,
                 )
             arm_check: PreflightCheckResult | None = None
-            if run_arm_canaries and corpus_config is not None:
+            if run_arm_canaries:
                 if corpus_config.split_path is None:
                     arm_check = PreflightCheckResult(
                         name="arm_mode_canaries",

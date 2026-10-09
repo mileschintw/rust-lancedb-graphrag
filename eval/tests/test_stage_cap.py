@@ -308,7 +308,8 @@ def test_cap_counts_failed_generations_and_stops_earlier_than_the_old_estimator(
     Records whose GenerateAnswer failed carry zero wire tokens but were billed. The cap
     must be reached on the corrected estimate, not on embeddings alone.
 
-    Each mocked record charges one per-attempt ceiling (~$0.0018), so a $0.005 cap is
+    Each mocked record charges one per-attempt ceiling (~$0.0038 at the D-173 output
+    price of 1.28), so a $0.009 cap is
     crossed at the third record. The old estimator charged only ~$0.0000144 of
     embeddings per record and would have dispatched every unit.
     """
@@ -344,7 +345,7 @@ def test_cap_counts_failed_generations_and_stops_earlier_than_the_old_estimator(
 
     monkeypatch.setattr("lancet_eval.run.drive_one", mock_drive_one)
 
-    cap = 0.005
+    cap = 0.009
     client = httpx.Client(base_url="http://testserver")
     res = drive(
         corpus="graphrag_bench",
@@ -637,11 +638,12 @@ def test_cap_sees_retried_spend_and_stops_earlier(
 ) -> None:
     """CR-03 (D-86): a billed attempt a retry replaced still counts toward the cap.
 
-    Each stub record costs about $0.0044 of wire tokens. With a $0.01 cap the drive
-    crosses it at the third record; when every record also carries one prior attempt
-    with the same tokens, each unit costs double and the drive crosses it at the second.
+    Each stub record costs about $0.0092 of wire tokens (D-173 output price 1.28).
+    With a $0.022 cap the drive crosses it at the third record; when every record
+    also carries one prior attempt with the same tokens, each unit costs double and
+    the drive crosses it at the second.
     """
-    cap = 0.01
+    cap = 0.022
     plain, plain_records = _drive_with_stubbed_records(
         tmp_path, monkeypatch, with_prior_attempt=False, cap=cap
     )

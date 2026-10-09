@@ -19,6 +19,10 @@ whose RetrieveHybrid completed (a snapshot with a non-empty ``result_hash``):
 * **g** a non-zero ``bm25_count`` on dense-only or ``vector_count`` on bm25-only
   (corroboration only).
 
+Clause (a) calls ``arms.echo_failures`` directly and clause (e) reads
+``has_arm_provenance``; neither matches on message text (D-158 IN-04), so rewording a
+message in ``arms`` moves no failure between clauses.
+
 A legacy label (``graph-off``, ``graph-on``) carries no mode echo and no ranking, so
 it is held to (e) and (f) only. A record whose RetrieveHybrid never completed (no
 snapshot, or a partial snapshot with an empty ``result_hash``) has nothing to check
@@ -40,7 +44,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from lancet_eval.arms import mode_provenance_failures, resolve_arm
+from lancet_eval.arms import echo_failures, resolve_arm
 from lancet_eval.usability import has_arm_provenance, is_usable
 
 if TYPE_CHECKING:
@@ -195,13 +199,11 @@ def provenance_failures(
             fail("f", config)
 
         if not legacy:
-            # (a) only the retrieval_mode echo failures of mode_provenance_failures;
-            # its GRAPH_ABLATION message is clause (e), reported above, not twice.
-            for message in mode_provenance_failures(
-                label, snapshot.retrieval_mode, record.notices
-            ):
-                if "retrieval_mode" in message:
-                    fail("a", message)
+            # (a) the retrieval_mode echo; the GRAPH_ABLATION check is clause (e),
+            # reported above, not twice. D-158 IN-04: clause (a) calls echo_failures
+            # directly, so rewording either message moves no failure between clauses.
+            for message in echo_failures(label, snapshot.retrieval_mode):
+                fail("a", message)
 
             ranking = snapshot.pre_truncation_ranking
             final = snapshot.retrieved_chunks
