@@ -1152,7 +1152,7 @@ Plans:
 
 **Out of Scope:** community summaries (999.1/999.5/999.4), query reformulation strategies (999.3 — a v1.1 arm), local inference endpoint (999.11 — v1.1), deeper traversal, new corpora.
 
-**Plans:** 3/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
+**Plans:** 4/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
 
 Plans:
 
@@ -1164,7 +1164,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06.3.6-04-PLAN.md — Window 1: dump v1 entities/edges from a store copy, regenerate the 38-question D-137 table, owner spot-check, then the selection commit (A/B/none)
+- [x] 06.3.6-04-PLAN.md — Window 1: dump v1 entities/edges from a store copy, regenerate the 38-question D-137 table, owner spot-check, then the selection commit (A/B/none)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
