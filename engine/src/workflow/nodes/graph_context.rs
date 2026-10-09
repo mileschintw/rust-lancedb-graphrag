@@ -11,6 +11,36 @@ use super::super::{
 };
 use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
 
+/// How many times the node asks for the query embedding: one try plus one retry (D-152).
+///
+/// A retry is taken only after a timeout. The per-attempt budget stays
+/// `query_embedding_timeout_ms`, so the node can spend this many attempts plus one jitter pause
+/// on the embedding alone, and `WorkflowSettings::validate` keeps that sum inside the graph node
+/// budget. Raising this number raises that sum, and a non-timeout error is never retried.
+pub const QUERY_EMBEDDING_ATTEMPTS: u32 = 2;
+
+/// Upper bound, in milliseconds, of the pause before the query-embedding retry (D-152).
+///
+/// Small against the 2000 ms attempt, so the pause spreads simultaneous retries without eating
+/// the graph budget. Counted once in the nesting rule that `WorkflowSettings::validate` enforces,
+/// so raising it needs `graph_node_timeout_ms` raised with it.
+pub const RETRY_JITTER_MAX_MS: u64 = 250;
+
+/// Returns the pause, in milliseconds and at most `max_ms`, taken after a failed attempt.
+///
+/// The value is the first eight bytes of a blake3 hash over the trace id and the attempt number,
+/// reduced modulo `max_ms + 1`, so one trace always pauses the same time and different traces
+/// spread across the range without a random-number dependency.
+pub fn retry_jitter_ms(trace_id: &str, attempt: u32, max_ms: u64) -> u64 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(trace_id.as_bytes());
+    hasher.update(&attempt.to_le_bytes());
+    let digest = hasher.finalize();
+    let mut head = [0_u8; 8];
+    head.copy_from_slice(&digest.as_bytes()[..8]);
+    u64::from_le_bytes(head) % max_ms.saturating_add(1)
+}
+
 pub struct ExtractGraphContextNode {
     embedding_port: Option<Arc<dyn QueryEmbeddingPort>>,
     graph_port: Option<Arc<dyn GraphQueryPort>>,

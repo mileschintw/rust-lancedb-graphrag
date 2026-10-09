@@ -61,6 +61,7 @@ pub mod graph_boost;
 pub mod graph_cutover;
 pub mod graph_wire;
 pub mod levers_pins;
+pub mod query_embedding_retry;
 pub mod retrieval_mode_pins;
 pub mod workflow_phase5_production;
 
