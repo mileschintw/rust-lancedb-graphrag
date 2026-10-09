@@ -448,3 +448,111 @@ def test_the_fixture_makes_the_gates_independent_of_the_working_tree(
     assert problems == []
     found = gitcheck.introducing_commit("anything", "any/path")
     assert found == preregistered_clean_tree
+
+
+# --- WR-02: a pre-registered value must be unchanged since its introducing commit ---
+
+_V2 = b"BASELINE = 1\nPREREGISTRATION_06_3_5 = 2\nJUDGE_QWK_TRUST_FLOOR = 0.7\n"
+_V3 = b"BASELINE = 1\nPREREGISTRATION_06_3_5 = 3\nJUDGE_QWK_TRUST_FLOOR = 0.7\n"
+
+
+def test_unchanged_values_pass_the_since_introduction_check(repo: Path) -> None:
+    problems = gitcheck.preregistration_problems(
+        BOTH, unchanged_since_introduction=True, repo=repo
+    )
+    assert problems == []
+
+
+def test_a_value_changed_in_a_later_commit_is_a_problem(repo: Path) -> None:
+    _write(repo, THRESHOLDS, _V3)
+    _commit(repo, "tweak", T0 + 200)
+    problems = gitcheck.preregistration_problems(
+        BOTH, unchanged_since_introduction=True, repo=repo
+    )
+    assert len(problems) == 1
+    assert "PREREGISTRATION_06_3_5" in problems[0]
+    assert "differs" in problems[0]
+    # the ordering alone still passes, which is the gap WR-02 names
+    assert gitcheck.preregistration_problems(BOTH, repo=repo) == []
+
+
+def test_an_uncommitted_edit_of_a_value_is_a_problem(repo: Path) -> None:
+    _write(
+        repo,
+        THRESHOLDS,
+        b"BASELINE = 1\nPREREGISTRATION_06_3_5 = 2\nJUDGE_QWK_TRUST_FLOOR = 0.9\n",
+    )
+    problems = gitcheck.preregistration_problems(
+        BOTH, unchanged_since_introduction=True, repo=repo
+    )
+    assert len(problems) == 1
+    assert "JUDGE_QWK_TRUST_FLOOR" in problems[0]
+
+
+def test_a_formatting_or_comment_change_is_not_a_difference(repo: Path) -> None:
+    _write(
+        repo,
+        THRESHOLDS,
+        b"# a note\nBASELINE = 1\nPREREGISTRATION_06_3_5   =   (2)  # unchanged\n"
+        b"JUDGE_QWK_TRUST_FLOOR: float = 0.70\n",
+    )
+    problems = gitcheck.preregistration_problems(
+        BOTH, unchanged_since_introduction=True, repo=repo
+    )
+    assert problems == []
+
+
+def test_a_token_with_no_readable_assignment_is_a_problem(repo: Path) -> None:
+    _write(
+        repo,
+        THRESHOLDS,
+        b"BASELINE = 1\n# PREREGISTRATION_06_3_5 JUDGE_QWK_TRUST_FLOOR\n",
+    )
+    problems = gitcheck.preregistration_problems(
+        BOTH, unchanged_since_introduction=True, repo=repo
+    )
+    assert len(problems) == 2
+    assert all("no readable assignment" in p for p in problems)
+
+
+def test_drive_refuses_a_split_corpus_whose_preregistered_value_changed(
+    tmp_path: Path, repo: Path
+) -> None:
+    _write(repo, THRESHOLDS, _V3)
+    _commit(repo, "tweak", T0 + 200)
+    args = _drive_args(tmp_path, "multihop_rag_heldout")
+
+    with pytest.raises(gitcheck.PreregistrationError, match="differs") as excinfo:
+        drive(**args, git_repo=repo)  # type: ignore[arg-type]
+    assert "D-73" in str(excinfo.value)
+    assert not (tmp_path / "journal.jsonl").exists()
+
+
+def test_score_refuses_a_split_report_whose_preregistered_value_changed(
+    repo: Path,
+) -> None:
+    _write(repo, THRESHOLDS, _V3)
+    _commit(repo, "tweak", T0 + 200)
+    with pytest.raises(ScoreError, match="differs"):
+        score_mod._require_preregistered_before(float(T0 + 1000), repo)
+
+
+def test_the_live_repository_values_match_their_introducing_commit() -> None:
+    """The closed run of record passes the new check against the real history."""
+    live = gitcheck.introducing_commit(
+        gitcheck.PREREGISTRATION_TOKEN, gitcheck.THRESHOLDS_PATH
+    )
+    if live is None:
+        pytest.skip("the git history that introduced the pre-registration is absent")
+    problems = gitcheck.preregistration_problems(
+        BOTH, unchanged_since_introduction=True
+    )
+    assert problems == []
+
+
+def test_score_refuses_a_split_report_when_the_source_tree_is_dirty(
+    repo: Path,
+) -> None:
+    _write(repo, OTHER, b"X = 99\n")
+    with pytest.raises(ScoreError, match="uncommitted"):
+        score_mod._require_preregistered_before(float(T0 + 1000), repo)

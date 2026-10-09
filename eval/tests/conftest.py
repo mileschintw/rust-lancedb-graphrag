@@ -275,6 +275,9 @@ def preregistered_clean_tree(monkeypatch: pytest.MonkeyPatch) -> str:
     monkeypatch.setattr(gitcheck, "is_ancestor", lambda a, b, *, repo=None: True)
     monkeypatch.setattr(gitcheck, "is_clean", lambda *paths, repo=None: True)
     monkeypatch.setattr(
+        gitcheck, "preregistered_value_problem", lambda token, sha, *, repo=None: None
+    )
+    monkeypatch.setattr(
         gitcheck, "commit_time", lambda sha, *, repo=None: int(time.time()) - 3600
     )
     return introducing

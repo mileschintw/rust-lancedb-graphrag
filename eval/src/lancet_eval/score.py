@@ -255,9 +255,11 @@ def _require_preregistered_before(created_at: object, repo: Path | None) -> None
     """D-73: a `[split]` corpus's report needs the pre-registration older than its data.
 
     Raises:
-        ScoreError: If the journal header carries no numeric `created_at`, or the
+        ScoreError: If the journal header carries no numeric `created_at`, the
             commits introducing `PREREGISTRATION_06_3_5` and `JUDGE_QWK_TRUST_FLOOR` are
-            absent, not ancestors of HEAD, or not strictly older than `created_at`.
+            absent, not ancestors of HEAD, or not strictly older than `created_at`, the
+            source tree has an uncommitted change, or either constant differs from the
+            value its introducing commit set (WR-02).
     """
     if isinstance(created_at, bool) or not isinstance(created_at, int | float):
         raise ScoreError(
@@ -267,6 +269,8 @@ def _require_preregistered_before(created_at: object, repo: Path | None) -> None
     problems = gitcheck.preregistration_problems(
         (gitcheck.PREREGISTRATION_TOKEN, gitcheck.TRUST_FLOOR_TOKEN),
         created_at=float(created_at),
+        require_clean_tree=True,
+        unchanged_since_introduction=True,
         repo=repo,
     )
     if problems:

@@ -429,6 +429,7 @@ def drive(
         problems = gitcheck.preregistration_problems(
             (gitcheck.PREREGISTRATION_TOKEN,),
             require_clean_tree=True,
+            unchanged_since_introduction=True,
             repo=git_repo,
         )
         if problems:

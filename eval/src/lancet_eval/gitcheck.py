@@ -14,6 +14,7 @@ at call time (`gitcheck.is_clean(...)`), so a test can monkeypatch them.
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import subprocess
@@ -191,11 +192,82 @@ def first_commit_adding(path: str, *, repo: Path | None = None) -> str | None:
     return lines[0] if lines else None
 
 
+def _assigned_value(source: str, name: str) -> str | None:
+    """The AST dump of the value last assigned to module-level `name`, or None.
+
+    Parsed, never executed, so a comment or a formatting change is not a difference
+    and a changed literal is.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+    found: str | None = None
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            target, value = node.target.id, node.value
+        elif (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            target, value = node.targets[0].id, node.value
+        else:
+            continue
+        if target == name and value is not None:
+            found = ast.dump(value)
+    return found
+
+
+def preregistered_value_problem(
+    token: str, sha: str, *, repo: Path | None = None
+) -> str | None:
+    """Why `token` no longer has the value it was committed with, or None if it does.
+
+    Compares the assignment of `token` in THRESHOLDS_PATH as committed at `sha` (the
+    introducing commit) with the assignment in the file on disk, which is what the
+    harness imports and applies. A later commit and an uncommitted edit are both
+    caught; the ordering gates alone prove only that the commit predates the data.
+
+    Args:
+        token: The constant to compare.
+        sha: The commit that introduced it.
+        repo: Repository to query; the live repository when None.
+
+    Returns:
+        One sentence, or None when the two assignments are AST-equal.
+
+    Raises:
+        GitCheckError: If the committed blob cannot be read.
+    """
+    committed = _assigned_value(show_blob(sha, THRESHOLDS_PATH, repo=repo), token)
+    path = (repo_root() if repo is None else Path(repo)) / THRESHOLDS_PATH
+    try:
+        current = _assigned_value(path.read_text(encoding="utf-8"), token)
+    except OSError as exc:
+        return f"{THRESHOLDS_PATH} cannot be read to compare {token}: {exc}"
+    if committed is None:
+        return (
+            f"{token} has no readable assignment in {THRESHOLDS_PATH} at the "
+            f"introducing commit ({sha[:12]}), so its value cannot be compared"
+        )
+    if current is None:
+        return f"{token} has no readable assignment in {THRESHOLDS_PATH} on disk"
+    if committed != current:
+        return (
+            f"{token} in {THRESHOLDS_PATH} differs from its value at the introducing "
+            f"commit ({sha[:12]}): a pre-registered value must not change after "
+            "commit"
+        )
+    return None
+
+
 def preregistration_problems(
     tokens: tuple[str, ...],
     *,
     created_at: float | None = None,
     require_clean_tree: bool = False,
+    unchanged_since_introduction: bool = False,
     repo: Path | None = None,
 ) -> list[str]:
     """Why the D-73 ordering does not hold, one sentence per problem (empty if it does).
@@ -203,12 +275,16 @@ def preregistration_problems(
     For each token: a commit in THRESHOLDS_PATH introduces it, that commit is an
     ancestor of HEAD, and, when `created_at` is given, its commit time is strictly
     earlier than `created_at` (the journal header's epoch seconds). With
-    `require_clean_tree`, SOURCE_DIR must have no uncommitted change.
+    `require_clean_tree`, SOURCE_DIR must have no uncommitted change. With
+    `unchanged_since_introduction`, each token's assignment on disk must be AST-equal
+    to the one at its introducing commit (WR-02).
 
     Args:
         tokens: Constants of THRESHOLDS_PATH that must have been committed first.
         created_at: Epoch seconds the data was created; None skips the time check.
         require_clean_tree: Also refuse a dirty SOURCE_DIR.
+        unchanged_since_introduction: Also refuse a token whose value differs from
+            the one its introducing commit set.
         repo: Repository to query; the live repository when None.
 
     Returns:
@@ -234,6 +310,10 @@ def preregistration_problems(
                 f"the commit introducing {token} ({sha[:12]}) is not older than the "
                 "journal header's created_at"
             )
+        if unchanged_since_introduction:
+            drift = preregistered_value_problem(token, sha, repo=repo)
+            if drift is not None:
+                problems.append(drift)
     if require_clean_tree and not is_clean(SOURCE_DIR, repo=repo):
         problems.append(f"{SOURCE_DIR} has an uncommitted change")
     return problems
