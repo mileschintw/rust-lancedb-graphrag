@@ -6,8 +6,8 @@
 | Parameter | Value |
 |---|---|
 | **Corpus** | `multihop_rag_heldout` |
-| **Run Date** | `2026-10-08T01:08:34.728504+00:00` |
-| **Commit SHA** | `8af27322beee804a2a75296e120a1656dceed2fe` |
+| **Run Date** | `2026-10-08T07:41:26.575929+00:00` |
+| **Commit SHA** | `f79de2b9f92144357c8db5bd68bce35b909dcae9` |
 | **Generation Model** | `deepseek/deepseek-v4-flash-0731` |
 | **Embedding Model** | `voyageai/voyage-4-large` |
 | **Judge Model** | `meta-llama/llama-3.3-70b-instruct` |
@@ -16,12 +16,12 @@
 | **Sampling Seed** | `42` |
 | **Deterministic Sample Size** | `351` |
 | **Judged Sample Size** | `0` |
-| **Completed Calibration Dual Scores** | `0` |
+| **Completed Calibration Dual Scores** | `20` |
 | **Index Generation** | `lance-702` |
-| **Result Hash** | `b6b5255c322b4f7e` |
+| **Result Hash** | `97dc6bf7ede6865a` |
 | **Dependency Lock Hash** | `8e71ea9ce7a3532b` |
 | **Arm Labels** | `dense-only, bm25-only, hybrid, hybrid+graph` |
-| **Notes** | No judge-versus-human calibration was performed; judged dimensions are uncalibrated. |
+| **Notes** | Ordered judged protocol (D-113, D-120): the D-114 labels and the selection-effect text are in judged-result.json. |
 
 
 ## Evaluation Dimensions
@@ -711,6 +711,70 @@
 
 
 | `null_abstention_correctness__hybrid_graph` | ok | **0.953** | 43 | successes=41, ci_lower=0.845, ci_upper=0.987, n_excluded=0, hallucinated_on_null=2, no_evidence_count=0, leak_count=0 |
+
+
+
+| `answer_groundedness__dense_only` | ok | **4.60** | 191 | judge_errors=0, n_p4=296, abstention_n=296, d114_label_code=0, abstention_rate=0.355, ci_lower=4.482, ci_upper=4.712, type_comparison_query_n=77, type_comparison_query_value=4.974, type_comparison_query_ci_lower=4.922, type_comparison_query_ci_upper=5, type_inference_query_n=94, type_inference_query_value=4.213, type_inference_query_ci_lower=4, type_inference_query_ci_upper=4.415, type_temporal_query_n=20, type_temporal_query_value=5, type_temporal_query_ci_lower=5, type_temporal_query_ci_upper=5 |
+
+
+
+| `answer_faithfulness__dense_only` | ok | **4.76** | 191 | judge_errors=0, n_p4=296, abstention_n=296, d114_label_code=0, abstention_rate=0.355, ci_lower=4.665, ci_upper=4.853, type_comparison_query_n=77, type_comparison_query_value=5, type_comparison_query_ci_lower=5, type_comparison_query_ci_upper=5, type_inference_query_n=94, type_inference_query_value=4.521, type_inference_query_ci_lower=4.330, type_inference_query_ci_upper=4.691, type_temporal_query_n=20, type_temporal_query_value=5, type_temporal_query_ci_lower=5, type_temporal_query_ci_upper=5 |
+
+
+
+| `answer_groundedness__bm25_only` | ok | **4.16** | 132 | judge_errors=0, n_p4=296, abstention_n=296, d114_label_code=0, abstention_rate=0.554, ci_lower=3.947, ci_upper=4.356, type_comparison_query_n=41, type_comparison_query_value=4.976, type_comparison_query_ci_lower=4.927, type_comparison_query_ci_upper=5, type_inference_query_n=75, type_inference_query_value=3.533, type_inference_query_ci_lower=3.240, type_inference_query_ci_upper=3.813, type_temporal_query_n=16, type_temporal_query_value=5, type_temporal_query_ci_lower=5, type_temporal_query_ci_upper=5 |
+
+
+
+| `answer_faithfulness__bm25_only` | ok | **4.64** | 132 | judge_errors=0, n_p4=296, abstention_n=296, d114_label_code=0, abstention_rate=0.554, ci_lower=4.455, ci_upper=4.795, type_comparison_query_n=41, type_comparison_query_value=5, type_comparison_query_ci_lower=5, type_comparison_query_ci_upper=5, type_inference_query_n=75, type_inference_query_value=4.360, type_inference_query_ci_lower=4.040, type_inference_query_ci_upper=4.627, type_temporal_query_n=16, type_temporal_query_value=5, type_temporal_query_ci_lower=5, type_temporal_query_ci_upper=5 |
+
+
+
+| `answer_groundedness__hybrid` | ok | **4.51** | 183 | judge_errors=0, n_p4=296, abstention_n=296, d114_label_code=0, abstention_rate=0.382, ci_lower=4.372, ci_upper=4.639, type_comparison_query_n=65, type_comparison_query_value=4.938, type_comparison_query_ci_lower=4.846, type_comparison_query_ci_upper=5, type_inference_query_n=95, type_inference_query_value=4.095, type_inference_query_ci_lower=3.874, type_inference_query_ci_upper=4.305, type_temporal_query_n=23, type_temporal_query_value=5, type_temporal_query_ci_lower=5, type_temporal_query_ci_upper=5 |
+
+
+
+| `answer_faithfulness__hybrid` | ok | **4.75** | 183 | judge_errors=0, n_p4=296, abstention_n=296, d114_label_code=0, abstention_rate=0.382, ci_lower=4.639, ci_upper=4.842, type_comparison_query_n=65, type_comparison_query_value=4.969, type_comparison_query_ci_lower=4.908, type_comparison_query_ci_upper=5, type_inference_query_n=95, type_inference_query_value=4.537, type_inference_query_ci_lower=4.347, type_inference_query_ci_upper=4.716, type_temporal_query_n=23, type_temporal_query_value=5, type_temporal_query_ci_lower=5, type_temporal_query_ci_upper=5 |
+
+
+
+| `answer_groundedness__hybrid_graph` | ok | **4.45** | 177 | judge_errors=0, n_p4=296, abstention_n=296, d114_label_code=0, abstention_rate=0.402, ci_lower=4.311, ci_upper=4.588, type_comparison_query_n=64, type_comparison_query_value=4.922, type_comparison_query_ci_lower=4.812, type_comparison_query_ci_upper=5, type_inference_query_n=95, type_inference_query_value=4.053, type_inference_query_ci_lower=3.842, type_inference_query_ci_upper=4.263, type_temporal_query_n=18, type_temporal_query_value=4.889, type_temporal_query_ci_lower=4.667, type_temporal_query_ci_upper=5 |
+
+
+
+| `answer_faithfulness__hybrid_graph` | ok | **4.72** | 177 | judge_errors=0, n_p4=296, abstention_n=296, d114_label_code=0, abstention_rate=0.402, ci_lower=4.621, ci_upper=4.819, type_comparison_query_n=64, type_comparison_query_value=5, type_comparison_query_ci_lower=5, type_comparison_query_ci_upper=5, type_inference_query_n=95, type_inference_query_value=4.484, type_inference_query_ci_lower=4.305, type_inference_query_ci_upper=4.653, type_temporal_query_n=18, type_temporal_query_value=5, type_temporal_query_ci_lower=5, type_temporal_query_ci_upper=5 |
+
+
+
+| `answer_groundedness_delta__dense_only` | ok | **0.06** | 160 | dropped_only_arm_abstained=23, dropped_only_hybrid_abstained=31, dropped_both_abstained=82, dropped_judge_unavailable=0, judge_errors_x=0, judge_errors_hybrid=0, abstention_n=296, d114_label_code=0, abstention_rate_x=0.355, abstention_rate_hybrid=0.382, abstention_rate_delta=-0.027, abstention_rate_delta_ci_lower=-0.074, abstention_rate_delta_ci_upper=0.024, abstention_differs=0, ci_lower=-0.081, ci_upper=0.206, n_pairs=160, mean_x=4.537, mean_hybrid=4.475, type_comparison_query_n_pairs=53, type_comparison_query_delta=0.038, type_comparison_query_ci_lower=0, type_comparison_query_ci_upper=0.113, type_inference_query_n_pairs=93, type_inference_query_delta=0.086, type_inference_query_ci_lower=-0.151, type_inference_query_ci_upper=0.323, type_temporal_query_n_pairs=14, type_temporal_query_delta=0, type_temporal_query_ci_lower=0, type_temporal_query_ci_upper=0 |
+
+
+
+| `answer_faithfulness_delta__dense_only` | ok | **-0.03** | 160 | dropped_only_arm_abstained=23, dropped_only_hybrid_abstained=31, dropped_both_abstained=82, dropped_judge_unavailable=0, judge_errors_x=0, judge_errors_hybrid=0, abstention_n=296, d114_label_code=0, abstention_rate_x=0.355, abstention_rate_hybrid=0.382, abstention_rate_delta=-0.027, abstention_rate_delta_ci_lower=-0.074, abstention_rate_delta_ci_upper=0.024, abstention_differs=0, ci_lower=-0.163, ci_upper=0.113, n_pairs=160, mean_x=4.719, mean_hybrid=4.744, type_comparison_query_n_pairs=53, type_comparison_query_delta=0.038, type_comparison_query_ci_lower=0, type_comparison_query_ci_upper=0.113, type_inference_query_n_pairs=93, type_inference_query_delta=-0.065, type_inference_query_ci_lower=-0.301, type_inference_query_ci_upper=0.172, type_temporal_query_n_pairs=14, type_temporal_query_delta=0, type_temporal_query_ci_lower=0, type_temporal_query_ci_upper=0 |
+
+
+
+| `answer_groundedness_delta__bm25_only` | ok | **-0.38** | 122 | dropped_only_arm_abstained=61, dropped_only_hybrid_abstained=10, dropped_both_abstained=103, dropped_judge_unavailable=0, judge_errors_x=0, judge_errors_hybrid=0, abstention_n=296, d114_label_code=0, abstention_rate_x=0.554, abstention_rate_hybrid=0.382, abstention_rate_delta=0.172, abstention_rate_delta_ci_lower=0.122, abstention_rate_delta_ci_upper=0.226, abstention_differs=1, ci_lower=-0.566, ci_upper=-0.189, n_pairs=122, mean_x=4.090, mean_hybrid=4.467, type_comparison_query_n_pairs=34, type_comparison_query_delta=0.029, type_comparison_query_ci_lower=-0.088, type_comparison_query_ci_upper=0.176, type_inference_query_n_pairs=74, type_inference_query_delta=-0.635, type_inference_query_ci_lower=-0.932, type_inference_query_ci_upper=-0.338, type_temporal_query_n_pairs=14, type_temporal_query_delta=0, type_temporal_query_ci_lower=0, type_temporal_query_ci_upper=0 |
+
+
+
+| `answer_faithfulness_delta__bm25_only` | ok | **-0.16** | 122 | dropped_only_arm_abstained=61, dropped_only_hybrid_abstained=10, dropped_both_abstained=103, dropped_judge_unavailable=0, judge_errors_x=0, judge_errors_hybrid=0, abstention_n=296, d114_label_code=0, abstention_rate_x=0.554, abstention_rate_hybrid=0.382, abstention_rate_delta=0.172, abstention_rate_delta_ci_lower=0.122, abstention_rate_delta_ci_upper=0.226, abstention_differs=1, ci_lower=-0.352, ci_upper=0.033, n_pairs=122, mean_x=4.607, mean_hybrid=4.762, type_comparison_query_n_pairs=34, type_comparison_query_delta=0.059, type_comparison_query_ci_lower=0, type_comparison_query_ci_upper=0.176, type_inference_query_n_pairs=74, type_inference_query_delta=-0.284, type_inference_query_ci_lower=-0.595, type_inference_query_ci_upper=0.014, type_temporal_query_n_pairs=14, type_temporal_query_delta=0, type_temporal_query_ci_lower=0, type_temporal_query_ci_upper=0 |
+
+
+
+| `answer_groundedness_delta__hybrid_graph` | ok | **-0.02** | 161 | dropped_only_arm_abstained=22, dropped_only_hybrid_abstained=16, dropped_both_abstained=97, dropped_judge_unavailable=0, judge_errors_x=0, judge_errors_hybrid=0, abstention_n=296, d114_label_code=0, abstention_rate_x=0.402, abstention_rate_hybrid=0.382, abstention_rate_delta=0.020, abstention_rate_delta_ci_lower=-0.020, abstention_rate_delta_ci_upper=0.061, abstention_differs=0, ci_lower=-0.118, ci_upper=0.062, n_pairs=161, mean_x=4.416, mean_hybrid=4.441, type_comparison_query_n_pairs=51, type_comparison_query_delta=0, type_comparison_query_ci_lower=-0.118, type_comparison_query_ci_upper=0.118, type_inference_query_n_pairs=95, type_inference_query_delta=-0.042, type_inference_query_ci_lower=-0.189, type_inference_query_ci_upper=0.095, type_temporal_query_n_pairs=15, type_temporal_query_delta=0, type_temporal_query_ci_lower=0, type_temporal_query_ci_upper=0 |
+
+
+
+| `answer_faithfulness_delta__hybrid_graph` | ok | **-0.02** | 161 | dropped_only_arm_abstained=22, dropped_only_hybrid_abstained=16, dropped_both_abstained=97, dropped_judge_unavailable=0, judge_errors_x=0, judge_errors_hybrid=0, abstention_n=296, d114_label_code=0, abstention_rate_x=0.402, abstention_rate_hybrid=0.382, abstention_rate_delta=0.020, abstention_rate_delta_ci_lower=-0.020, abstention_rate_delta_ci_upper=0.061, abstention_differs=0, ci_lower=-0.118, ci_upper=0.081, n_pairs=161, mean_x=4.696, mean_hybrid=4.714, type_comparison_query_n_pairs=51, type_comparison_query_delta=0.039, type_comparison_query_ci_lower=0, type_comparison_query_ci_upper=0.118, type_inference_query_n_pairs=95, type_inference_query_delta=-0.053, type_inference_query_ci_lower=-0.211, type_inference_query_ci_upper=0.116, type_temporal_query_n_pairs=15, type_temporal_query_delta=0, type_temporal_query_ci_lower=0, type_temporal_query_ci_upper=0 |
+
+
+
+| `judge_qwk_groundedness` | ok | **-0.03** | 20 | n_pairs=20, d114_floor=0.700, d114_label_code=0, qwk_dropped_resamples=0, spearman_dropped_resamples=109, ci_lower=-0.323, ci_upper=0.257, spearman=-0.038, spearman_ci_lower=-0.542, spearman_ci_upper=0.478, exact_agreement=0.200, mad=1.100, mean_signed_difference=0.600, joint_5_5_share=0.100, judge_marginal_1=1, human_marginal_1=0, judge_marginal_2=0, human_marginal_2=0, judge_marginal_3=2, human_marginal_3=4, judge_marginal_4=1, human_marginal_4=13, judge_marginal_5=16, human_marginal_5=3, exact_agreement_n__dense_only=5, exact_agreement_exact__dense_only=1, exact_agreement_n__bm25_only=5, exact_agreement_exact__bm25_only=0, exact_agreement_n__hybrid=5, exact_agreement_exact__hybrid=2, exact_agreement_n__hybrid_graph=5, exact_agreement_exact__hybrid_graph=1 |
+
+
+
+| `judge_qwk_faithfulness` | ok | **0.07** | 20 | n_pairs=20, d114_floor=0.700, d114_label_code=0, qwk_dropped_resamples=0, spearman_dropped_resamples=363, ci_lower=-0.301, ci_upper=0.591, spearman=0.023, spearman_ci_lower=-0.400, spearman_ci_upper=0.589, exact_agreement=0.500, mad=0.800, mean_signed_difference=0.200, joint_5_5_share=0.500, judge_marginal_1=1, human_marginal_1=0, judge_marginal_2=0, human_marginal_2=1, judge_marginal_3=2, human_marginal_3=2, judge_marginal_4=0, human_marginal_4=5, judge_marginal_5=17, human_marginal_5=12, exact_agreement_n__dense_only=5, exact_agreement_exact__dense_only=3, exact_agreement_n__bm25_only=5, exact_agreement_exact__bm25_only=1, exact_agreement_n__hybrid=5, exact_agreement_exact__hybrid=3, exact_agreement_n__hybrid_graph=5, exact_agreement_exact__hybrid_graph=3 |
 
 
 

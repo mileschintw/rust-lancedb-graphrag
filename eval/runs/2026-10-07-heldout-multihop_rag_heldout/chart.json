@@ -1,0 +1,98 @@
+{
+  "arms": [
+    "dense-only",
+    "bm25-only",
+    "hybrid",
+    "hybrid+graph"
+  ],
+  "caveat": "Cited, not comparable: arXiv 2401.15391 v1, Table 5 (Without Reranker) is shown beside these arms only as a reference. (a) The paper's setup is dense-only, and the paper has no BM25 or hybrid row; lancet's arms include BM25-only, hybrid and hybrid+graph. (b) The paper uses LlamaIndex with 256-token chunks and cosine top-K retrieval. (c) The paper's reranker columns re-rank 20 retrieved chunks with bge-reranker-large; they are not cited here, because production runs a no-op reranker. (d) The paper's prose defines Hit@K as the fraction of evidence that appears in the top-K retrieved set, but the pinned official script counts a query as a hit if any relevant chunk is in the top K, and D-102 says the script governs. (e) The official script uses text matching, while lancet's headline figures use chunk-ID matching through the gold-chunk table (the text rule is a cross-check). (f) The paper excludes nulls (\"NULL queries are excluded in this experiment\"). Lancet's population here is the 308 G-restricted held-out questions, while the paper averages over all non-null queries of its 2,556-question set; G-restriction removes questions whose evidence is split across chunks or absent from the index, which raises lancet's figures relative to a full-population reading. Lancet indexes a 346-document subset of the MultiHop-RAG corpus, not the paper's full document set. Lancet's chunker and embedder (`voyageai/voyage-4-large`) differ from the paper's.",
+  "paper_reference": {
+    "caption": "Retrieval performance of different embedding models.",
+    "citation": "arXiv 2401.15391 v1, Table 5",
+    "configuration": "Without Reranker",
+    "rows": [
+      {
+        "embedding": "bge-large-en-v1.5",
+        "hits_at_10": 0.6718,
+        "hits_at_4": 0.5221,
+        "map_at_10": 0.3423,
+        "mrr_at_10": 0.4298
+      },
+      {
+        "embedding": "voyage-02",
+        "hits_at_10": 0.6506,
+        "hits_at_4": 0.4619,
+        "map_at_10": 0.3143,
+        "mrr_at_10": 0.3934
+      }
+    ]
+  },
+  "run": "2026-10-07-heldout-multihop_rag_heldout",
+  "schema_version": 1,
+  "series": [
+    {
+      "arm": "dense-only",
+      "ci_hi": 0.7865443095646224,
+      "ci_lo": 0.6870390757961816,
+      "metric": "paper_hits_at_4",
+      "n": 296,
+      "value": 0.7398648648648649
+    },
+    {
+      "arm": "bm25-only",
+      "ci_hi": 0.6194997741376708,
+      "ci_lo": 0.5072338078602908,
+      "metric": "paper_hits_at_4",
+      "n": 296,
+      "value": 0.5641891891891891
+    },
+    {
+      "arm": "hybrid",
+      "ci_hi": 0.7392087932848845,
+      "ci_lo": 0.6343217641827916,
+      "metric": "paper_hits_at_4",
+      "n": 296,
+      "value": 0.6891891891891891
+    },
+    {
+      "arm": "hybrid+graph",
+      "ci_hi": 0.7296516477257708,
+      "ci_lo": 0.62386834416328,
+      "metric": "paper_hits_at_4",
+      "n": 296,
+      "value": 0.6790540540540541
+    },
+    {
+      "arm": "dense-only",
+      "ci_hi": 0.6358981046774418,
+      "ci_lo": 0.5241864199515621,
+      "metric": "answer_usable_p4",
+      "n": 296,
+      "value": 0.581081081081081
+    },
+    {
+      "arm": "bm25-only",
+      "ci_hi": 0.44855087766496216,
+      "ci_lo": 0.3380030894963657,
+      "metric": "answer_usable_p4",
+      "n": 296,
+      "value": 0.3918918918918919
+    },
+    {
+      "arm": "hybrid",
+      "ci_hi": 0.6260670006539173,
+      "ci_lo": 0.5140069583964613,
+      "metric": "answer_usable_p4",
+      "n": 296,
+      "value": 0.5709459459459459
+    },
+    {
+      "arm": "hybrid+graph",
+      "ci_hi": 0.6162122359858359,
+      "ci_lo": 0.5038511574859174,
+      "metric": "answer_usable_p4",
+      "n": 296,
+      "value": 0.5608108108108109
+    }
+  ]
+}

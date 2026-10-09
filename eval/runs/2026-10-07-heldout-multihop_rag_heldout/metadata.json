@@ -1,7 +1,7 @@
 {
   "corpus": "multihop_rag_heldout",
-  "run_date": "2026-10-08T01:08:34.728504+00:00",
-  "commit_sha": "8af27322beee804a2a75296e120a1656dceed2fe",
+  "run_date": "2026-10-08T07:41:26.575929+00:00",
+  "commit_sha": "f79de2b9f92144357c8db5bd68bce35b909dcae9",
   "generation_model": "deepseek/deepseek-v4-flash-0731",
   "embedding_model": "voyageai/voyage-4-large",
   "judge_model": "meta-llama/llama-3.3-70b-instruct",
@@ -10,9 +10,9 @@
   "sampling_seed": 42,
   "sample_size_deterministic": 351,
   "sample_size_judged": 0,
-  "calibration_completed_n": 0,
+  "calibration_completed_n": 20,
   "index_generation": "lance-702",
-  "result_hash": "b6b5255c322b4f7e",
+  "result_hash": "97dc6bf7ede6865a",
   "arm_labels": [
     "dense-only",
     "bm25-only",
@@ -21,7 +21,7 @@
   ],
   "dependency_lock_hash": "8e71ea9ce7a3532b",
   "partial": false,
-  "notes": "No judge-versus-human calibration was performed; judged dimensions are uncalibrated.",
+  "notes": "Ordered judged protocol (D-113, D-120): the D-114 labels and the selection-effect text are in judged-result.json.",
   "judged_slice_committed": 0,
   "verdicts_obtained": 0,
   "judged_slice_state": "not_judged"

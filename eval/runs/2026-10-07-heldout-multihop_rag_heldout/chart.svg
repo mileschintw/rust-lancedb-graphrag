@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="760" height="520" viewBox="0 0 760 520" role="img" aria-labelledby="chart-title chart-desc">
+<title id="chart-title">Four-arm comparison: 2026-10-07-heldout-multihop_rag_heldout</title>
+<desc id="chart-desc">Grouped bars of the per-arm value with Wilson 95% error bars.</desc>
+<rect class="background" x="0" y="0" width="760" height="520" fill="#ffffff"/>
+<text class="title" x="70" y="30" font-family="sans-serif" font-size="16" font-weight="bold">Four-arm comparison: 2026-10-07-heldout-multihop_rag_heldout</text>
+<text class="subtitle" x="70" y="50" font-family="sans-serif" font-size="11" fill="#444444">Paper-convention Hits@4 and answer_usable per arm, on P4</text>
+<g class="axis">
+<line class="gridline" x1="70" y1="360.00" x2="730" y2="360.00" stroke="#dddddd" stroke-width="1"/>
+<text class="tick-label" x="62" y="364.00" text-anchor="end" font-family="sans-serif" font-size="11">0.0</text>
+<line class="gridline" x1="70" y1="304.00" x2="730" y2="304.00" stroke="#dddddd" stroke-width="1"/>
+<text class="tick-label" x="62" y="308.00" text-anchor="end" font-family="sans-serif" font-size="11">0.2</text>
+<line class="gridline" x1="70" y1="248.00" x2="730" y2="248.00" stroke="#dddddd" stroke-width="1"/>
+<text class="tick-label" x="62" y="252.00" text-anchor="end" font-family="sans-serif" font-size="11">0.4</text>
+<line class="gridline" x1="70" y1="192.00" x2="730" y2="192.00" stroke="#dddddd" stroke-width="1"/>
+<text class="tick-label" x="62" y="196.00" text-anchor="end" font-family="sans-serif" font-size="11">0.6</text>
+<line class="gridline" x1="70" y1="136.00" x2="730" y2="136.00" stroke="#dddddd" stroke-width="1"/>
+<text class="tick-label" x="62" y="140.00" text-anchor="end" font-family="sans-serif" font-size="11">0.8</text>
+<line class="gridline" x1="70" y1="80.00" x2="730" y2="80.00" stroke="#dddddd" stroke-width="1"/>
+<text class="tick-label" x="62" y="84.00" text-anchor="end" font-family="sans-serif" font-size="11">1.0</text>
+<line class="axis-line" x1="70" y1="80" x2="70" y2="360" stroke="#333333" stroke-width="1"/>
+<line class="axis-line" x1="70" y1="360" x2="730" y2="360" stroke="#333333" stroke-width="1"/>
+<text class="axis-title" x="18" y="220.00" transform="rotate(-90 18 220.00)" text-anchor="middle" font-family="sans-serif" font-size="11">rate on P4 (fixed scale 0 to 1)</text>
+</g>
+<g class="bar-group" data-metric="paper_hits_at_4">
+<rect class="bar" data-arm="dense-only" data-value="0.74" x="122.14" y="152.84" width="47.52" height="207.16" fill="#4C78A8"/>
+<line class="errbar" data-arm="dense-only" x1="145.90" y1="139.77" x2="145.90" y2="167.63" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="dense-only" x1="141.90" y1="139.77" x2="149.90" y2="139.77" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="dense-only" x1="141.90" y1="167.63" x2="149.90" y2="167.63" stroke="#222222" stroke-width="1.5"/>
+<text class="bar-value" x="145.90" y="134.77" text-anchor="middle" font-family="sans-serif" font-size="10">0.74</text>
+<rect class="bar" data-arm="bm25-only" data-value="0.56" x="181.54" y="202.03" width="47.52" height="157.97" fill="#F58518"/>
+<line class="errbar" data-arm="bm25-only" x1="205.30" y1="186.54" x2="205.30" y2="217.97" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="bm25-only" x1="201.30" y1="186.54" x2="209.30" y2="186.54" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="bm25-only" x1="201.30" y1="217.97" x2="209.30" y2="217.97" stroke="#222222" stroke-width="1.5"/>
+<text class="bar-value" x="205.30" y="181.54" text-anchor="middle" font-family="sans-serif" font-size="10">0.56</text>
+<rect class="bar" data-arm="hybrid" data-value="0.69" x="240.94" y="167.03" width="47.52" height="192.97" fill="#54A24B"/>
+<line class="errbar" data-arm="hybrid" x1="264.70" y1="153.02" x2="264.70" y2="182.39" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="hybrid" x1="260.70" y1="153.02" x2="268.70" y2="153.02" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="hybrid" x1="260.70" y1="182.39" x2="268.70" y2="182.39" stroke="#222222" stroke-width="1.5"/>
+<text class="bar-value" x="264.70" y="148.02" text-anchor="middle" font-family="sans-serif" font-size="10">0.69</text>
+<rect class="bar" data-arm="hybrid+graph" data-value="0.68" x="300.34" y="169.86" width="47.52" height="190.14" fill="#B279A2"/>
+<line class="errbar" data-arm="hybrid+graph" x1="324.10" y1="155.70" x2="324.10" y2="185.32" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="hybrid+graph" x1="320.10" y1="155.70" x2="328.10" y2="155.70" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="hybrid+graph" x1="320.10" y1="185.32" x2="328.10" y2="185.32" stroke="#222222" stroke-width="1.5"/>
+<text class="bar-value" x="324.10" y="150.70" text-anchor="middle" font-family="sans-serif" font-size="10">0.68</text>
+<text class="group-label" x="235.00" y="382.00" text-anchor="middle" font-family="sans-serif" font-size="12">Hits@4, paper convention (P4, ID rule)</text>
+</g>
+<g class="bar-group" data-metric="answer_usable_p4">
+<rect class="bar" data-arm="dense-only" data-value="0.58" x="452.14" y="197.30" width="47.52" height="162.70" fill="#4C78A8"/>
+<line class="errbar" data-arm="dense-only" x1="475.90" y1="181.95" x2="475.90" y2="213.23" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="dense-only" x1="471.90" y1="181.95" x2="479.90" y2="181.95" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="dense-only" x1="471.90" y1="213.23" x2="479.90" y2="213.23" stroke="#222222" stroke-width="1.5"/>
+<text class="bar-value" x="475.90" y="176.95" text-anchor="middle" font-family="sans-serif" font-size="10">0.58</text>
+<rect class="bar" data-arm="bm25-only" data-value="0.39" x="511.54" y="250.27" width="47.52" height="109.73" fill="#F58518"/>
+<line class="errbar" data-arm="bm25-only" x1="535.30" y1="234.41" x2="535.30" y2="265.36" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="bm25-only" x1="531.30" y1="234.41" x2="539.30" y2="234.41" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="bm25-only" x1="531.30" y1="265.36" x2="539.30" y2="265.36" stroke="#222222" stroke-width="1.5"/>
+<text class="bar-value" x="535.30" y="229.41" text-anchor="middle" font-family="sans-serif" font-size="10">0.39</text>
+<rect class="bar" data-arm="hybrid" data-value="0.57" x="570.94" y="200.14" width="47.52" height="159.86" fill="#54A24B"/>
+<line class="errbar" data-arm="hybrid" x1="594.70" y1="184.70" x2="594.70" y2="216.08" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="hybrid" x1="590.70" y1="184.70" x2="598.70" y2="184.70" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="hybrid" x1="590.70" y1="216.08" x2="598.70" y2="216.08" stroke="#222222" stroke-width="1.5"/>
+<text class="bar-value" x="594.70" y="179.70" text-anchor="middle" font-family="sans-serif" font-size="10">0.57</text>
+<rect class="bar" data-arm="hybrid+graph" data-value="0.56" x="630.34" y="202.97" width="47.52" height="157.03" fill="#B279A2"/>
+<line class="errbar" data-arm="hybrid+graph" x1="654.10" y1="187.46" x2="654.10" y2="218.92" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="hybrid+graph" x1="650.10" y1="187.46" x2="658.10" y2="187.46" stroke="#222222" stroke-width="1.5"/>
+<line class="errcap" data-arm="hybrid+graph" x1="650.10" y1="218.92" x2="658.10" y2="218.92" stroke="#222222" stroke-width="1.5"/>
+<text class="bar-value" x="654.10" y="182.46" text-anchor="middle" font-family="sans-serif" font-size="10">0.56</text>
+<text class="group-label" x="565.00" y="382.00" text-anchor="middle" font-family="sans-serif" font-size="12">answer_usable (P4)</text>
+</g>
+<g class="legend">
+<rect class="legend-swatch" x="70.00" y="408.00" width="12" height="12" fill="#4C78A8"/>
+<text class="legend-label" x="88.00" y="418.00" font-family="sans-serif" font-size="11">dense-only</text>
+<rect class="legend-swatch" x="180.00" y="408.00" width="12" height="12" fill="#F58518"/>
+<text class="legend-label" x="198.00" y="418.00" font-family="sans-serif" font-size="11">bm25-only</text>
+<rect class="legend-swatch" x="283.00" y="408.00" width="12" height="12" fill="#54A24B"/>
+<text class="legend-label" x="301.00" y="418.00" font-family="sans-serif" font-size="11">hybrid</text>
+<rect class="legend-swatch" x="365.00" y="408.00" width="12" height="12" fill="#B279A2"/>
+<text class="legend-label" x="383.00" y="418.00" font-family="sans-serif" font-size="11">hybrid+graph</text>
+</g>
+<g class="footnotes">
+<text class="footnote" x="70" y="450.00" font-family="sans-serif" font-size="9" fill="#444444">Error bars are Wilson 95% intervals on P4 (unadjusted, estimation only).</text>
+<text class="footnote" x="70" y="464.00" font-family="sans-serif" font-size="9" fill="#444444">Source: chart.json (schema_version 1). Interim chart; Phase 6.4 owns the final chart.</text>
+<text class="footnote" x="70" y="478.00" font-family="sans-serif" font-size="9" fill="#444444">arXiv 2401.15391 v1, Table 5 is cited in chart.json and comparison.md only; not comparable, see its caveat.</text>
+</g>
+</svg>
