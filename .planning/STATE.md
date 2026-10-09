@@ -1,20 +1,20 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 17
+current_plan: Not started
 status: executing
-stopped_at: Phase 06.3.5 executed (18/18); verification human_needed - run /gsd-verify-work 06.3.5 (2 UAT items); see 06.3.5-HANDOVER.md FINAL
-last_updated: "2026-10-07T07:16:21.878Z"
+stopped_at: Phase 06.3.5 complete, ready to plan Phase 06.3.6
+last_updated: "2026-10-09T04:28:54.176Z"
 last_activity: 2026-10-09
-state_head: 508378bde89cfad2f391129493971266d1023576
+state_head: 35a4aa3f962647bfec8450f511db0f302314b13d
 progress:
   total_phases: 18
   completed_phases: 10
-  total_plans: 209
-  completed_plans: 192
+  total_plans: 210
+  completed_plans: 210
 milestone_name: milestone
-current_phase_name: Retrieval ablation matrix, paper-convention metrics, judged pass and calibration
-current_phase: 06.3.5
+current_phase: 06.3.6
+current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, temporal metadata, answer format
 last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; parallel waves (1, 3-6) fan out through a Workflow run, single-plan waves run sequentially on main; 6.4 stays parked."
 ---
 
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 17 (wave 13 of 13) - execution complete; awaiting UAT (/gsd-verify-work 06.3.5)
+Current Plan: Not started
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-09: Phase 06.3.5 COMPLETE.** UAT 2/2: chart passed; owner adopted the G-1 override and signed off the framing, and the drive-2 comparability sentence was added. VALIDATION validated with 0 gaps. Review `--fix`: CR-01 and WR-01/04/05 fixed, WR-02 partial (`compare` not gated), WR-03 skipped as an owner decision; eval 1802, engine 753, gateway 120. SECURITY 68/68 with threats_open 0 (T-06.3.5-60 closed by `a3af9def`). Re-verification passed 9/9 with the run of record re-derived identically at HEAD. OBS-06 stays unticked (D-98; shared with 06.3.6). Next: `/gsd-discuss-phase 06.3.6` (carry-forwards in its ROADMAP section, plus WR-02 `compare` gate, WR-03 decision, IN-03, and 06.3.6 running on the post-CR-01 engine). Open owner question: the ROADMAP marks 6.3.5 `Mode: mvp` but its goal is not a user story.
 - **2026-10-08: Phase 06.3.5 execution complete; verification `human_needed` (8/9, all 7 SC met as worded).** Code review: 1 critical, 5 warnings, 6 info, all open (CR-01 affected 0 of 118 drive records). UAT `06.3.5-UAT.md`: chart.svg visual check, plus the owner decision on the plan 18 engine change against the goal wording and the framing sign-off. 06.3.5 carry-forwards added to the 06.3.6 ROADMAP section. Next: `/gsd-verify-work 06.3.5`.
 - **2026-10-08: 06.3.5-17 complete; all 18 plans executed.** Owner D-103: `row-matches`. Run of record `06.3.5-RUN-OF-RECORD.md` (`1b068dd1`): the first paragraph states SC-2 MISS / continue-with-disclosure (owner, post-hoc) / P4 296/308 / both judged dimensions uncalibrated (QWK -0.026, 0.066). Holm: only bm25-only vs hybrid rejects (paper_hits_at_4 and answer_usable). Phase spend $0.352621 settled. Next: phase tail gates (code review, regression, verification).
 - **2026-10-08: 06.3.5-17 Task 1 done, STOPPED at Task 2 (D-103 owner paper-row read, not pre-authorised).** Reveal commit `f79de2b9` (descends from scores `7c2371e2`). `score --judged`, `report` and `compare` all exit 0; P4 296/308. **D-114: both judged dimensions are uncalibrated** (groundedness QWK -0.026, faithfulness QWK 0.066, n=20). Outputs stay uncommitted until Task 3 (plus `metadata.json`, which `score --judged` rewrote and which goes into Task 3's pathspec).
@@ -295,7 +296,7 @@ Total Plans in Phase: 17
 
 ## Active Phase
 
-- **Phase:** 06.3.5 (Retrieval ablation matrix, paper-convention metrics, judged pass and calibration), executing since 2026-10-07. 17 plans, 12 waves; wave 1 (plans 01, 02) dispatched first. Phase 6.4 stays **parked** until the user decides the unpark.
+- **Phase:** 06.3.6 (Quality levers measured as arms), ready to discuss/plan. Its carry-forwards from 06.3.5 are in the ROADMAP section. Phase 6.4 stays **parked** until the user decides the unpark.
 - **06.3.4.1 follow-ups:** closed on 2026-10-06 (UAT 4/4, VALIDATION 0 gaps, SECURITY 156/156, re-verification 10/10). Two non-blocking security follow-ups remain: register the 14-SUMMARY `outbound-call` flag, and route `eval/scripts/drive_measurement_pass.py` through `require_index_identity` or retire it.
 - **Execution mode note (kept for later live-stack phases):** 06.3.4.1 ran sequentially on main, not in harness worktrees, because its plans read the gitignored live eval store and ran latency soaks. Executors run on Sonnet and sign with their own trailer (user decision, 2026-10-05).
 
@@ -311,6 +312,7 @@ Total Plans in Phase: 17
 - **Phase 06.3.3: Retrieval Latency Measurement Pass and Timeout Budget Derivation** (Completed: 2026-09-07 — 6/6 plans; timeout budgets anchored)
 - **Phase 06.3.4: Corrected re-drive, calibration and root-cause documentation** (Completed: 2026-09-10 — 7/7 plans; 658 records driven, findings documented in `06.3.4-FINDINGS.md`, forensic trail in `06.3.1-ROOT-CAUSE.md`, open items carried into Phase 6.4)
 - **Phase 06.3.4.1: Retrieval diagnosis, index identity, and graph-yield repair** (Completed: 2026-10-06 — 34/34 plans; run of record drive 2, D-83 `all-pass-close`; UAT gaps closed by plans 31-34; re-verification `passed` 10/10; 6.4 stays parked)
+- **Phase 06.3.5: Retrieval ablation matrix, paper-convention metrics, judged pass and calibration** (Completed: 2026-10-09 — 18/18 plans; held-out run of record with SC-2 MISS under continue-with-disclosure; UAT 2/2; VALIDATION 0 gaps; SECURITY 68/68; re-verification `passed` 9/9 with G-1 owner override; OBS-06 stays open for 06.3.6)
 
 ## Known Issues & Debt
 
@@ -560,10 +562,10 @@ Total Plans in Phase: 17
 
 ## Session
 
-**Last session:** 2026-10-07T01:55:26.126Z
-**Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 executed (18/18); verification human_needed - run /gsd-verify-work 06.3.5 (2 UAT items); see 06.3.5-HANDOVER.md FINAL
-**Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
+**Last session:** 2026-10-09
+**Last activity:** 2026-10-09
+**Stopped at:** Phase 06.3.5 complete, ready to plan Phase 06.3.6
+**Resume file:** None
 
 ## Accumulated Context
 
