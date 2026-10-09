@@ -42,8 +42,9 @@ pub const MAX_FINAL_ANSWER_CHARS: usize = 256;
 /// so changing it would change what the SC-3 metric can read.
 const RENDERED_LINE_PREFIX: &str = "\nAnswer: ";
 
-/// The label a model writes on its own `Answer:` line (D-71), matched case-sensitively
-/// because the D-71 policy prescribes exactly this literal.
+/// The label a model writes on its own `Answer:` line (D-71). The strip matches it
+/// case-sensitively because the D-71 policy prescribes exactly this literal; the abstention
+/// check matches the wider [`LabelRule::Tolerant`] form.
 const MODEL_ANSWER_LABEL: &str = "Answer:";
 
 /// The label word without its colon, matched case-insensitively when removing a label
@@ -150,6 +151,8 @@ struct ModelAnswerSegment<'a> {
     segment_start: usize,
     /// Offset in `last_line` of the `Answer:` label itself.
     label_at: usize,
+    /// Length in bytes of the label as written, through its colon.
+    label_len: usize,
 }
 
 impl<'a> ModelAnswerSegment<'a> {
@@ -160,22 +163,32 @@ impl<'a> ModelAnswerSegment<'a> {
 
     /// The text after the label, without surrounding whitespace or leading emphasis.
     fn value(&self) -> &'a str {
-        self.last_line[self.label_at + MODEL_ANSWER_LABEL.len()..]
+        self.last_line[self.label_at + self.label_len..]
             .trim_start_matches(|c: char| matches!(c, '*' | '_'))
             .trim()
     }
 }
 
-/// Finds the model's own trailing `Answer:` segment on the last line of `trimmed`.
-///
-/// `trimmed` is the answer with trailing whitespace removed. The label must begin the line or
-/// follow whitespace, and a leading `*` or `_` emphasis run belongs to the segment. The strip
-/// and the abstention check share this one rule, so they cannot disagree about where the
-/// model's segment is.
-fn locate_trailing_model_answer(trimmed: &str) -> Option<ModelAnswerSegment<'_>> {
-    let line_start = trimmed.rfind('\n').map_or(0, |idx| idx + 1);
-    let last_line = &trimmed[line_start..];
-    let label_at = last_line.rfind(MODEL_ANSWER_LABEL)?;
+/// How [`locate_trailing_model_answer`] recognises the model's `Answer:` label.
+#[derive(Clone, Copy)]
+enum LabelRule {
+    /// The literal `Answer:` the D-71 policy prescribes, matched case-sensitively. The strip
+    /// uses this rule so that it never cuts prose that merely contains the word.
+    Exact,
+    /// The word `answer` in any ASCII case, with optional `*`, `_` or space between the word
+    /// and its colon (`answer:`, `**answer:**`, `**Answer**:`), the same tolerance
+    /// [`strip_leading_answer_label`] applies. The abstention check uses this rule so that a
+    /// differently-cased model line cannot hide a disagreement with the `final_answer` field.
+    Tolerant,
+}
+
+/// Builds the segment for a label at `label_at`, when it begins the line or follows whitespace.
+fn segment_at(
+    last_line: &str,
+    line_start: usize,
+    label_at: usize,
+    label_len: usize,
+) -> Option<ModelAnswerSegment<'_>> {
     // Extend the segment backwards over `*` and `_` emphasis; both are ASCII, so the byte
     // walk stays on char boundaries.
     let mut segment_start = label_at;
@@ -190,14 +203,56 @@ fn locate_trailing_model_answer(trimmed: &str) -> Option<ModelAnswerSegment<'_>>
         line_start,
         segment_start,
         label_at,
+        label_len,
     })
+}
+
+/// Finds the model's own trailing `Answer:` segment on the last line of `trimmed`.
+///
+/// `trimmed` is the answer with trailing whitespace removed. The label must begin the line or
+/// follow whitespace, and a leading `*` or `_` emphasis run belongs to the segment. The strip
+/// ([`LabelRule::Exact`]) and the abstention check ([`LabelRule::Tolerant`]) share this one
+/// positional rule. The abstention check is deliberately the wider of the two: a label the
+/// strip leaves in the prose must still count as the model's own answer when deciding whether
+/// the prose disagrees with the `final_answer` field.
+fn locate_trailing_model_answer(
+    trimmed: &str,
+    rule: LabelRule,
+) -> Option<ModelAnswerSegment<'_>> {
+    let line_start = trimmed.rfind('\n').map_or(0, |idx| idx + 1);
+    let last_line = &trimmed[line_start..];
+    match rule {
+        LabelRule::Exact => {
+            let label_at = last_line.rfind(MODEL_ANSWER_LABEL)?;
+            segment_at(last_line, line_start, label_at, MODEL_ANSWER_LABEL.len())
+        }
+        LabelRule::Tolerant => {
+            // ASCII lower-casing keeps every byte offset and char boundary of `last_line`.
+            let lowered = last_line.to_ascii_lowercase();
+            let mut search_end = lowered.len();
+            while let Some(label_at) = lowered[..search_end].rfind(ANSWER_LABEL_WORD) {
+                search_end = label_at;
+                let after_word = &last_line[label_at + ANSWER_LABEL_WORD.len()..];
+                let at_colon = after_word.trim_start_matches(|c: char| matches!(c, '*' | '_' | ' '));
+                if at_colon.starts_with(':') {
+                    let skipped = after_word.len() - at_colon.len();
+                    let label_len = ANSWER_LABEL_WORD.len() + skipped + 1;
+                    if let Some(segment) = segment_at(last_line, line_start, label_at, label_len)
+                    {
+                        return Some(segment);
+                    }
+                }
+            }
+            None
+        }
+    }
 }
 
 /// Returns the prose without the model's own trailing `Answer:` segment, when the strip's
 /// narrow conditions hold, and otherwise the answer with trailing whitespace trimmed.
 fn strip_trailing_model_answer(answer: &str) -> &str {
     let trimmed = answer.trim_end();
-    let Some(segment) = locate_trailing_model_answer(trimmed) else {
+    let Some(segment) = locate_trailing_model_answer(trimmed, LabelRule::Exact) else {
         return trimmed;
     };
     if segment.as_written().contains(['[', ']']) {
@@ -247,7 +302,9 @@ fn published_answer_text(rendered: &str) -> Option<&str> {
 /// the line the engine publishes means a true result always implies the harness abstention
 /// predicate (D-118), which reads the same line-start `Answer:` line. Second, if the model
 /// wrote its own trailing `Answer:` segment, that segment also matches, so a `final_answer`
-/// field that disagrees with the model's own prose is never read as an abstention.
+/// field that disagrees with the model's own prose is never read as an abstention. The model's
+/// segment is found ASCII-case-insensitively and through `*` or `_` emphasis (`answer: Yes`,
+/// `**answer:** Yes`), so a label the strip does not touch still counts against the abstention.
 ///
 /// The check only reads the would-be-published line. Validation still sees the model's own
 /// answer, and publication still happens only at the single seam in
@@ -260,7 +317,7 @@ pub(crate) fn abstains(answer: &str, final_answer: Option<&str>) -> bool {
     if !is_abstention_text(published) {
         return false;
     }
-    locate_trailing_model_answer(answer.trim_end())
+    locate_trailing_model_answer(answer.trim_end(), LabelRule::Tolerant)
         .is_none_or(|segment| is_abstention_text(segment.value()))
 }
 

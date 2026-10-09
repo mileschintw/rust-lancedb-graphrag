@@ -3396,6 +3396,112 @@ async fn abstention_substantive_model_only_answer_is_still_rejected() {
     assert_eq!(events[0]["model_cited_ids"], "1");
 }
 
+/// The model's own trailing answer line is found whatever its case or emphasis, so a
+/// `final_answer` that abstains cannot override a model line that says otherwise.
+#[test]
+fn abstention_model_answer_line_is_found_in_any_case_and_emphasis() {
+    use crate::generation::final_answer::abstains;
+
+    for prose in [
+        "Checked [1].
+answer: Yes",
+        "Checked [1].
+**answer:** Yes",
+        "Checked [1].
+ANSWER: Yes",
+        "Checked [1].
+**Answer**: Yes",
+        "Checked [1].
+_answer_: Yes",
+        "Checked [1]. answer: Yes",
+    ] {
+        assert!(
+            !abstains(prose, Some("Insufficient information")),
+            "the model's own line in {prose:?} disagrees with the field"
+        );
+    }
+    for prose in [
+        "Checked [1].
+answer: insufficient information.",
+        "Checked [1].
+**answer:** Insufficient information",
+        "Checked [1].
+**Answer**: Insufficient information.",
+    ] {
+        assert!(
+            abstains(prose, Some("Insufficient information")),
+            "the model's own line in {prose:?} agrees with the field"
+        );
+    }
+}
+
+/// A cited `model_only` output whose own last line says `answer: Yes` is not normalised, even
+/// though `final_answer` says `Insufficient information`.
+#[test]
+fn abstention_view_ignores_a_contradicting_lowercase_or_markdown_answer_line() {
+    let limits = crate::generation::GroundingLimits::new(8192, 2048).unwrap();
+    for answer in ["Checked [1].
+answer: Yes", "Checked [1].
+**answer:** Yes"] {
+        let output = ModelOutput {
+            answer: answer.into(),
+            final_answer: Some("Insufficient information".into()),
+            cited_evidence_ids: vec!["1".to_string()],
+            answer_basis: AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            usage: None,
+        };
+        assert!(!output.is_abstention(), "{answer:?} is not an abstention");
+        assert_eq!(output.grounded_abstention_view(limits), None, "{answer:?}");
+    }
+}
+
+/// Regression for CR-01: an `answer: Yes` last line (lower case) with an abstaining
+/// `final_answer` is rejected as `model_only`, not normalised.
+#[tokio::test]
+async fn abstention_lowercase_model_answer_line_is_still_rejected() {
+    abstention_contradicting_model_line_is_rejected("Checked [1].
+answer: Yes").await;
+}
+
+/// Regression for CR-01: the same with the `**answer:**` markdown form.
+#[tokio::test]
+async fn abstention_markdown_model_answer_line_is_still_rejected() {
+    abstention_contradicting_model_line_is_rejected("Checked [1].
+**answer:** Yes").await;
+}
+
+async fn abstention_contradicting_model_line_is_rejected(answer: &str) {
+    let content = json!({
+        "answer": answer,
+        "final_answer": "Insufficient information",
+        "cited_evidence_ids": ["1"],
+        "answer_basis": "model_only",
+        "notices": [],
+        "warnings": []
+    })
+    .to_string();
+    let (result, events) = generate_against_mock(
+        "Did the Fed hold rates?",
+        "Text.",
+        &content,
+        Some("stop"),
+        Some((500, 100, 600)),
+    )
+    .await;
+
+    let err = result.unwrap_err();
+    assert_eq!(err.kind, GenerationErrorKind::SchemaValidation);
+    assert_eq!(
+        err.message(),
+        "ModelOnly answer basis is not supported on Phase 03 QueryRAG path"
+    );
+    assert_eq!(events.len(), 1, "exactly one rejection event: {events:?}");
+    assert_eq!(unquoted(&events[0]["answer_basis"]), "model_only");
+    assert_eq!(events[0]["model_cited_ids"], "1");
+}
+
 /// Owner condition 2: an uncited `model_only` abstention is rejected exactly as before.
 ///
 /// Widening the fix to abstentions that cite no evidence block is a deferred owner decision,
