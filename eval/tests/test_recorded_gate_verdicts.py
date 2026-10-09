@@ -240,3 +240,103 @@ def test_the_reread_coverages_clear_the_floor_over_sample_scoped_denominators(
             name,
         )
         assert detail["coverage"] == detail["coverage_n"] / expected
+
+
+# --- 06.3.6-07: the 06.3.5 held-out drive re-reads unchanged, and under the D-151 floor ----
+
+_HELDOUT = "eval/runs/2026-10-07-heldout-multihop_rag_heldout"
+_HELDOUT_ARMS = ("dense-only", "bm25-only", "hybrid", "hybrid+graph")
+
+
+@pytest.fixture(scope="module")
+def _heldout_reread(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """Re-read the recorded held-out drive once, hashing its recorded files around it."""
+    run_dir = repo_root() / _HELDOUT
+    watched = [
+        run_dir / "journal.jsonl",
+        run_dir / "gates-heldout.md",
+        run_dir / "gates-heldout.json",
+    ]
+    before = {path: _sha256(path) for path in watched}
+    out = tmp_path_factory.mktemp("heldout") / "REREAD-heldout-disclosure.md"
+    code = main(
+        [
+            "--stage",
+            "heldout",
+            "--run",
+            str(run_dir),
+            "--engine-pid-before",
+            "1",
+            "--engine-pid-after",
+            "1",
+            "--out",
+            str(out),
+        ]
+    )
+    assert code == 0
+    assert {path: _sha256(path) for path in watched} == before, "a recorded file changed"
+    return json.loads(out.with_suffix(".json").read_text("utf-8"))
+
+
+@pytest.mark.parametrize("gate", ["SC-1", "SC-2"])
+def test_the_recorded_heldout_verdicts_are_unchanged_on_a_reread(
+    _heldout_reread: dict[str, Any], gate: str
+) -> None:
+    """The floor applies only under a pre-registration that carries one (T-06.3.6-25)."""
+    recorded = json.loads(
+        (repo_root() / _HELDOUT / "gates-heldout.json").read_text(encoding="utf-8")
+    )
+    assert list(_heldout_reread[gate]) == list(recorded[gate])
+    for label, entry in recorded[gate].items():
+        for field in ("status", "n", "reason"):
+            assert _heldout_reread[gate][label][field] == entry[field], (
+                gate,
+                label,
+                field,
+            )
+
+
+def test_a_hypothetical_reread_under_the_floor_reproduces_the_ai_spec_table() -> None:
+    """AI-SPEC 5 D-151: dense-only, hybrid, hybrid+graph and pooled read `reported`.
+
+    A labelled disclosure, never a re-adjudication: the recorded gate files stay as
+    they are (the unchanged re-read above), and the floor is passed in explicitly.
+    """
+    from fractions import Fraction
+
+    from lancet_eval.unpark_gates import (
+        HELDOUT_ARM_ROLES,
+        SC2TimeoutFloor,
+        evaluate_sc2,
+        evaluate_sc2_arm,
+    )
+
+    journal = repo_root() / _HELDOUT / "journal.jsonl"
+    floor = SC2TimeoutFloor(rate=Fraction(1, 40), problem=None)
+    expected = {"dense-only": 4, "bm25-only": None, "hybrid": 6, "hybrid+graph": 2}
+    for arm, timeouts in expected.items():
+        reading = evaluate_sc2_arm(journal, arm, 1, 1, timeout_floor=floor)
+        assert reading.status == "PASS", arm
+        assert reading.n == 351, arm
+        if timeouts is None:
+            assert "reported:" not in reading.reason, arm
+        else:
+            assert (
+                f"reported: timeout dominant, not material ({timeouts} of 351)"
+                in reading.reason
+            ), arm
+    pooled = evaluate_sc2(
+        journal, 1, 1, roles=HELDOUT_ARM_ROLES, timeout_floor=floor
+    )
+    assert pooled.status == "PASS"
+    assert pooled.n == 1404
+    assert "reported: timeout dominant, not material (12 of 1404)" in pooled.reason
+
+
+@pytest.mark.parametrize("stage", list(_RECORDED))
+def test_drives_1_1b_and_2_read_without_a_floor(
+    _rereads: dict[str, dict[str, Any]], stage: str
+) -> None:
+    """Their corpus names the 06.3.5 token, which carries no floor: no `reported`."""
+    reason = _rereads[stage]["SC-2"]["reason"]
+    assert "reported: timeout dominant" not in reason
