@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "Phase 06.3.6 executing: waves 1-3 of 17 done (lever 2 = graph_list_precision; levers wire contract landed); wave 4 (06 main, 07 and 08 worktrees, Workflow fan-out) next"
+stopped_at: "Phase 06.3.6 executing: waves 1-4 of 17 done (plans 01-08); wave 5 (09 rerank adapter on main, 10 lever comparison in a worktree, Workflow fan-out) next"
 last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
 state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
@@ -15,19 +15,20 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6 wave 2 complete (04: D-137 table, owner labels-agree, selection graph_list_precision); D-187 recorded; gate green; wave 3 complete (05: levers wire contract end to end, LEVER_GRAPH_V2 = 4; gate cargo 765, go 122, pytest 1916); wave 4 (06, 07, 08) next."
+last_activity_desc: "06.3.6 waves 3-4 complete (05-08; D-188 recorded); gate green (cargo 777, go 124, pytest 2081); wave 5 (09, 10) next."
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 6
+Current Plan: 9
 Total Plans in Phase: 22
 
 ## Current Status
 
 - **2026-10-09: Phase 06.3.6 EXECUTION STARTED** (`/gsd-execute-phase 06.3.6`). Wave 1: 06.3.6-01 (D-131 rerank probe, live, main), 06.3.6-02 (D-137 rule commit and `--graph-dump`, main) and 06.3.6-03 (harness hardening, worktree). Executors run on Sonnet.
+- **2026-10-09: 06.3.6 waves 3-4 COMPLETE.** 05: levers wire contract (proto, engine, gateway, harness), `LEVER_GRAPH_V2 = 4`. 06: bounded query-embedding retry and IN-02; owner D-188 raised the verify overlay's `graph_node_timeout_ms` 15000 -> 25000 for the D-152 nesting rule. 07 (worktree, merged `0ad002c9`): lever arm registry, provenance h/i/j, O10 tripwire, O15 spend line, SC-2 floor. 08 (worktree, merged `30429cf5`): evidence metadata ingestion and gateway validation. Gate green: cargo 777, go 124 (full suite on main), pytest 2081.
 - **2026-10-09: 06.3.6 wave 2 COMPLETE.** 04: the D-137 table refused first on 8 null_query questions (no gold rows); owner chose D-187 (empty gold set, N stays 38, disclosed fix `6ebfdc20`). Counts over 38: alias_split 0, absent 3, missing_edge 15, other 20 (over the 30 non-null: 0/0/14/16). Owner spot-check `labels-agree` (6 rows; alias_split empty). Selection `graph_list_precision` (`81f1b414`): plan 12 applies, plan 13 is not applicable. Gate green.
 - **2026-10-09: 06.3.6 wave 1 COMPLETE.** 01: D-131 probe PASS from the D-186 re-probe (call 1 replied with the bare model name `rerank-2.5-lite` and failed the original prefix check; owner chose a corrected check plus one re-probe); settled deltas equal `usage.cost` (1 credit = 1 USD), cumulative spend 8.8e-07; provisional `RERANK_UNREPORTED_CALL_CEILING_USD` 6.6e-07. 02: the rule commit `fc1ab4e3` (one SHA, D-73) and `--graph-dump`; its SUMMARY notes the three non-residual class predicates are pairwise disjoint, so the D-171 multi-membership matrix is diagonal by construction. 03: harness hardening, merged `254061a6`. Gate green.
 

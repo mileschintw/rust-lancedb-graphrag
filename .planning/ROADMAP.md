@@ -1152,7 +1152,7 @@ Plans:
 
 **Out of Scope:** community summaries (999.1/999.5/999.4), query reformulation strategies (999.3 — a v1.1 arm), local inference endpoint (999.11 — v1.1), deeper traversal, new corpora.
 
-**Plans:** 5/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
+**Plans:** 8/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
 
 Plans:
 
@@ -1172,9 +1172,9 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 06.3.6-06-PLAN.md — D-152 one bounded query-embedding retry with blake3 jitter, the nesting check, and the D-158 IN-02 fix (every arm, before any dev read)
-- [ ] 06.3.6-07-PLAN.md — O10/O14/O15/O16 `checkpoint:decision`, the selection-driven lever arm registry, provenance (h)/(i)/(j)/(e+), the rerank spend line and tripwire, the D-151 floor, the pre-registration classes
-- [ ] 06.3.6-08-PLAN.md — Evidence metadata outside the engine: one normaliser, the 346-of-346 backfill sidecar builder, `seed.py` fields, gateway validation and forwarding
+- [x] 06.3.6-06-PLAN.md — D-152 one bounded query-embedding retry with blake3 jitter, the nesting check, and the D-158 IN-02 fix (every arm, before any dev read)
+- [x] 06.3.6-07-PLAN.md — O10/O14/O15/O16 `checkpoint:decision`, the selection-driven lever arm registry, provenance (h)/(i)/(j)/(e+), the rerank spend line and tripwire, the D-151 floor, the pre-registration classes
+- [x] 06.3.6-08-PLAN.md — Evidence metadata outside the engine: one normaliser, the 346-of-346 backfill sidecar builder, `seed.py` fields, gateway validation and forwarding
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
