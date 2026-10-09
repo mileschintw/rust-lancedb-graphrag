@@ -455,3 +455,67 @@ These confirm §I's last bullet and the price row the owner must decide. Read fr
     D-153's text (judge constants only), so it is an **owner decision** before any cap is proposed (O9).
   - Judge listing: `meta-llama/llama-3.3-70b-instruct` at $0.22 / $0.50 per 1M; `measure.py:98-99` holds
     0.12 / 0.30. That fix is in scope under D-153.
+
+---
+
+## K. Corrections from research and planning (`/gsd-plan-phase 06.3.6`, 2026-10-09)
+
+These supersede §A–§J where they conflict. They come from `06.3.6-RESEARCH.md` "Corrections" (C-numbers) and
+from the planner and plan checkers.
+- **[re-checked]** means the orchestrator re-read the cited source or output itself.
+- **[research]** means it rests on the researcher's executed probe or source read, cited.
+
+**Lance and the store (supersedes the backfill part of §H):**
+- **C1 [re-checked].** Lance's SQL planner has no `CASE` (`lance-datafusion-8.0.0/src/planner.rs`, the fallthrough
+  `"Expression '…' is not supported SQL in lance"` near `:838`; no `Case` arm in the file). So
+  `add_columns(NewColumnTransform::SqlExpressions(… CASE …))` is rejected, and the table version is unchanged.
+  `NewColumnTransform::Reader` works. This was executed on a throwaway 5-fragment table with deletion vectors:
+  one new version, all 19 old column digests equal, old data files byte-identical, strict 22-column schema
+  equality (`research/lance_add_columns_probe.out`, sha256 `c87fc79b…b723`). **Still pending:** the COPY
+  verification on a copy of the real `nodes.lance` (plan 06.3.6-15).
+- **C2 [re-checked].** For `SqlExpressions` the `read_columns` argument is recomputed inside lance
+  (`lance-8.0.0/src/dataset/schema_evolution.rs:347`). For `Reader`, pass `None`.
+- **C3 [re-checked].** `DatabaseManager::open_and_validate` (`engine/src/db/mod.rs:35-60`) validates every table in
+  `table_schemas()`. `inspect_lancedb` (`bin/inspect_lancedb.rs:1488,1733`) and `diag_probe` call it, and
+  `identity.py:56-70` shells out to `inspect_lancedb`. So once `nodes_schema()` gains the three columns, every store
+  opener fails closed until the backfill runs. The D-137 store read must happen before that commit.
+- **C4 [re-checked].** The `staged_documents_v2` upgrade compares against exactly the 6-column legacy schema
+  (`db/mod.rs:88`, `:296`). After D-168 the 7-column form is legacy too, so both must upgrade. The upgrade is a
+  store write at the first engine start; it does not move `nodes_version`.
+- **C10 [research, executed].** `checkout(v)` then `restore()` adds a version (10 → 11 in the probe). A rollback
+  therefore changes `lance-{nodes_version}`, so the generation is recorded only after the final store state.
+- **COPY check 4 of AI-SPEC §4 item 4f is replaced** (planner). It compared result hashes from an engine
+  restarted before and after the backfill. After the schema commit no engine opens the pre-backfill store (C3),
+  and dense retrieval depends on a provider embedding. Plan 06.3.6-15 instead compares the `bm25-only`
+  `result_hash` of the 3 rehearsal questions with both 06.3.5 rehearsal journals.
+  - **[re-checked]** `result_hash` is blake3 over the final `final_limit` candidates' `chunk_id`s, each followed
+    by `\x00` (`engine/src/workflow/nodes/retrieve.rs:397-401`). It contains no answer, snapshot bytes or
+    `index_generation`, so it is a retrieval-only fingerprint.
+
+**Rerank endpoint (supersedes §A7's error list):**
+- **C11 [re-checked].** The fetched OpenAPI (`research/fetched/openrouter-submit-a-rerank-request-2026-10-09.md`)
+  documents 12 error statuses for `POST /rerank`: 400, 401, 402, 403, 404, 413, 429, 500, 502, 503, 524 and 529.
+  `results[].document` is required in the 200 body, so the reply echoes every document. The adapter needs a
+  documented body cap above the 256 KiB default (`engine/src/client/mod.rs:16`).
+
+**Line drift (supersedes §A2 / §I line numbers):**
+- **C8 [re-checked].** `pub struct WorkflowDependencies` is at `engine/src/workflow/mod.rs:336` and `pub fn new()`
+  at `:350`, not `:342` / `:357`.
+
+**Harness facts found while planning:**
+- **[re-checked]** `.gitignore:62` ignores `eval/runs/*`. The negations at `:63-67` cover only the existing corpus
+  names, so the 06.3.6 run directories need `!eval/runs/*-multihop_rag_levers_*/` (plan 06.3.6-03).
+- **[re-checked]** `preflight.py` appends every provenance clause code to its failures (`failures.extend(… for f in
+  provenance_failures(record))`, near `:1220`). A single `RERANK_DEGRADED` canary would therefore fail preflight
+  unless clause (i) is counted separately (plan 06.3.6-07).
+- **C5 [re-checked].** `corpus.py:105` `_SPLIT_ROLES = frozenset({"heldout", "rehearsal"})`, and the D-73 gate in
+  `run.py:427-441` applies to every `[split]` corpus. D-170 adds a `dev` role, exempt from the gate.
+- **[planner]** `seed.record_index_generation` (`seed.py:282`) has no CLI command, so plan 06.3.6-15 calls it with
+  `python -c`. It POSTs one `/rag/query` probe: the first `document_map.json` entry's title, "The best VPN services
+  for 2023".
+- **[planner]** `query_embedding_retries` is omitted from the wire when it is zero, so an absent value reads as 0.
+- **C6 [research].** `score` builds P4 from the held-out split (`score.py:658-661`), so it cannot score dev
+  journals. Plan 06.3.6-10 adds `dev_reads.py`.
+- **C7 [research, executed].** At HEAD, `uv run --project eval pytest eval/tests` gives 1802 passed. A repo-root
+  `pytest` also collects `scripts/` and fails. `ruff check --preview eval/src eval/tests` reports 556 findings
+  before any change, so the lint gate is "no new finding on touched files".
