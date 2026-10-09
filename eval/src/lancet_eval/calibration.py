@@ -44,7 +44,7 @@ from lancet_eval.agreement import (
     quadratic_weighted_kappa,
     spearman_rank_correlation,
 )
-from lancet_eval.arms import ARM_REGISTRY, ArmLabel, canonical_arm
+from lancet_eval.arms import ARM_REGISTRY, LEGACY_ARM_LABELS, ArmLabel, canonical_arm
 from lancet_eval.config import repo_root
 from lancet_eval.gate import AGREEMENT_TARGET
 from lancet_eval.judge import (
@@ -638,7 +638,7 @@ def emit_worksheet(
 # is handed to `agreement_summary`, which computes judge-human agreement and labels each
 # dimension by the D-114 rule alone. Nothing here makes an API call or writes a report.
 
-SLICE_SIZE = PER_ARM * len(ARM_REGISTRY)
+SLICE_SIZE = PER_ARM * len(LEGACY_ARM_LABELS)
 
 LABEL_CALIBRATED = "calibrated"
 LABEL_UNCALIBRATED = "uncalibrated"
@@ -840,7 +840,7 @@ def _dimension_summary(
     label = d114_label(qwk_res, n, floor)
     legacy = legacy_calibration_line(dimension, qwk_res.value, rho_res.value, label)
     per_arm: dict[str, dict[str, int]] = {}
-    for arm in ARM_REGISTRY:
+    for arm in LEGACY_ARM_LABELS:
         in_arm = [
             (h, j) for (p, j), h in zip(scored, human, strict=True) if p.arm == arm
         ]

@@ -667,3 +667,155 @@ def test_no_judge_path_at_all_is_open_to_a_06_3_6_token_corpus(
     with pytest.raises(ScoreError, match="D-153"):
         score_run(run_dir=run_dir, **kwargs)  # type: ignore[arg-type]
     assert seen == []
+
+
+# --- 06.3.6-07: the pre-registration resolver (D-73, D-149) ----------------------------
+
+
+def test_resolve_returns_the_object_a_corpus_token_names() -> None:
+    from lancet_eval import preregistration
+
+    assert (
+        preregistration.resolve("PREREGISTRATION_06_3_5")
+        is thresholds.PREREGISTRATION_06_3_5
+    )
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "PREREGISTRATION_NOT_THERE",
+        "UNPARK_GATE_COVERAGE_FLOOR",
+        "COMMITTED_THRESHOLDS",
+        "",
+    ],
+)
+def test_resolve_fails_closed_on_an_absent_or_non_preregistration_token(
+    token: str,
+) -> None:
+    from lancet_eval import preregistration
+
+    with pytest.raises(preregistration.PreregistrationError):
+        preregistration.resolve(token)
+
+
+def test_resolve_raises_the_gitcheck_error_type() -> None:
+    from lancet_eval import preregistration
+
+    assert preregistration.PreregistrationError is gitcheck.PreregistrationError
+
+
+def test_arms_of_an_ablation_preregistration_is_reference_then_comparisons() -> None:
+    from lancet_eval import preregistration
+
+    assert preregistration.arms_of(thresholds.PREREGISTRATION_06_3_5) == (
+        "hybrid",
+        "dense-only",
+        "bm25-only",
+        "hybrid+graph",
+    )
+
+
+def test_arms_of_a_lever_preregistration_lists_reference_families_descriptive() -> None:
+    from types import SimpleNamespace
+
+    from lancet_eval import preregistration
+
+    prereg = SimpleNamespace(
+        reference_arm="hybrid",
+        families=(
+            SimpleNamespace(arms=("hybrid+rerank", "hybrid+metadata")),
+            SimpleNamespace(arms=("hybrid+rerank", "hybrid+answer-format")),
+        ),
+        descriptive_arms=("hybrid+all",),
+    )
+    assert preregistration.arms_of(prereg) == (
+        "hybrid",
+        "hybrid+rerank",
+        "hybrid+metadata",
+        "hybrid+answer-format",
+        "hybrid+all",
+    )
+
+
+def test_the_lever_classes_are_frozen_dataclasses_with_the_spec_fields() -> None:
+    family = [f.name for f in dataclasses.fields(thresholds.FamilySpec)]
+    assert family == ["primary", "role", "arms", "alpha"]
+    lever = [f.name for f in dataclasses.fields(thresholds.LeverPreRegistration)]
+    assert lever == [
+        "reference_arm",
+        "families",
+        "descriptive_arms",
+        "test",
+        "non_evaluable_rule",
+        "population",
+        "complete_case_floor",
+        "matching_rule",
+        "bootstrap_b",
+        "bootstrap_seed",
+        "null_guard_arms",
+        "null_guard_predicate",
+        "null_guard_margin",
+        "null_guard_min_pair_fraction",
+        "answer_mix_strata",
+        "sc2_timeout_rate_floor",
+        "rerank_degrade_tripwire_rate",
+        "rerank_degrade_tripwire_min_calls",
+        "rerank_consecutive_degrade_halt",
+        "default_rule",
+        "provenance",
+    ]
+    spec = thresholds.FamilySpec(
+        primary="answer_usable", role="decisional", arms=("hybrid+rerank",), alpha=0.05
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        spec.alpha = 0.10  # type: ignore[misc]
+    assert thresholds.LeverPreRegistration.__dataclass_params__.frozen is True
+
+
+def test_a_lever_preregistration_is_resolvable_and_names_its_arms() -> None:
+    from lancet_eval import preregistration
+
+    prereg = thresholds.LeverPreRegistration(
+        reference_arm="hybrid",
+        families=(
+            thresholds.FamilySpec(
+                primary="answer_usable",
+                role="decisional",
+                arms=("hybrid+rerank", "hybrid+metadata"),
+                alpha=0.05,
+            ),
+            thresholds.FamilySpec(
+                primary="paper_hits_at_4",
+                role="supporting",
+                arms=("hybrid+rerank",),
+                alpha=0.05,
+            ),
+        ),
+        descriptive_arms=("hybrid+all", "hybrid+graph"),
+        test="paired_sign_flip_exact_two_sided",
+        non_evaluable_rule="p=1_m_unchanged",
+        population="pairwise_per_comparison",
+        complete_case_floor=0.80,
+        matching_rule="chunk_id_via_gold_chunks",
+        bootstrap_b=10_000,
+        bootstrap_seed=42,
+        null_guard_arms=("hybrid+metadata",),
+        null_guard_predicate="metrics.is_abstention",
+        null_guard_margin=0.10,
+        null_guard_min_pair_fraction=0.80,
+        answer_mix_strata=("comparison_query",),
+        sc2_timeout_rate_floor=0.025,
+        rerank_degrade_tripwire_rate=0.20,
+        rerank_degrade_tripwire_min_calls=50,
+        rerank_consecutive_degrade_halt=5,
+        default_rule="test",
+        provenance="test",
+    )
+    assert preregistration.arms_of(prereg) == (
+        "hybrid",
+        "hybrid+rerank",
+        "hybrid+metadata",
+        "hybrid+all",
+        "hybrid+graph",
+    )

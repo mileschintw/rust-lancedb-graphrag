@@ -1065,6 +1065,35 @@ def legacy_canary_skip(name: str) -> PreflightCheckResult:
     )
 
 
+# 06.3.6 D-174 (O10): the consecutive-degrade count at which the paid drive halts. The
+# preflight applies the same number to the POOLED count of degraded rerank canaries,
+# which is stricter than a consecutive run, so a canary set the drive's tripwire would
+# halt on never passes preflight. A corpus whose resolved pre-registration carries
+# `rerank_consecutive_degrade_halt` uses that value instead; this constant serves a
+# corpus without one (the `dev` role, whose pre-registration is not frozen yet).
+PREFLIGHT_RERANK_DEGRADE_HALT: int = 5
+
+
+def canary_preregistration(corpus_config: Any) -> Any | None:
+    """The pre-registration the arm canaries read their degrade limit from.
+
+    None for a `dev` corpus (dev reads precede the freeze commit, D-170), for a token
+    that names no pre-registration, and when the corpus has no token: the preflight
+    then falls back to `PREFLIGHT_RERANK_DEGRADE_HALT`. Never raises.
+    """
+    from lancet_eval.preregistration import PreregistrationError, resolve
+
+    if getattr(corpus_config, "split_role", None) == "dev":
+        return None
+    token = getattr(corpus_config, "preregistration_token", None)
+    if not token:
+        return None
+    try:
+        return resolve(token)
+    except PreregistrationError:
+        return None
+
+
 def check_arm_mode_canaries(
     client: httpx.Client,
     *,
@@ -1073,6 +1102,7 @@ def check_arm_mode_canaries(
     split_path: Path | str,
     config_path: Path | str | None = None,
     answered_snapshots: list[tuple[str, RetrievalSnapshot]] | None = None,
+    preregistration: object | None = None,
 ) -> PreflightCheckResult:
     """Prove every arm's provenance on the live stack with rehearsal-pool canaries.
 
@@ -1089,6 +1119,15 @@ def check_arm_mode_canaries(
     ID of the split (T-06.3.5-29): a canary must never spend a question the held-out
     drive needs unseen. When `answered_snapshots` is given, the snapshot of each
     answered canary is appended to it, labelled by question and arm.
+
+    Provenance clause (i), a rerank canary carrying RERANK_DEGRADED (typed code 23), is
+    counted and reported per arm rather than failed one by one, because one provider
+    timeout is not a defect of the system (06.3.6 D-134, O10 / D-174). The check fails
+    when (a) a rerank-bearing arm has no successful rerank canary (outcome `completed`
+    and no code 23), or (b) the degraded canaries pooled over the rerank-bearing arms
+    reach the O10 count: the `rerank_consecutive_degrade_halt` of `preregistration`
+    when it has one, else `PREFLIGHT_RERANK_DEGRADE_HALT`. Clauses (h) and (j), and
+    every other clause, keep their fail-on-any behaviour.
     """
     from lancet_eval.arms import request_fields, resolve_arm
     from lancet_eval.client import run_query
@@ -1151,6 +1190,9 @@ def check_arm_mode_canaries(
         )
 
     failures: list[str] = []
+    rerank_arms = [arm for arm in arms if "rerank" in specs[arm].levers]
+    rerank_degraded: dict[str, int] = dict.fromkeys(rerank_arms, 0)
+    rerank_succeeded: dict[str, int] = dict.fromkeys(rerank_arms, 0)
     for row in rows:
         qid = row["question_id"]
         min_chunks = int(row.get("min_retrieved_chunks", 1))
@@ -1218,10 +1260,21 @@ def check_arm_mode_canaries(
                     else None
                 ),
             )
+            canary_failures = provenance_failures(record)
             failures.extend(
                 f"{label} provenance clause ({f.code}): {f.detail}"
-                for f in provenance_failures(record)
+                for f in canary_failures
+                if f.code != "i"
             )
+            if arm in rerank_arms:
+                if any(f.code == "i" for f in canary_failures):
+                    rerank_degraded[arm] += 1
+                elif (
+                    meta is not None
+                    and meta.rerank is not None
+                    and meta.rerank.outcome.lower() == "completed"
+                ):
+                    rerank_succeeded[arm] += 1
             if meta is None and specs[arm].retrieval_mode != "hybrid":
                 failures.append(
                     f"{label} carries no workflow metadata, so the bm25_count / "
@@ -1243,11 +1296,44 @@ def check_arm_mode_canaries(
         "rows": len(rows),
         "arms": list(arms),
     }
+    rerank_note = ""
+    if rerank_arms:
+        degraded_total = sum(rerank_degraded.values())
+        canary_total = len(rows) * len(rerank_arms)
+        halt = getattr(preregistration, "rerank_consecutive_degrade_halt", None)
+        if not isinstance(halt, int) or isinstance(halt, bool) or halt < 1:
+            halt = PREFLIGHT_RERANK_DEGRADE_HALT
+        detail.update(
+            {
+                "rerank_degraded_by_arm": dict(rerank_degraded),
+                "rerank_degraded_total": degraded_total,
+                "rerank_canary_total": canary_total,
+                "rerank_degrade_halt": halt,
+            }
+        )
+        failures.extend(
+            f"arm {arm} has no successful rerank canary "
+            f"({rerank_degraded[arm]} of {len(rows)} degraded)"
+            for arm in rerank_arms
+            if rerank_succeeded[arm] == 0
+        )
+        if degraded_total >= halt:
+            failures.append(
+                f"pooled over the rerank-bearing arms, {degraded_total} of "
+                f"{canary_total} rerank canaries degraded, reaching the O10 count "
+                f"{halt}"
+            )
+        if degraded_total:
+            rerank_note = (
+                f" rerank degraded on {degraded_total} of {canary_total} rerank-arm "
+                f"canaries {dict(rerank_degraded)}: counted, not failed one by one "
+                "(D-134)."
+            )
     if failures:
         return PreflightCheckResult(
             name=name,
             passed=False,
-            message="; ".join(failures),
+            message="; ".join(failures) + (f";{rerank_note}" if rerank_note else ""),
             detail={**detail, "failure_count": len(failures)},
         )
     return PreflightCheckResult(
@@ -1256,6 +1342,7 @@ def check_arm_mode_canaries(
         message=(
             f"All {len(rows) * len(arms)} arm-mode canaries ({len(rows)} rehearsal "
             f"rows x {len(arms)} arms) passed provenance, floors and live budgets."
+            + rerank_note
         ),
         detail=detail,
     )
@@ -1405,6 +1492,7 @@ def run_preflight_checks(
                         ),
                         split_path=corpus_config.split_path,
                         answered_snapshots=answered,
+                        preregistration=canary_preregistration(corpus_config),
                     )
             if generation_check.detail.get("probe_snapshot_missing"):
                 generation_check = corpus_generation_from_canaries(

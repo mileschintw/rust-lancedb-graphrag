@@ -14,9 +14,11 @@ An unknown label fails closed.
 from __future__ import annotations
 
 import random
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Self
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from lancet_eval.client import LEVER_ORDER, LeverName
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -25,7 +27,27 @@ if TYPE_CHECKING:
     from lancet_eval.corpus import GoldQuestion
 
 RetrievalMode = Literal["dense_only", "bm25_only", "hybrid"]
-ArmLabel = Literal["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
+ArmLabel = Literal[
+    "dense-only",
+    "bm25-only",
+    "hybrid",
+    "hybrid+graph",
+    "hybrid+rerank",
+    "hybrid+metadata",
+    "hybrid+answer-format",
+    "hybrid+graph-v2",
+    "hybrid+all",
+]
+
+#: The four 06.3.5 labels, in registry order. Judged-stage and calibration code that
+#: was sized for the four-arm ablation iterates this tuple, never the whole registry,
+#: so the 06.3.6 lever arms (which issue no judge call, D-153) change none of its sizes.
+LEGACY_ARM_LABELS: tuple[str, ...] = (
+    "dense-only",
+    "bm25-only",
+    "hybrid",
+    "hybrid+graph",
+)
 
 
 class ArmSpec(BaseModel):
@@ -36,6 +58,8 @@ class ArmSpec(BaseModel):
         retrieval_mode: Value of the request's ``retrieval_mode`` field.
         disable_graph_context: Whether the request switches graph context off.
         legacy_aliases: Read-only lookup aliases (drives 1, 1b and 2 labels).
+        levers: The 06.3.6 quality levers the arm names on its request, in the
+            canonical ``LEVER_ORDER`` (D-136). Empty for the 06.3.5 arms.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -44,11 +68,36 @@ class ArmSpec(BaseModel):
     retrieval_mode: RetrievalMode
     disable_graph_context: bool
     legacy_aliases: tuple[str, ...] = ()
+    levers: tuple[LeverName, ...] = ()
+
+    @model_validator(mode="after")
+    def _levers_are_canonical(self) -> Self:
+        names = list(self.levers)
+        if len(set(names)) != len(names):
+            raise ValueError(f"arm {self.label!r}: duplicate levers {names}")
+        canonical = [name for name in LEVER_ORDER if name in names]
+        if names != canonical:
+            raise ValueError(
+                f"arm {self.label!r}: levers {names} are not in the canonical "
+                f"order {canonical} (D-136)"
+            )
+        if "graph_v2" in names and self.disable_graph_context:
+            raise ValueError(
+                f"arm {self.label!r}: graph_v2 cannot be combined with a switched-off "
+                "graph (D-165)"
+            )
+        return self
 
 
-ARM_REGISTRY: dict[str, ArmSpec] = {
-    a.label: a
-    for a in (
+def _registry_rows() -> tuple[ArmSpec, ...]:
+    """The registry rows: the four 06.3.5 arms, then the 06.3.6 lever arms.
+
+    ``hybrid+graph-v2`` exists only when ``graph_v2`` is a declared lever, which the
+    committed graph diagnosis selection decides (D-141; a test pins the two together).
+    ``hybrid+all`` carries every declared lever, with the graph on iff ``graph_v2``
+    is among them (D-149).
+    """
+    rows = [
         ArmSpec(
             label="dense-only",
             retrieval_mode="dense_only",
@@ -71,8 +120,46 @@ ARM_REGISTRY: dict[str, ArmSpec] = {
             disable_graph_context=False,
             legacy_aliases=("graph-on",),
         ),
+        ArmSpec(
+            label="hybrid+rerank",
+            retrieval_mode="hybrid",
+            disable_graph_context=True,
+            levers=("rerank",),
+        ),
+        ArmSpec(
+            label="hybrid+metadata",
+            retrieval_mode="hybrid",
+            disable_graph_context=True,
+            levers=("evidence_metadata",),
+        ),
+        ArmSpec(
+            label="hybrid+answer-format",
+            retrieval_mode="hybrid",
+            disable_graph_context=True,
+            levers=("binary_answer_format",),
+        ),
+    ]
+    if "graph_v2" in LEVER_ORDER:
+        rows.append(
+            ArmSpec(
+                label="hybrid+graph-v2",
+                retrieval_mode="hybrid",
+                disable_graph_context=False,
+                levers=("graph_v2",),
+            )
+        )
+    rows.append(
+        ArmSpec(
+            label="hybrid+all",
+            retrieval_mode="hybrid",
+            disable_graph_context="graph_v2" not in LEVER_ORDER,
+            levers=LEVER_ORDER,
+        )
     )
-}
+    return tuple(rows)
+
+
+ARM_REGISTRY: dict[str, ArmSpec] = {a.label: a for a in _registry_rows()}
 
 _ALIAS: dict[str, str] = {
     al: a.label for a in ARM_REGISTRY.values() for al in a.legacy_aliases
@@ -142,7 +229,8 @@ def request_fields(label: str) -> dict[str, object]:
 
     The two legacy labels return exactly the bodies drives 1, 1b and 2 sent, so a
     legacy request stays byte-identical. A canonical label also names its retrieval
-    mode and asks for the pre-truncation ranking (D-100).
+    mode and asks for the pre-truncation ranking (D-100); a lever arm adds the
+    ``levers`` it names (06.3.6 D-136), and no other arm sends the field.
 
     Args:
         label: A canonical label or an alias.
@@ -160,6 +248,8 @@ def request_fields(label: str) -> dict[str, object]:
     if spec.disable_graph_context:
         fields["disable_graph_context"] = True
     fields["include_pre_truncation_ranking"] = True
+    if spec.levers:
+        fields["levers"] = list(spec.levers)
     return fields
 
 
@@ -187,12 +277,40 @@ def echo_failures(label: str, retrieval_mode_echo: str | None) -> list[str]:
     ]
 
 
+def lever_echo_failures(label: str, levers_echo: Sequence[str] | None) -> list[str]:
+    """Checks that a record's snapshot echoes exactly the levers the arm requested.
+
+    The engine echoes the admitted levers in canonical order (D-136), and a registry
+    row stores its levers in that same order, so the two lists must be equal: an arm
+    without levers must see an empty echo, a lever arm its own levers and nothing more
+    or less. A journal written before the field existed echoes none, which is exactly
+    right for every arm that names no lever. This is provenance clause (h); callers
+    branch on this function, never on message text (D-158 IN-04).
+
+    Args:
+        label: The stored arm label (canonical or legacy alias).
+        levers_echo: ``RetrievalSnapshot.levers`` of the record, if any.
+
+    Returns:
+        Failure strings that each name the label; empty when the echo holds.
+    """
+    expected = list(resolve_arm(label).levers)
+    observed = list(levers_echo or ())
+    if observed == expected:
+        return []
+    return [
+        f"arm {label!r}: expected levers {expected!r} echoed in the snapshot, "
+        f"observed {observed!r}"
+    ]
+
+
 def ablation_failures(label: str, notices: Sequence[Notice]) -> list[str]:
-    """Checks that a graph-off arm carries the ablation notice and no unavailable one.
+    """Checks the graph notices of an arm against its graph switch.
 
     An arm that disables graph context must carry the GRAPH_ABLATION notice and not
-    GRAPH_UNAVAILABLE. Legacy labels are held to this check too. This is provenance
-    clause (e).
+    GRAPH_UNAVAILABLE. Legacy labels are held to this check too. An arm that leaves
+    the graph on (the graph-on arms, 06.3.6 D-134) must not carry GRAPH_ABLATION.
+    This is provenance clause (e).
 
     Args:
         label: The stored arm label (canonical or legacy alias).
@@ -202,10 +320,9 @@ def ablation_failures(label: str, notices: Sequence[Notice]) -> list[str]:
         Failure strings that each name the label; empty when the notices hold.
     """
     from lancet_eval.journal import RunRecord
-    from lancet_eval.usability import has_arm_provenance
+    from lancet_eval.usability import carries_graph_ablation, has_arm_provenance
 
-    if not resolve_arm(label).disable_graph_context:
-        return []
+    spec = resolve_arm(label)
     record = RunRecord(
         corpus="",
         question_id="",
@@ -213,6 +330,12 @@ def ablation_failures(label: str, notices: Sequence[Notice]) -> list[str]:
         outcome="success",
         notices=list(notices),
     )
+    if not spec.disable_graph_context:
+        if carries_graph_ablation(record):
+            return [
+                f"arm {label!r}: graph-on arm carries the GRAPH_ABLATION notice"
+            ]
+        return []
     if has_arm_provenance(record):
         return []
     return [
@@ -229,7 +352,8 @@ def mode_provenance_failures(
     """Checks that a record's echo and notices match the arm that was requested.
 
     A thin composition of ``echo_failures`` and ``ablation_failures``, kept for the
-    callers that want both lists in one call.
+    callers that want both lists in one call. The lever echo is its own clause (h),
+    ``lever_echo_failures``, and is not part of this composition.
 
     Args:
         label: The stored arm label (canonical or legacy alias).

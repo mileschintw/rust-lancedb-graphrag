@@ -3,6 +3,7 @@
 import inspect
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import httpx
@@ -657,3 +658,313 @@ def test_cap_sees_retried_spend_and_stops_earlier(
     assert len(retried_records) == 2
     assert retried.executed_count < plain.executed_count
     assert retried.observed_spend >= cap
+
+
+# --- 06.3.6-07: the O10 rerank degrade tripwire (D-174, T-06.3.6-24) ----------------------
+
+
+def _rerank_rec(
+    arm: str = "hybrid+rerank",
+    *,
+    degraded: bool = False,
+    outcome: str | None = None,
+    qid: str = "q",
+) -> RunRecord:
+    """A record carrying one rerank attempt, degraded (code 23) or completed."""
+    from lancet_eval.client import Notice, RerankMeta
+
+    return RunRecord(
+        corpus="multihop_rag_heldout",
+        question_id=qid,
+        graph_arm=arm,
+        outcome="success",
+        answer="A",
+        notices=(
+            [Notice(code="RERANK_DEGRADED", message="", typed_code=23)]
+            if degraded
+            else []
+        ),
+        workflow_meta=WorkflowWireMeta(
+            rerank=RerankMeta(
+                latency_ms=100,
+                cost_reported=not degraded,
+                outcome=outcome or ("degraded_timeout" if degraded else "completed"),
+            )
+        ),
+    )
+
+
+def _tripwire() -> Any:
+    from lancet_eval.run import RerankTripwire
+
+    return RerankTripwire(rate=0.20, min_calls=50, consecutive_halt=5)
+
+
+def _feed(tripwire: Any, pattern: str) -> str | None:
+    """Observe one record per character (`D` degraded, `o` completed); the first trip."""
+    for index, char in enumerate(pattern):
+        tripwire.observe(_rerank_rec(degraded=char == "D", qid=f"q{index}"))
+        if tripwire.tripped is not None:
+            return str(tripwire.tripped)
+    return None
+
+
+def test_eleven_degrades_in_fifty_attempts_halts_on_the_rate() -> None:
+    tripwire = _tripwire()
+    reason = _feed(tripwire, "oooD" * 11 + "o" * 6)
+    assert reason is not None
+    assert "0.22" in reason or "11 of 50" in reason
+    assert tripwire.attempts == 50
+
+
+def test_ten_degrades_in_fifty_attempts_does_not_halt() -> None:
+    tripwire = _tripwire()
+    assert _feed(tripwire, "oooD" * 10 + "o" * 10) is None
+    assert tripwire.attempts == 50
+    assert tripwire.degrades == 10
+
+
+def test_the_rate_is_not_evaluated_before_fifty_attempts() -> None:
+    tripwire = _tripwire()
+    assert _feed(tripwire, "ooD" * 15 + "o" * 4) is None
+    assert tripwire.attempts == 49
+    assert tripwire.degrades == 15
+    # The fiftieth attempt turns the evaluation on: 15 of 50 is 0.30 > 0.20.
+    tripwire.observe(_rerank_rec())
+    assert tripwire.tripped is not None
+
+
+def test_the_fifth_consecutive_degrade_halts_whatever_its_class() -> None:
+    tripwire = _tripwire()
+    classes = [
+        "degraded_timeout",
+        "degraded_status",
+        "degraded_malformed",
+        "degraded_transport",
+    ]
+    for i, outcome in enumerate(classes):
+        tripwire.observe(_rerank_rec(degraded=True, outcome=outcome, qid=f"q{i}"))
+        assert tripwire.tripped is None
+    tripwire.observe(_rerank_rec(degraded=True, outcome="degraded_timeout"))
+    assert tripwire.tripped is not None
+    assert "5 consecutive" in str(tripwire.tripped)
+
+
+def test_a_completed_attempt_resets_the_consecutive_count() -> None:
+    tripwire = _tripwire()
+    assert _feed(tripwire, "DDDDoDDDDoDDDD") is None
+
+
+def test_a_record_on_a_non_rerank_arm_neither_counts_nor_resets() -> None:
+    tripwire = _tripwire()
+    for i in range(4):
+        tripwire.observe(_rerank_rec(degraded=True, qid=f"q{i}"))
+    tripwire.observe(_rerank_rec(arm="hybrid", qid="h"))
+    tripwire.observe(_rerank_rec(arm="hybrid+graph", qid="g"))
+    assert tripwire.tripped is None
+    assert tripwire.attempts == 4
+    tripwire.observe(_rerank_rec(degraded=True, qid="q4"))
+    assert tripwire.tripped is not None
+
+
+def test_a_rerank_arm_record_without_an_attempt_is_neutral() -> None:
+    tripwire = _tripwire()
+    for i in range(4):
+        tripwire.observe(_rerank_rec(degraded=True, qid=f"q{i}"))
+    failed = RunRecord(
+        corpus="multihop_rag_heldout",
+        question_id="err",
+        graph_arm="hybrid+rerank",
+        outcome="error",
+        error_type="ConnectError",
+    )
+    tripwire.observe(failed)
+    assert tripwire.attempts == 4
+    assert tripwire.tripped is None
+    tripwire.observe(_rerank_rec(degraded=True, qid="q4"))
+    assert tripwire.tripped is not None
+
+
+def test_the_tripwire_counts_across_the_rerank_bearing_arms() -> None:
+    tripwire = _tripwire()
+    for i, arm in enumerate(
+        ["hybrid+rerank", "hybrid+all", "hybrid+rerank", "hybrid+all", "hybrid+rerank"]
+    ):
+        tripwire.observe(_rerank_rec(arm=arm, degraded=True, qid=f"q{i}"))
+    assert tripwire.tripped is not None
+    assert tripwire.degraded_by_arm == {"hybrid+rerank": 3, "hybrid+all": 2}
+
+
+def test_the_rate_comparison_is_exact_not_float() -> None:
+    from lancet_eval.run import RerankTripwire
+
+    # 0.1 + 0.2 style float noise must not move the boundary: 3 of 10 > 0.3 is False.
+    tripwire = RerankTripwire(rate=0.30, min_calls=10, consecutive_halt=99)
+    assert _feed(tripwire, "oDoDoDoooo") is None
+    assert tripwire.attempts == 10 and tripwire.degrades == 3
+
+
+def test_the_tripwire_is_built_from_the_preregistration_fields() -> None:
+    from types import SimpleNamespace
+
+    from lancet_eval import thresholds
+    from lancet_eval.run import RerankTripwire
+
+    prereg = SimpleNamespace(
+        rerank_degrade_tripwire_rate=0.20,
+        rerank_degrade_tripwire_min_calls=50,
+        rerank_consecutive_degrade_halt=5,
+    )
+    tripwire = RerankTripwire.from_preregistration(prereg)
+    assert tripwire is not None
+    assert (tripwire.rate, tripwire.min_calls, tripwire.consecutive_halt) == (
+        0.20,
+        50,
+        5,
+    )
+    # The 06.3.5 pre-registration carries no tripwire fields.
+    assert RerankTripwire.from_preregistration(thresholds.PREREGISTRATION_06_3_5) is None
+
+
+def test_a_dev_corpus_and_a_06_3_5_corpus_have_no_tripwire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from lancet_eval import thresholds
+    from lancet_eval.run import rerank_tripwire_for
+
+    lever = SimpleNamespace(
+        reference_arm="hybrid",
+        rerank_degrade_tripwire_rate=0.20,
+        rerank_degrade_tripwire_min_calls=50,
+        rerank_consecutive_degrade_halt=5,
+    )
+    monkeypatch.setattr(thresholds, "PREREGISTRATION_TEST_TRIPWIRE", lever, raising=False)
+    lever_config = SimpleNamespace(
+        split_role="rehearsal", preregistration_token="PREREGISTRATION_TEST_TRIPWIRE"
+    )
+    assert rerank_tripwire_for(lever_config) is not None
+    dev = SimpleNamespace(
+        split_role="dev", preregistration_token="PREREGISTRATION_TEST_TRIPWIRE"
+    )
+    assert rerank_tripwire_for(dev) is None
+    legacy = SimpleNamespace(
+        split_role="heldout", preregistration_token="PREREGISTRATION_06_3_5"
+    )
+    assert rerank_tripwire_for(legacy) is None
+    unresolvable = SimpleNamespace(
+        split_role="heldout", preregistration_token="PREREGISTRATION_NOT_THERE"
+    )
+    assert rerank_tripwire_for(unresolvable) is None
+
+
+def test_drive_result_defaults_to_not_stopped_by_the_tripwire() -> None:
+    res = DriveResult(3, stopped_by_cap=False, observed_spend=0.0)
+    assert res.stopped_by_tripwire is False
+    assert res.rerank_degraded_by_arm == {}
+    assert DriveResult(3, stopped_by_tripwire=True).stopped_by_tripwire is True
+
+
+def _tripwire_drive_setup(
+    monkeypatch: pytest.MonkeyPatch, *, halt: int, arms: list[str]
+) -> list[str]:
+    """A rehearsal-role corpus on a synthetic lever pre-registration; returns the arms."""
+    from types import SimpleNamespace
+
+    from lancet_eval import gitcheck, thresholds
+    from lancet_eval.corpus import load_corpus_config as real_load
+
+    prereg = SimpleNamespace(
+        reference_arm="hybrid",
+        families=(SimpleNamespace(arms=("hybrid+rerank",)),),
+        descriptive_arms=("hybrid+all",),
+        rerank_degrade_tripwire_rate=0.20,
+        rerank_degrade_tripwire_min_calls=50,
+        rerank_consecutive_degrade_halt=halt,
+    )
+    monkeypatch.setattr(thresholds, "PREREGISTRATION_TEST_TRIPWIRE", prereg, raising=False)
+    config = real_load("multihop_rag_heldout")
+    config.split_role = "rehearsal"
+    config.arms = arms
+    config.preregistration_token = "PREREGISTRATION_TEST_TRIPWIRE"
+    questions = real_load("multihop_rag_rehearsal").questions
+    monkeypatch.setattr("lancet_eval.run.load_corpus_config", lambda _n: config)
+    monkeypatch.setattr("lancet_eval.run.load_sample_questions", lambda _n: questions)
+    monkeypatch.setattr(gitcheck, "preregistration_problems", lambda *a, **k: [])
+    return arms
+
+
+def _drive_rerank_corpus(tmp_path: Path, journal: str = "journal.jsonl") -> DriveResult:
+    return drive(
+        corpus="multihop_rag_heldout",
+        journal_path=tmp_path / journal,
+        stage_spend_cap=10.0,
+        workers=1,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+
+
+def _mock_rerank_drive_one(*, degraded: bool) -> Any:
+    """A `drive_one` stand-in: `hybrid` carries no rerank, the others a rerank attempt."""
+
+    def mock_drive_one(*args: object, **kwargs: object) -> RunRecord:
+        arm = str(kwargs["arm"])
+        qid = str(kwargs["question"].question_id)  # type: ignore[attr-defined]
+        if arm == "hybrid":
+            return RunRecord(
+                corpus="multihop_rag_heldout",
+                question_id=qid,
+                graph_arm=arm,
+                outcome="success",
+                answer="A",
+            )
+        return _rerank_rec(arm=arm, degraded=degraded, qid=qid)
+
+    return mock_drive_one
+
+
+def test_a_rerank_outage_halts_the_drive_and_keeps_the_degraded_records(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.arms import resolve_arm
+
+    arms = _tripwire_drive_setup(
+        monkeypatch, halt=5, arms=["hybrid", "hybrid+rerank", "hybrid+all"]
+    )
+    monkeypatch.setattr(
+        "lancet_eval.run.drive_one", _mock_rerank_drive_one(degraded=True)
+    )
+
+    res = _drive_rerank_corpus(tmp_path)
+
+    assert res.stopped_by_tripwire is True
+    assert res.stopped_by_cap is False
+    assert res < 3 * len(arms)
+    assert sum(res.rerank_degraded_by_arm.values()) == 5
+    journalled = load_records(tmp_path / "journal.jsonl")
+    assert len(journalled) == res
+    rerank_records = [
+        r for r in journalled if "rerank" in resolve_arm(r.graph_arm).levers
+    ]
+    assert len(rerank_records) == 5
+    assert all(
+        n.typed_code == 23 for r in rerank_records for n in r.notices
+    )
+
+
+def test_a_healthy_rerank_drive_is_not_halted_or_labelled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    arms = _tripwire_drive_setup(
+        monkeypatch, halt=5, arms=["hybrid", "hybrid+rerank", "hybrid+all"]
+    )
+    monkeypatch.setattr(
+        "lancet_eval.run.drive_one", _mock_rerank_drive_one(degraded=False)
+    )
+
+    res = _drive_rerank_corpus(tmp_path)
+
+    assert res.stopped_by_tripwire is False
+    assert res == 3 * len(arms)
+    assert res.rerank_degraded_by_arm == {"hybrid+rerank": 0, "hybrid+all": 0}

@@ -1,0 +1,67 @@
+{
+  "eval/runs/2026-09-03-multihop_rag/journal.jsonl": {
+    "records": 1000,
+    "spend_usd": "0.048314880000000004",
+    "spend_usd_no_embeddings": "0.03391488"
+  },
+  "eval/runs/2026-09-06-measure-multihop_rag/journal.jsonl": {
+    "records": 0,
+    "spend_usd": "0.0",
+    "spend_usd_no_embeddings": "0.0"
+  },
+  "eval/runs/2026-09-09-multihop_rag/journal.jsonl": {
+    "records": 658,
+    "spend_usd": "0.36489914",
+    "spend_usd_no_embeddings": "0.35542394"
+  },
+  "eval/runs/2026-09-28-passA-measure-multihop_rag/journal.jsonl": {
+    "records": 0,
+    "spend_usd": "0.0",
+    "spend_usd_no_embeddings": "0.0"
+  },
+  "eval/runs/2026-09-29-genconfirm-measure-multihop_rag/journal.jsonl": {
+    "records": 0,
+    "spend_usd": "0.0",
+    "spend_usd_no_embeddings": "0.0"
+  },
+  "eval/runs/2026-09-29-genprobe-measure-multihop_rag/journal.jsonl": {
+    "records": 0,
+    "spend_usd": "0.0",
+    "spend_usd_no_embeddings": "0.0"
+  },
+  "eval/runs/2026-09-30-drive1-multihop_rag_diag/journal.jsonl": {
+    "records": 200,
+    "spend_usd": "0.15699982",
+    "spend_usd_no_embeddings": "0.15411982000000002"
+  },
+  "eval/runs/2026-10-01-drive1b-multihop_rag_diag/journal.jsonl": {
+    "records": 200,
+    "spend_usd": "0.12736816",
+    "spend_usd_no_embeddings": "0.12448816"
+  },
+  "eval/runs/2026-10-06-drive2-multihop_rag_diag/journal.jsonl": {
+    "records": 200,
+    "spend_usd": "0.1355512",
+    "spend_usd_no_embeddings": "0.13267120000000002"
+  },
+  "eval/runs/2026-10-06-passB-measure-multihop_rag/journal.jsonl": {
+    "records": 0,
+    "spend_usd": "0.0",
+    "spend_usd_no_embeddings": "0.0"
+  },
+  "eval/runs/2026-10-07-heldout-multihop_rag_heldout/journal.jsonl": {
+    "records": 1404,
+    "spend_usd": "0.9882903400000002",
+    "spend_usd_no_embeddings": "0.9680727400000002"
+  },
+  "eval/runs/2026-10-07-rehearsal-multihop_rag_rehearsal/journal.jsonl": {
+    "records": 12,
+    "spend_usd": "0.009625940000000001",
+    "spend_usd_no_embeddings": "0.00945314"
+  },
+  "eval/runs/2026-10-07-rehearsal2-multihop_rag_rehearsal/journal.jsonl": {
+    "records": 12,
+    "spend_usd": "0.009337940000000001",
+    "spend_usd_no_embeddings": "0.00916514"
+  }
+}

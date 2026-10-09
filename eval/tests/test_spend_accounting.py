@@ -529,3 +529,162 @@ def test_records_without_prior_attempts_price_exactly_as_before() -> None:
         _old_spend(recs, include_embeddings=False) + 3 * _ceiling_usd()
     )
     assert with_emb == pytest.approx(_old_spend(recs) + 3 * _ceiling_usd())
+
+
+# --- 06.3.6-07: the O15 rerank spend line (D-176, T-06.3.6-23) ---------------------------
+
+SPEND_BEFORE_THE_RERANK_LINE = (
+    Path(__file__).parent
+    / "fixtures"
+    / "compute_spend_before_the_rerank_line_685258c1.json"
+)
+PROBE_FILE = (
+    REPO_ROOT
+    / ".planning"
+    / "phases"
+    / "06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia"
+    / "06.3.6-PROBE.md"
+)
+
+
+def _rerank_record(
+    qid: str,
+    *,
+    cost: float | None,
+    arm: str = "hybrid+rerank",
+    outcome: str = "completed",
+) -> RunRecord:
+    """A rerank-arm record whose rerank attempt reported `cost` (None: unreported)."""
+    from lancet_eval.client import RerankMeta
+
+    return RunRecord(
+        corpus="multihop_rag",
+        question_id=qid,
+        graph_arm=arm,
+        outcome="success",
+        node_timings=[
+            NodeTiming(node_name="AssemblePrompt", duration_ms=12.0),
+            NodeTiming(node_name="GenerateAnswer", duration_ms=900.0),
+        ],
+        workflow_meta=WorkflowWireMeta(
+            prompt_tokens=1000,
+            completion_tokens=100,
+            rerank=RerankMeta(
+                latency_ms=120,
+                cost_credits=cost or 0.0,
+                cost_reported=cost is not None,
+                outcome=outcome,
+            ),
+        ),
+    )
+
+
+def _without_rerank(records: list[RunRecord]) -> list[RunRecord]:
+    out = []
+    for rec in records:
+        meta = rec.workflow_meta
+        assert meta is not None
+        stripped = meta.model_copy(update={"rerank": None})
+        out.append(rec.model_copy(update={"workflow_meta": stripped}))
+    return out
+
+
+def test_the_unreported_call_ceiling_is_the_probe_value() -> None:
+    """C13: the provisional ceiling is the value plan 06.3.6-01 recorded."""
+    import re
+
+    text = PROBE_FILE.read_text(encoding="utf-8")
+    match = re.search(
+        r"Provisional RERANK_UNREPORTED_CALL_CEILING_USD:\s*([0-9.eE+-]+)", text
+    )
+    assert match is not None
+    assert measure.RERANK_UNREPORTED_CALL_CEILING_USD == float(match.group(1))
+    assert measure.RERANK_UNREPORTED_CALL_CEILING_USD == pytest.approx(6.6e-07)
+
+
+def test_every_committed_journal_prices_byte_identically() -> None:
+    """The rerank line is added only when `workflow_meta.rerank` is present."""
+    import json
+
+    from lancet_eval.journal import load_records
+
+    golden = json.loads(SPEND_BEFORE_THE_RERANK_LINE.read_text(encoding="utf-8"))
+    assert len(golden) == 13
+    for rel, expected in golden.items():
+        if "spend_usd" not in expected:
+            continue
+        records = load_records(REPO_ROOT / rel)
+        assert len(records) == expected["records"], rel
+        assert not any(
+            r.workflow_meta is not None and r.workflow_meta.rerank is not None
+            for r in records
+        ), rel
+        with_emb, _ = compute_spend(records)
+        without_emb, _ = compute_spend(records, include_embeddings=False)
+        assert repr(with_emb) == expected["spend_usd"], rel
+        assert repr(without_emb) == expected["spend_usd_no_embeddings"], rel
+
+
+def test_two_reported_rerank_costs_and_one_unreported_call_are_added() -> None:
+    c1, c2 = 1.5e-06, 2.5e-06
+    records = [
+        _rerank_record("a", cost=c1),
+        _rerank_record("b", cost=c2),
+        _rerank_record("c", cost=None),
+    ]
+    added = compute_spend(records)[0] - compute_spend(_without_rerank(records))[0]
+    assert added == pytest.approx(
+        c1 + c2 + measure.RERANK_UNREPORTED_CALL_CEILING_USD, abs=1e-15
+    )
+
+
+def test_the_rerank_line_is_priced_with_or_without_embeddings() -> None:
+    records = [_rerank_record("a", cost=3e-06)]
+    for include in (True, False):
+        added = (
+            compute_spend(records, include_embeddings=include)[0]
+            - compute_spend(_without_rerank(records), include_embeddings=include)[0]
+        )
+        assert added == pytest.approx(3e-06, abs=1e-15)
+
+
+def test_a_degraded_rerank_attempt_is_priced_like_any_other() -> None:
+    records = [
+        _rerank_record("a", cost=None, outcome="degraded_timeout"),
+        _rerank_record("b", cost=2e-06, outcome="degraded_status"),
+    ]
+    added = compute_spend(records)[0] - compute_spend(_without_rerank(records))[0]
+    assert added == pytest.approx(
+        measure.RERANK_UNREPORTED_CALL_CEILING_USD + 2e-06, abs=1e-15
+    )
+
+
+def test_a_rerank_attempt_on_a_prior_attempt_is_charged_too() -> None:
+    from lancet_eval.client import RerankMeta
+
+    final = _rerank_record("a", cost=1e-06)
+    prior = AttemptRecord(
+        attempt=1,
+        outcome="error",
+        workflow_meta=WorkflowWireMeta(
+            rerank=RerankMeta(
+                latency_ms=90,
+                cost_credits=4e-06,
+                cost_reported=True,
+                outcome="completed",
+            )
+        ),
+    )
+    with_prior = final.model_copy(update={"prior_attempts": [prior]})
+    added = compute_spend([with_prior])[0] - compute_spend([final])[0]
+    embedding_of_one_more_attempt = (
+        measure.ESTIMATED_EMBEDDING_TOKENS_PER_QUERY
+        * measure.EMBEDDING_PRICE_PER_1M
+        / 1_000_000.0
+    )
+    assert added == pytest.approx(4e-06 + embedding_of_one_more_attempt, abs=1e-15)
+
+
+def test_a_record_without_rerank_telemetry_adds_no_rerank_line() -> None:
+    records = [_success_record(5000, 200)]
+    assert compute_spend(records)[0] == pytest.approx(_old_spend(records))

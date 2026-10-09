@@ -15,18 +15,24 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import statistics
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
+from fractions import Fraction
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, NamedTuple
 
-from lancet_eval import thresholds
-from lancet_eval.arms import canonical_arm
+from lancet_eval import preregistration, thresholds
+from lancet_eval.arms import canonical_arm, resolve_arm
 from lancet_eval.corpus import load_corpus_config, load_sample_questions
 from lancet_eval.diagnostic import build_rows, classify_record
 from lancet_eval.dimensions import make_graph_presence_rate
-from lancet_eval.flatness import flatness_verdict, records_from_run_journal
+from lancet_eval.flatness import (
+    SoakNodeTiming,
+    flatness_verdict,
+    records_from_run_journal,
+)
 from lancet_eval.journal import (
     completeness_comparison,
     first_attempt_view,
@@ -164,6 +170,165 @@ def _matches_role(stored_label: str, role_label: str) -> bool:
         return canonical_arm(stored_label) == canonical_arm(role_label)
     except ValueError:
         return False
+
+
+class SC2TimeoutFloor(NamedTuple):
+    """The SC-2 timeout-rate floor a reading is held to (06.3.6 D-151, D-164).
+
+    Attributes:
+        rate: timeouts / records in the reading at or above which a dominant timeout
+            class fails the error-mode clause. None means the legacy clause: a dominant
+            timeout class fails whatever its rate (drives 1, 1b, 2 and 06.3.5).
+        problem: Why the corpus's pre-registration could not be read, or None. A
+            problem makes the reading MISS (fail closed): a floor nobody pre-registered
+            is never assumed.
+    """
+
+    rate: Fraction | None
+    problem: str | None
+
+
+class _ErrorModeClause(NamedTuple):
+    """The SC-2 error-mode clause: whether it fails, and what it reports beside it."""
+
+    fails: bool
+    note: str | None
+    problem: str | None
+
+
+def sc2_timeout_floor_for(journal_path: Path | str) -> SC2TimeoutFloor:
+    """The timeout-rate floor of the journal's corpus, read from its pre-registration.
+
+    The corpus is the one the journal header names; its `[preregistration] token`
+    selects the object. Only an object that carries `sc2_timeout_rate_floor` (a lever
+    pre-registration) supplies a floor: the 06.3.5 object, a corpus without a token,
+    and a corpus config that cannot be loaded all keep the legacy clause, so every
+    earlier reading and every recorded gate file is unchanged. A token that names
+    nothing, or a malformed floor, is a `problem`, which the gates read as MISS.
+    """
+    corpus = _read_journal_corpus(journal_path)
+    if not corpus:
+        return SC2TimeoutFloor(None, None)
+    try:
+        config = load_corpus_config(corpus)
+    except Exception:
+        return SC2TimeoutFloor(None, None)
+    token = getattr(config, "preregistration_token", None)
+    if not token:
+        return SC2TimeoutFloor(None, None)
+    try:
+        prereg = preregistration.resolve(token)
+    except preregistration.PreregistrationError as exc:
+        return SC2TimeoutFloor(
+            None,
+            f"the pre-registration {token!r} named by corpus {corpus!r} could not be "
+            f"resolved, so the SC-2 timeout-rate floor is unknown ({exc})",
+        )
+    value = getattr(prereg, "sc2_timeout_rate_floor", None)
+    if value is None:
+        return SC2TimeoutFloor(None, None)
+    try:
+        rate = Fraction(str(value))
+    except (ValueError, ZeroDivisionError):
+        rate = Fraction(0)
+    if rate <= 0 or rate >= 1:
+        return SC2TimeoutFloor(
+            None,
+            f"{token}.sc2_timeout_rate_floor {value!r} is not a rate in (0, 1)",
+        )
+    return SC2TimeoutFloor(rate, None)
+
+
+def _error_mode_clause(
+    class_counts: Mapping[str, int], n: int, floor: SC2TimeoutFloor
+) -> _ErrorModeClause:
+    """The SC-2 error-mode clause over one reading of `n` records (D-151, D-164).
+
+    Legacy (`floor.rate` None): fails when timeout is a dominant error class (the
+    plurality or tied for it, `plurality_tie_is_dominant`). Under a floor: fails only
+    when timeout is dominant AND `timeouts / n >= floor.rate`, compared as fractions;
+    a dominant timeout class below the floor passes and is reported beside the reading.
+    A `floor.problem` fails closed.
+    """
+    if floor.problem is not None:
+        return _ErrorModeClause(True, None, floor.problem)
+    if not class_counts:
+        return _ErrorModeClause(False, None, None)
+    top = max(class_counts.values())
+    if class_counts.get(_TIMEOUT_CLASS, 0) != top:
+        return _ErrorModeClause(False, None, None)
+    if floor.rate is None:
+        return _ErrorModeClause(True, None, None)
+    timeouts = class_counts[_TIMEOUT_CLASS]
+    if n > 0 and Fraction(timeouts, n) >= floor.rate:
+        return _ErrorModeClause(True, None, None)
+    return _ErrorModeClause(
+        False, f"reported: timeout dominant, not material ({timeouts} of {n})", None
+    )
+
+
+def _floor_detail(
+    floor: SC2TimeoutFloor, class_counts: Mapping[str, int], clause: _ErrorModeClause
+) -> dict[str, Any]:
+    """The `detail` fields a floored reading adds; empty for a legacy reading."""
+    if floor.rate is None:
+        return {}
+    return {
+        "sc2_timeout_rate_floor": str(floor.rate),
+        "sc2_timeout_count": float(class_counts.get(_TIMEOUT_CLASS, 0)),
+        "sc2_timeout_material": clause.fails,
+    }
+
+
+def _rerank_subtracted_flatness(
+    journal_path: Path | str, arm: str
+) -> dict[str, Any]:
+    """The flatness of RetrieveHybrid minus `rerank.latency_ms` for one rerank arm.
+
+    O14 / D-175: printed beside the unchanged 06.3.4.1 reading and never part of the
+    verdict. Each record's RetrieveHybrid duration has its rerank call's latency taken
+    off (floored at zero), then the same D-89 verdict reads the arm's records
+    renumbered 1..n. A MISS of the node's own flatness that this series does not show
+    is provider latency drift under D-110.
+    """
+    try:
+        raw = load_records(journal_path)
+        flat = records_from_run_journal(journal_path)
+        if len(raw) != len(flat):
+            raise ValueError("journal is not a drive journal")
+        latencies: list[float] = []
+        adjusted: list[Any] = []
+        for rec, flat_rec in zip(raw, flat, strict=True):
+            if not _matches_role(rec.graph_arm, arm):
+                continue
+            rerank = rec.workflow_meta.rerank if rec.workflow_meta else None
+            latency = float(rerank.latency_ms) if rerank is not None else 0.0
+            if rerank is not None:
+                latencies.append(latency)
+            timings = [
+                SoakNodeTiming(t.node_name, max(0.0, t.duration_ms - latency))
+                if t.node_name == "RetrieveHybrid"
+                else t
+                for t in flat_rec.node_timings
+            ]
+            adjusted.append(
+                replace(flat_rec, ordinal=len(adjusted) + 1, node_timings=timings)
+            )
+        verdict = flatness_verdict(adjusted)
+    except ValueError as exc:
+        return {"reason": f"unavailable: {exc}"}
+    return {
+        "reason": verdict.reason,
+        "passed": verdict.passed,
+        "n": verdict.n,
+        "slope_ms_per_query": verdict.slope_ms_per_query,
+        "window_delta_ms": verdict.window_delta_ms,
+        "slice_medians_ms": list(verdict.slice_medians_ms),
+        "n_rerank_attempts": len(latencies),
+        "median_rerank_latency_ms": (
+            statistics.median(latencies) if latencies else None
+        ),
+    }
 
 
 def _record_for_role[T](arms_by_label: Mapping[str, T], role_label: str) -> T | None:
@@ -367,6 +532,7 @@ def evaluate_sc2(
     engine_pid_after: int,
     *,
     roles: ArmRoles = DEFAULT_ARM_ROLES,
+    timeout_floor: SC2TimeoutFloor | None = None,
 ) -> GateReading:
     """SC-2: PASS only when the error-mode clause (timeout not the plurality/tied
     error class) AND the RetrieveHybrid flatness clause both pass. An engine
@@ -377,6 +543,12 @@ def evaluate_sc2(
     flatness clause (D-64). Prints (in `detail`) the both-arm-error question count
     and the error class counts, per AI-SPEC #2. A "both-arm" error is an error on both
     arms of `roles`.
+
+    Under a pre-registration that carries `sc2_timeout_rate_floor` (06.3.6 D-151,
+    D-164; `timeout_floor` overrides what the journal's corpus resolves to) the
+    error-mode clause fails only when timeout is dominant AND timeouts / records in this
+    reading reach the floor, and a dominant timeout class below it is reported. Every
+    other corpus reads exactly as before.
     """
     if engine_pid_before != engine_pid_after:
         return GateReading(
@@ -393,6 +565,20 @@ def evaluate_sc2(
     records = load_records(journal_path)
     if not records:
         return GateReading(gate="SC-2", status="MISS", reason="n=0", n=0, detail={})
+
+    floor = (
+        timeout_floor
+        if timeout_floor is not None
+        else sc2_timeout_floor_for(journal_path)
+    )
+    if floor.problem is not None:
+        return GateReading(
+            gate="SC-2",
+            status="MISS",
+            reason=floor.problem,
+            n=len(records),
+            detail={"sc2_timeout_floor_problem": floor.problem},
+        )
 
     # D-73: the dominance reading is itself a committed literal, not a hardcoded
     # assumption -- refuse rather than silently reinterpret an unrecognised value.
@@ -442,7 +628,8 @@ def evaluate_sc2(
     # committed reading, checked above): a tie at the plurality count still
     # counts timeout as dominant.
     timeout_dominant = _TIMEOUT_CLASS in dominant_classes
-    error_mode_pass = not timeout_dominant
+    clause = _error_mode_clause(class_counts, len(records), floor)
+    error_mode_pass = not clause.fails
 
     flatness = flatness_verdict(records_from_run_journal(journal_path))
     flatness_pass = flatness.passed
@@ -451,6 +638,12 @@ def evaluate_sc2(
     if not error_mode_pass:
         reasons.append(
             f"timeout is a dominant error class (tied or plurality): {class_counts}"
+            + (
+                f"; {class_counts[_TIMEOUT_CLASS]} of {len(records)} reach the "
+                f"{floor.rate} rate floor"
+                if floor.rate is not None
+                else ""
+            )
         )
     if not flatness_pass:
         reasons.append(f"flatness {flatness.reason}")
@@ -461,6 +654,8 @@ def evaluate_sc2(
         if reasons
         else "error mode and RetrieveHybrid flatness both pass"
     )
+    if clause.note:
+        reason += f"; {clause.note}"
 
     detail: dict[str, Any] = {
         "class_counts": {k: float(v) for k, v in class_counts.items()},
@@ -476,6 +671,7 @@ def evaluate_sc2(
         "flatness_decay_present": flatness.decay_present,
         "flatness_slope_ms_per_query": flatness.slope_ms_per_query,
         "flatness_window_delta_ms": flatness.window_delta_ms,
+        **_floor_detail(floor, class_counts, clause),
     }
 
     return GateReading(
@@ -527,6 +723,14 @@ def evaluate_sc1_arm(
     )
 
 
+def _is_rerank_arm(arm: str) -> bool:
+    """Whether a stored arm label names a registry arm with the `rerank` lever."""
+    try:
+        return "rerank" in resolve_arm(arm).levers
+    except ValueError:
+        return False
+
+
 def _arm_flatness_records(journal_path: Path | str, arm: str) -> list[Any]:
     """The flatness records of one arm with ordinals renumbered 1..n.
 
@@ -547,6 +751,8 @@ def evaluate_sc2_arm(
     arm: str,
     engine_pid_before: int,
     engine_pid_after: int,
+    *,
+    timeout_floor: SC2TimeoutFloor | None = None,
 ) -> GateReading:
     """SC-2 for one arm of the held-out drive (D-109), so a failing arm cannot hide.
 
@@ -555,6 +761,11 @@ def evaluate_sc2_arm(
     plurality or tied class) and the RetrieveHybrid flatness clause over the arm's
     records renumbered 1..n. An engine restart is a MISS; an arm with no records is a
     MISS with `n=0`.
+
+    The D-151 timeout-rate floor applies as in `evaluate_sc2`, over this arm's own `n`.
+    For an arm whose levers include `rerank` (06.3.6 O14, D-175) the RetrieveHybrid
+    minus `rerank.latency_ms` flatness series is printed beside the unchanged flatness
+    reading, in `detail` and at the end of `reason`; it never changes the status.
     """
     if engine_pid_before != engine_pid_after:
         return GateReading(
@@ -578,6 +789,19 @@ def evaluate_sc2_arm(
             reason=f"arm {arm}: n=0 (no records)",
             n=0,
             detail={"arm": arm},
+        )
+    floor = (
+        timeout_floor
+        if timeout_floor is not None
+        else sc2_timeout_floor_for(journal_path)
+    )
+    if floor.problem is not None:
+        return GateReading(
+            gate="SC-2",
+            status="MISS",
+            reason=f"arm {arm}: {floor.problem}",
+            n=len(records),
+            detail={"arm": arm, "sc2_timeout_floor_problem": floor.problem},
         )
     if SC2_TIMEOUT_DOMINANCE_RULE not in _KNOWN_SC2_DOMINANCE_RULES:
         return GateReading(
@@ -609,6 +833,7 @@ def evaluate_sc2_arm(
     else:
         dominant_classes = []
     timeout_dominant = _TIMEOUT_CLASS in dominant_classes
+    clause = _error_mode_clause(class_counts, len(records), floor)
 
     try:
         flatness = flatness_verdict(_arm_flatness_records(journal_path, arm))
@@ -622,37 +847,60 @@ def evaluate_sc2_arm(
         )
 
     reasons: list[str] = []
-    if timeout_dominant:
+    if clause.fails:
         reasons.append(
             f"arm {arm}: timeout is a dominant error class (tied or plurality): "
             f"{class_counts}"
+            + (
+                f"; {class_counts[_TIMEOUT_CLASS]} of {len(records)} reach the "
+                f"{floor.rate} rate floor"
+                if floor.rate is not None
+                else ""
+            )
         )
     if not flatness.passed:
         reasons.append(f"arm {arm}: flatness {flatness.reason}")
+    reason = (
+        "; ".join(reasons)
+        if reasons
+        else f"arm {arm}: error mode and RetrieveHybrid flatness both pass"
+    )
+    if clause.note:
+        reason += f"; {clause.note}"
+    detail: dict[str, Any] = {
+        "arm": arm,
+        "class_counts": {k: float(v) for k, v in class_counts.items()},
+        "dominant_classes": dominant_classes,
+        "timeout_dominant": timeout_dominant,
+        "sc2_timeout_dominance_rule": SC2_TIMEOUT_DOMINANCE_RULE,
+        "retried_records": float(retried_records),
+        "flatness_reason": flatness.reason,
+        "flatness_n": flatness.n,
+        "flatness_trend_available": flatness.trend_available,
+        "flatness_window_available": flatness.window_available,
+        "flatness_decay_present": flatness.decay_present,
+        "flatness_slope_ms_per_query": flatness.slope_ms_per_query,
+        "flatness_window_delta_ms": flatness.window_delta_ms,
+        **_floor_detail(floor, class_counts, clause),
+    }
+    if _is_rerank_arm(arm):
+        series = _rerank_subtracted_flatness(journal_path, arm)
+        detail["rerank_subtracted_flatness"] = series
+        detail["o14_note"] = (
+            "RetrieveHybrid minus rerank.latency_ms is reported beside the 06.3.4.1 "
+            "flatness reading (D-175); a flatness MISS that this series does not show "
+            "is provider latency drift under D-110"
+        )
+        reason += (
+            "; reported: RetrieveHybrid minus rerank.latency_ms flatness "
+            f"{series['reason']}"
+        )
     return GateReading(
         gate="SC-2",
         status="PASS" if not reasons else "MISS",
-        reason=(
-            "; ".join(reasons)
-            if reasons
-            else f"arm {arm}: error mode and RetrieveHybrid flatness both pass"
-        ),
+        reason=reason,
         n=len(records),
-        detail={
-            "arm": arm,
-            "class_counts": {k: float(v) for k, v in class_counts.items()},
-            "dominant_classes": dominant_classes,
-            "timeout_dominant": timeout_dominant,
-            "sc2_timeout_dominance_rule": SC2_TIMEOUT_DOMINANCE_RULE,
-            "retried_records": float(retried_records),
-            "flatness_reason": flatness.reason,
-            "flatness_n": flatness.n,
-            "flatness_trend_available": flatness.trend_available,
-            "flatness_window_available": flatness.window_available,
-            "flatness_decay_present": flatness.decay_present,
-            "flatness_slope_ms_per_query": flatness.slope_ms_per_query,
-            "flatness_window_delta_ms": flatness.window_delta_ms,
-        },
+        detail=detail,
     )
 
 

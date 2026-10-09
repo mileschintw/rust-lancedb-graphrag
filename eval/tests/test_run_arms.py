@@ -840,14 +840,27 @@ def _echoing_stream(request: httpx.Request) -> httpx.Response:
     snapshot: dict[str, object] = {"index_generation": "gen1"}
     if mode is not None:
         snapshot["retrieval_mode"] = mode
+    levers = body.get("levers") or []
+    if levers:
+        snapshot["levers"] = levers
     answer: dict[str, object] = {"answer": "Paris", "snapshot": snapshot}
     if body.get("disable_graph_context"):
         answer["notices"] = [_GRAPH_ABLATION_NOTICE]
+    completed: dict[str, object] = {"success": True, "duration_ms": 100}
+    if "rerank" in levers:
+        completed["metadata"] = {
+            "rerank": {
+                "latency_ms": 120,
+                "cost_credits": 4.4e-07,
+                "cost_reported": True,
+                "outcome": "completed",
+            }
+        }
     text = (
         "event: final_answer\n"
         f"data: {json.dumps(answer)}\n\n"
         "event: workflow_completed\n"
-        'data: {"success": true, "duration_ms": 100}\n\n'
+        f"data: {json.dumps(completed)}\n\n"
     )
     return httpx.Response(
         status_code=200,
@@ -887,7 +900,11 @@ def test_every_registry_arm_round_trips_request_to_provenance(
     httpx_mock: HTTPXMock,
 ) -> None:
     """Companion invariant: a new arm without flags or provenance turns this red."""
-    from lancet_eval.arms import mode_provenance_failures, request_fields
+    from lancet_eval.arms import (
+        lever_echo_failures,
+        mode_provenance_failures,
+        request_fields,
+    )
 
     httpx_mock.add_callback(_echoing_stream, is_reusable=True)
     client = httpx.Client(base_url="http://testserver")
@@ -909,6 +926,8 @@ def test_every_registry_arm_round_trips_request_to_provenance(
             mode_provenance_failures(label, rec.snapshot.retrieval_mode, rec.notices)
             == []
         )
+        assert lever_echo_failures(label, rec.snapshot.levers) == []
+        assert body.get("levers", []) == list(ARM_REGISTRY[label].levers)
 
         # 4. another arm's echo is a failure that names the label
         other_mode = next(
@@ -1466,3 +1485,209 @@ def test_rehearsal_corpus_keeps_the_gate_on_its_configured_token(
     with pytest.raises(gitcheck.PreregistrationError):
         _drive_split("multihop_rag_rehearsal", tmp_path / "journal.jsonl")
     assert seen == [(("PREREGISTRATION_06_3_5",),)]
+
+
+# --- 06.3.6-07: the D-73 arm-set refusals at drive time (D-73, D-149) ---
+
+
+def _synthetic_lever_prereg(arms: tuple[str, ...]) -> object:
+    """A duck-typed lever pre-registration naming exactly `arms` (reference first)."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        reference_arm=arms[0],
+        families=(SimpleNamespace(arms=tuple(arms[1:-1])),),
+        descriptive_arms=(arms[-1],),
+    )
+
+
+def _split_config(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    role: str,
+    arms: list[str],
+    token: str,
+) -> object:
+    config = load_corpus_config("multihop_rag_heldout")
+    config.split_role = role
+    config.arms = arms
+    config.preregistration_token = token
+    monkeypatch.setattr("lancet_eval.run.load_corpus_config", lambda _name: config)
+    return config
+
+
+@pytest.mark.parametrize("role", ["heldout", "rehearsal"])
+def test_a_lever_arm_under_the_06_3_5_token_is_refused_before_any_request(
+    role: str,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval import gitcheck
+
+    _forbid_the_gate(monkeypatch)
+    _split_config(
+        monkeypatch,
+        role=role,
+        arms=["hybrid", "hybrid+graph", "hybrid+rerank"],
+        token="PREREGISTRATION_06_3_5",
+    )
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(gitcheck.PreregistrationError, match="hybrid\\+rerank"):
+        _drive_split("multihop_rag_heldout", j_path)
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_the_06_3_5_arm_list_is_not_equality_checked(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only lever arms are refused under the 06.3.5 token; its own arms still run."""
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    _forbid_the_gate(monkeypatch)
+    _split_config(
+        monkeypatch,
+        role="rehearsal",
+        arms=["hybrid", "hybrid+graph"],
+        token="PREREGISTRATION_06_3_5",
+    )
+    _dev_questions_for_rehearsal(monkeypatch)
+
+    journal = tmp_path / "journal.jsonl"
+    assert _drive_split("multihop_rag_heldout", journal, limit=1) == 2
+
+
+def _dev_questions_for_rehearsal(monkeypatch: pytest.MonkeyPatch) -> None:
+    from lancet_eval.corpus import load_corpus_config as real_load
+
+    questions = real_load("multihop_rag_rehearsal").questions[:3]
+    monkeypatch.setattr(
+        "lancet_eval.run.load_sample_questions", lambda _name: list(questions)
+    )
+
+
+def test_an_unknown_token_is_refused_before_any_request(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import gitcheck
+
+    _forbid_the_gate(monkeypatch)
+    _split_config(
+        monkeypatch,
+        role="heldout",
+        arms=["hybrid", "hybrid+rerank"],
+        token="PREREGISTRATION_NOT_THERE",
+    )
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(gitcheck.PreregistrationError, match="NOT_THERE"):
+        _drive_split("multihop_rag_heldout", j_path)
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_the_gate_still_runs_before_the_arm_set_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import gitcheck
+
+    seen: list[tuple[object, ...]] = []
+
+    def refuse(*args: object, **_kwargs: object) -> list[str]:
+        seen.append(args)
+        return ["stop here"]
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", refuse)
+    _split_config(
+        monkeypatch,
+        role="heldout",
+        arms=["hybrid", "hybrid+rerank"],
+        token="PREREGISTRATION_NOT_THERE",
+    )
+    with pytest.raises(gitcheck.PreregistrationError, match="stop here"):
+        _drive_split("multihop_rag_heldout", tmp_path / "journal.jsonl")
+    assert seen == [(("PREREGISTRATION_NOT_THERE",),)]
+
+
+def test_a_corpus_arm_list_that_differs_from_the_preregistration_is_refused(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import gitcheck, thresholds
+
+    monkeypatch.setattr(
+        thresholds,
+        "PREREGISTRATION_TEST_ARMS",
+        _synthetic_lever_prereg(("hybrid", "hybrid+rerank", "hybrid+all")),
+        raising=False,
+    )
+    _forbid_the_gate(monkeypatch)
+    _split_config(
+        monkeypatch,
+        role="heldout",
+        arms=["hybrid", "hybrid+rerank"],
+        token="PREREGISTRATION_TEST_ARMS",
+    )
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(gitcheck.PreregistrationError, match="hybrid\\+all"):
+        _drive_split("multihop_rag_heldout", j_path)
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_a_corpus_arm_list_equal_to_the_preregistration_is_driven(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import thresholds
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    monkeypatch.setattr(
+        thresholds,
+        "PREREGISTRATION_TEST_ARMS",
+        _synthetic_lever_prereg(("hybrid", "hybrid+rerank", "hybrid+all")),
+        raising=False,
+    )
+    _forbid_the_gate(monkeypatch)
+    # An alias counts as the arm it names: graph-off is hybrid.
+    _split_config(
+        monkeypatch,
+        role="rehearsal",
+        arms=["graph-off", "hybrid+all", "hybrid+rerank"],
+        token="PREREGISTRATION_TEST_ARMS",
+    )
+    _dev_questions_for_rehearsal(monkeypatch)
+
+    journal = tmp_path / "journal.jsonl"
+    assert _drive_split("multihop_rag_heldout", journal, limit=1) == 3
+
+
+def test_a_dev_corpus_is_exempt_from_the_arm_set_refusals(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    calls = _forbid_the_gate(monkeypatch)
+    config, _questions = _dev_config_and_questions(monkeypatch)
+    config.arms = ["hybrid", "hybrid+rerank"]  # type: ignore[attr-defined]
+    config.preregistration_token = "PREREGISTRATION_NOT_YET_FROZEN"  # type: ignore[attr-defined]
+
+    assert _drive_split("multihop_rag_heldout", tmp_path / "journal.jsonl") == 6
+    assert calls == []
+
+
+def test_the_rotation_over_a_lever_arm_list_stays_the_seeded_balanced_one(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.arms import plan_work_units
+    from lancet_eval.split import load_split
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    _forbid_the_gate(monkeypatch)
+    arms = ["hybrid", "hybrid+graph", "hybrid+rerank", "hybrid+metadata", "hybrid+all"]
+    config, questions = _dev_config_and_questions(monkeypatch)
+    config.arms = arms  # type: ignore[attr-defined]
+    j_path = tmp_path / "journal.jsonl"
+
+    assert _drive_split("multihop_rag_heldout", j_path) == 3 * len(arms)
+    planned = plan_work_units(questions, arms, load_split(_split_path()).order_seed)
+    assert _journal_units(j_path) == [(q.question_id, arm) for q, arm in planned]

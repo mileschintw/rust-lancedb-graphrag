@@ -6,12 +6,13 @@ import concurrent.futures
 import logging
 import re
 import time
+from fractions import Fraction
 from pathlib import Path
 
 import httpx
 
-from lancet_eval import gitcheck
-from lancet_eval.arms import plan_work_units, request_fields, resolve_arm
+from lancet_eval import gitcheck, preregistration
+from lancet_eval.arms import canonical_arm, plan_work_units, request_fields, resolve_arm
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings, repo_root
 from lancet_eval.corpus import (
@@ -42,32 +43,170 @@ from lancet_eval.split import (
     split_input_problems,
     split_sha256,
 )
+from lancet_eval.usability import carries_rerank_degraded, has_rerank_telemetry
 
 logger = logging.getLogger(__name__)
 
 
 class DriveResult(int):
-    """Result of drive() execution with spend and cap reporting."""
+    """Result of drive() execution with spend, cap and rerank-tripwire reporting.
+
+    ``stopped_by_tripwire`` is True when the O10 rerank degrade tripwire halted the
+    drive (06.3.6 D-174), and ``rerank_degraded_by_arm`` maps each arm that made a
+    rerank attempt to the number of its degraded attempts in this invocation (empty
+    when the corpus has no tripwire).
+    """
 
     executed_count: int
     stopped_by_cap: bool
     observed_spend: float
+    stopped_by_tripwire: bool
+    rerank_degraded_by_arm: dict[str, int]
 
     def __new__(
         cls,
         executed_count: int,
         stopped_by_cap: bool = False,
         observed_spend: float = 0.0,
+        stopped_by_tripwire: bool = False,
+        rerank_degraded_by_arm: dict[str, int] | None = None,
     ) -> DriveResult:
         val = super().__new__(cls, executed_count)
         val.executed_count = executed_count
         val.stopped_by_cap = stopped_by_cap
         val.observed_spend = observed_spend
+        val.stopped_by_tripwire = stopped_by_tripwire
+        val.rerank_degraded_by_arm = dict(rerank_degraded_by_arm or {})
         return val
 
     @property
     def capped(self) -> bool:
         return self.stopped_by_cap
+
+class RerankTripwire:
+    """The O10 rerank degrade tripwire of the paid drive (06.3.6 D-174, T-06.3.6-24).
+
+    Halts the drive when rerank degrades / rerank attempts exceeds ``rate`` once at
+    least ``min_calls`` attempts were made, or at ``consecutive_halt`` consecutive
+    degrades of any class, counted across every rerank-bearing arm. An attempt is a
+    record on a rerank-bearing arm that carries rerank telemetry or the RERANK_DEGRADED
+    notice (typed code 23); a degrade is such a record carrying the notice. A record on
+    another arm, and a rerank-arm record with no attempt (a transport error), neither
+    counts nor resets the consecutive streak. The rate is compared exactly, as a
+    fraction, and strictly (``>``), so 10 degrades in 50 attempts at 0.20 does not
+    halt and 11 in 50 does. Counts are per invocation, like the cap's per-drive
+    window: a resumed drive starts from zero, because resuming after a halt is the
+    owner's re-drive decision (a D-110 event). Degraded records already journalled stay
+    in the journal, off-arm under provenance clause (i); the tripwire only stops
+    further paid calls.
+
+    Attributes:
+        rate: The halting rate (exclusive).
+        min_calls: Attempts needed before the rate is evaluated.
+        consecutive_halt: Consecutive degrades that halt the drive.
+        attempts: Rerank attempts observed.
+        degrades: Degraded attempts observed.
+        consecutive: The current run of consecutive degrades.
+        degraded_by_arm: Degraded attempts per arm, for each arm with an attempt.
+    """
+
+    def __init__(self, *, rate: float, min_calls: int, consecutive_halt: int) -> None:
+        if not 0.0 < rate < 1.0:
+            raise ValueError(f"rerank tripwire rate {rate!r} must be in (0, 1)")
+        if min_calls < 1 or consecutive_halt < 1:
+            raise ValueError("rerank tripwire counts must be at least 1")
+        self.rate = rate
+        self.min_calls = min_calls
+        self.consecutive_halt = consecutive_halt
+        self._rate = Fraction(str(rate))
+        self.attempts = 0
+        self.degrades = 0
+        self.consecutive = 0
+        self.degraded_by_arm: dict[str, int] = {}
+        self._tripped: str | None = None
+
+    @classmethod
+    def from_preregistration(cls, prereg: object) -> RerankTripwire | None:
+        """The tripwire a pre-registration fixes, or None when it carries none.
+
+        A pre-registration without all three tripwire fields (06.3.5's, for one) has
+        no tripwire.
+        """
+        rate = getattr(prereg, "rerank_degrade_tripwire_rate", None)
+        min_calls = getattr(prereg, "rerank_degrade_tripwire_min_calls", None)
+        halt = getattr(prereg, "rerank_consecutive_degrade_halt", None)
+        if rate is None or min_calls is None or halt is None:
+            return None
+        return cls(rate=rate, min_calls=min_calls, consecutive_halt=halt)
+
+    @property
+    def tripped(self) -> str | None:
+        """The reason the tripwire fired, or None while it has not."""
+        return self._tripped
+
+    def observe(self, record: RunRecord) -> None:
+        """Counts one journalled record, in journal order."""
+        try:
+            levers = resolve_arm(record.graph_arm).levers
+        except ValueError:
+            return
+        if "rerank" not in levers:
+            return
+        degraded = carries_rerank_degraded(record)
+        if not (degraded or has_rerank_telemetry(record)):
+            return
+        arm = canonical_arm(record.graph_arm)
+        self.attempts += 1
+        self.degraded_by_arm[arm] = self.degraded_by_arm.get(arm, 0) + int(degraded)
+        if degraded:
+            self.degrades += 1
+            self.consecutive += 1
+        else:
+            self.consecutive = 0
+        if self._tripped is not None:
+            return
+        if self.consecutive >= self.consecutive_halt:
+            self._tripped = (
+                f"{self.consecutive} consecutive rerank degrades "
+                f"(halt at {self.consecutive_halt})"
+            )
+        elif (
+            self.attempts >= self.min_calls
+            and Fraction(self.degrades, self.attempts) > self._rate
+        ):
+            self._tripped = (
+                f"rerank degraded on {self.degrades} of {self.attempts} attempts "
+                f"({self.degrades / self.attempts:.2f}), above the {self.rate} "
+                "tripwire rate"
+            )
+
+    def summary(self) -> str:
+        """The per-arm degrade counts, for the drive's console line."""
+        by_arm = ", ".join(f"{arm}: {n}" for arm, n in self.degraded_by_arm.items())
+        return (
+            f"rerank degrades {self.degrades} of {self.attempts} attempts "
+            f"({by_arm or 'no rerank attempt'})"
+        )
+
+
+def rerank_tripwire_for(config: CorpusConfig) -> RerankTripwire | None:
+    """The tripwire of a corpus, read from the pre-registration its token names.
+
+    None for the `dev` role (dev reads precede the freeze, D-170), for a token that
+    resolves to nothing, and for a pre-registration without tripwire fields (06.3.5's):
+    those corpora have no in-drive rerank stop.
+    """
+    if getattr(config, "split_role", None) == "dev":
+        return None
+    token = getattr(config, "preregistration_token", None)
+    if not token:
+        return None
+    try:
+        prereg = preregistration.resolve(token)
+    except preregistration.PreregistrationError:
+        return None
+    return RerankTripwire.from_preregistration(prereg)
+
 
 # Legacy read-only view of the two drive 1/1b/2 labels. The sole durable arm-to-flag
 # mapping is `lancet_eval.arms.ARM_REGISTRY` (D-101); requests derive from it.
@@ -189,6 +328,38 @@ def _enforce_split_role(
                 "held-out question ID(s); a rehearsal must be disjoint from both "
                 "(D-106); refusing to drive"
             )
+
+
+def _enforce_preregistered_arm_set(config: CorpusConfig) -> None:
+    """Refuse a corpus whose arm list the pre-registration it names did not fix (D-73).
+
+    Under the 06.3.5 token a corpus may list none of the 06.3.6 lever arms: that
+    pre-registration fixed the four-arm ablation and nothing else, and its rehearsal
+    and held-out corpora list the four arms themselves, so no equality is demanded of
+    it. Under any other token the pre-registration must exist (`preregistration.resolve`
+    fails closed) and the corpus's arms, compared by canonical label, must equal the
+    arms it fixed: its reference arm, every family arm and its descriptive arms.
+    Runs after the ordering gate and before any journal I/O and any request.
+    """
+    token = config.preregistration_token
+    listed = {canonical_arm(label) for label in config.arms}
+    if token == gitcheck.PREREGISTRATION_TOKEN:
+        levers = sorted(label for label in listed if resolve_arm(label).levers)
+        if levers:
+            raise gitcheck.PreregistrationError(
+                f"D-73: corpus {config.name!r} lists the 06.3.6 lever arm(s) {levers} "
+                f"under the {token} token, which fixed only the 06.3.5 arms; "
+                "refusing to drive"
+            )
+        return
+    prereg = preregistration.resolve(token)
+    fixed = {canonical_arm(label) for label in preregistration.arms_of(prereg)}
+    if listed != fixed:
+        raise gitcheck.PreregistrationError(
+            f"D-73: corpus {config.name!r} lists arms that differ from the ones "
+            f"{token} fixed: missing {sorted(fixed - listed)}, not pre-registered "
+            f"{sorted(listed - fixed)}; refusing to drive"
+        )
 
 
 def _attempt_of(record: RunRecord, attempt: int) -> AttemptRecord:
@@ -417,6 +588,11 @@ def drive(
     `PREREGISTRATION_06_3_5` is an ancestor of HEAD and `eval/src/lancet_eval/` has no
     uncommitted change (D-73). ``git_repo`` points that check at another repository; it
     is the live repository when None.
+
+    A corpus whose pre-registration fixes a rerank tripwire (06.3.6 O10, D-174) stops
+    when ``RerankTripwire`` fires: the next unit is taken, the tripwire is checked
+    beside the cap, and the result carries ``stopped_by_tripwire`` with the per-arm
+    degrade counts.
     """
     eval_settings = settings or EvalSettings()
     require_index_identity(eval_settings, corpus)
@@ -456,6 +632,8 @@ def drive(
                     + f". {config.preregistration_token} must be committed in "
                     f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
                 )
+            # D-73 at drive time (06.3.6): the arm list is the pre-registered one.
+            _enforce_preregistered_arm_set(config)
         # D-105/D-106/D-107: a [split] corpus is refused before any journal I/O unless
         # its IDs fit its role, then driven in the seeded balanced rotation.
         split = load_split(config.split_path)
@@ -553,6 +731,8 @@ def drive(
 
         executed_count = 0
         stopped_by_cap = False
+        stopped_by_tripwire = False
+        tripwire = rerank_tripwire_for(config)
         remaining_iter = iter(remaining_units)
         in_flight: set[concurrent.futures.Future[RunRecord]] = set()
 
@@ -591,11 +771,18 @@ def drive(
                         journal.append(record)
                         records.append(record)
                         executed_count += 1
+                        if tripwire is not None:
+                            tripwire.observe(record)
 
                     # Take the next unit before the cap check (WR-01): a drive is
                     # "stopped by cap" only if a unit was still waiting when the cap
-                    # was reached, so a complete drive is never labelled capped.
-                    while len(in_flight) < effective_workers and not stopped_by_cap:
+                    # was reached, so a complete drive is never labelled capped. The
+                    # rerank tripwire follows the same rule.
+                    while (
+                        len(in_flight) < effective_workers
+                        and not stopped_by_cap
+                        and not stopped_by_tripwire
+                    ):
                         try:
                             q, arm = next(remaining_iter)
                         except StopIteration:
@@ -603,6 +790,9 @@ def drive(
                         current_spend, _ = compute_spend(records)
                         if current_spend >= stage_spend_cap:
                             stopped_by_cap = True
+                            break
+                        if tripwire is not None and tripwire.tripped is not None:
+                            stopped_by_tripwire = True
                             break
                         fut = executor.submit(
                             drive_one,
@@ -623,7 +813,21 @@ def drive(
                 eval_client.close()
 
         total_spend, _ = compute_spend(records)
-        return DriveResult(executed_count, stopped_by_cap=stopped_by_cap, observed_spend=total_spend)
+        if stopped_by_tripwire and tripwire is not None:
+            logger.warning(
+                "rerank tripwire halted the drive: %s; %s",
+                tripwire.tripped,
+                tripwire.summary(),
+            )
+        return DriveResult(
+            executed_count,
+            stopped_by_cap=stopped_by_cap,
+            observed_spend=total_spend,
+            stopped_by_tripwire=stopped_by_tripwire,
+            rerank_degraded_by_arm=(
+                tripwire.degraded_by_arm if tripwire is not None else None
+            ),
+        )
     finally:
         _safe_reconcile()
 

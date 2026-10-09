@@ -69,6 +69,13 @@ MEASUREMENT_ARMS: tuple[str, str] = ("graph-off", "graph-on")
 # tests/fixtures/openrouter_models_excerpt_2026-10-09.json.
 GENERATION_INPUT_PRICE_PER_1M = 0.14
 GENERATION_OUTPUT_PRICE_PER_1M = 1.28
+# 06.3.6 O15 / D-176: the charge for one rerank call whose response carried no
+# `usage.cost` (`workflow_meta.rerank.cost_reported` is False). Provisional value from
+# the plan 06.3.6-01 live probe (06.3.6-PROBE.md, C13): 1.5 x the largest per-call cost
+# the probe reported (4.4e-07 USD; one credit is one USD, as the probe read it). The
+# D-154 freeze may replace it. Pinned to PROBE.md by a test; a ceiling is never lowered
+# below the largest reported cost.
+RERANK_UNREPORTED_CALL_CEILING_USD = 6.6e-07
 # Voyage 4 large pricing per million tokens (not in the /models listing, which carries
 # no embedding models; the committed figure was kept on 2026-09-29).
 EMBEDDING_PRICE_PER_1M = 0.12
@@ -229,10 +236,19 @@ def compute_spend(
     attempts a harness retry superseded, are priced like the record itself, each with
     its wire tokens, its failed-generation ceiling and its own embedding estimate. A
     record without prior attempts prices exactly as it always did.
+
+    Rerank spend (06.3.6 O15, D-176): an attempt whose `workflow_meta.rerank` is present
+    adds the reported `usage.cost` (`cost_credits`) when `cost_reported`, else
+    `RERANK_UNREPORTED_CALL_CEILING_USD`. A degraded attempt is priced like any other,
+    because the provider may have billed it. The line sits with the generation spend, so
+    `include_embeddings=False` still includes it (that flag only drops the embedding
+    estimate). A record without `workflow_meta.rerank`, which is every record written
+    before 06.3.6, adds nothing, so every earlier journal prices byte-identically.
     """
     total_prompt_tokens = 0
     total_completion_tokens = 0
     query_count = 0
+    rerank_spend = 0.0
 
     for rec in records:
         for attempt in _every_attempt(rec):
@@ -240,6 +256,13 @@ def compute_spend(
             if attempt.workflow_meta is not None:
                 total_prompt_tokens += attempt.workflow_meta.prompt_tokens
                 total_completion_tokens += attempt.workflow_meta.completion_tokens
+                rerank = attempt.workflow_meta.rerank
+                if rerank is not None:
+                    rerank_spend += (
+                        rerank.cost_credits
+                        if rerank.cost_reported
+                        else RERANK_UNREPORTED_CALL_CEILING_USD
+                    )
 
     gen_spend = (total_prompt_tokens / 1_000_000.0) * GENERATION_INPUT_PRICE_PER_1M + (
         total_completion_tokens / 1_000_000.0
@@ -249,6 +272,8 @@ def compute_spend(
         * failed_generation_attempt_usd()
         * FAILED_GENERATION_CHARGE_MULTIPLIER
     )
+    if rerank_spend:
+        gen_spend += rerank_spend
 
     if not include_embeddings:
         return gen_spend, True

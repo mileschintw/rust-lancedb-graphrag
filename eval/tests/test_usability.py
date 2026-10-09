@@ -115,3 +115,21 @@ def test_attempted_graph_reads_the_canonical_label_and_the_legacy_alias() -> Non
     ):
         record = _base_record(graph_arm=label, node_timings=[timing])
         assert attempted_graph(record) is expected, label
+
+
+def test_is_graph_on_arm_reads_the_registry() -> None:
+    from lancet_eval.arms import ARM_REGISTRY
+    from lancet_eval.usability import is_graph_arm, is_graph_on_arm
+
+    assert is_graph_on_arm("hybrid+graph")
+    assert is_graph_on_arm("graph-on")
+    for label in ("dense-only", "bm25-only", "hybrid", "graph-off", "hybrid+rerank"):
+        assert not is_graph_on_arm(label)
+    assert not is_graph_on_arm("not-an-arm")
+    if "hybrid+graph-v2" in ARM_REGISTRY:
+        assert is_graph_on_arm("hybrid+graph-v2")
+        # is_graph_arm keeps its 06.3.5 meaning: only the v1 graph-on arm.
+        assert not is_graph_arm("hybrid+graph-v2")
+    assert is_graph_arm("hybrid+graph")
+    assert is_graph_arm("graph-on")
+    assert not is_graph_arm("hybrid+all")
