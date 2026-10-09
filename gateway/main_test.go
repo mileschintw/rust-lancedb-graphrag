@@ -5753,3 +5753,93 @@ func TestQueryRAGLeversRoundTrip(t *testing.T) {
 		t.Errorf("snapshot must echo the lever name: %s", final.Data)
 	}
 }
+
+// TestQueryRAGLeversRequestTable pins the 06.3.6 D-136 fail-closed request shapes: every malformed
+// `levers` value, and the `question_type` key (D-146), is a 400 `invalid request body` before the
+// engine is called, while a valid list is forwarded sorted by enum number. The shapes are
+// subtests of one test so the gateway test count moves by one.
+func TestQueryRAGLeversRequestTable(t *testing.T) {
+	rejected := []struct {
+		name string
+		body string
+	}{
+		{"unknown name", `{"query":"q","session_id":"s","levers":["sparse"]}`},
+		{"capitalised name", `{"query":"q","session_id":"s","levers":["Rerank"]}`},
+		{"upper-case name", `{"query":"q","session_id":"s","levers":["RERANK"]}`},
+		{"empty name", `{"query":"q","session_id":"s","levers":[""]}`},
+		{"unspecified name", `{"query":"q","session_id":"s","levers":["unspecified"]}`},
+		{"number instead of an array", `{"query":"q","session_id":"s","levers":1}`},
+		{"number inside the array", `{"query":"q","session_id":"s","levers":[1]}`},
+		{"duplicate name", `{"query":"q","session_id":"s","levers":["rerank","rerank"]}`},
+		{"string instead of an array", `{"query":"q","session_id":"s","levers":"rerank"}`},
+		{"five entries", `{"query":"q","session_id":"s","levers":["rerank","evidence_metadata","binary_answer_format","graph_v2","rerank"]}`},
+		{"question_type key", `{"query":"q","session_id":"s","question_type":"yes_no"}`},
+	}
+	for _, tc := range rejected {
+		t.Run(tc.name+" is rejected with 400 before the engine is called", func(t *testing.T) {
+			engine := engineFunc{
+				queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+					t.Fatal("queryRAG should not be called on invalid request")
+					return nil, nil
+				},
+			}
+			req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(tc.body)).WithContext(t.Context())
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+
+			app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 Bad Request", recorder.Code)
+			}
+			if !strings.Contains(recorder.Body.String(), "invalid request body") {
+				t.Errorf("body = %q, want the invalid_request_body message", recorder.Body.String())
+			}
+		})
+	}
+
+	forwarded := []struct {
+		name string
+		body string
+		want []pb.Lever
+	}{
+		{
+			"every lever is forwarded sorted by enum number",
+			`{"query":"q","session_id":"s","levers":["graph_v2","binary_answer_format","rerank","evidence_metadata"]}`,
+			[]pb.Lever{
+				pb.Lever_LEVER_RERANK,
+				pb.Lever_LEVER_EVIDENCE_METADATA,
+				pb.Lever_LEVER_BINARY_ANSWER_FORMAT,
+				pb.Lever_LEVER_GRAPH_V2,
+			},
+		},
+		{"an empty array is today's request", `{"query":"q","session_id":"s","levers":[]}`, nil},
+		{"an absent key is today's request", `{"query":"q","session_id":"s"}`, nil},
+	}
+	for _, tc := range forwarded {
+		t.Run(tc.name, func(t *testing.T) {
+			var receivedReq *pb.QueryRAGRequest
+			engine := engineFunc{
+				queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+					receivedReq = req
+					return newSingleResponseStream(&pb.QueryRAGResponse{Answer: "ok", SessionId: req.GetSessionId()}, nil), nil
+				},
+			}
+			req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(tc.body)).WithContext(t.Context())
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+
+			app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if receivedReq == nil {
+				t.Fatal("engine QueryRAG was not called")
+			}
+			if got := receivedReq.GetLevers(); !slices.Equal(got, tc.want) {
+				t.Errorf("engine levers = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

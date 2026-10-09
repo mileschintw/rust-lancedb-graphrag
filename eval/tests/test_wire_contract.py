@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+import re
+from typing import get_args
+
 import pytest
 
-from lancet_eval.client import NodeFailed, Notice, RetrievalSnapshot, StructuredCitation
+from lancet_eval.client import (
+    LEVER_ORDER,
+    LeverName,
+    NodeFailed,
+    Notice,
+    RerankMeta,
+    RetrievalSnapshot,
+    StructuredCitation,
+    WorkflowMetadata,
+)
+from lancet_eval.config import repo_root
 from lancet_eval.dimensions import (
     NOTICE_CODE_NO_EVIDENCE,
+    NOTICE_CODE_RERANK_DEGRADED,
     make_wire_contract_conformance,
 )
 from lancet_eval.journal import RunRecord, WorkflowWireMeta
@@ -301,3 +315,63 @@ def test_ten_record_journal_with_five_honest_failures_scores_one() -> None:
     assert res.detail["conforming_n"] == 10.0
     assert res.detail["violations_n"] == 0.0
 
+
+# --- 06.3.6 plan 05 Task 3: the lever contract mirrors the proto ---------------------
+
+_PROTO = repo_root() / "proto" / "lancet" / "v1" / "lancet.proto"
+
+
+def _proto_enum(name: str) -> list[tuple[str, int]]:
+    """The `(NAME, number)` members of one proto enum, in declaration order."""
+    text = _PROTO.read_text(encoding="utf-8")
+    block = re.search(rf"enum {name} \{{(.*?)\n\}}", text, re.DOTALL)
+    assert block is not None, f"enum {name} not found in {_PROTO}"
+    return [
+        (m.group(1), int(m.group(2)))
+        for m in re.finditer(
+            r"^\s*([A-Z][A-Z0-9_]*)\s*=\s*(\d+);", block.group(1), re.MULTILINE
+        )
+    ]
+
+
+def test_lever_order_equals_the_proto_enum_order() -> None:
+    members = [(n, v) for n, v in _proto_enum("Lever") if v != 0]
+    assert [v for _, v in members] == list(range(1, len(members) + 1))
+    names = [n.removeprefix("LEVER_").lower() for n, _ in members]
+    assert list(LEVER_ORDER) == names
+    assert set(get_args(LeverName)) == set(LEVER_ORDER)
+
+
+def test_rerank_degraded_notice_code_equals_the_proto_value() -> None:
+    codes = dict(_proto_enum("NoticeCode"))
+    assert NOTICE_CODE_RERANK_DEGRADED == codes["NOTICE_CODE_RERANK_DEGRADED"]
+
+
+def test_journal_wire_meta_names_every_client_workflow_metadata_field() -> None:
+    # The preflight copies the client model into the journal model with
+    # `model_validate(model_dump())`, and the journal model forbids extra keys: a field
+    # present on one side only is a crash or a silent drop.
+    assert set(WorkflowWireMeta.model_fields) == set(WorkflowMetadata.model_fields)
+    for name in ("rerank", "query_embedding_retries"):
+        assert (
+            WorkflowWireMeta.model_fields[name].default
+            == WorkflowMetadata.model_fields[name].default
+        )
+
+
+def test_rerank_metadata_survives_the_client_to_journal_round_trip() -> None:
+    meta = WorkflowMetadata(
+        rerank=RerankMeta(
+            latency_ms=41,
+            cost_credits=0.5,
+            cost_reported=True,
+            outcome="degraded_timeout",
+        ),
+        query_embedding_retries=2,
+    )
+    journal = WorkflowWireMeta.model_validate(meta.model_dump())
+    assert journal.rerank == meta.rerank
+    assert journal.query_embedding_retries == 2
+    default = WorkflowWireMeta.model_validate(WorkflowMetadata().model_dump())
+    assert default.rerank is None
+    assert default.query_embedding_retries == 0

@@ -23,6 +23,16 @@
 //! | `retrieval_mode_hybrid_admitted` | `retrieval_mode` 1, unmatched filter | success (not rejected) | n/a | As above. |
 //! | `retrieval_mode_dense_only_admitted` | `retrieval_mode` 2, unmatched filter | success (not rejected) | n/a | As above. |
 //! | `retrieval_mode_bm25_only_admitted` | `retrieval_mode` 3, unmatched filter | success (not rejected) | n/a | As above. |
+//! | `invalid_lever` | `levers` holds an integer outside the declared `Lever` values (99) | `InvalidArgument` | `invalid_levers` | — |
+//! | `negative_lever` | `levers` holds a negative integer (-1) | `InvalidArgument` | `invalid_levers` | — |
+//! | `duplicate_lever` | `levers` names `binary_answer_format` twice | `InvalidArgument` | `invalid_levers` | — |
+//! | `lever_unspecified_member` | `levers` holds `LEVER_UNSPECIFIED` (0) | `InvalidArgument` | `invalid_levers` | — |
+//! | `lever_unavailable_rerank` | `levers` names `rerank`, whose resource is not wired yet | `InvalidArgument` | `lever_unavailable` | — |
+//! | `lever_unavailable_evidence_metadata` | `levers` names `evidence_metadata`, whose resource is not wired yet | `InvalidArgument` | `lever_unavailable` | — |
+//! | `lever_unavailable_graph_v2` | `levers` names `graph_v2`, whose resource is not wired yet | `InvalidArgument` | `lever_unavailable` | — |
+//! | `lever_unavailable_when_mixed_with_an_available_lever` | `levers` names `binary_answer_format` and `rerank` | `InvalidArgument` | `lever_unavailable` | — |
+//! | `graph_v2_with_graph_disabled` | `levers` names `graph_v2` and `disable_graph_context` is true (D-165) | `InvalidArgument` | `invalid_lever_combination` | — |
+//! | `levers_admitted` | `levers` names `binary_answer_format`, unmatched filter | success (not rejected) | n/a | `binary_answer_format` needs no resource and is admitted; the zero-match filter keeps the row independent of corpus content. |
 //!
 //! **Negative filter bound (not a request-level row).** D-15's enumeration mentions a negative
 //! filter bound, but [`DocumentFilter`] carries only two repeated string lists and no numeric
@@ -51,12 +61,12 @@
 //!
 //! **The generator *is* independently wired** (`LancetServiceImpl::generator: Arc<dyn
 //! Generator>`), so `FakeGenerator::calls()` below is asserted directly: a real, non-tautological
-//! proof for that one port — and it stays `0` for all eighteen rows, not just the twelve rejecting
+//! proof for that one port — and it stays `0` for all twenty-seven rows, not just the twenty rejecting
 //! ones. `WorkflowRunner::run_workflow` (`engine/src/workflow/runner.rs`) skips both
 //! `AssemblePrompt` and `GenerateAnswer` whenever `!ctx.allow_model_only` and the retrieval pass
 //! left zero evidence — which is exactly what `unmatched_filter`, `contradictory_filter` and the
-//! four `retrieval_mode_*_admitted` rows construct. Dense and lexical retrieval, unlike
-//! generation, **do** run for those six rows
+//! four `retrieval_mode_*_admitted` rows and `levers_admitted` construct. Dense and lexical retrieval, unlike
+//! generation, **do** run for those seven rows
 //! (`RetrieveHybridNode` is never skipped) — the corpus really is queried and really does come
 //! back empty; only the two downstream nodes are skipped.
 
@@ -68,7 +78,9 @@ use engine::config::EffectiveRagSettings;
 use engine::db::DatabaseManager;
 use engine::generation;
 use engine::ingest::{process_job, read_staged_jobs};
-use engine::pb::lancet::v1::{DocumentFilter, NoticeCode, QueryRagRequest, RetrievalMode};
+use engine::pb::lancet::v1::{
+    DocumentFilter, Lever, NoticeCode, QueryRagRequest, RetrievalMode,
+};
 use engine::rerank;
 use engine::testkit::test_query_request;
 
@@ -326,6 +338,128 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
                 code: tonic::Code::InvalidArgument,
                 error_kind: "invalid_retrieval_mode",
             },
+        },
+        Row {
+            label: "invalid_lever",
+            request: QueryRagRequest {
+                levers: vec![99],
+                ..test_query_request("valid query", "00000000-0000-4000-8000-00000000000c")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "invalid_levers",
+            },
+        },
+        Row {
+            label: "negative_lever",
+            request: QueryRagRequest {
+                levers: vec![-1],
+                ..test_query_request("valid query", "00000000-0000-4000-8000-00000000000d")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "invalid_levers",
+            },
+        },
+        Row {
+            label: "duplicate_lever",
+            // Two copies of an admissible lever: the duplicate is refused before availability.
+            request: QueryRagRequest {
+                levers: vec![
+                    Lever::BinaryAnswerFormat as i32,
+                    Lever::BinaryAnswerFormat as i32,
+                ],
+                ..test_query_request("valid query", "00000000-0000-4000-8000-00000000000e")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "invalid_levers",
+            },
+        },
+        Row {
+            label: "lever_unspecified_member",
+            request: QueryRagRequest {
+                levers: vec![Lever::Unspecified as i32],
+                ..test_query_request("valid query", "00000000-0000-4000-8000-00000000000f")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "invalid_levers",
+            },
+        },
+        Row {
+            label: "lever_unavailable_rerank",
+            request: QueryRagRequest {
+                levers: vec![Lever::Rerank as i32],
+                ..test_query_request("valid query", "00000000-0000-4000-8000-000000000010")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "lever_unavailable",
+            },
+        },
+        Row {
+            label: "lever_unavailable_evidence_metadata",
+            request: QueryRagRequest {
+                levers: vec![Lever::EvidenceMetadata as i32],
+                ..test_query_request("valid query", "00000000-0000-4000-8000-000000000011")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "lever_unavailable",
+            },
+        },
+        Row {
+            label: "lever_unavailable_graph_v2",
+            request: QueryRagRequest {
+                levers: vec![Lever::GraphV2 as i32],
+                ..test_query_request("valid query", "00000000-0000-4000-8000-000000000012")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "lever_unavailable",
+            },
+        },
+        Row {
+            label: "lever_unavailable_when_mixed_with_an_available_lever",
+            // One available and one unavailable lever: the whole request is refused, never
+            // admitted with a subset, because the echo would then claim fewer levers than named.
+            request: QueryRagRequest {
+                levers: vec![Lever::BinaryAnswerFormat as i32, Lever::Rerank as i32],
+                ..test_query_request("valid query", "00000000-0000-4000-8000-000000000013")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "lever_unavailable",
+            },
+        },
+        Row {
+            label: "graph_v2_with_graph_disabled",
+            // The D-165 combination check runs before availability, so this row reports the
+            // contradiction and not the unavailability of graph_v2.
+            request: QueryRagRequest {
+                levers: vec![Lever::GraphV2 as i32],
+                disable_graph_context: Some(true),
+                ..test_query_request("valid query", "00000000-0000-4000-8000-000000000014")
+            },
+            outcome: Outcome::Reject {
+                code: tonic::Code::InvalidArgument,
+                error_kind: "invalid_lever_combination",
+            },
+        },
+        Row {
+            label: "levers_admitted",
+            request: QueryRagRequest {
+                query: "valid query".into(),
+                session_id: String::new(),
+                filter: Some(DocumentFilter {
+                    document_ids: vec![Uuid::new_v4().to_string()],
+                    content_types: vec![],
+                }),
+                levers: vec![Lever::BinaryAnswerFormat as i32],
+                ..Default::default()
+            },
+            outcome: Outcome::Succeed,
         },
     ];
     let admitted_modes = [

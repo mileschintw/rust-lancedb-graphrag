@@ -25,14 +25,18 @@
 #         do not move the count.
 #   121 — Phase 06.3.6 plan 05 Task 2 (gateway 81, internal/sse 17): added TestQueryRAGLeversRoundTrip,
 #         the D-136 request-name to engine-enum to snapshot-echo-name round trip.
+#   122 — Phase 06.3.6 plan 05 Task 3 (gateway 82, internal/sse 17): added TestQueryRAGLeversRequestTable,
+#         the D-136 fail-closed request shapes (and the D-146 question_type refusal) as subtests of
+#         ONE top-level test. The snapshot levers key and the rerank / query_embedding_retries
+#         metadata keys are subtests or assertions inside existing sse tests and do not move the count.
 set -e
 
-EXPECTED_TOTAL=121
+EXPECTED_TOTAL=122
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 81
+EXPECTED_PACKAGES="gateway 82
 gateway/db 7
 gateway/internal/config 4
 gateway/internal/sse 17

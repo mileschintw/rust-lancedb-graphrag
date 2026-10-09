@@ -19,7 +19,8 @@ use crate::generation::{
     AnswerBasis, FakeGenerator, GenerationError, GenerationErrorKind, Generator, ModelOutput,
 };
 use crate::pb::lancet::v1::{
-    workflow_event::Event, StructuredCitation, WorkflowCompletedEvent, WorkflowMetadata,
+    workflow_event::Event, Lever, QueryRagRequest, RerankMetadata, RerankOutcome,
+    RetrievalSnapshot, StructuredCitation, WorkflowCompletedEvent, WorkflowMetadata,
 };
 use crate::prompt::{DEFAULT_ANSWER_TOKEN_BUDGET, DEFAULT_MAX_PROMPT_TOKENS};
 use crate::retrieval::{Candidate, RetrievalSettings};
@@ -362,6 +363,92 @@ fn a_message_written_before_the_fields_existed_decodes_to_their_defaults() {
     assert_eq!(decoded.graph_seed_count, 0);
     assert!(!decoded.graph_path_found);
     assert!(decoded.graph_seed_document_ids.is_empty());
+}
+
+#[test]
+fn the_lever_and_rerank_fields_use_the_declared_tags_and_default_when_absent() {
+    // Tag keys are `(tag << 3) | wire_type`; tags above 15 take a two-byte varint key.
+    // `query_embedding_retries` is tag 18 (varint): key 144 = 0x90 0x01.
+    assert_eq!(
+        WorkflowMetadata {
+            query_embedding_retries: 1,
+            ..WorkflowMetadata::default()
+        }
+        .encode_to_vec(),
+        vec![0x90, 0x01, 1]
+    );
+    // `rerank` is tag 17 (length-delimited): key (17 << 3) | 2 = 138 = 0x8a 0x01. The nested
+    // `latency_ms` is tag 1 (varint), so the body is `[1 << 3, 5]`.
+    assert_eq!(
+        WorkflowMetadata {
+            rerank: Some(RerankMetadata {
+                latency_ms: 5,
+                ..RerankMetadata::default()
+            }),
+            ..WorkflowMetadata::default()
+        }
+        .encode_to_vec(),
+        vec![0x8a, 0x01, 2, 1 << 3, 5]
+    );
+    // `RetrievalSnapshot.levers` is tag 15, a packed repeated enum: key (15 << 3) | 2 = 122.
+    assert_eq!(
+        RetrievalSnapshot {
+            levers: vec![Lever::Rerank as i32, Lever::BinaryAnswerFormat as i32],
+            ..RetrievalSnapshot::default()
+        }
+        .encode_to_vec(),
+        vec![(15 << 3) | 2, 2, 1, 3]
+    );
+    // `QueryRagRequest.levers` is tag 8, packed: key (8 << 3) | 2 = 66.
+    assert_eq!(
+        QueryRagRequest {
+            levers: vec![Lever::BinaryAnswerFormat as i32],
+            ..QueryRagRequest::default()
+        }
+        .encode_to_vec(),
+        vec![(8 << 3) | 2, 1, 3]
+    );
+
+    // None of them is written at its default, so a default request and snapshot keep their bytes.
+    assert!(QueryRagRequest::default().encode_to_vec().is_empty());
+    assert!(RetrievalSnapshot::default().encode_to_vec().is_empty());
+    assert!(WorkflowMetadata::default().encode_to_vec().is_empty());
+
+    // A message from an older engine, with none of the new tags, decodes to their defaults.
+    let older = WorkflowMetadata {
+        vector_count: 6,
+        graph_seed_document_ids: vec!["d".to_owned()],
+        ..WorkflowMetadata::default()
+    }
+    .encode_to_vec();
+    let decoded = WorkflowMetadata::decode(older.as_slice()).unwrap();
+    assert!(decoded.rerank.is_none());
+    assert_eq!(decoded.query_embedding_retries, 0);
+    let older_snapshot = RetrievalSnapshot {
+        index_generation: "gen".to_owned(),
+        ..RetrievalSnapshot::default()
+    }
+    .encode_to_vec();
+    assert!(RetrievalSnapshot::decode(older_snapshot.as_slice())
+        .unwrap()
+        .levers
+        .is_empty());
+
+    // Round trip with every new field populated.
+    let metadata = WorkflowMetadata {
+        rerank: Some(RerankMetadata {
+            latency_ms: 40,
+            cost_credits: 0.5,
+            cost_reported: true,
+            outcome: RerankOutcome::DegradedTimeout as i32,
+        }),
+        query_embedding_retries: 2,
+        ..WorkflowMetadata::default()
+    };
+    assert_eq!(
+        WorkflowMetadata::decode(metadata.encode_to_vec().as_slice()).unwrap(),
+        metadata
+    );
 }
 
 #[test]

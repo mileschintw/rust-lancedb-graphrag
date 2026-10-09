@@ -17,6 +17,9 @@ use engine::pb::lancet::v1::{Lever, QueryRagRequest};
 use engine::rerank;
 use engine::testkit::test_query_request;
 
+use engine::workflow::LeverSet;
+
+use super::retrieval_mode_pins::{render_scenarios, Variation};
 use super::{configured_service, database_path, stage_document, FakeEmbedder, FakeGenerator};
 
 #[tokio::test]
@@ -72,4 +75,73 @@ async fn a_levers_request_is_admitted_and_echoed() {
     assert_eq!(snapshot.levers, vec![Lever::BinaryAnswerFormat as i32]);
 
     let _ = std::fs::remove_dir_all(path);
+}
+
+// ---------------------------------------------------------------------------
+// Identity and canonical order (Phase 06.3.6 plan 05 Task 3, D-136)
+// ---------------------------------------------------------------------------
+
+/// `retrieve_node_default.golden` was recorded before `retrieval_mode` or `levers` existed
+/// (see `retrieval_mode_pins`). A request that names an explicit empty `levers` list renders the
+/// same three scenarios, so the empty list is today's request and the default snapshot bytes are
+/// unchanged.
+#[tokio::test]
+async fn an_explicit_empty_levers_list_renders_the_recorded_default_request_output() {
+    let golden =
+        include_str!("../retrieval/testdata/retrieve_node_default.golden").replace("\r\n", "\n");
+    assert_eq!(
+        render_scenarios(Variation::DEFAULT.with_levers(&[])).await,
+        golden,
+        "an explicit empty `levers` list must be byte-identical to the default request"
+    );
+}
+
+#[test]
+fn the_echo_is_ascending_enum_order_whatever_order_the_client_sent() {
+    let sent_orders: [&[i32]; 4] = [&[3, 1], &[1, 3], &[4, 2, 3, 1], &[2, 4]];
+    for sent in sent_orders {
+        let echoed = LeverSet::try_from_wire(sent)
+            .expect("these values are declared and distinct")
+            .to_wire();
+        let mut ascending = sent.to_vec();
+        ascending.sort_unstable();
+        assert_eq!(echoed, ascending, "echo of {sent:?}");
+    }
+    assert_eq!(LeverSet::try_from_wire(&[]).unwrap(), LeverSet::default());
+    assert!(LeverSet::default().is_empty());
+    assert!(LeverSet::default().to_wire().is_empty());
+}
+
+#[test]
+fn a_lever_set_refuses_what_the_wire_may_not_carry() {
+    let unknown = LeverSet::try_from_wire(&[99]).unwrap_err();
+    assert!(unknown.is_unknown());
+    assert_eq!(unknown.value(), 99);
+
+    let unspecified = LeverSet::try_from_wire(&[Lever::Rerank as i32, 0]).unwrap_err();
+    assert!(unspecified.is_unspecified());
+
+    let negative = LeverSet::try_from_wire(&[-1]).unwrap_err();
+    assert!(negative.is_negative());
+    assert_eq!(negative.value(), -1);
+
+    let duplicate = LeverSet::try_from_wire(&[3, 1, 3]).unwrap_err();
+    assert!(duplicate.is_duplicate());
+    assert_eq!(duplicate.value(), 3);
+}
+
+#[test]
+fn a_lever_set_contains_exactly_the_levers_it_was_built_from() {
+    let set = LeverSet::try_from_wire(&[Lever::BinaryAnswerFormat as i32, Lever::Rerank as i32])
+        .unwrap();
+    assert!(set.contains(Lever::Rerank));
+    assert!(set.contains(Lever::BinaryAnswerFormat));
+    assert!(!set.contains(Lever::EvidenceMetadata));
+    assert!(!set.contains(Lever::GraphV2));
+    assert!(!set.contains(Lever::Unspecified));
+    assert!(!set.is_empty());
+    assert_eq!(
+        set.iter().collect::<Vec<_>>(),
+        vec![Lever::Rerank, Lever::BinaryAnswerFormat]
+    );
 }

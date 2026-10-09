@@ -164,18 +164,21 @@ fn render_context(ctx: &WorkflowContext) -> String {
 
 /// How a scenario's request differs from the default request (D-99, D-100).
 #[derive(Clone, Copy)]
-struct Variation {
+pub(super) struct Variation {
     mode: RetrievalMode,
     include_ranking: bool,
+    /// The raw `levers` the request names (06.3.6 D-136); empty is the default request.
+    levers: &'static [i32],
     /// Zero the two snapshot fields a variation adds (the mode echo and the ranking) before
     /// rendering, so what is compared is everything the variation must NOT change.
     strip_additions: bool,
 }
 
 impl Variation {
-    const DEFAULT: Self = Self {
+    pub(super) const DEFAULT: Self = Self {
         mode: RetrievalMode::Unspecified,
         include_ranking: false,
+        levers: &[],
         strip_additions: false,
     };
 
@@ -184,6 +187,11 @@ impl Variation {
             mode,
             ..Self::DEFAULT
         }
+    }
+
+    /// The same variation with `levers` set explicitly on the request, as a client would send it.
+    pub(super) fn with_levers(self, levers: &'static [i32]) -> Self {
+        Self { levers, ..self }
     }
 
     fn with_ranking(self) -> Self {
@@ -203,6 +211,7 @@ impl Variation {
     fn apply(&self, request: &mut QueryRagRequest) {
         request.retrieval_mode = self.mode as i32;
         request.include_pre_truncation_ranking = self.include_ranking;
+        request.levers = self.levers.to_vec();
     }
 
     fn strip(&self, snapshot: &mut RetrievalSnapshot) {
@@ -348,7 +357,7 @@ async fn runner_final_response(variation: Variation) -> String {
 }
 
 /// The three scenarios, framed `== <name> ==` as `graph_off_fusion` frames its own.
-async fn render_scenarios(variation: Variation) -> String {
+pub(super) async fn render_scenarios(variation: Variation) -> String {
     let mut current = String::new();
     for (name, rendered) in [
         ("graph_off_node_chain", node_chain(true, variation).await),

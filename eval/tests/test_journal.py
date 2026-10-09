@@ -330,3 +330,49 @@ def test_read_journal_header_returns_none_when_there_is_no_header(
     garbled = tmp_path / "garbled.jsonl"
     garbled.write_text("not json\n", encoding="utf-8")
     assert read_journal_header(garbled) is None
+
+
+# --- 06.3.6 plan 05 Task 3: the new defaulted wire fields keep old journals valid ---
+
+_COMMITTED_JOURNALS = sorted(_RUNS.glob("*/journal.jsonl"))
+_NAMED_JOURNALS = [
+    "2026-09-30-drive1-multihop_rag_diag",
+    "2026-10-01-drive1b-multihop_rag_diag",
+    "2026-10-06-drive2-multihop_rag_diag",
+    "2026-10-07-heldout-multihop_rag_heldout",
+    "2026-10-07-rehearsal-multihop_rag_rehearsal",
+    "2026-10-07-rehearsal2-multihop_rag_rehearsal",
+]
+
+
+def test_every_committed_journal_parses_with_the_new_defaulted_fields() -> None:
+    """D-136, D-134, D-52: `levers`, `rerank`, retries default cleanly.
+
+    Reads each record raw and validates it strictly (never through `load_records`, which
+    swallows a validation error), so a field the journal model forbids fails by name.
+    """
+    import pytest
+    from pydantic import ValidationError
+
+    from lancet_eval.measure import MeasurementRecord
+
+    present = {path.parent.name for path in _COMMITTED_JOURNALS}
+    assert set(_NAMED_JOURNALS) <= present, sorted(set(_NAMED_JOURNALS) - present)
+
+    parsed = 0
+    for path in _COMMITTED_JOURNALS:
+        for line in _strict_lines(path):
+            try:
+                rec: RunRecord = RunRecord.model_validate_json(line)
+            except ValidationError:
+                try:
+                    rec = MeasurementRecord.model_validate_json(line)
+                except ValidationError as err:
+                    pytest.fail(f"{path} holds a record the model refuses: {err}")
+            parsed += 1
+            if rec.snapshot is not None:
+                assert rec.snapshot.levers == [], path
+            if rec.workflow_meta is not None:
+                assert rec.workflow_meta.rerank is None, path
+                assert rec.workflow_meta.query_embedding_retries == 0, path
+    assert parsed > 0

@@ -452,6 +452,48 @@ func TestSSEWorkflowCompletedMetadataForwarding(t *testing.T) {
 	if payload.Metadata["degraded_mode"] != true {
 		t.Errorf("degraded_mode: got %v, want true", payload.Metadata["degraded_mode"])
 	}
+
+	// 06.3.6: a default payload gains neither of the two new keys.
+	for _, key := range []string{"rerank", "query_embedding_retries"} {
+		if _, has := payload.Metadata[key]; has {
+			t.Errorf("a default workflow_completed payload must not carry %q", key)
+		}
+	}
+
+	// Set, both keys appear: the rerank object holds numbers and an outcome name only.
+	set := &pb.WorkflowEvent{
+		Event: &pb.WorkflowEvent_WorkflowCompleted{
+			WorkflowCompleted: &pb.WorkflowCompletedEvent{
+				Success: true,
+				Metadata: &pb.WorkflowMetadata{
+					Rerank: &pb.RerankMetadata{
+						LatencyMs:    37,
+						CostCredits:  0.25,
+						CostReported: true,
+						Outcome:      pb.RerankOutcome_RERANK_OUTCOME_DEGRADED_TIMEOUT,
+					},
+					QueryEmbeddingRetries: 2,
+				},
+			},
+		},
+	}
+	got := completedMetadata(t, set)
+	rerank, ok := got["rerank"].(map[string]any)
+	if !ok {
+		t.Fatalf("rerank = %#v, want an object", got["rerank"])
+	}
+	wantRerank := map[string]any{
+		"latency_ms":    float64(37),
+		"cost_credits":  0.25,
+		"cost_reported": true,
+		"outcome":       "degraded_timeout",
+	}
+	if !maps.Equal(rerank, wantRerank) {
+		t.Errorf("rerank = %v, want %v", rerank, wantRerank)
+	}
+	if got["query_embedding_retries"] != float64(2) {
+		t.Errorf("query_embedding_retries = %v, want 2", got["query_embedding_retries"])
+	}
 }
 
 func TestRetrievalSnapshotDTOCarriesRetrievedChunks(t *testing.T) {
@@ -918,6 +960,23 @@ func TestRetrievalSnapshotDTOKeySets(t *testing.T) {
 		}
 		if got := string(keys["retrieval_mode"]); got != `"bm25_only"` {
 			t.Errorf("retrieval_mode = %s, want \"bm25_only\"", got)
+		}
+	})
+
+	t.Run("levers appear only when set, as names in ascending enum order", func(t *testing.T) {
+		keys := marshalKeys(t, &pb.RetrievalSnapshot{
+			Levers: []pb.Lever{pb.Lever_LEVER_RERANK, pb.Lever_LEVER_BINARY_ANSWER_FORMAT},
+		})
+		want := append(slices.Clone(defaultKeys), "levers")
+		slices.Sort(want)
+		if got := sortedKeys(keys); !slices.Equal(got, want) {
+			t.Fatalf("keys = %v, want %v", got, want)
+		}
+		if got := string(keys["levers"]); got != `["rerank","binary_answer_format"]` {
+			t.Errorf("levers = %s, want [\"rerank\",\"binary_answer_format\"]", got)
+		}
+		if _, has := marshalKeys(t, &pb.RetrievalSnapshot{})["levers"]; has {
+			t.Error("a default snapshot must not carry levers")
 		}
 	})
 
