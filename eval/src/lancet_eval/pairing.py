@@ -109,7 +109,12 @@ def form_pairs(
         qid: (arm_map.get("graph-on"), arm_map.get("graph-off"))
         for qid, arm_map in by_question.items()
     }
-    return _join_pairs(selected, gold_questions, treatment_needs_provenance=False)
+    return _join_pairs(
+        selected,
+        gold_questions,
+        treatment_needs_provenance=False,
+        reference_needs_provenance=True,
+    )
 
 
 def form_arm_pairs(
@@ -146,6 +151,7 @@ def form_arm_pairs(
     treatment = canonical_arm(treatment_arm)
     reference = canonical_arm(reference_arm)
     treatment_needs = resolve_arm(treatment).disable_graph_context
+    reference_needs = resolve_arm(reference).disable_graph_context
 
     by_question: dict[str, dict[str, RunRecord]] = {}
     stored: dict[tuple[str, str], str] = {}
@@ -171,7 +177,10 @@ def form_arm_pairs(
         for qid, arm_map in by_question.items()
     }
     return _join_pairs(
-        selected, gold_questions, treatment_needs_provenance=treatment_needs
+        selected,
+        gold_questions,
+        treatment_needs_provenance=treatment_needs,
+        reference_needs_provenance=reference_needs,
     )
 
 
@@ -180,6 +189,7 @@ def _join_pairs(
     gold_questions: dict[str, GoldQuestion],
     *,
     treatment_needs_provenance: bool,
+    reference_needs_provenance: bool,
 ) -> JoinResult:
     """The shared inner join of `form_pairs` and `form_arm_pairs`.
 
@@ -212,8 +222,9 @@ def _join_pairs(
             single_arm_usable_drops += 1
             continue
 
-        # Both are usable. Check provenance of graph-off
-        if not has_arm_provenance(rec_off):
+        # Both are usable. Check the GRAPH_ABLATION provenance of each side whose
+        # arm disables graph context.
+        if reference_needs_provenance and not has_arm_provenance(rec_off):
             provenance_drops += 1
             continue
         if treatment_needs_provenance and not has_arm_provenance(rec_on):

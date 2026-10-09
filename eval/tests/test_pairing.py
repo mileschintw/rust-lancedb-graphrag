@@ -352,3 +352,40 @@ def test_form_arm_pairs_refuses_an_alias_and_its_canonical_label() -> None:
             treatment_arm="hybrid+graph",
             reference_arm="hybrid",
         )
+
+
+def test_form_arm_pairs_does_not_demand_ablation_provenance_of_a_graph_reference() -> (
+    None
+):
+    """A graph-enabled reference carries no GRAPH_ABLATION notice; none is required."""
+    form_arm_pairs = _need_arm_pairs()
+    records = [
+        _make_record("q1", "hybrid+graph"),
+        _make_record("q1", "hybrid", notices=_ABLATION),
+    ]
+    res = form_arm_pairs(
+        records,
+        {"q1": _make_gold("q1")},
+        treatment_arm="hybrid",
+        reference_arm="hybrid+graph",
+    )
+    assert [p.question_id for p in res.pairs] == ["q1"]
+    assert res.provenance_drops == 0
+
+
+def test_form_arm_pairs_still_requires_provenance_on_a_graph_disabled_reference() -> (
+    None
+):
+    form_arm_pairs = _need_arm_pairs()
+    records = [
+        _make_record("q1", "hybrid+graph"),
+        _make_record("q1", "hybrid"),
+    ]
+    res = form_arm_pairs(
+        records,
+        {"q1": _make_gold("q1")},
+        treatment_arm="hybrid+graph",
+        reference_arm="hybrid",
+    )
+    assert res.pairs == []
+    assert res.provenance_drops == 1
