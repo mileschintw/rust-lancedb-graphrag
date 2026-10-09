@@ -31,7 +31,7 @@ from lancet_eval.client import (
     StructuredCitation,
 )
 from lancet_eval.config import repo_root
-from lancet_eval.corpus import GoldQuestion, load_sample_questions
+from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
 from lancet_eval.journal import Journal, RunRecord, WorkflowWireMeta
 from lancet_eval.judge import (
     JudgeCache,
@@ -969,3 +969,14 @@ def test_rehearsal_refuses_a_corpus_question_in_the_split(
         tmp_path, standard_records(_rehearsal_ids()), corpus=REHEARSAL
     )
     _refused(run, stage_env, "split", rehearsal=True)
+
+
+def test_the_judge_stage_refuses_a_06_3_6_token_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage_env: FakeJudge
+) -> None:
+    """D-153: no paid judge call can be issued for a 06.3.6 corpus."""
+    config = load_corpus_config(HELDOUT)
+    config.preregistration_token = "PREREGISTRATION_06_3_6"
+    monkeypatch.setattr(judge_stage, "load_corpus_config", lambda _name: config)
+    run = build_run(tmp_path, standard_records(g_ids(1, 1, 0)))
+    _refused(run, stage_env, "D-153")

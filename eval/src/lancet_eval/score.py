@@ -1203,6 +1203,24 @@ def _ordered_protocol_guard(
             `score --judged` when a legacy judged input meets an ordered corpus, or the
             reason a `--judged` call cannot proceed.
     """
+    # D-153: no paid judge call can be issued for a 06.3.6 corpus, on any path: the
+    # judged pass, the legacy `--judge`, the worksheet emit or a calibration input.
+    if getattr(config, "preregistration_token", "") in NO_JUDGE_PREREGISTRATION_TOKENS:
+        blocked = []
+        if judged:
+            blocked.append("`--judged`")
+        if not no_judge:
+            blocked.append("`score --judge`")
+        if emit_calibration_worksheet is not None:
+            blocked.append("`--emit-calibration-worksheet`")
+        if calibration_file is not None or calibration_key is not None:
+            blocked.append("a calibration input")
+        if blocked:
+            raise ScoreError(
+                f"{' and '.join(blocked)} refused for corpus {config.name!r}: it is "
+                f"pre-registered under {config.preregistration_token}, and a 06.3.6 "
+                "corpus issues no judge call (D-153)"
+            )
     ordered = getattr(config, "judge_protocol", "legacy") == "ordered"
     if not judged:
         if ordered:
@@ -1218,12 +1236,6 @@ def _ordered_protocol_guard(
             if used:
                 raise ScoreError(_ORDERED_REFUSAL.format(used=" and ".join(used)))
         return
-    if getattr(config, "preregistration_token", "") in NO_JUDGE_PREREGISTRATION_TOKENS:
-        raise ScoreError(
-            f"--judged is refused for corpus {config.name!r}: it is pre-registered "
-            f"under {config.preregistration_token}, and a 06.3.6 corpus issues no "
-            "judge call (D-153)"
-        )
     if not ordered:
         raise ScoreError(
             '--judged needs a corpus that declares [judge] protocol = "ordered"; '

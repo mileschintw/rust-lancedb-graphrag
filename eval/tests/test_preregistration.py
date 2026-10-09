@@ -639,3 +639,31 @@ def test_the_judged_path_is_refused_for_a_06_3_6_token_corpus(
             calibration_key=tmp_path / "key.json",
         )
     assert seen == []
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"no_judge": False},
+        {"emit_calibration_worksheet": "worksheet.json"},
+        {"calibration_file": "worksheet.json"},
+    ],
+    ids=["legacy-judge", "emit-worksheet", "calibration-file"],
+)
+def test_no_judge_path_at_all_is_open_to_a_06_3_6_token_corpus(
+    kwargs: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-153: legacy `--judge`, the worksheet and a calibration input are refused."""
+    from lancet_eval.corpus import load_corpus_config
+
+    config = load_corpus_config("multihop_rag_rehearsal")
+    config.preregistration_token = "PREREGISTRATION_06_3_6"
+    config.has_judge = False
+    config.judge_protocol = "legacy"
+    monkeypatch.setattr(score_mod, "load_corpus_config", lambda _name: config)
+    seen = _record_gate_tokens(monkeypatch)
+    run_dir = _split_journal(tmp_path, float(T0 + 100))
+
+    with pytest.raises(ScoreError, match="D-153"):
+        score_run(run_dir=run_dir, **kwargs)  # type: ignore[arg-type]
+    assert seen == []
