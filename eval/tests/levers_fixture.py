@@ -299,6 +299,7 @@ def write_corpus(
     *,
     token: str | None = TOKEN,
     name: str = CORPUS,
+    role: str = "heldout",
 ) -> Path:
     """Writes the tmp `[split]` corpus under `root/eval/corpora`; returns the gold."""
     corpora = root / "eval" / "corpora"
@@ -319,7 +320,7 @@ def write_corpus(
         f"arms = [{arm_list}]",
         "[split]",
         'file = "levers/split.json"',
-        'role = "heldout"',
+        f'role = "{role}"',
     ]
     if token is not None:
         lines += ["[preregistration]", f'token = "{token}"']
@@ -355,9 +356,9 @@ def write_corpus(
             "questions_sample_sha256": HEX,
             "dev_source": "dev.json",
             "order_seed": 42,
-            "dev_ids": ["lv-dev1"],
-            "heldout_g_ids": qs.g_ids,
-            "heldout_null_ids": qs.nulls,
+            "dev_ids": [*qs.g_ids, *qs.nulls] if role == "dev" else ["lv-dev1"],
+            "heldout_g_ids": ["lv-h1"] if role == "dev" else qs.g_ids,
+            "heldout_null_ids": ["lv-hn1"] if role == "dev" else qs.nulls,
         }),
         encoding="utf-8",
     )
