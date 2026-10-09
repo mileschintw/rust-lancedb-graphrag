@@ -78,7 +78,7 @@ def test_the_arm_lists_come_from_the_registry_and_the_selection() -> None:
 
 
 @pytest.mark.parametrize("shape", sorted(SHAPES))
-def test_score_no_judge_writes_one_cell_set_per_arm_in_registry_order_and_report_renders(
+def test_score_no_judge_writes_a_cell_set_per_arm_in_registry_order_and_report_renders(
     shape, tmp_path, monkeypatch, preregistered_clean_tree
 ) -> None:
     arms = SHAPES[shape]
@@ -94,7 +94,11 @@ def test_score_no_judge_writes_one_cell_set_per_arm_in_registry_order_and_report
     ]
     assert first_seen == [arm_slug(a) for a in ARM_REGISTRY if a in arms]
     for arm in arms:
-        for base in ("answer_usable_p4", "paper_hits_at_4", "null_abstention_correctness"):
+        for base in (
+            "answer_usable_p4",
+            "paper_hits_at_4",
+            "null_abstention_correctness",
+        ):
             assert f"{base}__{arm_slug(arm)}" in names
     # the one degraded rerank record is off-arm: it leaves P_all, and is counted
     p4 = _dim(report, "p4_size")
