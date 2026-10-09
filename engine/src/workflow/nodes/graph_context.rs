@@ -108,23 +108,42 @@ impl Node for ExtractGraphContextNode {
             let needs_query_embedding = ctx.runs_dense() || !ctx.disable_graph_context;
             if needs_query_embedding && ctx.query_embedding.is_none() {
                 if let Some(embedder) = &self.embedding_port {
-                    let embed_res = tokio::select! {
-                        biased;
-                        _ = cancel.cancelled() => return Err(NodeError::cancelled()),
-                        res = timeout(self.embedding_timeout, embedder.embed_variant_zero(variant_zero, cancel)) => match res {
-                            Ok(inner) => inner,
-                            Err(_) => Err(NodeError::new(NodeErrorKind::Timeout, "Query embedding timed out")),
-                        },
-                    };
+                    // D-152: one retry after a timeout, on every arm. Each attempt keeps the
+                    // whole per-attempt budget. A first-attempt success never sleeps and never
+                    // touches the retry count, so a lever-free record is unchanged.
+                    let mut attempt = 1;
+                    let vector = loop {
+                        let embed_res = tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => return Err(NodeError::cancelled()),
+                            res = timeout(self.embedding_timeout, embedder.embed_variant_zero(variant_zero, cancel)) => match res {
+                                Ok(inner) => inner,
+                                Err(_) => Err(NodeError::new(NodeErrorKind::Timeout, "Query embedding timed out")),
+                            },
+                        };
 
-                    match embed_res {
-                        Ok(vector) => {
-                            ctx.query_embedding = Some(vector);
+                        match embed_res {
+                            Ok(vector) => break vector,
+                            Err(err)
+                                if err.kind == NodeErrorKind::Timeout
+                                    && attempt < QUERY_EMBEDDING_ATTEMPTS =>
+                            {
+                                let jitter_ms =
+                                    retry_jitter_ms(&ctx.trace_id, attempt, RETRY_JITTER_MAX_MS);
+                                ctx.query_embedding_retries += 1;
+                                // The event names the attempt and the pause, never the query.
+                                tracing::warn!(attempt, jitter_ms, "query_embedding_retry");
+                                tokio::select! {
+                                    biased;
+                                    _ = cancel.cancelled() => return Err(NodeError::cancelled()),
+                                    _ = tokio::time::sleep(Duration::from_millis(jitter_ms)) => {}
+                                }
+                                attempt += 1;
+                            }
+                            Err(err) => return Err(err),
                         }
-                        Err(err) => {
-                            return Err(err);
-                        }
-                    }
+                    };
+                    ctx.query_embedding = Some(vector);
                 }
             }
 

@@ -290,11 +290,10 @@ async fn wire_metadata(embedder: Arc<ScriptedEmbedder>) -> WorkflowMetadata {
         "trace-retry-wire".to_owned(),
         SESSION.to_owned(),
     );
-    let ctx = WorkflowContext::new(
-        SESSION.to_owned(),
-        "trace-retry-wire".to_owned(),
-        &test_query_request("what did Acme supply?", SESSION),
-    );
+    // Graph off, so the only thing that could mark the record degraded is the retry itself.
+    let mut request = test_query_request("what did Acme supply?", SESSION);
+    request.disable_graph_context = Some(true);
+    let ctx = WorkflowContext::new(SESSION.to_owned(), "trace-retry-wire".to_owned(), &request);
     let mut runner = WorkflowRunner::new();
     runner.add_node(
         ExtractGraphContextNode::new(Some(embedder as Arc<dyn QueryEmbeddingPort>), None)
