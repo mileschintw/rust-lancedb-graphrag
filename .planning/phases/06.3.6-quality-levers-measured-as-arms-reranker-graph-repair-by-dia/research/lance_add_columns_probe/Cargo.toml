@@ -1,0 +1,18 @@
+# 06.3.6 research probe (throwaway, never part of the engine build).
+# Pins the SAME crate versions as engine/Cargo.lock (the lock file is copied beside this manifest), so the
+# behaviour observed here is the behaviour of the engine's lancedb 0.31.0 / lance 8.0.0.
+[package]
+name = "lance_add_columns_probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+lancedb = "~0.31"
+arrow-array = "~58.3"
+arrow-schema = "~58.3"
+tokio = { version = "~1.53", features = ["rt-multi-thread", "macros", "time"] }
+futures = "~0.3"
+blake3 = "1"

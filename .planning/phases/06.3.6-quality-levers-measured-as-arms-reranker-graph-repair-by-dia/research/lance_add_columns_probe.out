@@ -1,0 +1,34 @@
+CHECK rows_before (after 3 document deletions): 1201
+CHECK version_before: 9
+CHECK columns_before: 19
+CHECK indices_before: 0
+CHECK data_files_before: 5
+CHECK sql_bytes: [("doc_title", 80415), ("source", 27895), ("published_date", 21420)]
+CHECK case_attempt_elapsed_ms: 5
+CHECK case_expression: REJECTED, error tail: ...xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' ELSE NULL END' is not supported SQL in lance, C:\Users\user3\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lance-datafusion-8.0.0\src\planner.rs:838:22
+CHECK version_unchanged_after_rejected_case: true
+CHECK scan_order_stable_across_two_scans: true
+CHECK scan_rows: 1201
+CHECK reader_one_row_short: REJECTED lance error: Invalid user input: Stream ended before producing values for all rows in dataset, C:\Users\user3\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lance-8.0.0\src\dataset\schema_evolution.rs:637:29
+CHECK reader_one_row_long: REJECTED lance error: Invalid user input: Stream produced more values than expected for dataset, C:\Users\user3\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lance-8.0.0\src\dataset\schema_evolution.rs:678:20
+CHECK version_unchanged_after_bad_readers: true
+CHECK data_files_unchanged_after_bad_readers: true
+CHECK add_columns_elapsed_ms: 31
+CHECK add_columns_result_version: 10
+CHECK rows_after: 1201
+CHECK version_after: 10
+CHECK version_delta: 1
+CHECK indices_after: 0
+CHECK new_fields: [("doc_title", Utf8, true), ("source", Utf8, true), ("published_date", Utf8, true)]
+CHECK new_fields_are_utf8_nullable_in_order: true
+CHECK schema_fields_equal_expected_22_column_schema_strictly: true
+CHECK first_19_fields_unchanged: true
+CHECK old_data_files_byte_identical: true
+CHECK data_files_after: 10 (added 5)
+CHECK all_19_column_digests_equal: true
+CHECK rows_scanned: 1201
+CHECK value_mismatches: 0
+CHECK unmapped_document_rows_null: 4
+CHECK second_add_same_name: ERR lance error: Invalid user input: Column doc_title already exists in the dataset, C:\Users\user3\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lance-8.0.0\src\dataset\schema_evolution.rs:227:53
+CHECK add_on_checked_out_handle: ERR Invalid input, table cannot be modified when a specific version is checked out
+CHECK restore: version 10 -> 11, columns 19
