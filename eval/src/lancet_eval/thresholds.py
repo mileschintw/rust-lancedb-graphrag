@@ -323,3 +323,113 @@ CALIBRATION_DRAW_SEED: int = 42
 JUDGE_ERROR_RATE_TRIPWIRE: float = 0.05
 JUDGE_ERROR_TRIPWIRE_MIN_CALLS: int = 50
 JUDGE_CONSECUTIVE_ERROR_HALT: int = 5
+
+
+# 06.3.6 D-137/D-167/D-171: the pre-registered selection rule of lever 2 (graph repair
+# chosen by diagnosis). Committed before the 38-question diagnosis table exists, in ONE
+# commit together with its predicate code (`graph_diagnosis.py`); the `table` command
+# refuses unless that commit is an ancestor of a clean HEAD and the value is unchanged.
+# Declarative content only: no class count appears anywhere, and no similarity
+# threshold enters the rule.
+
+
+@dataclass(frozen=True)
+class GraphRepairRule:
+    """06.3.6 D-137: how the GRAPH_UNAVAILABLE class split picks lever 2.
+
+    Attributes:
+        population: The records the table classifies, as a selector.
+        expected_count: The population size; the table refuses any other size.
+        classes: The four diagnosis classes.
+        precedence: First-match order of the classes (D-171); the last is the residual.
+        alias_predicate: The `alias_split` predicate (parameter-free, D-167).
+        absent_predicate: The `absent` predicate.
+        missing_edge_predicate: The `missing_edge` predicate.
+        other_predicate: The `other` residual.
+        plurality_rule: How the single-label counts select a lever.
+        outcomes: The class-to-lever mapping, one `class -> lever` string each.
+        provenance: Where the rule and its constants come from.
+    """
+
+    population: str
+    expected_count: int
+    classes: tuple[str, ...]
+    precedence: tuple[str, ...]
+    alias_predicate: str
+    absent_predicate: str
+    missing_edge_predicate: str
+    other_predicate: str
+    plurality_rule: str
+    outcomes: tuple[str, ...]
+    provenance: str
+
+
+GRAPH_REPAIR_RULE_06_3_6 = GraphRepairRule(
+    population=(
+        "drive-2 records "
+        "(eval/runs/2026-10-06-drive2-multihop_rag_diag/journal.jsonl) on arm label "
+        "graph-on (legacy alias of hybrid+graph) carrying a notice with typed_code 10 "
+        "(GRAPH_UNAVAILABLE)"
+    ),
+    expected_count=38,
+    classes=("alias_split", "absent", "missing_edge", "other"),
+    precedence=("alias_split", "absent", "missing_edge", "other"),
+    alias_predicate=(
+        "Name tokens are the normalised tokens of the engine's normalize_name "
+        "(lower-case, non-alphanumerics including underscore separate tokens, a "
+        "leading 'the' dropped when more words remain); two names are token-contained "
+        "when one non-empty token set is a subset of the other (token, not substring). "
+        "A mention is seeded when some seed's name tokens are token-contained with its "
+        "tokens. alias_split holds when (a) two seeds a and b have no probe path "
+        "through both, and an entity E, not a and not b, with the same entity_type as "
+        "a, whose name tokens are token-contained with a's, whose source_chunk_ids "
+        "include a gold chunk of the question, has an edge in either direction to b; "
+        "or (b) a mention is unseeded, and an entity E whose name tokens are "
+        "token-contained with the mention's, whose source_chunk_ids include a gold "
+        "chunk of the question, has an edge in either direction to some seed. No "
+        "similarity threshold is used."
+    ),
+    absent_predicate=(
+        "Some mention has no entity anywhere in the entities table whose name tokens "
+        "are token-contained with the mention's, AND no entity's source_chunk_ids "
+        "intersects the gold chunk ids of the question."
+    ),
+    missing_edge_predicate=(
+        "At least two distinct seeds, every mention seeded, alias_split false, the "
+        "journal's graph_path_found false and graph_degree_capped_count equal to 0 "
+        "(a field the journal did not record does not satisfy it)."
+    ),
+    other_predicate=(
+        "The residual: a question for which none of the three predicates above holds "
+        "(no mention extracted, hubs capped by DEGREE_CAP, pairs lost to the seed "
+        "limit, and everything else)."
+    ),
+    plurality_rule=(
+        "Single-label counts, the label being the first class in precedence order "
+        "whose predicate holds. Strict plurality of alias_split selects "
+        "entity_resolution; strict plurality of absent selects none; a plurality of "
+        "missing_edge or of other, or any tie for the top count, selects "
+        "graph_list_precision."
+    ),
+    outcomes=(
+        "alias_split -> entity_resolution",
+        "missing_edge -> graph_list_precision",
+        "other -> graph_list_precision",
+        "absent -> none",
+        "any tie -> graph_list_precision",
+    ),
+    provenance=(
+        "06.3.6 D-137 (the rule, committed before the table is regenerated and "
+        "applied mechanically), D-167 (the alias_split predicate is parameter-free: "
+        "token containment of normalised names with the same entity_type; it can "
+        "under-detect vector-only aliases, which biases the plurality against "
+        "selecting entity resolution, and the table and the run of record say so) and "
+        "D-171 (first-match precedence alias_split, absent, missing_edge, other, "
+        "chosen blind by the owner before any table existed; its effect is that a "
+        "question with a visible alias a merge could fix counts toward entity "
+        "resolution even if an unnamed mention may still block it, and the "
+        "multi-membership matrix published beside the counts makes that visible). "
+        "Never changed after the table exists; a later predicate fix is a new "
+        "disclosed commit."
+    ),
+)
