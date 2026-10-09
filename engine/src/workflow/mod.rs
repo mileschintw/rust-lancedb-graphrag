@@ -1,4 +1,5 @@
 pub mod events;
+pub mod levers;
 pub mod node;
 pub mod nodes;
 pub mod ports;
@@ -10,10 +11,12 @@ use tokio_util::sync::CancellationToken;
 use crate::generation::ModelOutput;
 use crate::pb::lancet::v1::{
     AnswerBasis, DocumentFilter, NodeErrorKind, Notice, NoticeCode, NoticeSeverity,
-    QueryRagRequest, QueryRagResponse, RetrievalMode, RetrievalSnapshot, StructuredCitation,
+    QueryRagRequest, QueryRagResponse, RerankMetadata, RetrievalMode, RetrievalSnapshot,
+    StructuredCitation,
 };
 
 pub use events::EventSequence;
+pub use levers::{LeverError, LeverSet};
 pub use node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort};
 pub use nodes::{
     AssemblePromptNode, ExtractGraphContextNode, GenerateAnswerNode, ReformulateQueryNode,
@@ -94,6 +97,16 @@ pub struct WorkflowContext {
     ///
     /// Resolved once at admission from the request flag; `false` leaves the snapshot unchanged.
     pub include_pre_truncation_ranking: bool,
+    /// The quality levers this query run switches on (D-136).
+    ///
+    /// Empty in [`new`](Self::new); set once at admission from the validated request and echoed on
+    /// both snapshot literals. Never re-read from the request downstream.
+    pub levers: LeverSet,
+    /// Retries spent re-embedding the query after a retryable embedding failure (D-52); `0` until
+    /// the retry path of a later plan sets it.
+    pub query_embedding_retries: u32,
+    /// How the rerank attempt ended (D-134); `None` when no rerank was attempted.
+    pub rerank: Option<RerankMetadata>,
     /// Whether model-only answers are permitted when no evidence survives retrieval.
     ///
     /// Resolved once at admission in the order request, then configuration, then false (D-10/D-12), and never re-read downstream.
@@ -152,6 +165,9 @@ impl WorkflowContext {
             disable_graph_context: request.disable_graph_context.unwrap_or(false),
             retrieval_mode: request.retrieval_mode(),
             include_pre_truncation_ranking: request.include_pre_truncation_ranking,
+            levers: LeverSet::default(),
+            query_embedding_retries: 0,
+            rerank: None,
             allow_model_only: request.allow_model_only.unwrap_or(false),
             variants: Vec::new(),
             query_embedding: None,
@@ -320,7 +336,8 @@ pub fn derive_degraded_mode(
                 | NoticeCode::BasisReconciled
                 | NoticeCode::IndexRebuildFailed
                 | NoticeCode::IndexStale
-                | NoticeCode::IndexGenerationMismatch => return true,
+                | NoticeCode::IndexGenerationMismatch
+                | NoticeCode::RerankDegraded => return true,
                 NoticeCode::Unspecified
                 | NoticeCode::NoEvidence
                 | NoticeCode::ModelNotice

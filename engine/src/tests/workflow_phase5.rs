@@ -3079,6 +3079,7 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
         retrieved_chunks: vec![],
         retrieval_mode: 0,
         pre_truncation_ranking: Vec::new(),
+        levers: Vec::new(),
     });
 
     let event = events::checkpoint("full_snapshot", 77, &ctx);

@@ -61,6 +61,25 @@ enum RetrievalMode {
   RETRIEVAL_MODE_BM25_ONLY = 3;
 }
 
+// 06.3.6 D-136. A quality lever a request switches on, named once per request and echoed on
+// `RetrievalSnapshot.levers`. Plain enum (not `optional`): an empty `repeated Lever` is the
+// absent state, and proto3 writes 0 bytes for it, so the default request stays byte-identical on
+// the wire. LEVER_UNSPECIFIED is never a valid member of a request: the engine refuses it, an
+// unknown value, a negative value and a duplicate with `invalid_levers`. Numbering is the harness
+// `LEVER_ORDER`; a later lever takes the next free number and nothing is renumbered.
+enum Lever {
+  LEVER_UNSPECIFIED = 0;
+  // D-133/D-134: re-orders the fused candidate list with the configured reranker before the final take.
+  LEVER_RERANK = 1;
+  // D-141: renders per-block evidence metadata into the prompt.
+  LEVER_EVIDENCE_METADATA = 2;
+  // D-141: asks for a yes/no-shaped final answer line for binary questions.
+  LEVER_BINARY_ANSWER_FORMAT = 3;
+  // D-137/D-141: the graph repair the committed diagnosis selected (`graph_list_precision`).
+  // Refused with `invalid_lever_combination` when `disable_graph_context` is also set (D-165).
+  LEVER_GRAPH_V2 = 4;
+}
+
 message QueryRAGRequest {
   string query = 1;
   string session_id = 2;
@@ -84,6 +103,10 @@ message QueryRAGRequest {
   // pre-truncation candidate ranking (`RetrievalSnapshot.pre_truncation_ranking`, IDs and ranks
   // only, at most `candidate_limit` rows). False/absent leaves the snapshot bytes unchanged.
   bool include_pre_truncation_ranking = 7;
+
+  // 06.3.6 D-136. The quality levers this request switches on; empty == absent == today's request.
+  // Echoed canonically (ascending enum number) on `RetrievalSnapshot.levers`.
+  repeated Lever levers = 8;
 }
 
 // D-76. The enum is CANONICAL; `Notice.code` (string) is DERIVED from it by one mapping
@@ -119,6 +142,10 @@ enum NoticeCode {
   NOTICE_CODE_INDEX_REBUILD_FAILED = 20;
   NOTICE_CODE_INDEX_STALE = 21;
   NOTICE_CODE_INDEX_GENERATION_MISMATCH = 22;
+
+  // ── Phase 06.3.6 ──────────────────────────────────────────────────────────
+  // D-134: the reranker was attempted and the fused order was kept. Joins the `degraded_mode` set.
+  NOTICE_CODE_RERANK_DEGRADED = 23;
 }
 
 enum AnswerBasis {
@@ -163,7 +190,7 @@ message StructuredCitation {
 message RankedCandidate {
   string chunk_id = 1;
   string document_id = 2;
-  // Position in the cross-variant fused list (before the reranker and the final-limit take).
+  // Position in the list after the reranker (D-133); equal to the fused position when no rerank lever is set.
   int32 fused_rank = 3;
   int32 vector_rank = 4;
   int32 bm25_rank = 5;
@@ -189,6 +216,8 @@ message RetrievalSnapshot {
   RetrievalMode retrieval_mode = 13;
   // 06.3.5 D-100: populated only when the request set `include_pre_truncation_ranking`.
   repeated RankedCandidate pre_truncation_ranking = 14;
+  // 06.3.6 D-136: canonical echo of the admitted `QueryRAGRequest.levers`, ascending enum number.
+  repeated Lever levers = 15;
 }
 
 message QueryRAGResponse {
@@ -302,6 +331,32 @@ message WorkflowMetadata {
   // column (d) can be computed per record. Not capped: bounded by max_seeds and the corpus
   // document count (at most 88 IDs per question on the 100-question probe).
   repeated string graph_seed_document_ids = 16;
+  // 06.3.6 D-134: set only when a rerank was attempted (the rerank lever was admitted and the
+  // reranker was called); unset otherwise.
+  RerankMetadata rerank = 17;
+  // 06.3.6 D-52: retries spent re-embedding the query after a retryable embedding failure; zero is
+  // omitted on the wire.
+  uint32 query_embedding_retries = 18;
+}
+
+// 06.3.6 D-134. How a rerank attempt ended. UNSPECIFIED is never set by the engine.
+enum RerankOutcome {
+  RERANK_OUTCOME_UNSPECIFIED = 0;
+  RERANK_OUTCOME_COMPLETED = 1;
+  RERANK_OUTCOME_DEGRADED_TIMEOUT = 2;
+  RERANK_OUTCOME_DEGRADED_STATUS = 3;
+  RERANK_OUTCOME_DEGRADED_MALFORMED = 4;
+  RERANK_OUTCOME_DEGRADED_TRANSPORT = 5;
+}
+
+// 06.3.6 D-134. Latency and cost of one rerank attempt. Counts, numbers and an outcome only;
+// never query text or document text.
+message RerankMetadata {
+  uint32 latency_ms = 1;
+  double cost_credits = 2;
+  // False when the provider reported no cost; `cost_credits` is then 0 and means "unknown".
+  bool cost_reported = 3;
+  RerankOutcome outcome = 4;
 }
 
 message WorkflowCompletedEvent {

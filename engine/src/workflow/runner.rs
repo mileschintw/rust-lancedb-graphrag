@@ -641,6 +641,8 @@ impl WorkflowRunner {
             graph_boosted_chunk_count: ctx.graph_boosted_chunk_count,
             graph_degree_capped_count: ctx.graph_degree_capped_count,
             graph_seed_document_ids: ctx.graph_seed_document_ids.clone(),
+            rerank: ctx.rerank,
+            query_embedding_retries: ctx.query_embedding_retries,
         };
 
         let current_span = tracing::Span::current();

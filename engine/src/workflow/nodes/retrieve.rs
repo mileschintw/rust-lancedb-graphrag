@@ -196,6 +196,8 @@ impl RetrieveHybridNode {
             // D-99: echoed on the seed too, so a failed record stays attributable to its mode.
             retrieval_mode: ctx.retrieval_mode as i32,
             pre_truncation_ranking: Vec::new(),
+            // D-136: the admitted lever set, echoed on the seed too so a failed record stays attributable.
+            levers: ctx.levers.to_wire(),
         });
 
         let embedding = ctx.query_embedding.as_deref().unwrap_or(&[]);
@@ -455,6 +457,7 @@ impl RetrieveHybridNode {
             retrieved_chunks,
             retrieval_mode: ctx.retrieval_mode as i32,
             pre_truncation_ranking,
+            levers: ctx.levers.to_wire(),
         });
 
         // 5. Zero evidence check

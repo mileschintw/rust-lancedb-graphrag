@@ -82,6 +82,10 @@ pub struct QueryRagRequest {
     /// only, at most `candidate_limit` rows). False/absent leaves the snapshot bytes unchanged.
     #[prost(bool, tag="7")]
     pub include_pre_truncation_ranking: bool,
+    /// 06.3.6 D-136. The quality levers this request switches on; empty == absent == today's request.
+    /// Echoed canonically (ascending enum number) on `RetrievalSnapshot.levers`.
+    #[prost(enumeration="Lever", repeated, tag="8")]
+    pub levers: ::prost::alloc::vec::Vec<i32>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Notice {
@@ -128,7 +132,7 @@ pub struct RankedCandidate {
     pub chunk_id: ::prost::alloc::string::String,
     #[prost(string, tag="2")]
     pub document_id: ::prost::alloc::string::String,
-    /// Position in the cross-variant fused list (before the reranker and the final-limit take).
+    /// Position in the list after the reranker (D-133); equal to the fused position when no rerank lever is set.
     #[prost(int32, tag="3")]
     pub fused_rank: i32,
     #[prost(int32, tag="4")]
@@ -173,6 +177,9 @@ pub struct RetrievalSnapshot {
     /// 06.3.5 D-100: populated only when the request set `include_pre_truncation_ranking`.
     #[prost(message, repeated, tag="14")]
     pub pre_truncation_ranking: ::prost::alloc::vec::Vec<RankedCandidate>,
+    /// 06.3.6 D-136: canonical echo of the admitted `QueryRAGRequest.levers`, ascending enum number.
+    #[prost(enumeration="Lever", repeated, tag="15")]
+    pub levers: ::prost::alloc::vec::Vec<i32>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryRagResponse {
@@ -279,7 +286,7 @@ pub struct CheckpointEvent {
 }
 /// D-41 + Phase 05 D-30. One nested message = one additive tag, matching Phase 05's
 /// tags 10/11 pattern. The field list is D-30's, verbatim, not re-derived.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkflowMetadata {
     #[prost(int64, tag="1")]
     pub started_at_ms: i64,
@@ -324,6 +331,28 @@ pub struct WorkflowMetadata {
     /// document count (at most 88 IDs per question on the 100-question probe).
     #[prost(string, repeated, tag="16")]
     pub graph_seed_document_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// 06.3.6 D-134: set only when a rerank was attempted (the rerank lever was admitted and the
+    /// reranker was called); unset otherwise.
+    #[prost(message, optional, tag="17")]
+    pub rerank: ::core::option::Option<RerankMetadata>,
+    /// 06.3.6 D-52: retries spent re-embedding the query after a retryable embedding failure; zero is
+    /// omitted on the wire.
+    #[prost(uint32, tag="18")]
+    pub query_embedding_retries: u32,
+}
+/// 06.3.6 D-134. Latency and cost of one rerank attempt. Counts, numbers and an outcome only;
+/// never query text or document text.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct RerankMetadata {
+    #[prost(uint32, tag="1")]
+    pub latency_ms: u32,
+    #[prost(double, tag="2")]
+    pub cost_credits: f64,
+    /// False when the provider reported no cost; `cost_credits` is then 0 and means "unknown".
+    #[prost(bool, tag="3")]
+    pub cost_reported: bool,
+    #[prost(enumeration="RerankOutcome", tag="4")]
+    pub outcome: i32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WorkflowCompletedEvent {
@@ -416,6 +445,52 @@ impl RetrievalMode {
         }
     }
 }
+/// 06.3.6 D-136. A quality lever a request switches on, named once per request and echoed on
+/// `RetrievalSnapshot.levers`. Plain enum (not `optional`): an empty `repeated Lever` is the
+/// absent state, and proto3 writes 0 bytes for it, so the default request stays byte-identical on
+/// the wire. LEVER_UNSPECIFIED is never a valid member of a request: the engine refuses it, an
+/// unknown value, a negative value and a duplicate with `invalid_levers`. Numbering is the harness
+/// `LEVER_ORDER`; a later lever takes the next free number and nothing is renumbered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Lever {
+    Unspecified = 0,
+    /// D-133/D-134: re-orders the fused candidate list with the configured reranker before the final take.
+    Rerank = 1,
+    /// D-141: renders per-block evidence metadata into the prompt.
+    EvidenceMetadata = 2,
+    /// D-141: asks for a yes/no-shaped final answer line for binary questions.
+    BinaryAnswerFormat = 3,
+    /// D-137/D-141: the graph repair the committed diagnosis selected (`graph_list_precision`).
+    /// Refused with `invalid_lever_combination` when `disable_graph_context` is also set (D-165).
+    GraphV2 = 4,
+}
+impl Lever {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "LEVER_UNSPECIFIED",
+            Self::Rerank => "LEVER_RERANK",
+            Self::EvidenceMetadata => "LEVER_EVIDENCE_METADATA",
+            Self::BinaryAnswerFormat => "LEVER_BINARY_ANSWER_FORMAT",
+            Self::GraphV2 => "LEVER_GRAPH_V2",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "LEVER_UNSPECIFIED" => Some(Self::Unspecified),
+            "LEVER_RERANK" => Some(Self::Rerank),
+            "LEVER_EVIDENCE_METADATA" => Some(Self::EvidenceMetadata),
+            "LEVER_BINARY_ANSWER_FORMAT" => Some(Self::BinaryAnswerFormat),
+            "LEVER_GRAPH_V2" => Some(Self::GraphV2),
+            _ => None,
+        }
+    }
+}
 /// D-76. The enum is CANONICAL; `Notice.code` (string) is DERIVED from it by one mapping
 /// function and retained for forward compatibility, exactly as D-76 specifies.
 /// Values 1-3 already exist as wire strings today and MUST keep their spellings.
@@ -447,6 +522,9 @@ pub enum NoticeCode {
     IndexRebuildFailed = 20,
     IndexStale = 21,
     IndexGenerationMismatch = 22,
+    /// ── Phase 06.3.6 ──────────────────────────────────────────────────────────
+    /// D-134: the reranker was attempted and the fused order was kept. Joins the `degraded_mode` set.
+    RerankDegraded = 23,
 }
 impl NoticeCode {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -473,6 +551,7 @@ impl NoticeCode {
             Self::IndexRebuildFailed => "NOTICE_CODE_INDEX_REBUILD_FAILED",
             Self::IndexStale => "NOTICE_CODE_INDEX_STALE",
             Self::IndexGenerationMismatch => "NOTICE_CODE_INDEX_GENERATION_MISMATCH",
+            Self::RerankDegraded => "NOTICE_CODE_RERANK_DEGRADED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -496,6 +575,7 @@ impl NoticeCode {
             "NOTICE_CODE_INDEX_REBUILD_FAILED" => Some(Self::IndexRebuildFailed),
             "NOTICE_CODE_INDEX_STALE" => Some(Self::IndexStale),
             "NOTICE_CODE_INDEX_GENERATION_MISMATCH" => Some(Self::IndexGenerationMismatch),
+            "NOTICE_CODE_RERANK_DEGRADED" => Some(Self::RerankDegraded),
             _ => None,
         }
     }
@@ -610,6 +690,45 @@ impl NodeErrorKind {
             "NODE_ERROR_KIND_REFORMULATION_FAILED" => Some(Self::ReformulationFailed),
             "NODE_ERROR_KIND_INTERNAL" => Some(Self::Internal),
             "NODE_ERROR_KIND_INPUT_VALIDATION" => Some(Self::InputValidation),
+            _ => None,
+        }
+    }
+}
+/// 06.3.6 D-134. How a rerank attempt ended. UNSPECIFIED is never set by the engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum RerankOutcome {
+    Unspecified = 0,
+    Completed = 1,
+    DegradedTimeout = 2,
+    DegradedStatus = 3,
+    DegradedMalformed = 4,
+    DegradedTransport = 5,
+}
+impl RerankOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "RERANK_OUTCOME_UNSPECIFIED",
+            Self::Completed => "RERANK_OUTCOME_COMPLETED",
+            Self::DegradedTimeout => "RERANK_OUTCOME_DEGRADED_TIMEOUT",
+            Self::DegradedStatus => "RERANK_OUTCOME_DEGRADED_STATUS",
+            Self::DegradedMalformed => "RERANK_OUTCOME_DEGRADED_MALFORMED",
+            Self::DegradedTransport => "RERANK_OUTCOME_DEGRADED_TRANSPORT",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RERANK_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
+            "RERANK_OUTCOME_COMPLETED" => Some(Self::Completed),
+            "RERANK_OUTCOME_DEGRADED_TIMEOUT" => Some(Self::DegradedTimeout),
+            "RERANK_OUTCOME_DEGRADED_STATUS" => Some(Self::DegradedStatus),
+            "RERANK_OUTCOME_DEGRADED_MALFORMED" => Some(Self::DegradedMalformed),
+            "RERANK_OUTCOME_DEGRADED_TRANSPORT" => Some(Self::DegradedTransport),
             _ => None,
         }
     }

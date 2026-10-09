@@ -121,7 +121,49 @@ pub struct LancetServiceImpl {
     pub database: DatabaseManager,
 }
 
+/// Which quality levers this engine can serve right now (D-136, D-165).
+///
+/// A lever whose resource is absent is refused at admission with `lever_unavailable`, so the
+/// snapshot echo never claims a lever that did not run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LeverAvailability {
+    rerank: bool,
+    evidence_metadata: bool,
+    binary_answer_format: bool,
+    graph_v2: bool,
+}
+
+impl LeverAvailability {
+    /// Whether `lever` can be served; `LEVER_UNSPECIFIED` never can.
+    pub fn is_available(&self, lever: v1::Lever) -> bool {
+        match lever {
+            v1::Lever::Unspecified => false,
+            v1::Lever::Rerank => self.rerank,
+            v1::Lever::EvidenceMetadata => self.evidence_metadata,
+            v1::Lever::BinaryAnswerFormat => self.binary_answer_format,
+            v1::Lever::GraphV2 => self.graph_v2,
+        }
+    }
+}
+
 impl LancetServiceImpl {
+    /// Reports which levers this engine can serve against `_snapshot`.
+    ///
+    /// `binary_answer_format` needs no resource and is available. `rerank`, `evidence_metadata`
+    /// and `graph_v2` stay unavailable until the plans that implement them wire their resource
+    /// (the reranker port, the evidence metadata columns of the corpus snapshot, the graph repair).
+    pub fn lever_availability(
+        &self,
+        _snapshot: &workflow::ports::CorpusSnapshot,
+    ) -> LeverAvailability {
+        LeverAvailability {
+            rerank: false,
+            evidence_metadata: false,
+            binary_answer_format: true,
+            graph_v2: false,
+        }
+    }
+
     /// Persists a raw ingestion job to the staged documents table.
     pub async fn persist_raw(&self, job: &IngestionJob) -> Result<(), Status> {
         persist_raw_with_boundary(&self.table, job, &LanceDbReplacementMutationBoundary)
@@ -940,7 +982,7 @@ impl LancetService for LancetServiceImpl {
         };
 
         // Resolved once at admission; Phase 6 adds no configuration key for this flag.
-        let _disable_graph_context = req.disable_graph_context.unwrap_or(false);
+        let disable_graph_context = req.disable_graph_context.unwrap_or(false);
 
         // D-99 fails closed: a mode this build does not know is refused here and never read as
         // hybrid, because a silent default would make an ablation arm's delta an artefact. The
@@ -952,6 +994,52 @@ impl LancetService for LancetServiceImpl {
                 &session_id,
                 &correlation_id,
                 "invalid_retrieval_mode",
+            ));
+        }
+
+        // D-136 fails closed on the raw integers: an unknown, zero, negative or repeated lever is
+        // refused here and never ignored, because a silently dropped lever would make an arm's
+        // delta an artefact. The gateway refuses a bad name first; this is the engine's own check
+        // for a direct caller.
+        let levers = workflow::LeverSet::try_from_wire(&req.levers).map_err(|err| {
+            d1_status(
+                tonic::Code::InvalidArgument,
+                format!("invalid levers: {err}"),
+                &session_id,
+                &correlation_id,
+                "invalid_levers",
+            )
+        })?;
+
+        // D-165: the graph repair needs the graph, so asking for it with the graph off is a
+        // contradiction, refused before availability is consulted.
+        if levers.contains(v1::Lever::GraphV2) && disable_graph_context {
+            return Err(d1_status(
+                tonic::Code::InvalidArgument,
+                "levers graph_v2 cannot be combined with disable_graph_context",
+                &session_id,
+                &correlation_id,
+                "invalid_lever_combination",
+            ));
+        }
+
+        // A lever whose resource this engine does not hold is refused, never admitted and echoed:
+        // the echo claims which levers ran.
+        let snapshot = {
+            let guard = self.corpus_store.read().await;
+            Arc::clone(&*guard)
+        };
+        let availability = self.lever_availability(&snapshot);
+        if let Some(lever) = levers
+            .iter()
+            .find(|lever| !availability.is_available(*lever))
+        {
+            return Err(d1_status(
+                tonic::Code::InvalidArgument,
+                format!("lever {} is not available on this engine", lever.as_str_name()),
+                &session_id,
+                &correlation_id,
+                "lever_unavailable",
             ));
         }
 
@@ -1014,10 +1102,7 @@ impl LancetService for LancetServiceImpl {
         let mut ctx =
             workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
         ctx.allow_model_only = req.allow_model_only.unwrap_or(wf.allow_model_only_answers);
-        let snapshot = {
-            let guard = self.corpus_store.read().await;
-            Arc::clone(&*guard)
-        };
+        ctx.levers = levers;
         let (runner, deps) = self.build_production_workflow(snapshot);
 
         let parent_span = tracing::info_span!(

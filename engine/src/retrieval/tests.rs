@@ -1087,6 +1087,7 @@ fn retrieval_snapshot_variant_provenance_wire_contract() {
         retrieved_chunks: vec![],
         retrieval_mode: 0,
         pre_truncation_ranking: Vec::new(),
+        levers: Vec::new(),
     };
 
     let mut buf = Vec::new();
@@ -1202,6 +1203,7 @@ fn retrieval_snapshot_retrieved_chunks_wire_contract() {
         retrieved_chunks: vec![chunk1.clone(), chunk2.clone()],
         retrieval_mode: 0,
         pre_truncation_ranking: Vec::new(),
+        levers: Vec::new(),
     };
 
     let mut buf = Vec::new();
@@ -1268,6 +1270,7 @@ fn retrieval_snapshot_retrieved_chunks_wire_contract() {
         retrieved_chunks: vec![],
         retrieval_mode: 0,
         pre_truncation_ranking: Vec::new(),
+        levers: Vec::new(),
     };
 
     let mut empty_buf = Vec::new();
