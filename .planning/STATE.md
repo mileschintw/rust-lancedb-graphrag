@@ -1,12 +1,12 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: Not started
+current_plan: 1
 status: executing
-stopped_at: "Phase 06.3.6 planned: 22 plans in 17 waves, plan check passed (iteration 3), decision coverage 45/45 (D-127..D-171); next: /gsd-execute-phase 06.3.6 with live-stack plans sequential on main"
-last_updated: "2026-10-09T19:02:24.394Z"
+stopped_at: "Phase 06.3.6 executing: wave 1 of 17 (06.3.6-01 live probe on main; 06.3.6-02 on main and 06.3.6-03 in a worktree via a Workflow fan-out)"
+last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
-state_head: ac556cc90c1b039f81b4f6fe068f505f00a0a96a
+state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
 progress:
   total_phases: 18
   completed_phases: 10
@@ -15,17 +15,19 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "/gsd-plan-phase 06.3.6: research (C1-C14), pattern map, 22 plans in 17 waves, plan check passed after two revisions; owner decisions D-165..D-171 recorded; 6.4 stays parked."
+last_activity_desc: "/gsd-execute-phase 06.3.6 started: 22 plans in 17 waves; parallel waves fan out through a Workflow (main-tree plan plus worktree siblings); live-stack plans stay sequential on main."
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: Not started
+Current Plan: 1
 Total Plans in Phase: 22
 
 ## Current Status
+
+- **2026-10-09: Phase 06.3.6 EXECUTION STARTED** (`/gsd-execute-phase 06.3.6`). Wave 1: 06.3.6-01 (D-131 rerank probe, live, main), 06.3.6-02 (D-137 rule commit and `--graph-dump`, main) and 06.3.6-03 (harness hardening, worktree). Executors run on Sonnet.
 
 - **2026-10-09: Phase 06.3.6 PLANNED.** 22 plans in 17 waves (`06.3.6-01..22-PLAN.md`). The plan check passed at iteration 3, after one whole-phase pass, four full-read slice checks and two revisions. Decision coverage is 45/45 (D-127..D-171), and OBS-06 is on all 22 plans.
   - **Owner decisions taken during planning:** D-165..D-168 (AI-SPEC §4 open questions 1-4, each as recommended); D-169 (OBS-06 wording in REQUIREMENTS, applied in `3972d716`, no checkbox change); D-170 (a `dev` split role exempt from the D-73 gate); D-171 (the D-137 class precedence is the skeleton order).
@@ -302,7 +304,7 @@ Total Plans in Phase: 22
 
 ## Active Phase
 
-- **Phase:** 06.3.6 (Quality levers measured as arms), ready to discuss/plan. Its carry-forwards from 06.3.5 are in the ROADMAP section. Phase 6.4 stays **parked** until the user decides the unpark.
+- **Phase:** 06.3.6 (Quality levers measured as arms), **executing** since 2026-10-09: 22 plans in 17 waves. Parallel waves (1, 4, 5) fan out through a Workflow (one plan on main, siblings in worktrees, merged by the GSD record-agent/cleanup-wave gauntlet); the live-stack plans (01, 04, 15-21) run sequentially on main. Pre-answered checkpoints D-172..D-185 are applied by the executor that reaches them. Phase 6.4 stays **parked** until the user decides the unpark.
 - **06.3.4.1 follow-ups:** closed on 2026-10-06 (UAT 4/4, VALIDATION 0 gaps, SECURITY 156/156, re-verification 10/10). Two non-blocking security follow-ups remain: register the 14-SUMMARY `outbound-call` flag, and route `eval/scripts/drive_measurement_pass.py` through `require_index_identity` or retire it.
 - **Execution mode note (kept for later live-stack phases):** 06.3.4.1 ran sequentially on main, not in harness worktrees, because its plans read the gitignored live eval store and ran latency soaks. Executors run on Sonnet and sign with their own trailer (user decision, 2026-10-05).
 
