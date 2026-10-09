@@ -215,8 +215,8 @@ def make_record(
             chunk_id=cid,
             document_id=doc,
             fused_rank=i,
-            vector_rank=i,
-            bm25_rank=i,
+            vector_rank=i if arm_spec.retrieval_mode != "bm25_only" else None,
+            bm25_rank=i if arm_spec.retrieval_mode != "dense_only" else None,
             graph_rank=None,
         )
         for i, cid in enumerate(ids, start=1)
@@ -281,8 +281,8 @@ def make_record(
         structured_citations=[] if (is_null or blank) else final[:1],
         node_timings=[NodeTiming(node_name="RetrieveHybrid", duration_ms=100.0)],
         workflow_meta=WorkflowWireMeta(
-            vector_count=8,
-            bm25_count=8,
+            vector_count=0 if arm_spec.retrieval_mode == "bm25_only" else 8,
+            bm25_count=0 if arm_spec.retrieval_mode == "dense_only" else 8,
             prompt_tokens=spec.prompt_tokens,
             completion_tokens=50,
             rerank=rerank_meta,
