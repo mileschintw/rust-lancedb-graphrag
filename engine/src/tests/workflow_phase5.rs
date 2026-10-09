@@ -6980,6 +6980,78 @@ fn derive_degraded_mode_includes_retrieval_failed_regardless_of_position() {
     );
 }
 
+/// 06.3.6-06 Task 2 (D-158 IN-02): the notice that discloses a normalised grounded abstention is
+/// not a degradation, because the answer is a grounded `Insufficient information` that cites the
+/// evidence it checked.
+#[test]
+fn degraded_mode_ignores_the_grounded_abstention_normalisation_notice() {
+    let normalised = engine::workflow::notice(
+        NoticeCode::BasisReconciled,
+        engine::generation::GROUNDED_ABSTENTION_NORMALISED_NOTICE,
+        NoticeSeverity::Info,
+    );
+
+    assert!(
+        !engine::workflow::derive_degraded_mode(
+            &[normalised.clone()],
+            engine::pb::lancet::v1::AnswerBasis::Retrieval
+        ),
+        "the normalisation notice alone must not mark the record degraded"
+    );
+
+    // A notice that is not the normalisation one still counts, whatever order they arrive in.
+    let other = engine::workflow::notice(
+        NoticeCode::GraphTimeout,
+        "GRAPH_TIMEOUT",
+        NoticeSeverity::Info,
+    );
+    assert!(
+        engine::workflow::derive_degraded_mode(
+            &[normalised, other],
+            engine::pb::lancet::v1::AnswerBasis::Retrieval
+        ),
+        "a real degradation next to the normalisation notice must still mark the record degraded"
+    );
+}
+
+/// 06.3.6-06 Task 2 (D-158 IN-02): only the exact normalisation message is skipped. A different
+/// reconciliation, or one that merely contains the normalisation text, is still degraded.
+#[test]
+fn degraded_mode_still_counts_every_other_basis_reconciliation() {
+    let padded = format!(
+        "{} (extra)",
+        engine::generation::GROUNDED_ABSTENTION_NORMALISED_NOTICE
+    );
+    for message in ["answer basis reconciled to retrieval", "", padded.as_str()] {
+        let reconciled = engine::workflow::notice(
+            NoticeCode::BasisReconciled,
+            message,
+            NoticeSeverity::Info,
+        );
+        assert!(
+            engine::workflow::derive_degraded_mode(
+                &[reconciled],
+                engine::pb::lancet::v1::AnswerBasis::Retrieval
+            ),
+            "a BASIS_RECONCILED notice reading {message:?} must still mark the record degraded"
+        );
+    }
+}
+
+/// 06.3.6-06 Task 2: the rerank notice added in plan 05 marks the record degraded.
+#[test]
+fn degraded_mode_counts_a_rerank_degraded_notice() {
+    let rerank = engine::workflow::notice(
+        NoticeCode::RerankDegraded,
+        "rerank degraded",
+        NoticeSeverity::Info,
+    );
+    assert!(engine::workflow::derive_degraded_mode(
+        &[rerank],
+        engine::pb::lancet::v1::AnswerBasis::Retrieval
+    ));
+}
+
 /// 06.3.1-04 Task 1: Paused-clock RetrieveHybrid timeout emits partial_snapshot with full provenance audit set.
 /// A partial snapshot is an audit record, not evidence that retrieval produced anything.
 /// The discriminators are empty result_hash + empty chunk list + retrieval-failure notice present
