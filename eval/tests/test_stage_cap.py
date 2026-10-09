@@ -835,6 +835,7 @@ def test_a_dev_corpus_and_a_06_3_5_corpus_have_no_tripwire(
     from lancet_eval.run import rerank_tripwire_for
 
     lever = SimpleNamespace(
+        reference_arm="hybrid",
         rerank_degrade_tripwire_rate=0.20,
         rerank_degrade_tripwire_min_calls=50,
         rerank_consecutive_degrade_halt=5,
@@ -887,7 +888,7 @@ def _tripwire_drive_setup(
     config.split_role = "rehearsal"
     config.arms = arms
     config.preregistration_token = "PREREGISTRATION_TEST_TRIPWIRE"
-    questions = real_load("multihop_rag_rehearsal").questions[:6]
+    questions = real_load("multihop_rag_rehearsal").questions
     monkeypatch.setattr("lancet_eval.run.load_corpus_config", lambda _n: config)
     monkeypatch.setattr("lancet_eval.run.load_sample_questions", lambda _n: questions)
     monkeypatch.setattr(gitcheck, "preregistration_problems", lambda *a, **k: [])
@@ -939,7 +940,7 @@ def test_a_rerank_outage_halts_the_drive_and_keeps_the_degraded_records(
 
     assert res.stopped_by_tripwire is True
     assert res.stopped_by_cap is False
-    assert res < 6 * len(arms)
+    assert res < 3 * len(arms)
     assert sum(res.rerank_degraded_by_arm.values()) == 5
     journalled = load_records(tmp_path / "journal.jsonl")
     assert len(journalled) == res
@@ -965,5 +966,5 @@ def test_a_healthy_rerank_drive_is_not_halted_or_labelled(
     res = _drive_rerank_corpus(tmp_path)
 
     assert res.stopped_by_tripwire is False
-    assert res == 6 * len(arms)
+    assert res == 3 * len(arms)
     assert res.rerank_degraded_by_arm == {"hybrid+rerank": 0, "hybrid+all": 0}

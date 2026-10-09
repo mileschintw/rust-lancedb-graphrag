@@ -22,7 +22,13 @@ import lancet_eval.unpark_gates as gates
 from lancet_eval.corpus import GoldQuestion
 from lancet_eval.decay import DecayAnalysisError
 from lancet_eval.flatness import flatness_verdict, records_from_run_journal
-from lancet_eval.journal import AttemptRecord, NodeFailed, NodeTiming, RunRecord
+from lancet_eval.journal import (
+    AttemptRecord,
+    NodeFailed,
+    NodeTiming,
+    RunRecord,
+    WorkflowWireMeta,
+)
 
 ARMS = ["dense-only", "bm25-only", "hybrid", "hybrid+graph"]
 CORPUS = "multihop_rag_heldout"

@@ -433,3 +433,88 @@ GRAPH_REPAIR_RULE_06_3_6 = GraphRepairRule(
         "disclosed commit."
     ),
 )
+
+
+# 06.3.6 D-150/D-148/D-151/D-160/D-73: the classes the lever pre-registration is written
+# in. Definitions only. The assignment of an instance, with every number a decision
+# reads inside it, lands in the one D-154 freeze commit (D-73 compares that assignment's
+# AST, so a loose constant beside it would not be protected); nothing here names it.
+
+
+@dataclass(frozen=True)
+class FamilySpec:
+    """06.3.6 D-150: one Holm family, with one primary, its own arms and its own FWER.
+
+    Attributes:
+        primary: The family's primary dimension (`answer_usable` or `paper_hits_at_4`).
+        role: `decisional` (may make a default) or `supporting` (retrieval claim only).
+        arms: The arms compared with the reference arm; `m = len(arms)`, fixed before
+            data and never changed after it.
+        alpha: Family-wise error rate under Holm step-down.
+    """
+
+    primary: str
+    role: str
+    arms: tuple[str, ...]
+    alpha: float
+
+
+@dataclass(frozen=True)
+class LeverPreRegistration:
+    """06.3.6: the pre-registered inference, guards, gate floor and tripwire.
+
+    Everything not named here is a secondary: reported with CIs, never called
+    significant. Only a Holm rejection inside a family may be called significant.
+
+    Attributes:
+        reference_arm: The arm every comparison is a delta against.
+        families: The Holm families, each with its own primary and arm set.
+        descriptive_arms: Arms reported with CIs and never tested.
+        test: The exact two-sided paired sign-flip test (exact McNemar).
+        non_evaluable_rule: How a comparison below the coverage floor enters its family.
+        population: How each comparison's population is formed.
+        complete_case_floor: |P_X| / |H_G| at or above, per comparison; below it the
+            comparison is not evaluable.
+        matching_rule: How a retrieved chunk is matched to gold, fixed before data.
+        bootstrap_b: Bootstrap resamples of the estimation-only CIs.
+        bootstrap_seed: Seed of those CIs.
+        null_guard_arms: The arms the null-abstention guard can veto (D-148).
+        null_guard_predicate: The abstention predicate the guard reads.
+        null_guard_margin: The guard fails when the abstention increase over the
+            reference exceeds this share of the null pairs.
+        null_guard_min_pair_fraction: The fraction of the null questions that must be
+            paired for the guard to be evaluable; below it the guard fails closed.
+        answer_mix_strata: The strata of the reported-only answer-mix guard.
+        sc2_timeout_rate_floor: D-151: a dominant timeout class fails SC-2 only when
+            timeouts / records in the reading reach this rate (per arm and pooled).
+        rerank_degrade_tripwire_rate: O10: the drive halts when rerank degrades / rerank
+            attempts exceeds this rate.
+        rerank_degrade_tripwire_min_calls: O10: rerank attempts needed before the rate
+            is evaluated.
+        rerank_consecutive_degrade_halt: O10: the drive halts at this many consecutive
+            rerank degrades; the preflight applies it to its pooled canary count.
+        default_rule: When a lever may become a default.
+        provenance: Where the values come from.
+    """
+
+    reference_arm: str
+    families: tuple[FamilySpec, ...]
+    descriptive_arms: tuple[str, ...]
+    test: str
+    non_evaluable_rule: str
+    population: str
+    complete_case_floor: float
+    matching_rule: str
+    bootstrap_b: int
+    bootstrap_seed: int
+    null_guard_arms: tuple[str, ...]
+    null_guard_predicate: str
+    null_guard_margin: float
+    null_guard_min_pair_fraction: float
+    answer_mix_strata: tuple[str, ...]
+    sc2_timeout_rate_floor: float
+    rerank_degrade_tripwire_rate: float
+    rerank_degrade_tripwire_min_calls: int
+    rerank_consecutive_degrade_halt: int
+    default_rule: str
+    provenance: str

@@ -525,7 +525,15 @@ def run_benchmark(
         )
         stopped = getattr(count, "stopped_by_cap", False)
         spend = getattr(count, "observed_spend", 0.0)
-        if stopped:
+        if getattr(count, "stopped_by_tripwire", False):
+            degraded = getattr(count, "rerank_degraded_by_arm", {})
+            console.print(
+                "[yellow]Drive stopped early: the rerank degrade tripwire fired "
+                f"(O10, D-174); recorded {count} work units, rerank degrades by arm "
+                f"{degraded} (observed spend: ${spend:.4f}). Degraded records stay "
+                "journalled off-arm; re-driving is the owner's decision.[/yellow]"
+            )
+        elif stopped:
             console.print(
                 f"[yellow]Drive stopped early: reached stage spend cap (${stage_cap:.2f}); "
                 f"recorded {count} work units (observed spend: ${spend:.4f})[/yellow]"
