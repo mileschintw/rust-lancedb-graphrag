@@ -205,6 +205,12 @@ def test_analyse_reports_paired_deltas_without_a_p_value(tmp_path, monkeypatch) 
     assert out["reference_arm"] == "hybrid"
     arms = {a["arm"]: a for a in out["arms"]}
     assert set(arms) == set(DEV_ARMS) - {"hybrid"}
+    # a deterministic order: registry order, not set-iteration order
+    from lancet_eval.arms import ARM_REGISTRY
+
+    assert [a["arm"] for a in out["arms"]] == [
+        a for a in ARM_REGISTRY if a in set(DEV_ARMS) - {"hybrid"}
+    ]
     rr = arms[RRK]
     # lv-g005 is a degrade (off-arm): 9 pairs; lv-g000 and lv-g001 are lost
     assert rr["n_pairs"] == 9

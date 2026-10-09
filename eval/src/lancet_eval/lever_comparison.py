@@ -667,22 +667,49 @@ def _stratum_rows(
 # ---- the families --------------------------------------------------------------------
 
 
-def _exclusions(ctx: _Ctx, arm: str, pop: p4_mod.P4Population) -> dict[str, int]:
-    """Why G questions are outside P_X, by reason (AI-SPEC 5 item 7)."""
-    own = pop.excluded[canonical_arm(arm)]
-    ref = pop.excluded[canonical_arm(ctx.reference)]
-    degraded = 0
-    for qid in ctx.g_ids:
-        rec = ctx.by_key.get((qid, canonical_arm(arm)))
-        if rec is not None and is_usable(rec) and carries_rerank_degraded(rec):
-            degraded += 1
-    return {
-        "own_failure": own.own_failure,
-        "own_provenance": own.provenance,
-        "rerank_degrade": degraded,
-        "reference_failure": ref.own_failure + own.other_arm_failure,
-        "reference_provenance": ref.provenance,
+def _record_state(rec: RunRecord | None) -> str:
+    """`failure` (missing or unusable), `provenance` (usable, not ok) or `ok`."""
+    if rec is None or not is_usable(rec):
+        return "failure"
+    return "ok" if provenance.is_ok(rec) else "provenance"
+
+
+def _exclusions(ctx: _Ctx, arm: str) -> dict[str, int]:
+    """Why G questions are outside P_X: a partition of `|H_G| - |P_X|` (item 7).
+
+    Every excluded question is counted once: the arm's own failure, the arm's own
+    provenance failure (a rerank degrade is one of these), or, with the arm ok, a
+    reference-only failure. The `of_which` entries break a bucket down and are not part
+    of the partition.
+    """
+    label = canonical_arm(arm)
+    ref_label = canonical_arm(ctx.reference)
+    out = {
+        "own_failure": 0,
+        "own_provenance": 0,
+        "reference_only_failure": 0,
+        "of_which_rerank_degrade": 0,
+        "of_which_reference_own_failure": 0,
+        "of_which_reference_provenance": 0,
     }
+    for qid in ctx.g_ids:
+        rec = ctx.by_key.get((qid, label))
+        state = _record_state(rec)
+        if state == "failure":
+            out["own_failure"] += 1
+        elif state == "provenance":
+            out["own_provenance"] += 1
+            if rec is not None and carries_rerank_degraded(rec):
+                out["of_which_rerank_degrade"] += 1
+        else:
+            ref_state = _record_state(ctx.by_key.get((qid, ref_label)))
+            if ref_state == "failure":
+                out["reference_only_failure"] += 1
+                out["of_which_reference_own_failure"] += 1
+            elif ref_state == "provenance":
+                out["reference_only_failure"] += 1
+                out["of_which_reference_provenance"] += 1
+    return out
 
 
 def _comparison_rows(ctx: _Ctx, family: Any, *, floor: float) -> list[dict[str, Any]]:
@@ -716,7 +743,7 @@ def _comparison_rows(ctx: _Ctx, family: Any, *, floor: float) -> list[dict[str, 
             "ci_lo": None if pd is None else pd.ci_lower,
             "ci_hi": None if pd is None else pd.ci_upper,
             "ci_label": LABEL_UNADJUSTED,
-            "exclusions": _exclusions(ctx, arm, pop),
+            "exclusions": _exclusions(ctx, arm),
             "strata": _stratum_rows(ctx, vx, vr) if ok else [],
         })
     reject, adjusted = holm_fixed_m(raw, evaluable, family.alpha)
@@ -1001,8 +1028,13 @@ def _itt_ok(rec: RunRecord) -> bool:
     )
 
 
-def _rerank_itt_line(ctx: _Ctx) -> dict[str, Any] | None:
-    """Rerank only: a degraded record counts as the arm with its fused-order outcome."""
+def _rerank_itt_line(
+    ctx: _Ctx, main: Mapping[str, Mapping[str, Any]]
+) -> dict[str, Any] | None:
+    """Rerank only: a degraded record counts as the arm with its fused-order outcome.
+
+    `main` is the decisional family's rows already built, so no bootstrap is repeated.
+    """
     family = _decisional_family(ctx.prereg)
     arm = "hybrid+rerank"
     if arm not in family.arms:
@@ -1013,7 +1045,6 @@ def _rerank_itt_line(ctx: _Ctx) -> dict[str, Any] | None:
     floor = float(ctx.prereg.complete_case_floor)
     ok = coverage_floor_met(len(pop.question_ids), ctx.n_g, floor) and bool(vx)
     n_pos, n_neg, p = sign_flip(vx, vr) if ok else (None, None, 1.0)
-    main = {c["arm"]: c for c in _comparison_rows(ctx, family, floor=floor)}
     raw = [p if a == arm else (main[a]["raw_p"] or 1.0) for a in family.arms]
     evaluable = [ok if a == arm else bool(main[a]["evaluable"]) for a in family.arms]
     reject, adjusted = holm_fixed_m(raw, evaluable, family.alpha)
@@ -1424,7 +1455,7 @@ def build_lever_comparison(
         "graph_state": _graph_state(ctx),
         "sensitivity": {
             "p_dec": _p_dec_line(ctx),
-            "rerank_itt": _rerank_itt_line(ctx),
+            "rerank_itt": _rerank_itt_line(ctx, decisional_rows),
         },
         "secondaries": _secondaries(ctx, lever_arms),
         "rerank_operation": rerank_rows,
@@ -1532,18 +1563,24 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
                 "arm",
                 "own failure",
                 "own provenance",
-                "rerank degrade",
-                "reference failure",
-                "reference provenance",
+                "reference-only failure",
+                "sum (= |H_G| - n)",
+                "of which rerank degrade",
+                "of which reference own failure",
+                "of which reference provenance",
             ],
             [
                 (
                     c["arm"],
                     c["exclusions"]["own_failure"],
                     c["exclusions"]["own_provenance"],
-                    c["exclusions"]["rerank_degrade"],
-                    c["exclusions"]["reference_failure"],
-                    c["exclusions"]["reference_provenance"],
+                    c["exclusions"]["reference_only_failure"],
+                    c["exclusions"]["own_failure"]
+                    + c["exclusions"]["own_provenance"]
+                    + c["exclusions"]["reference_only_failure"],
+                    c["exclusions"]["of_which_rerank_degrade"],
+                    c["exclusions"]["of_which_reference_own_failure"],
+                    c["exclusions"]["of_which_reference_provenance"],
                 )
                 for c in fam["comparisons"]
             ],

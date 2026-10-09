@@ -42,7 +42,7 @@ from typing import Any
 
 from lancet_eval import gitcheck
 from lancet_eval import p4 as p4_mod
-from lancet_eval.arms import canonical_arm, resolve_arm
+from lancet_eval.arms import ARM_REGISTRY, canonical_arm, resolve_arm
 from lancet_eval.config import repo_root
 from lancet_eval.corpus import (
     NO_JUDGE_PREREGISTRATION_TOKENS,
@@ -408,8 +408,8 @@ def analyse(
         return vx, vr
 
     arms_out: list[dict[str, Any]] = []
-    reference_shares: dict[str, Any] | None = None
-    for arm in sorted(present - {REFERENCE_ARM}, key=lambda a: list(present).index(a)):
+    registry = list(ARM_REGISTRY)
+    for arm in sorted(present - {REFERENCE_ARM}, key=registry.index):
         spec = resolve_arm(arm)
         arm_records = [r for r in records if canonical_arm(r.graph_arm) == arm]
         pop = p4_mod.build_p4(
@@ -501,7 +501,6 @@ def analyse(
         "population": {"dev_g": len(dev_g), "dev_null": len(dev_null)},
         "n_records": len(records),
         "arms": arms_out,
-        "reference_comparison_shares": reference_shares,
         "spend_usd": float(spend),
         "spend_is_lower_bound": bool(lower_bound),
     }

@@ -357,7 +357,8 @@ def test_a_rerank_degrade_removes_the_question_from_p_rerank_only(
     n = len(qs.g_ids)
     assert _row(payload, "answer_usable", RERANK)["n_pairs"] == n - 1
     assert _row(payload, "answer_usable", METADATA)["n_pairs"] == n
-    assert _row(payload, "answer_usable", RERANK)["exclusions"]["rerank_degrade"] == 1
+    degraded = _row(payload, "answer_usable", RERANK)["exclusions"]
+    assert degraded["of_which_rerank_degrade"] == 1
     # the intention-to-treat line keeps the degraded record
     itt = payload["sensitivity"]["rerank_itt"]
     assert itt["n_pairs"] == n
@@ -698,3 +699,43 @@ def test_compare_levers_writes_both_files_and_prints_the_default_rows(
     assert "Default decision hybrid+rerank" in result.output
     assert (run / "lever-comparison.json").is_file()
     assert (run / "lever-comparison.md").is_file()
+
+
+def test_the_exclusion_reasons_partition_the_questions_outside_p_x(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    def spec(a: str, q: str) -> Spec:
+        if a == REF and q == "lv-g001":
+            return Spec(errored=True)  # hybrid failure while X is ok
+        if a == RERANK and q == "lv-g002":
+            return Spec(degraded=True)  # own provenance (clause i)
+        if a == RERANK and q == "lv-g003":
+            return Spec(errored=True)  # own failure
+        if a == RERANK and q == "lv-g004":
+            return Spec(errored=True)  # own failure while hybrid is ok
+        if a == REF and q == "lv-g004":
+            return Spec(errored=True)  # both fail: counted once, as own failure
+        return Spec()
+
+    run, gold, qs = _setup(tmp_path, monkeypatch, spec)
+    payload = build_lever_comparison(run, gold_chunks_path=gold)
+    n_g = len(qs.g_ids)
+    for fam in payload["families"]:
+        for comp in fam["comparisons"]:
+            ex = comp["exclusions"]
+            assert (
+                ex["own_failure"] + ex["own_provenance"] + ex["reference_only_failure"]
+                == n_g - comp["n_pairs"]
+            ), comp["arm"]
+    row = _row(payload, "answer_usable", RERANK)
+    ex = row["exclusions"]
+    assert ex["own_failure"] == 2
+    assert ex["own_provenance"] == 1
+    assert ex["of_which_rerank_degrade"] == 1
+    assert ex["reference_only_failure"] == 1
+    assert ex["of_which_reference_own_failure"] == 1
+    other = _row(payload, "answer_usable", METADATA)["exclusions"]
+    assert other["reference_only_failure"] == 2  # lv-g001 and lv-g004
+    assert other["own_failure"] == 0
+    text = lever_comparison.render_markdown(payload)
+    assert "reference-only failure" in text
