@@ -287,6 +287,11 @@ fi
 #         byte-identical output across two runs, a refused overwrite, and an empty store),
 #         753->758. inspect_lancedb rises 53->58. lib stays 660; `engine (bin)`/
 #         reconcile_eval_store/config_startup unchanged (0/18/22).
+#   759 -- Phase 06.3.6 plan 05 Task 1: the Wave-0 provider-message golden test
+#         (`provider_messages_for_the_default_request_are_byte_identical_to_the_recorded_pre_change_output`,
+#         recorded at the pre-change HEAD 895ec05a before any prompt-side edit), 758->759.
+#         lib rises 660->661; `engine (bin)`/inspect_lancedb/reconcile_eval_store/config_startup
+#         unchanged (0/58/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -326,18 +331,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 758 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 758, got $TOTAL" >&2
+if [ "$TOTAL" -ne 759 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 759, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 660 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 660, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 661 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 661, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 660 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 660, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 661 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 661, got $LIB_COUNT" >&2
   exit 1
 fi
 

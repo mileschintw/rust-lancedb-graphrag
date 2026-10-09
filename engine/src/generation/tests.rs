@@ -3536,3 +3536,67 @@ async fn abstention_uncited_model_only_answer_is_still_rejected() {
     assert_eq!(unquoted(&events[0]["answer_basis"]), "model_only");
     assert_eq!(events[0]["model_cited_ids"], "0");
 }
+
+// ---------------------------------------------------------------------------
+// The default request's provider messages (Phase 06.3.6 plan 05 Task 1, D-136)
+//
+// `testdata/provider_messages_default.golden` was recorded by running `pack_openrouter_messages`
+// below at 895ec05a2b085f62f047d6fa6d211fa5850ba995, before any 06.3.6 prompt-side or lever edit.
+// It is recorded once at the pre-change HEAD, never rebuilt from the code under test, and updated
+// only by the D-157 default-flip commit.
+// ---------------------------------------------------------------------------
+
+/// Renders the three values `pack_openrouter_messages` returns as stable, sectioned text.
+async fn render_default_provider_messages() -> String {
+    let evidence = assemble_evidence_blocks(&[
+        sample_candidate(
+            "1",
+            "Lancet fuses vector and BM25 candidates with reciprocal rank fusion.",
+        ),
+        sample_candidate(
+            "2",
+            "The gateway streams workflow events to clients as server-sent events.",
+        ),
+    ]);
+    let request = GenerationRequest::new("How does Lancet rank candidates?", evidence);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let (system, user, validation_evidence) =
+        crate::generation::openrouter::pack_openrouter_messages(
+            &request.question,
+            &request.evidence,
+            &request.graph_facts,
+            request.graph_weight,
+            8192,
+            2048,
+            request.allow_model_only,
+            &cancel,
+        )
+        .await
+        .expect("the default request must pack");
+    let evidence_lines: Vec<String> = validation_evidence
+        .iter()
+        .map(|block| {
+            format!(
+                "{} {} rank={} score={}",
+                block.id, block.chunk_id, block.rank, block.score
+            )
+        })
+        .collect();
+    format!(
+        "== system ==\n{system}\n== user ==\n{user}\n== evidence ==\n{}\n",
+        evidence_lines.join("\n")
+    )
+}
+
+#[tokio::test]
+async fn provider_messages_for_the_default_request_are_byte_identical_to_the_recorded_pre_change_output(
+) {
+    let golden =
+        include_str!("testdata/provider_messages_default.golden").replace("\r\n", "\n");
+    assert_eq!(
+        render_default_provider_messages().await,
+        golden,
+        "the default request's provider messages (== system ==, == user ==, == evidence ==) must \
+         match the output recorded before any 06.3.6 prompt-side change"
+    );
+}
