@@ -34,11 +34,12 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import BaseModel, ConfigDict
 
+from lancet_eval import gitcheck
 from lancet_eval import p4 as p4_mod
 from lancet_eval import strata as strata_mod
 from lancet_eval.arms import ARM_REGISTRY, arm_slug, canonical_arm
 from lancet_eval.corpus import load_corpus_config, load_sample_questions
-from lancet_eval.journal import RunRecord, load_records
+from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval.metrics import id_matcher, load_gold_chunk_sets, paper_question_scores
 from lancet_eval.pairing import deduplicate_by_arm
@@ -1373,10 +1374,55 @@ def _comparison_lines(
     ]
 
 
+def _require_preregistered(run: Path, git_repo: Path | None) -> None:
+    """D-73 (WR-02): a comparison needs the pre-registration older than the run's data.
+
+    This is the 06.3.5 comparison, so its token is the fixed 06.3.5 one. The check is
+    the one `score` applies to the same journal: the token's commit is an ancestor of
+    HEAD and strictly older than the journal header's `created_at`, the source tree is
+    clean, and the pre-registered value is unchanged since its introducing commit.
+
+    Raises:
+        ComparisonError: If the header carries no numeric `created_at`, or any D-73
+            problem holds.
+    """
+    journal = run / "journal.jsonl"
+    if not journal.is_file():
+        journal = run / "journal.json"
+    header = read_journal_header(journal)
+    created_at = None if header is None else header.get("created_at")
+    if isinstance(created_at, bool) or not isinstance(created_at, int | float):
+        raise ComparisonError(
+            "D-73: the journal header must carry a numeric created_at to prove the "
+            f"pre-registration predates the data (got {created_at!r})"
+        )
+    problems = gitcheck.preregistration_problems(
+        (gitcheck.PREREGISTRATION_TOKEN,),
+        created_at=float(created_at),
+        require_clean_tree=True,
+        unchanged_since_introduction=True,
+        repo=git_repo,
+    )
+    if problems:
+        raise ComparisonError(
+            "D-73: refusing to compare: "
+            + "; ".join(problems)
+            + f". {gitcheck.PREREGISTRATION_TOKEN} must be committed before the "
+            "data exists."
+        )
+
+
 def build_comparison(
-    run_dir: Path | str, *, gold_chunks_path: Path | str | None = None
+    run_dir: Path | str,
+    *,
+    gold_chunks_path: Path | str | None = None,
+    git_repo: Path | None = None,
 ) -> Comparison:
     """Builds the four-arm comparison of a scored, judged run directory.
+
+    Refuses first (D-73, WR-02) unless the pre-registration token's commit is older
+    than the journal header's `created_at` and the source tree is clean; this is checked
+    here so no library caller can skip it.
 
     Reads `report.json`, `judged-result.json` and the journal, and the optional
     `diagnostic/text_crosscheck.json`, `gates-heldout.json` and
@@ -1387,14 +1433,17 @@ def build_comparison(
         run_dir: A run directory that `score --judged` has passed.
         gold_chunks_path: The gold-chunk table; the committed post-reconcile table when
             None (the same default `score` uses).
+        git_repo: Repository the D-73 check queries; the live repository when None.
 
     Returns:
         The validated comparison.
 
     Raises:
-        ComparisonError: If an input is missing, stale or inconsistent with another.
+        ComparisonError: If the D-73 ordering does not hold, or an input is missing,
+            stale or inconsistent with another.
     """
     run = Path(run_dir)
+    _require_preregistered(run, git_repo)
     report = _load_report(run)
     corpus = report.metadata.corpus
     judged = _load_judged(run, corpus)
@@ -2020,7 +2069,10 @@ def _write_text(path: Path, text: str) -> None:
 
 
 def write_comparison(
-    run_dir: Path | str, *, gold_chunks_path: Path | str | None = None
+    run_dir: Path | str,
+    *,
+    gold_chunks_path: Path | str | None = None,
+    git_repo: Path | None = None,
 ) -> Comparison:
     """Builds the comparison and writes its four sidecars into the run directory.
 
@@ -2030,15 +2082,19 @@ def write_comparison(
     Args:
         run_dir: A run directory that `score --judged` has passed.
         gold_chunks_path: See `build_comparison`.
+        git_repo: See `build_comparison`.
 
     Returns:
         The comparison that was written.
 
     Raises:
-        ComparisonError: If the comparison cannot be built.
+        ComparisonError: If the comparison cannot be built, or the D-73 ordering does
+            not hold.
     """
     run = Path(run_dir)
-    comparison = build_comparison(run, gold_chunks_path=gold_chunks_path)
+    comparison = build_comparison(
+        run, gold_chunks_path=gold_chunks_path, git_repo=git_repo
+    )
     comparison_json = _dump_json(comparison.model_dump(mode="json"))
     comparison_md = render_markdown(comparison)
     chart_json = _dump_json(build_chart_data(comparison))
