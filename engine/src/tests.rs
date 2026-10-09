@@ -840,16 +840,27 @@ impl RecordingReranker {
 impl rerank::Reranker for RecordingReranker {
     fn rerank<'a>(
         &'a self,
-        mut candidates: Vec<retrieval::FusedCandidate>,
-    ) -> BoxFuture<'a, Result<Vec<retrieval::FusedCandidate>, retrieval::RetrievalError>> {
+        request: rerank::RerankRequest<'a>,
+    ) -> BoxFuture<'a, Result<rerank::RerankOutput, rerank::RerankError>> {
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.inputs.lock().unwrap().push(candidates.clone());
+        self.inputs.lock().unwrap().push(request.candidates.to_vec());
         Box::pin(async move {
-            if candidates.len() > 1 {
-                candidates.rotate_left(1);
+            // Rotates left by one: the second candidate becomes first and the first goes last.
+            let mut order: Vec<usize> = (0..request.candidates.len()).collect();
+            if order.len() > 1 {
+                order.rotate_left(1);
             }
-            Ok(candidates)
+            Ok(rerank::RerankOutput {
+                ranked: order
+                    .into_iter()
+                    .map(|index| rerank::Reranked {
+                        index,
+                        score: request.candidates[index].fused_score,
+                    })
+                    .collect(),
+                cost_credits: None,
+            })
         })
     }
 }
@@ -873,16 +884,11 @@ impl FailingReranker {
 impl rerank::Reranker for FailingReranker {
     fn rerank<'a>(
         &'a self,
-        _candidates: Vec<retrieval::FusedCandidate>,
-    ) -> BoxFuture<'a, Result<Vec<retrieval::FusedCandidate>, retrieval::RetrievalError>> {
+        _request: rerank::RerankRequest<'a>,
+    ) -> BoxFuture<'a, Result<rerank::RerankOutput, rerank::RerankError>> {
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Box::pin(async {
-            Err(retrieval::RetrievalError::new(
-                retrieval::RetrievalErrorKind::Snapshot,
-                "deterministic reranker failure",
-            ))
-        })
+        Box::pin(async { Err(rerank::RerankError::transport()) })
     }
 }
 

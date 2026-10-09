@@ -8,8 +8,6 @@ use crate::pb::lancet::v1::DocumentFilter;
 use crate::prompt::GraphFactBlock;
 use crate::retrieval::bm25::Bm25Index;
 use crate::retrieval::Candidate;
-#[cfg(test)]
-use crate::retrieval::{FusedCandidate, RetrievalError, RetrievalErrorKind};
 
 pub type Bm25IndexStore = Arc<RwLock<Arc<Bm25Index>>>;
 
@@ -580,6 +578,8 @@ pub struct FakeReranker {
     call_count: std::sync::atomic::AtomicUsize,
     should_fail: bool,
     stall: bool,
+    /// The ranking and cost to answer with instead of the identity ranking.
+    scripted: Option<(Vec<crate::rerank::Reranked>, Option<f64>)>,
 }
 
 #[cfg(test)]
@@ -589,22 +589,29 @@ impl FakeReranker {
             call_count: std::sync::atomic::AtomicUsize::new(0),
             should_fail: false,
             stall: false,
+            scripted: None,
         }
     }
 
     pub fn failure() -> Self {
         Self {
-            call_count: std::sync::atomic::AtomicUsize::new(0),
             should_fail: true,
-            stall: false,
+            ..Self::success()
         }
     }
 
     pub fn stall() -> Self {
         Self {
-            call_count: std::sync::atomic::AtomicUsize::new(0),
-            should_fail: false,
             stall: true,
+            ..Self::success()
+        }
+    }
+
+    /// Answers every call with `ranked` and `cost_credits`, whatever the candidates are.
+    pub fn scripted(ranked: Vec<crate::rerank::Reranked>, cost_credits: Option<f64>) -> Self {
+        Self {
+            scripted: Some((ranked, cost_credits)),
+            ..Self::success()
         }
     }
 
@@ -617,8 +624,8 @@ impl FakeReranker {
 impl crate::rerank::Reranker for FakeReranker {
     fn rerank<'a>(
         &'a self,
-        candidates: Vec<FusedCandidate>,
-    ) -> BoxFuture<'a, Result<Vec<FusedCandidate>, RetrievalError>> {
+        request: crate::rerank::RerankRequest<'a>,
+    ) -> BoxFuture<'a, Result<crate::rerank::RerankOutput, crate::rerank::RerankError>> {
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Box::pin(async move {
@@ -626,13 +633,26 @@ impl crate::rerank::Reranker for FakeReranker {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
             }
             if self.should_fail {
-                Err(RetrievalError::new(
-                    RetrievalErrorKind::Snapshot,
-                    "deterministic fake reranker failure",
-                ))
-            } else {
-                Ok(candidates)
+                return Err(crate::rerank::RerankError::transport());
             }
+            if let Some((ranked, cost_credits)) = &self.scripted {
+                return Ok(crate::rerank::RerankOutput {
+                    ranked: ranked.clone(),
+                    cost_credits: *cost_credits,
+                });
+            }
+            Ok(crate::rerank::RerankOutput {
+                ranked: request
+                    .candidates
+                    .iter()
+                    .enumerate()
+                    .map(|(index, candidate)| crate::rerank::Reranked {
+                        index,
+                        score: candidate.fused_score,
+                    })
+                    .collect(),
+                cost_credits: None,
+            })
         })
     }
 }
@@ -673,7 +693,10 @@ mod tests {
         let reranker = FakeReranker::stall();
         let res = tokio::time::timeout(
             std::time::Duration::from_millis(50),
-            reranker.rerank(vec![]),
+            reranker.rerank(crate::rerank::RerankRequest {
+                query: "q",
+                candidates: &[],
+            }),
         )
         .await;
         assert!(

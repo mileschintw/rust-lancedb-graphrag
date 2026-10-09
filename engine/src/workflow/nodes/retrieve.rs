@@ -11,7 +11,7 @@ use super::super::{
 };
 use crate::pb::lancet::v1::RankedCandidate;
 use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
-use crate::rerank::Reranker;
+use crate::rerank::{reorder, RerankRequest, Reranker};
 use crate::retrieval::dense::is_valid_chunk_id;
 use crate::retrieval::fusion::VariantProvenanceSource;
 use crate::retrieval::{
@@ -378,8 +378,18 @@ impl RetrieveHybridNode {
 
         // 4. Reranking
         let final_fused = if let Some(reranker) = &self.reranker {
-            match reranker.rerank(fused_candidates).await {
-                Ok(reranked) => reranked,
+            let result = reranker
+                .rerank(RerankRequest {
+                    query: &ctx.original_query,
+                    candidates: &fused_candidates,
+                })
+                .await;
+            let reordered = result.and_then(|output| reorder(fused_candidates, &output.ranked));
+            match reordered {
+                Ok(pairs) => pairs
+                    .into_iter()
+                    .map(|(candidate, _relevance)| candidate)
+                    .collect(),
                 Err(err) => {
                     return Err(NodeError::new(
                         NodeErrorKind::RetrievalFailed,
