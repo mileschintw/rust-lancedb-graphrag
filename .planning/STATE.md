@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 17
 status: executing
-stopped_at: Phase 06.3.5 all 18 plans executed; tail gates (code review, regression, verification) running
+stopped_at: Phase 06.3.5 executed (18/18); verification human_needed - run /gsd-verify-work 06.3.5 (2 UAT items); see 06.3.5-HANDOVER.md FINAL
 last_updated: "2026-10-07T07:16:21.878Z"
 last_activity: 2026-10-09
 state_head: 508378bde89cfad2f391129493971266d1023576
@@ -22,11 +22,12 @@ last_activity_desc: "/gsd-execute-phase 06.3.5 started: 17 plans in 12 waves; pa
 
 ## Current Position
 
-Current Plan: 17 (wave 13 of 13) - all plans complete; running phase tail gates
+Current Plan: 17 (wave 13 of 13) - execution complete; awaiting UAT (/gsd-verify-work 06.3.5)
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-08: Phase 06.3.5 execution complete; verification `human_needed` (8/9, all 7 SC met as worded).** Code review: 1 critical, 5 warnings, 6 info, all open (CR-01 affected 0 of 118 drive records). UAT `06.3.5-UAT.md`: chart.svg visual check, plus the owner decision on the plan 18 engine change against the goal wording and the framing sign-off. 06.3.5 carry-forwards added to the 06.3.6 ROADMAP section. Next: `/gsd-verify-work 06.3.5`.
 - **2026-10-08: 06.3.5-17 complete; all 18 plans executed.** Owner D-103: `row-matches`. Run of record `06.3.5-RUN-OF-RECORD.md` (`1b068dd1`): the first paragraph states SC-2 MISS / continue-with-disclosure (owner, post-hoc) / P4 296/308 / both judged dimensions uncalibrated (QWK -0.026, 0.066). Holm: only bm25-only vs hybrid rejects (paper_hits_at_4 and answer_usable). Phase spend $0.352621 settled. Next: phase tail gates (code review, regression, verification).
 - **2026-10-08: 06.3.5-17 Task 1 done, STOPPED at Task 2 (D-103 owner paper-row read, not pre-authorised).** Reveal commit `f79de2b9` (descends from scores `7c2371e2`). `score --judged`, `report` and `compare` all exit 0; P4 296/308. **D-114: both judged dimensions are uncalibrated** (groundedness QWK -0.026, faithfulness QWK 0.066, n=20). Outputs stay uncommitted until Task 3 (plus `metadata.json`, which `score --judged` rewrote and which goes into Task 3's pathspec).
 - **2026-10-08: 06.3.5-16 complete.** Owner scored the worksheet (`7c2371e2`, fast-forwarded from the owner worktree branch; 20 integer rows; key still untracked). Owner pre-reveal observations (rank-indexed citation markers seen identically by the judge; titles absent from evidence) recorded in JUDGE.md `3f4f2094` as disclosures, no instrument change (D-106). Owner: "Proceed with plan 17". Plan 17 Task 2 (D-103 paper-row read) is an owner checkpoint that is not pre-authorised.
@@ -561,7 +562,7 @@ Total Plans in Phase: 17
 
 **Last session:** 2026-10-07T01:55:26.126Z
 **Last activity:** 2026-10-07
-**Stopped at:** Phase 06.3.5 all 18 plans executed; tail gates (code review, regression, verification) running
+**Stopped at:** Phase 06.3.5 executed (18/18); verification human_needed - run /gsd-verify-work 06.3.5 (2 UAT items); see 06.3.5-HANDOVER.md FINAL
 **Resume file:** .planning/phases/06.3.5-retrieval-ablation-matrix-paper-convention-metrics-judged-pa/06.3.5-CONTEXT.md
 
 ## Accumulated Context
