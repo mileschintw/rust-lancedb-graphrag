@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::generation;
 use crate::graph;
+use crate::rerank::openrouter::{DEFAULT_RERANK_ENDPOINT, DEFAULT_RERANK_MODEL};
 use crate::retrieval::{self, Bm25Config};
 use crate::workflow::nodes::graph_context::{QUERY_EMBEDDING_ATTEMPTS, RETRY_JITTER_MAX_MS};
 
@@ -78,6 +79,12 @@ pub fn default_chat_endpoint() -> String {
 }
 pub fn default_models_endpoint() -> String {
     "https://openrouter.ai/api/v1/models".into()
+}
+pub fn default_rerank_endpoint() -> String {
+    DEFAULT_RERANK_ENDPOINT.into()
+}
+pub fn default_rerank_model() -> String {
+    DEFAULT_RERANK_MODEL.into()
 }
 pub fn default_generation_timeout_secs() -> u64 {
     30
@@ -682,6 +689,12 @@ pub struct OpenRouterSettings {
     pub chat_endpoint: String,
     #[serde(default = "default_models_endpoint", alias = "models_endpoint")]
     pub model_metadata_endpoint: String,
+    /// OpenRouter rerank endpoint of the rerank lever (D-131). Not overridable by environment.
+    #[serde(default = "default_rerank_endpoint")]
+    pub rerank_endpoint: String,
+    /// Rerank model slug of the rerank lever (D-131).
+    #[serde(default = "default_rerank_model")]
+    pub rerank_model: String,
     #[serde(default = "default_generation_timeout_secs")]
     pub generation_timeout_secs: u64,
     #[serde(default = "default_temperature")]
@@ -702,6 +715,8 @@ impl Default for OpenRouterSettings {
             extraction_concurrency: default_extraction_concurrency(),
             chat_endpoint: "https://openrouter.ai/api/v1/chat/completions".into(),
             model_metadata_endpoint: "https://openrouter.ai/api/v1/models".into(),
+            rerank_endpoint: default_rerank_endpoint(),
+            rerank_model: default_rerank_model(),
             generation_timeout_secs: 30,
             temperature: 0.0,
             top_p: 1.0,
@@ -728,6 +743,8 @@ pub struct EffectiveRagSettings {
     pub extraction_concurrency: usize,
     pub chat_endpoint: String,
     pub model_metadata_endpoint: String,
+    pub rerank_endpoint: String,
+    pub rerank_model: String,
     pub generation_timeout_secs: u64,
     pub temperature: f64,
     pub top_p: f64,
@@ -774,6 +791,8 @@ impl EffectiveRagSettings {
             extraction_concurrency: settings.openrouter.extraction_concurrency,
             chat_endpoint: settings.openrouter.chat_endpoint.clone(),
             model_metadata_endpoint: settings.openrouter.model_metadata_endpoint.clone(),
+            rerank_endpoint: settings.openrouter.rerank_endpoint.clone(),
+            rerank_model: settings.openrouter.rerank_model.clone(),
             generation_timeout_secs: settings.openrouter.generation_timeout_secs,
             temperature: settings.openrouter.temperature,
             top_p: settings.openrouter.top_p,
@@ -840,6 +859,12 @@ impl EffectiveRagSettings {
         }
         if self.model_metadata_endpoint.trim().is_empty() {
             return Err("invalid model_metadata_endpoint: must not be empty".into());
+        }
+        if self.rerank_endpoint.trim().is_empty() {
+            return Err("invalid rerank_endpoint: must not be empty".into());
+        }
+        if self.rerank_model.trim().is_empty() {
+            return Err("invalid rerank_model: must not be empty".into());
         }
         if self.generation_timeout_secs == 0 {
             return Err("invalid generation_timeout_secs: must be greater than 0".into());
@@ -1210,6 +1235,46 @@ mod tests {
             error.contains("graph_node_timeout_ms") && error.contains(&required.to_string()),
             "the error names the key and the required sum: {error}"
         );
+    }
+
+    /// D-131: the rerank endpoint and model of `[openrouter]` are one value in both files and the
+    /// compiled-in defaults, and startup refuses a blank one.
+    #[test]
+    fn rerank_endpoint_and_model_agree_with_both_files_and_are_validated() {
+        let defaults = OpenRouterSettings::default();
+        for (file_name, raw) in [
+            ("config/config.toml", CONFIG_TOML),
+            ("config/config.example.toml", CONFIG_EXAMPLE_TOML),
+        ] {
+            let parsed = ::config::Config::builder()
+                .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+                .build()
+                .expect("configuration file must parse as TOML");
+            for (key, default) in [
+                ("rerank_endpoint", &defaults.rerank_endpoint),
+                ("rerank_model", &defaults.rerank_model),
+            ] {
+                assert_eq!(
+                    parsed
+                        .get::<String>(&format!("openrouter.{key}"))
+                        .unwrap_or_else(|error| panic!("openrouter.{key} must be present: {error}")),
+                    *default,
+                    "{file_name} openrouter.{key} must equal the config.rs default"
+                );
+            }
+        }
+        type Blanked = fn(&mut Settings);
+        let blanks: [(&str, Blanked); 2] = [
+            ("rerank_endpoint", |s| s.openrouter.rerank_endpoint = " ".into()),
+            ("rerank_model", |s| s.openrouter.rerank_model = String::new()),
+        ];
+        for (key, blank) in blanks {
+            let mut settings = Settings::default();
+            blank(&mut settings);
+            let error = EffectiveRagSettings::try_from_settings(&settings)
+                .expect_err(&format!("a blank {key} must be rejected"));
+            assert!(error.contains(key), "the error must name {key}: {error}");
+        }
     }
 
     /// The seven `[engine.graph]` keys paired with the compiled-in default of each, as numbers.

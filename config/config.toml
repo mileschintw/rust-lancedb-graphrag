@@ -132,6 +132,9 @@ embedding_concurrency = 12
 extraction_concurrency = 15
 chat_endpoint = "https://openrouter.ai/api/v1/chat/completions"
 models_endpoint = "https://openrouter.ai/api/v1/models"
+# D-131: the rerank lever calls this endpoint with the generator key; it is not environment-overridable.
+rerank_endpoint = "https://openrouter.ai/api/v1/rerank"
+rerank_model = "voyageai/rerank-2.5-lite"
 generation_timeout_secs = 30
 temperature = 0.0
 top_p = 1.0

@@ -166,6 +166,10 @@ extraction_concurrency = 15
 chat_endpoint = "https://openrouter.ai/api/v1/chat/completions"
 # unit=URL string; range=nonblank
 models_endpoint = "https://openrouter.ai/api/v1/models"
+# unit=URL string; range=nonblank
+rerank_endpoint = "https://openrouter.ai/api/v1/rerank"
+# unit=provider identifier; range=nonblank
+rerank_model = "voyageai/rerank-2.5-lite"
 # unit=seconds; range=>0
 generation_timeout_secs = 30
 # unit=unitless; range=finite 0..2

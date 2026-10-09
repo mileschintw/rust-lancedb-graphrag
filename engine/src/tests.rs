@@ -104,6 +104,8 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "openrouter.extraction_concurrency",
     "openrouter.chat_endpoint",
     "openrouter.models_endpoint",
+    "openrouter.rerank_endpoint",
+    "openrouter.rerank_model",
     "openrouter.generation_timeout_secs",
     "openrouter.temperature",
     "openrouter.top_p",
@@ -247,6 +249,14 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     (
         "openrouter.models_endpoint",
         "unit=URL string; range=nonblank",
+    ),
+    (
+        "openrouter.rerank_endpoint",
+        "unit=URL string; range=nonblank",
+    ),
+    (
+        "openrouter.rerank_model",
+        "unit=provider identifier; range=nonblank",
     ),
     (
         "openrouter.generation_timeout_secs",

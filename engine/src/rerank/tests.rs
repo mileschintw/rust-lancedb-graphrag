@@ -591,11 +591,28 @@ impl LogBuffer {
 #[tokio::test]
 async fn the_key_never_appears_in_an_error_a_log_event_or_a_debug_rendering() {
     let logs = LogBuffer::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(logs.clone())
-        .with_max_level(tracing::Level::TRACE)
-        .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let subscriber = || {
+        tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_max_level(tracing::Level::TRACE)
+            .finish()
+    };
+    // `tracing` caches whether each callsite is enabled. A callsite first hit on another test
+    // thread while a subscriber is being created can be cached as disabled, and creating a
+    // subscriber rebuilds that cache. Two warm-up subscribers, each with one real call, settle it
+    // before the calls that are asserted on.
+    for _ in 0..2 {
+        let _warm_up = tracing::subscriber::set_default(subscriber());
+        let (url, server) = serve_once(Reply::status(500, "warm-up"));
+        let _ = call(
+            &reranker(&url, Duration::from_secs(5)),
+            &fused_candidates(2),
+        )
+        .await;
+        server.join().unwrap();
+    }
+    logs.0.lock().unwrap().clear();
+    let _guard = tracing::subscriber::set_default(subscriber());
 
     let mut renderings = Vec::new();
     // A provider refusal that echoes the key in its body, a malformed reply that does the same
