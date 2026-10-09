@@ -171,15 +171,16 @@ impl LeverAvailability {
 impl LancetServiceImpl {
     /// Reports which levers this engine can serve against `_snapshot`.
     ///
-    /// `binary_answer_format` needs no resource and is available. `rerank`, `evidence_metadata`
-    /// and `graph_v2` stay unavailable until the plans that implement them wire their resource
-    /// (the reranker port, the evidence metadata columns of the corpus snapshot, the graph repair).
+    /// `binary_answer_format` needs no resource and is available. `rerank` is available when
+    /// the lever reranker is wired (D-131). `evidence_metadata` and `graph_v2` stay unavailable
+    /// until the plans that implement them wire their resource (the evidence metadata columns of
+    /// the corpus snapshot, the graph repair).
     pub fn lever_availability(
         &self,
         _snapshot: &workflow::ports::CorpusSnapshot,
     ) -> LeverAvailability {
         LeverAvailability {
-            rerank: false,
+            rerank: self.lever_resources.reranker.is_some(),
             evidence_metadata: false,
             binary_answer_format: true,
             graph_v2: false,
@@ -208,7 +209,7 @@ impl LancetServiceImpl {
     pub fn build_production_workflow_with_levers(
         &self,
         snapshot: Arc<workflow::ports::CorpusSnapshot>,
-        _levers: &workflow::LeverSet,
+        levers: &workflow::LeverSet,
     ) -> (workflow::WorkflowRunner, workflow::WorkflowDependencies) {
         let embedder_adapter: Arc<dyn workflow::node::QueryEmbeddingPort> =
             Arc::new(ProductionEmbeddingPort {
@@ -250,6 +251,13 @@ impl LancetServiceImpl {
             grounding_limits: *self.effective_settings.grounding_limits(),
         };
 
+        // The lever reranker reaches the node only for a request that names the lever.
+        let lever_reranker = if levers.contains(v1::Lever::Rerank) {
+            self.lever_resources.reranker.clone()
+        } else {
+            None
+        };
+
         let wf = &self.effective_settings.workflow;
         let mut runner = workflow::WorkflowRunner::new().with_timeouts(
             wf.reformulate_timeout_ms,
@@ -280,7 +288,12 @@ impl LancetServiceImpl {
                 self.effective_settings.embedding_model.clone(),
             )
             .with_rebuild_degraded(snapshot.rebuild_degraded)
-            .with_excerpt_max_chars(self.effective_settings.citation_excerpt_max_chars),
+            .with_excerpt_max_chars(self.effective_settings.citation_excerpt_max_chars)
+            .with_rerank_lever(
+                lever_reranker,
+                std::time::Duration::from_millis(wf.rerank_timeout_ms),
+                std::time::Duration::from_millis(wf.retrieve_timeout_ms),
+            ),
         );
         runner.add_node(workflow::nodes::AssemblePromptNode::with_settings(
             self.effective_settings

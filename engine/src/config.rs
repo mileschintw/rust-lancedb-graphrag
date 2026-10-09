@@ -521,6 +521,9 @@ impl WorkflowSettings {
         if self.retrieve_timeout_ms == 0 {
             return Err("invalid retrieve_timeout_ms: must be greater than 0".into());
         }
+        if self.rerank_timeout_ms == 0 {
+            return Err("invalid rerank_timeout_ms: must be greater than 0".into());
+        }
         if self.graph_operation_timeout_ms == 0 {
             return Err("invalid graph_operation_timeout_ms: must be greater than 0".into());
         }
@@ -532,6 +535,22 @@ impl WorkflowSettings {
         }
         if self.generation_node_timeout_ms == 0 {
             return Err("invalid generation_node_timeout_ms: must be greater than 0".into());
+        }
+        // D-135: the rerank call runs after the search inside the node, so the node budget holds
+        // the search allowance, the rerank budget and the slack.
+        let retrieve_required = self
+            .rerank_timeout_ms
+            .saturating_add(RETRIEVE_SEARCH_ALLOWANCE_MS)
+            .saturating_add(NESTING_SLACK_MS);
+        if self.retrieve_timeout_ms < retrieve_required {
+            return Err(format!(
+                "invalid retrieve_timeout_ms ({}): must be >= rerank_timeout_ms ({}) + {} ms search allowance + {} ms slack ({})",
+                self.retrieve_timeout_ms,
+                self.rerank_timeout_ms,
+                RETRIEVE_SEARCH_ALLOWANCE_MS,
+                NESTING_SLACK_MS,
+                retrieve_required
+            ));
         }
         // D-152: the node may spend every embedding attempt, one jitter pause and the graph
         // operation, so the node budget has to hold all of them.
@@ -1251,7 +1270,9 @@ mod tests {
             rerank_timeout_ms: 0,
             ..settings.clone()
         };
-        let error = zero.validate().expect_err("a zero rerank budget must be refused");
+        let error = zero
+            .validate()
+            .expect_err("a zero rerank budget must be refused");
         assert!(error.contains("rerank_timeout_ms"), "{error}");
 
         let at_the_sum = WorkflowSettings {
@@ -1329,7 +1350,9 @@ mod tests {
                 assert_eq!(
                     parsed
                         .get::<String>(&format!("openrouter.{key}"))
-                        .unwrap_or_else(|error| panic!("openrouter.{key} must be present: {error}")),
+                        .unwrap_or_else(|error| panic!(
+                            "openrouter.{key} must be present: {error}"
+                        )),
                     *default,
                     "{file_name} openrouter.{key} must equal the config.rs default"
                 );
@@ -1337,8 +1360,12 @@ mod tests {
         }
         type Blanked = fn(&mut Settings);
         let blanks: [(&str, Blanked); 2] = [
-            ("rerank_endpoint", |s| s.openrouter.rerank_endpoint = " ".into()),
-            ("rerank_model", |s| s.openrouter.rerank_model = String::new()),
+            ("rerank_endpoint", |s| {
+                s.openrouter.rerank_endpoint = " ".into()
+            }),
+            ("rerank_model", |s| {
+                s.openrouter.rerank_model = String::new()
+            }),
         ];
         for (key, blank) in blanks {
             let mut settings = Settings::default();

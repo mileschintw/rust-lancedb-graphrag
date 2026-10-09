@@ -26,6 +26,8 @@ pub const PATH_DENSE: &str = "dense";
 pub const PATH_BM25: &str = "bm25";
 /// Path constant for graph retrieval.
 pub const PATH_GRAPH: &str = "graph";
+/// Path constant for the rerank lever.
+pub const PATH_RERANK: &str = "rerank";
 
 /// Kind constant for timeout failures.
 pub const KIND_TIMEOUT: &str = "timeout";

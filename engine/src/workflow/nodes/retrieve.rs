@@ -10,8 +10,10 @@ use super::super::{
     WorkflowContext,
 };
 use crate::pb::lancet::v1::RankedCandidate;
-use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
-use crate::rerank::{reorder, RerankRequest, Reranker};
+use crate::pb::lancet::v1::{
+    Lever, NodeErrorKind, NoticeCode, NoticeSeverity, RerankMetadata, RerankOutcome,
+};
+use crate::rerank::{reorder, RerankError, RerankOutput, RerankRequest, Reranker};
 use crate::retrieval::dense::is_valid_chunk_id;
 use crate::retrieval::fusion::VariantProvenanceSource;
 use crate::retrieval::{
@@ -32,10 +34,11 @@ pub const RERANK_NODE_RESERVE_MS: u64 = 50;
 /// [`RERANK_NODE_RESERVE_MS`], so the call can never outlast the node's timer.
 pub(crate) fn rerank_allowance(
     rerank_timeout: Duration,
-    _node_budget: Duration,
-    _elapsed: Duration,
+    node_budget: Duration,
+    elapsed: Duration,
 ) -> Duration {
-    rerank_timeout
+    let reserve = Duration::from_millis(RERANK_NODE_RESERVE_MS);
+    rerank_timeout.min(node_budget.saturating_sub(elapsed).saturating_sub(reserve))
 }
 
 /// The reranker of the `rerank` lever and the time limits that bound its call.
@@ -80,6 +83,9 @@ pub struct RetrieveSubStageReport {
     /// Time spent reading the graph's candidate chunks (D-76); `0.0` when the graph offered none.
     pub graph_fetch_ms: f64,
     pub fusion_ms: f64,
+    /// Time spent in the reranking step (the service reranker or the `rerank` lever); about `0.0`
+    /// when no reranker is configured.
+    pub rerank_ms: f64,
     /// Wall time of the whole `execute_inner` body, from just after the cancellation check to
     /// just before it emits this report — i.e. the same span `WorkflowRunner::run_node` times
     /// as the `RetrieveHybrid` node's own duration, available here so a caller driving this
@@ -413,37 +419,21 @@ impl RetrieveHybridNode {
         };
         fusion_ms_total += cross_fuse_start.elapsed().as_secs_f64() * 1000.0;
 
-        // D-100: the pre-rerank order, captured only on request and before the reranker can reorder
-        // it, bounded by `candidate_limit`. IDs and ranks only; the final list is untouched.
+        // 4. Reranking: the lever re-scores the whole fused list and degrades to the fused order
+        // on any failure (D-131, D-134); the service reranker keeps its strict failure.
+        let rerank_start = Instant::now();
+        let final_fused = self
+            .rerank_step(ctx, cancel, node_start, fused_candidates)
+            .await?;
+        let rerank_ms = rerank_start.elapsed().as_secs_f64() * 1000.0;
+
+        // D-133, D-100: the ranking the final limit is taken from, captured after the reranker and
+        // before the take and bounded by `candidate_limit`. IDs and ranks only; the final list is
+        // untouched. With no reranker the order is the fused order, so the bytes are unchanged.
         let pre_truncation_ranking = if ctx.include_pre_truncation_ranking {
-            ranked_candidates(&fused_candidates, self.settings.candidate_limit)
+            ranked_candidates(&final_fused, self.settings.candidate_limit)
         } else {
             Vec::new()
-        };
-
-        // 4. Reranking
-        let final_fused = if let Some(reranker) = &self.reranker {
-            let result = reranker
-                .rerank(RerankRequest {
-                    query: &ctx.original_query,
-                    candidates: &fused_candidates,
-                })
-                .await;
-            let reordered = result.and_then(|output| reorder(&fused_candidates, &output.ranked));
-            match reordered {
-                Ok(pairs) => pairs
-                    .into_iter()
-                    .map(|(candidate, _relevance)| candidate)
-                    .collect(),
-                Err(err) => {
-                    return Err(NodeError::new(
-                        NodeErrorKind::RetrievalFailed,
-                        format!("Reranker failure: {}", err),
-                    ));
-                }
-            }
-        } else {
-            fused_candidates
         };
 
         let taken_candidates: Vec<_> = final_fused
@@ -541,6 +531,7 @@ impl RetrieveHybridNode {
             bm25_ms: bm25_ms_total,
             graph_fetch_ms,
             fusion_ms: fusion_ms_total,
+            rerank_ms,
             total_ms: node_start.elapsed().as_secs_f64() * 1000.0,
         };
         *self
@@ -555,6 +546,7 @@ impl RetrieveHybridNode {
             bm25_ms = report.bm25_ms,
             graph_fetch_ms = report.graph_fetch_ms,
             fusion_ms = report.fusion_ms,
+            rerank_ms = report.rerank_ms,
             alive_tasks = runtime_metrics.num_alive_tasks(),
             global_queue = runtime_metrics.global_queue_depth(),
             "retrieve_hybrid_substages"
@@ -564,10 +556,25 @@ impl RetrieveHybridNode {
     }
 }
 
-/// The first `limit` of the cross-variant fused list as wire rows (D-100).
+/// The wire outcome of a failed rerank call. A refused request counts as malformed: the reply
+/// outcomes the wire declares are timeout, status, malformed and transport.
+fn degraded_outcome(error: &RerankError) -> RerankOutcome {
+    if error.is_timeout() {
+        RerankOutcome::DegradedTimeout
+    } else if error.status_code().is_some() {
+        RerankOutcome::DegradedStatus
+    } else if error.is_transport() {
+        RerankOutcome::DegradedTransport
+    } else {
+        RerankOutcome::DegradedMalformed
+    }
+}
+
+/// The first `limit` of the reranked list (the cross-variant fused list when no reranker ran) as
+/// wire rows (D-100, D-133).
 ///
 /// Ranks are 1-based; `0` means the chunk was not in that list. `fused_rank` is the position in
-/// `fused`. No chunk text is copied.
+/// `fused`, which is the list after the reranker. No chunk text is copied.
 fn ranked_candidates(fused: &[FusedCandidate], limit: usize) -> Vec<RankedCandidate> {
     fused
         .iter()
@@ -612,6 +619,131 @@ fn well_formed_chunk_ids(candidates: &[String]) -> (Vec<String>, usize) {
 }
 
 impl RetrieveHybridNode {
+    /// Reorders the fused list with the reranker this request selected.
+    ///
+    /// A request that names `rerank` and has a lever reranker takes the lever path; any other
+    /// request takes the service reranker's strict path, where a failure fails the query exactly
+    /// as it did before the lever existed.
+    async fn rerank_step(
+        &self,
+        ctx: &mut WorkflowContext,
+        cancel: &CancellationToken,
+        node_start: Instant,
+        fused: Vec<FusedCandidate>,
+    ) -> Result<Vec<FusedCandidate>, NodeError> {
+        if let Some(lever) = self
+            .rerank_lever
+            .as_ref()
+            .filter(|_| ctx.levers.contains(Lever::Rerank))
+        {
+            return self
+                .rerank_with_lever(lever, ctx, cancel, node_start, fused)
+                .await;
+        }
+        let Some(reranker) = &self.reranker else {
+            return Ok(fused);
+        };
+        let result = reranker
+            .rerank(RerankRequest {
+                query: &ctx.original_query,
+                candidates: &fused,
+            })
+            .await;
+        match result.and_then(|output| reorder(&fused, &output.ranked)) {
+            Ok(pairs) => Ok(pairs
+                .into_iter()
+                .map(|(candidate, _relevance)| candidate)
+                .collect()),
+            Err(err) => Err(NodeError::new(
+                NodeErrorKind::RetrievalFailed,
+                format!("Reranker failure: {}", err),
+            )),
+        }
+    }
+
+    /// The `rerank` lever (D-131, D-134, D-166): one bounded call, no retry, never spawned.
+    ///
+    /// On success the relevance replaces each candidate's fused score, so the packer's descending
+    /// sort reproduces the reranked order. On any failure the fused list is kept, one
+    /// `RERANK_DEGRADED` notice carries the failure class only, and the outcome is recorded.
+    async fn rerank_with_lever(
+        &self,
+        lever: &RerankLever,
+        ctx: &mut WorkflowContext,
+        cancel: &CancellationToken,
+        node_start: Instant,
+        fused: Vec<FusedCandidate>,
+    ) -> Result<Vec<FusedCandidate>, NodeError> {
+        let allowed = rerank_allowance(lever.timeout, lever.node_budget, node_start.elapsed());
+        // The tokio clock, so a paused-clock test sees the time the call was given.
+        let started = tokio::time::Instant::now();
+        let attempt: Result<RerankOutput, RerankError> = if allowed.is_zero() {
+            // Nothing is left after the reserve; no call may start.
+            Err(RerankError::timeout())
+        } else {
+            let call = lever.reranker.rerank(RerankRequest {
+                query: &ctx.original_query,
+                candidates: &fused,
+            });
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err(NodeError::cancelled()),
+                result = tokio::time::timeout(allowed, call) => {
+                    result.unwrap_or_else(|_| Err(RerankError::timeout()))
+                }
+            }
+        };
+        let latency_ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
+        let outcome = attempt.and_then(|output| {
+            reorder(&fused, &output.ranked).map(|pairs| (pairs, output.cost_credits))
+        });
+        match outcome {
+            Ok((pairs, cost_credits)) => {
+                ctx.rerank = Some(RerankMetadata {
+                    latency_ms,
+                    cost_credits: cost_credits.unwrap_or(0.0),
+                    cost_reported: cost_credits.is_some(),
+                    outcome: RerankOutcome::Completed as i32,
+                });
+                Ok(pairs
+                    .into_iter()
+                    .map(|(mut candidate, relevance)| {
+                        candidate.fused_score = relevance;
+                        candidate
+                    })
+                    .collect())
+            }
+            Err(error) => {
+                let class = error.class();
+                tracing::warn!(
+                    error_class = %class,
+                    latency_ms,
+                    "rerank_degraded; the fused order is kept"
+                );
+                ctx.add_notice(notice(
+                    NoticeCode::RerankDegraded,
+                    format!("Rerank degraded ({class}); the fused order was kept."),
+                    NoticeSeverity::Info,
+                ));
+                ctx.rerank = Some(RerankMetadata {
+                    latency_ms,
+                    cost_credits: 0.0,
+                    cost_reported: false,
+                    outcome: degraded_outcome(&error) as i32,
+                });
+                crate::telemetry::metrics::record_retrieval_path_failure(
+                    crate::telemetry::metrics::PATH_RERANK,
+                    if error.is_timeout() {
+                        crate::telemetry::metrics::KIND_TIMEOUT
+                    } else {
+                        crate::telemetry::metrics::KIND_ERROR
+                    },
+                );
+                Ok(fused)
+            }
+        }
+    }
+
     /// Reads the rows of `ctx.graph_chunk_candidates` for the graph list of fusion (D-76).
     ///
     /// Returns the rows in the graph's rank order, restricted to what the request's filter

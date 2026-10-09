@@ -77,6 +77,9 @@ reformulate_timeout_ms = 5000
 query_embedding_timeout_ms = 2000
 # unit=milliseconds; range=>0
 retrieve_timeout_ms = 2500
+# provisional (D-135): the largest value that nests, 2500 - 294 - 500; the derived value replaces it in the D-154 freeze commit
+# unit=milliseconds; range=>0
+rerank_timeout_ms = 1706
 # unit=milliseconds; range=>0
 graph_operation_timeout_ms = 2424
 # unit=milliseconds; range=>0

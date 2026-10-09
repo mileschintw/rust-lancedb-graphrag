@@ -27,10 +27,10 @@
 //! | `negative_lever` | `levers` holds a negative integer (-1) | `InvalidArgument` | `invalid_levers` | — |
 //! | `duplicate_lever` | `levers` names `binary_answer_format` twice | `InvalidArgument` | `invalid_levers` | — |
 //! | `lever_unspecified_member` | `levers` holds `LEVER_UNSPECIFIED` (0) | `InvalidArgument` | `invalid_levers` | — |
-//! | `lever_unavailable_rerank` | `levers` names `rerank`, whose resource is not wired yet | `InvalidArgument` | `lever_unavailable` | — |
+//! | `lever_unavailable_rerank` | `levers` names `rerank` and this service holds no lever reranker (D-131; `levers_pins` admits it once one is wired) | `InvalidArgument` | `lever_unavailable` | — |
 //! | `lever_unavailable_evidence_metadata` | `levers` names `evidence_metadata`, whose resource is not wired yet | `InvalidArgument` | `lever_unavailable` | — |
 //! | `lever_unavailable_graph_v2` | `levers` names `graph_v2`, whose resource is not wired yet | `InvalidArgument` | `lever_unavailable` | — |
-//! | `lever_unavailable_when_mixed_with_an_available_lever` | `levers` names `binary_answer_format` and `rerank` | `InvalidArgument` | `lever_unavailable` | — |
+//! | `lever_unavailable_when_mixed_with_an_available_lever` | `levers` names `binary_answer_format` and `rerank` with no lever reranker wired | `InvalidArgument` | `lever_unavailable` | — |
 //! | `graph_v2_with_graph_disabled` | `levers` names `graph_v2` and `disable_graph_context` is true (D-165) | `InvalidArgument` | `invalid_lever_combination` | — |
 //! | `levers_admitted` | `levers` names `binary_answer_format`, unmatched filter | success (not rejected) | n/a | `binary_answer_format` needs no resource and is admitted; the zero-match filter keeps the row independent of corpus content. |
 //!

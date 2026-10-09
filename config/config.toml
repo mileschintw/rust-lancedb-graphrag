@@ -34,13 +34,16 @@ deployment_environment = "dev"
 # Runner-level (top-level) node budgets enforced by WorkflowRunner around a whole node:
 # - reformulate_timeout_ms (ReformulateQuery) — carried at 5000; never derived
 # - graph_node_timeout_ms (ExtractGraphContext outer envelope)
-# - retrieve_timeout_ms (RetrieveHybrid)
+# - retrieve_timeout_ms (RetrieveHybrid; also holds the rerank call below)
 # - prompt_timeout_ms (AssemblePrompt)
 # - generation_node_timeout_ms (GenerateAnswer)
 #
 # Inner budgets enforced inside ExtractGraphContextNode that nest inside graph_node_timeout_ms:
 # - query_embedding_timeout_ms (inner embedding generation)
 # - graph_operation_timeout_ms (inner graph Cypher traversal / augmentation)
+#
+# Inner budget enforced inside RetrieveHybridNode that nests inside retrieve_timeout_ms:
+# - rerank_timeout_ms (the OpenRouter rerank call of the rerank lever)
 #
 # Nesting (slack 500ms is the committed rule's margin; engine startup requires only >=):
 # query_embedding (2000) + graph_operation (2424) = 4424 nests inside graph_node (12500), slack 8076ms
@@ -70,6 +73,8 @@ deployment_environment = "dev"
 reformulate_timeout_ms = 5000
 query_embedding_timeout_ms = 2000
 retrieve_timeout_ms = 2500
+# provisional (D-135): the largest value that nests, 2500 - 294 - 500; the derived value replaces it in the D-154 freeze commit
+rerank_timeout_ms = 1706
 graph_operation_timeout_ms = 2424
 graph_node_timeout_ms = 12500
 prompt_timeout_ms = 120

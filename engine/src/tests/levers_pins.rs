@@ -172,6 +172,11 @@ fn ranking_ids(ctx: &WorkflowContext) -> Vec<String> {
 
 const RERANK: &[i32] = &[Lever::Rerank as i32];
 
+/// The notice codes in order, for comparing two runs.
+fn notice_codes(notices: &[crate::pb::lancet::v1::Notice]) -> Vec<&str> {
+    notices.iter().map(|notice| notice.code.as_str()).collect()
+}
+
 /// The `final_limit` of the `retrieval_mode_pins` fixture.
 const FIXTURE_FINAL_LIMIT: usize = 4;
 
@@ -228,9 +233,10 @@ async fn an_identity_lever_leaves_the_ranking_the_final_list_and_the_result_hash
         lever_snapshot.pre_truncation_ranking,
         free_snapshot.pre_truncation_ranking
     );
-    assert!(
-        lever.notices.is_empty(),
-        "an identity ranking degrades nothing"
+    assert_eq!(
+        notice_codes(&lever.notices),
+        notice_codes(&free.notices),
+        "an identity ranking adds no notice"
     );
 }
 
@@ -290,7 +296,7 @@ async fn a_lever_reranker_is_not_called_for_a_request_that_does_not_name_the_lev
     );
     let ctx = run_chain(&fixture, true, Variation::DEFAULT).await;
     assert_eq!(failing.calls(), 0);
-    assert!(ctx.notices.is_empty());
+    assert!(degrade_notices(&ctx.notices).is_empty());
     assert!(ctx.rerank.is_none(), "no rerank was attempted");
 }
 
@@ -562,7 +568,10 @@ async fn the_lever_relevance_replaces_the_score_and_the_prompt_follows_the_reran
     assert_eq!(rerank.outcome, RerankOutcome::Completed as i32);
     assert!(rerank.cost_reported);
     assert_eq!(rerank.cost_credits, 4.4e-07);
-    assert!(ctx.notices.is_empty(), "a completed rerank adds no notice");
+    assert!(
+        degrade_notices(&ctx.notices).is_empty(),
+        "a completed rerank adds no notice"
+    );
 
     // The same list with no lever keeps the fused scores, so the overwrite is the lever's own.
     let free_scores: Vec<f64> = baseline

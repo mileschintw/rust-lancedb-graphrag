@@ -83,6 +83,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key.clone(),
         embedding_config,
     )?);
+    // D-131: the rerank lever reuses the generator's key, so it is cloned before the generator
+    // takes it.
+    let rerank_config = rerank::openrouter::RerankConfig::new(
+        effective_settings.rerank_endpoint.clone(),
+        effective_settings.rerank_model.clone(),
+        Duration::from_millis(effective_settings.workflow.rerank_timeout_ms),
+    )?;
+    let lever_reranker: Arc<dyn rerank::Reranker> = Arc::new(
+        rerank::openrouter::OpenRouterReranker::new(api_key.clone(), rerank_config)?,
+    );
     let extraction_config = generation::openrouter::OpenRouterGenerationConfig::new(
         effective_settings.generation_model.clone(),
         effective_settings.chat_endpoint.clone(),
@@ -163,7 +173,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         generator,
         embedder: embedder.clone(),
         reranker: Arc::new(rerank::NoOpReranker::new()),
-        lever_resources: LeverResources::default(),
+        lever_resources: LeverResources {
+            reranker: Some(lever_reranker),
+        },
         database: database.clone(),
     };
 
