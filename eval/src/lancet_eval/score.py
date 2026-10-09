@@ -31,6 +31,7 @@ from lancet_eval.agreement import (
 )
 from lancet_eval.config import get_commit_sha
 from lancet_eval.corpus import (
+    NO_JUDGE_PREREGISTRATION_TOKENS,
     load_corpus_config,
     load_sample_questions,
     sample_questions,
@@ -251,15 +252,28 @@ def _primary_arm(configured_arms: list[str], totals: dict[str, int]) -> str:
     return configured_arms[0]
 
 
-def _require_preregistered_before(created_at: object, repo: Path | None) -> None:
+def _require_preregistered_before(
+    created_at: object,
+    repo: Path | None,
+    tokens: tuple[str, ...] = (
+        gitcheck.PREREGISTRATION_TOKEN,
+        gitcheck.TRUST_FLOOR_TOKEN,
+    ),
+) -> None:
     """D-73: a `[split]` corpus's report needs the pre-registration older than its data.
 
+    Args:
+        created_at: The journal header's `created_at`.
+        repo: Repository to query; the live repository when None.
+        tokens: The constants that must be committed first. `score_run` passes the
+            corpus's configured pre-registration token, plus `JUDGE_QWK_TRUST_FLOOR`
+            when the corpus declares `[judge]`; the default is the 06.3.5 pair.
+
     Raises:
-        ScoreError: If the journal header carries no numeric `created_at`, the
-            commits introducing `PREREGISTRATION_06_3_5` and `JUDGE_QWK_TRUST_FLOOR` are
-            absent, not ancestors of HEAD, or not strictly older than `created_at`, the
-            source tree has an uncommitted change, or either constant differs from the
-            value its introducing commit set (WR-02).
+        ScoreError: If the journal header carries no numeric `created_at`, a token's
+            introducing commit is absent, not an ancestor of HEAD, or not strictly
+            older than `created_at`, the source tree has an uncommitted change, or a
+            constant differs from the value its introducing commit set (WR-02).
     """
     if isinstance(created_at, bool) or not isinstance(created_at, int | float):
         raise ScoreError(
@@ -267,7 +281,7 @@ def _require_preregistered_before(created_at: object, repo: Path | None) -> None
             f"to prove the pre-registration predates it (got {created_at!r})"
         )
     problems = gitcheck.preregistration_problems(
-        (gitcheck.PREREGISTRATION_TOKEN, gitcheck.TRUST_FLOOR_TOKEN),
+        tokens,
         created_at=float(created_at),
         require_clean_tree=True,
         unchanged_since_introduction=True,
@@ -277,8 +291,7 @@ def _require_preregistered_before(created_at: object, repo: Path | None) -> None
         raise ScoreError(
             "D-73: refusing to score a [split] corpus's report: "
             + "; ".join(problems)
-            + f". {gitcheck.PREREGISTRATION_TOKEN} and {gitcheck.TRUST_FLOOR_TOKEN} "
-            "must be committed before the data exists."
+            + f". {' and '.join(tokens)} must be committed before the data exists."
         )
 
 
@@ -1190,6 +1203,24 @@ def _ordered_protocol_guard(
             `score --judged` when a legacy judged input meets an ordered corpus, or the
             reason a `--judged` call cannot proceed.
     """
+    # D-153: no paid judge call can be issued for a 06.3.6 corpus, on any path: the
+    # judged pass, the legacy `--judge`, the worksheet emit or a calibration input.
+    if getattr(config, "preregistration_token", "") in NO_JUDGE_PREREGISTRATION_TOKENS:
+        blocked = []
+        if judged:
+            blocked.append("`--judged`")
+        if not no_judge:
+            blocked.append("`score --judge`")
+        if emit_calibration_worksheet is not None:
+            blocked.append("`--emit-calibration-worksheet`")
+        if calibration_file is not None or calibration_key is not None:
+            blocked.append("a calibration input")
+        if blocked:
+            raise ScoreError(
+                f"{' and '.join(blocked)} refused for corpus {config.name!r}: it is "
+                f"pre-registered under {config.preregistration_token}, and a 06.3.6 "
+                "corpus issues no judge call (D-153)"
+            )
     ordered = getattr(config, "judge_protocol", "legacy") == "ordered"
     if not judged:
         if ordered:
@@ -1779,7 +1810,13 @@ def score_run(
     # The legacy ingest below never sees the ordered worksheet.
     legacy_calibration_file = None if judged else calibration_file
     if config.split_file is not None:
-        _require_preregistered_before(header_created_at, git_repo)
+        _require_preregistered_before(
+            header_created_at,
+            git_repo,
+            (config.preregistration_token, gitcheck.TRUST_FLOOR_TOKEN)
+            if config.has_judge
+            else (config.preregistration_token,),
+        )
     sampled_questions = load_sample_questions(corpus_name)
     gold_map = {q.question_id: q for q in sampled_questions}
 

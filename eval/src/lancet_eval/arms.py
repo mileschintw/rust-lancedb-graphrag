@@ -163,6 +163,64 @@ def request_fields(label: str) -> dict[str, object]:
     return fields
 
 
+def echo_failures(label: str, retrieval_mode_echo: str | None) -> list[str]:
+    """Checks that a record's snapshot echoes the retrieval mode the arm requested.
+
+    A canonical label must see its own retrieval mode echoed in the snapshot. A legacy
+    label is not checked, because legacy journals carry no mode echo. This is
+    provenance clause (a); callers branch on this function, never on message text
+    (D-158 IN-04).
+
+    Args:
+        label: The stored arm label (canonical or legacy alias).
+        retrieval_mode_echo: ``RetrievalSnapshot.retrieval_mode`` of the record, if any.
+
+    Returns:
+        Failure strings that each name the label; empty when the echo holds.
+    """
+    spec = resolve_arm(label)
+    if is_legacy_label(label) or retrieval_mode_echo == spec.retrieval_mode:
+        return []
+    return [
+        f"arm {label!r}: expected retrieval_mode {spec.retrieval_mode!r} "
+        f"echoed in the snapshot, observed {retrieval_mode_echo!r}"
+    ]
+
+
+def ablation_failures(label: str, notices: Sequence[Notice]) -> list[str]:
+    """Checks that a graph-off arm carries the ablation notice and no unavailable one.
+
+    An arm that disables graph context must carry the GRAPH_ABLATION notice and not
+    GRAPH_UNAVAILABLE. Legacy labels are held to this check too. This is provenance
+    clause (e).
+
+    Args:
+        label: The stored arm label (canonical or legacy alias).
+        notices: The record's notices.
+
+    Returns:
+        Failure strings that each name the label; empty when the notices hold.
+    """
+    from lancet_eval.journal import RunRecord
+    from lancet_eval.usability import has_arm_provenance
+
+    if not resolve_arm(label).disable_graph_context:
+        return []
+    record = RunRecord(
+        corpus="",
+        question_id="",
+        graph_arm=label,
+        outcome="success",
+        notices=list(notices),
+    )
+    if has_arm_provenance(record):
+        return []
+    return [
+        f"arm {label!r}: graph-off arm lacks the GRAPH_ABLATION notice "
+        "or carries GRAPH_UNAVAILABLE"
+    ]
+
+
 def mode_provenance_failures(
     label: str,
     snapshot_mode: str | None,
@@ -170,10 +228,8 @@ def mode_provenance_failures(
 ) -> list[str]:
     """Checks that a record's echo and notices match the arm that was requested.
 
-    A canonical label must see its own retrieval mode echoed in the snapshot, and an
-    arm that disables graph context must carry the graph-ablation notice and not the
-    graph-unavailable one. A legacy label is held only to the graph-off notice check,
-    because legacy journals carry no mode echo.
+    A thin composition of ``echo_failures`` and ``ablation_failures``, kept for the
+    callers that want both lists in one call.
 
     Args:
         label: The stored arm label (canonical or legacy alias).
@@ -183,30 +239,7 @@ def mode_provenance_failures(
     Returns:
         Failure strings that each name the label; empty when provenance holds.
     """
-    from lancet_eval.journal import RunRecord
-    from lancet_eval.usability import has_arm_provenance
-
-    spec = resolve_arm(label)
-    failures: list[str] = []
-    if not is_legacy_label(label) and snapshot_mode != spec.retrieval_mode:
-        failures.append(
-            f"arm {label!r}: expected retrieval_mode {spec.retrieval_mode!r} "
-            f"echoed in the snapshot, observed {snapshot_mode!r}"
-        )
-    if spec.disable_graph_context:
-        record = RunRecord(
-            corpus="",
-            question_id="",
-            graph_arm=label,
-            outcome="success",
-            notices=list(notices),
-        )
-        if not has_arm_provenance(record):
-            failures.append(
-                f"arm {label!r}: graph-off arm lacks the GRAPH_ABLATION notice "
-                "or carries GRAPH_UNAVAILABLE"
-            )
-    return failures
+    return echo_failures(label, snapshot_mode) + ablation_failures(label, notices)
 
 
 def plan_work_units(

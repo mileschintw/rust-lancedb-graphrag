@@ -230,7 +230,7 @@ def test_alias_arm_labels_are_accepted_and_stored_verbatim(
 @pytest.mark.parametrize(
     "extra",
     [
-        '[split]\nfile = "multihop_rag/heldout_split.json"\nrole = "dev"\n',
+        '[split]\nfile = "multihop_rag/heldout_split.json"\nrole = "bogus"\n',
         '[split]\nfile = "multihop_rag/heldout_split.json"\n',
         '[split]\nrole = "heldout"\n',
         '[judge]\nprotocol = "strict"\n',
@@ -285,3 +285,90 @@ def test_every_committed_corpus_has_distinct_nonempty_arms(corpus_name: str) -> 
     cfg = load_corpus(corpus_name)
     assert cfg.arms
     assert len({canonical_arm(a) for a in cfg.arms}) == len(cfg.arms)
+
+
+# --- 06.3.6-03: per-corpus D-73 token, the dev role, the no-judge refusal ----------
+
+
+def test_a_corpus_without_a_preregistration_table_keeps_the_06_3_5_token() -> None:
+    for name in ("multihop_rag", "multihop_rag_heldout", "multihop_rag_rehearsal"):
+        cfg = load_corpus(name)
+        assert cfg.preregistration_token == "PREREGISTRATION_06_3_5", name
+
+
+def test_a_preregistration_table_sets_the_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _write_tmp_corpus(
+        tmp_path, monkeypatch, "tok", '[preregistration]\ntoken = "X"\n'
+    )
+    assert cfg.preregistration_token == "X"
+    assert cfg.has_judge is False
+
+
+@pytest.mark.parametrize("value", ['""', "5", '"   "'], ids=["empty", "int", "blank"])
+def test_a_non_string_or_empty_token_fails_the_load(
+    value: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(CorpusError, match="token"):
+        _write_tmp_corpus(
+            tmp_path, monkeypatch, "badtok", f"[preregistration]\ntoken = {value}\n"
+        )
+
+
+def test_the_dev_role_is_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _write_tmp_corpus(
+        tmp_path,
+        monkeypatch,
+        "devrole",
+        '[split]\nfile = "multihop_rag/heldout_split.json"\nrole = "dev"\n',
+    )
+    assert cfg.split_role == "dev"
+    assert cfg.split_file == "multihop_rag/heldout_split.json"
+
+
+def test_an_unknown_split_role_still_fails_the_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(CorpusError, match="role"):
+        _write_tmp_corpus(
+            tmp_path,
+            monkeypatch,
+            "badrole",
+            '[split]\nfile = "multihop_rag/heldout_split.json"\nrole = "bogus"\n',
+        )
+
+
+def test_a_06_3_6_corpus_cannot_declare_a_judge_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-153: no paid judge call can be issued for a 06.3.6 corpus."""
+    with pytest.raises(CorpusError, match="D-153"):
+        _write_tmp_corpus(
+            tmp_path,
+            monkeypatch,
+            "judged06",
+            '[preregistration]\ntoken = "PREREGISTRATION_06_3_6"\n\n'
+            '[judge]\nprotocol = "ordered"\n',
+        )
+
+
+def test_a_06_3_6_corpus_without_a_judge_section_loads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = _write_tmp_corpus(
+        tmp_path,
+        monkeypatch,
+        "plain06",
+        '[preregistration]\ntoken = "PREREGISTRATION_06_3_6"\n',
+    )
+    assert cfg.preregistration_token == "PREREGISTRATION_06_3_6"
+    assert cfg.has_judge is False
+
+
+def test_the_committed_06_3_5_corpora_declare_a_judge_section() -> None:
+    assert load_corpus("multihop_rag_heldout").has_judge is True
+    assert load_corpus("multihop_rag_rehearsal").has_judge is True
+    assert load_corpus("multihop_rag").has_judge is False

@@ -21,9 +21,11 @@ from typing import Any
 
 import pytest
 import test_score_judged_ordered as sj
+from test_preregistration import OTHER, T0, THRESHOLDS, _commit, _git, _write
 from typer.testing import CliRunner
 
 from lancet_eval import comparison as cmp_mod
+from lancet_eval import gitcheck
 from lancet_eval.cli import app
 from lancet_eval.comparison import (
     APPROXIMATION_LABEL,
@@ -66,6 +68,27 @@ NOT_ROBUST = "not robust to the matching rule"
 APPROXIMATION = "approximation; official text rule not verified"
 EXCLUDES_ZERO_NOTE = "CI excludes 0; not significant after Holm"
 REPO = Path(__file__).resolve().parents[2]
+
+REAL_GATE_PREFIX = "test_real_d73_gate_"
+
+
+@pytest.fixture(autouse=True)
+def _d73_gate_reports_no_problem(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Isolate every test of this file from the live repository state (WR-02).
+
+    `build_comparison` now calls `gitcheck.preregistration_problems`, which reads the
+    live repository: a dirty `eval/src/lancet_eval/` during execution would fail every
+    comparison test. This fixture makes the gate report no problem, except for the
+    dedicated `test_real_d73_gate_*` tests, which exercise the real refusal against a
+    temporary repository. It lives here, not in `conftest.py`, so the gate stays
+    visible to `test_preregistration.py`.
+    """
+    if request.node.name.startswith(REAL_GATE_PREFIX):
+        return
+    monkeypatch.setattr(gitcheck, "preregistration_problems", lambda *_a, **_k: [])
+
 
 # ---- pure helpers -----------------------------------------------------------------
 
@@ -420,7 +443,14 @@ def written(ordered: Any, tmp_path_factory: pytest.TempPathFactory) -> Any:
     dest = tmp_path_factory.mktemp("compare_written") / "run"
     shutil.copytree(pristine, dest)
     report_bytes = (dest / "report.json").read_bytes()
-    comparison = write_comparison(dest, gold_chunks_path=sc.gold)
+    # A module-scoped fixture is built before the function-scoped autouse gate fixture
+    # runs, so it isolates itself from the live repository the same way.
+    mp = pytest.MonkeyPatch()
+    mp.setattr(gitcheck, "preregistration_problems", lambda *_a, **_k: [])
+    try:
+        comparison = write_comparison(dest, gold_chunks_path=sc.gold)
+    finally:
+        mp.undo()
     return {
         "dir": dest,
         "comparison": comparison,
@@ -1498,3 +1528,132 @@ def test_the_gate_and_provider_readers_take_the_real_producer_shapes(
     md = cmp_mod.render_markdown(comp)
     assert "Sail Research" in md and "| SC-1 | pooled | MISS |" in md
     assert "1 record(s) had no served line" in md
+
+
+# ---- WR-02: the D-73 gate inside the comparison build function ---------------------
+
+
+@pytest.fixture
+def d73_repo(tmp_path: Path) -> Path:
+    """Two commits: the first has no token, the second (T0 + 100) adds it."""
+    root = tmp_path / "throwaway"
+    root.mkdir()
+    (tmp_path / "empty.gitconfig").write_text("", encoding="utf-8")
+    _git(root, "init", "-q")
+    _write(root, THRESHOLDS, b"BASELINE = 1\r\n")
+    _write(root, OTHER, b"X = 0\n")
+    _commit(root, "first", T0)
+    _write(
+        root,
+        THRESHOLDS,
+        b"BASELINE = 1\r\nPREREGISTRATION_06_3_5 = 2\r\n"
+        b"JUDGE_QWK_TRUST_FLOOR = 0.7\r\n",
+    )
+    _commit(root, "second", T0 + 100)
+    return root
+
+
+def _gate_run(tmp_path: Path, created_at: float | None) -> Path:
+    """A run directory holding only a journal header (the gate fires first)."""
+    run = tmp_path / "gate-run"
+    run.mkdir()
+    header: dict[str, Any] = {"type": "header", "corpus": "multihop_rag_heldout"}
+    if created_at is not None:
+        header["created_at"] = created_at
+    (run / "journal.jsonl").write_text(json.dumps(header) + "\n", encoding="utf-8")
+    return run
+
+
+def test_real_d73_gate_refuses_when_the_token_commit_is_missing(
+    tmp_path: Path,
+) -> None:
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    (tmp_path / "empty.gitconfig").write_text("", encoding="utf-8")
+    _git(bare, "init", "-q")
+    _write(bare, THRESHOLDS, b"BASELINE = 1\n")
+    _commit(bare, "only", T0)
+    run = _gate_run(tmp_path, float(T0 + 1000))
+
+    with pytest.raises(ComparisonError, match="PREREGISTRATION_06_3_5") as excinfo:
+        build_comparison(run, git_repo=bare)
+    assert "D-73" in str(excinfo.value)
+    _no_sidecars(run)
+
+
+def test_real_d73_gate_refuses_a_token_commit_not_older_than_the_data(
+    tmp_path: Path, d73_repo: Path
+) -> None:
+    run = _gate_run(tmp_path, float(T0 + 50))
+    with pytest.raises(ComparisonError, match="not older than"):
+        build_comparison(run, git_repo=d73_repo)
+    _no_sidecars(run)
+
+
+def test_real_d73_gate_refuses_a_dirty_source_tree(
+    tmp_path: Path, d73_repo: Path
+) -> None:
+    _write(d73_repo, OTHER, b"X = 99\n")
+    run = _gate_run(tmp_path, float(T0 + 1000))
+    with pytest.raises(ComparisonError, match="uncommitted"):
+        build_comparison(run, git_repo=d73_repo)
+    _no_sidecars(run)
+
+
+def test_real_d73_gate_refuses_a_header_without_a_numeric_created_at(
+    tmp_path: Path, d73_repo: Path
+) -> None:
+    run = _gate_run(tmp_path, None)
+    with pytest.raises(ComparisonError, match="created_at"):
+        build_comparison(run, git_repo=d73_repo)
+    _no_sidecars(run)
+
+
+def test_real_d73_gate_passes_a_clean_older_token_commit(
+    tmp_path: Path, d73_repo: Path
+) -> None:
+    """The gate lets the build proceed: the next refusal is the missing report.json."""
+    run = _gate_run(tmp_path, float(T0 + 1000))
+    with pytest.raises(ComparisonError) as excinfo:
+        build_comparison(run, git_repo=d73_repo)
+    assert "D-73" not in str(excinfo.value)
+    assert "report.json" in str(excinfo.value)
+
+
+def test_real_d73_gate_write_comparison_reaches_the_same_refusal(
+    tmp_path: Path, d73_repo: Path
+) -> None:
+    _write(d73_repo, OTHER, b"X = 99\n")
+    run = _gate_run(tmp_path, float(T0 + 1000))
+    with pytest.raises(ComparisonError, match="D-73"):
+        write_comparison(run, git_repo=d73_repo)
+    _no_sidecars(run)
+
+
+def test_the_compare_command_exits_one_and_prints_the_problems_when_the_gate_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        gitcheck,
+        "preregistration_problems",
+        lambda *_a, **_k: ["the pre-registration is not committed"],
+    )
+    run = _gate_run(tmp_path, float(T0 + 1000))
+    result = CliRunner().invoke(app, ["compare", "--run", str(run)])
+    assert result.exit_code == 1
+    flat = "".join(result.output.split())
+    assert "Compare refused" in result.output
+    assert "thepre-registrationisnotcommitted" in flat
+    _no_sidecars(run)
+
+
+def test_the_comparison_module_reaches_git_only_through_gitcheck() -> None:
+    source = Path(cmp_mod.__file__).read_text(encoding="utf-8")
+    assert "subprocess" not in source
+    assert "shell=True" not in source
+    literals = {
+        n.value
+        for n in ast.walk(ast.parse(source))
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    }
+    assert "PREREGISTRATION_06_3_5" not in literals

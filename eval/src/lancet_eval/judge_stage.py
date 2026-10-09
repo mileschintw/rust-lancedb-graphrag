@@ -53,6 +53,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from lancet_eval import gitcheck
 from lancet_eval.arms import ARM_REGISTRY, canonical_arm
 from lancet_eval.corpus import (
+    NO_JUDGE_PREREGISTRATION_TOKENS,
     CorpusConfig,
     GoldQuestion,
     load_corpus_config,
@@ -284,6 +285,11 @@ def load_inputs(run_dir: Path | str, *, rehearsal: bool = False) -> StageInputs:
     if not isinstance(corpus, str) or not corpus:
         raise JudgeStageError("the journal header names no corpus")
     config = load_corpus_config(corpus)
+    if config.preregistration_token in NO_JUDGE_PREREGISTRATION_TOKENS:
+        raise JudgeStageError(
+            f"corpus {corpus!r} is pre-registered under {config.preregistration_token}"
+            "; a 06.3.6 corpus issues no judge call (D-153)"
+        )
     if config.split_path is None or config.split_role is None:
         raise JudgeStageError(f"corpus {corpus!r} declares no [split]")
     want = "rehearsal" if rehearsal else "heldout"

@@ -102,7 +102,12 @@ LABEL_ADAPTERS: dict[str, Callable[[dict[str, Any]], GoldQuestion]] = {
 }
 
 
-_SPLIT_ROLES = frozenset({"heldout", "rehearsal"})
+# D-170: `dev` reads precede the freeze commit that introduces the 06.3.6 token by
+# design, so a `dev` corpus is exempt from the D-73 gate (see `run.drive`).
+_SPLIT_ROLES = frozenset({"heldout", "rehearsal", "dev"})
+# D-153: a corpus pre-registered under one of these tokens issues no paid judge call, so
+# it cannot declare a `[judge]` section and `score` refuses its judged path.
+NO_JUDGE_PREREGISTRATION_TOKENS = frozenset({"PREREGISTRATION_06_3_6"})
 _JUDGE_PROTOCOLS = frozenset({"legacy", "ordered"})
 
 
@@ -178,6 +183,26 @@ class CorpusConfig:
         self.split_path: Path | None = (
             root / "eval" / "corpora" / self.split_file if self.split_file else None
         )
+
+        # D-73 per corpus: the pre-registration token the gates read. A corpus without
+        # `[preregistration]` keeps the 06.3.5 token, so it behaves exactly as before.
+        # Imported here, not at module level: gitcheck pulls in subprocess, and the
+        # metrics module (network-free by test) imports this one.
+        from lancet_eval.gitcheck import PREREGISTRATION_TOKEN
+
+        prereg_sec = data.get("preregistration", {})
+        token = prereg_sec.get("token", PREREGISTRATION_TOKEN)
+        if not isinstance(token, str) or not token.strip():
+            raise CorpusError(
+                f"[preregistration] token in {toml_path} must be a non-empty string"
+            )
+        self.preregistration_token: str = token
+        self.has_judge = "judge" in data
+        if self.has_judge and token in NO_JUDGE_PREREGISTRATION_TOKENS:
+            raise CorpusError(
+                f"{toml_path} declares [preregistration] token {token!r} and a "
+                "[judge] section; a 06.3.6 corpus issues no judge call (D-153)"
+            )
 
         judge_protocol = str(data.get("judge", {}).get("protocol", "legacy"))
         if judge_protocol not in _JUDGE_PROTOCOLS:

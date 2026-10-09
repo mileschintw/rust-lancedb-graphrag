@@ -65,6 +65,7 @@ eval/runs/*
 !eval/runs/*-graphrag_bench/
 !eval/runs/*-multihop_rag_heldout/
 !eval/runs/*-multihop_rag_rehearsal/
+!eval/runs/*-multihop_rag_levers_*/
 data/lancedb-verify-02-06/
 data/.phase02-lancedb-preclean-*/
 .planning/phases/02-ingestion-chunking-vector-storage/.02-LIVE-CHALLENGE.json

@@ -1342,3 +1342,127 @@ def test_split_marker_check_accepts_every_tracked_journal_under_eval_runs() -> N
         else:
             _require_matching_split_marker(journal, None)
     assert checked_with_split == 3
+
+
+# --- 06.3.6-03: the D-73 gate on the configured token, and the D-170 dev role ---
+
+
+def _dev_config_and_questions(
+    monkeypatch: pytest.MonkeyPatch, extra_ids: tuple[str, ...] = (), n_dev: int = 3
+) -> tuple[object, list[GoldQuestion]]:
+    """A `[split]` corpus config with role `dev` over the first dev IDs (+ extras)."""
+    from lancet_eval.split import load_split
+
+    config = load_corpus_config("multihop_rag_heldout")
+    config.split_role = "dev"
+    split = load_split(_split_path())
+    ids = [*split.dev_ids[:n_dev], *extra_ids]
+    questions = [
+        GoldQuestion(question_id=qid, question=f"dev question {qid}?", gold_facts=[])
+        for qid in ids
+    ]
+    monkeypatch.setattr("lancet_eval.run.load_corpus_config", lambda _name: config)
+    monkeypatch.setattr(
+        "lancet_eval.run.load_sample_questions", lambda _name: questions
+    )
+    return config, questions
+
+
+def _forbid_the_gate(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
+    from lancet_eval import gitcheck
+
+    calls: list[tuple[object, ...]] = []
+
+    def record(*args: object, **kwargs: object) -> list[str]:
+        calls.append(args)
+        return []
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", record)
+    return calls
+
+
+def test_dev_corpus_runs_the_seeded_rotation_and_never_calls_the_d73_gate(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.arms import plan_work_units
+    from lancet_eval.split import load_split
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    calls = _forbid_the_gate(monkeypatch)
+    config, questions = _dev_config_and_questions(monkeypatch)
+    j_path = tmp_path / "journal.jsonl"
+
+    assert _drive_split("multihop_rag_heldout", j_path) == 12
+
+    planned = plan_work_units(
+        questions,
+        config.arms,  # type: ignore[attr-defined]
+        load_split(_split_path()).order_seed,
+    )
+    assert _journal_units(j_path) == [(q.question_id, arm) for q, arm in planned]
+    assert calls == []
+
+
+@pytest.mark.parametrize("kind", ["heldout_g", "heldout_null", "outside"])
+def test_dev_corpus_with_a_non_dev_id_is_refused_before_any_request(
+    kind: str,
+    tmp_path: Path,
+    httpx_mock: HTTPXMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval.split import load_split
+
+    split = load_split(_split_path())
+    stray = {
+        "heldout_g": split.heldout_g_ids[0],
+        "heldout_null": split.heldout_null_ids[0],
+        "outside": "not-in-the-split-at-all",
+    }[kind]
+    _forbid_the_gate(monkeypatch)
+    _dev_config_and_questions(monkeypatch, extra_ids=(stray,))
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(ValueError, match="D-170"):
+        _drive_split("multihop_rag_heldout", j_path)
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_heldout_corpus_calls_the_gate_with_exactly_its_configured_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import gitcheck
+
+    config = load_corpus_config("multihop_rag_heldout")
+    config.preregistration_token = "PREREGISTRATION_X_FOR_TEST"
+    monkeypatch.setattr("lancet_eval.run.load_corpus_config", lambda _name: config)
+    seen: list[tuple[object, ...]] = []
+
+    def refuse(*args: object, **_kwargs: object) -> list[str]:
+        seen.append(args)
+        return ["stop here"]
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", refuse)
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(gitcheck.PreregistrationError, match="PREREGISTRATION_X"):
+        _drive_split("multihop_rag_heldout", j_path)
+    assert seen == [(("PREREGISTRATION_X_FOR_TEST",),)]
+    assert not j_path.exists()
+
+
+def test_rehearsal_corpus_keeps_the_gate_on_its_configured_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import gitcheck
+
+    seen: list[tuple[object, ...]] = []
+
+    def refuse(*args: object, **_kwargs: object) -> list[str]:
+        seen.append(args)
+        return ["stop here"]
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", refuse)
+    with pytest.raises(gitcheck.PreregistrationError):
+        _drive_split("multihop_rag_rehearsal", tmp_path / "journal.jsonl")
+    assert seen == [(("PREREGISTRATION_06_3_5",),)]

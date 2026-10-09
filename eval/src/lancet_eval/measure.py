@@ -57,8 +57,18 @@ MEASUREMENT_ARMS: tuple[str, str] = ("graph-off", "graph-on")
 #     never lowered);
 #   - output: the committed 0.28 was below the listing, so it is raised to 0.32.
 # This applies to every token; it is a price correction, never a multiplier.
+# Price re-check 2026-10-09 (06.3.6-03, D-153 and D-173): unauthenticated GET
+# https://openrouter.ai/api/v1/models, fetched 2026-10-09T06:33:54Z, recorded in
+# research/fetched/openrouter-models-2026-10-09/models.json (sha256
+# a994c85ba561720b0d2a823211476ffca64315ec2f9bcbed0d164d8b6c51a55d) lists
+# deepseek/deepseek-v4-flash-0731 at $0.0137 prompt / $1.28 completion per 1M tokens.
+#   - input: the committed 0.14 is above the listing, so it stays (never lowered);
+#   - output: the committed 0.32 was below the listing, so it is raised to 1.28 (owner
+#     reply raise-1.28, D-173).
+# The listed values are pinned by the committed excerpt
+# tests/fixtures/openrouter_models_excerpt_2026-10-09.json.
 GENERATION_INPUT_PRICE_PER_1M = 0.14
-GENERATION_OUTPUT_PRICE_PER_1M = 0.32
+GENERATION_OUTPUT_PRICE_PER_1M = 1.28
 # Voyage 4 large pricing per million tokens (not in the /models listing, which carries
 # no embedding models; the committed figure was kept on 2026-09-29).
 EMBEDDING_PRICE_PER_1M = 0.12
@@ -94,9 +104,14 @@ _RETRIED_MESSAGE_PREFIXES: tuple[str, ...] = (
 _RETRIED_HTTP_PREFIX = "OpenRouter chat completion returned HTTP "
 
 # meta-llama/llama-3.3-70b-instruct judge pricing per million tokens via OpenRouter
-# Recorded on 2026-09-10 ($0.12 / 1M prompt, $0.30 / 1M completion)
-JUDGE_INPUT_PRICE_PER_1M = 0.12
-JUDGE_OUTPUT_PRICE_PER_1M = 0.30
+# Recorded on 2026-09-10 ($0.12 / 1M prompt, $0.30 / 1M completion); re-checked
+# 2026-10-09 (06.3.6-03, D-153) against the same listing as above
+# (research/fetched/openrouter-models-2026-10-09/models.json, sha256
+# a994c85ba561720b0d2a823211476ffca64315ec2f9bcbed0d164d8b6c51a55d): the listing prices
+# meta-llama/llama-3.3-70b-instruct at $0.22 prompt / $0.50 completion per 1M tokens,
+# above the committed figures, so both are raised (a price constant is never lowered).
+JUDGE_INPUT_PRICE_PER_1M = 0.22
+JUDGE_OUTPUT_PRICE_PER_1M = 0.50
 # Estimated prompt tokens per judge question (judge prompt + question + evidence + answer)
 ESTIMATED_JUDGE_PROMPT_TOKENS = 1200
 

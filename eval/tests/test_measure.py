@@ -1172,3 +1172,58 @@ def test_measure_command_exits_non_zero_naming_the_reused_journal(tmp_path):
     assert "journal.jsonl" in flat
     assert "freshrundirectory" in flat
     assert journal.read_bytes() == before
+
+
+# --- D-153 / D-173: price constants pinned to the committed listing excerpt ---
+
+_LISTING_EXCERPT = (
+    Path(__file__).parent / "fixtures" / "openrouter_models_excerpt_2026-10-09.json"
+)
+
+
+def _listed_per_1m(model_id: str) -> tuple[float, float]:
+    excerpt = json.loads(_LISTING_EXCERPT.read_text(encoding="utf-8"))
+    entry = next(m for m in excerpt["models"] if m["id"] == model_id)
+    return (
+        float(entry["pricing"]["prompt"]) * 1_000_000,
+        float(entry["pricing"]["completion"]) * 1_000_000,
+    )
+
+
+def test_price_constants_are_the_recorded_values():
+    from lancet_eval import measure
+
+    assert measure.JUDGE_INPUT_PRICE_PER_1M == 0.22
+    assert measure.JUDGE_OUTPUT_PRICE_PER_1M == 0.50
+    assert measure.GENERATION_INPUT_PRICE_PER_1M == 0.14
+    # D-173: the owner reply raise-1.28 (plan 06.3.6-03 Task 1).
+    assert measure.GENERATION_OUTPUT_PRICE_PER_1M == 1.28
+
+
+def test_price_constants_are_never_below_the_committed_listing_excerpt():
+    from lancet_eval import measure
+
+    gen_in, gen_out = _listed_per_1m("deepseek/deepseek-v4-flash-0731")
+    judge_in, judge_out = _listed_per_1m("meta-llama/llama-3.3-70b-instruct")
+    assert measure.GENERATION_INPUT_PRICE_PER_1M >= gen_in
+    assert measure.GENERATION_OUTPUT_PRICE_PER_1M >= gen_out
+    assert measure.JUDGE_INPUT_PRICE_PER_1M >= judge_in
+    assert measure.JUDGE_OUTPUT_PRICE_PER_1M >= judge_out
+
+
+def test_the_excerpt_records_the_sha256_of_the_full_listing_file():
+    excerpt = json.loads(_LISTING_EXCERPT.read_text(encoding="utf-8"))
+    assert len(excerpt["full_file_sha256"]) == 64
+    assert excerpt["source_url"] == "https://openrouter.ai/api/v1/models"
+
+
+def test_failed_generation_attempt_usd_follows_the_output_price():
+    from lancet_eval import measure
+
+    expected = (
+        measure.FAILED_GENERATION_PROMPT_TOKENS / 1_000_000.0
+    ) * measure.GENERATION_INPUT_PRICE_PER_1M + (
+        measure.FAILED_GENERATION_COMPLETION_TOKENS / 1_000_000.0
+    ) * measure.GENERATION_OUTPUT_PRICE_PER_1M
+    assert measure.failed_generation_attempt_usd() == pytest.approx(expected)
+    assert measure.failed_generation_attempt_usd() > 0.0035

@@ -154,8 +154,9 @@ def _enforce_split_role(
 
     A ``heldout`` corpus must hold exactly the split's held-out IDs (D-105). A
     ``rehearsal`` corpus must hold none of the dev or held-out IDs (D-106), so the
-    paid rehearsal can never spend a held-out or dev question. Runs before any
-    journal I/O and before any request.
+    paid rehearsal can never spend a held-out or dev question. A ``dev`` corpus must
+    hold only dev IDs: a subset of the split's dev IDs, disjoint from the held-out
+    IDs (D-170). Runs before any journal I/O and before any request.
     """
     ids = [q.question_id for q in questions]
     heldout = set(split.heldout_g_ids) | set(split.heldout_null_ids)
@@ -168,6 +169,17 @@ def _enforce_split_role(
                 f"{len(heldout)} ({len(split.heldout_g_ids)} G + "
                 f"{len(split.heldout_null_ids)} null): {len(heldout - got)} missing, "
                 f"{len(got - heldout)} outside the held-out split; refusing to drive"
+            )
+    elif config.split_role == "dev":
+        outside = set(ids) - set(split.dev_ids)
+        leaked_heldout = set(ids) & heldout
+        if outside or leaked_heldout:
+            raise ValueError(
+                f"dev corpus {config.name!r} holds {len(outside | leaked_heldout)} "
+                f"question ID(s) outside the committed split's dev IDs "
+                f"({len(leaked_heldout)} of them held-out); a dev corpus must be a "
+                "subset of the dev IDs and disjoint from the held-out IDs (D-170); "
+                "refusing to drive"
             )
     elif config.split_role == "rehearsal":
         leaked = set(ids) & (heldout | set(split.dev_ids))
@@ -425,20 +437,23 @@ def drive(
     is_limited = limit is not None
     split: HeldOutSplit | None = None
     if config.split_file is not None:
-        # D-73: the pre-registration is committed before any paid held-out request.
-        problems = gitcheck.preregistration_problems(
-            (gitcheck.PREREGISTRATION_TOKEN,),
-            require_clean_tree=True,
-            unchanged_since_introduction=True,
-            repo=git_repo,
-        )
-        if problems:
-            raise gitcheck.PreregistrationError(
-                f"D-73: refusing to drive the [split] corpus {corpus!r}: "
-                + "; ".join(problems)
-                + f". {gitcheck.PREREGISTRATION_TOKEN} must be committed in "
-                f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
+        # D-73: the pre-registration is committed before any paid held-out request, on
+        # the corpus's own configured token. D-170: a `dev` corpus is exempt, because
+        # dev reads precede the freeze commit that introduces the 06.3.6 token.
+        if config.split_role != "dev":
+            problems = gitcheck.preregistration_problems(
+                (config.preregistration_token,),
+                require_clean_tree=True,
+                unchanged_since_introduction=True,
+                repo=git_repo,
             )
+            if problems:
+                raise gitcheck.PreregistrationError(
+                    f"D-73: refusing to drive the [split] corpus {corpus!r}: "
+                    + "; ".join(problems)
+                    + f". {config.preregistration_token} must be committed in "
+                    f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
+                )
         # D-105/D-106/D-107: a [split] corpus is refused before any journal I/O unless
         # its IDs fit its role, then driven in the seeded balanced rotation.
         split = load_split(config.split_path)
