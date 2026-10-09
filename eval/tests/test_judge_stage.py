@@ -41,7 +41,10 @@ from lancet_eval.judge import (
     cache_key,
 )
 from lancet_eval.judge_stage import JudgeStageError, run_judge_stage
-from lancet_eval.measure import estimate_judge_cost_per_question
+from lancet_eval.measure import (
+    JUDGE_INPUT_PRICE_PER_1M,
+    estimate_judge_cost_per_question,
+)
 from lancet_eval.split import HeldOutSplit, load_split
 
 ARMS = ("dense-only", "bm25-only", "hybrid", "hybrid+graph")
@@ -748,10 +751,11 @@ def test_the_in_loop_spend_check_stops_before_a_call_that_would_exceed_the_cap(
     )
     run = build_run(tmp_path, standard_records(g_ids(1, 1, 0)))  # 8 keys
     result = _stage(run, cap=8 * COST * 1.01)
-    assert len(fake.calls) == 1  # one call costs 0.012, far above the cap
+    assert len(fake.calls) == 1  # one call costs 0.022, far above the cap
     assert result.stop_reason is not None
     assert "spend cap" in result.stop_reason
-    assert result.spend_usd == pytest.approx(0.012)
+    # 100_000 prompt tokens at the D-153 judge input price (0.22 per 1M)
+    assert result.spend_usd == pytest.approx(100_000 * JUDGE_INPUT_PRICE_PER_1M / 1e6)
     assert sum(a.not_attempted for a in result.arms.values()) == 7
     assert sum(a.judged_now for a in result.arms.values()) == 1
     assert _stage_json(run)["stop_reason"] == result.stop_reason

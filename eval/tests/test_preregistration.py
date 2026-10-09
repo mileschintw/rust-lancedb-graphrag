@@ -556,3 +556,86 @@ def test_score_refuses_a_split_report_when_the_source_tree_is_dirty(
     _write(repo, OTHER, b"X = 99\n")
     with pytest.raises(ScoreError, match="uncommitted"):
         score_mod._require_preregistered_before(float(T0 + 1000), repo)
+
+
+# --- 06.3.6-03: score gates on the configured token; no judge for a 06.3.6 corpus ---
+
+
+def _record_gate_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, ...]]:
+    seen: list[tuple[str, ...]] = []
+
+    def refuse(tokens: tuple[str, ...], **_kwargs: object) -> list[str]:
+        seen.append(tokens)
+        return ["stop here"]
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", refuse)
+    return seen
+
+
+def test_score_on_a_judged_corpus_gates_on_its_token_and_the_trust_floor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.corpus import load_corpus_config
+
+    config = load_corpus_config("multihop_rag_rehearsal")
+    assert config.has_judge
+    config.preregistration_token = "PREREGISTRATION_X_FOR_TEST"
+    monkeypatch.setattr(score_mod, "load_corpus_config", lambda _name: config)
+    seen = _record_gate_tokens(monkeypatch)
+    run_dir = _split_journal(tmp_path, float(T0 + 100))
+
+    with pytest.raises(ScoreError, match="D-73"):
+        score_run(run_dir=run_dir, no_judge=True)
+    assert seen == [("PREREGISTRATION_X_FOR_TEST", gitcheck.TRUST_FLOOR_TOKEN)]
+
+
+def test_score_on_a_corpus_without_a_judge_section_gates_on_its_token_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.corpus import load_corpus_config
+
+    config = load_corpus_config("multihop_rag_rehearsal")
+    config.has_judge = False
+    config.judge_protocol = "legacy"
+    monkeypatch.setattr(score_mod, "load_corpus_config", lambda _name: config)
+    seen = _record_gate_tokens(monkeypatch)
+    run_dir = _split_journal(tmp_path, float(T0 + 100))
+
+    with pytest.raises(ScoreError, match="D-73"):
+        score_run(run_dir=run_dir, no_judge=True)
+    assert seen == [("PREREGISTRATION_06_3_5",)]
+
+
+def test_require_preregistered_before_defaults_to_the_06_3_5_pair(
+    repo: Path,
+) -> None:
+    score_mod._require_preregistered_before(float(T0 + 200), repo)
+    with pytest.raises(ScoreError, match="NOT_THERE"):
+        score_mod._require_preregistered_before(
+            float(T0 + 200), repo, ("NOT_THERE",)
+        )
+
+
+def test_the_judged_path_is_refused_for_a_06_3_6_token_corpus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-153: no paid judge call can be issued for a 06.3.6 corpus."""
+    from lancet_eval.corpus import load_corpus_config
+
+    config = load_corpus_config("multihop_rag_rehearsal")
+    config.preregistration_token = "PREREGISTRATION_06_3_6"
+    config.has_judge = False
+    monkeypatch.setattr(score_mod, "load_corpus_config", lambda _name: config)
+    seen = _record_gate_tokens(monkeypatch)
+    run_dir = _split_journal(tmp_path, float(T0 + 100))
+
+    with pytest.raises(ScoreError, match="D-153"):
+        score_run(
+            run_dir=run_dir,
+            judged=True,
+            calibration_file=tmp_path / "worksheet.json",
+            calibration_key=tmp_path / "key.json",
+        )
+    assert seen == []
