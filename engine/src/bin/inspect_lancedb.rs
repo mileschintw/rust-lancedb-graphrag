@@ -2,7 +2,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use arrow_array::{
-    Array, FixedSizeListArray, Float32Array, Int32Array, Int64Array, RecordBatch, StringArray,
+    Array, FixedSizeListArray, Float32Array, Int32Array, Int64Array, ListArray, RecordBatch,
+    StringArray,
 };
 use engine::db::DatabaseManager;
 use engine::graph::escape_sql_literal;
@@ -1518,6 +1519,253 @@ async fn run_chunk_text(
     report.exit_code()
 }
 
+/// Columns the `--graph-dump` reads from `entities`: everything except the vectors and summaries.
+const GRAPH_DUMP_ENTITY_COLUMNS: [&str; 4] =
+    ["entity_id", "name", "entity_type", "source_chunk_ids"];
+
+/// Columns the `--graph-dump` reads from `entity_edges`: everything except the summary vector.
+const GRAPH_DUMP_EDGE_COLUMNS: [&str; 7] = [
+    "edge_id",
+    "source_node_id",
+    "target_node_id",
+    "relation_type",
+    "weight",
+    "document_id",
+    "summary",
+];
+
+/// File name of the entity rows written by `--graph-dump`.
+pub const GRAPH_DUMP_ENTITIES_FILE: &str = "entities.jsonl";
+/// File name of the edge rows written by `--graph-dump`.
+pub const GRAPH_DUMP_EDGES_FILE: &str = "entity_edges.jsonl";
+/// File name of the dump's metadata, written last.
+pub const GRAPH_DUMP_META_FILE: &str = "dump_meta.json";
+
+/// One `entities.jsonl` line: an entity without its vectors.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct EntityDumpRow {
+    pub entity_id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub source_chunk_ids: Vec<String>,
+}
+
+/// One `entity_edges.jsonl` line: an edge without its summary vector.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct EntityEdgeDumpRow {
+    pub edge_id: String,
+    pub source_node_id: String,
+    pub target_node_id: String,
+    pub relation_type: String,
+    pub weight: f32,
+    pub document_id: String,
+    pub summary: Option<String>,
+}
+
+/// Row counts of a graph dump.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct GraphDumpRowCounts {
+    pub entities: usize,
+    pub entity_edges: usize,
+}
+
+/// Lowercase hex SHA-256 of the exact bytes of each dumped file.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct GraphDumpSha256 {
+    #[serde(rename = "entities.jsonl")]
+    pub entities: String,
+    #[serde(rename = "entity_edges.jsonl")]
+    pub entity_edges: String,
+}
+
+/// The `dump_meta.json` of a graph dump.
+///
+/// The table versions are the versions the rows were read at, so a later reader can tell which
+/// state of the store the dump describes. Both tables are read at a pinned version, and nothing is
+/// ever written to them.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct GraphDumpMeta {
+    pub entities_version: u64,
+    pub entity_edges_version: u64,
+    pub row_counts: GraphDumpRowCounts,
+    pub sha256: GraphDumpSha256,
+}
+
+fn float32_column<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float32Array, String> {
+    batch
+        .column_by_name(name)
+        .ok_or_else(|| format!("LanceDB query did not return {name}"))?
+        .as_any()
+        .downcast_ref::<Float32Array>()
+        .ok_or_else(|| format!("LanceDB column {name} has an unexpected type"))
+}
+
+/// The strings of row `row` of a `List<Utf8>` column; a null list reads as empty.
+fn string_list_values(batch: &RecordBatch, name: &str, row: usize) -> Result<Vec<String>, String> {
+    let list = batch
+        .column_by_name(name)
+        .ok_or_else(|| format!("LanceDB query did not return {name}"))?
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .ok_or_else(|| format!("LanceDB column {name} has an unexpected type"))?;
+    if list.is_null(row) {
+        return Ok(Vec::new());
+    }
+    let values = list.value(row);
+    let strings = values
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .ok_or_else(|| format!("LanceDB column {name} holds a non-string list"))?;
+    Ok((0..strings.len())
+        .filter(|&index| !strings.is_null(index))
+        .map(|index| strings.value(index).to_owned())
+        .collect())
+}
+
+/// Reads `columns` of every row of `table` as it stands at `version`.
+async fn scan_all_at_version(
+    table: &Table,
+    version: u64,
+    columns: &[&str],
+) -> Result<Vec<RecordBatch>, String> {
+    table
+        .checkout(version)
+        .await
+        .map_err(|error| format!("table version {version} is not available: {error}"))?;
+    table
+        .query()
+        .select(Select::columns(columns))
+        .execute()
+        .await
+        .map_err(|error| error.to_string())?
+        .try_collect()
+        .await
+        .map_err(|error| error.to_string())
+}
+
+/// One JSON object per line, each ending in a newline.
+fn render_jsonl<T: Serialize>(rows: &[T]) -> Result<String, String> {
+    let mut rendered = String::new();
+    for row in rows {
+        rendered.push_str(&serde_json::to_string(row).map_err(|error| error.to_string())?);
+        rendered.push('\n');
+    }
+    Ok(rendered)
+}
+
+/// Writes the v1 `entities` and `entity_edges` tables to `out` as JSONL plus `dump_meta.json`.
+///
+/// Rows are sorted by `entity_id` and `edge_id`, so the same table versions always give the same
+/// bytes. Vectors and summaries of entities are not read. Both tables are pinned to their current
+/// version before they are scanned and nothing is written to the store: the only writes are the
+/// three files under `out`. `dump_meta.json` goes last, so its presence marks a complete dump.
+///
+/// # Errors
+/// Returns an error if a table cannot be read or has an unexpected column type, if `out` cannot
+/// be created, or if any of the three output files already exists (a dump is never overwritten).
+pub async fn inspect_graph_dump(
+    database: &DatabaseManager,
+    out: &Path,
+) -> Result<GraphDumpMeta, String> {
+    let entities_table = database.entities_table().await?;
+    let edges_table = database.entity_edges_table().await?;
+    let entities_version = entities_table
+        .version()
+        .await
+        .map_err(|error| error.to_string())?;
+    let entity_edges_version = edges_table
+        .version()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let mut entities = Vec::new();
+    let entity_batches = scan_all_at_version(
+        &entities_table,
+        entities_version,
+        &GRAPH_DUMP_ENTITY_COLUMNS,
+    )
+    .await?;
+    for batch in &entity_batches {
+        let id_col = string_column(batch, "entity_id")?;
+        let name_col = string_column(batch, "name")?;
+        let type_col = string_column(batch, "entity_type")?;
+        for row in 0..batch.num_rows() {
+            entities.push(EntityDumpRow {
+                entity_id: id_col.value(row).to_owned(),
+                name: name_col.value(row).to_owned(),
+                entity_type: type_col.value(row).to_owned(),
+                source_chunk_ids: string_list_values(batch, "source_chunk_ids", row)?,
+            });
+        }
+    }
+    entities.sort_by(|a, b| a.entity_id.cmp(&b.entity_id));
+
+    let mut edges = Vec::new();
+    let edge_batches =
+        scan_all_at_version(&edges_table, entity_edges_version, &GRAPH_DUMP_EDGE_COLUMNS).await?;
+    for batch in &edge_batches {
+        let edge_id_col = string_column(batch, "edge_id")?;
+        let source_col = string_column(batch, "source_node_id")?;
+        let target_col = string_column(batch, "target_node_id")?;
+        let relation_col = string_column(batch, "relation_type")?;
+        let weight_col = float32_column(batch, "weight")?;
+        let document_col = string_column(batch, "document_id")?;
+        let summary_col = string_column(batch, "summary")?;
+        for row in 0..batch.num_rows() {
+            edges.push(EntityEdgeDumpRow {
+                edge_id: edge_id_col.value(row).to_owned(),
+                source_node_id: source_col.value(row).to_owned(),
+                target_node_id: target_col.value(row).to_owned(),
+                relation_type: relation_col.value(row).to_owned(),
+                weight: weight_col.value(row),
+                document_id: document_col.value(row).to_owned(),
+                summary: (!summary_col.is_null(row)).then(|| summary_col.value(row).to_owned()),
+            });
+        }
+    }
+    edges.sort_by(|a, b| a.edge_id.cmp(&b.edge_id));
+
+    let entities_jsonl = render_jsonl(&entities)?;
+    let edges_jsonl = render_jsonl(&edges)?;
+    let meta = GraphDumpMeta {
+        entities_version,
+        entity_edges_version,
+        row_counts: GraphDumpRowCounts {
+            entities: entities.len(),
+            entity_edges: edges.len(),
+        },
+        sha256: GraphDumpSha256 {
+            entities: sha256_hex(entities_jsonl.as_bytes()),
+            entity_edges: sha256_hex(edges_jsonl.as_bytes()),
+        },
+    };
+    let meta_json = serde_json::to_string_pretty(&meta).map_err(|error| error.to_string())?;
+
+    std::fs::create_dir_all(out)
+        .map_err(|error| format!("failed to create {}: {error}", out.display()))?;
+    for name in [
+        GRAPH_DUMP_ENTITIES_FILE,
+        GRAPH_DUMP_EDGES_FILE,
+        GRAPH_DUMP_META_FILE,
+    ] {
+        if out.join(name).exists() {
+            return Err(format!(
+                "refusing to overwrite {}: a graph dump is never replaced",
+                out.join(name).display()
+            ));
+        }
+    }
+    for (name, content) in [
+        (GRAPH_DUMP_ENTITIES_FILE, entities_jsonl.as_str()),
+        (GRAPH_DUMP_EDGES_FILE, edges_jsonl.as_str()),
+        (GRAPH_DUMP_META_FILE, meta_json.as_str()),
+    ] {
+        std::fs::write(out.join(name), content.as_bytes())
+            .map_err(|error| format!("failed to write {name}: {error}"))?;
+    }
+    Ok(meta)
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum InspectMode {
     Document(String),
@@ -1531,6 +1779,10 @@ pub enum InspectMode {
         version: u64,
         out: Option<PathBuf>,
     },
+    /// Writes the v1 entity and edge tables to the directory `out` as JSONL (read-only).
+    GraphDump {
+        out: PathBuf,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1539,7 +1791,7 @@ pub struct InspectConfig {
     pub lancedb_path: Option<String>,
 }
 
-pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME | --gold-chunks QUESTIONS_JSONL --map DOCUMENT_MAP_JSON | --document-ids | --chunk-text IDS_JSONL --generation lance-N [--out PATH]] [--lancedb-path PATH]";
+pub const USAGE: &str = "usage: inspect_lancedb [--document-id UUID | --graph-population | --entity UUID [--max-hops N] | --entity-name NAME | --gold-chunks QUESTIONS_JSONL --map DOCUMENT_MAP_JSON | --document-ids | --chunk-text IDS_JSONL --generation lance-N [--out PATH] | --graph-dump --out DIR] [--lancedb-path PATH]";
 
 pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConfig, String> {
     let mut iter = args.into_iter();
@@ -1551,6 +1803,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
     let mut gold_chunks_questions = None;
     let mut gold_chunks_map = None;
     let mut document_ids = false;
+    let mut graph_dump = false;
     let mut chunk_text = None;
     let mut generation = None;
     let mut out = None;
@@ -1603,6 +1856,9 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
             "--document-ids" => {
                 document_ids = true;
             }
+            "--graph-dump" => {
+                graph_dump = true;
+            }
             "--chunk-text" => {
                 let val = iter
                     .next()
@@ -1644,8 +1900,10 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
             "--generation is only valid with --chunk-text\n{USAGE}"
         ));
     }
-    if out.is_some() && chunk_text.is_none() {
-        return Err(format!("--out is only valid with --chunk-text\n{USAGE}"));
+    if out.is_some() && chunk_text.is_none() && !graph_dump {
+        return Err(format!(
+            "--out is only valid with --chunk-text or --graph-dump\n{USAGE}"
+        ));
     }
 
     let mode_count = (document_id.is_some() as usize)
@@ -1654,6 +1912,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
         + (entity_name.is_some() as usize)
         + (gold_chunks_questions.is_some() as usize)
         + (document_ids as usize)
+        + (graph_dump as usize)
         + (chunk_text.is_some() as usize);
 
     if mode_count == 0 {
@@ -1693,6 +1952,11 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<InspectConf
         }
     } else if document_ids {
         InspectMode::DocumentIds
+    } else if graph_dump {
+        let out = out.ok_or_else(|| format!("--graph-dump requires --out\n{USAGE}"))?;
+        InspectMode::GraphDump {
+            out: PathBuf::from(out),
+        }
     } else if let Some(ids) = chunk_text {
         let generation = generation
             .ok_or_else(|| format!("--chunk-text requires --generation\n{USAGE}"))?;
@@ -1774,6 +2038,13 @@ async fn main() -> Result<(), String> {
             println!(
                 "{}",
                 serde_json::to_string(&report).map_err(|error| error.to_string())?
+            );
+        }
+        InspectMode::GraphDump { out } => {
+            let meta = inspect_graph_dump(&database, &out).await?;
+            println!(
+                "{}",
+                serde_json::to_string(&meta).map_err(|error| error.to_string())?
             );
         }
         InspectMode::ChunkText { .. } => {

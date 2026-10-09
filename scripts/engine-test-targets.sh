@@ -281,6 +281,12 @@ fi
 #         (lower case and markdown, both still rejected as `model_only`), 749->753. The lib
 #         count rises 656->660. `engine (bin)` stays 0; inspect_lancedb/reconcile_eval_store/
 #         config_startup unchanged (53/18/22).
+#   758 -- Phase 06.3.6 plan 02 Task 2: five `inspect_lancedb` tests for the read-only
+#         `--graph-dump` mode (flag parsing and the `--out` requirement, both tables written
+#         sorted without vectors with a matching `dump_meta.json`, table versions unchanged and
+#         byte-identical output across two runs, a refused overwrite, and an empty store),
+#         753->758. inspect_lancedb rises 53->58. lib stays 660; `engine (bin)`/
+#         reconcile_eval_store/config_startup unchanged (0/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -320,8 +326,8 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 753 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 753, got $TOTAL" >&2
+if [ "$TOTAL" -ne 758 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 758, got $TOTAL" >&2
   exit 1
 fi
 
@@ -340,8 +346,8 @@ if [ "$BIN_MAIN_COUNT" -ne 0 ]; then
   exit 1
 fi
 
-if [ "$BIN_INSPECT_COUNT" -ne 53 ]; then
-  echo "FAIL: inspect_lancedb test count mismatch: expected 53, got $BIN_INSPECT_COUNT" >&2
+if [ "$BIN_INSPECT_COUNT" -ne 58 ]; then
+  echo "FAIL: inspect_lancedb test count mismatch: expected 58, got $BIN_INSPECT_COUNT" >&2
   exit 1
 fi
 

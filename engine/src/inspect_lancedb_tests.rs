@@ -11,11 +11,12 @@ use uuid::Uuid;
 
 use super::{
     chunk_id_predicates, inspect_chunk_text, inspect_document, inspect_document_ids,
-    inspect_entity_name, inspect_entity_neighborhood, inspect_gold_chunks,
+    inspect_entity_name, inspect_entity_neighborhood, inspect_gold_chunks, inspect_graph_dump,
     inspect_graph_population, parse_args, parse_generation, read_chunk_id_file,
     render_chunk_text_jsonl, sha256_hex, ChunkTextFailure, ChunkTextRow, DegreeDistribution,
-    DegreeHistogramBucket, DocumentIdsReport, EntityMatch, EntityNameReport, GraphPopulationReport,
-    InspectMode, Inspection, NeighborhoodEdge, NeighborhoodReport, EMBEDDING_MODEL,
+    DegreeHistogramBucket, DocumentIdsReport, EntityMatch, EntityNameReport, GraphDumpMeta,
+    GraphPopulationReport, InspectMode, Inspection, NeighborhoodEdge, NeighborhoodReport,
+    EMBEDDING_MODEL, GRAPH_DUMP_EDGES_FILE, GRAPH_DUMP_ENTITIES_FILE, GRAPH_DUMP_META_FILE,
     IN_PREDICATE_BATCH_SIZE,
 };
 use engine::db::DatabaseManager;
@@ -2174,4 +2175,396 @@ fn chunk_text_jsonl_has_one_object_per_row_with_exactly_the_five_keys() {
         assert_eq!(&serde_json::from_str::<ChunkTextRow>(line).unwrap(), row);
     }
     assert!(render_chunk_text_jsonl(&[]).unwrap().is_empty());
+}
+
+// ---- --graph-dump (06.3.6-02 Task 2, D-137) ---------------------------------------------------
+
+struct DumpEntityFixture {
+    entity_id: &'static str,
+    name: &'static str,
+    entity_type: &'static str,
+    source_chunk_ids: &'static [&'static str],
+}
+
+struct DumpEdgeFixture {
+    edge_id: &'static str,
+    source_node_id: &'static str,
+    target_node_id: &'static str,
+    summary: Option<&'static str>,
+}
+
+/// A store whose entity rows carry `source_chunk_ids`, which `graph_fixture` leaves empty.
+async fn graph_dump_store(
+    test_name: &str,
+    entities: &[DumpEntityFixture],
+    edges: &[DumpEdgeFixture],
+) -> (DatabaseManager, String) {
+    let path = database_path(test_name);
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+
+    if !entities.is_empty() {
+        let table = database.entities_table().await.unwrap();
+        let schema = table.schema().await.unwrap();
+        let count = entities.len();
+        let nullable = |name: &str| {
+            new_null_array(schema.field_with_name(name).unwrap().data_type(), count)
+        };
+        let name_vectors = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+            (0..count).map(|_| Some((0..2048).map(|_| Some(0.1f32)))),
+            2048,
+        );
+        let mut chunk_ids = ListBuilder::new(StringBuilder::new());
+        for entity in entities {
+            for chunk_id in entity.source_chunk_ids {
+                chunk_ids.values().append_value(chunk_id);
+            }
+            chunk_ids.append(true);
+        }
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(
+                    entities.iter().map(|e| e.entity_id).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(
+                    entities.iter().map(|e| e.name).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(
+                    entities.iter().map(|e| e.entity_type).collect::<Vec<_>>(),
+                )),
+                Arc::new(name_vectors),
+                nullable("summary"),
+                nullable("summary_vector"),
+                nullable("unsummarized_refs"),
+                nullable("community_ids"),
+                Arc::new(chunk_ids.finish()),
+            ],
+        )
+        .unwrap();
+        table.add(batch).execute().await.unwrap();
+    }
+
+    if !edges.is_empty() {
+        let table = database.entity_edges_table().await.unwrap();
+        let schema = table.schema().await.unwrap();
+        let count = edges.len();
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(StringArray::from(
+                    edges.iter().map(|e| e.edge_id).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(
+                    edges.iter().map(|e| e.source_node_id).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(
+                    edges.iter().map(|e| e.target_node_id).collect::<Vec<_>>(),
+                )),
+                Arc::new(StringArray::from(vec!["owns"; count])),
+                Arc::new(Float32Array::from(vec![0.5; count])),
+                Arc::new(StringArray::from(vec!["doc:dummy"; count])),
+                Arc::new(StringArray::from(
+                    edges.iter().map(|e| e.summary).collect::<Vec<_>>(),
+                )),
+                new_null_array(
+                    schema.field_with_name("summary_vector").unwrap().data_type(),
+                    count,
+                ),
+            ],
+        )
+        .unwrap();
+        table.add(batch).execute().await.unwrap();
+    }
+
+    (database, path)
+}
+
+/// The current version of the `entities`, `entity_edges` and `nodes` tables, in that order.
+async fn graph_table_versions(database: &DatabaseManager) -> Vec<u64> {
+    let mut versions = Vec::new();
+    for table in [
+        database.entities_table().await.unwrap(),
+        database.entity_edges_table().await.unwrap(),
+        database.nodes_table().await.unwrap(),
+    ] {
+        versions.push(table.version().await.unwrap());
+    }
+    versions
+}
+
+fn read_json_lines(path: &std::path::Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+fn sorted_keys(value: &serde_json::Value) -> Vec<&str> {
+    let mut keys: Vec<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    keys
+}
+
+fn dump_fixture_entities() -> Vec<DumpEntityFixture> {
+    vec![
+        DumpEntityFixture {
+            entity_id: "e-b",
+            name: "Pixar",
+            entity_type: "ORG",
+            source_chunk_ids: &["d1:0", "d2:3"],
+        },
+        DumpEntityFixture {
+            entity_id: "e-a",
+            name: "Disney",
+            entity_type: "ORG",
+            source_chunk_ids: &["d1:0"],
+        },
+        DumpEntityFixture {
+            entity_id: "e-c",
+            name: "Nobody",
+            entity_type: "PERSON",
+            source_chunk_ids: &[],
+        },
+    ]
+}
+
+fn dump_fixture_edges() -> Vec<DumpEdgeFixture> {
+    vec![
+        DumpEdgeFixture {
+            edge_id: "x-2",
+            source_node_id: "e-b",
+            target_node_id: "e-a",
+            summary: None,
+        },
+        DumpEdgeFixture {
+            edge_id: "x-1",
+            source_node_id: "e-a",
+            target_node_id: "e-b",
+            summary: Some("Disney owns Pixar"),
+        },
+    ]
+}
+
+#[test]
+fn graph_dump_flags_parse_and_require_out() {
+    let parsed = parse_chunk_text_args(&["--graph-dump", "--out", "dump", "--lancedb-path", "store"])
+        .unwrap();
+    assert_eq!(
+        parsed.mode,
+        InspectMode::GraphDump {
+            out: std::path::PathBuf::from("dump"),
+        }
+    );
+    assert_eq!(parsed.lancedb_path.as_deref(), Some("store"));
+
+    let missing_out = parse_chunk_text_args(&["--graph-dump"]).unwrap_err();
+    assert!(missing_out.contains("--graph-dump requires --out"), "{missing_out}");
+
+    let combined =
+        parse_chunk_text_args(&["--graph-dump", "--out", "dump", "--document-ids"]).unwrap_err();
+    assert!(
+        combined.contains("multiple modes specified; select exactly one"),
+        "{combined}"
+    );
+    let with_chunk_text = parse_chunk_text_args(&[
+        "--graph-dump",
+        "--chunk-text",
+        "ids.jsonl",
+        "--generation",
+        "lance-1",
+        "--out",
+        "o",
+    ])
+    .unwrap_err();
+    assert!(with_chunk_text.contains("multiple modes"), "{with_chunk_text}");
+
+    let stray_generation =
+        parse_chunk_text_args(&["--graph-dump", "--out", "dump", "--generation", "lance-1"])
+            .unwrap_err();
+    assert!(
+        stray_generation.contains("--generation is only valid with --chunk-text"),
+        "{stray_generation}"
+    );
+    let stray_max_hops =
+        parse_chunk_text_args(&["--graph-dump", "--out", "dump", "--max-hops", "2"]).unwrap_err();
+    assert!(
+        stray_max_hops.contains("--max-hops is only valid with --entity"),
+        "{stray_max_hops}"
+    );
+    let stray_out = parse_chunk_text_args(&["--graph-population", "--out", "dump"]).unwrap_err();
+    assert!(
+        stray_out.contains("--out is only valid with --chunk-text or --graph-dump"),
+        "{stray_out}"
+    );
+}
+
+#[tokio::test]
+async fn graph_dump_writes_both_tables_sorted_without_vectors_and_a_matching_meta() {
+    let (database, path) = graph_dump_store(
+        "graph-dump-files",
+        &dump_fixture_entities(),
+        &dump_fixture_edges(),
+    )
+    .await;
+    let out = std::path::PathBuf::from(database_path("graph-dump-out"));
+
+    let meta = inspect_graph_dump(&database, &out).await.unwrap();
+
+    let entities = read_json_lines(&out.join(GRAPH_DUMP_ENTITIES_FILE));
+    assert_eq!(entities.len(), 3);
+    let ids: Vec<&str> = entities
+        .iter()
+        .map(|row| row["entity_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, vec!["e-a", "e-b", "e-c"], "rows are sorted by entity_id");
+    for row in &entities {
+        assert_eq!(
+            sorted_keys(row),
+            vec!["entity_id", "entity_type", "name", "source_chunk_ids"]
+        );
+    }
+    assert_eq!(entities[1]["name"], "Pixar");
+    assert_eq!(entities[1]["entity_type"], "ORG");
+    assert_eq!(
+        entities[1]["source_chunk_ids"],
+        serde_json::json!(["d1:0", "d2:3"])
+    );
+    assert_eq!(entities[2]["source_chunk_ids"], serde_json::json!([]));
+
+    let edges = read_json_lines(&out.join(GRAPH_DUMP_EDGES_FILE));
+    assert_eq!(edges.len(), 2);
+    assert_eq!(edges[0]["edge_id"], "x-1");
+    assert_eq!(edges[0]["source_node_id"], "e-a");
+    assert_eq!(edges[0]["target_node_id"], "e-b");
+    assert_eq!(edges[0]["summary"], "Disney owns Pixar");
+    assert!(edges[1]["summary"].is_null());
+    for row in &edges {
+        assert_eq!(
+            sorted_keys(row),
+            vec![
+                "document_id",
+                "edge_id",
+                "relation_type",
+                "source_node_id",
+                "summary",
+                "target_node_id",
+                "weight",
+            ]
+        );
+    }
+
+    let on_disk: GraphDumpMeta = serde_json::from_str(
+        &std::fs::read_to_string(out.join(GRAPH_DUMP_META_FILE)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(on_disk, meta);
+    let raw_meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out.join(GRAPH_DUMP_META_FILE)).unwrap())
+            .unwrap();
+    assert_eq!(
+        sorted_keys(&raw_meta),
+        vec![
+            "entities_version",
+            "entity_edges_version",
+            "row_counts",
+            "sha256"
+        ]
+    );
+    assert_eq!(
+        sorted_keys(&raw_meta["row_counts"]),
+        vec!["entities", "entity_edges"]
+    );
+    assert_eq!(
+        sorted_keys(&raw_meta["sha256"]),
+        vec!["entities.jsonl", "entity_edges.jsonl"]
+    );
+    assert_eq!(raw_meta["row_counts"]["entities"], 3);
+    assert_eq!(raw_meta["row_counts"]["entity_edges"], 2);
+    let versions = graph_table_versions(&database).await;
+    assert_eq!(raw_meta["entities_version"], versions[0]);
+    assert_eq!(raw_meta["entity_edges_version"], versions[1]);
+    assert_eq!(
+        raw_meta["sha256"]["entities.jsonl"],
+        sha256_hex(&std::fs::read(out.join(GRAPH_DUMP_ENTITIES_FILE)).unwrap())
+    );
+    assert_eq!(
+        raw_meta["sha256"]["entity_edges.jsonl"],
+        sha256_hex(&std::fs::read(out.join(GRAPH_DUMP_EDGES_FILE)).unwrap())
+    );
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_dir_all(out);
+}
+
+#[tokio::test]
+async fn graph_dump_does_not_mutate_table_versions_and_is_deterministic() {
+    let (database, path) = graph_dump_store(
+        "graph-dump-versions",
+        &dump_fixture_entities(),
+        &dump_fixture_edges(),
+    )
+    .await;
+    let before = graph_table_versions(&database).await;
+    let first = std::path::PathBuf::from(database_path("graph-dump-first"));
+    let second = std::path::PathBuf::from(database_path("graph-dump-second"));
+
+    inspect_graph_dump(&database, &first).await.unwrap();
+    inspect_graph_dump(&database, &second).await.unwrap();
+
+    assert_eq!(graph_table_versions(&database).await, before);
+    for name in [
+        GRAPH_DUMP_ENTITIES_FILE,
+        GRAPH_DUMP_EDGES_FILE,
+        GRAPH_DUMP_META_FILE,
+    ] {
+        assert_eq!(
+            std::fs::read(first.join(name)).unwrap(),
+            std::fs::read(second.join(name)).unwrap(),
+            "{name} differs between two runs over the same versions"
+        );
+    }
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_dir_all(first);
+    let _ = std::fs::remove_dir_all(second);
+}
+
+#[tokio::test]
+async fn graph_dump_refuses_to_overwrite_an_existing_dump() {
+    let (database, path) = graph_dump_store(
+        "graph-dump-overwrite",
+        &dump_fixture_entities(),
+        &dump_fixture_edges(),
+    )
+    .await;
+    let out = std::path::PathBuf::from(database_path("graph-dump-twice"));
+    inspect_graph_dump(&database, &out).await.unwrap();
+    let kept = std::fs::read(out.join(GRAPH_DUMP_ENTITIES_FILE)).unwrap();
+
+    let error = inspect_graph_dump(&database, &out).await.unwrap_err();
+
+    assert!(error.contains("refusing to overwrite"), "{error}");
+    assert_eq!(std::fs::read(out.join(GRAPH_DUMP_ENTITIES_FILE)).unwrap(), kept);
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_dir_all(out);
+}
+
+#[tokio::test]
+async fn graph_dump_of_an_empty_store_writes_empty_files_and_zero_counts() {
+    let (database, path) = graph_dump_store("graph-dump-empty", &[], &[]).await;
+    let out = std::path::PathBuf::from(database_path("graph-dump-empty-out"));
+
+    let meta = inspect_graph_dump(&database, &out).await.unwrap();
+
+    assert_eq!(meta.row_counts.entities, 0);
+    assert_eq!(meta.row_counts.entity_edges, 0);
+    assert!(std::fs::read(out.join(GRAPH_DUMP_ENTITIES_FILE)).unwrap().is_empty());
+    assert!(std::fs::read(out.join(GRAPH_DUMP_EDGES_FILE)).unwrap().is_empty());
+    assert_eq!(meta.sha256.entities, sha256_hex(b""));
+    let _ = std::fs::remove_dir_all(path);
+    let _ = std::fs::remove_dir_all(out);
 }
