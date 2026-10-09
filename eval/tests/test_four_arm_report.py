@@ -1141,3 +1141,43 @@ def test_a_held_out_g_question_outside_the_three_types_refuses_before_scoring(
     assert "fx-i2" in message
     assert "not a G stratum" in message
     assert not (run_dir / "report.json").exists()
+
+
+def _set_header_marker(run_dir: Path, **marker: object) -> None:
+    """Adds `order_seed` / `split_sha256` keys to the journal header line."""
+    journal = run_dir / "journal.jsonl"
+    lines = journal.read_text(encoding="utf-8").splitlines()
+    header = json.loads(lines[0])
+    header.update(marker)
+    lines[0] = json.dumps(header)
+    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_a_journal_marker_that_matches_the_split_on_disk_scores(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    from lancet_eval.split import load_split, split_sha256
+
+    assert preregistered_clean_tree
+    run_dir, gold = build_run(tmp_path, monkeypatch)
+    split = load_split(tmp_path / "repo" / "eval" / "corpora" / "fourarm" / "split.json")
+    _set_header_marker(
+        run_dir, order_seed=split.order_seed, split_sha256=split_sha256(split)
+    )
+    score_run(run_dir=run_dir, no_judge=True, gold_chunks_path=gold)
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [{"split_sha256": "0" * 64}, {"order_seed": 7}],
+    ids=["other-split", "other-seed"],
+)
+def test_a_journal_marker_that_differs_from_the_split_on_disk_refuses_the_report(
+    marker, tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    assert preregistered_clean_tree
+    run_dir, gold = build_run(tmp_path, monkeypatch)
+    _set_header_marker(run_dir, **marker)
+    with pytest.raises(ScoreError, match="split or seed changed"):
+        score_run(run_dir=run_dir, no_judge=True, gold_chunks_path=gold)
+    assert not (run_dir / "report.json").exists()

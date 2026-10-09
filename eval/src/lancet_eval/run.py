@@ -13,7 +13,7 @@ import httpx
 from lancet_eval import gitcheck
 from lancet_eval.arms import plan_work_units, request_fields, resolve_arm
 from lancet_eval.client import run_query
-from lancet_eval.config import EvalSettings
+from lancet_eval.config import EvalSettings, repo_root
 from lancet_eval.corpus import (
     CorpusConfig,
     GoldQuestion,
@@ -36,7 +36,12 @@ from lancet_eval.journal import (
 )
 from lancet_eval.measure import compute_spend
 from lancet_eval.raw_events import RawEventSink, baseline_sample_ids
-from lancet_eval.split import HeldOutSplit, load_split, split_sha256
+from lancet_eval.split import (
+    HeldOutSplit,
+    load_split,
+    split_input_problems,
+    split_sha256,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +110,40 @@ def _require_matching_journal_marker(
         raise ValueError(
             f"journal {path} has no gate_stage marker in its header, so a gate-stage "
             f"drive (gate_stage={gate_stage!r}) cannot append to it; use a new journal"
+        )
+
+
+def _require_matching_split_marker(path: Path, split: HeldOutSplit | None) -> None:
+    """Refuse to append to a journal begun under a different split or seed (D-107).
+
+    A ``[split]`` drive records ``order_seed`` and ``split_sha256`` in the header it
+    writes. An existing non-empty journal must carry both and they must equal this
+    drive's, so a resumed drive never recomputes the rotation from a split file that
+    changed since the journal was started. A drive without a split refuses a journal
+    whose header carries either marker. A new or empty file is always fine.
+    """
+    if not path.is_file() or path.stat().st_size == 0:
+        return
+    header = read_journal_header(path) or {}
+    carried = {k: header[k] for k in ("order_seed", "split_sha256") if k in header}
+    if split is None:
+        if carried:
+            raise ValueError(
+                f"journal {path} was started under a held-out split ({sorted(carried)} "
+                "in its header) but this drive has none; refusing to append"
+            )
+        return
+    expected = {"order_seed": split.order_seed, "split_sha256": split_sha256(split)}
+    if carried != expected:
+        missing = sorted(set(expected) - set(carried))
+        detail = (
+            f"its header lacks {missing}"
+            if missing
+            else f"its header has {carried}, this drive has {expected}"
+        )
+        raise ValueError(
+            f"journal {path} was not started under this split and seed: {detail}; "
+            "refusing to append records its header does not describe (D-107)"
         )
 
 
@@ -402,6 +441,14 @@ def drive(
         # D-105/D-106/D-107: a [split] corpus is refused before any journal I/O unless
         # its IDs fit its role, then driven in the seeded balanced rotation.
         split = load_split(config.split_path)
+        # The split records the hash of each file it was derived from; a changed
+        # input (or a missing one) means the held-out set is no longer the pinned one.
+        input_problems = split_input_problems(split, repo_root())
+        if input_problems:
+            raise ValueError(
+                f"split {config.split_path} no longer matches the files it was "
+                "derived from: " + "; ".join(input_problems) + "; refusing to drive"
+            )
         _enforce_split_role(config, split, questions)
         work_units = plan_work_units(questions, config.arms, split.order_seed)
         if limit is not None:
@@ -421,6 +468,7 @@ def drive(
     _require_matching_journal_marker(
         target_path, gate_stage=gate_stage, max_retries=max_retries
     )
+    _require_matching_split_marker(target_path, split)
     if not resume and load_records(target_path):
         # WR-03: spend is accumulated per invocation, so re-driving every unit into a
         # journal that already holds records restarts spend at zero and duplicates keys.

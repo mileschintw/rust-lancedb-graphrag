@@ -96,7 +96,7 @@ from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval import gitcheck, provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval import strata
-from lancet_eval.split import HeldOutSplit, load_split
+from lancet_eval.split import HeldOutSplit, load_split, split_sha256
 from lancet_eval.stats import (
     BOOTSTRAP_B,
     BOOTSTRAP_SEED,
@@ -276,6 +276,29 @@ def _require_preregistered_before(created_at: object, repo: Path | None) -> None
             + f". {gitcheck.PREREGISTRATION_TOKEN} and {gitcheck.TRUST_FLOOR_TOKEN} "
             "must be committed before the data exists."
         )
+
+
+def _require_split_marker_matches(
+    marker: Mapping[str, Any], split: HeldOutSplit
+) -> None:
+    """Refuse a journal whose header names a different split or seed than the one loaded.
+
+    The drive records ``split_sha256`` and ``order_seed`` in the header (D-107). When
+    the header carries one, it must equal the value computed from the split file the
+    report is about to be built on; a split edited after the drive passes no other gate.
+    A header without a marker is not refused here: journals older than the marker, and
+    the fixtures that build one by hand, carry none.
+
+    Raises:
+        ScoreError: If a recorded marker differs from the loaded split's.
+    """
+    expected = {"order_seed": split.order_seed, "split_sha256": split_sha256(split)}
+    for key, want in expected.items():
+        if key in marker and marker[key] != want:
+            raise ScoreError(
+                f"the journal header records {key}={marker[key]!r} but the split on "
+                f"disk has {want!r}: the split or seed changed since the drive"
+            )
 
 
 _JUDGEABLE_POLICIES = ("legacy", "06.3.5")
@@ -1665,6 +1688,7 @@ def score_run(
     header_corpus: str | None = None
     header_partial: bool | None = None
     header_created_at: object = None
+    header_split_marker: dict[str, Any] = {}
     with open(journal_path, encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
             line_str = line.strip()
@@ -1680,6 +1704,9 @@ def score_run(
             if isinstance(data, dict) and data.get("type") == "header":
                 header_corpus = data.get("corpus")
                 header_created_at = data.get("created_at")
+                header_split_marker = {
+                    k: data[k] for k in ("order_seed", "split_sha256") if k in data
+                }
                 if "partial" in data:
                     header_partial = bool(data["partial"])
                 continue
@@ -1779,6 +1806,7 @@ def score_run(
                 f"{listed}{tail}"
             )
         split_inputs = _load_split_inputs(config, gold_map, gold_chunks_path)
+        _require_split_marker_matches(header_split_marker, split_inputs.split)
 
     # D-113 / D-120 step 7: nothing judged exists before the order is proven.
     verified: Any = None

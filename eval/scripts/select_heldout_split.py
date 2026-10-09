@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from lancet_eval.config import repo_root
-from lancet_eval.split import HeldOutSplit, lf_sha256
+from lancet_eval.split import POPULATIONS_REL, HeldOutSplit, lf_sha256
 
 CORPUS_NAME = "multihop_rag"
 NULL_QUESTION_TYPE = "null_query"
@@ -38,10 +38,6 @@ ORDER_SEED = 42
 PICK_TYPES = ("comparison_query", "inference_query", "temporal_query")
 DERIVATION_RULE = "every non-dev sample question in G, plus every non-dev null"
 DEV_SOURCE = "eval/corpora/multihop_rag/diag_selection.json"
-POPULATIONS_REL = (
-    ".planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair"
-    "/diagnostic/post-reconcile/populations.json"
-)
 OUTPUT_FILES = (
     "heldout_split.json",
     "questions.heldout.jsonl",

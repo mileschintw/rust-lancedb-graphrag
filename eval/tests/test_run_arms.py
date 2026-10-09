@@ -1199,3 +1199,105 @@ def test_real_rehearsal_corpus_is_disjoint_and_runs_the_rotation(
 
     assert _drive_split("multihop_rag_rehearsal", j_path) == 12
     assert len({q for q, _ in _journal_units(j_path)}) == 3
+
+
+# --- 06.3.5 WR-01: a resumed [split] drive proves the journal's split and seed ---
+
+
+def _split_header(**extra: object) -> dict[str, object]:
+    from lancet_eval.split import load_split, split_sha256
+
+    split = load_split(_split_path())
+    return {
+        "type": "header",
+        "corpus": "multihop_rag_heldout",
+        "partial": True,
+        "created_at": 1.0,
+        "gate_stage": None,
+        "max_retries": 0,
+        "order_seed": split.order_seed,
+        "split_sha256": split_sha256(split),
+        **extra,
+    }
+
+
+@pytest.mark.usefixtures("preregistered_clean_tree")
+@pytest.mark.parametrize(
+    "header",
+    [
+        pytest.param(_split_header(split_sha256="0" * 64), id="other-split"),
+        pytest.param(_split_header(order_seed=7), id="other-seed"),
+        pytest.param(
+            {k: v for k, v in _split_header().items() if k != "split_sha256"},
+            id="no-split-digest",
+        ),
+        pytest.param(
+            {k: v for k, v in _split_header().items() if k != "order_seed"},
+            id="no-seed",
+        ),
+    ],
+)
+def test_resumed_split_drive_refuses_a_journal_begun_under_another_split_or_seed(
+    header: dict[str, object], tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    j_path = tmp_path / "journal.jsonl"
+    j_path.write_text(json.dumps(header) + "\n", encoding="utf-8")
+    before = j_path.read_bytes()
+
+    with pytest.raises(ValueError, match="split and seed"):
+        _drive_split("multihop_rag_heldout", j_path, limit=1)
+    assert j_path.read_bytes() == before
+    assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.usefixtures("preregistered_clean_tree")
+def test_resumed_split_drive_accepts_its_own_header(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+    assert _drive_split("multihop_rag_heldout", j_path, limit=1) == 4
+    assert _drive_split("multihop_rag_heldout", j_path, limit=2) == 4
+
+
+def test_split_marker_check_accepts_every_committed_split_journal() -> None:
+    from lancet_eval.config import repo_root
+    from lancet_eval.run import _require_matching_split_marker
+    from lancet_eval.split import load_split
+
+    split = load_split(_split_path())
+    journals = [
+        repo_root() / "eval" / "runs" / name / "journal.jsonl"
+        for name in (
+            "2026-10-07-heldout-multihop_rag_heldout",
+            "2026-10-07-rehearsal-multihop_rag_rehearsal",
+            "2026-10-07-rehearsal2-multihop_rag_rehearsal",
+        )
+    ]
+    for journal in journals:
+        assert journal.is_file(), journal
+        _require_matching_split_marker(journal, split)
+
+
+def test_a_drive_without_a_split_refuses_a_split_journal(tmp_path: Path) -> None:
+    from lancet_eval.run import _require_matching_split_marker
+
+    j_path = tmp_path / "journal.jsonl"
+    j_path.write_text(json.dumps(_split_header()) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="held-out split"):
+        _require_matching_split_marker(j_path, None)
+
+
+@pytest.mark.usefixtures("preregistered_clean_tree")
+def test_split_drive_refuses_a_split_whose_input_file_changed(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import lancet_eval.split as split_mod
+
+    monkeypatch.setattr(split_mod, "QUESTIONS_SAMPLE_REL", "eval/corpora/ATTRIBUTION.md")
+    j_path = tmp_path / "journal.jsonl"
+
+    with pytest.raises(ValueError, match="no longer matches"):
+        _drive_split("multihop_rag_heldout", j_path, limit=1)
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []

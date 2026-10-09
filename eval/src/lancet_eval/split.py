@@ -17,6 +17,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
+# The three files the split was derived from, repo-relative (the dev IDs come from the
+# split's own `dev_source`). `select_heldout_split.py` reads the same paths.
+POPULATIONS_REL = (
+    ".planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair"
+    "/diagnostic/post-reconcile/populations.json"
+)
+QUESTIONS_SAMPLE_REL = "eval/corpora/multihop_rag/questions.sample.jsonl"
+
 
 class HeldOutSplit(BaseModel):
     """The committed dev / held-out partition of the 500-question sample (D-105).
@@ -89,6 +97,39 @@ def load_split(path: str | Path) -> HeldOutSplit:
             overlap between sets or a duplicated ID.
     """
     return HeldOutSplit.model_validate_json(Path(path).read_text(encoding="utf-8"))
+
+
+def split_input_problems(split: HeldOutSplit, repo: str | Path) -> list[str]:
+    """Names every input file whose LF-normalised hash differs from the split's record.
+
+    The split stores `populations_sha256`, `diag_selection_sha256` and
+    `questions_sample_sha256` so a change to any file it was derived from is
+    detectable. This is the reader of those fields.
+
+    Args:
+        split: The parsed split.
+        repo: Repository root the recorded paths are relative to.
+
+    Returns:
+        One message per missing or changed input; empty when all three match.
+    """
+    root = Path(repo)
+    inputs = (
+        ("populations", POPULATIONS_REL, split.populations_sha256),
+        ("diag_selection", split.dev_source, split.diag_selection_sha256),
+        ("questions_sample", QUESTIONS_SAMPLE_REL, split.questions_sample_sha256),
+    )
+    problems: list[str] = []
+    for name, rel, recorded in inputs:
+        path = root / rel
+        if not path.is_file():
+            problems.append(f"{name} input {rel} is missing")
+        elif lf_sha256(path) != recorded:
+            problems.append(
+                f"{name} input {rel} no longer hashes to the split's recorded "
+                f"{recorded[:12]}"
+            )
+    return problems
 
 
 def split_sha256(split: HeldOutSplit) -> str:
