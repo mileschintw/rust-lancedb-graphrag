@@ -1301,3 +1301,44 @@ def test_split_drive_refuses_a_split_whose_input_file_changed(
         _drive_split("multihop_rag_heldout", j_path, limit=1)
     assert not j_path.exists()
     assert httpx_mock.get_requests() == []
+
+
+def test_split_marker_check_accepts_every_tracked_journal_under_eval_runs() -> None:
+    """A [split] journal is checked against its split; every other one against None.
+
+    Covers the legacy, diag and headerless measure journals too, so the non-split
+    refusal is proven against the real closed artifacts.
+    """
+    import subprocess
+
+    from lancet_eval.config import repo_root
+    from lancet_eval.corpus import load_corpus_config
+    from lancet_eval.journal import read_journal_header
+    from lancet_eval.run import _require_matching_split_marker
+    from lancet_eval.split import load_split
+
+    root = repo_root()
+    tracked = subprocess.run(
+        ["git", "ls-files", "eval/runs"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    journals = [
+        root / rel
+        for rel in tracked
+        if rel.endswith("/journal.jsonl") and "/raw_events/" not in rel
+    ]
+    assert len(journals) >= 10
+    checked_with_split = 0
+    for journal in journals:
+        header = read_journal_header(journal) or {}
+        corpus = header.get("corpus")
+        config = load_corpus_config(corpus) if corpus else None
+        if config is not None and config.split_path is not None:
+            _require_matching_split_marker(journal, load_split(config.split_path))
+            checked_with_split += 1
+        else:
+            _require_matching_split_marker(journal, None)
+    assert checked_with_split == 3
