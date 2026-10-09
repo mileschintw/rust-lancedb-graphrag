@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-09T19:47:52.882203+00:00",
+  "cost_reported": true,
+  "latency_ms": 407.3,
+  "model": "rerank-2.5-lite",
+  "ok": false,
+  "order": [
+    1,
+    0
+  ],
+  "provider": "VoyageAI by MongoDB",
+  "scores": [
+    0.90234375,
+    0.390625
+  ],
+  "status": 200,
+  "usage": {
+    "cost": 4.4e-07,
+    "total_tokens": 22
+  }
+}

@@ -66,7 +66,13 @@ def probe(client: httpx.Client, api_key: str) -> dict[str, object]:
     resp = client.post(
         ENDPOINT,
         headers={"Authorization": f"Bearer {api_key}"},
-        json={"model": MODEL, "query": QUERY, "documents": DOCUMENTS, "top_n": len(DOCUMENTS)},
+        json={
+            "model": MODEL,
+            "query": QUERY,
+            "documents": DOCUMENTS,
+            "top_n": len(DOCUMENTS),
+            "provider": {"allow_fallbacks": False},
+        },
         timeout=10.0,
     )
     latency_ms = (time.monotonic() - started) * 1000.0
@@ -89,7 +95,11 @@ def probe(client: httpx.Client, api_key: str) -> dict[str, object]:
         usage=body.usage.model_dump() if body.usage else None,
         cost_reported=bool(body.usage and body.usage.cost is not None),
     )
-    record["ok"] = sorted(order) == list(range(len(DOCUMENTS))) and bool(record["cost_reported"])
+    record["ok"] = (
+        sorted(order) == list(range(len(DOCUMENTS)))
+        and bool(record["cost_reported"])
+        and body.model.startswith(MODEL)
+    )
     return record
 
 
@@ -97,6 +107,8 @@ def _mock_handler(request: httpx.Request) -> httpx.Response:
     assert request.headers["authorization"] == "Bearer test-key"
     sent = json.loads(request.content)
     assert sent["documents"] == DOCUMENTS and sent["model"] == MODEL
+    assert sent["provider"] == {"allow_fallbacks": False}
+    assert sent["top_n"] == len(DOCUMENTS)
     return httpx.Response(200, json={
         "id": "gen-rerank-mock", "model": "voyageai/rerank-2.5-lite-20260727", "provider": "mock",
         "results": [
@@ -128,6 +140,15 @@ def main() -> int:
         with httpx.Client(transport=httpx.MockTransport(no_cost)) as client:
             missing = probe(client, "test-key")
         assert not missing["ok"] and not missing["cost_reported"], missing  # a missing usage.cost fails the probe
+
+        def wrong_model(request: httpx.Request) -> httpx.Response:
+            body = _mock_handler(request).json()
+            body["model"] = "other/rerank"
+            return httpx.Response(200, json=body)
+
+        with httpx.Client(transport=httpx.MockTransport(wrong_model)) as client:
+            rerouted = probe(client, "test-key")
+        assert not rerouted["ok"], rerouted  # a reply from a different model fails the probe
         print("selftest ok:", json.dumps(record, sort_keys=True))
         return 0
     key = os.environ.get("OPENROUTER_API_KEY", "")
