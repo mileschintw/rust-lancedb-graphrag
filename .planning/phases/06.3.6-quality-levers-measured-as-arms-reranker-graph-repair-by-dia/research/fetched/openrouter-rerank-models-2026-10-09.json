@@ -1,0 +1,379 @@
+{
+ "data": [
+  {
+   "id": "voyageai/rerank-3-lite",
+   "canonical_slug": "voyageai/rerank-3-lite-20260930",
+   "hugging_face_id": null,
+   "name": "VoyageAI by MongoDB: rerank-3-lite",
+   "created": 1790785569,
+   "description": "rerank-3-lite is a reranker optimized for both latency and quality and a drop-in upgrade to rerank-2.5-lite, improving on it by 0.94% NDCG@10 on average across domain evaluations and by 1.86%...",
+   "context_length": 32000,
+   "architecture": {
+    "modality": "text->rerank",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 32000,
+    "max_completion_tokens": 28800,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/voyageai/rerank-3-lite-20260930/endpoints"
+   }
+  },
+  {
+   "id": "voyageai/rerank-3",
+   "canonical_slug": "voyageai/rerank-3-20260930",
+   "hugging_face_id": null,
+   "name": "VoyageAI by MongoDB: rerank-3",
+   "created": 1790785501,
+   "description": "rerank-3 is a reranker optimized for quality and a drop-in upgrade to rerank-2.5, improving on it by 0.80% NDCG@10 on average across domain evaluations and by 3.35% on long-document evaluations,...",
+   "context_length": 32000,
+   "architecture": {
+    "modality": "text->rerank",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 32000,
+    "max_completion_tokens": 28800,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/voyageai/rerank-3-20260930/endpoints"
+   }
+  },
+  {
+   "id": "qwen/qwen3-reranker-8b",
+   "canonical_slug": "qwen/qwen3-reranker-8b",
+   "hugging_face_id": "Qwen/Qwen3-Reranker-8B",
+   "name": "Qwen3 Reranker 8B",
+   "created": 1786597684,
+   "description": "Qwen3 Reranker 8B is a text reranking model from Alibaba Cloud built on the Qwen3 architecture. It evaluates query-document pairs to produce relevance scores for use in retrieval and RAG...",
+   "context_length": 40960,
+   "architecture": {
+    "modality": "text->rerank",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Qwen3",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 40960,
+    "max_completion_tokens": 36864,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/qwen/qwen3-reranker-8b/endpoints"
+   }
+  },
+  {
+   "id": "voyageai/rerank-2.5-lite",
+   "canonical_slug": "voyageai/rerank-2.5-lite-20260727",
+   "hugging_face_id": null,
+   "name": "VoyageAI by MongoDB: rerank-2.5-lite",
+   "created": 1785188631,
+   "description": "rerank-2.5-lite is a reranker optimized for both latency and quality, delivering a 7.16% improvement in retrieval accuracy over Cohere Rerank v3.5 across 93 datasets. It also outperformed Cohere Rerank v3.5...",
+   "context_length": 32000,
+   "architecture": {
+    "modality": "text->rerank",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 32000,
+    "max_completion_tokens": 28800,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/voyageai/rerank-2.5-lite-20260727/endpoints"
+   }
+  },
+  {
+   "id": "voyageai/rerank-2.5",
+   "canonical_slug": "voyageai/rerank-2.5-20260727",
+   "hugging_face_id": null,
+   "name": "VoyageAI by MongoDB: rerank-2.5",
+   "created": 1785188630,
+   "description": "rerank-2.5 is a cutting-edge reranker optimized for quality, delivering a 7.94% improvement in retrieval accuracy over Cohere Rerank v3.5 across 93 datasets. It also outperformed Cohere Rerank v3.5 by 12.70%...",
+   "context_length": 32000,
+   "architecture": {
+    "modality": "text->rerank",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 32000,
+    "max_completion_tokens": 28800,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {},
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/voyageai/rerank-2.5-20260727/endpoints"
+   }
+  },
+  {
+   "id": "nvidia/llama-nemotron-rerank-vl-1b-v2:free",
+   "canonical_slug": "nvidia/llama-nemotron-rerank-vl-1b-v2",
+   "hugging_face_id": null,
+   "name": "NVIDIA: Llama Nemotron Rerank VL 1B V2 (free)",
+   "created": 1781036054,
+   "description": "Llama Nemotron Rerank VL 1B V2 is a 1.7B multimodal reranking model from NVIDIA. It evaluates the relevance of document images and text against user queries, designed for vision RAG...",
+   "context_length": 10240,
+   "architecture": {
+    "modality": "text+image->rerank",
+    "input_modalities": [
+     "text",
+     "image"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Other",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 10240,
+    "max_completion_tokens": 9216,
+    "is_moderated": false
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/nvidia/llama-nemotron-rerank-vl-1b-v2/endpoints"
+   }
+  },
+  {
+   "id": "cohere/rerank-4-pro",
+   "canonical_slug": "cohere/rerank-4-pro",
+   "hugging_face_id": null,
+   "name": "Cohere: Rerank 4 Pro",
+   "created": 1775446247,
+   "description": "Cohere's AI search foundation model for enhancing the relevance of information surfaced within search and RAG systems. Features a 32K context window, multilingual support across 100+ languages, no data pre-processing...",
+   "context_length": 32768,
+   "architecture": {
+    "modality": "text->rerank",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Cohere",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 32768,
+    "max_completion_tokens": 29491,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/cohere/rerank-4-pro/endpoints"
+   }
+  },
+  {
+   "id": "cohere/rerank-4-fast",
+   "canonical_slug": "cohere/rerank-4-fast",
+   "hugging_face_id": null,
+   "name": "Cohere: Rerank 4 Fast",
+   "created": 1775442269,
+   "description": "Cohere's AI search foundation model for enhancing the relevance of information surfaced within search and RAG systems. Features a 32K context window, multilingual support across 100+ languages, no data pre-processing...",
+   "context_length": 32768,
+   "architecture": {
+    "modality": "text->rerank",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Cohere",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 32768,
+    "max_completion_tokens": 29491,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/cohere/rerank-4-fast/endpoints"
+   }
+  },
+  {
+   "id": "cohere/rerank-v3.5",
+   "canonical_slug": "cohere/rerank-v3.5",
+   "hugging_face_id": null,
+   "name": "Cohere: Rerank v3.5",
+   "created": 1775416158,
+   "description": "Rerank v3.5 is designed to reorder search results for improved relevance. It supports multi-aspect and semi-structured data reranking over 100+ languages. Ideal for refining results from semantic or keyword search...",
+   "context_length": 4096,
+   "architecture": {
+    "modality": "text->rerank",
+    "input_modalities": [
+     "text"
+    ],
+    "output_modalities": [
+     "rerank"
+    ],
+    "tokenizer": "Cohere",
+    "instruct_type": null
+   },
+   "pricing": {
+    "prompt": "0",
+    "completion": "0"
+   },
+   "top_provider": {
+    "context_length": 4096,
+    "max_completion_tokens": 3686,
+    "is_moderated": true
+   },
+   "per_request_limits": null,
+   "supported_parameters": [],
+   "default_parameters": {
+    "temperature": null,
+    "top_p": null,
+    "top_k": null,
+    "frequency_penalty": null,
+    "presence_penalty": null,
+    "repetition_penalty": null
+   },
+   "supported_voices": null,
+   "knowledge_cutoff": null,
+   "expiration_date": null,
+   "links": {
+    "details": "/api/v1/models/cohere/rerank-v3.5/endpoints"
+   }
+  }
+ ],
+ "total_count": 9,
+ "links": {
+  "next": null
+ }
+}
