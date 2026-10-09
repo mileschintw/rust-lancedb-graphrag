@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "Phase 06.3.6 executing: wave 1 of 17 (06.3.6-01 live probe on main; 06.3.6-02 on main and 06.3.6-03 in a worktree via a Workflow fan-out)"
+stopped_at: "Phase 06.3.6 executing: wave 1 of 17 done (01 D-131 probe PASS after the D-186 re-probe; 02; 03 merged); wave 2 (06.3.6-04 graph diagnosis, main) next"
 last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
 state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
@@ -15,19 +15,20 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "/gsd-execute-phase 06.3.6 started: 22 plans in 17 waves; parallel waves fan out through a Workflow (main-tree plan plus worktree siblings); live-stack plans stay sequential on main."
+last_activity_desc: "06.3.6 wave 1 complete (01, 02, 03); post-merge gate green (cargo 758, go 120, eval pytest 1906); D-186 recorded; wave 2 (04) next."
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 1
+Current Plan: 4
 Total Plans in Phase: 22
 
 ## Current Status
 
 - **2026-10-09: Phase 06.3.6 EXECUTION STARTED** (`/gsd-execute-phase 06.3.6`). Wave 1: 06.3.6-01 (D-131 rerank probe, live, main), 06.3.6-02 (D-137 rule commit and `--graph-dump`, main) and 06.3.6-03 (harness hardening, worktree). Executors run on Sonnet.
+- **2026-10-09: 06.3.6 wave 1 COMPLETE.** 01: D-131 probe PASS from the D-186 re-probe (call 1 replied with the bare model name `rerank-2.5-lite` and failed the original prefix check; owner chose a corrected check plus one re-probe); settled deltas equal `usage.cost` (1 credit = 1 USD), cumulative spend 8.8e-07; provisional `RERANK_UNREPORTED_CALL_CEILING_USD` 6.6e-07. 02: the rule commit `fc1ab4e3` (one SHA, D-73) and `--graph-dump`; its SUMMARY notes the three non-residual class predicates are pairwise disjoint, so the D-171 multi-membership matrix is diagonal by construction. 03: harness hardening, merged `254061a6`. Gate green.
 
 - **2026-10-09: Phase 06.3.6 PLANNED.** 22 plans in 17 waves (`06.3.6-01..22-PLAN.md`). The plan check passed at iteration 3, after one whole-phase pass, four full-read slice checks and two revisions. Decision coverage is 45/45 (D-127..D-171), and OBS-06 is on all 22 plans.
   - **Owner decisions taken during planning:** D-165..D-168 (AI-SPEC §4 open questions 1-4, each as recommended); D-169 (OBS-06 wording in REQUIREMENTS, applied in `3972d716`, no checkbox change); D-170 (a `dev` split role exempt from the D-73 gate); D-171 (the D-137 class precedence is the skeleton order).

@@ -1152,15 +1152,15 @@ Plans:
 
 **Out of Scope:** community summaries (999.1/999.5/999.4), query reformulation strategies (999.3 — a v1.1 arm), local inference endpoint (999.11 — v1.1), deeper traversal, new corpora.
 
-**Plans:** 22 plans in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
+**Plans:** 3/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
 
 Plans:
 
 **Wave 1**
 
-- [ ] 06.3.6-01-PLAN.md — D-131 gate: the $0.01-capped authenticated rerank probe with the adapter's exact body, the orchestrator-settled account delta, and `06.3.6-PROBE.md` (no lever-1 code before its PASS)
-- [ ] 06.3.6-02-PLAN.md — D-137 rule commit (`GRAPH_REPAIR_RULE_06_3_6`, the D-171 skeleton-order precedence, the D-167 parameter-free alias predicate) and the read-only `inspect_lancedb --graph-dump`
-- [ ] 06.3.6-03-PLAN.md — Generation output price `checkpoint:decision`, D-153 judge prices, IN-03, IN-04, the per-corpus D-73 token, the D-170 `dev` role, the WR-02 `compare` gate and the run-directory negation
+- [x] 06.3.6-01-PLAN.md — D-131 gate: the $0.01-capped authenticated rerank probe with the adapter's exact body, the orchestrator-settled account delta, and `06.3.6-PROBE.md` (no lever-1 code before its PASS)
+- [x] 06.3.6-02-PLAN.md — D-137 rule commit (`GRAPH_REPAIR_RULE_06_3_6`, the D-171 skeleton-order precedence, the D-167 parameter-free alias predicate) and the read-only `inspect_lancedb --graph-dump`
+- [x] 06.3.6-03-PLAN.md — Generation output price `checkpoint:decision`, D-153 judge prices, IN-03, IN-04, the per-corpus D-73 token, the D-170 `dev` role, the WR-02 `compare` gate and the run-directory negation
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
