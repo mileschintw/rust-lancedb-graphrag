@@ -242,3 +242,46 @@ def test_invalid_split_or_judge_sections_fail_the_load(
 ) -> None:
     with pytest.raises(CorpusError):
         _write_tmp_corpus(tmp_path, monkeypatch, "bad_sections", extra)
+
+
+@pytest.mark.parametrize(
+    "arms",
+    [
+        '["hybrid", "graph-off"]',
+        '["graph-on", "hybrid+graph"]',
+        '["hybrid", "hybrid"]',
+    ],
+    ids=["alias-of-first", "alias-of-second", "repeated"],
+)
+def test_alias_equivalent_or_repeated_arm_labels_fail_the_load(
+    arms: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(CorpusError, match="same arm"):
+        _write_tmp_corpus(
+            tmp_path, monkeypatch, "dup_arms", f"[arms]\narms = {arms}\n"
+        )
+
+
+def test_empty_arm_list_fails_the_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with pytest.raises(CorpusError, match="no arm labels"):
+        _write_tmp_corpus(tmp_path, monkeypatch, "no_arms", "[arms]\narms = []\n")
+
+
+@pytest.mark.parametrize(
+    "corpus_name",
+    [
+        "multihop_rag",
+        "graphrag_bench",
+        "multihop_rag_diag",
+        "multihop_rag_heldout",
+        "multihop_rag_rehearsal",
+    ],
+)
+def test_every_committed_corpus_has_distinct_nonempty_arms(corpus_name: str) -> None:
+    from lancet_eval.arms import canonical_arm
+
+    cfg = load_corpus(corpus_name)
+    assert cfg.arms
+    assert len({canonical_arm(a) for a in cfg.arms}) == len(cfg.arms)

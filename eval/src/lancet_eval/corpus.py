@@ -141,9 +141,20 @@ class CorpusConfig:
         self.document_subset = data.get("document_subset", {})
         self.models = data.get("models", {})
         self.arms = list(data.get("arms", {}).get("arms", ["graph-on", "graph-off"]))
+        if not self.arms:
+            raise CorpusError(f"[arms] in {toml_path} lists no arm labels")
+        seen_arms: dict[str, str] = {}
         for label in self.arms:
             # D-101: a label the registry does not know fails the load, naming it.
-            canonical_arm(label)
+            canonical = canonical_arm(label)
+            # Two labels that share a canonical form are the same arm: they would
+            # be scheduled and paid for twice, then refused at score time.
+            if canonical in seen_arms:
+                raise CorpusError(
+                    f"[arms] in {toml_path} lists {seen_arms[canonical]!r} and "
+                    f"{label!r}, which are the same arm ({canonical!r})"
+                )
+            seen_arms[canonical] = label
 
         # D-105/D-107: a corpus that declares [split] is drawn from the committed
         # held-out split and driven in the seeded rotation.
