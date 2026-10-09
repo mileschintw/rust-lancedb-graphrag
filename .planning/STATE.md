@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "Phase 06.3.6 executing: waves 1-2 of 17 done (lever 2 = graph_list_precision); wave 3 (06.3.6-05 proto levers, main) next"
+stopped_at: "Phase 06.3.6 executing: waves 1-3 of 17 done (lever 2 = graph_list_precision; levers wire contract landed); wave 4 (06 main, 07 and 08 worktrees, Workflow fan-out) next"
 last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
 state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
@@ -15,14 +15,14 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6 wave 2 complete (04: D-137 table, owner labels-agree, selection graph_list_precision); D-187 recorded; gate green (eval pytest 1908); wave 3 (05) next."
+last_activity_desc: "06.3.6 wave 2 complete (04: D-137 table, owner labels-agree, selection graph_list_precision); D-187 recorded; gate green; wave 3 complete (05: levers wire contract end to end, LEVER_GRAPH_V2 = 4; gate cargo 765, go 122, pytest 1916); wave 4 (06, 07, 08) next."
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 22
 
 ## Current Status

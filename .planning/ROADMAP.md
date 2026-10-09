@@ -1152,7 +1152,7 @@ Plans:
 
 **Out of Scope:** community summaries (999.1/999.5/999.4), query reformulation strategies (999.3 — a v1.1 arm), local inference endpoint (999.11 — v1.1), deeper traversal, new corpora.
 
-**Plans:** 4/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
+**Plans:** 5/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
 
 Plans:
 
@@ -1168,7 +1168,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06.3.6-05-PLAN.md — Wave-0 provider-message golden, then the tracer: a `levers` request through proto, gateway, engine admission, the snapshot echo and the harness client; the full fail-closed admission matrix and D-165
+- [x] 06.3.6-05-PLAN.md — Wave-0 provider-message golden, then the tracer: a `levers` request through proto, gateway, engine admission, the snapshot echo and the harness client; the full fail-closed admission matrix and D-165
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
