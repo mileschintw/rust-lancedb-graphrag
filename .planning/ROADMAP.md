@@ -1152,7 +1152,82 @@ Plans:
 
 **Out of Scope:** community summaries (999.1/999.5/999.4), query reformulation strategies (999.3 — a v1.1 arm), local inference endpoint (999.11 — v1.1), deeper traversal, new corpora.
 
-**Plans:** 0 plans (not yet planned)
+**Plans:** 22 plans in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-170)
+
+Plans:
+
+**Wave 1**
+
+- [ ] 06.3.6-01-PLAN.md — D-131 gate: the $0.01-capped authenticated rerank probe with the adapter's exact body, the orchestrator-settled account delta, and `06.3.6-PROBE.md` (no lever-1 code before its PASS)
+- [ ] 06.3.6-02-PLAN.md — D-137 rule commit (`GRAPH_REPAIR_RULE_06_3_6`, owner-confirmed precedence, D-167 parameter-free alias predicate) and the read-only `inspect_lancedb --graph-dump`
+- [ ] 06.3.6-03-PLAN.md — Generation output price `checkpoint:decision`, D-153 judge prices, IN-03, IN-04, the per-corpus D-73 token, the D-170 `dev` role, the WR-02 `compare` gate and the run-directory negation
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06.3.6-04-PLAN.md — Window 1: dump v1 entities/edges from a store copy, regenerate the 38-question D-137 table, owner spot-check, then the selection commit (A/B/none)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06.3.6-05-PLAN.md — Wave-0 provider-message golden, then the tracer: a `levers` request through proto, gateway, engine admission, the snapshot echo and the harness client; the full fail-closed admission matrix and D-165
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 06.3.6-06-PLAN.md — D-152 one bounded query-embedding retry with blake3 jitter, the nesting check, and the D-158 IN-02 fix (every arm, before any dev read)
+- [ ] 06.3.6-07-PLAN.md — O10/O14/O15/O16 `checkpoint:decision`, the selection-driven lever arm registry, provenance (h)/(i)/(j)/(e+), the rerank spend line and tripwire, the D-151 floor, the pre-registration classes
+- [ ] 06.3.6-08-PLAN.md — Evidence metadata outside the engine: one normaliser, the 346-of-346 backfill sidecar builder, `seed.py` fields, gateway validation and forwarding
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 06.3.6-09-PLAN.md — Lever 1: the query-taking `Reranker` port, the OpenRouter rerank adapter, D-133 capture, D-134 degrade, D-166 overwrite, the provisional D-135 budget and per-request selection
+- [ ] 06.3.6-10-PLAN.md — `compare-levers` (families on P_X, fixed-m Holm, guards, default rows), `dev_reads.py` with the censoring-aware rerank derivation and ledger linter, and the 6/7-arm scoring proof
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 06.3.6-11-PLAN.md — Levers 3 and 4 in the prompt: `PromptOptions`, the metadata headers and sentence, the yes/no format rules, the per-snapshot `DocMetaMap` and its attach step
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 06.3.6-12-PLAN.md — Lever 2 branch B (conditional): graph-list precision variants, config key and per-request dispatch
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 06.3.6-13-PLAN.md — Lever 2 branch A (conditional): `NameVectorResolver`, the `build_graph_v2` side-table builder, `graph_index_v2`, the manifest preflight check
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 06.3.6-14-PLAN.md — The C3 schema commit: 22-column `nodes`, ingest persistence, D-168 staging upgrades, engine re-validation, the `DocMetaMap` scan, and the Reader-based backfill bin with COPY verification
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 06.3.6-15-PLAN.md — Window 2 store writes in D-159 order: Docker/Postgres, COPY verification, apply checkpoint, backfill (+ branch-A side tables), restart, one recorded generation, D-61 diff, merge audit
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 06.3.6-16-PLAN.md — Dev session 1 under the O7 blanket cap with O12/O13 and the read-2 rules written first; D-135 derivation; orchestrator-owned detached wait
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 06.3.6-17-PLAN.md — Dev session 2 (conditional on a read-2 trigger) and the mechanical freeze choices
+
+**Wave 13** *(blocked on Wave 12 completion)*
+
+- [ ] 06.3.6-18-PLAN.md — O11 if needed, then the ONE D-154 freeze commit: `PREREGISTRATION_06_3_6`, frozen sentences, timeout, variant or threshold, ceiling, ledger, rehearsal and held-out TOMLs
+
+**Wave 14** *(blocked on Wave 13 completion)*
+
+- [ ] 06.3.6-19-PLAN.md — Rehearsal on the frozen system: O8 cap, held-out preflight with one pre-authorised flake retry, the 3-question probe under every arm, journal-level provenance gate
+
+**Wave 15** *(blocked on Wave 14 completion)*
+
+- [ ] 06.3.6-20-PLAN.md — The held-out drive, part A: O9 cap, D-106 diff gate, prep, orchestrator-owned detached 6.6 h drive under a sleep hold, reconcile
+
+**Wave 16** *(blocked on Wave 15 completion)*
+
+- [ ] 06.3.6-21-PLAN.md — The held-out drive, part B: `score --no-judge`, gates with the D-151 floor, `compare-levers`, the D-110 checkpoint, and `06.3.6-RUN-OF-RECORD.md`
+
+**Wave 17** *(blocked on Wave 16 completion)*
+
+- [ ] 06.3.6-22-PLAN.md — D-157 default flip for any winning lever (conditional) and the closeout with the post-`phase.complete` requirement-ledger hand-off (D-127)
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
