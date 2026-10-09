@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -541,6 +542,41 @@ type ragQueryRequestBody struct {
 	RetrievalMode *string `json:"retrieval_mode"`
 	// IncludePreTruncationRanking opts in to the snapshot's pre-rerank ranking (06.3.5 D-100).
 	IncludePreTruncationRanking *bool `json:"include_pre_truncation_ranking"`
+	// Levers names the quality levers this request switches on (06.3.6 D-136). Absent or an empty
+	// array is today's request; a name outside leverByName, a duplicate, or more than
+	// maxRequestLevers entries is rejected before the engine is called.
+	Levers *[]string `json:"levers"`
+}
+
+// maxRequestLevers is the most levers one request may name: the number of levers the closed
+// leverByName set declares, so a longer list always contains a duplicate or an unknown name.
+const maxRequestLevers = 4
+
+// leverByName is the closed set of request strings for levers (06.3.6 D-136). Anything else,
+// including the empty string, a wrong-case spelling and "unspecified", is a client error.
+var leverByName = map[string]pb.Lever{
+	"rerank":               pb.Lever_LEVER_RERANK,
+	"evidence_metadata":    pb.Lever_LEVER_EVIDENCE_METADATA,
+	"binary_answer_format": pb.Lever_LEVER_BINARY_ANSWER_FORMAT,
+	"graph_v2":             pb.Lever_LEVER_GRAPH_V2,
+}
+
+// leversFromNames maps request lever names to the wire enum, sorted by enum number whatever the
+// order the client sent. It reports false for an unknown or duplicate name or too long a list.
+func leversFromNames(names []string) ([]pb.Lever, bool) {
+	if len(names) > maxRequestLevers {
+		return nil, false
+	}
+	levers := make([]pb.Lever, 0, len(names))
+	for _, name := range names {
+		lever, ok := leverByName[name]
+		if !ok || slices.Contains(levers, lever) {
+			return nil, false
+		}
+		levers = append(levers, lever)
+	}
+	slices.Sort(levers)
+	return levers, true
 }
 
 // retrievalModeByName is the closed set of request strings for retrieval_mode (06.3.5 D-99).
@@ -700,6 +736,17 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		retrievalMode = mode
 	}
 
+	var levers []pb.Lever
+	if body.Levers != nil {
+		var ok bool
+		levers, ok = leversFromNames(*body.Levers)
+		if !ok {
+			streamErrorCode = "invalid_request_body"
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+	}
+
 	req := &pb.QueryRAGRequest{
 		Query:                       body.Query,
 		SessionId:                   body.SessionID,
@@ -707,6 +754,7 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		DisableGraphContext:         body.DisableGraphContext,
 		RetrievalMode:               retrievalMode,
 		IncludePreTruncationRanking: body.IncludePreTruncationRanking != nil && *body.IncludePreTruncationRanking,
+		Levers:                      levers,
 	}
 	if body.Filter != nil {
 		req.Filter = &pb.DocumentFilter{

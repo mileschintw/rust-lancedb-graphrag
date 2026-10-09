@@ -70,6 +70,10 @@ type RetrievalSnapshotDTO struct {
 	// PreTruncationRanking is the pre-rerank candidate ranking, present only when the request
 	// opted in (06.3.5 D-100). IDs and ranks only; omitted otherwise.
 	PreTruncationRanking []RankedCandidateDTO `json:"pre_truncation_ranking,omitzero"`
+	// Levers is the canonical echo of the admitted levers as lowercase names, in ascending enum
+	// number (06.3.6 D-136). It is omitted when no lever was admitted, so a default snapshot keeps
+	// exactly its 10 keys.
+	Levers []string `json:"levers,omitzero"`
 }
 
 // RankedCandidateDTO is one row of the pre-truncation ranking (06.3.5 D-100). Ranks are 1-based
@@ -89,6 +93,32 @@ var retrievalModeNames = map[pb.RetrievalMode]string{
 	pb.RetrievalMode_RETRIEVAL_MODE_HYBRID:     "hybrid",
 	pb.RetrievalMode_RETRIEVAL_MODE_DENSE_ONLY: "dense_only",
 	pb.RetrievalMode_RETRIEVAL_MODE_BM25_ONLY:  "bm25_only",
+}
+
+// leverNames maps a non-zero Lever to its JSON name; the zero value has none.
+var leverNames = map[pb.Lever]string{
+	pb.Lever_LEVER_RERANK:               "rerank",
+	pb.Lever_LEVER_EVIDENCE_METADATA:    "evidence_metadata",
+	pb.Lever_LEVER_BINARY_ANSWER_FORMAT: "binary_answer_format",
+	pb.Lever_LEVER_GRAPH_V2:             "graph_v2",
+}
+
+// toLeverNames maps the echoed lever enums to their names in the order the engine sent them
+// (already ascending enum number). A value outside the known names is dropped.
+func toLeverNames(in []pb.Lever) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, lever := range in {
+		if name, ok := leverNames[lever]; ok {
+			out = append(out, name)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func toRankedCandidateDTOs(in []*pb.RankedCandidate) []RankedCandidateDTO {
@@ -189,6 +219,7 @@ func ToRetrievalSnapshotDTO(in *pb.RetrievalSnapshot) *RetrievalSnapshotDTO {
 		// A mode outside the known names (a future enum value) maps to "" and is omitted.
 		RetrievalMode:        retrievalModeNames[in.RetrievalMode],
 		PreTruncationRanking: toRankedCandidateDTOs(in.PreTruncationRanking),
+		Levers:               toLeverNames(in.Levers),
 	}
 }
 

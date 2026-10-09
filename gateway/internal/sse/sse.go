@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	pb "github.com/lancet/gateway/proto/lancet/v1"
 )
@@ -19,6 +20,12 @@ const (
 // event names are assigned inline in WriteWorkflowEvent; this one is named so it is not
 // buried inside a format string, where a rename would be invisible to a literal scan.
 const eventStreamError = "stream_error"
+
+// rerankOutcomeName renders a RerankOutcome as its lowercase name without the enum prefix
+// (06.3.6 D-134), e.g. "completed" or "degraded_timeout".
+func rerankOutcomeName(outcome pb.RerankOutcome) string {
+	return strings.ToLower(strings.TrimPrefix(outcome.String(), "RERANK_OUTCOME_"))
+}
 
 // WriteStreamError formats and writes a stream_error event frame to the SSE stream.
 func WriteStreamError(w http.ResponseWriter, rc *http.ResponseController, code, message string) {
@@ -132,6 +139,19 @@ func WriteWorkflowEvent(w http.ResponseWriter, rc *http.ResponseController, ev *
 				"graph_boosted_chunk_count": meta.GetGraphBoostedChunkCount(),
 				"graph_degree_capped_count": meta.GetGraphDegreeCappedCount(),
 				"graph_seed_document_ids":   seedDocumentIDs,
+			}
+			// 06.3.6 D-134, D-52: present only when set, so a default workflow_completed payload
+			// gains no key. Numbers and an outcome name only; never query or document text.
+			if rerank := meta.GetRerank(); rerank != nil {
+				metaMap["rerank"] = map[string]any{
+					"latency_ms":    rerank.GetLatencyMs(),
+					"cost_credits":  rerank.GetCostCredits(),
+					"cost_reported": rerank.GetCostReported(),
+					"outcome":       rerankOutcomeName(rerank.GetOutcome()),
+				}
+			}
+			if retries := meta.GetQueryEmbeddingRetries(); retries != 0 {
+				metaMap["query_embedding_retries"] = retries
 			}
 		} else {
 			metaMap = map[string]any{

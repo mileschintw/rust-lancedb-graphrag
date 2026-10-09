@@ -5703,3 +5703,53 @@ func TestQueryRAGRetrievalModeAndRankingRoundTrip(t *testing.T) {
 		t.Errorf("a rank that is absent from its list must be omitted: %s", final.Data)
 	}
 }
+
+// TestQueryRAGLeversRoundTrip is the 06.3.6 D-136 tracer at the gateway: a request naming a lever
+// reaches the engine as the enum, and the engine's echo reaches the client as the name.
+func TestQueryRAGLeversRoundTrip(t *testing.T) {
+	var receivedReq *pb.QueryRAGRequest
+	engine := engineFunc{
+		queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+			receivedReq = req
+			resp := &pb.QueryRAGResponse{
+				Answer:    "Binary answer",
+				SessionId: req.GetSessionId(),
+				Snapshot: &pb.RetrievalSnapshot{
+					IndexGeneration: "gen-1",
+					Levers:          []pb.Lever{pb.Lever_LEVER_BINARY_ANSWER_FORMAT},
+				},
+			}
+			return newSingleResponseStream(resp, nil), nil
+		},
+	}
+
+	body := `{"query":"is it so","session_id":"sess-levers","levers":["binary_answer_format"]}`
+	req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(body)).WithContext(t.Context())
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if receivedReq == nil {
+		t.Fatal("engine QueryRAG was not called")
+	}
+	if got := receivedReq.GetLevers(); len(got) != 1 || got[0] != pb.Lever_LEVER_BINARY_ANSWER_FORMAT {
+		t.Errorf("engine levers = %v, want [LEVER_BINARY_ANSWER_FORMAT]", got)
+	}
+
+	var final *sseEvent
+	for _, ev := range parseSSEEvents(recorder.Body.String()) {
+		if ev.Event == "final_answer" {
+			final = &ev
+		}
+	}
+	if final == nil {
+		t.Fatalf("no final_answer event in %s", recorder.Body.String())
+	}
+	if !strings.Contains(final.Data, `"levers":["binary_answer_format"]`) {
+		t.Errorf("snapshot must echo the lever name: %s", final.Data)
+	}
+}

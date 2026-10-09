@@ -23,14 +23,16 @@
 #         the default 10-key and explicit 12-key snapshot DTO pins and the ranking-row key rule. The
 #         unknown retrieval_mode and non-boolean flag 400 cases are subtests of an existing test and
 #         do not move the count.
+#   121 — Phase 06.3.6 plan 05 Task 2 (gateway 81, internal/sse 17): added TestQueryRAGLeversRoundTrip,
+#         the D-136 request-name to engine-enum to snapshot-echo-name round trip.
 set -e
 
-EXPECTED_TOTAL=120
+EXPECTED_TOTAL=121
 RELOCATION_BASELINE=67
 
 # Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
 # different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 80
+EXPECTED_PACKAGES="gateway 81
 gateway/db 7
 gateway/internal/config 4
 gateway/internal/sse 17
