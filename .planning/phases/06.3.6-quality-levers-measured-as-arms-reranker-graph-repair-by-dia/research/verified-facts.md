@@ -649,3 +649,13 @@ verification and this section describe the same code.
 
 **Requirements.** OBS-06 is unticked (`.planning/REQUIREMENTS.md:46`). Under D-127 only 06.3.6-22's SUMMARY carries
 `requirements-completed: [OBS-06]`. Plans 01-21 carry `requirements-completed: []`, and their `<output>` blocks say so.
+
+**§M corrections (2026-10-10, after gap planning).**
+- `./data/lancedb/staged_documents_v2.lance` has `_transactions` and `_versions` but no `data/` directory, so it holds
+  zero rows **[re-checked]** by the orchestrator. The planner read its manifest: it is the 7-column pre-metadata
+  staging form.
+- The planner reports that `DatabaseManager::initialize` upgrades that staging table by design (D-168) once `nodes`
+  validates. **[planner-reported]**, not re-checked by the orchestrator.
+- `bm25.len()` counts chunks, not documents **[planner-reported]**. Metadata coverage must count distinct documents.
+- `verify-ingestion.sh` and `verify-live-evidence.sh` exist at the repo root and are tracked **[re-checked]**
+  (`git ls-files`). VERIFICATION.md's remark that they do not exist is wrong.
