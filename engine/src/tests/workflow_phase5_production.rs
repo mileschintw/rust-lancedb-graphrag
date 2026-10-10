@@ -258,6 +258,7 @@ async fn workflow_phase5_production_context_population() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let assemble_node = workflow::nodes::AssemblePromptNode::new();
@@ -756,6 +757,7 @@ async fn workflow_phase5_config_verify_generation_timeout() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(deps.generator.clone());
@@ -956,6 +958,7 @@ async fn workflow_phase5_generation_retry_tracer() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator));
@@ -1035,6 +1038,7 @@ async fn workflow_phase5_openrouter_cancellation_propagates() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
     let mut req = generation::GenerationRequest::new("Question?", evidence);
     req.cancel = Some(cancel.clone());
@@ -2005,6 +2009,7 @@ async fn openrouter_node_standalone_near_miss_marker_is_repaired() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))
@@ -2159,6 +2164,7 @@ async fn openrouter_node_strict_visible_unresolvable_marker_is_dropped() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))
@@ -2310,6 +2316,7 @@ async fn openrouter_node_total_citation_loss_downgrades_basis_to_model_only() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))
@@ -2469,6 +2476,7 @@ async fn openrouter_node_total_citation_loss_flag_off_fails_closed() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let generate_node = workflow::nodes::GenerateAnswerNode::new(Some(generator))

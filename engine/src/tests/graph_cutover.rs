@@ -781,6 +781,7 @@ fn one_evidence_block() -> Vec<crate::prompt::EvidenceBlock> {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }]
 }
 

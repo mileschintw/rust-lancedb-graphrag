@@ -167,6 +167,7 @@ impl Node for GenerateAnswerNode {
             req.graph_facts = ctx.graph_facts.clone();
             req.graph_weight = self.graph_weight;
             req.allow_model_only = ctx.allow_model_only;
+            req.prompt_options = crate::prompt::PromptOptions::from_levers(ctx.levers);
             req.session_id = Some(ctx.session_id.clone());
             req.correlation_id = Some(ctx.trace_id.clone());
             req.cancel = Some(cancel.clone());

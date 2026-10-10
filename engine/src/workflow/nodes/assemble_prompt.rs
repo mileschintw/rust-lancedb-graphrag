@@ -6,7 +6,8 @@ use super::super::{
 };
 use crate::pb::lancet::v1::NodeErrorKind;
 use crate::prompt::{
-    pack_evidence_and_graph_prompt, PromptAssemblyError, DEFAULT_ANSWER_TOKEN_BUDGET,
+    pack_evidence_and_graph_prompt_with, PromptAssemblyError, PromptOptions,
+    DEFAULT_ANSWER_TOKEN_BUDGET,
     DEFAULT_MAX_PROMPT_TOKENS,
 };
 
@@ -79,7 +80,7 @@ impl Node for AssemblePromptNode {
                 return Ok(());
             }
 
-            match pack_evidence_and_graph_prompt(
+            match pack_evidence_and_graph_prompt_with(
                 &ctx.original_query,
                 &ctx.evidence_blocks,
                 &ctx.graph_facts,
@@ -87,6 +88,7 @@ impl Node for AssemblePromptNode {
                 self.max_prompt_tokens,
                 self.answer_token_budget,
                 cancel,
+                PromptOptions::from_levers(ctx.levers),
             )
             .await
             {

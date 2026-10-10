@@ -261,6 +261,7 @@ fn evidence_block_with_id(id: &str) -> crate::prompt::EvidenceBlock {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }
 }
 

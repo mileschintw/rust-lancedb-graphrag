@@ -15,7 +15,7 @@ use crate::{
         emit_generation_output_rejected, BoxFuture, GenerationError, GenerationErrorKind,
         GenerationRequest, Generator, GroundingLimits, ModelOutput, RejectedOutput,
     },
-    prompt::pack_evidence_and_graph_prompt,
+    prompt::{pack_evidence_and_graph_prompt_with, PromptOptions},
 };
 
 pub const DEFAULT_OPENROUTER_MODEL: &str = "openai/gpt-4o-mini";
@@ -239,7 +239,8 @@ pub struct OpenRouterGenerator {
 
 /// Packs system policy, user prompt, and validation evidence blocks for OpenRouter structured generation.
 ///
-/// Returns `(system_message, user_message, validation_evidence_blocks)`.
+/// Returns `(system_message, user_message, validation_evidence_blocks)`. `options` selects the
+/// lever-gated policy sentences, the same ones the workflow's own prompt assembly carries.
 /// When `evidence` is empty and `allow_model_only` is true, the ungrounded model-only prompt is packed
 /// and the returned validation evidence slice is empty.
 #[allow(clippy::too_many_arguments)]
@@ -251,6 +252,7 @@ pub(crate) async fn pack_openrouter_messages(
     evidence_budget: usize,
     max_output_tokens: usize,
     allow_model_only: bool,
+    options: PromptOptions,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<(String, String, Vec<crate::prompt::EvidenceBlock>), GenerationError> {
     if cancel.is_cancelled() {
@@ -266,7 +268,7 @@ pub(crate) async fn pack_openrouter_messages(
         return Ok((system_msg, user_msg, Vec::new()));
     }
 
-    let packed_evidence = pack_evidence_and_graph_prompt(
+    let packed_evidence = pack_evidence_and_graph_prompt_with(
         question,
         evidence,
         graph_facts,
@@ -274,6 +276,7 @@ pub(crate) async fn pack_openrouter_messages(
         evidence_budget,
         max_output_tokens,
         cancel,
+        options,
     )
     .await
     .map_err(|err| match err {
@@ -539,6 +542,7 @@ impl OpenRouterGenerator {
             self.config.evidence_token_budget(),
             self.config.max_completion_tokens(),
             request.allow_model_only,
+            request.prompt_options,
             &cancel,
         )
         .await?;

@@ -3569,6 +3569,7 @@ async fn render_default_provider_messages() -> String {
             8192,
             2048,
             request.allow_model_only,
+            request.prompt_options,
             &cancel,
         )
         .await
@@ -3599,4 +3600,85 @@ async fn provider_messages_for_the_default_request_are_byte_identical_to_the_rec
         "the default request's provider messages (== system ==, == user ==, == evidence ==) must \
          match the output recorded before any 06.3.6 prompt-side change"
     );
+}
+
+/// Packs the two-chunk default request through the provider path with `options` and returns the
+/// user message, which carries the assembled policy.
+async fn provider_user_message(options: crate::prompt::PromptOptions) -> String {
+    let evidence = assemble_evidence_blocks(&[sample_candidate(
+        "1",
+        "Lancet fuses vector and BM25 candidates with reciprocal rank fusion.",
+    )]);
+    let mut request = GenerationRequest::new("How does Lancet rank candidates?", evidence);
+    request.prompt_options = options;
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let (_system, user, _validation_evidence) =
+        crate::generation::openrouter::pack_openrouter_messages(
+            &request.question,
+            &request.evidence,
+            &request.graph_facts,
+            request.graph_weight,
+            8192,
+            2048,
+            request.allow_model_only,
+            request.prompt_options,
+            &cancel,
+        )
+        .await
+        .expect("the request must pack");
+    user
+}
+
+/// The provider adapter builds the same lever sentences the workflow's own prompt assembly does,
+/// because both read one `PromptOptions` (06.3.6 D-142, D-146).
+#[tokio::test]
+async fn the_provider_messages_carry_the_lever_sentences_the_request_selects() {
+    use crate::prompt::{
+        PromptOptions, BINARY_ANSWER_FORMAT_RULES, EVIDENCE_METADATA_POLICY_SENTENCE,
+    };
+
+    let plain = provider_user_message(PromptOptions::default()).await;
+    assert!(!plain.contains(EVIDENCE_METADATA_POLICY_SENTENCE));
+    assert!(!plain.contains(BINARY_ANSWER_FORMAT_RULES));
+
+    let metadata = provider_user_message(PromptOptions {
+        evidence_metadata: true,
+        binary_answer_format: false,
+    })
+    .await;
+    assert!(metadata.contains(EVIDENCE_METADATA_POLICY_SENTENCE));
+    assert!(!metadata.contains(BINARY_ANSWER_FORMAT_RULES));
+
+    let format = provider_user_message(PromptOptions {
+        evidence_metadata: false,
+        binary_answer_format: true,
+    })
+    .await;
+    assert!(format.contains(BINARY_ANSWER_FORMAT_RULES));
+    assert!(!format.contains(EVIDENCE_METADATA_POLICY_SENTENCE));
+
+    let both = provider_user_message(PromptOptions {
+        evidence_metadata: true,
+        binary_answer_format: true,
+    })
+    .await;
+    let metadata_at = both.find(EVIDENCE_METADATA_POLICY_SENTENCE).expect("metadata");
+    let format_at = both.find(BINARY_ANSWER_FORMAT_RULES).expect("format");
+    assert!(metadata_at < format_at, "metadata sentence precedes the format rules");
+}
+
+/// The hand-written `PartialEq` of the request compares `prompt_options`, so two requests that
+/// differ only in the lever sentences they select are not equal.
+#[test]
+fn generation_requests_that_select_different_prompt_options_are_not_equal() {
+    let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Some evidence.")]);
+    let plain = GenerationRequest::new("Question?", evidence.clone());
+    let mut with_format = GenerationRequest::new("Question?", evidence.clone());
+    assert_eq!(plain, with_format);
+    with_format.prompt_options.binary_answer_format = true;
+    assert_ne!(plain, with_format);
+    let mut with_metadata = GenerationRequest::new("Question?", evidence);
+    with_metadata.prompt_options.evidence_metadata = true;
+    assert_ne!(plain, with_metadata);
+    assert_ne!(with_format, with_metadata);
 }

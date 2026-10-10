@@ -269,6 +269,7 @@ async fn workflow_phase5_generation_preflight_bootstrap_tracer() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let steps = Arc::new(Mutex::new(Vec::new()));
@@ -605,6 +606,7 @@ async fn workflow_phase5_generation_preflight_worst_case_budget() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let preparation_started = Arc::new(tokio::sync::Notify::new());
@@ -1477,6 +1479,7 @@ async fn workflow_phase5_timeout_cancels_stalled_provider() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let node = GenerateAnswerNode::new(Some(generator));
@@ -2131,6 +2134,7 @@ async fn generation_retry_request_is_byte_identical() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let node = GenerateAnswerNode::new(Some(capturing_gen.clone() as Arc<dyn Generator>));
@@ -2233,6 +2237,7 @@ async fn generation_outer_timeout_allows_retry() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let node = GenerateAnswerNode::new(Some(slow_gen.clone() as Arc<dyn Generator>));
@@ -2312,6 +2317,7 @@ async fn generation_cancellation_between_attempts() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let node = GenerateAnswerNode::new(Some(cancelling_gen.clone() as Arc<dyn Generator>));
@@ -3030,6 +3036,7 @@ async fn workflow_phase5_checkpoint_full_snapshot() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
     ctx.assembled_prompt = "assembled prompt remains lossless".into();
     ctx.answer = "lossless answer".into();
@@ -3364,6 +3371,7 @@ async fn workflow_phase5_failure_terminal_notices_tracer() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::with_responses(vec![
@@ -3490,6 +3498,7 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
             rank: 1,
             suspicious: false,
             graph_boosted: false,
+            evidence_meta: None,
         }];
 
         let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::with_responses(vec![
@@ -3625,6 +3634,7 @@ async fn workflow_phase5_failure_terminal_preserves_notices_without_answer_event
             rank: 1,
             suspicious: false,
             graph_boosted: false,
+            evidence_meta: None,
         }];
 
         let fake_gen: Arc<dyn Generator> = Arc::new(FakeGenerator::new(Ok(ModelOutput {
@@ -3965,6 +3975,7 @@ async fn graph_ablation_empty_facts_and_context_with_grounded_answer() {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }];
 
     let fake_graph = Arc::new(FakeGraphQueryPort::success("entity_a -- rel -- entity_b"));
@@ -5720,6 +5731,7 @@ impl engine::generation::Generator for PackingTestGenerator {
                     8192,
                     2048,
                     request.allow_model_only,
+                    request.prompt_options,
                     &cancel,
                 )
                 .await?;
@@ -5891,6 +5903,7 @@ fn evidence_block_with_id(id: &str) -> engine::prompt::EvidenceBlock {
         rank: 1,
         suspicious: false,
         graph_boosted: false,
+        evidence_meta: None,
     }
 }
 

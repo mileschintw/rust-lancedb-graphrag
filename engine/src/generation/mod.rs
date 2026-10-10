@@ -521,6 +521,13 @@ pub struct GenerationRequest {
     pub allow_model_only: bool,
     pub session_id: Option<String>,
     pub correlation_id: Option<String>,
+    /// The lever-gated prompt additions of this request (06.3.6 D-142, D-146).
+    ///
+    /// Set from the admitted levers at both construction sites and read by the provider adapter
+    /// when it packs the messages, so the adapter builds the same prompt the workflow assembled.
+    /// It is the default, which adds nothing, for a request that names no lever.
+    #[serde(skip)]
+    pub prompt_options: crate::prompt::PromptOptions,
     #[serde(skip)]
     pub cancel: Option<tokio_util::sync::CancellationToken>,
 }
@@ -536,6 +543,7 @@ impl PartialEq for GenerationRequest {
             allow_model_only,
             session_id,
             correlation_id,
+            prompt_options,
             cancel: _,
         } = self;
         *system_policy == other.system_policy
@@ -546,6 +554,7 @@ impl PartialEq for GenerationRequest {
             && *allow_model_only == other.allow_model_only
             && *session_id == other.session_id
             && *correlation_id == other.correlation_id
+            && *prompt_options == other.prompt_options
     }
 }
 
@@ -560,6 +569,7 @@ impl GenerationRequest {
             allow_model_only: false,
             session_id: None,
             correlation_id: None,
+            prompt_options: crate::prompt::PromptOptions::default(),
             cancel: None,
         }
     }

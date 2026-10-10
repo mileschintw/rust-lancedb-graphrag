@@ -4,6 +4,7 @@ pub mod chunker;
 pub mod client;
 pub mod config;
 pub mod db;
+pub mod doc_meta;
 pub mod generation;
 pub mod graph;
 pub mod ingest;
