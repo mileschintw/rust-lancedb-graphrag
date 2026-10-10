@@ -113,6 +113,7 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "openrouter.temperature",
     "openrouter.top_p",
     "openrouter.max_output_tokens",
+    "openrouter.generation_provider_order",
 ];
 
 const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
@@ -276,6 +277,10 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     ("openrouter.temperature", "unit=unitless; range=finite 0..2"),
     ("openrouter.top_p", "unit=unitless; range=finite 0..1"),
     ("openrouter.max_output_tokens", "unit=tokens; range=>0"),
+    (
+        "openrouter.generation_provider_order",
+        "unit=provider slugs; range=empty, or unique entries of 1..=64 chars without whitespace",
+    ),
 ];
 
 #[test]
@@ -625,6 +630,55 @@ fn config_openrouter_model_env_overrides_match_contract() {
         .expect("effective settings from overridden openrouter model settings");
     assert_eq!(effective.generation_model, "custom/generation-model-test");
     assert_eq!(effective.embedding_model, "custom/embedding-model-test");
+}
+
+/// D-191: the generation provider pin is set in the configuration files only. `load_settings`
+/// reads each environment override by name, and none exists for the pin, so neither the plain
+/// variable nor an indexed form of it moves the pin.
+#[test]
+fn config_generation_provider_order_has_no_environment_override() {
+    let _guard = ENV_MUTEX.lock().unwrap();
+
+    for (name, value) in [
+        ("LANCET_OPENROUTER__GENERATION_PROVIDER_ORDER", "openinference"),
+        (
+            "LANCET_OPENROUTER__GENERATION_PROVIDER_ORDER",
+            "sail-research,openinference",
+        ),
+        ("LANCET_OPENROUTER__GENERATION_PROVIDER_ORDER", ""),
+        (
+            "LANCET_OPENROUTER__GENERATION_PROVIDER_ORDER__0",
+            "openinference",
+        ),
+    ] {
+        let settings = load_settings_with_env(name, value)
+            .unwrap_or_else(|error| panic!("{name}={value:?} must not break startup: {error}"));
+        assert_eq!(
+            settings.openrouter.generation_provider_order,
+            ["sail-research"],
+            "{name}={value:?} must leave the committed pin in force"
+        );
+    }
+}
+
+/// D-191: `main` hands the configured provider order to the generation config it builds from the
+/// effective settings, and to no other config (extraction and rerank keep their own requests).
+#[test]
+fn main_pins_only_the_generation_config_to_the_configured_provider_order() {
+    let main = include_str!("main.rs");
+    let pin = ".with_provider_order(effective_settings.generation_provider_order.clone())";
+    assert_eq!(main.matches(".with_provider_order(").count(), 1);
+    let pin_at = main.find(pin).expect("main pins the generation config");
+    let generation = main
+        .find("let generation_config =")
+        .expect("main builds the generation config");
+    let generator = main
+        .find("OpenRouterGenerator::new_with_config(api_key, generation_config)")
+        .expect("main builds the generator from the generation config");
+    assert!(
+        generation < pin_at && pin_at < generator,
+        "the pin sits between the generation config and the generator"
+    );
 }
 
 /// Sets `name` to `value` under the caller's `ENV_MUTEX` guard, runs `load_settings`, and restores

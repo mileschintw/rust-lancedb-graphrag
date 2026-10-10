@@ -2868,6 +2868,63 @@ async fn d96_chat_payload_requires_parameters() {
     );
 }
 
+/// Runs one `generate` call against a local mock, with the adapter built through the config
+/// path `main.rs` uses and pinned to `order`, and returns the chat request body the mock read.
+async fn d191_chat_body(order: &[&str]) -> serde_json::Value {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
+    let addr = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = accept_with_deadline(&listener).expect("accept chat request");
+        let request = read_http_request(&mut stream);
+        write_json_response(&mut stream, d96_response(json!({})));
+        let body = request.split_once("\r\n\r\n").expect("request body").1;
+        serde_json::from_str::<serde_json::Value>(body).expect("chat request body is JSON")
+    });
+    let config = OpenRouterGenerationConfig::with_grounding_limits(
+        "mock/d191-model",
+        format!("http://{addr}/chat"),
+        format!("http://{addr}/models"),
+        Duration::from_secs(5),
+        0.0,
+        1.0,
+        crate::generation::GroundingLimits::default_limits(),
+    )
+    .expect("generation config")
+    .with_provider_order(order.iter().map(|slug| (*slug).to_string()).collect());
+    let adapter = OpenRouterGenerator::new_with_config("test-key", config).expect("adapter");
+
+    let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Text.")]);
+    adapter
+        .generate(GenerationRequest::new("Question?", evidence))
+        .await
+        .expect("generation succeeds");
+    server.join().expect("server completed")
+}
+
+#[tokio::test]
+async fn d191_chat_payload_pins_the_configured_provider_order() {
+    let body = d191_chat_body(&["sail-research"]).await;
+    assert_eq!(
+        body["provider"],
+        json!({
+            "require_parameters": true,
+            "order": ["sail-research"],
+            "allow_fallbacks": false
+        }),
+        "the pin rides beside require_parameters and turns fallbacks off"
+    );
+}
+
+#[tokio::test]
+async fn d191_empty_provider_order_keeps_the_d96_provider_object() {
+    let body = d191_chat_body(&[]).await;
+    assert_eq!(
+        body["provider"],
+        json!({"require_parameters": true}),
+        "an empty order sends neither `order` nor `allow_fallbacks`"
+    );
+}
+
 #[tokio::test]
 async fn d96_generation_served_logs_the_response_id_model_and_provider() {
     let run = d96_generate_against_mock(d96_response(json!({

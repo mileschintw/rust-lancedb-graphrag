@@ -811,6 +811,14 @@ pub struct OpenRouterSettings {
     pub top_p: f64,
     #[serde(default = "default_max_output_tokens")]
     pub max_output_tokens: u32,
+    /// OpenRouter provider slugs the generation chat request is pinned to, in order (D-191,
+    /// amending D-96).
+    ///
+    /// A non-empty list is sent as `provider.order` with `allow_fallbacks = false`, beside
+    /// `require_parameters = true`. An empty list sends no pin and keeps the old request bytes.
+    /// Rerank keeps its own D-131 body. Not overridable by environment.
+    #[serde(default)]
+    pub generation_provider_order: Vec<String>,
 }
 
 impl Default for OpenRouterSettings {
@@ -829,6 +837,7 @@ impl Default for OpenRouterSettings {
             temperature: 0.0,
             top_p: 1.0,
             max_output_tokens: 2048,
+            generation_provider_order: Vec::new(),
         }
     }
 }
@@ -857,6 +866,7 @@ pub struct EffectiveRagSettings {
     pub temperature: f64,
     pub top_p: f64,
     pub max_output_tokens: u32,
+    pub generation_provider_order: Vec<String>,
     pub index_generation: String,
     grounding_limits: Arc<generation::GroundingLimits>,
 }
@@ -907,6 +917,7 @@ impl EffectiveRagSettings {
             temperature: settings.openrouter.temperature,
             top_p: settings.openrouter.top_p,
             max_output_tokens: settings.openrouter.max_output_tokens,
+            generation_provider_order: settings.openrouter.generation_provider_order.clone(),
             index_generation: new_index_generation(),
             grounding_limits: Arc::new(limits),
         };
@@ -1738,5 +1749,91 @@ mod tests {
             error.contains("graph_rrf_weight"),
             "the error must name graph_rrf_weight: {error}"
         );
+    }
+
+    /// D-191: startup accepts an empty order and well-formed slugs, and refuses an empty entry,
+    /// whitespace, a control character, an entry past 64 characters and a duplicate.
+    #[test]
+    fn generation_provider_order_entries_are_validated_at_startup() {
+        let with_order = |order: &[&str]| {
+            let mut settings = Settings::default();
+            settings.openrouter.generation_provider_order =
+                order.iter().map(|slug| (*slug).to_string()).collect();
+            EffectiveRagSettings::try_from_settings(&settings)
+        };
+
+        let longest = "a".repeat(64);
+        for accepted in [
+            &[][..],
+            &["sail-research"][..],
+            &["sail-research", "other-provider"][..],
+            &[longest.as_str()][..],
+        ] {
+            let effective = with_order(accepted)
+                .unwrap_or_else(|error| panic!("{accepted:?} must start: {error}"));
+            assert_eq!(effective.generation_provider_order, accepted);
+        }
+
+        let too_long = "a".repeat(65);
+        for refused in [
+            &[""][..],
+            &["sail-research", ""][..],
+            &["sail research"][..],
+            &[" sail-research"][..],
+            &["sail-research\t"][..],
+            &["sail\u{a0}research"][..],
+            &["sail\u{0}research"][..],
+            &["sail\u{7f}research"][..],
+            &[too_long.as_str()][..],
+            &["sail-research", "sail-research"][..],
+        ] {
+            let error = with_order(refused).expect_err(&format!("{refused:?} must refuse startup"));
+            assert!(
+                error.contains("generation_provider_order"),
+                "the error must name the key for {refused:?}: {error}"
+            );
+        }
+    }
+
+    /// D-191: the compiled-in default sends no pin, both committed files carry the Sail Research
+    /// pin, and the `verify` overlay inherits it. Each of the three starts.
+    #[test]
+    fn generation_provider_order_is_pinned_in_the_committed_files_and_open_by_default() {
+        const CONFIG_VERIFY_TOML: &str = include_str!("../../config/config.verify.toml");
+        assert!(OpenRouterSettings::default()
+            .generation_provider_order
+            .is_empty());
+
+        let layered = |sources: &[&str]| {
+            let mut builder = ::config::Config::builder();
+            for raw in sources {
+                builder =
+                    builder.add_source(::config::File::from_str(raw, ::config::FileFormat::Toml));
+            }
+            let built = builder.build().expect("configuration must parse as TOML");
+            let order = built
+                .get::<Vec<String>>("openrouter.generation_provider_order")
+                .expect("openrouter.generation_provider_order must be present");
+            let settings: Settings = built
+                .try_deserialize()
+                .expect("configuration must deserialize through Settings");
+            EffectiveRagSettings::try_from_settings(&settings)
+                .expect("configuration must pass startup validation");
+            order
+        };
+        for (name, sources) in [
+            ("config/config.toml", vec![CONFIG_TOML]),
+            ("config/config.example.toml", vec![CONFIG_EXAMPLE_TOML]),
+            (
+                "config/config.toml + config/config.verify.toml",
+                vec![CONFIG_TOML, CONFIG_VERIFY_TOML],
+            ),
+        ] {
+            assert_eq!(
+                layered(&sources),
+                ["sail-research"],
+                "{name} must pin generation to Sail Research (D-191)"
+            );
+        }
     }
 }

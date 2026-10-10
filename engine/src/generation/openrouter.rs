@@ -56,6 +56,7 @@ pub struct OpenRouterGenerationConfig {
     preflight_timeout: Duration,
     temperature: f64,
     top_p: f64,
+    provider_order: Vec<String>,
     pub grounding_limits: Arc<GroundingLimits>,
 }
 
@@ -113,6 +114,7 @@ impl OpenRouterGenerationConfig {
             preflight_timeout: DEFAULT_PREFLIGHT_TIMEOUT,
             temperature,
             top_p,
+            provider_order: Vec::new(),
             grounding_limits: limits,
         };
         config.validate()?;
@@ -146,6 +148,19 @@ impl OpenRouterGenerationConfig {
 
     pub fn preflight_timeout(&self) -> Duration {
         self.preflight_timeout
+    }
+
+    /// Pins the chat request to the given OpenRouter provider slugs, in order (D-191).
+    ///
+    /// An empty list, the default, sends no pin and keeps the request bytes of D-96.
+    pub fn with_provider_order(mut self, order: Vec<String>) -> Self {
+        self.provider_order = order;
+        self
+    }
+
+    /// The provider slugs the chat request is pinned to, empty when unpinned (D-191).
+    pub fn provider_order(&self) -> &[String] {
+        &self.provider_order
     }
 
     pub fn max_completion_tokens(&self) -> usize {
@@ -631,9 +646,7 @@ impl OpenRouterGenerator {
                     schema: schema_json,
                 },
             },
-            provider: ProviderPreferences {
-                require_parameters: true,
-            },
+            provider: ProviderPreferences::for_order(&[]),
         };
 
         let send_fut = self
@@ -960,17 +973,33 @@ struct OpenRouterChatPayload {
     provider: ProviderPreferences,
 }
 
-/// OpenRouter provider-routing preferences sent with every chat request (D-96).
+/// OpenRouter provider-routing preferences sent with every chat request (D-96, D-191).
 ///
 /// `require_parameters` makes OpenRouter route only to endpoints that support every parameter
 /// the request sends: structured outputs, `reasoning`, `temperature`, `top_p` and max tokens.
-/// Fallback among the qualifying endpoints stays on. A 2026-09-30 (about 21:15Z) snapshot showed
-/// 22 of 29 endpoints qualifying for `deepseek/deepseek-v4-flash-0731`; pinning one provider
-/// was not chosen. It is hard-coded because it is a routing invariant of the strict-schema
-/// contract, not a tunable. The routing preference is the only key under `provider`.
+/// It is hard-coded because it is a routing invariant of the strict-schema contract, not a
+/// tunable. With no configured provider order, fallback among the qualifying endpoints stays on
+/// and `require_parameters` is the only key under `provider` (D-96). A configured order adds
+/// `order` and `allow_fallbacks = false`, which pins generation to those providers (D-191).
 #[derive(Serialize)]
 struct ProviderPreferences {
     require_parameters: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    order: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    allow_fallbacks: Option<bool>,
+}
+
+impl ProviderPreferences {
+    /// The preferences for a chat request pinned to `order`, unpinned when `order` is empty.
+    fn for_order(order: &[String]) -> Self {
+        let _ = order;
+        Self {
+            require_parameters: true,
+            order: Vec::new(),
+            allow_fallbacks: None,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -1077,4 +1106,41 @@ struct UsageMeta {
     prompt_tokens: u32,
     completion_tokens: u32,
     total_tokens: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProviderPreferences;
+
+    fn slugs(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| (*name).to_string()).collect()
+    }
+
+    /// D-191: the `provider` object carries the order and `allow_fallbacks = false` after
+    /// `require_parameters` when pinned, and is byte-identical to D-96's when unpinned.
+    #[test]
+    fn provider_object_bytes_with_and_without_the_pin() {
+        let pinned =
+            serde_json::to_string(&ProviderPreferences::for_order(&slugs(&["sail-research"])))
+                .expect("preferences serialize");
+        assert_eq!(
+            pinned,
+            r#"{"require_parameters":true,"order":["sail-research"],"allow_fallbacks":false}"#
+        );
+
+        let unpinned = serde_json::to_string(&ProviderPreferences::for_order(&[]))
+            .expect("preferences serialize");
+        assert_eq!(unpinned, r#"{"require_parameters":true}"#);
+
+        let ordered = serde_json::to_string(&ProviderPreferences::for_order(&slugs(&[
+            "sail-research",
+            "other-provider",
+        ])))
+        .expect("preferences serialize");
+        assert_eq!(
+            ordered,
+            r#"{"require_parameters":true,"order":["sail-research","other-provider"],"allow_fallbacks":false}"#,
+            "the configured order is kept as written"
+        );
+    }
 }

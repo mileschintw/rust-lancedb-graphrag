@@ -433,6 +433,18 @@ fi
 #         assertions and a failing one, `--migrate-only`, and the source pin), 881->908. The lib count
 #         rises 783->796 and the new `backfill_evidence_metadata (bin)` count is 14.
 #         `engine (bin)`/inspect_lancedb/reconcile_eval_store/config_startup unchanged (0/58/18/22).
+#   915 -- Phase 06.3.6 plan 16 (D-191, generation pinned to Sail Research): the
+#         `[openrouter] generation_provider_order` key and the `provider.order` / `allow_fallbacks`
+#         request fields. Seven tests: one `generation::openrouter::tests` test (the exact `provider`
+#         bytes pinned, unpinned and with two slugs), two `generation::tests` tests (the chat body
+#         over a mock carries `order` and `allow_fallbacks = false` when pinned and the D-96 object
+#         when the order is empty), two `config::tests` tests (the entry validation at startup, and
+#         the pin in both committed files and the `verify` overlay with the open default), and two
+#         `tests` tests (no environment override moves the pin, and `main.rs` pins the generation
+#         config only). The key also joined the `config_example_matches_effective_rag_contract`
+#         key and annotation tables (no test added). 908->915. lib rises 796->803;
+#         `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata/
+#         config_startup unchanged (0/58/18/14/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -475,18 +487,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 908 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 908, got $TOTAL" >&2
+if [ "$TOTAL" -ne 915 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 915, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 796 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 796, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 803 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 803, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 796 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 796, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 803 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 803, got $LIB_COUNT" >&2
   exit 1
 fi
 
