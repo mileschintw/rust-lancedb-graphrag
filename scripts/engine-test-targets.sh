@@ -418,6 +418,21 @@ fi
 #         rebuild test was rewritten in place (it pinned the superseded carry-forward) and does not move
 #         the count. The lib count rises 774->783. `engine (bin)`/inspect_lancedb/reconcile_eval_store/
 #         config_startup unchanged (0/58/18/22).
+#   908 -- Phase 06.3.6 plan 14 Task 3: `db::backfill` (`backfill_nodes_metadata` over one
+#         `Table::add_columns` with a scan-order `Reader`, the strict post-state check and restore,
+#         `verify_backfill_on_copy` and its five COPY assertions, the legacy 19-column schema, the
+#         sidecar) and the new bin `backfill_evidence_metadata` (dry run, `--apply`,
+#         `--verify-on-copy`, `--migrate-only`). Thirteen `tests::ingest_metadata` tests (one version
+#         and the strict 22-column schema with the 19 digests, old data files and values checked,
+#         short and long readers refused, the second run failing with "already exists", a sidecar id
+#         absent from `nodes`, a forced post-state mismatch restored, an empty table, backfilled equal
+#         to a fresh ingest, the sidecar shape and its refusals, the schema classifier, three COPY
+#         verification runs and the source pin) and fourteen bin tests (the argument modes, the eval,
+#         copy and migrate isolation, the snapshot guard, a dry run that writes nothing, the refused
+#         applies, an apply that moves only the `nodes` version, `--verify-on-copy` with its five
+#         assertions and a failing one, `--migrate-only`, and the source pin), 881->908. The lib count
+#         rises 783->796 and the new `backfill_evidence_metadata (bin)` count is 14.
+#         `engine (bin)`/inspect_lancedb/reconcile_eval_store/config_startup unchanged (0/58/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -435,6 +450,7 @@ BIN_MAIN_COUNT=$(awk '/Running unittests src\/main\.rs/ {found=1; next} found &&
 BIN_INSPECT_COUNT=$(awk '/Running unittests src\/bin\/inspect_lancedb\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 BIN_SEED_COUNT=$(awk '/Running unittests src\/bin\/seed_rag_fixture\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 BIN_RECONCILE_COUNT=$(awk '/Running unittests src\/bin\/reconcile_eval_store\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
+BIN_BACKFILL_COUNT=$(awk '/Running unittests src\/bin\/backfill_evidence_metadata\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 INTEG_CONFIG_COUNT=$(awk '/Running tests\/config_startup\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 
 LIB_COUNT=${LIB_COUNT:-0}
@@ -442,6 +458,7 @@ BIN_MAIN_COUNT=${BIN_MAIN_COUNT:-0}
 BIN_INSPECT_COUNT=${BIN_INSPECT_COUNT:-0}
 BIN_SEED_COUNT=${BIN_SEED_COUNT:-0}
 BIN_RECONCILE_COUNT=${BIN_RECONCILE_COUNT:-0}
+BIN_BACKFILL_COUNT=${BIN_BACKFILL_COUNT:-0}
 INTEG_CONFIG_COUNT=${INTEG_CONFIG_COUNT:-0}
 
 echo "engine (lib): $LIB_COUNT"
@@ -449,26 +466,27 @@ echo "engine (bin): $BIN_MAIN_COUNT"
 echo "inspect_lancedb (bin): $BIN_INSPECT_COUNT"
 echo "seed_rag_fixture (bin): $BIN_SEED_COUNT"
 echo "reconcile_eval_store (bin): $BIN_RECONCILE_COUNT"
+echo "backfill_evidence_metadata (bin): $BIN_BACKFILL_COUNT"
 echo "config_startup (test): $INTEG_CONFIG_COUNT"
 
 LIB_BIN_SUM=$(( LIB_COUNT + BIN_MAIN_COUNT ))
-TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT + INTEG_CONFIG_COUNT ))
+TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT + BIN_BACKFILL_COUNT + INTEG_CONFIG_COUNT ))
 
-echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
+echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
-# Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 881 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 881, got $TOTAL" >&2
+# Assert invariants (9 named assertions)
+if [ "$TOTAL" -ne 908 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 908, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 783 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 783, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 796 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 796, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 783 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 783, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 796 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 796, got $LIB_COUNT" >&2
   exit 1
 fi
 
@@ -492,10 +510,15 @@ if [ "$BIN_RECONCILE_COUNT" -ne 18 ]; then
   exit 1
 fi
 
+if [ "$BIN_BACKFILL_COUNT" -ne 14 ]; then
+  echo "FAIL: backfill_evidence_metadata test count mismatch: expected 14, got $BIN_BACKFILL_COUNT" >&2
+  exit 1
+fi
+
 if [ "$INTEG_CONFIG_COUNT" -ne 22 ]; then
   echo "FAIL: config_startup test count mismatch: expected 22, got $INTEG_CONFIG_COUNT" >&2
   exit 1
 fi
 
-echo "All 8 Rust test target invariants verified successfully."
+echo "All 9 Rust test target invariants verified successfully."
 exit 0

@@ -1314,7 +1314,7 @@ async fn backfilled_values_equal_what_a_fresh_ingest_writes() {
     };
     let rows_a = read(nodes_a).await;
     let rows_b = read(nodes_b).await;
-    assert_eq!(rows_a.len(), 1);
+    assert_eq!(rows_a.len(), two_chunks().len(), "one row per chunk");
     assert_eq!(rows_a, rows_b, "backfilled equals fresh, row by row");
     assert_eq!(rows_b[0][1].as_deref(), Some(full_metadata()[0].1));
     let _ = std::fs::remove_dir_all(path_a);
