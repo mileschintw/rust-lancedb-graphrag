@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "Completed 06.3.6-16 (dev session 1); next wave 12 plan 17"
+stopped_at: "Completed 06.3.6-17 (dev session 2); next wave 13 plan 18"
 last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
 state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
@@ -15,7 +15,7 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6-16 dev session 1: 600 records, read 2 triggered for graph-v2"
+last_activity_desc: "06.3.6-17 dev session 2: 300 records; freeze candidate keeps graph-v2 EdgeEvidence"
 ---
 
 # Project State
@@ -30,6 +30,7 @@ Total Plans in Phase: 22
 - **2026-10-09: Phase 06.3.6 EXECUTION STARTED** (`/gsd-execute-phase 06.3.6`). Wave 1: 06.3.6-01 (D-131 rerank probe, live, main), 06.3.6-02 (D-137 rule commit and `--graph-dump`, main) and 06.3.6-03 (harness hardening, worktree). Executors run on Sonnet.
 - **2026-10-10: 06.3.6 wave 10 COMPLETE.** 15: live metadata backfill (nodes 702 -> 703; staging 766 -> 767 at first start), engine `generation=lance-703 doc_meta_documents=346`, generation recorded once (`0250d160`), D-61 coverage identical. Corroboration closed under owner D-189: 2/3 exact; mhr-325f99830534 retrieval completes but generation fails deterministically (OpenInference finish_reason 'error' at 701 tokens, 4 sends). Pre-backfill restore source: data/store-snapshots/pre-backfill-2026-10-10/. Gate green.
 - **2026-10-10: 06.3.6 wave 11 (16)** — dev session 1 600 records (599 ok), all Sail; metadata +0.100 CI [+0.022,+0.178]; graph-v2 read 2 (MultiCited) triggered; D-135 T=2286 ms needs O11; spend est $0.444 / acct $0.113.
+- **2026-10-10: 06.3.6 wave 12 (17)** — dev session 2 300/300 ok, all Sail; graph-v2 MultiCited -0.056 vs EdgeEvidence -0.011 -> keep read 1; freeze candidate freeze-d2b57135cf7c; O11 open (T=2286 needs retrieve 3080; D-184 -> A); dev spend est $0.656 / acct $0.162.
 - **2026-10-09: 06.3.6 wave 9 COMPLETE.** 14: THE schema commit `e620a0b2` (nodes 22 columns; the 19-column eval store now fails closed until plan 15 Task 4's backfill), DocMetaMap scan at startup and rebuild, `backfill_evidence_metadata` bin with COPY verification. Gate green: cargo 908, go 124, pytest 2166.
 - **2026-10-09: 06.3.6 wave 8 COMPLETE.** 13: branch A (entity resolution) not-applicable under selection graph_list_precision; SUMMARY only (`86a73e45`), no code, so the gate was not re-run.
 - **2026-10-09: 06.3.6 wave 7 COMPLETE.** 12: graph chunk precision variants (All / EdgeEvidence / MultiCited), `[engine.graph] graph_v2_chunk_precision` (default all, so graph_v2 is lever_unavailable until set), per-request dispatch. Owed later: launcher refusal of LANCET_ENGINE__GRAPH__* (plans 19, 20); the variant is not on the wire, so dev reads must record it. Gate green: cargo 857.
