@@ -1,0 +1,158 @@
+{
+ "records": 2457,
+ "arms": [
+  "hybrid",
+  "hybrid+graph",
+  "hybrid+rerank",
+  "hybrid+metadata",
+  "hybrid+answer-format",
+  "hybrid+graph-v2",
+  "hybrid+all"
+ ],
+ "format_counts": {
+  "L": 2453,
+  ".": 4
+ },
+ "format_by_arm": {
+  "hybrid": {
+   "L": 351
+  },
+  "hybrid+graph": {
+   "L": 351
+  },
+  "hybrid+rerank": {
+   "L": 351
+  },
+  "hybrid+metadata": {
+   "L": 349,
+   ".": 2
+  },
+  "hybrid+answer-format": {
+   "L": 350,
+   ".": 1
+  },
+  "hybrid+graph-v2": {
+   "L": 351
+  },
+  "hybrid+all": {
+   "L": 350,
+   ".": 1
+  }
+ },
+ "format_map": "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL.LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL",
+ "provider_sequence_rle": [
+  [
+   "Sail Research",
+   2457
+  ]
+ ],
+ "per_provider": {
+  "Sail Research": {
+   "records": 2457,
+   "L": 2453,
+   "i": 0,
+   "n": 0,
+   ".": 4,
+   "errors": 4
+  }
+ },
+ "by_arm_provider": {
+  "hybrid": {
+   "Sail Research": 351
+  },
+  "hybrid+graph": {
+   "Sail Research": 351
+  },
+  "hybrid+rerank": {
+   "Sail Research": 351
+  },
+  "hybrid+metadata": {
+   "Sail Research": 351
+  },
+  "hybrid+answer-format": {
+   "Sail Research": 351
+  },
+  "hybrid+graph-v2": {
+   "Sail Research": 351
+  },
+  "hybrid+all": {
+   "Sail Research": 351
+  }
+ },
+ "by_arm": {
+  "hybrid": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 0,
+   "unmatched": 0,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 0
+  },
+  "hybrid+graph": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 0,
+   "unmatched": 0,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 0
+  },
+  "hybrid+rerank": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 0,
+   "unmatched": 0,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 0
+  },
+  "hybrid+metadata": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 2,
+   "unmatched": 0,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 0
+  },
+  "hybrid+answer-format": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 1,
+   "unmatched": 0,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 0
+  },
+  "hybrid+graph-v2": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 0,
+   "unmatched": 0,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 0
+  },
+  "hybrid+all": {
+   "records": 351,
+   "no_evidence": 0,
+   "errored": 1,
+   "unmatched": 0,
+   "unmatched_no_evidence": 0,
+   "unmatched_errored": 0
+  }
+ },
+ "unmatched_count": 0,
+ "unmatched_no_evidence": 0,
+ "unmatched_errored": 0,
+ "unmatched_unexplained": 0,
+ "unmatched": [],
+ "two_served_lines": [],
+ "join_coverage": {
+  "reached_generate_answer": 2457,
+  "with_served_line": 2457
+ },
+ "served_lines_total": 2479,
+ "served_lines_not_in_journal": 22,
+ "distinct_models": [
+  "deepseek/deepseek-v4-flash-0731"
+ ],
+ "distinct_providers": [
+  "Sail Research"
+ ]
+}
