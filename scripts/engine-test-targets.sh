@@ -406,6 +406,18 @@ fi
 #         without the keys, and a 19-column `nodes` table failing `initialize` and `open_and_validate`
 #         closed with the staging table untouched), 857->872. The lib count rises 759->774. `engine
 #         (bin)`/inspect_lancedb/reconcile_eval_store/config_startup unchanged (0/58/18/22).
+#   881 -- Phase 06.3.6 plan 14 Task 2: the production `DocMetaMap` scan (`ingest::load_doc_meta`, one
+#         named-projection scan of `document_id` and the three metadata columns at the snapshot's
+#         `nodes` version), called at startup after the v1 graph build and on the ingest rebuild path,
+#         where a failed scan degrades the rebuild like the BM25 and graph builds do. Nine
+#         `tests::ingest_metadata` tests (one entry for the document with metadata and none for the
+#         other, an empty map and an unavailable lever for a store without metadata, an available lever
+#         over a scanned snapshot, a handle at another version refused, the shared handle left unpinned,
+#         a second rebuild picking up a newly ingested document, a failed scan keeping the prior
+#         snapshot whole, the `main.rs` call-order pin and the rebuild-path pin), 872->881. The plan 11
+#         rebuild test was rewritten in place (it pinned the superseded carry-forward) and does not move
+#         the count. The lib count rises 774->783. `engine (bin)`/inspect_lancedb/reconcile_eval_store/
+#         config_startup unchanged (0/58/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -445,18 +457,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 872 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 872, got $TOTAL" >&2
+if [ "$TOTAL" -ne 881 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 881, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 774 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 774, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 783 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 783, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 774 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 774, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 783 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 783, got $LIB_COUNT" >&2
   exit 1
 fi
 

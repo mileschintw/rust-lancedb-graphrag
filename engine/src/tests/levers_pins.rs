@@ -1038,10 +1038,12 @@ async fn service_holding_metadata(
     (path, service, map)
 }
 
-/// A snapshot that holds a non-empty map keeps that same map after a rebuild that succeeds, so an
-/// ingest never silently turns `evidence_metadata` unavailable.
+/// A rebuild that succeeds replaces the snapshot's map with a scan of the store (plan 06.3.6-14
+/// Task 2; plan 11 carried the prior map forward, which this supersedes). The store here holds no
+/// metadata, so the injected map is not carried over and the new snapshot's map is empty; the
+/// rebuild over a store that does hold metadata is pinned in `ingest_metadata`.
 #[tokio::test]
-async fn a_successful_rebuild_carries_the_metadata_map_forward() {
+async fn a_successful_rebuild_replaces_the_metadata_map_with_a_scan_of_the_store() {
     let _lock = crate::ingest::REBUILD_TEST_MUTEX.lock().await;
     let (path, service, map) = service_holding_metadata("levers-meta-rebuild-ok").await;
     let swapped = crate::ingest::rebuild_and_swap(
@@ -1052,10 +1054,14 @@ async fn a_successful_rebuild_carries_the_metadata_map_forward() {
     .await
     .expect("the rebuild succeeds");
     assert!(!swapped.rebuild_degraded);
-    assert!(!swapped.doc_meta.is_empty());
-    assert!(Arc::ptr_eq(&swapped.doc_meta, &map));
+    assert!(
+        swapped.doc_meta.is_empty(),
+        "the store holds no metadata, so the scanned map is empty"
+    );
+    assert!(!Arc::ptr_eq(&swapped.doc_meta, &map));
+    assert!(!map.is_empty(), "the earlier snapshot's map is untouched");
     let current = Arc::clone(&*service.corpus_store.read().await);
-    assert!(Arc::ptr_eq(&current.doc_meta, &map));
+    assert!(Arc::ptr_eq(&current.doc_meta, &swapped.doc_meta));
     let _ = std::fs::remove_dir_all(path);
 }
 

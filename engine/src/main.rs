@@ -52,18 +52,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let graph_index = engine::graph::index::GraphIndex::build(&database)
         .await
         .map_err(|error| format!("initial graph index build failed: {error}"))?;
-    let initial_snapshot = Arc::new(CorpusSnapshot::new(
-        Arc::new(bm25_index),
-        Arc::new(graph_index),
-        nodes_version,
-        false,
-    ));
+    // D-142, D-145: the evidence metadata of every document, from one scan of the metadata
+    // columns at the snapshot's `nodes` version. A fresh handle is scanned, so the handle the
+    // service keeps stays unpinned; an empty map leaves the `evidence_metadata` lever unavailable.
+    let doc_meta_nodes = database.nodes_table().await?;
+    let doc_meta = engine::ingest::load_doc_meta(&doc_meta_nodes, nodes_version)
+        .await
+        .map_err(|error| format!("initial document metadata scan failed: {error}"))?;
+    let initial_snapshot = Arc::new(
+        CorpusSnapshot::new(
+            Arc::new(bm25_index),
+            Arc::new(graph_index),
+            nodes_version,
+            false,
+        )
+        .with_doc_meta(Arc::new(doc_meta)),
+    );
     engine::telemetry::metrics::record_corpus_generation(initial_snapshot.nodes_version);
     tracing::info!(
         document_count = initial_snapshot.bm25.len(),
         generation = %initial_snapshot.generation,
         nodes_version = initial_snapshot.nodes_version,
         graph_entities = initial_snapshot.graph_index.entity_count(),
+        doc_meta_documents = initial_snapshot.doc_meta.len(),
         "BM25 snapshot built"
     );
     let corpus_store = Arc::new(tokio::sync::RwLock::new(initial_snapshot));

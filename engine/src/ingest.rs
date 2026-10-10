@@ -18,7 +18,7 @@ use arrow_array::{
 use dashmap::DashMap;
 use futures::{future::BoxFuture, StreamExt, TryStreamExt};
 use lancedb::{
-    query::{ExecutableQuery, QueryBase},
+    query::{ExecutableQuery, QueryBase, Select},
     Table,
 };
 use opentelemetry::trace::TraceContextExt;
@@ -1616,15 +1616,91 @@ impl RebuildTriggerLinks {
     }
 }
 
+/// The non-empty string at `row`, or `None` for a null or empty value.
+fn present_text(array: &StringArray, row: usize) -> Option<&str> {
+    (!array.is_null(row) && !array.value(row).is_empty()).then(|| array.value(row))
+}
+
 /// Scans the evidence metadata of every document in `nodes` at `nodes_version` into a map.
 ///
+/// One scan with a named projection of `document_id` and the three metadata columns; the value of
+/// a document is the first non-null value of each column over its chunk rows, and a document
+/// with no value at all has no entry (D-142, D-145). The map therefore describes exactly one
+/// `nodes` generation, which is what lets the snapshot that holds it stay immutable.
+///
+/// The handle is read, never checked out: a `Table` clone shares its pinned version with every
+/// other clone, so pinning the handle the service keeps would race the retrieval paths. The
+/// caller passes a handle that is already at `nodes_version` (a fresh `nodes_table()` handle at
+/// startup, the `checkout_latest` handle on rebuild), and a handle at any other version is
+/// refused rather than scanned.
+///
 /// # Errors
-/// Returns the failure text when the table cannot be read.
+/// Returns the failure text when the handle is not at `nodes_version` or the table cannot be read.
 pub async fn load_doc_meta(
-    _nodes: &Table,
-    _nodes_version: u64,
+    nodes: &Table,
+    nodes_version: u64,
 ) -> Result<crate::doc_meta::DocMetaMap, String> {
-    Ok(crate::doc_meta::DocMetaMap::default())
+    let actual = nodes.version().await.map_err(|error| {
+        format!("failed to read the nodes version for the metadata scan: {error}")
+    })?;
+    if actual != nodes_version {
+        return Err(format!(
+            "metadata scan refused: the nodes handle is at version {actual}, the snapshot version is {nodes_version}"
+        ));
+    }
+    let batches: Vec<RecordBatch> = nodes
+        .query()
+        .select(Select::columns(&[
+            "document_id",
+            "doc_title",
+            "source",
+            "published_date",
+        ]))
+        .execute()
+        .await
+        .map_err(|error| format!("metadata scan query failed: {error}"))?
+        .try_collect()
+        .await
+        .map_err(|error| format!("metadata scan collect failed: {error}"))?;
+
+    let mut by_document: HashMap<String, crate::doc_meta::DocMeta> = HashMap::new();
+    for batch in &batches {
+        let text = |name: &str| -> Result<&StringArray, String> {
+            batch
+                .column_by_name(name)
+                .ok_or_else(|| format!("metadata scan did not return {name}"))?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| format!("nodes column {name} is not a string column"))
+        };
+        let documents = text("document_id")?;
+        let titles = text("doc_title")?;
+        let sources = text("source")?;
+        let dates = text("published_date")?;
+        for row in 0..batch.num_rows() {
+            let (title, source, date) = (
+                present_text(titles, row),
+                present_text(sources, row),
+                present_text(dates, row),
+            );
+            if title.is_none() && source.is_none() && date.is_none() {
+                continue;
+            }
+            let entry = by_document
+                .entry(documents.value(row).to_owned())
+                .or_default();
+            if entry.doc_title.is_none() {
+                entry.doc_title = title.map(str::to_owned);
+            }
+            if entry.source.is_none() {
+                entry.source = source.map(str::to_owned);
+            }
+            if entry.published_date.is_none() {
+                entry.published_date = date.map(str::to_owned);
+            }
+        }
+    }
+    Ok(crate::doc_meta::DocMetaMap::from_entries(by_document))
 }
 
 #[cfg(test)]
@@ -1818,13 +1894,49 @@ pub async fn rebuild_and_swap_with_graph_builder(
         }
     };
 
+    // Scan the evidence metadata at the version just read, with the same degraded handling: a
+    // failed scan keeps the prior snapshot whole and never swaps in an empty map.
+    #[cfg(test)]
+    let doc_meta_result =
+        if REBUILD_DOC_META_FAIL_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            Err("injected document metadata scan failure".to_string())
+        } else {
+            load_doc_meta(&nodes_latest, nodes_version).await
+        };
+    #[cfg(not(test))]
+    let doc_meta_result = load_doc_meta(&nodes_latest, nodes_version).await;
+    let new_doc_meta = match doc_meta_result {
+        Ok(map) => map,
+        Err(err) => {
+            tracing::error!("document metadata rebuild failed: {err}");
+            let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
+                bm25: Arc::clone(&prior.bm25),
+                graph_index: Arc::clone(&prior.graph_index),
+                generation: prior.generation.clone(),
+                nodes_version: prior.nodes_version,
+                rebuild_degraded: true,
+                doc_meta: Arc::clone(&prior.doc_meta),
+            });
+            let mut write_guard = corpus_store.write().await;
+            *write_guard = degraded_snapshot;
+            current_span.record("lancet.index.generation_after", &prior.generation);
+            current_span.record("lancet.index.nodes_version_after", prior.nodes_version);
+            let elapsed_ms = rebuild_start.elapsed().as_millis() as u64;
+            crate::telemetry::metrics::record_index_rebuild_duration_ms(
+                crate::telemetry::metrics::REBUILD_FAILED,
+                elapsed_ms,
+            );
+            return Err(format!("document metadata rebuild failed: {err}"));
+        }
+    };
+
     let new_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
         bm25: Arc::new(new_bm25),
         graph_index: Arc::new(new_graph_index),
         generation: crate::workflow::ports::corpus_generation_from_nodes_version(nodes_version),
         nodes_version,
         rebuild_degraded: false,
-        doc_meta: Arc::clone(&prior.doc_meta),
+        doc_meta: Arc::new(new_doc_meta),
     });
 
     // Swap under a short write lock
