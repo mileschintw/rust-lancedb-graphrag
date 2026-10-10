@@ -120,6 +120,21 @@ pub fn parse_chunk_settings(metadata: &HashMap<String, String>) -> Result<ChunkS
     })
 }
 
+/// The ingest-metadata keys that carry a document's evidence metadata, in the column order of
+/// `nodes` and of the staging table (D-144, D-168).
+pub const EVIDENCE_METADATA_KEYS: [&str; 3] = ["doc_title", "source", "published_date"];
+
+/// The value of one evidence-metadata key, or `None` when it is absent or empty.
+///
+/// An empty value is stored as null so that a document without a value and a document with an
+/// empty one read the same.
+fn evidence_value<'a>(metadata: &'a HashMap<String, String>, key: &str) -> Option<&'a str> {
+    metadata
+        .get(key)
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+}
+
 #[derive(Debug, Clone)]
 pub struct IngestionJob {
     pub document_id: String,
@@ -352,6 +367,20 @@ pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<Ingestio
                     .ok_or("invalid generation array type in staged_documents_v2")
             })
             .transpose()?;
+        // The metadata columns are read when present, so a table that predates them still reads.
+        let mut evidence_columns: Vec<Option<&StringArray>> = Vec::new();
+        for key in EVIDENCE_METADATA_KEYS {
+            evidence_columns.push(
+                batch
+                    .column_by_name(key)
+                    .map(|col| {
+                        col.as_any().downcast_ref::<StringArray>().ok_or_else(|| {
+                            format!("invalid {key} array type in staged_documents_v2")
+                        })
+                    })
+                    .transpose()?,
+            );
+        }
 
         for i in 0..batch.num_rows() {
             let doc_id = doc_ids.value(i).to_string();
@@ -370,11 +399,18 @@ pub async fn read_staged_jobs(database: &DatabaseManager) -> Result<Vec<Ingestio
                 None => 1,
             };
 
-            let metadata = HashMap::from([
+            let mut metadata = HashMap::from([
                 ("chunk_strategy".to_string(), strategy),
                 ("chunk_size".to_string(), size.to_string()),
                 ("chunk_overlap".to_string(), overlap.to_string()),
             ]);
+            for (key, column) in EVIDENCE_METADATA_KEYS.iter().zip(&evidence_columns) {
+                if let Some(array) = column {
+                    if !array.is_null(i) && !array.value(i).is_empty() {
+                        metadata.insert((*key).to_string(), array.value(i).to_string());
+                    }
+                }
+            }
 
             let chunk_settings = parse_chunk_settings(&metadata).map_err(|error| {
                 format!("malformed chunk settings in staging for document {doc_id}: {error}")
@@ -460,6 +496,18 @@ pub async fn persist_raw_with_boundary(
             )
             .unwrap_or(i32::MAX)])),
             Arc::new(Int64Array::from(vec![new_gen])),
+            Arc::new(StringArray::from(vec![evidence_value(
+                &job.metadata,
+                "doc_title",
+            )])),
+            Arc::new(StringArray::from(vec![evidence_value(
+                &job.metadata,
+                "source",
+            )])),
+            Arc::new(StringArray::from(vec![evidence_value(
+                &job.metadata,
+                "published_date",
+            )])),
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -695,6 +743,9 @@ pub async fn replace_document_with_faults(
             .iter()
             .map(|chunk| content_hash(&chunk.content))
             .collect();
+        let doc_title = evidence_value(&job.metadata, "doc_title");
+        let source = evidence_value(&job.metadata, "source");
+        let published_date = evidence_value(&job.metadata, "published_date");
         let batch = RecordBatch::try_new(
             node_schema.clone(),
             vec![
@@ -745,6 +796,9 @@ pub async fn replace_document_with_faults(
                     Some(content_type(&job.filename));
                     chunks.len()
                 ])),
+                Arc::new(StringArray::from(vec![doc_title; chunks.len()])),
+                Arc::new(StringArray::from(vec![source; chunks.len()])),
+                Arc::new(StringArray::from(vec![published_date; chunks.len()])),
             ],
         )
         .map_err(|error| error.to_string())?;

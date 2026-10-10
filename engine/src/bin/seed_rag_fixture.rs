@@ -169,6 +169,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Arc::new(StringArray::from(vec![Some(EMBEDDING_MODEL); CHUNKS.len()])),
             Arc::new(Int64Array::from(vec![Some(ingested_at); CHUNKS.len()])),
             Arc::new(StringArray::from(vec![Some("text/plain"); CHUNKS.len()])),
+            nullable("doc_title"),
+            nullable("source"),
+            nullable("published_date"),
         ],
     )?;
 

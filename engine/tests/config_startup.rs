@@ -168,6 +168,9 @@ async fn seed_schema_valid_bm25_failure_fixture(
             Arc::new(StringArray::from(vec![Some("test-embedding-model")])),
             Arc::new(Int64Array::from(vec![Some(1)])),
             Arc::new(StringArray::from(vec![Some("text/plain")])),
+            nullable("doc_title")?,
+            nullable("source")?,
+            nullable("published_date")?,
         ],
     )
     .map_err(|error| format!("build BM25 failure fixture row: {error}"))?;

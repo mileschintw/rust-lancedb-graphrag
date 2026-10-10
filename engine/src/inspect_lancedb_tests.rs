@@ -156,6 +156,9 @@ async fn add_nodes(database: &DatabaseManager, document_id: &str, nodes: &[NodeF
                     .collect::<Vec<_>>(),
             )),
             nullable("content_type"),
+            nullable("doc_title"),
+            nullable("source"),
+            nullable("published_date"),
         ],
     )
     .unwrap();
@@ -568,6 +571,9 @@ async fn test_embedding_child_fixture(
             Arc::new(StringArray::from(vec![Some(EMBEDDING_MODEL)])),
             Arc::new(Int64Array::from(vec![Some(42)])),
             nullable("content_type"),
+            nullable("doc_title"),
+            nullable("source"),
+            nullable("published_date"),
         ],
     )
     .unwrap();
@@ -1640,6 +1646,9 @@ async fn document_ids_store(
                 nullable("embedding_model"),
                 nullable("ingested_at"),
                 nullable("content_type"),
+                nullable("doc_title"),
+                nullable("source"),
+                nullable("published_date"),
             ],
         )
         .unwrap();
@@ -1722,6 +1731,9 @@ async fn document_ids_store(
                 Arc::new(Int32Array::from(vec![500; n])),
                 Arc::new(Int32Array::from(vec![50; n])),
                 Arc::new(Int64Array::from(vec![1i64; n])),
+                Arc::new(StringArray::from(vec![None::<&str>; n])),
+                Arc::new(StringArray::from(vec![None::<&str>; n])),
+                Arc::new(StringArray::from(vec![None::<&str>; n])),
             ],
         )
         .unwrap();

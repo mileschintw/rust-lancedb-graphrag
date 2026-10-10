@@ -73,31 +73,19 @@ impl DatabaseManager {
             .into_iter()
             .collect::<HashSet<_>>();
 
+        // Every table except the staging table is created or validated first, `nodes` included, so
+        // a store whose `nodes` schema drifted fails closed before the staging table is touched
+        // (C4). There is no automatic upgrade of `nodes`: the backfill bin is its only migrator.
         for (name, expected) in table_schemas() {
+            if name == STAGED_TABLE {
+                continue;
+            }
             let table = if existing.contains(name) {
-                let tbl = self
-                    .connection
+                self.connection
                     .open_table(name)
                     .execute()
                     .await
-                    .map_err(|error| format!("failed to open LanceDB table {name}: {error}"))?;
-
-                if name == "staged_documents_v2" {
-                    let actual = tbl
-                        .schema()
-                        .await
-                        .map_err(|error| format!("failed to read schema for {name}: {error}"))?;
-                    if actual.fields() == legacy_staged_documents_v2_schema().fields() {
-                        let transform = lancedb::table::NewColumnTransform::SqlExpressions(vec![(
-                            "generation".to_string(),
-                            "CAST(1 AS BIGINT)".to_string(),
-                        )]);
-                        tbl.add_columns(transform, None).await.map_err(|error| {
-                            format!("failed to add generation column to {name}: {error}")
-                        })?;
-                    }
-                }
-                tbl
+                    .map_err(|error| format!("failed to open LanceDB table {name}: {error}"))?
             } else {
                 self.connection
                     .create_empty_table(name, expected.clone())
@@ -107,7 +95,26 @@ impl DatabaseManager {
             };
             validate_schema(name, &table, &expected).await?;
         }
-        Ok(())
+
+        let staged = if existing.contains(STAGED_TABLE) {
+            let table = self
+                .connection
+                .open_table(STAGED_TABLE)
+                .execute()
+                .await
+                .map_err(|error| format!("failed to open LanceDB table {STAGED_TABLE}: {error}"))?;
+            upgrade_staging_schema(&table).await?;
+            table
+        } else {
+            self.connection
+                .create_empty_table(STAGED_TABLE, staged_documents_v2_schema())
+                .execute()
+                .await
+                .map_err(|error| {
+                    format!("failed to create LanceDB table {STAGED_TABLE}: {error}")
+                })?
+        };
+        validate_schema(STAGED_TABLE, &staged, &staged_documents_v2_schema()).await
     }
 
     /// Delegates to `finish_get_or_create` (tested directly with synthetic errors — see
@@ -187,14 +194,54 @@ impl DatabaseManager {
     }
 }
 
+/// The staging table's name.
+const STAGED_TABLE: &str = "staged_documents_v2";
+
+/// Upgrades a legacy staging table to the current 10-column schema in place (D-168).
+///
+/// Both legacy forms are recognised by strict field equality: the 6-column table without
+/// `generation` gains `generation` (value 1, as before) and the three metadata columns in one
+/// version, and the 7-column table gains the three metadata columns. Any other schema is left for
+/// `validate_schema` to refuse. Existing rows keep every value and read null in the new columns.
+async fn upgrade_staging_schema(table: &Table) -> Result<(), String> {
+    let actual = table
+        .schema()
+        .await
+        .map_err(|error| format!("failed to read schema for {STAGED_TABLE}: {error}"))?;
+    let mut expressions = Vec::new();
+    if actual.fields() == legacy_staged_documents_v2_schema().fields() {
+        expressions.push(("generation".to_string(), "CAST(1 AS BIGINT)".to_string()));
+    } else if actual.fields() != staged_documents_v2_pre_metadata_schema().fields() {
+        return Ok(());
+    }
+    for column in ["doc_title", "source", "published_date"] {
+        expressions.push((column.to_string(), "CAST(NULL AS STRING)".to_string()));
+    }
+    table
+        .add_columns(
+            lancedb::table::NewColumnTransform::SqlExpressions(expressions),
+            None,
+        )
+        .await
+        .map_err(|error| format!("failed to upgrade {STAGED_TABLE}: {error}"))?;
+    Ok(())
+}
+
 async fn validate_schema(name: &str, table: &Table, expected: &SchemaRef) -> Result<(), String> {
     let actual = table
         .schema()
         .await
         .map_err(|error| format!("failed to read LanceDB schema for {name}: {error}"))?;
     if actual.fields() != expected.fields() {
+        let nodes_hint = if name == "nodes"
+            && actual.fields() == backfill::legacy_nodes_schema_v19().fields()
+        {
+            " A nodes table without the doc_title, source and published_date columns is migrated only by the backfill_evidence_metadata bin (--migrate-only for a store that is not the eval store); the engine never upgrades it."
+        } else {
+            ""
+        };
         return Err(format!(
-            "LanceDB schema drift detected for {name}. Remediation: schema reconciliation is fail-closed by design; rename or remove the stale LanceDB store directory and regenerate tables (e.g. via seed_rag_fixture or re-ingestion). Details - expected: {:?}, found: {:?}",
+            "LanceDB schema drift detected for {name}. Remediation: schema reconciliation is fail-closed by design; rename or remove the stale LanceDB store directory and regenerate tables (e.g. via seed_rag_fixture or re-ingestion).{nodes_hint} Details - expected: {:?}, found: {:?}",
             expected.fields(),
             actual.fields()
         ));
@@ -241,6 +288,9 @@ pub fn nodes_schema() -> SchemaRef {
         Field::new("embedding_model", DataType::Utf8, true),
         Field::new("ingested_at", DataType::Int64, true),
         Field::new("content_type", DataType::Utf8, true),
+        Field::new("doc_title", DataType::Utf8, true),
+        Field::new("source", DataType::Utf8, true),
+        Field::new("published_date", DataType::Utf8, true),
     ]))
 }
 
@@ -319,6 +369,9 @@ pub fn staged_documents_v2_pre_metadata_schema() -> SchemaRef {
     ]))
 }
 
+/// The staging schema: the pre-metadata form plus the three nullable evidence-metadata columns
+/// (D-168), so a staged document recovered after a restart keeps its `doc_title`, `source` and
+/// `published_date`.
 pub fn staged_documents_v2_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         Field::new("document_id", DataType::Utf8, false),
@@ -328,6 +381,9 @@ pub fn staged_documents_v2_schema() -> SchemaRef {
         Field::new("chunk_size", DataType::Int32, false),
         Field::new("chunk_overlap", DataType::Int32, false),
         Field::new("generation", DataType::Int64, false),
+        Field::new("doc_title", DataType::Utf8, true),
+        Field::new("source", DataType::Utf8, true),
+        Field::new("published_date", DataType::Utf8, true),
     ]))
 }
 

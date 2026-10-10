@@ -392,16 +392,118 @@ pub fn d1_status(
 }
 
 /// The longest accepted `doc_title`, in characters. Equal to the gateway's `maxDocTitleRunes`.
+///
+/// The corpus maximum is 177; the bound leaves room without letting an oversized value into a
+/// prompt block (T-06.3.6-28, T-06.3.6-47).
 pub const MAX_DOC_TITLE_CHARS: usize = 512;
 
 /// The longest accepted `source`, in characters. Equal to the gateway's `maxSourceRunes`.
+///
+/// The corpus maximum is 59; see [`MAX_DOC_TITLE_CHARS`] for why the bound is wider.
 pub const MAX_SOURCE_CHARS: usize = 256;
 
-/// Re-validates the evidence metadata of an ingest request.
+fn invalid_evidence(key: &str, requirement: &str) -> Status {
+    Status::invalid_argument(format!("invalid {key}: {requirement}"))
+}
+
+fn is_bounded_text(value: &str, max_chars: usize) -> bool {
+    value.chars().count() <= max_chars && !value.chars().any(char::is_control)
+}
+
+/// Whether `value` is a calendar date written `YYYY-MM-DD` with ASCII digits.
+///
+/// The month must be 01 to 12 and the day must exist in that month, counting February 29 only in
+/// a leap year of the proleptic Gregorian calendar. This is the form the gateway accepts through
+/// Go's `2006-01-02` layout, with no time of day and no unpadded fields.
+pub fn is_calendar_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return false;
+    }
+    let number = |from: usize, to: usize| -> Option<u32> {
+        bytes[from..to].iter().all(u8::is_ascii_digit).then(|| {
+            bytes[from..to]
+                .iter()
+                .fold(0, |total, digit| total * 10 + u32::from(digit - b'0'))
+        })
+    };
+    let (Some(year), Some(month), Some(day)) = (number(0, 4), number(5, 7), number(8, 10)) else {
+        return false;
+    };
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    (1..=days_in_month).contains(&day)
+}
+
+/// Validates a `doc_title` value: at most [`MAX_DOC_TITLE_CHARS`] characters, no control character.
+///
+/// # Errors
+/// Returns `InvalidArgument` naming the key, never the value.
+pub fn validate_doc_title(value: &str) -> Result<(), Status> {
+    if is_bounded_text(value, MAX_DOC_TITLE_CHARS) {
+        Ok(())
+    } else {
+        Err(invalid_evidence(
+            "doc_title",
+            "at most 512 characters and no control characters",
+        ))
+    }
+}
+
+/// Validates a `source` value: at most [`MAX_SOURCE_CHARS`] characters, no control character.
+///
+/// # Errors
+/// Returns `InvalidArgument` naming the key, never the value.
+pub fn validate_source(value: &str) -> Result<(), Status> {
+    if is_bounded_text(value, MAX_SOURCE_CHARS) {
+        Ok(())
+    } else {
+        Err(invalid_evidence(
+            "source",
+            "at most 256 characters and no control characters",
+        ))
+    }
+}
+
+/// Validates a `published_date` value: a calendar date written `YYYY-MM-DD`.
+///
+/// # Errors
+/// Returns `InvalidArgument` naming the key, never the value.
+pub fn validate_published_date(value: &str) -> Result<(), Status> {
+    if is_calendar_date(value) {
+        Ok(())
+    } else {
+        Err(invalid_evidence(
+            "published_date",
+            "must be a calendar date written YYYY-MM-DD",
+        ))
+    }
+}
+
+/// Re-validates the evidence metadata of an ingest request; the engine never trusts the gateway.
+///
+/// A missing key and an empty value are both "no value" and pass. Any other value must satisfy
+/// the key's validator, so nothing invalid is ever written to `nodes` or to the staging table.
 ///
 /// # Errors
 /// Returns `InvalidArgument` for a bad `doc_title`, `source` or `published_date`.
-pub fn validate_ingest_metadata(_metadata: &HashMap<String, String>) -> Result<(), Status> {
+pub fn validate_ingest_metadata(metadata: &HashMap<String, String>) -> Result<(), Status> {
+    let present = |key: &str| metadata.get(key).filter(|value| !value.is_empty());
+    if let Some(value) = present("doc_title") {
+        validate_doc_title(value)?;
+    }
+    if let Some(value) = present("source") {
+        validate_source(value)?;
+    }
+    if let Some(value) = present("published_date") {
+        validate_published_date(value)?;
+    }
     Ok(())
 }
 
@@ -939,6 +1041,7 @@ impl LancetService for LancetServiceImpl {
                     filename = message.filename.clone();
                     metadata = message.metadata.clone();
                     parsed_settings = Some(parse_chunk_settings(&metadata)?);
+                    validate_ingest_metadata(&metadata)?;
                     tracing::Span::current().record("lancet.document.id", &document_id);
                 } else {
                     if !message.metadata.is_empty() {

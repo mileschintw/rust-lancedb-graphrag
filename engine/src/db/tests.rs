@@ -168,6 +168,9 @@ async fn initialize_is_idempotent_over_non_empty_staging() {
             Arc::new(Int32Array::from(vec![500])),
             Arc::new(Int32Array::from(vec![50])),
             Arc::new(Int64Array::from(vec![1])),
+            Arc::new(StringArray::from(vec![None::<&str>])),
+            Arc::new(StringArray::from(vec![None::<&str>])),
+            Arc::new(StringArray::from(vec![None::<&str>])),
         ],
     )
     .unwrap();

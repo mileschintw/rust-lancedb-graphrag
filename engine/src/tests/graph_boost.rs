@@ -762,6 +762,9 @@ async fn add_node_rows(nodes: &lancedb::Table, rows: &[(&str, i32, &str)]) {
             Arc::new(StringArray::from(vec![Some("test-model"); count])),
             Arc::new(Int64Array::from(vec![Some(42); count])),
             Arc::new(StringArray::from(vec![Some("text/plain"); count])),
+            nullable("doc_title"),
+            nullable("source"),
+            nullable("published_date"),
         ],
     )
     .unwrap();

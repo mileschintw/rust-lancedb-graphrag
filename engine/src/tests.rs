@@ -1286,6 +1286,9 @@ pub(crate) async fn stage_document_with_settings(
             Arc::new(Int32Array::from(vec![i32::try_from(size).unwrap()])),
             Arc::new(Int32Array::from(vec![i32::try_from(overlap).unwrap()])),
             Arc::new(Int64Array::from(vec![1])),
+            Arc::new(StringArray::from(vec![None::<&str>])),
+            Arc::new(StringArray::from(vec![None::<&str>])),
+            Arc::new(StringArray::from(vec![None::<&str>])),
         ],
     )
     .unwrap();

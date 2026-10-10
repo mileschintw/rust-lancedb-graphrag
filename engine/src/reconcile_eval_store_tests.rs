@@ -83,6 +83,9 @@ async fn write_nodes(database: &DatabaseManager, pairs: &[(&str, &str)]) {
             nullable("embedding_model"),
             nullable("ingested_at"),
             nullable("content_type"),
+            nullable("doc_title"),
+            nullable("source"),
+            nullable("published_date"),
         ],
     )
     .unwrap();
@@ -157,6 +160,9 @@ async fn write_staged(database: &DatabaseManager, document_ids: &[&str]) {
             Arc::new(Int32Array::from(vec![500; n])),
             Arc::new(Int32Array::from(vec![50; n])),
             Arc::new(Int64Array::from(vec![1i64; n])),
+            Arc::new(StringArray::from(vec![None::<&str>; n])),
+            Arc::new(StringArray::from(vec![None::<&str>; n])),
+            Arc::new(StringArray::from(vec![None::<&str>; n])),
         ],
     )
     .unwrap();
