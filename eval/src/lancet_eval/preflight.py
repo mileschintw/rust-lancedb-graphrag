@@ -694,6 +694,7 @@ def read_effective_workflow_config(
         "reformulate_timeout_ms": f"{prefix}REFORMULATE_TIMEOUT_MS",
         "query_embedding_timeout_ms": f"{prefix}QUERY_EMBEDDING_TIMEOUT_MS",
         "retrieve_timeout_ms": f"{prefix}RETRIEVE_TIMEOUT_MS",
+        "rerank_timeout_ms": f"{prefix}RERANK_TIMEOUT_MS",
         "graph_operation_timeout_ms": f"{prefix}GRAPH_OPERATION_TIMEOUT_MS",
         "graph_node_timeout_ms": f"{prefix}GRAPH_NODE_TIMEOUT_MS",
         "prompt_timeout_ms": f"{prefix}PROMPT_TIMEOUT_MS",

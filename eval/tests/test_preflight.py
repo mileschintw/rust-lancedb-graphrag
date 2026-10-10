@@ -254,13 +254,14 @@ def test_run_preflight_checks_index_identity_is_second_check(
 def test_effective_workflow_config_same_under_eval_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With LANCET_ENV=eval, read_effective_workflow_config returns the same seven
+    """With LANCET_ENV=eval, read_effective_workflow_config returns the same eight
     workflow values as for the base config (D-66): the restored lancedb_path-only
     overlay carries no [engine.workflow] table, so nothing overrides the base."""
     for env_var in (
         "LANCET_ENGINE__WORKFLOW__REFORMULATE_TIMEOUT_MS",
         "LANCET_ENGINE__WORKFLOW__QUERY_EMBEDDING_TIMEOUT_MS",
         "LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS",
+        "LANCET_ENGINE__WORKFLOW__RERANK_TIMEOUT_MS",
         "LANCET_ENGINE__WORKFLOW__GRAPH_OPERATION_TIMEOUT_MS",
         "LANCET_ENGINE__WORKFLOW__GRAPH_NODE_TIMEOUT_MS",
         "LANCET_ENGINE__WORKFLOW__PROMPT_TIMEOUT_MS",
@@ -276,8 +277,28 @@ def test_effective_workflow_config_same_under_eval_env(
     monkeypatch.setenv("LANCET_ENV", "eval")
     eval_values = read_effective_workflow_config(base_config)
 
-    assert len(base_values) == 7
+    assert len(base_values) == 8
+    assert base_values["rerank_timeout_ms"] > 0
     assert eval_values == base_values
+
+
+def test_effective_workflow_config_mirrors_the_rerank_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The engine reads LANCET_ENGINE__WORKFLOW__RERANK_TIMEOUT_MS (config.rs), so the
+    harness's effective view of the budgets must follow it: the run of record reports
+    the rerank timeout the engine actually ran with (06.3.6-09 gap, closed in 06.3.6-18)."""
+    base_config = repo_root() / "config" / "config.toml"
+    monkeypatch.delenv("LANCET_ENV", raising=False)
+    monkeypatch.delenv("LANCET_ENGINE__WORKFLOW__RERANK_TIMEOUT_MS", raising=False)
+    from_file = read_effective_workflow_config(base_config)["rerank_timeout_ms"]
+
+    monkeypatch.setenv("LANCET_ENGINE__WORKFLOW__RERANK_TIMEOUT_MS", str(from_file + 1))
+    overridden = read_effective_workflow_config(base_config)["rerank_timeout_ms"]
+    assert overridden == from_file + 1
+
+    monkeypatch.setenv("LANCET_ENGINE__WORKFLOW__RERANK_TIMEOUT_MS", "not-a-number")
+    assert read_effective_workflow_config(base_config)["rerank_timeout_ms"] == from_file
 
 
 def test_gateway_failure_message_names_service_and_remedy(
