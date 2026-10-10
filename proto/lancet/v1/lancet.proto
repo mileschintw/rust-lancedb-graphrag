@@ -146,6 +146,9 @@ enum NoticeCode {
   // ── Phase 06.3.6 ──────────────────────────────────────────────────────────
   // D-134: the reranker was attempted and the fused order was kept. Joins the `degraded_mode` set.
   NOTICE_CODE_RERANK_DEGRADED = 23;
+  // D-194: a configured default lever whose resource this snapshot lacks was not applied to a request
+  // that named no lever. Joins the `degraded_mode` set.
+  NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE = 24;
 }
 
 enum AnswerBasis {

@@ -126,10 +126,12 @@ pub struct LancetServiceImpl {
 
 /// The resources that serve the quality levers of a request, held beside the lever-free ones.
 ///
-/// A lever whose resource is `None` is refused at admission with `lever_unavailable`. The
-/// service-wide `reranker` stays the lever-free path (a failing reranker there fails the query);
-/// `reranker` here is the one a request that names `rerank` uses, where a failure degrades to the
-/// fused order instead.
+/// A request that names a lever whose resource is `None` is refused at admission with
+/// `lever_unavailable`. A configured default whose resource is `None` is dropped from a request
+/// that names no lever, with a DEFAULT_LEVER_UNAVAILABLE notice (D-194). The service-wide
+/// `reranker` stays the lever-free path (a failing reranker there fails the query); `reranker`
+/// here is the one a request that names `rerank` uses, where a failure degrades to the fused
+/// order instead.
 #[derive(Clone, Default)]
 pub struct LeverResources {
     /// The reranker of the `rerank` lever; `None` leaves the lever unavailable.
@@ -146,8 +148,10 @@ impl std::fmt::Debug for LeverResources {
 
 /// Which quality levers this engine can serve right now (D-136, D-165).
 ///
-/// A lever whose resource is absent is refused at admission with `lever_unavailable`, so the
-/// snapshot echo never claims a lever that did not run.
+/// A named lever whose resource is absent is refused at admission with `lever_unavailable`, and an
+/// absent configured default is dropped from a request that names no lever with a
+/// DEFAULT_LEVER_UNAVAILABLE notice (D-194), so the snapshot echo never claims a lever that did
+/// not run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LeverAvailability {
     rerank: bool,
@@ -166,6 +170,38 @@ impl LeverAvailability {
             v1::Lever::BinaryAnswerFormat => self.binary_answer_format,
             v1::Lever::GraphV2 => self.graph_v2,
         }
+    }
+}
+
+/// Reports which levers an engine can serve against `snapshot`.
+///
+/// `binary_answer_format` needs no resource and is available. `rerank` is available when the lever
+/// reranker is wired (D-131). `evidence_metadata` is available when the snapshot holds metadata for
+/// at least one document (D-136). `graph_v2` is available when a graph chunk variant other than the
+/// no-op `all` is configured (D-139): with `all` the lever would change nothing while the echo still
+/// claimed it. This is the one availability predicate, shared by admission and the startup check.
+pub fn lever_availability_for(
+    lever_reranker_wired: bool,
+    graph_v2_chunk_precision: ChunkPrecision,
+    snapshot: &workflow::ports::CorpusSnapshot,
+) -> LeverAvailability {
+    LeverAvailability {
+        rerank: lever_reranker_wired,
+        evidence_metadata: !snapshot.doc_meta.is_empty(),
+        binary_answer_format: true,
+        graph_v2: graph_v2_chunk_precision != ChunkPrecision::All,
+    }
+}
+
+/// Why `lever` cannot be served when its resource is absent (D-194).
+///
+/// The same text feeds the startup warning and the per-request notice.
+pub fn lever_unavailable_reason(lever: v1::Lever) -> &'static str {
+    match lever {
+        v1::Lever::Rerank => "no lever reranker is wired",
+        v1::Lever::EvidenceMetadata => "the corpus snapshot holds no document metadata",
+        v1::Lever::GraphV2 => "graph_v2_chunk_precision is the no-op `all`",
+        v1::Lever::BinaryAnswerFormat | v1::Lever::Unspecified => "it cannot be served",
     }
 }
 
@@ -190,23 +226,16 @@ pub(crate) fn request_graph_settings(
 }
 
 impl LancetServiceImpl {
-    /// Reports which levers this engine can serve against `snapshot`.
-    ///
-    /// `binary_answer_format` needs no resource and is available. `rerank` is available when
-    /// the lever reranker is wired (D-131). `evidence_metadata` is available when the snapshot
-    /// holds metadata for at least one document (D-136). `graph_v2` is available when a graph chunk
-    /// variant other than the no-op `all` is configured (D-139): with `all` the lever would change
-    /// nothing while the echo still claimed it.
+    /// Reports which levers this engine can serve against `snapshot` (see [`lever_availability_for`]).
     pub fn lever_availability(
         &self,
         snapshot: &workflow::ports::CorpusSnapshot,
     ) -> LeverAvailability {
-        LeverAvailability {
-            rerank: self.lever_resources.reranker.is_some(),
-            evidence_metadata: !snapshot.doc_meta.is_empty(),
-            binary_answer_format: true,
-            graph_v2: self.effective_settings.graph.graph_v2_chunk_precision != ChunkPrecision::All,
-        }
+        lever_availability_for(
+            self.lever_resources.reranker.is_some(),
+            self.effective_settings.graph.graph_v2_chunk_precision,
+            snapshot,
+        )
     }
 
     /// Checks that every configured default lever can be served against `snapshot`.
@@ -227,12 +256,7 @@ impl LancetServiceImpl {
         let Some(lever) = missing else {
             return Ok(());
         };
-        let reason = match lever {
-            v1::Lever::Rerank => "no lever reranker is wired",
-            v1::Lever::EvidenceMetadata => "the corpus snapshot holds no document metadata",
-            v1::Lever::GraphV2 => "graph_v2_chunk_precision is the no-op `all`",
-            v1::Lever::BinaryAnswerFormat | v1::Lever::Unspecified => "it cannot be served",
-        };
+        let reason = lever_unavailable_reason(lever);
         Err(format!(
             "default lever {} is unavailable: {reason}; provide the resource (for example backfill              the store) or set [engine.levers] defaults = []",
             workflow::levers::wire_name(lever)
@@ -1229,9 +1253,10 @@ impl LancetService for LancetServiceImpl {
             )
         })?;
         // D-157: a request that names no lever runs the configured defaults, and the snapshot echo
-        // reports that effective set. A request that names levers runs exactly those. The checks
-        // below read the effective set, so a default whose resource is missing refuses the request
-        // with `lever_unavailable` instead of being dropped.
+        // reports the levers that ran. A request that names levers runs exactly those. The
+        // combination check below reads this set before availability is consulted; availability
+        // then refuses a named lever whose resource is missing, and drops a configured default
+        // whose resource is missing (D-194).
         let levers = if requested.is_empty() {
             self.effective_settings.default_levers
         } else {
@@ -1250,25 +1275,40 @@ impl LancetService for LancetServiceImpl {
             ));
         }
 
-        // A lever whose resource this engine does not hold is refused, never admitted and echoed:
-        // the echo claims which levers ran.
+        // A named lever whose resource this engine does not hold is refused, never admitted and
+        // echoed: the echo claims which levers ran. A configured default whose resource is missing
+        // was never asked for by this request, so it is dropped and reported in a notice (D-194).
         let snapshot = {
             let guard = self.corpus_store.read().await;
             Arc::clone(&*guard)
         };
         let availability = self.lever_availability(&snapshot);
-        if let Some(lever) = levers
-            .iter()
-            .find(|lever| !availability.is_available(*lever))
-        {
-            return Err(d1_status(
-                tonic::Code::InvalidArgument,
-                format!("lever {} is not available on this engine", lever.as_str_name()),
-                &session_id,
-                &correlation_id,
-                "lever_unavailable",
-            ));
-        }
+        let mut dropped_defaults = Vec::new();
+        let levers = if requested.is_empty() {
+            let mut kept = levers;
+            for lever in levers
+                .iter()
+                .filter(|lever| !availability.is_available(*lever))
+            {
+                dropped_defaults.push(lever);
+                kept = kept.without(lever);
+            }
+            kept
+        } else {
+            if let Some(lever) = levers
+                .iter()
+                .find(|lever| !availability.is_available(*lever))
+            {
+                return Err(d1_status(
+                    tonic::Code::InvalidArgument,
+                    format!("lever {} is not available on this engine", lever.as_str_name()),
+                    &session_id,
+                    &correlation_id,
+                    "lever_unavailable",
+                ));
+            }
+            levers
+        };
 
         let _query_request = QueryRequest::from_values(
             &req.query,
@@ -1330,6 +1370,17 @@ impl LancetService for LancetServiceImpl {
             workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
         ctx.allow_model_only = req.allow_model_only.unwrap_or(wf.allow_model_only_answers);
         ctx.levers = levers;
+        for lever in dropped_defaults {
+            ctx.add_notice(workflow::notice(
+                v1::NoticeCode::DefaultLeverUnavailable,
+                format!(
+                    "configured default lever {} was not applied: {}",
+                    workflow::levers::wire_name(lever),
+                    lever_unavailable_reason(lever)
+                ),
+                v1::NoticeSeverity::Warning,
+            ));
+        }
         let (runner, deps) = self.build_production_workflow_with_levers(snapshot, &ctx.levers);
 
         let parent_span = tracing::info_span!(

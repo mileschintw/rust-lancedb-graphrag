@@ -461,6 +461,19 @@ fi
 #         915->927. lib rises 803->813 and config_startup 22->24;
 #         `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata
 #         unchanged (0/58/18/14).
+#   933 -- Phase 06.3.6 plan 23 Task 1 (D-194, 2026-10-10): a configured default lever whose
+#         resource a snapshot lacks is dropped from a request that names no lever, with one
+#         DEFAULT_LEVER_UNAVAILABLE notice (typed code 24), instead of refusing it. Six new
+#         `tests::levers_pins` tests (a named unavailable lever still refused with
+#         `lever_unavailable`, a named request carrying no code-24 notice, a dropped default
+#         returning once a snapshot with metadata is swapped in, the combination check meeting a
+#         no-lever request before the availability filter, the notice joining the `degraded_mode`
+#         set, and the `LeverSet` removal method). The replaced test
+#         `an_unavailable_default_lever_is_dropped_with_one_notice_for_a_request_that_names_none`
+#         keeps its count, and the bad-input matrix rows `levers_default_degraded` /
+#         `levers_default_admitted` stay inside the existing test. 927->933. lib rises 813->819;
+#         `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata/
+#         config_startup unchanged (0/58/18/14/24).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -503,18 +516,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 927 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 927, got $TOTAL" >&2
+if [ "$TOTAL" -ne 933 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 933, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 813 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 813, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 819 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 819, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 813 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 813, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 819 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 819, got $LIB_COUNT" >&2
   exit 1
 fi
 

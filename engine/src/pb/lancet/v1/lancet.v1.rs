@@ -525,6 +525,9 @@ pub enum NoticeCode {
     /// ── Phase 06.3.6 ──────────────────────────────────────────────────────────
     /// D-134: the reranker was attempted and the fused order was kept. Joins the `degraded_mode` set.
     RerankDegraded = 23,
+    /// D-194: a configured default lever whose resource this snapshot lacks was not applied to a request
+    /// that named no lever. Joins the `degraded_mode` set.
+    DefaultLeverUnavailable = 24,
 }
 impl NoticeCode {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -552,6 +555,7 @@ impl NoticeCode {
             Self::IndexStale => "NOTICE_CODE_INDEX_STALE",
             Self::IndexGenerationMismatch => "NOTICE_CODE_INDEX_GENERATION_MISMATCH",
             Self::RerankDegraded => "NOTICE_CODE_RERANK_DEGRADED",
+            Self::DefaultLeverUnavailable => "NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -576,6 +580,7 @@ impl NoticeCode {
             "NOTICE_CODE_INDEX_STALE" => Some(Self::IndexStale),
             "NOTICE_CODE_INDEX_GENERATION_MISMATCH" => Some(Self::IndexGenerationMismatch),
             "NOTICE_CODE_RERANK_DEGRADED" => Some(Self::RerankDegraded),
+            "NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE" => Some(Self::DefaultLeverUnavailable),
             _ => None,
         }
     }

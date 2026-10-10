@@ -346,7 +346,8 @@ pub fn derive_degraded_mode(
                 | NoticeCode::IndexRebuildFailed
                 | NoticeCode::IndexStale
                 | NoticeCode::IndexGenerationMismatch
-                | NoticeCode::RerankDegraded => return true,
+                | NoticeCode::RerankDegraded
+                | NoticeCode::DefaultLeverUnavailable => return true,
                 NoticeCode::Unspecified
                 | NoticeCode::NoEvidence
                 | NoticeCode::ModelNotice

@@ -19,6 +19,7 @@ from lancet_eval.client import (
 )
 from lancet_eval.config import repo_root
 from lancet_eval.dimensions import (
+    NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE,
     NOTICE_CODE_NO_EVIDENCE,
     NOTICE_CODE_RERANK_DEGRADED,
     make_wire_contract_conformance,
@@ -345,6 +346,14 @@ def test_lever_order_equals_the_proto_enum_order() -> None:
 def test_rerank_degraded_notice_code_equals_the_proto_value() -> None:
     codes = dict(_proto_enum("NoticeCode"))
     assert NOTICE_CODE_RERANK_DEGRADED == codes["NOTICE_CODE_RERANK_DEGRADED"]
+
+
+def test_default_lever_unavailable_notice_code_equals_the_proto_value() -> None:
+    codes = dict(_proto_enum("NoticeCode"))
+    assert (
+        NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE
+        == codes["NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE"]
+    )
 
 
 def test_journal_wire_meta_names_every_client_workflow_metadata_field() -> None:

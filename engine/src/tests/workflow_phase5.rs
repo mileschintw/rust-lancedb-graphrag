@@ -3818,6 +3818,7 @@ fn test_notice_published_enum_reachability_or_reservation() {
             NoticeCode::IndexGenerationMismatch,
             "reserved: D-24 unified CorpusSnapshot makes cross-generation mixing unreachable",
         ),
+        (NoticeCode::DefaultLeverUnavailable, "engine/src/service.rs"),
     ];
 
     for (code, rationale) in published_manifest {

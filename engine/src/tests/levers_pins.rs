@@ -16,7 +16,9 @@ use engine::db::DatabaseManager;
 use engine::generation;
 use engine::graph::paths::ChunkSelection;
 use engine::ingest::{process_job, read_staged_jobs};
-use engine::pb::lancet::v1::{DocumentFilter, Lever, QueryRagRequest, RerankOutcome};
+use engine::pb::lancet::v1::{
+    DocumentFilter, Lever, NoticeCode, NoticeSeverity, QueryRagRequest, RerankOutcome,
+};
 use engine::rerank;
 use engine::testkit::test_query_request;
 
@@ -1475,41 +1477,260 @@ async fn an_empty_default_list_leaves_a_request_that_names_no_levers_lever_free(
     let _ = std::fs::remove_dir_all(path);
 }
 
+/// The DEFAULT_LEVER_UNAVAILABLE notices (typed code 24) of a response.
+fn default_lever_notices(
+    notices: &[crate::pb::lancet::v1::Notice],
+) -> Vec<&crate::pb::lancet::v1::Notice> {
+    notices
+        .iter()
+        .filter(|notice| notice.typed_code == NoticeCode::DefaultLeverUnavailable as i32)
+        .collect()
+}
+
+/// A request that names no lever, with a fresh session so no two tests share one.
+fn fresh_no_lever_request() -> QueryRagRequest {
+    request_without_evidence(&[], &Uuid::new_v4().to_string())
+}
+
 #[tokio::test]
-async fn an_unavailable_default_lever_refuses_a_request_that_names_none() {
-    // Metadata held, reranker missing: the default `rerank` cannot run.
+async fn an_unavailable_default_lever_is_dropped_with_one_notice_for_a_request_that_names_none() {
+    // (defaults, reranker wired, metadata held, the echo that ran, the dropped lever's wire name)
+    let cases: [(&str, &[&str], bool, bool, Vec<i32>, &str); 3] = [
+        (
+            "levers-defaults-no-reranker",
+            &["rerank", "evidence_metadata"],
+            false,
+            true,
+            vec![Lever::EvidenceMetadata as i32],
+            "rerank",
+        ),
+        (
+            "levers-defaults-no-metadata",
+            &["rerank", "evidence_metadata"],
+            true,
+            false,
+            vec![Lever::Rerank as i32],
+            "evidence_metadata",
+        ),
+        (
+            // The middle default is the one dropped, and the echo stays canonical.
+            "levers-defaults-middle-dropped",
+            &["rerank", "evidence_metadata", "binary_answer_format"],
+            true,
+            false,
+            vec![Lever::Rerank as i32, Lever::BinaryAnswerFormat as i32],
+            "evidence_metadata",
+        ),
+    ];
+    for (name, defaults, reranker, metadata, echo, dropped) in cases {
+        let (path, service) = service_with_default_levers(name, defaults, reranker, metadata).await;
+        let response = super::execute_query_rag(&service, fresh_no_lever_request())
+            .await
+            .unwrap_or_else(|status| panic!("{name}: a dropped default is admitted: {status}"));
+        assert_eq!(
+            response.snapshot.expect("a snapshot").levers,
+            echo,
+            "{name}: the echo reports only the levers that ran"
+        );
+        let notices = default_lever_notices(&response.notices);
+        assert_eq!(notices.len(), 1, "{name}: exactly one code-24 notice");
+        assert_eq!(
+            notices[0].severity,
+            NoticeSeverity::Warning as i32,
+            "{name}: the notice is a WARNING"
+        );
+        assert_eq!(notices[0].code, "DEFAULT_LEVER_UNAVAILABLE", "{name}");
+        assert!(
+            notices[0].message.contains(dropped),
+            "{name}: the notice names {dropped}: {}",
+            notices[0].message
+        );
+        let _ = std::fs::remove_dir_all(path);
+    }
+}
+
+#[tokio::test]
+async fn a_request_naming_an_unavailable_lever_is_still_refused_with_lever_unavailable() {
+    // Reranker wired, snapshot without metadata: naming `evidence_metadata` fails closed.
     let (path, service) = service_with_default_levers(
-        "levers-defaults-no-reranker",
+        "levers-named-no-metadata",
         &["rerank", "evidence_metadata"],
-        false,
         true,
+        false,
     )
     .await;
     let refused = super::execute_query_rag(
         &service,
-        request_without_evidence(&[], "00000000-0000-4000-8000-0000000000a4"),
+        request_without_evidence(METADATA, &Uuid::new_v4().to_string()),
     )
     .await
-    .expect_err("a default whose resource is absent is refused, never dropped");
+    .expect_err("a named lever whose resource is absent is refused, never dropped");
+    assert_eq!(refused.code(), tonic::Code::InvalidArgument);
     assert_eq!(error_kind_of(&refused), "lever_unavailable");
     let _ = std::fs::remove_dir_all(path);
 
-    // Reranker wired, snapshot without metadata: the default `evidence_metadata` cannot run.
+    // Metadata held, no lever reranker: naming `rerank` fails closed.
     let (path, service) = service_with_default_levers(
-        "levers-defaults-no-metadata",
+        "levers-named-no-reranker",
+        &["rerank", "evidence_metadata"],
+        false,
+        true,
+    )
+    .await;
+    let refused = super::execute_query_rag(
+        &service,
+        request_without_evidence(RERANK, &Uuid::new_v4().to_string()),
+    )
+    .await
+    .expect_err("a named lever whose resource is absent is refused, never dropped");
+    assert_eq!(refused.code(), tonic::Code::InvalidArgument);
+    assert_eq!(error_kind_of(&refused), "lever_unavailable");
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_request_naming_levers_carries_no_default_lever_notice() {
+    // Both defaults are unavailable here; a request that names its own lever never meets them.
+    let (path, service) = service_with_default_levers(
+        "levers-named-no-default-notice",
+        &["rerank", "evidence_metadata"],
+        false,
+        false,
+    )
+    .await;
+    let response = super::execute_query_rag(
+        &service,
+        request_without_evidence(BINARY, &Uuid::new_v4().to_string()),
+    )
+    .await
+    .expect("binary_answer_format needs no resource");
+    assert_eq!(
+        response.snapshot.expect("a snapshot").levers,
+        vec![Lever::BinaryAnswerFormat as i32]
+    );
+    assert!(
+        default_lever_notices(&response.notices).is_empty(),
+        "an explicit request never carries a code-24 notice: {:?}",
+        response.notices
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_dropped_default_comes_back_once_a_snapshot_with_metadata_is_swapped_in() {
+    let (path, service) = service_with_default_levers(
+        "levers-default-comes-back",
         &["rerank", "evidence_metadata"],
         true,
         false,
     )
     .await;
+    let before = super::execute_query_rag(&service, fresh_no_lever_request())
+        .await
+        .expect("a dropped default is admitted");
+    assert_eq!(
+        before.snapshot.expect("a snapshot").levers,
+        vec![Lever::Rerank as i32]
+    );
+    assert_eq!(default_lever_notices(&before.notices).len(), 1);
+
+    {
+        let mut store = service.corpus_store.write().await;
+        let prior = Arc::clone(&*store);
+        *store = Arc::new((*prior).clone().with_doc_meta(fixture_doc_meta()));
+    }
+    let after = super::execute_query_rag(&service, fresh_no_lever_request())
+        .await
+        .expect("both defaults are served once the snapshot holds metadata");
+    assert_eq!(
+        after.snapshot.expect("a snapshot").levers,
+        vec![Lever::Rerank as i32, Lever::EvidenceMetadata as i32],
+        "the dropped default returns without a restart"
+    );
+    assert!(
+        default_lever_notices(&after.notices).is_empty(),
+        "nothing is dropped, so no code-24 notice: {:?}",
+        after.notices
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_request_naming_no_lever_meets_the_combination_check_before_the_availability_filter() {
+    // The configured graph_v2 is unavailable under the no-op `all`, yet the contradiction with
+    // `disable_graph_context` is still refused: the combination check reads the configured
+    // defaults, and the defaults filter sits only in the availability slot (D-194, D-165).
+    let (path, mut service) =
+        service_with_default_levers("levers-defaults-combination", &["graph_v2"], true, true).await;
+    service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
     let refused = super::execute_query_rag(
         &service,
-        request_without_evidence(&[], "00000000-0000-4000-8000-0000000000a5"),
+        QueryRagRequest {
+            disable_graph_context: Some(true),
+            ..fresh_no_lever_request()
+        },
     )
     .await
-    .expect_err("an empty metadata map leaves the default unavailable");
-    assert_eq!(error_kind_of(&refused), "lever_unavailable");
+    .expect_err("graph_v2 with the graph off is a contradiction before availability is read");
+    assert_eq!(refused.code(), tonic::Code::InvalidArgument);
+    assert_eq!(error_kind_of(&refused), "invalid_lever_combination");
     let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn the_default_lever_unavailable_notice_joins_the_degraded_mode_set() {
+    use engine::pb::lancet::v1::AnswerBasis;
+    use engine::workflow::{derive_degraded_mode, notice};
+
+    let unavailable = notice(
+        NoticeCode::DefaultLeverUnavailable,
+        "configured default lever rerank was not applied",
+        NoticeSeverity::Warning,
+    );
+    assert!(
+        derive_degraded_mode(&[unavailable], AnswerBasis::Retrieval),
+        "a server-side resource absence counts, like GRAPH_UNAVAILABLE and RERANK_DEGRADED"
+    );
+    let ablation = notice(
+        NoticeCode::GraphAblation,
+        "graph context disabled by request",
+        NoticeSeverity::Info,
+    );
+    assert!(
+        !derive_degraded_mode(&[ablation], AnswerBasis::Retrieval),
+        "a request-shape notice does not count"
+    );
+}
+
+#[test]
+fn removing_a_lever_clears_exactly_that_lever_and_keeps_the_echo_canonical() {
+    let all = LeverSet::try_from_wire(&[
+        Lever::Rerank as i32,
+        Lever::EvidenceMetadata as i32,
+        Lever::BinaryAnswerFormat as i32,
+    ])
+    .expect("declared levers");
+    let without_middle = all.without(Lever::EvidenceMetadata);
+    assert_eq!(
+        without_middle.to_wire(),
+        vec![Lever::Rerank as i32, Lever::BinaryAnswerFormat as i32],
+        "one lever leaves and the rest keep ascending order"
+    );
+    assert!(!without_middle.contains(Lever::EvidenceMetadata));
+    assert_eq!(
+        without_middle.without(Lever::EvidenceMetadata),
+        without_middle,
+        "removing an absent lever changes nothing"
+    );
+    assert_eq!(
+        all.without(Lever::Unspecified),
+        all,
+        "LEVER_UNSPECIFIED is not a member, so removing it changes nothing"
+    );
+    assert_eq!(
+        LeverSet::default().without(Lever::Rerank),
+        LeverSet::default()
+    );
 }
 
 #[tokio::test]

@@ -204,6 +204,18 @@ impl LeverSet {
         self.0 == 0
     }
 
+    /// The set without `lever`; an absent lever and `Lever::Unspecified` leave it unchanged.
+    ///
+    /// Clearing one bit keeps [`LeverSet::to_wire`] canonical. D-194 drops a configured default
+    /// whose resource this snapshot lacks from the effective set of a request that names no
+    /// lever, so the snapshot echo lists only the levers that ran.
+    pub fn without(self, lever: Lever) -> Self {
+        if lever == Lever::Unspecified {
+            return self;
+        }
+        Self(self.0 & !Self::bit(lever))
+    }
+
     /// The set as wire values in ascending enum number, the snapshot echo.
     pub fn to_wire(&self) -> Vec<i32> {
         DECLARED
