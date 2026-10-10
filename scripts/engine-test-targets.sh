@@ -474,6 +474,21 @@ fi
 #         `levers_default_admitted` stay inside the existing test. 927->933. lib rises 813->819;
 #         `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata/
 #         config_startup unchanged (0/58/18/14/24).
+#   937 -- Phase 06.3.6 plan 23 Task 2 (D-194, D-197, 2026-10-10): startup warns instead of
+#         refusing over an unavailable default lever, before the ingest worker, the rebuild task
+#         and the staged-job replay. `LancetServiceImpl::validate_default_levers` is replaced by the
+#         free functions `unavailable_default_levers` and `default_lever_unavailable_warning`.
+#         Three new lib tests (`doc_meta_coverage_counts_distinct_documents_not_chunks`,
+#         `a_swap_that_empties_or_refills_document_metadata_is_logged`, and the source pin
+#         `main_runs_the_default_lever_check_before_the_workers_and_the_replay`); the lib test
+#         `startup_validation_refuses_a_default_lever_whose_resource_is_absent` is rewritten as
+#         `startup_check_reports_each_unavailable_default_lever` and keeps its count. In
+#         `config_startup`, `committed_lever_defaults_stop_the_engine_over_a_store_without_metadata`
+#         is replaced by `committed_lever_defaults_start_the_engine_over_an_empty_store_with_a_warning`
+#         (count unchanged) and `a_migrated_legacy_store_boots_the_committed_config_with_a_warning`
+#         is added. 933->937. lib rises 819->822 and config_startup 24->25;
+#         `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata
+#         unchanged (0/58/18/14).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -516,18 +531,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 933 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 933, got $TOTAL" >&2
+if [ "$TOTAL" -ne 937 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 937, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 819 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 819, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 822 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 822, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 819 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 819, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 822 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 822, got $LIB_COUNT" >&2
   exit 1
 fi
 
@@ -556,8 +571,8 @@ if [ "$BIN_BACKFILL_COUNT" -ne 14 ]; then
   exit 1
 fi
 
-if [ "$INTEG_CONFIG_COUNT" -ne 24 ]; then
-  echo "FAIL: config_startup test count mismatch: expected 24, got $INTEG_CONFIG_COUNT" >&2
+if [ "$INTEG_CONFIG_COUNT" -ne 25 ]; then
+  echo "FAIL: config_startup test count mismatch: expected 25, got $INTEG_CONFIG_COUNT" >&2
   exit 1
 fi
 

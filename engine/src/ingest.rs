@@ -1944,6 +1944,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
         let mut write_guard = corpus_store.write().await;
         *write_guard = Arc::clone(&new_snapshot);
     }
+    log_doc_meta_availability_change(&prior.doc_meta, &new_snapshot.doc_meta);
     tracing::info!(
         generation = %new_snapshot.generation,
         nodes_version = new_snapshot.nodes_version,
@@ -1962,6 +1963,30 @@ pub async fn rebuild_and_swap_with_graph_builder(
     crate::telemetry::metrics::record_corpus_generation(new_snapshot.nodes_version);
 
     Ok(new_snapshot)
+}
+
+/// Logs when a rebuild swap moves the corpus between holding document metadata and holding none.
+///
+/// The `evidence_metadata` lever is available exactly while the snapshot holds metadata (D-136),
+/// so a swap that empties the map drops a configured default from every request that names no
+/// lever, and a swap that refills it brings the default back (D-194). Unchanged emptiness logs
+/// nothing.
+pub(crate) fn log_doc_meta_availability_change(
+    prior: &crate::doc_meta::DocMetaMap,
+    next: &crate::doc_meta::DocMetaMap,
+) {
+    match (prior.is_empty(), next.is_empty()) {
+        (false, true) => tracing::warn!(
+            "evidence_metadata became unavailable: the swapped-in corpus snapshot holds no \
+             document metadata; a configured default is dropped with a notice and a request \
+             naming it is refused"
+        ),
+        (true, false) => tracing::info!(
+            "evidence_metadata became available again: the swapped-in corpus snapshot holds \
+             document metadata"
+        ),
+        _ => {}
+    }
 }
 
 pub fn spawn_rebuild_debounce_task(

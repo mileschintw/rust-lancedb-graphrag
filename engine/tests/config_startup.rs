@@ -26,10 +26,10 @@ fn spawn_engine_full(
 ) -> Result<(Child, Vec<String>, String), String> {
     let mut command = Command::new(env!("CARGO_BIN_EXE_engine"));
     command.current_dir(cwd);
-    // The committed configuration makes `rerank` and `evidence_metadata` default levers (D-157),
-    // and the engine refuses to start when one cannot be served. These fixtures boot it over a
-    // store that holds no documents, so they start lever-free unless a test says otherwise by
-    // removing this variable.
+    // The committed configuration makes `rerank` and `evidence_metadata` default levers (D-157).
+    // The engine starts with them over a store without document metadata: the unavailable default
+    // is dropped with a startup WARN (D-194). The fixtures still set the override to empty, so
+    // their output is not coupled to lever availability; the lever tests remove the variable.
     command.env(LEVER_DEFAULTS_ENV, "");
     for var in remove_vars {
         command.env_remove(var);
@@ -216,6 +216,113 @@ async fn seed_schema_valid_bm25_failure_fixture(
         document_id,
         chunk_id,
     })
+}
+
+/// Builds a store as an engine before the evidence-metadata columns left it: a 19-column `nodes`
+/// table holding one valid row, and the pre-metadata staging table with no rows. Returns the
+/// `document_id` of the row. Fails when `open_and_validate` accepts the store, because the point
+/// of the fixture is that the engine's own schema check refuses it (D-144).
+async fn seed_legacy_nineteen_column_store(lancedb_path: &Path) -> Result<String, String> {
+    let path = lancedb_path
+        .to_str()
+        .ok_or_else(|| "fixture path must be valid UTF-8".to_owned())?;
+    DatabaseManager::initialize(path).await?;
+    let connection = lancedb::connect(path)
+        .execute()
+        .await
+        .map_err(|error| format!("connect to the legacy fixture store: {error}"))?;
+    connection
+        .drop_table("nodes", &[])
+        .await
+        .map_err(|error| format!("drop nodes: {error}"))?;
+    let schema = engine::db::backfill::legacy_nodes_schema_v19();
+    let nodes = connection
+        .create_empty_table("nodes", schema.clone())
+        .execute()
+        .await
+        .map_err(|error| format!("recreate nodes with 19 columns: {error}"))?;
+    let document_id = Uuid::new_v4().to_string();
+    let chunk_id = format!("{document_id}:0");
+    let content = "A legacy document that carries no evidence metadata.";
+    let embedding = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+        std::iter::once(Some((0..2048).map(|_| Some(0.0f32)))),
+        2048,
+    );
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(vec![document_id.as_str()])),
+            Arc::new(StringArray::from(vec![chunk_id.as_str()])),
+            Arc::new(Int32Array::from(vec![0])),
+            Arc::new(Int32Array::from(vec![0])),
+            Arc::new(Int32Array::from(vec![content.len() as i32])),
+            Arc::new(StringArray::from(vec![content])),
+            Arc::new(embedding),
+            Arc::new(Int32Array::from(vec![12])),
+            Arc::new(StringArray::from(vec!["o200k_base"])),
+            Arc::new(StringArray::from(vec!["1"])),
+            Arc::new(StringArray::from(vec![Some("legacy-document.txt")])),
+            Arc::new(StringArray::from(vec![Some("Legacy")])),
+            Arc::new(Int32Array::from(vec![None::<i32>])),
+            Arc::new(Int32Array::from(vec![None::<i32>])),
+            Arc::new(StringArray::from(vec![Some("legacy-hash")])),
+            Arc::new(StringArray::from(vec![Some("1")])),
+            Arc::new(StringArray::from(vec![Some("test-embedding-model")])),
+            Arc::new(Int64Array::from(vec![Some(1)])),
+            Arc::new(StringArray::from(vec![Some("text/plain")])),
+        ],
+    )
+    .map_err(|error| format!("build the legacy fixture row: {error}"))?;
+    nodes
+        .add(batch)
+        .execute()
+        .await
+        .map_err(|error| format!("insert the legacy fixture row: {error}"))?;
+
+    connection
+        .drop_table("staged_documents_v2", &[])
+        .await
+        .map_err(|error| format!("drop staged_documents_v2: {error}"))?;
+    connection
+        .create_empty_table(
+            "staged_documents_v2",
+            engine::db::staged_documents_v2_pre_metadata_schema(),
+        )
+        .execute()
+        .await
+        .map_err(|error| format!("recreate the pre-metadata staging table: {error}"))?;
+
+    match DatabaseManager::open_and_validate(path).await {
+        Ok(_) => Err("open_and_validate accepted a 19-column nodes table".to_owned()),
+        Err(error) if error.contains("schema drift detected for nodes") => Ok(document_id),
+        Err(error) => Err(format!("unexpected open_and_validate failure: {error}")),
+    }
+}
+
+/// Migrates the `nodes` table of `lancedb_path` the way `backfill_evidence_metadata
+/// --migrate-only` does: through the library path with an empty sidecar.
+async fn migrate_legacy_nodes(lancedb_path: &Path) -> Result<(), String> {
+    let path = lancedb_path
+        .to_str()
+        .ok_or_else(|| "fixture path must be valid UTF-8".to_owned())?;
+    let nodes = lancedb::connect(path)
+        .execute()
+        .await
+        .map_err(|error| format!("connect for the migration: {error}"))?
+        .open_table("nodes")
+        .execute()
+        .await
+        .map_err(|error| format!("open nodes for the migration: {error}"))?;
+    engine::db::backfill::backfill_nodes_metadata(&nodes, &engine::db::backfill::Sidecar::empty())
+        .await
+        .map(|_| ())
+}
+
+/// The index of the first line holding every needle, or a failure naming the needles.
+fn line_with(logs: &[String], needles: &[&str]) -> Result<usize, String> {
+    logs.iter()
+        .position(|line| needles.iter().all(|needle| line.contains(needle)))
+        .ok_or_else(|| format!("no line holds {needles:?} in:\n{}", logs.join("\n")))
 }
 
 #[test]
@@ -1075,11 +1182,12 @@ fn telemetry_invalid_sampler_ratio_fails_closed() {
     let _ = fs::remove_dir_all(temp_dir);
 }
 
-/// D-157: the committed configuration asks for `rerank` and `evidence_metadata` by default, and
-/// an engine that cannot serve a default lever stops before it listens rather than refusing every
-/// request later. An empty store has no document metadata, so `evidence_metadata` is missing.
+/// D-194: the committed configuration asks for `rerank` and `evidence_metadata` by default. Over an
+/// empty store there is no document metadata, so the engine drops `evidence_metadata` with a WARN
+/// and serves. The WARN comes after the snapshot is built and before the staged-job replay, so no
+/// background work starts first.
 #[test]
-fn committed_lever_defaults_stop_the_engine_over_a_store_without_metadata() {
+fn committed_lever_defaults_start_the_engine_over_an_empty_store_with_a_warning() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let temp_dir =
         std::env::temp_dir().join(format!("lancet-cfg-test-lever-def-{}", uuid::Uuid::new_v4()));
@@ -1092,16 +1200,69 @@ fn committed_lever_defaults_stop_the_engine_over_a_store_without_metadata() {
     ];
     let remove_vars = ["LANCET_CONFIG_DIR", "LANCET_ENV", LEVER_DEFAULTS_ENV];
 
-    let failure = spawn_engine_full(repo_root, &env_vars, &remove_vars)
-        .expect_err("the committed lever defaults cannot be served over an empty store");
+    let (child, logs, _line) = spawn_engine_full(repo_root, &env_vars, &remove_vars)
+        .unwrap_or_else(|failure| panic!("the committed defaults must not stop the engine:\n{failure}"));
+    cleanup_child(child);
+
+    let built = line_with(&logs, &["BM25 snapshot built"]).unwrap();
+    let warned = line_with(&logs, &["WARN", "evidence_metadata"]).unwrap();
+    let replayed = line_with(&logs, &["Staged ingestion jobs replayed"]).unwrap();
+    let serving = line_with(&logs, &["Rust RAG Engine serving"]).unwrap();
     assert!(
-        failure.contains("evidence_metadata") && failure.contains("defaults = []"),
-        "the refusal must name the missing lever and the remedy:\n{failure}"
+        built < warned && warned < replayed && replayed < serving,
+        "order must be snapshot built ({built}), WARN ({warned}), replay ({replayed}), serving ({serving})"
     );
     assert!(
-        !failure.contains("Rust RAG Engine serving"),
-        "the engine must stop before it announces readiness:\n{failure}"
+        logs.iter()
+            .all(|line| !(line.contains("WARN") && line.contains("default lever rerank"))),
+        "the lever reranker is wired, so no WARN names rerank as unavailable:\n{}",
+        logs.join("\n")
     );
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+/// D-197: a legacy 19-column store opens only after `--migrate-only`. The engine's own check still
+/// refuses it first (D-144); once the nodes table is migrated through the library path the
+/// bin uses, the committed configuration boots over it, warns that `evidence_metadata` and the
+/// metadata coverage are missing, and leaves a store that opens cleanly (the empty pre-metadata
+/// staging table is upgraded by the engine's own `initialize`, D-168).
+#[test]
+fn a_migrated_legacy_store_boots_the_committed_config_with_a_warning() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-legacy-{}", uuid::Uuid::new_v4()));
+    let lancedb_dir = temp_dir.join("lancedb");
+    let runtime = tokio::runtime::Runtime::new().expect("create fixture runtime");
+    runtime
+        .block_on(seed_legacy_nineteen_column_store(&lancedb_dir))
+        .expect("seed a legacy store that the engine's own check refuses");
+    runtime
+        .block_on(migrate_legacy_nodes(&lancedb_dir))
+        .expect("migrate the legacy nodes table with an empty sidecar");
+
+    let lancedb_path = lancedb_dir.to_str().unwrap().replace('\\', "/");
+    let env_vars = [
+        ("LANCET_ENGINE__GRPC_ADDR", "127.0.0.1:0"),
+        ("LANCET_ENGINE__LANCEDB_PATH", lancedb_path.as_str()),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+    let remove_vars = ["LANCET_CONFIG_DIR", "LANCET_ENV", LEVER_DEFAULTS_ENV];
+    let (child, logs, _line) = spawn_engine_full(repo_root, &env_vars, &remove_vars)
+        .unwrap_or_else(|failure| panic!("a migrated legacy store must boot:\n{failure}"));
+    cleanup_child(child);
+
+    let serving = line_with(&logs, &["Rust RAG Engine serving"]).unwrap();
+    let warned = line_with(&logs, &["WARN", "evidence_metadata", "unavailable"]).unwrap();
+    let covered = line_with(&logs, &["WARN", "0 of 1 documents"]).unwrap();
+    assert!(
+        warned < serving && covered < serving,
+        "both warnings precede serving: lever WARN ({warned}), coverage WARN ({covered}), serving ({serving})"
+    );
+    runtime
+        .block_on(DatabaseManager::open_and_validate(
+            lancedb_dir.to_str().unwrap(),
+        ))
+        .unwrap_or_else(|error| panic!("the booted store must open and validate: {error}"));
     let _ = fs::remove_dir_all(temp_dir);
 }
 
@@ -1124,8 +1285,15 @@ fn an_empty_lever_defaults_override_starts_the_engine_over_a_store_without_metad
     ];
     let remove_vars = ["LANCET_CONFIG_DIR", "LANCET_ENV"];
 
-    let (child, line) = spawn_engine(repo_root, &env_vars, &remove_vars);
+    let (child, logs, line) = spawn_engine_full(repo_root, &env_vars, &remove_vars)
+        .unwrap_or_else(|failure| panic!("an empty override must start the engine:\n{failure}"));
     assert!(line.contains("Rust RAG Engine serving"));
     cleanup_child(child);
+    assert!(
+        logs.iter()
+            .all(|line| !(line.contains("WARN") && line.contains("default lever"))),
+        "no default lever is configured, so none is reported:\n{}",
+        logs.join("\n")
+    );
     let _ = fs::remove_dir_all(temp_dir);
 }

@@ -170,10 +170,13 @@ graph_v2_chunk_precision = "edge_evidence"
 #   caveat: SC-2 flatness read MISS on the rerank arms from a provider latency drift, and rerank adds
 #   about 289 ms of mean total latency per request.
 # graph_v2 and binary_answer_format stay off (no Holm rejection).
-# The engine refuses to start when a default cannot be served: no lever reranker, or a store whose
-# documents carry no metadata. Backfill the store, or start lever-free with `defaults = []` (or with
-# LANCET_ENGINE__LEVERS__DEFAULTS set to an empty value). A unit test pins this list in both
-# committed config files; the compiled-in default in engine/src/config.rs is empty.
+# A configured default whose resource is missing (no lever reranker, or a store whose documents
+# carry no metadata) is dropped with a startup WARN. Each request that names no lever then carries a
+# DEFAULT_LEVER_UNAVAILABLE notice naming it, and the echo lists only the levers that ran. A request
+# that names an unavailable lever is still refused (`lever_unavailable`). A legacy 19-column store
+# opens only after `backfill_evidence_metadata --migrate-only --lancedb-path PATH` (D-197).
+# `defaults = []`, or an empty LANCET_ENGINE__LEVERS__DEFAULTS, starts lever-free. A unit test pins
+# this list in both committed config files; the compiled-in default in engine/src/config.rs is empty.
 defaults = ["rerank", "evidence_metadata"]
 
 [openrouter]

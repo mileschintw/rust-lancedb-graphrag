@@ -205,6 +205,49 @@ pub fn lever_unavailable_reason(lever: v1::Lever) -> &'static str {
     }
 }
 
+/// The configured default levers that this engine cannot serve against `snapshot` (D-194).
+///
+/// The engine binary calls this once, when the first snapshot and the lever reranker exist, and
+/// logs a warning for each lever returned. Startup never fails over availability: a request that
+/// names no lever drops each such default and carries a DEFAULT_LEVER_UNAVAILABLE notice.
+pub fn unavailable_default_levers(
+    settings: &EffectiveRagSettings,
+    lever_reranker_wired: bool,
+    snapshot: &workflow::ports::CorpusSnapshot,
+) -> workflow::LeverSet {
+    let availability = lever_availability_for(
+        lever_reranker_wired,
+        settings.graph.graph_v2_chunk_precision,
+        snapshot,
+    );
+    settings
+        .default_levers
+        .iter()
+        .fold(settings.default_levers, |unavailable, lever| {
+            if availability.is_available(lever) {
+                unavailable.without(lever)
+            } else {
+                unavailable
+            }
+        })
+}
+
+/// The startup warning for a configured default lever that this engine cannot serve (D-194).
+///
+/// One plain sentence: the lever by wire name, why it is missing, what a request that names no
+/// lever now gets, and the remedies.
+pub fn default_lever_unavailable_warning(lever: v1::Lever) -> String {
+    format!(
+        "configured default lever {} is unavailable: {}; a request that names no lever runs \
+         without it and carries a DEFAULT_LEVER_UNAVAILABLE notice; provide the resource (for \
+         example backfill the store, or for a legacy 19-column store run \
+         `backfill_evidence_metadata --migrate-only`) or set [engine.levers] defaults = [] to \
+         start lever-free",
+        workflow::levers::wire_name(lever),
+        lever_unavailable_reason(lever)
+    )
+}
+
 /// The graph settings one request runs under (D-139, D-140).
 ///
 /// A request that names `graph_v2` runs the configured chunk variant; every other graph-on request,
@@ -236,31 +279,6 @@ impl LancetServiceImpl {
             self.effective_settings.graph.graph_v2_chunk_precision,
             snapshot,
         )
-    }
-
-    /// Checks that every configured default lever can be served against `snapshot`.
-    ///
-    /// # Errors
-    ///
-    /// Returns a message naming the first configured default whose resource is absent.
-    pub fn validate_default_levers(
-        &self,
-        snapshot: &workflow::ports::CorpusSnapshot,
-    ) -> Result<(), String> {
-        let availability = self.lever_availability(snapshot);
-        let missing = self
-            .effective_settings
-            .default_levers
-            .iter()
-            .find(|lever| !availability.is_available(*lever));
-        let Some(lever) = missing else {
-            return Ok(());
-        };
-        let reason = lever_unavailable_reason(lever);
-        Err(format!(
-            "default lever {} is unavailable: {reason}; provide the resource (for example backfill              the store) or set [engine.levers] defaults = []",
-            workflow::levers::wire_name(lever)
-        ))
     }
 
     /// Persists a raw ingestion job to the staged documents table.

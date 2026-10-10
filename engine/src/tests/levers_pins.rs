@@ -1734,11 +1734,20 @@ fn removing_a_lever_clears_exactly_that_lever_and_keeps_the_echo_canonical() {
 }
 
 #[tokio::test]
-async fn startup_validation_refuses_a_default_lever_whose_resource_is_absent() {
-    async fn snapshot_of(
+async fn startup_check_reports_each_unavailable_default_lever() {
+    use crate::service::{default_lever_unavailable_warning, unavailable_default_levers};
+
+    async fn unavailable(
         service: &crate::service::LancetServiceImpl,
-    ) -> Arc<crate::workflow::ports::CorpusSnapshot> {
-        Arc::clone(&*service.corpus_store.read().await)
+    ) -> Vec<Lever> {
+        let snapshot = Arc::clone(&*service.corpus_store.read().await);
+        unavailable_default_levers(
+            &service.effective_settings,
+            service.lever_resources.reranker.is_some(),
+            &snapshot,
+        )
+        .iter()
+        .collect()
     }
 
     let (path, service) = service_with_default_levers(
@@ -1748,10 +1757,11 @@ async fn startup_validation_refuses_a_default_lever_whose_resource_is_absent() {
         true,
     )
     .await;
-    let message = service
-        .validate_default_levers(&*snapshot_of(&service).await)
-        .expect_err("rerank is a default and no reranker is wired");
-    assert!(message.contains("rerank"), "{message}");
+    assert_eq!(
+        unavailable(&service).await,
+        vec![Lever::Rerank],
+        "rerank is a default and no reranker is wired"
+    );
     let _ = std::fs::remove_dir_all(path);
 
     let (path, service) = service_with_default_levers(
@@ -1761,13 +1771,20 @@ async fn startup_validation_refuses_a_default_lever_whose_resource_is_absent() {
         false,
     )
     .await;
-    let message = service
-        .validate_default_levers(&*snapshot_of(&service).await)
-        .expect_err("evidence_metadata is a default and the metadata map is empty");
-    assert!(message.contains("evidence_metadata"), "{message}");
-    assert!(
-        message.contains("defaults = []"),
-        "the refusal names the remedy: {message}"
+    assert_eq!(
+        unavailable(&service).await,
+        vec![Lever::EvidenceMetadata],
+        "evidence_metadata is a default and the metadata map is empty"
+    );
+    let _ = std::fs::remove_dir_all(path);
+
+    let (path, mut service) =
+        service_with_default_levers("levers-startup-graph-all", &["graph_v2"], true, true).await;
+    service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
+    assert_eq!(
+        unavailable(&service).await,
+        vec![Lever::GraphV2],
+        "graph_v2 under the no-op `all` is unavailable"
     );
     let _ = std::fs::remove_dir_all(path);
 
@@ -1778,15 +1795,210 @@ async fn startup_validation_refuses_a_default_lever_whose_resource_is_absent() {
         true,
     )
     .await;
-    service
-        .validate_default_levers(&*snapshot_of(&service).await)
-        .expect("both defaults are served");
+    assert!(
+        unavailable(&service).await.is_empty(),
+        "both defaults are served"
+    );
     let _ = std::fs::remove_dir_all(path);
 
     let (path, service) =
         service_with_default_levers("levers-startup-no-defaults", &[], false, false).await;
-    service
-        .validate_default_levers(&*snapshot_of(&service).await)
-        .expect("no default asks for nothing, so nothing can be missing");
+    assert!(
+        unavailable(&service).await.is_empty(),
+        "no default asks for nothing, so nothing can be missing"
+    );
     let _ = std::fs::remove_dir_all(path);
+
+    let warning = default_lever_unavailable_warning(Lever::EvidenceMetadata);
+    assert!(warning.contains("evidence_metadata"), "{warning}");
+    assert!(warning.contains("no document metadata"), "{warning}");
+    assert!(
+        warning.contains("defaults = []"),
+        "the warning names the remedy: {warning}"
+    );
+    assert!(
+        !warning.contains("  "),
+        "the sentence has single spaces only: {warning}"
+    );
+}
+
+/// One chunk row of `document_id`, with the fields the BM25 index requires.
+fn chunk_of(document_id: &str, chunk_index: i32) -> crate::retrieval::Candidate {
+    crate::retrieval::Candidate {
+        document_id: document_id.to_owned(),
+        chunk_id: format!("{document_id}:{chunk_index}"),
+        chunk_index,
+        char_start: 0,
+        char_end: 5,
+        content: "alpha".to_owned(),
+        title: None,
+        section_path: None,
+        content_type: None,
+        embedding_model: None,
+        ingested_at: None,
+        score: 0.0,
+    }
+}
+
+fn snapshot_of_chunks(
+    chunks: Vec<crate::retrieval::Candidate>,
+    meta: DocMetaMap,
+) -> crate::workflow::ports::CorpusSnapshot {
+    let bm25 = crate::retrieval::Bm25Index::from_candidates(
+        chunks,
+        crate::retrieval::Bm25Config::default(),
+    )
+    .expect("fixture chunks index");
+    crate::workflow::ports::CorpusSnapshot::new(
+        Arc::new(bm25),
+        Arc::new(engine::graph::index::GraphIndex::empty()),
+        1,
+        false,
+    )
+    .with_doc_meta(Arc::new(meta))
+}
+
+#[test]
+fn doc_meta_coverage_counts_distinct_documents_not_chunks() {
+    let meta = DocMetaMap::from_entries([("doc-a".to_owned(), headline_meta())]);
+    let snapshot = snapshot_of_chunks(
+        vec![chunk_of("doc-a", 0), chunk_of("doc-a", 1), chunk_of("doc-b", 0)],
+        meta,
+    );
+    let coverage = snapshot.doc_meta_coverage();
+    assert_eq!(snapshot.bm25.len(), 3, "the index counts chunks");
+    assert_eq!(
+        (coverage.with_metadata, coverage.documents),
+        (1, 2),
+        "coverage counts documents: one of two has metadata"
+    );
+
+    let empty = snapshot_of_chunks(vec![], DocMetaMap::default());
+    let coverage = empty.doc_meta_coverage();
+    assert_eq!(
+        (coverage.with_metadata, coverage.documents),
+        (0, 0),
+        "an empty snapshot is zero of zero"
+    );
+}
+
+/// Captures the log lines emitted while the guard is alive on this thread.
+#[derive(Clone)]
+struct LogSink(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogSink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture_logs() -> (
+    tracing::subscriber::DefaultGuard,
+    Arc<std::sync::Mutex<Vec<u8>>>,
+) {
+    let sink = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let writer = LogSink(Arc::clone(&sink));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    (tracing::subscriber::set_default(subscriber), sink)
+}
+
+fn captured(sink: &Arc<std::sync::Mutex<Vec<u8>>>) -> String {
+    String::from_utf8(
+        sink.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone(),
+    )
+    .expect("log output is UTF-8")
+}
+
+#[test]
+fn a_swap_that_empties_or_refills_document_metadata_is_logged() {
+    use crate::ingest::log_doc_meta_availability_change;
+
+    let held = DocMetaMap::from_entries([("doc-a".to_owned(), headline_meta())]);
+    let none = DocMetaMap::default();
+
+    let (guard, sink) = capture_logs();
+    log_doc_meta_availability_change(&held, &none);
+    drop(guard);
+    let emptied = captured(&sink);
+    assert!(
+        emptied.contains("WARN") && emptied.contains("evidence_metadata became unavailable"),
+        "a swap that empties the map warns: {emptied}"
+    );
+
+    let (guard, sink) = capture_logs();
+    log_doc_meta_availability_change(&none, &held);
+    drop(guard);
+    let refilled = captured(&sink);
+    assert!(
+        refilled.contains("INFO") && refilled.contains("evidence_metadata became available again"),
+        "a swap that refills the map informs: {refilled}"
+    );
+    assert!(!refilled.contains("WARN"), "{refilled}");
+
+    let (guard, sink) = capture_logs();
+    log_doc_meta_availability_change(&held, &held);
+    log_doc_meta_availability_change(&none, &none);
+    drop(guard);
+    assert!(
+        captured(&sink).is_empty(),
+        "unchanged emptiness logs nothing"
+    );
+}
+
+#[test]
+fn main_runs_the_default_lever_check_before_the_workers_and_the_replay() {
+    let main = include_str!("../main.rs");
+    let check = main
+        .find("unavailable_default_levers(")
+        .expect("main checks the configured defaults");
+    let worker = main
+        .find("spawn_worker_with_concurrency(")
+        .expect("main spawns the ingest worker");
+    let replay = main
+        .find("read_staged_jobs(")
+        .expect("main reads the staged jobs");
+    let replayed = main
+        .find("Staged ingestion jobs replayed")
+        .expect("main logs the end of the replay");
+    assert!(
+        check < worker && worker < replay && replay < replayed,
+        "order must be default check ({check}), worker spawn ({worker}), staged-job read ({replay}), replay line ({replayed})"
+    );
+    let debounce = main
+        .find("spawn_rebuild_debounce_task(")
+        .expect("main spawns the rebuild task");
+    assert!(
+        check < debounce,
+        "the default check ({check}) precedes the rebuild task ({debounce})"
+    );
+    assert!(
+        !main.contains("validate_default_levers"),
+        "startup no longer refuses over availability"
+    );
+
+    let ingest = include_str!("../ingest.rs");
+    let rebuild = ingest
+        .find("pub async fn rebuild_and_swap_with_graph_builder(")
+        .expect("the rebuild function exists");
+    let body = &ingest[rebuild..];
+    let swap = body
+        .find("// Swap under a short write lock")
+        .expect("the rebuild swaps under a write lock");
+    let logged = body
+        .find("log_doc_meta_availability_change(")
+        .expect("the rebuild logs a metadata availability change");
+    assert!(swap < logged, "the change is logged after the swap");
 }

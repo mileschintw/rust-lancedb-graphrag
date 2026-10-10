@@ -16,6 +16,15 @@ pub fn corpus_generation_from_nodes_version(nodes_version: u64) -> String {
     format!("lance-{nodes_version}")
 }
 
+/// How many of a snapshot's documents carry evidence metadata (D-194, review A-WR-03).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocMetaCoverage {
+    /// Distinct indexed documents that have a metadata entry.
+    pub with_metadata: usize,
+    /// Distinct indexed documents.
+    pub documents: usize,
+}
+
 /// One immutable generation of the query-time indexes.
 ///
 /// The BM25 index and the graph index are built together and swapped together inside one new
@@ -59,6 +68,22 @@ impl CorpusSnapshot {
     pub fn with_doc_meta(mut self, doc_meta: Arc<DocMetaMap>) -> Self {
         self.doc_meta = doc_meta;
         self
+    }
+
+    /// Counts the distinct indexed documents, and those among them that have a metadata entry.
+    ///
+    /// The index holds one row per chunk, so documents are counted by `document_id`, never by
+    /// chunk. An empty snapshot reports zero of zero.
+    pub fn doc_meta_coverage(&self) -> DocMetaCoverage {
+        let documents: std::collections::HashSet<&str> = self.bm25.chunk_document_ids().collect();
+        let with_metadata = documents
+            .iter()
+            .filter(|document_id| self.doc_meta.get(document_id).is_some())
+            .count();
+        DocMetaCoverage {
+            with_metadata,
+            documents: documents.len(),
+        }
     }
 }
 

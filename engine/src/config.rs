@@ -1217,9 +1217,10 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
         }
     }
     // D-157: the default levers. Unlike the keys above, an empty value is meaningful here: it
-    // starts the process lever-free, for example to ingest into a store that holds no document
-    // metadata yet (the engine refuses to start with a default lever it cannot serve). The
-    // rehearsal and drive launchers refuse `LANCET_ENGINE__GRAPH__*` and should refuse this too.
+    // starts the process lever-free. A default whose resource is missing, for example a store that
+    // holds no document metadata yet, is otherwise dropped with a startup WARN and a per-request
+    // notice (D-194). The rehearsal and drive launchers refuse `LANCET_ENGINE__GRAPH__*` and
+    // should refuse this too.
     if let Ok(raw) = std::env::var("LANCET_ENGINE__LEVERS__DEFAULTS") {
         settings.engine.levers.defaults = parse_lever_names_env(&raw);
     }

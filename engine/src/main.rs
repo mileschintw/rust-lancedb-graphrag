@@ -77,6 +77,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         doc_meta_documents = initial_snapshot.doc_meta.len(),
         "BM25 snapshot built"
     );
+    // A store whose documents only partly carry metadata still serves `evidence_metadata`, but
+    // adds no header to the documents without it (review A-WR-03). An empty snapshot is skipped.
+    let coverage = initial_snapshot.doc_meta_coverage();
+    if coverage.documents > 0 && coverage.with_metadata < coverage.documents {
+        tracing::warn!(
+            documents = coverage.documents,
+            documents_with_metadata = coverage.with_metadata,
+            "evidence metadata covers {} of {} documents in the corpus snapshot; the \
+             evidence_metadata lever adds no header for the others",
+            coverage.with_metadata,
+            coverage.documents
+        );
+    }
     let corpus_store = Arc::new(tokio::sync::RwLock::new(initial_snapshot));
 
     let table = database.staged_documents_table().await?;
@@ -104,6 +117,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let lever_reranker: Arc<dyn rerank::Reranker> = Arc::new(
         rerank::openrouter::OpenRouterReranker::new(api_key.clone(), rerank_config)?,
     );
+    let lever_resources = LeverResources {
+        reranker: Some(lever_reranker),
+    };
+    // D-194: a configured default lever this engine cannot serve is warned about and never stops
+    // startup. The check needs only the first snapshot and the lever reranker, so it runs before
+    // any background task starts and before any staged job is replayed.
+    {
+        let snapshot = Arc::clone(&*corpus_store.read().await);
+        let unavailable = engine::service::unavailable_default_levers(
+            &effective_settings,
+            lever_resources.reranker.is_some(),
+            &snapshot,
+        );
+        for lever in unavailable.iter() {
+            tracing::warn!("{}", engine::service::default_lever_unavailable_warning(lever));
+        }
+    }
     let extraction_config = generation::openrouter::OpenRouterGenerationConfig::new(
         effective_settings.generation_model.clone(),
         effective_settings.chat_endpoint.clone(),
@@ -152,6 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let staged_jobs = read_staged_jobs(&database).await?;
+    let replayed_jobs = staged_jobs.len();
     for job in staged_jobs {
         statuses.insert(job.document_id.clone(), IngestionStatus::queued());
         sender
@@ -159,6 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .map_err(|_| "worker exited during replay send")?;
     }
+    tracing::info!(replayed_jobs, "Staged ingestion jobs replayed");
 
     let generation_config =
         generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
@@ -185,20 +217,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         generator,
         embedder: embedder.clone(),
         reranker: Arc::new(rerank::NoOpReranker::new()),
-        lever_resources: LeverResources {
-            reranker: Some(lever_reranker),
-        },
+        lever_resources,
         database: database.clone(),
     };
-
-    // D-157: a configured default lever that this engine cannot serve stops startup. The check
-    // reads the snapshot just built, so a default never turns into a silent no-op.
-    {
-        let snapshot = Arc::clone(&*service.corpus_store.read().await);
-        service
-            .validate_default_levers(&snapshot)
-            .map_err(|err| format!("invalid lever defaults: {err}"))?;
-    }
 
     let addr = settings.engine.grpc_addr.parse()?;
     // D-93: build the prompt tokenizer before the server accepts requests, so the first

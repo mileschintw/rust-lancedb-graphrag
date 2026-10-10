@@ -167,6 +167,16 @@ impl Bm25Index {
         })
     }
 
+    /// The `document_id` of each indexed chunk, in index order.
+    ///
+    /// A document with several chunks appears once per chunk, so the length of this sequence is
+    /// [`Bm25Index::len`], not the number of distinct documents.
+    pub fn chunk_document_ids(&self) -> impl Iterator<Item = &str> {
+        self.documents
+            .iter()
+            .map(|document| document.candidate.document_id.as_str())
+    }
+
     /// Builds a snapshot by reading the canonical completed-node columns.
     pub async fn from_table(table: &Table, config: Bm25Config) -> Result<Self, Bm25BuildError> {
         let batches: Vec<RecordBatch> = table
