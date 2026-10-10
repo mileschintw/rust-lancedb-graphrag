@@ -1,0 +1,31 @@
+{
+  "corpus": "multihop_rag_levers_heldout",
+  "run_date": "2026-10-10T16:47:29.943938+00:00",
+  "commit_sha": "5f8324fe3512d89e0c6cfc0d20818a571c4bf62e",
+  "generation_model": "deepseek/deepseek-v4-flash-0731",
+  "embedding_model": "voyageai/voyage-4-large",
+  "judge_model": "meta-llama/llama-3.3-70b-instruct",
+  "judge_temperature": 0.0,
+  "judge_prompt_version": "v1",
+  "sampling_seed": 42,
+  "sample_size_deterministic": 351,
+  "sample_size_judged": 0,
+  "calibration_completed_n": 0,
+  "index_generation": "lance-703",
+  "result_hash": "64bad6f11b7678a2",
+  "arm_labels": [
+    "hybrid",
+    "hybrid+graph",
+    "hybrid+rerank",
+    "hybrid+metadata",
+    "hybrid+answer-format",
+    "hybrid+graph-v2",
+    "hybrid+all"
+  ],
+  "dependency_lock_hash": "8e71ea9ce7a3532b",
+  "partial": false,
+  "notes": "No judge-versus-human calibration was performed; judged dimensions are uncalibrated. all-arm P_all, not the decisional population: |P_all| = 304 of 308 held-out G questions (coverage 0.987). The per-arm cells are on this population; below any coverage floor they are labelled, never refused, and compare-levers reads one pairwise population per comparison (D-161).",
+  "judged_slice_committed": 0,
+  "verdicts_obtained": 0,
+  "judged_slice_state": "not_judged"
+}

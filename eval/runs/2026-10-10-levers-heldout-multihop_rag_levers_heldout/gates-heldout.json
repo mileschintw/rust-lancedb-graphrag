@@ -1,0 +1,619 @@
+{
+  "stage": "heldout",
+  "arms": [
+    "hybrid",
+    "hybrid+graph",
+    "hybrid+rerank",
+    "hybrid+metadata",
+    "hybrid+answer-format",
+    "hybrid+graph-v2",
+    "hybrid+all"
+  ],
+  "SC-1": {
+    "hybrid": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "hybrid+graph": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid+graph: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+graph",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "hybrid+rerank": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid+rerank: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+rerank",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "hybrid+metadata": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid+metadata: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+metadata",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "hybrid+answer-format": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid+answer-format: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+answer-format",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "hybrid+graph-v2": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid+graph-v2: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+graph-v2",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "hybrid+all": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "arm hybrid+all: all 351 work unit(s) recorded",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+all",
+        "n_expected": 351,
+        "missing_units": 0
+      }
+    },
+    "pooled": {
+      "gate": "SC-1",
+      "status": "PASS",
+      "reason": "header partial matches completeness_comparison() and report.json state is consistent",
+      "value": null,
+      "ci": null,
+      "n": 2457,
+      "detail": {
+        "header_partial": false,
+        "expected_partial": false,
+        "journal_complete": true,
+        "missing_units": 0.0,
+        "report_json_exists": true,
+        "retry_provenance": "header marker: gate_stage=heldout, max_retries=0"
+      }
+    }
+  },
+  "SC-2": {
+    "hybrid": {
+      "gate": "SC-2",
+      "status": "PASS",
+      "reason": "arm hybrid: error mode and RetrieveHybrid flatness both pass",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid",
+        "class_counts": {},
+        "dominant_classes": [],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": 0.0,
+        "flatness_window_delta_ms": -2.0,
+        "sc2_timeout_rate_floor": "1/40",
+        "sc2_timeout_count": 0.0,
+        "sc2_timeout_material": false
+      }
+    },
+    "hybrid+graph": {
+      "gate": "SC-2",
+      "status": "PASS",
+      "reason": "arm hybrid+graph: error mode and RetrieveHybrid flatness both pass",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+graph",
+        "class_counts": {},
+        "dominant_classes": [],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": 0.00904977375565611,
+        "flatness_window_delta_ms": 16.0,
+        "sc2_timeout_rate_floor": "1/40",
+        "sc2_timeout_count": 0.0,
+        "sc2_timeout_material": false
+      }
+    },
+    "hybrid+rerank": {
+      "gate": "SC-2",
+      "status": "MISS",
+      "reason": "arm hybrid+rerank: flatness decay_present; reported: RetrieveHybrid minus rerank.latency_ms flatness flat",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+rerank",
+        "class_counts": {},
+        "dominant_classes": [],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "decay_present",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": true,
+        "flatness_slope_ms_per_query": 0.3037974683544304,
+        "flatness_window_delta_ms": 931.0,
+        "sc2_timeout_rate_floor": "1/40",
+        "sc2_timeout_count": 0.0,
+        "sc2_timeout_material": false,
+        "rerank_subtracted_flatness": {
+          "reason": "flat",
+          "passed": true,
+          "n": 351,
+          "slope_ms_per_query": -0.003875968992248062,
+          "window_delta_ms": -1.0,
+          "slice_medians_ms": [
+            95.0,
+            96.0,
+            98.5,
+            95.0,
+            95.0,
+            95.0,
+            95.0,
+            80.0
+          ],
+          "n_rerank_attempts": 351,
+          "median_rerank_latency_ms": 319.0
+        },
+        "o14_note": "RetrieveHybrid minus rerank.latency_ms is reported beside the 06.3.4.1 flatness reading (D-175); a flatness MISS that this series does not show is provider latency drift under D-110"
+      }
+    },
+    "hybrid+metadata": {
+      "gate": "SC-2",
+      "status": "PASS",
+      "reason": "arm hybrid+metadata: error mode and RetrieveHybrid flatness both pass",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+metadata",
+        "class_counts": {
+          "citation_basis_retrieval": 2.0
+        },
+        "dominant_classes": [
+          "citation_basis_retrieval"
+        ],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": 0.0,
+        "flatness_window_delta_ms": 1.0,
+        "sc2_timeout_rate_floor": "1/40",
+        "sc2_timeout_count": 0.0,
+        "sc2_timeout_material": false
+      }
+    },
+    "hybrid+answer-format": {
+      "gate": "SC-2",
+      "status": "PASS",
+      "reason": "arm hybrid+answer-format: error mode and RetrieveHybrid flatness both pass",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+answer-format",
+        "class_counts": {
+          "citation_basis_retrieval": 1.0
+        },
+        "dominant_classes": [
+          "citation_basis_retrieval"
+        ],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": 0.0,
+        "flatness_window_delta_ms": -13.0,
+        "sc2_timeout_rate_floor": "1/40",
+        "sc2_timeout_count": 0.0,
+        "sc2_timeout_material": false
+      }
+    },
+    "hybrid+graph-v2": {
+      "gate": "SC-2",
+      "status": "PASS",
+      "reason": "arm hybrid+graph-v2: error mode and RetrieveHybrid flatness both pass",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+graph-v2",
+        "class_counts": {},
+        "dominant_classes": [],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "flat",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": false,
+        "flatness_slope_ms_per_query": -0.007874015748031496,
+        "flatness_window_delta_ms": 15.0,
+        "sc2_timeout_rate_floor": "1/40",
+        "sc2_timeout_count": 0.0,
+        "sc2_timeout_material": false
+      }
+    },
+    "hybrid+all": {
+      "gate": "SC-2",
+      "status": "MISS",
+      "reason": "arm hybrid+all: flatness decay_present; reported: RetrieveHybrid minus rerank.latency_ms flatness flat",
+      "value": null,
+      "ci": null,
+      "n": 351,
+      "detail": {
+        "arm": "hybrid+all",
+        "class_counts": {
+          "citation_basis_retrieval": 1.0
+        },
+        "dominant_classes": [
+          "citation_basis_retrieval"
+        ],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "retried_records": 0.0,
+        "flatness_reason": "decay_present",
+        "flatness_n": 351,
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": true,
+        "flatness_slope_ms_per_query": 0.5884353741496599,
+        "flatness_window_delta_ms": 976.0,
+        "sc2_timeout_rate_floor": "1/40",
+        "sc2_timeout_count": 0.0,
+        "sc2_timeout_material": false,
+        "rerank_subtracted_flatness": {
+          "reason": "flat",
+          "passed": true,
+          "n": 351,
+          "slope_ms_per_query": 0.006493506493506494,
+          "window_delta_ms": 4.0,
+          "slice_medians_ms": [
+            107.0,
+            107.0,
+            113.5,
+            113.5,
+            106.5,
+            106.5,
+            113.0,
+            137.0
+          ],
+          "n_rerank_attempts": 351,
+          "median_rerank_latency_ms": 344.0
+        },
+        "o14_note": "RetrieveHybrid minus rerank.latency_ms is reported beside the 06.3.4.1 flatness reading (D-175); a flatness MISS that this series does not show is provider latency drift under D-110"
+      }
+    },
+    "pooled": {
+      "gate": "SC-2",
+      "status": "MISS",
+      "reason": "flatness decay_present",
+      "value": null,
+      "ci": null,
+      "n": 2457,
+      "detail": {
+        "class_counts": {
+          "citation_basis_retrieval": 4.0
+        },
+        "dominant_classes": [
+          "citation_basis_retrieval"
+        ],
+        "timeout_dominant": false,
+        "sc2_timeout_dominance_rule": "plurality_tie_is_dominant",
+        "both_arm_error_question_count": 0.0,
+        "both_arm_error_class_pairs": [],
+        "retried_records": 0.0,
+        "flatness_reason": "decay_present",
+        "flatness_trend_available": true,
+        "flatness_window_available": true,
+        "flatness_decay_present": true,
+        "flatness_slope_ms_per_query": 0.001310615989515072,
+        "flatness_window_delta_ms": 751.0,
+        "sc2_timeout_rate_floor": "1/40",
+        "sc2_timeout_count": 0.0,
+        "sc2_timeout_material": false
+      }
+    }
+  },
+  "D-69 companion": {
+    "hybrid": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.010826239088088881
+      ],
+      "n": 351,
+      "detail": {
+        "class_counts": {},
+        "marker_mismatch_count": 0.0,
+        "total": 351.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 308.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.010826239088088881
+      }
+    },
+    "hybrid+graph": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.010826239088088881
+      ],
+      "n": 351,
+      "detail": {
+        "class_counts": {},
+        "marker_mismatch_count": 0.0,
+        "total": 351.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 308.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.010826239088088881
+      }
+    },
+    "hybrid+rerank": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.010826239088088881
+      ],
+      "n": 351,
+      "detail": {
+        "class_counts": {},
+        "marker_mismatch_count": 0.0,
+        "total": 351.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 308.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.010826239088088881
+      }
+    },
+    "hybrid+metadata": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.005698005698005698,
+      "ci": [
+        0.0015639592395947054,
+        0.02053491530048177
+      ],
+      "n": 351,
+      "detail": {
+        "class_counts": {
+          "citation_basis_retrieval": 2.0
+        },
+        "marker_mismatch_count": 0.0,
+        "total": 351.0,
+        "total_rejections": 2.0,
+        "total_rate": 0.005698005698005698,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 308.0,
+        "nonnull_rejections": 2.0,
+        "nonnull_rate": 0.006493506493506494,
+        "retried_records": 0.0,
+        "ci_lower": 0.0015639592395947054,
+        "ci_upper": 0.02053491530048177
+      }
+    },
+    "hybrid+answer-format": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.002849002849002849,
+      "ci": [
+        0.000503083172408339,
+        0.01595947364167434
+      ],
+      "n": 351,
+      "detail": {
+        "class_counts": {
+          "citation_basis_retrieval": 1.0
+        },
+        "marker_mismatch_count": 0.0,
+        "total": 351.0,
+        "total_rejections": 1.0,
+        "total_rate": 0.002849002849002849,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 308.0,
+        "nonnull_rejections": 1.0,
+        "nonnull_rate": 0.003246753246753247,
+        "retried_records": 0.0,
+        "ci_lower": 0.000503083172408339,
+        "ci_upper": 0.01595947364167434
+      }
+    },
+    "hybrid+graph-v2": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.0,
+      "ci": [
+        0.0,
+        0.010826239088088881
+      ],
+      "n": 351,
+      "detail": {
+        "class_counts": {},
+        "marker_mismatch_count": 0.0,
+        "total": 351.0,
+        "total_rejections": 0.0,
+        "total_rate": 0.0,
+        "null_total": 43.0,
+        "null_rejections": 0.0,
+        "null_rate": 0.0,
+        "nonnull_total": 308.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.0,
+        "ci_upper": 0.010826239088088881
+      }
+    },
+    "hybrid+all": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.002849002849002849,
+      "ci": [
+        0.000503083172408339,
+        0.01595947364167434
+      ],
+      "n": 351,
+      "detail": {
+        "class_counts": {
+          "citation_basis_retrieval": 1.0
+        },
+        "marker_mismatch_count": 0.0,
+        "total": 351.0,
+        "total_rejections": 1.0,
+        "total_rate": 0.002849002849002849,
+        "null_total": 43.0,
+        "null_rejections": 1.0,
+        "null_rate": 0.023255813953488372,
+        "nonnull_total": 308.0,
+        "nonnull_rejections": 0.0,
+        "nonnull_rate": 0.0,
+        "retried_records": 0.0,
+        "ci_lower": 0.000503083172408339,
+        "ci_upper": 0.01595947364167434
+      }
+    },
+    "pooled": {
+      "gate": "citation_rejection_rate",
+      "status": "PASS",
+      "reason": "citation_marker_mismatch=0, total and null rates within committed bounds",
+      "value": 0.001628001628001628,
+      "ci": [
+        0.0006332642674310824,
+        0.004178748013245577
+      ],
+      "n": 2457,
+      "detail": {
+        "class_counts": {
+          "citation_basis_retrieval": 4.0
+        },
+        "marker_mismatch_count": 0.0,
+        "total": 2457.0,
+        "total_rejections": 4.0,
+        "total_rate": 0.001628001628001628,
+        "null_total": 301.0,
+        "null_rejections": 1.0,
+        "null_rate": 0.0033222591362126247,
+        "nonnull_total": 2156.0,
+        "nonnull_rejections": 3.0,
+        "nonnull_rate": 0.0013914656771799629,
+        "retried_records": 0.0,
+        "ci_lower": 0.0006332642674310824,
+        "ci_upper": 0.004178748013245577
+      }
+    }
+  },
+  "not_computed": {
+    "SC-3": "not computed for the heldout stage (D-109): SC-3, SC-4 and SC-5 need the dev populations and the two-arm graph pairing, which the four-arm held-out drive does not carry",
+    "SC-4": "not computed for the heldout stage (D-109): SC-3, SC-4 and SC-5 need the dev populations and the two-arm graph pairing, which the four-arm held-out drive does not carry",
+    "SC-5": "not computed for the heldout stage (D-109): SC-3, SC-4 and SC-5 need the dev populations and the two-arm graph pairing, which the four-arm held-out drive does not carry"
+  },
+  "retry_provenance": "header marker: gate_stage=heldout, max_retries=0"
+}
