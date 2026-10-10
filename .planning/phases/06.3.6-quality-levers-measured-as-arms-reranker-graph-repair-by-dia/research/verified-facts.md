@@ -534,3 +534,118 @@ readings in `data/oi02-evidence/probe-2026-10-09/`.
   4.4e-07 equals `usage.cost`, so 1 credit = 1 USD is consistent.
 - The response-model rule is corrected by D-186 (owner): the reply `model` starts with the requested slug or with its
   bare name after the vendor prefix. A re-probe under that rule follows (plan 06.3.6-01).
+
+## M. Gap-closure facts for D-194 / D-197 (orchestrator reads at HEAD `2e228833`, 2026-10-10)
+
+**[re-checked]** by the orchestrator from the source at `path:line`. No commit touched `engine/`, `gateway/`, `eval/`,
+`proto/`, `config/` or `scripts/` after the verification commit `c036e70a` (`verified: 2026-10-10T20:51:27Z`), so the
+verification and this section describe the same code.
+
+**Startup order (`engine/src/main.rs`).**
+- 41: `EffectiveRagSettings::try_from_settings`. 43: `DatabaseManager::initialize`. A 19-column `nodes` table fails
+  here with "schema drift detected for nodes" (`engine/src/tests/ingest_metadata.rs:585`, D-144), before any lever code.
+- 55-61: the `doc_meta` scan (`load_doc_meta`) at the snapshot's `nodes` version. 62-71: `initial_snapshot` with
+  `.with_doc_meta`. 72-79: the info log "BM25 snapshot built" carries `document_count` (from `bm25.len()`) and
+  `doc_meta_documents` (from `doc_meta.len()`); nothing compares them. 80: `corpus_store`.
+- 104-106: the lever reranker (`OpenRouterReranker`) is always built, and `LeverResources.reranker` is `Some` (188-190).
+  So in the production binary `rerank` is always available. At startup only `evidence_metadata` (empty map) and
+  `graph_v2` (precision `all`) can be unavailable.
+- 131-142: `spawn_worker_with_concurrency`. 144-152: `spawn_rebuild_debounce_task`. 154-161: `read_staged_jobs` and the
+  replay send into the worker queue.
+- 194-202: `validate_default_levers` runs after the spawns and the replay (A-WR-01). Its `Err` makes `main` return.
+- 222: "Rust RAG Engine serving", the readiness line `engine/tests/config_startup.rs` waits for (10 s timeout).
+
+**Service (`engine/src/service.rs`).**
+- 134-137: `LeverResources { reranker: Option<Arc<dyn Reranker>> }`. 152-170: `LeverAvailability` and `is_available`.
+- 200-210: `lever_availability`. `rerank = reranker.is_some()`. `evidence_metadata = !snapshot.doc_meta.is_empty()`
+  (206): any one document with metadata passes (A-WR-03). `binary_answer_format = true`.
+  `graph_v2 = graph_v2_chunk_precision != All`.
+- 217-240: `validate_default_levers` is a method on `LancetServiceImpl`, so it needs the whole service. Its message at
+  237 contains a run of spaces ("backfill              the store").
+- 1222-1229: `LeverSet::try_from_wire` refuses with error kind `invalid_levers`.
+- 1235-1239: `requested.is_empty()` takes `effective_settings.default_levers`; otherwise the requested set is used.
+- 1243-1251: `graph_v2` with `disable_graph_context` gives `invalid_lever_combination`, evaluated on the effective set.
+- 1255-1271: an unavailable lever in the effective set gives `tonic::Code::InvalidArgument`, error kind
+  `lever_unavailable`, message "lever {NAME} is not available on this engine". The gateway maps InvalidArgument to HTTP
+  400 (review A-WR-02, `gateway/main.go:927`).
+- 1330-1333: `ctx.levers = levers;`, then `build_production_workflow_with_levers(snapshot, &ctx.levers)`. The snapshot
+  echo is `ctx.levers` (D-136 canonical echo).
+
+**LeverSet (`engine/src/workflow/levers.rs`).** It is a bit mask, `LeverSet(u8)`, with `contains`, `is_empty`,
+`to_wire` and `iter`. No method removes a lever, so filtering needs a new method. `wire_name` is `pub(crate)` (24-35).
+
+**Notices (`engine/src/workflow/mod.rs`).**
+- 34-50: `notice(code, message, severity)` is the only constructor; the string code is the enum name without
+  `NOTICE_CODE_`.
+- 216-223: `WorkflowContext::add_notice` dedups on (code, message).
+- 313-358: `derive_degraded_mode` matches exhaustively over `NoticeCode`, so a new variant does not compile until it is
+  placed in an arm. `GRAPH_ABLATION` (request shape) is outside the degraded set. `GRAPH_UNAVAILABLE` and
+  `RERANK_DEGRADED` (D-134) are inside it.
+
+**Proto (`proto/lancet/v1/lancet.proto`).**
+- 112-149: the `NoticeCode` enum. Its highest value is 23, `NOTICE_CODE_RERANK_DEGRADED`, in the "Phase 06.3.6"
+  block at 146-148. Tag 17 is reserved.
+- 165-171: `Notice { code, message, severity, typed_code }`.
+- One `buf generate` regenerates both `engine/src/pb/lancet/v1/lancet.v1.rs` and
+  `gateway/proto/lancet/v1/lancet.pb.go`, as in commit `b34dee48` (plan 06.3.6-05).
+
+**No allowlist of notice codes downstream.**
+- **Gateway:** notices pass through generically (`gateway/internal/sse/dto.go:46,251`; `sse.go:111`).
+  `extractNoticeCodes` (`gateway/main.go:644-660`) names a typed code with `pb.NoticeCode(n.TypedCode).String()`.
+- **Eval:** `Notice.typed_code` is a plain `int` (`eval/src/lancet_eval/client.py:58`). There is one constant per code
+  (`dimensions.py:16` and `usability.py:14` for 23). `eval/tests/test_wire_contract.py:345-347` pins 23 against the
+  proto through `_proto_enum` (324-335).
+- **Engine:** `test_notice_published_enum_reachability_or_reservation` (`engine/src/tests/workflow_phase5.rs:3758-3838`)
+  lists codes with their emission sites. It is not exhaustive: `RerankDegraded` is absent.
+
+**Rebuild (`engine/src/ingest.rs`).** `rebuild_and_swap_with_graph_builder` starts at 1746.
+- 1897-1931: `doc_meta` is rescanned at the version just read. A failed scan keeps the prior snapshot and sets
+  `rebuild_degraded`.
+- 1933-1946: the new snapshot is swapped in. 1947-1952: an info log.
+- Nothing logs when a swap changes which levers are available.
+
+**Tests that pin today's refusal (to be inverted or rewritten).**
+- `engine/tests/config_startup.rs`:
+  - 20: `LEVER_DEFAULTS_ENV`.
+  - 28-33: `spawn_engine_full` sets it to "" for every fixture, with a comment saying the engine refuses to start.
+  - 1078-1106: `committed_lever_defaults_stop_the_engine_over_a_store_without_metadata`.
+  - 1108-1131: `an_empty_lever_defaults_override_starts_the_engine_over_a_store_without_metadata`.
+- `engine/src/tests/levers_pins.rs`:
+  - Helpers: `service_with_default_levers` 1367, `request_without_evidence` 1397, `error_kind_of` 1408.
+  - 1419: `a_request_naming_no_levers_runs_the_configured_defaults_and_echoes_them`.
+  - 1442: `a_request_naming_levers_runs_exactly_those_and_none_of_the_defaults`.
+  - 1465: `an_empty_default_list_leaves_a_request_that_names_no_levers_lever_free`.
+  - 1479: `an_unavailable_default_lever_refuses_a_request_that_names_none`. Two cases, no reranker and no metadata, both
+    give `lever_unavailable`.
+  - 1516: `startup_validation_refuses_a_default_lever_whose_resource_is_absent`. It asserts that the message contains
+    "defaults = []" (about line 1548).
+
+**Prose that describes the refusal:**
+- `config/config.toml:148-150` and `config/config.example.toml:173-175`.
+- `engine/src/config.rs:1218-1222` (the env-override comment).
+- `engine/src/main.rs:194-195`.
+- The `engine/src/service.rs` doc comments at 127-133, 147-150 and 212-216.
+
+**Legacy store (D-197).**
+- `./data/lancedb` is the dev path in `config/config.toml:19`. It is a 19-column legacy store, about 138 KB on disk, in
+  a directory dated 2026-08-18.
+- `backfill_evidence_metadata --migrate-only --lancedb-path PATH` (`engine/src/bin/backfill_evidence_metadata.rs`,
+  USAGE at 77) refuses the configured eval store (`check_migrate_target`, 224-236). Otherwise it runs
+  `engine::db::backfill::backfill_nodes_metadata(&table, &Sidecar::empty())` on `nodes` (394-407; `backfill_on`
+  410-419).
+- Library anchors: `legacy_nodes_schema_v19()` at `engine/src/db/backfill.rs:53`, `Sidecar::empty()` at 112,
+  `backfill_nodes_metadata` at 349.
+- **Not verified by the orchestrator:**
+  - Whether `./data/lancedb` holds staged jobs. A boot over it replays them into embedding and extraction, which costs
+    money, so check before any real boot.
+  - Whether `DatabaseManager::initialize` upgrades a pre-metadata staging table once `nodes` validates.
+
+**Test-count gates.**
+- `scripts/engine-test-targets.sh` expects TOTAL 927: lib 813, inspect_lancedb 58, reconcile_eval_store 18,
+  backfill_evidence_metadata 14, config_startup 24.
+- `scripts/gateway-test-targets.sh` has `EXPECTED_TOTAL=124`.
+- Both are enforced. A test added or removed updates them in the same commit, with a dated history line, following
+  each script's header convention.
+
+**Requirements.** OBS-06 is unticked (`.planning/REQUIREMENTS.md:46`). Under D-127 only 06.3.6-22's SUMMARY carries
+`requirements-completed: [OBS-06]`. Plans 01-21 carry `requirements-completed: []`, and their `<output>` blocks say so.
