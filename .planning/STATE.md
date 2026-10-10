@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "06.3.6 gap plan 23 complete (post-merge gate green); code review and re-verification next"
+stopped_at: "06.3.6 re-verified after gap closure: human_needed 21/21 (UAT tests 5-6 pending); next /gsd-verify-work 06.3.6"
 last_updated: "2026-10-10T22:36:02.646Z"
 last_activity: 2026-10-10
 state_head: 8e2730f7bcbdfdc4e5fb9768ff70744992ea73ee
@@ -15,7 +15,7 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6 gap plan 23 executed (D-194, D-197)"
+last_activity_desc: "06.3.6 gap closure reviewed (0 critical) and re-verified (human_needed)"
 ---
 
 # Project State
