@@ -1,6 +1,6 @@
 # Dev reads ledger (D-154)
 
-Rendered from `dev-reads.jsonl`: 1 entry, in file order. The jsonl is the record; this file is derived from it.
+Rendered from `dev-reads.jsonl`: 7 entries, in file order. The jsonl is the record; this file is derived from it.
 
 ## 1. rule [dev-protocol-o7-o12-o13]
 
@@ -18,3 +18,162 @@ Rendered from `dev-reads.jsonl`: 1 entry, in file order. The jsonl is the record
 - freeze_choice: for every lever the read with the larger dev delta against its own session's hybrid; a tie keeps read 1 (D-154)
 - limits: at most 2 paid dev reads per lever overall (D-154); dev IDs only through the dev split role (D-170, D-106); no held-out number is read or quoted to set a parameter (D-129)
 - mechanical: each trigger is applied as written to the session's measured numbers; none is revised after read 1
+
+## 2. read: rerank (read 1)
+
+- entry_id: `read-718ec5daee51`
+- run_dir: eval/runs/2026-10-10-levers-s1-multihop_rag_levers_dev
+- session: s1
+- read: 1
+- index_generation: lance-703
+- reference: the same session's hybrid arm (O13, D-179)
+- engine_settings: {"generation_provider_pin": "D-191 order [\"sail-research\"], allow_fallbacks false", "head_sha_at_launch": "c077bef25d6a7e93b273ec368a05b6a583bee21d", "overrides_in_force": {"LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION": "edge_evidence"}, "prompt_sentences_commit": "e4ef66272713750b52af1fa5fe9627e17d837c6a", "rerank_timeout_ms": 1706, "retrieve_timeout_ms": 2500}
+- label: unadjusted, estimation only
+- lever: rerank
+- arm: hybrid+rerank
+- delta_answer_usable: 0.03409090909090917
+- ci: [-0.045454545454545456, 0.11363636363636363]
+- n_pairs: 88
+- n_pos: 8
+- n_neg: 5
+- null_pairs: {"b": 0, "c": 0, "n": 10}
+- mean_arm: 0.5909090909090909
+- mean_hybrid: 0.5568181818181818
+- comparison_shares: {"arm": {"insufficient_information": 0.29411764705882354, "no": 0.14705882352941177, "other": 0.058823529411764705, "yes": 0.5}, "hybrid": {"insufficient_information": 0.35294117647058826, "no": 0.11764705882352941, "other": 0.11764705882352941, "yes": 0.4117647058823529}, "n": 34}
+- mean_prompt_tokens: 2315.2272727272725
+- hits_at_4: {"available": true, "ci_hi": 0.2159090909090909, "ci_label": "unadjusted, estimation only", "ci_lo": 0.03409090909090909, "delta": 0.125, "mean_arm": 0.8863636363636364, "mean_hybrid": 0.7613636363636364, "n": 88, "note": null}
+- records: 100
+- records_with_retries: 0
+- rerank_outcomes: {"completed": 98, "degraded_timeout": 1, "degraded_transport": 1}
+- read2_decision: none
+- read2_rule_applied: rerank read 2 only in the D-135 lower-bound case; the derivation label is censored_above_p95_rank(1) (is_lower_bound false), so the trigger did not fire
+- note: T = 2286 ms does not nest in retrieve_timeout_ms 2500 (required 3080); that is the O11 freeze question for plan 06.3.6-18, not a read-2 trigger
+
+## 3. read: graph-v2 (read 1)
+
+- entry_id: `read-a99163059b46`
+- run_dir: eval/runs/2026-10-10-levers-s1-multihop_rag_levers_dev
+- session: s1
+- read: 1
+- index_generation: lance-703
+- reference: the same session's hybrid arm (O13, D-179)
+- engine_settings: {"generation_provider_pin": "D-191 order [\"sail-research\"], allow_fallbacks false", "head_sha_at_launch": "c077bef25d6a7e93b273ec368a05b6a583bee21d", "overrides_in_force": {"LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION": "edge_evidence"}, "prompt_sentences_commit": "e4ef66272713750b52af1fa5fe9627e17d837c6a", "rerank_timeout_ms": 1706, "retrieve_timeout_ms": 2500}
+- label: unadjusted, estimation only
+- lever: graph-v2
+- arm: hybrid+graph-v2
+- delta_answer_usable: -0.011111111111111183
+- ci: [-0.06666666666666667, 0.044444444444444446]
+- n_pairs: 90
+- n_pos: 3
+- n_neg: 4
+- null_pairs: {"b": 0, "c": 0, "n": 10}
+- mean_arm: 0.5444444444444444
+- mean_hybrid: 0.5555555555555556
+- comparison_shares: {"arm": {"insufficient_information": 0.4444444444444444, "no": 0.08333333333333333, "other": 0.1388888888888889, "yes": 0.3333333333333333}, "hybrid": {"insufficient_information": 0.3333333333333333, "no": 0.1111111111111111, "other": 0.1388888888888889, "yes": 0.4166666666666667}, "n": 36}
+- mean_prompt_tokens: 2470.9333333333334
+- hits_at_4: {"available": true, "ci_hi": 0.022222222222222223, "ci_label": "unadjusted, estimation only", "ci_lo": -0.06666666666666667, "delta": -0.022222222222222254, "mean_arm": 0.7333333333333333, "mean_hybrid": 0.7555555555555555, "n": 90, "note": null}
+- records: 100
+- records_with_retries: 0
+- variant_read: ChunkSelection EdgeEvidence (GRAPH_V2_CHUNK_PRECISION=edge_evidence)
+- v1_control_hybrid_graph: {"ci": [-0.07865168539325842, 0.056179775280898875], "comparison_shares": {"arm": {"insufficient_information": 0.3611111111111111, "no": 0.08333333333333333, "other": 0.1111111111111111, "yes": 0.4444444444444444}, "hybrid": {"insufficient_information": 0.3333333333333333, "no": 0.1111111111111111, "other": 0.1388888888888889, "yes": 0.4166666666666667}, "n": 36}, "delta_answer_usable": -0.011235955056179803, "hits_at_4": null, "mean_arm": 0.5393258426966292, "mean_hybrid": 0.550561797752809, "mean_prompt_tokens": 2467.4606741573034, "n_neg": 5, "n_pairs": 89, "n_pos": 4, "null_pairs": {"b": 0, "c": 0, "n": 10}, "records": 100, "records_with_retries": 0}
+- read2_decision: TRIGGERED
+- read2_rule_applied: O12 (D-180): read 2 (MultiCited(2)) iff read 1 dev paired delta of answer_usable <= 0; read 1 delta = -0.011111 <= 0
+
+## 4. read: metadata (read 1)
+
+- entry_id: `read-3289c9eebbea`
+- run_dir: eval/runs/2026-10-10-levers-s1-multihop_rag_levers_dev
+- session: s1
+- read: 1
+- index_generation: lance-703
+- reference: the same session's hybrid arm (O13, D-179)
+- engine_settings: {"generation_provider_pin": "D-191 order [\"sail-research\"], allow_fallbacks false", "head_sha_at_launch": "c077bef25d6a7e93b273ec368a05b6a583bee21d", "overrides_in_force": {"LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION": "edge_evidence"}, "prompt_sentences_commit": "e4ef66272713750b52af1fa5fe9627e17d837c6a", "rerank_timeout_ms": 1706, "retrieve_timeout_ms": 2500}
+- label: unadjusted, estimation only
+- lever: metadata
+- arm: hybrid+metadata
+- delta_answer_usable: 0.09999999999999998
+- ci: [0.022222222222222223, 0.17777777777777778]
+- n_pairs: 90
+- n_pos: 11
+- n_neg: 2
+- null_pairs: {"b": 0, "c": 0, "n": 10}
+- mean_arm: 0.6555555555555556
+- mean_hybrid: 0.5555555555555556
+- comparison_shares: {"arm": {"insufficient_information": 0.25, "no": 0.1111111111111111, "other": 0.08333333333333333, "yes": 0.5555555555555556}, "hybrid": {"insufficient_information": 0.3333333333333333, "no": 0.1111111111111111, "other": 0.1388888888888889, "yes": 0.4166666666666667}, "n": 36}
+- mean_prompt_tokens: 2724.4444444444443
+- hits_at_4: null
+- records: 100
+- records_with_retries: 0
+- read2_decision: none
+- read2_rule_applied: discretionary (D-143): none. Read 1 delta is positive (see ci) and no defect in the sentence was observed that a revision would fix on principle; choosing a revised sentence from 90 dev questions would be tuning wording on the dev numbers. The freeze keeps read 1.
+
+## 5. read: answer-format (read 1)
+
+- entry_id: `read-bb17c830cf89`
+- run_dir: eval/runs/2026-10-10-levers-s1-multihop_rag_levers_dev
+- session: s1
+- read: 1
+- index_generation: lance-703
+- reference: the same session's hybrid arm (O13, D-179)
+- engine_settings: {"generation_provider_pin": "D-191 order [\"sail-research\"], allow_fallbacks false", "head_sha_at_launch": "c077bef25d6a7e93b273ec368a05b6a583bee21d", "overrides_in_force": {"LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION": "edge_evidence"}, "prompt_sentences_commit": "e4ef66272713750b52af1fa5fe9627e17d837c6a", "rerank_timeout_ms": 1706, "retrieve_timeout_ms": 2500}
+- label: unadjusted, estimation only
+- lever: answer-format
+- arm: hybrid+answer-format
+- delta_answer_usable: -0.033333333333333326
+- ci: [-0.1111111111111111, 0.044444444444444446]
+- n_pairs: 90
+- n_pos: 5
+- n_neg: 8
+- null_pairs: {"b": 0, "c": 0, "n": 10}
+- mean_arm: 0.5222222222222223
+- mean_hybrid: 0.5555555555555556
+- comparison_shares: {"arm": {"insufficient_information": 0.3611111111111111, "no": 0.19444444444444445, "other": 0.027777777777777776, "yes": 0.4166666666666667}, "hybrid": {"insufficient_information": 0.3333333333333333, "no": 0.1111111111111111, "other": 0.1388888888888889, "yes": 0.4166666666666667}, "n": 36}
+- mean_prompt_tokens: 2347.7
+- hits_at_4: null
+- records: 100
+- records_with_retries: 0
+- read2_decision: none
+- read2_rule_applied: discretionary (D-147): none. The delta CI spans 0; the Yes/No/other shares moved in the intended direction (other down, No up) and AI-SPEC 4b forbids choosing a wording for moving those shares or the n = 10 null pairs. The freeze keeps read 1.
+
+## 6. derivation: rerank
+
+- entry_id: `derivation-d32847549b91`
+- lever: rerank
+- session: s1
+- run_dir: eval/runs/2026-10-10-levers-s1-multihop_rag_levers_dev
+- rule: D-135 censoring-aware derivation (dev_reads derive-rerank-timeout), provisional rerank_timeout_ms 1706, retrieve_timeout_ms 2500
+- arm: hybrid+rerank
+- budget_censored_status: clean
+- budget_rule: p95_multiplier_rule
+- ci_high_ms: null
+- ci_high_unbounded: true
+- ci_low_ms: 1059.0
+- decision: does_not_fit
+- excluded: {"malformed": 0, "no_telemetry": 0, "status": 0, "transport": 1, "unspecified": 0}
+- is_lower_bound: false
+- k: 1
+- label: censored_above_p95_rank(1)
+- multiplier: 1.5
+- n: 99
+- nests: false
+- p95_ms: 1524.0
+- percentile: 0.95
+- required_retrieve_ms: 3080
+- retrieve_timeout_ms: 2500
+- schema_version: 1
+- search_allowance_ms: 294
+- slack_ms: 500.0
+- t_ms: 2286
+
+## 7. read2_reason: graph-v2
+
+- entry_id: `read2_reason-073ce4ad04de`
+- lever: graph-v2
+- trigger: O12 (D-180, rule entry dev-protocol-o7-o12-o13): read 1 (EdgeEvidence) dev paired delta of answer_usable against the same-session hybrid <= 0
+- read1_delta_answer_usable: -0.011111111111111183
+- read1_ci: [-0.06666666666666667, 0.044444444444444446]
+- read1_hits_at_4_delta: -0.022222222222222254
+- read2_settings: {"chunk_selection": "MultiCited(2)", "generation_provider_pin": "D-191 order [\"sail-research\"], allow_fallbacks false", "no_other_override": true, "override": "LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION=multi_cited", "reference": "session 2 own hybrid (O13)", "rerank_timeout_ms": 1706, "retrieve_timeout_ms": 2500, "session_2_arms": ["hybrid", "hybrid+graph", "hybrid+graph-v2"]}
+- freeze_rule: the read with the larger dev delta against its own session hybrid; a tie keeps read 1 (EdgeEvidence)
+- written_before_read_2: true
+- other_levers: rerank, metadata and answer-format take no read 2 (see their read entries), so session 2 carries no revised sentence and no rerank override

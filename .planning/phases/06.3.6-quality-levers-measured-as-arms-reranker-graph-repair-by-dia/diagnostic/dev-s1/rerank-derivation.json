@@ -1,0 +1,30 @@
+{
+  "arm": "hybrid+rerank",
+  "budget_censored_status": "clean",
+  "budget_rule": "p95_multiplier_rule",
+  "ci_high_ms": null,
+  "ci_high_unbounded": true,
+  "ci_low_ms": 1059.0,
+  "decision": "does_not_fit",
+  "excluded": {
+    "malformed": 0,
+    "no_telemetry": 0,
+    "status": 0,
+    "transport": 1,
+    "unspecified": 0
+  },
+  "is_lower_bound": false,
+  "k": 1,
+  "label": "censored_above_p95_rank(1)",
+  "multiplier": 1.5,
+  "n": 99,
+  "nests": false,
+  "p95_ms": 1524.0,
+  "percentile": 0.95,
+  "required_retrieve_ms": 3080,
+  "retrieve_timeout_ms": 2500,
+  "schema_version": 1,
+  "search_allowance_ms": 294,
+  "slack_ms": 500.0,
+  "t_ms": 2286
+}

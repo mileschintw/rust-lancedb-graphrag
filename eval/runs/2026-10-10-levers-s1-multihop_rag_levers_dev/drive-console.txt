@@ -1,0 +1,6 @@
+Resolved run directory: eval\runs\2026-10-10-levers-s1-multihop_rag_levers_dev
+Driving corpus 'multihop_rag_levers_dev' (limit=None, resume=False, workers=1, 
+retries=0, gate_stage=None, stage_cap=$2.00)...
+Successfully recorded 600 new work units to 
+eval\runs\2026-10-10-levers-s1-multihop_rag_levers_dev\journal.jsonl (observed 
+spend: $0.4445)
