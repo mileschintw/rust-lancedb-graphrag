@@ -16,7 +16,7 @@ use crate::pb::lancet::v1::{
 };
 
 pub use events::EventSequence;
-pub use levers::{LeverError, LeverSet};
+pub use levers::{LeverError, LeverNameError, LeverSet};
 pub use node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort};
 pub use nodes::{
     AssemblePromptNode, ExtractGraphContextNode, GenerateAnswerNode, ReformulateQueryNode,

@@ -191,6 +191,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         database: database.clone(),
     };
 
+    // D-157: a configured default lever that this engine cannot serve stops startup. The check
+    // reads the snapshot just built, so a default never turns into a silent no-op.
+    {
+        let snapshot = Arc::clone(&*service.corpus_store.read().await);
+        service
+            .validate_default_levers(&snapshot)
+            .map_err(|err| format!("invalid lever defaults: {err}"))?;
+    }
+
     let addr = settings.engine.grpc_addr.parse()?;
     // D-93: build the prompt tokenizer before the server accepts requests, so the first
     // query's AssemblePrompt does not pay for it. It is blocking CPU work, so it runs off

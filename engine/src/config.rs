@@ -11,6 +11,7 @@ use crate::generation;
 use crate::graph;
 use crate::rerank::openrouter::{DEFAULT_RERANK_ENDPOINT, DEFAULT_RERANK_MODEL};
 use crate::retrieval::{self, Bm25Config};
+use crate::workflow;
 use crate::workflow::nodes::graph_context::{QUERY_EMBEDDING_ATTEMPTS, RETRY_JITTER_MAX_MS};
 
 pub fn default_candidate_limit() -> usize {
@@ -668,6 +669,8 @@ pub struct EngineSettings {
     pub graph: GraphConfigSettings,
     #[serde(default)]
     pub telemetry: TelemetryConfigSettings,
+    #[serde(default)]
+    pub levers: LeversConfigSettings,
 }
 
 impl Default for EngineSettings {
@@ -679,8 +682,28 @@ impl Default for EngineSettings {
             retrieval: RetrievalConfigSettings::default(),
             graph: GraphConfigSettings::default(),
             telemetry: TelemetryConfigSettings::default(),
+            levers: LeversConfigSettings::default(),
         }
     }
+}
+
+/// The `[engine.levers]` table: which quality levers a request that names none runs with.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct LeversConfigSettings {
+    /// Wire names of the levers applied when a request names no lever, in canonical order (D-157).
+    ///
+    /// Empty by default, which keeps a request that names no lever lever-free. The environment
+    /// override `LANCET_ENGINE__LEVERS__DEFAULTS` is a comma list, and an empty value means none.
+    #[serde(default)]
+    pub defaults: Vec<String>,
+}
+
+/// Reads the comma list `LANCET_ENGINE__LEVERS__DEFAULTS` carries; blank means no default lever.
+fn parse_lever_names_env(raw: &str) -> Vec<String> {
+    if raw.trim().is_empty() {
+        return Vec::new();
+    }
+    raw.split(',').map(|name| name.trim().to_owned()).collect()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -875,6 +898,8 @@ pub struct EffectiveRagSettings {
     pub top_p: f64,
     pub max_output_tokens: u32,
     pub generation_provider_order: Vec<String>,
+    /// The levers a request that names none runs with (D-157).
+    pub default_levers: workflow::LeverSet,
     pub index_generation: String,
     grounding_limits: Arc<generation::GroundingLimits>,
 }
@@ -906,6 +931,8 @@ impl EffectiveRagSettings {
             .map_err(|_| "evidence_token_budget exceeds u32::MAX".to_string())?;
         let limits = generation::GroundingLimits::new(ev, settings.openrouter.max_output_tokens)
             .map_err(|err| err.message().to_string())?;
+        let default_levers = workflow::LeverSet::try_from_names(&settings.engine.levers.defaults)
+            .map_err(|err| format!("invalid engine.levers.defaults: {err}"))?;
         let effective = Self {
             workflow,
             retrieval,
@@ -926,6 +953,7 @@ impl EffectiveRagSettings {
             top_p: settings.openrouter.top_p,
             max_output_tokens: settings.openrouter.max_output_tokens,
             generation_provider_order: settings.openrouter.generation_provider_order.clone(),
+            default_levers,
             index_generation: new_index_generation(),
             grounding_limits: Arc::new(limits),
         };
@@ -1187,6 +1215,13 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
                     ))
                 })?;
         }
+    }
+    // D-157: the default levers. Unlike the keys above, an empty value is meaningful here: it
+    // starts the process lever-free, for example to ingest into a store that holds no document
+    // metadata yet (the engine refuses to start with a default lever it cannot serve). The
+    // rehearsal and drive launchers refuse `LANCET_ENGINE__GRAPH__*` and should refuse this too.
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__LEVERS__DEFAULTS") {
+        settings.engine.levers.defaults = parse_lever_names_env(&raw);
     }
     if let Ok(raw) = std::env::var("LANCET_ENGINE__TELEMETRY__OTLP_ENDPOINT") {
         let trimmed = raw.trim();
@@ -1880,5 +1915,96 @@ mod tests {
                 "{name} must pin generation to Sail Research (D-191)"
             );
         }
+    }
+
+    /// D-157: the levers the run of record chose to ship as defaults, in canonical order.
+    const SHIPPED_DEFAULT_LEVERS: [&str; 2] = ["rerank", "evidence_metadata"];
+
+    /// Reads `engine.levers.defaults` from a TOML document, failing when the key is absent.
+    ///
+    /// Reading the raw key, rather than deserializing into `Settings`, keeps a file that dropped
+    /// the key from silently agreeing through its serde default.
+    fn file_default_levers(raw: &str) -> Vec<String> {
+        ::config::Config::builder()
+            .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+            .build()
+            .expect("configuration file must parse as TOML")
+            .get::<Vec<String>>("engine.levers.defaults")
+            .unwrap_or_else(|error| panic!("engine.levers.defaults must be present: {error}"))
+    }
+
+    /// D-157: the compiled-in default applies no lever, both committed files carry the winners of
+    /// the run of record, and each file passes startup validation as the same effective set.
+    #[test]
+    fn default_levers_are_empty_in_code_and_both_files_carry_the_run_of_record_winners() {
+        assert!(LeversConfigSettings::default().defaults.is_empty());
+        assert!(
+            EffectiveRagSettings::default().default_levers.is_empty(),
+            "the compiled-in default must stay lever-free so a service built without the file \
+             never asks for a resource it does not hold"
+        );
+        for (file_name, raw) in [
+            ("config/config.toml", CONFIG_TOML),
+            ("config/config.example.toml", CONFIG_EXAMPLE_TOML),
+        ] {
+            assert_eq!(
+                file_default_levers(raw),
+                SHIPPED_DEFAULT_LEVERS,
+                "{file_name} engine.levers.defaults must be the run-of-record winners (D-157)"
+            );
+            let settings: Settings = ::config::Config::builder()
+                .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+                .build()
+                .expect("configuration file must parse as TOML")
+                .try_deserialize()
+                .expect("configuration file must deserialize through Settings");
+            let effective = EffectiveRagSettings::try_from_settings(&settings)
+                .unwrap_or_else(|error| panic!("{file_name} must pass startup validation: {error}"));
+            assert_eq!(
+                effective.default_levers.to_wire(),
+                vec![1, 2],
+                "{file_name} must resolve to rerank then evidence_metadata"
+            );
+        }
+        assert_eq!(
+            file_default_levers(CONFIG_TOML),
+            file_default_levers(CONFIG_EXAMPLE_TOML),
+            "the two committed files must agree on the default levers"
+        );
+    }
+
+    /// D-157: an unknown, duplicate or out-of-order default name stops startup.
+    #[test]
+    fn configured_default_levers_that_break_the_contract_stop_startup() {
+        for (names, culprit) in [
+            (vec!["reranker"], "reranker"),
+            (vec!["rerank", "rerank"], "rerank"),
+            (vec!["evidence_metadata", "rerank"], "rerank"),
+            (vec![""], ""),
+        ] {
+            let mut settings = Settings::default();
+            settings.engine.levers.defaults = names.iter().map(|name| (*name).to_owned()).collect();
+            let message = EffectiveRagSettings::try_from_settings(&settings)
+                .expect_err("a default list that breaks the contract must not start");
+            assert!(
+                message.contains("engine.levers.defaults") && message.contains(culprit),
+                "names {names:?}: {message}"
+            );
+        }
+    }
+
+    /// D-157: `LANCET_ENGINE__LEVERS__DEFAULTS` reads as a comma list, and a blank value means no
+    /// default lever, which is how a process that must start lever-free says so.
+    #[test]
+    fn the_default_levers_environment_value_is_a_comma_list_and_blank_means_none() {
+        assert!(parse_lever_names_env("").is_empty());
+        assert!(parse_lever_names_env("   ").is_empty());
+        assert_eq!(parse_lever_names_env("rerank"), ["rerank"]);
+        assert_eq!(
+            parse_lever_names_env(" rerank , evidence_metadata "),
+            ["rerank", "evidence_metadata"]
+        );
+        // A malformed list reaches startup validation as it is; nothing is repaired here.
+        assert_eq!(parse_lever_names_env("rerank,"), ["rerank", ""]);
     }
 }

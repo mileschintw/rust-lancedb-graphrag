@@ -16,6 +16,9 @@ use arrow_array::{
 use engine::db::DatabaseManager;
 use uuid::Uuid;
 
+/// Environment override of `[engine.levers] defaults`; an empty value means no default lever.
+const LEVER_DEFAULTS_ENV: &str = "LANCET_ENGINE__LEVERS__DEFAULTS";
+
 fn spawn_engine_full(
     cwd: &Path,
     env_vars: &[(&str, &str)],
@@ -23,6 +26,11 @@ fn spawn_engine_full(
 ) -> Result<(Child, Vec<String>, String), String> {
     let mut command = Command::new(env!("CARGO_BIN_EXE_engine"));
     command.current_dir(cwd);
+    // The committed configuration makes `rerank` and `evidence_metadata` default levers (D-157),
+    // and the engine refuses to start when one cannot be served. These fixtures boot it over a
+    // store that holds no documents, so they start lever-free unless a test says otherwise by
+    // removing this variable.
+    command.env(LEVER_DEFAULTS_ENV, "");
     for var in remove_vars {
         command.env_remove(var);
     }
@@ -1064,5 +1072,60 @@ fn telemetry_invalid_sampler_ratio_fails_closed() {
             "diagnostic must mention sampler_ratio: {err_msg}"
         );
     }
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+/// D-157: the committed configuration asks for `rerank` and `evidence_metadata` by default, and
+/// an engine that cannot serve a default lever stops before it listens rather than refusing every
+/// request later. An empty store has no document metadata, so `evidence_metadata` is missing.
+#[test]
+fn committed_lever_defaults_stop_the_engine_over_a_store_without_metadata() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-lever-def-{}", uuid::Uuid::new_v4()));
+    let lancedb_dir = temp_dir.join("lancedb");
+    let lancedb_path = lancedb_dir.to_str().unwrap().replace('\\', "/");
+    let env_vars = [
+        ("LANCET_ENGINE__GRPC_ADDR", "127.0.0.1:0"),
+        ("LANCET_ENGINE__LANCEDB_PATH", lancedb_path.as_str()),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+    let remove_vars = ["LANCET_CONFIG_DIR", "LANCET_ENV", LEVER_DEFAULTS_ENV];
+
+    let failure = spawn_engine_full(repo_root, &env_vars, &remove_vars)
+        .expect_err("the committed lever defaults cannot be served over an empty store");
+    assert!(
+        failure.contains("evidence_metadata") && failure.contains("defaults = []"),
+        "the refusal must name the missing lever and the remedy:\n{failure}"
+    );
+    assert!(
+        !failure.contains("Rust RAG Engine serving"),
+        "the engine must stop before it announces readiness:\n{failure}"
+    );
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
+/// D-157: an empty `LANCET_ENGINE__LEVERS__DEFAULTS` is the operator's way to start lever-free,
+/// for example to ingest into a store that has no metadata yet.
+#[test]
+fn an_empty_lever_defaults_override_starts_the_engine_over_a_store_without_metadata() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let temp_dir = std::env::temp_dir().join(format!(
+        "lancet-cfg-test-lever-none-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let lancedb_dir = temp_dir.join("lancedb");
+    let lancedb_path = lancedb_dir.to_str().unwrap().replace('\\', "/");
+    let env_vars = [
+        ("LANCET_ENGINE__GRPC_ADDR", "127.0.0.1:0"),
+        ("LANCET_ENGINE__LANCEDB_PATH", lancedb_path.as_str()),
+        (LEVER_DEFAULTS_ENV, ""),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+    let remove_vars = ["LANCET_CONFIG_DIR", "LANCET_ENV"];
+
+    let (child, line) = spawn_engine(repo_root, &env_vars, &remove_vars);
+    assert!(line.contains("Rust RAG Engine serving"));
+    cleanup_child(child);
     let _ = fs::remove_dir_all(temp_dir);
 }

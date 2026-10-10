@@ -160,6 +160,22 @@ max_graph_chunk_candidates = 8
 # unit=variant name; range=all | edge_evidence | multi_cited
 graph_v2_chunk_precision = "edge_evidence"
 
+[engine.levers]
+# D-157: the quality levers a request that names none runs with, by wire name in canonical order
+# (rerank, evidence_metadata, binary_answer_format, graph_v2). The echo in the retrieval snapshot
+# reports the effective set. A request that names levers runs exactly those.
+# These are the 06.3.6 run-of-record winners (06.3.6-RUN-OF-RECORD.md, default_decision rows):
+# - evidence_metadata: default by rule (answer_usable +0.0621, Holm p 0.0077, guard 1 PASS).
+# - rerank: default by owner disposition D-193 (answer_usable +0.0812, Holm p 0.0032), with the D-192
+#   caveat: SC-2 flatness read MISS on the rerank arms from a provider latency drift, and rerank adds
+#   about 289 ms of mean total latency per request.
+# graph_v2 and binary_answer_format stay off (no Holm rejection).
+# The engine refuses to start when a default cannot be served: no lever reranker, or a store whose
+# documents carry no metadata. Backfill the store, or start lever-free with `defaults = []` (or with
+# LANCET_ENGINE__LEVERS__DEFAULTS set to an empty value). A unit test pins this list in both
+# committed config files; the compiled-in default in engine/src/config.rs is empty.
+defaults = ["rerank", "evidence_metadata"]
+
 [openrouter]
 # unit=URL string; range=nonblank
 embedding_endpoint = "https://openrouter.ai/api/v1/embeddings"

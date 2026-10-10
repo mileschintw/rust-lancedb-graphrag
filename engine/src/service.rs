@@ -209,6 +209,36 @@ impl LancetServiceImpl {
         }
     }
 
+    /// Checks that every configured default lever can be served against `snapshot`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message naming the first configured default whose resource is absent.
+    pub fn validate_default_levers(
+        &self,
+        snapshot: &workflow::ports::CorpusSnapshot,
+    ) -> Result<(), String> {
+        let availability = self.lever_availability(snapshot);
+        let missing = self
+            .effective_settings
+            .default_levers
+            .iter()
+            .find(|lever| !availability.is_available(*lever));
+        let Some(lever) = missing else {
+            return Ok(());
+        };
+        let reason = match lever {
+            v1::Lever::Rerank => "no lever reranker is wired",
+            v1::Lever::EvidenceMetadata => "the corpus snapshot holds no document metadata",
+            v1::Lever::GraphV2 => "graph_v2_chunk_precision is the no-op `all`",
+            v1::Lever::BinaryAnswerFormat | v1::Lever::Unspecified => "it cannot be served",
+        };
+        Err(format!(
+            "default lever {} is unavailable: {reason}; provide the resource (for example backfill              the store) or set [engine.levers] defaults = []",
+            workflow::levers::wire_name(lever)
+        ))
+    }
+
     /// Persists a raw ingestion job to the staged documents table.
     pub async fn persist_raw(&self, job: &IngestionJob) -> Result<(), Status> {
         persist_raw_with_boundary(&self.table, job, &LanceDbReplacementMutationBoundary)
@@ -1189,7 +1219,7 @@ impl LancetService for LancetServiceImpl {
         // refused here and never ignored, because a silently dropped lever would make an arm's
         // delta an artefact. The gateway refuses a bad name first; this is the engine's own check
         // for a direct caller.
-        let levers = workflow::LeverSet::try_from_wire(&req.levers).map_err(|err| {
+        let requested = workflow::LeverSet::try_from_wire(&req.levers).map_err(|err| {
             d1_status(
                 tonic::Code::InvalidArgument,
                 format!("invalid levers: {err}"),
@@ -1198,6 +1228,15 @@ impl LancetService for LancetServiceImpl {
                 "invalid_levers",
             )
         })?;
+        // D-157: a request that names no lever runs the configured defaults, and the snapshot echo
+        // reports that effective set. A request that names levers runs exactly those. The checks
+        // below read the effective set, so a default whose resource is missing refuses the request
+        // with `lever_unavailable` instead of being dropped.
+        let levers = if requested.is_empty() {
+            self.effective_settings.default_levers
+        } else {
+            requested
+        };
 
         // D-165: the graph repair needs the graph, so asking for it with the graph off is a
         // contradiction, refused before availability is consulted.

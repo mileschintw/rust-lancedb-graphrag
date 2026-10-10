@@ -445,6 +445,22 @@ fi
 #         key and annotation tables (no test added). 908->915. lib rises 796->803;
 #         `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata/
 #         config_startup unchanged (0/58/18/14/22).
+#   927 -- Phase 06.3.6 plan 22 (D-157, the run-of-record winners shipped as default levers):
+#         the `[engine.levers] defaults` key, `LeverSet::try_from_names`, the default substitution in
+#         `query_rag` admission and `LancetServiceImpl::validate_default_levers` with its call in
+#         `main.rs`. Ten lib tests: seven `tests::levers_pins` (the name parse and its refusals, a
+#         request naming no lever running and echoing the defaults, a named request running only
+#         its own levers, an empty default list leaving it lever-free, an unavailable default
+#         refusing it with `lever_unavailable`, and startup validation for a missing reranker, a
+#         missing metadata map, a served pair and no defaults) and three `config::tests` (the empty
+#         code default with both committed files carrying the winners, the startup refusal of an
+#         unknown, duplicate or out-of-order name, and the comma-list environment value). Two
+#         `config_startup` tests (the committed defaults stop the engine over a store without
+#         metadata, and an empty `LANCET_ENGINE__LEVERS__DEFAULTS` starts it). The bad-input
+#         matrix gained two post-table checks inside its existing test (no count change).
+#         915->927. lib rises 803->813 and config_startup 22->24;
+#         `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata
+#         unchanged (0/58/18/14).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -487,18 +503,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 915 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 915, got $TOTAL" >&2
+if [ "$TOTAL" -ne 927 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 927, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 803 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 803, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 813 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 813, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 803 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 803, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 813 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 813, got $LIB_COUNT" >&2
   exit 1
 fi
 
@@ -527,8 +543,8 @@ if [ "$BIN_BACKFILL_COUNT" -ne 14 ]; then
   exit 1
 fi
 
-if [ "$INTEG_CONFIG_COUNT" -ne 22 ]; then
-  echo "FAIL: config_startup test count mismatch: expected 22, got $INTEG_CONFIG_COUNT" >&2
+if [ "$INTEG_CONFIG_COUNT" -ne 24 ]; then
+  echo "FAIL: config_startup test count mismatch: expected 24, got $INTEG_CONFIG_COUNT" >&2
   exit 1
 fi
 

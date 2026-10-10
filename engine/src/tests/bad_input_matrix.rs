@@ -35,6 +35,8 @@
 //! | `levers_admitted` | `levers` names `binary_answer_format`, unmatched filter | success (not rejected) | n/a | `binary_answer_format` needs no resource and is admitted; the zero-match filter keeps the row independent of corpus content. |
 //! | `levers_metadata_admitted` | `levers` names `evidence_metadata`, unmatched filter, after the service's snapshot is replaced by one whose `DocMetaMap` holds an entry | success (not rejected) | n/a | Run after the table above, on the same service, so the one request is refused on the empty map and admitted on the non-empty one. |
 //! | `levers_graph_v2_admitted` | `levers` names `graph_v2`, unmatched filter, after the service's `graph_v2_chunk_precision` is set to `edge_evidence` | success (not rejected) | n/a | Run after the two checks above, on the same service, so the one request is refused on the no-op `all` and admitted once a variant is configured; with `disable_graph_context` it is still refused as `invalid_lever_combination` (D-165). |
+//! | `levers_default_unavailable` | `[engine.levers] defaults` names `rerank` and `evidence_metadata`, the request names no lever, and this service holds no lever reranker (D-157) | `InvalidArgument` | `lever_unavailable` | Run after the checks above, on the same service: the effective set is the configured defaults, so a default whose resource is absent is refused and never dropped. |
+//! | `levers_default_admitted` | the same defaults; a request that names `binary_answer_format` is admitted with the defaults unused, and a request that names no lever is admitted once a lever reranker is wired (D-157) | success (not rejected) | n/a | Run last, on the same service, so the one request is refused without the reranker and admitted with it. |
 //!
 //! **Negative filter bound (not a request-level row).** D-15's enumeration mentions a negative
 //! filter bound, but [`DocumentFilter`] carries only two repeated string lists and no numeric
@@ -86,6 +88,10 @@ use engine::pb::lancet::v1::{
 };
 use engine::rerank;
 use engine::testkit::test_query_request;
+use engine::workflow::LeverSet;
+
+use crate::service::LeverResources;
+use crate::workflow::ports::FakeReranker;
 
 use super::{configured_service, database_path, stage_document, FakeEmbedder, FakeGenerator};
 
@@ -620,6 +626,63 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
             .to_str()
             .unwrap(),
         "invalid_lever_combination"
+    );
+
+    // `levers_default_unavailable` and `levers_default_admitted` (D-157): the configured defaults
+    // are the effective set of a request that names no lever. The snapshot holds metadata from the
+    // check above, so only the lever reranker is missing.
+    service.effective_settings.default_levers = LeverSet::try_from_names(&[
+        "rerank".to_owned(),
+        "evidence_metadata".to_owned(),
+    ])
+    .expect("the shipped defaults are declared and canonical");
+    let no_lever_request = || QueryRagRequest {
+        query: "valid query".into(),
+        session_id: String::new(),
+        filter: unmatched_filter(),
+        ..Default::default()
+    };
+    let refused = super::execute_query_rag(&service, no_lever_request())
+        .await
+        .expect_err("row 'levers_default_unavailable' must be refused without a lever reranker");
+    assert_eq!(refused.code(), tonic::Code::InvalidArgument);
+    assert_eq!(
+        refused
+            .metadata()
+            .get("x-lancet-error-kind")
+            .expect("an error-kind trailer")
+            .to_str()
+            .unwrap(),
+        "lever_unavailable"
+    );
+    let named = super::execute_query_rag(
+        &service,
+        QueryRagRequest {
+            levers: vec![Lever::BinaryAnswerFormat as i32],
+            ..no_lever_request()
+        },
+    )
+    .await
+    .expect("a request that names a lever of its own never meets the defaults");
+    assert!(
+        named
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::NoEvidence as i32),
+        "row 'levers_default_admitted' (named lever) must carry the zero-evidence notice"
+    );
+    service.lever_resources = LeverResources {
+        reranker: Some(Arc::new(FakeReranker::success())),
+    };
+    let admitted = super::execute_query_rag(&service, no_lever_request())
+        .await
+        .expect("row 'levers_default_admitted' must succeed once the lever reranker is wired");
+    assert!(
+        admitted
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::NoEvidence as i32),
+        "row 'levers_default_admitted' must carry the zero-evidence notice"
     );
 
     assert_eq!(

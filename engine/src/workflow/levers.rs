@@ -21,6 +21,19 @@ const DECLARED: [Lever; 4] = [
     Lever::GraphV2,
 ];
 
+/// The name a lever carries on the gateway wire and in `[engine.levers] defaults`.
+///
+/// `Lever::Unspecified` is not a lever and has no name.
+pub(crate) fn wire_name(lever: Lever) -> &'static str {
+    match lever {
+        Lever::Unspecified => "unspecified",
+        Lever::Rerank => "rerank",
+        Lever::EvidenceMetadata => "evidence_metadata",
+        Lever::BinaryAnswerFormat => "binary_answer_format",
+        Lever::GraphV2 => "graph_v2",
+    }
+}
+
 /// The admitted quality levers of one request, held as a bit mask.
 ///
 /// Bit `n - 1` is set when the lever with enum number `n` is in the set. The default value is the
@@ -96,6 +109,28 @@ impl fmt::Display for LeverError {
 
 impl std::error::Error for LeverError {}
 
+/// A configured lever name was refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeverNameError {
+    name: String,
+    reason: &'static str,
+}
+
+impl LeverNameError {
+    /// The offending name as configured.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl fmt::Display for LeverNameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "lever name {:?} {}", self.name, self.reason)
+    }
+}
+
+impl std::error::Error for LeverNameError {}
+
 impl LeverSet {
     /// Parses the raw `levers` wire list of a request.
     ///
@@ -121,6 +156,39 @@ impl LeverSet {
             if bits & bit != 0 {
                 return Err(LeverError::new(LeverErrorKind::Duplicate, value));
             }
+            bits |= bit;
+        }
+        Ok(Self(bits))
+    }
+
+    /// Parses the lever names of the `[engine.levers] defaults` setting.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`LeverNameError`] for the first name that is blank, not a declared wire name,
+    /// a repeat of an earlier name, or out of canonical order (ascending enum number).
+    pub fn try_from_names(names: &[String]) -> Result<Self, LeverNameError> {
+        let refuse = |name: &String, reason| LeverNameError {
+            name: name.clone(),
+            reason,
+        };
+        let mut bits = 0_u8;
+        let mut previous = 0_i32;
+        for name in names {
+            let Some(lever) = DECLARED
+                .into_iter()
+                .find(|lever| wire_name(*lever) == name.as_str())
+            else {
+                return Err(refuse(name, "is not a lever this build declares"));
+            };
+            let bit = Self::bit(lever);
+            if bits & bit != 0 {
+                return Err(refuse(name, "appears more than once"));
+            }
+            if (lever as i32) < previous {
+                return Err(refuse(name, "is out of canonical order (ascending enum number)"));
+            }
+            previous = lever as i32;
             bits |= bit;
         }
         Ok(Self(bits))

@@ -1300,3 +1300,272 @@ async fn a_graph_v2_request_is_admitted_and_echoed_once_a_chunk_precision_is_con
     assert_eq!(error_kind(&contradiction), "invalid_lever_combination");
     let _ = std::fs::remove_dir_all(path);
 }
+
+// ---------------------------------------------------------------------------
+// Configured default levers (Phase 06.3.6 plan 22, D-157)
+// ---------------------------------------------------------------------------
+
+fn lever_names(list: &[&str]) -> Vec<String> {
+    list.iter().map(|name| (*name).to_owned()).collect()
+}
+
+#[test]
+fn configured_lever_names_parse_to_the_declared_levers_in_canonical_order() {
+    let pair = LeverSet::try_from_names(&lever_names(&["rerank", "evidence_metadata"]))
+        .expect("both names are declared and in canonical order");
+    assert_eq!(
+        pair.to_wire(),
+        vec![Lever::Rerank as i32, Lever::EvidenceMetadata as i32]
+    );
+
+    assert!(LeverSet::try_from_names(&[])
+        .expect("an empty list names no lever")
+        .is_empty());
+
+    let every = LeverSet::try_from_names(&lever_names(&[
+        "rerank",
+        "evidence_metadata",
+        "binary_answer_format",
+        "graph_v2",
+    ]))
+    .expect("every declared name in canonical order");
+    assert_eq!(every.to_wire(), vec![1, 2, 3, 4]);
+}
+
+#[test]
+fn configured_lever_names_refuse_whatever_is_not_a_canonical_declared_name() {
+    let refused: [(&[&str], &str, &str); 7] = [
+        (&["reranker"], "reranker", "not a lever"),
+        (&[""], "", "not a lever"),
+        (&["Rerank"], "Rerank", "not a lever"),
+        (&["LEVER_RERANK"], "LEVER_RERANK", "not a lever"),
+        (&["rerank", "rerank"], "rerank", "more than once"),
+        (
+            &["evidence_metadata", "rerank"],
+            "rerank",
+            "canonical order",
+        ),
+        (
+            &["graph_v2", "binary_answer_format"],
+            "binary_answer_format",
+            "canonical order",
+        ),
+    ];
+    for (names, culprit, reason) in refused {
+        let error = LeverSet::try_from_names(&lever_names(names))
+            .expect_err("a name outside the contract is refused, never ignored");
+        assert_eq!(error.name(), culprit, "names {names:?}");
+        assert!(
+            error.to_string().contains(reason),
+            "names {names:?}: {error} should say {reason:?}"
+        );
+    }
+}
+
+/// A service whose configured defaults are `defaults`, with the lever reranker wired when
+/// `reranker` is set and a snapshot that holds metadata when `metadata` is set.
+async fn service_with_default_levers(
+    name: &str,
+    defaults: &[&str],
+    reranker: bool,
+    metadata: bool,
+) -> (String, crate::service::LancetServiceImpl) {
+    let (path, mut service) = reranker_query_fixture(
+        name,
+        3,
+        RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default()),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+    service.effective_settings.default_levers =
+        LeverSet::try_from_names(&lever_names(defaults)).expect("test defaults are canonical");
+    if reranker {
+        service.lever_resources = LeverResources {
+            reranker: Some(Arc::new(FakeReranker::success())),
+        };
+    }
+    if metadata {
+        let mut store = service.corpus_store.write().await;
+        let prior = Arc::clone(&*store);
+        *store = Arc::new((*prior).clone().with_doc_meta(fixture_doc_meta()));
+    }
+    (path, service)
+}
+
+/// A filter naming no ingested document leaves zero evidence, so the run stops before the prompt:
+/// admission and the echo are what these tests read, not an answer.
+fn request_without_evidence(levers: &[i32], session: &str) -> QueryRagRequest {
+    QueryRagRequest {
+        levers: levers.to_vec(),
+        filter: Some(DocumentFilter {
+            document_ids: vec![Uuid::new_v4().to_string()],
+            content_types: vec![],
+        }),
+        ..test_query_request("reranker evidence", session)
+    }
+}
+
+fn error_kind_of(status: &tonic::Status) -> String {
+    status
+        .metadata()
+        .get("x-lancet-error-kind")
+        .expect("an error-kind trailer")
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn a_request_naming_no_levers_runs_the_configured_defaults_and_echoes_them() {
+    let (path, service) = service_with_default_levers(
+        "levers-defaults-applied",
+        &["rerank", "evidence_metadata"],
+        true,
+        true,
+    )
+    .await;
+    let response = super::execute_query_rag(
+        &service,
+        request_without_evidence(&[], "00000000-0000-4000-8000-0000000000a1"),
+    )
+    .await
+    .expect("the defaults are available, so the request is admitted");
+    assert_eq!(
+        response.snapshot.expect("a snapshot").levers,
+        vec![Lever::Rerank as i32, Lever::EvidenceMetadata as i32],
+        "the echo reports the effective set, not the empty request"
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_request_naming_levers_runs_exactly_those_and_none_of_the_defaults() {
+    let (path, service) = service_with_default_levers(
+        "levers-defaults-not-added",
+        &["rerank", "evidence_metadata"],
+        true,
+        true,
+    )
+    .await;
+    let response = super::execute_query_rag(
+        &service,
+        request_without_evidence(BINARY, "00000000-0000-4000-8000-0000000000a2"),
+    )
+    .await
+    .expect("binary_answer_format needs no resource");
+    assert_eq!(
+        response.snapshot.expect("a snapshot").levers,
+        vec![Lever::BinaryAnswerFormat as i32],
+        "a request that names a lever runs that lever alone"
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn an_empty_default_list_leaves_a_request_that_names_no_levers_lever_free() {
+    let (path, service) =
+        service_with_default_levers("levers-defaults-empty", &[], true, true).await;
+    let response = super::execute_query_rag(
+        &service,
+        request_without_evidence(&[], "00000000-0000-4000-8000-0000000000a3"),
+    )
+    .await
+    .expect("a lever-free request is admitted");
+    assert!(response.snapshot.expect("a snapshot").levers.is_empty());
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn an_unavailable_default_lever_refuses_a_request_that_names_none() {
+    // Metadata held, reranker missing: the default `rerank` cannot run.
+    let (path, service) = service_with_default_levers(
+        "levers-defaults-no-reranker",
+        &["rerank", "evidence_metadata"],
+        false,
+        true,
+    )
+    .await;
+    let refused = super::execute_query_rag(
+        &service,
+        request_without_evidence(&[], "00000000-0000-4000-8000-0000000000a4"),
+    )
+    .await
+    .expect_err("a default whose resource is absent is refused, never dropped");
+    assert_eq!(error_kind_of(&refused), "lever_unavailable");
+    let _ = std::fs::remove_dir_all(path);
+
+    // Reranker wired, snapshot without metadata: the default `evidence_metadata` cannot run.
+    let (path, service) = service_with_default_levers(
+        "levers-defaults-no-metadata",
+        &["rerank", "evidence_metadata"],
+        true,
+        false,
+    )
+    .await;
+    let refused = super::execute_query_rag(
+        &service,
+        request_without_evidence(&[], "00000000-0000-4000-8000-0000000000a5"),
+    )
+    .await
+    .expect_err("an empty metadata map leaves the default unavailable");
+    assert_eq!(error_kind_of(&refused), "lever_unavailable");
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn startup_validation_refuses_a_default_lever_whose_resource_is_absent() {
+    async fn snapshot_of(
+        service: &crate::service::LancetServiceImpl,
+    ) -> Arc<crate::workflow::ports::CorpusSnapshot> {
+        Arc::clone(&*service.corpus_store.read().await)
+    }
+
+    let (path, service) = service_with_default_levers(
+        "levers-startup-no-reranker",
+        &["rerank", "evidence_metadata"],
+        false,
+        true,
+    )
+    .await;
+    let message = service
+        .validate_default_levers(&*snapshot_of(&service).await)
+        .expect_err("rerank is a default and no reranker is wired");
+    assert!(message.contains("rerank"), "{message}");
+    let _ = std::fs::remove_dir_all(path);
+
+    let (path, service) = service_with_default_levers(
+        "levers-startup-no-metadata",
+        &["rerank", "evidence_metadata"],
+        true,
+        false,
+    )
+    .await;
+    let message = service
+        .validate_default_levers(&*snapshot_of(&service).await)
+        .expect_err("evidence_metadata is a default and the metadata map is empty");
+    assert!(message.contains("evidence_metadata"), "{message}");
+    assert!(
+        message.contains("defaults = []"),
+        "the refusal names the remedy: {message}"
+    );
+    let _ = std::fs::remove_dir_all(path);
+
+    let (path, service) = service_with_default_levers(
+        "levers-startup-served",
+        &["rerank", "evidence_metadata"],
+        true,
+        true,
+    )
+    .await;
+    service
+        .validate_default_levers(&*snapshot_of(&service).await)
+        .expect("both defaults are served");
+    let _ = std::fs::remove_dir_all(path);
+
+    let (path, service) =
+        service_with_default_levers("levers-startup-no-defaults", &[], false, false).await;
+    service
+        .validate_default_levers(&*snapshot_of(&service).await)
+        .expect("no default asks for nothing, so nothing can be missing");
+    let _ = std::fs::remove_dir_all(path);
+}
